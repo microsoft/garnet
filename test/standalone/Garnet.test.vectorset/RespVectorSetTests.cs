@@ -3104,9 +3104,22 @@ namespace Garnet.test
         public async Task RenamesAsync([Values(false, true)] bool runRenameInTransaction)
         {
             const string SourceKey = nameof(RenamesAsync) + "_source";
-            const string DestKey = SourceKey + "_dest";
+            const string DestKey = nameof(RenamesAsync) + "_dest";
 
             // TODO: In non-cluster mode the hash slot change change, make sure that is done correctly
+            ushort sourceHashSlot;
+            ushort destHashSlot;
+
+            unsafe
+            {
+                fixed (byte* sourcePtr = Encoding.ASCII.GetBytes(SourceKey))
+                fixed (byte* destPtr = Encoding.ASCII.GetBytes(DestKey))
+                {
+                    sourceHashSlot = HashSlotUtils.HashSlot(PinnedSpanByte.FromPinnedPointer(sourcePtr, SourceKey.Length));
+                    destHashSlot = HashSlotUtils.HashSlot(PinnedSpanByte.FromPinnedPointer(destPtr, DestKey.Length));
+                    ClassicAssert.AreNotEqual(sourceHashSlot, destHashSlot);
+                }
+            }
 
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase();
@@ -3119,8 +3132,12 @@ namespace Garnet.test
                 var vaddRes = (int)await db.ExecuteAsync("VADD", SourceKey, "VALUES", "3", "1", "2", "3", "foo");
                 ClassicAssert.AreEqual(1, vaddRes);
 
+                AssertExpectedHashSlot(server, SourceKey, sourceHashSlot);
+
                 var renameRes = await DoRenameAsync(db, runRenameInTransaction, nx: false);
                 ClassicAssert.IsTrue(renameRes);
+
+                AssertExpectedHashSlot(server, DestKey, destHashSlot);
 
                 var existsRes = await db.KeyExistsAsync(SourceKey);
                 ClassicAssert.IsFalse(existsRes);
@@ -3140,6 +3157,8 @@ namespace Garnet.test
                 var vaddRes = (int)await db.ExecuteAsync("VADD", SourceKey, "VALUES", "3", "1", "2", "3", "foo");
                 ClassicAssert.AreEqual(1, vaddRes);
 
+                AssertExpectedHashSlot(server, SourceKey, sourceHashSlot);
+
                 var setRes = await db.StringSetAsync(DestKey, "fizzbuzz");
                 ClassicAssert.IsTrue(setRes);
 
@@ -3149,6 +3168,8 @@ namespace Garnet.test
 
                 var renameRes = await DoRenameAsync(db, runRenameInTransaction, nx: false);
                 ClassicAssert.IsTrue(renameRes);
+
+                AssertExpectedHashSlot(server, DestKey, destHashSlot);
 
                 var existsRes = await db.KeyExistsAsync(SourceKey);
                 ClassicAssert.IsFalse(existsRes);
@@ -3168,6 +3189,8 @@ namespace Garnet.test
                 var vaddRes = (int)await db.ExecuteAsync("VADD", SourceKey, "VALUES", "3", "1", "2", "3", "foo");
                 ClassicAssert.AreEqual(1, vaddRes);
 
+                AssertExpectedHashSlot(server, SourceKey, sourceHashSlot);
+
                 var vaddRes2 = (int)await db.ExecuteAsync("VADD", DestKey, "VALUES", "3", "4", "5", "6", "foo");
                 ClassicAssert.AreEqual(1, vaddRes2);
 
@@ -3177,6 +3200,8 @@ namespace Garnet.test
 
                 var renameRes = await DoRenameAsync(db, runRenameInTransaction, nx: false);
                 ClassicAssert.IsTrue(renameRes);
+
+                AssertExpectedHashSlot(server, DestKey, destHashSlot);
 
                 var existsRes = await db.KeyExistsAsync(SourceKey);
                 ClassicAssert.IsFalse(existsRes);
@@ -3206,6 +3231,8 @@ namespace Garnet.test
                 var renameRes = await DoRenameAsync(db, runRenameInTransaction, nx: false);
                 ClassicAssert.IsTrue(renameRes);
 
+                AssertExpectedHashSlot(server, DestKey, destHashSlot);
+
                 var existsRes = await db.KeyExistsAsync(SourceKey);
                 ClassicAssert.IsFalse(existsRes);
 
@@ -3230,6 +3257,32 @@ namespace Garnet.test
                 }
 
                 return await db.KeyRenameAsync(SourceKey, DestKey, when);
+            }
+
+            // Check that the hash slot stored in context metadata matches expected
+            static void AssertExpectedHashSlot(GarnetServer server, string indexKey, ushort expectedHashSlot)
+            {
+                var store = server.Provider.StoreWrapper;
+                var vectorManager = store.DefaultDatabase.VectorManager;
+
+                unsafe
+                {
+                    fixed (byte* indexKeyPtr = Encoding.ASCII.GetBytes(indexKey))
+                    {
+                        var indexKeySpan = PinnedSpanByte.FromPinnedPointer(indexKeyPtr, indexKey.Length);
+
+                        var namespaceForKey = vectorManager.GetNamespacesForKeys(store, [indexKeySpan], []);
+                        ClassicAssert.AreEqual(VectorManager.ContextStep, namespaceForKey.Count);
+
+                        var namespacesForHashSlot = vectorManager.GetNamespacesForHashSlots([expectedHashSlot]);
+                        ClassicAssert.AreEqual(VectorManager.ContextStep, namespacesForHashSlot.Count);
+
+                        foreach (var ns in namespaceForKey)
+                        {
+                            ClassicAssert.IsTrue(namespacesForHashSlot.Contains(ns));
+                        }
+                    }
+                }
             }
         }
 
