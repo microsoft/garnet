@@ -1282,7 +1282,7 @@ namespace Garnet.server
         {
             AssertHaveStorageSession();
 
-            ReadIndex(indexValue, out var context, out _, out _, out quantType, out _, out _, out _, out _);
+            ReadIndex(indexValue, out var context, out _, out _, out quantType, out _, out _, out _, out _, out _);
 
             // Get internal id for the given element
             Span<byte> internalId = stackalloc byte[sizeof(int)];
