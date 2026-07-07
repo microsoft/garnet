@@ -46,6 +46,7 @@ namespace Garnet.server
         internal const long VREMAppendLogArg = RecreateIndexArg + 1;
         internal const long MigrateElementKeyLogArg = VREMAppendLogArg + 1;
         internal const long MigrateIndexKeyLogArg = MigrateElementKeyLogArg + 1;
+        internal const long VADDSetFlagsArg = MigrateIndexKeyLogArg + 1;
 
         /// <summary>
         /// Byte stored on log records to distinguish the INDEX key as a Vector Set
@@ -371,7 +372,7 @@ namespace Garnet.server
                 return;
             }
 
-            ReadIndex(record.ValueSpan, out var context, out _, out _, out _, out _, out _, out _, out _);
+            ReadIndex(record.ValueSpan, out var context, out _, out _, out _, out _, out _, out _, out _, out _);
             recoveredIndexes[context] = 0;
         }
 
@@ -472,7 +473,8 @@ namespace Garnet.server
             completedOutputs.Dispose();
         }
 
-        private static void CompletePending(ref Status status, ref StringBasicContext ctx)
+        private static void CompletePending<TContext>(ref Status status, ref TContext ctx)
+            where TContext : ITsavoriteContext<FixedSpanByteKey, StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions<GarnetKeyComparer, GarnetRecordTriggers>, ObjectAllocator<StoreFunctions<GarnetKeyComparer, GarnetRecordTriggers>>>
         {
             _ = ctx.CompletePendingWithOutputs(out var completedOutputs, wait: true);
             var more = completedOutputs.Next();
@@ -507,7 +509,7 @@ namespace Garnet.server
 
             errorMsg = default;
 
-            ReadIndex(indexValue, out var context, out var dimensions, out var reduceDims, out var quantType, out _, out var numLinks, out var distanceMetric, out var indexPtr);
+            ReadIndex(indexValue, out var context, out var dimensions, out var reduceDims, out var quantType, out _, out var numLinks, out var distanceMetric, out _, out var indexPtr);
 
             // Size FullVector / NeighborList disk reads to this set's geometry (dimensions, M) for single-IO fetches.
             SetActiveReadGeometry(dimensions, numLinks, quantType, reduceDims);
@@ -591,7 +593,7 @@ namespace Garnet.server
         {
             AssertHaveStorageSession();
 
-            ReadIndex(indexValue, out var context, out _, out _, out var quantType, out _, out _, out _, out var indexPtr);
+            ReadIndex(indexValue, out var context, out _, out _, out var quantType, out _, out _, out _, out _, out var indexPtr);
 
             var del = Service.Remove(context, indexPtr, element);
 
@@ -611,7 +613,15 @@ namespace Garnet.server
 
             ExceptionInjectionHelper.TriggerException(ExceptionInjectionType.VectorSet_Interrupt_Delete_0);
 
-            ReadIndex(value, out var context, out _, out _, out _, out _, out _, out _, out _);
+            ReadIndex(value, out var context, out _, out _, out _, out _, out _, out _, out var flags, out _);
+
+            // Ignore any deletion requested for an index that has the SuppressCleanup flag
+            //
+            // This typically indicates a rename is in progress
+            if (flags.HasFlag(VectorSetFlags.SuppressCleanup))
+            {
+                return;
+            }
 
             var tcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 
@@ -645,7 +655,15 @@ namespace Garnet.server
                 return;
             }
 
-            ReadIndex(value, out var context, out _, out _, out _, out _, out _, out _, out var indexPtr);
+            ReadIndex(value, out var context, out _, out _, out _, out _, out _, out _, out var flags, out var indexPtr);
+
+            // Ignore any drop requested for an index that has the SuppressCleanup flag
+            //
+            // This typically indicates a rename is in progress, and thus there's another owner of the index pointer
+            if (flags.HasFlag(VectorSetFlags.SuppressCleanup))
+            {
+                return;
+            }
 
             // It's possible for an index to be recovered from disk but never initialized, which means we need no drop
             if (indexPtr != 0)
@@ -670,7 +688,7 @@ namespace Garnet.server
                 return;
             }
 
-            ReadIndex(value, out var context, out _, out _, out _, out _, out _, out _, out var indexPtr);
+            ReadIndex(value, out var context, out _, out _, out _, out _, out _, out _, out _, out var indexPtr);
 
             Service.DropIndex(context, indexPtr);
         }
@@ -714,7 +732,7 @@ namespace Garnet.server
         {
             AssertHaveStorageSession();
 
-            ReadIndex(indexValue, out var context, out var dimensions, out var reduceDims, out var quantType, out _, out var numLinks, out _, out var indexPtr);
+            ReadIndex(indexValue, out var context, out var dimensions, out var reduceDims, out var quantType, out _, out var numLinks, out _, out _, out var indexPtr);
 
             // Size FullVector / NeighborList disk reads to this set's geometry (dimensions, M) for single-IO fetches.
             SetActiveReadGeometry(dimensions, numLinks, quantType, reduceDims);
@@ -905,7 +923,7 @@ namespace Garnet.server
         {
             AssertHaveStorageSession();
 
-            ReadIndex(indexValue, out var context, out var dimensions, out var reduceDims, out var quantType, out _, out var numLinks, out _, out var indexPtr);
+            ReadIndex(indexValue, out var context, out var dimensions, out var reduceDims, out var quantType, out _, out var numLinks, out _, out _, out var indexPtr);
 
             // Size FullVector / NeighborList disk reads to this set's geometry (dimensions, M) for single-IO fetches.
             SetActiveReadGeometry(dimensions, numLinks, quantType, reduceDims);
@@ -1063,7 +1081,7 @@ namespace Garnet.server
         internal VectorManagerResult FetchSingleVectorElementAttributes(ReadOnlySpan<byte> indexValue, PinnedSpanByte element, ref SpanByteAndMemory outputAttributes)
         {
             AssertHaveStorageSession();
-            ReadIndex(indexValue, out var context, out _, out _, out _, out _, out _, out _, out _);
+            ReadIndex(indexValue, out var context, out _, out _, out _, out _, out _, out _, out _, out _);
             var found = ReadSizeUnknown(context | DiskANNService.Attributes, forceAlignment: true, element, ref outputAttributes);
             return found ? VectorManagerResult.OK : VectorManagerResult.MissingElement;
         }
@@ -1170,7 +1188,7 @@ namespace Garnet.server
         {
             AssertHaveStorageSession();
 
-            ReadIndex(indexValue, out var context, out var dimensions, out _, out var quantType, out _, out _, out _, out var indexPtr);
+            ReadIndex(indexValue, out var context, out var dimensions, out _, out var quantType, out _, out _, out _, out _, out var indexPtr);
 
             // Make sure enough space in distances for requested count
             if (dimensions * sizeof(float) > outputDistances.Length)

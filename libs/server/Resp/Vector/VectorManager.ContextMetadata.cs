@@ -12,6 +12,7 @@ using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
 using Garnet.common;
+using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 
 namespace Garnet.server
@@ -292,6 +293,23 @@ namespace Garnet.server
                 inUse &= ~mask;
 
                 slots[(int)bitIx] = 0;
+
+                Version++;
+            }
+
+            public void UpdateHashSlot(bool allowZero, ushort context, ushort slot)
+            {
+                Debug.Assert(allowZero || context != 0, "Zero context not permitted here");
+                Debug.Assert((context % ContextStep) == 0, "Should only consider whole block of context, not a sub-bit");
+                Debug.Assert((context / ContextStep) < 64, "Context larger than expected");
+
+                var bitIx = context / ContextStep;
+                var mask = 1UL << (byte)bitIx;
+
+                Debug.Assert((inUse & mask) != 0, "Updating hash slot for context not in use");
+                Debug.Assert((cleaningUp & mask) == 0, "Updating hash slot for context being cleaned up");
+
+                slots[(int)bitIx] = slot;
 
                 Version++;
             }
@@ -716,6 +734,43 @@ namespace Garnet.server
                 namespaceBytes = namespaceBytes[0..sizeof(uint)];
                 BinaryPrimitives.WriteUInt32LittleEndian(namespaceBytes, (uint)context);
             }
+        }
+
+        /// <summary>
+        /// Given an old and new key and the value for the new key, update the associated hash slot in context metadata.
+        /// 
+        /// Assumes that old and new key are locked to prevent concurrent modification.
+        /// </summary>
+        public void UpdateHashSlot(ReadOnlySpan<byte> oldKey, ReadOnlySpan<byte> newKey, ReadOnlySpan<byte> value, ref VectorBasicContext vectorContext)
+        {
+            // Not a Vector Set index
+            if (value.Length != Index.Size)
+            {
+                logger?.LogError("Updating hash slot for {oldKey} -> {newKey} failed due to incorrect index length {actualLength} != {expectedLength}", SpanByte.ToShortString(oldKey), SpanByte.ToShortString(newKey), value.Length, Index.Size);
+                return;
+            }
+
+            var oldHashSlot = HashSlotUtils.HashSlot(oldKey);
+            var newHashSlot = HashSlotUtils.HashSlot(newKey);
+
+            if (oldHashSlot == newHashSlot)
+            {
+                // Nothing to do
+                return;
+            }
+
+            ReadIndex(value, out var context, out _, out _, out _, out _, out _, out _, out _, out _);
+
+            var (contextIndex, contextValue) = ContextMetadata.DecomposeContext(context);
+
+            lock (this)
+            {
+                contextMetadatas[contextIndex].UpdateHashSlot(contextIndex != 0, contextValue, newHashSlot);
+
+                _ = dirtyContextMetadatas.Add(contextIndex);
+            }
+
+            UpdateContextMetadata(ref vectorContext);
         }
     }
 }
