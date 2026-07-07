@@ -3314,6 +3314,87 @@ namespace Garnet.test
             }
         }
 
+        [Test]
+        [CancelAfter(30_000)]
+        public async Task VEMBRawAsync([Values("NOQUANT", "Q8", "BIN", "XNOQUANT_U8", "XNOQUANT_I8", "XBIN_I8", "XBIN_U8")] string quantizer, CancellationToken cancellation)
+        {
+            const string VectorSetName = nameof(VEMBRawAsync);
+            const string ElementName = nameof(ElementName);
+            const int VectorsForQuantization = 2_000;
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var quantizationNeeded = !(quantizer.Contains("NOQUANT", StringComparison.OrdinalIgnoreCase) || quantizer == "Q8");
+
+            var addRes = (int)await db.ExecuteAsync("VADD", [VectorSetName, "VALUES", "3", "1.0", "2.0", "3.0", ElementName, quantizer]).ConfigureAwait(false);
+            ClassicAssert.AreEqual(1, addRes);
+
+            await CheckRAWAsync(db, quantizer).ConfigureAwait(false);
+
+            if (quantizationNeeded)
+            {
+                // Trigger quantization if it's possible
+                var vectorManager = server.Provider.StoreWrapper.DefaultDatabase.VectorManager;
+
+                var quantTableStart = vectorManager.QuantizationRequestsProcessed;
+                var quantBackfillStart = vectorManager.QuantizationBackfillsProcessed;
+
+                var addsTriggeringQuantization = new Task<RedisResult>[VectorsForQuantization];
+
+                for (var i = 0; i < addsTriggeringQuantization.Length; i++)
+                {
+                    addsTriggeringQuantization[i] = db.ExecuteAsync("VADD", [VectorSetName, "VALUES", "3", "4.0", "5.0", "6.0", $"{ElementName}_{i}", quantizer]);
+                }
+
+                _ = await Task.WhenAll(addsTriggeringQuantization).ConfigureAwait(false);
+                foreach (var t in addsTriggeringQuantization)
+                {
+                    ClassicAssert.AreEqual(1, (int)await t.ConfigureAwait(false));
+                }
+
+                // We expect 1 _succesful_ table build
+                while (vectorManager.QuantizationRequestsProcessed != (quantTableStart + 1))
+                {
+                    await Task.Delay(1_000, cancellation).ConfigureAwait(false);
+                }
+
+                // No explicit config is set, so we expect Environment.ProcessorCount _successful_ backfills after the table build
+                while (vectorManager.QuantizationBackfillsProcessed != (quantBackfillStart + Environment.ProcessorCount))
+                {
+                    await Task.Delay(1_000, cancellation).ConfigureAwait(false);
+                }
+
+                await CheckRAWAsync(db, quantizer).ConfigureAwait(false);
+            }
+
+            static async Task CheckRAWAsync(IDatabase db, string quantizer)
+            {
+                var preQuantVEMBRaw = (byte[][])await db.ExecuteAsync("VEMB", [VectorSetName, ElementName, "RAW"]).ConfigureAwait(false);
+                var expectedLength = quantizer == "Q8" ? 4 : 3;
+
+                ClassicAssert.AreEqual(expectedLength, preQuantVEMBRaw.Length);
+
+                var expectedQType =
+                    quantizer switch
+                    {
+                        "NOQUANT" => "fp32",
+                        "Q8" or "XNOQUANT_I8" or "XNOQUANT_U8" => "q8",
+                        "BIN" or "XBIN_I8" or "XBIN_U8" => "bin",
+                        _ => throw new InvalidOperationException($"Unexpected quantizer: {quantizer}"),
+                    };
+                ClassicAssert.AreEqual(expectedQType, Encoding.ASCII.GetString(preQuantVEMBRaw[0]));
+
+                ClassicAssert.AreNotEqual(0, preQuantVEMBRaw[1].Length);
+                ClassicAssert.IsFalse(double.IsNaN(double.Parse(Encoding.ASCII.GetString(preQuantVEMBRaw[2]))));
+
+                if (expectedLength > 3)
+                {
+                    ClassicAssert.IsFalse(double.IsNaN(double.Parse(Encoding.ASCII.GetString(preQuantVEMBRaw[3]))));
+                }
+            }
+        }
+
         /// <summary>
         /// Create a new GarnetServer instance with common parameters.
         /// </summary>

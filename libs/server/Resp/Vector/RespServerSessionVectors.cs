@@ -1276,50 +1276,157 @@ namespace Garnet.server
                 raw = true;
             }
 
-            // TODO: what do we do here?
             if (raw)
             {
-                throw new NotImplementedException();
-            }
+                // Write out the vector's quantized elements
+                //
+                // The quantization map (which is written as first element) is as:
+                //  BIN, XBIN_I8, XBIN_U8  -> bin
+                //  Q8, XNOQUANT_I8, XNOQUANT_U8 -> q8
+                //  NOQUANT -> fp32
+                //
+                // The data string (written as second element) is whatever DiskANN stored
+                // under the quantized vector context, EXCEPT for the *NOQUANT* quantizers in which
+                // case it's the original vector.
+                //
+                // L2 norm (third element) and quantization range (fourth element for Q8) are dummy values
+                // for now.
 
-            Span<float> distanceSpace = stackalloc float[DefaultResultSetSize];
+                Span<float> quantizedSpace = stackalloc float[DefaultResultSetSize];
+                var quantizedResult = SpanByteAndMemory.FromPinnedSpan(MemoryMarshal.Cast<float, byte>(quantizedSpace));
 
-            var distanceResult = SpanByteAndMemory.FromPinnedSpan(MemoryMarshal.Cast<float, byte>(distanceSpace));
-
-            try
-            {
-                var res = storageApi.VectorSetEmbedding(key, elem, ref distanceResult);
-
-                if (res == GarnetStatus.OK)
+                try
                 {
-                    var distanceSpan = MemoryMarshal.Cast<byte, float>(distanceResult.ReadOnlySpan);
+                    var res = storageApi.VectorSetRawEmbedding(key, elem, ref quantizedResult, out var quantType, out var norm, out var range);
 
-                    while (!RespWriteUtils.TryWriteArrayLength(distanceSpan.Length, ref dcurr, dend))
-                        SendAndReset();
-
-                    for (var i = 0; i < distanceSpan.Length; i++)
+                    if (res == GarnetStatus.OK)
                     {
-                        while (!RespWriteUtils.TryWriteDoubleBulkString(distanceSpan[i], ref dcurr, dend))
+                        // Start array
+                        if (quantType == VectorQuantType.Q8)
+                        {
+                            WriteArrayLength(4);
+                        }
+                        else
+                        {
+                            WriteArrayLength(3);
+                        }
+
+                        // Write quant type
+                        if (quantType is VectorQuantType.Bin or VectorQuantType.XBin_I8 or VectorQuantType.XBin_U8)
+                        {
+                            WriteSimpleString("bin"u8);
+                        }
+                        else if (quantType is VectorQuantType.Q8 or VectorQuantType.XNoQuant_U8 or VectorQuantType.XNoQuant_I8)
+                        {
+                            WriteSimpleString("q8"u8);
+                        }
+                        else if (quantType == VectorQuantType.NoQuant)
+                        {
+                            WriteSimpleString("fp32");
+                        }
+                        else
+                        {
+                            throw new GarnetException($"Unexpected quantization type: {quantType}");
+                        }
+
+                        // Write raw data
+                        WriteBulkString(quantizedResult.ReadOnlySpan);
+
+                        // Write norm
+                        if (respProtocolVersion == 3)
+                        {
+                            WriteDoubleNumeric(norm);
+                        }
+                        else
+                        {
+                            while (!RespWriteUtils.TryWriteDoubleBulkString(norm, ref dcurr, dend))
+                                SendAndReset();
+                        }
+
+                        // For Q8 only write quantization range
+                        if (quantType == VectorQuantType.Q8)
+                        {
+                            if (respProtocolVersion == 3)
+                            {
+                                WriteDoubleNumeric(range.Value);
+                            }
+                            else
+                            {
+                                while (!RespWriteUtils.TryWriteDoubleBulkString(norm, ref dcurr, dend))
+                                    SendAndReset();
+                            }
+                        }
+                    }
+                    else if (res == GarnetStatus.WRONGTYPE)
+                    {
+                        return AbortVectorSetWrongType();
+                    }
+                    else
+                    {
+                        while (!RespWriteUtils.TryWriteEmptyArray(ref dcurr, dend))
                             SendAndReset();
                     }
-                }
-                else if (res == GarnetStatus.WRONGTYPE)
-                {
-                    return AbortVectorSetWrongType();
-                }
-                else
-                {
-                    while (!RespWriteUtils.TryWriteEmptyArray(ref dcurr, dend))
-                        SendAndReset();
-                }
 
-                return true;
-            }
-            finally
-            {
-                if (!distanceResult.IsSpanByte)
+                    return true;
+                }
+                finally
                 {
-                    distanceResult.Memory.Dispose();
+                    quantizedResult.Dispose();
+                }
+            }
+            else
+            {
+                // Write out the vector's elements
+                //
+                // In Redis this is reconstructed from quantized data, but with DiskANN we just have the real original values
+
+                Span<float> distanceSpace = stackalloc float[DefaultResultSetSize];
+
+                var distanceResult = SpanByteAndMemory.FromPinnedSpan(MemoryMarshal.Cast<float, byte>(distanceSpace));
+
+                try
+                {
+                    var res = storageApi.VectorSetEmbedding(key, elem, ref distanceResult);
+
+                    if (res == GarnetStatus.OK)
+                    {
+                        var distanceSpan = MemoryMarshal.Cast<byte, float>(distanceResult.ReadOnlySpan);
+
+                        while (!RespWriteUtils.TryWriteArrayLength(distanceSpan.Length, ref dcurr, dend))
+                            SendAndReset();
+
+                        if (respProtocolVersion == 3)
+                        {
+                            for (var i = 0; i < distanceSpan.Length; i++)
+                            {
+                                while (!RespWriteUtils.TryWriteDoubleNumeric(distanceSpan[i], ref dcurr, dend))
+                                    SendAndReset();
+                            }
+                        }
+                        else
+                        {
+                            for (var i = 0; i < distanceSpan.Length; i++)
+                            {
+                                while (!RespWriteUtils.TryWriteDoubleBulkString(distanceSpan[i], ref dcurr, dend))
+                                    SendAndReset();
+                            }
+                        }
+                    }
+                    else if (res == GarnetStatus.WRONGTYPE)
+                    {
+                        return AbortVectorSetWrongType();
+                    }
+                    else
+                    {
+                        while (!RespWriteUtils.TryWriteEmptyArray(ref dcurr, dend))
+                            SendAndReset();
+                    }
+
+                    return true;
+                }
+                finally
+                {
+                    distanceResult.Dispose();
                 }
             }
         }
