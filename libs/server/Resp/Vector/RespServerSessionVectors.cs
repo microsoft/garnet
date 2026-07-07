@@ -920,137 +920,11 @@ namespace Garnet.server
                         {
                             if (respProtocolVersion == 3)
                             {
-                                // TODO: this is rather complicated, so punt for now
-                                throw new NotImplementedException();
+                                WriteRESP3Result(this, count.Value, idResult, distanceResult, filterBitmapResult, withAttributes.Value, withScores.Value, idFormat, attributeResult);
                             }
                             else
                             {
-                                var remainingIds = idResult.ReadOnlySpan;
-                                var distancesSpan = MemoryMarshal.Cast<byte, float>(distanceResult.ReadOnlySpan);
-                                var hasFilter = filterBitmapResult.Length > 0;
-                                var filterBitmap = hasFilter ? filterBitmapResult.ReadOnlySpan : default;
-                                var remaininingAttributes = (withAttributes.Value || hasFilter) ? attributeResult.ReadOnlySpan : default;
-
-                                var totalFound = distancesSpan.Length;
-
-                                // Compute max output count: if bitmap is present, popcount it; otherwise all results
-                                int outputCount;
-                                if (hasFilter)
-                                {
-                                    outputCount = 0;
-                                    for (var b = 0; b < filterBitmap.Length; b++)
-                                        outputCount += System.Numerics.BitOperations.PopCount(filterBitmap[b]);
-                                }
-                                else
-                                {
-                                    outputCount = totalFound;
-                                }
-
-                                // Limit to what is actually asked for
-                                outputCount = Math.Min(count.Value, outputCount);
-
-                                // Each flag doubles output
-                                var arrayItemCount = outputCount;
-                                if (withScores.Value)
-                                {
-                                    arrayItemCount += outputCount;
-                                }
-                                if (withAttributes.Value)
-                                {
-                                    arrayItemCount += outputCount;
-                                }
-
-                                while (!RespWriteUtils.TryWriteArrayLength(arrayItemCount, ref dcurr, dend))
-                                    SendAndReset();
-
-                                var writtenCount = 0;
-                                var resultIndex = 0;
-
-                                while (writtenCount < outputCount)
-                                {
-                                    ReadOnlySpan<byte> elementData;
-
-                                    if (idFormat == VectorIdFormat.I32LengthPrefixed)
-                                    {
-                                        if (remainingIds.Length < sizeof(int))
-                                        {
-                                            throw new GarnetException($"Insufficient bytes for result id length at resultIndex={resultIndex}: {Convert.ToHexString(distanceResult.ReadOnlySpan)}");
-                                        }
-
-                                        var elementLen = BinaryPrimitives.ReadInt32LittleEndian(remainingIds);
-
-                                        if (remainingIds.Length < sizeof(int) + elementLen)
-                                        {
-                                            throw new GarnetException($"Insufficient bytes for result of length={elementLen} at resultIndex={resultIndex}: {Convert.ToHexString(distanceResult.ReadOnlySpan)}");
-                                        }
-
-                                        elementData = remainingIds.Slice(sizeof(int), elementLen);
-                                        remainingIds = remainingIds[(sizeof(int) + elementLen)..];
-                                    }
-                                    else if (idFormat == VectorIdFormat.FixedI32)
-                                    {
-                                        if (remainingIds.Length < sizeof(int))
-                                        {
-                                            throw new GarnetException($"Insufficient bytes for result id length at resultIndex={resultIndex}: {Convert.ToHexString(distanceResult.ReadOnlySpan)}");
-                                        }
-
-                                        elementData = remainingIds[..sizeof(int)];
-                                        remainingIds = remainingIds[sizeof(int)..];
-                                    }
-                                    else
-                                    {
-                                        throw new GarnetException($"Unexpected id format: {idFormat}");
-                                    }
-
-                                    // Check filter bitmap — skip results that didn't pass the filter
-                                    if (hasFilter && (filterBitmap[resultIndex >> 3] & (1 << (resultIndex & 7))) == 0)
-                                    {
-                                        // Advance attribute reader for skipped results (attributes are always present when bitmap exists)
-                                        if (!remaininingAttributes.IsEmpty)
-                                        {
-                                            var skipAttrLen = BinaryPrimitives.ReadInt32LittleEndian(remaininingAttributes);
-                                            remaininingAttributes = remaininingAttributes[(sizeof(int) + skipAttrLen)..];
-                                        }
-
-                                        resultIndex++;
-                                        continue;
-                                    }
-
-                                    while (!RespWriteUtils.TryWriteBulkString(elementData, ref dcurr, dend))
-                                        SendAndReset();
-
-                                    if (withScores.Value)
-                                    {
-                                        var distance = distancesSpan[resultIndex];
-
-                                        while (!RespWriteUtils.TryWriteDoubleBulkString(distance, ref dcurr, dend))
-                                            SendAndReset();
-                                    }
-
-                                    if (withAttributes.Value)
-                                    {
-                                        if (remaininingAttributes.Length < sizeof(int))
-                                        {
-                                            throw new GarnetException($"Insufficient bytes for attribute length at resultIndex={resultIndex}: {Convert.ToHexString(attributeResult.ReadOnlySpan)}");
-                                        }
-
-                                        var attrLen = BinaryPrimitives.ReadInt32LittleEndian(remaininingAttributes);
-                                        var attr = remaininingAttributes.Slice(sizeof(int), attrLen);
-                                        remaininingAttributes = remaininingAttributes[(sizeof(int) + attrLen)..];
-
-                                        while (!RespWriteUtils.TryWriteBulkString(attr, ref dcurr, dend))
-                                            SendAndReset();
-                                    }
-                                    else if (!remaininingAttributes.IsEmpty)
-                                    {
-                                        // Attributes fetched for filtering but not requested — advance reader
-                                        var attrLen = BinaryPrimitives.ReadInt32LittleEndian(remaininingAttributes);
-                                        remaininingAttributes = remaininingAttributes[(sizeof(int) + attrLen)..];
-                                    }
-
-                                    resultIndex++;
-                                    writtenCount++;
-                                }
+                                WriteRESP2Result(this, count.Value, idResult, distanceResult, filterBitmapResult, withAttributes.Value, withScores.Value, idFormat, attributeResult);
                             }
                         }
                         else if (vectorRes == VectorManagerResult.BadParams)
@@ -1091,6 +965,282 @@ namespace Garnet.server
                 if (rentedValues != null)
                 {
                     ArrayPool<byte>.Shared.Return(rentedValues);
+                }
+            }
+
+            // Write VSIM RESP2 result
+            //
+            // If not withScores and not withAttributes this is an array of matching elements in ascending order by distance
+            // If withScores (and not withAttributes) this is a map where keys are bulk string elements and values are double distances
+            // If withAttributes (and not withScores) this is a map where keys are bulk string elements and values are bulk string attributes
+            // If both withScores and withAttributes this is a map where keys are bulk string elements and values are 2 element arrays with double distances and bulk string attributes (in that order)
+            static void WriteRESP3Result(RespServerSession self, int count, SpanByteAndMemory idResult, SpanByteAndMemory distanceResult, SpanByteAndMemory filterBitmapResult, bool withAttributes, bool withScores, VectorIdFormat idFormat, SpanByteAndMemory attributeResult)
+            {
+                var remainingIds = idResult.ReadOnlySpan;
+                var distancesSpan = MemoryMarshal.Cast<byte, float>(distanceResult.ReadOnlySpan);
+                var hasFilter = filterBitmapResult.Length > 0;
+                var filterBitmap = hasFilter ? filterBitmapResult.ReadOnlySpan : default;
+                var remaininingAttributes = (withAttributes || hasFilter) ? attributeResult.ReadOnlySpan : default;
+
+                var totalFound = distancesSpan.Length;
+
+                // Compute max output count: if bitmap is present, popcount it; otherwise all results
+                int outputCount;
+                if (hasFilter)
+                {
+                    outputCount = 0;
+                    for (var b = 0; b < filterBitmap.Length; b++)
+                        outputCount += System.Numerics.BitOperations.PopCount(filterBitmap[b]);
+                }
+                else
+                {
+                    outputCount = totalFound;
+                }
+
+                // Limit to what is actually asked for
+                outputCount = Math.Min(count, outputCount);
+
+                if (!withAttributes && !withScores)
+                {
+                    // No score or attributes, simple array
+                    self.WriteArrayLength(outputCount);
+                }
+                else
+                {
+                    // At least one of scores or attributes, so a map is needed
+                    self.WriteMapLength(outputCount);
+                }
+
+                var writtenCount = 0;
+                var resultIndex = 0;
+
+                while (writtenCount < outputCount)
+                {
+                    ReadOnlySpan<byte> elementData;
+
+                    if (idFormat == VectorIdFormat.I32LengthPrefixed)
+                    {
+                        if (remainingIds.Length < sizeof(int))
+                        {
+                            throw new GarnetException($"Insufficient bytes for result id length at resultIndex={resultIndex}: {Convert.ToHexString(distanceResult.ReadOnlySpan)}");
+                        }
+
+                        var elementLen = BinaryPrimitives.ReadInt32LittleEndian(remainingIds);
+
+                        if (remainingIds.Length < sizeof(int) + elementLen)
+                        {
+                            throw new GarnetException($"Insufficient bytes for result of length={elementLen} at resultIndex={resultIndex}: {Convert.ToHexString(distanceResult.ReadOnlySpan)}");
+                        }
+
+                        elementData = remainingIds.Slice(sizeof(int), elementLen);
+                        remainingIds = remainingIds[(sizeof(int) + elementLen)..];
+                    }
+                    else if (idFormat == VectorIdFormat.FixedI32)
+                    {
+                        if (remainingIds.Length < sizeof(int))
+                        {
+                            throw new GarnetException($"Insufficient bytes for result id length at resultIndex={resultIndex}: {Convert.ToHexString(distanceResult.ReadOnlySpan)}");
+                        }
+
+                        elementData = remainingIds[..sizeof(int)];
+                        remainingIds = remainingIds[sizeof(int)..];
+                    }
+                    else
+                    {
+                        throw new GarnetException($"Unexpected id format: {idFormat}");
+                    }
+
+                    // Check filter bitmap — skip results that didn't pass the filter
+                    if (hasFilter && (filterBitmap[resultIndex >> 3] & (1 << (resultIndex & 7))) == 0)
+                    {
+                        // Advance attribute reader for skipped results (attributes are always present when bitmap exists)
+                        if (!remaininingAttributes.IsEmpty)
+                        {
+                            var skipAttrLen = BinaryPrimitives.ReadInt32LittleEndian(remaininingAttributes);
+                            remaininingAttributes = remaininingAttributes[(sizeof(int) + skipAttrLen)..];
+                        }
+
+                        resultIndex++;
+                        continue;
+                    }
+
+                    // Write the element
+                    self.WriteBulkString(elementData);
+
+                    if (withScores && withAttributes)
+                    {
+                        // Writing both, so need wrapping array
+                        self.WriteArrayLength(2);
+                    }
+
+                    if (withScores)
+                    {
+                        // Write score if requested
+                        var distance = distancesSpan[resultIndex];
+
+                        self.WriteDoubleNumeric(distance);
+                    }
+
+                    if (withAttributes)
+                    {
+                        // Write attribute if requested
+                        if (remaininingAttributes.Length < sizeof(int))
+                        {
+                            throw new GarnetException($"Insufficient bytes for attribute length at resultIndex={resultIndex}: {Convert.ToHexString(attributeResult.ReadOnlySpan)}");
+                        }
+
+                        var attrLen = BinaryPrimitives.ReadInt32LittleEndian(remaininingAttributes);
+                        var attr = remaininingAttributes.Slice(sizeof(int), attrLen);
+                        remaininingAttributes = remaininingAttributes[(sizeof(int) + attrLen)..];
+
+                        if (attr.IsEmpty)
+                        {
+                            self.WriteNull();
+                        }
+                        else
+                        {
+                            self.WriteBulkString(attr);
+                        }
+                    }
+
+                    resultIndex++;
+                    writtenCount++;
+                }
+            }
+
+            // Write VSIM RESP2 result
+            //
+            // This is an array with matching elements in ascending order by distance
+            // If withScores (and not withAttributes) then the array size is doubled and every 2nd element is a bulk string of the distance
+            // If withAttributes (and not withScores) then the array size is doubled and every 2nd element is a bulk string of the vector's attribute (if any)
+            // If both withScores and withAttributes the array size is tripled and every 2nd element is a bulk string of the distance, and every 3rd element is a bulk string of the vector's attribute (if any)
+            static void WriteRESP2Result(RespServerSession self, int count, SpanByteAndMemory idResult, SpanByteAndMemory distanceResult, SpanByteAndMemory filterBitmapResult, bool withAttributes, bool withScores, VectorIdFormat idFormat, SpanByteAndMemory attributeResult)
+            {
+                var remainingIds = idResult.ReadOnlySpan;
+                var distancesSpan = MemoryMarshal.Cast<byte, float>(distanceResult.ReadOnlySpan);
+                var hasFilter = filterBitmapResult.Length > 0;
+                var filterBitmap = hasFilter ? filterBitmapResult.ReadOnlySpan : default;
+                var remaininingAttributes = (withAttributes || hasFilter) ? attributeResult.ReadOnlySpan : default;
+
+                var totalFound = distancesSpan.Length;
+
+                // Compute max output count: if bitmap is present, popcount it; otherwise all results
+                int outputCount;
+                if (hasFilter)
+                {
+                    outputCount = 0;
+                    for (var b = 0; b < filterBitmap.Length; b++)
+                        outputCount += System.Numerics.BitOperations.PopCount(filterBitmap[b]);
+                }
+                else
+                {
+                    outputCount = totalFound;
+                }
+
+                // Limit to what is actually asked for
+                outputCount = Math.Min(count, outputCount);
+
+                // Each flag doubles output
+                var arrayItemCount = outputCount;
+                if (withScores)
+                {
+                    arrayItemCount += outputCount;
+                }
+                if (withAttributes)
+                {
+                    arrayItemCount += outputCount;
+                }
+
+                while (!RespWriteUtils.TryWriteArrayLength(arrayItemCount, ref self.dcurr, self.dend))
+                    self.SendAndReset();
+
+                var writtenCount = 0;
+                var resultIndex = 0;
+
+                while (writtenCount < outputCount)
+                {
+                    ReadOnlySpan<byte> elementData;
+
+                    if (idFormat == VectorIdFormat.I32LengthPrefixed)
+                    {
+                        if (remainingIds.Length < sizeof(int))
+                        {
+                            throw new GarnetException($"Insufficient bytes for result id length at resultIndex={resultIndex}: {Convert.ToHexString(distanceResult.ReadOnlySpan)}");
+                        }
+
+                        var elementLen = BinaryPrimitives.ReadInt32LittleEndian(remainingIds);
+
+                        if (remainingIds.Length < sizeof(int) + elementLen)
+                        {
+                            throw new GarnetException($"Insufficient bytes for result of length={elementLen} at resultIndex={resultIndex}: {Convert.ToHexString(distanceResult.ReadOnlySpan)}");
+                        }
+
+                        elementData = remainingIds.Slice(sizeof(int), elementLen);
+                        remainingIds = remainingIds[(sizeof(int) + elementLen)..];
+                    }
+                    else if (idFormat == VectorIdFormat.FixedI32)
+                    {
+                        if (remainingIds.Length < sizeof(int))
+                        {
+                            throw new GarnetException($"Insufficient bytes for result id length at resultIndex={resultIndex}: {Convert.ToHexString(distanceResult.ReadOnlySpan)}");
+                        }
+
+                        elementData = remainingIds[..sizeof(int)];
+                        remainingIds = remainingIds[sizeof(int)..];
+                    }
+                    else
+                    {
+                        throw new GarnetException($"Unexpected id format: {idFormat}");
+                    }
+
+                    // Check filter bitmap — skip results that didn't pass the filter
+                    if (hasFilter && (filterBitmap[resultIndex >> 3] & (1 << (resultIndex & 7))) == 0)
+                    {
+                        // Advance attribute reader for skipped results (attributes are always present when bitmap exists)
+                        if (!remaininingAttributes.IsEmpty)
+                        {
+                            var skipAttrLen = BinaryPrimitives.ReadInt32LittleEndian(remaininingAttributes);
+                            remaininingAttributes = remaininingAttributes[(sizeof(int) + skipAttrLen)..];
+                        }
+
+                        resultIndex++;
+                        continue;
+                    }
+
+                    while (!RespWriteUtils.TryWriteBulkString(elementData, ref self.dcurr, self.dend))
+                        self.SendAndReset();
+
+                    if (withScores)
+                    {
+                        var distance = distancesSpan[resultIndex];
+
+                        while (!RespWriteUtils.TryWriteDoubleBulkString(distance, ref self.dcurr, self.dend))
+                            self.SendAndReset();
+                    }
+
+                    if (withAttributes)
+                    {
+                        if (remaininingAttributes.Length < sizeof(int))
+                        {
+                            throw new GarnetException($"Insufficient bytes for attribute length at resultIndex={resultIndex}: {Convert.ToHexString(attributeResult.ReadOnlySpan)}");
+                        }
+
+                        var attrLen = BinaryPrimitives.ReadInt32LittleEndian(remaininingAttributes);
+                        var attr = remaininingAttributes.Slice(sizeof(int), attrLen);
+                        remaininingAttributes = remaininingAttributes[(sizeof(int) + attrLen)..];
+
+                        while (!RespWriteUtils.TryWriteBulkString(attr, ref self.dcurr, self.dend))
+                            self.SendAndReset();
+                    }
+                    else if (!remaininingAttributes.IsEmpty)
+                    {
+                        // Attributes fetched for filtering but not requested — advance reader
+                        var attrLen = BinaryPrimitives.ReadInt32LittleEndian(remaininingAttributes);
+                        remaininingAttributes = remaininingAttributes[(sizeof(int) + attrLen)..];
+                    }
+
+                    resultIndex++;
+                    writtenCount++;
                 }
             }
         }
