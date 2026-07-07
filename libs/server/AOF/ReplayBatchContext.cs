@@ -5,8 +5,9 @@ namespace Garnet.server
 {
     /// <summary>
     /// Shared page (unit of work) handed by the replay leader to the parallel replay tasks.
-    /// Coordination is done per-task via <see cref="Garnet.common.WorkReadyComplete"/> owned by each
-    /// replay task; this context only carries the page data every task scans.
+    /// Coordination is done centrally via <see cref="Garnet.common.WorkReadyCompleteSlim"/>, a shared
+    /// rendezvous barrier in which the leader and every replay task participate; this context only carries
+    /// the page data every task scans.
     /// </summary>
     /// <param name="replayTasks"></param>
     public unsafe class ReplayBatchContext(int replayTasks)

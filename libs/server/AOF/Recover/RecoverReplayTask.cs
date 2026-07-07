@@ -14,18 +14,20 @@ namespace Garnet.server
         internal async Task RecoverReplayTaskAsync(int replayTaskIdx, TsavoriteLog replaySublog)
         {
             var virtualSublogIdx = appendOnlyFile.GetVirtualSublogIdx(physicalSublogIdx, replayTaskIdx);
-            var signal = signals[replayTaskIdx];
             while (!cts.Token.IsCancellationRequested)
             {
                 try
                 {
-                    await signal.WaitReadyWorkAsync(cancellationToken: cts.Token).ConfigureAwait(false);
+                    // Rendezvous 1 (ready): meet the leader and peers at the barrier before scanning the page.
+                    await barrier.SignalWorkReadyWaitAsync(cancellationToken: cts.Token).ConfigureAwait(false);
                 }
-                catch (TaskCanceledException) when (cts.IsCancellationRequested)
-                { }
+                catch (OperationCanceledException) when (cts.IsCancellationRequested)
+                {
+                    break;
+                }
                 catch (Exception ex)
                 {
-                    logger?.LogError(ex, "{method} failed at WaitAsync", nameof(RecoverReplayTaskAsync));
+                    logger?.LogError(ex, "{method} failed at ready barrier", nameof(RecoverReplayTaskAsync));
                     await cts.CancelAsync().ConfigureAwait(false);
                     break;
                 }
@@ -59,10 +61,23 @@ namespace Garnet.server
                     break;
                 }
 
-                // Signal completion ONLY after the page was fully applied. On cancellation or fault we
-                // break above without signalling, so the leader observes cancellation instead of a
-                // completion for a page that was not fully applied.
-                signal.SignalCompleted();
+                try
+                {
+                    // Rendezvous 2 (completed): signal completion ONLY after the page was fully applied. On
+                    // cancellation or fault we break above WITHOUT arriving here, so the leader observes
+                    // cancellation instead of a completion for a page that was not fully applied.
+                    await barrier.SignalWorkCompletedWaitAsync(cancellationToken: cts.Token).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) when (cts.IsCancellationRequested)
+                {
+                    break;
+                }
+                catch (Exception ex)
+                {
+                    logger?.LogError(ex, "{method} failed at completion barrier", nameof(RecoverReplayTaskAsync));
+                    await cts.CancelAsync().ConfigureAwait(false);
+                    break;
+                }
             }
         }
 

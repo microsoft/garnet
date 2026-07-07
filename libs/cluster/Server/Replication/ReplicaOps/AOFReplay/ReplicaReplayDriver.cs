@@ -33,6 +33,13 @@ namespace Garnet.cluster
         readonly ReplicaReplayTask[] replayTasks;
         readonly TsavoriteLog physicalSublog;
 
+        /// <summary>
+        /// Centralized rendezvous barrier coordinating the replay leader (this driver) and its
+        /// <see cref="ReplicaReplayTask"/> workers. The leader is a participant, so the participant count
+        /// is the number of replay tasks plus one. Null when only a single replay task is used.
+        /// </summary>
+        internal readonly WorkReadyCompleteSlim barrier;
+
         int throttleCounter;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -68,6 +75,8 @@ namespace Garnet.cluster
             if (replayTaskCount > 1)
             {
                 replayBatchContext = new ReplayBatchContext(replayTaskCount);
+                // Leader participates in the barrier alongside every replay task, hence + 1.
+                barrier = new WorkReadyCompleteSlim(replayTaskCount + 1);
                 replayTasks = [.. Enumerable.Range(0, replayTaskCount).Select(i => new ReplicaReplayTask(i, this, clusterProvider, cts, logger))];
                 foreach (var replayTask in replayTasks)
                     _ = Task.Run(() => replayTask.FullPageBasedBackgroundReplayAsync());
@@ -112,19 +121,17 @@ namespace Garnet.cluster
             replayBatchContext.NextAddress = nextAddress;
             replayBatchContext.IsProtected = isProtected;
 
-            // Hand this page to every replay task.
-            for (var i = 0; i < replayTasks.Length; i++)
-                replayTasks[i].workReadyComplete.SignalWorkReady();
+            // Rendezvous 1 (ready): the page context above is published before the leader arrives, so
+            // once this returns every replay task has met at the barrier and may scan the page.
+            barrier.SignalWorkReadyWait(serverOptions.ReplicaSyncTimeout, cts.Token);
 
             // Set replication offset currentAddress
             replicationManager.SetSublogReplicationOffset(physicalSublogIdx, currentAddress);
 
-            // Wait for every replay task to finish applying its partition of the page before advancing.
-            for (var i = 0; i < replayTasks.Length; i++)
-            {
-                if (!replayTasks[i].workReadyComplete.WaitCompleted(serverOptions.ReplicaSyncTimeout, cts.Token))
-                    ExceptionUtils.ThrowException(new GarnetException("Timed out waiting for parallel replay tasks to complete", LogLevel.Warning, clientResponse: false));
-            }
+            // Rendezvous 2 (completed): block until every replay task has finished applying its partition
+            // of the page before advancing. The completion rendezvous guarantees no task is still reading
+            // the shared context when the leader recycles it for the next page.
+            barrier.SignalWorkCompletedWait(serverOptions.ReplicaSyncTimeout, cts.Token);
 
             // Before updating replication offset, we must wait for any pending Vector Set ops to complete
             replicationManager.AofProcessor.WaitForVectorOperationsToComplete();

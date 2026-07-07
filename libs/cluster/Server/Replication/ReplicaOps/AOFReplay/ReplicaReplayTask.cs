@@ -4,7 +4,6 @@
 using System;
 using System.Threading;
 using System.Threading.Tasks;
-using Garnet.common;
 using Garnet.server;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
@@ -28,15 +27,8 @@ namespace Garnet.cluster
         readonly ILogger logger = logger;
 
         /// <summary>
-        /// Per-task leader/worker handshake. The replay leader (<see cref="ReplicaReplayDriver"/>) hands
-        /// this task exactly one page at a time and waits for its completion on this signal, so no permit
-        /// can be stolen across tasks or leak across cycles.
-        /// </summary>
-        internal readonly WorkReadyComplete workReadyComplete = new();
-
-        /// <summary>
-        /// Asynchronously replays log entries using SemaphoreSlim coordination, processing and applying them for replication
-        /// and consistency across sublogs.
+        /// Asynchronously replays log entries using a shared rendezvous barrier for coordination, processing and applying
+        /// them for replication and consistency across sublogs.
         /// </summary>
         /// <returns>A task representing the asynchronous replay operation.</returns>
         internal async Task FullPageBasedBackgroundReplayAsync()
@@ -48,21 +40,23 @@ namespace Garnet.cluster
             {
                 try
                 {
-                    await workReadyComplete.WaitReadyWorkAsync(cancellationToken: cts.Token).ConfigureAwait(false);
+                    // Rendezvous 1 (ready): meet the leader and peers at the barrier before scanning the page.
+                    await replayDriver.barrier.SignalWorkReadyWaitAsync(cancellationToken: cts.Token).ConfigureAwait(false);
                 }
                 catch (OperationCanceledException) when (cts.Token.IsCancellationRequested)
                 {
                     // Suppress the exception if the task was cancelled because of store wrapper disposal
+                    break;
                 }
                 catch (Exception ex)
                 {
-                    logger?.LogError(ex, "{method} failed at WaitAsync", nameof(FullPageBasedBackgroundReplayAsync));
+                    logger?.LogError(ex, "{method} failed at ready barrier", nameof(FullPageBasedBackgroundReplayAsync));
                     await cts.CancelAsync().ConfigureAwait(false);
                     break;
                 }
 
-                // Guard: if cancellation happened during WaitReadyWorkAsync, exit cleanly
-                // without falling through to the processing block (which would issue a spurious SignalCompleted)
+                // Guard: if cancellation happened during the ready barrier, exit cleanly
+                // without falling through to the processing block (which would issue a spurious completion)
                 if (cts.Token.IsCancellationRequested)
                     break;
 
@@ -132,11 +126,25 @@ namespace Garnet.cluster
                     break;
                 }
 
-                // Signal completion ONLY after the page was fully applied. On cancellation or fault we
-                // break above WITHOUT signalling, so the leader's WaitCompleted observes cancellation /
-                // times out and tears down instead of advancing the replication offset past a page that
-                // was not fully applied.
-                workReadyComplete.SignalCompleted();
+                try
+                {
+                    // Rendezvous 2 (completed): signal completion ONLY after the page was fully applied.
+                    // On cancellation or fault we break above WITHOUT arriving here, so the leader's
+                    // completion barrier observes cancellation / times out and tears down instead of
+                    // advancing the replication offset past a page that was not fully applied.
+                    await replayDriver.barrier.SignalWorkCompletedWaitAsync(cancellationToken: cts.Token).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) when (cts.Token.IsCancellationRequested)
+                {
+                    // Suppress the exception if the task was cancelled because of store wrapper disposal
+                    break;
+                }
+                catch (Exception ex)
+                {
+                    logger?.LogError(ex, "{method} failed at completion barrier", nameof(FullPageBasedBackgroundReplayAsync));
+                    await cts.CancelAsync().ConfigureAwait(false);
+                    break;
+                }
             }
         }
     }

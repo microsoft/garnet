@@ -52,19 +52,19 @@ namespace Garnet.server
         Task[] replayTasks = null;
 
         /// <summary>
-        /// Per-task leader/worker handshakes (one per parallel replay task). The recover leader hands each
-        /// task exactly one page at a time and waits for its completion on the matching signal, so no
-        /// permit can be stolen across tasks or leak across cycles.
+        /// Centralized rendezvous barrier coordinating the recover leader (this driver) and its parallel
+        /// replay tasks. The leader is a participant, so the participant count is the number of replay
+        /// tasks plus one. Null until the parallel tasks are created.
         /// </summary>
-        WorkReadyComplete[] signals = null;
+        WorkReadyCompleteSlim barrier = null;
 
         /// <summary>
         /// Set by a replay task when it encounters an entry whose sequence number exceeds
         /// <see cref="untilSequenceNumber"/> (the prefix-consistency boundary). Because sequence numbers are
         /// monotonically increasing, no further entries need to be applied once this is set. The leader
-        /// observes it only after every task has finished the current page (via <see cref="WorkReadyComplete.WaitCompleted"/>,
-        /// which establishes a happens-before), then cancels to stop handing subsequent pages — avoiding
-        /// wasted scans and, importantly, avoiding committing log metadata beyond the intended prefix.
+        /// observes it only after every task has finished the current page (via the barrier's completion
+        /// rendezvous, which establishes a happens-before), then cancels to stop handing subsequent pages —
+        /// avoiding wasted scans and, importantly, avoiding committing log metadata beyond the intended prefix.
         /// </summary>
         volatile bool prefixConsistencyBoundaryReached = false;
 
@@ -137,25 +137,6 @@ namespace Garnet.server
             }
             else
             {
-                // Wait for previous batch to complete before overwriting shared batch context
-                if (replayTasks != null)
-                {
-                    // Pass the cancellation token so a worker that cancelled/faulted (and therefore did NOT
-                    // signal completion, by design) unwinds this leader wait instead of deadlocking recovery.
-                    for (var i = 0; i < signals.Length; i++)
-                        _ = signals[i].WaitCompleted(cancellationToken: cts.Token);
-
-                    // Every task has now finished the previous page. If any of them reached the
-                    // prefix-consistency boundary, stop here so we neither scan further pages nor commit
-                    // log metadata beyond the intended prefix.
-                    if (prefixConsistencyBoundaryReached)
-                    {
-                        logger?.LogTrace("Reached prefix-consistency boundary (until sequence number {untilSequenceNumber}), stopping parallel replay", untilSequenceNumber);
-                        cts.Cancel();
-                        return;
-                    }
-                }
-
                 CreateAndRunIntraPageParallelReplayTasks();
 
                 replayBatchContext.Record = record;
@@ -164,17 +145,29 @@ namespace Garnet.server
                 replayBatchContext.NextAddress = nextAddress;
                 replayBatchContext.IsProtected = isProtected;
 
-                // Hand this page to every replay task.
-                for (var i = 0; i < signals.Length; i++)
-                    signals[i].SignalWorkReady();
+                // Rendezvous 1 (ready): publish the page context above, then meet every replay task at the
+                // barrier so they may scan the page. The leader is a participant, hence the shared barrier.
+                barrier.SignalWorkReadyWait(cancellationToken: cts.Token);
 
-                // After the last batch, wait for workers and cancel to exit BulkConsumeAllAsync
-                if (nextAddress == untilAddress)
+                // Rendezvous 2 (completed): wait for every replay task to finish applying its partition of
+                // the page. This establishes a happens-before with prefixConsistencyBoundaryReached and
+                // guarantees no task is still reading the shared context before it is recycled for the next
+                // page.
+                barrier.SignalWorkCompletedWait(cancellationToken: cts.Token);
+
+                // Every task has now finished the current page. If any of them reached the
+                // prefix-consistency boundary, stop here so we neither scan further pages nor commit
+                // log metadata beyond the intended prefix.
+                if (prefixConsistencyBoundaryReached)
                 {
-                    for (var i = 0; i < signals.Length; i++)
-                        _ = signals[i].WaitCompleted(cancellationToken: cts.Token);
+                    logger?.LogTrace("Reached prefix-consistency boundary (until sequence number {untilSequenceNumber}), stopping parallel replay", untilSequenceNumber);
                     cts.Cancel();
+                    return;
                 }
+
+                // After the last batch, cancel to exit BulkConsumeAllAsync.
+                if (nextAddress == untilAddress)
+                    cts.Cancel();
             }
         }
 
@@ -183,7 +176,8 @@ namespace Garnet.server
             if (replayTasks != null)
                 return;
 
-            signals = [.. Enumerable.Range(0, serverOptions.AofReplayTaskCount).Select(_ => new WorkReadyComplete())];
+            // Leader participates in the barrier alongside every replay task, hence + 1.
+            barrier = new WorkReadyCompleteSlim(serverOptions.AofReplayTaskCount + 1);
             replayTasks = [.. Enumerable.Range(0, serverOptions.AofReplayTaskCount).Select(i => Task.Run(() => RecoverReplayTaskAsync(i, physicalSublog)))];
         }
 
@@ -214,7 +208,7 @@ namespace Garnet.server
                             break;
                     }
                 }
-                catch (TaskCanceledException) when (cts.IsCancellationRequested)
+                catch (OperationCanceledException) when (cts.IsCancellationRequested)
                 { }
             });
         }
