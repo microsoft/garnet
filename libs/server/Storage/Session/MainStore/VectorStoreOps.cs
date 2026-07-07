@@ -331,7 +331,7 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Get a RAW view of a quantized vector associated with an element, after (approximately) reversing any transformation.
+        /// Get a RAW view of a quantized (or full, if no quantized version is available) vector associated with an element.
         /// </summary>
         [SkipLocalsInit]
         public GarnetStatus VectorSetRawEmbedding(PinnedSpanByte key, ReadOnlySpan<byte> element, ref SpanByteAndMemory quantizedValues, out VectorQuantType quantType, out double norm, out double? range)

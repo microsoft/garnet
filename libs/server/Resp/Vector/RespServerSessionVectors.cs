@@ -968,7 +968,7 @@ namespace Garnet.server
                 }
             }
 
-            // Write VSIM RESP2 result
+            // Write VSIM RESP3 result
             //
             // If not withScores and not withAttributes this is an array of matching elements in ascending order by distance
             // If withScores (and not withAttributes) this is a map where keys are bulk string elements and values are double distances
@@ -1352,7 +1352,7 @@ namespace Garnet.server
                             }
                             else
                             {
-                                while (!RespWriteUtils.TryWriteDoubleBulkString(norm, ref dcurr, dend))
+                                while (!RespWriteUtils.TryWriteDoubleBulkString(range.Value, ref dcurr, dend))
                                     SendAndReset();
                             }
                         }
