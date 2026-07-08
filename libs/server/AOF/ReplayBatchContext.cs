@@ -1,16 +1,21 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
-
-using Garnet.common;
 
 namespace Garnet.server
 {
     /// <summary>
-    /// Replay work item used with recover/replication replay.
+    /// Shared page (unit of work) handed by the replay leader to the parallel replay tasks.
+    /// Coordination is done centrally via <see cref="Garnet.common.DoubleTurnstileBarrier"/>, a shared
+    /// rendezvous barrier in which the leader and every replay task participate; this context only carries
+    /// the page data every task scans.
     /// </summary>
     /// <param name="replayTasks"></param>
     public unsafe class ReplayBatchContext(int replayTasks)
     {
+        /// <summary>
+        /// Number of parallel replay tasks scanning each page.
+        /// </summary>
+        public readonly int ReplayTasks = replayTasks;
         /// <summary>
         /// Record pointer.
         /// </summary>
@@ -31,9 +36,5 @@ namespace Garnet.server
         /// Whether replay occurs under epoch protections.
         /// </summary>
         public bool IsProtected;
-        /// <summary>
-        /// Leader barrier to coordinate replication offset update.
-        /// </summary>
-        public LeaderFollowerBarrier LeaderFollowerBarrier = new(replayTasks);
     }
 }

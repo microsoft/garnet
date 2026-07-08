@@ -7,6 +7,7 @@ using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using Garnet.common;
 using Microsoft.Extensions.Logging;
+using Tsavorite.core;
 
 namespace Garnet.server
 {
@@ -41,10 +42,12 @@ namespace Garnet.server
             public VectorQuantType QuantType;
             [FieldOffset(36)]
             public VectorDistanceMetricType DistanceMetric;
-
-            // These used to be allocated for a GUID
             [FieldOffset(40)]
-            private ulong unused0;
+            public VectorSetFlags Flags;
+
+            // These used to be allocated for a GUID and can be reclaimed as necessary
+            [FieldOffset(44)]
+            private uint unused0;
             [FieldOffset(48)]
             private ulong unused1;
         }
@@ -82,6 +85,7 @@ namespace Garnet.server
             asIndex.BuildExplorationFactor = buildExplorationFactor;
             asIndex.NumLinks = numLinks;
             asIndex.DistanceMetric = distanceMetric;
+            asIndex.Flags = VectorSetFlags.None;
             asIndex.IndexPtr = (ulong)newIndexPtr;
         }
 
@@ -100,7 +104,7 @@ namespace Garnet.server
                 throw new GarnetException($"Acquired space for vector set index does not match expectations, {indexSpan.Length} != {Index.Size}");
             }
 
-            ReadIndex(indexSpan, out _, out _, out _, out _, out _, out _, out _, out var indexPtr);
+            ReadIndex(indexSpan, out _, out _, out _, out _, out _, out _, out _, out _, out var indexPtr);
             Debug.Assert(indexPtr == 0, "Shouldn't be recreating an index if we already have a pointer");
 
             ref var asIndex = ref Unsafe.As<byte, Index>(ref MemoryMarshal.GetReference(indexSpan));
@@ -112,7 +116,7 @@ namespace Garnet.server
         /// </summary>
         internal void DropIndex(ReadOnlySpan<byte> indexValue)
         {
-            ReadIndex(indexValue, out var context, out _, out _, out _, out _, out _, out _, out var indexPtr);
+            ReadIndex(indexValue, out var context, out _, out _, out _, out _, out _, out _, out _, out var indexPtr);
 
             if (indexPtr == 0)
             {
@@ -135,6 +139,7 @@ namespace Garnet.server
             out uint buildExplorationFactor,
             out uint numLinks,
             out VectorDistanceMetricType distanceMetric,
+            out VectorSetFlags flags,
             out nint indexPtr
         )
         {
@@ -149,6 +154,7 @@ namespace Garnet.server
             buildExplorationFactor = asIndex.BuildExplorationFactor;
             numLinks = asIndex.NumLinks;
             distanceMetric = asIndex.DistanceMetric;
+            flags = asIndex.Flags;
             indexPtr = (nint)asIndex.IndexPtr;
 
             Debug.Assert((context % ContextStep) == 0, $"Context ({context}) not as expected (% 4 == {context % 4}), vector set index is probably corrupted");
@@ -169,6 +175,73 @@ namespace Garnet.server
 
             asIndex.Context = newContext;
             asIndex.IndexPtr = 0;
+        }
+
+        /// <summary>
+        /// Issues an RMW to set the <see cref="VectorSetFlags.SuppressCleanup"/> flag on the given index.
+        /// 
+        /// Assumes that appropriate locking has been done to prevent concurrent modification to the index.
+        /// </summary>
+        internal static void MarkSuppressCleanup<TContext>(ReadOnlySpan<byte> key, ref TContext stringContext)
+            where TContext : ITsavoriteContext<FixedSpanByteKey, StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions<GarnetKeyComparer, GarnetRecordTriggers>, ObjectAllocator<StoreFunctions<GarnetKeyComparer, GarnetRecordTriggers>>>
+        {
+            // Since we only have the one flag, setting it doesn't require a read first.
+            SetFlags(key, VectorSetFlags.SuppressCleanup, ref stringContext);
+        }
+
+        /// <summary>
+        /// Issues an RMW to clear the <see cref="VectorSetFlags.SuppressCleanup"/> flag on the given index.
+        /// 
+        /// Assumes that appropriate locking has been done to prevent concurrent modification to the index.
+        /// </summary>
+        internal static void ClearSuppressCleanup<TContext>(ReadOnlySpan<byte> key, ref TContext stringContext)
+            where TContext : ITsavoriteContext<FixedSpanByteKey, StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions<GarnetKeyComparer, GarnetRecordTriggers>, ObjectAllocator<StoreFunctions<GarnetKeyComparer, GarnetRecordTriggers>>>
+        {
+            // Since we only have the one flag, clearing it is equivalent to setting to None
+            SetFlags(key, VectorSetFlags.None, ref stringContext);
+        }
+
+        /// <summary>
+        /// Issues an RMW to set <see cref="VectorSetFlags"/> on the given index.
+        /// 
+        /// Assumes that appropriate locking has been done to prevent concurrent modification to the index.
+        /// </summary>
+        private static void SetFlags<TContext>(ReadOnlySpan<byte> key, VectorSetFlags flags, ref TContext stringContext)
+            where TContext : ITsavoriteContext<FixedSpanByteKey, StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions<GarnetKeyComparer, GarnetRecordTriggers>, ObjectAllocator<StoreFunctions<GarnetKeyComparer, GarnetRecordTriggers>>>
+        {
+            var input = new StringInput(RespCommand.VADD, arg1: VADDSetFlagsArg);
+
+#pragma warning disable IDE0302 // Collection initializers don't _guarantee_ stackalloc, which is what we need here
+            Span<VectorSetFlags> flagsArg = stackalloc VectorSetFlags[1] { flags };
+#pragma warning restore IDE0302
+
+            input.parseState.EnsureCapacity(1);
+            input.parseState.SetArgument(0, PinnedSpanByte.FromPinnedSpan(MemoryMarshal.AsBytes(flagsArg)));
+
+            var output = new StringOutput();
+
+            var writeRes = stringContext.RMW((FixedSpanByteKey)key, ref input, ref output);
+            if (writeRes.IsPending)
+            {
+                CompletePending(ref writeRes, ref stringContext);
+            }
+
+            if (!writeRes.IsCompletedSuccessfully)
+            {
+                throw new GarnetException("Marking existing Vector Set index flags should never fail");
+            }
+        }
+
+        /// <summary>
+        /// Update <see cref="Index.Flags"/> field stored in <paramref name="indexValue"/>.
+        /// </summary>
+        public static void SetIndexFlags(Span<byte> indexValue, VectorSetFlags flags)
+        {
+            Debug.Assert(indexValue.Length == Index.Size, $"Index size is incorrect ({indexValue.Length} != {Index.Size}), implies vector set index is probably corrupted");
+
+            ref var asIndex = ref Unsafe.As<byte, Index>(ref MemoryMarshal.GetReference(indexValue));
+
+            asIndex.Flags = flags;
         }
     }
 }

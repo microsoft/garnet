@@ -330,7 +330,8 @@ namespace Garnet.test
             string aofMemorySize = "64m",
             string aofPageSize = null,
             bool copyReadsToTail = false,
-            int replayTaskCount = 1
+            int replayTaskCount = 1,
+            bool failOnRecoveryError = false
             )
         {
             if (useAzureStorage)
@@ -420,6 +421,7 @@ namespace Garnet.test
                 EnableVectorSetPreview = enableVectorSetPreview,
                 EnableRangeIndexPreview = enableRangeIndexPreview,
                 CopyReadsToTail = copyReadsToTail,
+                FailOnRecoveryError = failOnRecoveryError,
             };
 
             if (!string.IsNullOrEmpty(memorySize))
