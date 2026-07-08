@@ -37,7 +37,6 @@ namespace Tsavorite.core
         private readonly SafeConcurrentDictionary<int, SafeFileHandle> logHandles;
         private readonly bool useIoCompletionPort;
         private readonly ConcurrentQueue<SimpleAsyncResult> results;
-        private static uint sectorSize = 0;
         private bool _disposed;
         readonly bool readOnly;
         readonly ILogger logger;
@@ -53,7 +52,7 @@ namespace Tsavorite.core
         public override string ToString()
         {
             static string bstr(bool value) => value ? "T" : "F";
-            return $"secSize {sectorSize}, numPend {numPending}, RO {bstr(readOnly)}, preAll {bstr(preallocateFile)}, delClose {bstr(deleteOnClose)}, noFileBuf {bstr(disableFileBuffering)}";
+            return $"secSize {SectorSize}, numPend {numPending}, RO {bstr(readOnly)}, preAll {bstr(preallocateFile)}, delClose {bstr(deleteOnClose)}, noFileBuf {bstr(disableFileBuffering)}";
         }
 
         /// <summary>
@@ -115,7 +114,7 @@ namespace Tsavorite.core
                                       bool useIoCompletionPort = true,
                                       bool readOnly = false,
                                       ILogger logger = null)
-                : base(filename, GetSectorSize(filename), capacity)
+                : base(filename, NativeStorageDevice.ProbeSectorSize(filename), capacity)
         {
             if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
             {
@@ -520,13 +519,6 @@ namespace Tsavorite.core
 
         private SafeFileHandle CreateHandle(int segmentId)
             => CreateHandle(segmentId, disableFileBuffering, deleteOnClose, preallocateFile, segmentSize, FileName, ioCompletionPort);
-
-        private static uint GetSectorSize(string filename)
-        {
-            if (sectorSize <= 0)
-                sectorSize = Native32.GetDeviceSectorSize(filename);
-            return sectorSize;
-        }
 
         /// Sets file size to the specified value.
         /// Does not reset file seek pointer to original location.

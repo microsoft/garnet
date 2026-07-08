@@ -216,6 +216,9 @@ namespace Garnet
         [Option("aof-replay-task-count", Required = false, HelpText = "Number of replay tasks per physical sublog at the replica.")]
         public int AofReplayTaskCount { get; set; }
 
+        [Option("aof-replay-max-drift", Required = false, HelpText = "Maximum allowed drift in key sequence numbers between physical sublog replay drivers. When a driver is ahead of the slowest peer by more than this value, it yields. Only effective when aof-physical-sublog-count > 1. -1 = disabled.")]
+        public long AofReplayMaxDrift { get; set; }
+
         [IntRangeValidation(0, int.MaxValue)]
         [Option("aof-tail-witness-freq", Required = false, HelpText = "Polling frequency of the background task responsible for moving time ahead for all physical sublogs (Used only with physical sublog value >1).")]
         public int AofTailWitnessFreqMs { get; set; }
@@ -575,11 +578,13 @@ namespace Garnet
         [Option("index-resize-threshold", Required = false, HelpText = "Hash-index Overflow bucket count over total index size in percentage to trigger index resize")]
         public int IndexResizeThreshold { get; set; }
 
-        // ValueOverflowThreshold must be at least 64 bytes and strictly less than PageSize (both after rounding down to the previous power of 2).
-        // Validated at server-options consumption time; see GarnetServerOptions.ValueOverflowThresholdBytes.
         [MemorySizeValidation(isRequired: false)]
-        [Option("value-overflow-threshold", Required = false, HelpText = "Max size of a value stored inline in the main-log page (larger values overflow to the heap). Accepts a memory size (e.g. 4k, 1m). Minimum 64 bytes; must be less than PageSize.")]
-        public string ValueOverflowThreshold { get; set; }
+        [Option("max-inline-key-size", Required = false, HelpText = "Maximum size of a key stored inline in the in-memory portion of the main log. Accepts a memory size (e.g. \"1k\", \"128\"). Must be in range [0, 1022] bytes; default is 1022.")]
+        public string MaxInlineKeySize { get; set; }
+
+        [MemorySizeValidation(isRequired: false)]
+        [Option("max-inline-value-size", Required = false, HelpText = "Maximum size of a value stored inline in the in-memory portion of the main log. Accepts a memory size (e.g. \"4k\", \"15m\"). Must be in range [0, 16777214] bytes; default is min (1m, PageSize / 2).")]
+        public string MaxInlineValueSize { get; set; }
 
         [MemorySizeValidation(isRequired: false)]
         [Option("initial-io-record-size", Required = false, HelpText = "Initial IO read size for records on disk. Accepts a memory size (e.g. 4k, 8k). Default is 128 bytes.")]
@@ -872,6 +877,7 @@ namespace Garnet
                 AofSegmentSize = AofSegmentSize,
                 AofPhysicalSublogCount = AofPhysicalSublogCount,
                 AofReplayTaskCount = AofReplayTaskCount,
+                AofReplayMaxDrift = AofReplayMaxDrift,
                 AofTailWitnessFreqMs = AofTailWitnessFreqMs,
                 CommitFrequencyMs = CommitFrequencyMs,
                 WaitForCommit = WaitForCommit.GetValueOrDefault(),
@@ -951,7 +957,8 @@ namespace Garnet
                 ExtensionAllowUnsignedAssemblies = ExtensionAllowUnsignedAssemblies.GetValueOrDefault(),
                 IndexResizeFrequencySecs = IndexResizeFrequencySecs,
                 IndexResizeThreshold = IndexResizeThreshold,
-                ValueOverflowThreshold = ValueOverflowThreshold,
+                MaxInlineKeySize = MaxInlineKeySize,
+                MaxInlineValueSize = MaxInlineValueSize,
                 InitialIORecordSize = InitialIORecordSize,
                 LoadModuleCS = LoadModuleCS,
                 FailOnRecoveryError = FailOnRecoveryError.GetValueOrDefault(),

@@ -361,7 +361,7 @@ namespace Garnet.server
 
                     case RespCommand.VADD:
                     case RespCommand.VREM:
-                        if (input.arg1 is VectorManager.VADDAppendLogArg or VectorManager.VREMAppendLogArg or VectorManager.RecreateIndexArg)
+                        if (input.arg1 is VectorManager.VADDAppendLogArg or VectorManager.VREMAppendLogArg or VectorManager.RecreateIndexArg or VectorManager.VADDSetFlagsArg)
                         {
                             // A copy-update of the index key copies the whole index value to the new record: this is
                             // triggered when a CU is forced on the index record - during replication (VADD/VREM append

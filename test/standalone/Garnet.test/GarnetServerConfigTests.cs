@@ -1626,174 +1626,370 @@ namespace Garnet.test
         }
 
         [Test]
-        public void ValueOverflowThresholdParsing()
+        public void MaxInlineValueSizeParsing()
         {
-            // Default value from defaults.conf is "16k"
+            // Default value from defaults.conf is null (computed based on page size at runtime)
             {
                 var args = Array.Empty<string>();
                 var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out var invalidOptions, out _, out _, silentMode: true);
                 ClassicAssert.IsTrue(parseSuccessful);
                 ClassicAssert.AreEqual(0, invalidOptions.Count);
-                ClassicAssert.AreEqual("16k", options.ValueOverflowThreshold);
+                ClassicAssert.IsNull(options.MaxInlineValueSize);
                 var serverOptions = options.GetServerOptions();
-                ClassicAssert.AreEqual("16k", serverOptions.ValueOverflowThreshold);
-                ClassicAssert.AreEqual(16384, serverOptions.ValueOverflowThresholdBytes());
+                ClassicAssert.IsNull(serverOptions.MaxInlineValueSize);
+                var pageSize = 1L << serverOptions.PageSizeBits();
+                // With default 16m page size, the default should be 1m (min of 1m and pageSize/2)
+                ClassicAssert.AreEqual(1048576, serverOptions.MaxInlineValueSizeBytes(pageSize));
             }
 
-            // Various valid memory size strings (CLI). Use a 1g page size so the upper-bound case (256m) passes the cross-property fit check.
-            foreach (var (input, expectedBytes) in new[] { ("64", 64), ("1k", 1024), ("4k", 4096), ("1m", 1048576), ("2m", 1 << 21) })
+            // Various valid memory size strings (CLI). Use a 1g page size so the upper-bound case (15m) passes the page-fit check.
+            foreach (var (input, expectedBytes) in new[] { ("64", 64), ("1k", 1024), ("4k", 4096), ("1m", 1048576), ("15m", 15 * 1048576) })
             {
-                var args = new[] { "--page", "1g", "--value-overflow-threshold", input };
+                var args = new[] { "--page", "1g", "--max-inline-value-size", input };
                 var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out var invalidOptions, out _, out _, silentMode: true);
                 ClassicAssert.IsTrue(parseSuccessful, $"CLI parsing failed for '{input}'");
                 ClassicAssert.AreEqual(0, invalidOptions.Count);
-                ClassicAssert.AreEqual(input, options.ValueOverflowThreshold);
+                ClassicAssert.AreEqual(input, options.MaxInlineValueSize);
                 var serverOptions = options.GetServerOptions();
-                ClassicAssert.AreEqual(expectedBytes, serverOptions.ValueOverflowThresholdBytes(), $"Expected {expectedBytes} bytes for '{input}'");
+                var pageSize = 1L << serverOptions.PageSizeBits();
+                ClassicAssert.AreEqual(expectedBytes, serverOptions.MaxInlineValueSizeBytes(pageSize), $"Expected {expectedBytes} bytes for '{input}'");
             }
 
             // JSON parsing of a valid memory size string
             {
-                const string JSON = @"{ ""ValueOverflowThreshold"": ""1m"" }";
+                const string JSON = @"{ ""MaxInlineValueSize"": ""1m"" }";
                 var parseSuccessful = TryParseGarnetConfOptions(JSON, out var options, out var invalidOptions, out _);
                 ClassicAssert.IsTrue(parseSuccessful);
                 ClassicAssert.AreEqual(0, invalidOptions.Count);
-                ClassicAssert.AreEqual("1m", options.ValueOverflowThreshold);
-                ClassicAssert.AreEqual(1048576, options.GetServerOptions().ValueOverflowThresholdBytes());
+                ClassicAssert.AreEqual("1m", options.MaxInlineValueSize);
+                var serverOptions = options.GetServerOptions();
+                var pageSize = 1L << serverOptions.PageSizeBits();
+                ClassicAssert.AreEqual(1048576, serverOptions.MaxInlineValueSizeBytes(pageSize));
             }
         }
 
         [Test]
-        public void ValueOverflowThresholdValidation()
+        public void MaxInlineValueSizeValidation()
         {
             // Reject invalid format (CLI)
             {
-                var args = new[] { "--value-overflow-threshold", "abc" };
+                var args = new[] { "--max-inline-value-size", "abc" };
                 var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out _, out var invalidOptions, out _, out _, silentMode: true);
                 ClassicAssert.IsFalse(parseSuccessful);
-                ClassicAssert.IsTrue(invalidOptions.Contains(nameof(Options.ValueOverflowThreshold)));
+                ClassicAssert.IsTrue(invalidOptions.Contains(nameof(Options.MaxInlineValueSize)));
             }
 
             // Regression: the previous regex used a `[K|k|M|m|G|g]` character class which treated the pipe as a literal,
             // so inputs like '4|' were silently accepted. The tightened regex rejects them.
             {
-                var args = new[] { "--value-overflow-threshold", "4|" };
+                var args = new[] { "--max-inline-value-size", "4|" };
                 var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out _, out var invalidOptions, out _, out _, silentMode: true);
                 ClassicAssert.IsFalse(parseSuccessful);
-                ClassicAssert.IsTrue(invalidOptions.Contains(nameof(Options.ValueOverflowThreshold)));
+                ClassicAssert.IsTrue(invalidOptions.Contains(nameof(Options.MaxInlineValueSize)));
             }
 
-            // Reject below minimum (32 bytes < 64 bytes minimum) — enforced at server-options time.
+            // Reject below minimum (below 0 bytes minimum) — enforced at server-options time.
             {
-                var args = new[] { "--value-overflow-threshold", "32" };
+                var args = new[] { "--max-inline-value-size", "-1" };
+                var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out _, out var invalidOptions, out _, out _, silentMode: true);
+                ClassicAssert.IsFalse(parseSuccessful);
+            }
+
+            // Reject above maximum (17m > 16777214 bytes maximum) — enforced at server-options time.
+            {
+                var args = new[] { "--page", "1g", "--max-inline-value-size", "17m" };
                 var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out var invalidOptions, out _, out _, silentMode: true);
                 ClassicAssert.IsTrue(parseSuccessful);
                 ClassicAssert.AreEqual(0, invalidOptions.Count);
                 var serverOptions = options.GetServerOptions();
-                var ex = Assert.Throws<Exception>(() => serverOptions.ValueOverflowThresholdBytes());
-                ClassicAssert.IsTrue(ex.Message.Contains(nameof(serverOptions.ValueOverflowThreshold)));
+                var pageSize = 1L << serverOptions.PageSizeBits();
+                var ex = Assert.Throws<Exception>(() => serverOptions.MaxInlineValueSizeBytes(pageSize));
+                ClassicAssert.IsTrue(ex.Message.Contains(nameof(serverOptions.MaxInlineValueSize)));
             }
 
-            // Reject above maximum (512m > 256m maximum) — enforced at server-options time.
+            // Accept exactly the minimum (0 bytes)
             {
-                var args = new[] { "--value-overflow-threshold", "512m" };
+                var args = new[] { "--max-inline-value-size", "0" };
                 var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out var invalidOptions, out _, out _, silentMode: true);
                 ClassicAssert.IsTrue(parseSuccessful);
                 ClassicAssert.AreEqual(0, invalidOptions.Count);
                 var serverOptions = options.GetServerOptions();
-                var ex = Assert.Throws<Exception>(() => serverOptions.ValueOverflowThresholdBytes());
-                ClassicAssert.IsTrue(ex.Message.Contains(nameof(serverOptions.ValueOverflowThreshold)));
+                var pageSize = 1L << serverOptions.PageSizeBits();
+                ClassicAssert.AreEqual(0, serverOptions.MaxInlineValueSizeBytes(pageSize));
             }
 
-            // Accept exactly the minimum (64 bytes)
+            // Accept exactly the maximum (16777214 bytes). Use a 1g PageSize so the page-fit check passes.
             {
-                var args = new[] { "--value-overflow-threshold", "64" };
+                var args = new[] { "--page", "1g", "--max-inline-value-size", "16777214" };
                 var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out var invalidOptions, out _, out _, silentMode: true);
                 ClassicAssert.IsTrue(parseSuccessful);
                 ClassicAssert.AreEqual(0, invalidOptions.Count);
-                ClassicAssert.AreEqual(64, options.GetServerOptions().ValueOverflowThresholdBytes());
-            }
-
-            // Accept exactly the maximum (2m = 1<<21). Use a 1g PageSize so the cross-property fit check passes.
-            {
-                var args = new[] { "--page", "1g", "--value-overflow-threshold", "2m" };
-                var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out var invalidOptions, out _, out _, silentMode: true);
-                ClassicAssert.IsTrue(parseSuccessful);
-                ClassicAssert.AreEqual(0, invalidOptions.Count);
-                ClassicAssert.AreEqual(1 << 21, options.GetServerOptions().ValueOverflowThresholdBytes());
+                var serverOptions = options.GetServerOptions();
+                var pageSize = 1L << serverOptions.PageSizeBits();
+                ClassicAssert.AreEqual(16777214, serverOptions.MaxInlineValueSizeBytes(pageSize));
             }
 
             // JSON: reject invalid format
             {
-                const string JSON = @"{ ""ValueOverflowThreshold"": ""xyz"" }";
+                const string JSON = @"{ ""MaxInlineValueSize"": ""xyz"" }";
                 var parseSuccessful = TryParseGarnetConfOptions(JSON, out _, out var invalidOptions, out _);
                 ClassicAssert.IsFalse(parseSuccessful);
-                ClassicAssert.IsTrue(invalidOptions.Contains(nameof(Options.ValueOverflowThreshold)));
+                ClassicAssert.IsTrue(invalidOptions.Contains(nameof(Options.MaxInlineValueSize)));
             }
 
             // JSON: reject below minimum (enforced at server-options time)
             {
-                const string JSON = @"{ ""ValueOverflowThreshold"": ""32"" }";
-                var parseSuccessful = TryParseGarnetConfOptions(JSON, out var options, out var invalidOptions, out _);
-                ClassicAssert.IsTrue(parseSuccessful);
-                ClassicAssert.AreEqual(0, invalidOptions.Count);
-                var serverOptions = options.GetServerOptions();
-                Assert.Throws<Exception>(() => serverOptions.ValueOverflowThresholdBytes());
+                const string JSON = @"{ ""MaxInlineValueSize"": ""-1"" }";
+                var parseSuccessful = TryParseGarnetConfOptions(JSON, out _, out var invalidOptions, out _);
+                ClassicAssert.IsFalse(parseSuccessful);
             }
 
             // JSON: reject above maximum (enforced at server-options time)
             {
-                const string JSON = @"{ ""ValueOverflowThreshold"": ""512m"" }";
+                const string JSON = @"{ ""PageSize"": ""1g"", ""MaxInlineValueSize"": ""17m"" }";
                 var parseSuccessful = TryParseGarnetConfOptions(JSON, out var options, out var invalidOptions, out _);
                 ClassicAssert.IsTrue(parseSuccessful);
                 ClassicAssert.AreEqual(0, invalidOptions.Count);
                 var serverOptions = options.GetServerOptions();
-                Assert.Throws<Exception>(() => serverOptions.ValueOverflowThresholdBytes());
+                var pageSize = 1L << serverOptions.PageSizeBits();
+                Assert.Throws<Exception>(() => serverOptions.MaxInlineValueSizeBytes(pageSize));
             }
         }
 
         [Test]
-        public void ValueOverflowThresholdMustFitOnPage()
+        public void MaxInlineValueSizeMustFitOnPage()
         {
-            // ValueOverflowThreshold equal to PageSize is clamped down to PageSize/2 (next power of 2 down).
+            // MaxInlineValueSize equal to PageSize must throw an exception.
             {
-                var args = new[] { "--page", "4k", "--value-overflow-threshold", "4k" };
+                var args = new[] { "--page", "4k", "--max-inline-value-size", "4k" };
                 var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out var invalidOptions, out _, out _, silentMode: true);
                 ClassicAssert.IsTrue(parseSuccessful);
                 ClassicAssert.AreEqual(0, invalidOptions.Count);
                 var serverOptions = options.GetServerOptions();
-                ClassicAssert.AreEqual(2048, serverOptions.ValueOverflowThresholdBytes());
+                var pageSize = 1L << serverOptions.PageSizeBits();
+                var ex = Assert.Throws<Exception>(() => serverOptions.MaxInlineValueSizeBytes(pageSize));
+                ClassicAssert.IsTrue(ex.Message.Contains("greater than half the page size"));
             }
 
-            // ValueOverflowThreshold greater than PageSize is clamped down to PageSize/2.
+            // MaxInlineValueSize greater than PageSize must throw an exception.
             {
-                var args = new[] { "--page", "1k", "--value-overflow-threshold", "4k" };
+                var args = new[] { "--page", "1k", "--max-inline-value-size", "4k" };
                 var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out var invalidOptions, out _, out _, silentMode: true);
                 ClassicAssert.IsTrue(parseSuccessful);
                 ClassicAssert.AreEqual(0, invalidOptions.Count);
                 var serverOptions = options.GetServerOptions();
-                ClassicAssert.AreEqual(512, serverOptions.ValueOverflowThresholdBytes());
+                var pageSize = 1L << serverOptions.PageSizeBits();
+                var ex = Assert.Throws<Exception>(() => serverOptions.MaxInlineValueSizeBytes(pageSize));
+                ClassicAssert.IsTrue(ex.Message.Contains("greater than half the page size"));
             }
 
-            // ValueOverflowThreshold strictly less than PageSize (next power-of-2 down) is returned as-is.
+            // MaxInlineValueSize equal to PageSize/2 is accepted.
             {
-                var args = new[] { "--page", "8k", "--value-overflow-threshold", "4k" };
+                var args = new[] { "--page", "8k", "--max-inline-value-size", "4k" };
                 var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out var invalidOptions, out _, out _, silentMode: true);
                 ClassicAssert.IsTrue(parseSuccessful);
                 ClassicAssert.AreEqual(0, invalidOptions.Count);
                 var serverOptions = options.GetServerOptions();
-                ClassicAssert.AreEqual(4096, serverOptions.ValueOverflowThresholdBytes());
+                var pageSize = 1L << serverOptions.PageSizeBits();
+                ClassicAssert.AreEqual(4096, serverOptions.MaxInlineValueSizeBytes(pageSize));
             }
 
-            // Effective comparison uses post-rounding (previous power of 2): "5k" rounds to 4k, "8k" stays 8k -> ok.
+            // MaxInlineValueSize strictly less than PageSize/2 is returned as-is (Tsavorite may round down internally).
             {
-                var args = new[] { "--page", "8k", "--value-overflow-threshold", "5k" };
+                var args = new[] { "--page", "16k", "--max-inline-value-size", "5k" };
                 var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out var invalidOptions, out _, out _, silentMode: true);
                 ClassicAssert.IsTrue(parseSuccessful);
                 ClassicAssert.AreEqual(0, invalidOptions.Count);
                 var serverOptions = options.GetServerOptions();
-                // Raw bytes 5120 are returned by the helper; Tsavorite rounds to 4096 internally.
-                ClassicAssert.AreEqual(5120, serverOptions.ValueOverflowThresholdBytes());
+                var pageSize = 1L << serverOptions.PageSizeBits();
+                // Raw bytes 5120 are returned by the helper; Tsavorite may round to 4096 internally.
+                ClassicAssert.AreEqual(5120, serverOptions.MaxInlineValueSizeBytes(pageSize));
+            }
+        }
+
+        [Test]
+        public void MaxInlineValueSizeDefaultBehavior()
+        {
+            // When MaxInlineValueSize is not specified and PageSize >= 2m, default should be 1m.
+            {
+                var args = new[] { "--page", "4m" };
+                var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out var invalidOptions, out _, out _, silentMode: true);
+                ClassicAssert.IsTrue(parseSuccessful);
+                ClassicAssert.AreEqual(0, invalidOptions.Count);
+                var serverOptions = options.GetServerOptions();
+                var pageSize = 1L << serverOptions.PageSizeBits();
+                ClassicAssert.AreEqual(1048576, serverOptions.MaxInlineValueSizeBytes(pageSize)); // 1m
+            }
+
+            // When MaxInlineValueSize is not specified and PageSize >= 2m (exactly), default should be 1m.
+            {
+                var args = new[] { "--page", "2m" };
+                var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out var invalidOptions, out _, out _, silentMode: true);
+                ClassicAssert.IsTrue(parseSuccessful);
+                ClassicAssert.AreEqual(0, invalidOptions.Count);
+                var serverOptions = options.GetServerOptions();
+                var pageSize = 1L << serverOptions.PageSizeBits();
+                ClassicAssert.AreEqual(1048576, serverOptions.MaxInlineValueSizeBytes(pageSize)); // 1m
+            }
+
+            // When MaxInlineValueSize is not specified and PageSize < 2m, default should be pageSize/2.
+            {
+                var args = new[] { "--page", "1m" };
+                var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out var invalidOptions, out _, out _, silentMode: true);
+                ClassicAssert.IsTrue(parseSuccessful);
+                ClassicAssert.AreEqual(0, invalidOptions.Count);
+                var serverOptions = options.GetServerOptions();
+                var pageSize = 1L << serverOptions.PageSizeBits();
+                ClassicAssert.AreEqual(524288, serverOptions.MaxInlineValueSizeBytes(pageSize)); // 512k = 1m/2
+            }
+
+            // When MaxInlineValueSize is not specified and PageSize is very small, default should be pageSize/2.
+            {
+                var args = new[] { "--page", "4k" };
+                var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out var invalidOptions, out _, out _, silentMode: true);
+                ClassicAssert.IsTrue(parseSuccessful);
+                ClassicAssert.AreEqual(0, invalidOptions.Count);
+                var serverOptions = options.GetServerOptions();
+                var pageSize = 1L << serverOptions.PageSizeBits();
+                ClassicAssert.AreEqual(2048, serverOptions.MaxInlineValueSizeBytes(pageSize)); // 2k = 4k/2
+            }
+
+            // When MaxInlineValueSize IS specified, it must be <= pageSize/2.
+            {
+                var args = new[] { "--page", "4m", "--max-inline-value-size", "1m" };
+                var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out var invalidOptions, out _, out _, silentMode: true);
+                ClassicAssert.IsTrue(parseSuccessful);
+                ClassicAssert.AreEqual(0, invalidOptions.Count);
+                var serverOptions = options.GetServerOptions();
+                var pageSize = 1L << serverOptions.PageSizeBits();
+                ClassicAssert.AreEqual(1048576, serverOptions.MaxInlineValueSizeBytes(pageSize)); // 1m
+            }
+
+            // When MaxInlineValueSize IS specified but exceeds pageSize/2, throw exception.
+            {
+                var args = new[] { "--page", "1m", "--max-inline-value-size", "1m" };
+                var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out var invalidOptions, out _, out _, silentMode: true);
+                ClassicAssert.IsTrue(parseSuccessful);
+                ClassicAssert.AreEqual(0, invalidOptions.Count);
+                var serverOptions = options.GetServerOptions();
+                var pageSize = 1L << serverOptions.PageSizeBits();
+                var ex = Assert.Throws<Exception>(() => serverOptions.MaxInlineValueSizeBytes(pageSize));
+                ClassicAssert.IsTrue(ex.Message.Contains("greater than half the page size"));
+            }
+        }
+
+        [Test]
+        public void MaxInlineKeySizeParsing()
+        {
+            // Default value from defaults.conf is null (falls back to 1022 at server-options time)
+            {
+                var args = Array.Empty<string>();
+                var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out var invalidOptions, out _, out _, silentMode: true);
+                ClassicAssert.IsTrue(parseSuccessful);
+                ClassicAssert.AreEqual(0, invalidOptions.Count);
+                ClassicAssert.IsNull(options.MaxInlineKeySize);
+                var serverOptions = options.GetServerOptions();
+                ClassicAssert.IsNull(serverOptions.MaxInlineKeySize);
+                ClassicAssert.AreEqual(1022, serverOptions.MaxInlineKeySizeBytes());
+            }
+
+            // Various valid memory size strings (CLI)
+            foreach (var (input, expectedBytes) in new[] { ("0", 0), ("64", 64), ("128", 128), ("512", 512), ("1022", 1022) })
+            {
+                var args = new[] { "--max-inline-key-size", input };
+                var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out var invalidOptions, out _, out _, silentMode: true);
+                ClassicAssert.IsTrue(parseSuccessful, $"CLI parsing failed for '{input}'");
+                ClassicAssert.AreEqual(0, invalidOptions.Count);
+                ClassicAssert.AreEqual(input, options.MaxInlineKeySize);
+                var serverOptions = options.GetServerOptions();
+                ClassicAssert.AreEqual(expectedBytes, serverOptions.MaxInlineKeySizeBytes(), $"Expected {expectedBytes} bytes for '{input}'");
+            }
+
+            // JSON parsing of a valid memory size string
+            {
+                const string JSON = @"{ ""MaxInlineKeySize"": ""512"" }";
+                var parseSuccessful = TryParseGarnetConfOptions(JSON, out var options, out var invalidOptions, out _);
+                ClassicAssert.IsTrue(parseSuccessful);
+                ClassicAssert.AreEqual(0, invalidOptions.Count);
+                ClassicAssert.AreEqual("512", options.MaxInlineKeySize);
+                ClassicAssert.AreEqual(512, options.GetServerOptions().MaxInlineKeySizeBytes());
+            }
+        }
+
+        [Test]
+        public void MaxInlineKeySizeValidation()
+        {
+            // Reject invalid format (CLI)
+            {
+                var args = new[] { "--max-inline-key-size", "abc" };
+                var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out _, out var invalidOptions, out _, out _, silentMode: true);
+                ClassicAssert.IsFalse(parseSuccessful);
+                ClassicAssert.IsTrue(invalidOptions.Contains(nameof(Options.MaxInlineKeySize)));
+            }
+
+            // Reject below minimum (-1 bytes < 0 bytes minimum)
+            {
+                var args = new[] { "--max-inline-key-size", "-1" };
+                var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out _, out var invalidOptions, out _, out _, silentMode: true);
+                ClassicAssert.IsFalse(parseSuccessful);
+            }
+
+            // Reject above maximum (1023 bytes > 1022 bytes maximum) — enforced at server-options time.
+            {
+                var args = new[] { "--max-inline-key-size", "1023" };
+                var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out var invalidOptions, out _, out _, silentMode: true);
+                ClassicAssert.IsTrue(parseSuccessful);
+                ClassicAssert.AreEqual(0, invalidOptions.Count);
+                var serverOptions = options.GetServerOptions();
+                var ex = Assert.Throws<Exception>(() => serverOptions.MaxInlineKeySizeBytes());
+                ClassicAssert.IsTrue(ex.Message.Contains(nameof(serverOptions.MaxInlineKeySize)));
+            }
+
+            // Reject above maximum using size suffix (1k = 1024 bytes > 1022 bytes maximum)
+            {
+                var args = new[] { "--max-inline-key-size", "1k" };
+                var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out var invalidOptions, out _, out _, silentMode: true);
+                ClassicAssert.IsTrue(parseSuccessful);
+                ClassicAssert.AreEqual(0, invalidOptions.Count);
+                var serverOptions = options.GetServerOptions();
+                var ex = Assert.Throws<Exception>(() => serverOptions.MaxInlineKeySizeBytes());
+                ClassicAssert.IsTrue(ex.Message.Contains(nameof(serverOptions.MaxInlineKeySize)));
+            }
+
+            // Accept exactly the minimum (0 bytes)
+            {
+                var args = new[] { "--max-inline-key-size", "0" };
+                var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out var invalidOptions, out _, out _, silentMode: true);
+                ClassicAssert.IsTrue(parseSuccessful);
+                ClassicAssert.AreEqual(0, invalidOptions.Count);
+                ClassicAssert.AreEqual(0, options.GetServerOptions().MaxInlineKeySizeBytes());
+            }
+
+            // Accept exactly the maximum (1022 bytes)
+            {
+                var args = new[] { "--max-inline-key-size", "1022" };
+                var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out var invalidOptions, out _, out _, silentMode: true);
+                ClassicAssert.IsTrue(parseSuccessful);
+                ClassicAssert.AreEqual(0, invalidOptions.Count);
+                ClassicAssert.AreEqual(1022, options.GetServerOptions().MaxInlineKeySizeBytes());
+            }
+
+            // JSON: reject invalid format
+            {
+                const string JSON = @"{ ""MaxInlineKeySize"": ""xyz"" }";
+                var parseSuccessful = TryParseGarnetConfOptions(JSON, out _, out var invalidOptions, out _);
+                ClassicAssert.IsFalse(parseSuccessful);
+                ClassicAssert.IsTrue(invalidOptions.Contains(nameof(Options.MaxInlineKeySize)));
+            }
+
+            // JSON: reject above maximum (enforced at server-options time)
+            {
+                const string JSON = @"{ ""MaxInlineKeySize"": ""1023"" }";
+                var parseSuccessful = TryParseGarnetConfOptions(JSON, out var options, out var invalidOptions, out _);
+                ClassicAssert.IsTrue(parseSuccessful);
+                ClassicAssert.AreEqual(0, invalidOptions.Count);
+                var serverOptions = options.GetServerOptions();
+                Assert.Throws<Exception>(() => serverOptions.MaxInlineKeySizeBytes());
             }
         }
 

@@ -55,6 +55,23 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Gets the maximum replayed sequence number for a single physical sublog
+        /// by reading the max across all its virtual sublogs.
+        /// </summary>
+        /// <param name="physicalSublogIdx">Physical sublog index.</param>
+        /// <returns>The maximum sequence number observed across all virtual sublogs for this physical sublog.</returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public long GetPhysicalSublogMax(int physicalSublogIdx)
+        {
+            var replayTaskCount = serverOptions.AofReplayTaskCount;
+            var startIdx = appendOnlyFile.GetVirtualSublogIdx(physicalSublogIdx, 0);
+            long max = 0;
+            for (var rt = 0; rt < replayTaskCount; rt++)
+                max = Math.Max(max, Volatile.Read(ref vsrs[startIdx + rt].MaxRef));
+            return max;
+        }
+
+        /// <summary>
         /// Get frontier sequence number for provided hash
         /// NOTE: Frontier sequence number is maximum sequence number between key specific sequence number and maximum observed sublog sequence number
         /// </summary>
@@ -124,6 +141,7 @@ namespace Garnet.server
                 replicaReadSessionContext.sessionVersion = CurrentVersion;
                 replicaReadSessionContext.lastVirtualSublogIdx = -1;
                 replicaReadSessionContext.maximumSessionSequenceNumber = 0;
+                replicaReadSessionContext.ResetCachedSublogMax();
             }
         }
 
@@ -132,23 +150,29 @@ namespace Garnet.server
         /// </summary>
         /// <param name="keyHash"></param>
         /// <param name="replicaReadSessionContext"></param>
+        /// <param name="timeout"></param>
         /// <param name="ct"></param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        void VerifyKeyFreshness(long keyHash, ref ReplicaReadSessionContext replicaReadSessionContext, CancellationToken ct)
+        void VerifyKeyFreshness(long keyHash, ref ReplicaReadSessionContext replicaReadSessionContext, TimeSpan timeout, CancellationToken ct)
         {
             var virtualSublogIdx = appendOnlyFile.Log.GetVirtualSublogIdx(keyHash);
+            var initOrSameSublog = replicaReadSessionContext.lastVirtualSublogIdx == -1 || replicaReadSessionContext.lastVirtualSublogIdx == virtualSublogIdx;
+            var mssn = replicaReadSessionContext.maximumSessionSequenceNumber;
 
             // Here we have to wait for replay to catch up
             // Don't have to wait if reading from same sublog or maximumSessionTimestamp is behind the sublog frontier timestamp
-            if (replicaReadSessionContext.lastVirtualSublogIdx != -1 && replicaReadSessionContext.lastVirtualSublogIdx != virtualSublogIdx)
+            if (!initOrSameSublog && mssn >= replicaReadSessionContext.cachedSublogMax[virtualSublogIdx])
             {
+                // Refresh cached view
+                var sketchMaxValue = vsrs[virtualSublogIdx].Max;
+                replicaReadSessionContext.cachedSublogMax[virtualSublogIdx] = sketchMaxValue;
+
                 // Optimistic check without lock
-                while (replicaReadSessionContext.maximumSessionSequenceNumber >= GetSublogFrontierSequenceNumber(keyHash))
+                if (mssn >= sketchMaxValue)
                 {
-                    vsrs[virtualSublogIdx].WaitForSequenceNumber(
-                        keyHash,
-                        replicaReadSessionContext.maximumSessionSequenceNumber,
-                        ct);
+                    vsrs[virtualSublogIdx].WaitForSequenceNumber(mssn, timeout, ct);
+                    // Refresh after wait
+                    replicaReadSessionContext.cachedSublogMax[virtualSublogIdx] = vsrs[virtualSublogIdx].Max;
                 }
             }
 
@@ -166,14 +190,15 @@ namespace Garnet.server
         /// </summary>
         /// <param name="hash"></param>
         /// <param name="replicaReadSessionContext"></param>
+        /// <param name="timeout"></param>
         /// <param name="ct"></param>
-        public void BeforeConsistentReadKey(long hash, ref ReplicaReadSessionContext replicaReadSessionContext, CancellationToken ct)
+        public void PreSingleKeyConsistentRead(long hash, ref ReplicaReadSessionContext replicaReadSessionContext, TimeSpan timeout, CancellationToken ct)
         {
             // Check version
             CheckConsistencyManagerVersion(ref replicaReadSessionContext);
 
             // Verify key freshness
-            VerifyKeyFreshness(hash, ref replicaReadSessionContext, ct);
+            VerifyKeyFreshness(hash, ref replicaReadSessionContext, timeout, ct);
         }
 
         /// <summary>
@@ -184,7 +209,7 @@ namespace Garnet.server
         ///     we cannot be certain at prepare phase what is the actual sequence number.
         /// </summary>
         /// <param name="replicaReadSessionContext"></param>
-        public void AfterConsistentReadKey(ref ReplicaReadSessionContext replicaReadSessionContext)
+        public void PostSingleKeyConsistentRead(ref ReplicaReadSessionContext replicaReadSessionContext)
         {
             replicaReadSessionContext.maximumSessionSequenceNumber = Math.Max(
                 replicaReadSessionContext.maximumSessionSequenceNumber, GetKeySequenceNumber(replicaReadSessionContext.lastHash));
@@ -195,13 +220,14 @@ namespace Garnet.server
         /// </summary>
         /// <param name="key"></param>
         /// <param name="batchReadContext"></param>
+        /// <param name="timeout"></param>
         /// <param name="ct"></param>
         /// <param name="hash"></param>
-        public void BeforeConsistentReadKeyBatch(ReadOnlySpan<byte> key, ref ReplicaReadSessionContext batchReadContext, CancellationToken ct, out long hash)
+        public void PreBatchKeyConsistentRead(ReadOnlySpan<byte> key, ref ReplicaReadSessionContext batchReadContext, TimeSpan timeout, CancellationToken ct, out long hash)
         {
             // Verify key freshness
             hash = GarnetLog.HASH(key);
-            VerifyKeyFreshness(hash, ref batchReadContext, ct);
+            VerifyKeyFreshness(hash, ref batchReadContext, timeout, ct);
 
             // Keep track of max sequence number to check for updates after batch read.
             batchReadContext.maximumSessionSequenceNumber = Math.Max(
@@ -214,7 +240,7 @@ namespace Garnet.server
         /// <param name="hash"></param>
         /// <param name="batchReadContext"></param>
         /// <returns></returns>
-        public bool AfterConsistentReadKeyBatch(long hash, ref ReplicaReadSessionContext batchReadContext)
+        public bool PostBatchKeyConsistentReadValidate(long hash, ref ReplicaReadSessionContext batchReadContext)
         {
             var keySequenceNumber = GetKeySequenceNumber(hash);
             var mSSN = batchReadContext.maximumSessionSequenceNumber;

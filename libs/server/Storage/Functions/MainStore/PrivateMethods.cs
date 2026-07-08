@@ -758,7 +758,7 @@ namespace Garnet.server
         {
             if (functionsState.StoredProcMode) return;
 
-            if (input.header.cmd == RespCommand.VADD && input.arg1 is not (VectorManager.VADDAppendLogArg or VectorManager.MigrateElementKeyLogArg or VectorManager.MigrateIndexKeyLogArg))
+            if (input.header.cmd == RespCommand.VADD && input.arg1 is not (VectorManager.VADDAppendLogArg or VectorManager.MigrateElementKeyLogArg or VectorManager.MigrateIndexKeyLogArg or VectorManager.VADDSetFlagsArg))
             {
                 return;
             }
@@ -791,7 +791,7 @@ namespace Garnet.server
         {
             if (functionsState.StoredProcMode) return;
 
-            if (input.header.cmd == RespCommand.VADD && input.arg1 is not (VectorManager.VADDAppendLogArg or VectorManager.MigrateElementKeyLogArg or VectorManager.MigrateIndexKeyLogArg))
+            if (input.header.cmd == RespCommand.VADD && input.arg1 is not (VectorManager.VADDAppendLogArg or VectorManager.MigrateElementKeyLogArg or VectorManager.MigrateIndexKeyLogArg or VectorManager.VADDSetFlagsArg))
             {
                 return;
             }

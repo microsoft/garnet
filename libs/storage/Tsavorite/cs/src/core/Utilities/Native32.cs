@@ -46,44 +46,6 @@ namespace Tsavorite.core
             public uint HandleInfo;
         }
 
-        internal enum FILE_INFO_BY_HANDLE_CLASS
-        {
-            FileBasicInfo = 0,
-            FileStandardInfo = 1,
-            FileNameInfo = 2,
-            FileRenameInfo = 3,
-            FileDispositionInfo = 4,
-            FileAllocationInfo = 5,
-            FileEndOfFileInfo = 6,
-            FileStreamInfo = 7,
-            FileCompressionInfo = 8,
-            FileAttributeTagInfo = 9,
-            FileIdBothDirectoryInfo = 10,// 0x0A
-            FileIdBothDirectoryRestartInfo = 11, // 0xB
-            FileIoPriorityHintInfo = 12, // 0xC
-            FileRemoteProtocolInfo = 13, // 0xD
-            FileFullDirectoryInfo = 14, // 0xE
-            FileFullDirectoryRestartInfo = 15, // 0xF
-            FileStorageInfo = 16, // 0x10
-            FileAlignmentInfo = 17, // 0x11
-            FileIdInfo = 18, // 0x12
-            FileIdExtdDirectoryInfo = 19, // 0x13
-            FileIdExtdDirectoryRestartInfo = 20, // 0x14
-            MaximumFileInfoByHandlesClass
-        }
-
-        [StructLayout(LayoutKind.Sequential)]
-        internal struct FILE_STORAGE_INFO
-        {
-            public uint LogicalBytesPerSector;
-            public uint PhysicalBytesPerSectorForAtomicity;
-            public uint PhysicalBytesPerSectorForPerformance;
-            public uint FileSystemEffectivePhysicalBytesPerSectorForAtomicity;
-            public uint Flags;
-            public uint ByteOffsetForSectorAlignment;
-            public uint ByteOffsetForPartitionAlignment;
-        }
-
         [StructLayout(LayoutKind.Sequential)]
         public unsafe struct OVERLAPPED_ENTRY
         {
@@ -227,9 +189,6 @@ namespace Tsavorite.core
            out uint lpNumberOfFreeClusters,
            out uint lpTotalNumberOfClusters);
 
-        [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Auto)]
-        internal static extern bool GetFileInformationByHandleEx([In] SafeFileHandle hFile, FILE_INFO_BY_HANDLE_CLASS infoClass, out FILE_STORAGE_INFO fileStorageInfo, uint dwBufferSize);
-
         [DllImport("kernel32.dll", SetLastError = true)]
         internal static extern bool DeleteFileW([MarshalAs(UnmanagedType.LPWStr)] string lpFileName);
 
@@ -253,76 +212,6 @@ namespace Tsavorite.core
                 return (uint)IDevice.MinDeviceSectorSize;
             }
             return Math.Max(sectorSize, (uint)IDevice.MinDeviceSectorSize);
-        }
-
-        /// <summary>
-        /// Gets the device sector size for the volume containing <paramref name="filename"/> by opening the parent directory
-        /// and querying <see cref="FILE_STORAGE_INFO"/> via <c>GetFileInformationByHandleEx</c>.
-        /// Returns the max of <c>LogicalBytesPerSector</c> and <c>PhysicalBytesPerSectorForAtomicity</c>,
-        /// or <see cref="IDevice.MinDeviceSectorSize"/> if the query fails.
-        /// </summary>
-        /// <param name="filename">Any file path on the target volume; the file need not exist.</param>
-        /// <returns>The sector size in bytes.</returns>
-        /// <remarks>We open the parent directory (not the volume device) because <c>GetFileInformationByHandleEx(FileStorageInfo)</c>
-        /// returns <c>ERROR_INVALID_FUNCTION</c> on volume device handles. Directory handles require <c>FILE_FLAG_BACKUP_SEMANTICS</c>
-        /// and only read access, so this works even without write permissions.</remarks>
-        internal static uint GetVolumeSectorSize(string filename)
-        {
-            if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-                return IDevice.MinDeviceSectorSize;
-
-            try
-            {
-                var fullPath = Path.GetFullPath(filename);
-
-                // Walk up the directory tree to find an existing ancestor (the target dir may not exist yet).
-                var dirPath = Path.GetDirectoryName(fullPath);
-                while (!string.IsNullOrEmpty(dirPath) && !Directory.Exists(dirPath))
-                    dirPath = Path.GetDirectoryName(dirPath);
-
-                if (string.IsNullOrEmpty(dirPath))
-                {
-                    Debug.WriteLine($"Unable to find an existing directory for '{filename}' — assuming {IDevice.MinDeviceSectorSize} bytes.");
-                    return IDevice.MinDeviceSectorSize;
-                }
-
-                // Open the directory with FILE_FLAG_BACKUP_SEMANTICS (required for directories) and read-only access.
-                const uint FILE_FLAG_BACKUP_SEMANTICS = 0x02000000;
-                var handle = CreateFileW(dirPath,
-                    GENERIC_READ,
-                    0x00000001 /*FILE_SHARE_READ*/ | 0x00000002 /*FILE_SHARE_WRITE*/ | FILE_SHARE_DELETE,
-                    IntPtr.Zero,
-                    3 /*OPEN_EXISTING*/,
-                    FILE_FLAG_BACKUP_SEMANTICS,
-                    IntPtr.Zero);
-
-                if (handle.IsInvalid)
-                {
-                    Debug.WriteLine($"Unable to open directory '{dirPath}' for sector size query — assuming {IDevice.MinDeviceSectorSize} bytes.");
-                    return IDevice.MinDeviceSectorSize;
-                }
-
-                try
-                {
-                    if (GetFileInformationByHandleEx(handle, FILE_INFO_BY_HANDLE_CLASS.FileStorageInfo, out var info, (uint)sizeof(FILE_STORAGE_INFO)))
-                    {
-                        var result = Math.Max(info.LogicalBytesPerSector, info.PhysicalBytesPerSectorForAtomicity);
-                        if (result > 0)
-                            return Math.Max(result, IDevice.MinDeviceSectorSize);
-                    }
-                }
-                finally
-                {
-                    handle.Dispose();
-                }
-            }
-            catch
-            {
-                // Fall through to default
-            }
-
-            Debug.WriteLine($"Unable to retrieve sector size for '{filename}' — assuming {IDevice.MinDeviceSectorSize} bytes.");
-            return IDevice.MinDeviceSectorSize;
         }
         #endregion
 

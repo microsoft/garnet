@@ -2,25 +2,14 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Runtime.InteropServices;
 using System.Threading;
-using System.Threading.Channels;
 using System.Threading.Tasks;
-using Garnet.common;
 using Garnet.server;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 
 namespace Garnet.cluster
 {
-    [StructLayout(LayoutKind.Sequential, Size = 12)]
-    internal unsafe struct ReplayRecord
-    {
-        public byte* entryPtr;
-        public int payloadLength;
-        public long logAddressSequenceNumber;
-    }
-
     internal sealed class ReplicaReplayTask(
         int replayIdx,
         ReplicaReplayDriver replayDriver,
@@ -35,21 +24,11 @@ namespace Garnet.cluster
         readonly ReplayBatchContext replayBatchContext = replayDriver.replayBatchContext;
         readonly CancellationTokenSource cts = cts;
         readonly TsavoriteLog replaySublog = clusterProvider.storeWrapper.appendOnlyFile.Log.GetSubLog(replayDriver.physicalSublogIdx);
-        readonly ActiveWorkerMonitor activeWorkerMonitor = new();
-        private readonly Channel<ReplayRecord> replayChannel = Channel.CreateUnbounded<ReplayRecord>(
-            new() { SingleWriter = true, SingleReader = true, AllowSynchronousContinuations = false });
         readonly ILogger logger = logger;
 
         /// <summary>
-        /// Add record for replay
-        /// </summary>
-        /// <param name="replayRecord"></param>
-        public void AddRecord(ReplayRecord replayRecord)
-            => replayChannel.Writer.TryWrite(replayRecord);
-
-        /// <summary>
-        /// Asynchronously replays log entries using SemaphoreSlim coordination, processing and applying them for replication
-        /// and consistency across sublogs.
+        /// Asynchronously replays log entries using a shared rendezvous barrier for coordination, processing and applying
+        /// them for replication and consistency across sublogs.
         /// </summary>
         /// <returns>A task representing the asynchronous replay operation.</returns>
         internal async Task FullPageBasedBackgroundReplayAsync()
@@ -61,21 +40,23 @@ namespace Garnet.cluster
             {
                 try
                 {
-                    await replayBatchContext.LeaderFollowerBarrier.WaitReadyWorkAsync(cancellationToken: cts.Token).ConfigureAwait(false);
+                    // Rendezvous 1 (ready): meet the leader and peers at the barrier before scanning the page.
+                    await replayDriver.barrier.SignalWorkReadyWaitAsync(cancellationToken: cts.Token).ConfigureAwait(false);
                 }
-                catch (TaskCanceledException) when (cts.Token.IsCancellationRequested)
+                catch (OperationCanceledException) when (cts.Token.IsCancellationRequested)
                 {
                     // Suppress the exception if the task was cancelled because of store wrapper disposal
+                    break;
                 }
                 catch (Exception ex)
                 {
-                    logger?.LogError(ex, "{method} failed at WaitAsync", nameof(FullPageBasedBackgroundReplayAsync));
+                    logger?.LogError(ex, "{method} failed at ready barrier", nameof(FullPageBasedBackgroundReplayAsync));
                     await cts.CancelAsync().ConfigureAwait(false);
                     break;
                 }
 
-                // Guard: if cancellation happened during WaitReadyWorkAsync, exit cleanly
-                // without falling through to the processing block (which would issue a spurious SignalCompleted)
+                // Guard: if cancellation happened during the ready barrier, exit cleanly
+                // without falling through to the processing block (which would issue a spurious completion)
                 if (cts.Token.IsCancellationRequested)
                     break;
 
@@ -131,9 +112,12 @@ namespace Garnet.cluster
                         appendOnlyFile.readConsistencyManager.UpdateVirtualSublogMaxSequenceNumber(virtualSublogIdx, nextAddress);
                     }
                 }
-                catch (TaskCanceledException) when (cts.Token.IsCancellationRequested)
+                catch (OperationCanceledException) when (cts.Token.IsCancellationRequested)
                 {
-                    // Suppress the exception if the task was cancelled because of store wrapper disposal
+                    // Suppress the exception if the task was cancelled because of store wrapper disposal.
+                    // Break without signalling completion: the leader must observe cancellation, not a
+                    // spurious completion for an unapplied page.
+                    break;
                 }
                 catch (Exception ex)
                 {
@@ -141,44 +125,26 @@ namespace Garnet.cluster
                     await cts.CancelAsync().ConfigureAwait(false);
                     break;
                 }
-                finally
+
+                try
                 {
-                    // Signal work completion after processing
-                    replayBatchContext.LeaderFollowerBarrier.SignalCompleted();
+                    // Rendezvous 2 (completed): signal completion ONLY after the page was fully applied.
+                    // On cancellation or fault we break above WITHOUT arriving here, so the leader's
+                    // completion barrier observes cancellation / times out and tears down instead of
+                    // advancing the replication offset past a page that was not fully applied.
+                    await replayDriver.barrier.SignalWorkCompletedWaitAsync(cancellationToken: cts.Token).ConfigureAwait(false);
                 }
-            }
-        }
-
-        /// <summary>
-        /// Asynchronously processes records from the replay channel in the background.
-        /// </summary>
-        /// <returns>A task that represents the asynchronous replay operation.</returns>
-        internal async Task ChannelBasedBackgroundReplayAsync()
-        {
-            var physicalSublogIdx = replayDriver.physicalSublogIdx;
-            var virtualSublogIdx = appendOnlyFile.GetVirtualSublogIdx(physicalSublogIdx, replayTaskIdx);
-            var reader = replayChannel.Reader;
-
-            while (await reader.WaitToReadAsync(cts.Token).ConfigureAwait(false))
-            {
-                while (reader.TryRead(out var record))
+                catch (OperationCanceledException) when (cts.Token.IsCancellationRequested)
                 {
-                    unsafe
-                    {
-                        replicationManager.AofProcessor.ProcessAofRecordInternal(virtualSublogIdx, record.entryPtr, record.payloadLength, true, out var isCheckpointStart, record.logAddressSequenceNumber);
-
-                        // Encountered checkpoint start marker, log the ReplicationCheckpointStartOffset so we know the correct AOF truncation
-                        // point when we take a checkpoint at the checkpoint end marker
-                        if (isCheckpointStart)
-                        {
-                            // logger?.LogError("[{sublogIdx}] CheckpointStart {address}", sublogIdx, clusterProvider.replicationManager.GetSublogReplicationOffset(sublogIdx));
-                            replicationManager.ReplicationCheckpointStartOffset[physicalSublogIdx] = replicationManager.GetSublogReplicationOffset(physicalSublogIdx);
-                        }
-                    }
+                    // Suppress the exception if the task was cancelled because of store wrapper disposal
+                    break;
                 }
-
-                // Signal work completion after processing
-                replayBatchContext.LeaderFollowerBarrier.SignalCompleted();
+                catch (Exception ex)
+                {
+                    logger?.LogError(ex, "{method} failed at completion barrier", nameof(FullPageBasedBackgroundReplayAsync));
+                    await cts.CancelAsync().ConfigureAwait(false);
+                    break;
+                }
             }
         }
     }

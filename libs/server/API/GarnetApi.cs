@@ -393,6 +393,10 @@ namespace Garnet.server
         => storageSession.VectorSetEmbedding(key, element.ReadOnlySpan, ref outputDistances);
 
         /// <inheritdoc/>
+        public GarnetStatus VectorSetRawEmbedding(PinnedSpanByte key, PinnedSpanByte element, ref SpanByteAndMemory quantizedValues, out VectorQuantType quantType, out double norm, out double? range)
+        => storageSession.VectorSetRawEmbedding(key, element.ReadOnlySpan, ref quantizedValues, out quantType, out norm, out range);
+
+        /// <inheritdoc/>
         public unsafe GarnetStatus VectorSetDimensions(PinnedSpanByte key, out int dimensions)
         => storageSession.VectorSetDimensions(key, out dimensions);
 

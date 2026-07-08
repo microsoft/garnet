@@ -33,6 +33,12 @@ The index key (represented by the `Index` struct) contains the following data:
    * > [!NOTE]
      > We have several extensions here, `XNOQUANT_U8`, `XNOQUANT_I8`, `XBIN_I8`, and `XBIN_U8` which are not from Redis.
      > They forbid the `REDUCE` option, a restriction we may lift in the future.
+ - `VectorDistanceMetricType` - the distance metric used by this index, or a default value of `L2` if not specified
+   * > [!NOTE]
+     > This is an extension, Redis does not support explicitly setting a distance metric.
+     >
+     > Some of these options are aligned with Redis's vector index types, while others are unique to Garnet + DiskANN.
+ - `VectorSetFlags` - flags associated with the index
 
 The index key is in the store alongside other binary values like strings, hyperloglogs, and so on.  It is distinguished for `WRONGTYPE` purposes with `RecordType` field on `ISourceLogRecord` logs set to `VectorManager.RecordType` (which is `1`).
 
