@@ -12,6 +12,19 @@ using Microsoft.Extensions.Logging;
 namespace Garnet.server
 {
     /// <summary>
+    /// Reply suppression mode controlled by the <c>CLIENT REPLY</c> subcommand.
+    /// </summary>
+    internal enum ClientReplyMode : byte
+    {
+        /// <summary>Normal replies are sent (default).</summary>
+        On = 0,
+        /// <summary>All replies are suppressed until a <c>CLIENT REPLY ON</c> is received.</summary>
+        Off,
+        /// <summary>The reply for the next command is suppressed; mode returns to <see cref="On"/> after.</summary>
+        Skip,
+    }
+
+    /// <summary>
     /// Server session for RESP protocol - client commands are in this file
     /// </summary>
     internal sealed unsafe partial class RespServerSession : ServerSessionBase
@@ -636,6 +649,50 @@ namespace Garnet.server
             {
                 while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_UBLOCKING_CLINET, ref dcurr, dend))
                     SendAndReset();
+            }
+
+            return true;
+        }
+
+        /// <summary>
+        /// CLIENT REPLY ON|OFF|SKIP — controls per-connection reply suppression.
+        /// OFF suppresses all replies until ON; SKIP suppresses only the next command's reply.
+        /// The OFF and SKIP commands themselves produce no reply; ON replies with +OK.
+        /// </summary>
+        private bool NetworkCLIENTREPLY()
+        {
+            if (parseState.Count != 1)
+            {
+                return AbortWithWrongNumberOfArguments("client|reply");
+            }
+
+            var modeSpan = parseState.GetArgSliceByRef(0).ReadOnlySpan;
+
+            if (modeSpan.EqualsUpperCaseSpanIgnoringCase(CmdStrings.ON))
+            {
+                clientReplyMode = ClientReplyMode.On;
+                // The ON command itself must reply +OK even if we just transitioned out of OFF/SKIP.
+                // Clear the suppression flag set at command-start so the +OK actually flushes.
+                suppressCurrentReply = false;
+                while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                    SendAndReset();
+            }
+            else if (modeSpan.EqualsUpperCaseSpanIgnoringCase(CmdStrings.OFF))
+            {
+                clientReplyMode = ClientReplyMode.Off;
+                // No reply.
+            }
+            else if (modeSpan.EqualsUpperCaseSpanIgnoringCase(CmdStrings.SKIP))
+            {
+                // SKIP only arms when we're currently On. If already Off it stays Off; if already Skip it stays Skip
+                // (a second SKIP just re-arms — it does not stack).
+                if (clientReplyMode == ClientReplyMode.On)
+                    clientReplyMode = ClientReplyMode.Skip;
+                // No reply.
+            }
+            else
+            {
+                return AbortWithErrorMessage(CmdStrings.RESP_SYNTAX_ERROR);
             }
 
             return true;

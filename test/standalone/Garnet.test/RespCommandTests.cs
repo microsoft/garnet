@@ -512,6 +512,7 @@ namespace Garnet.test
                 RespCommand.CLIENT_SETNAME,
                 RespCommand.CLIENT_SETINFO,
                 RespCommand.CLIENT_UNBLOCK,
+                RespCommand.CLIENT_REPLY,
                 // Command
                 RespCommand.COMMAND,
                 RespCommand.COMMAND_COUNT,

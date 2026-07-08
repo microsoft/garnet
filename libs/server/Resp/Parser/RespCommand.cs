@@ -283,6 +283,7 @@ namespace Garnet.server
         CLIENT_SETNAME,
         CLIENT_SETINFO,
         CLIENT_UNBLOCK,
+        CLIENT_REPLY,
 
         MONITOR,
         MODULE,
@@ -466,6 +467,7 @@ namespace Garnet.server
             RespCommand.CLIENT_SETNAME,
             RespCommand.CLIENT_SETINFO,
             RespCommand.CLIENT_UNBLOCK,
+            RespCommand.CLIENT_REPLY,
             // Command
             RespCommand.COMMAND,
             RespCommand.COMMAND_COUNT,
@@ -2131,6 +2133,10 @@ namespace Garnet.server
                 else if (subCommand.SequenceEqual(CmdStrings.UNBLOCK))
                 {
                     return RespCommand.CLIENT_UNBLOCK;
+                }
+                else if (subCommand.SequenceEqual(CmdStrings.REPLY))
+                {
+                    return RespCommand.CLIENT_REPLY;
                 }
 
                 string errMsg = string.Format(CmdStrings.GenericErrUnknownSubCommandNoHelp,

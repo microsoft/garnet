@@ -54,6 +54,7 @@ namespace CommandInfoUpdater
                 new("CLIENT|SETNAME", RespCommand.CLIENT_SETNAME),
                 new("CLIENT|SETINFO", RespCommand.CLIENT_SETINFO),
                 new("CLIENT|UNBLOCK", RespCommand.CLIENT_UNBLOCK),
+                new("CLIENT|REPLY", RespCommand.CLIENT_REPLY),
             ]),
             new("CLUSTER", RespCommand.CLUSTER, StoreType.None,
             [
