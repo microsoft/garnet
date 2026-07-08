@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -56,7 +56,7 @@ namespace Garnet.server
         /// replay tasks. The leader is a participant, so the participant count is the number of replay
         /// tasks plus one. Null until the parallel tasks are created.
         /// </summary>
-        WorkReadyCompleteSlim barrier = null;
+        DoubleTurnstileBarrier barrier = null;
 
         /// <summary>
         /// Set by a replay task when it encounters an entry whose sequence number exceeds
@@ -177,7 +177,7 @@ namespace Garnet.server
                 return;
 
             // Leader participates in the barrier alongside every replay task, hence + 1.
-            barrier = new WorkReadyCompleteSlim(serverOptions.AofReplayTaskCount + 1);
+            barrier = new DoubleTurnstileBarrier(serverOptions.AofReplayTaskCount + 1);
             replayTasks = [.. Enumerable.Range(0, serverOptions.AofReplayTaskCount).Select(i => Task.Run(() => RecoverReplayTaskAsync(i, physicalSublog)))];
         }
 

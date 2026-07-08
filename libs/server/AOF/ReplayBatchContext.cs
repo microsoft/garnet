@@ -1,11 +1,11 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 namespace Garnet.server
 {
     /// <summary>
     /// Shared page (unit of work) handed by the replay leader to the parallel replay tasks.
-    /// Coordination is done centrally via <see cref="Garnet.common.WorkReadyCompleteSlim"/>, a shared
+    /// Coordination is done centrally via <see cref="Garnet.common.DoubleTurnstileBarrier"/>, a shared
     /// rendezvous barrier in which the leader and every replay task participate; this context only carries
     /// the page data every task scans.
     /// </summary>

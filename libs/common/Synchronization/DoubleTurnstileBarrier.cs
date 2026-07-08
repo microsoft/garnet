@@ -8,10 +8,12 @@ using System.Threading.Tasks;
 namespace Garnet.common
 {
     /// <summary>
-    /// Centralized two-phase cyclic rendezvous barrier for one leader plus N-1 workers that jointly
-    /// process a shared unit of work (an AOF replay "page") one at a time. It replaces the previous
-    /// design of N per-worker two-semaphore handshakes with a single shared instance backed by just two
-    /// bounded semaphores.
+    /// Centralized two-phase cyclic rendezvous barrier (the classic "double turnstile" construction) for
+    /// one leader plus N-1 workers that jointly process a shared unit of work (an AOF replay "page") one
+    /// at a time. It replaces the previous design of N per-worker two-semaphore handshakes with a single
+    /// shared instance backed by just two bounded semaphores. The two turnstiles (ready and completed)
+    /// gate every participant at the start and end of each page; the second turnstile resets the count to
+    /// zero so the barrier is safely reusable for the next page.
     ///
     /// <para>
     /// <b>Participants.</b> The leader is a participant like everyone else: <c>participantCount</c> equals
@@ -53,7 +55,7 @@ namespace Garnet.common
     /// participant (which cancels the token) unblocks the entire cohort instead of deadlocking it.
     /// </para>
     /// </summary>
-    public sealed class WorkReadyCompleteSlim
+    public sealed class DoubleTurnstileBarrier
     {
         readonly int participantCount;
         int workerCount = 0;
@@ -69,7 +71,7 @@ namespace Garnet.common
         /// workers plus one for the leader).
         /// </summary>
         /// <param name="participantCount">Total participants, including the leader. Must be at least 1.</param>
-        public WorkReadyCompleteSlim(int participantCount)
+        public DoubleTurnstileBarrier(int participantCount)
         {
             ArgumentOutOfRangeException.ThrowIfLessThan(participantCount, 1);
             this.participantCount = participantCount;

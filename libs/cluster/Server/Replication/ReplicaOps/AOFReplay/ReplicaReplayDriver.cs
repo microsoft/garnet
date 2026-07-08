@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -38,7 +38,7 @@ namespace Garnet.cluster
         /// <see cref="ReplicaReplayTask"/> workers. The leader is a participant, so the participant count
         /// is the number of replay tasks plus one. Null when only a single replay task is used.
         /// </summary>
-        internal readonly WorkReadyCompleteSlim barrier;
+        internal readonly DoubleTurnstileBarrier barrier;
 
         int throttleCounter;
 
@@ -76,7 +76,7 @@ namespace Garnet.cluster
             {
                 replayBatchContext = new ReplayBatchContext(replayTaskCount);
                 // Leader participates in the barrier alongside every replay task, hence + 1.
-                barrier = new WorkReadyCompleteSlim(replayTaskCount + 1);
+                barrier = new DoubleTurnstileBarrier(replayTaskCount + 1);
                 replayTasks = [.. Enumerable.Range(0, replayTaskCount).Select(i => new ReplicaReplayTask(i, this, clusterProvider, cts, logger))];
                 foreach (var replayTask in replayTasks)
                     _ = Task.Run(() => replayTask.FullPageBasedBackgroundReplayAsync());

@@ -11,7 +11,7 @@ using NUnit.Framework.Legacy;
 namespace Garnet.test
 {
     /// <summary>
-    /// Invariant tests for <see cref="WorkReadyCompleteSlim"/>, the centralized two-phase rendezvous
+    /// Invariant tests for <see cref="DoubleTurnstileBarrier"/>, the centralized two-phase rendezvous
     /// barrier that replaced the per-task leader/worker handshakes in parallel AOF replay.
     ///
     /// These guard the properties that structurally eliminate the parallel-replay permit-steal race:
@@ -23,7 +23,7 @@ namespace Garnet.test
     ///      <see cref="OperationCanceledException"/> respectively.
     /// </summary>
     [TestFixture]
-    public class WorkReadyCompleteSlimTests
+    public class DoubleTurnstileBarrierTests
     {
         [Test]
         [TestCase(2)]
@@ -33,7 +33,7 @@ namespace Garnet.test
         public void RepeatedCyclesRendezvousExactlyOnce(int workerCount)
         {
             // participantCount = workers + 1 leader (the leader participates like everyone else).
-            var barrier = new WorkReadyCompleteSlim(workerCount + 1);
+            var barrier = new DoubleTurnstileBarrier(workerCount + 1);
             const int cycles = 1000;
             var processed = 0;
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
@@ -69,7 +69,7 @@ namespace Garnet.test
         public void SingleParticipantNeverBlocks()
         {
             // With a single participant, that participant is always the last arriver and releases nobody.
-            var barrier = new WorkReadyCompleteSlim(1);
+            var barrier = new DoubleTurnstileBarrier(1);
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
 
             Assert.DoesNotThrow(() =>
@@ -85,7 +85,7 @@ namespace Garnet.test
         [Test]
         public void FastParticipantBlocksUntilCohortArrives()
         {
-            var barrier = new WorkReadyCompleteSlim(2);
+            var barrier = new DoubleTurnstileBarrier(2);
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
             var released = false;
 
@@ -107,7 +107,7 @@ namespace Garnet.test
         [Test]
         public void SignalWorkReadyWaitThrowsGarnetExceptionOnTimeout()
         {
-            var barrier = new WorkReadyCompleteSlim(2);
+            var barrier = new DoubleTurnstileBarrier(2);
             // Only one of two participants arrives, so the barrier can never assemble.
             _ = Assert.Throws<GarnetException>(() => barrier.SignalWorkReadyWait(TimeSpan.FromMilliseconds(50)));
         }
@@ -115,21 +115,21 @@ namespace Garnet.test
         [Test]
         public void SignalWorkCompletedThrowsGarnetExceptionOnTimeout()
         {
-            var barrier = new WorkReadyCompleteSlim(2);
+            var barrier = new DoubleTurnstileBarrier(2);
             _ = Assert.Throws<GarnetException>(() => barrier.SignalWorkCompletedWait(TimeSpan.FromMilliseconds(50)));
         }
 
         [Test]
         public void SignalWorkReadyWaitAsyncThrowsGarnetExceptionOnTimeout()
         {
-            var barrier = new WorkReadyCompleteSlim(2);
+            var barrier = new DoubleTurnstileBarrier(2);
             _ = Assert.ThrowsAsync<GarnetException>(async () => await barrier.SignalWorkReadyWaitAsync(TimeSpan.FromMilliseconds(50)));
         }
 
         [Test]
         public void SignalWorkReadyWaitThrowsOnCancellation()
         {
-            var barrier = new WorkReadyCompleteSlim(2);
+            var barrier = new DoubleTurnstileBarrier(2);
             using var cts = new CancellationTokenSource();
             var waiter = Task.Run(() => barrier.SignalWorkReadyWait(cancellationToken: cts.Token));
 
@@ -143,7 +143,7 @@ namespace Garnet.test
         [Test]
         public async Task SignalWorkCompletedAsyncThrowsOnCancellation()
         {
-            var barrier = new WorkReadyCompleteSlim(2);
+            var barrier = new DoubleTurnstileBarrier(2);
             using var cts = new CancellationTokenSource();
             var waiter = barrier.SignalWorkCompletedWaitAsync(cancellationToken: cts.Token);
 
@@ -156,8 +156,8 @@ namespace Garnet.test
         [Test]
         public void ConstructorRejectsNonPositiveParticipantCount()
         {
-            _ = Assert.Throws<ArgumentOutOfRangeException>(() => new WorkReadyCompleteSlim(0));
-            _ = Assert.Throws<ArgumentOutOfRangeException>(() => new WorkReadyCompleteSlim(-1));
+            _ = Assert.Throws<ArgumentOutOfRangeException>(() => new DoubleTurnstileBarrier(0));
+            _ = Assert.Throws<ArgumentOutOfRangeException>(() => new DoubleTurnstileBarrier(-1));
         }
     }
 }
