@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -6,6 +6,7 @@ using System.Diagnostics;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Garnet.common;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 
@@ -24,7 +25,7 @@ namespace Garnet.server
     /// <param name="untilAddress">End address in the append-only file for recovery.</param>
     /// <param name="untilSequenceNumber">Replay all records with sequence number to ensure prefix consistent recovery.</param>
     /// <param name="logger">Optional logger for diagnostic output.</param>
-    internal sealed class RecoverLogDriver(
+    internal sealed partial class RecoverLogDriver(
         AofProcessor aofProcessor,
         GarnetAppendOnlyFile appendOnlyFile,
         GarnetServerOptions serverOptions,
@@ -49,6 +50,23 @@ namespace Garnet.server
         readonly int dbId = dbId;
         readonly ReplayBatchContext replayBatchContext = new(serverOptions.AofReplayTaskCount);
         Task[] replayTasks = null;
+
+        /// <summary>
+        /// Centralized rendezvous barrier coordinating the recover leader (this driver) and its parallel
+        /// replay tasks. The leader is a participant, so the participant count is the number of replay
+        /// tasks plus one. Null until the parallel tasks are created.
+        /// </summary>
+        DoubleTurnstileBarrier barrier = null;
+
+        /// <summary>
+        /// Set by a replay task when it encounters an entry whose sequence number exceeds
+        /// <see cref="untilSequenceNumber"/> (the prefix-consistency boundary). Because sequence numbers are
+        /// monotonically increasing, no further entries need to be applied once this is set. The leader
+        /// observes it only after every task has finished the current page (via the barrier's completion
+        /// rendezvous, which establishes a happens-before), then cancels to stop handing subsequent pages —
+        /// avoiding wasted scans and, importantly, avoiding committing log metadata beyond the intended prefix.
+        /// </summary>
+        volatile bool prefixConsistencyBoundaryReached = false;
 
         /// <summary>
         /// Gets the total number of records that have been replayed.
@@ -119,13 +137,6 @@ namespace Garnet.server
             }
             else
             {
-                // Wait for previous batch to complete before overwriting shared batch context
-                if (replayTasks != null)
-                {
-                    replayBatchContext.LeaderFollowerBarrier.WaitCompleted();
-                    replayBatchContext.LeaderFollowerBarrier.Release();
-                }
-
                 CreateAndRunIntraPageParallelReplayTasks();
 
                 replayBatchContext.Record = record;
@@ -133,109 +144,41 @@ namespace Garnet.server
                 replayBatchContext.CurrentAddress = currentAddress;
                 replayBatchContext.NextAddress = nextAddress;
                 replayBatchContext.IsProtected = isProtected;
-                replayBatchContext.LeaderFollowerBarrier.SignalWorkReady();
 
-                // After the last batch, wait for workers and cancel to exit BulkConsumeAllAsync
-                if (nextAddress == untilAddress)
+                // Rendezvous 1 (ready): publish the page context above, then meet every replay task at the
+                // barrier so they may scan the page. The leader is a participant, hence the shared barrier.
+                barrier.SignalWorkReadyWait(cancellationToken: cts.Token);
+
+                // Rendezvous 2 (completed): wait for every replay task to finish applying its partition of
+                // the page. This establishes a happens-before with prefixConsistencyBoundaryReached and
+                // guarantees no task is still reading the shared context before it is recycled for the next
+                // page.
+                barrier.SignalWorkCompletedWait(cancellationToken: cts.Token);
+
+                // Every task has now finished the current page. If any of them reached the
+                // prefix-consistency boundary, stop here so we neither scan further pages nor commit
+                // log metadata beyond the intended prefix.
+                if (prefixConsistencyBoundaryReached)
                 {
-                    replayBatchContext.LeaderFollowerBarrier.WaitCompleted();
-                    replayBatchContext.LeaderFollowerBarrier.Release();
+                    logger?.LogTrace("Reached prefix-consistency boundary (until sequence number {untilSequenceNumber}), stopping parallel replay", untilSequenceNumber);
                     cts.Cancel();
+                    return;
                 }
+
+                // After the last batch, cancel to exit BulkConsumeAllAsync.
+                if (nextAddress == untilAddress)
+                    cts.Cancel();
             }
         }
 
         private void CreateAndRunIntraPageParallelReplayTasks()
-            => replayTasks ??= [.. Enumerable.Range(0, serverOptions.AofReplayTaskCount).Select(i => Task.Run(() => ContinuousBackgroundReplayAsync(i, physicalSublog)))];
-
-        internal async Task ContinuousBackgroundReplayAsync(int replayTaskIdx, TsavoriteLog replaySublog)
         {
-            var virtualSublogIdx = appendOnlyFile.GetVirtualSublogIdx(physicalSublogIdx, replayTaskIdx);
-            while (!cts.Token.IsCancellationRequested)
-            {
-                try
-                {
-                    await replayBatchContext.LeaderFollowerBarrier.WaitReadyWorkAsync(cancellationToken: cts.Token).ConfigureAwait(false);
-                }
-                catch (TaskCanceledException) when (cts.IsCancellationRequested)
-                { }
-                catch (Exception ex)
-                {
-                    logger?.LogError(ex, "{method} failed at WaitAsync", nameof(ContinuousBackgroundReplayAsync));
-                    await cts.CancelAsync().ConfigureAwait(false);
-                    break;
-                }
+            if (replayTasks != null)
+                return;
 
-                try
-                {
-                    unsafe
-                    {
-
-                        var record = replayBatchContext.Record;
-                        var recordLength = replayBatchContext.RecordLength;
-                        var currentAddress = replayBatchContext.CurrentAddress;
-                        var nextAddress = replayBatchContext.NextAddress;
-                        var isProtected = replayBatchContext.IsProtected;
-                        var ptr = record;
-
-                        var maxSequenceNumber = 0L;
-
-                        // logger?.LogError("[{sublogIdx},{replayIdx}] = {currentAddress} -> {nextAddress}", sublogIdx, replayIdx, currentAddress, nextAddress);                        
-                        while (ptr < record + recordLength)
-                        {
-                            cts.Token.ThrowIfCancellationRequested();
-                            var entryLength = appendOnlyFile.HeaderSize;
-                            var payloadLength = replaySublog.UnsafeGetLength(ptr);
-                            if (payloadLength > 0)
-                            {
-                                var entryPtr = ptr + entryLength;
-                                var logAddressSequenceNumber = currentAddress + (ptr - record);
-                                Debug.Assert(logAddressSequenceNumber > 0, "Entry log address must be positive");
-                                // Check if entry is assigned for processing to this replay task and
-                                // the sequence number is below the threshold to ensure prefix consistency
-                                if (aofProcessor.CanReplay(entryPtr, replayTaskIdx, logAddressSequenceNumber, out var sequenceNumber))
-                                {
-                                    if (untilSequenceNumber != -1 && sequenceNumber > untilSequenceNumber)
-                                    {
-                                        // Sequence numbers are monotonically increasing — stop processing this batch
-                                        break;
-                                    }
-                                    aofProcessor.ProcessAofRecordInternal(virtualSublogIdx, entryPtr, payloadLength, true, out var isCheckpointStart, logAddressSequenceNumber);
-                                    maxSequenceNumber = Math.Max(sequenceNumber, maxSequenceNumber);
-                                }
-                                entryLength += TsavoriteLog.UnsafeAlign(payloadLength);
-                            }
-                            else if (payloadLength < 0)
-                            {
-                                // Only a single thread should commit metadata
-                                if (replayTaskIdx == 0)
-                                {
-                                    TsavoriteLogRecoveryInfo info = new();
-                                    info.Initialize(new ReadOnlySpan<byte>(ptr + entryLength, -payloadLength));
-                                    replaySublog.UnsafeCommitMetadataOnly(info, isProtected);
-                                }
-                                entryLength += TsavoriteLog.UnsafeAlign(-payloadLength);
-                            }
-                            ptr += entryLength;
-                        }
-
-                        // Update max sequence number for this virtual sublog which is mapped
-                        appendOnlyFile.readConsistencyManager.UpdateVirtualSublogMaxSequenceNumber(virtualSublogIdx, maxSequenceNumber);
-                    }
-                }
-                catch (Exception ex)
-                {
-                    logger?.LogError(ex, "{method} failed at replaying", nameof(ContinuousBackgroundReplayAsync));
-                    await cts.CancelAsync().ConfigureAwait(false);
-                    break;
-                }
-                finally
-                {
-                    // Signal work completion after processing (skip if cancelled to avoid blocking on resetReady)
-                    if (!cts.Token.IsCancellationRequested)
-                        replayBatchContext.LeaderFollowerBarrier.SignalCompleted();
-                }
-            }
+            // Leader participates in the barrier alongside every replay task, hence + 1.
+            barrier = new DoubleTurnstileBarrier(serverOptions.AofReplayTaskCount + 1);
+            replayTasks = [.. Enumerable.Range(0, serverOptions.AofReplayTaskCount).Select(i => Task.Run(() => RecoverReplayTaskAsync(i, physicalSublog)))];
         }
 
         public void Throttle() { }
@@ -244,7 +187,7 @@ namespace Garnet.server
         /// Starts a background task to replay and recover data until a specified address or when cancellation is requested.
         /// </summary>
         /// <returns>A Task representing the asynchronous recovery operation.</returns>
-        public Task CreateRecoverTaskAsync()
+        public Task RunAsync()
         {
             return Task.Run(async () =>
             {
@@ -265,7 +208,7 @@ namespace Garnet.server
                             break;
                     }
                 }
-                catch (TaskCanceledException) when (cts.IsCancellationRequested)
+                catch (OperationCanceledException) when (cts.IsCancellationRequested)
                 { }
             });
         }

@@ -95,6 +95,13 @@ namespace Garnet.server
         public int AofReplayTaskCount = 1;
 
         /// <summary>
+        /// Maximum allowed drift (in key sequence numbers) between the fastest and slowest physical sublog replay drivers.
+        /// When a driver is ahead of the slowest peer by more than this value, it yields until the gap closes.
+        /// Only effective when AofPhysicalSublogCount > 1. -1 = disabled (no throttling).
+        /// </summary>
+        public long AofReplayMaxDrift = -1;
+
+        /// <summary>
         /// Polling frequency of the background task responsible for moving time ahead for all physical sublogs (Used only with physical sublog value >1).
         /// </summary>
         public int AofTailWitnessFreqMs = 100;

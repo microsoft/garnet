@@ -200,6 +200,10 @@ namespace Tsavorite.benchmark
         public void BeforeConsistentReadKeyBatchCallback(ReadOnlySpan<PinnedSpanByte> parameters) { }
 
         public bool AfterConsistentReadKeyBatchCallback(int keyCount) => true;
+        public void PreSingleKeyConsistentRead(long hash) => throw new NotImplementedException();
+        public void PostSingleKeyConsistentReadCallback() => throw new NotImplementedException();
+        public void PreBatchKeyConsistentReadCallback(ReadOnlySpan<PinnedSpanByte> parameters) => throw new NotImplementedException();
+        public bool PostBatchKeyConsistentReadCallback(int keyCount) => throw new NotImplementedException();
     }
 
     static class StaticUtilities

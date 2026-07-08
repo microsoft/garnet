@@ -11,7 +11,7 @@ using Tsavorite.core;
 
 namespace Garnet.server
 {
-    [StructLayout(LayoutKind.Explicit, Size = 26)]
+    [StructLayout(LayoutKind.Explicit)]
     public struct ReplicaReadSessionContext
     {
         /// <summary>
@@ -37,6 +37,24 @@ namespace Garnet.server
         /// </summary>
         [FieldOffset(24)]
         public short lastVirtualSublogIdx;
+
+        /// <summary>
+        /// Per-sublog cached maximum sequence numbers. Avoids repeated volatile reads of the
+        /// shared sketchMax value when the cached value already satisfies the read requirement.
+        /// Shared across batch/session context copies (same backing array).
+        /// </summary>
+        [FieldOffset(32)]
+        public long[] cachedSublogMax;
+
+        /// <summary>
+        /// Resets the cached per-sublog max values (e.g., on version change).
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public readonly void ResetCachedSublogMax()
+        {
+            if (cachedSublogMax != null)
+                Array.Clear(cachedSublogMax);
+        }
     }
 
     public class ReadSessionState : IDisposable
@@ -62,14 +80,14 @@ namespace Garnet.server
         ReplicaReadSessionContext batchReadContext;
 
         /// <summary>
-        /// A cancellation token source used to signal cancellation for consistent read operations.
+        /// A cancellation token source used to signal cancellation for consistent read operations (e.g., on dispose).
         /// </summary>
         readonly CancellationTokenSource consistentReadCts;
 
         /// <summary>
-        /// Timeout cancellation token source.
+        /// Timeout duration for consistent read wait operations.
         /// </summary>
-        CancellationTokenSource timeoutCts;
+        readonly TimeSpan readTimeout;
 
         /// <summary>
         /// Consistent read in progress lock
@@ -106,10 +124,10 @@ namespace Garnet.server
         {
             this.appendOnlyFile = appendOnlyFile;
             this.serverOptions = serverOptions;
-            replicaReadContext = new() { sessionVersion = -1, maximumSessionSequenceNumber = 0, lastVirtualSublogIdx = -1 };
+            var sublogMax = new long[serverOptions.AofVirtualSublogCount];
+            replicaReadContext = new() { sessionVersion = -1, maximumSessionSequenceNumber = 0, lastVirtualSublogIdx = -1, cachedSublogMax = sublogMax };
             consistentReadCts = new();
-            timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(consistentReadCts.Token);
-            timeoutCts.CancelAfter(serverOptions.ReplicaSyncTimeout);
+            readTimeout = serverOptions.ReplicaSyncTimeout;
         }
 
         /// <summary>
@@ -118,36 +136,23 @@ namespace Garnet.server
         public void Dispose()
         {
             consistentReadCts.Cancel();
-            timeoutCts.Cancel();
             inProgress.WriteLock();
             consistentReadCts.Dispose();
-            timeoutCts.Dispose();
         }
 
-        void ResetTimeoutCts()
-        {
-            if (timeoutCts.TryReset())
-            {
-                timeoutCts.CancelAfter(serverOptions.ReplicaSyncTimeout);
-            }
-            else
-            {
-                // TryReset failed (too many resets), recreate the CTS
-                timeoutCts?.Dispose();
-                timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(consistentReadCts.Token);
-                timeoutCts.CancelAfter(serverOptions.ReplicaSyncTimeout);
-            }
-        }
-
+        /// <summary>
+        /// Freshness check before actual read for a single key
+        /// </summary>
+        /// <param name="hash"></param>
+        /// <exception cref="GarnetException"></exception>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void BeforeConsistentReadKeyCallback(long hash)
+        public void PreSingleKeyConsistentRead(long hash)
         {
             if (!inProgress.TryReadLock())
-                throw new GarnetException($"Failed to acquire inProgress lock at {nameof(BeforeConsistentReadKeyCallback)}");
+                throw new GarnetException($"Failed to acquire inProgress lock at {nameof(PreSingleKeyConsistentRead)}");
             try
             {
-                ResetTimeoutCts();
-                appendOnlyFile.readConsistencyManager.BeforeConsistentReadKey(hash & long.MaxValue, ref replicaReadContext, timeoutCts.Token);
+                appendOnlyFile.readConsistencyManager.PreSingleKeyConsistentRead(hash & long.MaxValue, ref replicaReadContext, readTimeout, consistentReadCts.Token);
             }
             finally
             {
@@ -155,23 +160,38 @@ namespace Garnet.server
             }
         }
 
+        /// <summary>
+        /// Post read update maximum sequence number for a single key.
+        /// </summary>
+        /// <exception cref="GarnetException"></exception>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void AfterConsistentReadKeyCallback()
-            => appendOnlyFile.readConsistencyManager.AfterConsistentReadKey(ref replicaReadContext);
+        public void PostSingleKeyConsistentReadCallback()
+        {
+            if (!inProgress.TryReadLock())
+                throw new GarnetException($"Failed to acquire inProgress lock at {nameof(PostSingleKeyConsistentReadCallback)}");
+            try
+            {
+                appendOnlyFile.readConsistencyManager.PostSingleKeyConsistentRead(ref replicaReadContext);
+            }
+            finally
+            {
+                inProgress.ReadUnlock();
+            }
+        }
 
         /// <summary>
         /// Initialize context for read key batch.
         /// </summary>
         /// <param name="parameters"></param>
-        public void BeforeConsistentReadKeyBatch(ReadOnlySpan<PinnedSpanByte> parameters)
+        public void PreBatchKeyConsistentReadCallback(ReadOnlySpan<PinnedSpanByte> parameters)
         {
             if (!inProgress.TryReadLock())
-                throw new GarnetException($"Failed to acquire inProgress lock at {nameof(BeforeConsistentReadKeyCallback)}");
+                throw new GarnetException($"Failed to acquire inProgress lock at {nameof(PreBatchKeyConsistentReadCallback)}");
             try
             {
                 var keyCount = parameters.Length;
                 var consistencyManager = appendOnlyFile.readConsistencyManager;
-                // First check if version of consistency mananger has changed
+                // First check if version of consistency manager has changed
                 appendOnlyFile.readConsistencyManager.CheckConsistencyManagerVersion(ref replicaReadContext);
 
                 // Allocate array to cache key hashes for batch read
@@ -186,8 +206,7 @@ namespace Garnet.server
                 for (var i = 0; i < parameters.Length; i++)
                 {
                     var key = parameters[i];
-                    ResetTimeoutCts();
-                    consistencyManager.BeforeConsistentReadKeyBatch(key.ReadOnlySpan, ref batchReadContext, timeoutCts.Token, out var hash);
+                    consistencyManager.PreBatchKeyConsistentRead(key.ReadOnlySpan, ref batchReadContext, readTimeout, consistentReadCts.Token, out var hash);
                     keyHashCache[i] = hash;
                 }
             }
@@ -202,23 +221,32 @@ namespace Garnet.server
         /// </summary>
         /// <param name="keyCount"></param>
         /// <returns></returns>
-        public bool AfterConsistentReadKeyBatch(int keyCount)
+        public bool PostBatchKeyConsistentReadCallback(int keyCount)
         {
-            var consistencyManager = appendOnlyFile.readConsistencyManager;
-            for (var i = 0; i < keyCount; i++)
+            if (!inProgress.TryReadLock())
+                throw new GarnetException($"Failed to acquire inProgress lock at {nameof(PostBatchKeyConsistentReadCallback)}");
+            try
             {
-                var hash = keyHashCache[i];
-                if (!consistencyManager.AfterConsistentReadKeyBatch(hash, ref batchReadContext))
-                    return false;
+                var consistencyManager = appendOnlyFile.readConsistencyManager;
+                for (var i = 0; i < keyCount; i++)
+                {
+                    var hash = keyHashCache[i];
+                    if (!consistencyManager.PostBatchKeyConsistentReadValidate(hash, ref batchReadContext))
+                        return false;
+                }
+
+                // Propagate batch context back to session context to maintain prefix consistency
+                // for subsequent single-key reads across different sublogs.
+                replicaReadContext.maximumSessionSequenceNumber = batchReadContext.maximumSessionSequenceNumber;
+                replicaReadContext.lastVirtualSublogIdx = batchReadContext.lastVirtualSublogIdx;
+                replicaReadContext.lastHash = batchReadContext.lastHash;
+
+                return true;
             }
-
-            // Propagate batch context back to session context to maintain prefix consistency
-            // for subsequent single-key reads across different sublogs.
-            replicaReadContext.maximumSessionSequenceNumber = batchReadContext.maximumSessionSequenceNumber;
-            replicaReadContext.lastVirtualSublogIdx = batchReadContext.lastVirtualSublogIdx;
-            replicaReadContext.lastHash = batchReadContext.lastHash;
-
-            return true;
+            finally
+            {
+                inProgress.ReadUnlock();
+            }
         }
     }
 }
