@@ -3101,6 +3101,191 @@ namespace Garnet.test
         }
 
         [Test]
+        public async Task RenamesAsync([Values(false, true)] bool runRenameInTransaction)
+        {
+            const string SourceKey = nameof(RenamesAsync) + "_source";
+            const string DestKey = nameof(RenamesAsync) + "_dest";
+
+            ushort sourceHashSlot;
+            ushort destHashSlot;
+
+            unsafe
+            {
+                fixed (byte* sourcePtr = Encoding.ASCII.GetBytes(SourceKey))
+                fixed (byte* destPtr = Encoding.ASCII.GetBytes(DestKey))
+                {
+                    sourceHashSlot = HashSlotUtils.HashSlot(PinnedSpanByte.FromPinnedPointer(sourcePtr, SourceKey.Length));
+                    destHashSlot = HashSlotUtils.HashSlot(PinnedSpanByte.FromPinnedPointer(destPtr, DestKey.Length));
+                    ClassicAssert.AreNotEqual(sourceHashSlot, destHashSlot);
+                }
+            }
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase();
+
+            // Old key is Vector Set, and new key does not exist
+            {
+                _ = db.KeyDelete(SourceKey);
+                _ = db.KeyDelete(DestKey);
+
+                var vaddRes = (int)await db.ExecuteAsync("VADD", SourceKey, "VALUES", "3", "1", "2", "3", "foo");
+                ClassicAssert.AreEqual(1, vaddRes);
+
+                AssertExpectedHashSlot(server, SourceKey, sourceHashSlot);
+
+                var renameRes = await DoRenameAsync(db, runRenameInTransaction, nx: false);
+                ClassicAssert.IsTrue(renameRes);
+
+                AssertExpectedHashSlot(server, DestKey, destHashSlot);
+
+                var existsRes = await db.KeyExistsAsync(SourceKey);
+                ClassicAssert.IsFalse(existsRes);
+
+                var vembRes = (string[])await db.ExecuteAsync("VEMB", DestKey, "foo");
+                ClassicAssert.AreEqual(3, vembRes.Length);
+                ClassicAssert.AreEqual(1f, float.Parse(vembRes[0]));
+                ClassicAssert.AreEqual(2f, float.Parse(vembRes[1]));
+                ClassicAssert.AreEqual(3f, float.Parse(vembRes[2]));
+            }
+
+            // Old key is Vector Set, new key exists and is NOT a Vector Set
+            {
+                _ = db.KeyDelete(SourceKey);
+                _ = db.KeyDelete(DestKey);
+
+                var vaddRes = (int)await db.ExecuteAsync("VADD", SourceKey, "VALUES", "3", "1", "2", "3", "foo");
+                ClassicAssert.AreEqual(1, vaddRes);
+
+                AssertExpectedHashSlot(server, SourceKey, sourceHashSlot);
+
+                var setRes = await db.StringSetAsync(DestKey, "fizzbuzz");
+                ClassicAssert.IsTrue(setRes);
+
+                // RENAMENX should fail
+                var renameNxRes = await DoRenameAsync(db, runRenameInTransaction, nx: true);
+                ClassicAssert.IsFalse(renameNxRes);
+
+                var renameRes = await DoRenameAsync(db, runRenameInTransaction, nx: false);
+                ClassicAssert.IsTrue(renameRes);
+
+                AssertExpectedHashSlot(server, DestKey, destHashSlot);
+
+                var existsRes = await db.KeyExistsAsync(SourceKey);
+                ClassicAssert.IsFalse(existsRes);
+
+                var vembRes = (string[])await db.ExecuteAsync("VEMB", DestKey, "foo");
+                ClassicAssert.AreEqual(3, vembRes.Length);
+                ClassicAssert.AreEqual(1f, float.Parse(vembRes[0]));
+                ClassicAssert.AreEqual(2f, float.Parse(vembRes[1]));
+                ClassicAssert.AreEqual(3f, float.Parse(vembRes[2]));
+            }
+
+            // Old key is Vector Set, new key exists and IS a Vector Set
+            {
+                _ = db.KeyDelete(SourceKey);
+                _ = db.KeyDelete(DestKey);
+
+                var vaddRes = (int)await db.ExecuteAsync("VADD", SourceKey, "VALUES", "3", "1", "2", "3", "foo");
+                ClassicAssert.AreEqual(1, vaddRes);
+
+                AssertExpectedHashSlot(server, SourceKey, sourceHashSlot);
+
+                var vaddRes2 = (int)await db.ExecuteAsync("VADD", DestKey, "VALUES", "3", "4", "5", "6", "foo");
+                ClassicAssert.AreEqual(1, vaddRes2);
+
+                // RENAMENX should fail
+                var renameNxRes = await DoRenameAsync(db, runRenameInTransaction, nx: true);
+                ClassicAssert.IsFalse(renameNxRes);
+
+                var renameRes = await DoRenameAsync(db, runRenameInTransaction, nx: false);
+                ClassicAssert.IsTrue(renameRes);
+
+                AssertExpectedHashSlot(server, DestKey, destHashSlot);
+
+                var existsRes = await db.KeyExistsAsync(SourceKey);
+                ClassicAssert.IsFalse(existsRes);
+
+                var vembRes = (string[])await db.ExecuteAsync("VEMB", DestKey, "foo");
+                ClassicAssert.AreEqual(3, vembRes.Length);
+                ClassicAssert.AreEqual(1f, float.Parse(vembRes[0]));
+                ClassicAssert.AreEqual(2f, float.Parse(vembRes[1]));
+                ClassicAssert.AreEqual(3f, float.Parse(vembRes[2]));
+            }
+
+            // Old key is NOT a Vector Set, new key exists and IS a Vector Set
+            {
+                _ = db.KeyDelete(SourceKey);
+                _ = db.KeyDelete(DestKey);
+
+                var setRes = await db.StringSetAsync(SourceKey, "fizzbuzz");
+                ClassicAssert.IsTrue(setRes);
+
+                var vaddRes = (int)await db.ExecuteAsync("VADD", DestKey, "VALUES", "3", "4", "5", "6", "foo");
+                ClassicAssert.AreEqual(1, vaddRes);
+
+                AssertExpectedHashSlot(server, DestKey, destHashSlot);
+
+                // RENAMENX should fail
+                var renameNxRes = await DoRenameAsync(db, runRenameInTransaction, nx: true);
+                ClassicAssert.IsFalse(renameNxRes);
+
+                var renameRes = await DoRenameAsync(db, runRenameInTransaction, nx: false);
+                ClassicAssert.IsTrue(renameRes);
+
+                var existsRes = await db.KeyExistsAsync(SourceKey);
+                ClassicAssert.IsFalse(existsRes);
+
+                var getRes = (string)await db.StringGetAsync(DestKey);
+                ClassicAssert.AreEqual("fizzbuzz", getRes);
+            }
+
+            // Perform rename, optionally in a transaction, optionally with NX
+            static async Task<bool> DoRenameAsync(IDatabase db, bool inTransaction, bool nx)
+            {
+                var when = nx ? When.NotExists : When.Always;
+
+                if (inTransaction)
+                {
+                    var tran = db.CreateTransaction();
+                    var renameTask = tran.KeyRenameAsync(SourceKey, DestKey, when);
+                    var tranRes = await tran.ExecuteAsync();
+
+                    ClassicAssert.IsTrue(tranRes);
+
+                    return await renameTask;
+                }
+
+                return await db.KeyRenameAsync(SourceKey, DestKey, when);
+            }
+
+            // Check that the hash slot stored in context metadata matches expected
+            static void AssertExpectedHashSlot(GarnetServer server, string indexKey, ushort expectedHashSlot)
+            {
+                var store = server.Provider.StoreWrapper;
+                var vectorManager = store.DefaultDatabase.VectorManager;
+
+                unsafe
+                {
+                    fixed (byte* indexKeyPtr = Encoding.ASCII.GetBytes(indexKey))
+                    {
+                        var indexKeySpan = PinnedSpanByte.FromPinnedPointer(indexKeyPtr, indexKey.Length);
+
+                        var namespaceForKey = vectorManager.GetNamespacesForKeys(store, [indexKeySpan], []);
+                        ClassicAssert.AreEqual(VectorManager.ContextStep, namespaceForKey.Count);
+
+                        var namespacesForHashSlot = vectorManager.GetNamespacesForHashSlots([expectedHashSlot]);
+                        ClassicAssert.AreEqual(VectorManager.ContextStep, namespacesForHashSlot.Count);
+
+                        foreach (var ns in namespaceForKey)
+                        {
+                            ClassicAssert.IsTrue(namespacesForHashSlot.Contains(ns));
+                        }
+                    }
+                }
+            }
+        }
+
+        [Test]
         public async Task LotsOfVectorSetsAsync()
         {
             const int NumVectorSets = 1_000;

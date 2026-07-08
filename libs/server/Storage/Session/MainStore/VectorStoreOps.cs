@@ -138,6 +138,22 @@ namespace Garnet.server
         XCosine_Normalized = 3,
     }
 
+    /// <summary>
+    /// Flags associated with a Vector Set index key.
+    /// </summary>
+    [Flags]
+    public enum VectorSetFlags : int
+    {
+        /// <summary>
+        /// Default, no flags set.
+        /// </summary>
+        None = 0,
+
+        /// <summary>
+        /// A deletion of this key should not schedule cleanup for the associated data and contexts.
+        /// </summary>
+        SuppressCleanup = 1 << 0,
+    }
 
     /// <summary>
     /// Implementation of Vector Set operations.
@@ -332,7 +348,7 @@ namespace Garnet.server
                 }
 
                 // After a successful read we extract metadata
-                VectorManager.ReadIndex(indexSpan, out _, out var dimensionsUS, out var reducedDimensionsUS, out _, out _, out _, out _, out _);
+                VectorManager.ReadIndex(indexSpan, out _, out var dimensionsUS, out var reducedDimensionsUS, out _, out _, out _, out _, out _, out _);
 
                 dimensions = (int)(reducedDimensionsUS == 0 ? dimensionsUS : reducedDimensionsUS);
 
@@ -372,7 +388,7 @@ namespace Garnet.server
                 }
 
                 // After a successful read we extract metadata
-                VectorManager.ReadIndex(indexSpan, out var context, out vectorDimensions, out reducedDimensions, out quantType, out buildExplorationFactor, out numberOfLinks, out distanceMetricType, out var indexPtr);
+                VectorManager.ReadIndex(indexSpan, out var context, out vectorDimensions, out reducedDimensions, out quantType, out buildExplorationFactor, out numberOfLinks, out distanceMetricType, out _, out var indexPtr);
                 size = (long)NativeDiskANNMethods.card(context, indexPtr);
 
                 return GarnetStatus.OK;
