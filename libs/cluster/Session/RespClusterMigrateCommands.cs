@@ -85,7 +85,6 @@ namespace Garnet.cluster
                     var storeWrapper = clusterProvider.storeWrapper;
                     var transientObjectIdMap = storeWrapper.store.Log.TransientObjectIdMap;
 
-                    // Use try/finally instead of "using" because we don't want the boxing that an interface call would entail. Double-Dispose() is OK for DiskLogRecord.
                     DiskLogRecord diskLogRecord = default;
                     try
                     {
@@ -101,9 +100,7 @@ namespace Garnet.cluster
                                     return;
 
                                 if (kind != MigrationRecordSpanType.VectorSetIndex)
-                                {
                                     throw new InvalidOperationException($"Unexpected {nameof(MigrationRecordSpanType)}: {kind}");
-                                }
 
                                 var payload = payloadRaw.ReadOnlySpan;
 

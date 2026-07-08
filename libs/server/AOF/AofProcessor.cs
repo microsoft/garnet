@@ -215,6 +215,7 @@ namespace Garnet.server
                     participantCount = (short)storeWrapper.serverOptions.AofReplayTaskCount;
                     break;
                 default:
+                    // Note: AOF chunked headers should not be encountered here; they were introduced after *LogTransactionHeader.
                     throw new GarnetException($"Unsupported header type: {headerType}");
             }
         }
@@ -719,6 +720,7 @@ namespace Garnet.server
             {
                 // Single-physical-log + multi-replay: BasicHeader entries, use entry address for ordering
                 case AofHeaderType.BasicHeader:
+                case AofHeaderType.BasicChunkHeader:
                     logAddressSequenceNumber = entryAddress;
                     // Keyless entries (transactions, checkpoints, flush, stored procedures) are processed by all tasks
                     // because they may participate in barriers via ProcessSynchronizedOperation
@@ -729,6 +731,7 @@ namespace Garnet.server
                     return replayTaskIdx == storeWrapper.appendOnlyFile.Log.GetReplayTaskIdx(basicKey);
                 // Multi-physical-log: ShardedHeader entries with embedded sequence number
                 case AofHeaderType.ShardedHeader:
+                case AofHeaderType.ShardedChunkHeader:
                     var shardedHeader = *(AofShardedHeader*)ptr;
                     logAddressSequenceNumber = shardedHeader.sequenceNumber;
                     // Keyless entries are processed by task 0 only
@@ -769,13 +772,15 @@ namespace Garnet.server
             {
                 // Single-physical-log + multi-replay: BasicHeader entries
                 case AofHeaderType.BasicHeader:
+                case AofHeaderType.BasicChunkHeader:
                     var basicCurr = AofHeader.SkipHeader(ptr);
-                    var basicKey = PinnedSpanByte.FromLengthPrefixedPinnedPointer(basicCurr).ReadOnlySpan;
+                    var basicKey = PinnedSpanByte.FromLengthPrefixedPinnedPointer(basicCurr).ReadOnlySpan;  // TODO: chunking
                     return storeWrapper.appendOnlyFile.Log.GetReplayTaskIdx(basicKey);
                 // Multi-physical-log: ShardedHeader entries
                 case AofHeaderType.ShardedHeader:
+                case AofHeaderType.ShardedChunkHeader:
                     var curr = AofHeader.SkipHeader(ptr);
-                    var key = PinnedSpanByte.FromLengthPrefixedPinnedPointer(curr).ReadOnlySpan;
+                    var key = PinnedSpanByte.FromLengthPrefixedPinnedPointer(curr).ReadOnlySpan;            // TODO: chunking
                     return storeWrapper.appendOnlyFile.Log.GetReplayTaskIdx(key);
                 // Transaction headers (both types) don't have a single key for task assignment
                 case AofHeaderType.ShardedLogTransactionHeader:
@@ -807,11 +812,13 @@ namespace Garnet.server
             {
                 // Single-physical-log + multi-replay: use entry address
                 case AofHeaderType.BasicHeader:
+                case AofHeaderType.BasicChunkHeader:
                 case AofHeaderType.SingleLogTransactionHeader:
                     sequenceNumber = logAddressSequenceNumber;
                     return logAddressSequenceNumber > untilSequenceNumber;
                 // Multi-physical-log: use embedded sequence number
                 case AofHeaderType.ShardedHeader:
+                case AofHeaderType.ShardedChunkHeader:
                     var shardedHeader = *(AofShardedHeader*)ptr;
                     sequenceNumber = shardedHeader.sequenceNumber;
                     return shardedHeader.sequenceNumber > untilSequenceNumber;

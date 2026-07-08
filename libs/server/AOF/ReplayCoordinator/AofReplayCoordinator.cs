@@ -197,7 +197,8 @@ namespace Garnet.server
                                     startSeqNum = (*(AofShardedHeader*)ptr).sequenceNumber;
                                     break;
                                 default:
-                                    // BasicHeader from SL-era AOF: all replay tasks participate
+                                    // BasicHeader from SL-era AOF: all replay tasks participate.
+                                    Debug.Assert(headerType is not AofHeaderType.BasicChunkHeader and not AofHeaderType.ShardedChunkHeader, "Chunked headers should not be encountered as they were added after *LogTransactionHeader");
                                     logAccessCount = (short)serverOptions.AofReplayTaskCount;
                                     startSeqNum = logAddressSequenceNumber;
                                     break;
@@ -228,10 +229,12 @@ namespace Garnet.server
                     switch (headerType)
                     {
                         case AofHeaderType.BasicHeader:
+                        case AofHeaderType.BasicChunkHeader:
                         case AofHeaderType.SingleLogTransactionHeader:
                             sequenceNumber = logAddressSequenceNumber;
                             break;
                         case AofHeaderType.ShardedHeader:
+                        case AofHeaderType.ShardedChunkHeader:
                             sequenceNumber = (*(AofShardedHeader*)ptr).sequenceNumber;
                             break;
                         case AofHeaderType.ShardedLogTransactionHeader:
