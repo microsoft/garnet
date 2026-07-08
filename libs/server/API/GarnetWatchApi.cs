@@ -644,6 +644,13 @@ namespace Garnet.server
         }
 
         /// <inheritdoc/>
+        public GarnetStatus VectorSetRawEmbedding(PinnedSpanByte key, PinnedSpanByte element, ref SpanByteAndMemory quantizedValues, out VectorQuantType quantType, out double norm, out double? range)
+        {
+            garnetApi.WATCH(key, StoreType.Main);
+            return garnetApi.VectorSetRawEmbedding(key, element, ref quantizedValues, out quantType, out norm, out range);
+        }
+
+        /// <inheritdoc/>
         public GarnetStatus VectorSetDimensions(PinnedSpanByte key, out int dimensions)
         {
             garnetApi.WATCH(key, StoreType.Main);

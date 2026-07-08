@@ -145,7 +145,7 @@ namespace Garnet.server
             input.header.cmd = RespCommand.VADD;
             input.arg1 = RecreateIndexArg;
 
-            ReadIndex(value, out var context, out var dimensions, out var reduceDims, out var quantType, out var buildExplorationFactor, out var numLinks, out var distanceMetric, out var indexPtr);
+            ReadIndex(value, out var context, out var dimensions, out var reduceDims, out var quantType, out var buildExplorationFactor, out var numLinks, out var distanceMetric, out _, out var indexPtr);
 
             Debug.Assert(indexPtr == 0, "Shouldn't receive an index pointer during a migration");
 
@@ -346,7 +346,7 @@ namespace Garnet.server
 
                     namespaces ??= [];
 
-                    ReadIndex(indexSpan, out var context, out _, out _, out _, out _, out _, out _, out _);
+                    ReadIndex(indexSpan, out var context, out _, out _, out _, out _, out _, out _, out _, out _);
                     for (var i = 0UL; i < ContextStep; i++)
                     {
                         _ = namespaces.Add(context + i);

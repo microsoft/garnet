@@ -297,6 +297,12 @@ namespace Garnet.server
                             break;
                         }
 
+                        if (input.arg1 == VectorManager.VADDSetFlagsArg)
+                        {
+                            functionsState.logger?.LogError("InitialUpdater called with VADDSetFlagsArg, which should never happen");
+                            break;
+                        }
+
                         var dims = MemoryMarshal.Read<uint>(input.parseState.GetArgSliceByRef(0).Span);
                         var reduceDims = MemoryMarshal.Read<uint>(input.parseState.GetArgSliceByRef(1).Span);
                         // ValueType is here, skipping during index creation
@@ -832,6 +838,14 @@ namespace Garnet.server
                         functionsState.vectorManager.RecreateIndex(newIndexPtr, logRecord.ValueSpan);
                     }
 
+                    if (input.arg1 == VectorManager.VADDSetFlagsArg)
+                    {
+                        // Update flags on the index
+                        var flags = MemoryMarshal.Read<VectorSetFlags>(input.parseState.GetArgSliceByRef(0).Span);
+
+                        VectorManager.SetIndexFlags(logRecord.ValueSpan, flags);
+                    }
+
                     // Ignore everything else
                     return IPUResult.Succeeded;
                 case RespCommand.VREM:
@@ -1341,6 +1355,15 @@ namespace Garnet.server
                     {
                         // VADD has triggered a CU of the index key - we want to do nothing but we have to copy to prevent corruption
                         oldValue.CopyTo(dstLogRecord.ValueSpan);
+                    }
+                    else if (input.arg1 == VectorManager.VADDSetFlagsArg)
+                    {
+                        var flags = MemoryMarshal.Read<VectorSetFlags>(input.parseState.GetArgSliceByRef(0).Span);
+
+                        // CU implies we need to copy first
+                        oldValue.CopyTo(dstLogRecord.ValueSpan);
+
+                        VectorManager.SetIndexFlags(dstLogRecord.ValueSpan, flags);
                     }
 
                     break;

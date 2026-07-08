@@ -2128,6 +2128,11 @@ namespace Garnet.server
         GarnetStatus VectorSetEmbedding(PinnedSpanByte key, PinnedSpanByte element, ref SpanByteAndMemory outputDistances);
 
         /// <summary>
+        /// Fetch RAW embedding of a given element in a Vector Set.
+        /// </summary>
+        GarnetStatus VectorSetRawEmbedding(PinnedSpanByte key, PinnedSpanByte element, ref SpanByteAndMemory quantizedValues, out VectorQuantType quantType, out double norm, out double? range);
+
+        /// <summary>
         /// Fetch the dimensionality of the given Vector Set.
         /// 
         /// If the Vector Set was created with reduced dimensions, reports the reduced dimensions.
