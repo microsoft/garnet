@@ -61,46 +61,55 @@ namespace Garnet.server
         private const int PrimaryTableMask = PrimaryTableSize - 1;
         private const int MaxProbes = 16;
 
-        private static readonly CommandEntry[] primaryTable;
+        private static CommandEntry[] primaryTable;
 
         // Subcommand tables (per parent command)
-        private static readonly CommandEntry[] clusterSubTable;
-        private static readonly int clusterSubTableMask;
+        private static CommandEntry[] clusterSubTable;
+        private static int clusterSubTableMask;
 
-        private static readonly CommandEntry[] clientSubTable;
-        private static readonly int clientSubTableMask;
+        private static CommandEntry[] clientSubTable;
+        private static int clientSubTableMask;
 
-        private static readonly CommandEntry[] aclSubTable;
-        private static readonly int aclSubTableMask;
+        private static CommandEntry[] aclSubTable;
+        private static int aclSubTableMask;
 
-        private static readonly CommandEntry[] commandSubTable;
-        private static readonly int commandSubTableMask;
+        private static CommandEntry[] commandSubTable;
+        private static int commandSubTableMask;
 
-        private static readonly CommandEntry[] configSubTable;
-        private static readonly int configSubTableMask;
+        private static CommandEntry[] configSubTable;
+        private static int configSubTableMask;
 
-        private static readonly CommandEntry[] scriptSubTable;
-        private static readonly int scriptSubTableMask;
+        private static CommandEntry[] scriptSubTable;
+        private static int scriptSubTableMask;
 
-        private static readonly CommandEntry[] latencySubTable;
-        private static readonly int latencySubTableMask;
+        private static CommandEntry[] latencySubTable;
+        private static int latencySubTableMask;
 
-        private static readonly CommandEntry[] slowlogSubTable;
-        private static readonly int slowlogSubTableMask;
+        private static CommandEntry[] slowlogSubTable;
+        private static int slowlogSubTableMask;
 
-        private static readonly CommandEntry[] moduleSubTable;
-        private static readonly int moduleSubTableMask;
+        private static CommandEntry[] moduleSubTable;
+        private static int moduleSubTableMask;
 
-        private static readonly CommandEntry[] pubsubSubTable;
-        private static readonly int pubsubSubTableMask;
+        private static CommandEntry[] pubsubSubTable;
+        private static int pubsubSubTableMask;
 
-        private static readonly CommandEntry[] memorySubTable;
-        private static readonly int memorySubTableMask;
+        private static CommandEntry[] memorySubTable;
+        private static int memorySubTableMask;
 
-        private static readonly CommandEntry[] bitopSubTable;
-        private static readonly int bitopSubTableMask;
+        private static CommandEntry[] bitopSubTable;
+        private static int bitopSubTableMask;
 
-        static RespCommandHashLookup()
+        // Use a module initializer (not a static constructor) so the JIT does not emit
+        // type-initialization checks around the hot static Lookup methods. This runs once
+        // at module load, before any parsing.
+        // CA2255 warns against ModuleInitializer in libraries; this is a deliberate,
+        // reviewer-requested optimization for the parsing hot path (see PR #1658), and the
+        // table build is self-contained (no dependency on external module load order).
+#pragma warning disable CA2255 // The 'ModuleInitializer' attribute should not be used in libraries
+        [ModuleInitializer]
+        internal static void Initialize()
+#pragma warning restore CA2255
         {
             // Build primary command table
             primaryTable = GC.AllocateArray<CommandEntry>(PrimaryTableSize, pinned: true);
@@ -149,9 +158,9 @@ namespace Garnet.server
             Span<byte> word1Bytes = stackalloc byte[8];
             Span<byte> word2Bytes = stackalloc byte[8];
 
-            for (int i = 0; i < primaryTable.Length; i++)
+            for (var i = 0; i < primaryTable.Length; i++)
             {
-                ref CommandEntry entry = ref primaryTable[i];
+                ref var entry = ref primaryTable[i];
                 if (entry.NameLength == 0) continue;
 
                 // Reconstruct the name from the stored words
@@ -235,12 +244,12 @@ namespace Garnet.server
             if ((uint)length - 1 > 23)
                 return RespCommand.NONE;
 
-            uint hash = ComputeHash(name, length);
-            int idx = (int)(hash & (uint)PrimaryTableMask);
+            var hash = ComputeHash(name, length);
+            var idx = (int)(hash & (uint)PrimaryTableMask);
 
-            for (int probe = 0; probe < MaxProbes; probe++)
+            for (var probe = 0; probe < MaxProbes; probe++)
             {
-                ref CommandEntry entry = ref primaryTable[idx];
+                ref var entry = ref primaryTable[idx];
                 if (entry.NameLength == 0) return RespCommand.NONE;
                 if (entry.NameLength == (byte)length && MatchName(ref entry, name, length))
                 {
@@ -293,17 +302,17 @@ namespace Garnet.server
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private static uint ComputeHash(byte* name, int length)
         {
-            ulong word0 = length >= 8 ? *(ulong*)name : ReadPartialWord(name, length);
+            var word0 = length >= 8 ? *(ulong*)name : ReadPartialWord(name, length);
 
             if (Sse42.X64.IsSupported)
             {
-                uint crc = (uint)Sse42.X64.Crc32(0UL, word0);
+                var crc = (uint)Sse42.X64.Crc32(0UL, word0);
                 return Sse42.Crc32(crc, (uint)length);
             }
 
             if (System.Runtime.Intrinsics.Arm.Crc32.Arm64.IsSupported)
             {
-                uint crc = (uint)System.Runtime.Intrinsics.Arm.Crc32.Arm64.ComputeCrc32C(0U, word0);
+                var crc = (uint)System.Runtime.Intrinsics.Arm.Crc32.Arm64.ComputeCrc32C(0U, word0);
                 return System.Runtime.Intrinsics.Arm.Crc32.ComputeCrc32C(crc, (uint)length);
             }
 
@@ -316,17 +325,17 @@ namespace Garnet.server
         /// </summary>
         private static uint ComputeHash(ReadOnlySpan<byte> name)
         {
-            ulong word0 = GetWordFromSpan(name, 0);
+            var word0 = GetWordFromSpan(name, 0);
 
             if (Sse42.X64.IsSupported)
             {
-                uint crc = (uint)Sse42.X64.Crc32(0UL, word0);
+                var crc = (uint)Sse42.X64.Crc32(0UL, word0);
                 return Sse42.Crc32(crc, (uint)name.Length);
             }
 
             if (System.Runtime.Intrinsics.Arm.Crc32.Arm64.IsSupported)
             {
-                uint crc = (uint)System.Runtime.Intrinsics.Arm.Crc32.Arm64.ComputeCrc32C(0U, word0);
+                var crc = (uint)System.Runtime.Intrinsics.Arm.Crc32.Arm64.ComputeCrc32C(0U, word0);
                 return System.Runtime.Intrinsics.Arm.Crc32.ComputeCrc32C(crc, (uint)name.Length);
             }
 
@@ -366,7 +375,7 @@ namespace Garnet.server
 
             if (length <= 8)
             {
-                ulong inputWord = length == 8 ? *(ulong*)name : ReadPartialWord(name, length);
+                var inputWord = length == 8 ? *(ulong*)name : ReadPartialWord(name, length);
                 return entry.NameWord0 == inputWord;
             }
             else if (length <= 16)
@@ -393,12 +402,12 @@ namespace Garnet.server
             // CommandEntry stores at most 24 bytes of name; empty or oversized names can never match.
             if ((uint)length - 1 > 23) return RespCommand.NONE;
 
-            uint hash = ComputeHash(name, length);
-            int idx = (int)(hash & (uint)tableMask);
+            var hash = ComputeHash(name, length);
+            var idx = (int)(hash & (uint)tableMask);
 
-            for (int probe = 0; probe < MaxProbes; probe++)
+            for (var probe = 0; probe < MaxProbes; probe++)
             {
-                ref CommandEntry entry = ref table[idx];
+                ref var entry = ref table[idx];
 
                 // Empty slot — command not found
                 if (entry.NameLength == 0) return RespCommand.NONE;
@@ -423,11 +432,11 @@ namespace Garnet.server
         private static ulong GetWordFromSpan(ReadOnlySpan<byte> span, int offset)
         {
             if (offset >= span.Length) return 0;
-            int remaining = span.Length - offset;
+            var remaining = span.Length - offset;
             if (remaining >= 8) return MemoryMarshal.Read<ulong>(span.Slice(offset));
 
-            ulong word = 0;
-            for (int i = 0; i < remaining; i++)
+            var word = 0UL;
+            for (var i = 0; i < remaining; i++)
                 word |= (ulong)span[offset + i] << (i * 8);
             return word;
         }
@@ -440,12 +449,12 @@ namespace Garnet.server
             if (name.Length == 0 || name.Length > 24)
                 throw new ArgumentException($"Command name must be 1-24 bytes, got {name.Length}: {System.Text.Encoding.ASCII.GetString(name)}");
 
-            uint hash = ComputeHash(name);
-            int idx = (int)(hash & (uint)tableMask);
+            var hash = ComputeHash(name);
+            var idx = (int)(hash & (uint)tableMask);
 
-            for (int probe = 0; probe < MaxProbes; probe++)
+            for (var probe = 0; probe < MaxProbes; probe++)
             {
-                ref CommandEntry entry = ref table[idx];
+                ref var entry = ref table[idx];
                 if (entry.NameLength == 0)
                 {
                     entry.Command = command;
@@ -485,7 +494,7 @@ namespace Garnet.server
         private static CommandEntry[] BuildSubTable(ReadOnlySpan<(string Name, RespCommand Command)> subcommands, out int mask)
         {
             // Find next power of 2 that gives at most ~70% load factor
-            int size = 16;
+            var size = 16;
             while (size * 7 / 10 < subcommands.Length) size <<= 1;
             mask = size - 1;
 

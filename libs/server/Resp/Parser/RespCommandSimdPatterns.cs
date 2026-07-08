@@ -16,13 +16,13 @@ namespace Garnet.server
         // Masks zero out trailing bytes for patterns shorter than 16 bytes.
         private static readonly Vector128<byte> s_mask13 = Vector128.Create(
             0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
-            0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x00, 0x00, 0x00).AsByte();
+            0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x00, 0x00, 0x00);
         private static readonly Vector128<byte> s_mask14 = Vector128.Create(
             0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
-            0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x00, 0x00).AsByte();
+            0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x00, 0x00);
         private static readonly Vector128<byte> s_mask15 = Vector128.Create(
             0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
-            0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x00).AsByte();
+            0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x00);
 
         /// <summary>
         /// Builds a Vector128 RESP pattern for SIMD matching: *{argCount}\r\n${cmdLen}\r\n{cmd}\r\n
@@ -49,7 +49,7 @@ namespace Garnet.server
             buf[5] = (byte)('0' + cmd.Length);
             buf[6] = (byte)'\r';
             buf[7] = (byte)'\n';
-            for (int i = 0; i < cmd.Length; i++)
+            for (var i = 0; i < cmd.Length; i++)
                 buf[8 + i] = (byte)cmd[i];
             buf[8 + cmd.Length] = (byte)'\r';
             buf[9 + cmd.Length] = (byte)'\n';
