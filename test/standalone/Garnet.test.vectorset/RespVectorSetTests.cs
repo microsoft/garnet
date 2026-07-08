@@ -554,6 +554,132 @@ namespace Garnet.test
         }
 
         [Test]
+        public void VSIMResp3()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(protocol: RedisProtocol.Resp3));
+            var db = redis.GetDatabase();
+
+            var res1 = db.Execute("VADD", ["foo", "REDUCE", "50", "VALUES", "75", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "fizz", "CAS", "NOQUANT", "EF", "16", "M", "32", "SETATTR", "{\"id\": 123}"]);
+            ClassicAssert.AreEqual(1, (int)res1);
+
+            var res2 = db.Execute("VADD", ["foo", "REDUCE", "50", "VALUES", "75", "100.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "buzz", "CAS", "NOQUANT", "EF", "16", "M", "32", "SETATTR", "{\"id\": 456}"]);
+            ClassicAssert.AreEqual(1, (int)res2);
+
+            var res3 = (string[])db.Execute("VSIM", ["foo", "VALUES", "75", "110.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "COUNT", "5", "EPSILON", "1.0", "EF", "40"]);
+            ClassicAssert.AreEqual(2, res3.Length);
+            ClassicAssert.IsTrue(res3.Contains("fizz"));
+            ClassicAssert.IsTrue(res3.Contains("buzz"));
+
+            var res4 = (string[])db.Execute("VSIM", ["foo", "ELE", "fizz", "COUNT", "5", "EPSILON", "1.0", "EF", "40"]);
+            ClassicAssert.AreEqual(2, res4.Length);
+            ClassicAssert.IsTrue(res4.Contains("fizz"));
+            ClassicAssert.IsTrue(res4.Contains("buzz"));
+
+            // FP32
+            var float5 = new float[75];
+            float5[0] = 3;
+            for (var i = 1; i < float5.Length; i++)
+            {
+                float5[i] = float5[i - 1] + 0.1f;
+            }
+            var res5 = (string[])db.Execute("VSIM", ["foo", "FP32", MemoryMarshal.Cast<float, byte>(float5).ToArray(), "COUNT", "5", "EPSILON", "1.0", "EF", "40"]);
+            ClassicAssert.AreEqual(2, res5.Length);
+            ClassicAssert.IsTrue(res5.Contains("fizz"));
+            ClassicAssert.IsTrue(res5.Contains("buzz"));
+
+            // XB8
+            var byte6 = new byte[75];
+            byte6[0] = 10;
+            for (var i = 1; i < byte6.Length; i++)
+            {
+                byte6[i] = (byte)(byte6[i - 1] + 1);
+            }
+            var res6 = (string[])db.Execute("VSIM", ["foo", "XB8", byte6, "COUNT", "5", "EPSILON", "1.0", "EF", "40"]);
+            ClassicAssert.AreEqual(2, res6.Length);
+            ClassicAssert.IsTrue(res6.Contains("fizz"));
+            ClassicAssert.IsTrue(res6.Contains("buzz"));
+
+            // COUNT > EF
+            var byte7 = new byte[75];
+            byte7[0] = 20;
+            for (var i = 1; i < byte7.Length; i++)
+            {
+                byte7[i] = (byte)(byte7[i - 1] + 1);
+            }
+            var res7 = (string[])db.Execute("VSIM", ["foo", "XB8", byte7, "COUNT", "100", "EPSILON", "1.0", "EF", "40"]);
+            ClassicAssert.AreEqual(2, res7.Length);
+            ClassicAssert.IsTrue(res7.Contains("fizz"));
+            ClassicAssert.IsTrue(res7.Contains("buzz"));
+
+            // WITHSCORES (a MAP in Resp3)
+            var res8Raw = db.Execute("VSIM", ["foo", "XB8", byte7, "COUNT", "100", "EPSILON", "1.0", "EF", "40", "WITHSCORES"]);
+            ClassicAssert.AreEqual(ResultType.Map, res8Raw.Resp3Type);
+
+            var res8 = res8Raw.ToDictionary();
+            ClassicAssert.IsTrue(res8.Values.All(static v => ResultType.Double == v.Resp3Type));
+
+            ClassicAssert.AreEqual(2, res8.Count);
+            ClassicAssert.IsTrue(res8.ContainsKey("fizz"));
+            ClassicAssert.IsTrue(res8.ContainsKey("buzz"));
+            ClassicAssert.IsFalse(res8.Values.Any(static x => double.IsNaN((double)x)));
+
+            // WITHATTRIBS (a MAP in Resp3)
+            var res9Raw = db.Execute("VSIM", ["foo", "XB8", byte7, "COUNT", "100", "EPSILON", "1.0", "EF", "40", "WITHATTRIBS"]);
+            ClassicAssert.AreEqual(ResultType.Map, res9Raw.Resp3Type);
+
+            var res9 = res9Raw.ToDictionary();
+            ClassicAssert.IsTrue(res9.Values.All(static v => ResultType.BulkString == v.Resp3Type));
+
+            ClassicAssert.AreEqual(2, res9.Count);
+            ClassicAssert.IsTrue(res9.ContainsKey("fizz"));
+            ClassicAssert.IsTrue(res9.ContainsKey("buzz"));
+            ClassicAssert.AreEqual("{\"id\": 123}", (string)res9["fizz"]);
+            ClassicAssert.AreEqual("{\"id\": 456}", (string)res9["buzz"]);
+
+            // WITHSCORES and WITHATTRIBS (a MAP in Resp3)
+            var res10Raw = db.Execute("VSIM", ["foo", "XB8", byte7, "COUNT", "100", "EPSILON", "1.0", "EF", "40", "WITHATTRIBS", "WITHSCORES"]);
+            ClassicAssert.AreEqual(ResultType.Map, res10Raw.Resp3Type);
+
+            var res10 = res10Raw.ToDictionary();
+            ClassicAssert.IsTrue(res10.Values.All(static v => ResultType.Array == v.Resp3Type));
+
+            ClassicAssert.AreEqual(2, res10.Count);
+            ClassicAssert.IsTrue(res10.ContainsKey("fizz"));
+            ClassicAssert.IsTrue(res10.ContainsKey("buzz"));
+
+            var res10Fizz = (RedisResult[])res10["fizz"];
+            var res10Buzz = (RedisResult[])res10["buzz"];
+            ClassicAssert.AreEqual(2, res10Fizz.Length);
+            ClassicAssert.AreEqual(ResultType.Double, res10Fizz[0].Resp3Type);
+            ClassicAssert.AreEqual(ResultType.BulkString, res10Fizz[1].Resp3Type);
+            ClassicAssert.AreEqual(2, res10Buzz.Length);
+            ClassicAssert.AreEqual(ResultType.Double, res10Buzz[0].Resp3Type);
+            ClassicAssert.AreEqual(ResultType.BulkString, res10Buzz[1].Resp3Type);
+
+            ClassicAssert.IsFalse(double.IsNaN((double)res10Fizz[0]));
+            ClassicAssert.AreEqual("{\"id\": 123}", (string)res10Fizz[1]);
+
+            ClassicAssert.IsFalse(double.IsNaN((double)res10Buzz[0]));
+            ClassicAssert.AreEqual("{\"id\": 456}", (string)res10Buzz[1]);
+
+            // WITHSCORES and WITHATTRIBS (a MAP in Resp3)
+            var res11Raw = db.Execute("VSIM", ["foo", "XB8", byte7, "COUNT", "100", "EPSILON", "1.0", "EF", "40", "WITHATTRIBS", "WITHSCORES", "FILTER", ".id > 200"]);
+            ClassicAssert.AreEqual(ResultType.Map, res11Raw.Resp3Type);
+
+            var res11 = res11Raw.ToDictionary();
+            ClassicAssert.AreEqual(1, res11.Count);
+
+            var res11Buzz = res11["buzz"];
+            ClassicAssert.AreEqual(ResultType.Array, res11Buzz.Resp3Type);
+            ClassicAssert.AreEqual(2, res11Buzz.Length);
+            ClassicAssert.AreEqual(ResultType.Double, res11Buzz[0].Resp3Type);
+            ClassicAssert.AreEqual(ResultType.BulkString, res11Buzz[1].Resp3Type);
+
+            ClassicAssert.IsFalse(double.IsNaN((double)res11Buzz[0]));
+            ClassicAssert.AreEqual("{\"id\": 456}", (string)res11Buzz[1]);
+        }
+
+        [Test]
         public void VSIMWithAttribs()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
@@ -3369,6 +3495,87 @@ namespace Garnet.test
                     var actual = (byte)float.Parse(emb[i]);
 
                     ClassicAssert.AreEqual(expected, actual);
+                }
+            }
+        }
+
+        [Test]
+        [CancelAfter(30_000)]
+        public async Task VEMBRawAsync([Values("NOQUANT", "Q8", "BIN", "XNOQUANT_U8", "XNOQUANT_I8", "XBIN_I8", "XBIN_U8")] string quantizer, CancellationToken cancellation)
+        {
+            const string VectorSetName = nameof(VEMBRawAsync);
+            const string ElementName = nameof(ElementName);
+            const int VectorsForQuantization = 2_000;
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var quantizationNeeded = !(quantizer.Contains("NOQUANT", StringComparison.OrdinalIgnoreCase) || quantizer == "Q8");
+
+            var addRes = (int)await db.ExecuteAsync("VADD", [VectorSetName, "VALUES", "3", "1.0", "2.0", "3.0", ElementName, quantizer]).ConfigureAwait(false);
+            ClassicAssert.AreEqual(1, addRes);
+
+            await CheckRAWAsync(db, quantizer).ConfigureAwait(false);
+
+            if (quantizationNeeded)
+            {
+                // Trigger quantization if it's possible
+                var vectorManager = server.Provider.StoreWrapper.DefaultDatabase.VectorManager;
+
+                var quantTableStart = vectorManager.QuantizationRequestsProcessed;
+                var quantBackfillStart = vectorManager.QuantizationBackfillsProcessed;
+
+                var addsTriggeringQuantization = new Task<RedisResult>[VectorsForQuantization];
+
+                for (var i = 0; i < addsTriggeringQuantization.Length; i++)
+                {
+                    addsTriggeringQuantization[i] = db.ExecuteAsync("VADD", [VectorSetName, "VALUES", "3", "4.0", "5.0", "6.0", $"{ElementName}_{i}", quantizer]);
+                }
+
+                _ = await Task.WhenAll(addsTriggeringQuantization).ConfigureAwait(false);
+                foreach (var t in addsTriggeringQuantization)
+                {
+                    ClassicAssert.AreEqual(1, (int)await t.ConfigureAwait(false));
+                }
+
+                // We expect 1 _succesful_ table build
+                while (vectorManager.QuantizationRequestsProcessed != (quantTableStart + 1))
+                {
+                    await Task.Delay(1_000, cancellation).ConfigureAwait(false);
+                }
+
+                // No explicit config is set, so we expect Environment.ProcessorCount _successful_ backfills after the table build
+                while (vectorManager.QuantizationBackfillsProcessed != (quantBackfillStart + Environment.ProcessorCount))
+                {
+                    await Task.Delay(1_000, cancellation).ConfigureAwait(false);
+                }
+
+                await CheckRAWAsync(db, quantizer).ConfigureAwait(false);
+            }
+
+            static async Task CheckRAWAsync(IDatabase db, string quantizer)
+            {
+                var preQuantVEMBRaw = (byte[][])await db.ExecuteAsync("VEMB", [VectorSetName, ElementName, "RAW"]).ConfigureAwait(false);
+                var expectedLength = quantizer == "Q8" ? 4 : 3;
+
+                ClassicAssert.AreEqual(expectedLength, preQuantVEMBRaw.Length);
+
+                var expectedQType =
+                    quantizer switch
+                    {
+                        "NOQUANT" => "fp32",
+                        "Q8" or "XNOQUANT_I8" or "XNOQUANT_U8" => "q8",
+                        "BIN" or "XBIN_I8" or "XBIN_U8" => "bin",
+                        _ => throw new InvalidOperationException($"Unexpected quantizer: {quantizer}"),
+                    };
+                ClassicAssert.AreEqual(expectedQType, Encoding.ASCII.GetString(preQuantVEMBRaw[0]));
+
+                ClassicAssert.AreNotEqual(0, preQuantVEMBRaw[1].Length);
+                ClassicAssert.IsFalse(double.IsNaN(double.Parse(Encoding.ASCII.GetString(preQuantVEMBRaw[2]))));
+
+                if (expectedLength > 3)
+                {
+                    ClassicAssert.IsFalse(double.IsNaN(double.Parse(Encoding.ASCII.GetString(preQuantVEMBRaw[3]))));
                 }
             }
         }

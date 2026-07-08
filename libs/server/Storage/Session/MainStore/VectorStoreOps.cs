@@ -303,10 +303,10 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Get the approximate vector associated with an element, after (approximately) reversing any transformation.
+        /// Get the vector associated with an element.
         /// </summary>
         [SkipLocalsInit]
-        public unsafe GarnetStatus VectorSetEmbedding(PinnedSpanByte key, ReadOnlySpan<byte> element, ref SpanByteAndMemory outputDistances)
+        public GarnetStatus VectorSetEmbedding(PinnedSpanByte key, ReadOnlySpan<byte> element, ref SpanByteAndMemory outputDistances)
         {
             parseState.InitializeWithArgument(key);
 
@@ -322,6 +322,37 @@ namespace Garnet.server
                 }
 
                 if (!vectorManager.TryGetEmbedding(indexSpan, element, ref outputDistances))
+                {
+                    return GarnetStatus.NOTFOUND;
+                }
+
+                return GarnetStatus.OK;
+            }
+        }
+
+        /// <summary>
+        /// Get a RAW view of a quantized (or full, if no quantized version is available) vector associated with an element.
+        /// </summary>
+        [SkipLocalsInit]
+        public GarnetStatus VectorSetRawEmbedding(PinnedSpanByte key, ReadOnlySpan<byte> element, ref SpanByteAndMemory quantizedValues, out VectorQuantType quantType, out double norm, out double? range)
+        {
+            parseState.InitializeWithArgument(key);
+
+            var input = new StringInput(RespCommand.VEMB, ref parseState);
+
+            Span<byte> indexSpan = stackalloc byte[VectorManager.IndexSizeBytes];
+
+            using (vectorManager.ReadVectorIndex(this, key, ref input, indexSpan, out var status))
+            {
+                if (status != GarnetStatus.OK)
+                {
+                    quantType = VectorQuantType.Invalid;
+                    norm = double.NaN;
+                    range = null;
+                    return status;
+                }
+
+                if (!vectorManager.TryGetRawEmbedding(indexSpan, element, ref quantizedValues, out quantType, out norm, out range))
                 {
                     return GarnetStatus.NOTFOUND;
                 }

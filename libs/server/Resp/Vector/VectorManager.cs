@@ -1275,6 +1275,72 @@ namespace Garnet.server
             }
         }
 
+        /// <summary>
+        /// Try to read the associated raw quantization data for an element out of a Vector Set.
+        /// </summary>
+        internal bool TryGetRawEmbedding(ReadOnlySpan<byte> indexValue, ReadOnlySpan<byte> element, ref SpanByteAndMemory quantizedValues, out VectorQuantType quantType, out double norm, out double? range)
+        {
+            AssertHaveStorageSession();
+
+            ReadIndex(indexValue, out var context, out _, out _, out quantType, out _, out _, out _, out _, out _);
+
+            // Get internal id for the given element
+            Span<byte> internalId = stackalloc byte[sizeof(int)];
+            var internalIdBytes = SpanByteAndMemory.FromPinnedSpan(internalId);
+            try
+            {
+                if (!ReadSizeUnknown(context | DiskANNService.InternalIdMap, forceAlignment: true, element, ref internalIdBytes))
+                {
+                    norm = double.NaN;
+                    range = null;
+                    return false;
+                }
+
+                Debug.Assert(internalIdBytes.IsSpanByte, "Internal Id should always be of known size");
+            }
+            finally
+            {
+                internalIdBytes.Memory?.Dispose();
+            }
+
+            // NoQuant-ish quantizers won't have a quantized vector in the steady state
+            var readContext = context;
+            if (quantType is VectorQuantType.NoQuant or VectorQuantType.XNoQuant_U8 or VectorQuantType.XNoQuant_I8)
+            {
+                readContext |= DiskANNService.FullVector;
+            }
+            else
+            {
+                readContext |= DiskANNService.QuantizedVector;
+            }
+
+            // Get the RAW view - we're leaking DiskANN internal details here but that's _kind of_ the point
+            while (true)
+            {
+                if (ReadSizeUnknown(readContext, forceAlignment: true, internalId, ref quantizedValues))
+                {
+                    break;
+                }
+
+                // If read fails, that _might_ mean that quantization hasn't happened yet, so try and fetch the full vector
+                if (readContext == (context | DiskANNService.QuantizedVector))
+                {
+                    readContext = context | DiskANNService.FullVector;
+                    continue;
+                }
+
+                norm = double.NaN;
+                range = null;
+                return false;
+            }
+
+            // TODO: These values are nonsense, but is there an equivalent we can pull out for DiskANN?
+            norm = 1.0;
+            range = quantType == VectorQuantType.Q8 ? 1.0 : null;
+
+            return true;
+        }
+
         [Conditional("DEBUG")]
         private static void AssertHaveStorageSession()
         {
