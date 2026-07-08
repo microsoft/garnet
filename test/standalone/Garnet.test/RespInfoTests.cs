@@ -320,8 +320,22 @@ namespace Garnet.test
             db.StringSet("willexpire", "v");
             ClassicAssert.IsTrue(db.KeyExpire("willexpire", TimeSpan.FromMilliseconds(50)));
 
-            // Let the key expire. It may not be physically reaped yet, but the scan filters expired records.
-            Thread.Sleep(250);
+            // Poll (bounded) until the key is observed expired, rather than a fixed sleep, to avoid
+            // flakiness on slow/loaded CI agents. The key may not be physically reaped yet, but the
+            // scan filters expired records regardless.
+            var expired = false;
+            for (var i = 0; i < 100 && !expired; i++)
+            {
+                if (!db.KeyExists("willexpire"))
+                {
+                    expired = true;
+                    break;
+                }
+
+                Thread.Sleep(20);
+            }
+
+            ClassicAssert.IsTrue(expired, "Key with a short TTL should have expired");
 
             var info = db.Execute("INFO", "KEYSPACE").ToString();
             var line = GetKeyspaceLine(info, 0);

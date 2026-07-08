@@ -375,7 +375,7 @@ namespace Garnet.server
             return StoreExpiredKeyDeletionScan(DefaultDatabase);
         }
 
-        public override (int keyCount, int expireCount) GetKeyspaceStats(int dbId)
+        public override (long keyCount, long expireCount) GetKeyspaceStats(int dbId)
         {
             ArgumentOutOfRangeException.ThrowIfNotEqual(dbId, 0);
             return GetDatabaseKeyspaceStats(DefaultDatabase);

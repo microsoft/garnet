@@ -759,7 +759,7 @@ namespace Garnet.server
         /// </summary>
         /// <param name="dbId">Database ID</param>
         /// <returns>A tuple of (live keys, live keys with an expiration set).</returns>
-        public (int keyCount, int expireCount) GetKeyspaceStats(int dbId)
+        public (long keyCount, long expireCount) GetKeyspaceStats(int dbId)
             => databaseManager.GetKeyspaceStats(dbId);
 
         /// <summary>

@@ -598,7 +598,7 @@ namespace Garnet.server
         }
 
         /// <inheritdoc/>
-        public abstract (int keyCount, int expireCount) GetKeyspaceStats(int dbId);
+        public abstract (long keyCount, long expireCount) GetKeyspaceStats(int dbId);
 
         /// <summary>
         /// Count live keys and live keys with an expiration set for the given database via a full store scan.
@@ -607,7 +607,7 @@ namespace Garnet.server
         /// </summary>
         /// <param name="db">Database to scan.</param>
         /// <returns>A tuple of (live keys, live keys with an expiration set).</returns>
-        protected (int keyCount, int expireCount) GetDatabaseKeyspaceStats(GarnetDatabase db)
+        protected (long keyCount, long expireCount) GetDatabaseKeyspaceStats(GarnetDatabase db)
         {
             lock (db.KeyspaceScanLock)
             {

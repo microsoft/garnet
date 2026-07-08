@@ -185,7 +185,7 @@ namespace Garnet.server
         /// The key count uses the same non-expired predicate as <see cref="DbSize"/>, so the two are consistent.
         /// </summary>
         /// <returns>A tuple of (total live keys, live keys with an expiration set).</returns>
-        internal (int keyCount, int expireCount) KeyspaceStats()
+        internal (long keyCount, long expireCount) KeyspaceStats()
         {
             unifiedStoreKeyspaceStatsFuncs ??= new();
             unifiedStoreKeyspaceStatsFuncs.Initialize();
@@ -364,8 +364,8 @@ namespace Garnet.server
             internal class GetKeyspaceStatsInfo
             {
                 // This must be a class as it is passed through pending IO operations, so it is wrapped by higher structures for inlining as a generic type arg.
-                internal int keyCount;
-                internal int expireCount;
+                internal long keyCount;
+                internal long expireCount;
 
                 internal void Initialize()
                 {
@@ -383,9 +383,9 @@ namespace Garnet.server
             {
                 private readonly GetKeyspaceStatsInfo info;
 
-                internal int KeyCount => info.keyCount;
+                internal long KeyCount => info.keyCount;
 
-                internal int ExpireCount => info.expireCount;
+                internal long ExpireCount => info.expireCount;
 
                 internal UnifiedStoreGetKeyspaceStats() => info = new();
 
