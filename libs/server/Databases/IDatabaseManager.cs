@@ -248,6 +248,14 @@ namespace Garnet.server
         public (long numExpiredKeysFound, long totalRecordsScanned) ExpiredKeyDeletionScan(int dbId);
 
         /// <summary>
+        /// Count live keys and live keys with an expiration set for a database given its ID.
+        /// Used to populate the <c>INFO KEYSPACE</c> section.
+        /// </summary>
+        /// <param name="dbId">Database ID</param>
+        /// <returns>A tuple of (live keys, live keys with an expiration set).</returns>
+        public (long keyCount, long expireCount) GetKeyspaceStats(int dbId);
+
+        /// <summary>
         /// Collect and return an array mapping db Id to its stats
         /// </summary>
         /// <returns></returns>

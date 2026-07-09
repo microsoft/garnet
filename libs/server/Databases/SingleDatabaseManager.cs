@@ -375,6 +375,12 @@ namespace Garnet.server
             return StoreExpiredKeyDeletionScan(DefaultDatabase);
         }
 
+        public override (long keyCount, long expireCount) GetKeyspaceStats(int dbId)
+        {
+            ArgumentOutOfRangeException.ThrowIfNotEqual(dbId, 0);
+            return GetDatabaseKeyspaceStats(DefaultDatabase);
+        }
+
         public override (HybridLogScanMetrics mainStore, HybridLogScanMetrics objectStore)[] CollectHybridLogStats() => [CollectHybridLogStatsForDb(defaultDatabase)];
 
         private unsafe void SafeFlushAOF(AofEntryType entryType, bool unsafeTruncateLog)

@@ -112,7 +112,10 @@ namespace Garnet.test
             ClassicAssert.IsTrue(infoResult.Contains("# Memory"), $"INFO {option} should contain Memory section");
             ClassicAssert.IsTrue(infoResult.Contains("# Stats"), $"INFO {option} should contain Stats section");
             ClassicAssert.IsTrue(infoResult.Contains("# Clients"), $"INFO {option} should contain Clients section");
-            ClassicAssert.IsTrue(infoResult.Contains("# Keyspace"), $"INFO {option} should contain Keyspace section");
+
+            // KEYSPACE is scan-based and therefore excluded from the default/ALL/EVERYTHING sets
+            // (like HLOGSCAN); it is only produced on an explicit `INFO KEYSPACE` request.
+            ClassicAssert.IsFalse(infoResult.Contains("# Keyspace"), $"INFO {option} should not contain Keyspace section");
 
             // ALL excludes Modules section; DEFAULT and EVERYTHING include it
             if (option == "ALL")
@@ -263,6 +266,111 @@ namespace Garnet.test
             {
                 await setAction(db, keyToRcu, Guid.NewGuid().ToString()).ConfigureAwait(false);
             }
+        }
+
+        [TestCase(RedisProtocol.Resp2)]
+        [TestCase(RedisProtocol.Resp3)]
+        public void InfoKeyspaceEmptyDatabaseTest(RedisProtocol protocol)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(protocol: protocol));
+            var db = redis.GetDatabase(0);
+
+            var info = db.Execute("INFO", "KEYSPACE").ToString();
+
+            ClassicAssert.IsTrue(info.Contains("# Keyspace"), "Keyspace section header should be present");
+            // No database holds keys yet, so no dbN: lines should be emitted (matches Redis).
+            ClassicAssert.IsNull(GetKeyspaceLine(info, 0), "Empty database should not be listed in the Keyspace section");
+        }
+
+        [TestCase(RedisProtocol.Resp2)]
+        [TestCase(RedisProtocol.Resp3)]
+        public void InfoKeyspaceCountsTest(RedisProtocol protocol)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(protocol: protocol));
+            var db = redis.GetDatabase(0);
+
+            // 3 string keys (2 with a TTL) + 2 list (object) keys (1 with a TTL) => keys=5, expires=3
+            db.StringSet("str:1", "v1");
+            db.StringSet("str:2", "v2");
+            db.StringSet("str:3", "v3");
+            ClassicAssert.IsTrue(db.KeyExpire("str:1", TimeSpan.FromHours(1)));
+            ClassicAssert.IsTrue(db.KeyExpire("str:2", TimeSpan.FromHours(1)));
+
+            db.ListLeftPush("list:1", [new RedisValue("a"), new RedisValue("b")]);
+            db.ListLeftPush("list:2", [new RedisValue("c")]);
+            ClassicAssert.IsTrue(db.KeyExpire("list:1", TimeSpan.FromHours(1)));
+
+            var info = db.Execute("INFO", "KEYSPACE").ToString();
+            var line = GetKeyspaceLine(info, 0);
+
+            ClassicAssert.AreEqual("db0:keys=5,expires=3,avg_ttl=0", line);
+
+            // The reported key count must be consistent with DBSIZE (same non-expired predicate).
+            var dbSize = (long)db.Execute("DBSIZE");
+            ClassicAssert.AreEqual(5, dbSize);
+        }
+
+        [Test]
+        public void InfoKeyspaceExpiredKeysNotCountedTest()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            db.StringSet("live", "v");
+            db.StringSet("willexpire", "v");
+            ClassicAssert.IsTrue(db.KeyExpire("willexpire", TimeSpan.FromMilliseconds(50)));
+
+            // Poll (bounded) until the key is observed expired, rather than a fixed sleep, to avoid
+            // flakiness on slow/loaded CI agents. The key may not be physically reaped yet, but the
+            // scan filters expired records regardless.
+            var expired = false;
+            for (var i = 0; i < 100 && !expired; i++)
+            {
+                if (!db.KeyExists("willexpire"))
+                {
+                    expired = true;
+                    break;
+                }
+
+                Thread.Sleep(20);
+            }
+
+            ClassicAssert.IsTrue(expired, "Key with a short TTL should have expired");
+
+            var info = db.Execute("INFO", "KEYSPACE").ToString();
+            var line = GetKeyspaceLine(info, 0);
+
+            ClassicAssert.AreEqual("db0:keys=1,expires=0,avg_ttl=0", line);
+        }
+
+        [Test]
+        public void InfoKeyspaceMultiDatabaseTest()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+
+            var db0 = redis.GetDatabase(0);
+            var db1 = redis.GetDatabase(1);
+
+            // db0: 2 keys, 1 with a TTL; db1: 1 key, no TTL; db2: left empty.
+            db0.StringSet("a", "1");
+            db0.StringSet("b", "2");
+            ClassicAssert.IsTrue(db0.KeyExpire("a", TimeSpan.FromHours(1)));
+
+            db1.StringSet("c", "3");
+
+            var info = db0.Execute("INFO", "KEYSPACE").ToString();
+
+            ClassicAssert.AreEqual("db0:keys=2,expires=1,avg_ttl=0", GetKeyspaceLine(info, 0));
+            ClassicAssert.AreEqual("db1:keys=1,expires=0,avg_ttl=0", GetKeyspaceLine(info, 1));
+            // An untouched database must not appear.
+            ClassicAssert.IsNull(GetKeyspaceLine(info, 2), "Empty database should not be listed in the Keyspace section");
+        }
+
+        private static string GetKeyspaceLine(string infoOutput, int dbId)
+        {
+            ClassicAssert.IsNotNull(infoOutput, "INFO output should not be null");
+            var prefix = $"db{dbId}:";
+            return infoOutput.Split("\r\n").FirstOrDefault(line => line.StartsWith(prefix));
         }
     }
 }
