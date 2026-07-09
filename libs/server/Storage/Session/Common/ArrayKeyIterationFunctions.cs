@@ -289,7 +289,7 @@ namespace Garnet.server
                 public virtual bool Reader<TSourceLogRecord>(in TSourceLogRecord logRecord, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
                     where TSourceLogRecord : ISourceLogRecord
                 {
-                    if (CheckExpiry(in logRecord))
+                    if (logRecord.HasNamespace || CheckExpiry(in logRecord))
                     {
                         cursorRecordResult = CursorRecordResult.Skip;
                         return true;
@@ -351,7 +351,7 @@ namespace Garnet.server
                     where TSourceLogRecord : ISourceLogRecord
                 {
                     cursorRecordResult = CursorRecordResult.Skip;
-                    if (!CheckExpiry(in logRecord))
+                    if (!logRecord.HasNamespace && !CheckExpiry(in logRecord))
                         ++info.count;
                     return true;
                 }
@@ -395,7 +395,7 @@ namespace Garnet.server
                     where TSourceLogRecord : ISourceLogRecord
                 {
                     cursorRecordResult = CursorRecordResult.Skip;
-                    if (!CheckExpiry(in logRecord))
+                    if (!logRecord.HasNamespace && !CheckExpiry(in logRecord))
                     {
                         ++info.keyCount;
                         if (logRecord.DataHeader.HasExpiration)
