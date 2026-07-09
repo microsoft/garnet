@@ -40,8 +40,10 @@
     "lodash-es": "4.18.1",
     "//minimatch": "CVE-2024-21538, CVE-2023-36326, CVE-2023-34104 (ReDoS)",
     "minimatch": "3.1.5",
-    "//dompurify": "CVE-2025-26791, CVE-2026-0540, CVE-2026-41238, CVE-2026-41239, CVE-2026-41240 (XSS / prototype pollution)",
-    "dompurify": "3.4.0",
+    "//dompurify": "CVE-2025-26791, CVE-2026-0540, CVE-2026-41238, CVE-2026-41239, CVE-2026-41240, CVE-2026-49458, CVE-2026-49459, CVE-2026-49978 (XSS / prototype pollution / config poisoning)",
+    "dompurify": "3.4.11",
+    "//qs": "CVE-2026-8723 (DoS: qs.stringify TypeError on null/undefined comma-format array entries) – dep pins ~6.14.0, force 6.15.2",
+    "qs": "6.15.2",
     "//uuid": "GHSA uuid: Missing buffer bounds check in v3/v5/v6 when buf is provided",
     "uuid": "14.0.0"
   },
