@@ -90,6 +90,11 @@ namespace Garnet.cluster
                         TruncatedUntil = prevAddress;
                 }
 
+                // Bound truncation by replicationOffset to avoid truncating replica log beyond the point of active replay
+                var replicationUpperBound = clusterProvider.replicationManager.GetReplicationOffset(physicalSublogIdx);
+                if (replicationUpperBound < TruncatedUntil)
+                    TruncatedUntil = replicationUpperBound;
+
                 // Inform that we have logically truncatedUntil
                 this.TruncatedUntil.MonotonicUpdate(TruncatedUntil, physicalSublogIdx);
             }
@@ -115,9 +120,11 @@ namespace Garnet.cluster
         /// <summary>
         /// Safely truncate AOF until provided address by checking against active AofSyncDrivers
         /// </summary>
-        /// <param name="truncateUntil"></param>
-        public void SafeTruncateAof(in AofAddress truncateUntil)
+        /// <param name="role">Role of caller</param>
+        /// <param name="truncateUntil">TruncateUntil address</param>
+        public void SafeTruncateAof(NodeRole role, in AofAddress truncateUntil)
         {
+            Debug.Assert(role == NodeRole.PRIMARY, $"{nameof(SafeTruncateAof)} should be called only by a PRIMARY node!");
             _lock.WriteLock();
 
             if (_disposed)
@@ -140,6 +147,8 @@ namespace Garnet.cluster
                             TruncatedUntil[physicalSublogIdx] = previousAddress[physicalSublogIdx];
                     }
                 }
+
+                // NOTE: Do not need truncation based on replicationOffset because caller should always be a PRIMARY.
                 // Inform that we have logically truncatedUntil
                 this.TruncatedUntil.MonotonicUpdate(ref TruncatedUntil);
             }
