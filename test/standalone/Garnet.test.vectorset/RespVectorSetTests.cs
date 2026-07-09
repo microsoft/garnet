@@ -3580,6 +3580,63 @@ namespace Garnet.test
             }
         }
 
+        [Test]
+        public async Task HideInternalRecordsAsync()
+        {
+            // DBSIZE, INFO KEYSPACE, KEYS, SCAN shouldn't return the internal (ie. namespaced) records created for Vector Sets
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
+            var server = redis.GetServers().Single();
+            var db = redis.GetDatabase(0);
+
+            var setRes = await db.StringSetAsync("foo", "bar").ConfigureAwait(false);
+            ClassicAssert.IsTrue(setRes);
+
+            var addRes = await db.ExecuteAsync("VADD", [nameof(HideInternalRecordsAsync), "VALUES", "3", "1.0", "2.0", "3.0", "foo"]).ConfigureAwait(false);
+            ClassicAssert.AreEqual(1, (int)addRes);
+
+            // DBSIZE
+            {
+                var keyCount = await server.DatabaseSizeAsync(0).ConfigureAwait(false);
+                ClassicAssert.AreEqual(2, keyCount);
+            }
+
+            // INFO KEYSPACE
+            {
+                var info = await server.InfoAsync("keyspace").ConfigureAwait(false);
+                var keyspace = info.Single();
+                ClassicAssert.AreEqual("Keyspace", keyspace.Key);
+
+                var db0Data = keyspace.Single(static kv => kv.Key.Equals("db0", StringComparison.Ordinal)).Value;
+                var db0Values = db0Data.Split(",").ToDictionary(kv => kv.Split('=')[0], kv => kv.Split('=')[1]);
+                ClassicAssert.AreEqual("2", db0Values["keys"]);
+            }
+
+            // KEYS
+            {
+                var allKeys = (string[])await db.ExecuteAsync("KEYS", "*").ConfigureAwait(false);
+
+                ClassicAssert.AreEqual(2, allKeys.Length);
+                ClassicAssert.IsTrue(allKeys.Contains("foo"));
+                ClassicAssert.IsTrue(allKeys.Contains(nameof(HideInternalRecordsAsync)));
+            }
+
+            // SCAN
+            {
+                var allKeys = new List<string>();
+
+                var scan = server.KeysAsync(0).ConfigureAwait(false);
+                await foreach (var key in scan.ConfigureAwait(false))
+                {
+                    allKeys.Add(key);
+                }
+
+                ClassicAssert.AreEqual(2, allKeys.Count);
+                ClassicAssert.IsTrue(allKeys.Contains("foo"));
+                ClassicAssert.IsTrue(allKeys.Contains(nameof(HideInternalRecordsAsync)));
+            }
+        }
+
         /// <summary>
         /// Create a new GarnetServer instance with common parameters.
         /// </summary>
