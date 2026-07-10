@@ -122,7 +122,7 @@ namespace Resp.benchmark
         [Option("cluster-bench", Required = false, Default = false, HelpText = "Enable cluster benchmark mode. Distributes workload across discovered cluster shards.")]
         public bool ClusterBench { get; set; }
 
-        [Option("replica-ops-percent", Required = false, Default = 50, HelpText = "Percentage of operations routed to replicas (0-100). For write ops (SET, MSET), generates corresponding reads (GET, MGET) for the same keys and routes them to replicas. Actual: X% writes to primary, (100-X)% reads split between replica/primary based on this percentage.")]
+        [Option("replica-ops-percent", Required = false, Default = 0, HelpText = "Percentage of operations routed to replicas (0-100). For write ops (SET, MSET), generates corresponding reads (GET, MGET) for the same keys and routes them to replicas. Actual: X% writes to primary, (100-X)% reads split between replica/primary based on this percentage.")]
         public int ReplicaOpsPercent { get; set; }
 
         [Option("aof-bench", Required = false, Default = false, HelpText = "Run AOF bench at replica.")]
