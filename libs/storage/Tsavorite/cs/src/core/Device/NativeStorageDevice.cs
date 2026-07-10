@@ -415,9 +415,9 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Returns true if <paramref name="shimPath"/> is an existing symlink that points to a
-        /// libaio shared object - either the "libaio.so.1t64" or the historical "libaio.so.1"
-        /// SONAME (possibly via a relative or absolute target).
+        /// Returns true if <paramref name="shimPath"/> is an existing symlink whose target is a
+        /// supported libaio: the "libaio.so.1t64" or historical "libaio.so.1" SONAME, or a versioned
+        /// "libaio.so.1.*" real file (possibly via a relative or absolute target).
         /// </summary>
         static bool IsUsableLibaioShim(string shimPath)
         {
@@ -427,8 +427,14 @@ namespace Tsavorite.core
                 if (!info.Exists) return false;
                 var target = info.LinkTarget;
                 if (string.IsNullOrEmpty(target)) return false;
-                // LinkTarget can be a relative path (e.g., just "libaio.so.1"); accept either SONAME.
-                return target.Contains("libaio.so.1", StringComparison.Ordinal);
+                // LinkTarget may be relative (e.g. "libaio.so.1t64") or absolute (e.g.
+                // "/usr/lib64/libaio.so.1.0.2"); compare on the file name and accept only the two
+                // supported SONAMEs or a versioned "libaio.so.1.*" real file - without matching an
+                // unrelated future SONAME such as "libaio.so.10".
+                var name = Path.GetFileName(target);
+                return name == "libaio.so.1t64"
+                    || name == "libaio.so.1"
+                    || name.StartsWith("libaio.so.1.", StringComparison.Ordinal);
             }
             catch
             {
