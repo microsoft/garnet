@@ -38,17 +38,43 @@ namespace Resp.benchmark
         /// </summary>
         public void PrepareBuffers()
         {
+            SetWorkload(BuildWorkload());
+        }
+
+        /// <summary>
+        /// Attach a shared, pre-generated workload (built once per shard) to this provider.
+        /// Only references are copied — no new request buffers are allocated — so every
+        /// provider targeting the same shard shares the same read-only buffers.
+        /// </summary>
+        public void SetWorkload(SharedOfflineWorkload shared)
+        {
+            workload = shared.Workload;
+            batchCount = shared.BatchCount;
+            offlineBufferSize = shared.OfflineBufferSize;
+        }
+
+        /// <summary>
+        /// Build the shared offline workload for this provider's shard.
+        ///
+        /// The generated buffers depend only on the shard's slot range and the benchmark
+        /// options (not on the provider/thread), so the returned instance can be shared by
+        /// every provider targeting the same shard. Call once per shard, then distribute the
+        /// result to all providers of that shard via <see cref="SetWorkload"/>.
+        /// </summary>
+        public SharedOfflineWorkload BuildWorkload()
+        {
+            var localWorkload = default(ClusterWorkload);
             var batchSize = opts.BatchSize.First();
             var dbSizePerShard = opts.DbSize;
-            batchCount = Math.Max(1, dbSizePerShard / batchSize);
+            var localBatchCount = Math.Max(1, dbSizePerShard / batchSize);
 
             // Always fill primary requests (write ops in mixed mode, or single op in normal mode)
-            workload.PrimaryRequests = new Request[batchCount];
+            localWorkload.PrimaryRequests = new Request[localBatchCount];
 
-            for (var b = 0; b < batchCount; b++)
+            for (var b = 0; b < localBatchCount; b++)
             {
                 var buffer = GenerateRandomBatch(batchSize, dbSizePerShard, b);
-                workload.PrimaryRequests[b] = new Request
+                localWorkload.PrimaryRequests[b] = new Request
                 {
                     RespData = buffer,
                     ByteCount = buffer.Length,
@@ -61,14 +87,14 @@ namespace Resp.benchmark
             {
                 var readOp = GetReadOperationType();
 
-                workload.ReplicaRequests = new Request[batchCount];
-                workload.ReadUseReplica = new bool[batchCount];
+                localWorkload.ReplicaRequests = new Request[localBatchCount];
+                localWorkload.ReadUseReplica = new bool[localBatchCount];
 
-                for (var b = 0; b < batchCount; b++)
+                for (var b = 0; b < localBatchCount; b++)
                 {
                     // Generate corresponding read request (GET/MGET) for THE SAME KEYS as primary
                     var readBuffer = GenerateReadBatchForKeys(batchSize, dbSizePerShard, b, readOp);
-                    workload.ReplicaRequests[b] = new Request
+                    localWorkload.ReplicaRequests[b] = new Request
                     {
                         RespData = readBuffer,
                         ByteCount = readBuffer.Length,
@@ -76,28 +102,33 @@ namespace Resp.benchmark
                     };
 
                     // Pre-compute routing decision: should this read go to replica?
-                    workload.ReadUseReplica[b] = rng.Next(100) < opts.ReplicaOpsPercent;
+                    localWorkload.ReadUseReplica[b] = rng.Next(100) < opts.ReplicaOpsPercent;
                 }
             }
 
-            ComputeOfflineBufferSize();
+            return new SharedOfflineWorkload
+            {
+                Workload = localWorkload,
+                BatchCount = localBatchCount,
+                OfflineBufferSize = ComputeOfflineBufferSize(localWorkload)
+            };
         }
 
         /// <summary>
         /// Compute the LightClient buffer size needed to hold the largest pre-generated request.
         /// </summary>
-        private void ComputeOfflineBufferSize()
+        private static int ComputeOfflineBufferSize(ClusterWorkload localWorkload)
         {
-            var maxLen = workload.PrimaryRequests.Max(r => r.ByteCount);
+            var maxLen = localWorkload.PrimaryRequests.Max(r => r.ByteCount);
 
-            if (workload.ReplicaRequests != null)
+            if (localWorkload.ReplicaRequests != null)
             {
-                var maxReplicaLen = workload.ReplicaRequests.Max(r => r.ByteCount);
+                var maxReplicaLen = localWorkload.ReplicaRequests.Max(r => r.ByteCount);
                 maxLen = Math.Max(maxLen, maxReplicaLen);
             }
 
-            offlineBufferSize = (int)BitOperations.RoundUpToPowerOf2((uint)maxLen);
-            offlineBufferSize = Math.Max(offlineBufferSize, 1 << 17); // At least 128KB
+            var size = (int)BitOperations.RoundUpToPowerOf2((uint)maxLen);
+            return Math.Max(size, 1 << 17); // At least 128KB
         }
 
         /// <summary>
@@ -130,8 +161,10 @@ namespace Resp.benchmark
             var sb = new StringBuilder(estimatedCapacity);
             var isMCommand = opts.Op is OpType.MGET or OpType.MSET;
 
-            // Create deterministic RNG with buffer index for reproducible key generation
-            var deterministicRng = new Random(31337 + (threadIndex * 1000) + shard.Port + bufferIndex);
+            // Create deterministic RNG with buffer index for reproducible key generation.
+            // Seed is shard-scoped only (no threadIndex) so every provider targeting this
+            // shard generates identical buffers and can share a single workload instance.
+            var deterministicRng = new Random(31337 + shard.Port + bufferIndex);
 
             if (isMCommand)
             {
@@ -177,8 +210,10 @@ namespace Resp.benchmark
             var sb = new StringBuilder(estimatedCapacity);
             var isMCommand = readOp is OpType.MGET;
 
-            // Create deterministic RNG with same seed to generate same keys as write buffer
-            var deterministicRng = new Random(31337 + (threadIndex * 1000) + shard.Port + bufferIndex);
+            // Create deterministic RNG with same seed to generate same keys as write buffer.
+            // Seed is shard-scoped only (no threadIndex) so buffers are shareable across
+            // providers and reads still target the same keys as the shared write buffers.
+            var deterministicRng = new Random(31337 + shard.Port + bufferIndex);
 
             if (isMCommand)
             {

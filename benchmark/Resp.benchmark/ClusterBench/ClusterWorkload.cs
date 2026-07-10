@@ -33,4 +33,30 @@ namespace Resp.benchmark
         /// </summary>
         public bool[] ReadUseReplica;
     }
+
+    /// <summary>
+    /// Immutable, read-only offline workload buffers shared by every
+    /// <see cref="ClientRequestProvider"/> that targets the same shard.
+    ///
+    /// The request byte buffers depend only on the shard's slot range and the benchmark
+    /// options, and are never mutated during the run, so a single instance can be safely
+    /// shared across all workers/providers of a shard. This keeps benchmark memory
+    /// proportional to shard-count rather than provider-count (worker-count × shard-count),
+    /// which matters when running with many workers and a large --dbsize.
+    ///
+    /// Because <see cref="ClusterWorkload.ReadUseReplica"/> is computed once per shard
+    /// (rather than once per provider), replica routing decisions are shared across providers.
+    /// The overall read distribution still approximates --replica-ops-percent.
+    /// </summary>
+    public struct SharedOfflineWorkload
+    {
+        /// <summary>Pre-generated request buffers (primary + optional replica) for the shard.</summary>
+        public ClusterWorkload Workload;
+
+        /// <summary>Number of pre-generated batches (cycled through during the run).</summary>
+        public int BatchCount;
+
+        /// <summary>LightClient connection buffer size needed to hold the largest request.</summary>
+        public int OfflineBufferSize;
+    }
 }

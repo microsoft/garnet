@@ -10,10 +10,20 @@ namespace Resp.benchmark
     {
         private void RunOffline()
         {
-            // Prepare offline buffers
-            Console.WriteLine("Preparing offline buffers...");
-            Parallel.ForEach(providers, new ParallelOptions { MaxDegreeOfParallelism = LoadDataThreads },
-                provider => provider.PrepareBuffers());
+            // Prepare offline buffers: build one shared workload per shard and attach it to
+            // every provider targeting that shard. Providers are laid out shard-outer /
+            // thread-inner, so provider index (s * threadsPerShard + t) maps to shard s.
+            Console.WriteLine($"Preparing offline buffers (building {shards.Length} shared shard workload(s) for {providers.Length} providers)...");
+            var threadsPerShard = opts.NumThreads.First();
+            var sharedWorkloads = new SharedOfflineWorkload[shards.Length];
+            Parallel.For(0, shards.Length, new ParallelOptions { MaxDegreeOfParallelism = LoadDataThreads },
+                s => sharedWorkloads[s] = providers[s * threadsPerShard].BuildWorkload());
+
+            for (var s = 0; s < shards.Length; s++)
+            {
+                for (var t = 0; t < threadsPerShard; t++)
+                    providers[(s * threadsPerShard) + t].SetWorkload(sharedWorkloads[s]);
+            }
 
             var runTime = TimeSpan.FromSeconds(opts.RunTime == -1 ? int.MaxValue : opts.RunTime);
             var startSignal = new ManualResetEventSlim(false);
@@ -50,11 +60,20 @@ namespace Resp.benchmark
 
         private void RunWorkerPoolOffline()
         {
-            // Prepare offline buffers
-            Console.WriteLine("Preparing offline buffers...");
+            // Prepare offline buffers: build one shared workload per shard (from worker 0's
+            // provider for that shard) and attach it to the matching provider of every worker.
+            // Worker.Providers[s] always targets shards[s].
             var allProviders = workers.SelectMany(w => w.Providers).ToArray();
-            Parallel.ForEach(allProviders, new ParallelOptions { MaxDegreeOfParallelism = LoadDataThreads },
-                provider => provider.PrepareBuffers());
+            Console.WriteLine($"Preparing offline buffers (building {shards.Length} shared shard workload(s) for {allProviders.Length} providers)...");
+            var sharedWorkloads = new SharedOfflineWorkload[shards.Length];
+            Parallel.For(0, shards.Length, new ParallelOptions { MaxDegreeOfParallelism = LoadDataThreads },
+                s => sharedWorkloads[s] = workers[0].Providers[s].BuildWorkload());
+
+            foreach (var worker in workers)
+            {
+                for (var s = 0; s < shards.Length; s++)
+                    worker.Providers[s].SetWorkload(sharedWorkloads[s]);
+            }
 
             var runTime = TimeSpan.FromSeconds(opts.RunTime == -1 ? int.MaxValue : opts.RunTime);
 

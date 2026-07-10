@@ -172,9 +172,10 @@ namespace Resp.benchmark
 
         public void Dispose()
         {
-            workload.PrimaryRequests = null;
-            workload.ReplicaRequests = null;
-            workload.ReadUseReplica = null;
+            // Note: workload buffers may be shared across providers of the same shard
+            // (built once per shard). Do not free them here; drop only our reference and
+            // let the driver release the shared cache after the run.
+            workload = default;
             DisposeWorkerPoolConnections();
         }
 
