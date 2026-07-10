@@ -289,7 +289,7 @@ namespace Garnet.server
                 public virtual bool Reader<TSourceLogRecord>(in TSourceLogRecord logRecord, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
                     where TSourceLogRecord : ISourceLogRecord
                 {
-                    if (CheckExpiry(in logRecord))
+                    if (IsInternalRecord(in logRecord) || CheckExpiry(in logRecord))
                     {
                         cursorRecordResult = CursorRecordResult.Skip;
                         return true;
@@ -351,7 +351,7 @@ namespace Garnet.server
                     where TSourceLogRecord : ISourceLogRecord
                 {
                     cursorRecordResult = CursorRecordResult.Skip;
-                    if (!CheckExpiry(in logRecord))
+                    if (!IsInternalRecord(in logRecord) && !CheckExpiry(in logRecord))
                         ++info.count;
                     return true;
                 }
@@ -395,7 +395,7 @@ namespace Garnet.server
                     where TSourceLogRecord : ISourceLogRecord
                 {
                     cursorRecordResult = CursorRecordResult.Skip;
-                    if (!CheckExpiry(in logRecord))
+                    if (!IsInternalRecord(in logRecord) && !CheckExpiry(in logRecord))
                     {
                         ++info.keyCount;
                         if (logRecord.DataHeader.HasExpiration)
@@ -477,6 +477,15 @@ namespace Garnet.server
                 public void OnStop(bool completed, long numberOfRecords) { }
                 public void OnException(Exception exception, long numberOfRecords) { }
             }
+
+            /// <summary>
+            /// Determine if a log record represents an internal record.
+            /// 
+            /// Typically these records should not be reported in statistics, or returned to users.
+            /// </summary>
+            private static bool IsInternalRecord<TSourceLogRecord>(in TSourceLogRecord logRecord)
+                where TSourceLogRecord : ISourceLogRecord
+            => logRecord.HasNamespace;
         }
     }
 }
