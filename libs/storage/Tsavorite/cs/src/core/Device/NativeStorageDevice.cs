@@ -334,6 +334,25 @@ namespace Tsavorite.core
         ];
 
         /// <summary>
+        /// Finds the first host-provided libaio from <see cref="LibaioHostCandidatePaths"/>, or
+        /// returns false if none is installed. The returned path reflects the distro's actual layout
+        /// (e.g. /usr/lib64 on RHEL/Fedora/Azure Linux, /usr/lib/&lt;triplet&gt; on Debian/Ubuntu).
+        /// </summary>
+        static bool TryFindHostLibaio(out string hostLibaioPath)
+        {
+            hostLibaioPath = null;
+            foreach (var candidate in LibaioHostCandidatePaths)
+            {
+                if (File.Exists(candidate))
+                {
+                    hostLibaioPath = candidate;
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        /// <summary>
         /// Locate a host-provided libaio (see <see cref="LibaioHostCandidatePaths"/>) and create a
         /// <paramref name="missingSoname"/> symlink next to libnative_device.so so that the dynamic
         /// linker (searching RPATH=$ORIGIN) can satisfy the DT_NEEDED entry the load failed on. This
@@ -353,16 +372,7 @@ namespace Tsavorite.core
             if (IsMuslRuntime)
                 return false;
 
-            string hostLibaioPath = null;
-            foreach (var candidate in LibaioHostCandidatePaths)
-            {
-                if (File.Exists(candidate))
-                {
-                    hostLibaioPath = candidate;
-                    break;
-                }
-            }
-            if (hostLibaioPath == null)
+            if (!TryFindHostLibaio(out var hostLibaioPath))
                 return false;
 
             string shimPath;
@@ -426,21 +436,27 @@ namespace Tsavorite.core
             }
         }
 
-        static string TryGetLinuxMultiarchTriplet(Architecture architecture) => architecture switch
-        {
-            Architecture.X64 => "x86_64-linux-gnu",
-            Architecture.Arm64 => "aarch64-linux-gnu",
-            Architecture.Arm => "arm-linux-gnueabihf",
-            _ => null
-        };
-
         static string BuildLibaioDiagnostic(string attemptedSymlinkPath, string missingSoname, Exception inner)
         {
-            var arch = TryGetLinuxMultiarchTriplet(RuntimeInformation.ProcessArchitecture);
-            var libDir = arch == null ? "/usr/lib" : $"/usr/lib/{arch}";
             var attempted = attemptedSymlinkPath == null
                 ? "Could not find a host libaio in standard multiarch/lib64 paths; auto-repair skipped."
                 : $"Attempted to create '{attemptedSymlinkPath}' -> a host libaio but the load still failed.";
+
+            // Build the compat-symlink hint from the libaio the host actually ships so the suggested
+            // path is correct on every distro (e.g. /usr/lib64 on RHEL/Fedora/Azure Linux,
+            // /usr/lib/<triplet> on Debian/Ubuntu). Only offer it when a real libaio is present;
+            // otherwise the right fix is to install the package.
+            string symlinkFix;
+            if (TryFindHostLibaio(out var hostLibaioPath))
+            {
+                var linkPath = Path.Combine(Path.GetDirectoryName(hostLibaioPath) ?? "/usr/lib", missingSoname);
+                symlinkFix = $"(b) as root, create the compat symlink 'ln -sf {hostLibaioPath} {linkPath}', ";
+            }
+            else
+            {
+                symlinkFix = $"(b) if libaio is installed under a different SONAME, as root create a '{missingSoname}' compat symlink next to it, ";
+            }
+
             return
                 $"Failed to load native storage device library '{NativeLibraryPath}' because its dependency '{missingSoname}' " +
                 "is not resolvable by the dynamic linker. This is a libaio SONAME mismatch between the build box and the host: " +
@@ -448,8 +464,8 @@ namespace Tsavorite.core
                 "64-bit time_t ABI transition), whereas Azure Linux, RHEL, Fedora and pre-t64 Debian/Ubuntu ship 'libaio.so.1'. " +
                 attempted + " " +
                 "To fix, either (a) install the host's libaio package (for example 'apt-get install -y libaio1t64', " +
-                "'tdnf install -y libaio', or 'dnf install -y libaio'), (b) as root create a compat symlink so the required " +
-                $"SONAME resolves (for example 'ln -sf {libDir}/libaio.so.1 {libDir}/{missingSoname}', or the reverse), " +
+                "'tdnf install -y libaio', or 'dnf install -y libaio'), " +
+                symlinkFix +
                 "or (c) switch to a non-native device by setting '--device-type RandomAccess' (or removing '--use-native-device-linux'). " +
                 "Original loader error: " + inner.Message;
         }
