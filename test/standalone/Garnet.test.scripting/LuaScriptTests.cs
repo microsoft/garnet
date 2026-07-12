@@ -3384,5 +3384,702 @@ return count";
                 ClassicAssert.True(timeout, "Thread did not exit in expected time");
             }
         }
+
+        // Probe payload used by SubscribeConfirmed to confirm a subscription is active on the server
+        // before the real Lua-driven PUBLISH is issued.
+        private const string LuaPublishProbe = "__lua_publish_probe__";
+
+        /// <summary>
+        /// Subscribes to <paramref name="channel"/> with <paramref name="handler"/>, then blocks until
+        /// the subscription is confirmed active by publishing probe messages until one is received.
+        ///
+        /// This works around a StackExchange.Redis behavior where <see cref="ISubscriber.Subscribe(RedisChannel, Action{RedisChannel, RedisValue}, CommandFlags)"/>
+        /// may return before the server has registered the subscription.
+        /// </summary>
+        private static void SubscribeConfirmed(
+            ISubscriber sub,
+            IDatabase db,
+            RedisChannel channel,
+            Action<RedisChannel, RedisValue> handler)
+        {
+            var probeReceived = new ManualResetEvent(false);
+            sub.Subscribe(channel, (recvChannel, message) =>
+            {
+                if (message == LuaPublishProbe)
+                {
+                    probeReceived.Set();
+                }
+                else
+                {
+                    handler(recvChannel, message);
+                }
+            });
+
+            for (var i = 0; i < 20; i++)
+            {
+                _ = db.Publish(channel, LuaPublishProbe);
+                if (probeReceived.WaitOne(TimeSpan.FromMilliseconds(100)))
+                {
+                    break;
+                }
+            }
+
+            ClassicAssert.IsTrue(
+                probeReceived.WaitOne(TimeSpan.Zero),
+                $"Subscription to {(string)channel} did not become active within the probe window.");
+        }
+
+        /// <summary>
+        /// Blocks until the server reports at least <paramref name="expected"/> subscribers on
+        /// <paramref name="channel"/>, or fails the test if that count is not reached in time.
+        /// </summary>
+        private static void WaitForSubscriberCount(IDatabase db, RedisChannel channel, int expected)
+        {
+            var server = db.Multiplexer.GetServer(TestUtils.EndPoint);
+            for (var i = 0; i < 50; i++)
+            {
+                if (server.SubscriptionSubscriberCount(channel) >= expected)
+                {
+                    return;
+                }
+
+                Thread.Sleep(100);
+            }
+
+            ClassicAssert.AreEqual(
+                expected,
+                server.SubscriptionSubscriberCount(channel),
+                $"Did not observe {expected} subscriber(s) on {(string)channel}.");
+        }
+
+        // A single subscriber receives a message published from inside a Lua script via redis.call('PUBLISH', ...).
+        [Test]
+        public void LuaPublishSucceeds_WhenCalledViaRedisCall()
+        {
+            using var subRedis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var sub = subRedis.GetSubscriber();
+            var db = redis.GetDatabase(0);
+
+            var channel = RedisChannel.Literal("lua_pub_basic");
+            const string Payload = "hello-from-lua";
+            var received = new ManualResetEvent(false);
+            RedisValue lastMessage = default;
+
+            SubscribeConfirmed(sub, db, channel, (_, msg) =>
+            {
+                lastMessage = msg;
+                received.Set();
+            });
+
+            var count = (int)(long)db.ScriptEvaluate(
+                "return redis.call('PUBLISH', KEYS[1], ARGV[1])",
+                [new RedisKey("lua_pub_basic")],
+                [new RedisValue(Payload)]);
+
+            Assert.Multiple(() =>
+            {
+                ClassicAssert.AreEqual(1, count, "PUBLISH should report exactly one subscriber.");
+                ClassicAssert.IsTrue(received.WaitOne(TimeSpan.FromMilliseconds(500)),
+                    "Subscriber did not receive the Lua-published message.");
+                ClassicAssert.AreEqual(Payload, (string)lastMessage);
+            });
+
+            sub.Unsubscribe(channel);
+        }
+
+        // PUBLISH from Lua returns the number of clients that received the message.
+        [Test]
+        public void LuaPublishReturnsSubscriberCount()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var channel = RedisChannel.Literal("lua_pub_count");
+            const int SubscriberCount = 3;
+            var muxs = new List<ConnectionMultiplexer>();
+
+            try
+            {
+                for (var i = 0; i < SubscriberCount; i++)
+                {
+                    var mux = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+                    muxs.Add(mux);
+                    mux.GetSubscriber().Subscribe(channel, (_, _) => { });
+                }
+
+                WaitForSubscriberCount(db, channel, SubscriberCount);
+
+                var count = (int)(long)db.ScriptEvaluate(
+                    "return redis.call('PUBLISH', KEYS[1], ARGV[1])",
+                    [new RedisKey("lua_pub_count")],
+                    [new RedisValue("ping")]);
+
+                ClassicAssert.AreEqual(SubscriberCount, count,
+                    "Lua PUBLISH should report every active subscriber.");
+            }
+            finally
+            {
+                foreach (var mux in muxs)
+                {
+                    mux.Dispose();
+                }
+            }
+        }
+
+        // PUBLISH from Lua with no subscribers returns zero (and does not error).
+        [Test]
+        public void LuaPublishToNoSubscribersReturnsZero()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var count = (int)(long)db.ScriptEvaluate(
+                "return redis.call('PUBLISH', KEYS[1], ARGV[1])",
+                [new RedisKey("lua_pub_no_subscribers")],
+                [new RedisValue("nobody")]);
+
+            ClassicAssert.AreEqual(0, count, "PUBLISH with no subscribers must return zero.");
+        }
+
+        // Multiple independent subscribers all receive a single Lua-driven PUBLISH.
+        [Test]
+        public void LuaPublishMultipleSubscribers_AllReceive()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var channel = RedisChannel.Literal("lua_pub_all");
+            const string Payload = "broadcast";
+            const int SubscriberCount = 3;
+            var muxs = new List<ConnectionMultiplexer>();
+            var receivedFlags = new ManualResetEvent[SubscriberCount];
+            for (var i = 0; i < SubscriberCount; i++)
+            {
+                receivedFlags[i] = new ManualResetEvent(false);
+            }
+
+            try
+            {
+                for (var i = 0; i < SubscriberCount; i++)
+                {
+                    var idx = i;
+                    var mux = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+                    muxs.Add(mux);
+                    mux.GetSubscriber().Subscribe(channel, (_, _) => receivedFlags[idx].Set());
+                }
+
+                WaitForSubscriberCount(db, channel, SubscriberCount);
+
+                var count = (int)(long)db.ScriptEvaluate(
+                    "return redis.call('PUBLISH', KEYS[1], ARGV[1])",
+                    [new RedisKey("lua_pub_all")],
+                    [new RedisValue(Payload)]);
+
+                Assert.Multiple(() =>
+                {
+                    ClassicAssert.AreEqual(SubscriberCount, count);
+                    for (var i = 0; i < SubscriberCount; i++)
+                    {
+                        ClassicAssert.IsTrue(receivedFlags[i].WaitOne(TimeSpan.FromMilliseconds(500)),
+                            $"Subscriber #{i} did not receive the message.");
+                    }
+                });
+            }
+            finally
+            {
+                foreach (var mux in muxs)
+                {
+                    mux.Dispose();
+                }
+            }
+        }
+
+        // A pattern (PSUBSCRIBE) subscriber receives a message published from a Lua script.
+        [Test]
+        public void LuaPublish_PSubscribeReceives()
+        {
+            using var subRedis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var sub = subRedis.GetSubscriber();
+            var db = redis.GetDatabase(0);
+
+            var patternChannel = new RedisChannel("lua_pub_pattern_*", RedisChannel.PatternMode.Pattern);
+            var received = new ManualResetEvent(false);
+            RedisValue lastMessage = default;
+
+            SubscribeConfirmed(sub, db, patternChannel, (_, msg) =>
+            {
+                lastMessage = msg;
+                received.Set();
+            });
+
+            var count = (int)(long)db.ScriptEvaluate(
+                "return redis.call('PUBLISH', KEYS[1], ARGV[1])",
+                [new RedisKey("lua_pub_pattern_test")],
+                [new RedisValue("pattern-hit")]);
+
+            Assert.Multiple(() =>
+            {
+                ClassicAssert.AreEqual(1, count, "PUBLISH should report the pattern subscriber.");
+                ClassicAssert.IsTrue(received.WaitOne(TimeSpan.FromMilliseconds(500)),
+                    "Pattern subscriber did not receive the Lua-published message.");
+                ClassicAssert.AreEqual("pattern-hit", (string)lastMessage);
+            });
+
+            sub.Unsubscribe(patternChannel);
+        }
+
+        // PUBLISH cooperates with other commands (SET/GET) inside the same Lua script.
+        [Test]
+        public void LuaPublishMixedWithSetGet()
+        {
+            using var subRedis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var sub = subRedis.GetSubscriber();
+            var db = redis.GetDatabase(0);
+
+            var channel = RedisChannel.Literal("lua_pub_mixed");
+            var received = new ManualResetEvent(false);
+            RedisValue lastMessage = default;
+
+            SubscribeConfirmed(sub, db, channel, (_, msg) =>
+            {
+                lastMessage = msg;
+                received.Set();
+            });
+
+            // Script mixes SET, GET, and PUBLISH in a single EVAL.
+            const string Script = @"
+                redis.call('SET', KEYS[2], 'stored')
+                local stored = redis.call('GET', KEYS[2])
+                local n = redis.call('PUBLISH', KEYS[1], stored)
+                return n
+            ";
+
+            var count = (int)(long)db.ScriptEvaluate(
+                Script,
+                [new RedisKey("lua_pub_mixed"), new RedisKey("mixed_key")],
+                []);
+
+            Assert.Multiple(() =>
+            {
+                ClassicAssert.AreEqual(1, count);
+                ClassicAssert.IsTrue(received.WaitOne(TimeSpan.FromMilliseconds(500)));
+                ClassicAssert.AreEqual("stored", (string)lastMessage);
+                ClassicAssert.AreEqual("stored", (string)db.StringGet("mixed_key"));
+            });
+
+            sub.Unsubscribe(channel);
+        }
+
+        // Repeated PUBLISH calls from a single Lua script all reach the subscriber.
+        [Test]
+        public void LuaPublishSameChannelMultipleTimes()
+        {
+            using var subRedis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var sub = subRedis.GetSubscriber();
+            var db = redis.GetDatabase(0);
+
+            var channel = RedisChannel.Literal("lua_pub_repeat");
+            const int Repeat = 5;
+            var receivedMessages = new HashSet<string>();
+            var lockObj = new object();
+            var done = new ManualResetEvent(false);
+
+            SubscribeConfirmed(sub, db, channel, (_, msg) =>
+            {
+                lock (lockObj)
+                {
+                    receivedMessages.Add(msg);
+                    if (receivedMessages.Count >= Repeat)
+                    {
+                        done.Set();
+                    }
+                }
+            });
+
+            var count = (int)(long)db.ScriptEvaluate(
+                @"local times = tonumber(ARGV[2])
+                  local n = 0
+                  for i = 1, times do
+                    n = redis.call('PUBLISH', KEYS[1], ARGV[1] .. i)
+                  end
+                  return n",
+                [new RedisKey("lua_pub_repeat")],
+                [new RedisValue("msg-"), new RedisValue(Repeat.ToString())]);
+
+            Assert.Multiple(() =>
+            {
+                ClassicAssert.AreEqual(1, count, "Each PUBLISH should reach the single subscriber.");
+                ClassicAssert.IsTrue(done.WaitOne(TimeSpan.FromSeconds(2)),
+                    $"Did not receive all {Repeat} messages.");
+                ClassicAssert.AreEqual(Repeat, receivedMessages.Count,
+                    $"Expected {Repeat} distinct messages, got {receivedMessages.Count}.");
+                for (var i = 1; i <= Repeat; i++)
+                {
+                    ClassicAssert.IsTrue(receivedMessages.Contains($"msg-{i}"),
+                        $"Message msg-{i} was not received.");
+                }
+            });
+
+            sub.Unsubscribe(channel);
+        }
+
+        // Unicode (UTF-8) payloads survive a round-trip through Lua PUBLISH.
+        [Test]
+        public void LuaPublishUnicodePayload()
+        {
+            using var subRedis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var sub = subRedis.GetSubscriber();
+            var db = redis.GetDatabase(0);
+
+            var channel = RedisChannel.Literal("lua_pub_unicode");
+            const string Payload = "中文消息-emoji-😀-üñîçødé";
+            var received = new ManualResetEvent(false);
+            RedisValue lastMessage = default;
+
+            SubscribeConfirmed(sub, db, channel, (_, msg) =>
+            {
+                lastMessage = msg;
+                received.Set();
+            });
+
+            var count = (int)(long)db.ScriptEvaluate(
+                "return redis.call('PUBLISH', KEYS[1], ARGV[1])",
+                [new RedisKey("lua_pub_unicode")],
+                [new RedisValue(Payload)]);
+
+            Assert.Multiple(() =>
+            {
+                ClassicAssert.AreEqual(1, count);
+                ClassicAssert.IsTrue(received.WaitOne(TimeSpan.FromMilliseconds(500)));
+                ClassicAssert.AreEqual(Payload, (string)lastMessage);
+            });
+
+            sub.Unsubscribe(channel);
+        }
+
+        // An empty-string payload is delivered faithfully.
+        [Test]
+        public void LuaPublishEmptyPayload()
+        {
+            using var subRedis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var sub = subRedis.GetSubscriber();
+            var db = redis.GetDatabase(0);
+
+            var channel = RedisChannel.Literal("lua_pub_empty");
+            var received = new ManualResetEvent(false);
+            RedisValue lastMessage = default;
+
+            SubscribeConfirmed(sub, db, channel, (_, msg) =>
+            {
+                lastMessage = msg;
+                received.Set();
+            });
+
+            var count = (int)(long)db.ScriptEvaluate(
+                "return redis.call('PUBLISH', KEYS[1], ARGV[1])",
+                [new RedisKey("lua_pub_empty")],
+                [new RedisValue("")]);
+
+            Assert.Multiple(() =>
+            {
+                ClassicAssert.AreEqual(1, count);
+                ClassicAssert.IsTrue(received.WaitOne(TimeSpan.FromMilliseconds(500)));
+                ClassicAssert.IsTrue(lastMessage.IsNullOrEmpty);
+            });
+
+            sub.Unsubscribe(channel);
+        }
+
+        // PUBLISH works when preceded by non-PubSub write commands (SET/HSET/LPUSH) in the same script.
+        [Test]
+        public void LuaPublishAfterNonPubSubCommands()
+        {
+            using var subRedis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var sub = subRedis.GetSubscriber();
+            var db = redis.GetDatabase(0);
+
+            var channel = RedisChannel.Literal("lua_pub_after_cmds");
+            var received = new ManualResetEvent(false);
+            RedisValue lastMessage = default;
+
+            SubscribeConfirmed(sub, db, channel, (_, msg) =>
+            {
+                lastMessage = msg;
+                received.Set();
+            });
+
+            const string Script = @"
+                redis.call('SET', KEYS[2], 'v1')
+                redis.call('HSET', KEYS[3], 'f', 'hv')
+                redis.call('LPUSH', KEYS[4], 'elem')
+                return redis.call('PUBLISH', KEYS[1], ARGV[1])
+            ";
+
+            var count = (int)(long)db.ScriptEvaluate(
+                Script,
+                [
+                    new RedisKey("lua_pub_after_cmds"),
+                    new RedisKey("k_str"),
+                    new RedisKey("k_hash"),
+                    new RedisKey("k_list")
+                ],
+                [new RedisValue("after-cmds")]);
+
+            Assert.Multiple(() =>
+            {
+                ClassicAssert.AreEqual(1, count);
+                ClassicAssert.IsTrue(received.WaitOne(TimeSpan.FromMilliseconds(500)));
+                ClassicAssert.AreEqual("after-cmds", (string)lastMessage);
+                ClassicAssert.AreEqual("v1", (string)db.StringGet("k_str"));
+                ClassicAssert.AreEqual("hv", (string)db.HashGet("k_hash", "f"));
+                ClassicAssert.AreEqual("elem", (string)db.ListGetByIndex("k_list", 0));
+            });
+
+            sub.Unsubscribe(channel);
+        }
+
+        // SUBSCRIBE remains blocked inside Lua scripts by the NoScript bitmap (Redis protocol compliant).
+        [Test]
+        public void LuaSubscribe_StillNoScriptBlocked()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var exc = ClassicAssert.Throws<RedisServerException>(() =>
+                db.ScriptEvaluate("return redis.call('SUBSCRIBE', KEYS[1])", [new RedisKey("any_channel")]));
+
+            ClassicAssert.IsTrue(exc.Message.Contains("not allowed from script"),
+                $"SUBSCRIBE should remain blocked in scripts, got: {exc.Message}");
+        }
+
+        // PSUBSCRIBE remains blocked inside Lua scripts by the NoScript bitmap.
+        [Test]
+        public void LuaPSubscribe_StillNoScriptBlocked()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var exc = ClassicAssert.Throws<RedisServerException>(() =>
+                db.ScriptEvaluate("return redis.call('PSUBSCRIBE', KEYS[1])", [new RedisKey("chan*")]));
+
+            ClassicAssert.IsTrue(exc.Message.Contains("not allowed from script"),
+                $"PSUBSCRIBE should remain blocked in scripts, got: {exc.Message}");
+        }
+
+        // UNSUBSCRIBE remains blocked inside Lua scripts by the NoScript bitmap.
+        [Test]
+        public void LuaUnsubscribe_StillNoScriptBlocked()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var exc = ClassicAssert.Throws<RedisServerException>(() =>
+                db.ScriptEvaluate("return redis.call('UNSUBSCRIBE')", []));
+
+            ClassicAssert.IsTrue(exc.Message.Contains("not allowed from script"),
+                $"UNSUBSCRIBE should remain blocked in scripts, got: {exc.Message}");
+        }
+
+        // Concurrent Lua-driven PUBLISH calls from many threads do not race or drop messages.
+        [Test]
+        public void ConcurrentLuaPublish_NoRaceCondition()
+        {
+            using var subRedis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var sub = subRedis.GetSubscriber();
+            var db = redis.GetDatabase(0);
+
+            var channel = RedisChannel.Literal("lua_pub_concurrent");
+            const int TaskCount = 8;
+            const int PerTask = 8;
+            var totalMessages = TaskCount * PerTask;
+            var receivedCount = 0;
+            var lockObj = new object();
+            var allDone = new ManualResetEvent(false);
+
+            SubscribeConfirmed(sub, db, channel, (_, _) =>
+            {
+                lock (lockObj)
+                {
+                    receivedCount++;
+                    if (receivedCount >= totalMessages)
+                    {
+                        allDone.Set();
+                    }
+                }
+            });
+
+            const string Script = "return redis.call('PUBLISH', KEYS[1], ARGV[1])";
+            var exceptions = new List<Exception>();
+            var taskLock = new object();
+
+            var tasks = Enumerable.Range(0, TaskCount).Select(__ => Task.Run(() =>
+            {
+                for (var i = 0; i < PerTask; i++)
+                {
+                    try
+                    {
+                        _ = db.ScriptEvaluate(
+                            Script,
+                            [new RedisKey("lua_pub_concurrent")],
+                            [new RedisValue($"m{i}")]);
+                    }
+                    catch (Exception ex)
+                    {
+                        lock (taskLock)
+                        {
+                            exceptions.Add(ex);
+                        }
+                    }
+                }
+            })).ToArray();
+
+            Task.WaitAll(tasks);
+
+            Assert.Multiple(() =>
+            {
+                ClassicAssert.IsEmpty(exceptions, "Concurrent Lua PUBLISH should not throw.");
+                ClassicAssert.IsTrue(allDone.WaitOne(TimeSpan.FromSeconds(5)),
+                    $"Received {receivedCount}/{totalMessages} messages; possible race/loss.");
+                ClassicAssert.AreEqual(totalMessages, receivedCount);
+            });
+
+            sub.Unsubscribe(channel);
+        }
+
+        // Multiple distinct scripts loaded into the same session can each PUBLISH successfully.
+        [Test]
+        public void MultipleScriptsSameSession_AllCanPublish()
+        {
+            using var subRedis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var sub = subRedis.GetSubscriber();
+            var db = redis.GetDatabase(0);
+
+            var channel = RedisChannel.Literal("lua_pub_multi_script");
+            var received = new ManualResetEvent(false);
+            RedisValue lastMessage = default;
+
+            SubscribeConfirmed(sub, db, channel, (_, msg) =>
+            {
+                lastMessage = msg;
+                received.Set();
+            });
+
+            var count1 = (int)(long)db.ScriptEvaluate(
+                "return redis.call('PUBLISH', KEYS[1], 'first')",
+                [new RedisKey("lua_pub_multi_script")],
+                []);
+            var firstOk = received.WaitOne(TimeSpan.FromMilliseconds(500));
+            received.Reset();
+
+            var count2 = (int)(long)db.ScriptEvaluate(
+                "return redis.call('PUBLISH', KEYS[1], 'second')",
+                [new RedisKey("lua_pub_multi_script")],
+                []);
+            var secondOk = received.WaitOne(TimeSpan.FromMilliseconds(500));
+
+            Assert.Multiple(() =>
+            {
+                ClassicAssert.IsTrue(firstOk, "First script's PUBLISH should deliver.");
+                ClassicAssert.IsTrue(secondOk, "Second script's PUBLISH should deliver.");
+                ClassicAssert.AreEqual(1, count1);
+                ClassicAssert.AreEqual(1, count2);
+                ClassicAssert.AreEqual("second", (string)lastMessage);
+            });
+
+            sub.Unsubscribe(channel);
+        }
+
+        // Publishing to one channel from Lua must not deliver to a subscriber on a different channel.
+        [Test]
+        public void LuaPublishPreservesOtherSubscriberState()
+        {
+            using var subRedis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var sub = subRedis.GetSubscriber();
+            var db = redis.GetDatabase(0);
+
+            var channelA = RedisChannel.Literal("lua_pub_state_a");
+            var channelB = RedisChannel.Literal("lua_pub_state_b");
+            var aReceived = new ManualResetEvent(false);
+            var bReceived = new ManualResetEvent(false);
+
+            SubscribeConfirmed(sub, db, channelA, (_, _) => _ = aReceived.Set());
+            SubscribeConfirmed(sub, db, channelB, (_, _) => _ = bReceived.Set());
+
+            _ = (int)(long)db.ScriptEvaluate(
+                "return redis.call('PUBLISH', KEYS[1], ARGV[1])",
+                [new RedisKey("lua_pub_state_a")],
+                [new RedisValue("to-a")]);
+
+            Assert.Multiple(() =>
+            {
+                ClassicAssert.IsTrue(aReceived.WaitOne(TimeSpan.FromMilliseconds(500)),
+                    "Targeted subscriber should receive the message.");
+                ClassicAssert.IsFalse(bReceived.WaitOne(TimeSpan.FromMilliseconds(200)),
+                    "Publishing to one channel must not deliver to an unrelated channel.");
+            });
+
+            sub.Unsubscribe(channelA);
+            sub.Unsubscribe(channelB);
+        }
+
+        // PUBLISH keeps working from Lua after SCRIPT FLUSH clears the cache (cache is repopulated).
+        [Test]
+        public void ScriptCachePublish_WorksWithScriptFlush()
+        {
+            using var subRedis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
+            var sub = subRedis.GetSubscriber();
+            var db = redis.GetDatabase(0);
+            var server = redis.GetServer(TestUtils.EndPoint);
+
+            var channel = RedisChannel.Literal("lua_pub_flush");
+            var received = new ManualResetEvent(false);
+            RedisValue lastMessage = default;
+
+            SubscribeConfirmed(sub, db, channel, (_, msg) =>
+            {
+                lastMessage = msg;
+                received.Set();
+            });
+
+            const string Script = "return redis.call('PUBLISH', KEYS[1], ARGV[1])";
+
+            var count1 = (int)(long)db.ScriptEvaluate(
+                Script,
+                [new RedisKey("lua_pub_flush")],
+                [new RedisValue("before")]);
+            var firstOk = received.WaitOne(TimeSpan.FromMilliseconds(500));
+            received.Reset();
+
+            // Flush the server's script cache; the next EVAL must repopulate it and still work.
+            server.ScriptFlush();
+
+            var count2 = (int)(long)db.ScriptEvaluate(
+                Script,
+                [new RedisKey("lua_pub_flush")],
+                [new RedisValue("after")]);
+            var secondOk = received.WaitOne(TimeSpan.FromMilliseconds(500));
+
+            Assert.Multiple(() =>
+            {
+                ClassicAssert.IsTrue(firstOk, "First PUBLISH (before SCRIPT FLUSH) should deliver.");
+                ClassicAssert.IsTrue(secondOk, "Second PUBLISH (after SCRIPT FLUSH) should deliver.");
+                ClassicAssert.AreEqual(1, count1);
+                ClassicAssert.AreEqual(1, count2);
+                ClassicAssert.AreEqual("after", (string)lastMessage);
+            });
+
+            sub.Unsubscribe(channel);
+        }
     }
 }
