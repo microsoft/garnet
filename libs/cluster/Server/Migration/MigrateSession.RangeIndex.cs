@@ -40,7 +40,7 @@ namespace Garnet.cluster
             var transmitActivity = RangeIndexMigrationActivities.TransmitActivity.StartActivity();
             try
             {
-                using var reader = rangeIndexManager.SnapshotRangeIndexAndCreateReader(migrateOperation.LocalSession, keyBytes, chunkSize);
+                using var reader = rangeIndexManager.SnapshotRangeIndexAndCreateReader(migrateOperation.LocalSession, keyBytes);
                 transmitActivity.OnSnapshotCompleted(reader.TotalFileBytes);
 
                 while (!reader.IsComplete)

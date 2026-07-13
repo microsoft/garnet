@@ -402,6 +402,18 @@ namespace Garnet.test.cluster
         }
 
         /// <summary>
+        /// Test-only: force a small range index stream chunk size on every node's RangeIndexManager so a
+        /// migrated Range Index's serialized file spans many AOF entries, exercising the chunked
+        /// replicate/reassemble path. Requires range index preview enabled; no-ops on nodes without a manager.
+        /// Call after the nodes are started (e.g. right after <see cref="CreateInstances"/>) and before migration.
+        /// </summary>
+        public void SetRangeIndexStreamChunkSizeOnAllNodes(int chunkSize)
+        {
+            foreach (var node in nodes)
+                node?.Provider?.StoreWrapper?.DefaultDatabase?.RangeIndexManager?.SetAofStreamChunkSize(chunkSize);
+        }
+
+        /// <summary>
         /// Create single cluster instance with corresponding options
         /// </summary>
         /// <param name="endpoint"></param>

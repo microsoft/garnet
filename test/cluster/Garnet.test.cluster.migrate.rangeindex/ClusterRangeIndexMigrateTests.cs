@@ -43,35 +43,16 @@ namespace Garnet.test.cluster
         #region Helpers
 
         /// <summary>
-        /// Find a key name whose hash slot is owned by the node with the given ID.
-        /// </summary>
-        private string FindKeyOnNode(string prefix, string nodeId, List<SlotItem> slots)
-        {
-            for (var ix = 0; ; ix++)
-            {
-                var key = $"{prefix}_{ix}";
-                var slot = context.clusterTestUtils.HashSlot(key);
-                if (slots.Any(x => x.nnInfo.Any(y => y.nodeid == nodeId) && slot >= x.startSlot && slot <= x.endSlot))
-                    return key;
-            }
-        }
-
-        /// <summary>
         /// Create a RangeIndex key and insert fields on the given endpoint.
         /// </summary>
         private void CreateRangeIndexWithFields(IPEndPoint endpoint, string key, IEnumerable<(string Field, string Value)> fields)
         {
-            var createResult = (string)context.clusterTestUtils.Execute(
-                endpoint, "RI.CREATE",
-                [key, "DISK", "CACHESIZE", "65536", "MINRECORD", "8"],
-                flags: CommandFlags.NoRedirect);
+            var createResult = (string)context.clusterTestUtils.Execute(endpoint, "RI.CREATE", [key, "DISK", "CACHESIZE", "65536", "MINRECORD", "8"], flags: CommandFlags.NoRedirect);
             ClassicAssert.AreEqual("OK", createResult, $"RI.CREATE should succeed for key {key}");
 
             foreach (var (field, value) in fields)
             {
-                var setResult = (string)context.clusterTestUtils.Execute(
-                    endpoint, "RI.SET", [key, field, value],
-                    flags: CommandFlags.NoRedirect);
+                var setResult = (string)context.clusterTestUtils.Execute(endpoint, "RI.SET", [key, field, value], flags: CommandFlags.NoRedirect);
                 ClassicAssert.AreEqual("OK", setResult, $"RI.SET should succeed for {key}/{field}");
             }
         }
@@ -83,9 +64,7 @@ namespace Garnet.test.cluster
         {
             foreach (var (field, value) in fields)
             {
-                var result = (string)context.clusterTestUtils.Execute(
-                    endpoint, "RI.GET", [key, field],
-                    flags: CommandFlags.NoRedirect);
+                var result = (string)context.clusterTestUtils.Execute(endpoint, "RI.GET", [key, field], flags: CommandFlags.NoRedirect);
                 ClassicAssert.AreEqual(value, result, $"RI.GET {key}/{field} should return {value}");
             }
         }
@@ -108,6 +87,84 @@ namespace Garnet.test.cluster
             }
 
             ClassicAssert.Fail($"Slot {slot} ownership did not propagate within {timeoutSeconds}s");
+        }
+
+        /// <summary>
+        /// Generate a key whose hash slot is owned by the node at <paramref name="nodeIndex"/>, using the
+        /// cluster test util's slot-restricted random-key generator (no brute-force prefix loop).
+        /// </summary>
+        private string FindKeyOwnedByNode(int nodeIndex)
+        {
+            var slot = context.clusterTestUtils.GetOwnedSlotsFromNode(nodeIndex, context.logger)[0];
+            var data = new byte[16];
+            context.clusterTestUtils.RandomBytesRestrictedToSlot(ref data, slot);
+            return Encoding.ASCII.GetString(data);
+        }
+
+        /// <summary>Chunk size (bytes) that forces a migrated RI's range index stream to span many AOF entries.</summary>
+        private const int SmallStreamChunkSize = 1024;
+
+        /// <summary>Build a deterministic list of RI fields.</summary>
+        private static List<(string Field, string Value)> MakeFields(int count, string tag)
+        {
+            var fields = new List<(string Field, string Value)>(count);
+            for (var i = 0; i < count; i++)
+                fields.Add(($"field_{i:D4}", $"{tag}_{i:D4}_{new string('x', 64)}"));
+            return fields;
+        }
+
+        /// <summary>
+        /// Wait until RI.GET on <paramref name="endpoint"/> (NoRedirect) serves the migrated key and assert
+        /// it equals <paramref name="expected"/>. AOF replay / recovery and slot-view propagation are absorbed
+        /// by retrying only while the node reports a transient not-ready response (see
+        /// <see cref="IsTransientRiGetResponse"/>). A concrete value that differs fails immediately (a real
+        /// bug) instead of spinning until the timeout, and the timeout message includes the last response.
+        /// </summary>
+        private void AssertRiGetEventually(IPEndPoint endpoint, string key, string field, string expected, string because, int maxRetries = 200)
+        {
+            string last = null;
+            for (var r = 0; r < maxRetries; r++)
+            {
+                last = (string)context.clusterTestUtils.Execute(endpoint, "RI.GET", [key, field], skipLogging: true, flags: CommandFlags.NoRedirect);
+                if (last == expected)
+                    return;
+                if (!IsTransientRiGetResponse(last))
+                    ClassicAssert.Fail($"{because}: RI.GET {key}/{field} returned '{last}', expected '{expected}'");
+                Thread.Sleep(100);
+            }
+            ClassicAssert.Fail($"{because}: RI.GET {key}/{field} did not return '{expected}' within {maxRetries * 100}ms (last response: '{last}')");
+        }
+
+        private static bool IsTransientRiGetResponse(string v)
+            => v == null
+            || v.Contains("range index not found", StringComparison.OrdinalIgnoreCase)
+            || v.Contains("redirect not followed", StringComparison.OrdinalIgnoreCase)
+            || v.Contains("MOVED", StringComparison.OrdinalIgnoreCase)
+            || v.Contains("CLUSTERDOWN", StringComparison.OrdinalIgnoreCase)
+            || v.Contains("TRYAGAIN", StringComparison.OrdinalIgnoreCase)
+            || v.Contains("LOADING", StringComparison.OrdinalIgnoreCase);
+
+        /// <summary>
+        /// Verify every field of a migrated RI key on a replica
+        /// </summary>
+        private void VerifyRangeIndexOnReplica(int primaryIndex, int replicaIndex, string key, List<(string Field, string Value)> fields)
+        {
+            var replicaEndpoint = (IPEndPoint)context.clusterTestUtils.GetEndPoint(replicaIndex);
+            context.clusterTestUtils.WaitForReplicaAofSync(primaryIndex, replicaIndex, context.logger);
+            _ = context.clusterTestUtils.Execute(replicaEndpoint, "READONLY", Array.Empty<object>(), flags: CommandFlags.NoRedirect);
+
+            AssertRiGetEventually(replicaEndpoint, key, fields[0].Field, fields[0].Value, $"Replica (node {replicaIndex}) did not serve migrated RI key {key} after AOF sync");
+            foreach (var (field, value) in fields)
+            {
+                var result = (string)context.clusterTestUtils.Execute(replicaEndpoint, "RI.GET", [key, field], flags: CommandFlags.NoRedirect);
+                ClassicAssert.AreEqual(value, result, $"Replica RI.GET {key}/{field} should return migrated value");
+            }
+        }
+
+        private void RestartNode(int nodeIndex)
+        {
+            context.RestartNode(nodeIndex);
+            context.CreateConnection();
         }
 
         #endregion
@@ -137,32 +194,19 @@ namespace Garnet.test.cluster
                 slot, sourceNodeIndex, ((IPEndPoint)sourceEndpoint).Port, targetNodeIndex, ((IPEndPoint)targetEndpoint).Port);
 
             // Create RangeIndex and insert data on source node
-            var createResult = (string)context.clusterTestUtils.Execute(
-                (IPEndPoint)sourceEndpoint, "RI.CREATE",
-                [riKey, "DISK", "CACHESIZE", "65536", "MINRECORD", "8"],
-                flags: CommandFlags.NoRedirect);
+            var createResult = (string)context.clusterTestUtils.Execute((IPEndPoint)sourceEndpoint, "RI.CREATE", [riKey, "DISK", "CACHESIZE", "65536", "MINRECORD", "8"], flags: CommandFlags.NoRedirect);
             ClassicAssert.AreEqual("OK", createResult, "RI.CREATE should succeed on source node");
 
-            var setResult = (string)context.clusterTestUtils.Execute(
-                (IPEndPoint)sourceEndpoint, "RI.SET",
-                [riKey, "field1", "value1"],
-                flags: CommandFlags.NoRedirect);
+            var setResult = (string)context.clusterTestUtils.Execute((IPEndPoint)sourceEndpoint, "RI.SET", [riKey, "field1", "value1"], flags: CommandFlags.NoRedirect);
             ClassicAssert.AreEqual("OK", setResult, "RI.SET should succeed on source node");
 
             // Verify data is readable on source before migration
-            var getResult = (string)context.clusterTestUtils.Execute(
-                (IPEndPoint)sourceEndpoint, "RI.GET",
-                [riKey, "field1"],
-                flags: CommandFlags.NoRedirect);
+            var getResult = (string)context.clusterTestUtils.Execute((IPEndPoint)sourceEndpoint, "RI.GET", [riKey, "field1"], flags: CommandFlags.NoRedirect);
             ClassicAssert.AreEqual("value1", getResult, "RI.GET should return correct value before migration");
 
             // Migrate the slot from source to target
             context.logger?.LogWarning("Initiating slot migration");
-            context.clusterTestUtils.MigrateSlots(
-                (IPEndPoint)sourceEndpoint,
-                (IPEndPoint)targetEndpoint,
-                new List<int> { slot },
-                logger: context.logger);
+            context.clusterTestUtils.MigrateSlots((IPEndPoint)sourceEndpoint, (IPEndPoint)targetEndpoint, new List<int> { slot }, logger: context.logger);
 
             context.clusterTestUtils.WaitForMigrationCleanup(logger: context.logger);
             context.logger?.LogWarning("Migration cleanup complete");
@@ -174,10 +218,7 @@ namespace Garnet.test.cluster
             {
                 try
                 {
-                    targetGetResult = (string)context.clusterTestUtils.Execute(
-                        (IPEndPoint)targetEndpoint, "RI.GET",
-                        [riKey, "field1"],
-                        flags: CommandFlags.NoRedirect);
+                    targetGetResult = (string)context.clusterTestUtils.Execute((IPEndPoint)targetEndpoint, "RI.GET", [riKey, "field1"], flags: CommandFlags.NoRedirect);
                     if (targetGetResult != null)
                         break;
                 }
@@ -192,6 +233,455 @@ namespace Garnet.test.cluster
             ClassicAssert.AreEqual("value1", targetGetResult, "RI.GET should return correct value on target node after migration");
 
             context.logger?.LogWarning("ClusterMigrateRangeIndexSlot test passed");
+        }
+
+        /// <summary>
+        /// A migrated RangeIndex key must replicate to the destination primary's replica via the
+        /// AOF (the chunked range index stream). Set up two primaries each with a replica, populate a
+        /// DISK-backed RI key on the source primary, migrate its slot to the target primary, then
+        /// verify the target's replica returns the full migrated data (not an empty tree) after AOF
+        /// sync.
+        /// </summary>
+        [Test]
+        [Category("CLUSTER")]
+        public void ClusterMigrateRangeIndexReplicatesToReplicaViaAof()
+        {
+            const int primaryCount = 2;
+            const int replicaCount = 1;
+            const int nodeCount = primaryCount + primaryCount * replicaCount; // node0/1 primaries, node2/3 replicas
+
+            context.CreateInstances(nodeCount, enableAOF: true, enableRangeIndexPreview: true);
+            context.CreateConnection();
+            _ = context.clusterTestUtils.SimpleSetupCluster(primaryCount, replicaCount, logger: context.logger);
+
+            const int sourceNodeIndex = 0;
+            const int targetNodeIndex = 1;
+            const int targetReplicaIndex = 3; // replica of primary index 1 (see SimpleSetupCluster replica mapping)
+
+            var sourceEndpoint = (IPEndPoint)context.clusterTestUtils.GetEndPoint(sourceNodeIndex);
+            var targetEndpoint = (IPEndPoint)context.clusterTestUtils.GetEndPoint(targetNodeIndex);
+            var targetReplicaEndpoint = (IPEndPoint)context.clusterTestUtils.GetEndPoint(targetReplicaIndex);
+
+            // Pick a key owned by the source primary and populate a non-trivial DISK-backed RI.
+            var riKey = FindKeyOwnedByNode(sourceNodeIndex);
+            var slot = context.clusterTestUtils.HashSlot(riKey);
+            var fields = new List<(string Field, string Value)>();
+            for (var i = 0; i < 50; i++)
+                fields.Add(($"field_{i:D4}", $"value_{i:D4}_{new string('x', 64)}"));
+
+            CreateRangeIndexWithFields(sourceEndpoint, riKey, fields);
+
+            // Migrate the slot to the target primary.
+            context.clusterTestUtils.MigrateSlots(sourceEndpoint, targetEndpoint, new List<int> { slot }, logger: context.logger);
+            context.clusterTestUtils.WaitForMigrationCleanup(logger: context.logger);
+
+            // The target primary itself must have the full data.
+            VerifyFieldsOnEndpoint(targetEndpoint, riKey, fields);
+
+            // Wait for the target's replica to replay the migrated range index stream via AOF, then
+            // verify it has the full migrated data. Reads are served by the replica via READONLY;
+            // poll the first field until the replica's cluster view reflects the migrated slot
+            // (gossip lag) and the data is present.
+            context.clusterTestUtils.WaitForReplicaAofSync(targetNodeIndex, targetReplicaIndex, context.logger);
+            _ = context.clusterTestUtils.Execute(targetReplicaEndpoint, "READONLY", Array.Empty<object>(), flags: CommandFlags.NoRedirect);
+
+            var replicaServing = false;
+            for (var retries = 0; retries < 150 && !replicaServing; retries++)
+            {
+                var probe = (string)context.clusterTestUtils.Execute(targetReplicaEndpoint, "RI.GET", [riKey, fields[0].Field], flags: CommandFlags.NoRedirect);
+                replicaServing = probe == fields[0].Value;
+                if (!replicaServing)
+                    Thread.Sleep(100);
+            }
+            ClassicAssert.IsTrue(replicaServing, "Target's replica did not serve the migrated RI key after AOF sync");
+
+            foreach (var (field, value) in fields)
+            {
+                var result = (string)context.clusterTestUtils.Execute(targetReplicaEndpoint, "RI.GET", [riKey, field], flags: CommandFlags.NoRedirect);
+                ClassicAssert.AreEqual(value, result, $"Replica RI.GET {riKey}/{field} should return migrated value");
+            }
+        }
+
+        /// <summary>
+        /// A migrated RangeIndex key must survive a crash and be reconstructed from the destination
+        /// primary's own AOF (the chunked range index stream) on recovery. Migrate a DISK-backed RI key
+        /// to the target primary, restart it with recovery enabled, then verify the full data.
+        /// </summary>
+        [Test]
+        [Category("CLUSTER")]
+        public void ClusterMigrateRangeIndexRecoversFromAof()
+        {
+            const int primaryCount = 2;
+
+            context.CreateInstances(primaryCount, tryRecover: true, enableAOF: true, enableRangeIndexPreview: true);
+            context.CreateConnection();
+            _ = context.clusterTestUtils.SimpleSetupCluster(logger: context.logger);
+
+            const int sourceNodeIndex = 0;
+            const int targetNodeIndex = 1;
+
+            var sourceEndpoint = (IPEndPoint)context.clusterTestUtils.GetEndPoint(sourceNodeIndex);
+            var targetEndpoint = (IPEndPoint)context.clusterTestUtils.GetEndPoint(targetNodeIndex);
+
+            var riKey = FindKeyOwnedByNode(sourceNodeIndex);
+            var slot = context.clusterTestUtils.HashSlot(riKey);
+            var fields = new List<(string Field, string Value)>();
+            for (var i = 0; i < 50; i++)
+                fields.Add(($"field_{i:D4}", $"value_{i:D4}_{new string('y', 64)}"));
+
+            CreateRangeIndexWithFields(sourceEndpoint, riKey, fields);
+
+            context.clusterTestUtils.MigrateSlots(sourceEndpoint, targetEndpoint, new List<int> { slot }, logger: context.logger);
+            context.clusterTestUtils.WaitForMigrationCleanup(logger: context.logger);
+            VerifyFieldsOnEndpoint(targetEndpoint, riKey, fields);
+
+            // Restart the target primary with recovery: its AOF (containing the range index stream) is
+            // replayed and HandleRangeIndexStreamReplay must reconstruct the migrated key.
+            RestartNode(targetNodeIndex);
+
+            // Poll until the recovered node serves the key, then verify all fields.
+            var recovered = false;
+            for (var retries = 0; retries < 100 && !recovered; retries++)
+            {
+                try
+                {
+                    var getResult = (string)context.clusterTestUtils.Execute(targetEndpoint, "RI.GET", [riKey, fields[0].Field], flags: CommandFlags.NoRedirect);
+                    recovered = getResult == fields[0].Value;
+                }
+                catch
+                {
+                    // Node may still be recovering.
+                }
+                if (!recovered)
+                    Thread.Sleep(100);
+            }
+            ClassicAssert.IsTrue(recovered, "Target primary did not recover the migrated RI key from its AOF");
+            VerifyFieldsOnEndpoint(targetEndpoint, riKey, fields);
+        }
+
+        /// <summary>
+        /// A migrated RI whose file spans many range index stream chunks (small chunk size) must reassemble
+        /// correctly on the target's replica (live AOF) and on the target after crash recovery.
+        /// </summary>
+        [Test]
+        [Category("CLUSTER")]
+        public void ClusterMigrateRangeIndexMultiChunkStreamReplicatesAndRecovers()
+        {
+            const int primaryCount = 2, replicaCount = 1, nodeCount = 4;
+
+            context.CreateInstances(nodeCount, tryRecover: true, enableAOF: true, enableRangeIndexPreview: true);
+            context.SetRangeIndexStreamChunkSizeOnAllNodes(SmallStreamChunkSize);
+            context.CreateConnection();
+            _ = context.clusterTestUtils.SimpleSetupCluster(primaryCount, replicaCount, logger: context.logger);
+
+            const int source = 0, target = 1, targetReplica = 3;
+            var sourceEp = (IPEndPoint)context.clusterTestUtils.GetEndPoint(source);
+            var targetEp = (IPEndPoint)context.clusterTestUtils.GetEndPoint(target);
+
+            var riKey = FindKeyOwnedByNode(source);
+            var slot = context.clusterTestUtils.HashSlot(riKey);
+            var fields = MakeFields(80, "mc");
+            CreateRangeIndexWithFields(sourceEp, riKey, fields);
+
+            context.clusterTestUtils.MigrateSlots(sourceEp, targetEp, [slot], logger: context.logger);
+            context.clusterTestUtils.WaitForMigrationCleanup(logger: context.logger);
+            VerifyFieldsOnEndpoint(targetEp, riKey, fields);
+
+            // Replica reassembles the multi-chunk stream from live AOF.
+            VerifyRangeIndexOnReplica(target, targetReplica, riKey, fields);
+
+            // Target reconstructs the multi-chunk stream from its own AOF on recovery.
+            RestartNode(target);
+            AssertRiGetEventually(targetEp, riKey, fields[0].Field, fields[0].Value, "Target did not recover the multi-chunk migrated RI key");
+            VerifyFieldsOnEndpoint(targetEp, riKey, fields);
+        }
+
+        /// <summary>
+        /// Migrating an empty RI (RI.CREATE, no RI.SET) still streams a valid range index stream (headers +
+        /// trailer/stub only); the empty index must exist and be functional on the target's replica
+        /// and after recovery.
+        /// </summary>
+        [Test]
+        [Category("CLUSTER")]
+        public void ClusterMigrateEmptyRangeIndexReplicatesAndRecovers()
+        {
+            const int primaryCount = 2, replicaCount = 1, nodeCount = 4;
+
+            context.CreateInstances(nodeCount, tryRecover: true, enableAOF: true, enableRangeIndexPreview: true);
+            context.CreateConnection();
+            _ = context.clusterTestUtils.SimpleSetupCluster(primaryCount, replicaCount, logger: context.logger);
+
+            const int source = 0, target = 1, targetReplica = 3;
+            var sourceEp = (IPEndPoint)context.clusterTestUtils.GetEndPoint(source);
+            var targetEp = (IPEndPoint)context.clusterTestUtils.GetEndPoint(target);
+
+            var riKey = FindKeyOwnedByNode(source);
+            var slot = context.clusterTestUtils.HashSlot(riKey);
+
+            var createResult = (string)context.clusterTestUtils.Execute(sourceEp, "RI.CREATE", [riKey, "DISK", "CACHESIZE", "65536", "MINRECORD", "8"], flags: CommandFlags.NoRedirect);
+            ClassicAssert.AreEqual("OK", createResult, "RI.CREATE should succeed on source");
+
+            context.clusterTestUtils.MigrateSlots(sourceEp, targetEp, [slot], logger: context.logger);
+            context.clusterTestUtils.WaitForMigrationCleanup(logger: context.logger);
+
+            // The empty index must exist on the target: RI.SET succeeds only if the index is present.
+            var setResult = (string)context.clusterTestUtils.Execute(targetEp, "RI.SET", [riKey, "field_0000", "value_0000"], flags: CommandFlags.NoRedirect);
+            ClassicAssert.AreEqual("OK", setResult, "RI.SET should succeed on target (empty index must have migrated)");
+
+            var oneField = new List<(string Field, string Value)> { ("field_0000", "value_0000") };
+            VerifyRangeIndexOnReplica(target, targetReplica, riKey, oneField);
+
+            // Recovery: the empty-index range index stream (and the later RI.SET) must both survive.
+            RestartNode(target);
+            AssertRiGetEventually(targetEp, riKey, "field_0000", "value_0000", "Target did not recover the migrated empty index (+ subsequent set)");
+        }
+
+        /// <summary>
+        /// Round-trip migration P0 -> P1 -> P0 with a replica on each primary. Both primaries and
+        /// their replicas must end consistent, and P1 must no longer own the key after it is migrated
+        /// back (no stale ownership).
+        /// </summary>
+        [Test]
+        [Category("CLUSTER")]
+        public void ClusterMigrateRangeIndexRoundTripWithReplicas()
+        {
+            const int primaryCount = 2, replicaCount = 1, nodeCount = 4;
+
+            context.CreateInstances(nodeCount, enableAOF: true, enableRangeIndexPreview: true);
+            context.CreateConnection();
+            _ = context.clusterTestUtils.SimpleSetupCluster(primaryCount, replicaCount, logger: context.logger);
+
+            const int p0 = 0, p1 = 1, r0 = 2, r1 = 3;
+            var ep0 = (IPEndPoint)context.clusterTestUtils.GetEndPoint(p0);
+            var ep1 = (IPEndPoint)context.clusterTestUtils.GetEndPoint(p1);
+
+            var riKey = FindKeyOwnedByNode(p0);
+            var slot = context.clusterTestUtils.HashSlot(riKey);
+            var fields = MakeFields(40, "rt");
+            CreateRangeIndexWithFields(ep0, riKey, fields);
+
+            // P0 -> P1
+            context.clusterTestUtils.MigrateSlots(ep0, ep1, [slot], logger: context.logger);
+            context.clusterTestUtils.WaitForMigrationCleanup(logger: context.logger);
+            VerifyFieldsOnEndpoint(ep1, riKey, fields);
+            VerifyRangeIndexOnReplica(p1, r1, riKey, fields);
+
+            // P1 -> P0
+            context.clusterTestUtils.MigrateSlots(ep1, ep0, [slot], logger: context.logger);
+            context.clusterTestUtils.WaitForMigrationCleanup(logger: context.logger);
+            VerifyFieldsOnEndpoint(ep0, riKey, fields);
+            VerifyRangeIndexOnReplica(p0, r0, riKey, fields);
+
+            // P1 must no longer own the slot (no stale ownership after migrating the key away).
+            var p1Slots = context.clusterTestUtils.GetOwnedSlotsFromNode(ep1, context.logger);
+            ClassicAssert.IsFalse(p1Slots.Contains(slot), "P1 should not own the slot after migrating the key back to P0");
+        }
+
+        /// <summary>
+        /// Interleaving resilience. Migrate several RI keys while a background task continuously
+        /// writes to a target-owned string key, so range index stream chunks interleave with unrelated AOF
+        /// entries. Every migrated key must still reassemble on the target and its replica.
+        /// </summary>
+        [Test]
+        [Category("CLUSTER")]
+        public void ClusterMigrateRangeIndexInterleavedWithConcurrentWrites()
+        {
+            const int primaryCount = 2, replicaCount = 1, nodeCount = 4;
+
+            context.CreateInstances(nodeCount, enableAOF: true, enableRangeIndexPreview: true);
+            context.SetRangeIndexStreamChunkSizeOnAllNodes(SmallStreamChunkSize);
+            context.CreateConnection();
+            _ = context.clusterTestUtils.SimpleSetupCluster(primaryCount, replicaCount, logger: context.logger);
+
+            const int source = 0, target = 1, targetReplica = 3;
+            var sourceEp = (IPEndPoint)context.clusterTestUtils.GetEndPoint(source);
+            var targetEp = (IPEndPoint)context.clusterTestUtils.GetEndPoint(target);
+
+            var riKeys = new List<(string Key, List<(string Field, string Value)> Fields)>();
+            var slots = new HashSet<int>();
+            for (var k = 0; k < 3; k++)
+            {
+                var key = FindKeyOwnedByNode(source);
+                var fields = MakeFields(40, $"il{k}");
+                CreateRangeIndexWithFields(sourceEp, key, fields);
+                riKeys.Add((key, fields));
+                slots.Add(context.clusterTestUtils.HashSlot(key));
+            }
+
+            // Background writer to a target-owned string key to interleave StoreUpsert entries with
+            // the incoming range index stream chunks in the target's AOF during migration.
+            var targetStringKey = FindKeyOwnedByNode(target);
+            var stop = false;
+            var bg = Task.Run(() =>
+            {
+                var i = 0;
+                while (!Volatile.Read(ref stop))
+                {
+                    try { _ = context.clusterTestUtils.Execute(targetEp, "SET", [targetStringKey, $"v{i}"], skipLogging: true, flags: CommandFlags.NoRedirect); }
+                    catch { /* best effort */ }
+                    i++;
+                }
+            });
+
+            try
+            {
+                context.clusterTestUtils.MigrateSlots(sourceEp, targetEp, slots.ToList(), logger: context.logger);
+                context.clusterTestUtils.WaitForMigrationCleanup(logger: context.logger);
+            }
+            finally
+            {
+                Volatile.Write(ref stop, true);
+                bg.Wait();
+            }
+
+            foreach (var (key, fields) in riKeys)
+            {
+                VerifyFieldsOnEndpoint(targetEp, key, fields);
+                VerifyRangeIndexOnReplica(target, targetReplica, key, fields);
+            }
+
+            var stringVal = (string)context.clusterTestUtils.Execute(targetEp, "GET", [targetStringKey], flags: CommandFlags.NoRedirect);
+            ClassicAssert.IsNotNull(stringVal, "target-owned string key written during migration should exist");
+        }
+
+        /// <summary>
+        /// After migrating a key to the target and replicating to its replica, failing the replica
+        /// over to primary must leave the migrated RI data intact and writable on the new primary.
+        /// </summary>
+        [Test]
+        [Category("CLUSTER")]
+        public void ClusterMigrateRangeIndexThenFailover()
+        {
+            const int primaryCount = 2, replicaCount = 1, nodeCount = 4;
+
+            context.CreateInstances(nodeCount, enableAOF: true, enableRangeIndexPreview: true);
+            context.CreateConnection();
+            _ = context.clusterTestUtils.SimpleSetupCluster(primaryCount, replicaCount, logger: context.logger);
+
+            const int source = 0, target = 1, targetReplica = 3;
+            var sourceEp = (IPEndPoint)context.clusterTestUtils.GetEndPoint(source);
+            var targetEp = (IPEndPoint)context.clusterTestUtils.GetEndPoint(target);
+
+            var riKey = FindKeyOwnedByNode(source);
+            var slot = context.clusterTestUtils.HashSlot(riKey);
+            var fields = MakeFields(40, "fo");
+            CreateRangeIndexWithFields(sourceEp, riKey, fields);
+
+            context.clusterTestUtils.MigrateSlots(sourceEp, targetEp, [slot], logger: context.logger);
+            context.clusterTestUtils.WaitForMigrationCleanup(logger: context.logger);
+            VerifyFieldsOnEndpoint(targetEp, riKey, fields);
+            VerifyRangeIndexOnReplica(target, targetReplica, riKey, fields);
+
+            // Checkpoint so the replica has a durable base before failover.
+            var targetLastSave = context.clusterTestUtils.LastSave(target, logger: context.logger);
+            var replicaLastSave = context.clusterTestUtils.LastSave(targetReplica, logger: context.logger);
+            context.clusterTestUtils.WaitUntilNextSecond(targetReplica, replicaLastSave);
+            context.clusterTestUtils.Checkpoint(target, logger: context.logger);
+            context.clusterTestUtils.WaitCheckpoint(target, targetLastSave, logger: context.logger);
+            context.clusterTestUtils.WaitCheckpoint(targetReplica, replicaLastSave, logger: context.logger);
+            context.clusterTestUtils.WaitForReplicaAofSync(target, targetReplica, context.logger);
+
+            _ = context.clusterTestUtils.ClusterFailover(targetReplica, logger: context.logger);
+            context.clusterTestUtils.WaitForNoFailover(targetReplica, logger: context.logger);
+            context.clusterTestUtils.WaitForFailoverCompleted(targetReplica, logger: context.logger);
+            context.clusterTestUtils.WaitForReplicaRecovery(target, logger: context.logger);
+
+            var newPrimaryEp = (IPEndPoint)context.clusterTestUtils.GetEndPoint(targetReplica);
+            foreach (var (field, value) in fields)
+            {
+                var result = (string)context.clusterTestUtils.Execute(newPrimaryEp, "RI.GET", [riKey, field], flags: CommandFlags.NoRedirect);
+                ClassicAssert.AreEqual(value, result, "new primary should serve migrated RI data after failover");
+            }
+
+            var setResult = (string)context.clusterTestUtils.Execute(newPrimaryEp, "RI.SET", [riKey, "post_failover", "ok"], flags: CommandFlags.NoRedirect);
+            ClassicAssert.AreEqual("OK", setResult, "new primary should accept RI.SET after failover");
+        }
+
+        /// <summary>
+        /// Checkpoint after migration then recover. The range index stream entries precede the checkpoint and
+        /// must be skipped on recovery (the key is restored from the checkpoint) with no double-publish;
+        /// a post-checkpoint RI.SET (in the AOF) must also survive.
+        /// </summary>
+        [Test]
+        [Category("CLUSTER")]
+        public void ClusterMigrateRangeIndexCheckpointThenRecover()
+        {
+            const int primaryCount = 2;
+
+            context.CreateInstances(primaryCount, tryRecover: true, enableAOF: true, enableRangeIndexPreview: true);
+            context.CreateConnection();
+            _ = context.clusterTestUtils.SimpleSetupCluster(logger: context.logger);
+
+            const int source = 0, target = 1;
+            var sourceEp = (IPEndPoint)context.clusterTestUtils.GetEndPoint(source);
+            var targetEp = (IPEndPoint)context.clusterTestUtils.GetEndPoint(target);
+
+            var riKey = FindKeyOwnedByNode(source);
+            var slot = context.clusterTestUtils.HashSlot(riKey);
+            var fields = MakeFields(40, "cp");
+            CreateRangeIndexWithFields(sourceEp, riKey, fields);
+
+            context.clusterTestUtils.MigrateSlots(sourceEp, targetEp, [slot], logger: context.logger);
+            context.clusterTestUtils.WaitForMigrationCleanup(logger: context.logger);
+            VerifyFieldsOnEndpoint(targetEp, riKey, fields);
+
+            var targetLastSave = context.clusterTestUtils.LastSave(target, logger: context.logger);
+            context.clusterTestUtils.WaitUntilNextSecond(target, targetLastSave);
+            context.clusterTestUtils.Checkpoint(target, logger: context.logger);
+            context.clusterTestUtils.WaitCheckpoint(target, targetLastSave, logger: context.logger);
+
+            // Post-checkpoint write lands in the AOF (replayed on top of the checkpoint).
+            _ = context.clusterTestUtils.Execute(targetEp, "RI.SET", [riKey, "post_ckpt", "pv"], flags: CommandFlags.NoRedirect);
+
+            RestartNode(target);
+            AssertRiGetEventually(targetEp, riKey, fields[0].Field, fields[0].Value, "Target did not recover the migrated RI key after a post-migration checkpoint");
+            VerifyFieldsOnEndpoint(targetEp, riKey, fields);
+            AssertRiGetEventually(targetEp, riKey, "post_ckpt", "pv", "post-checkpoint RI.SET should survive recovery");
+        }
+
+        /// <summary>
+        /// A replica that joins the target primary AFTER a migration must reconstruct the migrated
+        /// key from the primary's AOF (range index stream replay) during its initial sync. Uses a manual 2-primary
+        /// topology with a spare node attached as a replica only after the migration completes.
+        /// </summary>
+        [Test]
+        [Category("CLUSTER")]
+        public void ClusterMigrateRangeIndexReplicaAddedAfterMigration()
+        {
+            const int nodeCount = 3; // node0/1 primaries, node2 spare -> late replica of node1
+
+            context.CreateInstances(nodeCount, enableAOF: true, enableRangeIndexPreview: true);
+            context.CreateConnection();
+
+            const int source = 0, target = 1, lateReplica = 2;
+
+            // Form a 2-primary cluster manually (node2 stays a spare with no slots).
+            ClassicAssert.AreEqual("OK", context.clusterTestUtils.AddDelSlotsRange(source, new List<(int, int)> { (0, 8191) }, true, context.logger));
+            ClassicAssert.AreEqual("OK", context.clusterTestUtils.AddDelSlotsRange(target, new List<(int, int)> { (8192, 16383) }, true, context.logger));
+            context.clusterTestUtils.Meet(target, source, logger: context.logger);
+            context.clusterTestUtils.Meet(lateReplica, source, logger: context.logger);
+            context.clusterTestUtils.WaitAll(context.logger);
+            context.clusterTestUtils.BumpEpoch(source, logger: context.logger);
+            context.clusterTestUtils.BumpEpoch(target, logger: context.logger);
+
+            var sourceEp = (IPEndPoint)context.clusterTestUtils.GetEndPoint(source);
+            var targetEp = (IPEndPoint)context.clusterTestUtils.GetEndPoint(target);
+
+            var riKey = FindKeyOwnedByNode(source);
+            var slot = context.clusterTestUtils.HashSlot(riKey);
+            var fields = MakeFields(40, "late");
+            CreateRangeIndexWithFields(sourceEp, riKey, fields);
+
+            context.clusterTestUtils.MigrateSlots(sourceEp, targetEp, [slot], logger: context.logger);
+            context.clusterTestUtils.WaitForMigrationCleanup(logger: context.logger);
+            VerifyFieldsOnEndpoint(targetEp, riKey, fields);
+
+            // Attach the spare node as a replica of the target AFTER the migration: its initial sync must
+            // replay the target's AOF (including the range index stream) and reconstruct the migrated key.
+            _ = context.clusterTestUtils.ClusterReplicate(lateReplica, target, async: false, logger: context.logger);
+            context.clusterTestUtils.BumpEpoch(lateReplica, logger: context.logger);
+
+            VerifyRangeIndexOnReplica(target, lateReplica, riKey, fields);
         }
 
         /// <summary>
@@ -210,17 +700,12 @@ namespace Garnet.test.cluster
 
             var primary0 = (IPEndPoint)context.clusterTestUtils.GetEndPoint(0);
             var primary1 = (IPEndPoint)context.clusterTestUtils.GetEndPoint(1);
-            var primary0Id = context.clusterTestUtils.ClusterMyId(primary0);
-            var slots = context.clusterTestUtils.ClusterSlots(primary0);
 
-            var riKey = FindKeyOnNode(nameof(ClusterMigrateEmptyRangeIndex), primary0Id, slots);
+            var riKey = FindKeyOwnedByNode(0);
             var slot = context.clusterTestUtils.HashSlot(riKey);
 
             // Create RI key with no data — empty tree
-            var createResult = (string)context.clusterTestUtils.Execute(
-                primary0, "RI.CREATE",
-                [riKey, "DISK", "CACHESIZE", "65536", "MINRECORD", "8"],
-                flags: CommandFlags.NoRedirect);
+            var createResult = (string)context.clusterTestUtils.Execute(primary0, "RI.CREATE", [riKey, "DISK", "CACHESIZE", "65536", "MINRECORD", "8"], flags: CommandFlags.NoRedirect);
             ClassicAssert.AreEqual("OK", createResult, "RI.CREATE should succeed");
 
             // Migrate
@@ -231,22 +716,15 @@ namespace Garnet.test.cluster
             WaitForSlotOwnership(primary0, primary1, slot);
 
             // Verify the empty RI key exists on target — RI.SET should work
-            var setResult = (string)context.clusterTestUtils.Execute(
-                primary1, "RI.SET", [riKey, "field_00", "value_00"],
-                flags: CommandFlags.NoRedirect);
+            var setResult = (string)context.clusterTestUtils.Execute(primary1, "RI.SET", [riKey, "field_00", "value_00"], flags: CommandFlags.NoRedirect);
             ClassicAssert.AreEqual("OK", setResult, "RI.SET should succeed on migrated empty tree");
 
-            var getResult = (string)context.clusterTestUtils.Execute(
-                primary1, "RI.GET", [riKey, "field_00"],
-                flags: CommandFlags.NoRedirect);
+            var getResult = (string)context.clusterTestUtils.Execute(primary1, "RI.GET", [riKey, "field_00"], flags: CommandFlags.NoRedirect);
             ClassicAssert.AreEqual("value_00", getResult, "RI.GET should return correct value on target");
 
             // Verify source returns MOVED
-            var movedResult = (string)context.clusterTestUtils.Execute(
-                primary0, "RI.GET", [riKey, "field_00"],
-                flags: CommandFlags.NoRedirect);
-            ClassicAssert.IsTrue(movedResult.StartsWith("Key has MOVED to "),
-                $"Expected MOVED from source, got: {movedResult}");
+            var movedResult = (string)context.clusterTestUtils.Execute(primary0, "RI.GET", [riKey, "field_00"], flags: CommandFlags.NoRedirect);
+            ClassicAssert.IsTrue(movedResult.StartsWith("Key has MOVED to "), $"Expected MOVED from source, got: {movedResult}");
         }
 
         /// <summary>
@@ -265,10 +743,8 @@ namespace Garnet.test.cluster
 
             var primary0 = (IPEndPoint)context.clusterTestUtils.GetEndPoint(0);
             var primary1 = (IPEndPoint)context.clusterTestUtils.GetEndPoint(1);
-            var primary0Id = context.clusterTestUtils.ClusterMyId(primary0);
-            var slots = context.clusterTestUtils.ClusterSlots(primary0);
 
-            var riKey = FindKeyOnNode(nameof(ClusterMigrateRangeIndexSingleBySlot), primary0Id, slots);
+            var riKey = FindKeyOwnedByNode(0);
             var slot = context.clusterTestUtils.HashSlot(riKey);
 
             // Create RI with multiple fields
@@ -291,11 +767,8 @@ namespace Garnet.test.cluster
             VerifyFieldsOnEndpoint(primary1, riKey, fields);
 
             // Verify source returns MOVED
-            var movedResult = (string)context.clusterTestUtils.Execute(
-                primary0, "RI.GET", [riKey, "field1"],
-                flags: CommandFlags.NoRedirect);
-            ClassicAssert.IsTrue(movedResult.StartsWith("Key has MOVED to "),
-                $"Expected MOVED response from source, got: {movedResult}");
+            var movedResult = (string)context.clusterTestUtils.Execute(primary0, "RI.GET", [riKey, "field1"], flags: CommandFlags.NoRedirect);
+            ClassicAssert.IsTrue(movedResult.StartsWith("Key has MOVED to "), $"Expected MOVED response from source, got: {movedResult}");
         }
 
         /// <summary>
@@ -433,8 +906,7 @@ namespace Garnet.test.cluster
             {
                 var key = $"{HashTag}str_{i}";
                 var value = $"str_value_{i}_{rand.Next(10000)}";
-                var setResult = (string)context.clusterTestUtils.Execute(
-                    sourceEndpoint, "SET", [key, value], flags: CommandFlags.NoRedirect);
+                var setResult = (string)context.clusterTestUtils.Execute(sourceEndpoint, "SET", [key, value], flags: CommandFlags.NoRedirect);
                 ClassicAssert.AreEqual("OK", setResult, $"SET should succeed for {key}");
                 stringKeys.Add((key, value));
             }
@@ -451,8 +923,7 @@ namespace Garnet.test.cluster
                     var field = $"hf_{f:D4}";
                     var value = $"hash_value_{i}_{f}_{rand.Next(10000)}";
                     var hsetArgs = new object[] { key, field, value };
-                    _ = context.clusterTestUtils.Execute(
-                        sourceEndpoint, "HSET", hsetArgs, flags: CommandFlags.NoRedirect);
+                    _ = context.clusterTestUtils.Execute(sourceEndpoint, "HSET", hsetArgs, flags: CommandFlags.NoRedirect);
                     fields.Add((field, value));
                 }
                 hashKeys.Add((key, fields));
@@ -495,8 +966,7 @@ namespace Garnet.test.cluster
             // Verify string keys on target
             foreach (var (key, expected) in stringKeys)
             {
-                var actual = (string)context.clusterTestUtils.Execute(
-                    targetEndpoint, "GET", [key], flags: CommandFlags.NoRedirect);
+                var actual = (string)context.clusterTestUtils.Execute(targetEndpoint, "GET", [key], flags: CommandFlags.NoRedirect);
                 ClassicAssert.AreEqual(expected, actual, $"GET {key} on target");
             }
 
@@ -505,30 +975,20 @@ namespace Garnet.test.cluster
             {
                 foreach (var (field, expected) in fields)
                 {
-                    var actual = (string)context.clusterTestUtils.Execute(
-                        targetEndpoint, "HGET", [key, field], flags: CommandFlags.NoRedirect);
+                    var actual = (string)context.clusterTestUtils.Execute(targetEndpoint, "HGET", [key, field], flags: CommandFlags.NoRedirect);
                     ClassicAssert.AreEqual(expected, actual, $"HGET {key} {field} on target");
                 }
             }
 
             // Verify source returns MOVED for one key from each type
-            var movedRi = (string)context.clusterTestUtils.Execute(
-                sourceEndpoint, "RI.GET", [riKeys[0].Key, riKeys[0].Fields[0].Field],
-                flags: CommandFlags.NoRedirect);
-            ClassicAssert.IsTrue(movedRi.StartsWith("Key has MOVED to "),
-                $"Expected MOVED from source for RI key {riKeys[0].Key}, got: {movedRi}");
+            var movedRi = (string)context.clusterTestUtils.Execute(sourceEndpoint, "RI.GET", [riKeys[0].Key, riKeys[0].Fields[0].Field], flags: CommandFlags.NoRedirect);
+            ClassicAssert.IsTrue(movedRi.StartsWith("Key has MOVED to "), $"Expected MOVED from source for RI key {riKeys[0].Key}, got: {movedRi}");
 
-            var movedStr = (string)context.clusterTestUtils.Execute(
-                sourceEndpoint, "GET", [stringKeys[0].Key],
-                flags: CommandFlags.NoRedirect);
-            ClassicAssert.IsTrue(movedStr.StartsWith("Key has MOVED to "),
-                $"Expected MOVED from source for string key {stringKeys[0].Key}, got: {movedStr}");
+            var movedStr = (string)context.clusterTestUtils.Execute(sourceEndpoint, "GET", [stringKeys[0].Key], flags: CommandFlags.NoRedirect);
+            ClassicAssert.IsTrue(movedStr.StartsWith("Key has MOVED to "), $"Expected MOVED from source for string key {stringKeys[0].Key}, got: {movedStr}");
 
-            var movedHash = (string)context.clusterTestUtils.Execute(
-                sourceEndpoint, "HGET", [hashKeys[0].Key, hashKeys[0].Fields[0].Field],
-                flags: CommandFlags.NoRedirect);
-            ClassicAssert.IsTrue(movedHash.StartsWith("Key has MOVED to "),
-                $"Expected MOVED from source for hash key {hashKeys[0].Key}, got: {movedHash}");
+            var movedHash = (string)context.clusterTestUtils.Execute(sourceEndpoint, "HGET", [hashKeys[0].Key, hashKeys[0].Fields[0].Field], flags: CommandFlags.NoRedirect);
+            ClassicAssert.IsTrue(movedHash.StartsWith("Key has MOVED to "), $"Expected MOVED from source for hash key {hashKeys[0].Key}, got: {movedHash}");
         }
 
         /// <summary>
@@ -591,11 +1051,8 @@ namespace Garnet.test.cluster
             // Verify source returns MOVED
             foreach (var (key, _, _) in primary0Keys)
             {
-                var result = (string)context.clusterTestUtils.Execute(
-                    primary0, "RI.GET", [key, "field_0000"],
-                    flags: CommandFlags.NoRedirect);
-                ClassicAssert.IsTrue(result.StartsWith("Key has MOVED to "),
-                    $"Expected MOVED from source for key {key}");
+                var result = (string)context.clusterTestUtils.Execute(primary0, "RI.GET", [key, "field_0000"], flags: CommandFlags.NoRedirect);
+                ClassicAssert.IsTrue(result.StartsWith("Key has MOVED to "), $"Expected MOVED from source for key {key}");
             }
         }
 
@@ -615,10 +1072,8 @@ namespace Garnet.test.cluster
 
             var primary0 = (IPEndPoint)context.clusterTestUtils.GetEndPoint(0);
             var primary1 = (IPEndPoint)context.clusterTestUtils.GetEndPoint(1);
-            var primary0Id = context.clusterTestUtils.ClusterMyId(primary0);
-            var slots = context.clusterTestUtils.ClusterSlots(primary0);
 
-            var riKey = FindKeyOnNode(nameof(ClusterMigrateRangeIndexBack), primary0Id, slots);
+            var riKey = FindKeyOwnedByNode(0);
             var slot = context.clusterTestUtils.HashSlot(riKey);
 
             // Create RI with initial data on P0
@@ -639,9 +1094,7 @@ namespace Garnet.test.cluster
             // Verify on P1 and add more data
             VerifyFieldsOnEndpoint(primary1, riKey, [("field_00", "value_00"), ("field_01", "value_01")]);
 
-            var setResult = (string)context.clusterTestUtils.Execute(
-                primary1, "RI.SET", [riKey, "field_02", "value_02"],
-                flags: CommandFlags.NoRedirect);
+            var setResult = (string)context.clusterTestUtils.Execute(primary1, "RI.SET", [riKey, "field_02", "value_02"], flags: CommandFlags.NoRedirect);
             ClassicAssert.AreEqual("OK", setResult);
 
             // Migrate P1 → P0
@@ -660,9 +1113,7 @@ namespace Garnet.test.cluster
             VerifyFieldsOnEndpoint(primary0, riKey, [("field_00", "value_00"), ("field_01", "value_01"), ("field_02", "value_02")]);
 
             // Add more data on P0
-            var setResult2 = (string)context.clusterTestUtils.Execute(
-                primary0, "RI.SET", [riKey, "field_03", "value_03"],
-                flags: CommandFlags.NoRedirect);
+            var setResult2 = (string)context.clusterTestUtils.Execute(primary0, "RI.SET", [riKey, "field_03", "value_03"], flags: CommandFlags.NoRedirect);
             ClassicAssert.AreEqual("OK", setResult2);
 
             VerifyFieldsOnEndpoint(primary0, riKey, [("field_00", "value_00"), ("field_01", "value_01"), ("field_02", "value_02"), ("field_03", "value_03")]);
@@ -724,10 +1175,7 @@ namespace Garnet.test.cluster
             foreach (var (key, _, onP0) in allKeys)
             {
                 var endpoint = onP0 ? primary0 : primary1;
-                var createResult = (string)context.clusterTestUtils.Execute(
-                    endpoint, "RI.CREATE",
-                    [key, "DISK", "CACHESIZE", "65536", "MINRECORD", "8"],
-                    flags: CommandFlags.NoRedirect);
+                var createResult = (string)context.clusterTestUtils.Execute(endpoint, "RI.CREATE", [key, "DISK", "CACHESIZE", "65536", "MINRECORD", "8"], flags: CommandFlags.NoRedirect);
                 ClassicAssert.AreEqual("OK", createResult);
             }
 
@@ -908,9 +1356,7 @@ namespace Garnet.test.cluster
 
                 foreach (var (field, value) in writeResults[i])
                 {
-                    var result = (string)context.clusterTestUtils.Execute(
-                        endpoint, "RI.GET", [key, field],
-                        flags: CommandFlags.NoRedirect);
+                    var result = (string)context.clusterTestUtils.Execute(endpoint, "RI.GET", [key, field], flags: CommandFlags.NoRedirect);
                     ClassicAssert.AreEqual(value, result, $"Data loss: {key}/{field} not found after stress");
                 }
             }
@@ -935,10 +1381,8 @@ namespace Garnet.test.cluster
 
             var primary0 = (IPEndPoint)context.clusterTestUtils.GetEndPoint(0);
             var primary1 = (IPEndPoint)context.clusterTestUtils.GetEndPoint(1);
-            var primary0Id = context.clusterTestUtils.ClusterMyId(primary0);
-            var slots = context.clusterTestUtils.ClusterSlots(primary0);
 
-            var riKey = FindKeyOnNode($"{nameof(ClusterMigrateRangeIndexWithChunkSize)}_{chunkSize}", primary0Id, slots);
+            var riKey = FindKeyOwnedByNode(0);
             var slot = context.clusterTestUtils.HashSlot(riKey);
 
             // Create RI with enough data to span multiple chunks at small sizes
@@ -977,10 +1421,8 @@ namespace Garnet.test.cluster
 
             var primary0 = (IPEndPoint)context.clusterTestUtils.GetEndPoint(0);
             var primary1 = (IPEndPoint)context.clusterTestUtils.GetEndPoint(1);
-            var primary0Id = context.clusterTestUtils.ClusterMyId(primary0);
-            var slots = context.clusterTestUtils.ClusterSlots(primary0);
 
-            var riKey = FindKeyOnNode(nameof(ClusterMigrateRangeIndexWhileReadingAsync), primary0Id, slots);
+            var riKey = FindKeyOwnedByNode(0);
             var slot = context.clusterTestUtils.HashSlot(riKey);
 
             // Create RI key and populate with known data
@@ -1067,10 +1509,8 @@ namespace Garnet.test.cluster
 
             var primary0 = (IPEndPoint)context.clusterTestUtils.GetEndPoint(0);
             var primary1 = (IPEndPoint)context.clusterTestUtils.GetEndPoint(1);
-            var primary0Id = context.clusterTestUtils.ClusterMyId(primary0);
-            var slots = context.clusterTestUtils.ClusterSlots(primary0);
 
-            var riKey = FindKeyOnNode(nameof(ClusterMigrateRangeIndexWithPauseDuringTransmitAsync), primary0Id, slots);
+            var riKey = FindKeyOwnedByNode(0);
             var slot = context.clusterTestUtils.HashSlot(riKey);
 
             var fields = Enumerable.Range(0, 20).Select(i => ($"field_{i}", $"value_{i}")).ToList();
@@ -1102,9 +1542,7 @@ namespace Garnet.test.cluster
                 {
                     try
                     {
-                        var result = (string)context.clusterTestUtils.Execute(
-                            primary0, "RI.GET", [riKey, field],
-                            flags: CommandFlags.NoRedirect);
+                        var result = (string)context.clusterTestUtils.Execute(primary0, "RI.GET", [riKey, field], flags: CommandFlags.NoRedirect);
                         // Read may succeed or fail depending on exact sketch gating behavior
                         context.logger?.LogInformation("RI.GET during TRANSMITTING: {field} = {result}", field, result);
                     }
@@ -1149,10 +1587,8 @@ namespace Garnet.test.cluster
 
             var primary0 = (IPEndPoint)context.clusterTestUtils.GetEndPoint(0);
             var primary1 = (IPEndPoint)context.clusterTestUtils.GetEndPoint(1);
-            var primary0Id = context.clusterTestUtils.ClusterMyId(primary0);
-            var slots = context.clusterTestUtils.ClusterSlots(primary0);
 
-            var riKey = FindKeyOnNode(nameof(ClusterMigrateRangeIndexWithPauseDuringDeleteAsync), primary0Id, slots);
+            var riKey = FindKeyOwnedByNode(0);
             var slot = context.clusterTestUtils.HashSlot(riKey);
 
             var fields = Enumerable.Range(0, 20).Select(i => ($"field_{i}", $"value_{i}")).ToList();
@@ -1182,9 +1618,7 @@ namespace Garnet.test.cluster
                 {
                     try
                     {
-                        var result = (string)context.clusterTestUtils.Execute(
-                            primary1, "RI.GET", [riKey, field],
-                            flags: CommandFlags.NoRedirect);
+                        var result = (string)context.clusterTestUtils.Execute(primary1, "RI.GET", [riKey, field], flags: CommandFlags.NoRedirect);
                         context.logger?.LogInformation("RI.GET on target during DELETING: {field} = {result}", field, result);
                     }
                     catch (Exception ex)
@@ -1228,10 +1662,8 @@ namespace Garnet.test.cluster
 
             var primary0 = (IPEndPoint)context.clusterTestUtils.GetEndPoint(0);
             var primary1 = (IPEndPoint)context.clusterTestUtils.GetEndPoint(1);
-            var primary0Id = context.clusterTestUtils.ClusterMyId(primary0);
-            var slots = context.clusterTestUtils.ClusterSlots(primary0);
 
-            var riKey = FindKeyOnNode(nameof(ClusterMigrateRangeIndexExceptionDuringTransmit), primary0Id, slots);
+            var riKey = FindKeyOwnedByNode(0);
             var slot = context.clusterTestUtils.HashSlot(riKey);
 
             var fields = Enumerable.Range(0, 20).Select(i => ($"field_{i}", $"value_{i}")).ToList();
@@ -1257,9 +1689,7 @@ namespace Garnet.test.cluster
                 VerifyFieldsOnEndpoint(primary0, riKey, fields);
 
                 // RI.SET should work (sketch must have been cleared)
-                var setResult = (string)context.clusterTestUtils.Execute(
-                    primary0, "RI.SET", [riKey, "after_failure", "works"],
-                    flags: CommandFlags.NoRedirect);
+                var setResult = (string)context.clusterTestUtils.Execute(primary0, "RI.SET", [riKey, "after_failure", "works"], flags: CommandFlags.NoRedirect);
                 ClassicAssert.AreEqual("OK", setResult, "RI.SET should succeed after failed migration");
             }
             finally
@@ -1271,23 +1701,6 @@ namespace Garnet.test.cluster
 #endif
 
         #region Post-migration lifecycle
-
-        /// <summary>
-        /// Restart a cluster node in place, recovering from its on-disk checkpoint and cluster
-        /// configuration. Mirrors the restart recipe used by the RangeIndex replication tests.
-        /// </summary>
-        private void RestartNode(int nodeIndex)
-        {
-            context.nodes[nodeIndex].Dispose(false);
-            context.nodes[nodeIndex] = context.CreateInstance(
-                context.clusterTestUtils.GetEndPoint(nodeIndex),
-                tryRecover: true,
-                enableAOF: true,
-                cleanClusterConfig: false,
-                enableRangeIndexPreview: true);
-            context.nodes[nodeIndex].Start();
-            context.CreateConnection();
-        }
 
         /// <summary>
         /// Take a checkpoint on the given node and wait for it to complete.
@@ -1319,10 +1732,8 @@ namespace Garnet.test.cluster
 
             var primary0 = (IPEndPoint)context.clusterTestUtils.GetEndPoint(0);
             var primary1 = (IPEndPoint)context.clusterTestUtils.GetEndPoint(1);
-            var primary0Id = context.clusterTestUtils.ClusterMyId(primary0);
-            var slots = context.clusterTestUtils.ClusterSlots(primary0);
 
-            var riKey = FindKeyOnNode(nameof(ClusterMigrateRangeIndexThenFlushAndRead), primary0Id, slots);
+            var riKey = FindKeyOwnedByNode(0);
             var slot = context.clusterTestUtils.HashSlot(riKey);
 
             var fields = Enumerable.Range(0, 30).Select(i => ($"field_{i}", $"value_{i}")).ToList();
@@ -1337,8 +1748,7 @@ namespace Garnet.test.cluster
             var moreFields = Enumerable.Range(30, 20).Select(i => ($"field_{i}", $"value_{i}")).ToList();
             foreach (var (field, value) in moreFields)
             {
-                var setResult = (string)context.clusterTestUtils.Execute(
-                    primary1, "RI.SET", [riKey, field, value], flags: CommandFlags.NoRedirect);
+                var setResult = (string)context.clusterTestUtils.Execute(primary1, "RI.SET", [riKey, field, value], flags: CommandFlags.NoRedirect);
                 ClassicAssert.AreEqual("OK", setResult, $"RI.SET should succeed on target for {riKey}/{field}");
             }
 
@@ -1354,10 +1764,11 @@ namespace Garnet.test.cluster
         /// migrated tree (plus a post-migration write) is recovered from the checkpoint snapshot.
         /// </summary>
         /// <remarks>
-        /// A checkpoint is required: migrated RangeIndex records are not yet carried in the AOF,
-        /// so an AOF-only restart would not recover the tree. The checkpoint snapshots all live
-        /// trees (including migrated ones) and records the AOF tail, so post-checkpoint writes
-        /// replay normally onto the recovered tree.
+        /// This test exercises checkpoint-based recovery of a migrated tree. Migrated RangeIndex keys
+        /// are now also carried in the AOF as a chunked range index stream (see
+        /// <see cref="ClusterMigrateRangeIndexRecoversFromAof"/> for AOF-only recovery); here the
+        /// checkpoint snapshots all live trees (including migrated ones) and records the AOF tail, so
+        /// post-checkpoint writes replay normally onto the recovered tree.
         /// </remarks>
         [Test]
         [Category("CLUSTER")]
@@ -1366,17 +1777,15 @@ namespace Garnet.test.cluster
             const int shards = 2;
             const int targetIndex = 1;
 
-            context.CreateInstances(shards, enableRangeIndexPreview: true, enableAOF: true);
+            context.CreateInstances(shards, tryRecover: true, enableRangeIndexPreview: true, enableAOF: true);
             context.CreateConnection();
 
             _ = context.clusterTestUtils.SimpleSetupCluster(logger: context.logger);
 
             var primary0 = (IPEndPoint)context.clusterTestUtils.GetEndPoint(0);
             var primary1 = (IPEndPoint)context.clusterTestUtils.GetEndPoint(1);
-            var primary0Id = context.clusterTestUtils.ClusterMyId(primary0);
-            var slots = context.clusterTestUtils.ClusterSlots(primary0);
 
-            var riKey = FindKeyOnNode(nameof(ClusterMigrateRangeIndexThenCheckpointRestart), primary0Id, slots);
+            var riKey = FindKeyOwnedByNode(0);
             var slot = context.clusterTestUtils.HashSlot(riKey);
 
             var fields = Enumerable.Range(0, 20).Select(i => ($"field_{i}", $"value_{i}")).ToList();
@@ -1389,8 +1798,7 @@ namespace Garnet.test.cluster
 
             // Post-migration write on the target.
             var extra = ("field_extra", "value_extra");
-            ClassicAssert.AreEqual("OK", (string)context.clusterTestUtils.Execute(
-                primary1, "RI.SET", [riKey, extra.Item1, extra.Item2], flags: CommandFlags.NoRedirect));
+            ClassicAssert.AreEqual("OK", (string)context.clusterTestUtils.Execute(primary1, "RI.SET", [riKey, extra.Item1, extra.Item2], flags: CommandFlags.NoRedirect));
 
             // Checkpoint the target so the migrated tree is persisted, then restart and recover.
             CheckpointNode(targetIndex);
@@ -1419,10 +1827,8 @@ namespace Garnet.test.cluster
 
             var primary0 = (IPEndPoint)context.clusterTestUtils.GetEndPoint(0);
             var primary1 = (IPEndPoint)context.clusterTestUtils.GetEndPoint(1);
-            var primary0Id = context.clusterTestUtils.ClusterMyId(primary0);
-            var slots = context.clusterTestUtils.ClusterSlots(primary0);
 
-            var riKey = FindKeyOnNode(nameof(ClusterMigrateRangeIndexThenDelete), primary0Id, slots);
+            var riKey = FindKeyOwnedByNode(0);
             var slot = context.clusterTestUtils.HashSlot(riKey);
 
             var fields = Enumerable.Range(0, 20).Select(i => ($"field_{i}", $"value_{i}")).ToList();
@@ -1437,19 +1843,15 @@ namespace Garnet.test.cluster
             VerifyFieldsOnEndpoint(primary1, riKey, fields);
 
             // Delete the whole key on the target.
-            var delResult = (int)context.clusterTestUtils.Execute(
-                primary1, "DEL", [riKey], flags: CommandFlags.NoRedirect);
+            var delResult = (int)context.clusterTestUtils.Execute(primary1, "DEL", [riKey], flags: CommandFlags.NoRedirect);
             ClassicAssert.AreEqual(1, delResult, "DEL should remove the migrated key");
 
             // The key is gone.
-            var exists = (int)context.clusterTestUtils.Execute(
-                primary1, "RI.EXISTS", [riKey], flags: CommandFlags.NoRedirect);
+            var exists = (int)context.clusterTestUtils.Execute(primary1, "RI.EXISTS", [riKey], flags: CommandFlags.NoRedirect);
             ClassicAssert.AreEqual(0, exists, "RI.EXISTS should be 0 after DEL");
 
-            var getResult = (string)context.clusterTestUtils.Execute(
-                primary1, "RI.GET", [riKey, "field_0"], flags: CommandFlags.NoRedirect);
-            ClassicAssert.IsTrue(getResult.Contains("not found", StringComparison.OrdinalIgnoreCase),
-                $"RI.GET should report the index is gone after DEL, got: {getResult}");
+            var getResult = (string)context.clusterTestUtils.Execute(primary1, "RI.GET", [riKey, "field_0"], flags: CommandFlags.NoRedirect);
+            ClassicAssert.IsTrue(getResult.Contains("not found", StringComparison.OrdinalIgnoreCase), $"RI.GET should report the index is gone after DEL, got: {getResult}");
 
             // A fresh index can be created at the same key (delete cleaned up file state).
             var recreated = new[] { ("field_a", "value_a"), ("field_b", "value_b") };
@@ -1469,17 +1871,15 @@ namespace Garnet.test.cluster
             const int shards = 2;
             const int targetIndex = 1;
 
-            context.CreateInstances(shards, enableRangeIndexPreview: true, enableAOF: true);
+            context.CreateInstances(shards, tryRecover: true, enableRangeIndexPreview: true, enableAOF: true);
             context.CreateConnection();
 
             _ = context.clusterTestUtils.SimpleSetupCluster(logger: context.logger);
 
             var primary0 = (IPEndPoint)context.clusterTestUtils.GetEndPoint(0);
             var primary1 = (IPEndPoint)context.clusterTestUtils.GetEndPoint(1);
-            var primary0Id = context.clusterTestUtils.ClusterMyId(primary0);
-            var slots = context.clusterTestUtils.ClusterSlots(primary0);
 
-            var riKey = FindKeyOnNode(nameof(ClusterMigrateRangeIndexThenCheckpointRestartAndContinue), primary0Id, slots);
+            var riKey = FindKeyOwnedByNode(0);
             var slot = context.clusterTestUtils.HashSlot(riKey);
 
             var fields = Enumerable.Range(0, 15).Select(i => ($"field_{i}", $"value_{i}")).ToList();
@@ -1499,8 +1899,7 @@ namespace Garnet.test.cluster
             var afterRecovery = Enumerable.Range(15, 15).Select(i => ($"field_{i}", $"value_{i}")).ToList();
             foreach (var (field, value) in afterRecovery)
             {
-                ClassicAssert.AreEqual("OK", (string)context.clusterTestUtils.Execute(
-                    primary1, "RI.SET", [riKey, field, value], flags: CommandFlags.NoRedirect));
+                ClassicAssert.AreEqual("OK", (string)context.clusterTestUtils.Execute(primary1, "RI.SET", [riKey, field, value], flags: CommandFlags.NoRedirect));
             }
             VerifyFieldsOnEndpoint(primary1, riKey, fields.Concat(afterRecovery));
 
@@ -1522,17 +1921,15 @@ namespace Garnet.test.cluster
             const int shards = 2;
             const int sourceIndex = 0;
 
-            context.CreateInstances(shards, enableRangeIndexPreview: true, enableAOF: true);
+            context.CreateInstances(shards, tryRecover: true, enableRangeIndexPreview: true, enableAOF: true);
             context.CreateConnection();
 
             _ = context.clusterTestUtils.SimpleSetupCluster(logger: context.logger);
 
             var primary0 = (IPEndPoint)context.clusterTestUtils.GetEndPoint(0);
             var primary1 = (IPEndPoint)context.clusterTestUtils.GetEndPoint(1);
-            var primary0Id = context.clusterTestUtils.ClusterMyId(primary0);
-            var slots = context.clusterTestUtils.ClusterSlots(primary0);
 
-            var riKey = FindKeyOnNode(nameof(ClusterMigrateRangeIndexRoundTripThenRestart), primary0Id, slots);
+            var riKey = FindKeyOwnedByNode(0);
             var slot = context.clusterTestUtils.HashSlot(riKey);
 
             var fields = Enumerable.Range(0, 15).Select(i => ($"field_{i}", $"value_{i}")).ToList();
@@ -1545,8 +1942,7 @@ namespace Garnet.test.cluster
 
             // Add a field on P1, then migrate back P1 → P0.
             var extra = ("field_extra", "value_extra");
-            ClassicAssert.AreEqual("OK", (string)context.clusterTestUtils.Execute(
-                primary1, "RI.SET", [riKey, extra.Item1, extra.Item2], flags: CommandFlags.NoRedirect));
+            ClassicAssert.AreEqual("OK", (string)context.clusterTestUtils.Execute(primary1, "RI.SET", [riKey, extra.Item1, extra.Item2], flags: CommandFlags.NoRedirect));
 
             context.clusterTestUtils.MigrateSlots(primary1, primary0, [slot]);
             context.clusterTestUtils.WaitForMigrationCleanup(logger: context.logger);
