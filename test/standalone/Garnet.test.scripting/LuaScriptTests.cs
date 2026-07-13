@@ -3402,7 +3402,7 @@ return count";
             RedisChannel channel,
             Action<RedisChannel, RedisValue> handler)
         {
-            var probeReceived = new ManualResetEvent(false);
+            using var probeReceived = new ManualResetEvent(false);
             sub.Subscribe(channel, (recvChannel, message) =>
             {
                 if (message == LuaPublishProbe)
@@ -3463,7 +3463,7 @@ return count";
 
             var channel = RedisChannel.Literal("lua_pub_basic");
             const string Payload = "hello-from-lua";
-            var received = new ManualResetEvent(false);
+            using var received = new ManualResetEvent(false);
             RedisValue lastMessage = default;
 
             SubscribeConfirmed(sub, db, channel, (_, msg) =>
@@ -3592,6 +3592,10 @@ return count";
                 {
                     mux.Dispose();
                 }
+                foreach (var flag in receivedFlags)
+                {
+                    flag.Dispose();
+                }
             }
         }
 
@@ -3605,7 +3609,7 @@ return count";
             var db = redis.GetDatabase(0);
 
             var patternChannel = new RedisChannel("lua_pub_pattern_*", RedisChannel.PatternMode.Pattern);
-            var received = new ManualResetEvent(false);
+            using var received = new ManualResetEvent(false);
             RedisValue lastMessage = default;
 
             SubscribeConfirmed(sub, db, patternChannel, (_, msg) =>
@@ -3640,7 +3644,7 @@ return count";
             var db = redis.GetDatabase(0);
 
             var channel = RedisChannel.Literal("lua_pub_mixed");
-            var received = new ManualResetEvent(false);
+            using var received = new ManualResetEvent(false);
             RedisValue lastMessage = default;
 
             SubscribeConfirmed(sub, db, channel, (_, msg) =>
@@ -3686,7 +3690,7 @@ return count";
             const int Repeat = 5;
             var receivedMessages = new HashSet<string>();
             var lockObj = new object();
-            var done = new ManualResetEvent(false);
+            using var done = new ManualResetEvent(false);
 
             SubscribeConfirmed(sub, db, channel, (_, msg) =>
             {
@@ -3738,7 +3742,7 @@ return count";
 
             var channel = RedisChannel.Literal("lua_pub_unicode");
             const string Payload = "中文消息-emoji-😀-üñîçødé";
-            var received = new ManualResetEvent(false);
+            using var received = new ManualResetEvent(false);
             RedisValue lastMessage = default;
 
             SubscribeConfirmed(sub, db, channel, (_, msg) =>
@@ -3772,7 +3776,7 @@ return count";
             var db = redis.GetDatabase(0);
 
             var channel = RedisChannel.Literal("lua_pub_empty");
-            var received = new ManualResetEvent(false);
+            using var received = new ManualResetEvent(false);
             RedisValue lastMessage = default;
 
             SubscribeConfirmed(sub, db, channel, (_, msg) =>
@@ -3806,7 +3810,7 @@ return count";
             var db = redis.GetDatabase(0);
 
             var channel = RedisChannel.Literal("lua_pub_after_cmds");
-            var received = new ManualResetEvent(false);
+            using var received = new ManualResetEvent(false);
             RedisValue lastMessage = default;
 
             SubscribeConfirmed(sub, db, channel, (_, msg) =>
@@ -3902,7 +3906,7 @@ return count";
             var totalMessages = TaskCount * PerTask;
             var receivedCount = 0;
             var lockObj = new object();
-            var allDone = new ManualResetEvent(false);
+            using var allDone = new ManualResetEvent(false);
 
             SubscribeConfirmed(sub, db, channel, (_, _) =>
             {
@@ -3964,7 +3968,7 @@ return count";
             var db = redis.GetDatabase(0);
 
             var channel = RedisChannel.Literal("lua_pub_multi_script");
-            var received = new ManualResetEvent(false);
+            using var received = new ManualResetEvent(false);
             RedisValue lastMessage = default;
 
             SubscribeConfirmed(sub, db, channel, (_, msg) =>
@@ -4009,8 +4013,8 @@ return count";
 
             var channelA = RedisChannel.Literal("lua_pub_state_a");
             var channelB = RedisChannel.Literal("lua_pub_state_b");
-            var aReceived = new ManualResetEvent(false);
-            var bReceived = new ManualResetEvent(false);
+            using var aReceived = new ManualResetEvent(false);
+            using var bReceived = new ManualResetEvent(false);
 
             SubscribeConfirmed(sub, db, channelA, (_, _) => _ = aReceived.Set());
             SubscribeConfirmed(sub, db, channelB, (_, _) => _ = bReceived.Set());
@@ -4043,7 +4047,7 @@ return count";
             var server = redis.GetServer(TestUtils.EndPoint);
 
             var channel = RedisChannel.Literal("lua_pub_flush");
-            var received = new ManualResetEvent(false);
+            using var received = new ManualResetEvent(false);
             RedisValue lastMessage = default;
 
             SubscribeConfirmed(sub, db, channel, (_, msg) =>

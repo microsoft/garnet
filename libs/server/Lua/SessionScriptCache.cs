@@ -52,8 +52,9 @@ namespace Garnet.server
             this.logger = logger;
 
             scratchBufferNetworkSender = new ScratchBufferNetworkSender();
-            // Pass storeWrapper.subscribeBroker so Lua scripts can use Pub/Sub commands
-            // (e.g. redis.call('PUBLISH', ...)) consistently with network sessions.
+            // Pass storeWrapper.subscribeBroker so Lua scripts can use publish-side Pub/Sub
+            // commands (e.g. redis.call('PUBLISH', ...)) consistently with network sessions.
+            // SUBSCRIBE/PSUBSCRIBE remain blocked by the NoScript bitmap.
             processor = new RespServerSession(0, scratchBufferNetworkSender, storeWrapper, storeWrapper.subscribeBroker, authenticator, false);
 
             // There's some parsing involved in these, so save them off per-session
