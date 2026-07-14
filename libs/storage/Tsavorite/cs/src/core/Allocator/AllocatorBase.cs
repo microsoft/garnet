@@ -1211,6 +1211,11 @@ namespace Tsavorite.core
             // TODO: Here we can "allocate" the last chunk on the page as an invalid record, and enqueue it into the revivification freelist if enabled,
             // before we proceed to the next page. This will speed up scan by letting it jump to the end of the page rather than relying on the end of
             // the page to be zero-initialized and traversing it by 8-byte IsNull RecordInfo increments.
+            // NOTE: this filler must be written differently per allocator. The main store uses a RecordInfo/RecordDataHeader invalid record
+            // (KeyLength=0, ValueLength=tail, PreviousAddress=kTempInvalidAddress, Filler unset). TsavoriteLog does NOT use RecordInfo records —
+            // its scan (TsavoriteLogScanIterator.GetNextInternal) already skips a zero-length page tail by jumping to the next page — so for
+            // TsavoriteLog the filler must be an entry-length-prefixed record (or left as a zero tail), not a RecordInfo record. Deferred for now
+            // (only exercised once a partialSlots caller wastes a sub-partialSlots tail; the AOF chunk writer's zero tails are already handled).
 
             // Allocate next page and set new tail
             if (!IsAllocated(pageIndex % BufferSize) || !IsAllocated((pageIndex + 1) % BufferSize))
@@ -1298,7 +1303,9 @@ namespace Tsavorite.core
 
         /// <summary>Try allocate, spin for RETRY_NOW (logicalAddress is less than 0) case</summary>
         /// <param name="numSlots">Number of slots to allocate</param>
-        /// <param name="partialSlots">Number of partial slots to allocate if we are at the end of a page</param>
+        /// <param name="partialSlots">If nonzero, the number of partial slots to allocate if we are at the end of a page and we would split <paramref name="numSlots"/>
+        ///     into two parts, on this page and on the following page, each of size at least <paramref name="partialSlots"/>. If this condition is met we satisfy the
+        ///     allocation and the caller will also receive the length of the allocation so it can allocate the second part after populating the first.</param>
         /// <param name="logicalAddress">Returned address, or RETRY_LATER (if 0) indicator</param>
         /// <param name="length">Length of the allocation, if successful</param>
         /// <returns>True if we were able to allocate, else false</returns>

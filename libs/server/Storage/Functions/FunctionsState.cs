@@ -20,7 +20,14 @@ namespace Garnet.server
         public readonly WatchVersionMap watchVersionMap;
         public readonly MemoryPool<byte> memoryPool;
         public readonly CacheSizeTracker cacheSizeTracker;
-        public readonly GarnetObjectSerializer garnetObjectSerializer;
+        private GarnetObjectSerializer garnetObjectSerializerInstance;
+
+        /// <summary>
+        /// Per-session object serializer, created lazily on first use. A <see cref="FunctionsState"/> is used mono-threaded (one
+        /// instance per session), so this serializer is safe for streaming Serialize/Deserialize (which mutate the serializer's
+        /// writer/reader), unlike the process-shared <see cref="StoreWrapper.GarnetObjectSerializer"/>.
+        /// </summary>
+        public GarnetObjectSerializer garnetObjectSerializer => garnetObjectSerializerInstance ??= new GarnetObjectSerializer(customCommandManager);
         public IStoreFunctions storeFunctions;
         public ObjectIdMap transientObjectIdMap;
         public readonly RangeIndexManager rangeIndexManager;
@@ -41,7 +48,6 @@ namespace Garnet.server
             this.customCommandManager = storeWrapper.customCommandManager;
             this.memoryPool = memoryPool ?? MemoryPool<byte>.Shared;
             this.cacheSizeTracker = objectStoreSizeTracker;
-            this.garnetObjectSerializer = storeWrapper.GarnetObjectSerializer;
             this.storeFunctions = storeWrapper.storeFunctions;
             this.transientObjectIdMap = storeWrapper.store.TransientObjectIdMap;
 

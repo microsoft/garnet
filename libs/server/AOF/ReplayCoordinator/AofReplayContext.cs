@@ -17,6 +17,9 @@ namespace Garnet.server
         public readonly Queue<TransactionGroup> txnGroupBuffer = [];
         public readonly Dictionary<int, TransactionGroup> activeTxns = [];
 
+        /// <summary>Accumulates chunked-record fragments (keyed by objectId) until a logical record is complete.</summary>
+        public readonly AofChunkedRecordReader chunkedReader = new();
+
         internal readonly RespServerSession respServerSession;
 
         public CustomProcedureInput customProcInput;

@@ -1,11 +1,9 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using Garnet.common;
-using Tsavorite.core;
 
 namespace Garnet.server
 {
@@ -150,6 +148,21 @@ namespace Garnet.server
             };
         }
 
+        /// <summary>
+        /// Like <see cref="SkipHeader"/>, but returns a reference to the embedded <see cref="AofChunkHeader"/> of a chunk record
+        /// (its lengths/objectId/keyHash), for <see cref="AofHeaderType.BasicChunkHeader"/> and
+        /// <see cref="AofHeaderType.ShardedChunkHeader"/>.
+        /// </summary>
+        public static unsafe ref AofChunkHeader GetChunkedHeaderRef(byte* entryPtr)
+        {
+            var headerType = ((AofHeader*)entryPtr)->HeaderType;
+            if (headerType == AofHeaderType.BasicChunkHeader)
+                return ref ((AofBasicChunkHeader*)entryPtr)->chunkHeader;
+            if (headerType == AofHeaderType.ShardedChunkHeader)
+                return ref ((AofShardedChunkHeader*)entryPtr)->chunkHeader;
+            throw new GarnetException($"Type is not a chunk header: {headerType}");
+        }
+
         public const int TotalSize = 16;
 
         // Important: Update version number whenever any of the following change:
@@ -242,6 +255,9 @@ namespace Garnet.server
             }
         }
 
+        /// <summary>True if this record is one chunk of a larger, chunked logical record.</summary>
+        public readonly bool IsChunked => (flags & ChunkedRecordFlag) != 0;
+
         public AofHeader()
         {
             flags = 0;
@@ -250,13 +266,16 @@ namespace Garnet.server
     }
 
     /// <summary>
-    /// Chunked variant of <see cref="AofHeader"/>: a basic header immediately followed by a
-    /// <see cref="ChunkHeader"/>. Used when a large value is split across multiple AOF entries.
+    /// Chunked variant of <see cref="AofHeader"/>: a basic header immediately followed by an
+    /// <see cref="AofChunkHeader"/>. Used when a large value is split across multiple AOF entries.
     /// </summary>
     [StructLayout(LayoutKind.Explicit, Size = TotalSize)]
     struct AofBasicChunkHeader
     {
-        public const int TotalSize = AofHeader.TotalSize + ChunkHeader.TotalSize;
+        public const int TotalSize = AofHeader.TotalSize + AofChunkHeader.TotalSize;
+
+        /// <summary>Byte offset of the chunk's objectId within this header (the only field patched per-chunk at write time).</summary>
+        public const int ObjectIdOffset = AofHeader.TotalSize + AofChunkHeader.ObjectIdOffset;
 
         /// <summary>
         /// Basic AOF header.
@@ -268,17 +287,20 @@ namespace Garnet.server
         /// Chunk framing for this entry.
         /// </summary>
         [FieldOffset(AofHeader.TotalSize)]
-        public ChunkHeader chunkHeader;
+        public AofChunkHeader chunkHeader;
     }
 
     /// <summary>
-    /// Chunked variant of <see cref="AofShardedHeader"/>: a sharded header immediately followed by a
-    /// <see cref="ChunkHeader"/>.
+    /// Chunked variant of <see cref="AofShardedHeader"/>: a sharded header immediately followed by an
+    /// <see cref="AofChunkHeader"/>.
     /// </summary>
     [StructLayout(LayoutKind.Explicit, Size = TotalSize)]
     struct AofShardedChunkHeader
     {
-        public const int TotalSize = AofShardedHeader.TotalSize + ChunkHeader.TotalSize;
+        public const int TotalSize = AofShardedHeader.TotalSize + AofChunkHeader.TotalSize;
+
+        /// <summary>Byte offset of the chunk's objectId within this header (the only field patched per-chunk at write time).</summary>
+        public const int ObjectIdOffset = AofShardedHeader.TotalSize + AofChunkHeader.ObjectIdOffset;
 
         /// <summary>
         /// Sharded AOF header.
@@ -290,6 +312,6 @@ namespace Garnet.server
         /// Chunk framing for this entry.
         /// </summary>
         [FieldOffset(AofShardedHeader.TotalSize)]
-        public ChunkHeader chunkHeader;
+        public AofChunkHeader chunkHeader;
     }
 }

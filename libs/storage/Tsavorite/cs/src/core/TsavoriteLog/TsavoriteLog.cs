@@ -18,9 +18,16 @@ namespace Tsavorite.core
     /// <summary>
     /// Tsavorite Log
     /// </summary>
-    public sealed class TsavoriteLog : IDisposable
+    public sealed partial class TsavoriteLog : IDisposable
     {
         private Exception cannedException = null;
+
+        /// <summary>
+        /// Minimum size in bytes for a partial (chunked) allocation at the end of a page, passed as <c>partialSlots</c> to
+        /// <see cref="TsavoriteLogAllocatorImpl"/> allocation. It is also the threshold above which a key/value/object is
+        /// considered "large" and must be written as multiple chunk records.
+        /// </summary>
+        public const int MinPartialAllocSize = 1 << 20; // 1 MB
 
         readonly TsavoriteLogAllocatorImpl allocator;
         readonly LightEpoch epoch;
@@ -731,6 +738,13 @@ namespace Tsavorite.core
         /// </summary>
         /// <returns></returns>
         public int UnsafeGetLogPageSizeBits() => allocator.LogPageSizeBits;
+
+        /// <summary>
+        /// The allocator's sector-aligned buffer pool, exposed so callers (e.g. the AOF chunked-object write path) can create a
+        /// <see cref="ConditionallyHoistedKey"/> for keys they need to carry into the (struct-field-based) chunked serializer.
+        /// May be null for allocators that never do buffered IO; a pinned key never dereferences it.
+        /// </summary>
+        public SectorAlignedBufferPool BufferPool => allocator.bufferPool;
 
         /// <summary>
         /// Get read only lag address

@@ -40,26 +40,31 @@ namespace Garnet.server
         /// a. InPlaceWriter
         /// b. PostInitialWriter
         /// </summary>
-        void WriteLogUpsert<TEpochAccessor>(ReadOnlySpan<byte> key, ref ObjectInput input, IGarnetObject value, long version, int sessionID, TEpochAccessor epochAccessor)
+        void WriteLogUpsert<TKey, TEpochAccessor>(TKey key, ref ObjectInput input, IGarnetObject value, long version, int sessionID, TEpochAccessor epochAccessor)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
             where TEpochAccessor : IEpochAccessor
         {
             if (functionsState.StoredProcMode)
                 return;
             input.header.flags |= RespInputFlags.Deterministic;
 
-            GarnetObjectSerializer.Serialize(value, out var valueBytes);
-            fixed (byte* valPtr = valueBytes)
-            {
-                functionsState.appendOnlyFile.Log.Enqueue(
-                    AofEntryType.ObjectStoreUpsert,
-                    version,
-                    sessionID,
-                    key,
-                    new ReadOnlySpan<byte>(valPtr, valueBytes.Length),
-                    ref input,
-                    epochAccessor,
-                    out _);
-            }
+            // TODO(aof-chunk): thread epochAccessor so the caller's (store) epoch is suspended during AOF flush waits.
+            _ = epochAccessor;
+
+            // Defer object serialization: GarnetLog.EnqueueObjectChunked streams the object into chunk records via the AOF's
+            // ChunkedObjectSerializer, so we no longer materialize the whole serialized value up front.
+            functionsState.appendOnlyFile.Log.EnqueueObjectChunked(
+                AofEntryType.ObjectStoreUpsert,
+                version,
+                sessionID,
+                key,
+                value,
+                ref input,
+                functionsState.garnetObjectSerializer,
+                out _);
         }
 
         /// <summary>

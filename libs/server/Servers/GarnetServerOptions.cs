@@ -980,6 +980,9 @@ namespace Garnet.server
             // store but are still written in full to the AOF), and object commands like LPUSH/HSET can
             // push the AOF entry even higher. Throw a clear error here so users do not hit the runtime
             // "Entry does not fit on page" path with a stalled session.
+            // Note: entries larger than MinPartialAllocSize are split into multiple chunk records (each
+            // guaranteed to fit a page), so chunkable ops are not bounded by this rule; the 2x floor still
+            // guarantees headroom for the largest single non-chunked mirror plus its per-entry overhead.
             var mainPageSizeBits = PageSizeBits();
             if (pageSizeBits < mainPageSizeBits + 1)
             {

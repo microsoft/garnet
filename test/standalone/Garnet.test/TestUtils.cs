@@ -329,6 +329,7 @@ namespace Garnet.test
             bool enableRangeIndexPreview = false,
             string aofMemorySize = "64m",
             string aofPageSize = null,
+            int aofPhysicalSublogCount = 1,
             bool copyReadsToTail = false,
             int replayTaskCount = 1,
             bool failOnRecoveryError = false
@@ -413,6 +414,7 @@ namespace Garnet.test
                 EnableReadCache = enableReadCache,
                 ReplicationOffsetMaxLag = asyncReplay ? -1 : 0,
                 AofReplayTaskCount = replayTaskCount,
+                AofPhysicalSublogCount = aofPhysicalSublogCount,
                 LuaOptions = enableLua ? new LuaOptions(luaMemoryMode, luaMemoryLimit, luaTimeout ?? Timeout.InfiniteTimeSpan, luaLoggingMode, luaAllowedFunctions ?? [], logger) : null,
                 UnixSocketPath = unixSocketPath,
                 UnixSocketPermission = unixSocketPermission,
