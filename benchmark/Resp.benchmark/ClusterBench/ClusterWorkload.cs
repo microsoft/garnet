@@ -53,7 +53,9 @@ namespace Resp.benchmark
         /// <summary>Pre-generated request buffers (primary + optional replica) for the shard.</summary>
         public ClusterWorkload Workload;
 
-        /// <summary>Number of pre-generated batches (cycled through during the run).</summary>
+        /// <summary>Number of pre-generated batches in the shared collection. Each worker
+        /// randomly selects a batch in [0, BatchCount) per iteration, so concurrent workers
+        /// targeting the same shard touch different keys at any instant despite sharing buffers.</summary>
         public int BatchCount;
 
         /// <summary>LightClient connection buffer size needed to hold the largest request.</summary>

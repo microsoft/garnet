@@ -401,11 +401,12 @@ namespace Resp.benchmark
                 startSignal.Wait();
 
                 var sw = Stopwatch.StartNew();
-                var batchIdx = 0;
 
                 while (!done && sw.Elapsed < runTime)
                 {
-                    var bufIdx = batchIdx % batchCount;
+                    // Each worker randomly picks a buffer from the shared per-shard collection so
+                    // concurrent workers touch different keys at any instant (buffers stay shared).
+                    var bufIdx = rng.Next(batchCount);
                     Request request;
                     bool useReplica;
 
@@ -434,8 +435,11 @@ namespace Resp.benchmark
                         client.CompletePendingRequests();
                     }
 
-                    // Track bytes received
-                    var bytesRcvd = client.TotalBytesReceived;
+                    // Track bytes received across BOTH connections. Each client's TotalBytesReceived
+                    // is a cumulative counter, so sum them and store the absolute total. (Storing a
+                    // single client's total here would drop the other connection's bytes and oscillate
+                    // as primary/replica alternate.)
+                    var bytesRcvd = primaryClient.TotalBytesReceived + (replicaClient?.TotalBytesReceived ?? 0);
                     Interlocked.Exchange(ref bytesReceived, bytesRcvd);
 
                     var elapsed = Stopwatch.GetTimestamp() - opStart;
@@ -451,8 +455,6 @@ namespace Resp.benchmark
                         Interlocked.Add(ref replicaOps, request.CommandCount);
                     else
                         Interlocked.Add(ref primaryOps, request.CommandCount);
-
-                    batchIdx++;
                 }
             }
             finally
@@ -500,7 +502,6 @@ namespace Resp.benchmark
                 var sw = Stopwatch.StartNew();
                 var batchSize = opts.BatchSize.First();
                 var dbSizePerShard = opts.DbSize;
-                var batchIdx = 0;
 
                 // Determine operation types for mixed workload
                 var primaryOp = opts.Op;
@@ -510,7 +511,9 @@ namespace Resp.benchmark
 
                 while (!done && sw.Elapsed < runTime)
                 {
-                    var bufIdx = batchIdx % batchCount;
+                    // Each worker randomly picks a buffer from the shared per-shard collection so
+                    // concurrent workers touch different keys at any instant (buffers stay shared).
+                    var bufIdx = rng.Next(batchCount);
                     bool useReplica;
                     OpType currentOp;
                     int numCommands;
@@ -592,8 +595,6 @@ namespace Resp.benchmark
                         Interlocked.Add(ref replicaOps, numCommands);
                     else
                         Interlocked.Add(ref primaryOps, numCommands);
-
-                    batchIdx++;
                 }
             }
             finally
@@ -634,7 +635,6 @@ namespace Resp.benchmark
                 var sw = Stopwatch.StartNew();
                 var batchSize = opts.BatchSize.First();
                 var dbSizePerShard = opts.DbSize;
-                var batchIdx = 0;
 
                 // Determine operation types for mixed workload
                 var primaryOp = opts.Op;
@@ -644,7 +644,9 @@ namespace Resp.benchmark
 
                 while (!done && sw.Elapsed < runTime)
                 {
-                    var bufIdx = batchIdx % batchCount;
+                    // Each worker randomly picks a buffer from the shared per-shard collection so
+                    // concurrent workers touch different keys at any instant (buffers stay shared).
+                    var bufIdx = rng.Next(batchCount);
                     bool useReplica;
                     OpType currentOp;
                     int numCommands;
@@ -725,8 +727,6 @@ namespace Resp.benchmark
                         Interlocked.Add(ref replicaOps, numCommands);
                     else
                         Interlocked.Add(ref primaryOps, numCommands);
-
-                    batchIdx++;
                 }
             }
             finally
@@ -762,7 +762,6 @@ namespace Resp.benchmark
                 var sw = Stopwatch.StartNew();
                 var batchSize = opts.BatchSize.First();
                 var dbSizePerShard = opts.DbSize;
-                var batchIdx = 0;
 
                 // Determine operation types for mixed workload
                 var primaryOp = opts.Op;
@@ -772,7 +771,9 @@ namespace Resp.benchmark
 
                 while (!done && sw.Elapsed < runTime)
                 {
-                    var bufIdx = batchIdx % batchCount;
+                    // Each worker randomly picks a buffer from the shared per-shard collection so
+                    // concurrent workers touch different keys at any instant (buffers stay shared).
+                    var bufIdx = rng.Next(batchCount);
                     bool useReplica;
                     OpType currentOp;
                     int numCommands;
@@ -852,8 +853,6 @@ namespace Resp.benchmark
                         Interlocked.Add(ref replicaOps, numCommands);
                     else
                         Interlocked.Add(ref primaryOps, numCommands);
-
-                    batchIdx++;
                 }
             }
             finally

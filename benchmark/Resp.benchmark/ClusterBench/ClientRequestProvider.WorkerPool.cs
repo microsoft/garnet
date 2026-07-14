@@ -25,9 +25,6 @@ namespace Resp.benchmark
         private IDatabase replicaSERedisDb;
         private bool connectionsInitialized = false;
 
-        // Batch counter for offline mode (cycles through pre-generated batches)
-        private long batchCounter = -1;
-
         // Pipeline state: tracks pending request metadata per provider
         private long pendingStartTimestamp;
         private int pendingBatchSize;
@@ -286,7 +283,9 @@ namespace Resp.benchmark
                 InitializeConnections();
 
             var opStart = Stopwatch.GetTimestamp();
-            var batchIdx = (int)(Interlocked.Increment(ref batchCounter) % batchCount);
+            // Each worker randomly picks a buffer from the shared per-shard collection so concurrent
+            // workers targeting the same shard touch different keys at any instant (buffers stay shared).
+            var batchIdx = rng.Next(batchCount);
 
             // Determine which request to execute
             bool useReplica;
@@ -371,8 +370,10 @@ namespace Resp.benchmark
                 }
             }
 
-            // Track bytes received
-            var bytesRcvd = selectedClient.TotalBytesReceived;
+            // Track bytes received across BOTH connections. Each client's TotalBytesReceived is a
+            // cumulative counter, so sum them and store the absolute total (storing only the
+            // selected client's total would drop the other connection's bytes and oscillate).
+            var bytesRcvd = primaryLightClient.TotalBytesReceived + (replicaLightClient?.TotalBytesReceived ?? 0);
             Interlocked.Exchange(ref bytesReceived, bytesRcvd);
         }
 
@@ -558,7 +559,9 @@ namespace Resp.benchmark
             var isMCommand = opts.Op is OpType.MGET or OpType.MSET;
 
             // Determine routing: for mixed workload, use pre-computed routing
-            var batchIdx = (int)(Interlocked.Increment(ref batchCounter) % batchCount);
+            // Each worker randomly picks a buffer from the shared per-shard collection so concurrent
+            // workers targeting the same shard touch different keys at any instant (buffers stay shared).
+            var batchIdx = rng.Next(batchCount);
             var useReplica = workload.ReplicaRequests != null && workload.ReadUseReplica[batchIdx];
 
             if (workload.ReplicaRequests == null)
@@ -803,8 +806,9 @@ namespace Resp.benchmark
             // LightClient uses TotalBytesReceived, others track via calculation
             if (opts.Client == ClientType.LightClient)
             {
-                var client = (pendingUsedReplica && replicaLightClient != null) ? replicaLightClient : primaryLightClient;
-                var bytesRcvd = client.TotalBytesReceived;
+                // Sum both connections' cumulative counters and store the absolute total (storing a
+                // single client's total would drop the other connection's bytes and oscillate).
+                var bytesRcvd = primaryLightClient.TotalBytesReceived + (replicaLightClient?.TotalBytesReceived ?? 0);
                 Interlocked.Exchange(ref bytesReceived, bytesRcvd);
             }
             else
