@@ -306,6 +306,1148 @@ namespace Garnet.test
             => db.StringGetAsync(againstKey);
         }
 
+        // The following commands from the requested list are intentionally SKIPPED because they have no
+        // high-level StackExchange.Redis equivalent method (and we deliberately avoid ExecuteAsync).
+        // They are either Garnet-specific commands or standard Redis commands that SE.Redis does not model:
+        //
+        //   No SE.Redis method / not modeled: BITFIELD, BITFIELD_RO, MEMORY_USAGE, GEORADIUS_RO,
+        //       GEORADIUSBYMEMBER_RO, UNLINK (KeyDelete emits DEL), WATCH
+        //   Blocking commands (no SE.Redis blocking API): BLMOVE, BLPOP, BRPOP, BRPOPLPUSH, BZPOPMAX, BZPOPMIN
+        //   Garnet ETag commands: DELIFGREATER, GETIFNOTMATCH, GETWITHETAG, SETIFGREATER, SETIFMATCH, SETWITHETAG
+        //   Garnet Range Index commands: RICONFIG, RICREATE, RIDEL, RIEXISTS, RIGET, RIMETRICS, RIRANGE, RISCAN, RISET
+        //   Garnet sorted-set field TTL commands: ZEXPIRE, ZEXPIREAT, ZEXPIRETIME, ZPERSIST, ZPEXPIRE,
+        //       ZPEXPIREAT, ZPEXPIRETIME, ZPTTL, ZTTL
+        //   Other Garnet-specific commands: COMMITAOF, COSCAN, EXPDELSCAN, HCOLLECT, ZCOLLECT, PURGEBP,
+        //       REGISTERCS, RUNTXP, SPUBLISH, SSUBSCRIBE, WATCHMS, WATCHOS
+
+        [Test]
+        public Task APPENDAsync()
+        {
+            return TestNonVectorSetCommandAsync(RunCommand);
+
+            static Task RunCommand(IDatabase db, RedisKey againstKey)
+            => db.StringAppendAsync(againstKey, "foo");
+        }
+
+        [Test]
+        public Task BITCOUNTAsync()
+        {
+            return TestNonVectorSetCommandAsync(RunCommand);
+
+            static Task RunCommand(IDatabase db, RedisKey againstKey)
+            => db.StringBitCountAsync(againstKey);
+        }
+
+        [Test]
+        public async Task BITOPAsync()
+        {
+            await TestNonVectorSetCommandAsync(RunAnd).ConfigureAwait(false);
+            await TestNonVectorSetCommandAsync(RunOr).ConfigureAwait(false);
+            await TestNonVectorSetCommandAsync(RunXor).ConfigureAwait(false);
+            await TestNonVectorSetCommandAsync(RunNot).ConfigureAwait(false);
+
+            static Task RunAnd(IDatabase db, RedisKey againstKey)
+            => db.StringBitOperationAsync(Bitwise.And, "BITOP_dest", againstKey);
+
+            static Task RunOr(IDatabase db, RedisKey againstKey)
+            => db.StringBitOperationAsync(Bitwise.Or, "BITOP_dest", againstKey);
+
+            static Task RunXor(IDatabase db, RedisKey againstKey)
+            => db.StringBitOperationAsync(Bitwise.Xor, "BITOP_dest", againstKey);
+
+            static Task RunNot(IDatabase db, RedisKey againstKey)
+            => db.StringBitOperationAsync(Bitwise.Not, "BITOP_dest", againstKey);
+        }
+
+        [Test]
+        public Task BITPOSAsync()
+        {
+            return TestNonVectorSetCommandAsync(RunCommand);
+
+            static Task RunCommand(IDatabase db, RedisKey againstKey)
+            => db.StringBitPositionAsync(againstKey, true);
+        }
+
+        [Test]
+        public Task DECRAsync()
+        {
+            return TestNonVectorSetCommandAsync(RunCommand);
+
+            static Task RunCommand(IDatabase db, RedisKey againstKey)
+            => db.StringDecrementAsync(againstKey);
+        }
+
+        [Test]
+        public Task DECRBYAsync()
+        {
+            return TestNonVectorSetCommandAsync(RunCommand);
+
+            static Task RunCommand(IDatabase db, RedisKey againstKey)
+            => db.StringDecrementAsync(againstKey, 2L);
+        }
+
+        [Test]
+        public Task GETBITAsync()
+        {
+            return TestNonVectorSetCommandAsync(RunCommand);
+
+            static Task RunCommand(IDatabase db, RedisKey againstKey)
+            => db.StringGetBitAsync(againstKey, 0);
+        }
+
+        [Test]
+        public Task GETDELAsync()
+        {
+            return TestNonVectorSetCommandAsync(RunCommand);
+
+            static Task RunCommand(IDatabase db, RedisKey againstKey)
+            => db.StringGetDeleteAsync(againstKey);
+        }
+
+        [Test]
+        public Task GETEXAsync()
+        {
+            return TestNonVectorSetCommandAsync(RunCommand);
+
+            static Task RunCommand(IDatabase db, RedisKey againstKey)
+            => db.StringGetSetExpiryAsync(againstKey, TimeSpan.FromSeconds(10));
+        }
+
+        [Test]
+        public Task GETRANGEAsync()
+        {
+            return TestNonVectorSetCommandAsync(RunCommand);
+
+            static Task RunCommand(IDatabase db, RedisKey againstKey)
+            => db.StringGetRangeAsync(againstKey, 0, -1);
+        }
+
+        [Test]
+        public Task GETSETAsync()
+        {
+            return TestNonVectorSetCommandAsync(RunCommand);
+
+            static Task RunCommand(IDatabase db, RedisKey againstKey)
+            => db.StringGetSetAsync(againstKey, "foo");
+        }
+
+        [Test]
+        public Task INCRAsync()
+        {
+            return TestNonVectorSetCommandAsync(RunCommand);
+
+            static Task RunCommand(IDatabase db, RedisKey againstKey)
+            => db.StringIncrementAsync(againstKey);
+        }
+
+        [Test]
+        public Task INCRBYAsync()
+        {
+            return TestNonVectorSetCommandAsync(RunCommand);
+
+            static Task RunCommand(IDatabase db, RedisKey againstKey)
+            => db.StringIncrementAsync(againstKey, 2L);
+        }
+
+        [Test]
+        public Task INCRBYFLOATAsync()
+        {
+            return TestNonVectorSetCommandAsync(RunCommand);
+
+            static Task RunCommand(IDatabase db, RedisKey againstKey)
+            => db.StringIncrementAsync(againstKey, 1.5);
+        }
+
+        [Test]
+        public Task LCSAsync()
+        {
+            return TestNonVectorSetCommandAsync(RunCommand);
+
+            static Task RunCommand(IDatabase db, RedisKey againstKey)
+            => db.StringLongestCommonSubsequenceAsync(againstKey, "LCS_other");
+        }
+
+        [Test]
+        public Task MGETAsync()
+        {
+            return TestNonVectorSetCommandAsync(RunCommand);
+
+            static Task RunCommand(IDatabase db, RedisKey againstKey)
+            => db.StringGetAsync([againstKey]);
+        }
+
+        [Test]
+        public Task MSETAsync()
+        {
+            return TestNonVectorSetCommandAsync(RunCommand);
+
+            static Task RunCommand(IDatabase db, RedisKey againstKey)
+            => db.StringSetAsync([new KeyValuePair<RedisKey, RedisValue>(againstKey, "foo")]);
+        }
+
+        [Test]
+        public Task MSETNXAsync()
+        {
+            return TestNonVectorSetCommandAsync(RunCommand);
+
+            static Task RunCommand(IDatabase db, RedisKey againstKey)
+            => db.StringSetAsync([new KeyValuePair<RedisKey, RedisValue>(againstKey, "foo")], When.NotExists);
+        }
+
+        [Test]
+        public Task PSETEXAsync()
+        {
+            return TestNonVectorSetCommandAsync(RunCommand);
+
+            static Task RunCommand(IDatabase db, RedisKey againstKey)
+            => db.StringSetAsync(againstKey, "foo", TimeSpan.FromMilliseconds(10000), When.Always);
+        }
+
+        [Test]
+        public Task SETAsync()
+        {
+            return TestNonVectorSetCommandAsync(RunCommand);
+
+            static Task RunCommand(IDatabase db, RedisKey againstKey)
+            => db.StringSetAsync(againstKey, "foo");
+        }
+
+        [Test]
+        public Task SETBITAsync()
+        {
+            return TestNonVectorSetCommandAsync(RunCommand);
+
+            static Task RunCommand(IDatabase db, RedisKey againstKey)
+            => db.StringSetBitAsync(againstKey, 0, true);
+        }
+
+        [Test]
+        public Task SETEXAsync()
+        {
+            return TestNonVectorSetCommandAsync(RunCommand);
+
+            static Task RunCommand(IDatabase db, RedisKey againstKey)
+            => db.StringSetAsync(againstKey, "foo", TimeSpan.FromSeconds(10), When.Always);
+        }
+
+        [Test]
+        public Task SETNXAsync()
+        {
+            return TestNonVectorSetCommandAsync(RunCommand);
+
+            static Task RunCommand(IDatabase db, RedisKey againstKey)
+            => db.StringSetAsync(againstKey, "foo", null, When.NotExists);
+        }
+
+        [Test]
+        public Task SETRANGEAsync()
+        {
+            return TestNonVectorSetCommandAsync(RunCommand);
+
+            static Task RunCommand(IDatabase db, RedisKey againstKey)
+            => db.StringSetRangeAsync(againstKey, 0, "foo");
+        }
+
+        [Test]
+        public Task STRLENAsync()
+        {
+            return TestNonVectorSetCommandAsync(RunCommand);
+
+            static Task RunCommand(IDatabase db, RedisKey againstKey)
+            => db.StringLengthAsync(againstKey);
+        }
+
+        [Test]
+        public Task SUBSTRAsync()
+        {
+            return TestNonVectorSetCommandAsync(RunCommand);
+
+            static Task RunCommand(IDatabase db, RedisKey againstKey)
+            => db.StringGetRangeAsync(againstKey, 0, -1);
+        }
+
+        [Test]
+        public Task HDELAsync()
+        {
+            return TestNonVectorSetCommandAsync(RunCommand);
+
+            static Task RunCommand(IDatabase db, RedisKey againstKey)
+            => db.HashDeleteAsync(againstKey, "foo");
+        }
+
+        [Test]
+        public Task HEXISTSAsync()
+        {
+            return TestNonVectorSetCommandAsync(RunCommand);
+
+            static Task RunCommand(IDatabase db, RedisKey againstKey)
+            => db.HashExistsAsync(againstKey, "foo");
+        }
+
+        [Test]
+        public Task HEXPIREAsync()
+        {
+            return TestNonVectorSetCommandAsync(RunCommand);
+
+            static Task RunCommand(IDatabase db, RedisKey againstKey)
+            => db.HashFieldExpireAsync(againstKey, ["foo"], TimeSpan.FromSeconds(10));
+        }
+
+        [Test]
+        public Task HEXPIREATAsync()
+        {
+            return TestNonVectorSetCommandAsync(RunCommand);
+
+            static Task RunCommand(IDatabase db, RedisKey againstKey)
+            => db.HashFieldExpireAsync(againstKey, ["foo"], DateTime.UtcNow.AddMinutes(10));
+        }
+
+        [Test]
+        public Task HEXPIRETIMEAsync()
+        {
+            return TestNonVectorSetCommandAsync(RunCommand);
+
+            static Task RunCommand(IDatabase db, RedisKey againstKey)
+            => db.HashFieldGetExpireDateTimeAsync(againstKey, ["foo"]);
+        }
+
+        [Test]
+        public Task HGETAsync()
+        {
+            return TestNonVectorSetCommandAsync(RunCommand);
+
+            static Task RunCommand(IDatabase db, RedisKey againstKey)
+            => db.HashGetAsync(againstKey, "foo");
+        }
+
+        [Test]
+        public Task HGETALLAsync()
+        {
+            return TestNonVectorSetCommandAsync(RunCommand);
+
+            static Task RunCommand(IDatabase db, RedisKey againstKey)
+            => db.HashGetAllAsync(againstKey);
+        }
+
+        [Test]
+        public Task HINCRBYAsync()
+        {
+            return TestNonVectorSetCommandAsync(RunCommand);
+
+            static Task RunCommand(IDatabase db, RedisKey againstKey)
+            => db.HashIncrementAsync(againstKey, "foo", 1L);
+        }
+
+        [Test]
+        public Task HINCRBYFLOATAsync()
+        {
+            return TestNonVectorSetCommandAsync(RunCommand);
+
+            static Task RunCommand(IDatabase db, RedisKey againstKey)
+            => db.HashIncrementAsync(againstKey, "foo", 1.5);
+        }
+
+        [Test]
+        public Task HKEYSAsync()
+        {
+            return TestNonVectorSetCommandAsync(RunCommand);
+
+            static Task RunCommand(IDatabase db, RedisKey againstKey)
+            => db.HashKeysAsync(againstKey);
+        }
+
+        [Test]
+        public Task HLENAsync()
+        {
+            return TestNonVectorSetCommandAsync(RunCommand);
+
+            static Task RunCommand(IDatabase db, RedisKey againstKey)
+            => db.HashLengthAsync(againstKey);
+        }
+
+        [Test]
+        public Task HMGETAsync()
+        {
+            return TestNonVectorSetCommandAsync(RunCommand);
+
+            static Task RunCommand(IDatabase db, RedisKey againstKey)
+            => db.HashGetAsync(againstKey, ["foo"]);
+        }
+
+        [Test]
+        public Task HMSETAsync()
+        {
+            return TestNonVectorSetCommandAsync(RunCommand);
+
+            static Task RunCommand(IDatabase db, RedisKey againstKey)
+            => db.HashSetAsync(againstKey, [new HashEntry("foo", "bar")]);
+        }
+
+        [Test]
+        public Task HPERSISTAsync()
+        {
+            return TestNonVectorSetCommandAsync(RunCommand);
+
+            static Task RunCommand(IDatabase db, RedisKey againstKey)
+            => db.HashFieldPersistAsync(againstKey, ["foo"]);
+        }
+
+        [Test]
+        public Task HPEXPIREAsync()
+        {
+            return TestNonVectorSetCommandAsync(RunCommand);
+
+            static Task RunCommand(IDatabase db, RedisKey againstKey)
+            => db.HashFieldExpireAsync(againstKey, ["foo"], TimeSpan.FromMilliseconds(10000));
+        }
+
+        [Test]
+        public Task HPEXPIREATAsync()
+        {
+            return TestNonVectorSetCommandAsync(RunCommand);
+
+            static Task RunCommand(IDatabase db, RedisKey againstKey)
+            => db.HashFieldExpireAsync(againstKey, ["foo"], DateTime.UtcNow.AddMinutes(10));
+        }
+
+        [Test]
+        public Task HPEXPIRETIMEAsync()
+        {
+            return TestNonVectorSetCommandAsync(RunCommand);
+
+            static Task RunCommand(IDatabase db, RedisKey againstKey)
+            => db.HashFieldGetExpireDateTimeAsync(againstKey, ["foo"]);
+        }
+
+        [Test]
+        public Task HPTTLAsync()
+        {
+            return TestNonVectorSetCommandAsync(RunCommand);
+
+            static Task RunCommand(IDatabase db, RedisKey againstKey)
+            => db.HashFieldGetTimeToLiveAsync(againstKey, ["foo"]);
+        }
+
+        [Test]
+        public Task HRANDFIELDAsync()
+        {
+            return TestNonVectorSetCommandAsync(RunCommand);
+
+            static Task RunCommand(IDatabase db, RedisKey againstKey)
+            => db.HashRandomFieldAsync(againstKey);
+        }
+
+        [Test]
+        public Task HSCANAsync()
+        {
+            return TestNonVectorSetCommandAsync(RunCommand);
+
+            static async Task RunCommand(IDatabase db, RedisKey againstKey)
+            {
+                await using (var e = db.HashScanAsync(againstKey).GetAsyncEnumerator())
+                {
+                    _ = await e.MoveNextAsync().ConfigureAwait(false);
+                }
+            }
+        }
+
+        [Test]
+        public Task HSETAsync()
+        {
+            return TestNonVectorSetCommandAsync(RunCommand);
+
+            static Task RunCommand(IDatabase db, RedisKey againstKey)
+            => db.HashSetAsync(againstKey, "foo", "bar");
+        }
+
+        [Test]
+        public Task HSETNXAsync()
+        {
+            return TestNonVectorSetCommandAsync(RunCommand);
+
+            static Task RunCommand(IDatabase db, RedisKey againstKey)
+            => db.HashSetAsync(againstKey, "foo", "bar", When.NotExists);
+        }
+
+        [Test]
+        public Task HSTRLENAsync()
+        {
+            return TestNonVectorSetCommandAsync(RunCommand);
+
+            static Task RunCommand(IDatabase db, RedisKey againstKey)
+            => db.HashStringLengthAsync(againstKey, "foo");
+        }
+
+        [Test]
+        public Task HTTLAsync()
+        {
+            return TestNonVectorSetCommandAsync(RunCommand);
+
+            static Task RunCommand(IDatabase db, RedisKey againstKey)
+            => db.HashFieldGetTimeToLiveAsync(againstKey, ["foo"]);
+        }
+
+        [Test]
+        public Task HVALSAsync()
+        {
+            return TestNonVectorSetCommandAsync(RunCommand);
+
+            static Task RunCommand(IDatabase db, RedisKey againstKey)
+            => db.HashValuesAsync(againstKey);
+        }
+
+        [Test]
+        public Task LINDEXAsync()
+        {
+            return TestNonVectorSetCommandAsync(RunCommand);
+
+            static Task RunCommand(IDatabase db, RedisKey againstKey)
+            => db.ListGetByIndexAsync(againstKey, 0);
+        }
+
+        [Test]
+        public async Task LINSERTAsync()
+        {
+            await TestNonVectorSetCommandAsync(RunBefore).ConfigureAwait(false);
+            await TestNonVectorSetCommandAsync(RunAfter).ConfigureAwait(false);
+
+            static Task RunBefore(IDatabase db, RedisKey againstKey)
+            => db.ListInsertBeforeAsync(againstKey, "pivot", "foo");
+
+            static Task RunAfter(IDatabase db, RedisKey againstKey)
+            => db.ListInsertAfterAsync(againstKey, "pivot", "foo");
+        }
+
+        [Test]
+        public Task LLENAsync()
+        {
+            return TestNonVectorSetCommandAsync(RunCommand);
+
+            static Task RunCommand(IDatabase db, RedisKey againstKey)
+            => db.ListLengthAsync(againstKey);
+        }
+
+        [Test]
+        public async Task LMOVEAsync()
+        {
+            await TestNonVectorSetCommandAsync(RunLeftRight).ConfigureAwait(false);
+            await TestNonVectorSetCommandAsync(RunRightLeft).ConfigureAwait(false);
+
+            static Task RunLeftRight(IDatabase db, RedisKey againstKey)
+            => db.ListMoveAsync(againstKey, "LMOVE_dest", ListSide.Left, ListSide.Right);
+
+            static Task RunRightLeft(IDatabase db, RedisKey againstKey)
+            => db.ListMoveAsync(againstKey, "LMOVE_dest", ListSide.Right, ListSide.Left);
+        }
+
+        [Test]
+        public Task LPOPAsync()
+        {
+            return TestNonVectorSetCommandAsync(RunCommand);
+
+            static Task RunCommand(IDatabase db, RedisKey againstKey)
+            => db.ListLeftPopAsync(againstKey);
+        }
+
+        [Test]
+        public Task LPOSAsync()
+        {
+            return TestNonVectorSetCommandAsync(RunCommand);
+
+            static Task RunCommand(IDatabase db, RedisKey againstKey)
+            => db.ListPositionAsync(againstKey, "foo");
+        }
+
+        [Test]
+        public Task LPUSHAsync()
+        {
+            return TestNonVectorSetCommandAsync(RunCommand);
+
+            static Task RunCommand(IDatabase db, RedisKey againstKey)
+            => db.ListLeftPushAsync(againstKey, (RedisValue)"foo");
+        }
+
+        [Test]
+        public Task LPUSHXAsync()
+        {
+            return TestNonVectorSetCommandAsync(RunCommand);
+
+            static Task RunCommand(IDatabase db, RedisKey againstKey)
+            => db.ListLeftPushAsync(againstKey, (RedisValue)"foo", When.Exists);
+        }
+
+        [Test]
+        public Task LRANGEAsync()
+        {
+            return TestNonVectorSetCommandAsync(RunCommand);
+
+            static Task RunCommand(IDatabase db, RedisKey againstKey)
+            => db.ListRangeAsync(againstKey);
+        }
+
+        [Test]
+        public Task LREMAsync()
+        {
+            return TestNonVectorSetCommandAsync(RunCommand);
+
+            static Task RunCommand(IDatabase db, RedisKey againstKey)
+            => db.ListRemoveAsync(againstKey, "foo");
+        }
+
+        [Test]
+        public Task LSETAsync()
+        {
+            return TestNonVectorSetCommandAsync(RunCommand);
+
+            static Task RunCommand(IDatabase db, RedisKey againstKey)
+            => db.ListSetByIndexAsync(againstKey, 0, "foo");
+        }
+
+        [Test]
+        public Task LTRIMAsync()
+        {
+            return TestNonVectorSetCommandAsync(RunCommand);
+
+            static Task RunCommand(IDatabase db, RedisKey againstKey)
+            => db.ListTrimAsync(againstKey, 0, -1);
+        }
+
+        [Test]
+        public Task RPOPAsync()
+        {
+            return TestNonVectorSetCommandAsync(RunCommand);
+
+            static Task RunCommand(IDatabase db, RedisKey againstKey)
+            => db.ListRightPopAsync(againstKey);
+        }
+
+        [Test]
+        public Task RPOPLPUSHAsync()
+        {
+            return TestNonVectorSetCommandAsync(RunCommand);
+
+            static Task RunCommand(IDatabase db, RedisKey againstKey)
+            => db.ListRightPopLeftPushAsync(againstKey, "RPOPLPUSH_dest");
+        }
+
+        [Test]
+        public Task RPUSHAsync()
+        {
+            return TestNonVectorSetCommandAsync(RunCommand);
+
+            static Task RunCommand(IDatabase db, RedisKey againstKey)
+            => db.ListRightPushAsync(againstKey, (RedisValue)"foo");
+        }
+
+        [Test]
+        public Task RPUSHXAsync()
+        {
+            return TestNonVectorSetCommandAsync(RunCommand);
+
+            static Task RunCommand(IDatabase db, RedisKey againstKey)
+            => db.ListRightPushAsync(againstKey, (RedisValue)"foo", When.Exists);
+        }
+
+        [Test]
+        public Task SADDAsync()
+        {
+            return TestNonVectorSetCommandAsync(RunCommand);
+
+            static Task RunCommand(IDatabase db, RedisKey againstKey)
+            => db.SetAddAsync(againstKey, "foo");
+        }
+
+        [Test]
+        public Task SCARDAsync()
+        {
+            return TestNonVectorSetCommandAsync(RunCommand);
+
+            static Task RunCommand(IDatabase db, RedisKey againstKey)
+            => db.SetLengthAsync(againstKey);
+        }
+
+        [Test]
+        public Task SDIFFAsync()
+        {
+            return TestNonVectorSetCommandAsync(RunCommand);
+
+            static Task RunCommand(IDatabase db, RedisKey againstKey)
+            => db.SetCombineAsync(StackExchange.Redis.SetOperation.Difference, [againstKey]);
+        }
+
+        [Test]
+        public Task SDIFFSTOREAsync()
+        {
+            return TestNonVectorSetCommandAsync(RunCommand);
+
+            static Task RunCommand(IDatabase db, RedisKey againstKey)
+            => db.SetCombineAndStoreAsync(StackExchange.Redis.SetOperation.Difference, "SDIFFSTORE_dest", [againstKey]);
+        }
+
+        [Test]
+        public Task SINTERAsync()
+        {
+            return TestNonVectorSetCommandAsync(RunCommand);
+
+            static Task RunCommand(IDatabase db, RedisKey againstKey)
+            => db.SetCombineAsync(StackExchange.Redis.SetOperation.Intersect, [againstKey]);
+        }
+
+        [Test]
+        public Task SINTERSTOREAsync()
+        {
+            return TestNonVectorSetCommandAsync(RunCommand);
+
+            static Task RunCommand(IDatabase db, RedisKey againstKey)
+            => db.SetCombineAndStoreAsync(StackExchange.Redis.SetOperation.Intersect, "SINTERSTORE_dest", [againstKey]);
+        }
+
+        [Test]
+        public Task SISMEMBERAsync()
+        {
+            return TestNonVectorSetCommandAsync(RunCommand);
+
+            static Task RunCommand(IDatabase db, RedisKey againstKey)
+            => db.SetContainsAsync(againstKey, "foo");
+        }
+
+        [Test]
+        public Task SMEMBERSAsync()
+        {
+            return TestNonVectorSetCommandAsync(RunCommand);
+
+            static Task RunCommand(IDatabase db, RedisKey againstKey)
+            => db.SetMembersAsync(againstKey);
+        }
+
+        [Test]
+        public Task SMISMEMBERAsync()
+        {
+            return TestNonVectorSetCommandAsync(RunCommand);
+
+            static Task RunCommand(IDatabase db, RedisKey againstKey)
+            => db.SetContainsAsync(againstKey, ["foo"]);
+        }
+
+        [Test]
+        public Task SMOVEAsync()
+        {
+            return TestNonVectorSetCommandAsync(RunCommand);
+
+            static Task RunCommand(IDatabase db, RedisKey againstKey)
+            => db.SetMoveAsync(againstKey, "SMOVE_dest", "foo");
+        }
+
+        [Test]
+        public Task SPOPAsync()
+        {
+            return TestNonVectorSetCommandAsync(RunCommand);
+
+            static Task RunCommand(IDatabase db, RedisKey againstKey)
+            => db.SetPopAsync(againstKey);
+        }
+
+        [Test]
+        public Task SRANDMEMBERAsync()
+        {
+            return TestNonVectorSetCommandAsync(RunCommand);
+
+            static Task RunCommand(IDatabase db, RedisKey againstKey)
+            => db.SetRandomMemberAsync(againstKey);
+        }
+
+        [Test]
+        public Task SREMAsync()
+        {
+            return TestNonVectorSetCommandAsync(RunCommand);
+
+            static Task RunCommand(IDatabase db, RedisKey againstKey)
+            => db.SetRemoveAsync(againstKey, "foo");
+        }
+
+        [Test]
+        public Task SSCANAsync()
+        {
+            return TestNonVectorSetCommandAsync(RunCommand);
+
+            static async Task RunCommand(IDatabase db, RedisKey againstKey)
+            {
+                await using (var e = db.SetScanAsync(againstKey).GetAsyncEnumerator())
+                {
+                    _ = await e.MoveNextAsync().ConfigureAwait(false);
+                }
+            }
+        }
+
+        [Test]
+        public Task SUNIONAsync()
+        {
+            return TestNonVectorSetCommandAsync(RunCommand);
+
+            static Task RunCommand(IDatabase db, RedisKey againstKey)
+            => db.SetCombineAsync(StackExchange.Redis.SetOperation.Union, [againstKey]);
+        }
+
+        [Test]
+        public Task SUNIONSTOREAsync()
+        {
+            return TestNonVectorSetCommandAsync(RunCommand);
+
+            static Task RunCommand(IDatabase db, RedisKey againstKey)
+            => db.SetCombineAndStoreAsync(StackExchange.Redis.SetOperation.Union, "SUNIONSTORE_dest", [againstKey]);
+        }
+
+        [Test]
+        public Task ZADDAsync()
+        {
+            return TestNonVectorSetCommandAsync(RunCommand);
+
+            static Task RunCommand(IDatabase db, RedisKey againstKey)
+            => db.SortedSetAddAsync(againstKey, "foo", 1.0);
+        }
+
+        [Test]
+        public Task ZCARDAsync()
+        {
+            return TestNonVectorSetCommandAsync(RunCommand);
+
+            static Task RunCommand(IDatabase db, RedisKey againstKey)
+            => db.SortedSetLengthAsync(againstKey);
+        }
+
+        [Test]
+        public Task ZCOUNTAsync()
+        {
+            return TestNonVectorSetCommandAsync(RunCommand);
+
+            static Task RunCommand(IDatabase db, RedisKey againstKey)
+            => db.SortedSetLengthAsync(againstKey, 1, 10);
+        }
+
+        [Test]
+        public Task ZDIFFSTOREAsync()
+        {
+            return TestNonVectorSetCommandAsync(RunCommand);
+
+            static Task RunCommand(IDatabase db, RedisKey againstKey)
+            => db.SortedSetCombineAndStoreAsync(StackExchange.Redis.SetOperation.Difference, "ZDIFFSTORE_dest", [againstKey]);
+        }
+
+        [Test]
+        public Task ZINCRBYAsync()
+        {
+            return TestNonVectorSetCommandAsync(RunCommand);
+
+            static Task RunCommand(IDatabase db, RedisKey againstKey)
+            => db.SortedSetIncrementAsync(againstKey, "foo", 1.0);
+        }
+
+        [Test]
+        public Task ZINTERSTOREAsync()
+        {
+            return TestNonVectorSetCommandAsync(RunCommand);
+
+            static Task RunCommand(IDatabase db, RedisKey againstKey)
+            => db.SortedSetCombineAndStoreAsync(StackExchange.Redis.SetOperation.Intersect, "ZINTERSTORE_dest", [againstKey]);
+        }
+
+        [Test]
+        public Task ZLEXCOUNTAsync()
+        {
+            return TestNonVectorSetCommandAsync(RunCommand);
+
+            static Task RunCommand(IDatabase db, RedisKey againstKey)
+            => db.SortedSetLengthByValueAsync(againstKey, "a", "z");
+        }
+
+        [Test]
+        public Task ZMSCOREAsync()
+        {
+            return TestNonVectorSetCommandAsync(RunCommand);
+
+            static Task RunCommand(IDatabase db, RedisKey againstKey)
+            => db.SortedSetScoresAsync(againstKey, ["foo"]);
+        }
+
+        [Test]
+        public Task ZPOPMAXAsync()
+        {
+            return TestNonVectorSetCommandAsync(RunCommand);
+
+            static Task RunCommand(IDatabase db, RedisKey againstKey)
+            => db.SortedSetPopAsync(againstKey, Order.Descending);
+        }
+
+        [Test]
+        public Task ZPOPMINAsync()
+        {
+            return TestNonVectorSetCommandAsync(RunCommand);
+
+            static Task RunCommand(IDatabase db, RedisKey againstKey)
+            => db.SortedSetPopAsync(againstKey, Order.Ascending);
+        }
+
+        [Test]
+        public Task ZRANDMEMBERAsync()
+        {
+            return TestNonVectorSetCommandAsync(RunCommand);
+
+            static Task RunCommand(IDatabase db, RedisKey againstKey)
+            => db.SortedSetRandomMemberAsync(againstKey);
+        }
+
+        [Test]
+        public Task ZRANGEAsync()
+        {
+            return TestNonVectorSetCommandAsync(RunCommand);
+
+            static Task RunCommand(IDatabase db, RedisKey againstKey)
+            => db.SortedSetRangeByRankAsync(againstKey);
+        }
+
+        [Test]
+        public Task ZRANGEBYLEXAsync()
+        {
+            return TestNonVectorSetCommandAsync(RunCommand);
+
+            static Task RunCommand(IDatabase db, RedisKey againstKey)
+            => db.SortedSetRangeByValueAsync(againstKey);
+        }
+
+        [Test]
+        public Task ZRANGEBYSCOREAsync()
+        {
+            return TestNonVectorSetCommandAsync(RunCommand);
+
+            static Task RunCommand(IDatabase db, RedisKey againstKey)
+            => db.SortedSetRangeByScoreAsync(againstKey);
+        }
+
+        [Test]
+        public Task ZRANGESTOREAsync()
+        {
+            return TestNonVectorSetCommandAsync(RunCommand);
+
+            static Task RunCommand(IDatabase db, RedisKey againstKey)
+            => db.SortedSetRangeAndStoreAsync(againstKey, "ZRANGESTORE_dest", 0, -1);
+        }
+
+        [Test]
+        public Task ZRANKAsync()
+        {
+            return TestNonVectorSetCommandAsync(RunCommand);
+
+            static Task RunCommand(IDatabase db, RedisKey againstKey)
+            => db.SortedSetRankAsync(againstKey, "foo");
+        }
+
+        [Test]
+        public Task ZREMAsync()
+        {
+            return TestNonVectorSetCommandAsync(RunCommand);
+
+            static Task RunCommand(IDatabase db, RedisKey againstKey)
+            => db.SortedSetRemoveAsync(againstKey, "foo");
+        }
+
+        [Test]
+        public Task ZREMRANGEBYLEXAsync()
+        {
+            return TestNonVectorSetCommandAsync(RunCommand);
+
+            static Task RunCommand(IDatabase db, RedisKey againstKey)
+            => db.SortedSetRemoveRangeByValueAsync(againstKey, "a", "z");
+        }
+
+        [Test]
+        public Task ZREMRANGEBYRANKAsync()
+        {
+            return TestNonVectorSetCommandAsync(RunCommand);
+
+            static Task RunCommand(IDatabase db, RedisKey againstKey)
+            => db.SortedSetRemoveRangeByRankAsync(againstKey, 0, -1);
+        }
+
+        [Test]
+        public Task ZREMRANGEBYSCOREAsync()
+        {
+            return TestNonVectorSetCommandAsync(RunCommand);
+
+            static Task RunCommand(IDatabase db, RedisKey againstKey)
+            => db.SortedSetRemoveRangeByScoreAsync(againstKey, 0, 100);
+        }
+
+        [Test]
+        public Task ZREVRANGEAsync()
+        {
+            return TestNonVectorSetCommandAsync(RunCommand);
+
+            static Task RunCommand(IDatabase db, RedisKey againstKey)
+            => db.SortedSetRangeByRankAsync(againstKey, 0, -1, Order.Descending);
+        }
+
+        [Test]
+        public Task ZREVRANGEBYLEXAsync()
+        {
+            return TestNonVectorSetCommandAsync(RunCommand);
+
+            static Task RunCommand(IDatabase db, RedisKey againstKey)
+            => db.SortedSetRangeByValueAsync(againstKey, order: Order.Descending);
+        }
+
+        [Test]
+        public Task ZREVRANGEBYSCOREAsync()
+        {
+            return TestNonVectorSetCommandAsync(RunCommand);
+
+            static Task RunCommand(IDatabase db, RedisKey againstKey)
+            => db.SortedSetRangeByScoreAsync(againstKey, order: Order.Descending);
+        }
+
+        [Test]
+        public Task ZREVRANKAsync()
+        {
+            return TestNonVectorSetCommandAsync(RunCommand);
+
+            static Task RunCommand(IDatabase db, RedisKey againstKey)
+            => db.SortedSetRankAsync(againstKey, "foo", Order.Descending);
+        }
+
+        [Test]
+        public Task ZSCANAsync()
+        {
+            return TestNonVectorSetCommandAsync(RunCommand);
+
+            static async Task RunCommand(IDatabase db, RedisKey againstKey)
+            {
+                await using (var e = db.SortedSetScanAsync(againstKey).GetAsyncEnumerator())
+                {
+                    _ = e.MoveNextAsync().ConfigureAwait(false);
+                }
+            }
+        }
+
+        [Test]
+        public Task ZSCOREAsync()
+        {
+            return TestNonVectorSetCommandAsync(RunCommand);
+
+            static Task RunCommand(IDatabase db, RedisKey againstKey)
+            => db.SortedSetScoreAsync(againstKey, "foo");
+        }
+
+        [Test]
+        public Task ZUNIONSTOREAsync()
+        {
+            return TestNonVectorSetCommandAsync(RunCommand);
+
+            static Task RunCommand(IDatabase db, RedisKey againstKey)
+            => db.SortedSetCombineAndStoreAsync(StackExchange.Redis.SetOperation.Union, "ZUNIONSTORE_dest", [againstKey]);
+        }
+
+        [Test]
+        public Task GEOADDAsync()
+        {
+            return TestNonVectorSetCommandAsync(RunCommand);
+
+            static Task RunCommand(IDatabase db, RedisKey againstKey)
+            => db.GeoAddAsync(againstKey, 12.3, 45.6, "foo");
+        }
+
+        [Test]
+        public Task GEODISTAsync()
+        {
+            return TestNonVectorSetCommandAsync(RunCommand);
+
+            static Task RunCommand(IDatabase db, RedisKey againstKey)
+            => db.GeoDistanceAsync(againstKey, "foo", "bar");
+        }
+
+        [Test]
+        public Task GEOHASHAsync()
+        {
+            return TestNonVectorSetCommandAsync(RunCommand);
+
+            static Task RunCommand(IDatabase db, RedisKey againstKey)
+            => db.GeoHashAsync(againstKey, "foo");
+        }
+
+        [Test]
+        public Task GEOPOSAsync()
+        {
+            return TestNonVectorSetCommandAsync(RunCommand);
+
+            static Task RunCommand(IDatabase db, RedisKey againstKey)
+            => db.GeoPositionAsync(againstKey, "foo");
+        }
+
+        [Test]
+        public Task GEORADIUSAsync()
+        {
+            return TestNonVectorSetCommandAsync(RunCommand);
+
+            static Task RunCommand(IDatabase db, RedisKey againstKey)
+            => db.GeoRadiusAsync(againstKey, 12.3, 45.6, 100);
+        }
+
+        [Test]
+        public Task GEORADIUSBYMEMBERAsync()
+        {
+            return TestNonVectorSetCommandAsync(RunCommand);
+
+            static Task RunCommand(IDatabase db, RedisKey againstKey)
+            => db.GeoRadiusAsync(againstKey, "foo", 100);
+        }
+
+        [Test]
+        public async Task GEOSEARCHAsync()
+        {
+            await TestNonVectorSetCommandAsync(RunByMember).ConfigureAwait(false);
+            await TestNonVectorSetCommandAsync(RunByCoordinate).ConfigureAwait(false);
+
+            static Task RunByMember(IDatabase db, RedisKey againstKey)
+            => db.GeoSearchAsync(againstKey, "foo", new GeoSearchCircle(100));
+
+            static Task RunByCoordinate(IDatabase db, RedisKey againstKey)
+            => db.GeoSearchAsync(againstKey, 12.3, 45.6, new GeoSearchCircle(100));
+        }
+
+        [Test]
+        public Task GEOSEARCHSTOREAsync()
+        {
+            return TestNonVectorSetCommandAsync(RunCommand);
+
+            static Task RunCommand(IDatabase db, RedisKey againstKey)
+            => db.GeoSearchAndStoreAsync(againstKey, "GEOSEARCHSTORE_dest", "foo", new GeoSearchCircle(100));
+        }
+
+        [Test]
+        public Task PFADDAsync()
+        {
+            return TestNonVectorSetCommandAsync(RunCommand);
+
+            static Task RunCommand(IDatabase db, RedisKey againstKey)
+            => db.HyperLogLogAddAsync(againstKey, "foo");
+        }
+
+        [Test]
+        public Task PFCOUNTAsync()
+        {
+            return TestNonVectorSetCommandAsync(RunCommand);
+
+            static Task RunCommand(IDatabase db, RedisKey againstKey)
+            => db.HyperLogLogLengthAsync(againstKey);
+        }
+
+        [Test]
+        public Task PFMERGEAsync()
+        {
+            return TestNonVectorSetCommandAsync(RunCommand);
+
+            static Task RunCommand(IDatabase db, RedisKey againstKey)
+            => db.HyperLogLogMergeAsync("PFMERGE_dest", [againstKey]);
+        }
+
         /// <summary>
         /// Common code for all Vector Set commands against non-Vector Set keys
         /// </summary>
