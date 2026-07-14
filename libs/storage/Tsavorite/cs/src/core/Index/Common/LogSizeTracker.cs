@@ -45,6 +45,9 @@ namespace Tsavorite.core
         /// </summary>
         private CompletionEvent resizeTaskEvent;
 
+        /// <summary>The running resizer task, retained so <see cref="Stop"/> can observe its completion.</summary>
+        private volatile Task resizerTask;
+
         /// <summary>The current heap size of the log</summary>
         private ConcurrentCounter heapSize;
 
@@ -151,7 +154,11 @@ namespace Tsavorite.core
             Debug.Assert(runState == (int)RunState.NotStarted, "Cannot restart LogSizeTracker");
             resizeTaskEvent.Initialize();
             runState = (int)RunState.Running;
-            _ = Task.Run(() => ResizerTask(cancellationToken), cancellationToken);
+            // Do NOT pass cancellationToken as Task.Run's second argument. If the token is already canceled when the queued
+            // task is dequeued (e.g. ctsCommit was cancelled in StoreWrapper.Dispose before the resizer got a thread), Task.Run
+            // transitions the task to Canceled WITHOUT ever running its body, so OnStopped() would never run and a Stop(wait: true)
+            // caller would spin forever. The body observes cancellation itself via the awaited WaitAsync and always reaches OnStopped().
+            resizerTask = Task.Run(() => ResizerTask(cancellationToken));
         }
 
         /// <summary>Stop the resizer task</summary>
@@ -162,7 +169,9 @@ namespace Tsavorite.core
             {
                 // This Set() will wake up the task and it will detect StopRequested and call OnStopped().
                 resizeTaskEvent.Set();
-                while (wait && !IsStopped)
+                // Wait until the resizer has stopped. Also break if the task itself has completed for any reason: defense in
+                // depth so a caller passing wait: true can never spin forever even if OnStopped() somehow did not run.
+                while (wait && !IsStopped && resizerTask?.IsCompleted != true)
                     _ = Thread.Yield();
             }
         }
