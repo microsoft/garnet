@@ -300,6 +300,10 @@ namespace Garnet.server
             {
                 ProcessOutput(output.SpanByteAndMemory);
             }
+            else if (status == GarnetStatus.WRONGTYPE)
+            {
+                WriteError(CmdStrings.RESP_ERR_WRONG_TYPE);
+            }
             else
             {
                 Debug.Assert(output.SpanByteAndMemory.IsSpanByte);

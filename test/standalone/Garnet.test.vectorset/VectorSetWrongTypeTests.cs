@@ -341,22 +341,22 @@ namespace Garnet.test
         [Test]
         public async Task BITOPAsync()
         {
-            await TestNonVectorSetCommandAsync(RunAnd).ConfigureAwait(false);
-            await TestNonVectorSetCommandAsync(RunOr).ConfigureAwait(false);
-            await TestNonVectorSetCommandAsync(RunXor).ConfigureAwait(false);
-            await TestNonVectorSetCommandAsync(RunNot).ConfigureAwait(false);
+            await TestNonVectorSetCommandAsync(RunAndWithVectorSet).ConfigureAwait(false);
+            await TestNonVectorSetCommandAsync(RunOrWithVectorSet).ConfigureAwait(false);
+            await TestNonVectorSetCommandAsync(RunXorWithVectorSet).ConfigureAwait(false);
+            await TestNonVectorSetCommandAsync(RunNotWithVectorSet).ConfigureAwait(false);
 
-            static Task RunAnd(IDatabase db, RedisKey againstKey)
-            => db.StringBitOperationAsync(Bitwise.And, "BITOP_dest", againstKey);
+            static Task RunAndWithVectorSet(IDatabase db, RedisKey againstKey)
+            => db.StringBitOperationAsync(Bitwise.And, "BITOP_dest_and", againstKey);
 
-            static Task RunOr(IDatabase db, RedisKey againstKey)
-            => db.StringBitOperationAsync(Bitwise.Or, "BITOP_dest", againstKey);
+            static Task RunOrWithVectorSet(IDatabase db, RedisKey againstKey)
+            => db.StringBitOperationAsync(Bitwise.Or, "BITOP_dest_or", againstKey);
 
-            static Task RunXor(IDatabase db, RedisKey againstKey)
-            => db.StringBitOperationAsync(Bitwise.Xor, "BITOP_dest", againstKey);
+            static Task RunXorWithVectorSet(IDatabase db, RedisKey againstKey)
+            => db.StringBitOperationAsync(Bitwise.Xor, "BITOP_dest_xor", againstKey);
 
-            static Task RunNot(IDatabase db, RedisKey againstKey)
-            => db.StringBitOperationAsync(Bitwise.Not, "BITOP_dest", againstKey);
+            static Task RunNotWithVectorSet(IDatabase db, RedisKey againstKey)
+            => db.StringBitOperationAsync(Bitwise.Not, "BITOP_dest_not", againstKey);
         }
 
         [Test]
@@ -459,21 +459,42 @@ namespace Garnet.test
         }
 
         [Test]
-        public Task LCSAsync()
+        public async Task LCSAsync()
         {
-            return TestNonVectorSetCommandAsync(RunCommand);
+            await TestNonVectorSetCommandAsync(RunCommandFirstVectorSet).ConfigureAwait(false);
+            await TestNonVectorSetCommandAsync(RunCommandSecondVectorSet).ConfigureAwait(false);
 
-            static Task RunCommand(IDatabase db, RedisKey againstKey)
-            => db.StringLongestCommonSubsequenceAsync(againstKey, "LCS_other");
+            static async Task RunCommandFirstVectorSet(IDatabase db, RedisKey againstKey)
+            {
+                var otherKey = againstKey.Append("_other");
+                Assert.True(await db.StringSetAsync(otherKey, "foo").ConfigureAwait(false));
+
+                await db.StringLongestCommonSubsequenceAsync(againstKey, otherKey);
+            }
+
+            static async Task RunCommandSecondVectorSet(IDatabase db, RedisKey againstKey)
+            {
+                var otherKey = againstKey.Append("_other");
+                Assert.True(await db.StringSetAsync(otherKey, "foo").ConfigureAwait(false));
+
+                await db.StringLongestCommonSubsequenceAsync(otherKey, againstKey);
+            }
         }
 
         [Test]
-        public Task MGETAsync()
+        public async Task MGETAsync()
         {
-            return TestNonVectorSetCommandAsync(RunCommand);
+            // MGET is special, and returns NULL when one of the keys it fetches is not string instead of raising WRONGTYPE
 
-            static Task RunCommand(IDatabase db, RedisKey againstKey)
-            => db.StringGetAsync([againstKey]);
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
+            var db = redis.GetDatabase();
+
+            var key = await CreateKeyWithTypeAsync(db, KeyType.VectorSet).ConfigureAwait(false);
+
+            var res = await db.StringGetAsync([key, key]).ConfigureAwait(false);
+            ClassicAssert.AreEqual(2, res.Length);
+            ClassicAssert.IsTrue(res[0].IsNull);
+            ClassicAssert.IsTrue(res[1].IsNull);
         }
 
         [Test]
@@ -830,14 +851,24 @@ namespace Garnet.test
         [Test]
         public async Task LMOVEAsync()
         {
-            await TestNonVectorSetCommandAsync(RunLeftRight).ConfigureAwait(false);
-            await TestNonVectorSetCommandAsync(RunRightLeft).ConfigureAwait(false);
+            await TestNonVectorSetCommandAsync(RunVectorSetSource).ConfigureAwait(false);
+            await TestNonVectorSetCommandAsync(RunVectorSetDest).ConfigureAwait(false);
 
-            static Task RunLeftRight(IDatabase db, RedisKey againstKey)
-            => db.ListMoveAsync(againstKey, "LMOVE_dest", ListSide.Left, ListSide.Right);
+            static async Task RunVectorSetSource(IDatabase db, RedisKey againstKey)
+            {
+                var otherKey = againstKey.Append("_dest");
+                ClassicAssert.AreEqual(1, await db.ListLeftPushAsync(otherKey, "foo").ConfigureAwait(false));
 
-            static Task RunRightLeft(IDatabase db, RedisKey againstKey)
-            => db.ListMoveAsync(againstKey, "LMOVE_dest", ListSide.Right, ListSide.Left);
+                _ = await db.ListMoveAsync(againstKey, otherKey, ListSide.Left, ListSide.Right).ConfigureAwait(false);
+            }
+
+            static async Task RunVectorSetDest(IDatabase db, RedisKey againstKey)
+            {
+                var otherKey = againstKey.Append("_source");
+                ClassicAssert.AreEqual(1, await db.ListLeftPushAsync(otherKey, "foo").ConfigureAwait(false));
+
+                _ = await db.ListMoveAsync(otherKey, againstKey, ListSide.Left, ListSide.Right).ConfigureAwait(false);
+            }
         }
 
         [Test]

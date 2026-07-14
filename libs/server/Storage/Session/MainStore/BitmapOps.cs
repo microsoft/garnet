@@ -131,6 +131,12 @@ namespace Garnet.server
                     if (status == GarnetStatus.NOTFOUND)
                         continue;
 
+                    if (status == GarnetStatus.WRONGTYPE)
+                    {
+                        result = 0;
+                        return GarnetStatus.WRONGTYPE;
+                    }
+
                     byte* localBitmapPtr;
                     int localBitmapLength;
 
@@ -183,6 +189,9 @@ namespace Garnet.server
 
                     if (maxBitmapLen > 0)
                     {
+                        // TODO: If the dstKey exists and is a Vector Set, we need to explicitly delete it
+                        //       This also needs a test
+
                         var dstKey = keys[0];
                         var dstBitmapSpanByte = PinnedSpanByte.FromPinnedPointer(dstBitmapPtr, maxBitmapLen);
                         status = SET(dstKey, dstBitmapSpanByte, ref uc);

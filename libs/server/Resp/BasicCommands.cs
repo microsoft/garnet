@@ -156,6 +156,9 @@ namespace Garnet.server
                     Debug.Assert(output.SpanByteAndMemory.IsSpanByte);
                     WriteNull();
                     break;
+                case GarnetStatus.WRONGTYPE:
+                    WriteError(CmdStrings.RESP_ERR_WRONG_TYPE);
+                    break;
             }
 
             return true;
@@ -434,6 +437,10 @@ namespace Garnet.server
                 sessionMetrics?.incr_total_found();
                 ProcessOutput(output.SpanByteAndMemory);
             }
+            else if (status == GarnetStatus.WRONGTYPE)
+            {
+                WriteError(CmdStrings.RESP_ERR_WRONG_TYPE);
+            }
             else
             {
                 sessionMetrics?.incr_total_notfound();
@@ -676,6 +683,8 @@ namespace Garnet.server
 
             var input = new StringInput(cmd, ref parseState, startIdx: 1, arg1: inputArg);
 
+            // TODO: A set that overwrites a Vector Set needs to delete it?
+
             if (!getValue)
             {
                 var status = storageApi.SET_Conditional(key, ref input);
@@ -712,9 +721,13 @@ namespace Garnet.server
                 input.header.SetSetGetFlag();
 
                 var output = GetStringOutput();
-                GarnetStatus status = storageApi.SET_Conditional(key, ref input, ref output);
+                var status = storageApi.SET_Conditional(key, ref input, ref output);
 
-                if (status != GarnetStatus.NOTFOUND)
+                if (status == GarnetStatus.WRONGTYPE)
+                {
+                    WriteError(CmdStrings.RESP_ERR_WRONG_TYPE);
+                }
+                else if (status != GarnetStatus.NOTFOUND)
                 {
                     ProcessOutput(output.SpanByteAndMemory);
                 }
@@ -753,17 +766,25 @@ namespace Garnet.server
             StringOutput stringOutput = new(new SpanByteAndMemory(output));
 
             var input = new StringInput(cmd, 0, incrByValue);
-            _ = storageApi.Increment(key, ref input, ref stringOutput);
-            output.Length = stringOutput.SpanByteAndMemory.Length;
+            var res = storageApi.Increment(key, ref input, ref stringOutput);
 
-            if (!stringOutput.HasError)
+            if (res == GarnetStatus.WRONGTYPE)
             {
-                while (!RespWriteUtils.TryWriteIntegerFromBytes(outputBuffer.Slice(0, output.Length), ref dcurr, dend))
-                    SendAndReset();
+                WriteError(CmdStrings.RESP_ERR_WRONG_TYPE);
             }
             else
             {
-                WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER);
+                output.Length = stringOutput.SpanByteAndMemory.Length;
+
+                if (!stringOutput.HasError)
+                {
+                    while (!RespWriteUtils.TryWriteIntegerFromBytes(outputBuffer.Slice(0, output.Length), ref dcurr, dend))
+                        SendAndReset();
+                }
+                else
+                {
+                    WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER);
+                }
             }
 
             return true;
@@ -791,27 +812,35 @@ namespace Garnet.server
             var output = PinnedSpanByte.FromPinnedSpan(outputBuffer);
             StringOutput stringOutput = new(new SpanByteAndMemory(output));
 
-            _ = storageApi.IncrementByFloat(key, ref stringOutput, dbl);
-            output.Length = stringOutput.SpanByteAndMemory.Length;
+            var res = storageApi.IncrementByFloat(key, ref stringOutput, dbl);
 
-            if (!stringOutput.HasError)
+            if (res == GarnetStatus.WRONGTYPE)
             {
-                while (!RespWriteUtils.TryWriteBulkString(output.ReadOnlySpan, ref dcurr, dend))
-                    SendAndReset();
+                WriteError(CmdStrings.RESP_ERR_WRONG_TYPE);
             }
             else
             {
-                if ((stringOutput.OutputFlags & StringOutputFlags.NaNOrInfinityError) != 0)
+                output.Length = stringOutput.SpanByteAndMemory.Length;
+
+                if (!stringOutput.HasError)
                 {
-                    WriteError(CmdStrings.RESP_ERR_GENERIC_NAN_INFINITY_INCR);
-                }
-                else if ((stringOutput.OutputFlags & StringOutputFlags.InvalidTypeError) != 0)
-                {
-                    WriteError(CmdStrings.RESP_ERR_NOT_VALID_FLOAT);
+                    while (!RespWriteUtils.TryWriteBulkString(output.ReadOnlySpan, ref dcurr, dend))
+                        SendAndReset();
                 }
                 else
                 {
-                    throw new GarnetException($"Unrecognized return output flags value: {stringOutput.OutputFlags}");
+                    if ((stringOutput.OutputFlags & StringOutputFlags.NaNOrInfinityError) != 0)
+                    {
+                        WriteError(CmdStrings.RESP_ERR_GENERIC_NAN_INFINITY_INCR);
+                    }
+                    else if ((stringOutput.OutputFlags & StringOutputFlags.InvalidTypeError) != 0)
+                    {
+                        WriteError(CmdStrings.RESP_ERR_NOT_VALID_FLOAT);
+                    }
+                    else
+                    {
+                        throw new GarnetException($"Unrecognized return output flags value: {stringOutput.OutputFlags}");
+                    }
                 }
             }
 
@@ -831,10 +860,16 @@ namespace Garnet.server
             Span<byte> outputBuffer = stackalloc byte[NumUtils.MaximumFormatInt64Length];
             var output = StringOutput.FromPinnedSpan(outputBuffer);
 
-            storageApi.APPEND(sbKey, ref input, ref output);
-
-            while (!RespWriteUtils.TryWriteIntegerFromBytes(outputBuffer.Slice(0, output.SpanByteAndMemory.Length), ref dcurr, dend))
-                SendAndReset();
+            var res = storageApi.APPEND(sbKey, ref input, ref output);
+            if (res == GarnetStatus.WRONGTYPE)
+            {
+                WriteError(CmdStrings.RESP_ERR_WRONG_TYPE);
+            }
+            else
+            {
+                while (!RespWriteUtils.TryWriteIntegerFromBytes(outputBuffer.Slice(0, output.SpanByteAndMemory.Length), ref dcurr, dend))
+                    SendAndReset();
+            }
 
             return true;
         }

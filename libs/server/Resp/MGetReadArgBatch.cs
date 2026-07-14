@@ -107,7 +107,6 @@ namespace Garnet.server
 
                 if (!HasGoneAsync)
                 {
-
                     var bufferSize = session.parseState.Count - i;
                     var arr = ArrayPool<(Status, StringOutput)>.Shared.Rent(bufferSize);
                     runningStatus = arr.AsMemory()[..bufferSize];

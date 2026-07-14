@@ -188,6 +188,8 @@ namespace Garnet.server
             if (status == GarnetStatus.NOTFOUND)
                 while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
                     SendAndReset();
+            else if (status == GarnetStatus.WRONGTYPE)
+                WriteError(CmdStrings.RESP_ERR_WRONG_TYPE);
             else
                 dcurr += output.SpanByteAndMemory.Length;
 
@@ -247,6 +249,10 @@ namespace Garnet.server
             {
                 while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
                     SendAndReset();
+            }
+            else if (status == GarnetStatus.WRONGTYPE)
+            {
+                WriteError(CmdStrings.RESP_ERR_WRONG_TYPE);
             }
 
             return true;
@@ -333,6 +339,10 @@ namespace Garnet.server
             {
                 ProcessOutput(output.SpanByteAndMemory);
             }
+            else if (status == GarnetStatus.WRONGTYPE)
+            {
+                WriteError(CmdStrings.RESP_ERR_WRONG_TYPE);
+            }
             else if (status == GarnetStatus.NOTFOUND)
             {
                 var resp = bSetValSlice[0] == '0' ? CmdStrings.RESP_RETURN_VAL_0 : CmdStrings.RESP_RETURN_VAL_N1;
@@ -367,9 +377,17 @@ namespace Garnet.server
 
             var input = new StringInput(RespCommand.BITOP, ref parseState);
 
-            _ = storageApi.StringBitOperation(ref input, bitOp, out var result);
-            while (!RespWriteUtils.TryWriteInt64(result, ref dcurr, dend))
-                SendAndReset();
+            var res = storageApi.StringBitOperation(ref input, bitOp, out var result);
+
+            if (res == GarnetStatus.WRONGTYPE)
+            {
+                WriteError(CmdStrings.RESP_ERR_WRONG_TYPE);
+            }
+            else
+            {
+                while (!RespWriteUtils.TryWriteInt64(result, ref dcurr, dend))
+                    SendAndReset();
+            }
 
             return true;
         }

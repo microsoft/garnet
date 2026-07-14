@@ -452,7 +452,14 @@ namespace Garnet.server
             var output = GetStringOutput();
             var status = storageApi.LCS(key1, key2, ref output, lenOnly, withIndices, withMatchLen, minMatchLen);
 
-            ProcessOutput(output.SpanByteAndMemory);
+            if (status == GarnetStatus.WRONGTYPE)
+            {
+                WriteError(CmdStrings.RESP_ERR_WRONG_TYPE);
+            }
+            else
+            {
+                ProcessOutput(output.SpanByteAndMemory);
+            }
 
             return true;
         }
