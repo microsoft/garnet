@@ -157,6 +157,8 @@ namespace Garnet.server
 
             if (status == GarnetStatus.OK)
                 dcurr += output.SpanByteAndMemory.Length;
+            else if (status == GarnetStatus.WRONGTYPE)
+                WriteError(CmdStrings.RESP_ERR_WRONG_TYPE);
 
             return true;
         }

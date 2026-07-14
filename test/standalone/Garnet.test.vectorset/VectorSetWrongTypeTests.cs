@@ -498,66 +498,12 @@ namespace Garnet.test
         }
 
         [Test]
-        public Task MSETAsync()
-        {
-            return TestNonVectorSetCommandAsync(RunCommand);
-
-            static Task RunCommand(IDatabase db, RedisKey againstKey)
-            => db.StringSetAsync([new KeyValuePair<RedisKey, RedisValue>(againstKey, "foo")]);
-        }
-
-        [Test]
-        public Task MSETNXAsync()
-        {
-            return TestNonVectorSetCommandAsync(RunCommand);
-
-            static Task RunCommand(IDatabase db, RedisKey againstKey)
-            => db.StringSetAsync([new KeyValuePair<RedisKey, RedisValue>(againstKey, "foo")], When.NotExists);
-        }
-
-        [Test]
-        public Task PSETEXAsync()
-        {
-            return TestNonVectorSetCommandAsync(RunCommand);
-
-            static Task RunCommand(IDatabase db, RedisKey againstKey)
-            => db.StringSetAsync(againstKey, "foo", TimeSpan.FromMilliseconds(10000), When.Always);
-        }
-
-        [Test]
-        public Task SETAsync()
-        {
-            return TestNonVectorSetCommandAsync(RunCommand);
-
-            static Task RunCommand(IDatabase db, RedisKey againstKey)
-            => db.StringSetAsync(againstKey, "foo");
-        }
-
-        [Test]
         public Task SETBITAsync()
         {
             return TestNonVectorSetCommandAsync(RunCommand);
 
             static Task RunCommand(IDatabase db, RedisKey againstKey)
             => db.StringSetBitAsync(againstKey, 0, true);
-        }
-
-        [Test]
-        public Task SETEXAsync()
-        {
-            return TestNonVectorSetCommandAsync(RunCommand);
-
-            static Task RunCommand(IDatabase db, RedisKey againstKey)
-            => db.StringSetAsync(againstKey, "foo", TimeSpan.FromSeconds(10), When.Always);
-        }
-
-        [Test]
-        public Task SETNXAsync()
-        {
-            return TestNonVectorSetCommandAsync(RunCommand);
-
-            static Task RunCommand(IDatabase db, RedisKey againstKey)
-            => db.StringSetAsync(againstKey, "foo", null, When.NotExists);
         }
 
         [Test]

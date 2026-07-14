@@ -381,6 +381,9 @@ namespace Garnet.server
                 {
                     var srcKey = input.parseState.GetArgSliceByRef(i);
                     var srcVal = input.parseState.GetArgSliceByRef(i + 1);
+
+                    // TODO: SETs that overwrite Vector SETs needs to do an explicit delete first
+
                     SET(srcKey, srcVal, ref context);
                 }
             }

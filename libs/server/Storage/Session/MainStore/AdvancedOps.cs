@@ -78,6 +78,8 @@ namespace Garnet.server
 
             if (status.Found || status.Record.Created || status.Record.InPlaceUpdated)
                 return GarnetStatus.OK;
+            else if (status.IsWrongType)
+                return GarnetStatus.WRONGTYPE;
             else
                 return GarnetStatus.NOTFOUND;
         }
