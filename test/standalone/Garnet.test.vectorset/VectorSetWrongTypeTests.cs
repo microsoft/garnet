@@ -97,14 +97,14 @@ namespace Garnet.test
 
             if (missing.Count > 0)
             {
-                var missingCmds = string.Join(", ", missing.OrderBy(static x => x));
+                var missingCmds = string.Join(", ", missing.OrderBy(static x => x.ToString()));
 
-                ClassicAssert.Fail($"Missing tests for: {missingCmds}");
+                ClassicAssert.Fail($"Missing tests for {missing.Count:N0} commands: {missingCmds}");
             }
         }
 
         [Test]
-        public void AllOtherCommandsCovered()
+        public void OtherCommandsCovered()
         {
             ClassicAssert.IsTrue(RespCommandsInfo.TryGetRespCommandsInfo(out var info, externalOnly: true));
 
@@ -151,9 +151,9 @@ namespace Garnet.test
 
             if (missing.Count > 0)
             {
-                var missingCmds = string.Join(", ", missing.OrderBy(static x => x));
+                var missingCmds = string.Join(", ", missing.OrderBy(static x => x.ToString()));
 
-                ClassicAssert.Fail($"Missing tests for: {missingCmds}");
+                ClassicAssert.Fail($"Missing tests for {missing.Count:N0} commands: {missingCmds}");
             }
         }
 
