@@ -83,10 +83,24 @@ namespace Garnet.test.cluster
             });
 
             // Baseline: with both nodes up, a publish on the publisher node is forwarded and delivered.
-            Assert.DoesNotThrow(
-                () => pubRedis.GetServer(publisherEndpoint).Execute("PUBLISH", channelName, message),
-                "Baseline publish threw while both nodes were up");
-            ClassicAssert.IsTrue(delivered.Wait(TimeSpan.FromSeconds(15)),
+            // StackExchange.Redis SUBSCRIBE can return before the subscription is actually active on
+            // the server, so a single early publish may be silently dropped. Retry the publish until
+            // the message is delivered (or we time out), which makes the baseline check robust against
+            // that race rather than relying on one publish landing after the subscription is live.
+            var baselineDeadline = Stopwatch.StartNew();
+            var baselineDelivered = false;
+            while (baselineDeadline.Elapsed < TimeSpan.FromSeconds(15))
+            {
+                Assert.DoesNotThrow(
+                    () => pubRedis.GetServer(publisherEndpoint).Execute("PUBLISH", channelName, message),
+                    "Baseline publish threw while both nodes were up");
+                if (delivered.Wait(TimeSpan.FromMilliseconds(500)))
+                {
+                    baselineDelivered = true;
+                    break;
+                }
+            }
+            ClassicAssert.IsTrue(baselineDelivered,
                 "Baseline publish was not forwarded/delivered while both nodes were up");
 
             subscriber.Unsubscribe(channel);
@@ -157,8 +171,8 @@ namespace Garnet.test.cluster
 
         /// <summary>
         /// Returns true if the node answers PING with PONG. A brief client-side reconfiguration after
-        /// a peer shutdown can surface as a transient connection exception; those are retried for a
-        /// short bounded period. A node whose main thread is blocked will never answer and returns false.
+        /// a peer shutdown can surface as a transient connection or timeout exception; those are retried
+        /// for a short bounded period. A node whose main thread is blocked will never answer and returns false.
         /// </summary>
         private bool NodeResponds(int nodeIndex)
         {
@@ -171,9 +185,10 @@ namespace Garnet.test.cluster
                     if (pong == "PONG")
                         return true;
                 }
-                catch (RedisConnectionException)
+                catch (Exception ex) when (ex is RedisConnectionException or RedisTimeoutException)
                 {
-                    // Transient client-side reconfiguration after peer shutdown; retry.
+                    // Transient client-side reconfiguration or a slow/overloaded node after peer
+                    // shutdown surfaces as a connection or timeout exception; retry within the window.
                 }
                 Thread.Sleep(100);
             }
