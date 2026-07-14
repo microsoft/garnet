@@ -92,7 +92,7 @@ namespace Garnet.server
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public int GetReplayTaskIdx(long hash) => (int)(((ulong)hash / (uint)physicalSublogCount) % (uint)replayTaskCount);
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public int GetVirtualSublogIdx(long hash) => GetPhysicalSublogIdx(hash) * replayTaskCount + GetReplayTaskIdx(hash);
+        public int GetVirtualSublogIdx(long hash) => (GetPhysicalSublogIdx(hash) * replayTaskCount) + GetReplayTaskIdx(hash);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public int GetPhysicalSublogIdx(ReadOnlySpan<byte> key) => GetPhysicalSublogIdx(HASH(key));

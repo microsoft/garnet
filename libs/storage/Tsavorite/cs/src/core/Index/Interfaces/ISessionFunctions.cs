@@ -352,23 +352,23 @@ namespace Tsavorite.core
         /// Called before reading a single key to verify key freshness and enforce prefix consistency.
         /// </summary>
         /// <param name="hash">The key hash about to be read</param>
-        void BeforeConsistentReadCallback(long hash);
+        void PreSingleKeyConsistentRead(long hash);
 
         /// <summary>
         /// Called after a single key read to update the session timestamp.
         /// </summary>
-        void AfterConsistentReadKeyCallback();
+        void PostSingleKeyConsistentReadCallback();
 
         /// <summary>
         /// Called before reading a batch of keys to verify their freshness and enforce prefix consistency.
         /// </summary>
         /// <param name="parameters"></param>
-        void BeforeConsistentReadKeyBatchCallback(ReadOnlySpan<PinnedSpanByte> parameters);
+        void PreBatchKeyConsistentReadCallback(ReadOnlySpan<PinnedSpanByte> parameters);
 
         /// <summary>
         /// Called after reading a batch of keys to update the session timestamp.
         /// </summary>
-        bool AfterConsistentReadKeyBatchCallback(int keyCount);
+        bool PostBatchKeyConsistentReadCallback(int keyCount);
         #endregion Utilities
     }
 

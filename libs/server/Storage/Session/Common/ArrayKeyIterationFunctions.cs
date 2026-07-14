@@ -17,6 +17,9 @@ namespace Garnet.server
         // These contain classes so instantiate once and re-initialize
         private ArrayKeyIterationFunctions.UnifiedStoreGetDBSize unifiedStoreDbSizeFuncs;
 
+        // Iterator for INFO KEYSPACE (counts live keys and live keys with an expiration set)
+        private ArrayKeyIterationFunctions.UnifiedStoreGetKeyspaceStats unifiedStoreKeyspaceStatsFuncs;
+
         // Iterator for SCAN command
         private ArrayKeyIterationFunctions.UnifiedStoreGetDBKeys unifiedStoreDbScanFuncs;
 
@@ -176,6 +179,22 @@ namespace Garnet.server
             return unifiedStoreDbSizeFuncs.Count;
         }
 
+        /// <summary>
+        /// Count the number of live keys and the number of live keys that have an expiration set,
+        /// in a single scan over the store. Used by the <c>INFO KEYSPACE</c> section.
+        /// The key count uses the same non-expired predicate as <see cref="DbSize"/>, so the two are consistent.
+        /// </summary>
+        /// <returns>A tuple of (total live keys, live keys with an expiration set).</returns>
+        internal (long keyCount, long expireCount) KeyspaceStats()
+        {
+            unifiedStoreKeyspaceStatsFuncs ??= new();
+            unifiedStoreKeyspaceStatsFuncs.Initialize();
+            long cursor = 0;
+            unifiedBasicContext.Session.ScanCursor(ref cursor, long.MaxValue, unifiedStoreKeyspaceStatsFuncs);
+
+            return (unifiedStoreKeyspaceStatsFuncs.KeyCount, unifiedStoreKeyspaceStatsFuncs.ExpireCount);
+        }
+
         internal static unsafe class ArrayKeyIterationFunctions
         {
             internal class GetDBKeysInfo
@@ -251,9 +270,9 @@ namespace Garnet.server
 
                 public override bool Reader<TSourceLogRecord>(in TSourceLogRecord logRecord, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
                 {
-                    readSessionState.BeforeConsistentReadKeyCallback(GarnetLog.HASH(logRecord.Key));
+                    readSessionState.PreSingleKeyConsistentRead(GarnetLog.HASH(logRecord.Key));
                     var status = base.Reader(in logRecord, recordMetadata, numberOfRecords, out cursorRecordResult);
-                    readSessionState.AfterConsistentReadKeyCallback();
+                    readSessionState.PostSingleKeyConsistentReadCallback();
                     return status;
                 }
             }
@@ -270,7 +289,7 @@ namespace Garnet.server
                 public virtual bool Reader<TSourceLogRecord>(in TSourceLogRecord logRecord, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
                     where TSourceLogRecord : ISourceLogRecord
                 {
-                    if (CheckExpiry(in logRecord))
+                    if (IsInternalRecord(in logRecord) || CheckExpiry(in logRecord))
                     {
                         cursorRecordResult = CursorRecordResult.Skip;
                         return true;
@@ -332,8 +351,56 @@ namespace Garnet.server
                     where TSourceLogRecord : ISourceLogRecord
                 {
                     cursorRecordResult = CursorRecordResult.Skip;
-                    if (!CheckExpiry(in logRecord))
+                    if (!IsInternalRecord(in logRecord) && !CheckExpiry(in logRecord))
                         ++info.count;
+                    return true;
+                }
+
+                public bool OnStart(long beginAddress, long endAddress) => true;
+                public void OnStop(bool completed, long numberOfRecords) { }
+                public void OnException(Exception exception, long numberOfRecords) { }
+            }
+
+            internal class GetKeyspaceStatsInfo
+            {
+                // This must be a class as it is passed through pending IO operations, so it is wrapped by higher structures for inlining as a generic type arg.
+                internal long keyCount;
+                internal long expireCount;
+
+                internal void Initialize()
+                {
+                    keyCount = 0;
+                    expireCount = 0;
+                }
+            }
+
+            /// <summary>
+            /// Scan callback for the <c>INFO KEYSPACE</c> section. Counts live (non-expired) keys and,
+            /// among those, how many have an expiration set. The live-key predicate matches
+            /// <see cref="UnifiedStoreGetDBSize"/> so the reported key count is consistent with <c>DBSIZE</c>.
+            /// </summary>
+            internal sealed class UnifiedStoreGetKeyspaceStats : IScanIteratorFunctions
+            {
+                private readonly GetKeyspaceStatsInfo info;
+
+                internal long KeyCount => info.keyCount;
+
+                internal long ExpireCount => info.expireCount;
+
+                internal UnifiedStoreGetKeyspaceStats() => info = new();
+
+                internal void Initialize() => info.Initialize();
+
+                public bool Reader<TSourceLogRecord>(in TSourceLogRecord logRecord, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
+                    where TSourceLogRecord : ISourceLogRecord
+                {
+                    cursorRecordResult = CursorRecordResult.Skip;
+                    if (!IsInternalRecord(in logRecord) && !CheckExpiry(in logRecord))
+                    {
+                        ++info.keyCount;
+                        if (logRecord.DataHeader.HasExpiration)
+                            ++info.expireCount;
+                    }
                     return true;
                 }
 
@@ -410,6 +477,15 @@ namespace Garnet.server
                 public void OnStop(bool completed, long numberOfRecords) { }
                 public void OnException(Exception exception, long numberOfRecords) { }
             }
+
+            /// <summary>
+            /// Determine if a log record represents an internal record.
+            /// 
+            /// Typically these records should not be reported in statistics, or returned to users.
+            /// </summary>
+            private static bool IsInternalRecord<TSourceLogRecord>(in TSourceLogRecord logRecord)
+                where TSourceLogRecord : ISourceLogRecord
+            => logRecord.HasNamespace;
         }
     }
 }
