@@ -123,7 +123,7 @@ jobs:
         os: [ ubuntu-latest, windows-latest ]
         framework: [ 'net8.0' , 'net10.0']
         configuration: [ 'Debug', 'Release' ]
-        test: [ 'Garnet.test', 'Garnet.test.collections', 'Garnet.test.acl', 'Garnet.test.scripting', 'Garnet.test.complexstring', 'Garnet.test.vectorset', 'Garnet.test.rangeindex', 'Garnet.test.extensions' ]
+        test: [ 'Garnet.test', 'Garnet.test.collections', 'Garnet.test.acl', 'Garnet.test.scripting', 'Garnet.test.complexstring', 'Garnet.test.vectorset', 'Garnet.test.rangeindex', 'Garnet.test.extensions', 'BfTreeInterop.test' ]
     if: needs.changes.outputs.garnet == 'true'
     steps:
       - name: Check out code
@@ -138,6 +138,9 @@ jobs:
           restore-keys: nuget-${{ runner.os }}-
       - name: Install dependencies
         run: dotnet restore
+      - name: Build native BfTree library
+        if: ${{ matrix.test == 'BfTreeInterop.test' }}
+        run: cargo build --release --locked --manifest-path libs/native/bftree-garnet/Cargo.toml
       - name: Run tests ${{ matrix.test }}
         run: dotnet test test/standalone/${{ matrix.test }} -f ${{ matrix.framework }} --configuration ${{ matrix.configuration }} --logger "console;verbosity=detailed" --logger trx --results-directory "GarnetTestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}-${{ matrix.test }}" -- NUnit.DisplayName=FullName
         timeout-minutes: 45 

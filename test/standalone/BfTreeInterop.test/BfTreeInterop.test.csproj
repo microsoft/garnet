@@ -5,6 +5,9 @@
     <NoWarn>1701;1702;1591</NoWarn>
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
+    <SignAssembly>true</SignAssembly>
+    <AssemblyOriginatorKeyFile>../../../Garnet.snk</AssemblyOriginatorKeyFile>
+    <DelaySign>false</DelaySign>
   </PropertyGroup>
 
   <ItemGroup>
@@ -14,7 +17,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="../../libs/native/bftree-garnet/BfTreeInterop.csproj" />
+    <ProjectReference Include="../../../libs/native/bftree-garnet/BfTreeInterop.csproj" />
   </ItemGroup>
 
 </Project>
