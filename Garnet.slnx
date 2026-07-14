@@ -77,6 +77,7 @@
   </Folder>
   <Folder Name="/test/">
     <Project Path="test/Garnet.fuzz/Garnet.fuzz.csproj" />
+    <Project Path="test/standalone/BfTreeInterop.test/BfTreeInterop.test.csproj" />
     <Project Path="test/standalone/Garnet.test/Garnet.test.csproj" />
     <Project Path="test/standalone/Garnet.test.acl/Garnet.test.acl.csproj" />
     <Project Path="test/standalone/Garnet.test.collections/Garnet.test.collections.csproj" />
