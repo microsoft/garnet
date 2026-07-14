@@ -66,6 +66,13 @@ namespace Tsavorite.core
         public bool IsStopped => runState == (int)RunState.Stopped;
 
         /// <summary>
+        /// Indicates whether the background resizer task is currently running (started and not yet stop-requested/stopped).
+        /// Callers on the allocation path use this to decide whether they must evict synchronously themselves (when the
+        /// resizer is not running, e.g. during recovery/AOF replay) instead of deferring eviction to the resizer.
+        /// </summary>
+        public bool IsRunning => runState == (int)RunState.Running;
+
+        /// <summary>
         /// Callback for when we have trimmed memory, such as by shifting headAddress to close records and/or evicting pages.
         /// Passes the current number of allocated log pages and the headAddress.
         /// </summary>
