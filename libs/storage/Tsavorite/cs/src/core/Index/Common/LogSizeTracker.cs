@@ -169,9 +169,13 @@ namespace Tsavorite.core
             {
                 // This Set() will wake up the task and it will detect StopRequested and call OnStopped().
                 resizeTaskEvent.Set();
+            }
+
+            if (wait && (prevState == (int)RunState.Running || prevState == (int)RunState.StopRequested))
+            {
                 // Wait until the resizer has stopped. Also break if the task itself has completed for any reason: defense in
                 // depth so a caller passing wait: true can never spin forever even if OnStopped() somehow did not run.
-                while (wait && !IsStopped && resizerTask?.IsCompleted != true)
+                while (!IsStopped && !(resizerTask is { IsCompleted: true }))
                     _ = Thread.Yield();
             }
         }
