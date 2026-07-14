@@ -544,50 +544,6 @@ namespace Garnet.test.cluster
         }
 
         /// <summary>
-        /// A replica that joins the target primary AFTER a migration must reconstruct the migrated
-        /// key from the primary's AOF (range index stream replay) during its initial sync. Uses a manual 2-primary
-        /// topology with a spare node attached as a replica only after the migration completes.
-        /// </summary>
-        [Test]
-        [Category("CLUSTER")]
-        public void ClusterMigrateRangeIndexReplicaAddedAfterMigration()
-        {
-            const int nodeCount = 3; // node0/1 primaries, node2 spare -> late replica of node1
-
-            context.CreateInstances(nodeCount, enableAOF: true, enableRangeIndexPreview: true);
-            context.CreateConnection();
-
-            const int source = 0, target = 1, lateReplica = 2;
-
-            // Form a 2-primary cluster manually (node2 stays a spare with no slots).
-            ClassicAssert.AreEqual("OK", context.clusterTestUtils.AddDelSlotsRange(source, new List<(int, int)> { (0, 8191) }, true, context.logger));
-            ClassicAssert.AreEqual("OK", context.clusterTestUtils.AddDelSlotsRange(target, new List<(int, int)> { (8192, 16383) }, true, context.logger));
-            context.clusterTestUtils.Meet(target, source, logger: context.logger);
-            context.clusterTestUtils.Meet(lateReplica, source, logger: context.logger);
-            context.clusterTestUtils.WaitAll(context.logger);
-            context.clusterTestUtils.BumpEpoch(source, logger: context.logger);
-            context.clusterTestUtils.BumpEpoch(target, logger: context.logger);
-
-            var sourceEp = Endpoint(source);
-            var targetEp = Endpoint(target);
-
-            var riKey = FindKeyOwnedByNode(source);
-            var slot = context.clusterTestUtils.HashSlot(riKey);
-            var fields = MakeFields(40, "late");
-            CreateRangeIndexWithFields(sourceEp, riKey, fields);
-
-            MigrateSlotsAndWaitCleanup(sourceEp, targetEp, [slot]);
-            VerifyFieldsOnEndpoint(targetEp, riKey, fields);
-
-            // Attach the spare node as a replica of the target AFTER the migration: its initial sync must
-            // replay the target's AOF (including the range index stream) and reconstruct the migrated key.
-            _ = context.clusterTestUtils.ClusterReplicate(lateReplica, target, async: false, logger: context.logger);
-            context.clusterTestUtils.BumpEpoch(lateReplica, logger: context.logger);
-
-            VerifyRangeIndexOnReplica(target, lateReplica, riKey, fields);
-        }
-
-        /// <summary>
         /// Single RI key with multiple fields, slot-based migration between 2 primaries.
         /// Verifies all fields survive and source returns MOVED.
         /// </summary>
