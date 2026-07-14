@@ -154,6 +154,8 @@ namespace Garnet.server
                 // TODO(RI): Acquire Checkpoint lock to prevent a concurrent checkpoint from deleting the
                 // RangeIndexStream chunks added to the AOF before the BFTree is created
 
+                // TODO(RI): Create RangeIndex first in Tsavorite and only then chunk and replicate through AOF
+
                 // Replicate the migrated BfTree to secondaries by streaming the snapshot file into
                 // the AOF as chunked range index stream entries. This must happen while tempPath is still
                 // intact (before the move below). On replay, HandleRangeIndexStreamReplay reassembles

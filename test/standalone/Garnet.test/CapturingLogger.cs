@@ -51,4 +51,18 @@ namespace Garnet.test
             entries.Enqueue(new Entry(logLevel, formatter(state, exception), exception, fields));
         }
     }
+
+    /// <summary>
+    /// <see cref="ILoggerProvider"/> that returns a single shared <see cref="CapturingLogger"/> for every
+    /// category, so it can be attached to an existing <see cref="ILoggerFactory"/> (e.g. a multi-node cluster
+    /// test's shared factory) to capture structured log entries emitted by any component.
+    /// </summary>
+    public sealed class CapturingLoggerProvider(CapturingLogger logger) : ILoggerProvider
+    {
+        private readonly CapturingLogger logger = logger;
+
+        public ILogger CreateLogger(string categoryName) => logger;
+
+        public void Dispose() { }
+    }
 }

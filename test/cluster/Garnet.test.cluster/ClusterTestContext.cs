@@ -414,6 +414,19 @@ namespace Garnet.test.cluster
         }
 
         /// <summary>
+        /// Attach a <see cref="CapturingLogger"/> to the shared logger factory so tests can assert on
+        /// structured log fields emitted by any node (e.g. <c>chunkCount</c> from a RangeIndex AOF stream).
+        /// The test's log level must be raised to at least <see cref="LogLevel.Information"/> for the target
+        /// entries to reach the capture. Returns the capturing logger.
+        /// </summary>
+        public CapturingLogger CaptureNodeLogs()
+        {
+            var capture = new CapturingLogger();
+            loggerFactory.AddProvider(new CapturingLoggerProvider(capture));
+            return capture;
+        }
+
+        /// <summary>
         /// Create single cluster instance with corresponding options
         /// </summary>
         /// <param name="endpoint"></param>
