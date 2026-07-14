@@ -402,10 +402,7 @@ namespace Garnet.test.cluster
         }
 
         /// <summary>
-        /// Test-only: force a small range index stream chunk size on every node's RangeIndexManager so a
-        /// migrated Range Index's serialized file spans many AOF entries, exercising the chunked
-        /// replicate/reassemble path. Requires range index preview enabled; no-ops on nodes without a manager.
-        /// Call after the nodes are started (e.g. right after <see cref="CreateInstances"/>) and before migration.
+        /// Test-only: force a small range index stream chunk size on every node's RangeIndexManager.
         /// </summary>
         public void SetRangeIndexStreamChunkSizeOnAllNodes(int chunkSize)
         {
@@ -415,9 +412,7 @@ namespace Garnet.test.cluster
 
         /// <summary>
         /// Attach a <see cref="CapturingLogger"/> to the shared logger factory so tests can assert on
-        /// structured log fields emitted by any node (e.g. <c>chunkCount</c> from a RangeIndex AOF stream).
-        /// The test's log level must be raised to at least <see cref="LogLevel.Information"/> for the target
-        /// entries to reach the capture. Returns the capturing logger.
+        /// structured log fields emitted by any node.
         /// </summary>
         public CapturingLogger CaptureNodeLogs()
         {
