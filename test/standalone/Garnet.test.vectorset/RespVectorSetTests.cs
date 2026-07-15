@@ -3756,6 +3756,64 @@ namespace Garnet.test
             ClassicAssert.AreEqual(RedisType.String, dbRacer.KeyType(key), "key type was changed away from String by the synthetic replication RMW");
             ClassicAssert.AreEqual(StringValue, (string)dbRacer.StringGet(key), "String value was corrupted by the synthetic replication RMW");
         }
+
+        /// <summary>
+        /// Documents that the "concurrent delete, then a brand-new vector set is created before the
+        /// parked VADD's synthetic RMW" interleaving is impossible for the same key: the VADD holds a
+        /// SHARED vector lock on the key hash across its synthetic replication RMW, and creating a new
+        /// index needs an EXCLUSIVE lock, so any new create blocks until the parked VADD releases. The
+        /// realizable ordering is therefore: raced delete (lock-free) -> parked VADD's synthetic RMW
+        /// runs against the tombstone (no resurrection) -> only then can a fresh create proceed. This
+        /// asserts that end state: after the whole race a fresh VADD builds a clean index holding only
+        /// its own element, with no leakage of the raced-away element and no recreate livelock.
+        /// </summary>
+        [Test]
+        public async Task ConcurrentUnlinkDuringSyntheticReplicationThenFreshCreateIsClean()
+        {
+            var key = nameof(ConcurrentUnlinkDuringSyntheticReplicationThenFreshCreateIsClean);
+            const ExceptionInjectionType Pause = ExceptionInjectionType.VectorSet_Pause_Before_Synthetic_Replication_Rmw;
+
+            using var redisOp = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            using var redisRacer = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var dbOp = redisOp.GetDatabase(0);
+            var dbRacer = redisRacer.GetDatabase(0);
+
+            var data = new byte[75];
+            var elem1 = new byte[] { 1, 0, 0, 0 };
+            var elem2 = new byte[] { 2, 0, 0, 0 };
+
+            ExceptionInjectionHelper.EnableException(Pause);
+            try
+            {
+                // Connection 1: VADD elem1 creates the first index, then parks before its append-log RMW,
+                // holding a SHARED vector lock on the key hash.
+                var opTask = Task.Run(() => dbOp.Execute("VADD", [key, "XB8", (RedisValue)data, (RedisValue)elem1, "XPREQ8"]));
+
+                await ExceptionInjectionHelper.WaitOnClearAsync(Pause).WaitAsync(TimeSpan.FromSeconds(30));
+
+                // Connection 2: tombstone the parked key with a lock-free raw delete.
+                _ = dbRacer.KeyDelete(key);
+
+                // Release the parked VADD; its synthetic RMW runs against the tombstone, then it releases
+                // the shared lock. A concurrent create could not have slipped in ahead of this point.
+                ExceptionInjectionHelper.EnableException(Pause);
+                await opTask;
+            }
+            finally
+            {
+                ExceptionInjectionHelper.DisableException(Pause);
+            }
+
+            // Now that the shared lock is free and the key is absent, a fresh create can proceed.
+            _ = dbRacer.Execute("VADD", [key, "XB8", (RedisValue)data, (RedisValue)elem2, "XPREQ8"]);
+
+            ClassicAssert.IsTrue(dbRacer.KeyExists(key), "fresh vector set was lost");
+
+            var members = (byte[][])dbRacer.Execute("VSIM", [key, "XB8", (RedisValue)data, "COUNT", "10", "EPSILON", "1.0", "EF", "40"]);
+            ClassicAssert.AreEqual(1, members.Length, "fresh vector set should hold exactly its own single element");
+            ClassicAssert.IsTrue(members.Any(x => x.SequenceEqual(elem2)), "fresh element missing from the new index");
+            ClassicAssert.IsFalse(members.Any(x => x.SequenceEqual(elem1)), "raced-away element must not leak into the fresh index");
+        }
 #endif
 
         /// <summary>
