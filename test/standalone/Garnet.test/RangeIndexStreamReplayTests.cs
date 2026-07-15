@@ -5,6 +5,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Text;
+using Garnet.common;
 using Garnet.server;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -144,10 +145,10 @@ namespace Garnet.test
             using var mgr = new RangeIndexManager(testDir, logger: capture);
             var key = Encoding.UTF8.GetBytes("k1");
 
-            // A first chunk that begins with a non-positive key length is rejected by the deserializer,
-            // and the failed reassembly must be removed (not left pending).
+            // A first chunk that begins with a non-positive key length is rejected by the deserializer.
+            // Replay must fail loud (throw) after removing the failed reassembly (not left pending).
             var malformed = new byte[16]; // leading 4 bytes = 0 => invalid key length
-            mgr.ProcessStreamChunk(session: null, key, malformed, isFirst: true, isLast: false);
+            ClassicAssert.Throws<GarnetException>(() => mgr.ProcessStreamChunk(session: null, key, malformed, isFirst: true, isLast: false));
             ClassicAssert.AreEqual(0, mgr.PendingStreamReassemblyCount);
 
             var end = AssertSingleReassemblyReason(capture, "ChunkProcessingError");
@@ -164,13 +165,50 @@ namespace Garnet.test
             ClassicAssert.Greater(chunks.Count, 2, "test needs a multi-chunk stream");
 
             // Feed the first chunk flagged as the final one while the stream is still incomplete:
-            // this is a malformed/truncated stream and must be dropped.
-            mgr.ProcessStreamChunk(session: null, key, chunks[0].Chunk, isFirst: true, isLast: true);
+            // this is a malformed/truncated stream and must fail loud (throw) after being dropped.
+            ClassicAssert.Throws<GarnetException>(() => mgr.ProcessStreamChunk(session: null, key, chunks[0].Chunk, isFirst: true, isLast: true));
             ClassicAssert.AreEqual(0, mgr.PendingStreamReassemblyCount);
 
             // The activity pins the exact drop reason: a final flag on a still-incomplete stream.
             var end = AssertSingleReassemblyReason(capture, "FinalChunkButDeserializerIncomplete");
             ClassicAssert.AreEqual("1", end.Field("chunkCount"));
         }
+
+#if DEBUG
+        [Test]
+        public void PublishFailureOnCompleteStreamThrows()
+        {
+            var capture = new CapturingLogger();
+            using var mgr = new RangeIndexManager(testDir, logger: capture);
+            var key = Encoding.UTF8.GetBytes("k1");
+            var chunks = BuildStreamChunks(key, MakeStub(), RandomBytes(8192), chunkSize: 512);
+            ClassicAssert.Greater(chunks.Count, 2, "test needs a multi-chunk stream");
+
+            // Feed every chunk except the trailer: the stream is fully buffered but not yet complete.
+            for (var i = 0; i < chunks.Count - 1; i++)
+                mgr.ProcessStreamChunk(session: null, key, chunks[i].Chunk, chunks[i].IsFirst, chunks[i].IsLast);
+
+            ClassicAssert.AreEqual(1, mgr.PendingStreamReassemblyCount);
+
+            // Force PublishMigratedIndex to be treated as failed so the final chunk completes the stream
+            // but the publish is rejected. Replay must fail loud (throw) and drop the reassembly.
+            ExceptionInjectionHelper.EnableException(ExceptionInjectionType.RangeIndex_Replay_Force_Publish_Failure);
+            try
+            {
+                var last = chunks[^1];
+                ClassicAssert.Throws<GarnetException>(() => mgr.ProcessStreamChunk(session: null, key, last.Chunk, last.IsFirst, last.IsLast));
+            }
+            finally
+            {
+                ExceptionInjectionHelper.DisableException(ExceptionInjectionType.RangeIndex_Replay_Force_Publish_Failure);
+            }
+
+            ClassicAssert.AreEqual(0, mgr.PendingStreamReassemblyCount);
+
+            // The activity distinguishes a rejected publish from a clean completion.
+            var end = AssertSingleReassemblyReason(capture, "PublishFailed");
+            ClassicAssert.AreEqual(chunks.Count.ToString(), end.Field("chunkCount"));
+        }
+#endif
     }
 }

@@ -4,6 +4,7 @@
 using System;
 using System.Buffers;
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.IO;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
@@ -294,9 +295,11 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Startup validation: ensure the AOF page is large enough to safely hold a single
+        /// Debug-time backstop ensuring the AOF page is large enough to safely hold a single
         /// <see cref="AofEntryType.RangeIndexStreamChunk"/> entry — the current stream chunk size plus a
-        /// <see cref="DefaultMigrationChunkSize"/> safety margin.
+        /// <see cref="DefaultMigrationChunkSize"/> safety margin. Production configs are validated earlier and
+        /// allocation-free via the <c>RequiresMinimumMemory</c> attribute on <c>enable-range-index-preview</c>;
+        /// this guards the test-only chunk-size override path (see <see cref="SetAofStreamChunkSize"/>).
         /// </summary>
         public void ValidateAofPageCompatibility(GarnetAppendOnlyFile appendOnlyFile)
         {
@@ -305,8 +308,7 @@ namespace Garnet.server
 
             var pageBytes = 1L << appendOnlyFile.Log.UnsafeGetLogPageSizeBits();
             var requiredPageBytes = (long)rangeIndexAofStreamChunkSize + DefaultMigrationChunkSize;
-            if (pageBytes < requiredPageBytes)
-                throw new GarnetException($"AOF page size ({pageBytes} bytes) is too small for range index stream chunk size {rangeIndexAofStreamChunkSize}; needs at least {requiredPageBytes} bytes. Increase --aof-page-size.");
+            Debug.Assert(pageBytes >= requiredPageBytes, $"AOF page size ({pageBytes} bytes) is too small for range index stream chunk size {rangeIndexAofStreamChunkSize}; needs at least {requiredPageBytes} bytes. Increase --aof-page-size.");
         }
 
         /// <summary>Enqueue a single <see cref="AofEntryType.RangeIndexStreamChunk"/> chunk to the AOF.</summary>
@@ -359,17 +361,26 @@ namespace Garnet.server
             {
                 logger?.LogError("HandleRangeIndexStreamReplay: failed to process range index stream chunk for key {key}", Encoding.UTF8.GetString(key));
                 RemoveAndDisposeStreamReassembly(keyArr, "ChunkProcessingError");
-                return;
+                throw new GarnetException($"HandleRangeIndexStreamReplay: failed to process range index stream chunk for key {Encoding.UTF8.GetString(key)}");
             }
 
             if (deserializer.IsComplete)
             {
                 // TODO(RangeIndex): Propagate replaceOption in the migrated stream
-                var publishResult = PublishMigratedIndex(deserializer.Key, deserializer.Stub, deserializer.TempPath, replaceOption: false, ref session.stringBasicContext, session.functionsState.appendOnlyFile);
+                PublishMigratedIndexResult publishResult;
+                if (ExceptionInjectionHelper.TriggerCondition(ExceptionInjectionType.RangeIndex_Replay_Force_Publish_Failure))
+                    publishResult = PublishMigratedIndexResult.Failed;
+                else
+                    publishResult = PublishMigratedIndex(deserializer.Key, deserializer.Stub, deserializer.TempPath, replaceOption: false, ref session.stringBasicContext, session.functionsState.appendOnlyFile);
+
                 state.activity.OnPublishResult(publishResult);
 
                 if (publishResult == PublishMigratedIndexResult.Failed)
+                {
                     logger?.LogError("HandleRangeIndexStreamReplay: PublishMigratedIndex failed during AOF replay for key {key}", Encoding.UTF8.GetString(key));
+                    RemoveAndDisposeStreamReassembly(keyArr, "PublishFailed");
+                    throw new GarnetException($"HandleRangeIndexStreamReplay: PublishMigratedIndex failed during AOF replay for key {Encoding.UTF8.GetString(key)}");
+                }
 
                 RemoveAndDisposeStreamReassembly(keyArr, "Complete");
                 return;
@@ -377,9 +388,10 @@ namespace Garnet.server
 
             if (isLast)
             {
-                // Final-chunk flag set but the deserializer did not reach completion — the stream is malformed/truncated. Drop the partial state.
+                // Final-chunk flag set but the deserializer did not reach completion — the stream is malformed/truncated.
                 logger?.LogError("HandleRangeIndexStreamReplay: final range index stream chunk flag set but stream is incomplete for key {key}", Encoding.UTF8.GetString(key));
                 RemoveAndDisposeStreamReassembly(keyArr, "FinalChunkButDeserializerIncomplete");
+                throw new GarnetException($"HandleRangeIndexStreamReplay: final range index stream chunk flag set but stream is incomplete for key {Encoding.UTF8.GetString(key)}");
             }
         }
 

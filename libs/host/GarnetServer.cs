@@ -399,7 +399,8 @@ namespace Garnet
 
             if (serverOptions.EnableRangeIndexPreview)
             {
-                // Fail fast at startup if the AOF page can't hold a migrated range index stream chunk (no-op when AOF is disabled).
+                // Debug-time backstop; production configs are rejected earlier (allocation-free) by the
+                // RequiresMinimumMemory attribute on enable-range-index-preview.
                 rangeIndexManager.ValidateAofPageCompatibility(aof);
             }
 
