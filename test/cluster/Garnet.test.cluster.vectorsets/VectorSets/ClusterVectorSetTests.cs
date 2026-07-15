@@ -2218,36 +2218,21 @@ namespace Garnet.test.cluster
 
 #if DEBUG
         /// <summary>
-        /// KNOWN REPLICA-SIDE BUG (documented, not yet fixed - flagged for the Garnet team).
-        ///
         /// Corner case of the delete-during-synthetic-replication race, observed on a replica.
         ///
         /// On the primary a VADD builds its index and then emits a synthetic append-log RMW
         /// (<see cref="RespCommand.VADD"/> with <c>VADDAppendLogArg</c>) purely to replicate the add.
         /// We pause the primary right before that synthetic RMW, race a lock-free DEL followed by a
         /// String SET on the same key from another connection, then release the VADD. The AOF order
-        /// the replica then replays is: DEL, SET(string), synthetic-VADD-append-log.
+        /// the replica would replay is: DEL, SET(string), synthetic-VADD-append-log.
         ///
-        /// Unlike the primary (where the synthetic append-log RMW is a no-op against the String
-        /// record), the replica resets arg1 to default in <c>HandleVectorSetAddReplication</c> and
-        /// replays a *genuine* VADD against a String key. <c>ReadOrCreateVectorIndex</c> then returns
-        /// a non-OK status, which trips
-        /// <c>Debug.Assert(status == GarnetStatus.OK, "Replication should only occur when an add is
-        /// successful, so index must exist")</c> in <c>ApplyVectorSetAdd</c>
-        /// (VectorManager.Replication.cs). That invariant ("if we're replicating an add the index must
-        /// exist") is false under a raced concurrent delete: in Debug it asserts on the replay thread;
-        /// in Release the assert is compiled out and control can fall through to the
-        /// <c>GarnetException("...will cause data loss...")</c> path.
-        ///
-        /// Data-wise the observed end state stayed consistent (primary and replica both TYPE=string,
-        /// replication converged, no livelock), but the invariant violation surfaces as a
-        /// DebugAssertException on the replica's replay thread at teardown, so this test is currently
-        /// <see cref="IgnoreAttribute"/>d. Un-ignore once the replica replay handles a
-        /// concurrently-deleted/retyped key gracefully (e.g. treat a non-OK ReadOrCreateVectorIndex as
-        /// a clean no-op, since the AOF's DEL/SET already yield the correct end state).
+        /// The synthetic RMW runs against the now-String record. Its updaters
+        /// (InPlaceUpdater/CopyUpdater in RMWMethods.cs) detect that the record is no longer a vector
+        /// index (RecordType != VectorManager.RecordType) and cancel the operation, so nothing is
+        /// written to the AOF. The replica therefore never replays a VADD against a non-index record:
+        /// primary and replica both converge to a String value for the key.
         /// </summary>
         [Test]
-        [Ignore("Documents a known replica-side bug: replaying a synthetic VADD append-log against a concurrently deleted+retyped key trips the Debug.Assert at VectorManager.Replication.cs:414. Orthogonal to the NeedInitialUpdate primary-side fix; flagged for the Garnet team.")]
         public async Task ReplicaReplaysSyntheticVAddAgainstStringKeyAfterRacedDeleteAsync()
         {
             const int PrimaryIndex = 0;

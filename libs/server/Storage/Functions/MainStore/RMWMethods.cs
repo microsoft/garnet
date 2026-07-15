@@ -832,6 +832,16 @@ namespace Garnet.server
 
                     return TryCopyValueLengthToOutput(logRecord.ValueSpan, ref output) ? IPUResult.Succeeded : IPUResult.Failed;
                 case RespCommand.VADD:
+                    // These synthetic replication writes require an existing index record. If the key was
+                    // concurrently UNLINK'd and re-typed (e.g. a raced String SET) the record is no longer
+                    // an index; cancel so no AOF entry is emitted and replicas don't replay the add against
+                    // a non-index record.
+                    if (logRecord.RecordType != VectorManager.RecordType)
+                    {
+                        rmwInfo.Action = RMWAction.CancelOperation;
+                        return IPUResult.Failed;
+                    }
+
                     // Adding to an existing VectorSet is modeled as a read operations
                     //
                     // However, we do synthesize some (pointless) writes to implement replication (which we ignore here).
@@ -859,6 +869,14 @@ namespace Garnet.server
                     // Ignore everything else
                     return IPUResult.Succeeded;
                 case RespCommand.VREM:
+                    // Same rationale as the VADD case above: a synthetic VREM replication write requires an
+                    // existing index record. If the key was concurrently UNLINK'd and re-typed, cancel.
+                    if (logRecord.RecordType != VectorManager.RecordType)
+                    {
+                        rmwInfo.Action = RMWAction.CancelOperation;
+                        return IPUResult.Failed;
+                    }
+
                     // Removing from a VectorSet is modeled as a read operations
                     //
                     // However, we do synthesize some (pointless) writes to implement replication
@@ -1352,6 +1370,15 @@ namespace Garnet.server
                     break;
 
                 case RespCommand.VADD:
+                    // Concurrent UNLINK + re-type: no index record remains, so cancel. Canceling writes
+                    // nothing to the AOF, preventing replicas from replaying the add against a non-index
+                    // record.
+                    if (srcLogRecord.RecordType != VectorManager.RecordType)
+                    {
+                        rmwInfo.Action = RMWAction.CancelOperation;
+                        return false;
+                    }
+
                     if (input.arg1 == VectorManager.RecreateIndexArg)
                     {
                         // Recreate index
@@ -1379,6 +1406,13 @@ namespace Garnet.server
                     break;
 
                 case RespCommand.VREM:
+                    // Same rationale as the VADD CopyUpdater case above.
+                    if (srcLogRecord.RecordType != VectorManager.RecordType)
+                    {
+                        rmwInfo.Action = RMWAction.CancelOperation;
+                        return false;
+                    }
+
                     Debug.Assert(input.arg1 == VectorManager.VREMAppendLogArg, "Unexpected CopyUpdater call on VREM key");
 
                     // VREM has triggered a CU of the index key - like the VADD append-log branch above we
