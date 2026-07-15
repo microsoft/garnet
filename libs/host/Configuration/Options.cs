@@ -294,11 +294,11 @@ namespace Garnet
         public bool? EnableTLS { get; set; }
 
         [CertFileValidation(true, true, false)]
-        [Option("cert-file-name", Required = false, HelpText = "TLS certificate file name (example: testcert.pfx).")]
+        [Option("cert-file-name", Required = false, HelpText = "TLS certificate file name. Accepts a PKCS#12/PFX file or a PEM-encoded certificate (.pem, .crt, .cer); the format is auto-detected from the file's contents (example: testcert.pfx).")]
         public string CertFileName { get; set; }
 
         [HiddenOption]
-        [Option("cert-password", Required = false, HelpText = "TLS certificate password (example: placeholder).")]
+        [Option("cert-password", Required = false, HelpText = "TLS certificate password (example: placeholder). For a PEM-encoded cert-file-name, this is instead treated as the path to a separate PEM private key file, if the key isn't already included in cert-file-name.")]
         public string CertPassword { get; set; }
 
         [Option("cert-subject-name", Required = false, HelpText = "TLS certificate subject name.")]
