@@ -49,19 +49,10 @@ namespace Garnet.server
                     return false; // Key must already exist
                 case RespCommand.VADD:
                 case RespCommand.VREM:
-                    // The synthetic args below (replication append-log, migration, recreate,
-                    // set-flags) only make sense as a CopyUpdater on an already-existing index
-                    // record. If the key was concurrently deleted (e.g. a raced UNLINK, which
-                    // takes no vector lock), creating a record here via InitialUpdater leaves a
-                    // zeroed 56-byte index that NeedsRecreate flags forever, livelocking the
-                    // recreate loop. Refuse to create — the key must already exist, as with
-                    // RIPROMOTE/RIRESTORE. A genuine VADD create carries arg1 == 0 and still creates.
-                    if (input.arg1 is VectorManager.VADDAppendLogArg
-                        or VectorManager.VREMAppendLogArg
-                        or VectorManager.RecreateIndexArg
-                        or VectorManager.VADDSetFlagsArg
-                        or VectorManager.MigrateElementKeyLogArg
-                        or VectorManager.MigrateIndexKeyLogArg)
+                    // These synthetic args are only valid as a CopyUpdater on an existing index
+                    // record; encountering them here means the key was concurrently UNLINK'd, so we
+                    // cannot complete the operation. A genuine VADD create carries arg1 == 0.
+                    if (input.arg1 == VectorManager.VADDAppendLogArg || input.arg1 == VectorManager.VREMAppendLogArg || input.arg1 == VectorManager.RecreateIndexArg || input.arg1 == VectorManager.VADDSetFlagsArg || input.arg1 == VectorManager.MigrateElementKeyLogArg || input.arg1 == VectorManager.MigrateIndexKeyLogArg)
                     {
                         return false;
                     }
@@ -1389,6 +1380,10 @@ namespace Garnet.server
 
                 case RespCommand.VREM:
                     Debug.Assert(input.arg1 == VectorManager.VREMAppendLogArg, "Unexpected CopyUpdater call on VREM key");
+
+                    // VREM has triggered a CU of the index key - like the VADD append-log branch above we
+                    // want to do nothing but we have to copy the old value forward to prevent corruption.
+                    oldValue.CopyTo(dstLogRecord.ValueSpan);
                     break;
 
                 default:

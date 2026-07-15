@@ -3637,72 +3637,139 @@ namespace Garnet.test
             }
         }
 
+#if DEBUG
         /// <summary>
         /// Regression test for the primary-side VectorSet recreate livelock, driven as a real
-        /// two-connection race rather than a synthetic direct call.
+        /// two-connection race, for both VADD and VREM.
         ///
-        /// A VADD is phrased as a read once the index exists, so after a successful add
-        /// <c>VectorStoreOps</c> issues a synthetic <c>VADDAppendLogArg</c> RMW purely to get the
-        /// write into the AOF. That synthetic arg is only meaningful as a CopyUpdater on an
-        /// already-existing record. VADD holds only a SHARED vector lock across add + replicate,
-        /// and UNLINK's raw main-store DELETE takes NO vector lock, so a concurrent UNLINK can
-        /// tombstone the key in between. On the unfixed code <c>NeedInitialUpdate</c> then returned
-        /// true for the synthetic arg on the now-absent key, and <c>InitialUpdater</c>'s no-op
-        /// branch left a pre-sized 56-byte record fully zeroed — resurrecting the key as a phantom
-        /// <c>ctx=0 dims=0 indexPtr=0</c> index that <c>NeedsRecreate</c> flags forever, livelocking
-        /// the recreate loop and pegging all cores.
+        /// After a successful add/remove, the operation issues a synthetic append-log RMW just to get
+        /// the write into the AOF, holding only a SHARED vector lock. UNLINK's raw main-store DELETE
+        /// takes no vector lock, so a concurrent UNLINK can tombstone the key in between. On the unfixed
+        /// code <c>NeedInitialUpdate</c> returned true for the synthetic arg on the now-absent key, and
+        /// <c>InitialUpdater</c> left a zeroed 56-byte record — resurrecting the key as a phantom index
+        /// that <c>NeedsRecreate</c> flags forever, livelocking the recreate loop.
         ///
-        /// This drives that exact interleaving deterministically via an exception-injection pause:
-        /// connection 1 runs a VADD that parks inside the synthetic-replication window (after the
-        /// add, before the append-log RMW); connection 2 UNLINKs the key; then the pause is cleared
-        /// so the synthetic RMW runs against the tombstoned key. The key must NOT be resurrected.
-        /// Fails on the unfixed code (key comes back as a zeroed phantom index), passes with the fix.
+        /// This drives that interleaving deterministically: connection 1 parks the operation in the
+        /// synthetic-replication window; connection 2 UNLINKs the key; the pause is cleared so the
+        /// synthetic RMW runs against the tombstone. The key must NOT be resurrected. Fails on the
+        /// unfixed code, passes with the fix.
         /// </summary>
         [Test]
-        public async Task SyntheticReplicationRaceWithConcurrentUnlinkMustNotResurrectKey()
+        public async Task SyntheticReplicationRaceWithConcurrentUnlinkMustNotResurrectKey([Values("VADD", "VREM")] string operation)
         {
-#if !DEBUG
-            ClassicAssert.Ignore("Relies on ExceptionInjectionHelper, disabled in non-DEBUG");
-#endif
-            const string Key = nameof(SyntheticReplicationRaceWithConcurrentUnlinkMustNotResurrectKey);
+            var key = $"{nameof(SyntheticReplicationRaceWithConcurrentUnlinkMustNotResurrectKey)}:{operation}";
             const ExceptionInjectionType Pause = ExceptionInjectionType.VectorSet_Pause_Before_Synthetic_Replication_Rmw;
 
-            using var redisVadd = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            using var redisOp = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             using var redisUnlink = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
-            var dbVadd = redisVadd.GetDatabase(0);
+            var dbOp = redisOp.GetDatabase(0);
             var dbUnlink = redisUnlink.GetDatabase(0);
 
             var data = new byte[75];
-            new Random(2026_07_15).NextBytes(data);
-            var elem = new byte[4];
+            var elem = new byte[] { 1, 0, 0, 0 };
+            var elem2 = new byte[] { 2, 0, 0, 0 };
 
-            // Arm the pause in the synthetic-replication window. The VADD below creates the index,
-            // adds the vector, then parks there before its append-log RMW.
+            // VREM needs an existing element to remove, so seed the index (with a second element left
+            // behind so the remove doesn't drop the whole set) before arming the pause — otherwise the
+            // seeding VADD would itself park in the window.
+            if (operation == "VREM")
+            {
+                dbOp.Execute("VADD", [key, "XB8", (RedisValue)data, (RedisValue)elem, "XPREQ8"]);
+                dbOp.Execute("VADD", [key, "XB8", (RedisValue)data, (RedisValue)elem2, "XPREQ8"]);
+            }
+
+            // Arm the pause in the synthetic-replication window.
             ExceptionInjectionHelper.EnableException(Pause);
             try
             {
-                // Connection 1: VADD creates the index, adds the vector, then parks in the window.
-                var vaddTask = Task.Run(() => dbVadd.Execute("VADD", [Key, "XB8", (RedisValue)data, (RedisValue)elem, "XPREQ8"]));
+                // Connection 1: run the operation; it modifies the index, then parks before its append-log RMW.
+                var opTask = operation == "VADD"
+                    ? Task.Run(() => dbOp.Execute("VADD", [key, "XB8", (RedisValue)data, (RedisValue)elem, "XPREQ8"]))
+                    : Task.Run(() => dbOp.Execute("VREM", [key, (RedisValue)elem]));
 
-                // Wait (event-driven, no polling) until the VADD reaches the pause: ResetAndWaitAsync
-                // clears the injection flag on arrival, which completes WaitOnClearAsync here. By this
-                // point the index has been created, so there is something for UNLINK to tombstone.
+                // Wait (event-driven, no polling) until the operation reaches the pause. By this point the
+                // index exists, so there is something for UNLINK to tombstone.
                 await ExceptionInjectionHelper.WaitOnClearAsync(Pause).WaitAsync(TimeSpan.FromSeconds(30));
 
                 // Connection 2: UNLINK the parked key. Raw main-store tombstone, takes no vector lock.
-                _ = dbUnlink.KeyDelete(Key);
+                _ = dbUnlink.KeyDelete(key);
 
-                // Re-arm to release the parked VADD; its synthetic append-log RMW now runs against the
-                // tombstoned key.
+                // Re-arm to release the parked operation; its synthetic append-log RMW now runs against
+                // the tombstoned key.
                 ExceptionInjectionHelper.EnableException(Pause);
-                await vaddTask;
+                await opTask;
             }
             finally
             {
                 ExceptionInjectionHelper.DisableException(Pause);
             }
 
-            ClassicAssert.IsFalse(dbUnlink.KeyExists(Key), "synthetic replication RMW resurrected a tombstoned key as a phantom index");
+            ClassicAssert.IsFalse(dbUnlink.KeyExists(key), "synthetic replication RMW resurrected a tombstoned key as a phantom index");
+        }
+#endif
+
+        /// <summary>
+        /// Second, race-free path to the same zeroed-index livelock: a VREM against an index whose
+        /// record has aged into the read-only region takes the Tsavorite read-copy-update path, so the
+        /// synthetic VREM append-log RMW runs through CopyUpdater rather than InPlaceUpdater. CopyUpdater
+        /// allocates a fresh destination record and must copy the old 56-byte index value forward (as the
+        /// VADD append-log branch does). If it does not, the new record is left zeroed, the index pointer
+        /// is lost, and NeedsRecreate flags it forever (RecreateIndex(dims:0) livelock) — with no
+        /// concurrent UNLINK involved.
+        /// </summary>
+        [Test]
+        public void VremCopyUpdaterOnReadOnlyIndexMustPreserveIndexValue()
+        {
+            const string Key = nameof(VremCopyUpdaterOnReadOnlyIndexMustPreserveIndexValue);
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var storeWrapper = server.Provider.StoreWrapper;
+            var vectorManager = storeWrapper.DefaultDatabase.VectorManager;
+            var store = storeWrapper.store;
+
+            ClassicAssert.AreEqual(1, (int)db.Execute("VADD", [Key, "VALUES", "3", "1", "2", "3", "elemA"]));
+
+            // Everything written so far (the index record + elemA) sits below this address. elemB, added
+            // next, lands above it. Shifting the read-only boundary here ages the index into the read-only
+            // region while leaving elemB in the mutable region so it can still be removed.
+            var splitAddr = store.Log.TailAddress;
+
+            ClassicAssert.AreEqual(1, (int)db.Execute("VADD", [Key, "VALUES", "3", "4", "5", "6", "elemB"]));
+
+            var ptrBefore = ReadStoredIndexPtr(storeWrapper, vectorManager, Key);
+            ClassicAssert.AreNotEqual((nint)0, ptrBefore, "index pointer should be valid immediately after creation");
+
+            // Age only the index record into the read-only region so the synthetic VREM append-log RMW
+            // against it must go through CopyUpdater (read-copy-update) instead of an in-place update.
+            store.Log.ShiftReadOnlyAddress(splitAddr, wait: true);
+
+            // VREM synthesizes a VREM append-log RMW against the (now read-only) index key -> CopyUpdater.
+            var vremResult = (int)db.Execute("VREM", [Key, "elemB"]);
+
+            var ptrAfter = ReadStoredIndexPtr(storeWrapper, vectorManager, Key);
+            ClassicAssert.AreNotEqual((nint)0, ptrAfter,
+                $"VREM CopyUpdater on a read-only index dropped the stored index pointer (vremResult={vremResult}, ptrBefore={ptrBefore})");
+
+            // Reads the raw 56-byte index value stored under the visible key and extracts the index pointer,
+            // without going through the recreate path (which would livelock on a corrupted, zeroed record).
+            static nint ReadStoredIndexPtr(StoreWrapper storeWrapper, VectorManager vectorManager, string key)
+            {
+                using var storageSession = new StorageSession(storeWrapper, new(), new(), null, null, storeWrapper.DefaultDatabase.Id, null, vectorManager, null);
+
+                Span<byte> indexSpan = stackalloc byte[VectorManager.IndexSize];
+                StringInput input = default;
+                input.header.cmd = RespCommand.VSIM;
+
+                var keyBytes = Encoding.ASCII.GetBytes(key);
+                using (vectorManager.ReadForDeleteVectorIndex(storageSession, keyBytes, ref input, indexSpan, out var status))
+                {
+                    ClassicAssert.AreEqual(GarnetStatus.OK, status, "index key should exist");
+                    VectorManager.ReadIndex(indexSpan, out _, out _, out _, out _, out _, out _, out _, out _, out var indexPtr);
+                    return indexPtr;
+                }
+            }
         }
 
         /// <summary>

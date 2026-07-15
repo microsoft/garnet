@@ -139,6 +139,20 @@ namespace Garnet.common
         }
 
         /// <summary>
+        /// Synchronous, event-driven counterpart to <see cref="ResetAndWaitAsync"/>: signals arrival by
+        /// clearing the condition, then parks on the shared <see cref="TaskCompletionSource{TResult}"/>
+        /// until it is re-enabled. No busy spin. Inert unless the injection point has been enabled, which
+        /// only happens from <see cref="EnableException"/> (Debug-only), so this is a no-op in Release.
+        /// </summary>
+        /// <param name="exceptionType"></param>
+        public static void ResetAndWait(ExceptionInjectionType exceptionType)
+        {
+#pragma warning disable VSTHRD002 // Event-driven park on a TaskCompletionSource for test injection; blocking here is intentional and deadlock-free.
+            ResetAndWaitAsync(exceptionType).GetAwaiter().GetResult();
+#pragma warning restore VSTHRD002
+        }
+
+        /// <summary>
         /// Wait on clear condition
         /// </summary>
         /// <param name="exceptionType"></param>
