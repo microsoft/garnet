@@ -52,7 +52,7 @@ namespace Garnet.server
                     // These synthetic args are only valid as a CopyUpdater on an existing index
                     // record; encountering them here means the key was concurrently UNLINK'd, so we
                     // cannot complete the operation. A genuine VADD create carries arg1 == 0.
-                    if (input.arg1 == VectorManager.VADDAppendLogArg || input.arg1 == VectorManager.VREMAppendLogArg || input.arg1 == VectorManager.RecreateIndexArg || input.arg1 == VectorManager.VADDSetFlagsArg || input.arg1 == VectorManager.MigrateElementKeyLogArg || input.arg1 == VectorManager.MigrateIndexKeyLogArg)
+                    if (input.arg1 is VectorManager.VADDAppendLogArg or VectorManager.VREMAppendLogArg or VectorManager.RecreateIndexArg or VectorManager.VADDSetFlagsArg or VectorManager.MigrateElementKeyLogArg or VectorManager.MigrateIndexKeyLogArg)
                     {
                         return false;
                     }
