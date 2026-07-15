@@ -3643,14 +3643,15 @@ namespace Garnet.test
         /// two-connection race, for both VADD and VREM.
         ///
         /// After a successful add/remove, the operation issues a synthetic append-log RMW just to get
-        /// the write into the AOF, holding only a SHARED vector lock. UNLINK's raw main-store DELETE
-        /// takes no vector lock, so a concurrent UNLINK can tombstone the key in between. On the unfixed
+        /// the write into the AOF, holding only a SHARED vector lock. A raw main-store delete (DEL or
+        /// UNLINK — both take the same lock-free delete path, taking no vector lock) can tombstone the
+        /// key in between. On the unfixed
         /// code <c>NeedInitialUpdate</c> returned true for the synthetic arg on the now-absent key, and
-        /// <c>InitialUpdater</c> left a zeroed 56-byte record — resurrecting the key as a phantom index
+        /// <c>InitialUpdater</c> left a zeroed index record — resurrecting the key as a phantom index
         /// that <c>NeedsRecreate</c> flags forever, livelocking the recreate loop.
         ///
         /// This drives that interleaving deterministically: connection 1 parks the operation in the
-        /// synthetic-replication window; connection 2 UNLINKs the key; the pause is cleared so the
+        /// synthetic-replication window; connection 2 deletes the key; the pause is cleared so the
         /// synthetic RMW runs against the tombstone. The key must NOT be resurrected. Fails on the
         /// unfixed code, passes with the fix.
         /// </summary>
@@ -3688,10 +3689,11 @@ namespace Garnet.test
                     : Task.Run(() => dbOp.Execute("VREM", [key, (RedisValue)elem]));
 
                 // Wait (event-driven, no polling) until the operation reaches the pause. By this point the
-                // index exists, so there is something for UNLINK to tombstone.
+                // index exists, so there is something to tombstone.
                 await ExceptionInjectionHelper.WaitOnClearAsync(Pause).WaitAsync(TimeSpan.FromSeconds(30));
 
-                // Connection 2: UNLINK the parked key. Raw main-store tombstone, takes no vector lock.
+                // Connection 2: delete the parked key with a raw main-store DEL (same lock-free path as
+                // UNLINK), tombstoning it while the operation holds only a SHARED vector lock.
                 _ = dbUnlink.KeyDelete(key);
 
                 // Re-arm to release the parked operation; its synthetic append-log RMW now runs against
@@ -3712,10 +3714,10 @@ namespace Garnet.test
         /// Second, race-free path to the same zeroed-index livelock: a VREM against an index whose
         /// record has aged into the read-only region takes the Tsavorite read-copy-update path, so the
         /// synthetic VREM append-log RMW runs through CopyUpdater rather than InPlaceUpdater. CopyUpdater
-        /// allocates a fresh destination record and must copy the old 56-byte index value forward (as the
+        /// allocates a fresh destination record and must copy the old index value forward (as the
         /// VADD append-log branch does). If it does not, the new record is left zeroed, the index pointer
         /// is lost, and NeedsRecreate flags it forever (RecreateIndex(dims:0) livelock) — with no
-        /// concurrent UNLINK involved.
+        /// concurrent delete involved.
         /// </summary>
         [Test]
         public void VremCopyUpdaterOnReadOnlyIndexMustPreserveIndexValue()
@@ -3752,7 +3754,7 @@ namespace Garnet.test
             ClassicAssert.AreNotEqual((nint)0, ptrAfter,
                 $"VREM CopyUpdater on a read-only index dropped the stored index pointer (vremResult={vremResult}, ptrBefore={ptrBefore})");
 
-            // Reads the raw 56-byte index value stored under the visible key and extracts the index pointer,
+            // Reads the raw index value stored under the visible key and extracts the index pointer,
             // without going through the recreate path (which would livelock on a corrupted, zeroed record).
             static nint ReadStoredIndexPtr(StoreWrapper storeWrapper, VectorManager vectorManager, string key)
             {
