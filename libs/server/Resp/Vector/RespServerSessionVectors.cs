@@ -1439,10 +1439,29 @@ namespace Garnet.server
                 return AbortWithErrorMessage("ERR Vector Set (preview) commands are not enabled");
             }
 
-            // TODO: implement!
+            if(parseState.Count != 1)
+            {
+                return AbortWithWrongNumberOfArguments("VCARD");
+            }
 
-            while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
-                SendAndReset();
+            var key = parseState.GetArgSliceByRef(0);
+
+            var res = storageApi.VectorSetCardinality(key, out var card);
+
+            switch (res)
+            {
+                case GarnetStatus.WRONGTYPE:
+                    WriteError(CmdStrings.RESP_ERR_WRONG_TYPE);
+                    break;
+
+                case GarnetStatus.NOTFOUND:
+                    card = 0;
+                    goto case GarnetStatus.OK;
+
+                case GarnetStatus.OK:
+                    WriteInt64(card);
+                    break;
+            }
 
             return true;
         }

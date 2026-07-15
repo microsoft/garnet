@@ -2107,6 +2107,11 @@ namespace Garnet.server
         #region Vector Sets
 
         /// <summary>
+        /// Count the number of vectors in a Vector Set.
+        /// </summary>
+        GarnetStatus VectorSetCardinality(PinnedSpanByte key, out long card);
+
+        /// <summary>
         /// Perform a similarity search given a vector and these parameters.
         /// 
         /// Ids are encoded in <paramref name="outputIds"/> as length prefixed blobs of bytes.

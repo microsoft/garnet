@@ -427,6 +427,31 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Get number of vectors in Vector Set.
+        /// </summary>
+        internal GarnetStatus VectorSetCardinality(PinnedSpanByte key, out long card)
+        {
+            parseState.InitializeWithArgument(key);
+
+            var input = new StringInput(RespCommand.VCARD, ref parseState);
+            Span<byte> indexSpan = stackalloc byte[VectorManager.IndexSizeBytes];
+            using (vectorManager.ReadVectorIndex(this, key, ref input, indexSpan, out var status))
+            {
+                if (status != GarnetStatus.OK)
+                {
+                    card = 0;
+                    return status;
+                }
+
+                // After a successful read we extract metadata
+                VectorManager.ReadIndex(indexSpan, out var context, out _, out _, out _, out _, out _, out _, out _, out var indexPtr);
+                card = (long)NativeDiskANNMethods.card(context, indexPtr);
+
+                return GarnetStatus.OK;
+            }
+        }
+
+        /// <summary>
         /// Get the attributes associated with an element in the VectorSet
         /// </summary>
         [SkipLocalsInit]

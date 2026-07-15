@@ -377,6 +377,10 @@ namespace Garnet.server
 
         #region VectorSet commands
 
+        /// <inheritdoc/>
+        public GarnetStatus VectorSetCardinality(PinnedSpanByte key, out long card)
+        => storageSession.VectorSetCardinality(key, out card);
+
         /// <inheritdoc />
         public unsafe GarnetStatus VectorSetAdd(PinnedSpanByte key, int reduceDims, VectorValueType valueType, PinnedSpanByte values, PinnedSpanByte element, VectorQuantType quantizer, int buildExplorationFactor, PinnedSpanByte attributes, int numLinks, VectorDistanceMetricType distanceMetric, out VectorManagerResult result, out ReadOnlySpan<byte> errorMsg)
         => storageSession.VectorSetAdd(key, reduceDims, valueType, values, element, quantizer, buildExplorationFactor, attributes, numLinks, distanceMetric, out result, out errorMsg);

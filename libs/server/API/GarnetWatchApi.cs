@@ -622,6 +622,14 @@ namespace Garnet.server
         #endregion
 
         #region Vector Sets
+
+        /// <inheritdoc/>
+        public GarnetStatus VectorSetCardinality(PinnedSpanByte key, out long card)
+        {
+            garnetApi.WATCH(key, StoreType.Main);
+            return garnetApi.VectorSetCardinality(key, out card);
+        }
+
         /// <inheritdoc/>
         public GarnetStatus VectorSetValueSimilarity(PinnedSpanByte key, VectorValueType valueType, PinnedSpanByte value, int count, float delta, int searchExplorationFactor, PinnedSpanByte filter, int maxFilteringEffort, bool includeAttributes, ref SpanByteAndMemory outputIds, out VectorIdFormat outputIdFormat, out ReadOnlySpan<byte> errorMessage, ref SpanByteAndMemory outputDistances, ref SpanByteAndMemory outputAttributes, out VectorManagerResult result, ref SpanByteAndMemory filterBitmap)
         {
