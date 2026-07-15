@@ -3637,6 +3637,18 @@ namespace Garnet.test
             }
         }
 
+        [Test]
+        public async Task TypeAsync()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
+            var db = redis.GetDatabase(0);
+
+            ClassicAssert.IsTrue(await db.VectorSetAddAsync("foo", VectorSetAddRequest.Member("bar", new float[] { 1, 2, 3 })).ConfigureAwait(false));
+
+            var type = await db.KeyTypeAsync("foo").ConfigureAwait(false);
+            ClassicAssert.AreEqual(RedisType.VectorSet, type);
+        }
+
         /// <summary>
         /// Create a new GarnetServer instance with common parameters.
         /// </summary>

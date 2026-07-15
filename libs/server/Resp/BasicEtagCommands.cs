@@ -33,6 +33,9 @@ namespace Garnet.server
                     Debug.Assert(output.SpanByteAndMemory.IsSpanByte);
                     WriteNull();
                     break;
+                case GarnetStatus.WRONGTYPE:
+                    WriteError(CmdStrings.RESP_ERR_WRONG_TYPE);
+                    break;
                 default:
                     ProcessOutput(output.SpanByteAndMemory);
                     break;
@@ -60,6 +63,9 @@ namespace Garnet.server
                 case GarnetStatus.NOTFOUND:
                     Debug.Assert(output.SpanByteAndMemory.IsSpanByte);
                     WriteNull();
+                    break;
+                case GarnetStatus.WRONGTYPE:
+                    WriteError(CmdStrings.RESP_ERR_WRONG_TYPE);
                     break;
                 default:
                     ProcessOutput(output.SpanByteAndMemory);

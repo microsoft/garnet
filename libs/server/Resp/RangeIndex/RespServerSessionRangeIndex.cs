@@ -253,7 +253,7 @@ namespace Garnet.server
 
             if (status == GarnetStatus.WRONGTYPE)
             {
-                SendAndReset();
+                WriteError(CmdStrings.RESP_ERR_WRONG_TYPE);
                 return true;
             }
 
@@ -302,7 +302,7 @@ namespace Garnet.server
 
             if (status == GarnetStatus.WRONGTYPE)
             {
-                SendAndReset();
+                WriteError(CmdStrings.RESP_ERR_WRONG_TYPE);
                 return true;
             }
 
@@ -486,10 +486,17 @@ namespace Garnet.server
 
             var key = parseState.GetArgSliceByRef(0);
 
-            storageApi.RangeIndexExists(key, out var exists);
+            var res = storageApi.RangeIndexExists(key, out var exists);
 
-            while (!RespWriteUtils.TryWriteInt32(exists ? 1 : 0, ref dcurr, dend))
-                SendAndReset();
+            if (res == GarnetStatus.WRONGTYPE)
+            {
+                WriteError(CmdStrings.RESP_ERR_WRONG_TYPE);
+            }
+            else
+            {
+                while (!RespWriteUtils.TryWriteInt32(exists ? 1 : 0, ref dcurr, dend))
+                    SendAndReset();
+            }
 
             return true;
         }

@@ -553,7 +553,7 @@ namespace Garnet.server
 
             // OK means the key exists and IS a RangeIndex (WRONGTYPE/NOTFOUND for anything else)
             exists = status == GarnetStatus.OK;
-            return GarnetStatus.OK;
+            return status;
         }
 
         /// <summary>

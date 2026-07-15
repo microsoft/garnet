@@ -141,9 +141,15 @@ namespace Garnet.server
 
             var status = storageApi.GET(key, out PinnedSpanByte value);
 
-            if (status is GarnetStatus.NOTFOUND or GarnetStatus.WRONGTYPE)
+            if (status is GarnetStatus.NOTFOUND)
             {
                 WriteNull();
+                return true;
+            }
+
+            if (status is GarnetStatus.WRONGTYPE)
+            {
+                WriteError(CmdStrings.RESP_ERR_WRONG_TYPE);
                 return true;
             }
 

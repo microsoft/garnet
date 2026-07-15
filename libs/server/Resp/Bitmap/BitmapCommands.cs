@@ -559,8 +559,6 @@ namespace Garnet.server
                                                       PinnedSpanByte overflowTypeSlice = default)
             where TGarnetApi : IGarnetApi
         {
-            while (!RespWriteUtils.TryWriteArrayLength(secondaryCommandArgs.Count, ref dcurr, dend))
-                SendAndReset();
 
             var input = new StringInput(cmd);
 
@@ -585,6 +583,19 @@ namespace Garnet.server
                 var output = GetStringOutput();
                 var status = storageApi.StringBitField(sbKey, ref input, opCode,
                     ref output);
+
+                if (status == GarnetStatus.WRONGTYPE)
+                {
+                    WriteError(CmdStrings.RESP_ERR_WRONG_TYPE);
+                    break;
+                }
+
+                // Must defer writing array length until first result so we can handle WRONGTYPE
+                if (i == 0)
+                {
+                    while (!RespWriteUtils.TryWriteArrayLength(secondaryCommandArgs.Count, ref dcurr, dend))
+                        SendAndReset();
+                }
 
                 if (status == GarnetStatus.NOTFOUND && opCode == RespCommand.GET)
                 {
