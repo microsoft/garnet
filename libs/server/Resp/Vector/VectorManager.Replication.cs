@@ -91,9 +91,13 @@ namespace Garnet.server
             inputCopy.arg1 = VADDAppendLogArg;
 
 #if DEBUG
-            // Test-only pause: lets a test park a VADD in the window between the successful add and its
-            // synthetic append-log RMW, to race a concurrent UNLINK into it (see RespVectorSetTests).
-            ExceptionInjectionHelper.WaitOnClear(ExceptionInjectionType.VectorSet_Pause_Before_Synthetic_Replication_Rmw);
+            // Test-only pause (event-driven, no busy spin): parks the VADD in the window between the
+            // successful add and its synthetic append-log RMW so a test can race a concurrent UNLINK
+            // into it (see RespVectorSetTests). ResetAndWaitAsync signals arrival, then blocks on a
+            // TaskCompletionSource until the test re-arms the injection point.
+#pragma warning disable VSTHRD002 // DEBUG-only test hook; parks the synchronous replication path on a TCS with no continuation back onto this thread.
+            ExceptionInjectionHelper.ResetAndWaitAsync(ExceptionInjectionType.VectorSet_Pause_Before_Synthetic_Replication_Rmw).GetAwaiter().GetResult();
+#pragma warning restore VSTHRD002
 #endif
 
             var res = context.RMW((FixedSpanByteKey)key, ref inputCopy);
@@ -129,8 +133,11 @@ namespace Garnet.server
             inputCopy.parseState.InitializeWithArgument(PinnedSpanByte.FromPinnedSpan(element));
 
 #if DEBUG
-            // Test-only pause: mirrors the VADD window above, for the synthetic VREM append-log RMW.
-            ExceptionInjectionHelper.WaitOnClear(ExceptionInjectionType.VectorSet_Pause_Before_Synthetic_Replication_Rmw);
+            // Test-only pause (event-driven, no busy spin): mirrors the VADD window above for the
+            // synthetic VREM append-log RMW. Blocks on a TaskCompletionSource until the test re-arms.
+#pragma warning disable VSTHRD002 // DEBUG-only test hook; parks the synchronous replication path on a TCS with no continuation back onto this thread.
+            ExceptionInjectionHelper.ResetAndWaitAsync(ExceptionInjectionType.VectorSet_Pause_Before_Synthetic_Replication_Rmw).GetAwaiter().GetResult();
+#pragma warning restore VSTHRD002
 #endif
 
             var res = context.RMW((FixedSpanByteKey)key, ref inputCopy);
