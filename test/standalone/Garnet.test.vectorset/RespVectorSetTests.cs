@@ -3708,6 +3708,54 @@ namespace Garnet.test
 
             ClassicAssert.IsFalse(dbUnlink.KeyExists(key), "synthetic replication RMW resurrected a tombstoned key as a phantom index");
         }
+
+        /// <summary>
+        /// Race variant: after the parked VADD is tombstoned by a concurrent delete, a String value is
+        /// SET at the same key before the synthetic append-log RMW runs. The synthetic append-log arg is
+        /// a no-op in the RMW updaters (it neither reads the value as an index nor rewrites it), so the
+        /// key must be left as an intact String — no corruption, type change, or recreate livelock.
+        /// This holds independently of the NeedInitialUpdate fix (the key exists, so that guard is not
+        /// on this path); the test documents that the concurrent-type-change interleaving is safe.
+        /// </summary>
+        [Test]
+        public async Task SyntheticReplicationRaceWithConcurrentUnlinkThenStringSetMustNotCorrupt()
+        {
+            var key = nameof(SyntheticReplicationRaceWithConcurrentUnlinkThenStringSetMustNotCorrupt);
+            const ExceptionInjectionType Pause = ExceptionInjectionType.VectorSet_Pause_Before_Synthetic_Replication_Rmw;
+            const string StringValue = "not-a-vector-index";
+
+            using var redisOp = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            using var redisRacer = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var dbOp = redisOp.GetDatabase(0);
+            var dbRacer = redisRacer.GetDatabase(0);
+
+            var data = new byte[75];
+            var elem = new byte[] { 1, 0, 0, 0 };
+
+            ExceptionInjectionHelper.EnableException(Pause);
+            try
+            {
+                // Connection 1: VADD creates the index, then parks before its append-log RMW.
+                var opTask = Task.Run(() => dbOp.Execute("VADD", [key, "XB8", (RedisValue)data, (RedisValue)elem, "XPREQ8"]));
+
+                await ExceptionInjectionHelper.WaitOnClearAsync(Pause).WaitAsync(TimeSpan.FromSeconds(30));
+
+                // Connection 2: tombstone the vector-set key, then re-add it as a plain String.
+                _ = dbRacer.KeyDelete(key);
+                _ = dbRacer.StringSet(key, StringValue);
+
+                // Release the parked VADD; its synthetic append-log RMW now runs against a String record.
+                ExceptionInjectionHelper.EnableException(Pause);
+                await opTask;
+            }
+            finally
+            {
+                ExceptionInjectionHelper.DisableException(Pause);
+            }
+
+            ClassicAssert.AreEqual(RedisType.String, dbRacer.KeyType(key), "key type was changed away from String by the synthetic replication RMW");
+            ClassicAssert.AreEqual(StringValue, (string)dbRacer.StringGet(key), "String value was corrupted by the synthetic replication RMW");
+        }
 #endif
 
         /// <summary>
