@@ -2340,6 +2340,131 @@ namespace Garnet.test.cluster
         }
 #endif
 
+#if DEBUG
+        /// <summary>
+        /// Companion to <see cref="ReplicaReplaysSyntheticVAddAgainstStringKeyAfterRacedDeleteAsync"/>,
+        /// exploring the "UNLINK then fresh vector set" interleaving on a replica.
+        ///
+        /// Desired (but unrealizable) ordering: VADD(T1) -> UNLINK(T2) -> VADD-new-set(T2) -> VAddReplicate(T1).
+        /// It is unrealizable on the primary because T1's VADD holds a SHARED vector lock on the key hash
+        /// across its synthetic replicate (ReadOrCreateVectorIndex returns still holding it), so T2's fresh
+        /// create (which needs an EXCLUSIVE lock) blocks until T1's VAddReplicate completes. The realizable
+        /// serialized order is therefore: VADD(T1 native) -> UNLINK(T2) -> VAddReplicate(T1, absent key) ->
+        /// VADD-new-set(T2). This test drives exactly that.
+        ///
+        /// The open question is whether the primary's synthetic VAddReplicate for the first element (E1)
+        /// still ships E1 to the replica via the AOF even though E1 was unlinked and never survives on the
+        /// primary. If it does, the replica replays a genuine VADD(E1) against the (momentarily absent) key
+        /// and ends up with {E1, E2} while the primary only has {E2} - a silent divergence.
+        /// </summary>
+        [Test]
+        public async Task ReplicaVsPrimaryAfterUnlinkThenFreshCreateDuringSyntheticVAddReplicationAsync()
+        {
+            const int PrimaryIndex = 0;
+            const int SecondaryIndex = 1;
+            const string Key = "foo";
+
+            _ = await SimpleSetupClusterAsync(DefaultShards, primaryCount: 1, replicaCount: 1, useTLS: false).ConfigureAwait(false);
+
+            var primary = (IPEndPoint)context.endpoints[PrimaryIndex];
+            var secondary = (IPEndPoint)context.endpoints[SecondaryIndex];
+
+            ClassicAssert.AreEqual("master", context.clusterTestUtils.RoleCommand(primary).Value);
+            ClassicAssert.AreEqual("slave", context.clusterTestUtils.RoleCommand(secondary).Value);
+
+            // E1 is added by the parked first VADD (T1); E2 is added by the fresh vector set (T2).
+            var v1 = new byte[75];
+            v1[0] = 1;
+            for (var i = 1; i < v1.Length; i++)
+                v1[i] = (byte)(v1[i - 1] + 1);
+            var e1 = new byte[] { 1, 0, 0, 0 };
+
+            var v2 = new byte[75];
+            v2[0] = 200;
+            for (var i = 1; i < v2.Length; i++)
+                v2[i] = (byte)(v2[i - 1] + 3);
+            var e2 = new byte[] { 2, 0, 0, 0 };
+
+            var opConfig = new ConfigurationOptions
+            {
+                EndPoints = { primary, secondary },
+                AllowAdmin = true,
+                AbortOnConnectFail = false,
+                ConnectTimeout = 20_000,
+                SyncTimeout = 120_000,
+            };
+
+            using var opConn = await ConnectionMultiplexer.ConnectAsync(opConfig).ConfigureAwait(false);
+            var opDb = opConn.GetDatabase();
+
+            Exception vaddError = null;
+            RedisResult vaddResult = null;
+
+            ExceptionInjectionHelper.EnableException(ExceptionInjectionType.VectorSet_Pause_Before_Synthetic_Replication_Rmw);
+            try
+            {
+                var vaddTask = Task.Run(() =>
+                {
+                    try
+                    {
+                        vaddResult = opDb.Execute("VADD", Key, "XB8", v1, e1, "XPREQ8");
+                    }
+                    catch (Exception ex)
+                    {
+                        vaddError = ex;
+                    }
+                });
+
+                await ExceptionInjectionHelper.WaitOnClearAsync(ExceptionInjectionType.VectorSet_Pause_Before_Synthetic_Replication_Rmw).ConfigureAwait(false);
+
+                // UNLINK is a lock-free main-store delete: it bypasses the shared vector lock T1 still holds,
+                // so it removes the vector set while T1 is parked.
+                var unlinkRes = (long)context.clusterTestUtils.Execute(primary, "UNLINK", [new RedisKey(Key)]);
+                ClassicAssert.AreEqual(1, unlinkRes);
+
+                // Release T1: its synthetic append-log RMW for E1 now runs against the absent key.
+                ExceptionInjectionHelper.EnableException(ExceptionInjectionType.VectorSet_Pause_Before_Synthetic_Replication_Rmw);
+
+                await vaddTask.ConfigureAwait(false);
+            }
+            finally
+            {
+                ExceptionInjectionHelper.DisableException(ExceptionInjectionType.VectorSet_Pause_Before_Synthetic_Replication_Rmw);
+            }
+
+            // A fresh vector set is created on the same key only after T1 released its shared lock.
+            var vadd2Res = (int)context.clusterTestUtils.Execute(primary, "VADD", [new RedisKey(Key), "XB8", v2, e2, "XPREQ8"]);
+            ClassicAssert.AreEqual(1, vadd2Res);
+
+            using var syncCts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+            context.clusterTestUtils.WaitForReplicaAofSync(PrimaryIndex, SecondaryIndex, cancellation: syncCts.Token);
+
+            var readonlyOnReplica = (string)context.clusterTestUtils.Execute(secondary, "READONLY", []);
+            ClassicAssert.AreEqual("OK", readonlyOnReplica);
+
+            var primaryMembers = (byte[][])context.clusterTestUtils.Execute(primary, "VSIM", [new RedisKey(Key), "XB8", v2, "COUNT", "10"]);
+            var replicaMembers = (byte[][])context.clusterTestUtils.Execute(secondary, "VSIM", [new RedisKey(Key), "XB8", v2, "COUNT", "10"]);
+
+            var primaryHasE1 = primaryMembers.Any(x => x.SequenceEqual(e1));
+            var primaryHasE2 = primaryMembers.Any(x => x.SequenceEqual(e2));
+            var replicaHasE1 = replicaMembers.Any(x => x.SequenceEqual(e1));
+            var replicaHasE2 = replicaMembers.Any(x => x.SequenceEqual(e2));
+
+            TestContext.Out.WriteLine($"[unlink-then-fresh-create] vaddResult={vaddResult}, vaddError={vaddError?.Message}");
+            TestContext.Out.WriteLine($"[unlink-then-fresh-create] primary: E1={primaryHasE1}, E2={primaryHasE2}, count={primaryMembers.Length}");
+            TestContext.Out.WriteLine($"[unlink-then-fresh-create] replica: E1={replicaHasE1}, E2={replicaHasE2}, count={replicaMembers.Length}");
+
+            // The primary's surviving set is the fresh one: {E2} only (E1 was unlinked before the create).
+            ClassicAssert.IsTrue(primaryHasE2, "Primary lost the fresh vector set element E2");
+            ClassicAssert.IsFalse(primaryHasE1, "Primary unexpectedly retained the unlinked element E1");
+
+            // The replica must match the primary exactly - it must not resurrect E1 from a synthetic
+            // append-log entry for an add that never survived on the primary.
+            ClassicAssert.AreEqual(primaryHasE1, replicaHasE1, "Replica diverged from primary on E1 (resurrected an unlinked element)");
+            ClassicAssert.AreEqual(primaryHasE2, replicaHasE2, "Replica diverged from primary on E2");
+        }
+#endif
+
         private async Task<(List<ShardInfo> Shards, List<ushort> Slots)> SimpleSetupClusterAsync(int shardCount, int primaryCount, int replicaCount, bool onDemandCheckpoint = false, bool useTLS = true)
         {
             context.CreateInstances(shardCount, useTLS: useTLS, enableAOF: true, AofMemorySize: DefaultAOFMemorySize, OnDemandCheckpoint: onDemandCheckpoint, sublogCount: sublogCount, threadPoolMinIOCompletionThreads: 512);
