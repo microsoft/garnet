@@ -2128,6 +2128,17 @@ namespace Garnet.server
         GarnetStatus VectorSetLinks(PinnedSpanByte key, PinnedSpanByte element, bool withScores, ref SpanByteAndMemory idResults, ref SpanByteAndMemory distanceResults);
 
         /// <summary>
+        /// Fetch random elements from the given Vector Set.
+        /// 
+        /// If <paramref name="count"/> is &lt; 0 we allow duplicates, if <paramref name="count"/> &gt; 0 we remove duplicates.
+        /// 
+        /// It is OK to fetch fewer than the requested number of elements.
+        /// 
+        /// On success, <paramref name="idResults"/> has length prefixed element names.
+        /// </summary>
+        GarnetStatus VectorSetRandomMembers(PinnedSpanByte key, int count, ref SpanByteAndMemory idResults);
+
+        /// <summary>
         /// Perform a similarity search given a vector and these parameters.
         /// 
         /// Ids are encoded in <paramref name="outputIds"/> as length prefixed blobs of bytes.

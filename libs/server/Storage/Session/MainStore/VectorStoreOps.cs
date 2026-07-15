@@ -503,6 +503,34 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Fetch random elements from the given Vector Set.
+        /// 
+        /// If <paramref name="count"/> is &lt; 0 we allow duplicates, if <paramref name="count"/> &gt; 0 we remove duplicates.
+        /// 
+        /// It is OK to fetch fewer than the requested number of elements.
+        /// 
+        /// On success, <paramref name="idResults"/> has length prefixed element names.
+        /// </summary>
+        internal GarnetStatus VectorSetRandomMembers(PinnedSpanByte key, int count, ref SpanByteAndMemory idResults)
+        {
+            parseState.InitializeWithArgument(key);
+
+            var input = new StringInput(RespCommand.VRANDMEMBER, ref parseState);
+            Span<byte> indexSpan = stackalloc byte[VectorManager.IndexSizeBytes];
+            using (vectorManager.ReadVectorIndex(this, key, ref input, indexSpan, out var status))
+            {
+                if (status != GarnetStatus.OK)
+                {
+                    return status;
+                }
+
+                // TODO: Implement!
+                idResults.Length = 0;
+                return GarnetStatus.OK;
+            }
+        }
+
+        /// <summary>
         /// Get the attributes associated with an element in the VectorSet
         /// </summary>
         [SkipLocalsInit]

@@ -1739,15 +1739,68 @@ namespace Garnet.server
         private bool NetworkVRANDMEMBER<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            const int DefaultResultSetSize = 64;
+            const int DefaultIdSize = sizeof(ulong);
+
             if (!storageSession.vectorManager.IsEnabled)
             {
                 return AbortWithErrorMessage("ERR Vector Set (preview) commands are not enabled");
             }
 
-            // TODO: implement!
+            if (parseState.Count is not (1 or 2))
+            {
+                return AbortWithWrongNumberOfArguments("VRANDMEMBER");
+            }
 
-            while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
-                SendAndReset();
+            var key = parseState.GetArgSliceByRef(0);
+            var count = 1;
+
+            if (parseState.Count == 2)
+            {
+                if (!parseState.TryGetInt(1, out count))
+                {
+                    return AbortWithErrorMessage("ERR expected integer count");
+                }
+            }
+
+            Span<byte> idSpace = stackalloc byte[DefaultResultSetSize * DefaultIdSize];
+
+            var idResult = SpanByteAndMemory.FromPinnedSpan(idSpace);
+            try
+            {
+
+                var res = storageApi.VectorSetRandomMembers(key, count, ref idResult);
+
+                switch (res)
+                {
+                    case GarnetStatus.NOTFOUND:
+                        if (parseState.Count == 2)
+                        {
+                            WriteArrayLength(0);
+                        }
+                        else
+                        {
+                            WriteNull();
+                        }
+                        break;
+                    case GarnetStatus.WRONGTYPE:
+                        WriteError(CmdStrings.RESP_ERR_WRONG_TYPE);
+                        break;
+
+                    case GarnetStatus.OK:
+                        {
+                            // TODO: implement!
+                            while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                                SendAndReset();
+                        }
+                        break;
+                }
+            }
+            finally
+            {
+                idResult.Dispose();
+            }
+
 
             return true;
         }

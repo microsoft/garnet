@@ -645,6 +645,13 @@ namespace Garnet.server
         }
 
         /// <inheritdoc/>
+        public GarnetStatus VectorSetRandomMembers(PinnedSpanByte key, int count, ref SpanByteAndMemory idResults)
+        {
+            garnetApi.WATCH(key, StoreType.Main);
+            return garnetApi.VectorSetRandomMembers(key, count, ref idResults);
+        }
+
+        /// <inheritdoc/>
         public GarnetStatus VectorSetValueSimilarity(PinnedSpanByte key, VectorValueType valueType, PinnedSpanByte value, int count, float delta, int searchExplorationFactor, PinnedSpanByte filter, int maxFilteringEffort, bool includeAttributes, ref SpanByteAndMemory outputIds, out VectorIdFormat outputIdFormat, out ReadOnlySpan<byte> errorMessage, ref SpanByteAndMemory outputDistances, ref SpanByteAndMemory outputAttributes, out VectorManagerResult result, ref SpanByteAndMemory filterBitmap)
         {
             garnetApi.WATCH(key, StoreType.Main);
