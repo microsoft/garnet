@@ -385,6 +385,10 @@ namespace Garnet.server
         public GarnetStatus VectorSetIsMember(PinnedSpanByte key, PinnedSpanByte element)
         => storageSession.VectorSetIsMember(key, element);
 
+        /// <inheritdoc/>
+        public GarnetStatus VectorSetLinks(PinnedSpanByte key, PinnedSpanByte element, bool withScores, ref SpanByteAndMemory idResults, ref SpanByteAndMemory distanceResults)
+        => storageSession.VectorSetLinks(key, element, withScores, ref idResults, ref distanceResults);
+
         /// <inheritdoc />
         public unsafe GarnetStatus VectorSetAdd(PinnedSpanByte key, int reduceDims, VectorValueType valueType, PinnedSpanByte values, PinnedSpanByte element, VectorQuantType quantizer, int buildExplorationFactor, PinnedSpanByte attributes, int numLinks, VectorDistanceMetricType distanceMetric, out VectorManagerResult result, out ReadOnlySpan<byte> errorMsg)
         => storageSession.VectorSetAdd(key, reduceDims, valueType, values, element, quantizer, buildExplorationFactor, attributes, numLinks, distanceMetric, out result, out errorMsg);

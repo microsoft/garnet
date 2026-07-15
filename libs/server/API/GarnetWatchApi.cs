@@ -630,12 +630,18 @@ namespace Garnet.server
             return garnetApi.VectorSetCardinality(key, out card);
         }
 
-
         /// <inheritdoc/>
         public GarnetStatus VectorSetIsMember(PinnedSpanByte key, PinnedSpanByte element)
         {
             garnetApi.WATCH(key, StoreType.Main);
             return garnetApi.VectorSetIsMember(key, element);
+        }
+
+        /// <inheritdoc/>
+        public GarnetStatus VectorSetLinks(PinnedSpanByte key, PinnedSpanByte element, bool withScores, ref SpanByteAndMemory idResults, ref SpanByteAndMemory distanceResults)
+        {
+            garnetApi.WATCH(key, StoreType.Main);
+            return garnetApi.VectorSetLinks(key, element, withScores, ref idResults, ref distanceResults);
         }
 
         /// <inheritdoc/>

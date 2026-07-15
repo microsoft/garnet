@@ -1672,17 +1672,68 @@ namespace Garnet.server
         private bool NetworkVLINKS<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            const int DefaultResultSetSize = 64;
+            const int DefaultIdSize = sizeof(ulong);
+
             if (!storageSession.vectorManager.IsEnabled)
             {
                 return AbortWithErrorMessage("ERR Vector Set (preview) commands are not enabled");
             }
 
-            // TODO: implement!
+            if (parseState.Count is not (2 or 3))
+            {
+                return AbortWithWrongNumberOfArguments("VLINKS");
+            }
 
-            while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
-                SendAndReset();
+            var key = parseState.GetArgSliceByRef(0);
+            var element = parseState.GetArgSliceByRef(1);
+            var withScores = false;
 
-            return true;
+            if (parseState.Count == 3)
+            {
+                if (!parseState.GetArgSliceByRef(2).ReadOnlySpan.EqualsUpperCaseSpanIgnoringCase("WITHSCORES"u8))
+                {
+                    return AbortWithErrorMessage("ERR Unexpected option");
+                }
+
+                withScores = true;
+            }
+
+            Span<byte> idSpace = stackalloc byte[DefaultResultSetSize * DefaultIdSize];
+            Span<byte> distanceSpace = stackalloc byte[DefaultResultSetSize * sizeof(float)];
+
+            var idResult = SpanByteAndMemory.FromPinnedSpan(idSpace);
+            var distanceResult = SpanByteAndMemory.FromPinnedSpan(distanceSpace);
+            try
+            {
+                var res = storageApi.VectorSetLinks(key, element, withScores, ref idResult, ref distanceResult);
+
+                switch (res)
+                {
+                    case GarnetStatus.NOTFOUND:
+                        WriteNull();
+                        break;
+
+                    case GarnetStatus.WRONGTYPE:
+                        WriteError(CmdStrings.RESP_ERR_WRONG_TYPE);
+                        break;
+
+                    case GarnetStatus.OK:
+                        {
+                            // TODO: implement!
+                            while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                                SendAndReset();
+                        }
+                        break;
+                }
+
+                return true;
+            }
+            finally
+            {
+                idResult.Dispose();
+                distanceResult.Dispose();
+            }
         }
 
         private bool NetworkVRANDMEMBER<TGarnetApi>(ref TGarnetApi storageApi)

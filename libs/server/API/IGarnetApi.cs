@@ -2121,6 +2121,13 @@ namespace Garnet.server
         GarnetStatus VectorSetIsMember(PinnedSpanByte key, PinnedSpanByte element);
 
         /// <summary>
+        /// For a given element, find all neighbors and (optionally) the distance to those neighbors.
+        /// 
+        /// On success, <paramref name="idResults"/> has length prefixed element names, and <paramref name="distanceResults"/> (if <paramref name="withScores"/> is true) has a float for each of those elements.
+        /// </summary>
+        GarnetStatus VectorSetLinks(PinnedSpanByte key, PinnedSpanByte element, bool withScores, ref SpanByteAndMemory idResults, ref SpanByteAndMemory distanceResults);
+
+        /// <summary>
         /// Perform a similarity search given a vector and these parameters.
         /// 
         /// Ids are encoded in <paramref name="outputIds"/> as length prefixed blobs of bytes.

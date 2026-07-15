@@ -468,7 +468,7 @@ namespace Garnet.server
                 }
 
                 // After a successful read we extract metadata
-                if(vectorManager.IsMember(indexSpan, element))
+                if (vectorManager.IsMember(indexSpan, element))
                 {
                     return GarnetStatus.OK;
                 }
@@ -476,6 +476,29 @@ namespace Garnet.server
                 {
                     return GarnetStatus.NOTFOUND;
                 }
+            }
+        }
+
+        /// <summary>
+        /// Determine neighbors of a given element, and (optionally) the distance to each neighbor.
+        /// </summary>
+        internal GarnetStatus VectorSetLinks(PinnedSpanByte key, PinnedSpanByte element, bool withScores, ref SpanByteAndMemory idResults, ref SpanByteAndMemory memoryResults)
+        {
+            parseState.InitializeWithArgument(key);
+
+            var input = new StringInput(RespCommand.VISMEMBER, ref parseState);
+            Span<byte> indexSpan = stackalloc byte[VectorManager.IndexSizeBytes];
+            using (vectorManager.ReadVectorIndex(this, key, ref input, indexSpan, out var status))
+            {
+                if (status != GarnetStatus.OK)
+                {
+                    return status;
+                }
+
+                // TODO: Implement!
+                idResults.Length = 0;
+                memoryResults.Length = 0;
+                return GarnetStatus.OK;
             }
         }
 
