@@ -46,15 +46,6 @@ namespace Garnet.server
         => replicationReplayCancellation.CanBeCanceled && replicationReplayTasks.Any(static r => !r.IsCompleted);
 
         /// <summary>
-        /// Test-only hook fired inside the synthetic-replication window: after a VADD/VREM has
-        /// modified the vector index but before its synthetic append-log RMW runs against the
-        /// main store. Tests set this to deterministically interleave a concurrent UNLINK into
-        /// the exact race window that can resurrect a tombstoned key as a zeroed, recreate-flagged
-        /// phantom index. Null (a single predictable branch) on every non-test code path.
-        /// </summary>
-        internal static Action OnBeforeSyntheticReplicationRmw;
-
-        /// <summary>
         /// Hook for <see cref="TaskManager"/> to request replication tasks start.
         /// 
         /// The underlying tasks may not be spun up until later, but the provided <see cref="CancellationToken"/> will be used
@@ -99,7 +90,11 @@ namespace Garnet.server
             var inputCopy = input;
             inputCopy.arg1 = VADDAppendLogArg;
 
-            OnBeforeSyntheticReplicationRmw?.Invoke();
+#if DEBUG
+            // Test-only pause: lets a test park a VADD in the window between the successful add and its
+            // synthetic append-log RMW, to race a concurrent UNLINK into it (see RespVectorSetTests).
+            ExceptionInjectionHelper.WaitOnClear(ExceptionInjectionType.VectorSet_Pause_Before_Synthetic_Replication_Rmw);
+#endif
 
             var res = context.RMW((FixedSpanByteKey)key, ref inputCopy);
 
@@ -133,7 +128,10 @@ namespace Garnet.server
 
             inputCopy.parseState.InitializeWithArgument(PinnedSpanByte.FromPinnedSpan(element));
 
-            OnBeforeSyntheticReplicationRmw?.Invoke();
+#if DEBUG
+            // Test-only pause: mirrors the VADD window above, for the synthetic VREM append-log RMW.
+            ExceptionInjectionHelper.WaitOnClear(ExceptionInjectionType.VectorSet_Pause_Before_Synthetic_Replication_Rmw);
+#endif
 
             var res = context.RMW((FixedSpanByteKey)key, ref inputCopy);
 

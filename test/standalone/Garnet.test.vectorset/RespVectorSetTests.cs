@@ -3652,57 +3652,57 @@ namespace Garnet.test
         /// <c>ctx=0 dims=0 indexPtr=0</c> index that <c>NeedsRecreate</c> flags forever, livelocking
         /// the recreate loop and pegging all cores.
         ///
-        /// This drives that exact interleaving deterministically: connection 1 runs a VADD that a
-        /// test-only hook parks inside the synthetic-replication window (after the add, before the
-        /// append-log RMW); connection 2 UNLINKs the key; then the hook is released so the synthetic
-        /// RMW runs against the tombstoned key. The key must NOT be resurrected. Fails on the unfixed
-        /// code (key comes back as a zeroed phantom index), passes with the fix.
+        /// This drives that exact interleaving deterministically via an exception-injection pause:
+        /// connection 1 runs a VADD that parks inside the synthetic-replication window (after the
+        /// add, before the append-log RMW); connection 2 UNLINKs the key; then the pause is cleared
+        /// so the synthetic RMW runs against the tombstoned key. The key must NOT be resurrected.
+        /// Fails on the unfixed code (key comes back as a zeroed phantom index), passes with the fix.
         /// </summary>
         [Test]
         public void SyntheticReplicationRaceWithConcurrentUnlinkMustNotResurrectKey()
         {
+#if !DEBUG
+            ClassicAssert.Ignore("Relies on ExceptionInjectionHelper, disabled in non-DEBUG");
+#endif
             const string Key = nameof(SyntheticReplicationRaceWithConcurrentUnlinkMustNotResurrectKey);
-
-            var vectorManager = server.Provider.StoreWrapper.DefaultDatabase.VectorManager;
-            ClassicAssert.IsNotNull(vectorManager, "VectorManager not initialised — enableVectorSetPreview must be true");
 
             using var redisVadd = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             using var redisUnlink = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var dbVadd = redisVadd.GetDatabase(0);
             var dbUnlink = redisUnlink.GetDatabase(0);
 
-            using var reachedWindow = new ManualResetEventSlim(false);
-            using var releaseVadd = new ManualResetEventSlim(false);
+            var data = new byte[75];
+            new Random(2026_07_15).NextBytes(data);
+            var elem = new byte[4];
 
-            // Park the VADD-processing thread in the exact window between the successful add and the
-            // synthetic append-log RMW, so a concurrent UNLINK on another connection lands first.
-            VectorManager.OnBeforeSyntheticReplicationRmw = () =>
-            {
-                reachedWindow.Set();
-                releaseVadd.Wait(TimeSpan.FromSeconds(30));
-            };
-
+            // Arm the pause in the synthetic-replication window so the VADD below parks there after
+            // creating the index but before its append-log RMW runs. The window stays open until we
+            // DisableException, so the synthetic RMW is guaranteed to run only after the UNLINK below.
+            ExceptionInjectionHelper.EnableException(ExceptionInjectionType.VectorSet_Pause_Before_Synthetic_Replication_Rmw);
             try
             {
-                var data = new byte[75];
-                new Random(2026_07_15).NextBytes(data);
-                var elem = new byte[4];
-
-                // Connection 1: VADD creates the index, adds the vector, then blocks in the hook.
+                // Connection 1: VADD creates the index, adds the vector, then parks in the window.
                 var vaddTask = Task.Run(() => dbVadd.Execute("VADD", [Key, "XB8", (RedisValue)data, (RedisValue)elem, "XPREQ8"]));
 
-                ClassicAssert.IsTrue(reachedWindow.Wait(TimeSpan.FromSeconds(30)), "VADD never reached the synthetic-replication window");
+                // Wait until the index key exists — i.e. the VADD has created the record and is now
+                // parked at (or heading into) the pause, so there is something for UNLINK to tombstone.
+                var deadline = DateTime.UtcNow.AddSeconds(30);
+                while (!dbUnlink.KeyExists(Key))
+                {
+                    ClassicAssert.IsTrue(DateTime.UtcNow < deadline, "VADD never created the index key");
+                    Thread.Yield();
+                }
 
                 // Connection 2: UNLINK the parked key. Raw main-store tombstone, takes no vector lock.
                 _ = dbUnlink.KeyDelete(Key);
 
-                // Release the VADD so its synthetic append-log RMW runs against the tombstoned key.
-                releaseVadd.Set();
+                // Clear the pause so the VADD's synthetic append-log RMW runs against the tombstoned key.
+                ExceptionInjectionHelper.DisableException(ExceptionInjectionType.VectorSet_Pause_Before_Synthetic_Replication_Rmw);
                 vaddTask.GetAwaiter().GetResult();
             }
             finally
             {
-                VectorManager.OnBeforeSyntheticReplicationRmw = null;
+                ExceptionInjectionHelper.DisableException(ExceptionInjectionType.VectorSet_Pause_Before_Synthetic_Replication_Rmw);
             }
 
             ClassicAssert.IsFalse(dbUnlink.KeyExists(Key), "synthetic replication RMW resurrected a tombstoned key as a phantom index");

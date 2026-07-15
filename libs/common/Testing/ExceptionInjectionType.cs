@@ -112,5 +112,11 @@ namespace Garnet.common
         /// in-flight ProcessRecord.
         /// </summary>
         RangeIndex_Migration_Receive_Pause_In_ProcessRecord,
+        /// <summary>
+        /// Vector Set: pause in the synthetic-replication window, after a VADD/VREM has modified the
+        /// index but before its append-log RMW runs against the main store. Lets a test race a
+        /// concurrent UNLINK into the exact window that could resurrect a tombstoned index key.
+        /// </summary>
+        VectorSet_Pause_Before_Synthetic_Replication_Rmw,
     }
 }
