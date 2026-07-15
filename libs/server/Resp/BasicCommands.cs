@@ -407,10 +407,17 @@ namespace Garnet.server
             Span<byte> outputBuffer = stackalloc byte[NumUtils.MaximumFormatInt64Length];
             var output = PinnedSpanByte.FromPinnedSpan(outputBuffer);
 
-            _ = storageApi.SETRANGE(key, ref input, ref output);
+            var res = storageApi.SETRANGE(key, ref input, ref output);
 
-            while (!RespWriteUtils.TryWriteIntegerFromBytes(outputBuffer.Slice(0, output.Length), ref dcurr, dend))
-                SendAndReset();
+            if (res == GarnetStatus.WRONGTYPE)
+            {
+                WriteError(CmdStrings.RESP_ERR_WRONG_TYPE);
+            }
+            else
+            {
+                while (!RespWriteUtils.TryWriteIntegerFromBytes(outputBuffer.Slice(0, output.Length), ref dcurr, dend))
+                    SendAndReset();
+            }
 
             return true;
         }
@@ -1013,6 +1020,9 @@ namespace Garnet.server
                 case GarnetStatus.NOTFOUND:
                     while (!RespWriteUtils.TryWriteInt32(0, ref dcurr, dend))
                         SendAndReset();
+                    break;
+                case GarnetStatus.WRONGTYPE:
+                    WriteError(CmdStrings.RESP_ERR_WRONG_TYPE);
                     break;
             }
 

@@ -508,6 +508,11 @@ namespace Garnet.server
             if (status.IsPending)
                 CompletePendingForSession(ref status, ref sbmOut, ref context);
 
+            if (status.IsWrongType)
+            {
+                return GarnetStatus.WRONGTYPE;
+            }
+
             Debug.Assert(sbmOut.SpanByteAndMemory.IsSpanByte);
             output.Length = sbmOut.SpanByteAndMemory.Length;
 

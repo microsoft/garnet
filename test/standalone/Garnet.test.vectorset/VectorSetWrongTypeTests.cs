@@ -1299,7 +1299,7 @@ namespace Garnet.test
             {
                 await using (var e = db.SortedSetScanAsync(againstKey).GetAsyncEnumerator())
                 {
-                    _ = e.MoveNextAsync().ConfigureAwait(false);
+                    _ = await e.MoveNextAsync().ConfigureAwait(false);
                 }
             }
         }
