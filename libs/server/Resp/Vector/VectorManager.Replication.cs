@@ -46,6 +46,15 @@ namespace Garnet.server
         => replicationReplayCancellation.CanBeCanceled && replicationReplayTasks.Any(static r => !r.IsCompleted);
 
         /// <summary>
+        /// Test-only hook fired inside the synthetic-replication window: after a VADD/VREM has
+        /// modified the vector index but before its synthetic append-log RMW runs against the
+        /// main store. Tests set this to deterministically interleave a concurrent UNLINK into
+        /// the exact race window that can resurrect a tombstoned key as a zeroed, recreate-flagged
+        /// phantom index. Null (a single predictable branch) on every non-test code path.
+        /// </summary>
+        internal static Action OnBeforeSyntheticReplicationRmw;
+
+        /// <summary>
         /// Hook for <see cref="TaskManager"/> to request replication tasks start.
         /// 
         /// The underlying tasks may not be spun up until later, but the provided <see cref="CancellationToken"/> will be used
@@ -90,6 +99,8 @@ namespace Garnet.server
             var inputCopy = input;
             inputCopy.arg1 = VADDAppendLogArg;
 
+            OnBeforeSyntheticReplicationRmw?.Invoke();
+
             var res = context.RMW((FixedSpanByteKey)key, ref inputCopy);
 
             if (res.IsPending)
@@ -121,6 +132,8 @@ namespace Garnet.server
             inputCopy.arg1 = VREMAppendLogArg;
 
             inputCopy.parseState.InitializeWithArgument(PinnedSpanByte.FromPinnedSpan(element));
+
+            OnBeforeSyntheticReplicationRmw?.Invoke();
 
             var res = context.RMW((FixedSpanByteKey)key, ref inputCopy);
 

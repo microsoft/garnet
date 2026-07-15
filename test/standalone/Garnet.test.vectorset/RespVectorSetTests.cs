@@ -3638,6 +3638,77 @@ namespace Garnet.test
         }
 
         /// <summary>
+        /// Regression test for the primary-side VectorSet recreate livelock, driven as a real
+        /// two-connection race rather than a synthetic direct call.
+        ///
+        /// A VADD is phrased as a read once the index exists, so after a successful add
+        /// <c>VectorStoreOps</c> issues a synthetic <c>VADDAppendLogArg</c> RMW purely to get the
+        /// write into the AOF. That synthetic arg is only meaningful as a CopyUpdater on an
+        /// already-existing record. VADD holds only a SHARED vector lock across add + replicate,
+        /// and UNLINK's raw main-store DELETE takes NO vector lock, so a concurrent UNLINK can
+        /// tombstone the key in between. On the unfixed code <c>NeedInitialUpdate</c> then returned
+        /// true for the synthetic arg on the now-absent key, and <c>InitialUpdater</c>'s no-op
+        /// branch left a pre-sized 56-byte record fully zeroed — resurrecting the key as a phantom
+        /// <c>ctx=0 dims=0 indexPtr=0</c> index that <c>NeedsRecreate</c> flags forever, livelocking
+        /// the recreate loop and pegging all cores.
+        ///
+        /// This drives that exact interleaving deterministically: connection 1 runs a VADD that a
+        /// test-only hook parks inside the synthetic-replication window (after the add, before the
+        /// append-log RMW); connection 2 UNLINKs the key; then the hook is released so the synthetic
+        /// RMW runs against the tombstoned key. The key must NOT be resurrected. Fails on the unfixed
+        /// code (key comes back as a zeroed phantom index), passes with the fix.
+        /// </summary>
+        [Test]
+        public void SyntheticReplicationRaceWithConcurrentUnlinkMustNotResurrectKey()
+        {
+            const string Key = nameof(SyntheticReplicationRaceWithConcurrentUnlinkMustNotResurrectKey);
+
+            var vectorManager = server.Provider.StoreWrapper.DefaultDatabase.VectorManager;
+            ClassicAssert.IsNotNull(vectorManager, "VectorManager not initialised — enableVectorSetPreview must be true");
+
+            using var redisVadd = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            using var redisUnlink = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var dbVadd = redisVadd.GetDatabase(0);
+            var dbUnlink = redisUnlink.GetDatabase(0);
+
+            using var reachedWindow = new ManualResetEventSlim(false);
+            using var releaseVadd = new ManualResetEventSlim(false);
+
+            // Park the VADD-processing thread in the exact window between the successful add and the
+            // synthetic append-log RMW, so a concurrent UNLINK on another connection lands first.
+            VectorManager.OnBeforeSyntheticReplicationRmw = () =>
+            {
+                reachedWindow.Set();
+                releaseVadd.Wait(TimeSpan.FromSeconds(30));
+            };
+
+            try
+            {
+                var data = new byte[75];
+                new Random(2026_07_15).NextBytes(data);
+                var elem = new byte[4];
+
+                // Connection 1: VADD creates the index, adds the vector, then blocks in the hook.
+                var vaddTask = Task.Run(() => dbVadd.Execute("VADD", [Key, "XB8", (RedisValue)data, (RedisValue)elem, "XPREQ8"]));
+
+                ClassicAssert.IsTrue(reachedWindow.Wait(TimeSpan.FromSeconds(30)), "VADD never reached the synthetic-replication window");
+
+                // Connection 2: UNLINK the parked key. Raw main-store tombstone, takes no vector lock.
+                _ = dbUnlink.KeyDelete(Key);
+
+                // Release the VADD so its synthetic append-log RMW runs against the tombstoned key.
+                releaseVadd.Set();
+                vaddTask.GetAwaiter().GetResult();
+            }
+            finally
+            {
+                VectorManager.OnBeforeSyntheticReplicationRmw = null;
+            }
+
+            ClassicAssert.IsFalse(dbUnlink.KeyExists(Key), "synthetic replication RMW resurrected a tombstoned key as a phantom index");
+        }
+
+        /// <summary>
         /// Create a new GarnetServer instance with common parameters.
         /// </summary>
         private static GarnetServer CreateGarnetServer(bool tryRecover, bool enableVectorSetPreview = true)
