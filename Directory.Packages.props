@@ -32,7 +32,7 @@
     <PackageVersion Include="System.Numerics.Tensors" Version="10.0.5" />
     <PackageVersion Include="Microsoft.Extensions.Hosting" Version="10.0.5" />
     <PackageVersion Include="Microsoft.Extensions.Hosting.WindowsServices" Version="10.0.5" />
-    <PackageVersion Include="diskann-garnet" Version="3.0.0" />
+    <PackageVersion Include="diskann-garnet" Version="4.0.0" />
     <PackageVersion Include="Microsoft.VisualStudio.Threading.Analyzers" Version="17.14.15" />
   </ItemGroup>
 </Project>
