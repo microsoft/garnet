@@ -1326,6 +1326,11 @@ namespace Garnet.server
         /// Remove a member from a vector set, if it is present and the key exists.
         /// </summary>
         GarnetStatus VectorSetRemove(PinnedSpanByte key, PinnedSpanByte element);
+
+        /// <summary>
+        /// Update attribute for element in a Vector Set.
+        /// </summary>
+        GarnetStatus VectorSetSetAttribute(PinnedSpanByte key, PinnedSpanByte element, PinnedSpanByte attribute);
         #endregion
     }
 

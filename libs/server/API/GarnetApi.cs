@@ -401,6 +401,10 @@ namespace Garnet.server
         => storageSession.VectorSetRemove(key, element);
 
         /// <inheritdoc />
+        public GarnetStatus VectorSetSetAttribute(PinnedSpanByte key, PinnedSpanByte element, PinnedSpanByte attribute)
+        => storageSession.VectorSetSetAttribute(key, element, attribute);
+
+        /// <inheritdoc />
         public unsafe GarnetStatus VectorSetValueSimilarity(PinnedSpanByte key, VectorValueType valueType, PinnedSpanByte values, int count, float delta, int searchExplorationFactor, PinnedSpanByte filter, int maxFilteringEffort, bool includeAttributes, ref SpanByteAndMemory outputIds, out VectorIdFormat outputIdFormat, out ReadOnlySpan<byte> errorMessage, ref SpanByteAndMemory outputDistances, ref SpanByteAndMemory outputAttributes, out VectorManagerResult result, ref SpanByteAndMemory filterBitmap)
         => storageSession.VectorSetValueSimilarity(key, valueType, values, count, delta, searchExplorationFactor, filter.ReadOnlySpan, maxFilteringEffort, includeAttributes, ref outputIds, out outputIdFormat, out errorMessage, ref outputDistances, ref outputAttributes, out result, ref filterBitmap);
 

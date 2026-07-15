@@ -248,6 +248,33 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Update attribute on an element in a Vector Set.
+        /// 
+        /// Returns <see cref="GarnetStatus.NOTFOUND"/> if Vector Set does not exist, or element is not a member.
+        /// 
+        /// Removing an attribute is modelled as setting an empty attribute.
+        /// </summary>
+        [SkipLocalsInit]
+        public GarnetStatus VectorSetSetAttribute(PinnedSpanByte key, PinnedSpanByte element, PinnedSpanByte attribute)
+        {
+            var input = new StringInput(RespCommand.VREM, ref parseState);
+
+            Span<byte> indexSpan = stackalloc byte[VectorManager.IndexSizeBytes];
+
+            using (vectorManager.ReadVectorIndex(this, key, ref input, indexSpan, out var status))
+            {
+                if (status != GarnetStatus.OK)
+                {
+                    return status;
+                }
+
+                // TODO: Implement!
+
+                return GarnetStatus.NOTFOUND;
+            }
+        }
+
+        /// <summary>
         /// Perform a similarity search on an existing Vector Set given a vector as a bunch of floats.
         /// </summary>
         [SkipLocalsInit]

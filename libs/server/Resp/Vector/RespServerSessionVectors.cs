@@ -1844,10 +1844,45 @@ namespace Garnet.server
                 return AbortWithErrorMessage("ERR Vector Set (preview) commands are not enabled");
             }
 
-            // TODO: implement!
+            if (parseState.Count != 3)
+            {
+                return AbortWithWrongNumberOfArguments("VSETATTR");
+            }
 
-            while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
-                SendAndReset();
+            var key = parseState.GetArgSliceByRef(0);
+            var elem = parseState.GetArgSliceByRef(1);
+            var attr = parseState.GetArgSliceByRef(2);
+
+            var res = storageApi.VectorSetSetAttribute(key, elem, attr);
+
+            switch (res)
+            {
+                case GarnetStatus.NOTFOUND:
+                    if (respProtocolVersion == 3)
+                    {
+                        while (!RespWriteUtils.TryWriteFalse(ref dcurr, dend))
+                            SendAndReset();
+                    }
+                    else
+                    {
+                        WriteInt32(0);
+                    }
+                    break;
+                case GarnetStatus.WRONGTYPE:
+                    WriteError(CmdStrings.RESP_ERR_WRONG_TYPE);
+                    break;
+                case GarnetStatus.OK:
+                    if (respProtocolVersion == 3)
+                    {
+                        while (!RespWriteUtils.TryWriteTrue(ref dcurr, dend))
+                            SendAndReset();
+                    }
+                    else
+                    {
+                        WriteInt32(1);
+                    }
+                    break;
+            }
 
             return true;
         }
