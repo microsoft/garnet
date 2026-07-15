@@ -50,9 +50,9 @@ namespace Garnet.server
             {
                 var key = parseState.GetArgSliceByRef(c);
                 var val = parseState.GetArgSliceByRef(c + 1);
-                
+
                 // TODO: SETs that overwrite Vector SETs needs to do an explicit delete first
-                
+
                 _ = storageApi.SET(key, val);
             }
             while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
