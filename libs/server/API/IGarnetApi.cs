@@ -2112,6 +2112,15 @@ namespace Garnet.server
         GarnetStatus VectorSetCardinality(PinnedSpanByte key, out long card);
 
         /// <summary>
+        /// Returns <see cref="GarnetStatus.OK"/> if the given element exists in the given Vector Set.
+        /// 
+        /// Returns <see cref="GarnetStatus.NOTFOUND"/> if the given element is not in the Vector Set, or the Vector Set does not exist.
+        /// 
+        /// Returns <see cref="GarnetStatus.WRONGTYPE"/> if the given key exists, but is not a Vector set.
+        /// </summary>
+        GarnetStatus VectorSetIsMember(PinnedSpanByte key, PinnedSpanByte element);
+
+        /// <summary>
         /// Perform a similarity search given a vector and these parameters.
         /// 
         /// Ids are encoded in <paramref name="outputIds"/> as length prefixed blobs of bytes.

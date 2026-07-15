@@ -630,6 +630,14 @@ namespace Garnet.server
             return garnetApi.VectorSetCardinality(key, out card);
         }
 
+
+        /// <inheritdoc/>
+        public GarnetStatus VectorSetIsMember(PinnedSpanByte key, PinnedSpanByte element)
+        {
+            garnetApi.WATCH(key, StoreType.Main);
+            return garnetApi.VectorSetIsMember(key, element);
+        }
+
         /// <inheritdoc/>
         public GarnetStatus VectorSetValueSimilarity(PinnedSpanByte key, VectorValueType valueType, PinnedSpanByte value, int count, float delta, int searchExplorationFactor, PinnedSpanByte filter, int maxFilteringEffort, bool includeAttributes, ref SpanByteAndMemory outputIds, out VectorIdFormat outputIdFormat, out ReadOnlySpan<byte> errorMessage, ref SpanByteAndMemory outputDistances, ref SpanByteAndMemory outputAttributes, out VectorManagerResult result, ref SpanByteAndMemory filterBitmap)
         {

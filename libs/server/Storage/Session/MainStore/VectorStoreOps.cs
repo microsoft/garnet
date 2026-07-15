@@ -452,6 +452,34 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Determine if an element is a member of a Vector Set.
+        /// </summary>
+        internal GarnetStatus VectorSetIsMember(PinnedSpanByte key, PinnedSpanByte element)
+        {
+            parseState.InitializeWithArgument(key);
+
+            var input = new StringInput(RespCommand.VISMEMBER, ref parseState);
+            Span<byte> indexSpan = stackalloc byte[VectorManager.IndexSizeBytes];
+            using (vectorManager.ReadVectorIndex(this, key, ref input, indexSpan, out var status))
+            {
+                if (status != GarnetStatus.OK)
+                {
+                    return status;
+                }
+
+                // After a successful read we extract metadata
+                if(vectorManager.IsMember(indexSpan, element))
+                {
+                    return GarnetStatus.OK;
+                }
+                else
+                {
+                    return GarnetStatus.NOTFOUND;
+                }
+            }
+        }
+
+        /// <summary>
         /// Get the attributes associated with an element in the VectorSet
         /// </summary>
         [SkipLocalsInit]
