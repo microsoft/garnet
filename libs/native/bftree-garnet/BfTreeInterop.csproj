@@ -68,6 +68,19 @@
              Condition="Exists('$(MSBuildThisFileDirectory)target/release/libbftree_garnet.dylib')" />
   </ItemGroup>
 
+  <!-- Fallback: when Rust isn't installed (no target/release/ output), copy the committed
+       runtimes/<rid>/native/ binary to the output root so framework-dependent hosts
+       (e.g. BfTreeInterop.test) that probe the app directory can load it. -->
+  <ItemGroup Condition="$([MSBuild]::IsOSPlatform('Linux')) And !Exists('$(NativeBuildOutput)')">
+    <Content Include="$(NativePrebuilt)" CopyToOutputDirectory="PreserveNewest" Link="libbftree_garnet.so" Visible="false" Condition="Exists('$(NativePrebuilt)')" />
+  </ItemGroup>
+  <ItemGroup Condition="$([MSBuild]::IsOSPlatform('Windows')) And !Exists('$(NativeBuildOutput)')">
+    <Content Include="$(NativePrebuilt)" CopyToOutputDirectory="PreserveNewest" Link="bftree_garnet.dll" Visible="false" Condition="Exists('$(NativePrebuilt)')" />
+  </ItemGroup>
+  <ItemGroup Condition="$([MSBuild]::IsOSPlatform('OSX')) And !Exists('$(NativeBuildOutput)')">
+    <Content Include="$(NativePrebuilt)" CopyToOutputDirectory="PreserveNewest" Link="libbftree_garnet.dylib" Visible="false" Condition="Exists('$(NativePrebuilt)')" />
+  </ItemGroup>
+
   <!-- NuGet packaging: include pre-built native binaries for all platforms.
        In CI, native binaries are placed here by the pipeline before dotnet build. -->
   <ItemGroup>
