@@ -47,6 +47,25 @@ namespace Garnet.server
                     return false; // Key must already exist; don't create new
                 case RespCommand.RIRESTORE:
                     return false; // Key must already exist
+                case RespCommand.VADD:
+                case RespCommand.VREM:
+                    // The synthetic args below (replication append-log, migration, recreate,
+                    // set-flags) only make sense as a CopyUpdater on an already-existing index
+                    // record. If the key was concurrently deleted (e.g. a raced UNLINK, which
+                    // takes no vector lock), creating a record here via InitialUpdater leaves a
+                    // zeroed 56-byte index that NeedsRecreate flags forever, livelocking the
+                    // recreate loop. Refuse to create — the key must already exist, as with
+                    // RIPROMOTE/RIRESTORE. A genuine VADD create carries arg1 == 0 and still creates.
+                    if (input.arg1 is VectorManager.VADDAppendLogArg
+                        or VectorManager.VREMAppendLogArg
+                        or VectorManager.RecreateIndexArg
+                        or VectorManager.VADDSetFlagsArg
+                        or VectorManager.MigrateElementKeyLogArg
+                        or VectorManager.MigrateIndexKeyLogArg)
+                    {
+                        return false;
+                    }
+                    return true;
                 default:
                     if (input.header.cmd > RespCommandExtensions.LastValidCommand)
                     {
