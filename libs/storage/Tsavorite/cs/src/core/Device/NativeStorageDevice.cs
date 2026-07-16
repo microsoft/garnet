@@ -210,12 +210,19 @@ namespace Tsavorite.core
             catch (DllNotFoundException ex) when (RuntimeInformation.IsOSPlatform(OSPlatform.Linux)
                                                   && ex.Message.Contains("libaio.so.1", StringComparison.Ordinal))
             {
-                // Compatibility shim for Debian 13 / Ubuntu 24.04+, where libaio1 was renamed to
-                // libaio1t64 and the library now exports SONAME "libaio.so.1t64" (the 64-bit
-                // time_t ABI transition). Drop a libaio.so.1 -> libaio.so.1t64 symlink next to
+                // SONAME-mismatch shim for libaio. Our shipped binaries link libaio using the
+                // build box's SONAME: on Debian 13 / Ubuntu 24.04+ the libaio1 package was renamed
+                // to libaio1t64 (64-bit time_t ABI transition) and its SONAME became
+                // "libaio.so.1t64", so binaries built there carry a DT_NEEDED of libaio.so.1t64.
+                // Other glibc distros (Azure Linux, RHEL, Fedora, ...) ship the historical
+                // "libaio.so.1" instead. Whichever SONAME the loader could not resolve, drop a
+                // symlink of that name -> the libaio the host actually provides, next to
                 // libnative_device.so; the native library is built with RPATH=$ORIGIN so it picks
                 // the symlink up.
-                if (TryCreateLibaioCompatSymlink(resolvedPath, out var symlinkedPath))
+                var missingSoname = ex.Message.Contains("libaio.so.1t64", StringComparison.Ordinal)
+                    ? "libaio.so.1t64"
+                    : "libaio.so.1";
+                if (TryCreateLibaioCompatSymlink(resolvedPath, missingSoname, out var symlinkedPath))
                 {
                     try
                     {
@@ -227,7 +234,7 @@ namespace Tsavorite.core
                     }
                 }
 
-                throw new DllNotFoundException(BuildLibaioDiagnostic(symlinkedPath, ex), ex);
+                throw new DllNotFoundException(BuildLibaioDiagnostic(symlinkedPath, missingSoname, ex), ex);
             }
         }
 
@@ -277,10 +284,39 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Candidate paths for libaio.so.1t64 on Debian/Ubuntu multiarch layouts. These match what
-        /// libaio1t64 installs on amd64 and arm64; add more here if additional architectures appear.
+        /// True on musl-based distros (e.g., Alpine), detected via the musl dynamic loader
+        /// (/lib/ld-musl-*.so*). The shipped native device libraries are glibc builds, so on musl
+        /// they are unsupported: fabricating a libaio compat symlink and retrying the load would bind
+        /// the glibc library against musl's libaio and crash. On musl we skip the compat shim and let
+        /// the load fail cleanly so the caller can fall back to a managed device.
         /// </summary>
-        static readonly string[] LibaioT64CandidatePaths =
+        static readonly bool IsMuslRuntime = DetectMuslRuntime();
+
+        static bool DetectMuslRuntime()
+        {
+            if (!RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
+                return false;
+            try
+            {
+                using var e = Directory.EnumerateFiles("/lib", "ld-musl-*.so*").GetEnumerator();
+                return e.MoveNext();
+            }
+            catch
+            {
+                // /lib may be absent or inaccessible; treat as non-musl.
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Candidate absolute paths for a host-provided libaio shared object, across the multiarch
+        /// and lib64 layouts of the distros we support. The 64-bit time_t SONAME "libaio.so.1t64"
+        /// (shipped by Debian 13 / Ubuntu 24.04+ libaio1t64) is listed before the historical
+        /// "libaio.so.1" (shipped by Azure Linux, RHEL, Fedora, and pre-t64 Debian/Ubuntu) so that,
+        /// when both are present, we prefer linking against the real t64 file. Add more here if
+        /// additional architectures or layouts appear.
+        /// </summary>
+        static readonly string[] LibaioHostCandidatePaths =
         [
             "/usr/lib/x86_64-linux-gnu/libaio.so.1t64",
             "/usr/lib/aarch64-linux-gnu/libaio.so.1t64",
@@ -288,29 +324,55 @@ namespace Tsavorite.core
             "/lib/aarch64-linux-gnu/libaio.so.1t64",
             "/usr/lib64/libaio.so.1t64",
             "/usr/lib/libaio.so.1t64",
+            "/usr/lib/x86_64-linux-gnu/libaio.so.1",
+            "/usr/lib/aarch64-linux-gnu/libaio.so.1",
+            "/lib/x86_64-linux-gnu/libaio.so.1",
+            "/lib/aarch64-linux-gnu/libaio.so.1",
+            "/usr/lib64/libaio.so.1",
+            "/usr/lib/libaio.so.1",
+            "/lib/libaio.so.1",
         ];
 
         /// <summary>
-        /// Locate libaio.so.1t64 and create a libaio.so.1 symlink next to libnative_device.so so that
-        /// the dynamic linker (searching RPATH=$ORIGIN) can satisfy the DT_NEEDED entry. Returns true
-        /// when after the call a usable symlink exists at the expected path - whether we created it or
-        /// a concurrently-starting process did. Sets <paramref name="createdSymlink"/> to the link path
-        /// in that case.
+        /// Finds the first host-provided libaio from <see cref="LibaioHostCandidatePaths"/>, or
+        /// returns false if none is installed. The returned path reflects the distro's actual layout
+        /// (e.g. /usr/lib64 on RHEL/Fedora/Azure Linux, /usr/lib/&lt;triplet&gt; on Debian/Ubuntu).
         /// </summary>
-        static bool TryCreateLibaioCompatSymlink(string resolvedNativeLibraryPath, out string createdSymlink)
+        static bool TryFindHostLibaio(out string hostLibaioPath)
         {
-            createdSymlink = null;
-
-            string t64Path = null;
-            foreach (var candidate in LibaioT64CandidatePaths)
+            hostLibaioPath = null;
+            foreach (var candidate in LibaioHostCandidatePaths)
             {
                 if (File.Exists(candidate))
                 {
-                    t64Path = candidate;
-                    break;
+                    hostLibaioPath = candidate;
+                    return true;
                 }
             }
-            if (t64Path == null)
+            return false;
+        }
+
+        /// <summary>
+        /// Locate a host-provided libaio (see <see cref="LibaioHostCandidatePaths"/>) and create a
+        /// <paramref name="missingSoname"/> symlink next to libnative_device.so so that the dynamic
+        /// linker (searching RPATH=$ORIGIN) can satisfy the DT_NEEDED entry the load failed on. This
+        /// bridges the SONAME mismatch in either direction: a t64 binary on a non-t64 distro
+        /// (libaio.so.1t64 -> host libaio.so.1) or a pre-t64 binary on a t64 distro
+        /// (libaio.so.1 -> host libaio.so.1t64). Returns true when a usable symlink exists at the
+        /// expected path after the call - whether we created it or a concurrently-starting process
+        /// did. Sets <paramref name="createdSymlink"/> to the link path in that case.
+        /// </summary>
+        static bool TryCreateLibaioCompatSymlink(string resolvedNativeLibraryPath, string missingSoname, out string createdSymlink)
+        {
+            createdSymlink = null;
+
+            // On musl (Alpine) the glibc-built native device cannot load; do not fabricate a libaio
+            // symlink that would bind it against musl's libaio and segfault - fail cleanly instead so
+            // the caller falls back to a managed device (matches pre-shim behavior on musl).
+            if (IsMuslRuntime)
+                return false;
+
+            if (!TryFindHostLibaio(out var hostLibaioPath))
                 return false;
 
             string shimPath;
@@ -320,7 +382,7 @@ namespace Tsavorite.core
                 if (string.IsNullOrEmpty(nativeDir) || !Directory.Exists(nativeDir))
                     return false;
 
-                shimPath = Path.Combine(nativeDir, "libaio.so.1");
+                shimPath = Path.Combine(nativeDir, missingSoname);
             }
             catch (Exception)
             {
@@ -329,7 +391,7 @@ namespace Tsavorite.core
 
             try
             {
-                File.CreateSymbolicLink(shimPath, t64Path);
+                File.CreateSymbolicLink(shimPath, hostLibaioPath);
                 createdSymlink = shimPath;
                 return true;
             }
@@ -337,8 +399,8 @@ namespace Tsavorite.core
             {
                 // Either a concurrently-starting process already created the symlink (common in
                 // container fleets where multiple Garnet instances share an image), or a stale file
-                // of the same name is present. If it's a symlink resolving to libaio.so.1t64, treat
-                // that as success; otherwise fall through to the diagnostic error.
+                // of the same name is present. If it already resolves to a real libaio, treat that
+                // as success; otherwise fall through to the diagnostic error.
                 if (IsUsableLibaioShim(shimPath))
                 {
                     createdSymlink = shimPath;
@@ -353,8 +415,9 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Returns true if <paramref name="shimPath"/> is an existing symlink that points to a
-        /// libaio.so.1t64 file (possibly via relative or absolute target).
+        /// Returns true if <paramref name="shimPath"/> is an existing symlink whose target is a
+        /// supported libaio: the "libaio.so.1t64" or historical "libaio.so.1" SONAME, or a versioned
+        /// "libaio.so.1.*" real file (possibly via a relative or absolute target).
         /// </summary>
         static bool IsUsableLibaioShim(string shimPath)
         {
@@ -364,8 +427,14 @@ namespace Tsavorite.core
                 if (!info.Exists) return false;
                 var target = info.LinkTarget;
                 if (string.IsNullOrEmpty(target)) return false;
-                // LinkTarget can be a relative path (e.g., just "libaio.so.1t64"); accept either.
-                return target.EndsWith("libaio.so.1t64", StringComparison.Ordinal);
+                // LinkTarget may be relative (e.g. "libaio.so.1t64") or absolute (e.g.
+                // "/usr/lib64/libaio.so.1.0.2"); compare on the file name and accept only the two
+                // supported SONAMEs or a versioned "libaio.so.1.*" real file - without matching an
+                // unrelated future SONAME such as "libaio.so.10".
+                var name = Path.GetFileName(target);
+                return name == "libaio.so.1t64"
+                    || name == "libaio.so.1"
+                    || name.StartsWith("libaio.so.1.", StringComparison.Ordinal);
             }
             catch
             {
@@ -373,30 +442,36 @@ namespace Tsavorite.core
             }
         }
 
-        static string TryGetLinuxMultiarchTriplet(Architecture architecture) => architecture switch
+        static string BuildLibaioDiagnostic(string attemptedSymlinkPath, string missingSoname, Exception inner)
         {
-            Architecture.X64 => "x86_64-linux-gnu",
-            Architecture.Arm64 => "aarch64-linux-gnu",
-            Architecture.Arm => "arm-linux-gnueabihf",
-            _ => null
-        };
-
-        static string BuildLibaioDiagnostic(string attemptedSymlinkPath, Exception inner)
-        {
-            var arch = TryGetLinuxMultiarchTriplet(RuntimeInformation.ProcessArchitecture);
             var attempted = attemptedSymlinkPath == null
-                ? "Could not find libaio.so.1t64 in standard multiarch paths; auto-repair skipped."
-                : $"Attempted to create '{attemptedSymlinkPath}' -> libaio.so.1t64 but the load still failed.";
-            var compatSymlinkFix = arch == null
-                ? "(b) as root, create a 'libaio.so.1' -> 'libaio.so.1t64' compat symlink in the appropriate multiarch library directory for your distro, "
-                : $"(b) as root, create the compat symlink: sudo ln -s /usr/lib/{arch}/libaio.so.1t64 /usr/lib/{arch}/libaio.so.1, ";
+                ? "Could not find a host libaio in standard multiarch/lib64 paths; auto-repair skipped."
+                : $"Attempted to create '{attemptedSymlinkPath}' -> a host libaio but the load still failed.";
+
+            // Build the compat-symlink hint from the libaio the host actually ships so the suggested
+            // path is correct on every distro (e.g. /usr/lib64 on RHEL/Fedora/Azure Linux,
+            // /usr/lib/<triplet> on Debian/Ubuntu). Only offer it when a real libaio is present;
+            // otherwise the right fix is to install the package.
+            string symlinkFix;
+            if (TryFindHostLibaio(out var hostLibaioPath))
+            {
+                var linkPath = Path.Combine(Path.GetDirectoryName(hostLibaioPath) ?? "/usr/lib", missingSoname);
+                symlinkFix = $"(b) as root, create the compat symlink 'ln -sf {hostLibaioPath} {linkPath}', ";
+            }
+            else
+            {
+                symlinkFix = $"(b) if libaio is installed under a different SONAME, as root create a '{missingSoname}' compat symlink next to it, ";
+            }
+
             return
-                $"Failed to load native storage device library '{NativeLibraryPath}' because its dependency 'libaio.so.1' " +
-                "is not resolvable by the dynamic linker. This typically happens on Debian 13 (trixie) or " +
-                "Ubuntu 24.04 (noble) where the libaio1 package was renamed to libaio1t64 (64-bit time_t ABI " +
-                "transition) and only ships 'libaio.so.1t64'. " + attempted + " " +
-                "To fix, either (a) install the legacy-named package if available for your distro, " +
-                compatSymlinkFix +
+                $"Failed to load native storage device library '{NativeLibraryPath}' because its dependency '{missingSoname}' " +
+                "is not resolvable by the dynamic linker. This is a libaio SONAME mismatch between the build box and the host: " +
+                "binaries built on Debian 13 (trixie) / Ubuntu 24.04 (noble) require 'libaio.so.1t64' (the libaio1t64 package, " +
+                "64-bit time_t ABI transition), whereas Azure Linux, RHEL, Fedora and pre-t64 Debian/Ubuntu ship 'libaio.so.1'. " +
+                attempted + " " +
+                "To fix, either (a) install the host's libaio package (for example 'apt-get install -y libaio1t64', " +
+                "'tdnf install -y libaio', or 'dnf install -y libaio'), " +
+                symlinkFix +
                 "or (c) switch to a non-native device by setting '--device-type RandomAccess' (or removing '--use-native-device-linux'). " +
                 "Original loader error: " + inner.Message;
         }
