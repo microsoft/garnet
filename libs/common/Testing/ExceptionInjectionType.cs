@@ -117,5 +117,10 @@ namespace Garnet.common
         /// index but before its append-log RMW runs against the main store.
         /// </summary>
         VectorSet_Pause_Before_Synthetic_Replication_Rmw,
+        /// <summary>
+        /// RangeIndex AOF replay: force PublishMigratedIndex to be treated as failed once a stream
+        /// reassembles, to exercise the publish-failure throw path in ProcessStreamChunk.
+        /// </summary>
+        RangeIndex_Replay_Force_Publish_Failure,
     }
 }

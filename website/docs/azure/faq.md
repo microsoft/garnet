@@ -27,9 +27,9 @@ Yes, Azure Cosmos DB Garnet Cache uses the Redis RESP protocol, making it compat
 Azure Cosmos DB Garnet Cache supports the RESP protocol and doesn't have full support for any specific Redis version. Visit the list of [supported Redis commands](./api-compatibility.md).
 
 ### How is Azure Cosmos DB Garnet Cache priced?
-Azure Cosmos DB Garnet Cache clusters are billed per instance per hour with no licensing fees. Each node will be billed for the chosen SKU plus an attached disk, used for [data persistence](./resiliency.md#data-persistence), sized at 2x the total memory of each node. Pricing per SKU is set at different rates than the underlying Azure VM and is subject to change between our extended Private Preview and Public Preview. 
+Azure Cosmos DB Garnet Cache clusters are billed per instance per hour with no licensing fees. Each node is billed for the chosen SKU. When [data persistence](./resiliency.md#data-persistence) is enabled, each node also has an attached disk that is billed separately. Pricing per SKU is set at different rates than the underlying Azure VM and is subject to change between our extended Private Preview and Public Preview. 
 
-For information about pricing for specific SKUs, reach out to [CosmosGarnetCache@service.microsoft.com](mailto:cosmosgarnetcache@service.microsoft.com).
+For information about pricing, see the [Azure Cosmos DB Garnet Cache pricing page](https://azure.microsoft.com/en-us/pricing/details/cosmos-db/garnet-cache/).
 
 
 ## Performance and Scalability
@@ -38,10 +38,10 @@ For information about pricing for specific SKUs, reach out to [CosmosGarnetCache
 Latency is typically sub-millisecond and is around 3ms at the 99th percentile. Performance and throughput varies by tier, key/ value size, and number of concurrent requests, among other factors.
 
 ### Can I scale my cache?
-Yes, you can [scale out](./cluster-configuration.md#horizontal-scaling-scale-outin) by adding shards, or [scale up](./cluster-configuration.md#vertical-scaling-scale-updown) by changing SKU size within a VM family and generation with no downtime.
+Yes. You can [scale out](./cluster-configuration.md#horizontal-scaling-scale-outin) by adding shards on a running cluster without downtime. You can also [scale up](./cluster-configuration.md#vertical-scaling-scale-updown) by changing the SKU size, which is done by deprovisioning and reprovisioning the cluster.
 
 ### How many connections are supported?
-Garnet doesn't limit the number of client connections that can be made on any node for any SKU. In practice, connection limits vary by SKU. See the [virtual machine limits](https://learn.microsoft.com/azure/virtual-machines/sizes/overview#list-of-vm-size-families-by-type) corresponding to the [Azure Cosmos DB Garnet Cache SKU](./api-compatibility.md) you choose.
+Garnet doesn't impose a software limit on the number of client connections on any node for any SKU. In practice, the number of concurrent connections a node can handle is bounded by its compute and network resources, which vary by SKU. See the [virtual machine limits](https://learn.microsoft.com/azure/virtual-machines/sizes/overview#list-of-vm-size-families-by-type) corresponding to the [Azure Cosmos DB Garnet Cache SKU](./api-compatibility.md) you choose.
 
 
 ## Development and Integration
@@ -68,6 +68,9 @@ Azure Cosmos DB Garnet Cache can be configured with availability zones during pr
 
 
 ## Troubleshooting
+
+### Cluster creation or scaling fails with an authorization error
+Creating or scaling a Garnet cluster requires `Microsoft.DocumentDB/garnetClusters/write` and `Microsoft.Network/virtualNetworks/subnets/join/action` on the cluster's subnet. The built-in **Owner** and **Contributor** roles include both permissions; Cosmos DB-specific roles (such as Cosmos DB Operator or DocumentDB Account Contributor) do not. If you use a custom role, ensure it includes both actions. See [permissions to create and manage a cluster](./security.md#permissions-to-create-and-manage-a-cluster).
 
 ### My application can't connect to the cache
 Check these common issues:
