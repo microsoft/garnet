@@ -2260,7 +2260,7 @@ namespace Garnet.test.cluster
                 });
 
                 // Wait until the primary VADD has built its index and parked right before writing the synthetic append-log entry to the AOF.
-                await ExceptionInjectionHelper.WaitOnClearAsync(ExceptionInjectionType.VectorSet_Pause_Before_Synthetic_Replication_Rmw).ConfigureAwait(false);
+                await ExceptionInjectionHelper.WaitOnClearAsync(ExceptionInjectionType.VectorSet_Pause_Before_Synthetic_Replication_Rmw).WaitAsync(TimeSpan.FromSeconds(30)).ConfigureAwait(false);
 
                 // DEL bypasses the vector lock the parked VADD still holds, so it wins the race; the following SET turns the key into a String.
                 var delRes = (long)context.clusterTestUtils.Execute(primary, "DEL", [new RedisKey(Key)]);

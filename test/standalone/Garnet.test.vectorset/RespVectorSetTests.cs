@@ -3679,7 +3679,7 @@ namespace Garnet.test
                 await ExceptionInjectionHelper.WaitOnClearAsync(Pause).WaitAsync(TimeSpan.FromSeconds(30));
 
                 // Connection 2: DEL the parked key, tombstoning it while the operation holds a shared vector lock.
-                _ = dbDel.KeyDelete(key);
+                ClassicAssert.IsTrue(dbDel.KeyDelete(key), "DEL did not remove the parked vector-set key");
 
                 // Re-arm to release the parked operation; its synthetic append-log RMW now runs against
                 // the tombstoned key.
@@ -3722,8 +3722,8 @@ namespace Garnet.test
                 await ExceptionInjectionHelper.WaitOnClearAsync(Pause).WaitAsync(TimeSpan.FromSeconds(30));
 
                 // Connection 2: tombstone the vector-set key, then re-add it as a plain String.
-                _ = dbRacer.KeyDelete(key);
-                _ = dbRacer.StringSet(key, StringValue);
+                ClassicAssert.IsTrue(dbRacer.KeyDelete(key), "DEL did not remove the parked vector-set key");
+                ClassicAssert.IsTrue(dbRacer.StringSet(key, StringValue), "SET did not store the String value");
 
                 // Release the parked VADD; its synthetic append-log RMW now runs against a String record.
                 ExceptionInjectionHelper.EnableException(Pause);
