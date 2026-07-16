@@ -23,6 +23,8 @@ namespace Garnet.server.BfTreeInterop
         Deleted = -2,
         /// <summary>The key is invalid (e.g. too long).</summary>
         InvalidKey = -3,
+        /// <summary>Invalid arguments (null pointer or negative length).</summary>
+        InvalidArguments = -4,
     }
 
     /// <summary>
@@ -34,6 +36,19 @@ namespace Garnet.server.BfTreeInterop
         Success = 0,
         /// <summary>Key or value is invalid (e.g. exceeds configured limits).</summary>
         InvalidKV = 1,
+        /// <summary>Invalid arguments (null pointer or negative length).</summary>
+        InvalidArguments = -1,
+    }
+
+    /// <summary>
+    /// Result codes for BfTree delete operations.
+    /// </summary>
+    public enum BfTreeDeleteResult
+    {
+        /// <summary>Delete succeeded.</summary>
+        Success = 0,
+        /// <summary>Invalid arguments (null pointer or negative length).</summary>
+        InvalidArguments = -1,
     }
 
     /// <summary>
@@ -201,9 +216,9 @@ namespace Garnet.server.BfTreeInterop
         /// Delete a key. Zero-overhead.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void Delete(PinnedSpanByte key)
+        public BfTreeDeleteResult Delete(PinnedSpanByte key)
         {
-            NativeBfTreeMethods.bftree_delete(_tree, key.ToPointer(), key.Length);
+            return (BfTreeDeleteResult)NativeBfTreeMethods.bftree_delete(_tree, key.ToPointer(), key.Length);
         }
 
         /// <summary>
@@ -270,9 +285,9 @@ namespace Garnet.server.BfTreeInterop
         /// Delete via native pointer.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static void DeleteByPtr(nint treePtr, PinnedSpanByte key)
+        public static BfTreeDeleteResult DeleteByPtr(nint treePtr, PinnedSpanByte key)
         {
-            NativeBfTreeMethods.bftree_delete(treePtr, key.ToPointer(), key.Length);
+            return (BfTreeDeleteResult)NativeBfTreeMethods.bftree_delete(treePtr, key.ToPointer(), key.Length);
         }
 
         /// <summary>
@@ -287,6 +302,10 @@ namespace Garnet.server.BfTreeInterop
                 handle = NativeBfTreeMethods.bftree_scan_with_count(
                     treePtr, skp, startKey.Length, count, (byte)returnField);
             }
+
+            if (handle == nint.Zero)
+                throw new InvalidOperationException("bftree_scan_with_count returned a null handle.");
+
             try
             {
                 Span<byte> buffer = stackalloc byte[8192];
@@ -310,6 +329,10 @@ namespace Garnet.server.BfTreeInterop
                 handle = NativeBfTreeMethods.bftree_scan_with_end_key(
                     treePtr, skp, startKey.Length, ekp, endKey.Length, (byte)returnField);
             }
+
+            if (handle == nint.Zero)
+                throw new InvalidOperationException("bftree_scan_with_end_key returned a null handle.");
+
             try
             {
                 Span<byte> buffer = stackalloc byte[8192];
@@ -367,11 +390,11 @@ namespace Garnet.server.BfTreeInterop
         /// <summary>
         /// Delete a key from the BfTree.
         /// </summary>
-        public void Delete(ReadOnlySpan<byte> key)
+        public BfTreeDeleteResult Delete(ReadOnlySpan<byte> key)
         {
             ObjectDisposedException.ThrowIf(_disposed != 0, this);
             fixed (byte* kp = key)
-                Delete(PinnedSpanByte.FromPinnedPointer(kp, key.Length));
+                return Delete(PinnedSpanByte.FromPinnedPointer(kp, key.Length));
         }
 
         /// <summary>
@@ -398,6 +421,10 @@ namespace Garnet.server.BfTreeInterop
                 handle = NativeBfTreeMethods.bftree_scan_with_count(
                     _tree, skp, startKey.Length, count, (byte)returnField);
             }
+
+            if (handle == nint.Zero)
+                throw new InvalidOperationException("bftree_scan_with_count returned a null handle.");
+
             try
             {
                 return DrainScanIteratorWithCallback(handle, scanBuffer, returnField, onRecord);
@@ -424,6 +451,10 @@ namespace Garnet.server.BfTreeInterop
                 handle = NativeBfTreeMethods.bftree_scan_with_count(
                     _tree, skp, startKey.Length, count, (byte)returnField);
             }
+
+            if (handle == nint.Zero)
+                throw new InvalidOperationException("bftree_scan_with_count returned a null handle.");
+
             try
             {
                 return DrainScanIteratorToList(handle, returnField);
@@ -448,6 +479,10 @@ namespace Garnet.server.BfTreeInterop
                 handle = NativeBfTreeMethods.bftree_scan_with_end_key(
                     _tree, skp, startKey.Length, ekp, endKey.Length, (byte)returnField);
             }
+
+            if (handle == nint.Zero)
+                throw new InvalidOperationException("bftree_scan_with_end_key returned a null handle.");
+
             try
             {
                 return DrainScanIteratorToList(handle, returnField);

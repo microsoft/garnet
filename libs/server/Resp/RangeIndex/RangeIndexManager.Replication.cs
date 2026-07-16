@@ -149,7 +149,13 @@ namespace Garnet.server
                 if (status != GarnetStatus.OK) return;
                 var treePtr = ReadIndex(stubSpan).TreeHandle;
                 if (treePtr == nint.Zero) return;
-                BfTreeService.InsertByPtr(treePtr, field, value);
+
+                var insertResult = BfTreeService.InsertByPtr(treePtr, field, value);
+                if (insertResult != BfTreeInsertResult.Success)
+                {
+                    logger?.LogError("RI.SET AOF replay: native insert rejected ({result}) for a {keyLen}-byte key with field {fieldLen}B and value {valueLen}B; primary/replica divergence.", insertResult, key.Length, field.Length, value.Length);
+                    throw new GarnetException($"RI.SET AOF replay failed: native insert returned {insertResult}");
+                }
             }
         }
 
@@ -174,7 +180,13 @@ namespace Garnet.server
                 if (status != GarnetStatus.OK) return;
                 var treePtr = ReadIndex(stubSpan).TreeHandle;
                 if (treePtr == nint.Zero) return;
-                BfTreeService.DeleteByPtr(treePtr, field);
+
+                var deleteResult = BfTreeService.DeleteByPtr(treePtr, field);
+                if (deleteResult != BfTreeDeleteResult.Success)
+                {
+                    logger?.LogError("RI.DEL AOF replay: native delete rejected ({result}) for a {keyLen}-byte key with field {fieldLen}B; primary/replica divergence.", deleteResult, key.Length, field.Length);
+                    throw new GarnetException($"RI.DEL AOF replay failed: native delete returned {deleteResult}");
+                }
             }
         }
     }
