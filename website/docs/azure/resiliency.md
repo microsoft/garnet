@@ -14,9 +14,9 @@ Azure Cosmos DB Garnet Cache implements a distributed architecture with built-in
 
 - **Primary-Replica Architecture**: Each cache cluster consists of one or more shards with primary node and replica nodes
 - **Asynchronous Replication**: Data is asynchronously replicated from primaries
-- **AOF Persistence**: Append-Only File snapshots provide durable data storage to disk
+- **Persistence (optional)**: When enabled, append-only file (AOF) logging combined with Redis Database (RDB) snapshots provides durable storage to disk, performed asynchronously without blocking
 - **Automatic Failover**: Fast failover for minimal service interruption
-- **Automatic Recovery**: Failed nodes recover using AOF snapshots and replication
+- **Automatic Recovery**: Failed nodes recover from the latest RDB snapshot and AOF (when persistence is enabled) and from replication
 
 ![Architecture](../../static/img/azure/architecture.png)
 
@@ -39,9 +39,9 @@ Azure Cosmos DB Garnet Cache supports configurable replication factors to balanc
 |---------------|--------------------|-----------------------|-----------|
 | **No Replication** | 1x | 1, primary only | Development, testing, cost-optimized production |
 | **High Availability** | 2x | 2, one replica per primary | Mission-critical applications |
-| **Optimized Read Performance** | 3x-5x* | 3-5, two to four replicas per primary | Mission-critical applications requiring high read throughput |
+| **Optimized Read Performance** | 3x-6x | 3-6, two to five replicas per primary | Mission-critical applications requiring high read throughput |
 
-*Reach out to [CosmosGarnetCache@service.microsoft.com](mailto:cosmosgarnetcache@service.microsoft.com) if you need a higher replication factor.
+The maximum replication factor is 6x (one primary and five replicas). Reach out to [CosmosGarnetCache@service.microsoft.com](mailto:cosmosgarnetcache@service.microsoft.com) if you need a higher limit.
 
 The replication process is as follows
 
@@ -62,9 +62,18 @@ If enabled, nodes are automatically distributed across multiple availability zon
 
 ## Data Persistence
 
-Azure Cosmos DB Garnet Cache uses append only file (AOF) persistence to ensure data durability. Every write operation is appended to a persistent log file stored on an attached locally redundant [Premium Managed Disk](https://learn.microsoft.com/azure/virtual-machines/disks-types#premium-ssds). Checkpoints are stored every second. The disk size is automatically provisioned for each node based on 2x the total amount of memory for the SKU. See the [disks provisioned for each SKU](./cluster-configuration.md#available-tiers).
+Data persistence is optional and is configured when you provision a cluster. A cluster runs in one of two modes — **No Persistence** (in-memory only) or **Append Only File (AOF) and Redis Database (RDB)** — and this can't be changed after provisioning.
 
-Data on nodes is restored from the latest data checkpoint upon restart, including from automatic failovers. It is possible to experience data loss after a failover for the portion of data that hasn't been replicated or wasn't included in the latest checkpoint.
+When persistence is enabled, Garnet durably stores your data on an attached locally redundant [Premium Managed Disk](https://learn.microsoft.com/azure/virtual-machines/disks-types#premium-ssds) using a combination of two complementary mechanisms:
+
+- **Redis Database (RDB) snapshots**: Point-in-time snapshots of the full dataset saved to disk.
+- **Append-only file (AOF)**: A continuous log of every write operation, committed frequently (roughly every second).
+
+Combining both mechanisms provides fast recovery and fine-grained durability: RDB snapshots serve as compact, fast-to-restore recovery points while the AOF captures recent writes since the last snapshot. Both are performed asynchronously and are non-blocking, so persistence keeps latency consistent whether or not it's enabled.
+
+The disk size is not configurable and is provisioned to scale with each SKU so that persistence keeps pace with the node's write throughput. See the [disks provisioned for each SKU](./cluster-configuration.md#available-tiers).
+
+On restart, including after an automatic failover, each node recovers from its latest RDB snapshot and replays its AOF. It is possible to experience data loss for the portion of data that hasn't been replicated or wasn't captured in the latest snapshot or AOF.
 
 ## Learn More
 
