@@ -101,17 +101,35 @@ namespace Garnet.server.TLS
         }
 
         /// <summary>
+        /// UTF-8 byte order mark, tolerated before the PEM marker since some editors save PEM files
+        /// with one even though the format doesn't call for it.
+        /// </summary>
+        static ReadOnlySpan<byte> Utf8Bom => [0xEF, 0xBB, 0xBF];
+
+        /// <summary>
         /// Determines whether a certificate file is PEM-encoded by inspecting its leading bytes for
-        /// the "-----BEGIN" marker, rather than relying on the file's extension.
+        /// the "-----BEGIN" marker, rather than relying on the file's extension. Tolerates a leading
+        /// UTF-8 BOM and leading blank lines/whitespace ahead of the marker.
         /// </summary>
         static bool IsPemFile(string fileName)
         {
-            Span<byte> buffer = stackalloc byte[PemMarker.Length];
+            // Sized generously so a BOM plus a few blank lines still leave room for the marker itself.
+            Span<byte> buffer = stackalloc byte[64];
 
             using var stream = File.OpenRead(fileName);
-            var bytesRead = stream.Read(buffer);
+            var totalRead = 0;
+            int bytesRead;
+            while (totalRead < buffer.Length && (bytesRead = stream.Read(buffer[totalRead..])) > 0)
+                totalRead += bytesRead;
 
-            return bytesRead == buffer.Length && buffer.SequenceEqual(PemMarker);
+            ReadOnlySpan<byte> prefix = buffer[..totalRead];
+
+            if (prefix.StartsWith(Utf8Bom))
+                prefix = prefix[Utf8Bom.Length..];
+
+            prefix = prefix.TrimStart(" \t\r\n"u8);
+
+            return prefix.StartsWith(PemMarker);
         }
     }
 }

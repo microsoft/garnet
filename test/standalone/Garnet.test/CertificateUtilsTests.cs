@@ -1,7 +1,9 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
 using System.IO;
+using System.Text;
 using Garnet.server.TLS;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -9,12 +11,12 @@ using NUnit.Framework.Legacy;
 namespace Garnet.test
 {
     [TestFixture]
-    public class CertificateUtilsTests
+    public class CertificateUtilsTests : TestBase
     {
         [TearDown]
         public void TearDown()
         {
-            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
+            TestUtils.OnTearDown(waitForDelete: true);
         }
 
         [Test]
@@ -43,7 +45,10 @@ namespace Garnet.test
             // without a separate key file being specified.
             Directory.CreateDirectory(TestUtils.MethodTestDir);
             var combinedPemFile = Path.Combine(TestUtils.MethodTestDir, "combined.pem");
-            File.WriteAllText(combinedPemFile, File.ReadAllText(TestUtils.pemCertFile) + File.ReadAllText(TestUtils.pemCertKeyFile));
+            var certContents = File.ReadAllText(TestUtils.pemCertFile);
+            if (!certContents.EndsWith('\n'))
+                certContents += Environment.NewLine;
+            File.WriteAllText(combinedPemFile, certContents + File.ReadAllText(TestUtils.pemCertKeyFile));
 
             var cert = CertificateUtils.GetMachineCertificateByFile(combinedPemFile, null);
 
@@ -60,6 +65,23 @@ namespace Garnet.test
             File.Copy(TestUtils.pemCertFile, renamedCertFile, overwrite: true);
 
             var cert = CertificateUtils.GetMachineCertificateByFile(renamedCertFile, TestUtils.pemCertKeyFile);
+
+            ClassicAssert.IsNotNull(cert);
+            ClassicAssert.IsTrue(cert.HasPrivateKey);
+        }
+
+        [Test]
+        public void GetMachineCertificateByFileDetectsPemWithLeadingBomAndBlankLines()
+        {
+            // Some editors save PEM files with a UTF-8 BOM and/or a blank line or two before the
+            // "-----BEGIN" marker. Detection should tolerate that instead of falling through to the
+            // PKCS#12 path and failing.
+            Directory.CreateDirectory(TestUtils.MethodTestDir);
+            var bomPemFile = Path.Combine(TestUtils.MethodTestDir, "bom.pem");
+            var contents = "\r\n\n" + File.ReadAllText(TestUtils.pemCertFile);
+            File.WriteAllText(bomPemFile, contents, new UTF8Encoding(encoderShouldEmitUTF8Identifier: true));
+
+            var cert = CertificateUtils.GetMachineCertificateByFile(bomPemFile, TestUtils.pemCertKeyFile);
 
             ClassicAssert.IsNotNull(cert);
             ClassicAssert.IsTrue(cert.HasPrivateKey);

@@ -22,7 +22,7 @@ openssl pkcs12 -inkey `<server-name>`.key -in `<server-name>`.crt -export -out s
 
 Use the following parameters to pass the certificate file details and password:
 
-GarnetServer --cert-file-name `<path-to-file>`/server-cert.pfx --password `<cert-password>`
+GarnetServer --cert-file-name `<path-to-file>`/server-cert.pfx --cert-password `<cert-password>`
 
 When using a PEM certificate instead, pass the path to the matching private key file in place of the password (unless the key is already included in the certificate file):
 
