@@ -46,17 +46,43 @@ namespace Garnet.server
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.MSET));
             }
 
-            for (int c = 0; c < parseState.Count; c += 2)
+            for (var c = 0; c < parseState.Count; c += 2)
             {
                 var key = parseState.GetArgSliceByRef(c);
                 var val = parseState.GetArgSliceByRef(c + 1);
 
-                // TODO: SETs that overwrite Vector SETs needs to do an explicit delete first
+                var res = storageApi.SET(key, val);
 
-                _ = storageApi.SET(key, val);
+                // Type already stored in key which requires an explicit delete
+                if (res == GarnetStatus.WRONGTYPE)
+                {
+                    var createTransaction = false;
+                    if (txnManager.state != TxnState.Running)
+                    {
+                        createTransaction = true;
+                        txnManager.AddTransactionStoreTypes(TransactionStoreTypes.Main | TransactionStoreTypes.Object);
+                        txnManager.SaveKeyEntryToLock(key, LockType.Exclusive);
+                        _ = txnManager.Run(true);
+                    }
+
+                    try
+                    {
+                        _ = storageSession.DELETE(key, ref storageSession.unifiedTransactionalContext);
+                        _ = storageSession.SET(key, val, ref storageSession.stringTransactionalContext);
+                    }
+                    finally
+                    {
+                        if (createTransaction)
+                        {
+                            txnManager.Commit(true);
+                        }
+                    }
+                }
             }
+
             while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                 SendAndReset();
+
             return true;
         }
 

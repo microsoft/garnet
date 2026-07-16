@@ -1,12 +1,17 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
+using System.Text;
+using System.Threading.Tasks;
 using Garnet.server;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
+using StackExchange.Redis;
+using Tsavorite.core;
 
 namespace Garnet.test
 {
@@ -61,6 +66,52 @@ namespace Garnet.test
 
                 ClassicAssert.Fail($"Missing tests for {missing.Count:N0} commands: {missingCmds}");
             }
+        }
+
+        [Test]
+        public Task MSETAsync()
+        {
+            return TestVectorSetOverwrittenCommandAsync(RunCommand);
+
+            static async Task RunCommand(IDatabase db, RedisKey againstKey)
+            {
+                var res = await db.ExecuteAsync("MSET", [againstKey, "foo"]).ConfigureAwait(false);
+                ClassicAssert.AreEqual("OK", (string)res);
+
+                var finalValue = await db.StringGetAsync(againstKey).ConfigureAwait(false);
+                ClassicAssert.AreEqual("foo", finalValue);
+            }
+        }
+
+        // Infrastructure
+
+        private async Task TestVectorSetOverwrittenCommandAsync(Func<IDatabase, RedisKey, Task> runCommand)
+        {
+            var vectorManager = server.Provider.StoreWrapper.DefaultDatabase.VectorManager;
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
+            var db = redis.GetDatabase();
+
+            var name = $"VectorSet_{Guid.NewGuid()}";
+            var nameBytes = Encoding.ASCII.GetBytes(name);
+
+            var res = await db.VectorSetAddAsync(name, VectorSetAddRequest.Member("fizzbuzz", new[] { 1.0f, 2.0f, 3.0f }, "{\"foo\":\"bar\"}")).ConfigureAwait(false);
+            ClassicAssert.IsTrue(res);
+
+            ulong vectorSetContext;
+            unsafe
+            {
+                fixed (byte* namePtr = nameBytes)
+                {
+                    vectorSetContext = vectorManager.GetNamespacesForKeys(server.Provider.StoreWrapper, [PinnedSpanByte.FromPinnedPointer(namePtr, nameBytes.Length)], []).Min();
+                }
+            }
+
+            await runCommand(db, name);
+
+            vectorManager.GetContextState(vectorSetContext, out var inUse, out var isCleaningUp, out _);
+
+            ClassicAssert.IsTrue(!inUse || isCleaningUp, "Context should be free'd or in the process of being cleaned up");
         }
     }
 }
