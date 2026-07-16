@@ -2237,8 +2237,7 @@ namespace Garnet.test.cluster
             ClassicAssert.AreEqual("master", context.clusterTestUtils.RoleCommand(primary).Value);
             ClassicAssert.AreEqual("slave", context.clusterTestUtils.RoleCommand(secondary).Value);
 
-            // The parked VADD blocks its own session thread, so DEL/SET must run on a different TCP
-            // connection.
+            // The parked VADD blocks its own session thread, so DEL/SET must run on a different TCP connection.
             using var opConn = await ConnectionMultiplexer.ConnectAsync(context.clusterTestUtils.GetRedisConfig(context.endpoints)).ConfigureAwait(false);
             var opDb = opConn.GetDatabase();
 
@@ -2324,8 +2323,7 @@ namespace Garnet.test.cluster
             var e1 = new byte[] { 1, 0, 0, 0 };
             var e2 = new byte[] { 2, 0, 0, 0 };
 
-            // The parked VADD blocks its own session thread, so DEL must run on a different TCP
-            // connection.
+            // The parked VADD blocks its own session thread, so DEL must run on a different TCP connection.
             using var opConn = await ConnectionMultiplexer.ConnectAsync(context.clusterTestUtils.GetRedisConfig(context.endpoints)).ConfigureAwait(false);
             var opDb = opConn.GetDatabase();
 
