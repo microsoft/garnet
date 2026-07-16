@@ -2218,17 +2218,9 @@ namespace Garnet.test.cluster
 
 #if DEBUG
         /// <summary>
-        /// Corner case of the delete-during-synthetic-replication race, observed on a replica.
-        ///
-        /// On the primary a VADD builds its index and then emits a synthetic append-log RMW
-        /// (<see cref="RespCommand.VADD"/> with <c>VADDAppendLogArg</c>) purely to replicate the add.
-        /// We pause the primary right before that synthetic RMW, race a DEL followed by a
-        /// String SET on the same key from another connection, then release the VADD. The AOF order
-        /// the replica would replay is: DEL, SET(string), synthetic-VADD-append-log.
-        ///
-        /// The synthetic RMW runs against the now-String record. Its updaters
-        /// (InPlaceUpdater/CopyUpdater in RMWMethods.cs) must detect that the record is no longer a vector
-        /// index and cancel the operation.
+        /// Replica view of the delete-during-synthetic-replication race. A paused primary VADD is raced
+        /// by DEL then String SET, so its synthetic append-log RMW runs against a String record; the
+        /// updaters must cancel it (no AOF entry) so the replica stays converged with the primary.
         /// </summary>
         [Test]
         public async Task ReplicaReplaysSyntheticVAddAgainstStringKeyAfterRacedDeleteAsync()
@@ -2307,20 +2299,11 @@ namespace Garnet.test.cluster
 
 #if DEBUG
         /// <summary>
-        /// Companion to <see cref="ReplicaReplaysSyntheticVAddAgainstStringKeyAfterRacedDeleteAsync"/>,
-        /// exploring the "DEL then fresh vector set" interleaving on a replica.
-        ///
-        /// Desired (but unrealizable) ordering: VADD(T1) -> DEL(T2) -> VADD-new-set(T2) -> VAddReplicate(T1).
-        /// It is unrealizable on the primary because T1's VADD holds a SHARED vector lock on the key hash
-        /// across its synthetic replicate (ReadOrCreateVectorIndex returns still holding it), so T2's fresh
-        /// create (which needs an EXCLUSIVE lock) blocks until T1's VAddReplicate completes. The realizable
-        /// serialized order is therefore: VADD(T1 native) -> DEL(T2) -> VAddReplicate(T1, absent key) ->
-        /// VADD-new-set(T2). This test drives exactly that.
-        ///
-        /// The open question is whether the primary's synthetic VAddReplicate for the first element (E1)
-        /// still ships E1 to the replica via the AOF even though E1 was deleted and never survives on the
-        /// primary. If it does, the replica replays a genuine VADD(E1) against the (momentarily absent) key
-        /// and ends up with {E1, E2} while the primary only has {E2} - a silent divergence.
+        /// Companion to <see cref="ReplicaReplaysSyntheticVAddAgainstStringKeyAfterRacedDeleteAsync"/>.
+        /// T1's VADD holds a SHARED vector lock across its synthetic replicate, so a fresh create (which
+        /// needs an EXCLUSIVE lock) serializes after it: the realizable order is VADD(T1) -> DEL(T2) ->
+        /// synthetic replicate(T1, absent key) -> fresh VADD(T2). The synthetic replicate of the deleted
+        /// element E1 must not ship E1 to the replica — primary and replica must both end with {E2} only.
         /// </summary>
         [Test]
         public async Task ReplicaVsPrimaryAfterDelThenFreshCreateDuringSyntheticVAddReplicationAsync()

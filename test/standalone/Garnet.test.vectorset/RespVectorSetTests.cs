@@ -3639,20 +3639,10 @@ namespace Garnet.test
 
 #if DEBUG
         /// <summary>
-        /// Regression test for the primary-side VectorSet recreate livelock, driven as a real
-        /// two-connection race, for both VADD and VREM.
-        ///
-        /// After a successful add/remove, the operation issues a synthetic append-log RMW just to get
-        /// the write into the AOF, holding only a SHARED vector lock. A raw main-store delete (DEL, a
-        /// lock-free path taking no vector lock) can tombstone the key in between. On the unfixed
-        /// code <c>NeedInitialUpdate</c> returned true for the synthetic arg on the now-absent key, and
-        /// <c>InitialUpdater</c> left a zeroed index record — resurrecting the key as a phantom index
-        /// that <c>NeedsRecreate</c> flags forever, livelocking the recreate loop.
-        ///
-        /// This drives that interleaving deterministically: connection 1 parks the operation in the
-        /// synthetic-replication window; connection 2 deletes the key; the pause is cleared so the
-        /// synthetic RMW runs against the tombstone. The key must NOT be resurrected. Fails on the
-        /// unfixed code, passes with the fix.
+        /// A VADD/VREM issues a synthetic append-log RMW (to land the write in the AOF) while holding
+        /// only a SHARED vector lock, so a concurrent lock-free DEL can tombstone the key in between.
+        /// Drives that interleaving deterministically via a pause point: the synthetic RMW must run
+        /// against the tombstone without resurrecting the key as a zeroed phantom index.
         /// </summary>
         [Test]
         public async Task SyntheticReplicationRaceWithConcurrentDelMustNotResurrectKey([Values("VADD", "VREM")] string operation)
@@ -3708,12 +3698,9 @@ namespace Garnet.test
         }
 
         /// <summary>
-        /// Race variant: after the parked VADD is tombstoned by a concurrent delete, a String value is
-        /// SET at the same key before the synthetic append-log RMW runs. The synthetic append-log arg is
-        /// a no-op in the RMW updaters (it neither reads the value as an index nor rewrites it), so the
-        /// key must be left as an intact String — no corruption, type change, or recreate livelock.
-        /// This holds independently of the NeedInitialUpdate fix (the key exists, so that guard is not
-        /// on this path); the test documents that the concurrent-type-change interleaving is safe.
+        /// Variant where the tombstoned key is re-SET as a String before the parked VADD's synthetic
+        /// append-log RMW runs. The synthetic RMW must leave the String intact — no type change,
+        /// value corruption, or recreate livelock.
         /// </summary>
         [Test]
         public async Task SyntheticReplicationRaceWithConcurrentDelThenStringSetMustNotCorrupt()
@@ -3755,14 +3742,10 @@ namespace Garnet.test
         }
 
         /// <summary>
-        /// Documents that the "concurrent delete, then a brand-new vector set is created before the
-        /// parked VADD's synthetic RMW" interleaving is impossible for the same key: the VADD holds a
-        /// SHARED vector lock on the key hash across its synthetic replication RMW, and creating a new
-        /// index needs an EXCLUSIVE lock, so any new create blocks until the parked VADD releases. The
-        /// realizable ordering is therefore: raced delete (lock-free) -> parked VADD's synthetic RMW
-        /// runs against the tombstone (no resurrection) -> only then can a fresh create proceed. This
-        /// asserts that end state: after the whole race a fresh VADD builds a clean index holding only
-        /// its own element, with no leakage of the raced-away element and no recreate livelock.
+        /// The parked VADD holds a SHARED vector lock across its synthetic RMW, so a fresh create
+        /// (which needs an EXCLUSIVE lock) cannot slip in ahead: the realizable order is raced DEL ->
+        /// synthetic RMW against the tombstone -> fresh create. Asserts the end state — the fresh index
+        /// holds only its own element, with no leaked element and no recreate livelock.
         /// </summary>
         [Test]
         public async Task ConcurrentDelDuringSyntheticReplicationThenFreshCreateIsClean()
@@ -3813,12 +3796,10 @@ namespace Garnet.test
 #endif
 
         /// <summary>
-        /// A VREM against an index whose record has aged into the read-only region takes the Tsavorite
-        /// read-copy-update path, so the synthetic VREM append-log RMW runs through CopyUpdater rather
-        /// than InPlaceUpdater. CopyUpdater allocates a fresh destination record and must copy the old
-        /// index value forward. If it does not, the new record is left zeroed, the index pointer is lost,
-        /// and NeedsRecreate flags it forever (RecreateIndex(dims:0) livelock) — with no concurrent
-        /// delete involved.
+        /// A VREM against an index aged into the read-only region runs the synthetic append-log RMW
+        /// through CopyUpdater, which must copy the old index value forward. Otherwise the new record is
+        /// zeroed, the index pointer is lost, and NeedsRecreate livelocks (RecreateIndex(dims:0)) — with
+        /// no concurrent delete involved.
         /// </summary>
         [Test]
         public void VremCopyUpdaterOnReadOnlyIndexMustPreserveIndexValue()
