@@ -3676,8 +3676,6 @@ namespace Garnet.test
                     ? Task.Run(() => dbOp.Execute("VADD", [key, "VALUES", "3", "1", "2", "3", (RedisValue)elem]))
                     : Task.Run(() => dbOp.Execute("VREM", [key, (RedisValue)elem]));
 
-                // Wait (event-driven, no polling) until the operation reaches the pause. By this point the
-                // index exists, so there is something to tombstone.
                 await ExceptionInjectionHelper.WaitOnClearAsync(Pause).WaitAsync(TimeSpan.FromSeconds(30));
 
                 // Connection 2: DEL the parked key, tombstoning it while the operation holds a shared vector lock.
