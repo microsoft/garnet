@@ -79,9 +79,9 @@ namespace Garnet.test
         [Test]
         public Task MSETAsync()
         {
-            return TestVectorSetOverwrittenCommandAsync(RunCommand);
+            return TestVectorSetOverwrittenCommandAsync(RunCommandAsync);
 
-            static async Task RunCommand(IDatabaseAsync executeDB, IDatabaseAsync readDB, RedisKey againstKey)
+            static async Task RunCommandAsync(IDatabaseAsync executeDB, IDatabaseAsync readDB, RedisKey againstKey)
             {
                 var res = await executeDB.ExecuteAsync("MSET", [againstKey, "foo"]).ConfigureAwait(false);
                 ClassicAssert.AreEqual("OK", (string)res);
@@ -94,9 +94,9 @@ namespace Garnet.test
         [Test]
         public Task PSETEXAsync()
         {
-            return TestVectorSetOverwrittenCommandAsync(RunCommand);
+            return TestVectorSetOverwrittenCommandAsync(RunCommandAsync);
 
-            static async Task RunCommand(IDatabaseAsync executeDB, IDatabaseAsync readDB, RedisKey againstKey)
+            static async Task RunCommandAsync(IDatabaseAsync executeDB, IDatabaseAsync readDB, RedisKey againstKey)
             {
                 var res = await executeDB.ExecuteAsync("PSETEX", [againstKey, "10000", "foo"]).ConfigureAwait(false);
                 ClassicAssert.AreEqual("OK", (string)res);
@@ -109,9 +109,9 @@ namespace Garnet.test
         [Test]
         public Task SETAsync()
         {
-            return TestVectorSetOverwrittenCommandAsync(RunCommand);
+            return TestVectorSetOverwrittenCommandAsync(RunCommandAsync);
 
-            static async Task RunCommand(IDatabaseAsync executeDB, IDatabaseAsync readDB, RedisKey againstKey)
+            static async Task RunCommandAsync(IDatabaseAsync executeDB, IDatabaseAsync readDB, RedisKey againstKey)
             {
                 var res = await executeDB.StringSetAsync(againstKey, "foo").ConfigureAwait(false);
                 ClassicAssert.IsTrue(res);
@@ -124,9 +124,9 @@ namespace Garnet.test
         [Test]
         public Task SETEXAsync()
         {
-            return TestVectorSetOverwrittenCommandAsync(RunCommand);
+            return TestVectorSetOverwrittenCommandAsync(RunCommandAsync);
 
-            static async Task RunCommand(IDatabaseAsync executeDB, IDatabaseAsync readDB, RedisKey againstKey)
+            static async Task RunCommandAsync(IDatabaseAsync executeDB, IDatabaseAsync readDB, RedisKey againstKey)
             {
                 var res = await executeDB.ExecuteAsync("SETEX", [againstKey, "10", "foo"]).ConfigureAwait(false);
                 ClassicAssert.AreEqual("OK", (string)res);
@@ -139,9 +139,9 @@ namespace Garnet.test
         [Test]
         public Task SETIFGREATERAsync()
         {
-            return TestVectorSetOverwrittenCommandAsync(RunCommand);
+            return TestVectorSetOverwrittenCommandAsync(RunCommandAsync);
 
-            static async Task RunCommand(IDatabaseAsync executeDB, IDatabaseAsync readDB, RedisKey againstKey)
+            static async Task RunCommandAsync(IDatabaseAsync executeDB, IDatabaseAsync readDB, RedisKey againstKey)
             {
                 var res = (string[])await executeDB.ExecuteAsync("SETIFGREATER", [againstKey, "foo", "1234"]).ConfigureAwait(false);
                 ClassicAssert.AreEqual(2, res.Length);
@@ -158,9 +158,9 @@ namespace Garnet.test
         {
             // Vector Sets have no ETAG, so SETIFMATCH will succeed
 
-            return TestVectorSetOverwrittenCommandAsync(RunCommand);
+            return TestVectorSetOverwrittenCommandAsync(RunCommandAsync);
 
-            static async Task RunCommand(IDatabaseAsync executeDB, IDatabaseAsync readDB, RedisKey againstKey)
+            static async Task RunCommandAsync(IDatabaseAsync executeDB, IDatabaseAsync readDB, RedisKey againstKey)
             {
                 var res = (string[])await executeDB.ExecuteAsync("SETIFMATCH", [againstKey, "foo", "1234"]).ConfigureAwait(false);
                 ClassicAssert.AreEqual(2, res.Length);
@@ -175,9 +175,9 @@ namespace Garnet.test
         [Test]
         public Task SETWITHETAGAsync()
         {
-            return TestVectorSetOverwrittenCommandAsync(RunCommand);
+            return TestVectorSetOverwrittenCommandAsync(RunCommandAsync);
 
-            static async Task RunCommand(IDatabaseAsync executeDB, IDatabaseAsync readDB, RedisKey againstKey)
+            static async Task RunCommandAsync(IDatabaseAsync executeDB, IDatabaseAsync readDB, RedisKey againstKey)
             {
                 var res = (string[])await executeDB.ExecuteAsync("SETWITHETAG", [againstKey, "foo"]).ConfigureAwait(false);
                 ClassicAssert.AreEqual(1, res.Length);
