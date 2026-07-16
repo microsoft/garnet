@@ -796,6 +796,13 @@ namespace Garnet.server
                 return;
             }
 
+            // Migrated RangeIndex publish: the chunked range index stream is logged separately and is the
+            // single AOF source of truth, so skip auto-logging this RICREATE (see StreamedPublishLogArg).
+            if (input.header.cmd == RespCommand.RICREATE && input.arg1 == RangeIndexManager.StreamedPublishLogArg)
+            {
+                return;
+            }
+
             input.header.flags |= RespInputFlags.Deterministic;
 
             functionsState.appendOnlyFile.Log.Enqueue(

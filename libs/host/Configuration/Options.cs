@@ -664,6 +664,9 @@ namespace Garnet
         [Option("vector-set-replay-task-count", Required = false, HelpText = "Configure how many replay tasks are used to replay VectorSet operations at the replica (default: 0 uses the machine CPU count)")]
         public int VectorSetReplayTaskCount { get; set; }
 
+        // 512k == 2 x RangeIndexManager.DefaultMigrationChunkSize (256k): a migrated range index stream chunk
+        // plus its safety margin must fit in a single AOF page. Validated here to fail before store/AOF allocation.
+        [RequiresMinimumMemory(nameof(AofPageSize), minimumValue: "512k")]
         [Option("enable-range-index-preview", Required = false, HelpText = "Enable Range Index (preview) - this feature (and associated RI.* commands) are incomplete, unstable, and subject to change while still in preview")]
         public bool EnableRangeIndexPreview { get; set; }
 
