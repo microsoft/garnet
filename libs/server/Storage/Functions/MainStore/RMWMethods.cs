@@ -1379,8 +1379,7 @@ namespace Garnet.server
                     break;
 
                 case RespCommand.VADD:
-                    // NeedCopyUpdate cancels when the record is no longer an index, so CopyUpdater is only
-                    // reached for a genuine index record.
+                    // NeedCopyUpdate cancels when the record is no longer an index, so CopyUpdater is only reached for a genuine index record.
                     Debug.Assert(srcLogRecord.RecordType == VectorManager.RecordType, "CopyUpdater reached for VADD on a non-index record");
 
                     if (input.arg1 == VectorManager.RecreateIndexArg)
@@ -1410,8 +1409,7 @@ namespace Garnet.server
                     break;
 
                 case RespCommand.VREM:
-                    // NeedCopyUpdate cancels when the record is no longer an index, so CopyUpdater is only
-                    // reached for a genuine index record.
+                    // NeedCopyUpdate cancels when the record is no longer an index, so CopyUpdater is only reached for a genuine index record.
                     Debug.Assert(srcLogRecord.RecordType == VectorManager.RecordType, "CopyUpdater reached for VREM on a non-index record");
                     Debug.Assert(input.arg1 == VectorManager.VREMAppendLogArg, "Unexpected CopyUpdater call on VREM key");
 
