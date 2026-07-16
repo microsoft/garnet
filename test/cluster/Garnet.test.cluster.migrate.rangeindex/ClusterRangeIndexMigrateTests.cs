@@ -10,9 +10,7 @@ using System.Net;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
-#if DEBUG
 using Garnet.common;
-#endif
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
@@ -1179,7 +1177,6 @@ namespace Garnet.test.cluster
             VerifyFieldsOnEndpoint(primary1, riKey, fields);
         }
 
-#if DEBUG
         /// <summary>
         /// Pause migration during TRANSMITTING state via fault injection,
         /// fire RI.SET and RI.GET while migration is paused, then resume.
@@ -1189,6 +1186,8 @@ namespace Garnet.test.cluster
         [Category("CLUSTER")]
         public async Task ClusterMigrateRangeIndexWithPauseDuringTransmitAsync()
         {
+            ClusterTestUtils.IgnoreIfExceptionInjectionDisabled();
+
             const int shards = 2;
 
             context.CreateInstances(shards, enableRangeIndexPreview: true);
@@ -1267,6 +1266,8 @@ namespace Garnet.test.cluster
         [Category("CLUSTER")]
         public async Task ClusterMigrateRangeIndexWithPauseDuringDeleteAsync()
         {
+            ClusterTestUtils.IgnoreIfExceptionInjectionDisabled();
+
             const int shards = 2;
 
             context.CreateInstances(shards, enableRangeIndexPreview: true);
@@ -1342,6 +1343,8 @@ namespace Garnet.test.cluster
         [Category("CLUSTER")]
         public void ClusterMigrateRangeIndexExceptionDuringTransmit()
         {
+            ClusterTestUtils.IgnoreIfExceptionInjectionDisabled();
+
             const int shards = 2;
 
             context.CreateInstances(shards, enableRangeIndexPreview: true);
@@ -1386,8 +1389,6 @@ namespace Garnet.test.cluster
                 ExceptionInjectionHelper.DisableException(ExceptionInjectionType.RangeIndex_Migration_Before_Deleting);
             }
         }
-
-#endif
 
         #region Post-migration lifecycle
 

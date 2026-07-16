@@ -174,10 +174,11 @@ namespace Garnet.test
             ClassicAssert.AreEqual("1", end.Field("chunkCount"));
         }
 
-#if DEBUG
         [Test]
         public void PublishFailureOnCompleteStreamThrows()
         {
+            TestUtils.IgnoreIfExceptionInjectionDisabled();
+
             var capture = new CapturingLogger();
             using var mgr = new RangeIndexManager(testDir, logger: capture);
             var key = Encoding.UTF8.GetBytes("k1");
@@ -209,6 +210,5 @@ namespace Garnet.test
             var end = AssertSingleReassemblyReason(capture, "PublishFailed");
             ClassicAssert.AreEqual(chunks.Count.ToString(), end.Field("chunkCount"));
         }
-#endif
     }
 }
