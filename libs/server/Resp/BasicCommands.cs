@@ -357,11 +357,30 @@ namespace Garnet.server
 
             var status = storageApi.SET(key, value);
 
+            // Type already stored in key which requires an explicit delete
             if (status == GarnetStatus.WRONGTYPE)
             {
-                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
-                    SendAndReset();
-                return true;
+                var createTransaction = false;
+                if (txnManager.state != TxnState.Running)
+                {
+                    createTransaction = true;
+                    txnManager.AddTransactionStoreTypes(TransactionStoreTypes.Main | TransactionStoreTypes.Object);
+                    txnManager.SaveKeyEntryToLock(key, LockType.Exclusive);
+                    _ = txnManager.Run(true);
+                }
+
+                try
+                {
+                    _ = storageSession.DELETE(key, ref storageSession.unifiedTransactionalContext);
+                    _ = storageSession.SET(key, value, ref storageSession.stringTransactionalContext);
+                }
+                finally
+                {
+                    if (createTransaction)
+                    {
+                        txnManager.Commit(true);
+                    }
+                }
             }
 
             while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))

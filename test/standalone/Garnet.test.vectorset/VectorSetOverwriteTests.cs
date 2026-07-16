@@ -99,6 +99,21 @@ namespace Garnet.test
         }
 
         [Test]
+        public Task SETAsync()
+        {
+            return TestVectorSetOverwrittenCommandAsync(RunCommand);
+
+            static async Task RunCommand(IDatabase db, RedisKey againstKey)
+            {
+                var res = await db.StringSetAsync(againstKey, "foo").ConfigureAwait(false);
+                ClassicAssert.IsTrue(res);
+
+                var finalValue = await db.StringGetAsync(againstKey).ConfigureAwait(false);
+                ClassicAssert.AreEqual("foo", finalValue);
+            }
+        }
+
+        [Test]
         public Task SETEXAsync()
         {
             return TestVectorSetOverwrittenCommandAsync(RunCommand);
@@ -107,6 +122,58 @@ namespace Garnet.test
             {
                 var res = await db.ExecuteAsync("SETEX", [againstKey, "10", "foo"]).ConfigureAwait(false);
                 ClassicAssert.AreEqual("OK", (string)res);
+
+                var finalValue = await db.StringGetAsync(againstKey).ConfigureAwait(false);
+                ClassicAssert.AreEqual("foo", finalValue);
+            }
+        }
+
+        [Test]
+        public Task SETIFGREATERAsync()
+        {
+            return TestVectorSetOverwrittenCommandAsync(RunCommand);
+
+            static async Task RunCommand(IDatabase db, RedisKey againstKey)
+            {
+                var res = (string[])await db.ExecuteAsync("SETIFGREATER", [againstKey, "foo", "1234"]).ConfigureAwait(false);
+                ClassicAssert.AreEqual(2, res.Length);
+                ClassicAssert.AreEqual("1234", res[0]);
+                ClassicAssert.IsNull(res[1]);
+
+                var finalValue = await db.StringGetAsync(againstKey).ConfigureAwait(false);
+                ClassicAssert.AreEqual("foo", finalValue);
+            }
+        }
+
+        [Test]
+        public Task SETIFMATCHAsync()
+        {
+            // Vector Sets have no ETAG, so SETIFMATCH will succeed
+
+            return TestVectorSetOverwrittenCommandAsync(RunCommand);
+
+            static async Task RunCommand(IDatabase db, RedisKey againstKey)
+            {
+                var res = (string[])await db.ExecuteAsync("SETIFMATCH", [againstKey, "foo", "1234"]).ConfigureAwait(false);
+                ClassicAssert.AreEqual(2, res.Length);
+                ClassicAssert.AreEqual("1235", res[0]); // +1 since we're starting from empty
+                ClassicAssert.IsNull(res[1]);
+
+                var finalValue = await db.StringGetAsync(againstKey).ConfigureAwait(false);
+                ClassicAssert.AreEqual("foo", finalValue);
+            }
+        }
+
+        [Test]
+        public Task SETWITHETAGAsync()
+        {
+            return TestVectorSetOverwrittenCommandAsync(RunCommand);
+
+            static async Task RunCommand(IDatabase db, RedisKey againstKey)
+            {
+                var res = (string[])await db.ExecuteAsync("SETWITHETAG", [againstKey, "foo"]).ConfigureAwait(false);
+                ClassicAssert.AreEqual(1, res.Length);
+                ClassicAssert.AreEqual("1", res[0]);
 
                 var finalValue = await db.StringGetAsync(againstKey).ConfigureAwait(false);
                 ClassicAssert.AreEqual("foo", finalValue);

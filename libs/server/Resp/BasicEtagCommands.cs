@@ -292,7 +292,34 @@ namespace Garnet.server
                 input.header.SetSetGetFlag();
 
             var output = GetStringOutput();
-            storageApi.SET_ETagConditional(key, ref input, ref output);
+            var res = storageApi.SET_ETagConditional(key, ref input, ref output);
+
+            // Type already stored in key which requires an explicit delete
+            if (res == GarnetStatus.WRONGTYPE)
+            {
+                var createTransaction = false;
+                if (txnManager.state != TxnState.Running)
+                {
+                    createTransaction = true;
+                    txnManager.AddTransactionStoreTypes(TransactionStoreTypes.Main | TransactionStoreTypes.Object);
+                    txnManager.SaveKeyEntryToLock(key, LockType.Exclusive);
+                    _ = txnManager.Run(true);
+                }
+
+                try
+                {
+                    _ = storageSession.DELETE(key, ref storageSession.unifiedTransactionalContext);
+                    _ = storageSession.SET_Conditional(key, ref input, ref output, ref storageSession.stringTransactionalContext);
+                }
+                finally
+                {
+                    if (createTransaction)
+                    {
+                        txnManager.Commit(true);
+                    }
+                }
+            }
+
             ProcessOutput(output.SpanByteAndMemory);
             return true;
         }
