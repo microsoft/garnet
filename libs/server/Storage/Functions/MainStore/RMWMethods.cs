@@ -49,11 +49,12 @@ namespace Garnet.server
                     return false; // Key must already exist
                 case RespCommand.VADD:
                 case RespCommand.VREM:
-                    // A genuine VADD/VREM create carries arg1 == 0. Any non-zero arg1 is a synthetic
-                    // follow-up (append-log, recreate, set-flags, migrate) that is only valid against an
-                    // already-existing index record; reaching NeedInitialUpdate means the key was
-                    // concurrently deleted, so we must not fabricate a new record.
-                    return input.arg1 == 0;
+                    // A synthetic replication append-log write (VADDAppendLogArg / VREMAppendLogArg) must
+                    // never fabricate a record: reaching NeedInitialUpdate for one means the key was
+                    // concurrently deleted on the primary, so replaying it on a replica would resurrect a
+                    // spurious index. Every other arg1 - a genuine create (0) or a migration import
+                    // (RecreateIndexArg / MigrateIndexKeyLogArg) - legitimately creates a fresh index record.
+                    return input.arg1 != VectorManager.VADDAppendLogArg && input.arg1 != VectorManager.VREMAppendLogArg;
                 default:
                     if (input.header.cmd > RespCommandExtensions.LastValidCommand)
                     {
