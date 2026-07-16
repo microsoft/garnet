@@ -18,10 +18,18 @@ namespace Garnet.test
     /// <summary>
     /// Tests that RESP commands that _overwrite_ Vector Sets correctly cause them to be cleaned up.
     /// </summary>
-    [TestFixture]
+    [TestFixture(false)]
+    [TestFixture(true)]
     public class VectorSetOverwriteTests : TestBase
     {
-        GarnetServer server;
+        private readonly bool runInTransaction;
+
+        private GarnetServer server;
+
+        public VectorSetOverwriteTests(bool runInTransaction)
+        {
+            this.runInTransaction = runInTransaction;
+        }
 
         [SetUp]
         public void Setup()
@@ -73,12 +81,12 @@ namespace Garnet.test
         {
             return TestVectorSetOverwrittenCommandAsync(RunCommand);
 
-            static async Task RunCommand(IDatabase db, RedisKey againstKey)
+            static async Task RunCommand(IDatabaseAsync executeDB, IDatabaseAsync readDB, RedisKey againstKey)
             {
-                var res = await db.ExecuteAsync("MSET", [againstKey, "foo"]).ConfigureAwait(false);
+                var res = await executeDB.ExecuteAsync("MSET", [againstKey, "foo"]).ConfigureAwait(false);
                 ClassicAssert.AreEqual("OK", (string)res);
 
-                var finalValue = await db.StringGetAsync(againstKey).ConfigureAwait(false);
+                var finalValue = await readDB.StringGetAsync(againstKey).ConfigureAwait(false);
                 ClassicAssert.AreEqual("foo", finalValue);
             }
         }
@@ -88,12 +96,12 @@ namespace Garnet.test
         {
             return TestVectorSetOverwrittenCommandAsync(RunCommand);
 
-            static async Task RunCommand(IDatabase db, RedisKey againstKey)
+            static async Task RunCommand(IDatabaseAsync executeDB, IDatabaseAsync readDB, RedisKey againstKey)
             {
-                var res = await db.ExecuteAsync("PSETEX", [againstKey, "10000", "foo"]).ConfigureAwait(false);
+                var res = await executeDB.ExecuteAsync("PSETEX", [againstKey, "10000", "foo"]).ConfigureAwait(false);
                 ClassicAssert.AreEqual("OK", (string)res);
 
-                var finalValue = await db.StringGetAsync(againstKey).ConfigureAwait(false);
+                var finalValue = await readDB.StringGetAsync(againstKey).ConfigureAwait(false);
                 ClassicAssert.AreEqual("foo", finalValue);
             }
         }
@@ -103,12 +111,12 @@ namespace Garnet.test
         {
             return TestVectorSetOverwrittenCommandAsync(RunCommand);
 
-            static async Task RunCommand(IDatabase db, RedisKey againstKey)
+            static async Task RunCommand(IDatabaseAsync executeDB, IDatabaseAsync readDB, RedisKey againstKey)
             {
-                var res = await db.StringSetAsync(againstKey, "foo").ConfigureAwait(false);
+                var res = await executeDB.StringSetAsync(againstKey, "foo").ConfigureAwait(false);
                 ClassicAssert.IsTrue(res);
 
-                var finalValue = await db.StringGetAsync(againstKey).ConfigureAwait(false);
+                var finalValue = await readDB.StringGetAsync(againstKey).ConfigureAwait(false);
                 ClassicAssert.AreEqual("foo", finalValue);
             }
         }
@@ -118,12 +126,12 @@ namespace Garnet.test
         {
             return TestVectorSetOverwrittenCommandAsync(RunCommand);
 
-            static async Task RunCommand(IDatabase db, RedisKey againstKey)
+            static async Task RunCommand(IDatabaseAsync executeDB, IDatabaseAsync readDB, RedisKey againstKey)
             {
-                var res = await db.ExecuteAsync("SETEX", [againstKey, "10", "foo"]).ConfigureAwait(false);
+                var res = await executeDB.ExecuteAsync("SETEX", [againstKey, "10", "foo"]).ConfigureAwait(false);
                 ClassicAssert.AreEqual("OK", (string)res);
 
-                var finalValue = await db.StringGetAsync(againstKey).ConfigureAwait(false);
+                var finalValue = await readDB.StringGetAsync(againstKey).ConfigureAwait(false);
                 ClassicAssert.AreEqual("foo", finalValue);
             }
         }
@@ -133,14 +141,14 @@ namespace Garnet.test
         {
             return TestVectorSetOverwrittenCommandAsync(RunCommand);
 
-            static async Task RunCommand(IDatabase db, RedisKey againstKey)
+            static async Task RunCommand(IDatabaseAsync executeDB, IDatabaseAsync readDB, RedisKey againstKey)
             {
-                var res = (string[])await db.ExecuteAsync("SETIFGREATER", [againstKey, "foo", "1234"]).ConfigureAwait(false);
+                var res = (string[])await executeDB.ExecuteAsync("SETIFGREATER", [againstKey, "foo", "1234"]).ConfigureAwait(false);
                 ClassicAssert.AreEqual(2, res.Length);
                 ClassicAssert.AreEqual("1234", res[0]);
                 ClassicAssert.IsNull(res[1]);
 
-                var finalValue = await db.StringGetAsync(againstKey).ConfigureAwait(false);
+                var finalValue = await readDB.StringGetAsync(againstKey).ConfigureAwait(false);
                 ClassicAssert.AreEqual("foo", finalValue);
             }
         }
@@ -152,14 +160,14 @@ namespace Garnet.test
 
             return TestVectorSetOverwrittenCommandAsync(RunCommand);
 
-            static async Task RunCommand(IDatabase db, RedisKey againstKey)
+            static async Task RunCommand(IDatabaseAsync executeDB, IDatabaseAsync readDB, RedisKey againstKey)
             {
-                var res = (string[])await db.ExecuteAsync("SETIFMATCH", [againstKey, "foo", "1234"]).ConfigureAwait(false);
+                var res = (string[])await executeDB.ExecuteAsync("SETIFMATCH", [againstKey, "foo", "1234"]).ConfigureAwait(false);
                 ClassicAssert.AreEqual(2, res.Length);
                 ClassicAssert.AreEqual("1235", res[0]); // +1 since we're starting from empty
                 ClassicAssert.IsNull(res[1]);
 
-                var finalValue = await db.StringGetAsync(againstKey).ConfigureAwait(false);
+                var finalValue = await readDB.StringGetAsync(againstKey).ConfigureAwait(false);
                 ClassicAssert.AreEqual("foo", finalValue);
             }
         }
@@ -169,20 +177,20 @@ namespace Garnet.test
         {
             return TestVectorSetOverwrittenCommandAsync(RunCommand);
 
-            static async Task RunCommand(IDatabase db, RedisKey againstKey)
+            static async Task RunCommand(IDatabaseAsync executeDB, IDatabaseAsync readDB, RedisKey againstKey)
             {
-                var res = (string[])await db.ExecuteAsync("SETWITHETAG", [againstKey, "foo"]).ConfigureAwait(false);
+                var res = (string[])await executeDB.ExecuteAsync("SETWITHETAG", [againstKey, "foo"]).ConfigureAwait(false);
                 ClassicAssert.AreEqual(1, res.Length);
                 ClassicAssert.AreEqual("1", res[0]);
 
-                var finalValue = await db.StringGetAsync(againstKey).ConfigureAwait(false);
+                var finalValue = await readDB.StringGetAsync(againstKey).ConfigureAwait(false);
                 ClassicAssert.AreEqual("foo", finalValue);
             }
         }
 
         // Infrastructure
 
-        private async Task TestVectorSetOverwrittenCommandAsync(Func<IDatabase, RedisKey, Task> runCommand)
+        private async Task TestVectorSetOverwrittenCommandAsync(Func<IDatabaseAsync, IDatabaseAsync, RedisKey, Task> runCommand)
         {
             var vectorManager = server.Provider.StoreWrapper.DefaultDatabase.VectorManager;
 
@@ -204,7 +212,20 @@ namespace Garnet.test
                 }
             }
 
-            await runCommand(db, name);
+            if (runInTransaction)
+            {
+                var trans = db.CreateTransaction();
+                var queuedTask = runCommand(trans, db, name);
+
+                var transRes = await trans.ExecuteAsync().ConfigureAwait(false);
+                ClassicAssert.IsTrue(transRes);
+
+                await queuedTask.ConfigureAwait(false);
+            }
+            else
+            {
+                await runCommand(db, db, name).ConfigureAwait(false);
+            }
 
             vectorManager.GetContextState(vectorSetContext, out var inUse, out var isCleaningUp, out _);
 
