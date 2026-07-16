@@ -2262,8 +2262,7 @@ namespace Garnet.test.cluster
                 // Wait until the primary VADD has built its index and parked right before writing the synthetic append-log entry to the AOF.
                 await ExceptionInjectionHelper.WaitOnClearAsync(ExceptionInjectionType.VectorSet_Pause_Before_Synthetic_Replication_Rmw).ConfigureAwait(false);
 
-                // DEL is a lock-free main-store delete that bypasses the vector lock the parked VADD
-                // still holds, so it wins the race; the following SET turns the key into a String.
+                // DEL bypasses the vector lock the parked VADD still holds, so it wins the race; the following SET turns the key into a String.
                 var delRes = (long)context.clusterTestUtils.Execute(primary, "DEL", [new RedisKey(Key)]);
                 ClassicAssert.AreEqual(1, delRes);
 
@@ -2347,8 +2346,7 @@ namespace Garnet.test.cluster
 
                 await ExceptionInjectionHelper.WaitOnClearAsync(ExceptionInjectionType.VectorSet_Pause_Before_Synthetic_Replication_Rmw).ConfigureAwait(false);
 
-                // DEL is a lock-free main-store delete: it bypasses the shared vector lock T1 still holds,
-                // so it removes the vector set while T1 is parked.
+                // DEL bypasses the shared vector lock T1 still holds, so it removes the vector set while T1 is parked.
                 var delRes = (long)context.clusterTestUtils.Execute(primary, "DEL", [new RedisKey(Key)]);
                 ClassicAssert.AreEqual(1, delRes);
 
