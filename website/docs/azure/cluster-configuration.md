@@ -10,9 +10,9 @@ title: Cluster Configuration for Azure Cosmos DB Garnet Cache
 
 Azure Cosmos DB Garnet Cache lets you choose the underlying [Azure Virtual Machine](https://learn.microsoft.com/azure/virtual-machines/sizes/overview) that your cache nodes will be provisioned on. The specs offered by cache nodes mirror the Azure virtual machine itself. Garnet doesn't limit the number of client connections that can be made on any node for any SKU. When choosing the right tier and SKU for your workload, consider that roughly 30% of memory on each node will be reserved for metadata and processing requests. Smaller SKUs in each tier are classified as [dev/test](#dev-test) while larger SKUs are designed for [production](#production) workloads.
 
-Every node also has a [Premium SSD Managed Disk](https://learn.microsoft.com/azure/virtual-machines/disks-types#premium-ssds) provisioned for [data persistence](./resiliency.md#data-persistence). The disk size is not configurable and represents 2x the total memory of each node. The Managed Disk SKU provisioned for each option is in the table below, and is priced at the [Azure Managed Disk price](https://azure.microsoft.com/pricing/details/managed-disks).
+When [data persistence](./resiliency.md#data-persistence) is enabled, every node has a [Premium SSD Managed Disk](https://learn.microsoft.com/azure/virtual-machines/disks-types#premium-ssds) provisioned. The disk size is not configurable and is provisioned to scale with each SKU so that persistence keeps pace with the node's write throughput. The Managed Disk SKU provisioned for each option is in the table below.
 
-The pricing model for cache nodes is instance-based and there are no licensing fees. For information about pricing for specific SKUs, reach out to [CosmosGarnetCache@service.microsoft.com](mailto:cosmosgarnetcache@service.microsoft.com).
+The pricing model for cache nodes is instance-based and there are no licensing fees. For information about pricing, see the [Azure Cosmos DB Garnet Cache pricing page](https://azure.microsoft.com/en-us/pricing/details/cosmos-db/garnet-cache/).
 
 ### General Purpose
 
@@ -22,23 +22,41 @@ Balanced performance tier suitable for most caching workloads with a good balanc
 
 |SKU |vCPUs |Memory (GB) |Network bandwidth (MB/s) |Premium SSD Managed Disk |Cluster Type |
 |----|------|------------|-------------------------|-------------------------|-------------|
-|Standard_B2ls_v2 |2	|4   |6250  |P2  |Dev/ Test |
-|Standard_B2als_v2|2	|4   |6250  |P2  |Dev/ Test |
-|Standard_D2s_v5	|2  |8   |12500 |P3  |Dev/ Test |
-|Standard_D4s_v5	|4  |16  |12500 |P4  |Dev/ Test |
-|Standard_D8s_v5	|8	|32  |12500 |P6  |Production |
-|Standard_D16s_v5	|16 |64  |12500 |P10 |Production |
-|Standard_D32s_v5	|32 |128 |16000 |P15 |Production |
-|Standard_D2as_v5	|2	|8   |12500 |P3  |Dev/ Test |
-|Standard_D4as_v5	|4	|16  |12500 |P4  |Dev/ Test |
-|Standard_D8as_v5	|8	|32  |12500 |P6  |Production |
-|Standard_D16as_v5|16	|64  |12500 |P10 |Production |
-|Standard_D32as_v5|32	|128 |16000 |P15 |Production |
-|Standard_D2s_v4	|2	|8   |5000  |P3  |Dev/ Test |
-|Standard_D4s_v4	|4	|16  |10000 |P4  |Dev/ Test |
-|Standard_D8s_v4	|8	|32  |12500 |P6  |Production |
-|Standard_D16s_v4 |16	|64  |12500 |P10 |Production |
-|Standard_D32s_v4 |32	|128 |16000 |P15 |Production |
+|Standard_B2ls_v2 |2	|4   |6250  |P4  |Dev/ Test |
+|Standard_B2als_v2|2	|4   |6250  |P4  |Dev/ Test |
+|Standard_D2s_v6  |2   |8    |12500 |P6  |Dev/ Test |
+|Standard_D4s_v6  |4   |16   |12500 |P10 |Dev/ Test |
+|Standard_D8s_v6  |8   |32   |12500 |P15 |Production |
+|Standard_D16s_v6 |16  |64   |12500 |P20 |Production |
+|Standard_D32s_v6 |32  |128  |16000 |P30 |Production |
+|Standard_D48s_v6 |48  |192  |24000 |P40 |Production |
+|Standard_D64s_v6 |64  |256  |30000 |P40 |Production |
+|Standard_D96s_v6 |96  |384  |41000 |P50 |Production |
+|Standard_D128s_v6|128 |512  |54000 |P50 |Production |
+|Standard_D192s_v6|192 |768  |82000 |P60 |Production |
+|Standard_D2s_v5	|2  |8   |12500 |P6  |Dev/ Test |
+|Standard_D4s_v5	|4  |16  |12500 |P10 |Dev/ Test |
+|Standard_D8s_v5	|8	|32  |12500 |P15 |Production |
+|Standard_D16s_v5	|16 |64  |12500 |P20 |Production |
+|Standard_D32s_v5	|32 |128 |16000 |P30 |Production |
+|Standard_D48s_v5 |48  |192  |24000 |P40 |Production |
+|Standard_D64s_v5 |64  |256  |30000 |P40 |Production |
+|Standard_D96s_v5 |96  |384  |35000 |P50 |Production |
+|Standard_D2as_v5	|2	|8   |12500 |P6  |Dev/ Test |
+|Standard_D4as_v5	|4	|16  |12500 |P10 |Dev/ Test |
+|Standard_D8as_v5	|8	|32  |12500 |P15 |Production |
+|Standard_D16as_v5|16	|64  |12500 |P20 |Production |
+|Standard_D32as_v5|32	|128 |16000 |P30 |Production |
+|Standard_D48as_v5|48  |192  |24000 |P40 |Production |
+|Standard_D64as_v5|64  |256  |32000 |P40 |Production |
+|Standard_D96as_v5|96  |384  |40000 |P50 |Production |
+|Standard_D2s_v4	|2	|8   |5000  |P6  |Dev/ Test |
+|Standard_D4s_v4	|4	|16  |10000 |P10 |Dev/ Test |
+|Standard_D8s_v4	|8	|32  |12500 |P15 |Production |
+|Standard_D16s_v4 |16	|64  |12500 |P20 |Production |
+|Standard_D32s_v4 |32	|128 |16000 |P30 |Production |
+|Standard_D48s_v4 |48  |192  |24000 |P40 |Production |
+|Standard_D64s_v4 |64  |256  |30000 |P40 |Production |
 
 ### Memory Optimized
 
@@ -46,26 +64,60 @@ High-memory tier designed for workloads requiring large in-memory datasets with 
 
 - **Use Cases**: Large datasets, gaming leaderboards, vector search workloads
 
-|SKU |vCPUs |Memory (GB) |Network bandwidth (MB/s) |Premium SSD Managed Disk |
-|----|------|------------|-------------------------|-------------------------|
-|Standard_E2s_v5	|2	|16  |12500 |P4  |Dev/ Test |
-|Standard_E4s_v5	|4	|32  |12500 |P6  |Dev/ Test |
-|Standard_E8s_v5  |8	|64  |12500 |P10 |Production |
-|Standard_E16s_v5	|16 |128 |12500 |P15 |Production |
-|Standard_E20s_v5	|20 |160 |12500 |P20 |Production |
-|Standard_E32s_v5	|32 |256 |16000 |P20 |Production |
-|Standard_E2as_v5	|2	|16  |12500 |P4  |Dev/ Test |
-|Standard_E4as_v5	|4	|32  |12500 |P6  |Dev/ Test |
-|Standard_E8as_v5	|8	|64  |12500 |P10 |Production |
-|Standard_E16as_v5|16	|128 |12500 |P15 |Production |
-|Standard_E20as_v5|20	|160 |12500 |P20 |Production |
-|Standard_E32as_v5|32	|256 |16000 |P20 |Production |
-|Standard_E2s_v4	|2	|16  |5000  |P4  |Dev/ Test |
-|Standard_E4s_v4	|4	|32  |10000 |P6  |Dev/ Test |
-|Standard_E8s_v4	|8	|64  |12500 |P10 |Production |
-|Standard_E16s_v4 |16	|128 |12500 |P50 |Production |
-|Standard_E20s_v4 |20	|160 |10000 |P20 |Production |
-|Standard_E32s_v4 |32	|256 |16000 |P20 |Production |
+|SKU |vCPUs |Memory (GB) |Network bandwidth (MB/s) |Premium SSD Managed Disk |Cluster Type |
+|----|------|------------|-------------------------|-------------------------|-------------|
+|Standard_E2s_v6  |2   |16   |12500 |P10 |Dev/ Test |
+|Standard_E4s_v6  |4   |32   |12500 |P15 |Dev/ Test |
+|Standard_E8s_v6  |8   |64   |12500 |P20 |Production |
+|Standard_E16s_v6 |16  |128  |12500 |P30 |Production |
+|Standard_E20s_v6 |20  |160  |12500 |P40 |Production |
+|Standard_E32s_v6 |32  |256  |16000 |P40 |Production |
+|Standard_E48s_v6 |48  |384  |24000 |P50 |Production |
+|Standard_E64s_v6 |64  |512  |30000 |P50 |Production |
+|Standard_E96s_v6 |96  |768  |41000 |P60 |Production |
+|Standard_E128s_v6|128 |1024 |54000 |P60 |Production |
+|Standard_E2s_v5	|2	|16  |12500 |P10 |Dev/ Test |
+|Standard_E4s_v5	|4	|32  |12500 |P15 |Dev/ Test |
+|Standard_E8s_v5  |8	|64  |12500 |P20 |Production |
+|Standard_E16s_v5	|16 |128 |12500 |P30 |Production |
+|Standard_E20s_v5	|20 |160 |12500 |P40 |Production |
+|Standard_E32s_v5	|32 |256 |16000 |P40 |Production |
+|Standard_E48s_v5 |48  |384  |24000 |P50 |Production |
+|Standard_E64s_v5 |64  |512  |30000 |P50 |Production |
+|Standard_E96s_v5 |96  |672  |35000 |P60 |Production |
+|Standard_E2as_v5	|2	|16  |12500 |P10 |Dev/ Test |
+|Standard_E4as_v5	|4	|32  |12500 |P15 |Dev/ Test |
+|Standard_E8as_v5	|8	|64  |12500 |P20 |Production |
+|Standard_E16as_v5|16	|128 |12500 |P30 |Production |
+|Standard_E20as_v5|20	|160 |12500 |P40 |Production |
+|Standard_E32as_v5|32	|256 |16000 |P40 |Production |
+|Standard_E48as_v5|48  |384  |24000 |P50 |Production |
+|Standard_E64as_v5|64  |512  |32000 |P50 |Production |
+|Standard_E96as_v5|96  |672  |40000 |P60 |Production |
+|Standard_E2s_v4	|2	|16  |5000  |P10 |Dev/ Test |
+|Standard_E4s_v4	|4	|32  |10000 |P15 |Dev/ Test |
+|Standard_E8s_v4	|8	|64  |12500 |P20 |Production |
+|Standard_E16s_v4 |16	|128 |12500 |P30 |Production |
+|Standard_E20s_v4 |20	|160 |10000 |P40 |Production |
+|Standard_E32s_v4 |32	|256 |16000 |P40 |Production |
+|Standard_E48s_v4 |48  |384  |24000 |P50 |Production |
+|Standard_E64s_v4 |64  |504  |30000 |P50 |Production |
+
+### Compute Optimized
+
+High CPU-to-memory ratio tier with dedicated physical cores designed for CPU-intensive caching workloads.
+
+- **Use Cases**: CPU-bound workloads, high request throughput
+
+|SKU |vCPUs |Memory (GB) |Network bandwidth (MB/s) |Premium SSD Managed Disk |Cluster Type |
+|----|------|------------|-------------------------|-------------------------|-------------|
+|Standard_F2as_v6 |2   |8    |12500 |P6  |Dev/ Test |
+|Standard_F4as_v6 |4   |16   |12500 |P10 |Dev/ Test |
+|Standard_F8as_v6 |8   |32   |12500 |P15 |Production |
+|Standard_F16as_v6|16  |64   |16000 |P20 |Production |
+|Standard_F32as_v6|32  |128  |20000 |P30 |Production |
+|Standard_F48as_v6|48  |192  |28000 |P40 |Production |
+|Standard_F64as_v6|64  |256  |36000 |P40 |Production |
 
 
 ### Cluster Types
@@ -91,37 +143,37 @@ The decision between vertical and horizontal scaling depends on your specific wo
 
 #### Vertical Scaling (Scale Up/Down)
 
-Vertical scaling involves changing the SKU of your existing cache nodes to increase or decrease their individual capacity. This approach maintains your current cluster topology while providing more or fewer resources per node. You can scale up SKU size in place within the same tier and generation.
+Vertical scaling changes the SKU of your cache nodes to increase or decrease their individual capacity while keeping the same cluster topology (shard and replica count). Vertical scaling can't be performed in place: to change the SKU you deprovision the existing cluster and reprovision it at the new SKU. Plan for this when scheduling a scale-up or scale-down operation.
 
 **When to Scale Up:**
-Vertical scaling is most effective when your workload benefits from having more resources concentrated on fewer nodes. This approach reduces network overhead between nodes and simplifies data management. Consider scaling up when you need increased memory capacity for larger datasets or higher CPU performance for complex operations.
+Vertical scaling is most effective when your workload benefits from having more resources concentrated on fewer nodes. Concentrating memory and CPU on a single larger node keeps related data together, avoids cross-shard coordination for multi-key operations, and reduces the network overhead and operational complexity of a larger topology. In many cases scaling up is preferable to scaling out: a single large SKU can deliver very high throughput on a large dataset with simpler data management and lower tail latency for multi-key and range operations, and it avoids having to partition a workload that is hard to shard. Consider scaling up when you need increased memory capacity for larger datasets or higher CPU performance for complex operations.
 
 Vector search workloads are particularly well-suited for vertical scaling because they benefit significantly from having the entire dataset available on a single node. Vector similarity searches require access to large portions of the dataset to compute accurate results, and distributing vectors across multiple nodes can introduce latency and complexity. By scaling up to larger SKUs, vector search applications can maintain all vectors in memory on a single node, enabling faster index traversal and more efficient similarity computations.
 
 **Benefits of Vertical Scaling:**
-The primary advantage of vertical scaling is operational simplicity, as it maintains your existing cluster topology while providing enhanced performance.
+The primary advantages of vertical scaling are operational simplicity and data locality. It maintains your existing cluster topology while concentrating more resources on each node, keeping your entire dataset (or each shard) on a single node for predictable, high-throughput access. The tradeoff is that changing the SKU requires deprovisioning and reprovisioning the cluster rather than an in-place update.
 
 #### Horizontal Scaling (Scale Out/In)
 
-Horizontal scaling involves adding or removing nodes from your cluster to distribute load across more instances. You can scale horizontally by adding more shards to increase memory footprint and write throughput, or by increasing the replication factor to improve read throughput and availability.
+Horizontal scaling involves adding or removing shards to distribute load across more instances. You can scale out by adding more shards to increase memory footprint and write throughput. Read throughput and availability are determined by the replication factor, which is chosen at provisioning and can't be changed afterward.
 
 **When to Scale Out:**
-Horizontal scaling becomes essential when your workload exceeds the capacity limits of individual nodes or when you need to distribute load for better performance. This approach is particularly effective for applications with high concurrent user loads or when you need to improve read performance through additional replica.
+Horizontal scaling becomes essential when your workload exceeds the capacity limits of individual nodes or when you need to distribute load for better performance. This approach is particularly effective for applications with high concurrent user loads or when you need to improve read performance through additional replicas.
 
 **Scaling with Shards vs Replicas:**
-Adding shards increases your total memory capacity and write throughput by distributing data across multiple primary nodes. Each shard handles a portion of your keyspace, allowing for parallel processing of operations. Alternatively, adding replicas primarily improves read throughput and provides better availability, as read operations can be distributed across multiple copies of your data. The [replication factor](./resiliency.md#replication) you choose directly impacts both performance and resiliency characteristics of your cluster.
+Adding shards increases your total memory capacity and write throughput by distributing data across multiple primary nodes. Each shard handles a portion of your keyspace, allowing for parallel processing of operations. A higher replication factor primarily improves read throughput and provides better availability, as read operations can be distributed across multiple copies of your data. The [replication factor](./resiliency.md#replication) is chosen at provisioning and directly impacts both performance and resiliency characteristics of your cluster.
 
 **Benefits of Horizontal Scaling:**
 Horizontal scaling provides superior fault tolerance since the failure of individual nodes has less impact on overall system availability. This approach also offers better resource utilization efficiency and can handle virtually unlimited growth by continuously adding nodes.
 
 ### How to Scale
 
-The **Settings > Cluster Explorer** page of the [Azure portal](https://aka.ms/garnet-portal) allows you to scale your cluster both vertically and horizontally. The Azure Cosmos DB Garnet Cache is in an expanded Private Preview and you must access the Azure portal through this link to manage your caches.
+The **Settings > Cluster Explorer** page of the [Azure portal](https://portal.azure.com) allows you to scale your cluster horizontally without downtime.
 
 ![Cluster Explorer](../../static/img/azure/cluster-explorer.png)
 
-You can increase the shard count to scale in/ out, or change the SKU size to scale down/ up. Replication factor can only be configured during cluster provisioning and cannot be updated in place on existing clusters.
-
+Increase or decrease the shard count to scale out or in on a running cluster. Vertical scaling (changing the SKU to scale up or down) can't be done in place and requires deprovisioning the existing cluster and reprovisioning it at the target SKU. Replication factor can only be configured during cluster provisioning and cannot be updated in place on existing clusters.
+Scaling a cluster requires the same permissions as creating one, including `Microsoft.Network/virtualNetworks/subnets/join/action` on the cluster's subnet. See [permissions to create and manage a cluster](./security.md#permissions-to-create-and-manage-a-cluster).
 ![Scale Cluster](../../static/img/azure/scale-cluster.png)
 
 ### Right-Sizing Your Deployment
