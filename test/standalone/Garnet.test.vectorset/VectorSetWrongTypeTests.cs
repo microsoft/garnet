@@ -57,6 +57,55 @@ namespace Garnet.test
         [Test]
         public void AllVectorSetCommandsCovered()
         {
+            var toCheck = GetVectorSetCommands();
+
+            var missing = new List<RespCommand>();
+            foreach (var cmd in toCheck)
+            {
+                var mtd = GetType().GetMethod($"{cmd.ToString()}Async");
+                if (mtd == null || mtd.GetCustomAttribute<TestAttribute>() == null)
+                {
+                    missing.Add(cmd);
+                }
+            }
+
+            if (missing.Count > 0)
+            {
+                var missingCmds = string.Join(", ", missing.OrderBy(static x => x.ToString()));
+
+                ClassicAssert.Fail($"Missing tests for {missing.Count:N0} commands: {missingCmds}");
+            }
+        }
+
+        [Test]
+        public void AllOtherCommandsCovered()
+        {
+            var toCheck = GetNonVectorSetCommands();
+
+            var missing = new List<RespCommand>();
+            foreach (var cmd in toCheck)
+            {
+                var mtd = GetType().GetMethod($"{cmd.ToString()}Async");
+                if (mtd == null || mtd.GetCustomAttribute<TestAttribute>() == null)
+                {
+                    missing.Add(cmd);
+                }
+            }
+
+            if (missing.Count > 0)
+            {
+                var missingCmds = string.Join(", ", missing.OrderBy(static x => x.ToString()));
+
+                ClassicAssert.Fail($"Missing tests for {missing.Count:N0} commands: {missingCmds}");
+            }
+        }
+
+        /// <summary>
+        /// Return all Vector Set commands, these need to WRONGTYPE when run against (or with) non-Vector Set keys.
+        /// </summary>
+        /// <returns></returns>
+        internal static IEnumerable<RespCommand> GetVectorSetCommands()
+        {
             ClassicAssert.IsTrue(RespCommandsInfo.TryGetRespCommandsInfo(out var info, externalOnly: true));
 
             var pending = new Stack<RespCommandsInfo>(info.Values);
@@ -85,26 +134,13 @@ namespace Garnet.test
                 }
             }
 
-            var missing = new List<RespCommand>();
-            foreach (var cmd in toCheck)
-            {
-                var mtd = GetType().GetMethod($"{cmd.ToString()}Async");
-                if (mtd == null || mtd.GetCustomAttribute<TestAttribute>() == null)
-                {
-                    missing.Add(cmd);
-                }
-            }
-
-            if (missing.Count > 0)
-            {
-                var missingCmds = string.Join(", ", missing.OrderBy(static x => x.ToString()));
-
-                ClassicAssert.Fail($"Missing tests for {missing.Count:N0} commands: {missingCmds}");
-            }
+            return toCheck;
         }
 
-        [Test]
-        public void OtherCommandsCovered()
+        /// <summary>
+        /// Return all commands that need to WRONGTYPE when run against (or with) a Vector Set key.
+        /// </summary>
+        internal static IEnumerable<RespCommand> GetNonVectorSetCommands()
         {
             ClassicAssert.IsTrue(RespCommandsInfo.TryGetRespCommandsInfo(out var info, externalOnly: true));
 
@@ -174,25 +210,17 @@ namespace Garnet.test
                 }
             }
 
-            _ = toCheck.RemoveAll(p => knownSafeOnVectorSets.Contains(p));
+            _ = toCheck.RemoveAll(knownSafeOnVectorSets.Contains);
+            _ = toCheck.RemoveAll(GetOverwritingCommands().Contains);
 
-            var missing = new List<RespCommand>();
-            foreach (var cmd in toCheck)
-            {
-                var mtd = GetType().GetMethod($"{cmd.ToString()}Async");
-                if (mtd == null || mtd.GetCustomAttribute<TestAttribute>() == null)
-                {
-                    missing.Add(cmd);
-                }
-            }
-
-            if (missing.Count > 0)
-            {
-                var missingCmds = string.Join(", ", missing.OrderBy(static x => x.ToString()));
-
-                ClassicAssert.Fail($"Missing tests for {missing.Count:N0} commands: {missingCmds}");
-            }
+            return toCheck;
         }
+
+        /// <summary>
+        /// Return all commands that can safely run against a Vector Set key, but cause that key to be overwritten.
+        /// </summary>
+        internal static IEnumerable<RespCommand> GetOverwritingCommands()
+        => [RespCommand.MSET, RespCommand.MSETNX, RespCommand.PSETEX, RespCommand.SET, RespCommand.SETEX, RespCommand.SETNX, RespCommand.SETIFGREATER, RespCommand.SETIFMATCH, RespCommand.SETWITHETAG];
 
         // Vector Set commands - these WRONGTYPE against non-Vector Set keys
 
