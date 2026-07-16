@@ -154,6 +154,7 @@ namespace Garnet.server
         {
             activeVectorManager?.WaitForVectorOperationsToComplete();
             activeVectorManager?.ShutdownReplayTasks();
+            activeRangeIndexManager?.DisposeIncompleteStreamReassembly();
             aofReplayCoordinator?.Dispose();
         }
 
@@ -458,6 +459,9 @@ namespace Garnet.server
                 case AofEntryType.StoreRMW:
                     StoreRMW(preparedParameters, stringContext, ref replayContext.parseState, activeVectorManager, activeRangeIndexManager, replayContext.respServerSession, obtainServerSession);
                     break;
+                case AofEntryType.RangeIndexStreamChunk:
+                    HandleRangeIndexStreamChunk(preparedParameters, ref replayContext.parseState, activeRangeIndexManager, replayContext.respServerSession);
+                    break;
                 case AofEntryType.StoreDelete:
                     StoreDelete(preparedParameters, stringContext);
                     break;
@@ -574,6 +578,17 @@ namespace Garnet.server
         static void StoreDelete<TStringContext>(PreparedParameters preparedParameters, TStringContext stringContext)
             where TStringContext : ITsavoriteContext<FixedSpanByteKey, StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
             => stringContext.Delete((FixedSpanByteKey)preparedParameters.Key);
+
+        static void HandleRangeIndexStreamChunk(PreparedParameters preparedParameters, ref SessionParseState parseState, RangeIndexManager rangeIndexManager, RespServerSession activeServerSession)
+        {
+            if (!activeServerSession.StoreWrapper.serverOptions.EnableRangeIndexPreview)
+                ExceptionUtils.ThrowException(new GarnetException("RangeIndexPreview disabled; Replay failed"));
+
+            var stringInput = new StringInput { parseState = parseState };
+            _ = stringInput.DeserializeFrom(preparedParameters.PayloadPtr);
+
+            rangeIndexManager.HandleRangeIndexStreamReplay(activeServerSession.storageSession, preparedParameters.Key, ref stringInput);
+        }
 
         static void ObjectStoreUpsert<TObjectContext>(PreparedParameters preparedParameters, TObjectContext objectContext, GarnetObjectSerializer garnetObjectSerializer, byte* outputPtr, int outputLength)
             where TObjectContext : ITsavoriteContext<FixedSpanByteKey, ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
