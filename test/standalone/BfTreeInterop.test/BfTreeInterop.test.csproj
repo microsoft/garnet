@@ -18,6 +18,7 @@
 
   <ItemGroup>
     <ProjectReference Include="../../../libs/native/bftree-garnet/BfTreeInterop.csproj" />
+    <ProjectReference Include="../Garnet.test/Garnet.test.csproj" />
   </ItemGroup>
 
 </Project>
