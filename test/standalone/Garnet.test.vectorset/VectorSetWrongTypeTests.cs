@@ -166,7 +166,7 @@ namespace Garnet.test
                 RespCommand.RENAME,
                 RespCommand.RENAMENX,
                 RespCommand.RESTORE,
-                RespCommand.RICREATE,
+                RespCommand.RIEXISTS,
                 RespCommand.RUNTXP,
                 RespCommand.MSETNX,
                 RespCommand.SETNX,
@@ -1666,21 +1666,21 @@ namespace Garnet.test
         }
 
         [Test]
+        public Task RICREATEAsync()
+        {
+            return TestNonVectorSetCommandAsync(RunCommandAsync);
+
+            static Task RunCommandAsync(IDatabase db, RedisKey againstKey)
+            => db.ExecuteAsync("RI.CREATE", againstKey);
+        }
+
+        [Test]
         public Task RIDELAsync()
         {
             return TestNonVectorSetCommandAsync(RunCommandAsync);
 
             static Task RunCommandAsync(IDatabase db, RedisKey againstKey)
             => db.ExecuteAsync("RI.DEL", againstKey, "foo");
-        }
-
-        [Test]
-        public Task RIEXISTSAsync()
-        {
-            return TestNonVectorSetCommandAsync(RunCommandAsync);
-
-            static Task RunCommandAsync(IDatabase db, RedisKey againstKey)
-            => db.ExecuteAsync("RI.EXISTS", againstKey);
         }
 
         [Test]
@@ -1835,7 +1835,7 @@ namespace Garnet.test
             }
             catch (RedisServerException exc)
             {
-                ClassicAssert.IsTrue(exc.Message.StartsWith("WRONGTYPE "));
+                ClassicAssert.IsTrue(exc.Message.StartsWith("WRONGTYPE "), $"Actual error: {exc.Message}");
             }
         }
 

@@ -152,22 +152,30 @@ namespace Garnet.server
                 (ulong)cacheSize, (uint)minRecordSize, (uint)maxRecordSize, (uint)maxKeyLen, (uint)leafPageSize,
                 out var result, out var errorMsg);
 
-            if (result == RangeIndexResult.OK)
+
+            if (status == GarnetStatus.WRONGTYPE)
             {
-                while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
-                    SendAndReset();
+                WriteError(CmdStrings.RESP_ERR_WRONG_TYPE);
             }
             else
             {
-                if (errorMsg.Length > 0)
+                if (result == RangeIndexResult.OK)
                 {
-                    while (!RespWriteUtils.TryWriteError(errorMsg, ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                         SendAndReset();
                 }
                 else
                 {
-                    while (!RespWriteUtils.TryWriteError("ERR range index creation failed"u8, ref dcurr, dend))
-                        SendAndReset();
+                    if (errorMsg.Length > 0)
+                    {
+                        while (!RespWriteUtils.TryWriteError(errorMsg, ref dcurr, dend))
+                            SendAndReset();
+                    }
+                    else
+                    {
+                        while (!RespWriteUtils.TryWriteError("ERR range index creation failed"u8, ref dcurr, dend))
+                            SendAndReset();
+                    }
                 }
             }
 
@@ -486,17 +494,10 @@ namespace Garnet.server
 
             var key = parseState.GetArgSliceByRef(0);
 
-            var res = storageApi.RangeIndexExists(key, out var exists);
+            _ = storageApi.RangeIndexExists(key, out var exists);
 
-            if (res == GarnetStatus.WRONGTYPE)
-            {
-                WriteError(CmdStrings.RESP_ERR_WRONG_TYPE);
-            }
-            else
-            {
-                while (!RespWriteUtils.TryWriteInt32(exists ? 1 : 0, ref dcurr, dend))
-                    SendAndReset();
-            }
+            while (!RespWriteUtils.TryWriteInt32(exists ? 1 : 0, ref dcurr, dend))
+                SendAndReset();
 
             return true;
         }

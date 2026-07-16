@@ -130,7 +130,7 @@ namespace Garnet.server
             // RMW failed - free the BfTree
             bfTree.Dispose();
             errorMsg = "ERR failed to create range index"u8;
-            return GarnetStatus.OK;
+            return status.IsWrongType ? GarnetStatus.WRONGTYPE : GarnetStatus.OK;
         }
 
         /// <summary>
@@ -579,7 +579,7 @@ namespace Garnet.server
 
             // OK means the key exists and IS a RangeIndex (WRONGTYPE/NOTFOUND for anything else)
             exists = status == GarnetStatus.OK;
-            return status;
+            return GarnetStatus.OK;
         }
 
         /// <summary>
