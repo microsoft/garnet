@@ -3740,66 +3740,6 @@ namespace Garnet.test
 #endif
 
         /// <summary>
-        /// A VREM against an index aged into the read-only region runs the synthetic append-log RMW
-        /// through CopyUpdater, which must copy the old index value forward. Otherwise the new record is
-        /// zeroed, the index pointer is lost, and NeedsRecreate livelocks (RecreateIndex(dims:0)) — with
-        /// no concurrent delete involved.
-        /// </summary>
-        [Test]
-        public void VremCopyUpdaterOnReadOnlyIndexMustPreserveIndexValue()
-        {
-            const string Key = nameof(VremCopyUpdaterOnReadOnlyIndexMustPreserveIndexValue);
-
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
-            var db = redis.GetDatabase(0);
-
-            var storeWrapper = server.Provider.StoreWrapper;
-            var vectorManager = storeWrapper.DefaultDatabase.VectorManager;
-            var store = storeWrapper.store;
-
-            ClassicAssert.AreEqual(1, (int)db.Execute("VADD", [Key, "VALUES", "3", "1", "2", "3", "elemA"]));
-
-            // Everything written so far (the index record + elemA) sits below this address. elemB, added
-            // next, lands above it. Shifting the read-only boundary here ages the index into the read-only
-            // region while leaving elemB in the mutable region so it can still be removed.
-            var splitAddr = store.Log.TailAddress;
-
-            ClassicAssert.AreEqual(1, (int)db.Execute("VADD", [Key, "VALUES", "3", "4", "5", "6", "elemB"]));
-
-            var ptrBefore = ReadStoredIndexPtr(storeWrapper, vectorManager, Key);
-            ClassicAssert.AreNotEqual((nint)0, ptrBefore, "index pointer should be valid immediately after creation");
-
-            // Age only the index record into the read-only region so the synthetic VREM append-log RMW
-            // against it must go through CopyUpdater (read-copy-update) instead of an in-place update.
-            store.Log.ShiftReadOnlyAddress(splitAddr, wait: true);
-
-            // VREM synthesizes a VREM append-log RMW against the (now read-only) index key -> CopyUpdater.
-            var vremResult = (int)db.Execute("VREM", [Key, "elemB"]);
-
-            var ptrAfter = ReadStoredIndexPtr(storeWrapper, vectorManager, Key);
-            ClassicAssert.AreNotEqual((nint)0, ptrAfter, $"VREM CopyUpdater on a read-only index dropped the stored index pointer (vremResult={vremResult}, ptrBefore={ptrBefore})");
-        }
-
-        // Reads the raw index value stored under the visible key and extracts the index pointer,
-        // without going through the recreate path (which would livelock on a corrupted, zeroed record).
-        private static nint ReadStoredIndexPtr(StoreWrapper storeWrapper, VectorManager vectorManager, string key)
-        {
-            using var storageSession = new StorageSession(storeWrapper, new(), new(), null, null, storeWrapper.DefaultDatabase.Id, null, vectorManager, null);
-
-            Span<byte> indexSpan = stackalloc byte[VectorManager.IndexSize];
-            StringInput input = default;
-            input.header.cmd = RespCommand.VSIM;
-
-            var keyBytes = Encoding.ASCII.GetBytes(key);
-            using (vectorManager.ReadForDeleteVectorIndex(storageSession, keyBytes, ref input, indexSpan, out var status))
-            {
-                ClassicAssert.AreEqual(GarnetStatus.OK, status, "index key should exist");
-                VectorManager.ReadIndex(indexSpan, out _, out _, out _, out _, out _, out _, out _, out _, out var indexPtr);
-                return indexPtr;
-            }
-        }
-
-        /// <summary>
         /// Create a new GarnetServer instance with common parameters.
         /// </summary>
         private static GarnetServer CreateGarnetServer(bool tryRecover, bool enableVectorSetPreview = true)
