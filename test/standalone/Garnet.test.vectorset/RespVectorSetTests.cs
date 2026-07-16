@@ -1390,9 +1390,7 @@ namespace Garnet.test
 
         private void InterruptedVectorSetDelete(ExceptionInjectionType faultLocation)
         {
-#if !DEBUG
-            ClassicAssert.Ignore("Relies on ExceptionInjectionHelper, disable in non-DEBUG");
-#endif
+            TestUtils.IgnoreIfExceptionInjectionDisabled();
 
             var key = $"{nameof(InterruptedVectorSetDelete)}_{faultLocation}";
 
@@ -1579,9 +1577,7 @@ namespace Garnet.test
 
         private async Task InterruptedVectorSetDeleteRecoveryAsync(ExceptionInjectionType faultLocation)
         {
-#if !DEBUG
-            ClassicAssert.Ignore("Relies on ExceptionInjectionHelper, disable in non-DEBUG");
-#endif
+            TestUtils.IgnoreIfExceptionInjectionDisabled();
 
             var key = $"{nameof(InterruptedVectorSetDeleteRecoveryAsync)}_{faultLocation}";
 

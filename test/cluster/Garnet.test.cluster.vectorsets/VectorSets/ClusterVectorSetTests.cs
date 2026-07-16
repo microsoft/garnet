@@ -16,9 +16,7 @@ using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
-#if DEBUG
 using Garnet.common;
-#endif
 using Garnet.server;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -2216,7 +2214,6 @@ namespace Garnet.test.cluster
             ClassicAssert.IsTrue(vsimRes.Length > 0);
         }
 
-#if DEBUG
         /// <summary>
         /// Replica view of the delete-during-synthetic-replication race. A paused primary VADD is raced
         /// by DEL then String SET, so its synthetic append-log RMW runs against a String record; the
@@ -2225,6 +2222,8 @@ namespace Garnet.test.cluster
         [Test]
         public async Task ReplicaReplaysSyntheticVAddAgainstStringKeyAfterRacedDeleteAsync()
         {
+            ClusterTestUtils.IgnoreIfExceptionInjectionDisabled();
+
             const int PrimaryIndex = 0;
             const int SecondaryIndex = 1;
             const string Key = "foo";
@@ -2294,7 +2293,6 @@ namespace Garnet.test.cluster
             ClassicAssert.AreEqual("string", primaryType, "Synthetic VADD must not change the raced String key away from String on the primary");
             ClassicAssert.AreEqual(primaryType, replicaType, "Replica diverged from primary after replaying a synthetic VADD against a String key");
         }
-#endif
 
         private async Task<(List<ShardInfo> Shards, List<ushort> Slots)> SimpleSetupClusterAsync(int shardCount, int primaryCount, int replicaCount, bool onDemandCheckpoint = false, bool useTLS = true)
         {
