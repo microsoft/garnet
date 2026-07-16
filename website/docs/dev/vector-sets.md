@@ -161,17 +161,12 @@ Quantizers that start with an `X` are extensions, quantizers that are not also f
 
 Some quantizers require a sample of vectors be gathered before the actual quantization can be applied.  This gathering is opaque to Garnet, but cooperates with DiskANN to move extra calculations and backfills to background tasks.
 
-Backfills are triggered by `insert` returning `DiskANNInsertResult.QuantizationRequested`, after which:
+Backfills are triggered by `insert` returning `DiskANNInsertResult.QuantizationRequested` or `create_index` setting the out param `quantizationNeeded` to true, after which:
  - `build_quant_table` is invoked on a background task once for each `DiskANNInsertResult.QuantizationRequested` returned
  - If `build_quant_table` returns 1, some number of `backfill_quant_vectors` tasks are also executed in the background
  - `backfill_quant_vectors` tasks run in parallel, each task receiving a unique `task_index` which is &lt; `task_count`
  
  It is legal for DiskANN to request quantization multiple times - it is `diskann-garnet`'s responsibility to handle any extra, or concurrent, calls to `build_quant_table` and guarantee only one success is reported.
-
- > [!NOTE]
- > Today DiskANN does not recover quantization state.
- >
- > This will be fixed in a future `diskann-garnet` release, which will also allow us to resume quantization if it was interrupted.
 
 # Locking
 
@@ -393,7 +388,7 @@ The callback returns 1 if the key-value pair was found or created, and 0 if some
 
 Garnet calls into the following DiskANN functions:
 
- - [x] `nint create_index(ulong context, uint dimensions, uint reduceDims, VectorQuantType quantType, uint buildExplorationFactor, uint numLinks, VectorDistanceMetricType distanceMetric, nint readCallback, nint writeCallback, nint deleteCallback, nint readModifyWriteCallback)`
+ - [x] `nint create_index(ulong context, uint dimensions, uint reduceDims, VectorQuantType quantType, VectorDistanceMetricType distanceMetric, uint buildExplorationFactor, uint numLinks, nint readCallback, nint writeCallback, nint deleteCallback, nint readModifyWriteCallback, nint filterCallback, out bool quantizationNeeded)`
  - [x] `void drop_index(ulong context, nint index)`
  - [x] `DiskANNInsertResult insert(ulong context, nint index, nint id_data, nuint id_len, nint vector_data, nuint vector_len, nint attribute_data, nuint attribute_len)`
  - [x] `byte remove(ulong context, nint index, nint id_data, nuint id_len)`

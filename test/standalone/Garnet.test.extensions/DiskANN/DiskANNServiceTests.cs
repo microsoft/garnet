@@ -176,7 +176,7 @@ namespace Garnet.test
             var rmwFuncPtr = Marshal.GetFunctionPointerForDelegate(rmwDel);
             var filterFuncPtr = Marshal.GetFunctionPointerForDelegate(filterDel);
 
-            var rawIndex = NativeDiskANNMethods.create_index(Context, 75, 0, VectorQuantType.XNoQuant_U8, VectorDistanceMetricType.L2, 10, 10, readFuncPtr, writeFuncPtr, deleteFuncPtr, rmwFuncPtr, filterFuncPtr);
+            var rawIndex = NativeDiskANNMethods.create_index(Context, 75, 0, VectorQuantType.XNoQuant_U8, VectorDistanceMetricType.L2, 10, 10, readFuncPtr, writeFuncPtr, deleteFuncPtr, rmwFuncPtr, filterFuncPtr, out _);
 
             Span<byte> id = [0, 1, 2, 3];
             Span<byte> elem = Enumerable.Range(0, 75).Select(static x => (byte)x).ToArray();
@@ -379,7 +379,7 @@ namespace Garnet.test
             var rmwFuncPtr = Marshal.GetFunctionPointerForDelegate(rmwDel);
             var filterFuncPtr = Marshal.GetFunctionPointerForDelegate(filterDel);
 
-            var rawIndex = NativeDiskANNMethods.create_index(Context, 75, 0, VectorQuantType.XNoQuant_U8, VectorDistanceMetricType.L2, 10, 10, readFuncPtr, writeFuncPtr, deleteFuncPtr, rmwFuncPtr, filterFuncPtr);
+            var rawIndex = NativeDiskANNMethods.create_index(Context, 75, 0, VectorQuantType.XNoQuant_U8, VectorDistanceMetricType.L2, 10, 10, readFuncPtr, writeFuncPtr, deleteFuncPtr, rmwFuncPtr, filterFuncPtr, out _);
 
             Span<byte> id = [0, 1, 2, 3];
             Span<byte> elem = Enumerable.Range(0, 75).Select(static x => (byte)x).ToArray();
@@ -424,7 +424,7 @@ namespace Garnet.test
             {
                 NativeDiskANNMethods.drop_index(Context, rawIndex);
 
-                rawIndex = NativeDiskANNMethods.create_index(Context, 75, 0, VectorQuantType.XNoQuant_U8, VectorDistanceMetricType.L2, 10, 10, readFuncPtr, writeFuncPtr, deleteFuncPtr, rmwFuncPtr, filterFuncPtr);
+                rawIndex = NativeDiskANNMethods.create_index(Context, 75, 0, VectorQuantType.XNoQuant_U8, VectorDistanceMetricType.L2, 10, 10, readFuncPtr, writeFuncPtr, deleteFuncPtr, rmwFuncPtr, filterFuncPtr, out _);
             }
 
             // Search value

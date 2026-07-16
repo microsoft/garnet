@@ -51,12 +51,9 @@ namespace Garnet.server
 #if DEBUG
             System.Threading.Interlocked.Increment(ref CreateIndexCalls);
 #endif
-            // TODO: This needs to be set appropriately - requires DiskANN changes
-            quantizationRequested = false;
-
             unsafe
             {
-                var ret = NativeDiskANNMethods.create_index(context, dimensions, reduceDims, quantType, distanceMetric, buildExplorationFactor, numLinks, (nint)readCallback, (nint)writeCallback, (nint)deleteCallback, (nint)readModifyWriteCallback, (nint)filterCallback);
+                var ret = NativeDiskANNMethods.create_index(context, dimensions, reduceDims, quantType, distanceMetric, buildExplorationFactor, numLinks, (nint)readCallback, (nint)writeCallback, (nint)deleteCallback, (nint)readModifyWriteCallback, (nint)filterCallback, out quantizationRequested);
 
                 Debug.Assert(ret != 0, "create_index failed, returning a null pointer - this shouldn't be possible");
 
@@ -347,7 +344,8 @@ namespace Garnet.server
             nint writeCallback,
             nint deleteCallback,
             nint readModifyWriteCallback,
-            nint filterCallback
+            nint filterCallback,
+            [MarshalAs(UnmanagedType.U1)] out bool quantizationNeeded
         );
 
         [LibraryImport(DISKANN_GARNET)]
