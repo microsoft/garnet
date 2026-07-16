@@ -146,9 +146,7 @@ namespace Garnet.common
         /// <param name="exceptionType"></param>
         public static void ResetAndWait(ExceptionInjectionType exceptionType)
         {
-#pragma warning disable VSTHRD002
-            ResetAndWaitAsync(exceptionType).GetAwaiter().GetResult();
-#pragma warning restore VSTHRD002
+            AsyncUtils.BlockingWait(ResetAndWaitAsync(exceptionType));
         }
 
         /// <summary>

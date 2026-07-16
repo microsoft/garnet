@@ -3633,7 +3633,6 @@ namespace Garnet.test
             }
         }
 
-#if DEBUG
         /// <summary>
         /// A VADD/VREM issues a synthetic append-log RMW (to land the write in the AOF) while holding
         /// a shared vector lock, so a concurrent DEL can tombstone the key in between.
@@ -3643,6 +3642,8 @@ namespace Garnet.test
         [Test]
         public async Task SyntheticReplicationRaceWithConcurrentDelMustNotResurrectKey([Values("VADD", "VREM")] string operation)
         {
+            TestUtils.IgnoreIfExceptionInjectionDisabled();
+
             var key = $"{nameof(SyntheticReplicationRaceWithConcurrentDelMustNotResurrectKey)}:{operation}";
             const ExceptionInjectionType Pause = ExceptionInjectionType.VectorSet_Pause_Before_Synthetic_Replication_Rmw;
 
@@ -3698,6 +3699,8 @@ namespace Garnet.test
         [Test]
         public async Task SyntheticReplicationRaceWithConcurrentDelThenStringSetMustNotCorrupt()
         {
+            TestUtils.IgnoreIfExceptionInjectionDisabled();
+
             var key = nameof(SyntheticReplicationRaceWithConcurrentDelThenStringSetMustNotCorrupt);
             const ExceptionInjectionType Pause = ExceptionInjectionType.VectorSet_Pause_Before_Synthetic_Replication_Rmw;
             const string StringValue = "not-a-vector-index";
@@ -3733,7 +3736,6 @@ namespace Garnet.test
             ClassicAssert.AreEqual(RedisType.String, dbRacer.KeyType(key), "key type was changed away from String by the synthetic replication RMW");
             ClassicAssert.AreEqual(StringValue, (string)dbRacer.StringGet(key), "String value was corrupted by the synthetic replication RMW");
         }
-#endif
 
         /// <summary>
         /// Create a new GarnetServer instance with common parameters.
