@@ -394,19 +394,27 @@ namespace Garnet.test
         [Test]
         public async Task BITFIELDAsync()
         {
-            await TestNonVectorSetCommandAsync(RunCommandAsync).ConfigureAwait(false);
+            await TestNonVectorSetCommandAsync(RunCommandSingleAsync).ConfigureAwait(false);
+            await TestNonVectorSetCommandAsync(RunCommandMultiAsync).ConfigureAwait(false);
 
-            static Task RunCommandAsync(IDatabase db, RedisKey againstKey)
+            static Task RunCommandSingleAsync(IDatabase db, RedisKey againstKey)
             => db.ExecuteAsync("BITFIELD", [againstKey, "GET", "u8", "0"]);
+
+            static Task RunCommandMultiAsync(IDatabase db, RedisKey againstKey)
+            => db.ExecuteAsync("BITFIELD", [againstKey, "GET", "u8", "0", "GET", "u8", "16"]);
         }
 
         [Test]
         public async Task BITFIELD_ROAsync()
         {
-            await TestNonVectorSetCommandAsync(RunCommandAsync).ConfigureAwait(false);
+            await TestNonVectorSetCommandAsync(RunCommandSingleAsync).ConfigureAwait(false);
+            await TestNonVectorSetCommandAsync(RunCommandMultiAsync).ConfigureAwait(false);
 
-            static Task RunCommandAsync(IDatabase db, RedisKey againstKey)
+            static Task RunCommandSingleAsync(IDatabase db, RedisKey againstKey)
             => db.ExecuteAsync("BITFIELD_RO", [againstKey, "GET", "u8", "0"]);
+
+            static Task RunCommandMultiAsync(IDatabase db, RedisKey againstKey)
+            => db.ExecuteAsync("BITFIELD_RO", [againstKey, "GET", "u8", "0", "GET", "u8", "16"]);
         }
 
         [Test]
