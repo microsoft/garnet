@@ -397,13 +397,6 @@ namespace Garnet
             var store = CreateStore(dbId, clusterFactory, customCommandManager, storeEpoch, rangeIndexManager, vectorManager, out var stateMachineDriver, out var sizeTracker, out var kvSettings);
             var aof = CreateAOF(dbId);
 
-            if (serverOptions.EnableRangeIndexPreview)
-            {
-                // Debug-time backstop; production configs are rejected earlier (allocation-free) by the
-                // RequiresMinimumMemory attribute on enable-range-index-preview.
-                rangeIndexManager.ValidateAofPageCompatibility(aof);
-            }
-
             return new GarnetDatabase(dbId, store, kvSettings, storeEpoch, stateMachineDriver, sizeTracker, aof, serverOptions.AdjustedIndexMaxCacheLines == 0, vectorManager, rangeIndexManager);
         }
 

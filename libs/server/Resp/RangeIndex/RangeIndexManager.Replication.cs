@@ -4,7 +4,6 @@
 using System;
 using System.Buffers;
 using System.Collections.Concurrent;
-using System.Diagnostics;
 using System.IO;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
@@ -292,23 +291,6 @@ namespace Garnet.server
                 ArrayPool<byte>.Shared.Return(destBuffer);
                 streamActivity.EndAndLog(logger, key);
             }
-        }
-
-        /// <summary>
-        /// Debug-time backstop ensuring the AOF page is large enough to safely hold a single
-        /// <see cref="AofEntryType.RangeIndexStreamChunk"/> entry — the current stream chunk size plus a
-        /// <see cref="DefaultMigrationChunkSize"/> safety margin. Production configs are validated earlier and
-        /// allocation-free via the <c>RequiresMinimumMemory</c> attribute on <c>enable-range-index-preview</c>;
-        /// this guards the test-only chunk-size override path (see <see cref="SetAofStreamChunkSize"/>).
-        /// </summary>
-        public void ValidateAofPageCompatibility(GarnetAppendOnlyFile appendOnlyFile)
-        {
-            if (appendOnlyFile == null)
-                return;
-
-            var pageBytes = 1L << appendOnlyFile.Log.UnsafeGetLogPageSizeBits();
-            var requiredPageBytes = (long)rangeIndexAofStreamChunkSize + DefaultMigrationChunkSize;
-            Debug.Assert(pageBytes >= requiredPageBytes, $"AOF page size ({pageBytes} bytes) is too small for range index stream chunk size {rangeIndexAofStreamChunkSize}; needs at least {requiredPageBytes} bytes. Increase --aof-page-size.");
         }
 
         /// <summary>Enqueue a single <see cref="AofEntryType.RangeIndexStreamChunk"/> chunk to the AOF.</summary>
