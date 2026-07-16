@@ -3739,8 +3739,8 @@ namespace Garnet.test
         }
 
         /// <summary>
-        /// The parked VADD holds a SHARED vector lock across its synthetic RMW, so a fresh create
-        /// (which needs an EXCLUSIVE lock) cannot slip in ahead: the realizable order is raced DEL ->
+        /// The parked VADD holds a shared vector lock across its synthetic RMW, so a fresh create
+        /// (which needs an exclusive lock) cannot slip in ahead: the realizable order is raced DEL ->
         /// synthetic RMW against the tombstone -> fresh create. Asserts the end state — the fresh index
         /// holds only its own element, with no leaked element and no recreate livelock.
         /// </summary>
@@ -3762,7 +3762,7 @@ namespace Garnet.test
             try
             {
                 // Connection 1: VADD elem1 creates the first index, then parks before its append-log RMW,
-                // holding a SHARED vector lock on the key hash.
+                // holding a shared vector lock on the key hash.
                 var opTask = Task.Run(() => dbOp.Execute("VADD", [key, "VALUES", "3", "1", "2", "3", (RedisValue)elem1]));
 
                 await ExceptionInjectionHelper.WaitOnClearAsync(Pause).WaitAsync(TimeSpan.FromSeconds(30));
