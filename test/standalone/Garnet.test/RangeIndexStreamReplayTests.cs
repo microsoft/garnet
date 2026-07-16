@@ -146,7 +146,7 @@ namespace Garnet.test
             var key = Encoding.UTF8.GetBytes("k1");
 
             // A first chunk that begins with a non-positive key length is rejected by the deserializer.
-            // Replay must fail loud (throw) after removing the failed reassembly (not left pending).
+            // Replay must throw after removing the failed reassembly (not left pending).
             var malformed = new byte[16]; // leading 4 bytes = 0 => invalid key length
             ClassicAssert.Throws<GarnetException>(() => mgr.ProcessStreamChunk(session: null, key, malformed, isFirst: true, isLast: false));
             ClassicAssert.AreEqual(0, mgr.PendingStreamReassemblyCount);
@@ -165,7 +165,7 @@ namespace Garnet.test
             ClassicAssert.Greater(chunks.Count, 2, "test needs a multi-chunk stream");
 
             // Feed the first chunk flagged as the final one while the stream is still incomplete:
-            // this is a malformed/truncated stream and must fail loud (throw) after being dropped.
+            // this is a malformed/truncated stream and must throw after being dropped.
             ClassicAssert.Throws<GarnetException>(() => mgr.ProcessStreamChunk(session: null, key, chunks[0].Chunk, isFirst: true, isLast: true));
             ClassicAssert.AreEqual(0, mgr.PendingStreamReassemblyCount);
 
@@ -191,7 +191,7 @@ namespace Garnet.test
             ClassicAssert.AreEqual(1, mgr.PendingStreamReassemblyCount);
 
             // Force PublishMigratedIndex to be treated as failed so the final chunk completes the stream
-            // but the publish is rejected. Replay must fail loud (throw) and drop the reassembly.
+            // but the publish is rejected. Replay must throw and drop the reassembly.
             ExceptionInjectionHelper.EnableException(ExceptionInjectionType.RangeIndex_Replay_Force_Publish_Failure);
             try
             {
