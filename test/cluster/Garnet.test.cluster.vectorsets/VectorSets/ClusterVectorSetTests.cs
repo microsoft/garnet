@@ -2306,7 +2306,7 @@ namespace Garnet.test.cluster
         /// element E1 must not ship E1 to the replica — primary and replica must both end with {E2} only.
         /// </summary>
         [Test]
-        public async Task ReplicaVsPrimaryAfterDelThenFreshCreateDuringSyntheticVAddReplicationAsync()
+        public async Task ReplicaMatchesPrimaryAfterDelThenFreshCreateRacesSyntheticVAddAsync()
         {
             const int PrimaryIndex = 0;
             const int SecondaryIndex = 1;
