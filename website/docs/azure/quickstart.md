@@ -38,10 +38,10 @@ During provisioning, you must either create a new virtual network for your cache
    - **Shard Count**: The number of shards in your cluster, corresponding to the number of primary nodes. The memory footprint of your cache is determined by the total memory across all primary nodes. Learn when to [scale out vs. scale up](./cluster-configuration.md#choosing-your-scaling-strategy).
    - **Replication Factor**: Determines the number of nodes in each shard. *1x* is primary nodes only with no replicas; use *2x* or higher for high availability. The replication factor can't be changed after provisioning. See [replication](./resiliency.md#replication).
    - **Total Node Count**: To modify, adjust the *Shard Count*. The total number of nodes in the cluster is calculated by *Shard Count x Replication Factor*.
-6. Optionally, fill in the Advanced tab information:
+5. Optionally, fill in the Advanced tab information:
    - **Persistence mode**: Optional. Choose **No Persistence** (in-memory only) or **Append Only File (AOF) and Redis Database (RDB)**, which combines AOF operation logs with RDB snapshots for [data persistence](./resiliency.md#data-persistence). The persistence mode can only be configured at provisioning time and can't be changed afterward.
    - **Disk SKU**: Not configurable. When data persistence is enabled, disk size is automatically selected based on the compute SKU chosen.
-5. Click **Review + Create** and then **Create**
+6. Click **Review + Create** and then **Create**
 
 
 ## Step 2: Configure Data Access with RBAC

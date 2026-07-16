@@ -280,12 +280,12 @@ The Azure Cosmos DB Garnet Cache implements a growing subset of the [open-source
 |  | [STRLEN](../commands/raw-string.md#strlen) | ➕ |  |
 |  | [SUBSTR](../commands/raw-string.md#substr) | ➕ | (Deprecated) |
 | <span id="vector-set">**VECTOR SET (Preview)**</span> | [VADD](../commands/vector-sets.md#vadd) | ➕ | Preview |
-|  | [VSIM](vector-sets.md#vsim) | ➕ | Preview |
-|  | [VREM](vector-sets.md#vrem) | ➕ | Preview |
-|  | [VEMB](vector-sets.md#vemb) | ➕ | Preview (no `RAW`) |
-|  | [VDIM](vector-sets.md#vdim) | ➕ | Preview |
-|  | [VINFO](vector-sets.md#vinfo) | ➕ | Preview |
-|  | [VGETATTR](vector-sets.md#vgetattr) | ➕ | Preview |
+|  | [VSIM](../commands/vector-sets.md#vsim) | ➕ | Preview |
+|  | [VREM](../commands/vector-sets.md#vrem) | ➕ | Preview |
+|  | [VEMB](../commands/vector-sets.md#vemb) | ➕ | Preview (no `RAW`) |
+|  | [VDIM](../commands/vector-sets.md#vdim) | ➕ | Preview |
+|  | [VINFO](../commands/vector-sets.md#vinfo) | ➕ | Preview |
+|  | [VGETATTR](../commands/vector-sets.md#vgetattr) | ➕ | Preview |
 |  | VCARD | ➖ | Not yet implemented |
 |  | VISMEMBER | ➖ | Not yet implemented |
 |  | VLINKS | ➖ | Not yet implemented |
