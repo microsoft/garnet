@@ -2308,22 +2308,22 @@ namespace Garnet.test.cluster
 #if DEBUG
         /// <summary>
         /// Companion to <see cref="ReplicaReplaysSyntheticVAddAgainstStringKeyAfterRacedDeleteAsync"/>,
-        /// exploring the "UNLINK then fresh vector set" interleaving on a replica.
+        /// exploring the "DEL then fresh vector set" interleaving on a replica.
         ///
-        /// Desired (but unrealizable) ordering: VADD(T1) -> UNLINK(T2) -> VADD-new-set(T2) -> VAddReplicate(T1).
+        /// Desired (but unrealizable) ordering: VADD(T1) -> DEL(T2) -> VADD-new-set(T2) -> VAddReplicate(T1).
         /// It is unrealizable on the primary because T1's VADD holds a SHARED vector lock on the key hash
         /// across its synthetic replicate (ReadOrCreateVectorIndex returns still holding it), so T2's fresh
         /// create (which needs an EXCLUSIVE lock) blocks until T1's VAddReplicate completes. The realizable
-        /// serialized order is therefore: VADD(T1 native) -> UNLINK(T2) -> VAddReplicate(T1, absent key) ->
+        /// serialized order is therefore: VADD(T1 native) -> DEL(T2) -> VAddReplicate(T1, absent key) ->
         /// VADD-new-set(T2). This test drives exactly that.
         ///
         /// The open question is whether the primary's synthetic VAddReplicate for the first element (E1)
-        /// still ships E1 to the replica via the AOF even though E1 was unlinked and never survives on the
+        /// still ships E1 to the replica via the AOF even though E1 was deleted and never survives on the
         /// primary. If it does, the replica replays a genuine VADD(E1) against the (momentarily absent) key
         /// and ends up with {E1, E2} while the primary only has {E2} - a silent divergence.
         /// </summary>
         [Test]
-        public async Task ReplicaVsPrimaryAfterUnlinkThenFreshCreateDuringSyntheticVAddReplicationAsync()
+        public async Task ReplicaVsPrimaryAfterDelThenFreshCreateDuringSyntheticVAddReplicationAsync()
         {
             const int PrimaryIndex = 0;
             const int SecondaryIndex = 1;
@@ -2341,7 +2341,7 @@ namespace Garnet.test.cluster
             var e1 = new byte[] { 1, 0, 0, 0 };
             var e2 = new byte[] { 2, 0, 0, 0 };
 
-            // The parked VADD blocks its own session thread, so UNLINK must run on a different TCP
+            // The parked VADD blocks its own session thread, so DEL must run on a different TCP
             // connection.
             using var opConn = await ConnectionMultiplexer.ConnectAsync(context.clusterTestUtils.GetRedisConfig(context.endpoints)).ConfigureAwait(false);
             var opDb = opConn.GetDatabase();
@@ -2366,10 +2366,10 @@ namespace Garnet.test.cluster
 
                 await ExceptionInjectionHelper.WaitOnClearAsync(ExceptionInjectionType.VectorSet_Pause_Before_Synthetic_Replication_Rmw).ConfigureAwait(false);
 
-                // UNLINK is a lock-free main-store delete: it bypasses the shared vector lock T1 still holds,
+                // DEL is a lock-free main-store delete: it bypasses the shared vector lock T1 still holds,
                 // so it removes the vector set while T1 is parked.
-                var unlinkRes = (long)context.clusterTestUtils.Execute(primary, "UNLINK", [new RedisKey(Key)]);
-                ClassicAssert.AreEqual(1, unlinkRes);
+                var delRes = (long)context.clusterTestUtils.Execute(primary, "DEL", [new RedisKey(Key)]);
+                ClassicAssert.AreEqual(1, delRes);
 
                 // Release T1: its synthetic append-log RMW for E1 now runs against the absent key.
                 ExceptionInjectionHelper.EnableException(ExceptionInjectionType.VectorSet_Pause_Before_Synthetic_Replication_Rmw);
@@ -2398,17 +2398,17 @@ namespace Garnet.test.cluster
             var replicaHasE1 = replicaMembers.Any(x => x.SequenceEqual(e1));
             var replicaHasE2 = replicaMembers.Any(x => x.SequenceEqual(e2));
 
-            TestContext.Out.WriteLine($"[unlink-then-fresh-create] vaddResult={vaddResult}, vaddError={vaddError?.Message}");
-            TestContext.Out.WriteLine($"[unlink-then-fresh-create] primary: E1={primaryHasE1}, E2={primaryHasE2}, count={primaryMembers.Length}");
-            TestContext.Out.WriteLine($"[unlink-then-fresh-create] replica: E1={replicaHasE1}, E2={replicaHasE2}, count={replicaMembers.Length}");
+            TestContext.Out.WriteLine($"[del-then-fresh-create] vaddResult={vaddResult}, vaddError={vaddError?.Message}");
+            TestContext.Out.WriteLine($"[del-then-fresh-create] primary: E1={primaryHasE1}, E2={primaryHasE2}, count={primaryMembers.Length}");
+            TestContext.Out.WriteLine($"[del-then-fresh-create] replica: E1={replicaHasE1}, E2={replicaHasE2}, count={replicaMembers.Length}");
 
-            // The primary's surviving set is the fresh one: {E2} only (E1 was unlinked before the create).
+            // The primary's surviving set is the fresh one: {E2} only (E1 was deleted before the create).
             ClassicAssert.IsTrue(primaryHasE2, "Primary lost the fresh vector set element E2");
-            ClassicAssert.IsFalse(primaryHasE1, "Primary unexpectedly retained the unlinked element E1");
+            ClassicAssert.IsFalse(primaryHasE1, "Primary unexpectedly retained the deleted element E1");
 
             // The replica must match the primary exactly - it must not resurrect E1 from a synthetic
             // append-log entry for an add that never survived on the primary.
-            ClassicAssert.AreEqual(primaryHasE1, replicaHasE1, "Replica diverged from primary on E1 (resurrected an unlinked element)");
+            ClassicAssert.AreEqual(primaryHasE1, replicaHasE1, "Replica diverged from primary on E1 (resurrected a deleted element)");
             ClassicAssert.AreEqual(primaryHasE2, replicaHasE2, "Replica diverged from primary on E2");
         }
 #endif

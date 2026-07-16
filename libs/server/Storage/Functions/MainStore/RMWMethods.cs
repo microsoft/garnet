@@ -52,7 +52,7 @@ namespace Garnet.server
                     // A genuine VADD/VREM create carries arg1 == 0. Any non-zero arg1 is a synthetic
                     // follow-up (append-log, recreate, set-flags, migrate) that is only valid against an
                     // already-existing index record; reaching NeedInitialUpdate means the key was
-                    // concurrently UNLINK'd, so we must not fabricate a new record.
+                    // concurrently deleted, so we must not fabricate a new record.
                     return input.arg1 == 0;
                 default:
                     if (input.header.cmd > RespCommandExtensions.LastValidCommand)
@@ -830,7 +830,7 @@ namespace Garnet.server
                     return TryCopyValueLengthToOutput(logRecord.ValueSpan, ref output) ? IPUResult.Succeeded : IPUResult.Failed;
                 case RespCommand.VADD:
                     // These synthetic replication writes require an existing index record. If the key was
-                    // concurrently UNLINK'd and re-typed (e.g. a raced String SET) the record is no longer
+                    // concurrently deleted and re-typed (e.g. a raced String SET) the record is no longer
                     // an index; cancel so no AOF entry is emitted and replicas don't replay the add against
                     // a non-index record.
                     if (logRecord.RecordType != VectorManager.RecordType)
@@ -867,7 +867,7 @@ namespace Garnet.server
                     return IPUResult.Succeeded;
                 case RespCommand.VREM:
                     // Same rationale as the VADD case above: a synthetic VREM replication write requires an
-                    // existing index record. If the key was concurrently UNLINK'd and re-typed, cancel.
+                    // existing index record. If the key was concurrently deleted and re-typed, cancel.
                     if (logRecord.RecordType != VectorManager.RecordType)
                     {
                         rmwInfo.Action = RMWAction.CancelOperation;
@@ -999,7 +999,7 @@ namespace Garnet.server
                 case RespCommand.VADD:
                 case RespCommand.VREM:
                     // Synthetic VADD/VREM replication writes require an existing index record. If the key
-                    // was concurrently UNLINK'd and re-typed (e.g. a raced String SET), no index remains:
+                    // was concurrently deleted and re-typed (e.g. a raced String SET), no index remains:
                     // cancel here, before a tail record is allocated, so nothing is copied to the log or
                     // AOF and replicas never replay the add/remove against a non-index record.
                     if (srcLogRecord.RecordType != VectorManager.RecordType)

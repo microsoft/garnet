@@ -3643,9 +3643,8 @@ namespace Garnet.test
         /// two-connection race, for both VADD and VREM.
         ///
         /// After a successful add/remove, the operation issues a synthetic append-log RMW just to get
-        /// the write into the AOF, holding only a SHARED vector lock. A raw main-store delete (DEL or
-        /// UNLINK — both take the same lock-free delete path, taking no vector lock) can tombstone the
-        /// key in between. On the unfixed
+        /// the write into the AOF, holding only a SHARED vector lock. A raw main-store delete (DEL, a
+        /// lock-free path taking no vector lock) can tombstone the key in between. On the unfixed
         /// code <c>NeedInitialUpdate</c> returned true for the synthetic arg on the now-absent key, and
         /// <c>InitialUpdater</c> left a zeroed index record — resurrecting the key as a phantom index
         /// that <c>NeedsRecreate</c> flags forever, livelocking the recreate loop.
@@ -3656,15 +3655,15 @@ namespace Garnet.test
         /// unfixed code, passes with the fix.
         /// </summary>
         [Test]
-        public async Task SyntheticReplicationRaceWithConcurrentUnlinkMustNotResurrectKey([Values("VADD", "VREM")] string operation)
+        public async Task SyntheticReplicationRaceWithConcurrentDelMustNotResurrectKey([Values("VADD", "VREM")] string operation)
         {
-            var key = $"{nameof(SyntheticReplicationRaceWithConcurrentUnlinkMustNotResurrectKey)}:{operation}";
+            var key = $"{nameof(SyntheticReplicationRaceWithConcurrentDelMustNotResurrectKey)}:{operation}";
             const ExceptionInjectionType Pause = ExceptionInjectionType.VectorSet_Pause_Before_Synthetic_Replication_Rmw;
 
             using var redisOp = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
-            using var redisUnlink = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            using var redisDel = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var dbOp = redisOp.GetDatabase(0);
-            var dbUnlink = redisUnlink.GetDatabase(0);
+            var dbDel = redisDel.GetDatabase(0);
 
             var elem = new byte[] { 1, 0, 0, 0 };
             var elem2 = new byte[] { 2, 0, 0, 0 };
@@ -3691,9 +3690,9 @@ namespace Garnet.test
                 // index exists, so there is something to tombstone.
                 await ExceptionInjectionHelper.WaitOnClearAsync(Pause).WaitAsync(TimeSpan.FromSeconds(30));
 
-                // Connection 2: delete the parked key with a raw main-store DEL (same lock-free path as
-                // UNLINK), tombstoning it while the operation holds only a SHARED vector lock.
-                _ = dbUnlink.KeyDelete(key);
+                // Connection 2: delete the parked key with a raw main-store DEL, tombstoning it while
+                // the operation holds only a SHARED vector lock.
+                _ = dbDel.KeyDelete(key);
 
                 // Re-arm to release the parked operation; its synthetic append-log RMW now runs against
                 // the tombstoned key.
@@ -3705,7 +3704,7 @@ namespace Garnet.test
                 ExceptionInjectionHelper.DisableException(Pause);
             }
 
-            ClassicAssert.IsFalse(dbUnlink.KeyExists(key), "synthetic replication RMW resurrected a tombstoned key as a phantom index");
+            ClassicAssert.IsFalse(dbDel.KeyExists(key), "synthetic replication RMW resurrected a tombstoned key as a phantom index");
         }
 
         /// <summary>
@@ -3717,9 +3716,9 @@ namespace Garnet.test
         /// on this path); the test documents that the concurrent-type-change interleaving is safe.
         /// </summary>
         [Test]
-        public async Task SyntheticReplicationRaceWithConcurrentUnlinkThenStringSetMustNotCorrupt()
+        public async Task SyntheticReplicationRaceWithConcurrentDelThenStringSetMustNotCorrupt()
         {
-            var key = nameof(SyntheticReplicationRaceWithConcurrentUnlinkThenStringSetMustNotCorrupt);
+            var key = nameof(SyntheticReplicationRaceWithConcurrentDelThenStringSetMustNotCorrupt);
             const ExceptionInjectionType Pause = ExceptionInjectionType.VectorSet_Pause_Before_Synthetic_Replication_Rmw;
             const string StringValue = "not-a-vector-index";
 
@@ -3766,9 +3765,9 @@ namespace Garnet.test
         /// its own element, with no leakage of the raced-away element and no recreate livelock.
         /// </summary>
         [Test]
-        public async Task ConcurrentUnlinkDuringSyntheticReplicationThenFreshCreateIsClean()
+        public async Task ConcurrentDelDuringSyntheticReplicationThenFreshCreateIsClean()
         {
-            var key = nameof(ConcurrentUnlinkDuringSyntheticReplicationThenFreshCreateIsClean);
+            var key = nameof(ConcurrentDelDuringSyntheticReplicationThenFreshCreateIsClean);
             const ExceptionInjectionType Pause = ExceptionInjectionType.VectorSet_Pause_Before_Synthetic_Replication_Rmw;
 
             using var redisOp = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
