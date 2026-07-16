@@ -7,41 +7,56 @@ using System.IO;
 namespace Tsavorite.core.Allocator.ObjectSerialization
 {
     /// <summary>
-    /// Serializes an <see cref="IHeapObject"/> into a bounded buffer, draining the buffer to an <see cref="IChunkedObjectConsumer"/>
-    /// as it fills. This lets an arbitrarily large object be written as a sequence of chunks without materializing its entire
-    /// serialized form at once (only up to <c>bufferSize</c> bytes are held at a time). The generic
-    /// <see cref="ChunkedObjectSerializer{TKey, TInput}"/> adds the record's key and input, which are forwarded to the consumer.
+    /// Serializes an <see cref="IHeapObject"/> into a bounded circular buffer, draining the buffer to an
+    /// <see cref="IChunkedObjectSerializerConsumer"/> as it fills. This lets an arbitrarily large object be written as a
+    /// sequence of chunks without materializing its entire serialized form at once (only up to <c>bufferSize</c> bytes are
+    /// held at a time). The generic <see cref="ChunkedObjectSerializer{TContext, TInput}"/> adds the record's key and input,
+    /// which are forwarded to the consumer.
     /// </summary>
     /// <remarks>
-    /// The buffer is compacted (unconsumed bytes moved to the front) rather than treated as a true wrap-around ring, so the
-    /// span handed to the consumer is always contiguous. Buffer-fill drains use <c>isComplete: false</c>; a final drain after
-    /// serialization completes uses <c>isComplete: true</c> (its data length may be zero).
+    /// The buffer is a true ring (no compaction): <see cref="head"/> is the next position to fill and <see cref="tail"/> the
+    /// next to consume, so available bytes are exposed to the consumer as up to two spans (the run from tail to the end, then
+    /// the wrapped run from the start). Buffer-fill drains use <c>isComplete: false</c>; a final drain after serialization
+    /// completes uses <c>isComplete: true</c> (its data length may be zero).
     /// </remarks>
-    public abstract class ChunkedObjectSerializer
+    /// <typeparam name="TContext">Caller state threaded through <c>Drain</c> to the consumer (e.g. the write-side chunk state).</typeparam>
+    public class ChunkedObjectSerializer<TContext>
     {
         readonly IObjectSerializer<IHeapObject> serializer;
         readonly IHeapObject valueObject;
 
-        /// <summary>Buffer holding serialized value bytes not yet consumed; unconsumed bytes are kept at the front.</summary>
-        protected readonly byte[] buffer;
+        /// <summary>The consumer that turns drained bytes into chunk records.</summary>
+        protected readonly IChunkedObjectSerializerConsumer consumer;
 
-        /// <summary>Count of valid (unconsumed) bytes at the front of <see cref="buffer"/>.</summary>
+        /// <summary>Caller state passed through to the consumer on every drain; set for the duration of <see cref="Serialize"/>.</summary>
+        protected TContext context;
+
+        /// <summary>The circular buffer holding serialized value bytes not yet consumed.</summary>
+        readonly byte[] buffer;
+        /// <summary>Next position to fill (write into).</summary>
+        int head;
+        /// <summary>Next position to consume (drain from).</summary>
+        int tail;
+        /// <summary>Number of valid (unconsumed) bytes currently in the ring; disambiguates head==tail empty vs full.</summary>
         int count;
 
-        protected ChunkedObjectSerializer(IObjectSerializer<IHeapObject> serializer, IHeapObject valueObject, int bufferSize)
+        protected ChunkedObjectSerializer(IChunkedObjectSerializerConsumer consumer, IObjectSerializer<IHeapObject> serializer, IHeapObject valueObject, int bufferSize)
         {
+            this.consumer = consumer;
             this.serializer = serializer;
             this.valueObject = valueObject;
             this.buffer = new byte[bufferSize];
         }
 
         /// <summary>
-        /// Serialize the value object, draining the buffer to the consumer as it fills, then perform a final drain with
-        /// <c>isComplete: true</c> (which also carries the key/input tail on the generic subclass).
+        /// Serialize the value object, draining the ring to the consumer as it fills, then perform a final drain with
+        /// <c>isComplete: true</c> (which also carries the key/input tail on the generic subclass). <paramref name="context"/>
+        /// is passed through to the consumer on every drain.
         /// </summary>
-        public void Serialize()
+        public void Serialize(TContext context)
         {
-            using var stream = new ChunkStream(this);
+            this.context = context;
+            using var stream = new ChunkStreamWriter(this);
             serializer.BeginSerialize(stream);
             serializer.Serialize(valueObject);
             serializer.EndSerialize();
@@ -49,41 +64,59 @@ namespace Tsavorite.core.Allocator.ObjectSerialization
         }
 
         /// <summary>
-        /// Drain the front <paramref name="length"/> bytes of <see cref="buffer"/> to the consumer.
+        /// Drain the ring's available bytes (as two spans, <paramref name="first"/> then <paramref name="second"/>) to the
+        /// consumer. The base form carries only the value; the generic subclass overrides this to also carry the key and input.
         /// </summary>
-        /// <returns>The number of bytes consumed (0..<paramref name="length"/>).</returns>
-        protected abstract long Drain(int length, bool isComplete);
+        /// <param name="first">The contiguous run of available bytes (from tail to head or the buffer end).</param>
+        /// <param name="second">The wrapped run of available bytes; empty when the ring is not wrapped.</param>
+        /// <param name="isComplete">True on the final drain of the value.</param>
+        /// <returns>The number of bytes consumed (0..<c>first.Length + second.Length</c>).</returns>
+        protected virtual int Drain(ReadOnlySpan<byte> first, ReadOnlySpan<byte> second, bool isComplete)
+            => consumer.Consume(first, second, isComplete, context);
 
-        // Append bytes into the buffer, draining (isComplete: false) whenever the buffer fills.
+        // Append bytes into the ring, draining (isComplete: false) whenever it fills.
         void Write(ReadOnlySpan<byte> src)
         {
             while (src.Length > 0)
             {
-                var space = buffer.Length - count;
-                if (space == 0)
+                if (count == buffer.Length)
                 {
-                    DrainAndCompact(isComplete: false);
-                    space = buffer.Length - count;
+                    DrainOnce(isComplete: false);
                     // If the consumer could not free any space, we cannot make progress.
-                    if (space == 0)
+                    if (count == buffer.Length)
                         throw new TsavoriteException("Chunk consumer did not consume any bytes on a full buffer");
                 }
-                var toCopy = Math.Min(space, src.Length);
-                src.Slice(0, toCopy).CopyTo(buffer.AsSpan(count));
+
+                // Fill contiguously from head to the buffer end (or as much as fits/remains), then wrap on the next iteration.
+                var free = buffer.Length - count;
+                var toEnd = buffer.Length - head;
+                var toCopy = Math.Min(src.Length, Math.Min(free, toEnd));
+                src.Slice(0, toCopy).CopyTo(buffer.AsSpan(head));
+                head += toCopy;
+                if (head == buffer.Length)
+                    head = 0;
                 count += toCopy;
                 src = src.Slice(toCopy);
             }
         }
 
-        void DrainAndCompact(bool isComplete)
+        // Present the ring's unconsumed bytes as [tail..end] then [0..head] (the second span is empty when not wrapped) and
+        // drain them, advancing tail by however many the consumer took.
+        void DrainOnce(bool isComplete)
         {
-            var consumed = (int)Drain(count, isComplete);
+            var firstLen = Math.Min(count, buffer.Length - tail);
+            var first = new ReadOnlySpan<byte>(buffer, tail, firstLen);
+            var secondLen = count - firstLen;
+            var second = secondLen > 0 ? new ReadOnlySpan<byte>(buffer, 0, secondLen) : default;
+
+            var consumed = Drain(first, second, isComplete);
             if (consumed < 0 || consumed > count)
                 throw new TsavoriteException($"Chunk consumer returned invalid consumed count {consumed} for {count} bytes");
-            var remaining = count - consumed;
-            if (remaining > 0 && consumed > 0)
-                buffer.AsSpan(consumed, remaining).CopyTo(buffer.AsSpan(0));
-            count = remaining;
+
+            tail += consumed;
+            if (tail >= buffer.Length)
+                tail -= buffer.Length;
+            count -= consumed;
         }
 
         // Drain whatever remains as the final chunk (isComplete: true). Loops in case the consumer takes it in pieces.
@@ -91,16 +124,16 @@ namespace Tsavorite.core.Allocator.ObjectSerialization
         {
             do
             {
-                DrainAndCompact(isComplete: true);
+                DrainOnce(isComplete: true);
             } while (count > 0);
         }
 
-        /// <summary>A write-only <see cref="Stream"/> that funnels serialized bytes into the owning serializer's buffer.</summary>
-        sealed class ChunkStream : Stream
+        /// <summary>A write-only <see cref="Stream"/> that funnels serialized bytes into the owning serializer's ring buffer.</summary>
+        sealed class ChunkStreamWriter : Stream
         {
-            readonly ChunkedObjectSerializer owner;
+            readonly ChunkedObjectSerializer<TContext> owner;
 
-            internal ChunkStream(ChunkedObjectSerializer owner) => this.owner = owner;
+            internal ChunkStreamWriter(ChunkedObjectSerializer<TContext> owner) => this.owner = owner;
 
             public override void Write(byte[] array, int offset, int length) => owner.Write(new ReadOnlySpan<byte>(array, offset, length));
             public override void Write(ReadOnlySpan<byte> span) => owner.Write(span);
@@ -119,41 +152,41 @@ namespace Tsavorite.core.Allocator.ObjectSerialization
     }
 
     /// <summary>
-    /// This form of <see cref="ChunkedObjectSerializer"/> carries the record's key and input, which are passed to the consumer
-    /// on each drain so the consumer can write the key (first chunk) and input (final chunk) alongside the value data.
+    /// A <see cref="ChunkedObjectSerializer{TContext}"/> that also carries the record's key and input, passed to the consumer
+    /// on each drain so it can write the key (first chunk) and input (final chunk) alongside the value data.
     /// </summary>
-    /// <typeparam name="TKey">The record key type.</typeparam>
+    /// <typeparam name="TContext">Caller state threaded through to the consumer.</typeparam>
     /// <typeparam name="TInput">The record input type.</typeparam>
-    public sealed class ChunkedObjectSerializer<TKey, TInput> : ChunkedObjectSerializer
-        where TKey : IKey
+    public sealed unsafe class ChunkedObjectSerializer<TContext, TInput> : ChunkedObjectSerializer<TContext>
         where TInput : IStoreInput
     {
-        /// <summary>The caller's key, passed to Consume.</summary>
-        /// <remarks>SAFETY: This is safe as long as we do not exit the scope of any pinned or fixed memory.</remarks>
-        TKey key;
+        // TODO: Consider changing this from ConditionallyHoistedKey to IKey. One concern is that if this is called with a
+        // LogRecord.Key, then the underlying LogRecord might be evicted when we pulse epochAccessor. That could be dealt with by
+        // having ConditionallyHoistedKey "adopt" the underlying byte[] or OverflowByteArray rather than copying it as it
+        // currently does.
+        /// <summary>The record's key, passed to the consumer on each drain.</summary>
+        ConditionallyHoistedKey key;
 
-        /// <summary>The caller's input, passed to Consume.</summary>
-        /// <remarks>SAFETY: This is safe as long as we do not exit the scope of any pinned or fixed memory.</remarks>
+        /// <summary>The record's input, passed to the consumer on each drain.</summary>
+        /// <remarks>SAFETY: safe as long as we do not exit the scope of any pinned or fixed memory.</remarks>
         TInput input;
 
         /// <summary>The input's serialized length, captured at construction so it is available independent of <see cref="input"/>.</summary>
         readonly int inputSerializedLength;
 
-        readonly IChunkedObjectConsumer consumer;
-
-        public ChunkedObjectSerializer(TKey key, ref TInput input, IObjectSerializer<IHeapObject> serializer, IHeapObject valueObject, int bufferSize, IChunkedObjectConsumer consumer)
-            : base(serializer, valueObject, bufferSize)
+        public ChunkedObjectSerializer(in ConditionallyHoistedKey key, ref TInput input, IChunkedObjectSerializerConsumer consumer, IObjectSerializer<IHeapObject> serializer, IHeapObject valueObject, int bufferSize)
+            : base(consumer, serializer, valueObject, bufferSize)
         {
             this.key = key;
             this.input = input;
             this.inputSerializedLength = input.SerializedLength;
-            this.consumer = consumer;
         }
 
         /// <summary>The input's serialized length, captured at construction.</summary>
         public int InputSerializedLength => inputSerializedLength;
 
-        protected override long Drain(int length, bool isComplete)
-            => consumer.Consume(new ReadOnlySpan<byte>(buffer, 0, length), isComplete, key, ref input);
+        /// <inheritdoc/>
+        protected override int Drain(ReadOnlySpan<byte> first, ReadOnlySpan<byte> second, bool isComplete)
+            => consumer.Consume(first, second, isComplete, key, ref input, context);
     }
 }

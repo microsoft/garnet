@@ -59,10 +59,9 @@ namespace Garnet.server
 
             input.header.flags |= RespInputFlags.Deterministic;
 
-            // TODO(aof-chunk): thread epochAccessor so the caller's (store) epoch is suspended during AOF flush waits.
-            _ = epochAccessor;
-
-            // Defer object serialization: streamed into chunk records via the AOF's ChunkedObjectSerializer.
+            // Object serialization is deferred to the AOF: GarnetLog.EnqueueObjectChunked streams the object into chunk
+            // records via the ChunkedObjectSerializer without materializing the whole serialized value. The store epoch
+            // (epochAccessor) is suspended only while blocked on an AOF flush during chunk allocation.
             functionsState.appendOnlyFile.Log.EnqueueObjectChunked(
                 AofEntryType.UnifiedStoreObjectUpsert,
                 version,
@@ -71,6 +70,7 @@ namespace Garnet.server
                 value,
                 ref input,
                 functionsState.garnetObjectSerializer,
+                epochAccessor,
                 out _);
         }
 

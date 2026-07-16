@@ -554,11 +554,13 @@ namespace Garnet.server
             // Initialize only for multi-log
             virtualSublogAccessVector = [.. Enumerable.Range(0, appendOnlyFile.Log.Size).Select(_ => new BitVector(AofShardedLogTransactionHeader.ReplayTaskAccessVectorBytes))];
 
-            // If sharded log is enabled calculate sublog access bitmap
-            for (var i = 0; i < txnKeysParseState.Count; i++)
+            // Compute the sublog access bitmap from the transaction's locked keys. keyEntries is populated in both
+            // standalone and cluster mode (via SaveKeyEntryToLock), unlike txnKeysParseState which is only filled during
+            // cluster slot verification (TxnClusterSlotCheck.SaveKeyArgSlice returns early when !clusterEnabled). The
+            // stored keyHash equals GarnetLog.HASH of the key, so it is used directly (no re-hashing).
+            for (var i = 0; i < keyEntries.Count; i++)
             {
-                ref var key = ref txnKeysParseState.GetArgSliceByRef(i);
-                var keyHash = GarnetLog.HASH(key.ReadOnlySpan);
+                var keyHash = keyEntries.GetKeyHash(i);
                 var physicalSublogIdx = appendOnlyFile.Log.GetPhysicalSublogIdx(keyHash);
                 var replayIdx = appendOnlyFile.Log.GetReplayTaskIdx(keyHash);
                 physicalSublogAccessVector |= 1UL << physicalSublogIdx;

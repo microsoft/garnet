@@ -129,7 +129,7 @@ namespace Garnet.server
         };
 
         /// <summary>
-        /// True if this op's replayed record carries a length-prefixed value component after the key (Upsert shapes). This mirrors
+        /// True if this op's replayed record carries a length-prefixed value currentComponent after the key (Upsert shapes). This mirrors
         /// the layout the replay parsers expect, and is used by both the chunked writer (which components to emit) and the reader
         /// (how to reconstruct), so they always agree.
         /// </summary>

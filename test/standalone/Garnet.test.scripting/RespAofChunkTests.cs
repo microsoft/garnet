@@ -229,7 +229,7 @@ namespace Garnet.test
         [Test]
         public async Task AofLargeInputRmwBrokenAcrossPagesRecoverTest()
         {
-            // APPEND logs as StoreRMW, whose (large) payload rides entirely in the input component. A ~3 MB APPEND therefore
+            // APPEND logs as StoreRMW, whose (large) payload rides entirely in the input currentComponent. A ~3 MB APPEND therefore
             // forces the INPUT to be split across multiple chunk records / pages, and the RMW is replayed from the reassembled input.
             const string key = "appendkey";
             var chunk = MakeValue(3 * 1024 * 1024);
@@ -248,6 +248,32 @@ namespace Garnet.test
             {
                 var db = redis.GetDatabase(0);
                 ClassicAssert.AreEqual(chunk, (string)db.StringGet(key));
+            }
+        }
+
+        [Test]
+        public async Task AofLargeKeySmallInputInlineRmwRecoverTest()
+        {
+            // A ~2 MB key with a SMALL APPEND payload: the large key makes the record chunkable and span pages, while the small
+            // input fits a single record and is written inline (no materialized input buffer). Recovery replays the RMW from the
+            // reassembled key and the inline input. Complements AofLargeInputRmwBrokenAcrossPagesRecoverTest (which splits the input).
+            var key = "IK:" + MakeValue(2 * 1024 * 1024);
+            const string value = "small-appended-value";
+
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
+            {
+                var db = redis.GetDatabase(0);
+                _ = db.StringAppend(key, value);
+                ClassicAssert.AreEqual(value, (string)db.StringGet(key));
+            }
+
+            _ = await server.Store.CommitAOFAsync(default);
+            RestartForRecovery();
+
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
+            {
+                var db = redis.GetDatabase(0);
+                ClassicAssert.AreEqual(value, (string)db.StringGet(key));
             }
         }
 
@@ -391,17 +417,10 @@ namespace Garnet.test
         }
 
         [Test]
-        [Ignore("Blocked by a pre-existing multilog transaction bug (independent of chunking, and NOT object-specific): under " +
-                "standalone AofPhysicalSublogCount>1, an internal transaction (here KeyRename) computes an empty " +
-                "physicalSublogAccessVector because TransactionManager.ComputeSublogAccessVector derives it from txnKeysParseState, " +
-                "which is only populated in cluster mode (TxnKeyManager.SaveKeyArgSlice early-returns when !clusterEnabled), whereas " +
-                "RENAME registers keys via SaveKeyEntryToLock->keyEntries. The empty vector makes GarnetLog.EnqueueTxn skip the " +
-                "TxnStart marker and (Debug) trip the ShardedLog.UnlockSublogs assert / (Release) corrupt the AOF -> crash on restart. " +
-                "Masked in cluster mode. Fix: ComputeSublogAccessVector should iterate keyEntries, not txnKeysParseState.")]
         public async Task AofChunkShardedObjectRecoverTest()
         {
             // Sharded object chunking: a large hash re-upserted via rename (ObjectStoreUpsert) is written as AofShardedChunkHeader
-            // value chunks into a sublog, then recovered. Currently fails at recovery — see the [Ignore] reason above.
+            // value chunks into a sublog, then recovered. Exercises the sharded object-chunk path end-to-end.
             UseTopology(replayTasks: 1, sublogs: 2);
 
             var hash = Enumerable.Range(0, 64).Select(i => new HashEntry("f" + i, MakeValue(16 * 1024))).ToArray();

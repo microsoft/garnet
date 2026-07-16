@@ -1,9 +1,11 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System.Buffers;
 using System.Diagnostics;
 using System.IO;
 using System.Text;
+using Garnet.common;
 using Tsavorite.core;
 
 namespace Garnet.server
@@ -45,6 +47,18 @@ namespace Garnet.server
 
             using var ms = new MemoryStream(data);
             using var binaryReader = new BinaryReader(ms, Encoding.UTF8);
+            return DeserializeInternal(binaryReader);
+        }
+
+        /// <summary>Thread-safe streaming deserialize over a (possibly multi-segment) byte sequence.</summary>
+        /// <remarks>Avoids flattening the sequence into one contiguous array: a <see cref="BinaryReader"/> reads across the
+        /// segments via a <see cref="ReadOnlySequenceStream"/>, copying only into its own small read buffers.</remarks>
+        /// <param name="data">The serialized object bytes, possibly spread across multiple segments.</param>
+        /// <returns>The deserialized object.</returns>
+        public IGarnetObject Deserialize(in ReadOnlySequence<byte> data)
+        {
+            using var stream = new ReadOnlySequenceStream(data);
+            using var binaryReader = new BinaryReader(stream, Encoding.UTF8);
             return DeserializeInternal(binaryReader);
         }
 

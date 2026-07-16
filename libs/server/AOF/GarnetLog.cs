@@ -10,7 +10,6 @@ using System.Threading.Tasks;
 using Garnet.common;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
-using Tsavorite.core.Allocator.ObjectSerialization;
 
 namespace Garnet.server
 {
@@ -598,7 +597,7 @@ namespace Garnet.server
         {
             if (IsChunkable(key, value, input.SerializedLength))
             {
-                EnqueueSpanChunked(opType, version, sessionId, key, value, opType.HasChunkValue(), ref input, opType.HasChunkInput(), out logicalAddress);
+                EnqueueSpanChunked(opType, version, sessionId, key, value, opType.HasChunkValue(), ref input, opType.HasChunkInput(), epochAccessor, out logicalAddress);
                 return;
             }
 
@@ -651,15 +650,15 @@ namespace Garnet.server
             }
         }
 
-        // Chunk when the combined component data would exceed the minimum partial-allocation size. Chunking applies to ALL op
+        // Chunk when the combined currentComponent data would exceed the minimum partial-allocation size. Chunking applies to ALL op
         // shapes so that a large key (or key+value/input) is split across page-sized chunk records; the exact components written
         // are determined by the op type (HasChunkValue/HasChunkInput), matching the layout the replay parsers expect.
         static bool IsChunkable(ReadOnlySpan<byte> key, ReadOnlySpan<byte> value, int inputSerializedLength)
             => (long)key.TotalSize() + value.TotalSize() + inputSerializedLength > TsavoriteLog.MinPartialAllocSize;
 
         // Write a large record as chunk records. writeValue/writeInput select the components (key is always written). The full
-        // component lengths are stamped into the chunk header up front so the reader can pre-allocate one buffer per component.
-        void EnqueueSpanChunked<TInput>(AofEntryType opType, long version, int sessionId, ReadOnlySpan<byte> key, ReadOnlySpan<byte> value, bool writeValue, ref TInput input, bool writeInput, out long logicalAddress)
+        // currentComponent lengths are stamped into the chunk header up front so the reader can pre-allocate one buffer per currentComponent.
+        void EnqueueSpanChunked<TInput>(AofEntryType opType, long version, int sessionId, ReadOnlySpan<byte> key, ReadOnlySpan<byte> value, bool writeValue, ref TInput input, bool writeInput, IEpochAccessor epochAccessor, out long logicalAddress)
             where TInput : IStoreInput
         {
             var chunkHeader = new AofChunkHeader
@@ -685,7 +684,7 @@ namespace Garnet.server
                     },
                     chunkHeader = chunkHeader
                 };
-                singleLog.log.EnqueueChunkedSpan(header, AofBasicChunkHeader.ObjectIdOffset, (FixedSpanByteKey)key, value, writeValue, ref input, writeInput, out logicalAddress);
+                singleLog.log.EnqueueChunkedSpan(header, AofBasicChunkHeader.ObjectIdOffset, (FixedSpanByteKey)key, value, writeValue, ref input, writeInput, epochAccessor, out logicalAddress);
             }
             else
             {
@@ -706,7 +705,7 @@ namespace Garnet.server
                     },
                     chunkHeader = chunkHeader
                 };
-                shardedLog.sublog[physicalSublogIdx].EnqueueChunkedSpan(header, AofShardedChunkHeader.ObjectIdOffset, (FixedSpanByteKey)key, value, writeValue, ref input, writeInput, out logicalAddress);
+                shardedLog.sublog[physicalSublogIdx].EnqueueChunkedSpan(header, AofShardedChunkHeader.ObjectIdOffset, (FixedSpanByteKey)key, value, writeValue, ref input, writeInput, epochAccessor, out logicalAddress);
 
                 if (serverOptions.AofAutoCommit)
                     Commit();
@@ -720,7 +719,7 @@ namespace Garnet.server
             // RMW shape (key + input, no value). Chunk when large so a big key/input is split across page-sized records.
             if (IsChunkable(key, default, input.SerializedLength))
             {
-                EnqueueSpanChunked(opType, version, sessionId, key, default, opType.HasChunkValue(), ref input, opType.HasChunkInput(), out logicalAddress);
+                EnqueueSpanChunked(opType, version, sessionId, key, default, opType.HasChunkValue(), ref input, opType.HasChunkInput(), epochAccessor, out logicalAddress);
                 return;
             }
 
@@ -778,7 +777,7 @@ namespace Garnet.server
             if (IsChunkable(key, value, 0))
             {
                 var dummyInput = default(StringInput);
-                EnqueueSpanChunked(opType, version, sessionId, key, value, opType.HasChunkValue(), ref dummyInput, opType.HasChunkInput(), out logicalAddress);
+                EnqueueSpanChunked(opType, version, sessionId, key, value, opType.HasChunkValue(), ref dummyInput, opType.HasChunkInput(), epochAccessor, out logicalAddress);
                 return;
             }
 
@@ -834,7 +833,7 @@ namespace Garnet.server
         /// pinned key; hoisted for a non-pinned one).
         /// </summary>
         internal unsafe void EnqueueObjectChunked<TKey, TInput>(AofEntryType opType, long version, int sessionId, TKey key, IHeapObject value,
-                ref TInput input, IObjectSerializer<IHeapObject> objectSerializer, out long logicalAddress)
+                ref TInput input, IObjectSerializer<IHeapObject> objectSerializer, IEpochAccessor epochAccessor, out long logicalAddress)
             where TKey : IKey
 #if NET9_0_OR_GREATER
                 , allows ref struct
@@ -873,8 +872,7 @@ namespace Garnet.server
                     chunkHeader = chunkHeader
                 };
                 var chKey = ConditionallyHoistedKey.Create(key, log.BufferPool);
-                var serializer = new ChunkedObjectSerializer<ConditionallyHoistedKey, TInput>(chKey, ref input, objectSerializer, value, ChunkBufferSize(log, value), log);
-                log.EnqueueChunkedObject(header, AofBasicChunkHeader.ObjectIdOffset, serializer, writeInput: opType.HasChunkInput(), out logicalAddress);
+                log.EnqueueChunkedObject(header, AofBasicChunkHeader.ObjectIdOffset, in chKey, ref input, objectSerializer, value, ChunkBufferSize(log, value), writeInput: opType.HasChunkInput(), epochAccessor, out logicalAddress);
                 chKey.Dispose();
             }
             // Multi physical sublogs and multi-replay support
@@ -898,8 +896,7 @@ namespace Garnet.server
                     chunkHeader = chunkHeader
                 };
                 var chKey = ConditionallyHoistedKey.Create(key, log.BufferPool);
-                var serializer = new ChunkedObjectSerializer<ConditionallyHoistedKey, TInput>(chKey, ref input, objectSerializer, value, ChunkBufferSize(log, value), log);
-                log.EnqueueChunkedObject(header, AofShardedChunkHeader.ObjectIdOffset, serializer, writeInput: opType.HasChunkInput(), out logicalAddress);
+                log.EnqueueChunkedObject(header, AofShardedChunkHeader.ObjectIdOffset, in chKey, ref input, objectSerializer, value, ChunkBufferSize(log, value), writeInput: opType.HasChunkInput(), epochAccessor, out logicalAddress);
                 chKey.Dispose();
 
                 if (serverOptions.AofAutoCommit)
@@ -1071,7 +1068,8 @@ namespace Garnet.server
             // RMW shape (key + input, no value). Chunk when large so a big key/input is split across page-sized records.
             if (IsChunkable(key, default, input.SerializedLength))
             {
-                EnqueueSpanChunked(opType, version, sessionId, key, default, opType.HasChunkValue(), ref input, opType.HasChunkInput(), out logicalAddress);
+                // No caller store epoch on this path (e.g. replication replay), so nothing to suspend during a flush wait.
+                EnqueueSpanChunked(opType, version, sessionId, key, default, opType.HasChunkValue(), ref input, opType.HasChunkInput(), epochAccessor: null, out logicalAddress);
                 return;
             }
 

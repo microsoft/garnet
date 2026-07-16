@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -112,7 +112,12 @@ namespace Garnet.server
             /// </summary>
             /// <param name="sublogIdx"></param>
             /// <param name="entry"></param>
-            internal void AddFuzzyRegionOperation(int sublogIdx, ReadOnlySpan<byte> entry) => aofReplayContext[sublogIdx].fuzzyRegionOps.Add(entry.ToArray());
+            internal void AddFuzzyRegionOperation(int sublogIdx, ReadOnlySpan<byte> entry) => aofReplayContext[sublogIdx].fuzzyRegionOps.Add(new ReplayOperation(entry.ToArray()));
+
+            /// <summary>
+            /// Buffer a completed chunked-record accumulator as a fuzzy-region operation.
+            /// </summary>
+            internal void AddFuzzyRegionOperation(int sublogIdx, ChunkedAccumulator acc) => aofReplayContext[sublogIdx].fuzzyRegionOps.Add(new ReplayOperation(acc));
 
             /// <summary>
             /// This method will perform one of the following
@@ -164,7 +169,7 @@ namespace Garnet.server
                         case AofEntryType.StoredProcedure:
                             throw new GarnetException($"Unexpected AOF header operation type {header.opType} within transaction");
                         default:
-                            group.Operations.Add(new ReadOnlySpan<byte>(ptr, length).ToArray());
+                            group.Operations.Add(new ReplayOperation(new ReadOnlySpan<byte>(ptr, length).ToArray()));
                             break;
                     }
 
@@ -248,6 +253,22 @@ namespace Garnet.server
             }
 
             /// <summary>
+            /// Buffer a completed chunked-record operation into the active transaction group for its session, if any. A chunked
+            /// record is only ever a data op (never a Txn{Start,Commit,Abort} marker), so this only handles the "add to an
+            /// existing group" case; standalone chunked ops return false and are replayed by the caller.
+            /// </summary>
+            /// <returns>True if the op was buffered into an active transaction group; otherwise false.</returns>
+            internal bool AddOrReplayTransactionOperation(int virtualSublogIdx, ChunkedAccumulator acc)
+            {
+                if (aofReplayContext[virtualSublogIdx].activeTxns.TryGetValue(acc.sessionID, out var group))
+                {
+                    group.Operations.Add(new ReplayOperation(acc));
+                    return true;
+                }
+                return false;
+            }
+
+            /// <summary>
             /// Process fuzzy region operations if any
             /// </summary>
             /// <param name="sublogIdx"></param>
@@ -261,19 +282,33 @@ namespace Garnet.server
                 var replayContext = GetReplayContext(sublogIdx);
                 foreach (var entry in fuzzyRegionOps)
                 {
-                    fixed (byte* entryPtr = entry)
+                    if (entry.IsChunked)
                     {
-                        var header = *(AofHeader*)entryPtr;
                         _ = aofProcessor.ReplayOpDispatch(
                             sublogIdx,
-                            header,
+                            entry.Chunk,
                             replayContext,
                             replayContext.StringBasicContext,
                             replayContext.ObjectBasicContext,
                             replayContext.UnifiedBasicContext,
-                            entryPtr,
-                            entry.Length,
                             asReplica);
+                    }
+                    else
+                    {
+                        fixed (byte* entryPtr = entry.Record)
+                        {
+                            var header = *(AofHeader*)entryPtr;
+                            _ = aofProcessor.ReplayOpDispatch(
+                                sublogIdx,
+                                header,
+                                replayContext,
+                                replayContext.StringBasicContext,
+                                replayContext.ObjectBasicContext,
+                                replayContext.UnifiedBasicContext,
+                                entryPtr,
+                                entry.Record.Length,
+                                asReplica);
+                        }
                     }
                 }
             }
@@ -400,13 +435,22 @@ namespace Garnet.server
                 // Helper to iterate of transaction keys and add them to lockset
                 static void SaveTransactionGroupKeysToLock(TransactionManager txnManager, TransactionGroup txnGroup)
                 {
-                    foreach (var entry in txnGroup.Operations)
+                    foreach (var op in txnGroup.Operations)
                     {
-                        fixed (byte* entryPtr = entry)
+                        if (op.IsChunked)
                         {
-                            var curr = AofHeader.SkipHeader(entryPtr);
-                            var key = PinnedSpanByte.FromLengthPrefixedPinnedPointer(curr);
-                            txnManager.SaveKeyEntryToLock(key, LockType.Exclusive);
+                            var acc = op.Chunk;
+                            fixed (byte* keyPtr = acc.key)
+                                txnManager.SaveKeyEntryToLock(PinnedSpanByte.FromPinnedPointer(keyPtr, acc.keyOffset), LockType.Exclusive);
+                        }
+                        else
+                        {
+                            fixed (byte* entryPtr = op.Record)
+                            {
+                                var curr = AofHeader.SkipHeader(entryPtr);
+                                var key = PinnedSpanByte.FromLengthPrefixedPinnedPointer(curr);
+                                txnManager.SaveKeyEntryToLock(key, LockType.Exclusive);
+                            }
                         }
                     }
                 }
@@ -420,22 +464,37 @@ namespace Garnet.server
                     where TUnifiedContext : ITsavoriteContext<FixedSpanByteKey, UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator>
                 {
                     var replayContext = aofProcessor.aofReplayCoordinator.GetReplayContext(txnGroup.VirtualSublogIdx);
-                    foreach (var entry in txnGroup.Operations)
+                    foreach (var op in txnGroup.Operations)
                     {
-                        fixed (byte* entryPtr = entry)
+                        if (op.IsChunked)
                         {
-                            var header = *(AofHeader*)entryPtr;
                             _ = aofProcessor.ReplayOpDispatch(
                                 txnGroup.VirtualSublogIdx,
-                                header,
+                                op.Chunk,
                                 replayContext,
                                 stringContext,
                                 objectContext,
                                 unifiedContext,
-                                entryPtr,
-                                entry.Length,
                                 asReplica: asReplica,
                                 logAddressSequenceNumber: entryAddress);
+                        }
+                        else
+                        {
+                            fixed (byte* entryPtr = op.Record)
+                            {
+                                var header = *(AofHeader*)entryPtr;
+                                _ = aofProcessor.ReplayOpDispatch(
+                                    txnGroup.VirtualSublogIdx,
+                                    header,
+                                    replayContext,
+                                    stringContext,
+                                    objectContext,
+                                    unifiedContext,
+                                    entryPtr,
+                                    op.Record.Length,
+                                    asReplica: asReplica,
+                                    logAddressSequenceNumber: entryAddress);
+                            }
                         }
                     }
                 }

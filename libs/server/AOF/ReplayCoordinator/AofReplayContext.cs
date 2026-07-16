@@ -13,7 +13,7 @@ namespace Garnet.server
     /// </summary>
     internal sealed class AofReplayContext
     {
-        public readonly List<byte[]> fuzzyRegionOps = [];
+        public readonly List<ReplayOperation> fuzzyRegionOps = [];
         public readonly Queue<TransactionGroup> txnGroupBuffer = [];
         public readonly Dictionary<int, TransactionGroup> activeTxns = [];
 
@@ -84,7 +84,7 @@ namespace Garnet.server
         public void AddToFuzzyRegionBuffer(TransactionGroup group, ReadOnlySpan<byte> commitMarker)
         {
             // Add commit marker operation
-            fuzzyRegionOps.Add(commitMarker.ToArray());
+            fuzzyRegionOps.Add(new ReplayOperation(commitMarker.ToArray()));
             // Enqueue transaction group
             txnGroupBuffer.Enqueue(group);
         }
