@@ -2291,6 +2291,7 @@ namespace Garnet.test.cluster
             var replicaType = (string)context.clusterTestUtils.Execute(secondary, "TYPE", [new RedisKey(Key)]);
             TestContext.Out.WriteLine($"[replica-synthetic-vadd] replicaType={replicaType}");
 
+            ClassicAssert.AreEqual("string", primaryType, "Synthetic VADD must not change the raced String key away from String on the primary");
             ClassicAssert.AreEqual(primaryType, replicaType, "Replica diverged from primary after replaying a synthetic VADD against a String key");
         }
 #endif
