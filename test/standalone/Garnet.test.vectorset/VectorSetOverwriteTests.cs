@@ -83,6 +83,36 @@ namespace Garnet.test
             }
         }
 
+        [Test]
+        public Task PSETEXAsync()
+        {
+            return TestVectorSetOverwrittenCommandAsync(RunCommand);
+
+            static async Task RunCommand(IDatabase db, RedisKey againstKey)
+            {
+                var res = await db.ExecuteAsync("PSETEX", [againstKey, "10000", "foo"]).ConfigureAwait(false);
+                ClassicAssert.AreEqual("OK", (string)res);
+
+                var finalValue = await db.StringGetAsync(againstKey).ConfigureAwait(false);
+                ClassicAssert.AreEqual("foo", finalValue);
+            }
+        }
+
+        [Test]
+        public Task SETEXAsync()
+        {
+            return TestVectorSetOverwrittenCommandAsync(RunCommand);
+
+            static async Task RunCommand(IDatabase db, RedisKey againstKey)
+            {
+                var res = await db.ExecuteAsync("SETEX", [againstKey, "10", "foo"]).ConfigureAwait(false);
+                ClassicAssert.AreEqual("OK", (string)res);
+
+                var finalValue = await db.StringGetAsync(againstKey).ConfigureAwait(false);
+                ClassicAssert.AreEqual("foo", finalValue);
+            }
+        }
+
         // Infrastructure
 
         private async Task TestVectorSetOverwrittenCommandAsync(Func<IDatabase, RedisKey, Task> runCommand)

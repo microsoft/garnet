@@ -486,7 +486,33 @@ namespace Garnet.server
             var value = parseState.GetArgSliceByRef(2);
 
             var input = new StringInput(RespCommand.SETEX, 0, valMetadata);
-            _ = storageApi.SET(key, ref input, value);
+            var res = storageApi.SET(key, ref input, value);
+
+            // Type already stored in key which requires an explicit delete
+            if (res == GarnetStatus.WRONGTYPE)
+            {
+                var createTransaction = false;
+                if (txnManager.state != TxnState.Running)
+                {
+                    createTransaction = true;
+                    txnManager.AddTransactionStoreTypes(TransactionStoreTypes.Main | TransactionStoreTypes.Object);
+                    txnManager.SaveKeyEntryToLock(key, LockType.Exclusive);
+                    _ = txnManager.Run(true);
+                }
+
+                try
+                {
+                    _ = storageSession.DELETE(key, ref storageSession.unifiedTransactionalContext);
+                    _ = storageSession.SET(key, ref input, value, ref storageSession.stringTransactionalContext);
+                }
+                finally
+                {
+                    if (createTransaction)
+                    {
+                        txnManager.Commit(true);
+                    }
+                }
+            }
 
             while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                 SendAndReset();

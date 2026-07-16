@@ -168,6 +168,8 @@ namespace Garnet.test
                 RespCommand.RESTORE,
                 RespCommand.RICREATE,
                 RespCommand.RUNTXP,
+                RespCommand.MSETNX,
+                RespCommand.SETNX,
                 RespCommand.SPUBLISH,
                 RespCommand.SSUBSCRIBE,
                 RespCommand.SUBSCRIBE,
@@ -220,7 +222,7 @@ namespace Garnet.test
         /// Return all commands that can safely run against a Vector Set key, but cause that key to be overwritten.
         /// </summary>
         internal static IEnumerable<RespCommand> GetOverwritingCommands()
-        => [RespCommand.MSET, RespCommand.MSETNX, RespCommand.PSETEX, RespCommand.SET, RespCommand.SETEX, RespCommand.SETNX, RespCommand.SETIFGREATER, RespCommand.SETIFMATCH, RespCommand.SETWITHETAG];
+        => [RespCommand.MSET, RespCommand.PSETEX, RespCommand.SET, RespCommand.SETEX, RespCommand.SETIFGREATER, RespCommand.SETIFMATCH, RespCommand.SETWITHETAG];
 
         // Vector Set commands - these WRONGTYPE against non-Vector Set keys
 
