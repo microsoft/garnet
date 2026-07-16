@@ -122,7 +122,15 @@ namespace Tsavorite.core
                 // TryConsumeNext returns false if we have to wait for the next record.
                 while (!TryBulkConsumeNext(consumer, maxChunkSize))
                 {
-                    await Task.Delay(throttleMs, token).ConfigureAwait(false);
+                    if (throttleMs == 0)
+                    {
+                        token.ThrowIfCancellationRequested();
+                        await Task.Yield();
+                    }
+                    else
+                    {
+                        await Task.Delay(throttleMs, token).ConfigureAwait(false);
+                    }
                 }
             }
         }
@@ -458,7 +466,7 @@ namespace Tsavorite.core
         /// <param name="maxChunkSize"></param>
         /// <typeparam name="T">concrete type of consumer</typeparam>
         /// <returns>whether a next entry is present</returns>
-        public unsafe bool TryBulkConsumeNext<T>(T consumer, int maxChunkSize = 0) where T : IBulkLogEntryConsumer
+        private unsafe bool TryBulkConsumeNext<T>(T consumer, int maxChunkSize = 0) where T : IBulkLogEntryConsumer
         {
             // Throttle and implicitly check for consumer liveness
             consumer.Throttle();
