@@ -3666,7 +3666,6 @@ namespace Garnet.test
             var dbOp = redisOp.GetDatabase(0);
             var dbUnlink = redisUnlink.GetDatabase(0);
 
-            var data = new byte[75];
             var elem = new byte[] { 1, 0, 0, 0 };
             var elem2 = new byte[] { 2, 0, 0, 0 };
 
@@ -3675,8 +3674,8 @@ namespace Garnet.test
             // seeding VADD would itself park in the window.
             if (operation == "VREM")
             {
-                dbOp.Execute("VADD", [key, "XB8", (RedisValue)data, (RedisValue)elem, "XPREQ8"]);
-                dbOp.Execute("VADD", [key, "XB8", (RedisValue)data, (RedisValue)elem2, "XPREQ8"]);
+                dbOp.Execute("VADD", [key, "VALUES", "3", "1", "2", "3", (RedisValue)elem]);
+                dbOp.Execute("VADD", [key, "VALUES", "3", "4", "5", "6", (RedisValue)elem2]);
             }
 
             // Arm the pause in the synthetic-replication window.
@@ -3685,7 +3684,7 @@ namespace Garnet.test
             {
                 // Connection 1: run the operation; it modifies the index, then parks before its append-log RMW.
                 var opTask = operation == "VADD"
-                    ? Task.Run(() => dbOp.Execute("VADD", [key, "XB8", (RedisValue)data, (RedisValue)elem, "XPREQ8"]))
+                    ? Task.Run(() => dbOp.Execute("VADD", [key, "VALUES", "3", "1", "2", "3", (RedisValue)elem]))
                     : Task.Run(() => dbOp.Execute("VREM", [key, (RedisValue)elem]));
 
                 // Wait (event-driven, no polling) until the operation reaches the pause. By this point the
@@ -3729,14 +3728,13 @@ namespace Garnet.test
             var dbOp = redisOp.GetDatabase(0);
             var dbRacer = redisRacer.GetDatabase(0);
 
-            var data = new byte[75];
             var elem = new byte[] { 1, 0, 0, 0 };
 
             ExceptionInjectionHelper.EnableException(Pause);
             try
             {
                 // Connection 1: VADD creates the index, then parks before its append-log RMW.
-                var opTask = Task.Run(() => dbOp.Execute("VADD", [key, "XB8", (RedisValue)data, (RedisValue)elem, "XPREQ8"]));
+                var opTask = Task.Run(() => dbOp.Execute("VADD", [key, "VALUES", "3", "1", "2", "3", (RedisValue)elem]));
 
                 await ExceptionInjectionHelper.WaitOnClearAsync(Pause).WaitAsync(TimeSpan.FromSeconds(30));
 
@@ -3778,7 +3776,6 @@ namespace Garnet.test
             var dbOp = redisOp.GetDatabase(0);
             var dbRacer = redisRacer.GetDatabase(0);
 
-            var data = new byte[75];
             var elem1 = new byte[] { 1, 0, 0, 0 };
             var elem2 = new byte[] { 2, 0, 0, 0 };
 
@@ -3787,7 +3784,7 @@ namespace Garnet.test
             {
                 // Connection 1: VADD elem1 creates the first index, then parks before its append-log RMW,
                 // holding a SHARED vector lock on the key hash.
-                var opTask = Task.Run(() => dbOp.Execute("VADD", [key, "XB8", (RedisValue)data, (RedisValue)elem1, "XPREQ8"]));
+                var opTask = Task.Run(() => dbOp.Execute("VADD", [key, "VALUES", "3", "1", "2", "3", (RedisValue)elem1]));
 
                 await ExceptionInjectionHelper.WaitOnClearAsync(Pause).WaitAsync(TimeSpan.FromSeconds(30));
 
@@ -3805,11 +3802,11 @@ namespace Garnet.test
             }
 
             // Now that the shared lock is free and the key is absent, a fresh create can proceed.
-            _ = dbRacer.Execute("VADD", [key, "XB8", (RedisValue)data, (RedisValue)elem2, "XPREQ8"]);
+            _ = dbRacer.Execute("VADD", [key, "VALUES", "3", "1", "2", "3", (RedisValue)elem2]);
 
             ClassicAssert.IsTrue(dbRacer.KeyExists(key), "fresh vector set was lost");
 
-            var members = (byte[][])dbRacer.Execute("VSIM", [key, "XB8", (RedisValue)data, "COUNT", "10", "EPSILON", "1.0", "EF", "40"]);
+            var members = (byte[][])dbRacer.Execute("VSIM", [key, "VALUES", "3", "1", "2", "3", "COUNT", "10", "EPSILON", "1.0", "EF", "40"]);
             ClassicAssert.AreEqual(1, members.Length, "fresh vector set should hold exactly its own single element");
             ClassicAssert.IsTrue(members.Any(x => x.SequenceEqual(elem2)), "fresh element missing from the new index");
             ClassicAssert.IsFalse(members.Any(x => x.SequenceEqual(elem1)), "raced-away element must not leak into the fresh index");
@@ -3817,13 +3814,12 @@ namespace Garnet.test
 #endif
 
         /// <summary>
-        /// Second, race-free path to the same zeroed-index livelock: a VREM against an index whose
-        /// record has aged into the read-only region takes the Tsavorite read-copy-update path, so the
-        /// synthetic VREM append-log RMW runs through CopyUpdater rather than InPlaceUpdater. CopyUpdater
-        /// allocates a fresh destination record and must copy the old index value forward (as the
-        /// VADD append-log branch does). If it does not, the new record is left zeroed, the index pointer
-        /// is lost, and NeedsRecreate flags it forever (RecreateIndex(dims:0) livelock) — with no
-        /// concurrent delete involved.
+        /// A VREM against an index whose record has aged into the read-only region takes the Tsavorite
+        /// read-copy-update path, so the synthetic VREM append-log RMW runs through CopyUpdater rather
+        /// than InPlaceUpdater. CopyUpdater allocates a fresh destination record and must copy the old
+        /// index value forward. If it does not, the new record is left zeroed, the index pointer is lost,
+        /// and NeedsRecreate flags it forever (RecreateIndex(dims:0) livelock) — with no concurrent
+        /// delete involved.
         /// </summary>
         [Test]
         public void VremCopyUpdaterOnReadOnlyIndexMustPreserveIndexValue()
@@ -3857,26 +3853,25 @@ namespace Garnet.test
             var vremResult = (int)db.Execute("VREM", [Key, "elemB"]);
 
             var ptrAfter = ReadStoredIndexPtr(storeWrapper, vectorManager, Key);
-            ClassicAssert.AreNotEqual((nint)0, ptrAfter,
-                $"VREM CopyUpdater on a read-only index dropped the stored index pointer (vremResult={vremResult}, ptrBefore={ptrBefore})");
+            ClassicAssert.AreNotEqual((nint)0, ptrAfter, $"VREM CopyUpdater on a read-only index dropped the stored index pointer (vremResult={vremResult}, ptrBefore={ptrBefore})");
+        }
 
-            // Reads the raw index value stored under the visible key and extracts the index pointer,
-            // without going through the recreate path (which would livelock on a corrupted, zeroed record).
-            static nint ReadStoredIndexPtr(StoreWrapper storeWrapper, VectorManager vectorManager, string key)
+        // Reads the raw index value stored under the visible key and extracts the index pointer,
+        // without going through the recreate path (which would livelock on a corrupted, zeroed record).
+        private static nint ReadStoredIndexPtr(StoreWrapper storeWrapper, VectorManager vectorManager, string key)
+        {
+            using var storageSession = new StorageSession(storeWrapper, new(), new(), null, null, storeWrapper.DefaultDatabase.Id, null, vectorManager, null);
+
+            Span<byte> indexSpan = stackalloc byte[VectorManager.IndexSize];
+            StringInput input = default;
+            input.header.cmd = RespCommand.VSIM;
+
+            var keyBytes = Encoding.ASCII.GetBytes(key);
+            using (vectorManager.ReadForDeleteVectorIndex(storageSession, keyBytes, ref input, indexSpan, out var status))
             {
-                using var storageSession = new StorageSession(storeWrapper, new(), new(), null, null, storeWrapper.DefaultDatabase.Id, null, vectorManager, null);
-
-                Span<byte> indexSpan = stackalloc byte[VectorManager.IndexSize];
-                StringInput input = default;
-                input.header.cmd = RespCommand.VSIM;
-
-                var keyBytes = Encoding.ASCII.GetBytes(key);
-                using (vectorManager.ReadForDeleteVectorIndex(storageSession, keyBytes, ref input, indexSpan, out var status))
-                {
-                    ClassicAssert.AreEqual(GarnetStatus.OK, status, "index key should exist");
-                    VectorManager.ReadIndex(indexSpan, out _, out _, out _, out _, out _, out _, out _, out _, out var indexPtr);
-                    return indexPtr;
-                }
+                ClassicAssert.AreEqual(GarnetStatus.OK, status, "index key should exist");
+                VectorManager.ReadIndex(indexSpan, out _, out _, out _, out _, out _, out _, out _, out _, out var indexPtr);
+                return indexPtr;
             }
         }
 

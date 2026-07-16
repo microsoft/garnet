@@ -49,14 +49,11 @@ namespace Garnet.server
                     return false; // Key must already exist
                 case RespCommand.VADD:
                 case RespCommand.VREM:
-                    // These synthetic args are only valid as a CopyUpdater on an existing index
-                    // record; encountering them here means the key was concurrently UNLINK'd, so we
-                    // cannot complete the operation. A genuine VADD create carries arg1 == 0.
-                    if (input.arg1 is VectorManager.VADDAppendLogArg or VectorManager.VREMAppendLogArg or VectorManager.RecreateIndexArg or VectorManager.VADDSetFlagsArg or VectorManager.MigrateElementKeyLogArg or VectorManager.MigrateIndexKeyLogArg)
-                    {
-                        return false;
-                    }
-                    return true;
+                    // A genuine VADD/VREM create carries arg1 == 0. Any non-zero arg1 is a synthetic
+                    // follow-up (append-log, recreate, set-flags, migrate) that is only valid against an
+                    // already-existing index record; reaching NeedInitialUpdate means the key was
+                    // concurrently UNLINK'd, so we must not fabricate a new record.
+                    return input.arg1 == 0;
                 default:
                     if (input.header.cmd > RespCommandExtensions.LastValidCommand)
                     {
@@ -999,6 +996,18 @@ namespace Garnet.server
                 case RespCommand.RIRESTORE:
                     // Copy to tail if needed, then IPU will set TreeHandle
                     return true;
+                case RespCommand.VADD:
+                case RespCommand.VREM:
+                    // Synthetic VADD/VREM replication writes require an existing index record. If the key
+                    // was concurrently UNLINK'd and re-typed (e.g. a raced String SET), no index remains:
+                    // cancel here, before a tail record is allocated, so nothing is copied to the log or
+                    // AOF and replicas never replay the add/remove against a non-index record.
+                    if (srcLogRecord.RecordType != VectorManager.RecordType)
+                    {
+                        rmwInfo.Action = RMWAction.CancelOperation;
+                        return false;
+                    }
+                    return true;
                 default:
                     if (input.header.cmd > RespCommandExtensions.LastValidCommand)
                     {
@@ -1370,14 +1379,9 @@ namespace Garnet.server
                     break;
 
                 case RespCommand.VADD:
-                    // Concurrent UNLINK + re-type: no index record remains, so cancel. Canceling writes
-                    // nothing to the AOF, preventing replicas from replaying the add against a non-index
-                    // record.
-                    if (srcLogRecord.RecordType != VectorManager.RecordType)
-                    {
-                        rmwInfo.Action = RMWAction.CancelOperation;
-                        return false;
-                    }
+                    // NeedCopyUpdate cancels when the record is no longer an index, so CopyUpdater is only
+                    // reached for a genuine index record.
+                    Debug.Assert(srcLogRecord.RecordType == VectorManager.RecordType, "CopyUpdater reached for VADD on a non-index record");
 
                     if (input.arg1 == VectorManager.RecreateIndexArg)
                     {
@@ -1406,13 +1410,9 @@ namespace Garnet.server
                     break;
 
                 case RespCommand.VREM:
-                    // Same rationale as the VADD CopyUpdater case above.
-                    if (srcLogRecord.RecordType != VectorManager.RecordType)
-                    {
-                        rmwInfo.Action = RMWAction.CancelOperation;
-                        return false;
-                    }
-
+                    // NeedCopyUpdate cancels when the record is no longer an index, so CopyUpdater is only
+                    // reached for a genuine index record.
+                    Debug.Assert(srcLogRecord.RecordType == VectorManager.RecordType, "CopyUpdater reached for VREM on a non-index record");
                     Debug.Assert(input.arg1 == VectorManager.VREMAppendLogArg, "Unexpected CopyUpdater call on VREM key");
 
                     // VREM has triggered a CU of the index key - like the VADD append-log branch above we

@@ -2222,15 +2222,13 @@ namespace Garnet.test.cluster
         ///
         /// On the primary a VADD builds its index and then emits a synthetic append-log RMW
         /// (<see cref="RespCommand.VADD"/> with <c>VADDAppendLogArg</c>) purely to replicate the add.
-        /// We pause the primary right before that synthetic RMW, race a lock-free DEL followed by a
+        /// We pause the primary right before that synthetic RMW, race a DEL followed by a
         /// String SET on the same key from another connection, then release the VADD. The AOF order
         /// the replica would replay is: DEL, SET(string), synthetic-VADD-append-log.
         ///
         /// The synthetic RMW runs against the now-String record. Its updaters
-        /// (InPlaceUpdater/CopyUpdater in RMWMethods.cs) detect that the record is no longer a vector
-        /// index (RecordType != VectorManager.RecordType) and cancel the operation, so nothing is
-        /// written to the AOF. The replica therefore never replays a VADD against a non-index record:
-        /// primary and replica both converge to a String value for the key.
+        /// (InPlaceUpdater/CopyUpdater in RMWMethods.cs) must detect that the record is no longer a vector
+        /// index and cancel the operation.
         /// </summary>
         [Test]
         public async Task ReplicaReplaysSyntheticVAddAgainstStringKeyAfterRacedDeleteAsync()
@@ -2247,24 +2245,9 @@ namespace Garnet.test.cluster
             ClassicAssert.AreEqual("master", context.clusterTestUtils.RoleCommand(primary).Value);
             ClassicAssert.AreEqual("slave", context.clusterTestUtils.RoleCommand(secondary).Value);
 
-            var vectorData = new byte[75];
-            vectorData[0] = 1;
-            for (var i = 1; i < vectorData.Length; i++)
-                vectorData[i] = (byte)(vectorData[i - 1] + 1);
-            var element = new byte[] { 7, 0, 0, 0 };
-
             // The parked VADD blocks its own session thread, so DEL/SET must run on a different TCP
-            // connection. Both endpoints are supplied so the client can map the (single-shard) cluster.
-            var opConfig = new ConfigurationOptions
-            {
-                EndPoints = { primary, secondary },
-                AllowAdmin = true,
-                AbortOnConnectFail = false,
-                ConnectTimeout = 20_000,
-                SyncTimeout = 120_000,
-            };
-
-            using var opConn = await ConnectionMultiplexer.ConnectAsync(opConfig).ConfigureAwait(false);
+            // connection.
+            using var opConn = await ConnectionMultiplexer.ConnectAsync(context.clusterTestUtils.GetRedisConfig(context.endpoints)).ConfigureAwait(false);
             var opDb = opConn.GetDatabase();
 
             Exception vaddError = null;
@@ -2277,7 +2260,7 @@ namespace Garnet.test.cluster
                 {
                     try
                     {
-                        vaddResult = opDb.Execute("VADD", Key, "XB8", vectorData, element, "XPREQ8");
+                        vaddResult = opDb.Execute("VADD", Key, "VALUES", "3", "1", "2", "3", "elemA");
                     }
                     catch (Exception ex)
                     {
@@ -2285,8 +2268,7 @@ namespace Garnet.test.cluster
                     }
                 });
 
-                // Wait until the primary VADD has built its index and parked right before writing the
-                // synthetic append-log entry to the AOF.
+                // Wait until the primary VADD has built its index and parked right before writing the synthetic append-log entry to the AOF.
                 await ExceptionInjectionHelper.WaitOnClearAsync(ExceptionInjectionType.VectorSet_Pause_Before_Synthetic_Replication_Rmw).ConfigureAwait(false);
 
                 // DEL is a lock-free main-store delete that bypasses the vector lock the parked VADD
@@ -2310,10 +2292,8 @@ namespace Garnet.test.cluster
             var primaryType = (string)context.clusterTestUtils.Execute(primary, "TYPE", [new RedisKey(Key)]);
             TestContext.Out.WriteLine($"[replica-synthetic-vadd] vaddResult={vaddResult}, vaddError={vaddError?.Message}, primaryType={primaryType}");
 
-            // Replaying the synthetic VADD against a String key must not livelock the replica nor stall
-            // replication: the AOF sync must converge within the timeout.
-            using var syncCts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
-            context.clusterTestUtils.WaitForReplicaAofSync(PrimaryIndex, SecondaryIndex, cancellation: syncCts.Token);
+            // Replaying the synthetic VADD against a String key must not livelock the replica nor stall replication: the AOF sync must converge.
+            context.clusterTestUtils.WaitForReplicaAofSync(PrimaryIndex, SecondaryIndex);
 
             var readonlyOnReplica = (string)context.clusterTestUtils.Execute(secondary, "READONLY", []);
             ClassicAssert.AreEqual("OK", readonlyOnReplica);
@@ -2358,28 +2338,12 @@ namespace Garnet.test.cluster
             ClassicAssert.AreEqual("slave", context.clusterTestUtils.RoleCommand(secondary).Value);
 
             // E1 is added by the parked first VADD (T1); E2 is added by the fresh vector set (T2).
-            var v1 = new byte[75];
-            v1[0] = 1;
-            for (var i = 1; i < v1.Length; i++)
-                v1[i] = (byte)(v1[i - 1] + 1);
             var e1 = new byte[] { 1, 0, 0, 0 };
-
-            var v2 = new byte[75];
-            v2[0] = 200;
-            for (var i = 1; i < v2.Length; i++)
-                v2[i] = (byte)(v2[i - 1] + 3);
             var e2 = new byte[] { 2, 0, 0, 0 };
 
-            var opConfig = new ConfigurationOptions
-            {
-                EndPoints = { primary, secondary },
-                AllowAdmin = true,
-                AbortOnConnectFail = false,
-                ConnectTimeout = 20_000,
-                SyncTimeout = 120_000,
-            };
-
-            using var opConn = await ConnectionMultiplexer.ConnectAsync(opConfig).ConfigureAwait(false);
+            // The parked VADD blocks its own session thread, so UNLINK must run on a different TCP
+            // connection.
+            using var opConn = await ConnectionMultiplexer.ConnectAsync(context.clusterTestUtils.GetRedisConfig(context.endpoints)).ConfigureAwait(false);
             var opDb = opConn.GetDatabase();
 
             Exception vaddError = null;
@@ -2392,7 +2356,7 @@ namespace Garnet.test.cluster
                 {
                     try
                     {
-                        vaddResult = opDb.Execute("VADD", Key, "XB8", v1, e1, "XPREQ8");
+                        vaddResult = opDb.Execute("VADD", Key, "VALUES", "3", "1", "1", "1", e1);
                     }
                     catch (Exception ex)
                     {
@@ -2418,17 +2382,16 @@ namespace Garnet.test.cluster
             }
 
             // A fresh vector set is created on the same key only after T1 released its shared lock.
-            var vadd2Res = (int)context.clusterTestUtils.Execute(primary, "VADD", [new RedisKey(Key), "XB8", v2, e2, "XPREQ8"]);
+            var vadd2Res = (int)context.clusterTestUtils.Execute(primary, "VADD", [new RedisKey(Key), "VALUES", "3", "2", "2", "2", (RedisValue)e2]);
             ClassicAssert.AreEqual(1, vadd2Res);
 
-            using var syncCts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
-            context.clusterTestUtils.WaitForReplicaAofSync(PrimaryIndex, SecondaryIndex, cancellation: syncCts.Token);
+            context.clusterTestUtils.WaitForReplicaAofSync(PrimaryIndex, SecondaryIndex);
 
             var readonlyOnReplica = (string)context.clusterTestUtils.Execute(secondary, "READONLY", []);
             ClassicAssert.AreEqual("OK", readonlyOnReplica);
 
-            var primaryMembers = (byte[][])context.clusterTestUtils.Execute(primary, "VSIM", [new RedisKey(Key), "XB8", v2, "COUNT", "10"]);
-            var replicaMembers = (byte[][])context.clusterTestUtils.Execute(secondary, "VSIM", [new RedisKey(Key), "XB8", v2, "COUNT", "10"]);
+            var primaryMembers = (byte[][])context.clusterTestUtils.Execute(primary, "VSIM", [new RedisKey(Key), "VALUES", "3", "2", "2", "2", "COUNT", "10"]);
+            var replicaMembers = (byte[][])context.clusterTestUtils.Execute(secondary, "VSIM", [new RedisKey(Key), "VALUES", "3", "2", "2", "2", "COUNT", "10"]);
 
             var primaryHasE1 = primaryMembers.Any(x => x.SequenceEqual(e1));
             var primaryHasE2 = primaryMembers.Any(x => x.SequenceEqual(e2));
