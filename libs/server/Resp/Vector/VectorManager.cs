@@ -1358,7 +1358,7 @@ namespace Garnet.server
             }
 
             return false;
-        } 
+        }
 
         [Conditional("DEBUG")]
         private static void AssertHaveStorageSession()
