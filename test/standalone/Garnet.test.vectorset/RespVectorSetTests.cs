@@ -3640,7 +3640,7 @@ namespace Garnet.test
 #if DEBUG
         /// <summary>
         /// A VADD/VREM issues a synthetic append-log RMW (to land the write in the AOF) while holding
-        /// only a SHARED vector lock, so a concurrent DEL can tombstone the key in between.
+        /// a shared vector lock, so a concurrent DEL can tombstone the key in between.
         /// Drives that interleaving deterministically via a pause point: the synthetic RMW must run
         /// against the tombstone without resurrecting the key as a zeroed phantom index.
         /// </summary>
@@ -3680,7 +3680,7 @@ namespace Garnet.test
                 // index exists, so there is something to tombstone.
                 await ExceptionInjectionHelper.WaitOnClearAsync(Pause).WaitAsync(TimeSpan.FromSeconds(30));
 
-                // Connection 2: DEL the parked key, tombstoning it while the operation holds only a SHARED vector lock.
+                // Connection 2: DEL the parked key, tombstoning it while the operation holds a shared vector lock.
                 _ = dbDel.KeyDelete(key);
 
                 // Re-arm to release the parked operation; its synthetic append-log RMW now runs against
