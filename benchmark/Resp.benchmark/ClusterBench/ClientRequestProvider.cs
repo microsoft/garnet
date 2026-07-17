@@ -65,7 +65,10 @@ namespace Resp.benchmark
             this.opts = opts;
             this.threadIndex = threadIndex;
             this.shardThreadIndex = shardThreadIndex;
-            this.rng = new Random(31337 + (threadIndex * 1000) + shard.Port);
+            // Req 2: the request-buffer selection RNG is seeded from GUID (opts.WorkloadSeed) + threadIdx,
+            // so each worker/shard provider draws an independent buffer sequence and parallel instances
+            // (distinct GUID seed) never select buffers in lockstep.
+            this.rng = new Random(CombineSeed(opts.WorkloadSeed, threadIndex));
             this.keyGen = new SlotKeyGenerator(shard, opts.KeyLength);
             this.histogram = new LongHistogram(HISTOGRAM_LOWER_BOUND, HISTOGRAM_UPPER_BOUND, 2);
 
@@ -85,6 +88,15 @@ namespace Resp.benchmark
                 this.hasReplica = false;
             }
         }
+
+        /// <summary>
+        /// Deterministically mixes a base seed (GUID-derived <see cref="Options.WorkloadSeed"/>) with a
+        /// component (thread/shard/buffer index) using a Roslyn-style multiply-add hash. Unlike
+        /// <see cref="System.HashCode"/> (which is randomized per process and would break reproducibility),
+        /// this is stable for a fixed base seed, and it avoids the correlated early sequences that
+        /// <see cref="System.Random"/> produces for adjacent (base+index) seeds.
+        /// </summary>
+        public static int CombineSeed(int baseSeed, int component) => unchecked((baseSeed * 486187739) + component);
 
         /// <summary>
         /// Determines which endpoint to use for a given operation based on operation type and --replica-read-percent setting.

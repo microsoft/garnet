@@ -30,6 +30,17 @@ namespace Resp.benchmark
         public ClusterBench(Options opts, ILoggerFactory loggerFactory = null)
         {
             this.opts = opts;
+
+            // Resolve the workload seed once, per process. -1 => auto-generate a unique random
+            // salt (via Guid) so that multiple benchmark instances running the same command in
+            // parallel do not select the identical in-range keys in lockstep, which would
+            // otherwise maximize server-side hash-bucket/record contention. The salt only
+            // reshuffles selection within the loaded [0, DbSize) key domain, so preload/GET
+            // semantics are preserved. All workers/providers in this process share this single
+            // value so read buffers still match write buffers in mixed workloads.
+            if (opts.WorkloadSeed == -1)
+                opts.WorkloadSeed = Guid.NewGuid().GetHashCode();
+
             this.loggerFactory = loggerFactory;
             this.logger = loggerFactory?.CreateLogger("ClusterBench");
         }
@@ -175,6 +186,7 @@ namespace Resp.benchmark
             Console.WriteLine($"{"Skip Load: " + skipLoad,-28}{"Auth: " + (string.IsNullOrEmpty(opts.Auth) ? "No" : "Yes"),-28}");
             Console.WriteLine($"{"Replicas: " + totalReplicas,-28}{"Replica Reads: " + replicaReads,-28}");
             Console.WriteLine($"{"Workers: " + totalProviders,-28}{"Broadcast: " + (opts.Broadcast ? "Yes" : "No"),-28}");
+            Console.WriteLine($"{"Workload Seed: " + opts.WorkloadSeed,-28}{"Offline Buffers: " + opts.OfflineBufferPermutations,-28}");
             Console.WriteLine("=======================================================");
             Console.WriteLine();
 
@@ -238,6 +250,7 @@ namespace Resp.benchmark
             Console.WriteLine($"{"Skip Load: " + skipLoad,-28}{"Auth: " + (string.IsNullOrEmpty(opts.Auth) ? "No" : "Yes"),-28}");
             Console.WriteLine($"{"Replicas: " + totalReplicas,-28}{"Replica Reads: " + replicaReads,-28}");
             Console.WriteLine($"{"Workers: " + workerCount,-28}{"Broadcast: " + (opts.Broadcast ? "Yes" : "No"),-28}");
+            Console.WriteLine($"{"Workload Seed: " + opts.WorkloadSeed,-28}{"Offline Buffers: " + opts.OfflineBufferPermutations,-28}");
             Console.WriteLine("=======================================================");
             Console.WriteLine();
 

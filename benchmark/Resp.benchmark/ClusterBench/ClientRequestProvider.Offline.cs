@@ -66,7 +66,10 @@ namespace Resp.benchmark
             var localWorkload = default(ClusterWorkload);
             var batchSize = opts.BatchSize.First();
             var dbSizePerShard = opts.DbSize;
-            var localBatchCount = Math.Max(1, dbSizePerShard / batchSize);
+            // Req 3: number of pre-generated buffer permutations per shard is decoupled from
+            // DbSize/batchSize (previously ~40) and made configurable so concurrent workers are
+            // far less likely to select the same buffer (and the same keys) at the same instant.
+            var localBatchCount = Math.Max(1, opts.OfflineBufferPermutations);
 
             // Always fill primary requests (write ops in mixed mode, or single op in normal mode)
             localWorkload.PrimaryRequests = new Request[localBatchCount];
@@ -161,10 +164,12 @@ namespace Resp.benchmark
             var sb = new StringBuilder(estimatedCapacity);
             var isMCommand = opts.Op is OpType.MGET or OpType.MSET;
 
-            // Create deterministic RNG with buffer index for reproducible key generation.
-            // Seed is shard-scoped only (no threadIndex) so every provider targeting this
-            // shard generates identical buffers and can share a single workload instance.
-            var deterministicRng = new Random(31337 + shard.Port + bufferIndex);
+            // Req 1: the per-shard workload RNG is seeded from a GUID (opts.WorkloadSeed), combined
+            // with the shard and buffer index so each of the N buffers is a distinct in-range key
+            // permutation and parallel instances (distinct GUID) generate different keys. Reads
+            // reseed identically (below) so they still target the write keys. Draws stay within
+            // [0, DbSize), so preload/GET semantics are preserved.
+            var deterministicRng = new Random(CombineSeed(CombineSeed(opts.WorkloadSeed, shard.Port), bufferIndex));
 
             if (isMCommand)
             {
@@ -210,10 +215,9 @@ namespace Resp.benchmark
             var sb = new StringBuilder(estimatedCapacity);
             var isMCommand = readOp is OpType.MGET;
 
-            // Create deterministic RNG with same seed to generate same keys as write buffer.
-            // Seed is shard-scoped only (no threadIndex) so buffers are shareable across
-            // providers and reads still target the same keys as the shared write buffers.
-            var deterministicRng = new Random(31337 + shard.Port + bufferIndex);
+            // Reseed with the SAME per-shard GUID-derived seed as the write builder so reads
+            // target the same keys as the shared write buffers (within this instance).
+            var deterministicRng = new Random(CombineSeed(CombineSeed(opts.WorkloadSeed, shard.Port), bufferIndex));
 
             if (isMCommand)
             {

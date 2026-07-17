@@ -30,7 +30,7 @@ namespace Resp.benchmark
         {
             this.workerId = id;
             this.opts = opts;
-            this.rng = new Random(id); // Seeded with worker ID for reproducibility
+            this.rng = new Random(ClientRequestProvider.CombineSeed(opts.WorkloadSeed, id)); // Seeded with GUID (opts.WorkloadSeed) + worker id so parallel instances decorrelate provider selection
 
             // Create one provider per shard
             providers = new ClientRequestProvider[shards.Length];

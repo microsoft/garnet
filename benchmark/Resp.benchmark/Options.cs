@@ -20,6 +20,12 @@ namespace Resp.benchmark
         [Option('s', "skipload", Required = false, Default = false, HelpText = "Skip loading phase")]
         public bool SkipLoad { get; set; }
 
+        [Option("workload-seed", Required = false, Default = -1, HelpText = "Seed for cluster-bench workload key generation/selection. -1 (default) auto-generates a unique per-process random seed (via Guid) so multiple benchmark instances running the same command in parallel scramble their in-range key selection independently, avoiding cross-instance lockstep on identical keys (which maximizes server-side contention). The seed only reshuffles selection within the loaded [0, DbSize) key domain, so preload/GET semantics are preserved. Set an explicit value for reproducible key selection across instances.")]
+        public int WorkloadSeed { get; set; }
+
+        [Option("offline-buffers", Required = false, Default = 128, HelpText = "Number of pre-generated request-buffer permutations per shard in cluster-bench offline mode. More permutations reduce the chance that concurrent workers select the same buffer (and thus hammer the same keys) at the same instant. Higher values increase client memory usage (~batchSize x (keyLen+valueLen+overhead) bytes per buffer, per shard).")]
+        public int OfflineBufferPermutations { get; set; }
+
         [Option("dbsize", Required = false, Default = 1 << 10, HelpText = "DB size")]
         public int DbSize { get; set; }
 
