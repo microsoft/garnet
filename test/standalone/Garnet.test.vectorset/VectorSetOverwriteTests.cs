@@ -190,6 +190,7 @@ namespace Garnet.test
             var vectorManager = server.Provider.StoreWrapper.DefaultDatabase.VectorManager;
 
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
+            var s = redis.GetServers().Single();
             var db = redis.GetDatabase();
 
             var name = $"VectorSet_{Guid.NewGuid()}";
@@ -226,6 +227,14 @@ namespace Garnet.test
             else
             {
                 await runCommand(db, db, name).ConfigureAwait(false);
+            }
+
+            if (EvictToDisk)
+            {
+                // Force a truncate
+#pragma warning disable CS0618 // Need to force a synchronous save even though it is dangerous
+                await s.SaveAsync(SaveType.ForegroundSave).ConfigureAwait(false);
+#pragma warning restore CS0618 // Type or member is obsolete
             }
 
             vectorManager.GetContextState(vectorSetContext, out var inUse, out var isCleaningUp, out _);
