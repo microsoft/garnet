@@ -90,6 +90,7 @@ namespace Garnet.test
         GarnetTestRangeIndex = 34700,
         GarnetTestScripting = 34800,
         GarnetTestVectorSet = 34900,
+        GarnetTestBfTreeInterop = 35000,
     }
 
     internal static class TestUtils

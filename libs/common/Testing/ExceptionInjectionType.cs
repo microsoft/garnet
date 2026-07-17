@@ -112,5 +112,10 @@ namespace Garnet.common
         /// in-flight ProcessRecord.
         /// </summary>
         RangeIndex_Migration_Receive_Pause_In_ProcessRecord,
+        /// <summary>
+        /// RangeIndex AOF replay: force PublishMigratedIndex to be treated as failed once a stream
+        /// reassembles, to exercise the publish-failure throw path in ProcessStreamChunk.
+        /// </summary>
+        RangeIndex_Replay_Force_Publish_Failure,
     }
 }
