@@ -415,7 +415,12 @@ namespace Garnet.server
         /// </summary>
         public async ValueTask RecoverCheckpointAsync(bool replicaRecover = false, bool recoverFromToken = false, CheckpointMetadata metadata = null)
         {
-            StartSizeTrackers();    // We need to start this before recovery to have size tracking during the recovery process.
+            // Do NOT start the background size-tracker resizer here. It must not independently shift head / evict / free pages
+            // concurrently with recovery, which owns the log: recovery does its own budget-aware eviction and directly resets
+            // log addresses (RecoveryReset). Racing the resizer against that can lose a page read/flush completion and hang the
+            // main recovery thread in WaitRead/WaitFlush. The size tracker object still tracks size during recovery; AOF replay
+            // evicts synchronously via the allocator (IssueShiftAddress) while the resizer is not running. The resizer is started
+            // after recovery completes, in StoreWrapper.Start().
             await databaseManager.RecoverCheckpointAsync(replicaRecover, recoverFromToken, metadata).ConfigureAwait(false);
         }
 
