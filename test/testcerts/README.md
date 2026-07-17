@@ -10,9 +10,11 @@ These certificates should be used ONLY on dev/test environments.
 
 ## Using GarnetServer with TLS
 
-For using TLS, it is required a pfx certificate, either in Windows or Linux, that contains the private and public key.
+For using TLS, GarnetServer accepts either a pfx certificate (Windows or Linux) that contains the private and public key, or a PEM-encoded certificate
+and private key pair. The certificate format is detected automatically from the file's contents, so either `.pfx` or `.pem`/`.crt`/`.cer` files work with
+`--cert-file-name`.
 
-In the case that you have these two keys and you need the pfx format use the following command with openssl:
+In the case that you have the private and public key as separate `.key`/`.crt` PEM files and want the pfx format instead, use the following command with openssl:
 
 openssl pkcs12 -inkey `<server-name>`.key -in `<server-name>`.crt -export -out server-cert.pfx
 
@@ -20,7 +22,11 @@ openssl pkcs12 -inkey `<server-name>`.key -in `<server-name>`.crt -export -out s
 
 Use the following parameters to pass the certificate file details and password:
 
-GarnetServer --cert-file-name `<path-to-file>`/server-cert.pfx --password `<cert-password>`
+GarnetServer --cert-file-name `<path-to-file>`/server-cert.pfx --cert-password `<cert-password>`
+
+When using a PEM certificate instead, pass the path to the matching private key file in place of the password (unless the key is already included in the certificate file):
+
+GarnetServer --cert-file-name `<path-to-file>`/server-cert.crt --cert-password `<path-to-file>`/server-cert.key
 
 ### Note:
 The repository contains a pfx file under the path `<root>`/test/testcerts. If needed, use the testcert.pfx with the password `placeholder`.

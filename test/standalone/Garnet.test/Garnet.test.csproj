@@ -30,6 +30,12 @@
 	  <None Include="..\..\testcerts\testcert.pfx" Link="testcert.pfx">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
+	  <None Include="..\..\testcerts\testcert.pem" Link="testcert.pem">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+	  <None Include="..\..\testcerts\testcert.key.pem" Link="testcert.key.pem">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
 	  <None Update="GarnetJSON\JSONPath\RegressionSuite.json">
 	    <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
 	  </None>
