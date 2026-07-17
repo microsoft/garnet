@@ -18,18 +18,13 @@ namespace Garnet.test
     /// <summary>
     /// Tests that RESP commands that _overwrite_ Vector Sets correctly cause them to be cleaned up.
     /// </summary>
-    [TestFixture(false)]
-    [TestFixture(true)]
-    public class VectorSetOverwriteTests : TestBase
+    [TestFixture(false, false)]
+    [TestFixture(true, false)]
+    [TestFixture(false, true)]
+    [TestFixture(true, true)]
+    public class VectorSetOverwriteTests(bool RunInTransaction, bool EvictToDisk) : TestBase
     {
-        private readonly bool runInTransaction;
-
         private GarnetServer server;
-
-        public VectorSetOverwriteTests(bool runInTransaction)
-        {
-            this.runInTransaction = runInTransaction;
-        }
 
         [SetUp]
         public void Setup()
@@ -212,7 +207,13 @@ namespace Garnet.test
                 }
             }
 
-            if (runInTransaction)
+            if (EvictToDisk)
+            {
+                var evictAndFlushRes = (string)await db.ExecuteAsync("DEBUG", "FLUSHANDEVICT").ConfigureAwait(false);
+                ClassicAssert.IsTrue(evictAndFlushRes.StartsWith("OK "));
+            }
+
+            if (RunInTransaction)
             {
                 var trans = db.CreateTransaction();
                 var queuedTask = runCommand(trans, db, name);
