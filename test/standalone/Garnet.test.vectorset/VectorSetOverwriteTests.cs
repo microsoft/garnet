@@ -30,7 +30,20 @@ namespace Garnet.test
         public void Setup()
         {
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
-            server = CreateGarnetServer(tryRecover: false);
+            server =
+                TestUtils.CreateGarnetServer(
+                    TestUtils.MethodTestDir,
+                    enableAOF: true,
+                    tryRecover: false,
+                    enableVectorSetPreview: true,
+                    enableRangeIndexPreview: true,
+                    compactionType: EvictToDisk ? LogCompactionType.Scan : LogCompactionType.None,
+                    lowMemory: EvictToDisk,
+                    mutablePercent: EvictToDisk ? 10 : 90,
+                    indexMaxSize: EvictToDisk ? "1m" : default,
+                    compactionMaxSegments: EvictToDisk ? 1 : 32,
+                    segmentSize: EvictToDisk ? "1m" : "1g"
+                );
 
             server.Start();
         }
@@ -41,12 +54,6 @@ namespace Garnet.test
             server.Dispose();
             TestUtils.OnTearDown();
         }
-
-        /// <summary>
-        /// Create a new GarnetServer instance with common parameters.
-        /// </summary>
-        private static GarnetServer CreateGarnetServer(bool tryRecover)
-        => TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableAOF: true, tryRecover: tryRecover, enableVectorSetPreview: true, enableRangeIndexPreview: true);
 
         [Test]
         public void AllOverwritingCommandsCovered()
@@ -187,6 +194,8 @@ namespace Garnet.test
 
         private async Task TestVectorSetOverwrittenCommandAsync(Func<IDatabaseAsync, IDatabaseAsync, RedisKey, Task> runCommand)
         {
+            const int ExtraRecordForCompaction = 50_000;
+
             var vectorManager = server.Provider.StoreWrapper.DefaultDatabase.VectorManager;
 
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
@@ -210,6 +219,11 @@ namespace Garnet.test
 
             if (EvictToDisk)
             {
+                // We don't only need the record on disk, we need a compaction to happen - so we need a bunch of _other_ data written
+                var dummyKeys = Enumerable.Range(0, ExtraRecordForCompaction).Select(static i => new KeyValuePair<RedisKey, RedisValue>($"String_{i}", new byte[4 * 1_024])).ToArray();
+                var dummySetsRes = await db.StringSetAsync(dummyKeys).ConfigureAwait(false);
+                ClassicAssert.IsTrue(dummySetsRes);
+
                 var evictAndFlushRes = (string)await db.ExecuteAsync("DEBUG", "FLUSHANDEVICT").ConfigureAwait(false);
                 ClassicAssert.IsTrue(evictAndFlushRes.StartsWith("OK "));
             }

@@ -332,8 +332,12 @@ namespace Garnet.test
             string aofPageSize = null,
             bool copyReadsToTail = false,
             int replayTaskCount = 1,
-            bool failOnRecoveryError = false
-            )
+            bool failOnRecoveryError = false,
+            LogCompactionType compactionType = LogCompactionType.None,
+            int mutablePercent = 90,
+            int compactionMaxSegments = 32,
+            string segmentSize = "1g"
+        )
         {
             if (useAzureStorage)
                 IgnoreIfNotRunningAzureTests();
@@ -423,6 +427,10 @@ namespace Garnet.test
                 EnableRangeIndexPreview = enableRangeIndexPreview,
                 CopyReadsToTail = copyReadsToTail,
                 FailOnRecoveryError = failOnRecoveryError,
+                CompactionType = compactionType,
+                MutablePercent = mutablePercent,
+                CompactionMaxSegments = compactionMaxSegments,
+                SegmentSize = segmentSize,
             };
 
             if (!string.IsNullOrEmpty(memorySize))
