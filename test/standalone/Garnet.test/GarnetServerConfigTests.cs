@@ -92,6 +92,25 @@ namespace Garnet.test
         }
 
         [Test]
+        public void RangeIndexPreviewRequiresMinimumAofPageSize()
+        {
+            // Range index preview needs an AOF page large enough for a migrated stream chunk (>= 512k).
+            var args = new[] { "--enable-range-index-preview", "--aof-page-size", "256k" };
+            var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out _, out _, out _, out _, silentMode: true);
+            ClassicAssert.IsFalse(parseSuccessful, "aof-page-size below 512k must be rejected when range index preview is enabled");
+
+            // A page at the threshold is accepted.
+            args = ["--enable-range-index-preview", "--aof-page-size", "512k"];
+            parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out _, out _, out _, out _, silentMode: true);
+            ClassicAssert.IsTrue(parseSuccessful, "aof-page-size at 512k must be accepted when range index preview is enabled");
+
+            // The constraint only applies when the preview is enabled.
+            args = ["--aof-page-size", "256k"];
+            parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out _, out _, out _, out _, silentMode: true);
+            ClassicAssert.IsTrue(parseSuccessful, "aof-page-size below 512k must be accepted when range index preview is disabled");
+        }
+
+        [Test]
         public void ImportExportConfigLocal()
         {
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);

@@ -20,6 +20,7 @@ namespace Garnet.cluster
     internal sealed class RangeIndexMigrationReceiveState : IDisposable
     {
         private readonly RangeIndexManager rangeIndexManager;
+        private readonly GarnetAppendOnlyFile appendOnlyFile;
         private readonly ILogger logger;
         private RangeIndexChunkedDeserializer currentDeserializer;
         private RangeIndexMigrationActivities.ReceiveActivity receiveActivity;
@@ -29,9 +30,10 @@ namespace Garnet.cluster
         internal bool IsReceiving => currentDeserializer != null;
         internal int CurrentChunkCount => receiveActivity?.ChunkCount ?? 0;
 
-        internal RangeIndexMigrationReceiveState(RangeIndexManager rangeIndexManager, ILogger logger = null)
+        internal RangeIndexMigrationReceiveState(RangeIndexManager rangeIndexManager, GarnetAppendOnlyFile appendOnlyFile = null, ILogger logger = null)
         {
             this.rangeIndexManager = rangeIndexManager;
+            this.appendOnlyFile = appendOnlyFile;
             this.logger = logger;
         }
 
@@ -86,7 +88,7 @@ namespace Garnet.cluster
                     return HandleError("Disposed before publish");
 
                 receiveActivity.OnPublishing();
-                var publishResult = rangeIndexManager.PublishMigratedIndex(currentDeserializer.Key, currentDeserializer.Stub, currentDeserializer.TempPath, replaceOption, ref stringBasicContext);
+                var publishResult = rangeIndexManager.PublishMigratedIndex(currentDeserializer.Key, currentDeserializer.Stub, currentDeserializer.TempPath, replaceOption, ref stringBasicContext, appendOnlyFile);
                 receiveActivity.OnPublishResult(publishResult);
 
                 if (publishResult == RangeIndexManager.PublishMigratedIndexResult.Failed)

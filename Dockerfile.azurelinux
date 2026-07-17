@@ -45,7 +45,16 @@ FROM mcr.microsoft.com/dotnet/runtime:10.0-azurelinux3.0 AS runtime
 # recommended (enables the io_uring backend). When liburing is absent, the C#
 # loader falls back to libnative_device_libaio.so so the Libaio backend keeps
 # working.
+#
+# Azure Linux's libaio ships SONAME "libaio.so.1", but the shipped
+# libnative_device.so is built on Ubuntu 24.04 (noble) and carries a DT_NEEDED
+# of "libaio.so.1t64" (the 64-bit time_t ABI transition renamed libaio1 ->
+# libaio1t64). Add a libaio.so.1t64 -> libaio.so.1 compat symlink and refresh
+# the linker cache so the native device library resolves; without it the
+# Libaio/Uring backend fails to load with "libaio.so.1t64: cannot open ...".
 RUN tdnf install -y libaio liburing && tdnf clean all \
+    && ln -sf libaio.so.1 /usr/lib/libaio.so.1t64 \
+    && ldconfig \
     && DN_DIR=$(ls -d /usr/share/dotnet/shared/Microsoft.NETCore.App/* | head -n1) \
     && ln -sf "/usr/lib/liblua-5.4.so" "$DN_DIR/liblua54.so"
 
