@@ -429,7 +429,7 @@ namespace Garnet.test
 
             var value = db.KeyDump("mykey");
 
-            ClassicAssert.AreEqual(null, value);
+            ClassicAssert.IsNull(value);
         }
 
         /// <summary>

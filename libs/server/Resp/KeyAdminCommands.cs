@@ -141,15 +141,10 @@ namespace Garnet.server
 
             var status = storageApi.GET(key, out PinnedSpanByte value);
 
-            if (status is GarnetStatus.NOTFOUND)
+            // Non-string values cannot be DUMP'd today, but raising an error is risky so just act like the key doesn't exist
+            if (status is GarnetStatus.NOTFOUND or GarnetStatus.WRONGTYPE)
             {
                 WriteNull();
-                return true;
-            }
-
-            if (status is GarnetStatus.WRONGTYPE)
-            {
-                WriteError(CmdStrings.RESP_ERR_WRONG_TYPE);
                 return true;
             }
 

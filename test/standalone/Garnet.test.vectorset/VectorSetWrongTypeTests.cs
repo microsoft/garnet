@@ -148,6 +148,7 @@ namespace Garnet.test
                 RespCommand.COMMITAOF,
                 RespCommand.DEL,
                 RespCommand.DELIFGREATER,
+                RespCommand.DUMP,
                 RespCommand.EXPDELSCAN,
                 RespCommand.EXISTS,
                 RespCommand.EXPIRE,
@@ -165,7 +166,7 @@ namespace Garnet.test
                 RespCommand.REGISTERCS,
                 RespCommand.RENAME,
                 RespCommand.RENAMENX,
-                RespCommand.RESTORE,
+                RespCommand.RESTORE, // If RESTORE gets REPLACE support we'll need to add it to VectorSetOverwriteTests
                 RespCommand.RIEXISTS,
                 RespCommand.RUNTXP,
                 RespCommand.MSETNX,
@@ -545,20 +546,6 @@ namespace Garnet.test
 
             static Task RunCommandAsync(IDatabase db, RedisKey againstKey)
             => db.StringDecrementAsync(againstKey, 2L);
-        }
-
-        [Test]
-        public Task DUMPAsync()
-        {
-            // Very technically DUMP'ing is supported on Vector Sets in Redis.
-            //
-            // But any reasonably sized Vector Set will be too large to return
-            // so we WRONGTYPE it and deviate from Redis behavior.
-
-            return TestNonVectorSetCommandAsync(RunCommandAsync);
-
-            static Task RunCommandAsync(IDatabase db, RedisKey againstKey)
-            => db.ExecuteAsync("DUMP", againstKey);
         }
 
         [Test]
