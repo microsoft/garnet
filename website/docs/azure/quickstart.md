@@ -13,6 +13,7 @@ This guide will walk you through creating and connecting to your first Azure Cos
 - An active Azure subscription
 - Confirmed registration to the expanded Private Preview. If your subscription isn't already registered, [sign up](./overview.md#register-your-subscription).
 - Access to the Azure portal and the [Azure CLI](https://learn.microsoft.com/en-us/cli/azure/install-azure-cli?view=azure-cli-latest)
+- Permissions to create the cluster. Your identity needs `Microsoft.DocumentDB/garnetClusters/write` and `Microsoft.Network/virtualNetworks/subnets/join/action` on the subnet the cluster uses. The built-in **Owner** and **Contributor** roles include both permissions; Cosmos DB-specific roles don't. See [permissions to create and manage a cluster](./security.md#permissions-to-create-and-manage-a-cluster).
 - Required role assignment permissions. 
     - For successful provisioning, you must have **Microsoft.Authorization/roleAssignments/write** permissions at either the *Subscription* or *Resource Group* scope. Example built-in roles are [Owner](https://learn.microsoft.com/azure/role-based-access-control/built-in-roles/privileged#owner) and [User Access Administrator](https://learn.microsoft.com/azure/role-based-access-control/built-in-roles#user-access-administrator), or you can use a custom role with this permission.
 
@@ -20,7 +21,7 @@ This guide will walk you through creating and connecting to your first Azure Cos
 
 During provisioning, you must either create a new virtual network for your cache or use an existing one. All application access to the cache must be from within this virtual network.
 
-1. Sign in to the [Azure portal](https://aka.ms/garnet-portal). The Azure Cosmos DB Garnet Cache is in an expanded Private Preview and you must access the Azure portal through this link to create caches.
+1. Sign in to the [Azure portal](https://portal.azure.com).
 2. Click **Create a resource** and search for **Azure Cosmos DB Garnet Cache**.
 3. Select **Azure Cosmos DB Garnet Cache** and click **Create**.
 4. Fill in the required information:
@@ -28,16 +29,19 @@ During provisioning, you must either create a new virtual network for your cache
    - **Resource Group**: Create new or select existing.
    - **Region**: Select the region closest to your application. See the list of [supported regions](./cluster-configuration.md#regional-availability).
    - **Cluster Name**: Choose a unique name for your cache.
-   - **Virtual Network**: Select *Create a new virtual network* then enter your network name, and optionally, customize the address space and subnet. If you're using an existing virtual network, ensure the proper [outbound network rules](./security.md#required-outbound-network-rules) are configured.
-   - **Assign Roles**: Leave this option checked for successful provisioning. During provisioning, the *Network Contributor* role will be assigned to *Azure Cosmos DB* on both the virtual network and subnet. Ensure you have **Microsoft.Authorization/roleAssignments/write** permissions at either the *Subscription* or *Resource Group* scope for this operation to succeed.
-   - **System Assigned Identity**: Optional. This will create a managed identity for the cache.
+   - **Virtual Network**: Select *Create a new virtual network* then enter your network name, and optionally, customize the address space and subnet. If you're using an existing virtual network, ensure the proper [outbound network rules](./security.md#required-outbound-network-rules) are configured. Your identity must have `Microsoft.Network/virtualNetworks/subnets/join/action` on the selected subnet. See [permissions to create and manage a cluster](./security.md#permissions-to-create-and-manage-a-cluster).
+   - **Enable outbound access**: Shown when you create a new virtual network. A new VNet needs outbound access for provisioning to reach the required destinations, and provisioning fails without it. Only uncheck it if you'll configure an explicit outbound method, such as a NAT gateway, yourself. See [outbound access](./security.md#outbound-access).
+   - **Assign Roles**: Leave this option checked for successful provisioning. This grants the *Azure Cosmos DB* service principal the *Network Contributor* role on the virtual network and subnet so the managed service can deploy and manage cache nodes in your network. Ensure you have *Microsoft.Authorization/roleAssignments/write* permissions at either the *Subscription* or *Resource Group* scope for role assignment to succeed. This assignment applies to the service, and is separate from your own permissions: your identity still needs `Microsoft.DocumentDB/garnetClusters/write` and `Microsoft.Network/virtualNetworks/subnets/join/action` to [create the cluster](./security.md#permissions-to-create-and-manage-a-cluster).
    - **Availability Zone**: Optional. Select to enable availability zones, meaning nodes will be distributed across zones. See [availability zone support](./resiliency.md#multi-availability-zone-deployment).
    - **Cluster Type**: Either Dev/Test or Production. This determines the SKUs that will be available and the performance characteristics to expect from your cache. See [cluster configuration](./cluster-configuration.md#cluster-types).
    - **SKU Size**: Once cluster type is selected, you can select your SKU. All nodes in the cluster will be provisioned on a Virtual Machine of this SKU. See [SKU details](./cluster-configuration.md#available-tiers).
    - **Shard Count**: The number of shards in your cluster, corresponding to the number of primary nodes. The memory footprint of your cache is determined by the total memory across all primary nodes. Learn when to [scale out vs. scale up](./cluster-configuration.md#choosing-your-scaling-strategy).
-   - **Replication Factor**: Not currently configurable. The default replication factor is 2x meaning there are 2 nodes per shard, one primary and one replica.
+   - **Replication Factor**: Determines the number of nodes in each shard. *1x* is primary nodes only with no replicas; use *2x* or higher for high availability. The replication factor can't be changed after provisioning. See [replication](./resiliency.md#replication).
    - **Total Node Count**: To modify, adjust the *Shard Count*. The total number of nodes in the cluster is calculated by *Shard Count x Replication Factor*.
-5. Click **Review + Create** and then **Create**
+5. Optionally, fill in the Advanced tab information:
+   - **Persistence mode**: Optional. Choose **No Persistence** (in-memory only) or **Append Only File (AOF) and Redis Database (RDB)**, which combines AOF operation logs with RDB snapshots for [data persistence](./resiliency.md#data-persistence). The persistence mode can only be configured at provisioning time and can't be changed afterward.
+   - **Disk SKU**: Not configurable. When data persistence is enabled, disk size is automatically selected based on the compute SKU chosen.
+6. Click **Review + Create** and then **Create**
 
 
 ## Step 2: Configure Data Access with RBAC
@@ -49,7 +53,7 @@ Roles can be assigned at various scopes, in both examples below we will assign t
 ### Set up in the Azure Portal
 You can assign data access roles for the Azure Cosmos DB Garnet Cache clusters using the **Access control (IAM)** page.
 
-1. Sign in to the [Azure portal](https://aka.ms/garnet-portal). The Azure Cosmos DB Garnet Cache is in an expanded Private Preview and you must access the Azure portal through this link to see your caches.
+1. Sign in to the [Azure portal](https://portal.azure.com).
 2. Navigate to the **Access control (IAM)** page of your Azure Cosmos DB Garnet Cache resource and select **Add > Add role assignment**.
 
 ![Configure Azure Cosmos DB Garnet Cache RBAC](../../static/img/azure/configure-rbac.png)
@@ -136,7 +140,7 @@ az account get-access-token --scope https://cosmos.azure.com/.default --query ac
 ```
 
 3. Find the IP address of your cache nodes. Redis clients can connect to one of the node IP addresses and get the list of all replicas and ports automatically.
-    1. Sign in to the [Azure portal](https://aka.ms/garnet-portal). The Azure Cosmos DB Garnet Cache is in an expanded Private Preview and you must access the Azure portal through this link to see your caches.
+    1. Sign in to the [Azure portal](https://portal.azure.com).
     2. Navigate to the **Settings > Cluster Explorer** page of your Azure Cosmos DB Garnet Cache resource.
     3. Find the IP addresses of all nodes in your cluster. Save them for a future step.
 

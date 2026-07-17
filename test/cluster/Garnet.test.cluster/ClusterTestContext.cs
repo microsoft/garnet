@@ -402,6 +402,26 @@ namespace Garnet.test.cluster
         }
 
         /// <summary>
+        /// Test-only: force a small range index stream chunk size on every node's RangeIndexManager.
+        /// </summary>
+        public void SetRangeIndexStreamChunkSizeOnAllNodes(int chunkSize)
+        {
+            foreach (var node in nodes)
+                node?.Provider?.StoreWrapper?.DefaultDatabase?.RangeIndexManager?.SetAofStreamChunkSize(chunkSize);
+        }
+
+        /// <summary>
+        /// Attach a <see cref="CapturingLogger"/> to the shared logger factory so tests can assert on
+        /// structured log fields emitted by any node.
+        /// </summary>
+        public CapturingLogger CaptureNodeLogs()
+        {
+            var capture = new CapturingLogger();
+            loggerFactory.AddProvider(new CapturingLoggerProvider(capture));
+            return capture;
+        }
+
+        /// <summary>
         /// Create single cluster instance with corresponding options
         /// </summary>
         /// <param name="endpoint"></param>
