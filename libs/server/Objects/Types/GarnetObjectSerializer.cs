@@ -4,6 +4,7 @@
 using System.Diagnostics;
 using System.IO;
 using System.Text;
+using Garnet.common;
 using Tsavorite.core;
 
 namespace Garnet.server
@@ -50,7 +51,15 @@ namespace Garnet.server
 
         private IGarnetObject DeserializeInternal(BinaryReader binaryReader)
         {
-            var type = (GarnetObjectType)binaryReader.ReadByte();
+            var firstByte = binaryReader.ReadByte();
+
+            // 0xFC..0xFF are reserved for a future object-serialization format version/escape byte
+            // (see GarnetObjectType). No current writer emits these, so encountering one means the
+            // data was written by a newer version whose object format this build cannot read.
+            if (firstByte >= GarnetObjectTypeExtensions.ReservedObjectFormatByteStart)
+                throw new GarnetException($"Unsupported object serialization format marker 0x{firstByte:X2}; the data may have been written by a newer Garnet version.");
+
+            var type = (GarnetObjectType)firstByte;
             var obj = type switch
             {
                 GarnetObjectType.Null => null,

@@ -4,7 +4,9 @@
 namespace Garnet.cluster
 {
     /// <summary>
-    /// NodeRole identifier
+    /// NodeRole identifier.
+    /// Persisted in the cluster config (ClusterConfigSerializer) and gossiped, so values are
+    /// EXPLICIT and APPEND-ONLY: never change/reorder an existing value; add new roles at the end.
     /// </summary>
     public enum NodeRole : byte
     {
@@ -15,11 +17,11 @@ namespace Garnet.cluster
         /// <summary>
         /// REPLICA Role identifier
         /// </summary>
-        REPLICA,
+        REPLICA = 0x1,
         /// <summary>
         /// UNASSIGNED Role identifier
         /// </summary>
-        UNASSIGNED,
+        UNASSIGNED = 0x2,
     }
 
     /// <summary>
