@@ -83,14 +83,50 @@ namespace Garnet.cluster
                 return new(true);
             }
 
+            // Fits one send buffer: send the whole record (type LogRecord). Otherwise send it as chunks (type ChunkedLogRecord)
+            // from the stable pooled Memory, which stays valid across the chunked send's flush awaits.
+            int serializedRecordLength;
             fixed (byte* ptr = output.SpanByteAndMemory.Span)
+                serializedRecordLength = new LogRecord((long)ptr).GetSerializedSize();
+
+            if (serializedRecordLength <= NetworkBufferSettings.MaxSendBufferContentSize)
             {
-                var serializedRecordLength = new LogRecord((long)ptr).GetSerializedSize();
-
-                ReadOnlySpan<byte> toWrite = new(ptr, serializedRecordLength);
-
-                return WriteOrSendRecordSpanAsync(gcs, MigrationRecordSpanType.LogRecord, toWrite);
+                fixed (byte* ptr = output.SpanByteAndMemory.Span)
+                    return WriteOrSendRecordSpanAsync(gcs, MigrationRecordSpanType.LogRecord, new ReadOnlySpan<byte>(ptr, serializedRecordLength));
             }
+
+            return WriteOrSendChunkedRecordAsync(gcs, output.SpanByteAndMemory.Memory.Memory[..serializedRecordLength]);
+        }
+
+        /// <summary>
+        /// Send a serialized record larger than one send buffer as a sequence of <see cref="MigrationRecordSpanType.ChunkedLogRecord"/>
+        /// chunks, flushing and retrying when the client buffer fills. The receiver reassembles the chunks and deserializes.
+        /// </summary>
+        private async ValueTask<bool> WriteOrSendChunkedRecordAsync(GarnetClientSession gcs, ReadOnlyMemory<byte> record)
+        {
+            var maxChunk = NetworkBufferSettings.MaxSendBufferContentSize;
+            var offset = 0;
+            while (offset < record.Length)
+            {
+                var chunkLength = Math.Min(maxChunk, record.Length - offset);
+                var moreChunksFollow = offset + chunkLength < record.Length;
+
+                if (gcs.NeedsInitialization)
+                    gcs.SetClusterMigrateHeader(_sourceNodeId, _replaceOption, isVectorSets: false);
+
+                if (gcs.TryWriteChunkedRecordSpan(record.Span.Slice(offset, chunkLength), moreChunksFollow, out var task))
+                {
+                    offset += chunkLength;
+                    continue;
+                }
+
+                // Client buffer is full: flush and retry the same chunk.
+                if (!await HandleMigrateTaskResponseAsync(task).ConfigureAwait(false))
+                    return false;
+                gcs.SetClusterMigrateHeader(_sourceNodeId, _replaceOption, isVectorSets: false);
+            }
+
+            return true;
         }
 
         /// <summary>

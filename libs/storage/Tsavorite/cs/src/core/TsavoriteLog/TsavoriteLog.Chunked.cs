@@ -31,7 +31,6 @@ namespace Tsavorite.core
     //   in AllocatorBase.HandlePageOverflow).
     public sealed partial class TsavoriteLog : IChunkedObjectSerializerConsumer
     {
-        public const int ChunkContinuesFlag = unchecked((int)0x80000000);
 
         /// <summary>
         /// Writes a chunk record's header: copies the caller's template (which already holds the constant fields — keyHash and the
@@ -364,7 +363,7 @@ namespace Tsavorite.core
                 // component's prefix is deferred to the start of the next chunk record — never split across the
                 // boundary. The reader applies the identical bound (off + sizeof(int) <= chunkRegion in ReadChunk).
                 if (chunkRegion - chunkOffset < sizeof(int))
-                    break; 
+                    break;
                 var segCap = chunkRegion - chunkOffset - sizeof(int);
 
                 // For Input not yet materialized: if the whole input fits into this record then serialize it directly (no temp buffer);
@@ -398,7 +397,7 @@ namespace Tsavorite.core
                 var segLen = chunkRemaining < segCap ? chunkRemaining : segCap;
                 var needSplit = (comp[i].offset + segLen < comp[i].TotalLen) || !comp[i].isComplete;
 
-                *(int*)(payload + chunkOffset) = segLen | (needSplit ? ChunkContinuesFlag : 0);
+                *(int*)(payload + chunkOffset) = segLen | (needSplit ? ChunkedRecordConstants.ContinuationFlag : 0);
                 chunkOffset += sizeof(int);
                 if (segLen > 0)
                 {

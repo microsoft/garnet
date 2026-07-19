@@ -6,6 +6,7 @@ using System.Buffers;
 using System.Diagnostics;
 using System.IO;
 using System.Runtime.CompilerServices;
+using Tsavorite.core.Allocator.ObjectSerialization;
 
 #pragma warning disable CS1591 // Missing XML comment for publicly visible type or member
 
@@ -299,86 +300,182 @@ namespace Tsavorite.core
 
         #region Serialization to and from expanded record format
         /// <summary>
-        /// Serialize a log record (which may be in-memory <see cref="LogRecord"/> or IO'd <see cref="DiskLogRecord"/>) to the <see cref="SpanByteAndMemory"/>
-        /// <paramref name="output"/> in inline-expanded format, with the Overflow Keys and Values and Object Values serialized inline to the Key and Value spans.
-        /// The serialized layout is:
+        /// Serialize a log record (in-memory <see cref="LogRecord"/> or IO'd <see cref="DiskLogRecord"/>) that is too large for a
+        /// single network send buffer as a sequence of chunks, for the migration / replication chunked path (the small-record
+        /// fast path — the whole record in one buffer — is handled by the caller). The record is written through
+        /// <paramref name="chunker"/> (a reused network-mode <see cref="ChunkedObjectSerializer{TContext}"/>) as one continuous
+        /// byte stream, in the same layout as the non-chunked path:
         /// <list type="bullet">
-        ///     <item>Inline portion of the LogRecord: RecordInfo, IndicatorWord, Key and Value data (each of 4 byte length, which restores to object Id), optionals (ETag, Expiration, ObjectLogPosition, ...)</item>
-        ///     <item>Key data, if key is Overflow</item>
-        ///     <item>Value data, if value is Overflow or Object</item>
+        ///     <item>Inline portion of the LogRecord: RecordInfo, IndicatorWord, inline Key/Value (each 4-byte length restoring to
+        ///         an object Id), optionals (ETag, Expiration, ObjectLogPosition, ...)</item>
+        ///     <item>Key data, if the key is Overflow</item>
+        ///     <item>Value data, if the value is Overflow; or the streamed object serialization, if the value is an Object</item>
         /// </list>
+        /// The chunker's consumer frames each drained span as a chunk record (see <c>GarnetClientSession.TryWriteChunkedRecordSpan</c>)
+        /// with a continuation flag that is clear only on the record's last chunk; the receiver reassembles the chunks and calls
+        /// <see cref="Deserialize"/>. A streamed object value's length is not known when the inline portion is emitted, so its RDH
+        /// value-length is left zero here and the receiver supplies it to <see cref="Deserialize"/> via the value-length override.
         /// </summary>
-        /// <param name="srcLogRecord">The Source log record to be serialized to inline form</param>
-        /// <param name="maxHeapAllocationSize">The size of heap allocation to make in <paramref name="output"/>.<see cref="SpanByteAndMemory.Memory"/>
-        ///     if the record is larger than the inline <paramref name="output"/>.<see cref="SpanByteAndMemory.SpanByte"/>. This can happen because:
-        ///     <list type="bullet">
-        ///         <item>The known record size (due to inline data and Overflow (whose length is known in advance)) is larger than the 
-        ///             <paramref name="output"/>.<see cref="SpanByteAndMemory.SpanByte"/> size</item>
-        ///         <item>The Object Value serialization (if any) surpasses the <paramref name="output"/>.<see cref="SpanByteAndMemory.SpanByte"/> size
-        ///             (we don't know how big an object is until we serialize it)</item>
-        ///     </list></param>
-        /// <param name="valueObjectSerializer">The serializer for the value object, if there is one (ignored if not)</param>
-        /// <param name="memoryPool">The memory pool to use to allocate <paramref name="maxHeapAllocationSize"/> bytes into 
-        ///     <paramref name="output"/>.<see cref="SpanByteAndMemory.Memory"/> if we overflow the <paramref name="output"/>.<see cref="SpanByteAndMemory.SpanByte"/>.</param>
-        /// <param name="output">The output to receive the serialized logRecord data, either in <paramref name="output"/>.<see cref="SpanByteAndMemory.SpanByte"/>
-        ///   or <paramref name="output"/>.<see cref="SpanByteAndMemory.Memory"/></param>
-        /// <remarks>
-        /// This is used for migration and replication, and output.SpanByteAndMemory is a span of the remaining space in the network buffer.
-        /// <list type="bullet">
-        ///     <item>If <paramref name="output"/>.<see cref="SpanByteAndMemory.IsSpanByte"/>, it points directly to the network buffer so we include the length prefix in the output.</item>
-        ///     <item><see cref="SpanByteAndMemory.Memory"/> is allocated if needed; in that case the caller will flush the network buffer and retry with the full length.</item>
-        ///     <item>The record stream is prefixed with the int length of the stream. RespReadUtils.GetSerializedRecordSpan sets up for deserialization from the network buffer.</item>
-        /// </list>
-        /// </remarks>
-        /// <returns>The total number of bytes in the output.</returns>
-        public static int Serialize<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, int maxHeapAllocationSize, IObjectSerializer<IHeapObject> valueObjectSerializer,
-            MemoryPool<byte> memoryPool, ref SpanByteAndMemory output)
+        /// <typeparam name="TSourceLogRecord">The source log record type.</typeparam>
+        /// <typeparam name="TContext">Per-record caller state threaded through the chunker to its consumer on every drain.</typeparam>
+        /// <param name="srcLogRecord">The source log record to serialize.</param>
+        /// <param name="valueObjectSerializer">Serializer used to stream an object value into the chunk stream (ignored if the value is not an object).</param>
+        /// <param name="chunker">The reused chunk writer (network manual mode); its consumer frames and sends each drained span.</param>
+        /// <param name="context">Per-record caller state passed to the chunker's consumer on every drain.</param>
+        public static void Serialize<TSourceLogRecord, TContext>(in TSourceLogRecord srcLogRecord, IObjectSerializer<IHeapObject> valueObjectSerializer,
+                ChunkedObjectSerializer<TContext> chunker, TContext context)
             where TSourceLogRecord : ISourceLogRecord
         {
             if (srcLogRecord.IsMemoryLogRecord)
-                return SerializeLogRecord(in srcLogRecord.AsMemoryLogRecordRef(), maxHeapAllocationSize, valueObjectSerializer, memoryPool, ref output);
-
-            if (!srcLogRecord.IsDiskLogRecord)
+                SerializeChunked(in srcLogRecord.AsMemoryLogRecordRef(), valueObjectSerializer, chunker, context);
+            else if (srcLogRecord.IsDiskLogRecord)
+                SerializeChunked(in srcLogRecord.AsDiskLogRecordRef().logRecord, valueObjectSerializer, chunker, context);
+            else
                 throw new TsavoriteException("Unknown TSourceLogRecord type");
-            return SerializeLogRecord(in srcLogRecord.AsDiskLogRecordRef().logRecord, maxHeapAllocationSize, valueObjectSerializer, memoryPool, ref output);
         }
 
-        // TODO: long value sizes (larger than the network buffer) are currently not supported; need to create a chunked protocol that will write incrementally to a PinnedMemoryStream
-        //       specialized on a new ReplicaStreamBuffer that wraps the network buffer's PinnedSpanByte and the FlushAndReset callback does the network buffer flush and reset (with
-        //       extra work to make this send to multiple replicas) and updates the output available length. Currently using maxHeapAllocationSize to get around not yet having this.
-
-        static int SerializeLogRecord(in LogRecord logRecord, int maxHeapAllocationSize, IObjectSerializer<IHeapObject> valueObjectSerializer, MemoryPool<byte> memoryPool, ref SpanByteAndMemory output)
+        static void SerializeChunked<TContext>(in LogRecord logRecord, IObjectSerializer<IHeapObject> valueObjectSerializer, ChunkedObjectSerializer<TContext> chunker, TContext context)
         {
-            // TotalSize includes the length prefix, which is included in the output stream if we can write directly to the SpanByte, which is a span in the
-            // network buffer. In case of significant shrinkage, calculate this AllocatedSize separately rather than logRecord.GetInlineRecordSizes().allocatedSize.
-            var alignedInlineRecordSize = RoundUp(logRecord.ActualSize, Constants.kRecordAlignment);
-            var estimatedTotalSize = alignedInlineRecordSize + sizeof(int); // Include the record-size prefix in case we can use the SpanByte directly (see DirectCopyInlinePortionOfRecord)
+            var dataHeader = logRecord.DataHeader;
+            var actualSize = logRecord.ActualSize;
+            var alignedInlineRecordSize = RoundUp(actualSize, Constants.kRecordAlignment);
 
-            var heapSize = 0;
-            if (logRecord.DataHeader.RecordIsInline)
+            chunker.BeginSerialize(context);
+
+            // Emit the inline portion. Copy it to a scratch buffer so we can reset the filler length (the record may have been
+            // shrunk) and, for a non-inline record, encode the overflow key/value lengths into the RDH. For a streamed object
+            // value the length is not yet known, so its RDH value-length is left zero (SetObjectLogRecordStartPositionAndLength
+            // ignores the passed length for an overflow value and uses it verbatim for an object value); the receiver derives it.
+            var rented = ArrayPool<byte>.Shared.Rent(alignedInlineRecordSize);
+            try
             {
-                // estimatedTotalSize is accurate here.
-                DirectCopyInlinePortionOfRecord(in logRecord, alignedInlineRecordSize, estimatedTotalSize, maxHeapAllocationSize, memoryPool, ref output);
+                fixed (byte* scratch = rented)
+                {
+                    Buffer.MemoryCopy((byte*)logRecord.physicalAddress, scratch, alignedInlineRecordSize, alignedInlineRecordSize);
+                    var scratchRecord = new LogRecord((long)scratch, logRecord.objectIdMap);
+                    scratchRecord.SetFillerLength(alignedInlineRecordSize - actualSize);
+                    if (!dataHeader.RecordIsInline)
+                    {
+                        var fakeFilePos = new ObjectLogFilePositionInfo((ulong)alignedInlineRecordSize, segSizeBits: 0);
+                        scratchRecord.SetObjectLogRecordStartPositionAndLength(fakeFilePos, valueObjectLength: 0);
+                    }
+                }
+
+                // WriteBytes from the managed array (outside the fixed) so a drain's blocking flush does not hold the pin.
+                chunker.WriteBytes(new ReadOnlySpan<byte>(rented, 0, alignedInlineRecordSize));
+            }
+            finally
+            {
+                ArrayPool<byte>.Shared.Return(rented);
+            }
+
+            if (!dataHeader.RecordIsInline)
+            {
+                if (dataHeader.KeyIsOverflow)
+                    chunker.WriteBytes(logRecord.KeyOverflow.ReadOnlySpan);
+
+                if (dataHeader.ValueIsOverflow)
+                {
+                    chunker.WriteBytes(logRecord.ValueOverflow.ReadOnlySpan);
+                }
+                else if (dataHeader.ValueIsObject)
+                {
+                    // Stream the object into the chunk buffer; it drains to the consumer as it fills, so the whole serialized
+                    // form is never materialized at once.
+                    var stream = chunker.GetStream();
+                    valueObjectSerializer.BeginSerialize(stream);
+                    valueObjectSerializer.Serialize(logRecord.ValueObject);
+                    valueObjectSerializer.EndSerialize();
+                }
+            }
+
+            chunker.EndSerialize();
+        }
+
+        /// <summary>
+        /// Serialize a whole log record into <paramref name="output"/> (growing its heap memory as needed) in the non-chunked
+        /// layout that <see cref="Deserialize"/> reads. Used by the migration read path, which must serialize while holding the
+        /// store epoch (a migrating key is not locked and may be concurrently updated) and therefore cannot stream to the
+        /// network there; the caller sends the resulting buffer out of epoch (whole if it fits a send buffer, else sliced into
+        /// chunks). Unlike the chunked <see cref="Serialize"/>, an object value's length is known here, so its RDH value-length
+        /// is encoded normally.
+        /// </summary>
+        /// <typeparam name="TSourceLogRecord">The source log record type.</typeparam>
+        /// <param name="srcLogRecord">The source log record to serialize.</param>
+        /// <param name="valueObjectSerializer">Serializer for an object value (ignored if the value is not an object).</param>
+        /// <param name="memoryPool">Memory pool used to grow <paramref name="output"/> if needed.</param>
+        /// <param name="output">Receives the serialized record (in <see cref="SpanByteAndMemory.Memory"/> when it must grow).</param>
+        /// <returns>The serialized record length (no length prefix).</returns>
+        public static int SerializeToBuffer<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, IObjectSerializer<IHeapObject> valueObjectSerializer,
+                MemoryPool<byte> memoryPool, ref SpanByteAndMemory output)
+            where TSourceLogRecord : ISourceLogRecord
+        {
+            if (srcLogRecord.IsMemoryLogRecord)
+                return SerializeLogRecordToBuffer(in srcLogRecord.AsMemoryLogRecordRef(), valueObjectSerializer, memoryPool, ref output);
+            if (!srcLogRecord.IsDiskLogRecord)
+                throw new TsavoriteException("Unknown TSourceLogRecord type");
+            return SerializeLogRecordToBuffer(in srcLogRecord.AsDiskLogRecordRef().logRecord, valueObjectSerializer, memoryPool, ref output);
+        }
+
+        static int SerializeLogRecordToBuffer(in LogRecord logRecord, IObjectSerializer<IHeapObject> valueObjectSerializer, MemoryPool<byte> memoryPool, ref SpanByteAndMemory output)
+        {
+            var dataHeader = logRecord.DataHeader;
+            var alignedInlineRecordSize = RoundUp(logRecord.ActualSize, Constants.kRecordAlignment);
+            if (dataHeader.RecordIsInline)
+            {
+                DirectCopyInlinePortionOfRecord(in logRecord, alignedInlineRecordSize, estimatedTotalSize: alignedInlineRecordSize,
+                    maxHeapAllocationSize: alignedInlineRecordSize, memoryPool, ref output);
+                return alignedInlineRecordSize;
+            }
+
+            // Not inline: determine the heap component sizes (serializing an object value up front, into a growable stream, so
+            // its length is known), size the output for the whole record, then lay out the inline portion, overflow key, and value.
+            var keyLength = dataHeader.KeyIsOverflow ? logRecord.KeyOverflow.Length : 0;
+
+            var valueLength = 0;
+            byte[] objectBuffer = null;
+            if (dataHeader.ValueIsOverflow)
+            {
+                valueLength = logRecord.ValueOverflow.Length;
             }
             else
             {
-                var estimatedRecordHeapSize = logRecord.DataHeader.KeyIsOverflow ? logRecord.KeyOverflow.Length : 0;
-                if (logRecord.DataHeader.ValueIsOverflow)
-                    estimatedRecordHeapSize += logRecord.ValueOverflow.Length;
-                else if (logRecord.DataHeader.ValueIsObject)
-                {
-                    // We don't know this size exactly so use a small value. Either we'll fit in inline and then have to adjust if we go beyond that, or we
-                    // will just allocate max here and then if we go beyond that, we'll throw the capacity-exceeded exception. This is where "estimated" comes in.
-                    estimatedRecordHeapSize += 1 << 17; // Currently 128KB, matching the processing layer's BufferSizeUtils.MaxBatchSize
-                }
-
-                estimatedTotalSize += estimatedRecordHeapSize;
-
-                // DirectCopyInlinePortionOfRecord will allocate Memory in output if needed.
-                DirectCopyInlinePortionOfRecord(in logRecord, alignedInlineRecordSize, estimatedTotalSize, maxHeapAllocationSize, memoryPool, ref output);
-                heapSize = SerializeHeapObjects(in logRecord, alignedInlineRecordSize, estimatedRecordHeapSize, valueObjectSerializer, ref output);
+                Debug.Assert(dataHeader.ValueIsObject, "Expected ValueIsObject to be true");
+                using var stream = new MemoryStream();
+                valueObjectSerializer.BeginSerialize(stream);
+                valueObjectSerializer.Serialize(logRecord.ValueObject);
+                valueObjectSerializer.EndSerialize();
+                objectBuffer = stream.GetBuffer();
+                valueLength = (int)stream.Length;
             }
-            return alignedInlineRecordSize + heapSize;
+
+            var totalSize = alignedInlineRecordSize + keyLength + valueLength;
+
+            // Grows output to the whole-record size and copies the inline portion into it.
+            DirectCopyInlinePortionOfRecord(in logRecord, alignedInlineRecordSize, estimatedTotalSize: totalSize,
+                maxHeapAllocationSize: totalSize, memoryPool, ref output);
+
+            var outputSpan = output.Span;
+            var offset = alignedInlineRecordSize;
+            if (dataHeader.KeyIsOverflow)
+            {
+                logRecord.KeyOverflow.ReadOnlySpan.CopyTo(outputSpan.Slice(offset, keyLength));
+                offset += keyLength;
+            }
+            if (dataHeader.ValueIsOverflow)
+                logRecord.ValueOverflow.ReadOnlySpan.CopyTo(outputSpan.Slice(offset, valueLength));
+            else
+                new ReadOnlySpan<byte>(objectBuffer, 0, valueLength).CopyTo(outputSpan.Slice(offset, valueLength));
+
+            // Encode the overflow/object lengths into the inline portion's RDH so Deserialize can restore them.
+            var fakeFilePos = new ObjectLogFilePositionInfo((ulong)alignedInlineRecordSize, segSizeBits: 0);
+            fixed (byte* ptr = outputSpan)
+            {
+                var serializedLogRecord = new LogRecord((long)ptr, logRecord.objectIdMap);
+                serializedLogRecord.SetObjectLogRecordStartPositionAndLength(fakeFilePos, (ulong)valueLength);
+            }
+
+            return totalSize;
         }
 
         /// <summary>
@@ -424,84 +521,17 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Serialize any Overflow Key and Overflow or Object Value into the output after the inline record portion.
-        /// </summary>
-        /// <param name="logRecord">The log record to serialize</param>
-        /// <param name="inlineRecordSize">The size of the inline portion of the log record (which includes the space for ObjectIds, but not the object/overflow data)</param>
-        /// <param name="heapSize"></param>
-        /// <param name="valueObjectSerializer"></param>
-        /// <param name="output"></param>
-        /// <returns></returns>
-        private static int SerializeHeapObjects(in LogRecord logRecord, int inlineRecordSize, int heapSize, IObjectSerializer<IHeapObject> valueObjectSerializer, ref SpanByteAndMemory output)
-        {
-            if (logRecord.DataHeader.RecordIsInline)
-                return inlineRecordSize;
-
-            // Serialize Key then Value, just like the Object log file. And this will be easy to modify for future chunking of multi-networkBuffer Keys and Values.
-            var outputOffset = (ulong)inlineRecordSize;
-            if (logRecord.DataHeader.KeyIsOverflow)
-            {
-                var overflow = logRecord.KeyOverflow;
-                overflow.ReadOnlySpan.CopyTo(output.Span.Slice(inlineRecordSize));
-                outputOffset += (ulong)overflow.Length;
-            }
-
-            var valueObjectLength = 0UL;
-            if (logRecord.DataHeader.ValueIsOverflow)
-            {
-                var overflow = logRecord.ValueOverflow;
-                overflow.ReadOnlySpan.CopyTo(output.Span.Slice((int)outputOffset));
-                valueObjectLength = (ulong)overflow.Length;
-            }
-            else
-            {
-                Debug.Assert(logRecord.DataHeader.ValueIsObject, "Expected ValueIsObject to be true");
-                if (output.IsSpanByte)
-                    valueObjectLength = DoSerialize(logRecord.ValueObject, valueObjectSerializer, output.SpanByte.ToPointer() + outputOffset, output.Length);
-                else
-                {
-                    fixed (byte* ptr = output.MemorySpan.Slice((int)outputOffset))
-                        valueObjectLength = DoSerialize(logRecord.ValueObject, valueObjectSerializer, ptr, output.Length);
-                }
-            }
-            outputOffset += valueObjectLength;
-
-            // Create a temp LogRecord over the output data so we can store the lengths in serialized format, using the offset to the serialized
-            // part of the buffer as a fake file offset (implicitly for segment 0).
-            var fakeFilePos = new ObjectLogFilePositionInfo((ulong)inlineRecordSize, segSizeBits: 0);
-            if (output.IsSpanByte)
-            {
-                var serializedLogRecord = new LogRecord((long)output.SpanByte.ToPointer());
-                serializedLogRecord.SetObjectLogRecordStartPositionAndLength(fakeFilePos, valueObjectLength);
-            }
-            else
-            {
-                fixed (byte* ptr = output.MemorySpan.Slice(0, inlineRecordSize))
-                {
-                    var serializedLogRecord = new LogRecord((long)ptr, logRecord.objectIdMap);
-                    serializedLogRecord.SetObjectLogRecordStartPositionAndLength(fakeFilePos, valueObjectLength);
-                    serializedLogRecord = new LogRecord((long)ptr);     // Reset to clear objectIdMap because it may be the one in the main log and we pass in a transient one when deserializing
-                }
-            }
-
-            return (int)outputOffset - inlineRecordSize;
-
-            static ulong DoSerialize(IHeapObject valueObject, IObjectSerializer<IHeapObject> valueObjectSerializer, byte* destPtr, int destLength)
-            {
-                var stream = new UnmanagedMemoryStream(destPtr, destLength, destLength, FileAccess.ReadWrite);
-                valueObjectSerializer.BeginSerialize(stream);
-                valueObjectSerializer.Serialize(valueObject);
-                valueObjectSerializer.EndSerialize();
-                var valueLength = (ulong)stream.Position;
-                return valueLength;
-            }
-        }
-
-        /// <summary>
         /// Deserialize from a <see cref="PinnedSpanByte"/> over a stream of bytes created by <see cref="Serialize"/>.
         /// </summary>
+        /// <param name="recordSpan">The reassembled record bytes.</param>
+        /// <param name="valueObjectSerializer">Serializer used to deserialize an object value.</param>
+        /// <param name="transientObjectIdMap">Transient object-id map for the deserialized record's overflow/object slots.</param>
+        /// <param name="storeFunctions">The store functions.</param>
+        /// <param name="objectValueLengthOverride">When non-negative, the object value's serialized length to use instead of the
+        ///     one encoded in the RDH. The chunked network path (see <see cref="Serialize"/>) streams the object value and so
+        ///     cannot encode its length up front; the receiver derives it and passes it here. Only valid for an object value.</param>
         public static DiskLogRecord Deserialize<TStoreFunctions>(PinnedSpanByte recordSpan, IObjectSerializer<IHeapObject> valueObjectSerializer, ObjectIdMap transientObjectIdMap,
-            TStoreFunctions storeFunctions)
+            TStoreFunctions storeFunctions, int objectValueLengthOverride = -1)
             where TStoreFunctions : IStoreFunctions
         {
             // Serialize() did not change the state of the KeyIsInline/ValueIsInline/ValueIsObject bits, but it did change the value at the ObjectId
@@ -512,6 +542,12 @@ namespace Tsavorite.core
                 return new(serializedLogRecord);
             var offset = serializedLogRecord.GetObjectLogRecordStartPositionAndLengths(out var keyLength, out var valueLength);
 
+            if (objectValueLengthOverride >= 0)
+            {
+                // The chunked sender left an object value's RDH length as zero (it is streamed, so unknown up front); use the length the receiver derived.
+                Debug.Assert(serializedLogRecord.DataHeader.ValueIsObject, "objectValueLengthOverride is only valid for an object value");
+                valueLength = (ulong)objectValueLengthOverride;
+            }
             // Note: Similar logic to this is in ObjectLogReader.ReadObjects.
             var keyWasSet = false;
             try
@@ -549,6 +585,34 @@ namespace Tsavorite.core
                 serializedLogRecord.OnDeserializationError(keyWasSet);
                 throw;
             }
+        }
+
+        /// <summary>
+        /// Deserialize a record reassembled from <see cref="Serialize"/>'s chunk stream (migration / replication chunked path).
+        /// A streamed object value's length is not encoded in the RDH (the chunked <see cref="Serialize"/> cannot know it up
+        /// front), so it is derived here from the reassembled record size — the object value is the record's last component, so
+        /// its length is <c>total − inlinePortion − overflowKey</c> — and passed to <see cref="Deserialize"/> as the value-length
+        /// override. When the RDH length is present (the migration buffer path encodes it), it must agree.
+        /// </summary>
+        public static DiskLogRecord DeserializeChunked<TStoreFunctions>(PinnedSpanByte recordSpan, IObjectSerializer<IHeapObject> valueObjectSerializer,
+                ObjectIdMap transientObjectIdMap, TStoreFunctions storeFunctions)
+            where TStoreFunctions : IStoreFunctions
+        {
+            var objectValueLengthOverride = -1;
+            var logRecord = new LogRecord((long)recordSpan.ToPointer());
+            if (!logRecord.DataHeader.RecordIsInline && logRecord.DataHeader.ValueIsObject)
+            {
+                // Derive the object value length from the reassembled size (it is the record's last component). An overflow key's
+                // length is encoded in the RDH; an overflow value never coexists with an object value.
+                _ = logRecord.GetObjectLogRecordStartPositionAndLengths(out var keyLength, out var rdhValueLength);
+                var inlineRecordSize = RoundUp(logRecord.ActualSize, Constants.kRecordAlignment);
+                objectValueLengthOverride = recordSpan.Length - inlineRecordSize - keyLength;
+                Debug.Assert(objectValueLengthOverride >= 0, "Chunked record: derived object value length is negative");
+                Debug.Assert(rdhValueLength == 0 || (long)rdhValueLength == objectValueLengthOverride,
+                    "Chunked record: RDH-encoded object length disagrees with the reassembled size");
+            }
+
+            return Deserialize(recordSpan, valueObjectSerializer, transientObjectIdMap, storeFunctions, objectValueLengthOverride);
         }
 
         /// <summary>

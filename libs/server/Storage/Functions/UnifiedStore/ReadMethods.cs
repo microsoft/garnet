@@ -29,7 +29,7 @@ namespace Garnet.server
             return cmd switch
             {
                 RespCommand.EXISTS => true,
-                RespCommand.MIGRATE => HandleMigrate(in srcLogRecord, (int)input.arg1, ref output),
+                RespCommand.MIGRATE => HandleMigrate(in srcLogRecord, ref output),
                 RespCommand.MEMORY_USAGE => HandleMemoryUsage(in srcLogRecord, ref output),
                 RespCommand.TYPE => HandleType(in srcLogRecord, ref output),
                 RespCommand.TTL or
@@ -126,10 +126,13 @@ namespace Garnet.server
             return true;
         }
 
-        private bool HandleMigrate<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, int maxHeapAllocationSize, ref UnifiedOutput output)
+        private bool HandleMigrate<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref UnifiedOutput output)
             where TSourceLogRecord : ISourceLogRecord
         {
-            DiskLogRecord.Serialize(in srcLogRecord, maxHeapAllocationSize,
+            // Serialize the whole record to a buffer while holding the store epoch (a migrating key is not locked, so we cannot
+            // safely serialize an object value out of epoch). The caller sends this buffer out of epoch, chunking it if it is
+            // larger than a send buffer.
+            DiskLogRecord.SerializeToBuffer(in srcLogRecord,
                 valueObjectSerializer: srcLogRecord.DataHeader.ValueIsObject ? functionsState.garnetObjectSerializer : null,
                 memoryPool: functionsState.memoryPool, output: ref output.SpanByteAndMemory);
             return true;

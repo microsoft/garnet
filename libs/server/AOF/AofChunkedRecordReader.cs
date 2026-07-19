@@ -248,8 +248,8 @@ namespace Garnet.server
             {
                 var prefix = *(int*)(payload + off);
                 off += sizeof(int);
-                var more = (prefix & TsavoriteLog.ChunkContinuesFlag) != 0;
-                var dataLen = prefix & ~TsavoriteLog.ChunkContinuesFlag;
+                var more = (prefix & ChunkedRecordConstants.ContinuationFlag) != 0;
+                var dataLen = prefix & ~ChunkedRecordConstants.ContinuationFlag;
                 if (dataLen > 0)
                     AppendChunk(acc, payload + off, dataLen);
                 off += dataLen;

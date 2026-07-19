@@ -3,6 +3,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Linq;
 #if DEBUG
 using Garnet.common;
 #endif
@@ -134,6 +135,61 @@ namespace Garnet.test.cluster
             Validate(primaryIndex, replicaIndex, disableObjects);
         }
 
+        /// <summary>
+        /// Full diskless sync of records larger than the replication send buffer (2 &lt;&lt; AofPageSizeBits), which exercises the
+        /// chunked (MigrationRecordSpanType.ChunkedLogRecord) streaming path: DiskLogRecord.Serialize streams each large record
+        /// as chunks and the replica reassembles and deserializes them.
+        /// </summary>
+        [Test, Order(20)]
+        [Category("REPLICATION")]
+        public void ClusterDisklessSyncLargeValuesChunked()
+        {
+            var nodes_count = 2;
+            var primaryIndex = 0;
+            var replicaIndex = 1;
+            // Small AOF page size => small replication send buffer (2 << AofPageSizeBits => 64 KB here). A single command's AOF
+            // entry must fit the AOF page, so we build one large set incrementally (small SADD batches); the resulting object is
+            // far larger than the send buffer and is streamed via the chunked path during the full diskless sync.
+            context.CreateInstances(nodes_count, disableObjects: false, enableAOF: true, useTLS: useTLS, enableDisklessSync: true,
+                timeout: timeout, sublogCount: sublogCount, pageSize: "16k", AofPageSize: "32k", memorySize: "1m", lowMemory: true);
+            context.CreateConnection(useTLS: useTLS);
+
+            // Setup primary and introduce it to the future replica.
+            _ = context.clusterTestUtils.AddDelSlotsRange(primaryIndex, [(0, 16383)], addslot: true, logger: context.logger);
+            context.clusterTestUtils.SetConfigEpoch(primaryIndex, primaryIndex + 1, logger: context.logger);
+            context.clusterTestUtils.SetConfigEpoch(replicaIndex, replicaIndex + 1, logger: context.logger);
+            context.clusterTestUtils.Meet(primaryIndex, replicaIndex, logger: context.logger);
+            context.clusterTestUtils.WaitUntilNodeIsKnown(primaryIndex, replicaIndex, logger: context.logger);
+
+            // Build a large set with a few larger SADD batches (each batch's AOF entry still fits the 32 KB AOF page). 30000
+            // members => a ~100 KB object, well beyond the 64 KB send buffer.
+            var setKey = "largeset";
+            var allMembers = new HashSet<int>();
+            for (var batch = 0; batch < 15; batch++)
+            {
+                var b = new List<int>();
+                for (var j = 0; j < 2000; j++)
+                {
+                    var v = batch * 2000 + j;
+                    b.Add(v);
+                    _ = allMembers.Add(v);
+                }
+                context.clusterTestUtils.Sadd(primaryIndex, setKey, b, context.logger);
+            }
+
+            // Attach the replica => full diskless sync streams the snapshot, chunking the large set object.
+            _ = context.clusterTestUtils.ClusterReplicate(replicaNodeIndex: replicaIndex, primaryNodeIndex: primaryIndex, logger: context.logger);
+            context.clusterTestUtils.WaitForReplicaAofSync(primaryIndex, replicaIndex, logger: context.logger);
+
+            // Validate the replica received the large set through the chunked path.
+            var result = context.clusterTestUtils.Smembers(replicaIndex, setKey, context.logger);
+            while (result.Count != allMembers.Count)
+            {
+                ClusterTestUtils.BackOff(cancellationToken: context.cts.Token);
+                result = context.clusterTestUtils.Smembers(replicaIndex, setKey, context.logger);
+            }
+            ClassicAssert.IsTrue(result.ToHashSet().SetEquals(allMembers));
+        }
         /// <summary>
         /// Re-attach replica on disconnect after it has received some amount of data.
         /// The replica should replay only the portion it missed without doing a full sync,

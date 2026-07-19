@@ -2671,7 +2671,7 @@ namespace Tsavorite.core
             return true;
         }
 
-        private bool ShouldCommmitMetadata(ref TsavoriteLogRecoveryInfo info) 
+        private bool ShouldCommmitMetadata(ref TsavoriteLogRecoveryInfo info)
             => beginAddress > CommittedBeginAddress || info.Cookie != null;
 
         private void CommitMetadataOnly(ref TsavoriteLogRecoveryInfo info)

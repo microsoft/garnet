@@ -18,6 +18,13 @@ namespace Tsavorite.core.Allocator.ObjectSerialization
     /// next to consume, so available bytes are exposed to the consumer as up to two spans (the run from tail to the end, then
     /// the wrapped run from the start). Buffer-fill drains use <c>isComplete: false</c>; a final drain after serialization
     /// completes uses <c>isComplete: true</c> (its data length may be zero).
+    /// <para>
+    /// Two drive modes share the ring: the object mode (<see cref="Serialize"/>, used by the AOF write path) streams one
+    /// <see cref="IObjectSerializer{T}"/>-serialized object; the manual mode (<see cref="BeginSerialize"/> /
+    /// <see cref="WriteBytes"/> / <see cref="GetStream"/> / <see cref="EndSerialize"/>, used by the network migration /
+    /// replication path) frames several raw byte components — record header, key, value, optionals — into one chunk stream,
+    /// content-agnostically. Both drain through the value-only <c>IChunkedObjectSerializerConsumer.Consume</c>.
+    /// </para>
     /// </remarks>
     /// <typeparam name="TContext">Caller state threaded through <c>Drain</c> to the consumer (e.g. the write-side chunk state).</typeparam>
     public class ChunkedObjectSerializer<TContext>
@@ -47,6 +54,31 @@ namespace Tsavorite.core.Allocator.ObjectSerialization
             this.valueObject = valueObject;
             this.buffer = new byte[bufferSize];
         }
+
+        /// <summary>
+        /// Create a chunk writer for the network (migration / replication) path, which frames raw byte components (record
+        /// header, key, value, optionals) — and optionally streams an object value via <see cref="GetStream"/> — into one
+        /// chunk stream using <see cref="BeginSerialize"/> / <see cref="WriteBytes"/> / <see cref="EndSerialize"/>. There is
+        /// no fixed value object; <see cref="Serialize"/> is not used on this instance.
+        /// </summary>
+        public ChunkedObjectSerializer(IChunkedObjectSerializerConsumer consumer, int bufferSize)
+            : this(consumer, serializer: null, valueObject: null, bufferSize)
+        {
+        }
+
+        /// <summary>Set the context for a manual chunked write (see the network-path constructor); follow with
+        /// <see cref="WriteBytes"/> / <see cref="GetStream"/> and finish with <see cref="EndSerialize"/>.</summary>
+        public void BeginSerialize(TContext context) => this.context = context;
+
+        /// <summary>Append raw bytes to the chunk stream, draining to the consumer as the ring fills.</summary>
+        public void WriteBytes(ReadOnlySpan<byte> bytes) => Write(bytes);
+
+        /// <summary>A write-only <see cref="Stream"/> over the chunk ring, e.g. to run an <see cref="IObjectSerializer{T}"/>
+        /// directly into it; bytes written drain to the consumer as the ring fills.</summary>
+        public Stream GetStream() => new ChunkStreamWriter(this);
+
+        /// <summary>Flush the ring's remaining bytes as the final chunk(s) (<c>isComplete: true</c>), completing a manual write.</summary>
+        public void EndSerialize() => FlushFinal();
 
         /// <summary>
         /// Serialize the value object, draining the ring to the consumer as it fills, then perform a final drain with

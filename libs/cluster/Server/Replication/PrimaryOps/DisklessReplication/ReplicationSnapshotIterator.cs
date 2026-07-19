@@ -9,10 +9,11 @@ using Garnet.common;
 using Garnet.server;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
+using Tsavorite.core.Allocator.ObjectSerialization;
 
 namespace Garnet.cluster
 {
-    internal sealed unsafe class SnapshotIteratorManager
+    internal sealed unsafe class SnapshotIteratorManager : IChunkedObjectSerializerConsumer
     {
         public readonly ReplicationSyncManager replicationSyncManager;
         public readonly CancellationToken cancellationToken;
@@ -24,6 +25,11 @@ namespace Garnet.cluster
         SpanByteAndMemory serializationOutput;
         GarnetObjectSerializer valueObjectSerializer;
         MemoryPool<byte> memoryPool;
+
+        // Reused chunk writer for records too large for a single send buffer; this manager is its consumer (fans chunks to all sessions).
+        readonly ChunkedObjectSerializer<SnapshotIteratorManager> chunker;
+        // Max record/chunk payload that fits one send buffer after the per-batch header and per-chunk framing overhead.
+        readonly int maxSendBufferContentSize;
 
         readonly ReplicaSyncSession[] sessions;
         readonly int numSessions;
@@ -54,6 +60,12 @@ namespace Garnet.cluster
 
             memoryPool = MemoryPool<byte>.Shared;
             valueObjectSerializer = new(customCommandManager: default);
+
+            // Base the chunk size on the AOF-sync client's own send buffer (GetAofSyncNetworkBufferSettings), NOT the inclusive
+            // networkBufferSettings (whose sendBufferSize is the max across all replication clients and is larger than this one).
+            maxSendBufferContentSize = replicationSyncManager.ClusterProvider.replicationManager.GetAofSyncNetworkBufferSettings.MaxSendBufferContentSize;
+            // The ring holds one drained chunk; keep it below maxSendBufferContentSize so a chunk plus its framing always fits a freshly flushed buffer.
+            chunker = new ChunkedObjectSerializer<SnapshotIteratorManager>(this, bufferSize: Math.Max(1024, maxSendBufferContentSize - 64));
         }
 
         /// <summary>
@@ -99,41 +111,56 @@ namespace Garnet.cluster
             return true;
         }
 
-        public bool StringReader<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, RecordMetadata recordMetadata, long numberOfRecords)
+        /// <summary>
+        /// Serialize and send one record to all active replica sessions. A fully-inline record that fits one send buffer is
+        /// sent whole (type <see cref="MigrationRecordSpanType.LogRecord"/>); anything larger (an inline record too big for the
+        /// buffer, an overflow key/value, or an object value) is streamed as chunks (type
+        /// <see cref="MigrationRecordSpanType.ChunkedLogRecord"/>) so records larger than the send buffer are supported.
+        /// </summary>
+        public bool WriteRecord<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, RecordMetadata recordMetadata, long numberOfRecords)
             where TSourceLogRecord : ISourceLogRecord
         {
             if (!firstRead)
             {
-                var key = srcLogRecord.Key;
-                var value = srcLogRecord.ValueSpan;
-                logger?.LogTrace("Start Streaming {key} {value}", key.ToString(), value.ToString());
+                logger?.LogTrace("Start Streaming {key}", srcLogRecord.Key.ToString());
                 firstRead = true;
             }
 
-            // Note: We may be sending to multiple replicas, so serialize LogRecords to a local then copy to the multiple network buffers
-            // rather than issuing multiple serialization calls.
-            _ = DiskLogRecord.Serialize(in srcLogRecord, maxHeapAllocationSize: -1, valueObjectSerializer: default, memoryPool, ref serializationOutput);
+            // We may be sending to multiple replicas, so serialize once to a local buffer (fast path) or drain once through the
+            // shared chunker (chunked path), copying to each network buffer as we go rather than re-serializing per replica.
+            // RoundUp(ActualSize) to Constants.kRecordAlignment (8); Constants is internal to Tsavorite.core.
+            var alignedInlineRecordSize = (srcLogRecord.ActualSize + 7) & ~7;
+            if (srcLogRecord.DataHeader.RecordIsInline && alignedInlineRecordSize <= maxSendBufferContentSize)
+            {
+                DiskLogRecord.DirectCopyInlinePortionOfRecord(in srcLogRecord, alignedInlineRecordSize, estimatedTotalSize: alignedInlineRecordSize,
+                    maxHeapAllocationSize: alignedInlineRecordSize, memoryPool, ref serializationOutput);
+                return FanOutRecordSpan(serializationOutput.MemorySpan.Slice(0, alignedInlineRecordSize), MigrationRecordSpanType.LogRecord);
+            }
 
-            var needToFlush = false;
+            // Chunked path: DiskLogRecord.Serialize drains through the chunker to this consumer's Consume, which fans each chunk
+            // out to all sessions with the continuation flag set until the record's final chunk.
+            DiskLogRecord.Serialize(in srcLogRecord, valueObjectSerializer, chunker, this);
+            return !cancellationToken.IsCancellationRequested;
+        }
+
+        /// <summary>
+        /// Fan a whole record span out to all active sessions in lockstep. Because every session receives the same byte stream
+        /// their buffers stay in lockstep: a record fits in all of them or in none, so a full buffer flushes all and retries.
+        /// </summary>
+        bool FanOutRecordSpan(ReadOnlySpan<byte> span, MigrationRecordSpanType type)
+        {
             while (true)
             {
                 if (cancellationToken.IsCancellationRequested)
-                {
-                    logger?.LogError("{method} cancellationRequested", nameof(OnStart));
                     return false;
-                }
 
-                // Write key value pair to network buffer
+                var needToFlush = false;
                 for (var i = 0; i < numSessions; i++)
                 {
                     if (!replicationSyncManager.IsActive(i))
                         continue;
-
-                    // Initialize header if necessary
                     sessions[i].SetClusterSyncHeader();
-
-                    // Try to write to network buffer. If failed we need to retry
-                    if (!sessions[i].TryWriteRecordSpan(serializationOutput.MemorySpan, MigrationRecordSpanType.LogRecord, out var task))
+                    if (!sessions[i].TryWriteRecordSpan(span, type, out var task))
                     {
                         sessions[i].SetFlushTask(task);
                         needToFlush = true;
@@ -141,52 +168,31 @@ namespace Garnet.cluster
                 }
 
                 if (!needToFlush)
-                    break;
+                    return true;
 
-                // Wait for flush to complete for all and retry to enqueue previous keyValuePair above
                 AsyncUtils.BlockingWait(replicationSyncManager.WaitForFlushAsync());
                 currentFlushEventCount++;
-                needToFlush = false;
             }
-
-            return true;
         }
 
-        public bool ObjectReader<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, RecordMetadata recordMetadata, long numberOfRecords)
-            where TSourceLogRecord : ISourceLogRecord
+        /// <summary>
+        /// Fan one record chunk out to all active sessions in lockstep (see <see cref="FanOutRecordSpan"/>), setting the
+        /// continuation flag per <paramref name="moreChunksFollow"/>. Returns the number of bytes consumed (the whole span).
+        /// </summary>
+        int FanOutChunk(ReadOnlySpan<byte> span, bool moreChunksFollow)
         {
-            if (!firstRead)
-            {
-                var key = srcLogRecord.Key;
-                var value = srcLogRecord.ValueObject;
-                logger?.LogTrace("Start Streaming {key} {value}", key.ToString(), value.ToString());
-                firstRead = true;
-            }
-
-            // Note: We may be sending to multiple replicas, so cannot serialize LogRecords directly to the network buffer
-            var maxHeapAllocationSize = replicationSyncManager.ClusterProvider.replicationManager.networkBufferSettings.sendBufferSize;
-            var recordSize = DiskLogRecord.Serialize(in srcLogRecord, maxHeapAllocationSize, valueObjectSerializer, memoryPool, ref serializationOutput);
-
-            var needToFlush = false;
             while (true)
             {
                 if (cancellationToken.IsCancellationRequested)
-                {
-                    logger?.LogError("{method} cancellationRequested", nameof(OnStart));
-                    return false;
-                }
+                    return span.Length; // Abort: drop the chunk; WriteRecord returns false and the sync fails.
 
-                // Write key value pair to network buffer
+                var needToFlush = false;
                 for (var i = 0; i < numSessions; i++)
                 {
                     if (!replicationSyncManager.IsActive(i))
                         continue;
-
-                    // Initialize header if necessary
                     sessions[i].SetClusterSyncHeader();
-
-                    // Try to write to network buffer. If failed we need to retry
-                    if (!sessions[i].TryWriteRecordSpan(serializationOutput.MemorySpan.Slice(0, recordSize), MigrationRecordSpanType.LogRecord, out var task))
+                    if (!sessions[i].TryWriteChunkedRecordSpan(span, moreChunksFollow, out var task))
                     {
                         sessions[i].SetFlushTask(task);
                         needToFlush = true;
@@ -194,15 +200,26 @@ namespace Garnet.cluster
                 }
 
                 if (!needToFlush)
-                    break;
+                    return span.Length;
 
-                // Wait for flush to complete for all and retry to enqueue previous keyValuePair above
                 AsyncUtils.BlockingWait(replicationSyncManager.WaitForFlushAsync());
                 currentFlushEventCount++;
             }
-
-            return true;
         }
+
+        /// <inheritdoc/>
+        int IChunkedObjectSerializerConsumer.Consume<TContext>(ReadOnlySpan<byte> first, ReadOnlySpan<byte> second, bool isComplete, TContext context)
+        {
+            // Each drained run is one chunk to every session; the continuation flag is clear only on the final run of the record.
+            var consumed = FanOutChunk(first, moreChunksFollow: !second.IsEmpty || !isComplete);
+            if (!second.IsEmpty)
+                consumed += FanOutChunk(second, moreChunksFollow: !isComplete);
+            return consumed;
+        }
+
+        /// <inheritdoc/>
+        int IChunkedObjectSerializerConsumer.Consume<TContext, TKey, TInput>(ReadOnlySpan<byte> first, ReadOnlySpan<byte> second, bool isComplete, TKey key, ref TInput input, TContext context)
+            => throw new NotSupportedException("The network chunk path serializes only the value; the key is sent inline.");
 
         public void OnStop(bool completed, long numberOfRecords, long targetVersion)
         {
@@ -240,9 +257,7 @@ namespace Garnet.cluster
         public bool Reader<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, RecordMetadata recordMetadata, long numberOfRecords)
             where TSourceLogRecord : ISourceLogRecord
         {
-            return srcLogRecord.DataHeader.ValueIsObject
-                ? snapshotIteratorManager.ObjectReader(in srcLogRecord, recordMetadata, numberOfRecords)
-                : snapshotIteratorManager.StringReader(in srcLogRecord, recordMetadata, numberOfRecords);
+            return snapshotIteratorManager.WriteRecord(in srcLogRecord, recordMetadata, numberOfRecords);
         }
 
         public void OnException(Exception exception, long numberOfRecords)
