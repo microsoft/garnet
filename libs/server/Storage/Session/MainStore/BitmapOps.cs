@@ -189,12 +189,16 @@ namespace Garnet.server
 
                     if (maxBitmapLen > 0)
                     {
-                        // TODO: If the dstKey exists and is a Vector Set, we need to explicitly delete it
-                        //       This also needs a test
-
                         var dstKey = keys[0];
                         var dstBitmapSpanByte = PinnedSpanByte.FromPinnedPointer(dstBitmapPtr, maxBitmapLen);
                         status = SET(dstKey, dstBitmapSpanByte, ref uc);
+
+                        // Implies type stored under key requires an explicit delete, like a Vector Set
+                        if (status == GarnetStatus.WRONGTYPE)
+                        {
+                            _ = uc.Delete((FixedSpanByteKey)dstKey);
+                            status = SET(dstKey, dstBitmapSpanByte, ref uc);
+                        }
                     }
                 }
                 else

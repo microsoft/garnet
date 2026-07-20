@@ -60,6 +60,9 @@ namespace Garnet.test
         {
             var toCheck = VectorSetWrongTypeTests.GetOverwritingCommands();
 
+            // BITOP continues to be a weird one - dest needs to handle being overwritten
+            toCheck = toCheck.Append(RespCommand.BITOP);
+
             var missing = new List<RespCommand>();
             foreach (var cmd in toCheck)
             {
@@ -75,6 +78,35 @@ namespace Garnet.test
                 var missingCmds = string.Join(", ", missing.OrderBy(static x => x.ToString()));
 
                 ClassicAssert.Fail($"Missing tests for {missing.Count:N0} commands: {missingCmds}");
+            }
+        }
+
+        [Test]
+        public Task BITOPAsync()
+        {
+            if (RunInTransaction)
+            {
+                ClassicAssert.Ignore("BITOP appears to be broken in transactions, restore this test when that's fixed");
+            }
+
+            return TestVectorSetOverwrittenCommandAsync(RunCommandAsync, PrepCommandAsync);
+
+            static async Task PrepCommandAsync(IDatabaseAsync readDB, RedisKey againstKey)
+            {
+                var set0Res = await readDB.StringSetAsync("foo", new byte[] { 255, 0, 255, 0 }).ConfigureAwait(false);
+                ClassicAssert.IsTrue(set0Res);
+
+                var set1Res = await readDB.StringSetAsync("bar", new byte[] { 1, 2, 4, 8 }).ConfigureAwait(false);
+                ClassicAssert.IsTrue(set1Res);
+            }
+
+            static async Task RunCommandAsync(IDatabaseAsync executeDB, IDatabaseAsync readDB, RedisKey againstKey)
+            {
+                var res = await executeDB.StringBitOperationAsync(Bitwise.And, againstKey, ["foo", "bar"]).ConfigureAwait(false);
+                ClassicAssert.AreEqual(4, res);
+
+                var finalValue = (byte[])await readDB.StringGetAsync(againstKey).ConfigureAwait(false);
+                ClassicAssert.IsTrue(new byte[] { 1, 0, 4, 0 }.SequenceEqual(finalValue));
             }
         }
 
@@ -202,7 +234,9 @@ namespace Garnet.test
 
         // Infrastructure
 
-        private async Task TestVectorSetOverwrittenCommandAsync(Func<IDatabaseAsync, IDatabaseAsync, RedisKey, Task> runCommand)
+        private async Task TestVectorSetOverwrittenCommandAsync(
+            Func<IDatabaseAsync, IDatabaseAsync, RedisKey, Task> runCommand,
+            Func<IDatabaseAsync, RedisKey, Task> runPrep = null)
         {
             const int ExtraRecordForCompaction = 50_000;
 
@@ -236,6 +270,11 @@ namespace Garnet.test
 
                 var evictAndFlushRes = (string)await db.ExecuteAsync("DEBUG", "FLUSHANDEVICT").ConfigureAwait(false);
                 ClassicAssert.IsTrue(evictAndFlushRes.StartsWith("OK "));
+            }
+
+            if (runPrep != null)
+            {
+                await runPrep(db, name).ConfigureAwait(false);
             }
 
             if (RunInTransaction)
