@@ -613,21 +613,23 @@ namespace Garnet.test
                     .SetValue(networkWriter, new ThrowingNetworkSender());
 
                 using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(3));
-                using var waiterStarted = new ManualResetEventSlim();
+                // Flipped immediately before the waiter thread calls flushEvent.Wait, so the
+                // main thread has a deterministic (bounded-spin, not fixed-sleep) signal that
+                // the waiter is about to enter its wait rather than merely having started.
+                var aboutToWait = false;
                 Exception waiterException = null;
                 var waiterThread = new Thread(() =>
                 {
-                    waiterStarted.Set();
+                    Volatile.Write(ref aboutToWait, true);
                     try { flushEvent.Wait(cts.Token); }
                     catch (Exception ex) { waiterException = ex; }
                 })
                 { IsBackground = true };
                 waiterThread.Start();
-                waiterStarted.Wait();
-                // Give the waiter thread a brief moment to actually enter the semaphore wait
-                // before triggering the failing flush below, avoiding a race where the flush
-                // signals completion before the waiter has started waiting on it.
-                Thread.Sleep(50);
+
+                var spinWait = new SpinWait();
+                while (!Volatile.Read(ref aboutToWait))
+                    spinWait.SpinOnce();
 
                 networkWriter.AsyncFlushPages(0, untilAddress);
 
