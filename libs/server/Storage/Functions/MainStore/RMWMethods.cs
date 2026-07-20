@@ -825,10 +825,8 @@ namespace Garnet.server
 
                     return TryCopyValueLengthToOutput(logRecord.ValueSpan, ref output) ? IPUResult.Succeeded : IPUResult.Failed;
                 case RespCommand.VADD:
-                    // These synthetic replication writes require an existing index record. If the key was
-                    // concurrently deleted and re-typed (e.g. a raced String SET) the record is no longer
-                    // an index; cancel so no AOF entry is emitted and replicas don't replay the add against
-                    // a non-index record.
+                    // If the key was concurrently deleted and re-typed (e.g. a raced String SET) the record is no longer
+                    // an index; cancel so no AOF entry is emitted.
                     if (logRecord.RecordType != VectorManager.RecordType)
                     {
                         rmwInfo.Action = RMWAction.CancelOperation;
@@ -994,15 +992,13 @@ namespace Garnet.server
                     return true;
                 case RespCommand.VADD:
                 case RespCommand.VREM:
-                    // Synthetic VADD/VREM replication writes require an existing index record. If the key
-                    // was concurrently deleted and re-typed (e.g. a raced String SET), no index remains:
-                    // cancel here, before a tail record is allocated, so nothing is copied to the log or
-                    // AOF and replicas never replay the add/remove against a non-index record.
+                    // If the key was concurrently deleted and re-typed (e.g. a raced String SET), no index remains
                     if (srcLogRecord.RecordType != VectorManager.RecordType)
                     {
                         rmwInfo.Action = RMWAction.CancelOperation;
                         return false;
                     }
+
                     return true;
                 default:
                     if (input.header.cmd > RespCommandExtensions.LastValidCommand)
@@ -1378,27 +1374,18 @@ namespace Garnet.server
                     // NeedCopyUpdate cancels when the record is no longer an index, so CopyUpdater is only reached for a genuine index record.
                     Debug.Assert(srcLogRecord.RecordType == VectorManager.RecordType, "CopyUpdater reached for VADD on a non-index record");
 
+                    // Always copy to avoid corruption of the index record
+                    oldValue.CopyTo(dstLogRecord.ValueSpan);
+
                     if (input.arg1 == VectorManager.RecreateIndexArg)
                     {
                         // Recreate index
                         var newIndexPtr = MemoryMarshal.Read<nint>(input.parseState.GetArgSliceByRef(11).Span);
-
-                        oldValue.CopyTo(dstLogRecord.ValueSpan);
-
                         functionsState.vectorManager.RecreateIndex(newIndexPtr, dstLogRecord.ValueSpan);
-                    }
-                    else if (input.arg1 is VectorManager.VADDAppendLogArg or VectorManager.VREMAppendLogArg)
-                    {
-                        // VADD has triggered a CU of the index key - we want to do nothing but we have to copy to prevent corruption
-                        oldValue.CopyTo(dstLogRecord.ValueSpan);
                     }
                     else if (input.arg1 == VectorManager.VADDSetFlagsArg)
                     {
                         var flags = MemoryMarshal.Read<VectorSetFlags>(input.parseState.GetArgSliceByRef(0).Span);
-
-                        // CU implies we need to copy first
-                        oldValue.CopyTo(dstLogRecord.ValueSpan);
-
                         VectorManager.SetIndexFlags(dstLogRecord.ValueSpan, flags);
                     }
 
