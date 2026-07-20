@@ -107,8 +107,7 @@ namespace Garnet.server
         /// </summary>
         /// <param name="localServerSession">The local server session for store access.</param>
         /// <param name="keyBytes">The key bytes of the RangeIndex to serialize.</param>
-        /// <param name="chunkSize">The chunk size for streaming. Defaults to <see cref="DefaultMigrationChunkSize"/>.</param>
-        public unsafe RangeIndexMigrationReader SnapshotRangeIndexAndCreateReader(LocalServerSession localServerSession, ReadOnlySpan<byte> keyBytes, int chunkSize = DefaultMigrationChunkSize)
+        public unsafe RangeIndexMigrationReader SnapshotRangeIndexAndCreateReader(LocalServerSession localServerSession, ReadOnlySpan<byte> keyBytes)
         {
             fixed (byte* keyPtr = keyBytes)
             {
@@ -117,8 +116,8 @@ namespace Garnet.server
                     throw new InvalidOperationException("Failed to snapshot BfTree for migration");
 
                 var serializer = new RangeIndexChunkedSerializer(keyBytes.ToArray(), stubBytes, totalBytes);
-                var fileStream = new FileStream(snapshotPath, FileMode.Open, FileAccess.Read, FileShare.Read, bufferSize: chunkSize);
-                return new RangeIndexMigrationReader(serializer, fileStream, snapshotPath, chunkSize, logger);
+                var fileStream = new FileStream(snapshotPath, FileMode.Open, FileAccess.Read, FileShare.Read, bufferSize: RangeIndexMigrationReader.DefaultFileReadBufferSize);
+                return new RangeIndexMigrationReader(serializer, fileStream, snapshotPath, logger);
             }
         }
 
@@ -132,7 +131,7 @@ namespace Garnet.server
         /// Publish a migrated RangeIndex key: move the temp file to the working path,
         /// recover the native BfTree, and insert the stub into the store via RICREATE RMW.
         /// </summary>
-        public unsafe PublishMigratedIndexResult PublishMigratedIndex(ReadOnlySpan<byte> keyBytes, ReadOnlySpan<byte> stubBytes, string tempPath, bool replaceOption, ref StringBasicContext ctx)
+        public unsafe PublishMigratedIndexResult PublishMigratedIndex(ReadOnlySpan<byte> keyBytes, ReadOnlySpan<byte> stubBytes, string tempPath, bool replaceOption, ref StringBasicContext ctx, GarnetAppendOnlyFile appendOnlyFile)
         {
             var keyExists = KeyExists(keyBytes, ref ctx);
             if (keyExists)
@@ -152,7 +151,16 @@ namespace Garnet.server
             {
                 var bftreeDataPath = LogDataPathFor(keyBytes);
 
-                // TODO(RI): Before publishing the migrated index, insert the chunked RI file into AOF to replicate to secondaries.
+                // TODO(RI): Acquire Checkpoint lock to prevent a concurrent checkpoint from deleting the
+                // RangeIndexStream chunks added to the AOF before the BFTree is created
+
+                // TODO(RI): Create RangeIndex first in Tsavorite and only then chunk and replicate through AOF
+
+                // Replicate the migrated BfTree to secondaries by streaming the snapshot file into
+                // the AOF as chunked range index stream entries. This must happen while tempPath is still
+                // intact (before the move below). On replay, HandleRangeIndexStreamReplay reassembles
+                // the file and re-invokes this method.
+                ReplicateRangeIndexStream(keyBytes, stubBytes, tempPath, appendOnlyFile, ctx.Session.Version, ctx.Session.ID, rangeIndexAofStreamChunkSize);
 
                 // TODO(RI): The KeyExists check above is not race-free. The destination slot is in
                 // IMPORTING state, so a client can still write to this key via -ASK before we publish.
@@ -185,6 +193,10 @@ namespace Garnet.server
                     parseState.InitializeWithArgument(stubSlice);
 
                     var input = new StringInput(RespCommand.RICREATE, ref parseState);
+
+                    // Suppress the auto-AOF-log for this RICREATE: the range index stream enqueued above is
+                    // the single AOF source of truth for this migrated key (see StreamedPublishLogArg).
+                    input.arg1 = StreamedPublishLogArg;
                     var output = new StringOutput();
                     var pinnedKey = PinnedSpanByte.FromPinnedPointer(keyPtr, keyBytes.Length);
                     var status = ctx.RMW((FixedSpanByteKey)pinnedKey, ref input, ref output);

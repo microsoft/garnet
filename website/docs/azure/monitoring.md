@@ -74,7 +74,7 @@ High CPU usage can indicate various performance bottlenecks in your cluster. Use
 #### Resolution Steps
 1. **Analyze Command Patterns**: Review **Command Process Rate** trends to identify peak usage periods causing high CPU load.
 2. **Monitor Node Distribution**: Use the Node split feature to identify if specific nodes are experiencing higher CPU usage than others.
-3. **Scale Compute Resources**: Consider increasing the replication factor if **Read Command Process Rate** is high, or increase the shard count if **Write Command Process Rate** is high.
+3. **Scale Compute Resources**: Increase the shard count if **Write Command Process Rate** is high. To improve read throughput, provision a cluster with a higher replication factor. The replication factor is set at provisioning and can't be changed afterward.
 
 ### High Memory Usage
 
@@ -125,6 +125,22 @@ Performance issues can affect various aspects of your cache operations. Use late
 4. **Review Command Distribution**: Analyze **Read Command Process Rate** vs **Write Command Process Rate** to understand workload characteristics.
 5. **Identify Node Hotspots**: Use Node-level metrics to detect if specific nodes are experiencing disproportionate load.
 6. **Scale Appropriately**: Consider upgrading to higher performance tiers or adding more nodes based on the specific bottleneck identified.
+
+### Cluster Creation or Scaling Fails
+
+Provisioning and scaling are control plane operations governed by Azure RBAC rather than surfaced through metrics. If a cluster fails to create or scale, verify the caller's permissions.
+
+#### Symptoms
+- Cluster creation fails with an authorization error.
+- Scaling (changing the shard count) fails with a permissions error.
+
+#### Resolution Steps
+1. **Verify cluster permissions**: Ensure your identity has `Microsoft.DocumentDB/garnetClusters/write` and `Microsoft.Network/virtualNetworks/subnets/join/action` on the cluster's subnet.
+2. **Check your role**: The built-in **Owner** and **Contributor** roles include both permissions. Cosmos DB-specific roles (Cosmos DB Operator, DocumentDB Account Contributor, and similar) can't create or scale a Garnet cluster.
+3. **Update custom roles**: If you use a custom role, add both actions. A role that can create networking resources doesn't necessarily include subnet `join/action`.
+4. **Wait for propagation**: If a role assignment was recently added, allow a few minutes for it to take effect before retrying.
+
+See [permissions to create and manage a cluster](./security.md#permissions-to-create-and-manage-a-cluster).
 
 
 ## Learn More

@@ -483,6 +483,9 @@ namespace Garnet.server
         /// <inheritdoc/>
         public void Dispose()
         {
+            // Drop any in-progress AOF-stream reassembly
+            DisposeIncompleteStreamReassembly();
+
             foreach (var kvp in liveIndexes)
             {
                 try { kvp.Value.Tree?.Dispose(); }
