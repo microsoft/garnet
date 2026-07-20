@@ -385,6 +385,7 @@ namespace Tsavorite.test
             public bool IsDeleted<TSourceLogRecord>(in TSourceLogRecord logRecord)
                 where TSourceLogRecord : ISourceLogRecord
                 => logRecord.ValueSpan.AsRef<ValueStruct>().vfield1 % 2 != 0;
+            public void OnImplicitlyDeleted<TSourceLogRecord>(in TSourceLogRecord logRecord) where TSourceLogRecord : ISourceLogRecord { }
         }
     }
 }

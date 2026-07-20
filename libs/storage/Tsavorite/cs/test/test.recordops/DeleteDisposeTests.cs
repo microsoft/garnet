@@ -19,15 +19,19 @@ namespace Tsavorite.test
     [TestFixture]
     internal class DeleteDisposeTests : TestBase
     {
-        internal struct TrackingRecordTriggers : IRecordTriggers
+        internal struct TrackingRecordTriggers : IRecordTriggers, ICompactionFunctions
         {
             internal readonly DisposeTracker tracker;
             public TrackingRecordTriggers(DisposeTracker tracker) => this.tracker = tracker;
             public readonly bool CallOnEvict => false;
             public readonly bool CallOnFlush => false;
             public readonly bool CallOnDiskRead => false;
+
+            public bool IsDeleted<TSourceLogRecord>(in TSourceLogRecord logRecord) where TSourceLogRecord : ISourceLogRecord => false;
             public readonly void OnDispose(ref LogRecord logRecord, DisposeReason reason) => tracker?.RecordDispose(reason);
             public readonly void OnDisposeDiskRecord(ref DiskLogRecord logRecord, DisposeReason reason) { }
+
+            public void OnImplicitlyDeleted<TSourceLogRecord>(in TSourceLogRecord logRecord) where TSourceLogRecord : ISourceLogRecord { }
         }
 
         internal class DisposeTracker
@@ -242,7 +246,7 @@ namespace Tsavorite.test
     [TestFixture]
     internal class ObjectDeleteDisposeTests : TestBase
     {
-        internal struct ObjTrackingRecordTriggers : IRecordTriggers
+        internal struct ObjTrackingRecordTriggers : IRecordTriggers, ICompactionFunctions
         {
             internal readonly ObjDisposeTracker tracker;
             public ObjTrackingRecordTriggers(ObjDisposeTracker tracker) => this.tracker = tracker;
@@ -250,10 +254,14 @@ namespace Tsavorite.test
             public readonly bool CallOnFlush => false;
             public readonly bool CallOnDiskRead => false;
 
+            public bool IsDeleted<TSourceLogRecord>(in TSourceLogRecord logRecord) where TSourceLogRecord : ISourceLogRecord => false;
+
             public readonly void OnDispose(ref LogRecord logRecord, DisposeReason reason)
                 => tracker?.RecordDispose(reason);
 
             public readonly void OnDisposeDiskRecord(ref DiskLogRecord logRecord, DisposeReason reason) { }
+
+            public void OnImplicitlyDeleted<TSourceLogRecord>(in TSourceLogRecord logRecord) where TSourceLogRecord : ISourceLogRecord { }
         }
 
         internal class ObjDisposeTracker

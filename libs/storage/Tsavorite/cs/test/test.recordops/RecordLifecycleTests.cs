@@ -132,7 +132,7 @@ namespace Tsavorite.test
             }
         }
 
-        internal struct LifecycleRecordTriggers : IRecordTriggers
+        internal struct LifecycleRecordTriggers : IRecordTriggers, ICompactionFunctions
         {
             internal readonly LifecycleTracker tracker;
             public LifecycleRecordTriggers(LifecycleTracker tracker) => this.tracker = tracker;
@@ -183,6 +183,9 @@ namespace Tsavorite.test
                 if (tracker is null) return;
                 _ = Interlocked.Increment(ref tracker.EvictCounts[(int)source]);
             }
+
+            public bool IsDeleted<TSourceLogRecord>(in TSourceLogRecord logRecord) where TSourceLogRecord : ISourceLogRecord => false;
+            public void OnImplicitlyDeleted<TSourceLogRecord>(in TSourceLogRecord logRecord) where TSourceLogRecord : ISourceLogRecord { }
         }
 
         private TsavoriteKV<LifecycleStoreFunctions, LifecycleAllocator> store;

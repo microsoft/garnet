@@ -206,7 +206,7 @@ namespace Tsavorite.core
             where TSourceLogRecord : ISourceLogRecord
         => false;
 
-        public void OnImplicitlyDeleted<TSourceLogRecord>(in TSourceLogRecord logRecord) 
+        public void OnImplicitlyDeleted<TSourceLogRecord>(in TSourceLogRecord logRecord)
             where TSourceLogRecord : ISourceLogRecord
         {
         }
@@ -215,7 +215,7 @@ namespace Tsavorite.core
     /// <summary>
     /// No-op implementation of <see cref="IRecordTriggers"/> for SpanByte.
     /// </summary>
-    public readonly struct SpanByteRecordTriggers : IRecordTriggers    // TODO remove for dual
+    public readonly struct SpanByteRecordTriggers : IRecordTriggers, ICompactionFunctions    // TODO remove for dual
     {
         /// <summary>Default instance.</summary>
         public static readonly SpanByteRecordTriggers Instance = new();
@@ -235,8 +235,12 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         public bool CallOnTruncate => false;
 
+        public bool IsDeleted<TSourceLogRecord>(in TSourceLogRecord logRecord) where TSourceLogRecord : ISourceLogRecord => false;
+
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void OnDisposeDiskRecord(ref DiskLogRecord logRecord, DisposeReason reason) { }
+
+        public void OnImplicitlyDeleted<TSourceLogRecord>(in TSourceLogRecord logRecord) where TSourceLogRecord : ISourceLogRecord { }
     }
 }

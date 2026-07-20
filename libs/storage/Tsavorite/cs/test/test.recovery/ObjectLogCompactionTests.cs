@@ -327,6 +327,8 @@ namespace Tsavorite.test
             public bool IsDeleted<TSourceLogRecord>(in TSourceLogRecord logRecord)
                 where TSourceLogRecord : ISourceLogRecord
                 => false;
+
+            public void OnImplicitlyDeleted<TSourceLogRecord>(in TSourceLogRecord logRecord) where TSourceLogRecord : ISourceLogRecord { }
         }
 
         private struct EvenCompactionFunctions : ICompactionFunctions
@@ -334,6 +336,8 @@ namespace Tsavorite.test
             public readonly bool IsDeleted<TSourceLogRecord>(in TSourceLogRecord logRecord)
                 where TSourceLogRecord : ISourceLogRecord
                 => ((TestObjectValue)logRecord.ValueObject).value % 2 != 0;
+
+            public void OnImplicitlyDeleted<TSourceLogRecord>(in TSourceLogRecord logRecord) where TSourceLogRecord : ISourceLogRecord { }
         }
     }
 }

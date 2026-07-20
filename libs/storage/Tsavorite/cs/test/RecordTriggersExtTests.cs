@@ -49,7 +49,7 @@ namespace Tsavorite.test
             public int PostCopyCount => PostCopyToTailEvents.Count;
         }
 
-        internal struct ExtRecordTriggers : IRecordTriggers
+        internal struct ExtRecordTriggers : IRecordTriggers, ICompactionFunctions
         {
             internal readonly TriggerEvents events;
             public ExtRecordTriggers(TriggerEvents events) { this.events = events; }
@@ -60,9 +60,15 @@ namespace Tsavorite.test
             public readonly bool CallPostCopyToTail => events?.CallPostCopyToTailFlag ?? false;
             public readonly bool CallOnTruncate => events?.CallOnTruncateFlag ?? false;
 
+            public bool IsDeleted<TSourceLogRecord>(in TSourceLogRecord logRecord) where TSourceLogRecord : ISourceLogRecord => false;
+
             public readonly void OnFlush(ref LogRecord logRecord, long logicalAddress)
             {
                 events?.FlushAddresses.Add(logicalAddress);
+            }
+
+            public void OnImplicitlyDeleted<TSourceLogRecord>(in TSourceLogRecord logRecord) where TSourceLogRecord : ISourceLogRecord
+            {
             }
 
             public readonly void OnTruncate(long newBeginAddress)
