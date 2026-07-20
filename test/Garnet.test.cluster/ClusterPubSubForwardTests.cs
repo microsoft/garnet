@@ -6,6 +6,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Net;
 using System.Threading;
+using Allure.NUnit;
 using Microsoft.Extensions.Logging;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -13,8 +14,9 @@ using StackExchange.Redis;
 
 namespace Garnet.test.cluster
 {
+    [AllureNUnit]
     [TestFixture, NonParallelizable]
-    public class ClusterPubSubForwardTests
+    public class ClusterPubSubForwardTests : AllureTestBase
     {
         ClusterTestContext context;
         readonly Dictionary<string, LogLevel> monitorTests = [];
