@@ -1374,7 +1374,7 @@ namespace Garnet.server
                     // NeedCopyUpdate cancels when the record is no longer an index, so CopyUpdater is only reached for a genuine index record.
                     Debug.Assert(srcLogRecord.RecordType == VectorManager.RecordType, "CopyUpdater reached for VADD on a non-index record");
 
-                    // Always copy to avoid corruption of the index record
+                    // Always copy to avoid corruption of the index record - otherwise the allocated destination will contain garbage data
                     oldValue.CopyTo(dstLogRecord.ValueSpan);
 
                     if (input.arg1 == VectorManager.RecreateIndexArg)
@@ -1396,8 +1396,7 @@ namespace Garnet.server
                     Debug.Assert(srcLogRecord.RecordType == VectorManager.RecordType, "CopyUpdater reached for VREM on a non-index record");
                     Debug.Assert(input.arg1 == VectorManager.VREMAppendLogArg, "Unexpected CopyUpdater call on VREM key");
 
-                    // VREM has triggered a CU of the index key - like the VADD append-log branch above we
-                    // want to do nothing but we have to copy the old value forward to prevent corruption.
+                    // Always copy to avoid corruption of the index record - otherwise the allocated destination will contain garbage data
                     oldValue.CopyTo(dstLogRecord.ValueSpan);
                     break;
 
