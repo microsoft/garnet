@@ -475,44 +475,27 @@ namespace Garnet.common
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void ReallocateOutput(int extraLenHint = 0, bool lowerMinimum = false)
         {
-            var length = output.Length;
+            var bytesWritten = (int)(curr - ptr);
+            var length = ComputeGrowth(output.Length, extraLenHint, lowerMinimum);
 
-            if (!lowerMinimum)
+            // ComputeGrowth clamps to Array.MaxLength (the hard ceiling for a single managed
+            // array / MemoryPool<byte>.Shared.Rent buffer) and never wraps around to a value
+            // smaller than what was requested. If the response genuinely cannot fit in a
+            // single buffer even at that ceiling, fail clearly instead of overflowing into a
+            // too-small allocation, which previously surfaced as a confusing
+            // ArgumentOutOfRangeException/OverflowException from deep inside Buffer.MemoryCopy
+            // (see https://github.com/microsoft/garnet/issues/1616).
+            if (length <= 0 || length < bytesWritten)
             {
-                if (length < 1024)
-                    length = 512;
+                throw new GarnetException(
+                    $"RESP response of at least {(long)bytesWritten + extraLenHint} bytes exceeds the maximum " +
+                    $"supported single-buffer size ({Array.MaxLength} bytes). Consider using a cursor-based " +
+                    "command (e.g. HSCAN instead of HGETALL) to retrieve large collections in batches.");
             }
-            else
-            {
-                if (length < 16)
-                    length = 8;
-            }
-
-            if (length == 0x40000000)
-            {
-                // Maximal allocation from MemoryPool Rent()
-                length = Array.MaxLength;
-            }
-            else if (length < extraLenHint)
-            {
-                var total = (uint)extraLenHint + (uint)length;
-                if ((total >= 0x40000000) && (total < Array.MaxLength))
-                    length = Array.MaxLength;
-                else
-                    length = (int)BitOperations.RoundUpToPowerOf2(total);
-            }
-            else
-            {
-                length <<= 1;
-            }
-
-            if (length <= 0)
-                throw new OverflowException("length");
 
             var newMem = MemoryPool<byte>.Shared.Rent(length);
             var newPtrHandle = newMem.Memory.Pin();
             var newPtr = (byte*)newPtrHandle.Pointer;
-            var bytesWritten = (int)(curr - ptr);
             if (bytesWritten > 0)
                 Buffer.MemoryCopy(ptr, newPtr, length, bytesWritten);
 
@@ -532,6 +515,55 @@ namespace Garnet.common
             output.Length = length;
             curr = ptr + bytesWritten;
             end = ptr + length;
+        }
+
+        /// <summary>
+        /// Computes the next output buffer capacity, given the current capacity and a hint for
+        /// how many additional bytes are needed.
+        /// </summary>
+        /// <remarks>
+        /// All arithmetic is done in <see cref="long"/> so the growth calculation itself can
+        /// never silently overflow/wrap around into a value smaller than <paramref name="currentLength"/>
+        /// or <paramref name="extraLenHint"/> the way the previous <see cref="int"/>/<see cref="uint"/>-based
+        /// version could once the buffer grew close to 2^30-2^31 bytes (see
+        /// https://github.com/microsoft/garnet/issues/1616, where this caused
+        /// HGETALL on multi-million-element hashes to fail with a confusing
+        /// ArgumentOutOfRangeException from deep inside Buffer.MemoryCopy). The result is
+        /// clamped to <see cref="Array.MaxLength"/>, the hard ceiling for a single managed
+        /// array / <see cref="MemoryPool{T}"/> rent; callers must check whether the returned
+        /// length is actually sufficient before using it.
+        /// </remarks>
+        /// <param name="currentLength">Current output buffer capacity, in bytes.</param>
+        /// <param name="extraLenHint">Hint for how many additional bytes the caller needs room for.</param>
+        /// <param name="lowerMinimum">Whether to use the lower (8 byte) minimum instead of the default (512 byte) minimum.</param>
+        /// <returns>The new buffer capacity, in bytes, clamped to <see cref="Array.MaxLength"/>.</returns>
+        public static int ComputeGrowth(int currentLength, int extraLenHint, bool lowerMinimum)
+        {
+            long length = currentLength;
+
+            if (!lowerMinimum)
+            {
+                if (length < 1024)
+                    length = 512;
+            }
+            else
+            {
+                if (length < 16)
+                    length = 8;
+            }
+
+            long grown;
+            if (length < extraLenHint)
+            {
+                var total = length + (long)extraLenHint;
+                grown = (long)BitOperations.RoundUpToPowerOf2((ulong)total);
+            }
+            else
+            {
+                grown = length << 1;
+            }
+
+            return grown > Array.MaxLength ? Array.MaxLength : (int)grown;
         }
 
         /// <summary>

@@ -866,6 +866,38 @@ namespace Garnet.test
             ClassicAssert.AreEqual("abc", result["foo"]);
             ClassicAssert.AreEqual("def", result["bar"]);
         }
+
+        /// <summary>
+        /// Regression test for https://github.com/microsoft/garnet/issues/1616: HGETALL on a
+        /// hash large enough that its serialized RESP response requires many output-buffer
+        /// reallocations used to throw (ArgumentOutOfRangeException / OverflowException) once
+        /// the buffer's capacity, while doubling, crossed certain internal boundaries. This
+        /// writes enough field/value pairs to force well over a dozen buffer growths and
+        /// verifies HGETALL still returns the full, correct data set instead of throwing.
+        /// </summary>
+        [Test]
+        public async Task CanDoHGETALLOnLargeHashRequiringManyBufferGrowths()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var hashkey = "testGetAllLargeHash";
+
+            const int numFields = 50_000;
+            var fieldValue = new string('v', 100); // pad each value so total payload is sizeable
+
+            var setEntries = new HashEntry[numFields];
+            for (var i = 0; i < numFields; i++)
+                setEntries[i] = new HashEntry($"field:{i}", fieldValue);
+
+            await db.HashSetAsync(hashkey, setEntries).ConfigureAwait(false);
+
+            var result = (await db.HashGetAllAsync(hashkey).ConfigureAwait(false)).ToStringDictionary();
+
+            ClassicAssert.AreEqual(numFields, result.Count);
+            ClassicAssert.AreEqual(fieldValue, result["field:0"]);
+            ClassicAssert.AreEqual(fieldValue, result[$"field:{numFields - 1}"]);
+        }
+
         [Test]
         public async Task CanDoHMSETMultipleTimes()
         {
