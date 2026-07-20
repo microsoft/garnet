@@ -174,6 +174,13 @@ namespace Tsavorite.core
                     // See if we are copying to read cache or tail of log. If we already found the record in memory, we're done.
                     if (operationState.readCopyOptions.CopyFrom != ReadCopyFrom.None && !memoryRecord.IsSet)
                     {
+                        // The Reader() call above already succeeded, so the operation is a SUCCESS regardless of whether a copy is
+                        // actually performed below (e.g. CopyTo is None, which is a valid "track CopyFrom for stats but don't copy"
+                        // configuration, or the ReadCache copy's guard conditions are not met). Without this, 'status' retains
+                        // whatever FindTagAndTryEphemeralSLock set via its out-parameter above, which is only meaningful when that
+                        // call returns false (i.e. it is NOT a valid "found" status here) - previously causing a spurious NOTFOUND to
+                        // be returned for a completed, correctly-read pending Read() whenever neither branch below ran.
+                        status = OperationStatus.SUCCESS;
                         if (operationState.readCopyOptions.CopyTo == ReadCopyTo.MainLog)
                         {
                             // Plumb source logical address so PostCopyToTail can name per-flush snapshot files.
