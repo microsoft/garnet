@@ -3,7 +3,9 @@
 
 using System;
 using System.Linq;
+using System.Net.Sockets;
 using System.Security.Cryptography;
+using System.Text;
 using System.Threading;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -199,6 +201,110 @@ namespace Garnet.test
 
             sub.Unsubscribe(RedisChannel.Literal("messagesA"));
             sub.Unsubscribe(RedisChannel.Literal("messagesB"));
+        }
+
+        /// <summary>
+        /// Regression test for https://github.com/microsoft/garnet/issues/1615 (network-lock-error part).
+        ///
+        /// A client that PUBLISHes to a channel it is itself subscribed to receives its own message via a
+        /// reentrant delivery on the same connection: SubscribeBroker.Broadcast calls back into this exact
+        /// connection's Publish() while that connection's TryConsumeMessages is still on the stack and still
+        /// holding the network sender's (non-reentrant) SpinLock. Before the fix, the reentrant Enter failed
+        /// but the subsequent finally still unconditionally called Exit, releasing a lock this call never
+        /// actually held. That caused the outer TryConsumeMessages to later throw a
+        /// SynchronizationLockException when it tried to release the lock it did hold, tearing down the
+        /// connection. This test would previously fail because the connection died and the trailing PING
+        /// got no response (or the socket read timed out / the connection was reset).
+        /// </summary>
+        [Test]
+        public void SelfPublishOnSubscribedChannelDoesNotCorruptConnection()
+        {
+            const string channel = "self-publish-channel";
+
+            using var socket = new Socket(SocketType.Stream, ProtocolType.Tcp);
+            socket.Connect(TestUtils.EndPoint);
+            socket.ReceiveTimeout = 10_000;
+            socket.SendTimeout = 10_000;
+
+            // Subscribe on this connection, and wait for the subscribe confirmation so we know the broker
+            // has registered this session as a subscriber before we publish to the same channel below.
+            SendCommand(socket, "SUBSCRIBE", channel);
+            var subscribeResponse = ReadAvailable(socket);
+            StringAssert.Contains("subscribe", subscribeResponse);
+            StringAssert.Contains(channel, subscribeResponse);
+
+            // Publish to the channel we're subscribed to, on the very same connection - this is what
+            // triggers the reentrant delivery into this connection's own Publish() path.
+            SendCommand(socket, "PUBLISH", channel, "self-published-message");
+            var publishResponse = ReadAvailable(socket);
+            // The PUBLISH command itself must still complete and report the one (self-)subscriber,
+            // regardless of whether the self-delivered "message" push made it through.
+            StringAssert.Contains(":1", publishResponse);
+
+            // The critical assertion: the connection must still be alive and the session must still be
+            // usable afterwards. Before the fix, the SynchronizationLockException thrown while unwinding
+            // TryConsumeMessages tore down this connection, so this PING would get no reply at all.
+            // (The reply is the RESP2 "subscribe-mode" PONG form - *2\r\n$4\r\npong\r\n$0\r\n\r\n - since this
+            // connection is still subscribed; that's expected and orthogonal to what we're checking here.)
+            SendCommand(socket, "PING");
+            var pingResponse = ReadAvailable(socket);
+            ClassicAssert.AreEqual("*2\r\n$4\r\npong\r\n$0\r\n\r\n", pingResponse,
+                "Connection did not survive a self-publish on a subscribed channel - PING got no normal reply");
+        }
+
+        private static void SendCommand(Socket socket, params string[] args)
+        {
+            var sb = new StringBuilder();
+            sb.Append('*').Append(args.Length).Append("\r\n");
+            foreach (var arg in args)
+            {
+                var argBytes = Encoding.UTF8.GetByteCount(arg);
+                sb.Append('$').Append(argBytes).Append("\r\n").Append(arg).Append("\r\n");
+            }
+            socket.Send(Encoding.UTF8.GetBytes(sb.ToString()));
+        }
+
+        /// <summary>
+        /// Reads whatever the server sends back within a short window, returning once the socket has been
+        /// quiet for a bit. Used instead of parsing exact RESP token counts, since a self-publish can cause
+        /// zero or more independent flushes (push message and/or command reply) on the same connection.
+        /// </summary>
+        private static string ReadAvailable(Socket socket, int overallTimeoutMs = 5_000, int quietPeriodMs = 200)
+        {
+            var buffer = new byte[4096];
+            var sb = new StringBuilder();
+            var deadline = DateTime.UtcNow.AddMilliseconds(overallTimeoutMs);
+
+            while (DateTime.UtcNow < deadline)
+            {
+                if (socket.Poll(quietPeriodMs * 1000, SelectMode.SelectRead))
+                {
+                    int read;
+                    try
+                    {
+                        read = socket.Receive(buffer);
+                    }
+                    catch (SocketException)
+                    {
+                        break;
+                    }
+
+                    if (read == 0)
+                    {
+                        // Peer closed the connection - stop trying to read.
+                        break;
+                    }
+                    sb.Append(Encoding.UTF8.GetString(buffer, 0, read));
+                }
+                else if (sb.Length > 0)
+                {
+                    // We received some data and it has now been quiet for quietPeriodMs - assume the
+                    // server is done flushing for this round-trip.
+                    break;
+                }
+            }
+
+            return sb.ToString();
         }
 
         private void SubscribeAndPublish(ISubscriber sub, IDatabase db, RedisChannel channel, RedisChannel? publishChannel = null, RedisValue? message = null, Action<RedisChannel, RedisValue> onSubscribe = null)

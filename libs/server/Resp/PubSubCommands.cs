@@ -3,7 +3,6 @@
 
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using Garnet.common;
 using Tsavorite.core;
 
@@ -21,9 +20,18 @@ namespace Garnet.server
         /// <inheritdoc />
         public override unsafe void Publish(PinnedSpanByte key, PinnedSpanByte value)
         {
+            // Tracks whether EnterAndGetResponseObject succeeded, so we only release the lock we actually
+            // acquired. A session can receive its own published message while it is itself the publisher
+            // (e.g. RESP3 PUBLISH to a channel it is subscribed to), in which case this is a reentrant call
+            // on a thread that is already holding the same non-reentrant SpinLock via the outer
+            // TryConsumeMessages/EnterAndGetResponseObject call. Without this guard, the failed re-entrant
+            // Enter would still be unconditionally Exit-ed here, releasing the outer lock early and causing
+            // a SynchronizationLockException when the outer call later tries to exit it itself.
+            var entered = false;
             try
             {
                 networkSender.EnterAndGetResponseObject(out dcurr, out dend);
+                entered = true;
 
                 WritePushLength(3);
 
@@ -44,16 +52,21 @@ namespace Garnet.server
             }
             finally
             {
-                networkSender.ExitAndReturnResponseObject();
+                if (entered)
+                    networkSender.ExitAndReturnResponseObject();
             }
         }
 
         /// <inheritdoc />
         public override unsafe void PatternPublish(PinnedSpanByte pattern, PinnedSpanByte key, PinnedSpanByte value)
         {
+            // See the comment in Publish() above: guard against releasing a lock we never acquired when this
+            // is a reentrant call on a thread that already holds the sender's SpinLock.
+            var entered = false;
             try
             {
                 networkSender.EnterAndGetResponseObject(out dcurr, out dend);
+                entered = true;
 
                 WritePushLength(4);
 
@@ -74,7 +87,8 @@ namespace Garnet.server
             }
             finally
             {
-                networkSender.ExitAndReturnResponseObject();
+                if (entered)
+                    networkSender.ExitAndReturnResponseObject();
             }
         }
 
@@ -100,7 +114,12 @@ namespace Garnet.server
                 return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_CLUSTER_DISABLED);
             }
 
-            Debug.Assert(isSubscriptionSession == false);
+            // Note: a session may legitimately issue PUBLISH while itself in subscription mode (e.g. a
+            // RESP3 client publishing to a channel it is subscribed to; Garnet also does not yet enforce
+            // RESP2's "only (P)SUBSCRIBE/(P)UNSUBSCRIBE/PING/QUIT/RESET while subscribed" restriction - see
+            // https://github.com/microsoft/garnet/issues/1615). This can result in the broker delivering
+            // this very message back to this same session re-entrantly; see the entered-guard in Publish()
+            // and PatternPublish() above, which is what keeps that scenario from corrupting session state.
             // PUBLISH channel message => [*3\r\n$7\r\nPUBLISH\r\n$]7\r\nchannel\r\n$7\r\message\r\n
 
             var key = parseState.GetArgSliceByRef(0);
