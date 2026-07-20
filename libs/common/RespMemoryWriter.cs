@@ -476,7 +476,8 @@ namespace Garnet.common
         private void ReallocateOutput(int extraLenHint = 0, bool lowerMinimum = false)
         {
             var bytesWritten = (int)(curr - ptr);
-            var length = ComputeGrowth(output.Length, extraLenHint, lowerMinimum);
+            var previousLength = output.Length;
+            var length = ComputeGrowth(previousLength, extraLenHint, lowerMinimum);
 
             // ComputeGrowth clamps to Array.MaxLength (the hard ceiling for a single managed
             // array / MemoryPool<byte>.Shared.Rent buffer) and never wraps around to a value
@@ -484,8 +485,12 @@ namespace Garnet.common
             // single buffer even at that ceiling, fail clearly instead of overflowing into a
             // too-small allocation, which previously surfaced as a confusing
             // ArgumentOutOfRangeException/OverflowException from deep inside Buffer.MemoryCopy
-            // (see https://github.com/microsoft/garnet/issues/1616).
-            if (length <= 0 || length < bytesWritten)
+            // (see https://github.com/microsoft/garnet/issues/1616). We also bail out when the
+            // buffer failed to actually grow (length <= previousLength): that only happens once
+            // previousLength is already clamped at Array.MaxLength, and without this check we'd
+            // rent an identically-sized buffer forever, since the caller's `while (!Try...)`
+            // loop would keep failing and re-requesting the same insufficient capacity.
+            if (length <= 0 || length < bytesWritten || length <= previousLength)
             {
                 throw new GarnetException(
                     $"RESP response of at least {(long)bytesWritten + extraLenHint} bytes exceeds the maximum " +
