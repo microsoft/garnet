@@ -404,7 +404,7 @@ namespace Garnet.server
             var value = parseState.GetArgSliceByRef(2);
             if ((long)offset + value.Length > BitmapManager.MaxBitmapPayloadBytes)
             {
-                return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_OFFSETOUTOFRANGE);
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_STRING_EXCEEDS_MAX_SIZE);
             }
 
             var input = new StringInput(RespCommand.SETRANGE, ref parseState, startIdx: 1);
