@@ -252,6 +252,48 @@ namespace Garnet.test
                 "Connection did not survive a self-publish on a subscribed channel - PING got no normal reply");
         }
 
+        /// <summary>
+        /// Same regression as <see cref="SelfPublishOnSubscribedChannelDoesNotCorruptConnection"/>, but for
+        /// the PSUBSCRIBE/PatternPublish path, which received the identical entered-guard fix in
+        /// PatternPublish() but had no direct coverage. A client that is pattern-subscribed to a channel and
+        /// then PUBLISHes a matching key on that same connection triggers the same reentrant delivery, this
+        /// time through SubscribeBroker's pattern-matching broadcast into PatternPublish().
+        /// </summary>
+        [Test]
+        public void SelfPublishOnPatternSubscribedChannelDoesNotCorruptConnection()
+        {
+            const string pattern = "self-publish-pattern-*";
+            const string channel = "self-publish-pattern-channel";
+
+            using var socket = new Socket(SocketType.Stream, ProtocolType.Tcp);
+            socket.Connect(TestUtils.EndPoint);
+            socket.ReceiveTimeout = 10_000;
+            socket.SendTimeout = 10_000;
+
+            // Pattern-subscribe on this connection, and wait for the confirmation so we know the broker has
+            // registered this session as a pattern subscriber before we publish a matching key below.
+            SendCommand(socket, "PSUBSCRIBE", pattern);
+            var subscribeResponse = ReadAvailable(socket);
+            StringAssert.Contains("psubscribe", subscribeResponse);
+            StringAssert.Contains(pattern, subscribeResponse);
+
+            // Publish to a channel matching our own pattern subscription, on the very same connection - this
+            // triggers the reentrant delivery into this connection's own PatternPublish() path.
+            SendCommand(socket, "PUBLISH", channel, "self-published-message");
+            var publishResponse = ReadAvailable(socket);
+            // The PUBLISH command itself must still complete and report the one (self-)subscriber,
+            // regardless of whether the self-delivered "pmessage" push made it through.
+            StringAssert.Contains(":1", publishResponse);
+
+            // The critical assertion: the connection must still be alive and the session must still be
+            // usable afterwards. Before the fix, the SynchronizationLockException thrown while unwinding
+            // TryConsumeMessages tore down this connection, so this PING would get no reply at all.
+            SendCommand(socket, "PING");
+            var pingResponse = ReadAvailable(socket);
+            ClassicAssert.AreEqual("*2\r\n$4\r\npong\r\n$0\r\n\r\n", pingResponse,
+                "Connection did not survive a self-publish on a pattern-subscribed channel - PING got no normal reply");
+        }
+
         private static void SendCommand(Socket socket, params string[] args)
         {
             var sb = new StringBuilder();
