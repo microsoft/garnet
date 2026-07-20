@@ -270,14 +270,14 @@ namespace Garnet.server
                 StopPendingMetrics();
             }
 
-            if (status.NotFound)
+            if (status.IsWrongType)
+            {
+                return GarnetStatus.WRONGTYPE;
+            }
+            else if (status.NotFound)
             {
                 incr_session_notfound();
                 return GarnetStatus.NOTFOUND;
-            }
-            else if (status.IsWrongType)
-            {
-                return GarnetStatus.WRONGTYPE;
             }
             else
             {
