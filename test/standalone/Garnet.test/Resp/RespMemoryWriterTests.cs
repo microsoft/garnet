@@ -56,7 +56,7 @@ namespace Garnet.test.Resp
         [TestCase(0x40000000)] // exactly 2^30 (the old special-cased value)
         [TestCase(0x40000001)] // just above 2^30 (previously NOT special-cased -> bug)
         [TestCase(0x60000000)] // 1.5 * 2^30 - not a power of two, reachable when the buffer's
-                                // starting size isn't a power of two
+                               // starting size isn't a power of two
         [TestCase(0x7FFFFFC6)] // Array.MaxLength - 1
         [TestCase(0x7FFFFFC7)] // exactly Array.MaxLength
         public static void ComputeGrowth_NearMaxCapacity_NeverShrinksOrOverflows(int currentLength)
