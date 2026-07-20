@@ -735,11 +735,35 @@ namespace Garnet.server
 
             var input = new StringInput(cmd, ref parseState, startIdx: 1, arg1: inputArg);
 
-            // TODO: A set that overwrites a Vector Set needs to delete it?
-
             if (!getValue)
             {
                 var status = storageApi.SET_Conditional(key, ref input);
+
+                // Type already stored in key which requires an explicit delete
+                if (status == GarnetStatus.WRONGTYPE)
+                {
+                    var createTransaction = false;
+                    if (txnManager.state != TxnState.Running)
+                    {
+                        createTransaction = true;
+                        txnManager.AddTransactionStoreTypes(TransactionStoreTypes.Main | TransactionStoreTypes.Object);
+                        txnManager.SaveKeyEntryToLock(key, LockType.Exclusive);
+                        _ = txnManager.Run(true);
+                    }
+
+                    try
+                    {
+                        _ = storageSession.DELETE(key, ref storageSession.unifiedTransactionalContext);
+                        status = storageSession.SET_Conditional(key, ref input, ref storageSession.stringTransactionalContext);
+                    }
+                    finally
+                    {
+                        if (createTransaction)
+                        {
+                            txnManager.Commit(true);
+                        }
+                    }
+                }
 
                 // KEEPTTL without flags doesn't care whether it was found or not.
                 if (cmd == RespCommand.SETKEEPTTL)
