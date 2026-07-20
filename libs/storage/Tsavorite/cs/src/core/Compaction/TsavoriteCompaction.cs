@@ -40,7 +40,6 @@ namespace Tsavorite.core
 
             using (var iter1 = Log.Scan(Log.BeginAddress, untilAddress))
             {
-                long numPending = 0;
                 while (iter1.GetNext())
                 {
                     var key = iter1.Key;
@@ -49,18 +48,30 @@ namespace Tsavorite.core
                     {
                         var iter1AsLogSource = iter1 as ISourceLogRecord;   // Can't use 'ref' on a 'using' variable
                         var status = storebContext.CompactionCopyToTail(in iter1AsLogSource, iter1.CurrentAddress, iter1.NextAddress);
-                        if (status.IsPending && ++numPending > 256)
+
+                        // TODO: Figure out a way to restore a pending buffer, like with Scan
+                        //
+                        //       Maybe remember the address?  Pass an input that saves the key if we go async?
+                        if (status.IsPending)
                         {
-                            _ = storebContext.CompletePending(wait: true);
-                            numPending = 0;
+                            _ = storebContext.CompletePendingWithOutputs(out var outputs, wait: true);
+
+                            if (outputs.Next())
+                            {
+                                status = outputs.Current.Status;
+                            }
+                        }
+
+                        if (status.Found)
+                        {
+                            // Inform CF that we found a record that was implicitly deleted
+                            cf.OnImplicitlyDeleted(in iter1AsLogSource);
                         }
                     }
 
                     // Ensure address is at record boundary
                     untilAddress = iter1.NextAddress;
                 }
-                if (numPending > 0)
-                    _ = storebContext.CompletePending(wait: true);
             }
             Log.ShiftBeginAddress(untilAddress, false);
             return untilAddress;
@@ -109,7 +120,6 @@ namespace Tsavorite.core
                 if (untilAddress < scanUntil)
                     ScanImmutableTailToRemoveFromTempKv(ref untilAddress, scanUntil, tempbContext);
 
-                var numPending = 0;
                 using var iter3 = tempKv.Log.Scan(tempKv.Log.BeginAddress, tempKv.Log.TailAddress);
                 while (iter3.GetNext())
                 {
@@ -123,20 +133,38 @@ namespace Tsavorite.core
 
                     // If record is not the latest in tempKv's memory for this key, ignore it (will not be returned if deleted)
                     if (!tempbContext.ContainsKeyInMemory(iter3, out var tempKeyAddress).Found || iter3.CurrentAddress != tempKeyAddress)
+                    {
+                        // Inform CF that we found a record that was implicitly deleted
+                        cf.OnImplicitlyDeleted(in iter3);
+
                         continue;
+                    }
 
                     // As long as there's no record of the same key whose address is >= untilAddress (scan boundary), we are safe to copy the old record
                     // to the tail. We don't know the actualAddress of the key in the main kv, but we it will not be below untilAddress.
                     var iter3AsLogSource = iter3 as ISourceLogRecord;   // Can't use 'ref' on a 'using' variable
                     var status = storebContext.CompactionCopyToTail(in iter3AsLogSource, iter3.CurrentAddress, untilAddress - 1);
-                    if (status.IsPending && ++numPending > 256)
+
+                    // TODO: Figure out a way to restore a pending buffer, like with Scan
+                    //
+                    //       Maybe remember the address?  Pass an input that saves the key if we go async?
+                    if (status.IsPending)
                     {
-                        _ = storebContext.CompletePending(wait: true);
-                        numPending = 0;
+                        _ = storebContext.CompletePendingWithOutputs(out var outputs, wait: true);
+
+                        if (outputs.Next())
+                        {
+                            status = outputs.Current.Status;
+                        }
                     }
+
+                    if (status.Found)
+                    {
+                        // Inform CF that we found a record that was implicitly deleted
+                        cf.OnImplicitlyDeleted(in iter3);
+                    }
+
                 }
-                if (numPending > 0)
-                    _ = storebContext.CompletePending(wait: true);
             }
             Log.ShiftBeginAddress(originalUntilAddress, false);
             return originalUntilAddress;
