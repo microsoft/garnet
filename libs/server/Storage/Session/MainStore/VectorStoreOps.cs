@@ -188,9 +188,7 @@ namespace Garnet.server
             parseState.InitializeWithArguments([dimsArg, reduceDimsArg, valueTypeArg, valuesArg, elementArg, quantizerArg, buildExplorationFactorArg, attributesArg, numLinksArg, distanceMetricArg]);
 
             var input = new StringInput(RespCommand.VADD, ref parseState);
-
             Span<byte> indexSpan = stackalloc byte[VectorManager.IndexSizeBytes];
-
             using (vectorManager.ReadOrCreateVectorIndex(this, key, ref input, indexSpan, out var status))
             {
                 if (status != GarnetStatus.OK)
@@ -220,10 +218,10 @@ namespace Garnet.server
         [SkipLocalsInit]
         public unsafe GarnetStatus VectorSetRemove(PinnedSpanByte key, PinnedSpanByte element)
         {
+            parseState.InitializeWithArgument(key);
+
             var input = new StringInput(RespCommand.VREM, ref parseState);
-
             Span<byte> indexSpan = stackalloc byte[VectorManager.IndexSizeBytes];
-
             using (vectorManager.ReadVectorIndex(this, key, ref input, indexSpan, out var status))
             {
                 if (status != GarnetStatus.OK)
@@ -257,10 +255,10 @@ namespace Garnet.server
         [SkipLocalsInit]
         public GarnetStatus VectorSetSetAttribute(PinnedSpanByte key, PinnedSpanByte element, PinnedSpanByte attribute)
         {
-            var input = new StringInput(RespCommand.VREM, ref parseState);
+            parseState.InitializeWithArgument(key);
 
+            var input = new StringInput(RespCommand.VSETATTR, ref parseState);
             Span<byte> indexSpan = stackalloc byte[VectorManager.IndexSizeBytes];
-
             using (vectorManager.ReadVectorIndex(this, key, ref input, indexSpan, out var status))
             {
                 if (status != GarnetStatus.OK)
@@ -284,9 +282,7 @@ namespace Garnet.server
 
             // Get the index
             var input = new StringInput(RespCommand.VSIM, ref parseState);
-
             Span<byte> indexSpan = stackalloc byte[VectorManager.IndexSizeBytes];
-
             using (vectorManager.ReadVectorIndex(this, key, ref input, indexSpan, out var status))
             {
                 if (status != GarnetStatus.OK)
@@ -312,9 +308,7 @@ namespace Garnet.server
             parseState.InitializeWithArgument(key);
 
             var input = new StringInput(RespCommand.VSIM, ref parseState);
-
             Span<byte> indexSpan = stackalloc byte[VectorManager.IndexSizeBytes];
-
             using (vectorManager.ReadVectorIndex(this, key, ref input, indexSpan, out var status))
             {
                 if (status != GarnetStatus.OK)
@@ -338,9 +332,7 @@ namespace Garnet.server
             parseState.InitializeWithArgument(key);
 
             var input = new StringInput(RespCommand.VEMB, ref parseState);
-
             Span<byte> indexSpan = stackalloc byte[VectorManager.IndexSizeBytes];
-
             using (vectorManager.ReadVectorIndex(this, key, ref input, indexSpan, out var status))
             {
                 if (status != GarnetStatus.OK)
@@ -366,9 +358,7 @@ namespace Garnet.server
             parseState.InitializeWithArgument(key);
 
             var input = new StringInput(RespCommand.VEMB, ref parseState);
-
             Span<byte> indexSpan = stackalloc byte[VectorManager.IndexSizeBytes];
-
             using (vectorManager.ReadVectorIndex(this, key, ref input, indexSpan, out var status))
             {
                 if (status != GarnetStatus.OK)
@@ -394,9 +384,7 @@ namespace Garnet.server
             parseState.InitializeWithArgument(key);
 
             var input = new StringInput(RespCommand.VDIM, ref parseState);
-
             Span<byte> indexSpan = stackalloc byte[VectorManager.IndexSizeBytes];
-
             using (vectorManager.ReadVectorIndex(this, key, ref input, indexSpan, out var status))
             {
                 if (status != GarnetStatus.OK)
@@ -513,7 +501,7 @@ namespace Garnet.server
         {
             parseState.InitializeWithArgument(key);
 
-            var input = new StringInput(RespCommand.VISMEMBER, ref parseState);
+            var input = new StringInput(RespCommand.VLINKS, ref parseState);
             Span<byte> indexSpan = stackalloc byte[VectorManager.IndexSizeBytes];
             using (vectorManager.ReadVectorIndex(this, key, ref input, indexSpan, out var status))
             {

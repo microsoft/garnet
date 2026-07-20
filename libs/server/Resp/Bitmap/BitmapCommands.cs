@@ -687,7 +687,7 @@ namespace Garnet.server
                             var mem = MemoryPool<byte>.Shared.Rent(output.SpanByteAndMemory.Length);
                             output.SpanByteAndMemory.ReadOnlySpan.CopyTo(mem.Memory.Span);
 
-                            output.SpanByteAndMemory = new(mem);
+                            output.SpanByteAndMemory = new(mem, output.SpanByteAndMemory.Length);
                         }
 
                         self.WriteArrayLength(secondaryCommandArgs.Count);
