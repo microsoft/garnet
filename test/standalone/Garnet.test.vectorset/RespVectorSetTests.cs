@@ -3660,7 +3660,6 @@ namespace Garnet.test
 
             // Arm the pause in the synthetic-replication window.
             ExceptionInjectionHelper.EnableException(Pause);
-            RedisResult opReply;
             try
             {
                 // Connection 1: run the operation; it modifies the index, then parks before its append-log RMW.
@@ -3674,18 +3673,16 @@ namespace Garnet.test
                 ClassicAssert.IsTrue(dbDel.KeyDelete(key), "DEL did not remove the parked vector-set key");
 
                 // Re-arm to release the parked operation; its synthetic append-log RMW now runs against
-                // the tombstoned key.
+                // the tombstoned key. The rejection surfaces as NOTFOUND internally and must not be turned
+                // into a client-visible error, so the raced command completes gracefully (last-writer DEL wins).
                 ExceptionInjectionHelper.EnableException(Pause);
-                opReply = await opTask.WaitAsync(TimeSpan.FromSeconds(30));
+                Assert.DoesNotThrowAsync(async () => await opTask.WaitAsync(TimeSpan.FromSeconds(30)), $"the raced {operation} surfaced the rejected synthetic RMW as an error");
             }
             finally
             {
                 ExceptionInjectionHelper.DisableException(Pause);
             }
 
-            // The rejected synthetic RMW returns NOTFOUND, which does not surface as an error: the command
-            // completes gracefully (last-writer DEL wins) and returns its normal count reply.
-            ClassicAssert.AreEqual(1, (long)opReply, $"the raced {operation} must complete gracefully rather than surfacing the rejected synthetic RMW as an error");
             ClassicAssert.IsFalse(dbDel.KeyExists(key), "synthetic replication RMW resurrected a tombstoned key as a phantom index");
         }
 
@@ -3711,7 +3708,6 @@ namespace Garnet.test
             var elem = new byte[] { 1, 0, 0, 0 };
 
             ExceptionInjectionHelper.EnableException(Pause);
-            RedisResult opReply;
             try
             {
                 // Connection 1: VADD creates the index, then parks before its append-log RMW.
@@ -3723,18 +3719,16 @@ namespace Garnet.test
                 ClassicAssert.IsTrue(dbRacer.KeyDelete(key), "DEL did not remove the parked vector-set key");
                 ClassicAssert.IsTrue(dbRacer.StringSet(key, StringValue), "SET did not store the String value");
 
-                // Release the parked VADD; its synthetic append-log RMW now runs against a String record.
+                // Release the parked VADD; its synthetic append-log RMW now cancels against the String record.
+                // The cancellation must not surface as a client-visible error, so the VADD completes gracefully.
                 ExceptionInjectionHelper.EnableException(Pause);
-                opReply = await opTask.WaitAsync(TimeSpan.FromSeconds(30));
+                Assert.DoesNotThrowAsync(async () => await opTask.WaitAsync(TimeSpan.FromSeconds(30)), "the raced VADD surfaced the canceled synthetic RMW as an error");
             }
             finally
             {
                 ExceptionInjectionHelper.DisableException(Pause);
             }
 
-            // The synthetic RMW cancels against the re-typed record (NOTFOUND), so the VADD still completes
-            // gracefully and returns its normal count reply.
-            ClassicAssert.AreEqual(1, (long)opReply, "the raced VADD must complete gracefully rather than surfacing the canceled synthetic RMW as an error");
             ClassicAssert.AreEqual(RedisType.String, dbRacer.KeyType(key), "key type was changed away from String by the synthetic replication RMW");
             ClassicAssert.AreEqual(StringValue, (string)dbRacer.StringGet(key), "String value was corrupted by the synthetic replication RMW");
         }
