@@ -3738,6 +3738,165 @@ namespace Garnet.test
         }
 
         /// <summary>
+        /// A lazy index recreate (triggered when a restored record has a null DiskANN pointer) rebuilds
+        /// the index under an exclusive vector lock, then issues a RecreateIndexArg RMW to write the
+        /// refreshed pointer back. A concurrent DEL bypasses that vector lock and can tombstone the key in
+        /// between. Drives the interleaving deterministically via a pause point: the recreate RMW must run
+        /// against the tombstone without resurrecting the key as a zeroed phantom index.
+        /// </summary>
+        [Test]
+        public async Task RecreateIndexRaceWithConcurrentDelMustNotResurrectKey()
+        {
+            TestUtils.IgnoreIfExceptionInjectionDisabled();
+
+            const ExceptionInjectionType Pause = ExceptionInjectionType.VectorSet_Pause_Before_Recreate_Rmw;
+            const string Key = nameof(RecreateIndexRaceWithConcurrentDelMustNotResurrectKey);
+            var elem = new byte[] { 1, 0, 0, 0 };
+
+            // Create the index, checkpoint, then recover: the restored record carries a null index pointer
+            // (indexPtr == 0), so the next operation on the key must recreate the DiskANN index.
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))
+            {
+                var s = redis.GetServers()[0];
+                var db = redis.GetDatabase(0);
+
+                _ = db.KeyDelete(Key);
+
+                var addRes = db.Execute("VADD", [Key, "VALUES", "3", "1", "2", "3", (RedisValue)elem]);
+                ClassicAssert.AreEqual(1, (int)addRes);
+
+#pragma warning disable CS0618 // Intentionally doing bad things
+                s.Save(SaveType.ForegroundSave);
+#pragma warning restore CS0618
+
+                var commit = await server.Store.WaitForCommitAsync();
+                ClassicAssert.IsTrue(commit);
+
+                server.Dispose(deleteDir: false);
+
+                server = CreateGarnetServer(tryRecover: true);
+                server.Start();
+            }
+
+            using var redisOp = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            using var redisDel = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var dbOp = redisOp.GetDatabase(0);
+            var dbDel = redisDel.GetDatabase(0);
+
+            ExceptionInjectionHelper.EnableException(Pause);
+            try
+            {
+                // Connection 1: a read triggers the lazy recreate; it rebuilds the DiskANN index under an
+                // exclusive vector lock, then parks before writing the refreshed pointer back to the main store.
+                var opTask = Task.Run(() => dbOp.Execute("VSIM", [Key, "VALUES", "3", "1.0", "2.0", "3.0"]));
+
+                await ExceptionInjectionHelper.WaitOnClearAsync(Pause).WaitAsync(TimeSpan.FromSeconds(30));
+
+                // Connection 2: DEL bypasses the exclusive vector lock the recreate holds, tombstoning the key.
+                ClassicAssert.IsTrue(dbDel.KeyDelete(Key), "DEL did not remove the recreating vector-set key");
+
+                // Release the parked recreate; its RecreateIndexArg RMW now runs against the tombstoned key.
+                ExceptionInjectionHelper.EnableException(Pause);
+                await opTask;
+            }
+            finally
+            {
+                ExceptionInjectionHelper.DisableException(Pause);
+            }
+
+            ClassicAssert.IsFalse(dbDel.KeyExists(Key), "recreate RMW resurrected a tombstoned key as a phantom index");
+        }
+
+        /// <summary>
+        /// VADDSetFlagsArg (MarkSuppressCleanup / ClearSuppressCleanup) is only ever issued by RENAME, which
+        /// runs inside a transaction holding an Exclusive main-store lock on the key — so a concurrent DEL/UNLINK
+        /// can never tombstone the key mid-flag-update the way it can for the synthetic-replication and recreate
+        /// paths. Its NeedInitialUpdate guard is therefore purely defensive and not reproducible via a real race.
+        /// This test injects the flag-setting RMW directly against an absent key and asserts it does not fabricate
+        /// a record (i.e. the guard rejects rather than resurrecting a zeroed phantom index).
+        /// </summary>
+        [Test]
+        public void SetFlagsRmwAgainstAbsentKeyMustNotResurrectKey()
+        {
+            const string Key = nameof(SetFlagsRmwAgainstAbsentKeyMustNotResurrectKey);
+            var keyBytes = Encoding.ASCII.GetBytes(Key);
+
+            var storeWrapper = server.Provider.StoreWrapper;
+
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
+            {
+                var db = redis.GetDatabase(0);
+                _ = db.KeyDelete(Key);
+                ClassicAssert.IsFalse(db.KeyExists(Key), "test precondition: key must be absent before injecting the flag RMW");
+            }
+
+            var functionsState = storeWrapper.CreateFunctionsState();
+            var functions = new MainSessionFunctions(functionsState);
+            ClassicAssert.IsTrue(storeWrapper.TryGetDatabase(0, out var database));
+
+            using (var session = database.Store.NewSession<FixedSpanByteKey, StringInput, StringOutput, long, MainSessionFunctions>(functions, false))
+            {
+                var context = session.BasicContext;
+                VectorManager.MarkSuppressCleanup(keyBytes, ref context);
+            }
+
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
+            {
+                var db = redis.GetDatabase(0);
+                ClassicAssert.IsFalse(db.KeyExists(Key), "flag-setting RMW resurrected an absent key as a phantom index");
+            }
+        }
+
+        /// <summary>
+        /// With an explicit CreateIndexArg sentinel gating index creation, a raw VADD/VREM RMW that carries
+        /// the default arg1 (0) must NOT establish a record — creation is now opt-in. This is the safety
+        /// property the sentinel buys: only a deliberate create (CreateIndexArg) or migration import may
+        /// fabricate an index key; any stray/synthetic write with the default arg1 is rejected rather than
+        /// resurrecting a phantom index.
+        /// </summary>
+        [Test]
+        public void RawVectorRmwWithDefaultArgMustNotCreateIndex([Values("VADD", "VREM")] string operation)
+        {
+            var key = $"{nameof(RawVectorRmwWithDefaultArgMustNotCreateIndex)}:{operation}";
+            var keyBytes = Encoding.ASCII.GetBytes(key);
+
+            var storeWrapper = server.Provider.StoreWrapper;
+
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
+            {
+                var db = redis.GetDatabase(0);
+                _ = db.KeyDelete(key);
+                ClassicAssert.IsFalse(db.KeyExists(key), "test precondition: key must be absent before injecting the RMW");
+            }
+
+            var functionsState = storeWrapper.CreateFunctionsState();
+            var functions = new MainSessionFunctions(functionsState);
+            ClassicAssert.IsTrue(storeWrapper.TryGetDatabase(0, out var database));
+
+            using (var session = database.Store.NewSession<FixedSpanByteKey, StringInput, StringOutput, long, MainSessionFunctions>(functions, false))
+            {
+                var context = session.BasicContext;
+
+                var cmd = operation == "VADD" ? RespCommand.VADD : RespCommand.VREM;
+                var input = new StringInput(cmd); // arg1 defaults to 0 — the old "genuine create" value
+                var output = new StringOutput();
+
+                ReadOnlySpan<byte> keySpan = keyBytes;
+                var status = context.RMW((FixedSpanByteKey)keySpan, ref input, ref output);
+                if (status.IsPending)
+                {
+                    _ = context.CompletePending(wait: true);
+                }
+            }
+
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
+            {
+                var db = redis.GetDatabase(0);
+                ClassicAssert.IsFalse(db.KeyExists(key), "a VADD/VREM RMW with the default arg1 created an index record — creation must require an explicit CreateIndexArg");
+            }
+        }
+
+        /// <summary>
         /// Create a new GarnetServer instance with common parameters.
         /// </summary>
         private static GarnetServer CreateGarnetServer(bool tryRecover, bool enableVectorSetPreview = true)

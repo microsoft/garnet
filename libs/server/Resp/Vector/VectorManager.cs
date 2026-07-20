@@ -40,13 +40,57 @@ namespace Garnet.server
         internal const byte MetadataNamespace = 1;
 
         internal const int IndexSizeBytes = Index.Size;
+
+        // Vector Set operations overload StringInput.arg1 with a sentinel that tells the main-store session
+        // functions which kind of synthetic/real VADD/VREM RMW this is. Two properties matter for each
+        // sentinel and are called out per-entry below:
+        //   * AOF: whether the RMW is written to the append-only file (and therefore replicated to replicas
+        //     and recovered on restart) or is a NODE-LOCAL operation that must never be logged. The logging
+        //     allowlist lives in PrivateMethods.cs (WriteLogUpsert/WriteLogRMW): a VADD is logged only when
+        //     arg1 is VADDAppendLogArg, MigrateElementKeyLogArg, MigrateIndexKeyLogArg or VADDSetFlagsArg;
+        //     a main-store VREM RMW only ever occurs as VREMAppendLogArg, so it is always logged.
+        //   * Create: whether NeedInitialUpdate (RMWMethods.cs) lets this arg establish a brand-new record.
+        //     Only the create allowlist may (CreateIndexArg, MigrateIndexImportArg, MigrateElementKeyLogArg,
+        //     MigrateIndexKeyLogArg); everything else must reject to avoid resurrecting a concurrently
+        //     deleted key.
+
+        // Synthetic write that carries a user VADD element insert into the AOF so replicas replay it.
+        // AOF: LOGGED (replicated). Create: rejected (targets an already-existing index key).
         internal const long VADDAppendLogArg = long.MinValue;
         // DeleteAfterDropArg used to be here
+        // Lazy rebuild of the native index for a stub already present locally (indexPtr == 0 after restore).
+        // AOF: NODE-LOCAL, never logged (each node recreates its own native index). Create: rejected
+        // (the stub record must already exist; creating here would resurrect a concurrently-deleted key).
         internal const long RecreateIndexArg = VADDAppendLogArg + 2;
+        // Synthetic write that carries a user VREM element removal into the AOF so replicas replay it.
+        // AOF: LOGGED (replicated). Create: rejected (targets an already-existing index key).
         internal const long VREMAppendLogArg = RecreateIndexArg + 1;
+        // Migration source-side synthetic write (issued against an empty dummy key) whose sole purpose is to
+        // emit an AOF entry a replica replays to apply a migrated element key.
+        // AOF: LOGGED (replicated). Create: allowed (runs against an empty dummy key with no record).
         internal const long MigrateElementKeyLogArg = VREMAppendLogArg + 1;
+        // Migration source-side synthetic write (issued against an empty dummy key) whose sole purpose is to
+        // emit an AOF entry a replica replays to apply a migrated index key.
+        // AOF: LOGGED (replicated). Create: allowed (runs against an empty dummy key with no record).
         internal const long MigrateIndexKeyLogArg = MigrateElementKeyLogArg + 1;
+        // Sets/clears the SuppressCleanup flag on an existing index record, issued by RENAME inside a txn that
+        // holds Exclusive main-store locks on the key.
+        // AOF: LOGGED (replicated). Create: rejected (the index record must already exist).
         internal const long VADDSetFlagsArg = MigrateIndexKeyLogArg + 1;
+        // Migration receive-side build of the native index for a freshly imported index key. Unlike
+        // RecreateIndexArg (which rebuilds the index for a stub that is ALREADY present locally), this
+        // legitimately establishes a brand-new index record on the target.
+        // AOF: NODE-LOCAL, never logged (replication of the migrated data rides on the separate
+        // MigrateElementKeyLogArg / MigrateIndexKeyLogArg synthetic writes). Create: allowed.
+        internal const long MigrateIndexImportArg = VADDSetFlagsArg + 1;
+        // Genuine, user-driven creation of a brand-new index record (a VADD against a key that has no index
+        // yet). Made an explicit sentinel rather than the default arg1 (0) so that establishing a record is
+        // an opt-in: any VADD/VREM RMW that reaches NeedInitialUpdate without deliberately setting a create
+        // sentinel is rejected, closing the resurrection hole where a synthetic/stray write against a
+        // concurrently-deleted key would fabricate a record.
+        // AOF: NODE-LOCAL, never logged (creation replicates via the separate VADDAppendLogArg synthetic
+        // write). Create: allowed.
+        internal const long CreateIndexArg = MigrateIndexImportArg + 1;
 
         /// <summary>
         /// Byte stored on log records to distinguish the INDEX key as a Vector Set

@@ -122,5 +122,11 @@ namespace Garnet.common
         /// reassembles, to exercise the publish-failure throw path in ProcessStreamChunk.
         /// </summary>
         RangeIndex_Replay_Force_Publish_Failure,
+        /// <summary>
+        /// Vector Set: pause in the index-recreate window, after DiskANN has rebuilt the index but
+        /// before the RecreateIndexArg RMW writes the refreshed index pointer back to the main store.
+        /// Lets a test race a concurrent DEL against the recreate write.
+        /// </summary>
+        VectorSet_Pause_Before_Recreate_Rmw,
     }
 }

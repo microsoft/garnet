@@ -48,13 +48,21 @@ namespace Garnet.server
                 case RespCommand.RIRESTORE:
                     return false; // Key must already exist
                 case RespCommand.VADD:
+                    // Only an explicit allowlist may establish a record: a genuine user-driven create
+                    // (CreateIndexArg), a migration index import (MigrateIndexImportArg), and the migrate
+                    // replica-follow writes (MigrateElementKeyLogArg / MigrateIndexKeyLogArg) whose dummy stub
+                    // emits the AOF entry replicas replay. Everything else (RecreateIndexArg, the synthetic
+                    // replication append-log VADDAppendLogArg, VADDSetFlagsArg, and the default arg1 of 0)
+                    // targets an already-existing index key; reaching here means the key was concurrently
+                    // deleted, so we must reject rather than fabricate/resurrect a record.
+                    return input.arg1 is VectorManager.CreateIndexArg or VectorManager.MigrateIndexImportArg or VectorManager.MigrateElementKeyLogArg or VectorManager.MigrateIndexKeyLogArg;
                 case RespCommand.VREM:
-                    // A synthetic replication append-log write (VADDAppendLogArg / VREMAppendLogArg) must
-                    // never fabricate a record: reaching NeedInitialUpdate for one means the key was
-                    // concurrently deleted on the primary, so replaying it on a replica would resurrect a
-                    // spurious index. Every other arg1 - a genuine create (0) or a migration import
-                    // (RecreateIndexArg / MigrateIndexKeyLogArg) - legitimately creates a fresh index record.
-                    return input.arg1 != VectorManager.VADDAppendLogArg && input.arg1 != VectorManager.VREMAppendLogArg;
+                    // A main-store VREM RMW only ever carries VREMAppendLogArg (the synthetic replication write
+                    // that logs a user element removal), which by definition targets an ALREADY-EXISTING index
+                    // key and takes the InPlaceUpdater path. VREM never creates an index. Reaching
+                    // NeedInitialUpdate means the key is absent (concurrently deleted), so always reject —
+                    // creating a record here would resurrect the deleted key.
+                    return false;
                 default:
                     if (input.header.cmd > RespCommandExtensions.LastValidCommand)
                     {
@@ -305,10 +313,23 @@ namespace Garnet.server
                             break;
                         }
 
-                        if (input.arg1 == VectorManager.VADDSetFlagsArg)
+                        if (input.arg1 is VectorManager.VADDSetFlagsArg or VectorManager.RecreateIndexArg)
                         {
-                            functionsState.logger?.LogError("InitialUpdater called with VADDSetFlagsArg, which should never happen");
-                            break;
+                            // Both target an already-existing index key, so NeedInitialUpdate rejects them; reaching
+                            // here would mean resurrecting a concurrently-deleted key. Return false to abort the RMW
+                            // (falling through to the shared "return true" would commit an empty phantom record).
+                            functionsState.logger?.LogError("InitialUpdater called with a synthetic arg1 ({arg1}) that requires an existing index record, which should never happen", input.arg1);
+                            return false;
+                        }
+
+                        if (input.arg1 is not (VectorManager.CreateIndexArg or VectorManager.MigrateIndexImportArg))
+                        {
+                            // Only a genuine create (CreateIndexArg) or a migration index import
+                            // (MigrateIndexImportArg) may establish a new index record here; NeedInitialUpdate
+                            // gates this, so any other arg1 reaching InitialUpdater is a bug. Return false to abort
+                            // rather than commit an empty phantom record.
+                            functionsState.logger?.LogError("InitialUpdater called with an unexpected arg1 ({arg1}); only CreateIndexArg or MigrateIndexImportArg may establish an index record", input.arg1);
+                            return false;
                         }
 
                         var dims = MemoryMarshal.Read<uint>(input.parseState.GetArgSliceByRef(0).Span);
@@ -331,8 +352,11 @@ namespace Garnet.server
                     }
                     break;
                 case RespCommand.VREM:
-                    Debug.Assert(input.arg1 == VectorManager.VREMAppendLogArg, "Should only see VREM writes as part of replication");
-                    break;
+                    // Unreachable by design: NeedInitialUpdate always rejects VREM (it never creates an index),
+                    // so InitialUpdater is never entered for a VREM. Guard defensively — return false to abort
+                    // rather than commit an empty phantom record if this is ever reached.
+                    functionsState.logger?.LogError("InitialUpdater called for VREM (arg1 {arg1}); VREM must never establish an index record", input.arg1);
+                    return false;
                 default:
                     if (input.header.cmd > RespCommandExtensions.LastValidCommand)
                     {
