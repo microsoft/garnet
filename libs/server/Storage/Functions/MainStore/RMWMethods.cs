@@ -48,14 +48,14 @@ namespace Garnet.server
                 case RespCommand.RIRESTORE:
                     return false; // Key must already exist
                 case RespCommand.VADD:
-                    // Only an explicit allowlist may establish a record: a genuine user-driven create
-                    // (CreateIndexArg), a migration index import (MigrateIndexImportArg), and the migrate
+                    // Only an explicit allowlist may establish a record: a genuine create (CreateIndexArg,
+                    // covering both a user-driven create and the migration index import) and the migrate
                     // replica-follow writes (MigrateElementKeyLogArg / MigrateIndexKeyLogArg) whose dummy stub
                     // emits the AOF entry replicas replay. Everything else (RecreateIndexArg, the synthetic
                     // replication append-log VADDAppendLogArg, VADDSetFlagsArg, and the default arg1 of 0)
                     // targets an already-existing index key; reaching here means the key was concurrently
                     // deleted, so we must reject rather than fabricate/resurrect a record.
-                    return input.arg1 is VectorManager.CreateIndexArg or VectorManager.MigrateIndexImportArg or VectorManager.MigrateElementKeyLogArg or VectorManager.MigrateIndexKeyLogArg;
+                    return input.arg1 is VectorManager.CreateIndexArg or VectorManager.MigrateElementKeyLogArg or VectorManager.MigrateIndexKeyLogArg;
                 case RespCommand.VREM:
                     // A main-store VREM RMW only ever carries VREMAppendLogArg (the synthetic replication write
                     // that logs a user element removal), which by definition targets an ALREADY-EXISTING index
@@ -322,13 +322,13 @@ namespace Garnet.server
                             return false;
                         }
 
-                        if (input.arg1 is not (VectorManager.CreateIndexArg or VectorManager.MigrateIndexImportArg))
+                        if (input.arg1 is not VectorManager.CreateIndexArg)
                         {
-                            // Only a genuine create (CreateIndexArg) or a migration index import
-                            // (MigrateIndexImportArg) may establish a new index record here; NeedInitialUpdate
-                            // gates this, so any other arg1 reaching InitialUpdater is a bug. Return false to abort
-                            // rather than commit an empty phantom record.
-                            functionsState.logger?.LogError("InitialUpdater called with an unexpected arg1 ({arg1}); only CreateIndexArg or MigrateIndexImportArg may establish an index record", input.arg1);
+                            // Only a genuine create (CreateIndexArg, covering both a user create and a migration
+                            // index import) may establish a new index record here; NeedInitialUpdate gates this,
+                            // so any other arg1 reaching InitialUpdater is a bug. Return false to abort rather
+                            // than commit an empty phantom record.
+                            functionsState.logger?.LogError("InitialUpdater called with an unexpected arg1 ({arg1}); only CreateIndexArg may establish an index record", input.arg1);
                             return false;
                         }
 
