@@ -4,6 +4,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using Garnet.common;
 using Garnet.server;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -276,6 +277,18 @@ namespace Garnet.test
             ClassicAssert.AreEqual(3, (int)GarnetObjectType.Hash);
             ClassicAssert.AreEqual(4, (int)GarnetObjectType.Set);
             ClassicAssert.AreEqual(0xFB, (int)GarnetObjectType.All);
+        }
+
+        [Test]
+        public void LegacyCustomObjectTypeIdFailsFastOnDeserialize()
+        {
+            // Older builds based custom object type ids at LastObjectType+1 (=5), which now lies in the
+            // reserved built-in band below the fixed custom base (0x40). Deserializing such a record must
+            // fail fast rather than silently return null (which would drop the object and lose data).
+            var serializer = new GarnetObjectSerializer(new CustomCommandManager());
+            var legacyCustomObjectBytes = new byte[] { 5 };
+
+            Assert.Throws<GarnetException>(() => serializer.Deserialize(legacyCustomObjectBytes));
         }
 
         [Test]

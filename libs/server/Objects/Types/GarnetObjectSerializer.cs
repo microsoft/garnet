@@ -74,8 +74,16 @@ namespace Garnet.server
 
         private IGarnetObject CustomDeserialize(byte type, BinaryReader binaryReader)
         {
-            if (type < CustomCommandManager.CustomTypeIdStartOffset ||
-                !customCommandManager.TryGetCustomObjectCommand(type, out var cmd)) return null;
+            // Built-in type ids (0..LastObjectType) are handled by the caller. A type id below the
+            // fixed custom-object base therefore lies in the reserved built-in band and is not valid
+            // for this build: it was written either by an older build whose custom objects were based
+            // at LastObjectType+1 (rather than the fixed base), or by a newer build with additional
+            // built-in types. Fail fast instead of silently returning null, which would drop the
+            // record and lose data without any indication.
+            if (type < CustomCommandManager.CustomTypeIdStartOffset)
+                throw new GarnetException($"Unsupported object type id 0x{type:X2}; the data may have been written by an incompatible Garnet version (e.g. legacy custom objects that used a different type-id range).");
+
+            if (!customCommandManager.TryGetCustomObjectCommand(type, out var cmd)) return null;
             return cmd.factory.Deserialize(type, binaryReader);
         }
 
