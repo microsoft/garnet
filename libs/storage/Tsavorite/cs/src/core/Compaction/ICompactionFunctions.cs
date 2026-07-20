@@ -18,12 +18,28 @@ namespace Tsavorite.core
         /// </remarks>
         bool IsDeleted<TSourceLogRecord>(in TSourceLogRecord logRecord)
             where TSourceLogRecord : ISourceLogRecord;
+
+        /// <summary>
+        /// Called when a record is determined to be unreachable during a compaction.
+        /// 
+        /// If a record was deleted the usual Delete() way (i.e. its tombstone is set), then this function is not called for it.
+        /// If <see cref="IsDeleted{TSourceLogRecord}(in TSourceLogRecord)"/> returns true, then this function is not called for it.
+        /// </summary>
+        void OnImplicitlyDeleted<TSourceLogRecord>(in TSourceLogRecord logRecord)
+            where TSourceLogRecord : ISourceLogRecord;
     }
 
     internal struct DefaultCompactionFunctions : ICompactionFunctions
     {
+        /// <inheritdoc/>
         public bool IsDeleted<TSourceLogRecord>(in TSourceLogRecord logRecord)
             where TSourceLogRecord : ISourceLogRecord
             => false;
+
+        /// <inheritdoc/>
+        public void OnImplicitlyDeleted<TSourceLogRecord>(in TSourceLogRecord logRecord)
+            where TSourceLogRecord : ISourceLogRecord
+        {
+        }
     }
 }

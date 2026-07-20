@@ -11,7 +11,7 @@ namespace Garnet.server
     /// to handle per-record cleanup on delete, eviction, flush, copy-to-tail, log truncation,
     /// and disk read for BfTree stubs (RangeIndex).
     /// </summary>
-    public readonly struct GarnetRecordTriggers : IRecordTriggers
+    public readonly struct GarnetRecordTriggers : IRecordTriggers, ICompactionFunctions
     {
         /// <summary>
         /// Cache size tracker for heap size accounting.
@@ -260,6 +260,14 @@ namespace Garnet.server
         public readonly void OnTruncate(long newBeginAddress)
         {
             rangeIndexManager?.OnTruncateImpl(newBeginAddress);
+        }
+
+        /// <inheritdoc/>
+        public bool IsDeleted<TSourceLogRecord>(in TSourceLogRecord logRecord) where TSourceLogRecord : ISourceLogRecord => false;
+
+        /// <inheritdoc/>
+        public void OnImplicitlyDeleted<TSourceLogRecord>(in TSourceLogRecord logRecord) where TSourceLogRecord : ISourceLogRecord
+        {
         }
     }
 }

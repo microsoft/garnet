@@ -16,9 +16,9 @@ namespace Tsavorite.core
     /// because there is no need to wrap calls to them with additional functionality. This can be changed to redirect if such wrapper
     /// functionality is needed.
     /// </remarks>
-    public struct StoreFunctions<TKeyComparer, TRecordTriggers>(TKeyComparer keyComparer, Func<IObjectSerializer<IHeapObject>> valueSerializerCreator, TRecordTriggers recordTriggers) : IStoreFunctions
+    public struct StoreFunctions<TKeyComparer, TRecordTriggers>(TKeyComparer keyComparer, Func<IObjectSerializer<IHeapObject>> valueSerializerCreator, TRecordTriggers recordTriggers) : IStoreFunctions, ICompactionFunctions
         where TKeyComparer : IKeyComparer
-        where TRecordTriggers : IRecordTriggers
+        where TRecordTriggers : IRecordTriggers, ICompactionFunctions
     {
         #region Fields
         /// <summary>Compare two keys for equality, and get a key's hash code.</summary>
@@ -144,6 +144,20 @@ namespace Tsavorite.core
         public readonly void OnTruncate(long newBeginAddress) => recordTriggers.OnTruncate(newBeginAddress);
         #endregion Record Triggers
 
+        #region Compacton Functions
+        /// <inheritdoc/>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public readonly bool IsDeleted<TSourceLogRecord>(in TSourceLogRecord logRecord)
+            where TSourceLogRecord : ISourceLogRecord
+            => recordTriggers.IsDeleted(in logRecord);
+
+        /// <inheritdoc/>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public readonly void OnImplicitlyDeleted<TSourceLogRecord>(in TSourceLogRecord logRecord)
+            where TSourceLogRecord : ISourceLogRecord
+            => recordTriggers.OnImplicitlyDeleted(in logRecord);
+        #endregion Compaction Functions
+
         #region Checkpoint Completion
         /// <inheritdoc/>
         public void SetCheckpointCompletedCallback(Action callback) => checkpointCompletionCallback = callback;
@@ -164,7 +178,7 @@ namespace Tsavorite.core
         public static StoreFunctions<TKeyComparer, TRecordTriggers> Create<TKeyComparer, TRecordTriggers>
                 (TKeyComparer keyComparer, Func<IObjectSerializer<IHeapObject>> valueSerializerCreator, TRecordTriggers recordTriggers)
             where TKeyComparer : IKeyComparer
-            where TRecordTriggers : IRecordTriggers
+            where TRecordTriggers : IRecordTriggers, ICompactionFunctions
             => new(keyComparer, valueSerializerCreator, recordTriggers);
 
         /// <summary>
@@ -179,7 +193,7 @@ namespace Tsavorite.core
         /// </summary>
         public static StoreFunctions<TKeyComparer, TRecordTriggers> Create<TKeyComparer, TRecordTriggers>(TKeyComparer keyComparer, TRecordTriggers recordTriggers)
             where TKeyComparer : IKeyComparer
-            where TRecordTriggers : IRecordTriggers
+            where TRecordTriggers : IRecordTriggers, ICompactionFunctions
             => new(keyComparer, valueSerializerCreator: null, recordTriggers);
 
         /// <summary>

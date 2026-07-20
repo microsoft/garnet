@@ -175,10 +175,10 @@ namespace Tsavorite.core
     }
 
     /// <summary>
-    /// Default no-op implementation of <see cref="IRecordTriggers"/>.
+    /// Default no-op implementation of <see cref="IRecordTriggers"/> and <see cref="ICompactionFunctions"/>.
     /// </summary>
     /// <remarks>It is appropriate to call methods on this instance as a no-op.</remarks>
-    public readonly struct DefaultRecordTriggers : IRecordTriggers
+    public readonly struct DefaultRecordTriggers : IRecordTriggers, ICompactionFunctions
     {
         /// <summary>Default instance.</summary>
         public static readonly DefaultRecordTriggers Instance = new();
@@ -201,6 +201,15 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void OnDisposeDiskRecord(ref DiskLogRecord logRecord, DisposeReason reason) { }
+
+        public bool IsDeleted<TSourceLogRecord>(in TSourceLogRecord logRecord)
+            where TSourceLogRecord : ISourceLogRecord
+        => false;
+
+        public void OnImplicitlyDeleted<TSourceLogRecord>(in TSourceLogRecord logRecord) 
+            where TSourceLogRecord : ISourceLogRecord
+        {
+        }
     }
 
     /// <summary>
