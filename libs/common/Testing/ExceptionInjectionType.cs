@@ -113,8 +113,7 @@ namespace Garnet.common
         /// </summary>
         RangeIndex_Migration_Receive_Pause_In_ProcessRecord,
         /// <summary>
-        /// Vector Set: pause in the synthetic-replication window, after a VADD/VREM has modified the
-        /// index but before its append-log RMW runs against the main store.
+        /// Vector Set: pause after a VADD/VREM has modified the index but before append-log RMW against main store.
         /// </summary>
         VectorSet_Pause_Before_Synthetic_Replication_Rmw,
         /// <summary>
@@ -123,9 +122,7 @@ namespace Garnet.common
         /// </summary>
         RangeIndex_Replay_Force_Publish_Failure,
         /// <summary>
-        /// Vector Set: pause in the index-recreate window, after DiskANN has rebuilt the index but
-        /// before the RecreateIndexArg RMW writes the refreshed index pointer back to the main store.
-        /// Lets a test race a concurrent DEL against the recreate write.
+        /// Vector Set: pause in the index-recreate window before RMW write refreshed index pointer back to the main store.
         /// </summary>
         VectorSet_Pause_Before_Recreate_Rmw,
     }

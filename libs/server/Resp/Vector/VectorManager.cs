@@ -47,7 +47,7 @@ namespace Garnet.server
         //     this must be thought through when creating new args to ensure a stub doesn't gets ressurected in case of concurrent DEL.
         internal const long VADDAppendLogArg = long.MinValue; // User VADD element insert, replayed on replicas. AOF: YES. InitialUpdater: NO.
         // DeleteAfterDropArg used to be here
-        internal const long RecreateIndexArg = VADDAppendLogArg + 2; // Lative-index rebuild for a local stub. AOF: NO. InitialUpdater: NO.
+        internal const long RecreateIndexArg = VADDAppendLogArg + 2; // Native index rebuild for a local stub. AOF: NO. InitialUpdater: NO.
         internal const long VREMAppendLogArg = RecreateIndexArg + 1; // User VREM element removal, replayed on replicas. AOF: YES. InitialUpdater: NO.
         internal const long MigrateElementKeyLogArg = VREMAppendLogArg + 1; // AOF: YES. InitialUpdater: YES (empty dummy key).
         internal const long MigrateIndexKeyLogArg = MigrateElementKeyLogArg + 1; // AOF: YES. InitialUpdater: YES (empty dummy key).
