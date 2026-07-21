@@ -3878,6 +3878,8 @@ namespace Garnet.test
 
                 ClassicAssert.IsTrue(status.IsCanceled, $"{operation} with arg1={name} against a re-typed String key must CANCEL");
                 ClassicAssert.IsFalse(output.HasError, $"{operation} with arg1={name} cancel must not surface an output error");
+                ClassicAssert.IsFalse(status.Record.InPlaceUpdated, $"{operation} with arg1={name} cancel must not update the record in place");
+                ClassicAssert.IsFalse(status.Record.CopyUpdated, $"{operation} with arg1={name} cancel must not copy-update the record to the tail");
                 ClassicAssert.AreEqual(RedisType.String, db.KeyType(key), $"{operation} with arg1={name} changed the key type away from String");
                 ClassicAssert.AreEqual(StringValue, (string)db.StringGet(key), $"{operation} with arg1={name} corrupted the String value");
             }
