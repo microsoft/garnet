@@ -117,5 +117,11 @@ namespace Garnet.common
         /// reassembles, to exercise the publish-failure throw path in ProcessStreamChunk.
         /// </summary>
         RangeIndex_Replay_Force_Publish_Failure,
+        /// <summary>
+        /// Drop the AOF auto-commit page flush before it reaches the device, so an acked write never becomes
+        /// durable (CommittedUntilAddress lags TailAddress). Used to exercise the graceful-shutdown durability
+        /// race where the async flush has not completed before the log is disposed.
+        /// </summary>
+        Aof_AutoCommit_Drop_Page_Flush,
     }
 }
