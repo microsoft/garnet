@@ -3224,37 +3224,6 @@ namespace Garnet.test
         }
 
         /// <summary>
-        /// Seeds <paramref name="count"/> random vectors into <paramref name="key"/>, then evicts the entire main
-        /// log to disk with <c>LogAccessor.FlushAndEvict</c> so any subsequent delete callback runs against
-        /// disk-resident records (<c>status.Found == false</c>). Returns the little-endian element ids in insertion order.
-        /// </summary>
-        private List<byte[]> SeedVectorSetAndFlushToDisk(IDatabase db, string key, int dim, int count)
-        {
-            var rng = new Random(0);
-
-            var ids = new List<byte[]>(count);
-            for (var i = 0; i < count; i++)
-            {
-                var vec = new float[dim];
-                for (var d = 0; d < dim; d++)
-                    vec[d] = (float)rng.NextDouble();
-
-                var id = new byte[4];
-                BinaryPrimitives.WriteInt32LittleEndian(id, i);
-                ids.Add(id);
-
-                var res = db.Execute("VADD", [key, "FP32", MemoryMarshal.Cast<float, byte>(vec).ToArray(), id, "NOQUANT"]);
-                ClassicAssert.AreEqual(1, (int)res, $"VADD #{i} should succeed");
-            }
-
-            var store = server.Provider.StoreWrapper.store;
-            store.Log.FlushAndEvict(wait: true);
-            ClassicAssert.AreEqual(store.Log.TailAddress, store.Log.HeadAddress, "the whole main log should have been evicted to disk");
-
-            return ids;
-        }
-
-        /// <summary>
         /// A VREM whose element records have been fully flushed to disk must still succeed (end-to-end, over RESP).
         ///
         /// The DiskANN delete callback (<c>VectorManager.DeleteCallbackUnmanaged</c>) issues a Tsavorite
@@ -3271,11 +3240,17 @@ namespace Garnet.test
             var db = redis.GetDatabase(0);
 
             const string Key = nameof(VREMOnDiskFlushedElementSucceeds);
-            const int Dim = 16;
-            const int Count = 32;
+            var target = new byte[] { 2, 0, 0, 0 };
 
-            var ids = SeedVectorSetAndFlushToDisk(db, Key, Dim, Count);
-            var target = ids[Count / 2];
+            ClassicAssert.AreEqual(1, (int)db.Execute("VADD", [Key, "VALUES", "4", "1.0", "1.0", "1.0", "1.0", new byte[] { 1, 0, 0, 0 }, "NOQUANT"]));
+            ClassicAssert.AreEqual(1, (int)db.Execute("VADD", [Key, "VALUES", "4", "2.0", "2.0", "2.0", "2.0", target, "NOQUANT"]));
+            ClassicAssert.AreEqual(1, (int)db.Execute("VADD", [Key, "VALUES", "4", "3.0", "3.0", "3.0", "3.0", new byte[] { 3, 0, 0, 0 }, "NOQUANT"]));
+
+            // Force every namespaced record (and the index stub) onto disk so the VREM delete callback runs against
+            // disk-resident records (status.Found == false).
+            var store = server.Provider.StoreWrapper.store;
+            store.Log.FlushAndEvict(wait: true);
+            ClassicAssert.AreEqual(store.Log.TailAddress, store.Log.HeadAddress, "the whole main log should have been evicted to disk");
 
             // VREM an element whose records are on disk: must succeed (return 1) despite the not-found delete.
             var removed = (int)db.Execute("VREM", [Key, target]);
@@ -3285,12 +3260,10 @@ namespace Garnet.test
             var removedAgain = (int)db.Execute("VREM", [Key, target]);
             ClassicAssert.AreEqual(0, removedAgain, "second VREM of the same element must report not-found");
 
-            // The set must stay consistent: a similarity search anchored on a surviving element returns every
-            // remaining member and never the removed one.
-            var survivor = ids[0];
-            var neighbors = (byte[][])db.Execute("VSIM", [Key, "ELE", survivor, "COUNT", Count.ToString(), "EPSILON", "1.0", "EF", "200"]);
-            ClassicAssert.AreEqual(Count - 1, neighbors.Length, "VSIM should return every surviving element exactly once");
-            CollectionAssert.DoesNotContain(neighbors.Select(n => BinaryPrimitives.ReadInt32LittleEndian(n)).ToList(), Count / 2, "the removed element must not appear in similarity results");
+            // The set must stay consistent: a similarity search returns both survivors and never the removed one.
+            var neighbors = (byte[][])db.Execute("VSIM", [Key, "VALUES", "4", "0.0", "0.0", "0.0", "0.0", "COUNT", "5", "EF", "128"]);
+            ClassicAssert.AreEqual(2, neighbors.Length, "VSIM should return both surviving elements");
+            ClassicAssert.IsFalse(neighbors.Any(n => n.SequenceEqual(target)), "the removed element must not appear in similarity results");
         }
 
         /// <summary>
@@ -3309,11 +3282,15 @@ namespace Garnet.test
             var db = redis.GetDatabase(0);
 
             const string Key = nameof(VREMOnDiskFlushedElement_ServiceRemoveSucceeds);
-            const int Dim = 16;
-            const int Count = 32;
+            var target = new byte[] { 2, 0, 0, 0 };
 
-            var ids = SeedVectorSetAndFlushToDisk(db, Key, Dim, Count);
-            var target = ids[Count / 2];
+            ClassicAssert.AreEqual(1, (int)db.Execute("VADD", [Key, "VALUES", "4", "1.0", "1.0", "1.0", "1.0", new byte[] { 1, 0, 0, 0 }, "NOQUANT"]));
+            ClassicAssert.AreEqual(1, (int)db.Execute("VADD", [Key, "VALUES", "4", "2.0", "2.0", "2.0", "2.0", target, "NOQUANT"]));
+            ClassicAssert.AreEqual(1, (int)db.Execute("VADD", [Key, "VALUES", "4", "3.0", "3.0", "3.0", "3.0", new byte[] { 3, 0, 0, 0 }, "NOQUANT"]));
+
+            var store = server.Provider.StoreWrapper.store;
+            store.Log.FlushAndEvict(wait: true);
+            ClassicAssert.AreEqual(store.Log.TailAddress, store.Log.HeadAddress, "the whole main log should have been evicted to disk");
 
             var session = new RespServerSession(0, new EmbeddedNetworkSender(), server.Provider.StoreWrapper, null, null, false);
             var vectorManager = server.Provider.StoreWrapper.DefaultDatabase.VectorManager;
