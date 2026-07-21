@@ -3224,14 +3224,9 @@ namespace Garnet.test
         }
 
         /// <summary>
-        /// A VREM whose element records have been fully flushed to disk must still succeed (end-to-end, over RESP).
-        ///
-        /// The DiskANN delete callback (<c>VectorManager.DeleteCallbackUnmanaged</c>) issues a Tsavorite
-        /// Delete for each of the element's namespaced records. For a disk-resident record that Delete reports
-        /// <c>status.Found == false</c> even though the key logically exists — Tsavorite deletes are tombstone
-        /// appends and never read the old record back. The callback must therefore treat a completed-but-not-found
-        /// delete as success (<c>status.IsCompletedSuccessfully</c>); gating the return value on <c>status.Found</c>
-        /// would make VREM spuriously fail for any element that had been evicted to disk.
+        /// End-to-end: VREM of an element whose records were evicted to disk must still succeed. The Tsavorite
+        /// delete reports <c>status.Found == false</c> for a disk-resident record, so the delete callback must
+        /// treat a completed-but-not-found delete as success rather than gating on <c>status.Found</c>.
         /// </summary>
         [Test]
         public void VREMOnDiskFlushedElementSucceeds()
@@ -3267,13 +3262,9 @@ namespace Garnet.test
         }
 
         /// <summary>
-        /// Lower-level companion to <see cref="VREMOnDiskFlushedElementSucceeds"/> that drives the removal straight
-        /// through <see cref="VectorManager.TryRemove"/> (and therefore <c>DiskANNService.Remove</c>), bypassing RESP
-        /// parsing, integer encoding, and replication. It pins the bug to the exact layer it lived at: for a
-        /// disk-resident element the Tsavorite delete in <c>VectorManager.DeleteCallbackUnmanaged</c> completes with
-        /// <c>status.Found == false</c>. Before the fix the callback returned 0, <c>Service.Remove</c> returned false,
-        /// and <c>TryRemove</c> reported <see cref="VectorManagerResult.MissingElement"/>; after the fix it returns
-        /// <see cref="VectorManagerResult.OK"/>. A genuinely absent element still reports <c>MissingElement</c>.
+        /// Same disk-evicted removal as <see cref="VREMOnDiskFlushedElementSucceeds"/>, but driven straight through
+        /// <see cref="VectorManager.TryRemove"/>/<c>Service.Remove</c> so the fix is pinned at that layer: before the
+        /// fix it returned <see cref="VectorManagerResult.MissingElement"/>, after it returns <see cref="VectorManagerResult.OK"/>.
         /// </summary>
         [Test]
         public void VREMOnDiskFlushedElement_ServiceRemoveSucceeds()
