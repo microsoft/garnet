@@ -40,13 +40,19 @@ namespace Garnet.server
         internal const byte MetadataNamespace = 1;
 
         internal const int IndexSizeBytes = Index.Size;
-        internal const long VADDAppendLogArg = long.MinValue;
+
+        // VADD/VREM overload StringInput.arg1 with a sentinel identifying special RMW operations.
+        //   - AOF: YES (replicated/recoverable) / NO (never logged).
+        //   - InitialUpdater: YES/NO. whether this arg can create a new record in Tsavorite if one doesn't exist at the moment (NeedInitialUpdate).
+        //     this must be thought through when creating new args to ensure a stub doesn't gets ressurected in case of concurrent DEL.
+        internal const long VADDAppendLogArg = long.MinValue; // User VADD element insert, replayed on replicas. AOF: YES. InitialUpdater: NO.
         // DeleteAfterDropArg used to be here
-        internal const long RecreateIndexArg = VADDAppendLogArg + 2;
-        internal const long VREMAppendLogArg = RecreateIndexArg + 1;
-        internal const long MigrateElementKeyLogArg = VREMAppendLogArg + 1;
-        internal const long MigrateIndexKeyLogArg = MigrateElementKeyLogArg + 1;
-        internal const long VADDSetFlagsArg = MigrateIndexKeyLogArg + 1;
+        internal const long RecreateIndexArg = VADDAppendLogArg + 2; // Native index rebuild for a local stub. AOF: NO. InitialUpdater: NO.
+        internal const long VREMAppendLogArg = RecreateIndexArg + 1; // User VREM element removal, replayed on replicas. AOF: YES. InitialUpdater: NO.
+        internal const long MigrateElementKeyLogArg = VREMAppendLogArg + 1; // AOF: YES. InitialUpdater: YES (empty dummy key).
+        internal const long MigrateIndexKeyLogArg = MigrateElementKeyLogArg + 1; // AOF: YES. InitialUpdater: YES (empty dummy key).
+        internal const long VADDSetFlagsArg = MigrateIndexKeyLogArg + 1; // AOF: YES. InitialUpdater: NO (record must exist).
+        internal const long CreateIndexArg = VADDSetFlagsArg + 1; // New stub record creation. AOF: NO. InitialUpdater: YES.
 
         /// <summary>
         /// Byte stored on log records to distinguish the INDEX key as a Vector Set

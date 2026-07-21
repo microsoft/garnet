@@ -5,15 +5,12 @@ using System;
 using System.Buffers.Binary;
 using System.IO;
 using System.Text;
+using System.Threading;
 using Garnet.cluster;
+using Garnet.common;
 using Garnet.server;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
-#if DEBUG
-using System.Threading;
-using Garnet.common;
-#endif
-
 // The receive-side ProcessRecord takes a ref StringBasicContext; declare the alias locally so the
 // test can pass a default (it is only dereferenced on stream completion, which these tests avoid).
 using StringBasicContext = Tsavorite.core.BasicContext<
@@ -91,11 +88,12 @@ namespace Garnet.test.cluster
             Assert.Throws<ObjectDisposedException>(() => state.ProcessRecord(BuildPartialChunk(), null, ref ctx, replaceOption: false));
         }
 
-#if DEBUG
         [Test]
         [Category("CLUSTER")]
         public void DisposeDuringProcessRecord_DefersCleanupToWorker()
         {
+            ClusterTestUtils.IgnoreIfExceptionInjectionDisabled();
+
             var manager = new RangeIndexManager(testDir);
             var state = new RangeIndexMigrationReceiveState(manager);
             var chunk = BuildPartialChunk();
@@ -152,6 +150,5 @@ namespace Garnet.test.cluster
             StringBasicContext ctx2 = default;
             Assert.Throws<ObjectDisposedException>(() => state.ProcessRecord(chunk, null, ref ctx2, replaceOption: false));
         }
-#endif
     }
 }

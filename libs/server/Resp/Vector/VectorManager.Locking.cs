@@ -192,6 +192,8 @@ namespace Garnet.server
                         {
                             try
                             {
+                                ExceptionInjectionHelper.ResetAndWait(ExceptionInjectionType.VectorSet_Pause_Before_Recreate_Rmw);
+
                                 writeRes = storageSession.RMW_MainStore(key, ref input, ref indexConfigOutput, ref storageSession.stringBasicContext);
 
                                 if (writeRes != GarnetStatus.OK)
@@ -381,6 +383,7 @@ namespace Garnet.server
                         else
                         {
                             // Create a new index, grab a new context
+                            input.arg1 = CreateIndexArg;
 
                             // We must associate the index with a hash slot at creation time to enable future migrations
                             var slot = HashSlotUtils.HashSlot(key);

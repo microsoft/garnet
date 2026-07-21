@@ -257,6 +257,13 @@ namespace Garnet.test
                 Assert.Ignore("Environment variable RunAzureTests is not defined");
         }
 
+        public static void IgnoreIfExceptionInjectionDisabled()
+        {
+#if !DEBUG
+            Assert.Ignore("Relies on ExceptionInjectionHelper, only enabled in DEBUG builds");
+#endif
+        }
+
         public static void WaitUntilNextSecond(IDatabase db, long baseSeconds)
         {
             // LASTSAVE returns Unix seconds via DateTimeOffset.ToUnixTimeSeconds() so it has
