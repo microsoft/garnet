@@ -3832,6 +3832,7 @@ namespace Garnet.test
                 ClassicAssert.IsTrue(status.NotFound, $"{operation} with arg1={name} on an absent key must return NOTFOUND");
                 ClassicAssert.IsFalse(status.IsCanceled, $"{operation} with arg1={name} rejection must be NOTFOUND, not CANCELED");
                 ClassicAssert.IsFalse(output.HasError, $"{operation} with arg1={name} rejection must not surface an output error");
+                ClassicAssert.IsFalse(status.Record.Created, $"{operation} with arg1={name} rejection must not append a new record to the log");
                 ClassicAssert.IsFalse(db.KeyExists(key), $"{operation} with arg1={name} resurrected an absent key as a phantom index");
             }
         }
