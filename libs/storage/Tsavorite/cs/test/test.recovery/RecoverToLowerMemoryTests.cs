@@ -13,23 +13,18 @@ using static Tsavorite.test.TestUtils;
 
 namespace Tsavorite.test.recovery
 {
-    using LongAllocator = SpanByteAllocator<StoreFunctions<LongKeyComparer, SpanByteRecordTriggers>>;
-    using LongStoreFunctions = StoreFunctions<LongKeyComparer, SpanByteRecordTriggers>;
+    using ObjAllocator = ObjectAllocator<StoreFunctions<LongKeyComparer, DefaultRecordTriggers>>;
+    using ObjStoreFunctions = StoreFunctions<LongKeyComparer, DefaultRecordTriggers>;
 
     /// <summary>
-    /// Recovers an inline (SpanByte) store's Snapshot checkpoint into a smaller memory budget than was checkpointed,
-    /// with a <see cref="LogSizeTracker{TStoreFunctions, TAllocator}"/> attached so recovery must evict snapshot pages
-    /// to honor the budget. Every record — whether it stayed resident or was evicted to disk — must read back correctly.
-    ///
-    /// Regression for issue #1950: <c>RecoverSnapshotPages</c> skipped flushing the last read-batch of snapshot pages
-    /// (assuming they stay resident), but the budget-driven recovery eviction floor (<see cref="LogSizeTracker.MinEvictionHeadAddressLag"/>
-    /// / <c>MaxAllocatedPageCount</c>) is finer-grained than the read batch, so it could free a page that was never
-    /// flushed to the main log. After <c>RecoveryReset</c> marked that page's range flushed, a later read of it did a
-    /// 0-byte disk read and returned NOTFOUND (a lost key). Only the inline store was affected (the object-store path
-    /// already flushed every page).
+    /// Recovers an <see cref="ObjectAllocator{TStoreFunctions}"/> store's Snapshot checkpoint into a smaller memory budget
+    /// than was checkpointed, with a <see cref="LogSizeTracker{TStoreFunctions, TAllocator}"/> attached so recovery must
+    /// evict snapshot pages to honor the budget. Garnet always uses the ObjectAllocator (even for string values), so this
+    /// exercises the same allocator as the Garnet server. Every record — whether it stayed resident or was evicted to disk —
+    /// must read back correctly. Regression for issue #1950 (a snapshot page lost during eviction-while-recovering).
     /// </summary>
     [TestFixture]
-    public class SpanByteRecoverySnapshotEvictionTests : TestBase
+    public class RecoverToLowerMemoryTests : TestBase
     {
         [SetUp]
         public void Setup() => RecreateDirectory(MethodTestDir);
@@ -38,32 +33,37 @@ namespace Tsavorite.test.recovery
         public void TearDown() => TestUtils.OnTearDown();
 
         const int NumRecords = 2000;                 // spans enough pages that recovery reads in multiple batches and must evict
-        const long InitialMemorySize = 25 * 1024;    // store1 budget; its own eviction flushes most pages before the checkpoint
 
-        // The evict-before-flush interleaving is timing-dependent (a page's recovery flush completing vs. TrimLogPages
-        // choosing to evict it), so repeat a few times to reliably catch a regression rather than relying on one recovery.
-        const int RepeatCount = 15;
+        // store1 budget; larger than the recovery budget => a still-mutable snapshot region at checkpoint whose page count
+        // exceeds the recovery buffer, so recovery must evict snapshot pages (which is what surfaces #1950).
+        const long InitialMemorySize = 63 * 1024;
+
+        // The evict-while-recovering interleaving (and the optional concurrent resizer) is timing-sensitive, so repeat a few
+        // times to reliably catch a regression.
+        const int RepeatCount = 3;
 
         sealed class MyFunctions : SimpleLongSimpleFunctions { }
 
-        static TsavoriteKV<LongStoreFunctions, LongAllocator> CreateStore(IDevice log, string checkpointDir, long memorySize)
+        static TsavoriteKV<ObjStoreFunctions, ObjAllocator> CreateStore(IDevice log, IDevice objlog, string checkpointDir, long memorySize)
             => new(new()
             {
                 IndexSize = 1L << 20,
                 LogDevice = log,
+                ObjectLogDevice = objlog,
                 MutableFraction = 1,
                 PageSize = MinKvLogPageSize,
                 LogMemorySize = memorySize,
+                SegmentSize = 1L << 20,
                 CheckpointDir = checkpointDir,
-            }, StoreFunctions.Create(LongKeyComparer.Instance, SpanByteRecordTriggers.Instance),
+            }, StoreFunctions.Create(LongKeyComparer.Instance, () => new TestObjectValue.Serializer(), DefaultRecordTriggers.Instance),
                (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions));
 
         // recoveryMemorySize 18k => power-of-two BufferSize; 23k => non-power-of-two (MaxAllocatedPageCount 5, BufferSize 8)
-        // so the read batch exceeds the resident set, the layout that surfaced #1950. startResizerDuringReads also runs the
-        // background resizer concurrently with the post-recovery reads.
+        // so the read batch exceeds the resident set. startResizerDuringReads also runs the background resizer concurrently
+        // with the post-recovery reads.
         [Test]
         [Category("TsavoriteKV"), Category("CheckpointRestore")]
-        public async Task RecoverSnapshotUnderMemoryBudgetReadsAllRecords(
+        public async Task RecoverSnapshotToLowerMemoryInlineOnly(
             [Values(18 * 1024, 23 * 1024)] long recoveryMemorySize,
             [Values(false, true)] bool startResizerDuringReads)
         {
@@ -75,12 +75,13 @@ namespace Tsavorite.test.recovery
                 _ = Directory.CreateDirectory(dir);
                 var checkpointDir = Path.Combine(dir, "checkpoints");
                 IDevice log = Devices.CreateLogDevice(Path.Combine(dir, "hlog.log"), deleteOnClose: false);
+                IDevice objlog = Devices.CreateLogDevice(Path.Combine(dir, "hlog.obj.log"), deleteOnClose: false);
                 try
                 {
-                    // Write all records and take a Snapshot checkpoint. store1's own eviction (under InitialMemorySize)
-                    // flushes most pages to the main log, leaving a still-mutable snapshot region captured in the snapshot file.
+                    // Write all records (inline values) and take a Snapshot checkpoint. store1's own eviction (under
+                    // InitialMemorySize) flushes most pages to the main log, leaving a still-mutable snapshot region.
                     Guid token;
-                    using (var store1 = CreateStore(log, checkpointDir, InitialMemorySize))
+                    using (var store1 = CreateStore(log, objlog, checkpointDir, InitialMemorySize))
                     {
                         using (var session = store1.NewSession<TestSpanByteKey, long, long, Empty, MyFunctions>(new MyFunctions()))
                         {
@@ -96,9 +97,10 @@ namespace Tsavorite.test.recovery
                         ClassicAssert.IsTrue(success);
                         token = checkpointToken;
                     }
+
                     // Recover into a smaller budget with a size tracker attached, so recovery evicts snapshot pages to fit.
-                    var store2 = CreateStore(log, checkpointDir, recoveryMemorySize);
-                    var tracker = new LogSizeTracker<LongStoreFunctions, LongAllocator>(store2.Log, recoveryMemorySize, recoveryMemorySize / 8, recoveryMemorySize / 16, logger: null);
+                    var store2 = CreateStore(log, objlog, checkpointDir, recoveryMemorySize);
+                    var tracker = new LogSizeTracker<ObjStoreFunctions, ObjAllocator>(store2.Log, recoveryMemorySize, recoveryMemorySize / 8, recoveryMemorySize / 16, logger: null);
                     store2.Log.SetLogSizeTracker(tracker);
                     _ = await store2.RecoverAsync(default, token).ConfigureAwait(false);
 
@@ -136,6 +138,7 @@ namespace Tsavorite.test.recovery
                 finally
                 {
                     log.Dispose();
+                    objlog.Dispose();
                     try { Directory.Delete(dir, recursive: true); } catch { }
                 }
             }

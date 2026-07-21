@@ -28,6 +28,11 @@ namespace Tsavorite.core
         /// <summary>The current head address; updated as pages are evicted during recovery.</summary>
         public long headAddress;
 
+        /// <summary>For snapshot recovery, the hybrid-log/snapshot boundary (the snapshot phase's scanFromAddress). Pages at or
+        /// above its page are snapshot-region pages that were read from the snapshot file and are not yet durable on the main log,
+        /// so they must be flushed before eviction. -1 during hybrid-log recovery, where all read pages are already durable.</summary>
+        public long snapshotScanFromAddress = -1;
+
         /// <summary>Circular status buffer of 'capacity' size; the indexing wraps per hlog.GetPageIndexForPage().</summary>
         public ReadStatus[] readStatus;
         /// <summary>Circular status buffer of 'capacity' size; the indexing wraps per hlog.GetPageIndexForPage().</summary>
@@ -615,9 +620,14 @@ namespace Tsavorite.core
             var maxHeadAddress = untilAddress - LogSizeTracker.MinEvictionHeadAddressLag;
 
             // Evict pages from headAddress upward while over budget, respecting MinEvictionHeadAddressLag. This is during Pass1,
-            // so there are no objects to evict; we're evicting a full page each iteration.
+            // so there are no objects to evict; we're evicting a full page each iteration. We must evict enough that the pages
+            // already resident plus this batch fit within the circular buffer (totalPagesNeeded <= BufferSize): the budget's
+            // highTargetSize can exceed BufferSize * PageSize (e.g. a power-of-two page budget leaves highTargetSize just over
+            // BufferSize pages), and evicting only to the budget would free fewer than numPagesToRead slots, so the read would
+            // reuse a still-resident slot and silently overwrite an un-evicted page.
             while (totalPagesNeeded > 1
-                && hlogBase.logSizeTracker.RemainingBudget < numPagesToRead * hlogBase.PageSize
+                && (totalPagesNeeded > hlogBase.BufferSize
+                    || hlogBase.logSizeTracker.RemainingBudget < numPagesToRead * hlogBase.PageSize)
                 && recoveryStatus.headAddress < maxHeadAddress)
             {
                 var pageIndex = hlogBase.GetPageIndexForPage(headPage);
