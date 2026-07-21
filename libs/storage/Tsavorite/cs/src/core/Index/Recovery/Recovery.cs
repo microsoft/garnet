@@ -114,7 +114,7 @@ namespace Tsavorite.core
         internal void Dispose()
         {
             recoveryDevice.Dispose();
-            objectLogRecoveryDevice.Dispose();
+            objectLogRecoveryDevice?.Dispose();
             readSemaphore.Dispose();
             flushSemaphore.Dispose();
         }
@@ -905,8 +905,7 @@ namespace Tsavorite.core
                     }
                 }
 
-                RecoverSnapshotPages(scanFromAddress, recoverFromAddress, untilAddress, nextVersion, in options,
-                    endPage, snapshotEndPage, numPagesToReadPerIteration, recoveryStatus, page, end);
+                RecoverSnapshotPages(scanFromAddress, recoverFromAddress, untilAddress, nextVersion, in options, recoveryStatus, page, end);
             }
 
             await WaitUntilAllPagesHaveBeenFlushedAsync(startPage, endPage, recoveryStatus, cancellationToken).ConfigureAwait(false);
@@ -1047,7 +1046,7 @@ namespace Tsavorite.core
         /// For each page in the snapshot from [page, end), process the page for recovery.
         /// </summary>
         private void RecoverSnapshotPages(long scanFromAddress, long recoverFromAddress, long untilAddress, long nextVersion, in RecoveryOptions options,
-            long endPage, long snapshotEndPage, int numPagesToRead, RecoveryStatus recoveryStatus, long page, long end)
+            RecoveryStatus recoveryStatus, long page, long end)
         {
             for (long p = page; p < end; p++)
             {
@@ -1057,26 +1056,20 @@ namespace Tsavorite.core
                 if (recoverFromAddress < endLogicalAddress && recoverFromAddress < untilAddress)
                     ProcessReadSnapshotPage(recoverFromAddress, untilAddress, nextVersion, options, recoveryStatus, p, pageIndex);
 
-                if (hlogBase.IsObjectAllocator && hlogBase.logSizeTracker is not null)
+                if (hlogBase.logSizeTracker is not null)
                 {
-                    // Object store under a memory budget (a size tracker is attached, so pages may be evicted during recovery — both read-time via
-                    // TrimLogPages and load-time during the deferred object load). Flush every snapshot page to the main log, copying its objects from the
-                    // snapshot object-log into the main object-log so the page is fully durable before it can be evicted, letting us recover into a smaller
-                    // memory budget than was checkpointed. (Without a size tracker no eviction occurs, so we avoid these writes — which also keeps configs
-                    // whose page size exceeds the main-log device segment, that never flush to the main log, working as before.) The objectLogRecoveryDevice
-                    // is the snapshot object-log (copy source); the boundary page's flush starts at scanFromAddress, so only its snapshot-region records are
-                    // processed.
+                    // Under a memory budget (a size tracker is attached, so pages may be evicted during recovery — read-time via TrimLogPages and, for the
+                    // object store, load-time during the deferred object load), every snapshot page must be made durable on the main log before it can be
+                    // evicted, letting us recover into a smaller memory budget than was checkpointed. Budget-driven eviction can free ANY resident page below
+                    // its eviction floor (MinEvictionHeadAddressLag / MaxAllocatedPageCount), which is finer-grained than the read batch, so skipping any page
+                    // would risk an evicted-but-never-flushed page that reads back empty after RecoveryReset marks it flushed. For the object store this flush
+                    // also copies each record's objects from the snapshot object-log (objectLogRecoveryDevice) into the main object-log; for the inline/string
+                    // store objectLogRecoveryDevice is null (HasObjectLog is false), so no object bytes are copied (and formerFlushedUntilAddress, used only by
+                    // that copy, is inert) — the single call below is correct for both. (Without a size tracker no eviction occurs, so we skip these writes —
+                    // which also keeps configs whose page size exceeds the main-log device segment, that never flush to the main log, working as before.)
                     recoveryStatus.flushStatus[pageIndex] = FlushStatus.Pending;
                     hlogBase.AsyncFlushPagesForRecovery(scanFromAddress, p, 1, AsyncFlushPageCallbackForRecovery, recoveryStatus,
                         recoveryStatus.objectLogRecoveryDevice, formerFlushedUntilAddress: scanFromAddress);
-                }
-                else if (!hlogBase.IsObjectAllocator && p + numPagesToRead < endPage)
-                {
-                    // String store: records are fully inline, so a snapshot page is durable once written to the main log (no object copy needed) and the
-                    // deferred object load is a no-op (so it never evicts). Flush only pages that will be pushed out of the buffer by subsequent reads, so
-                    // read-time eviction can reclaim them; the final resident set (the last batch) stays in memory, as before.
-                    recoveryStatus.flushStatus[pageIndex] = FlushStatus.Pending;
-                    hlogBase.AsyncFlushPagesForRecovery(scanFromAddress, p, 1, AsyncFlushPageCallbackForRecovery, recoveryStatus);
                 }
             }
         }
@@ -1109,10 +1102,10 @@ namespace Tsavorite.core
 
             // By default first page has one extra record
             var recoveryDevice = checkpointManager.GetSnapshotLogDevice(guid);
-            var objectLogRecoveryDevice = checkpointManager.GetSnapshotObjectLogDevice(guid);
+            var objectLogRecoveryDevice = hlogBase._wrapper.HasObjectLog ? checkpointManager.GetSnapshotObjectLogDevice(guid) : null;
 
             recoveryDevice.Initialize(hlogBase.GetMainLogSegmentSize());
-            objectLogRecoveryDevice.Initialize(hlogBase.GetObjectLogSegmentSize());
+            objectLogRecoveryDevice?.Initialize(hlogBase.GetObjectLogSegmentSize());
             recoveryStatus = new RecoveryStatus(hlogBase.BufferSize)
             {
                 recoveryDevice = recoveryDevice,
