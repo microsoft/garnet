@@ -21,7 +21,140 @@ namespace Garnet.server
     {
         NONE = 0x00,
 
-        // Read-only commands. NOTE: Should immediately follow NONE.
+        // Write (mutating) commands. These are the ONLY RespCommand values persisted to disk
+        // (serialized into RespInputHeader.cmd in the AOF and streamed to replicas), so they are
+        // assigned EXPLICIT, STABLE numeric values and MUST be treated as append-only:
+        //   * Never change, reuse, or reorder an existing value.
+        //   * Add a new write command by appending it with the next unused value (do NOT insert
+        //     mid-block or renumber). PersistedEnumStabilityTests guards this.
+        // Placing writes first (immediately after NONE) keeps their values dense and independent
+        // of read/admin command additions, which are never persisted and may renumber freely.
+        APPEND = 1, // Note: FirstWriteCommand — keep as the first write command
+        BITFIELD = 2,
+        BZMPOP = 3,
+        BZPOPMAX = 4,
+        BZPOPMIN = 5,
+        DECR = 6,
+        DECRBY = 7,
+        DEL = 8,
+        DELIFEXPIM = 9,
+        DELIFGREATER = 10,
+        EXPIRE = 11,
+        EXPIREAT = 12,
+        FLUSHALL = 13,
+        FLUSHDB = 14,
+        GEOADD = 15,
+        GEORADIUS = 16,
+        GEORADIUSBYMEMBER = 17,
+        GEOSEARCHSTORE = 18,
+        GETDEL = 19,
+        GETEX = 20,
+        GETSET = 21,
+        HCOLLECT = 22,
+        HDEL = 23,
+        HEXPIRE = 24,
+        HPEXPIRE = 25,
+        HEXPIREAT = 26,
+        HPEXPIREAT = 27,
+        HPERSIST = 28,
+        HINCRBY = 29,
+        HINCRBYFLOAT = 30,
+        HMSET = 31,
+        HSET = 32,
+        HSETNX = 33,
+        INCR = 34,
+        INCRBY = 35,
+        INCRBYFLOAT = 36,
+        LINSERT = 37,
+        LMOVE = 38,
+        LMPOP = 39,
+        LPOP = 40,
+        LPUSH = 41,
+        LPUSHX = 42,
+        LREM = 43,
+        LSET = 44,
+        LTRIM = 45,
+        BLPOP = 46,
+        BRPOP = 47,
+        BLMOVE = 48,
+        BRPOPLPUSH = 49,
+        BLMPOP = 50,
+        MIGRATE = 51,
+        MSET = 52,
+        MSETNX = 53,
+        PERSIST = 54,
+        PEXPIRE = 55,
+        PEXPIREAT = 56,
+        PFADD = 57,
+        PFMERGE = 58,
+        PSETEX = 59,
+        RENAME = 60,
+        RICREATE = 61,
+        RIDEL = 62,
+        RIPROMOTE = 63,
+        RIRESTORE = 64,
+        RISET = 65,
+        RESTORE = 66,
+        RENAMENX = 67,
+        RPOP = 68,
+        RPOPLPUSH = 69,
+        RPUSH = 70,
+        RPUSHX = 71,
+        SADD = 72,
+        SDIFFSTORE = 73,
+        SET = 74,
+        SETBIT = 75,
+        SETEX = 76,
+        SETEXNX = 77,
+        SETEXXX = 78,
+        SETNX = 79,
+        SETIFMATCH = 80,
+        SETIFGREATER = 81,
+        SETWITHETAG = 82,
+        SETKEEPTTL = 83,
+        SETKEEPTTLXX = 84,
+        SETRANGE = 85,
+        SINTERSTORE = 86,
+        SMOVE = 87,
+        SPOP = 88,
+        SREM = 89,
+        SUNIONSTORE = 90,
+        SWAPDB = 91,
+        UNLINK = 92,
+        VADD = 93,
+        VREM = 94,
+        VSETATTR = 95,
+        ZADD = 96,
+        ZCOLLECT = 97,
+        ZDIFFSTORE = 98,
+        ZEXPIRE = 99,
+        ZPEXPIRE = 100,
+        ZEXPIREAT = 101,
+        ZPEXPIREAT = 102,
+        ZPERSIST = 103,
+        ZINCRBY = 104,
+        ZMPOP = 105,
+        ZINTERSTORE = 106,
+        ZPOPMAX = 107,
+        ZPOPMIN = 108,
+        ZRANGESTORE = 109,
+        ZREM = 110,
+        ZREMRANGEBYLEX = 111,
+        ZREMRANGEBYRANK = 112,
+        ZREMRANGEBYSCORE = 113,
+        ZUNIONSTORE = 114,
+
+        // BITOP is the true command, AND|OR|XOR|NOT are pseudo-subcommands
+        BITOP = 115,
+        BITOP_AND = 116,
+        BITOP_OR = 117,
+        BITOP_XOR = 118,
+        BITOP_NOT = 119,
+        BITOP_DIFF = 120, // Note: LastWriteCommand — append new write commands after this with the next value
+
+        // Read-only commands. NEVER persisted (reads never enter the AOF), so these are
+        // auto-numbered and may be renumbered/reordered freely across versions. They follow the
+        // write block; the read range is [FirstReadCommand, LastReadCommand].
         BITCOUNT,
         BITFIELD_RO,
         BITPOS,
@@ -116,7 +249,7 @@ namespace Garnet.server
         ZEXPIRETIME,
         ZPEXPIRETIME,
         ZSCAN,
-        ZSCORE, // Note: Last read command should immediately precede FirstWriteCommand
+        ZSCORE,
         ZUNION,
 
         // Read-only RangeIndex commands
@@ -126,130 +259,6 @@ namespace Garnet.server
         RIMETRICS,
         RIRANGE,
         RISCAN,
-
-        // Write commands
-        APPEND, // Note: Update FirstWriteCommand if adding new write commands before this
-        BITFIELD,
-        BZMPOP,
-        BZPOPMAX,
-        BZPOPMIN,
-        DECR,
-        DECRBY,
-        DEL,
-        DELIFEXPIM,
-        DELIFGREATER,
-        EXPIRE,
-        EXPIREAT,
-        FLUSHALL,
-        FLUSHDB,
-        GEOADD,
-        GEORADIUS,
-        GEORADIUSBYMEMBER,
-        GEOSEARCHSTORE,
-        GETDEL,
-        GETEX,
-        GETSET,
-        HCOLLECT,
-        HDEL,
-        HEXPIRE,
-        HPEXPIRE,
-        HEXPIREAT,
-        HPEXPIREAT,
-        HPERSIST,
-        HINCRBY,
-        HINCRBYFLOAT,
-        HMSET,
-        HSET,
-        HSETNX,
-        INCR,
-        INCRBY,
-        INCRBYFLOAT,
-        LINSERT,
-        LMOVE,
-        LMPOP,
-        LPOP,
-        LPUSH,
-        LPUSHX,
-        LREM,
-        LSET,
-        LTRIM,
-        BLPOP,
-        BRPOP,
-        BLMOVE,
-        BRPOPLPUSH,
-        BLMPOP,
-        MIGRATE,
-        MSET,
-        MSETNX,
-        PERSIST,
-        PEXPIRE,
-        PEXPIREAT,
-        PFADD,
-        PFMERGE,
-        PSETEX,
-        RENAME,
-        RICREATE,
-        RIDEL,
-        RIPROMOTE,
-        RIRESTORE,
-        RISET,
-        RESTORE,
-        RENAMENX,
-        RPOP,
-        RPOPLPUSH,
-        RPUSH,
-        RPUSHX,
-        SADD,
-        SDIFFSTORE,
-        SET,
-        SETBIT,
-        SETEX,
-        SETEXNX,
-        SETEXXX,
-        SETNX,
-        SETIFMATCH,
-        SETIFGREATER,
-        SETWITHETAG,
-        SETKEEPTTL,
-        SETKEEPTTLXX,
-        SETRANGE,
-        SINTERSTORE,
-        SMOVE,
-        SPOP,
-        SREM,
-        SUNIONSTORE,
-        SWAPDB,
-        UNLINK,
-        VADD,
-        VREM,
-        VSETATTR,
-        ZADD,
-        ZCOLLECT,
-        ZDIFFSTORE,
-        ZEXPIRE,
-        ZPEXPIRE,
-        ZEXPIREAT,
-        ZPEXPIREAT,
-        ZPERSIST,
-        ZINCRBY,
-        ZMPOP,
-        ZINTERSTORE,
-        ZPOPMAX,
-        ZPOPMIN,
-        ZRANGESTORE,
-        ZREM,
-        ZREMRANGEBYLEX,
-        ZREMRANGEBYRANK,
-        ZREMRANGEBYSCORE,
-        ZUNIONSTORE,
-
-        // BITOP is the true command, AND|OR|XOR|NOT are pseudo-subcommands
-        BITOP,
-        BITOP_AND,
-        BITOP_OR,
-        BITOP_XOR,
-        BITOP_NOT,
-        BITOP_DIFF, // Note: Update LastWriteCommand if adding new write commands after this
 
         // Script execution commands
         EVAL,
@@ -566,13 +575,22 @@ namespace Garnet.server
                 };
         }
 
-        internal const RespCommand FirstReadCommand = RespCommand.NONE + 1;
-
-        internal const RespCommand LastReadCommand = RespCommand.APPEND - 1;
-
+        // The write (mutating) command block is placed first: [FirstWriteCommand, LastWriteCommand].
+        // These are the only persisted RespCommand values (see the enum comment). The read block
+        // follows the write block, then the script commands (EVAL/EVALSHA). Reads/scripts are never
+        // persisted, so the read range is derived positionally and may shift as write commands are
+        // appended.
         internal const RespCommand FirstWriteCommand = RespCommand.APPEND;
 
         internal const RespCommand LastWriteCommand = RespCommand.BITOP_DIFF;
+
+        // Data commands span writes + reads + scripts contiguously: [FirstDataCommand, LastDataCommand].
+        internal const RespCommand FirstDataCommand = FirstWriteCommand;
+
+        // Reads immediately follow the write block and end just before the first script command (EVAL).
+        internal const RespCommand FirstReadCommand = LastWriteCommand + 1;
+
+        internal const RespCommand LastReadCommand = RespCommand.EVAL - 1;
 
         internal const RespCommand LastDataCommand = RespCommand.EVALSHA;
 
@@ -583,7 +601,12 @@ namespace Garnet.server
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static bool IsReadOnly(this RespCommand cmd)
-            => cmd <= LastReadCommand;
+        {
+            // Reads are no longer the lowest command range (writes are), so this is a two-sided
+            // range check. Kept branchless (same idiom as IsWriteOnly) as it is on the hot path.
+            var test = (uint)((int)cmd - (int)FirstReadCommand);
+            return test <= (LastReadCommand - FirstReadCommand);
+        }
 
         /// <summary>
         /// Returns true if this command can legally operate on a RangeIndex key.
@@ -628,7 +651,7 @@ namespace Garnet.server
                 RespCommand.KEYS => false,
                 RespCommand.SCAN => false,
                 RespCommand.SWAPDB => false,
-                _ => cmd >= FirstReadCommand && cmd <= LastDataCommand
+                _ => cmd >= FirstDataCommand && cmd <= LastDataCommand
             };
         }
 
