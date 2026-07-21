@@ -97,6 +97,11 @@ namespace Garnet.server
 
         int opCount;
 
+        // Thread ID performing a synchronous self-broadcast (set only around SubscribeBroker.PublishNow).
+        // Used by Publish/PatternPublish to detect the reentrant self-delivery that occurs when a session
+        // publishes to a channel it is itself subscribed to.
+        int publishingThreadId;
+
         /// <summary>
         /// Current database session items
         /// </summary>
@@ -648,7 +653,14 @@ namespace Garnet.server
 
                     if (CheckACLPermissions(cmd) && (noScriptPassed = CheckScriptPermissions(cmd)))
                     {
-                        if (txnManager.state != TxnState.None)
+                        // In RESP2, only a small set of commands are allowed while in subscription mode.
+                        // RESP3 uses distinct push types for subscription messages, so all commands are valid.
+                        if (isSubscriptionSession && respProtocolVersion == 2 && !cmd.IsAllowedInSubscriptionMode())
+                        {
+                            while (!RespWriteUtils.TryWriteError(string.Format(CmdStrings.GenericPubSubCommandNotAllowed, cmd.ToString()), ref dcurr, dend))
+                                SendAndReset();
+                        }
+                        else if (txnManager.state != TxnState.None)
                         {
                             if (txnManager.state == TxnState.Running)
                             {
