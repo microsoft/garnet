@@ -79,6 +79,12 @@ namespace Garnet.server
         public readonly GarnetServerOptions serverOptions;
 
         /// <summary>
+        /// Runtime-adjustable configuration values (seeded from <see cref="serverOptions"/> at startup,
+        /// updated through CONFIG SET). Reachable across the server and cluster layers.
+        /// </summary>
+        public readonly RuntimeServerConfig runtimeConfig;
+
+        /// <summary>
         /// Subscribe broker
         /// </summary>
         public readonly SubscribeBroker subscribeBroker;
@@ -200,13 +206,23 @@ namespace Garnet.server
             DatabaseCreatorDelegate createDatabaseDelegate = null,
             IDatabaseManager databaseManager = null,
             IClusterFactory clusterFactory = null,
-            ILoggerFactory loggerFactory = null)
+            ILoggerFactory loggerFactory = null,
+            RuntimeServerConfig runtimeConfig = null)
         {
             this.version = version;
             this.redisProtocolVersion = redisProtocolVersion;
             this.servers = servers;
             this.startupTimestamp = Stopwatch.GetTimestamp();
             this.serverOptions = serverOptions;
+            // Share the runtime config table across cloned wrappers (e.g. the AOF copy ctor) so that a
+            // CONFIG SET is observed consistently; otherwise seed a fresh table from the startup options.
+            this.runtimeConfig = runtimeConfig ?? new RuntimeServerConfig();
+            if (runtimeConfig == null)
+            {
+                this.runtimeConfig.Init(serverOptions);
+                // The primary wrapper owns the table and provides live state for read-only parameters.
+                this.runtimeConfig.SetOwner(this);
+            }
             this.subscribeBroker = subscribeBroker;
             this.customCommandManager = customCommandManager;
             this.loggerFactory = loggerFactory;
@@ -307,7 +323,8 @@ namespace Garnet.server
             storeWrapper.accessControlList,
             databaseManager: storeWrapper.databaseManager.Clone(recordToAof),
             clusterFactory: null,
-            loggerFactory: storeWrapper.loggerFactory)
+            loggerFactory: storeWrapper.loggerFactory,
+            runtimeConfig: storeWrapper.runtimeConfig)
         {
         }
 

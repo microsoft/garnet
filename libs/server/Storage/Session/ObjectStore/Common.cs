@@ -134,7 +134,7 @@ namespace Garnet.server
 
             // Prepare the input
             var header = new RespInputHeader(objectType);
-            var input = new ObjectInput(header, ref parseState, arg2: ObjectScanCountLimit);
+            var input = new ObjectInput(header, ref parseState, arg2: runtimeConfig.GetInt(ServerConfigType.OBJECT_SCAN_COUNT_LIMIT));
 
             switch (objectType)
             {

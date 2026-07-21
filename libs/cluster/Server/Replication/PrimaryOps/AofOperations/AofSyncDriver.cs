@@ -206,7 +206,7 @@ namespace Garnet.cluster
 
                 while (!cts.IsCancellationRequested)
                 {
-                    await Task.Delay(clusterProvider.serverOptions.AofTailWitnessFreqMs, cts.Token).ConfigureAwait(false);
+                    await Task.Delay(clusterProvider.storeWrapper.runtimeConfig.GetInt(ServerConfigType.AOF_TAIL_WITNESS_FREQ_MS), cts.Token).ConfigureAwait(false);
                     var currentTailAddress = appendOnlyFile.Log.TailAddress;
                     var newWrites = previousTailAddress.AnyLesser(currentTailAddress);
 

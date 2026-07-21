@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using Garnet.common;
@@ -737,6 +738,122 @@ namespace Garnet.test
             var heapAfter = tracker.LogHeapSizeBytes;
             Assert.That(apcAfter < apcBefore || heapAfter < heapBefore, Is.True,
                 $"Expected APC ({apcBefore}->{apcAfter}) or heap ({heapBefore}->{heapAfter}) to decrease after trim.");
+        }
+
+        /// <summary>
+        /// Verifies that runtime-adjustable options (backed by <see cref="RuntimeServerConfig"/>) can be
+        /// read and written through CONFIG GET / CONFIG SET, covering integer, long, boolean, enum,
+        /// seconds-based timeout, alias, and multi-option forms.
+        /// </summary>
+        [Test]
+        public void ConfigGetSetRuntimeOptionsTest()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            static string Get(IDatabase db, string requestName, string expectedEchoName = null)
+            {
+                var res = (RedisResult[])db.Execute("CONFIG", "GET", requestName);
+                ClassicAssert.AreEqual(2, res.Length);
+                ClassicAssert.AreEqual(expectedEchoName ?? requestName, res[0].ToString());
+                return res[1].ToString();
+            }
+
+            // Integer option.
+            ClassicAssert.AreEqual("OK", db.Execute("CONFIG", "SET", "replica-sync-delay", "42").ToString());
+            ClassicAssert.AreEqual("42", Get(db, "replica-sync-delay"));
+
+            // Integer option accepting the -1 sentinel.
+            ClassicAssert.AreEqual("OK", db.Execute("CONFIG", "SET", "replica-offset-max-lag", "-1").ToString());
+            ClassicAssert.AreEqual("-1", Get(db, "replica-offset-max-lag"));
+
+            // Long option.
+            ClassicAssert.AreEqual("OK", db.Execute("CONFIG", "SET", "aof-replay-max-drift", "123456789").ToString());
+            ClassicAssert.AreEqual("123456789", Get(db, "aof-replay-max-drift"));
+
+            // Boolean option (yes/no).
+            ClassicAssert.AreEqual("OK", db.Execute("CONFIG", "SET", "sg-get", "no").ToString());
+            ClassicAssert.AreEqual("no", Get(db, "sg-get"));
+            ClassicAssert.AreEqual("OK", db.Execute("CONFIG", "SET", "sg-get", "yes").ToString());
+            ClassicAssert.AreEqual("yes", Get(db, "sg-get"));
+
+            // Enum option.
+            ClassicAssert.AreEqual("OK", db.Execute("CONFIG", "SET", "compaction-type", "Lookup").ToString());
+            ClassicAssert.AreEqual("Lookup", Get(db, "compaction-type"));
+
+            // Timeout option expressed in seconds.
+            ClassicAssert.AreEqual("OK", db.Execute("CONFIG", "SET", "repl-attach-timeout", "30").ToString());
+            ClassicAssert.AreEqual("30", Get(db, "repl-attach-timeout"));
+
+            // Alias resolves to the canonical cluster-node-timeout option; CONFIG GET echoes the canonical name.
+            ClassicAssert.AreEqual("OK", db.Execute("CONFIG", "SET", "cluster-timeout", "77").ToString());
+            ClassicAssert.AreEqual("77", Get(db, "cluster-timeout", expectedEchoName: "cluster-node-timeout"));
+            ClassicAssert.AreEqual("77", Get(db, "cluster-node-timeout"));
+
+            // Multiple options in a single CONFIG SET.
+            ClassicAssert.AreEqual("OK",
+                db.Execute("CONFIG", "SET", "compaction-max-segments", "7", "object-scan-count-limit", "500").ToString());
+            ClassicAssert.AreEqual("7", Get(db, "compaction-max-segments"));
+            ClassicAssert.AreEqual("500", Get(db, "object-scan-count-limit"));
+        }
+
+        /// <summary>
+        /// Verifies that CONFIG SET rejects malformed / out-of-range values for runtime-adjustable options
+        /// and that a rejected value does not mutate the option.
+        /// </summary>
+        [Test]
+        public void ConfigSetRuntimeOptionValidationTest()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            // Out-of-range integer (min is 0).
+            _ = Assert.Throws<RedisServerException>(() => db.Execute("CONFIG", "SET", "replica-sync-delay", "-5"));
+            // Non-integer value.
+            _ = Assert.Throws<RedisServerException>(() => db.Execute("CONFIG", "SET", "compaction-max-segments", "abc"));
+            // Invalid enum value.
+            _ = Assert.Throws<RedisServerException>(() => db.Execute("CONFIG", "SET", "compaction-type", "Bogus"));
+            // Invalid boolean value.
+            _ = Assert.Throws<RedisServerException>(() => db.Execute("CONFIG", "SET", "sg-get", "maybe"));
+
+            // A rejected value must not have mutated the option.
+            var res = (RedisResult[])db.Execute("CONFIG", "GET", "compaction-max-segments");
+            ClassicAssert.AreNotEqual("abc", res[1].ToString());
+        }
+
+        /// <summary>
+        /// Verifies that read-only parameters exposed through the runtime config table (timeout, save,
+        /// appendonly, databases) reject CONFIG SET, and that CONFIG GET * includes both the read-only
+        /// parameters and the per-session slave-read-only value.
+        /// </summary>
+        [Test]
+        public void ConfigGetAllAndReadOnlyRejectionTest()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            // CONFIG SET on read-only parameters is rejected.
+            _ = Assert.Throws<RedisServerException>(() => db.Execute("CONFIG", "SET", "appendonly", "yes"));
+            _ = Assert.Throws<RedisServerException>(() => db.Execute("CONFIG", "SET", "databases", "32"));
+            _ = Assert.Throws<RedisServerException>(() => db.Execute("CONFIG", "SET", "timeout", "10"));
+
+            // CONFIG GET * returns a name/value map including read-only and per-session parameters.
+            var all = (RedisResult[])db.Execute("CONFIG", "GET", "*");
+            ClassicAssert.IsTrue(all.Length % 2 == 0);
+            var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            for (var i = 0; i < all.Length; i += 2)
+                map[all[i].ToString()] = all[i + 1].ToString();
+
+            // Read-only parameters.
+            ClassicAssert.IsTrue(map.ContainsKey("timeout"));
+            ClassicAssert.IsTrue(map.ContainsKey("save"));
+            ClassicAssert.IsTrue(map.ContainsKey("appendonly"));
+            ClassicAssert.IsTrue(map.ContainsKey("databases"));
+            // Per-session parameter.
+            ClassicAssert.IsTrue(map.ContainsKey("slave-read-only"));
+            ClassicAssert.AreEqual("no", map["slave-read-only"]);
+            // A settable runtime parameter.
+            ClassicAssert.IsTrue(map.ContainsKey("replica-sync-delay"));
         }
     }
 }

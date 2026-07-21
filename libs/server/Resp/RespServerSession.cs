@@ -121,9 +121,6 @@ namespace Garnet.server
         // True if multiple logical databases are enabled on this session
         readonly bool allowMultiDb;
 
-        // Cached scatter-gather GET flag (read once per session; checked on every GET dispatch)
-        readonly bool enableScatterGatherGet;
-
         // Track whether consistent read session is active
         internal bool IsConsistentReadSessionActive = false;
 
@@ -287,7 +284,6 @@ namespace Garnet.server
                 sessionScriptCache = new(storeWrapper, _authenticator, storeWrapper.luaTimeoutManager, logger);
 
             allowMultiDb = storeWrapper.serverOptions.AllowMultiDb;
-            enableScatterGatherGet = storeWrapper.serverOptions.EnableScatterGatherGet;
 
             // Create the default DB session (for DB 0) & add it to the session map
             activeDbId = 0;
@@ -317,8 +313,9 @@ namespace Garnet.server
             readHead = 0;
             toDispose = false;
             SessionAsking = 0;
-            if (storeWrapper.serverOptions.SlowLogThreshold > 0)
-                slowLogThreshold = (long)(storeWrapper.serverOptions.SlowLogThreshold * OutputScalingFactor.TimeStampToMicroseconds);
+            var slowLogThresholdConfig = storeWrapper.runtimeConfig.GetInt(ServerConfigType.SLOWLOG_LOG_SLOWER_THAN_MICROS);
+            if (slowLogThresholdConfig > 0)
+                slowLogThreshold = (long)(slowLogThresholdConfig * OutputScalingFactor.TimeStampToMicroseconds);
 
             // Reserve minimum 4 bytes to send pending sequence number as output
             if (this.networkSender != null)
