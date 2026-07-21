@@ -7,20 +7,34 @@ namespace Tsavorite.core
 {
     /// <summary>
     /// Non-generic interface for hybrid log memory allocator struct wrapper for inlining. This contains the performance-critical methods that must be inlined;
-    /// abstract/virtual methods may be called via <see cref="AllocatorBase{TStoreFunctions, TAllocatorCallbacks}"/>.
+    /// abstract/virtual methods may be called via <see cref="AllocatorBase{TStoreFunctions, TAllocator}"/>.
     /// </summary>
     public interface IAllocator
     {
         /// <summary>Get record size required to allocate a new record. Includes allocator-specific information such as key and value overflow.</summary>
         /// <remarks>Requires <see cref="RecordSizeInfo.FieldInfo"/> to be populated already.</remarks>
         void PopulateRecordSizeInfo(ref RecordSizeInfo sizeInfo);
+
+        /// <summary>Allocate the page in the circular buffer slot at <paramref name="pageIndex"/></summary>
+        void AllocatePage(int pageIndex);
+
+        /// <summary>Free the page at <paramref name="pageIndex"/></summary>
+        void FreePage(long pageIndex);
+
+        /// <summary>Number of extra overflow pages allocated</summary>
+        int OverflowPageCount { get; }
+
+        /// <summary>Get the page number of a logical address, using the allocator-specific address interpretation.
+        /// Main-store allocators mask off the read-cache bit (via <see cref="LogAddress"/>); TsavoriteLog has no read
+        /// cache and uses the full address range.</summary>
+        long GetPageOfAddress(long logicalAddress, int logPageSizeBits);
     }
 
     /// <summary>
     /// Genric interface for hybrid log memory allocator struct wrapper for inlining. This contains the performance-critical methods that must be inlined;
-    /// abstract/virtual methods may be called via <see cref="AllocatorBase{TStoreFunctions, TAllocatorCallbacks}"/>.
+    /// abstract/virtual methods may be called via <see cref="AllocatorBase{TStoreFunctions, TAllocator}"/>.
     /// </summary>
-    public interface IAllocator<TStoreFunctions> : IAllocator, IAllocatorCallbacks<TStoreFunctions>
+    public interface IAllocator<TStoreFunctions> : IAllocator
         where TStoreFunctions : IStoreFunctions
     {
         /// <summary>The base class instance of the allocator implementation</summary>
