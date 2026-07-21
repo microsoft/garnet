@@ -133,7 +133,7 @@ namespace Garnet.cluster
         void UpdateGossipRecv() => this.gossipRecv = DateTimeOffset.UtcNow.Ticks;
         void ResetCts()
         {
-            bool internalCtsDisposed = false;
+            var internalCtsDisposed = false;
             internalCts.Cancel();
             if (!internalCts.TryReset())
             {
@@ -304,6 +304,11 @@ namespace Garnet.cluster
                 }
 
                 locked = true;
+                if (!gc.IsConnected)
+                {
+                    logger?.LogError($"{nameof(TryClusterPublish)}: client not connected; skipping publish forwarding");
+                    return;
+                }
                 gc.ExecuteClusterPublishNoResponse(cmd, channel, message);
             }
             finally
