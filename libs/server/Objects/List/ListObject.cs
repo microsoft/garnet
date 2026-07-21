@@ -13,28 +13,30 @@ namespace Garnet.server
 #pragma warning disable CS1591 // Missing XML comment for publicly visible type or member
 
     /// <summary>
-    /// Operations on SortedSet
+    /// Operations on List.
+    /// Persisted in the AOF via RespInputHeader.SubId, so values are EXPLICIT and APPEND-ONLY:
+    /// never change/reorder an existing value; add new operations at the end with the next value.
     /// </summary>
     public enum ListOperation : byte
     {
-        LPOP,
-        LPUSH,
-        LPUSHX,
-        RPOP,
-        RPUSH,
-        RPUSHX,
-        LLEN,
-        LTRIM,
-        LRANGE,
-        LINDEX,
-        LINSERT,
-        LREM,
-        RPOPLPUSH,
-        LMOVE,
-        LSET,
-        BRPOP,
-        BLPOP,
-        LPOS,
+        LPOP = 0,
+        LPUSH = 1,
+        LPUSHX = 2,
+        RPOP = 3,
+        RPUSH = 4,
+        RPUSHX = 5,
+        LLEN = 6,
+        LTRIM = 7,
+        LRANGE = 8,
+        LINDEX = 9,
+        LINSERT = 10,
+        LREM = 11,
+        RPOPLPUSH = 12,
+        LMOVE = 13,
+        LSET = 14,
+        BRPOP = 15,
+        BLPOP = 16,
+        LPOS = 17,
     }
 
     /// <summary>

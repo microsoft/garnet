@@ -572,7 +572,7 @@ namespace Garnet
     internal sealed class CertFileValidationAttribute : FilePathValidationAttribute
     {
         internal CertFileValidationAttribute(bool fileMustExist, bool directoryMustExist, bool isRequired) : base(
-            fileMustExist, directoryMustExist, isRequired, [".pfx"])
+            fileMustExist, directoryMustExist, isRequired, [".pfx", ".pem", ".crt", ".cer"])
         {
         }
 

@@ -77,21 +77,19 @@ namespace Garnet.server
         public sealed override bool Operate(ref ObjectInput input, ref ObjectOutput output,
                                             byte respProtocolVersion)
         {
-            switch (input.header.cmd)
+            // COSCAN (custom object scan) is signalled by header.type == GarnetObjectType.All.
+            if (input.header.type == GarnetObjectType.All)
             {
-                // Scan Command
-                case RespCommand.COSCAN:
-                    Scan(ref input, ref output, respProtocolVersion);
-                    break;
-                default:
-                    if ((byte)input.header.type != this.type)
-                    {
-                        // Indicates an incorrect type of key
-                        output.OutputFlags |= ObjectOutputFlags.WrongType;
-                        output.SpanByteAndMemory.Length = 0;
-                        return true;
-                    }
-                    break;
+                Scan(ref input, ref output, respProtocolVersion);
+                return true;
+            }
+
+            if ((byte)input.header.type != this.type)
+            {
+                // Indicates an incorrect type of key
+                output.OutputFlags |= ObjectOutputFlags.WrongType;
+                output.SpanByteAndMemory.Length = 0;
+                return true;
             }
 
             return true;

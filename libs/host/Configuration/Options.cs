@@ -294,11 +294,11 @@ namespace Garnet
         public bool? EnableTLS { get; set; }
 
         [CertFileValidation(true, true, false)]
-        [Option("cert-file-name", Required = false, HelpText = "TLS certificate file name (example: testcert.pfx).")]
+        [Option("cert-file-name", Required = false, HelpText = "TLS certificate file name. Accepts a PKCS#12/PFX file or a PEM-encoded certificate (.pem, .crt, .cer); the format is auto-detected from the file's contents (example: testcert.pfx).")]
         public string CertFileName { get; set; }
 
         [HiddenOption]
-        [Option("cert-password", Required = false, HelpText = "TLS certificate password (example: placeholder).")]
+        [Option("cert-password", Required = false, HelpText = "TLS certificate password (example: placeholder). For a PEM-encoded cert-file-name, this is instead treated as the path to a separate PEM private key file, if the key isn't already included in cert-file-name.")]
         public string CertPassword { get; set; }
 
         [Option("cert-subject-name", Required = false, HelpText = "TLS certificate subject name.")]
@@ -664,6 +664,9 @@ namespace Garnet
         [Option("vector-set-replay-task-count", Required = false, HelpText = "Configure how many replay tasks are used to replay VectorSet operations at the replica (default: 0 uses the machine CPU count)")]
         public int VectorSetReplayTaskCount { get; set; }
 
+        // 512k == 2 x RangeIndexManager.DefaultMigrationChunkSize (256k): a migrated range index stream chunk
+        // plus its safety margin must fit in a single AOF page. Validated here to fail before store/AOF allocation.
+        [RequiresMinimumMemory(nameof(AofPageSize), minimumValue: "512k")]
         [Option("enable-range-index-preview", Required = false, HelpText = "Enable Range Index (preview) - this feature (and associated RI.* commands) are incomplete, unstable, and subject to change while still in preview")]
         public bool EnableRangeIndexPreview { get; set; }
 

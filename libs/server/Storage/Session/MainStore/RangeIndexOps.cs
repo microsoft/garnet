@@ -7,6 +7,7 @@ using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using Garnet.common;
 using Garnet.server.BfTreeInterop;
+using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 
 namespace Garnet.server
@@ -221,6 +222,12 @@ namespace Garnet.server
                 }
 
                 var insertResult = BfTreeService.InsertByPtr(treePtr, field, value);
+                if (insertResult == BfTreeInsertResult.InvalidArguments)
+                {
+                    logger?.LogError("RI.SET: invalid arguments for a {keyLen}-byte field and {valueLen}-byte value.", field.Length, value.Length);
+                    throw new GarnetException("RI.SET: invalid arguments.");
+                }
+
                 if (insertResult == BfTreeInsertResult.InvalidKV)
                 {
                     ref readonly var stub = ref RangeIndexManager.ReadIndex(stubSpan);
@@ -302,6 +309,12 @@ namespace Garnet.server
                     var valueStart = bufStart + optimisticHeaderSize;
                     var readResult = BfTreeService.ReadByPtrInto(stub.TreeHandle, field, valueStart, maxValueSize, out var bytesWritten);
 
+                    if (readResult == BfTreeReadResult.InvalidArguments)
+                    {
+                        logger?.LogError("RI.GET: invalid arguments for a {fieldLen}-byte field.", field.Length);
+                        throw new GarnetException("RI.GET: invalid arguments.");
+                    }
+
                     if (readResult != BfTreeReadResult.Found || bytesWritten < 0)
                     {
                         result = RangeIndexResult.NotFound;
@@ -340,6 +353,13 @@ namespace Garnet.server
                     {
                         var valueStart = bufStart + optimisticHeaderSize;
                         var readResult = BfTreeService.ReadByPtrInto(stub.TreeHandle, field, valueStart, maxValueSize, out var bytesWritten);
+
+                        if (readResult == BfTreeReadResult.InvalidArguments)
+                        {
+                            heapMemory.Dispose();
+                            logger?.LogError("RI.GET: invalid arguments for a {fieldLen}-byte field.", field.Length);
+                            throw new GarnetException("RI.GET: invalid arguments.");
+                        }
 
                         if (readResult != BfTreeReadResult.Found || bytesWritten < 0)
                         {
@@ -411,7 +431,13 @@ namespace Garnet.server
                     return GarnetStatus.OK;
                 }
 
-                BfTreeService.DeleteByPtr(treePtr, field);
+                var deleteResult = BfTreeService.DeleteByPtr(treePtr, field);
+                if (deleteResult != BfTreeDeleteResult.Success)
+                {
+                    logger?.LogError("RI.DEL: invalid arguments for a {fieldLen}-byte field.", field.Length);
+                    throw new GarnetException("RI.DEL: invalid arguments.");
+                }
+
                 result = RangeIndexResult.OK;
 
                 functionsState.rangeIndexManager.ReplicateRangeIndexDel(

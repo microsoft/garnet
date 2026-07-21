@@ -16,38 +16,40 @@ namespace Garnet.server
 #pragma warning disable CS1591 // Missing XML comment for publicly visible type or member
 
     /// <summary>
-    /// Operations on SortedSet
+    /// Operations on SortedSet.
+    /// Persisted in the AOF via RespInputHeader.SubId, so values are EXPLICIT and APPEND-ONLY:
+    /// never change/reorder an existing value; add new operations at the end with the next value.
     /// </summary>
     public enum SortedSetOperation : byte
     {
-        ZADD,
-        ZCARD,
-        ZPOPMAX,
-        ZSCORE,
-        ZREM,
-        ZCOUNT,
-        ZINCRBY,
-        ZRANK,
-        ZRANGE,
-        GEOADD,
-        GEOHASH,
-        GEODIST,
-        GEOPOS,
-        GEOSEARCH,
-        ZREVRANK,
-        ZREMRANGEBYLEX,
-        ZREMRANGEBYRANK,
-        ZREMRANGEBYSCORE,
-        ZLEXCOUNT,
-        ZPOPMIN,
-        ZRANDMEMBER,
-        ZDIFF,
-        ZSCAN,
-        ZMSCORE,
-        ZEXPIRE,
-        ZTTL,
-        ZPERSIST,
-        ZCOLLECT
+        ZADD = 0,
+        ZCARD = 1,
+        ZPOPMAX = 2,
+        ZSCORE = 3,
+        ZREM = 4,
+        ZCOUNT = 5,
+        ZINCRBY = 6,
+        ZRANK = 7,
+        ZRANGE = 8,
+        GEOADD = 9,
+        GEOHASH = 10,
+        GEODIST = 11,
+        GEOPOS = 12,
+        GEOSEARCH = 13,
+        ZREVRANK = 14,
+        ZREMRANGEBYLEX = 15,
+        ZREMRANGEBYRANK = 16,
+        ZREMRANGEBYSCORE = 17,
+        ZLEXCOUNT = 18,
+        ZPOPMIN = 19,
+        ZRANDMEMBER = 20,
+        ZDIFF = 21,
+        ZSCAN = 22,
+        ZMSCORE = 23,
+        ZEXPIRE = 24,
+        ZTTL = 25,
+        ZPERSIST = 26,
+        ZCOLLECT = 27,
     }
 
     /// <summary>

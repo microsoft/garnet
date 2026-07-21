@@ -19,9 +19,14 @@ const READ_FOUND: i32 = 0; // Actual byte count is in `out_value_len`.
 const READ_NOT_FOUND: i32 = -1;
 const READ_DELETED: i32 = -2;
 const READ_INVALID_KEY: i32 = -3;
+const READ_INVALID_ARGS: i32 = -4;
 
 const INSERT_SUCCESS: i32 = 0;
 const INSERT_INVALID_KV: i32 = 1;
+const INSERT_INVALID_ARGS: i32 = -1;
+
+const DELETE_SUCCESS: i32 = 0;
+const DELETE_INVALID_ARGS: i32 = -1;
 
 // ---------------------------------------------------------------------------
 // Storage backend constants (matches C# StorageBackendType enum)
@@ -140,7 +145,9 @@ pub unsafe extern "C" fn bftree_drop(tree: *mut BfTree) {
 // Point operations
 // ---------------------------------------------------------------------------
 
-/// Insert a key-value pair. Returns INSERT_SUCCESS (0) or INSERT_INVALID_KV (1).
+/// Insert a key-value pair. Returns INSERT_SUCCESS (0), INSERT_INVALID_KV (1) when
+/// the key/value violates the tree's configured size limits, or INSERT_INVALID_ARGS
+/// (-1) when the arguments are invalid (null pointers or a negative length).
 ///
 /// # Safety
 /// `tree` must be a valid BfTree pointer. `key`/`value` must point to valid
@@ -153,6 +160,10 @@ pub unsafe extern "C" fn bftree_insert(
     value: *const u8,
     value_len: i32,
 ) -> i32 {
+    if tree.is_null() || key.is_null() || value.is_null() || key_len < 0 || value_len < 0 {
+        return INSERT_INVALID_ARGS;
+    }
+
     let tree = &*tree;
     let key = slice::from_raw_parts(key, key_len as usize);
     let value = slice::from_raw_parts(value, value_len as usize);
@@ -167,8 +178,9 @@ pub unsafe extern "C" fn bftree_insert(
 /// On success, writes the value bytes into `out_buffer` and sets
 /// `*out_value_len` to the number of bytes written. Returns READ_FOUND (0).
 ///
-/// On failure, returns READ_NOT_FOUND (-1), READ_DELETED (-2), or
-/// READ_INVALID_KEY (-3).
+/// On failure, returns READ_NOT_FOUND (-1), READ_DELETED (-2),
+/// READ_INVALID_KEY (-3), or READ_INVALID_ARGS (-4) when the arguments are invalid
+/// (null pointers or a negative length).
 ///
 /// # Safety
 /// All pointer arguments must be valid. `out_buffer` must have at least
@@ -182,6 +194,10 @@ pub unsafe extern "C" fn bftree_read(
     out_buffer_len: i32,
     out_value_len: *mut i32,
 ) -> i32 {
+    if tree.is_null() || key.is_null() || key_len < 0 || out_buffer.is_null() || out_buffer_len < 0 {
+        return READ_INVALID_ARGS;
+    }
+
     let tree = &*tree;
     let key = slice::from_raw_parts(key, key_len as usize);
     let buffer = slice::from_raw_parts_mut(out_buffer, out_buffer_len as usize);
@@ -198,7 +214,8 @@ pub unsafe extern "C" fn bftree_read(
     }
 }
 
-/// Delete a key from the tree.
+/// Delete a key from the tree. Returns DELETE_SUCCESS (0), or DELETE_INVALID_ARGS (-1)
+/// when the arguments are invalid (null pointers or a negative length).
 ///
 /// # Safety
 /// `tree` must be a valid BfTree pointer. `key` must point to valid memory.
@@ -207,10 +224,15 @@ pub unsafe extern "C" fn bftree_delete(
     tree: *mut BfTree,
     key: *const u8,
     key_len: i32,
-) {
+) -> i32 {
+    if tree.is_null() || key.is_null() || key_len < 0 {
+        return DELETE_INVALID_ARGS;
+    }
+
     let tree = &*tree;
     let key = slice::from_raw_parts(key, key_len as usize);
     tree.delete(key);
+    DELETE_SUCCESS
 }
 
 // ---------------------------------------------------------------------------
@@ -243,6 +265,10 @@ pub unsafe extern "C" fn bftree_scan_with_count(
     count: i32,
     return_field: u8,
 ) -> *mut ScanHandle<'static> {
+    if tree.is_null() || start_key.is_null() || start_key_len < 0 || count < 0 {
+        return std::ptr::null_mut();
+    }
+
     let tree = &*tree;
     let start = slice::from_raw_parts(start_key, start_key_len as usize);
     let rf = match return_field {
@@ -272,6 +298,10 @@ pub unsafe extern "C" fn bftree_scan_with_end_key(
     end_key_len: i32,
     return_field: u8,
 ) -> *mut ScanHandle<'static> {
+    if tree.is_null() || start_key.is_null() || start_key_len < 0 || end_key.is_null() || end_key_len < 0 {
+        return std::ptr::null_mut();
+    }
+
     let tree = &*tree;
     let start = slice::from_raw_parts(start_key, start_key_len as usize);
     let end = slice::from_raw_parts(end_key, end_key_len as usize);
@@ -311,6 +341,10 @@ pub unsafe extern "C" fn bftree_scan_next(
     out_key_len: *mut i32,
     out_value_len: *mut i32,
 ) -> i32 {
+    if handle.is_null() || out_buffer.is_null() || out_buffer_len < 0 {
+        return 0;
+    }
+
     let handle = &mut *handle;
     let buffer = slice::from_raw_parts_mut(out_buffer, out_buffer_len as usize);
     match handle.iter.next(buffer) {
