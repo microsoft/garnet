@@ -22,6 +22,10 @@ namespace Garnet.server
                 InfoMetricsType.STOREREVIV => false,
                 InfoMetricsType.HLOGSCAN => false,
                 InfoMetricsType.COMMANDSTATS => false,
+                // KEYSPACE requires a full per-database log scan to count keys (Garnet has no O(1)
+                // key counter). Exclude it from the default/ALL/EVERYTHING sets so plain INFO stays
+                // cheap; it is still populated on an explicit `INFO KEYSPACE` request.
+                InfoMetricsType.KEYSPACE => false,
                 _ => true
             })];
 
@@ -380,9 +384,24 @@ namespace Garnet.server
             clientsInfo = [new("connected_clients", metricsDisabled ? "0" : (globalMetrics.total_connections_received - globalMetrics.total_connections_disposed).ToString())];
         }
 
-        private void PopulateKeyspaceInfo()
+        private void PopulateKeyspaceInfo(StoreWrapper storeWrapper)
         {
-            keyspaceInfo = null;
+            var databases = storeWrapper.GetDatabasesSnapshot();
+
+            List<MetricsItem> items = null;
+            foreach (var db in databases.OrderBy(db => db.Id))
+            {
+                var (keyCount, expireCount) = storeWrapper.GetKeyspaceStats(db.Id);
+
+                // Redis lists only databases that currently hold at least one key.
+                if (keyCount == 0)
+                    continue;
+
+                items ??= [];
+                items.Add(new($"db{db.Id}", $"keys={keyCount},expires={expireCount},avg_ttl=0"));
+            }
+
+            keyspaceInfo = items?.ToArray();
         }
 
         private void PopulateClusterBufferPoolStats(StoreWrapper storeWrapper)
@@ -514,7 +533,7 @@ namespace Garnet.server
                     GetSectionRespInfo(header, clientsInfo, sbResponse);
                     return;
                 case InfoMetricsType.KEYSPACE:
-                    PopulateKeyspaceInfo();
+                    PopulateKeyspaceInfo(storeWrapper);
                     GetSectionRespInfo(header, keyspaceInfo, sbResponse);
                     return;
                 case InfoMetricsType.MODULES:
@@ -592,7 +611,7 @@ namespace Garnet.server
                     PopulateClientsInfo(storeWrapper);
                     return clientsInfo;
                 case InfoMetricsType.KEYSPACE:
-                    PopulateKeyspaceInfo();
+                    PopulateKeyspaceInfo(storeWrapper);
                     return keyspaceInfo;
                 case InfoMetricsType.MODULES:
                     return null;

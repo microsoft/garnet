@@ -98,6 +98,17 @@ namespace Garnet.server
         /// </summary>
         internal StorageSession StoreExpiredKeyDeletionDbStorageSession;
 
+        /// <summary>
+        /// Storage session intended for INFO KEYSPACE scans.
+        /// Shared across concurrent INFO callers, so all access must be guarded by <see cref="KeyspaceScanLock"/>.
+        /// </summary>
+        internal StorageSession KeyspaceScanStorageSession;
+
+        /// <summary>
+        /// Guards <see cref="KeyspaceScanStorageSession"/> since INFO can be issued concurrently by multiple sessions.
+        /// </summary>
+        internal readonly object KeyspaceScanLock = new();
+
         internal StorageSession HybridLogStatScanStorageSession;
 
         private KVSettings KvSettings;
@@ -169,6 +180,7 @@ namespace Garnet.server
             AppendOnlyFile?.Dispose();
             StoreCollectionDbStorageSession?.Dispose();
             StoreExpiredKeyDeletionDbStorageSession?.Dispose();
+            KeyspaceScanStorageSession?.Dispose();
 
             SizeTracker?.Stop();
         }

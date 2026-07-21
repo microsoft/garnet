@@ -195,7 +195,7 @@ namespace Tsavorite.core
         internal PageOffset TailPageOffset;
 
         /// <summary>Whether log is disposed</summary>
-        private bool disposed = false;
+        private volatile bool disposed = false;
 
         /// <summary>Whether device is a null device</summary>
         internal readonly bool IsNullDevice;
@@ -462,6 +462,13 @@ namespace Tsavorite.core
         {
             disposed = true;
 
+            // Stop the size-tracker resizer and wait for it to exit BEFORE tearing down the epoch, buffer pool, flush event
+            // (and, by the owner, the log device) that it uses; otherwise a still-running resizer can spin on or dereference
+            // these cleared resources. Setting disposed = true above makes the resizer's eviction spin-waits bail out, so this
+            // Stop(wait: true) cannot itself hang even if an in-flight eviction target is no longer reachable. The device is
+            // still alive at this point, so any already-issued resizer flush completes and the resizer terminates promptly.
+            logSizeTracker?.Stop(wait: true);
+
             if (isEpochOwned)
                 epoch.Dispose();
             bufferPool.Free();
@@ -472,7 +479,6 @@ namespace Tsavorite.core
 
             onReadOnlyObserver?.OnCompleted();
             onEvictionObserver?.OnCompleted();
-            logSizeTracker?.Stop();
         }
 
         #endregion abstract and virtual methods
@@ -984,14 +990,14 @@ namespace Tsavorite.core
                 }
 
                 // Wait for flush to complete
-                while (wait && FlushedUntilAddress < newReadOnlyAddress)
+                while (wait && !disposed && FlushedUntilAddress < newReadOnlyAddress)
                     _ = Thread.Yield();
                 return;
             }
 
             // Epoch already protected, so launch the shift and wait for flush to complete
             _ = ShiftReadOnlyAddress(newReadOnlyAddress);
-            while (wait && FlushedUntilAddress < newReadOnlyAddress)
+            while (wait && !disposed && FlushedUntilAddress < newReadOnlyAddress)
                 epoch.ProtectAndDrain();
         }
 
@@ -1020,7 +1026,7 @@ namespace Tsavorite.core
                     epoch.Suspend();
                 }
 
-                while (waitForEviction && ClosedUntilAddress < newHeadAddress)
+                while (waitForEviction && !disposed && ClosedUntilAddress < newHeadAddress)
                     _ = Thread.Yield();
                 return;
             }
@@ -1029,7 +1035,7 @@ namespace Tsavorite.core
             _ = ShiftHeadAddress(newHeadAddress);
 
             // We wait for ClosedUntilAddress here to ensure eviction scan is complete
-            while (waitForEviction && ClosedUntilAddress < newHeadAddress)
+            while (waitForEviction && !disposed && ClosedUntilAddress < newHeadAddress)
                 epoch.ProtectAndDrain();
         }
 
@@ -1082,8 +1088,10 @@ namespace Tsavorite.core
 
             // First check whether we need to shift HeadAddress. If we are not forcing for flush and have a logSizeTracker that's over budget then we have already issued
             // a shift if needed (and allowed by allocated page count); otherwise make sure we stay in the MaxAllocatedPageCount (which may be less than BufferSize).
+            // When the background resizer is not running (e.g. during recovery/AOF replay, before it is started post-recovery), we cannot defer eviction to it, so we
+            // evict synchronously here based on MaxAllocatedPageCount; otherwise the allocation retry loop would livelock waiting for a page close that never happens.
             var desiredHeadAddress = HeadAddress;
-            if (needSHA || logSizeTracker is null || !logSizeTracker.IsOverBudget)
+            if (needSHA || logSizeTracker is null || !logSizeTracker.IsOverBudget || !logSizeTracker.IsRunning)
             {
                 var headPage = GetPage(desiredHeadAddress);
                 if (pageIndex - headPage >= MaxAllocatedPageCount)

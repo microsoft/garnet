@@ -4,6 +4,7 @@
 using System.Diagnostics;
 using System.IO;
 using System.Text;
+using Garnet.common;
 using Tsavorite.core;
 
 namespace Garnet.server
@@ -50,7 +51,15 @@ namespace Garnet.server
 
         private IGarnetObject DeserializeInternal(BinaryReader binaryReader)
         {
-            var type = (GarnetObjectType)binaryReader.ReadByte();
+            var firstByte = binaryReader.ReadByte();
+
+            // 0xFC..0xFF are reserved for a future object-serialization format version/escape byte
+            // (see GarnetObjectType). No current writer emits these, so encountering one means the
+            // data was written by a newer version whose object format this build cannot read.
+            if (firstByte >= GarnetObjectTypeExtensions.ReservedObjectFormatByteStart)
+                throw new GarnetException($"Unsupported object serialization format marker 0x{firstByte:X2}; the data may have been written by a newer Garnet version.");
+
+            var type = (GarnetObjectType)firstByte;
             var obj = type switch
             {
                 GarnetObjectType.Null => null,
@@ -65,8 +74,16 @@ namespace Garnet.server
 
         private IGarnetObject CustomDeserialize(byte type, BinaryReader binaryReader)
         {
-            if (type < CustomCommandManager.CustomTypeIdStartOffset ||
-                !customCommandManager.TryGetCustomObjectCommand(type, out var cmd)) return null;
+            // Built-in type ids (0..LastObjectType) are handled by the caller. A type id below the
+            // fixed custom-object base therefore lies in the reserved built-in band and is not valid
+            // for this build: it was written either by an older build whose custom objects were based
+            // at LastObjectType+1 (rather than the fixed base), or by a newer build with additional
+            // built-in types. Fail fast instead of silently returning null, which would drop the
+            // record and lose data without any indication.
+            if (type < CustomCommandManager.CustomTypeIdStartOffset)
+                throw new GarnetException($"Unsupported object type id 0x{type:X2}; the data may have been written by an incompatible Garnet version (e.g. legacy custom objects that used a different type-id range).");
+
+            if (!customCommandManager.TryGetCustomObjectCommand(type, out var cmd)) return null;
             return cmd.factory.Deserialize(type, binaryReader);
         }
 

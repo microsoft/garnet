@@ -16,7 +16,7 @@ namespace Garnet.server
     public sealed class RangeIndexMigrationReader : IDisposable
     {
         private readonly RangeIndexChunkedSerializer serializer;
-        private FileStream fileStream;
+        private Stream stream;
         private readonly string tempFilePath;
         private readonly ILogger logger;
         private readonly Memory<byte> readBuffer;
@@ -29,28 +29,35 @@ namespace Garnet.server
         public long TotalFileBytes => serializer.TotalFileBytes;
 
         /// <summary>
-        /// Create a migration reader that wraps a serializer and file stream. On dispose,
-        /// the underlying <paramref name="fileStream"/> is closed and <paramref name="tempFilePath"/>
-        /// is deleted (best-effort) so source-side migration snapshots do not accumulate.
+        /// Default size (bytes) of the internal file-read buffer when the caller does not specify one.
+        /// This is independent of the destination (serialization) chunk size passed to
+        /// <see cref="ReadNextChunk"/> / <see cref="ReadNextChunkAsync"/>; a larger read buffer reduces
+        /// the number of file-system reads.
+        /// </summary>
+        public const int DefaultFileReadBufferSize = 1 << 20; // 1 MiB
+
+        /// <summary>
+        /// Create a migration reader that wraps a serializer and a data stream. On dispose,
+        /// the underlying <paramref name="stream"/> is closed and <paramref name="tempFilePath"/>
+        /// (when non-null) is deleted (best-effort) so source-side migration snapshots do not accumulate.
         /// </summary>
         /// <param name="serializer">The pure state-machine serializer.</param>
-        /// <param name="fileStream">The file stream to read snapshot data from.</param>
-        /// <param name="tempFilePath">The path of the snapshot file owned by this reader; deleted on dispose.</param>
-        /// <param name="chunkSize">Size of the internal buffer used to read file data from disk; must be positive.
-        /// The forward-progress minimum (trailer size) applies to the <c>destination</c> passed to
-        /// <see cref="ReadNextChunkAsync"/>, not to this buffer.</param>
+        /// <param name="stream">The stream to read snapshot data from (e.g. a FileStream in production, or a
+        /// MemoryStream in tests).</param>
+        /// <param name="tempFilePath">The path of the snapshot file owned by this reader; deleted on dispose.
+        /// Pass null when the stream is not backed by an owned temp file (nothing is deleted).</param>
         /// <param name="logger">Optional logger for delete failures.</param>
-        /// <exception cref="ArgumentOutOfRangeException">Thrown if <paramref name="chunkSize"/> is not positive.</exception>
-        public RangeIndexMigrationReader(RangeIndexChunkedSerializer serializer, FileStream fileStream, string tempFilePath, int chunkSize, ILogger logger = null)
+        /// <param name="readBufferSize">Size (bytes) of the internal buffer used to read data from the stream.</param>
+        public RangeIndexMigrationReader(RangeIndexChunkedSerializer serializer, Stream stream, string tempFilePath, ILogger logger = null, int readBufferSize = DefaultFileReadBufferSize)
         {
-            if (chunkSize <= 0)
-                throw new ArgumentOutOfRangeException(nameof(chunkSize), chunkSize, "chunkSize must be positive.");
+            if (readBufferSize <= 0)
+                throw new ArgumentOutOfRangeException(nameof(readBufferSize), readBufferSize, "readBufferSize must be positive.");
 
             this.serializer = serializer;
-            this.fileStream = fileStream;
+            this.stream = stream;
             this.tempFilePath = tempFilePath;
             this.logger = logger;
-            readBuffer = new byte[chunkSize];
+            readBuffer = new byte[readBufferSize];
         }
 
         /// <summary>
@@ -78,11 +85,7 @@ namespace Garnet.server
         /// <exception cref="ArgumentException">Thrown if <paramref name="destination"/> is smaller than <see cref="RangeIndexChunkedSerializer.MinChunkSize"/>.</exception>
         public async ValueTask<int> ReadNextChunkAsync(Memory<byte> destination, CancellationToken cancellationToken = default)
         {
-            // The destination is the buffer the serializer frames into, so it must be able to hold
-            // the largest single-chunk element (the trailer). A destination below this could never
-            // frame the trailer and the stream would never complete.
-            if (destination.Length < RangeIndexChunkedSerializer.MinChunkSize)
-                throw new ArgumentException($"destination must be at least {RangeIndexChunkedSerializer.MinChunkSize} bytes (the trailer size) so the stream can complete.", nameof(destination));
+            ValidateDestination(destination.Length);
 
             var initialLength = destination.Length;
             while (!serializer.IsComplete && destination.Length > 0)
@@ -90,11 +93,8 @@ namespace Garnet.server
                 // Refill the file buffer if the serializer needs file data
                 if (serializer.NeedsFileData)
                 {
-                    var bytesRead = await fileStream.ReadAsync(readBuffer, cancellationToken).ConfigureAwait(false);
-                    if (bytesRead == 0)
-                        throw new Exception($"RangeIndex file truncated: {serializer.FileDataRemaining} bytes remaining");
-
-                    serializer.SupplyFileData(readBuffer[..bytesRead]);
+                    var bytesRead = await stream.ReadAsync(readBuffer, cancellationToken).ConfigureAwait(false);
+                    SupplyFileDataOrThrow(bytesRead);
                 }
 
                 var written = serializer.MoveNext(destination.Span);
@@ -110,6 +110,50 @@ namespace Garnet.server
             return initialLength - destination.Length;
         }
 
+        /// <summary>
+        /// Synchronous counterpart to <see cref="ReadNextChunkAsync"/> for callers that are not on an async path
+        /// </summary>
+        /// <param name="destination">Output buffer. Must be at least <see cref="RangeIndexChunkedSerializer.MinChunkSize"/> bytes.</param>
+        /// <returns>Number of bytes written to <paramref name="destination"/> (always positive while the stream is incomplete).</returns>
+        public int ReadNextChunk(Span<byte> destination)
+        {
+            ValidateDestination(destination.Length);
+
+            var initialLength = destination.Length;
+            while (!serializer.IsComplete && destination.Length > 0)
+            {
+                if (serializer.NeedsFileData)
+                {
+                    var bytesRead = stream.Read(readBuffer.Span);
+                    SupplyFileDataOrThrow(bytesRead);
+                }
+
+                var written = serializer.MoveNext(destination);
+                if (written == 0)
+                    break;
+
+                destination = destination[written..];
+            }
+
+            return initialLength - destination.Length;
+        }
+
+        // The destination is the buffer the serializer frames into, so it must be able to hold the
+        // largest single-chunk element (the trailer). A destination below this could never frame the
+        // trailer and the stream would never complete.
+        private static void ValidateDestination(int length)
+        {
+            if (length < RangeIndexChunkedSerializer.MinChunkSize)
+                throw new ArgumentException($"destination must be at least {RangeIndexChunkedSerializer.MinChunkSize} bytes (the trailer size) so the stream can complete.", "destination");
+        }
+
+        private void SupplyFileDataOrThrow(int bytesRead)
+        {
+            if (bytesRead == 0)
+                throw new Exception($"RangeIndex file truncated: {serializer.FileDataRemaining} bytes remaining");
+            serializer.SupplyFileData(readBuffer[..bytesRead]);
+        }
+
         /// <inheritdoc/>
         public void Dispose()
         {
@@ -118,15 +162,15 @@ namespace Garnet.server
 
             try
             {
-                fileStream?.Dispose();
+                stream?.Dispose();
             }
             catch (Exception ex)
             {
-                logger?.LogWarning(ex, "RangeIndexMigrationReader: failed to dispose file stream for {Path} (ignored)", tempFilePath);
+                logger?.LogWarning(ex, "RangeIndexMigrationReader: failed to dispose stream for {Path} (ignored)", tempFilePath);
             }
             finally
             {
-                fileStream = null;
+                stream = null;
             }
 
             if (tempFilePath != null)

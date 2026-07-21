@@ -415,7 +415,12 @@ namespace Garnet.server
         /// </summary>
         public async ValueTask RecoverCheckpointAsync(bool replicaRecover = false, bool recoverFromToken = false, CheckpointMetadata metadata = null)
         {
-            StartSizeTrackers();    // We need to start this before recovery to have size tracking during the recovery process.
+            // Do NOT start the background size-tracker resizer here. It must not independently shift head / evict / free pages
+            // concurrently with recovery, which owns the log: recovery does its own budget-aware eviction and directly resets
+            // log addresses (RecoveryReset). Racing the resizer against that can lose a page read/flush completion and hang the
+            // main recovery thread in WaitRead/WaitFlush. The size tracker object still tracks size during recovery; AOF replay
+            // evicts synchronously via the allocator (IssueShiftAddress) while the resizer is not running. The resizer is started
+            // after recovery completes, in StoreWrapper.Start().
             await databaseManager.RecoverCheckpointAsync(replicaRecover, recoverFromToken, metadata).ConfigureAwait(false);
         }
 
@@ -752,6 +757,15 @@ namespace Garnet.server
         /// <returns></returns>
         public (long numExpiredKeysFound, long totalRecordsScanned) ExpiredKeyDeletionScan(int dbId)
             => databaseManager.ExpiredKeyDeletionScan(dbId);
+
+        /// <summary>
+        /// Count live keys and live keys with an expiration set for a specific database ID.
+        /// Used to populate the <c>INFO KEYSPACE</c> section.
+        /// </summary>
+        /// <param name="dbId">Database ID</param>
+        /// <returns>A tuple of (live keys, live keys with an expiration set).</returns>
+        public (long keyCount, long expireCount) GetKeyspaceStats(int dbId)
+            => databaseManager.GetKeyspaceStats(dbId);
 
         /// <summary>
         /// Grows indexes of both main store and object store if current size is too small.

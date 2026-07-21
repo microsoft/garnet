@@ -162,7 +162,7 @@ namespace Garnet.server
             }
 
             var tmpSimpleRespCommandInfo = new SimpleRespCommandInfo[(int)RespCommandExtensions.LastValidCommand + 1];
-            for (var cmdId = (int)RespCommandExtensions.FirstReadCommand; cmdId < tmpSimpleRespCommandInfo.Length; cmdId++)
+            for (var cmdId = (int)RespCommandExtensions.FirstDataCommand; cmdId < tmpSimpleRespCommandInfo.Length; cmdId++)
             {
                 if (!tmpFlattenedRespCommandsInfo.TryGetValue((RespCommand)cmdId, out var cmdInfo))
                 {
@@ -210,11 +210,11 @@ namespace Garnet.server
                         )
                 );
 
-            FastBasicRespCommandsInfo = new RespCommandsInfo[(int)RespCommandExtensions.LastDataCommand - (int)RespCommandExtensions.FirstReadCommand + 1];
-            for (var i = (int)RespCommandExtensions.FirstReadCommand; i <= (int)RespCommandExtensions.LastDataCommand; i++)
+            FastBasicRespCommandsInfo = new RespCommandsInfo[(int)RespCommandExtensions.LastDataCommand - (int)RespCommandExtensions.FirstDataCommand + 1];
+            for (var i = (int)RespCommandExtensions.FirstDataCommand; i <= (int)RespCommandExtensions.LastDataCommand; i++)
             {
                 FlattenedRespCommandsInfo.TryGetValue((RespCommand)i, out var commandInfo);
-                FastBasicRespCommandsInfo[i - (int)RespCommandExtensions.FirstReadCommand] = commandInfo;
+                FastBasicRespCommandsInfo[i - (int)RespCommandExtensions.FirstDataCommand] = commandInfo;
             }
 
             return true;
@@ -354,7 +354,7 @@ namespace Garnet.server
             respCommandsInfo = null;
             if (!IsInitialized && !TryInitialize(logger)) return false;
 
-            var offset = (int)cmd - (int)RespCommandExtensions.FirstReadCommand;
+            var offset = (int)cmd - (int)RespCommandExtensions.FirstDataCommand;
             if (offset < 0 || offset >= FastBasicRespCommandsInfo.Length)
                 return false;
 
