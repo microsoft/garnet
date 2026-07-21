@@ -46,35 +46,50 @@ Adding a single new command touches **at minimum** these areas:
 
 **File:** `libs/server/Resp/Parser/RespCommand.cs`
 
-The `RespCommand` enum is divided into sections with **ordering that matters**:
+The `RespCommand` enum is **writes-first**: write (mutating) commands occupy a dense,
+explicitly-numbered block immediately after `NONE`, followed by reads, scripts, and non-data:
 
 ```
-Read commands:     BITCOUNT ... ZUNION     (before APPEND)
-Write commands:    APPEND ... BITOP_DIFF   (after APPEND)
-Script commands:   EVAL, EVALSHA
+Write commands:    APPEND = 1 ... BITOP_DIFF = 120   (EXPLICIT values; the ONLY persisted values)
+Read commands:     BITCOUNT ... RISCAN               (auto-numbered; never persisted)
+Script commands:   EVAL, EVALSHA                     (LastDataCommand = EVALSHA)
 Non-key commands:  PING, SUBSCRIBE, etc.
 Admin commands:    AUTH, CONFIG, etc.
 ```
 
-**Read/write classification uses enum ordering:**
-- `cmd < RespCommand.APPEND` → read-only
-- `cmd >= RespCommand.APPEND && cmd <= RespCommand.BITOP_DIFF` → write
+**Why writes-first:** the write command's numeric value is persisted to disk (serialized into
+`RespInputHeader.cmd` in the AOF and streamed to replicas). Keeping writes in a dense,
+explicitly-numbered leading block makes those values **stable** — adding a read/admin command
+(which is never persisted) cannot shift them.
 
-**Rules:**
-- Read-only commands go **before** `APPEND`
-- Write commands go **between** `APPEND` and `BITOP_DIFF`
-- Update the boundary comments if you add before `APPEND` or after `BITOP_DIFF`
-- Place alphabetically within the appropriate section
+**Read/write classification uses enum ranges (positional constants, not hardcoded values):**
+- `RespCommandExtensions.FirstWriteCommand (APPEND=1) .. LastWriteCommand (BITOP_DIFF=120)` → write
+- `FirstReadCommand .. LastReadCommand (= EVAL - 1)` → read-only
+
+**Rules for adding a command:**
+- **Write (mutating) command:** APPEND it at the **end** of the write block, immediately before
+  the `// Read-only commands` marker, with the **next explicit value** (e.g. `MYCMD = 121,`).
+  Then update `LastWriteCommand` if it is no longer `BITOP_DIFF`. **Never** insert into the middle
+  of the write block or change/reuse an existing value — persisted values must be append-only.
+- **Read-only / script / non-data command:** add it in the appropriate (auto-numbered) section.
+  These are never persisted, so their values may shift freely.
+- Adding a write shifts the auto-numbered reads up by one — that is harmless (reads aren't
+  persisted) and requires no other change.
+
+**Guardrails (do not bypass):**
+- `PersistedEnumStabilityTests` snapshots the write-block values and asserts the write range
+  contains exactly the write commands. If you change an existing write value it fails — that is a
+  breaking on-disk change requiring an `AofHeader.AofHeaderVersion` bump + a legacy remap in
+  `AofProcessor` / `LegacyRespCommand`, not an edited expected value.
+- If a new write command's value ever approaches the custom command range (`0xFEFF`), that is also
+  caught by a test.
 
 **Boundary markers to watch (search for these comments):**
 ```csharp
-ZUNION,  // Note: Last read command is determined by APPEND - 1
-APPEND, // Note: Update FirstWriteCommand if adding new write commands before this
-BITOP_DIFF, // Note: Update LastWriteCommand if adding new write commands after this
+APPEND = 1, // Note: FirstWriteCommand — keep as the first write command
+BITOP_DIFF = 120, // Note: LastWriteCommand — append new write commands after this with the next value
 EVALSHA, // Note: Update LastDataCommand if adding new data commands after this
 ```
-
-**⚠️ Caveat:** The boundary comments in the source may not be on the actual last/first entry (e.g., `ZSCORE` has the comment but `ZUNION` follows it). The real boundary is determined by code: `LastReadCommand = RespCommand.APPEND - 1`. Always check the actual enum ordering, not just the comments.
 
 ---
 
@@ -249,7 +264,15 @@ private unsafe bool SortedSetAdd<TGarnetApi>(ref TGarnetApi storageApi)
 - The actual data operation logic lives in `libs/server/Objects/[ObjectName]/[ObjectName]ObjectImpl.cs`, dispatched via the operation enum
 
 **For new object sub-operations:**
-Add a value to the `[ObjectName]Operation` enum in `libs/server/Objects/[ObjectName]/[ObjectName]Object.cs` and handle it in the `Operate` method's switch statement.
+Add a value to the `[ObjectName]Operation` enum in `libs/server/Objects/[ObjectName]/[ObjectName]Object.cs`
+and handle it in the `Operate` method's switch statement.
+
+> **⚠️ Persisted, append-only:** the object operation enums (`HashOperation`, `ListOperation`,
+> `SetOperation`, `SortedSetOperation`) have **explicit values** and are serialized to the AOF via
+> `RespInputHeader.SubId`. **Append** the new operation at the **end** with the next explicit value;
+> never insert into the middle, reorder, or change an existing value. `PersistedEnumStabilityTests`
+> guards these values. The id occupies a full header byte, so up to 256 sub-operations per type are
+> allowed.
 
 ### Unified command note
 

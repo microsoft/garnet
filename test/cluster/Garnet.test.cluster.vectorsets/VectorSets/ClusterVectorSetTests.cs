@@ -1374,7 +1374,7 @@ namespace Garnet.test.cluster
                 {
                     var migrateSimRes = (byte[][])context.clusterTestUtils.Execute(secondary1, "VSIM", [key, "XB8", data, "WITHSCORES", "WITHATTRIBS"], flags: CommandFlags.NoRedirect);
 
-                    if (migrateSimRes.Length == 1 && Encoding.UTF8.GetString(migrateSimRes[1]).StartsWith("Key has MOVED to "))
+                    if (migrateSimRes.Length == 1 && Encoding.UTF8.GetString(migrateSimRes[0]).StartsWith("Key has MOVED to "))
                     {
                         success = false;
                         break;
