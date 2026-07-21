@@ -31,11 +31,13 @@ namespace Garnet.test
         }
 
         /// <summary>
-        /// With a high commit frequency (auto-commit disabled and the periodic commit far from firing),
-        /// a SET is acked but never committed. A graceful shutdown before the periodic commit loses it.
+        /// With a high commit frequency (auto-commit disabled and the periodic commit far from firing), a write
+        /// that is not explicitly committed is acked but never made durable, so a graceful shutdown loses it while
+        /// an explicitly committed control write survives. This characterizes the shutdown contract: graceful
+        /// <c>Dispose</c> does not flush the AOF, so durability requires an explicit commit (COMMITAOF/WaitForCommit).
         /// </summary>
         [Test]
-        public void HighCommitFrequencyLosesAckedWriteOnGracefulShutdown()
+        public void UncommittedWriteLostButCommittedWriteSurvivesOnGracefulShutdown()
         {
             const int farOffCommitMs = 60 * 60 * 1000;
 
@@ -45,7 +47,9 @@ namespace Garnet.test
             using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
             {
                 var db = redis.GetDatabase(0);
-                ClassicAssert.IsTrue(db.StringSet("k", "v"), "SET should be acknowledged to the client");
+                ClassicAssert.IsTrue(db.StringSet("control", "cv"), "control SET should be acknowledged");
+                db.Execute("COMMITAOF");
+                ClassicAssert.IsTrue(db.StringSet("k", "v"), "target SET should be acknowledged to the client");
             }
 
             server.Dispose(false);
@@ -57,8 +61,10 @@ namespace Garnet.test
             using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
             {
                 var db = redis.GetDatabase(0);
+                ClassicAssert.AreEqual("cv", db.StringGet("control").ToString(),
+                    "explicitly committed control write must survive recovery (proves the AOF/recovery pipeline works)");
                 ClassicAssert.IsFalse(db.KeyExists("k"),
-                    "acked write must be LOST: it was never committed and graceful shutdown does not flush the AOF");
+                    "target write must be LOST: it was never committed and graceful shutdown does not flush the AOF");
             }
         }
     }

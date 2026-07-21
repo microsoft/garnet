@@ -18,6 +18,7 @@ namespace Garnet.test
     /// DEBUG-only: relies on <see cref="ExceptionInjectionHelper"/> and the injected page-flush hook.
     /// </summary>
     [TestFixture]
+    [NonParallelizable]
     public class RespAofGracefulShutdownDurabilityInjectedTests : TestBase
     {
         GarnetServer server;
@@ -61,12 +62,19 @@ namespace Garnet.test
                 server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableAOF: true, commitFrequencyMs: 0);
                 server.Start();
 
+                using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
+                {
+                    var db = redis.GetDatabase(0);
+                    ClassicAssert.IsTrue(db.StringSet("control", "cv"), "control SET should be acknowledged");
+                    db.Execute("COMMITAOF");
+                }
+
                 ExceptionInjectionHelper.EnableException(dropFlush);
 
                 using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
                 {
                     var db = redis.GetDatabase(0);
-                    ClassicAssert.IsTrue(db.StringSet("k", "v"), "SET should be acknowledged to the client");
+                    ClassicAssert.IsTrue(db.StringSet("k", "v"), "target SET should be acknowledged to the client");
                 }
 
                 ClassicAssert.IsTrue(flushDropped.Wait(TimeSpan.FromSeconds(10)),
@@ -87,8 +95,10 @@ namespace Garnet.test
             using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
             {
                 var db = redis.GetDatabase(0);
+                ClassicAssert.AreEqual("cv", db.StringGet("control").ToString(),
+                    "explicitly committed control write must survive recovery (proves the AOF/recovery pipeline works)");
                 ClassicAssert.IsFalse(db.KeyExists("k"),
-                    "acked write must be LOST: its auto-commit flush had not reached the device when graceful shutdown occurred");
+                    "target write must be LOST: its auto-commit flush had not reached the device when graceful shutdown occurred");
             }
         }
     }
