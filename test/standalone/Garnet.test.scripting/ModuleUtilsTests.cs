@@ -49,5 +49,23 @@ namespace Garnet.test
             ClassicAssert.IsNull(modulePath);
             CollectionAssert.IsEmpty(moduleArgs);
         }
+
+        [Test]
+        // Empty quoted path
+        [TestCase("\"\"")]
+        [TestCase("\"\" arg0")]
+        // Whitespace-only quoted path
+        [TestCase("\"   \"")]
+        [TestCase("\"   \" arg0")]
+        // Unterminated quote
+        [TestCase("\"/opt/My Modules/My Module.dll")]
+        [TestCase("\"/opt/My Modules/My Module.dll arg0")]
+        public void ParseModuleSpecInvalidQuotedTest(string moduleSpec)
+        {
+            var parsed = ModuleUtils.TryParseModuleSpec(moduleSpec, out var modulePath, out var moduleArgs);
+            ClassicAssert.IsFalse(parsed);
+            ClassicAssert.IsNull(modulePath);
+            CollectionAssert.IsEmpty(moduleArgs);
+        }
     }
 }

@@ -320,7 +320,11 @@ namespace Garnet
             foreach (var filePathArg in filePaths)
             {
                 if (!ModuleUtils.TryParseModuleSpec(filePathArg, out var filePath, out _))
+                {
+                    isValid = false;
+                    errorSb.AppendLine($"Invalid module specification: '{filePathArg}'.");
                     continue;
+                }
                 var result = base.IsValid(filePath, validationContext);
                 if (result != null && result != ValidationResult.Success)
                 {

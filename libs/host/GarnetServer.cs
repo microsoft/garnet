@@ -408,7 +408,11 @@ namespace Garnet
             foreach (var moduleCS in opts.LoadModuleCS)
             {
                 if (!ModuleUtils.TryParseModuleSpec(moduleCS, out var modulePath, out var moduleArgs))
+                {
+                    if (!string.IsNullOrWhiteSpace(moduleCS))
+                        logger?.LogError("Invalid module specification: {0}", moduleCS);
                     continue;
+                }
 
                 if (!ModuleUtils.LoadAssemblies([modulePath], null, opts.ExtensionAllowUnsignedAssemblies,
                         out var loadedAssemblies, out var errorMsg, ignorePathCheckWhenUndefined: true)

@@ -28,7 +28,9 @@ namespace Garnet.server
         /// Because a module path may itself contain spaces, the path is delimited from its arguments as follows:
         /// <list type="number">
         /// <item>If the specification begins with a double quote, the path is the text between that quote and the
-        /// next double quote, and any remaining (space-separated) text is treated as the module arguments.</item>
+        /// next double quote, and any remaining (space-separated) text is treated as the module arguments. Such a
+        /// specification is invalid (returns false) if the quote is not terminated or the quoted path is empty or
+        /// whitespace-only.</item>
         /// <item>Otherwise, the path is the text up to and including the first space-separated token that ends with
         /// a recognized module assembly extension (.dll or .exe) - preserving any spaces within the path - and the
         /// remaining tokens are treated as the module arguments.</item>
@@ -39,7 +41,8 @@ namespace Garnet.server
         /// <param name="moduleSpec">The raw module specification string.</param>
         /// <param name="modulePath">The parsed module path (may contain spaces).</param>
         /// <param name="moduleArgs">The parsed module arguments (empty if none).</param>
-        /// <returns>True if a non-empty module path was parsed; otherwise false.</returns>
+        /// <returns>True if a non-empty module path was parsed; otherwise false (e.g. empty, whitespace-only or
+        /// malformed quoted specification).</returns>
         public static bool TryParseModuleSpec(string moduleSpec, out string modulePath, out string[] moduleArgs)
         {
             modulePath = null;
@@ -51,15 +54,21 @@ namespace Garnet.server
             var spec = moduleSpec.Trim();
 
             // 1) Explicitly double-quoted path: "<path>" [args...]
+            //    A leading double quote signals an explicitly quoted path; it must be terminated and
+            //    contain a non-empty, non-whitespace path, otherwise the specification is invalid.
             if (spec[0] == '"')
             {
                 var closingQuoteIdx = spec.IndexOf('"', 1);
-                if (closingQuoteIdx > 1)
-                {
-                    modulePath = spec[1..closingQuoteIdx];
-                    moduleArgs = SplitModuleArgs(spec[(closingQuoteIdx + 1)..]);
-                    return modulePath.Length > 0;
-                }
+                if (closingQuoteIdx < 0)
+                    return false;
+
+                var quotedPath = spec[1..closingQuoteIdx];
+                if (string.IsNullOrWhiteSpace(quotedPath))
+                    return false;
+
+                modulePath = quotedPath;
+                moduleArgs = SplitModuleArgs(spec[(closingQuoteIdx + 1)..]);
+                return true;
             }
 
             // 2) Unquoted path: delimit the path from its arguments using the module assembly extension,
