@@ -3649,9 +3649,7 @@ namespace Garnet.test
             var elem = new byte[] { 1, 0, 0, 0 };
             var elem2 = new byte[] { 2, 0, 0, 0 };
 
-            // VREM needs an existing element to remove, so seed the index (with a second element left
-            // behind so the remove doesn't drop the whole set) before arming the pause — otherwise the
-            // seeding VADD would itself park in the window.
+            // VREM needs an existing element to remove, so seed the index before arming the pause.
             if (operation == "VREM")
             {
                 dbOp.Execute("VADD", [key, "VALUES", "3", "1", "2", "3", (RedisValue)elem]);
@@ -3718,10 +3716,8 @@ namespace Garnet.test
                 ClassicAssert.IsTrue(dbRacer.KeyDelete(key), "DEL did not remove the parked vector-set key");
                 ClassicAssert.IsTrue(dbRacer.StringSet(key, StringValue), "SET did not store the String value");
 
-                // Release the parked VADD; its synthetic append-log RMW now cancels against the String record.
-                // The cancellation is internally IsCompletedSuccessfully, so it must not surface as a client-visible
-                // error: the native add already ran against the live index, so the reply stays the normal count (1).
-                // Last-writer-wins — the concurrent DEL+SET then re-types the key, which the assertions below verify.
+                // Release the parked VADD. Its synthetic append-log RMW cancels against the re-typed String,
+                // but the native add already ran, so the reply is the normal count (1) — last-writer DEL+SET wins.
                 ExceptionInjectionHelper.EnableException(Pause);
                 var opReply = await opTask.WaitAsync(TimeSpan.FromSeconds(30));
                 ClassicAssert.AreEqual(1, (long)opReply, "the raced VADD must return its normal count (1), not surface the canceled synthetic RMW");
