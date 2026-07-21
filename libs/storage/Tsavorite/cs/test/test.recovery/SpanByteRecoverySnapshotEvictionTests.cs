@@ -79,52 +79,59 @@ namespace Tsavorite.test.recovery
                 {
                     // Write all records and take a Snapshot checkpoint. store1's own eviction (under InitialMemorySize)
                     // flushes most pages to the main log, leaving a still-mutable snapshot region captured in the snapshot file.
-                    var store1 = CreateStore(log, checkpointDir, InitialMemorySize);
-                    using (var session = store1.NewSession<TestSpanByteKey, long, long, Empty, MyFunctions>(new MyFunctions()))
+                    Guid token;
+                    using (var store1 = CreateStore(log, checkpointDir, InitialMemorySize))
                     {
-                        var bContext = session.BasicContext;
-                        for (long key = 0; key < NumRecords; key++)
+                        using (var session = store1.NewSession<TestSpanByteKey, long, long, Empty, MyFunctions>(new MyFunctions()))
                         {
-                            var keySpan = new Span<byte>(keyArray);
-                            keySpan.AsRef<long>() = key;
-                            _ = bContext.Upsert(TestSpanByteKey.FromArray(keyArray), keySpan);
+                            var bContext = session.BasicContext;
+                            for (long key = 0; key < NumRecords; key++)
+                            {
+                                var keySpan = new Span<byte>(keyArray);
+                                keySpan.AsRef<long>() = key;
+                                _ = bContext.Upsert(TestSpanByteKey.FromArray(keyArray), keySpan);
+                            }
                         }
+                        var (success, checkpointToken) = await store1.TakeFullCheckpointAsync(CheckpointType.Snapshot).ConfigureAwait(false);
+                        ClassicAssert.IsTrue(success);
+                        token = checkpointToken;
                     }
-                    var (success, token) = await store1.TakeFullCheckpointAsync(CheckpointType.Snapshot).ConfigureAwait(false);
-                    ClassicAssert.IsTrue(success);
-                    store1.Dispose();
-
                     // Recover into a smaller budget with a size tracker attached, so recovery evicts snapshot pages to fit.
                     var store2 = CreateStore(log, checkpointDir, recoveryMemorySize);
                     var tracker = new LogSizeTracker<LongStoreFunctions, LongAllocator>(store2.Log, recoveryMemorySize, recoveryMemorySize / 8, recoveryMemorySize / 16, logger: null);
                     store2.Log.SetLogSizeTracker(tracker);
                     _ = await store2.RecoverAsync(default, token).ConfigureAwait(false);
 
-                    if (startResizerDuringReads)
-                        tracker.Start(CancellationToken.None);
-
-                    using (var session = store2.NewSession<TestSpanByteKey, long, long, Empty, MyFunctions>(new MyFunctions()))
+                    try
                     {
-                        var bContext = session.BasicContext;
-                        for (long key = 0; key < NumRecords; key++)
+                        if (startResizerDuringReads)
+                            tracker.Start(CancellationToken.None);
+
+                        using (var session = store2.NewSession<TestSpanByteKey, long, long, Empty, MyFunctions>(new MyFunctions()))
                         {
-                            var keySpan = new Span<byte>(keyArray);
-                            keySpan.AsRef<long>() = key;
-                            long output = -1;
-                            var status = bContext.Read(TestSpanByteKey.FromArray(keyArray), ref output);
-                            if (status.IsPending)
+                            var bContext = session.BasicContext;
+                            for (long key = 0; key < NumRecords; key++)
                             {
-                                Assert.That(bContext.CompletePendingWithOutputs(out var completedOutputs, wait: true), Is.True);
-                                (status, output) = GetSinglePendingResult(completedOutputs);
+                                var keySpan = new Span<byte>(keyArray);
+                                keySpan.AsRef<long>() = key;
+                                long output = -1;
+                                var status = bContext.Read(TestSpanByteKey.FromArray(keyArray), ref output);
+                                if (status.IsPending)
+                                {
+                                    Assert.That(bContext.CompletePendingWithOutputs(out var completedOutputs, wait: true), Is.True);
+                                    (status, output) = GetSinglePendingResult(completedOutputs);
+                                }
+                                ClassicAssert.IsTrue(status.Found, $"iter {iter}: key {key} not found (recoveryMemorySize {recoveryMemorySize}, startResizer {startResizerDuringReads})");
+                                ClassicAssert.AreEqual(key, output, $"iter {iter}: key {key} wrong value {output}");
                             }
-                            ClassicAssert.IsTrue(status.Found, $"iter {iter}: key {key} not found (recoveryMemorySize {recoveryMemorySize}, startResizer {startResizerDuringReads})");
-                            ClassicAssert.AreEqual(key, output, $"iter {iter}: key {key} wrong value {output}");
                         }
                     }
-
-                    if (startResizerDuringReads)
-                        tracker.Stop(wait: true);
-                    store2.Dispose();
+                    finally
+                    {
+                        if (startResizerDuringReads)
+                            tracker.Stop(wait: true);
+                        store2.Dispose();
+                    }
                 }
                 finally
                 {
