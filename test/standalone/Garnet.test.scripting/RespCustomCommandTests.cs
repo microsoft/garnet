@@ -1346,8 +1346,8 @@ namespace Garnet.test
             var factory = new MyDictFactory();
             server.Register.NewCommand("MYDICTGET", CommandType.Read, factory, new MyDictGet(), new RespCommandsInfo { Arity = 3 });
 
-            // Only able to register 31 sub-commands, try to register 32
-            var regCount = 32;
+            // Only able to register 256 sub-commands (subId occupies a full header byte); MYDICTGET above takes one slot, so try to register 256 more
+            var regCount = byte.MaxValue + 1;
             var failedTaskIdAndMessage = new ConcurrentBag<(int, string)>();
             var regCmdTasks = new Task[regCount];
             for (var i = 0; i < regCount; i++)

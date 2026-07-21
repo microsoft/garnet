@@ -766,9 +766,11 @@ public static bool IsLegalOnRangeIndex(this RespCommand cmd)
 ### Step 2: Add RESP commands to the parser
 
 > **Reference:** `libs/server/Resp/Parser/RespCommand.cs`
-> - Read commands are defined before `APPEND` (the last read command is just before `APPEND`)
-> - Write commands are defined starting at `APPEND`
-> - Read/write classification uses enum ordering: `cmd <= LastReadCommand` ⟹ read-only
+> - The enum is **writes-first**: write commands occupy a dense, explicitly-numbered block
+>   `APPEND = 1 .. BITOP_DIFF = 120` immediately after `NONE` (these are the only persisted
+>   RespCommand values); read commands follow, then scripts (EVAL/EVALSHA)
+> - Read/write classification uses enum **ranges**: `FirstReadCommand <= cmd <= LastReadCommand`
+>   ⟹ read-only; `FirstWriteCommand <= cmd <= LastWriteCommand` ⟹ write
 > - Fast parsing: `FastParseArrayCommand()` uses `ulong` pointer comparisons for short
 >   fixed-length commands
 > - Longer/unusual commands fall through to `SlowParseCommand()`
