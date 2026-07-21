@@ -3753,16 +3753,33 @@ namespace Garnet.test
         ];
 
         /// <summary>
-        /// Drives a single main-store VADD/VREM RMW carrying the given arg1 sentinel directly against the key.
+        /// Opens a throwaway main-store client session bound to database 0, used to drive raw RMW/Read
+        /// operations directly against the string store (bypassing the RESP layer).
         /// </summary>
-        private Status SimulateVectorSetStubRmw(string key, RespCommand cmd, long arg1, out StringOutput output)
+        private ClientSession<
+            FixedSpanByteKey,
+            StringInput,
+            StringOutput,
+            long,
+            MainSessionFunctions,
+            Tsavorite.core.StoreFunctions<Garnet.common.GarnetKeyComparer, Garnet.server.GarnetRecordTriggers>,
+            Tsavorite.core.ObjectAllocator<Tsavorite.core.StoreFunctions<Garnet.common.GarnetKeyComparer, Garnet.server.GarnetRecordTriggers>>
+        > NewMainStoreSession()
         {
             var storeWrapper = server.Provider.StoreWrapper;
             var functionsState = storeWrapper.CreateFunctionsState();
             var functions = new MainSessionFunctions(functionsState);
             ClassicAssert.IsTrue(storeWrapper.TryGetDatabase(0, out var database));
 
-            using var session = database.Store.NewSession<FixedSpanByteKey, StringInput, StringOutput, long, MainSessionFunctions>(functions, false);
+            return database.Store.NewSession<FixedSpanByteKey, StringInput, StringOutput, long, MainSessionFunctions>(functions, false);
+        }
+
+        /// <summary>
+        /// Drives a single main-store VADD/VREM RMW carrying the given arg1 sentinel directly against the key.
+        /// </summary>
+        private Status SimulateVectorSetStubRmw(string key, RespCommand cmd, long arg1, out StringOutput output)
+        {
+            using var session = NewMainStoreSession();
             var context = session.BasicContext;
 
             var input = new StringInput(cmd, arg1: arg1);
@@ -3782,12 +3799,7 @@ namespace Garnet.test
         /// </summary>
         private byte[] ReadRawVectorStub(string key)
         {
-            var storeWrapper = server.Provider.StoreWrapper;
-            var functionsState = storeWrapper.CreateFunctionsState();
-            var functions = new MainSessionFunctions(functionsState);
-            ClassicAssert.IsTrue(storeWrapper.TryGetDatabase(0, out var database));
-
-            using var session = database.Store.NewSession<FixedSpanByteKey, StringInput, StringOutput, long, MainSessionFunctions>(functions, false);
+            using var session = NewMainStoreSession();
             var context = session.BasicContext;
 
             Span<byte> stub = stackalloc byte[VectorManager.IndexSizeBytes];
@@ -3872,10 +3884,9 @@ namespace Garnet.test
         }
 
         /// <summary>
-        /// Proceed path: the genuine synthetic-replication args (VADDAppendLogArg / VREMAppendLogArg) running
-        /// against a live index record must proceed (Found) and leave the index intact. Parameterized across both
+        /// Syntheticargs (VADDAppendLogArg / VREMAppendLogArg) must leave the index intact and copy if needed. Parameterized across both
         /// the mutable region (InPlaceUpdater) and the read-only region (NeedCopyUpdate → CopyUpdater), so the
-        /// copy-to-tail path that must preserve the index is exercised too.
+        /// copy-to-tail path that must preserve the index is exercised.
         /// </summary>
         [Test]
         public void VectorSyntheticAppendLogRmwOnLiveIndexProceedsAndPreservesIndex([Values("VADD", "VREM")] string operation, [Values(false, true)] bool inReadOnlyRegion)
