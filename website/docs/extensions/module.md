@@ -49,9 +49,9 @@ passed to the module's `OnLoad` method through the `args` parameter:
 --loadmodulecs "/path/to/MyModule.dll arg0 arg1"
 ```
 
-Module paths that contain spaces are supported. A path is delimited from its arguments at the module
-assembly extension (`.dll` or `.exe`), so a path containing spaces loads correctly without any extra
-escaping:
+Module paths that contain spaces are supported. The path is resolved against the filesystem (the longest
+prefix of the specification that exists as a file or directory is taken as the module path), so a path
+containing spaces loads correctly without any extra escaping:
 
 ```
 --loadmodulecs "/path/to/My Modules/My Module.dll"
