@@ -3672,11 +3672,10 @@ namespace Garnet.test
                 // Connection 2: DEL the parked key, tombstoning it while the operation holds a shared vector lock.
                 ClassicAssert.IsTrue(dbDel.KeyDelete(key), "DEL did not remove the parked vector-set key");
 
-                // Re-arm to release the parked operation; its synthetic append-log RMW now runs against
-                // the tombstoned key. The rejection surfaces as NOTFOUND internally and must not be turned
-                // into a client-visible error, so the raced command completes gracefully (last-writer DEL wins).
+                // Re-arm to release the parked operation; its synthetic append-log RMW now runs against the tombstoned key.
                 ExceptionInjectionHelper.EnableException(Pause);
-                Assert.DoesNotThrowAsync(async () => await opTask.WaitAsync(TimeSpan.FromSeconds(30)), $"the raced {operation} surfaced the rejected synthetic RMW as an error");
+                var opReply = await opTask.WaitAsync(TimeSpan.FromSeconds(30));
+                ClassicAssert.AreEqual(1, (long)opReply, $"the raced {operation} must return its normal count (1), not surface the rejected synthetic RMW");
             }
             finally
             {
@@ -3720,9 +3719,12 @@ namespace Garnet.test
                 ClassicAssert.IsTrue(dbRacer.StringSet(key, StringValue), "SET did not store the String value");
 
                 // Release the parked VADD; its synthetic append-log RMW now cancels against the String record.
-                // The cancellation must not surface as a client-visible error, so the VADD completes gracefully.
+                // The cancellation is internally IsCompletedSuccessfully, so it must not surface as a client-visible
+                // error: the native add already ran against the live index, so the reply stays the normal count (1).
+                // Last-writer-wins — the concurrent DEL+SET then re-types the key, which the assertions below verify.
                 ExceptionInjectionHelper.EnableException(Pause);
-                Assert.DoesNotThrowAsync(async () => await opTask.WaitAsync(TimeSpan.FromSeconds(30)), "the raced VADD surfaced the canceled synthetic RMW as an error");
+                var opReply = await opTask.WaitAsync(TimeSpan.FromSeconds(30));
+                ClassicAssert.AreEqual(1, (long)opReply, "the raced VADD must return its normal count (1), not surface the canceled synthetic RMW");
             }
             finally
             {
@@ -3751,8 +3753,7 @@ namespace Garnet.test
         ];
 
         /// <summary>
-        /// Drives a single main-store VADD/VREM RMW carrying the given arg1 sentinel directly against the key,
-        /// bypassing the RESP command layer so the exact sentinel reaches the session-function decision gates.
+        /// Drives a single main-store VADD/VREM RMW carrying the given arg1 sentinel directly against the key.
         /// </summary>
         private Status SimulateVectorSetStubRmw(string key, RespCommand cmd, long arg1, out StringOutput output)
         {
@@ -3807,9 +3808,7 @@ namespace Garnet.test
         /// <summary>
         /// NeedInitialUpdate gate: on an absent key, every synthetic/stray VADD/VREM arg1 must reject (NOTFOUND,
         /// no record) rather than resurrect a phantom index. The only args allowed to establish a record are
-        /// VADD's create allowlist (CreateIndexArg / Migrate*): CreateIndexArg needs the native create payload
-        /// and Migrate* only ever run against an empty dummy key, so the create side is exercised by the
-        /// functional create/migration tests rather than driven here with a bare input.
+        /// VADD's create allowlist (CreateIndexArg / Migrate*).
         /// </summary>
         [Test]
         public void VectorRmwOnAbsentKeyRejectsSyntheticArgs([Values("VADD", "VREM")] string operation)
