@@ -58,7 +58,8 @@ namespace Garnet.server
                     input.header.SortedSetOp = SortedSetOperation.ZSCAN;
                     break;
                 case GarnetObjectType.All:
-                    input.header.cmd = RespCommand.COSCAN;
+                    // COSCAN (custom object scan) is dispatched via header.type == All (already set by
+                    // the RespInputHeader(objectType) ctor). Do not overwrite cmd/type here.
                     break;
             }
 

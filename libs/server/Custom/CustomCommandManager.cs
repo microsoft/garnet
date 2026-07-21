@@ -23,7 +23,10 @@ namespace Garnet.server
         // ID ranges for custom raw string commands and custom object types
         private static readonly int CustomRawStringCommandMinId = (ushort)RespCommand.INVALID - MaxCustomRawStringCommands;
         private static readonly int CustomRawStringCommandMaxId = (ushort)RespCommand.INVALID - 1;
-        private static readonly int CustomObjectTypeMinId = (byte)GarnetObjectTypeExtensions.LastObjectType + 1;
+        // Custom object type ids start at a FIXED base (not LastObjectType + 1), so that adding a new
+        // built-in GarnetObjectType (which grows within the reserved built-in band [0, 0x3F]) never
+        // shifts the persisted ids of custom objects. Range: [0x40, FirstSpecialObjectType - 1].
+        private static readonly int CustomObjectTypeMinId = (byte)GarnetObjectTypeExtensions.LastReservedBuiltinType + 1;
         private static readonly int CustomObjectTypeMaxId = (byte)GarnetObjectTypeExtensions.FirstSpecialObjectType - 1;
 
         // Maps holding different types of custom commands

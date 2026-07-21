@@ -140,13 +140,27 @@ namespace Garnet.server
 
         public const int TotalSize = 16;
 
-        // Important: Update version number whenever any of the following change:
+        // Important: Update AofHeaderVersion whenever any of the following change:
         // * Layout, size, contents of this struct
         // * Any of the AofEntryType or AofStoreType enums' existing value mappings
         // * SpanByte format or header
+        // * The persisted-value numbering of any enum serialized into an entry payload:
+        //   RespCommand (RespInputHeader.cmd), the object sub-operation enums (RespInputHeader.SubId:
+        //   HashOperation/ListOperation/SetOperation/SortedSetOperation), GarnetObjectType
+        //   (RespInputHeader.type), or RespInputFlags.
+        // * The layout of RespInputHeader itself (e.g. which byte holds cmd/type/subId/flags).
         // Version 3 repurposes the flags byte as a bitfield containing the header type
         // plus chunked-record and unsafe-truncate markers.
-        const byte AofHeaderVersion = 3;
+        // Version 4 makes the RespCommand write block dense/explicit (writes-first) and moves the
+        // object sub-operation id (SubId) from the low 5 bits of the flags byte into its own header
+        // byte; AofProcessor remaps v3 entries on replay.
+        internal const byte AofHeaderVersion = 4;
+
+        /// <summary>
+        /// Highest AOF header version this build can read/replay. Entries with a higher version were
+        /// written by a newer Garnet version and cannot be safely interpreted.
+        /// </summary>
+        internal const byte MaxSupportedAofHeaderVersion = AofHeaderVersion;
 
         /// <summary>
         /// Bits in <see cref="flags"/> that identify the <see cref="AofHeaderType"/>
