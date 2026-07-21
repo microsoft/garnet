@@ -3753,33 +3753,16 @@ namespace Garnet.test
         ];
 
         /// <summary>
-        /// Opens a throwaway main-store client session bound to database 0, used to drive raw RMW/Read
-        /// operations directly against the string store (bypassing the RESP layer).
+        /// Drives a single main-store VADD/VREM RMW carrying the given arg1 sentinel directly against the key.
         /// </summary>
-        private ClientSession<
-            FixedSpanByteKey,
-            StringInput,
-            StringOutput,
-            long,
-            MainSessionFunctions,
-            Tsavorite.core.StoreFunctions<Garnet.common.GarnetKeyComparer, Garnet.server.GarnetRecordTriggers>,
-            Tsavorite.core.ObjectAllocator<Tsavorite.core.StoreFunctions<Garnet.common.GarnetKeyComparer, Garnet.server.GarnetRecordTriggers>>
-        > NewMainStoreSession()
+        private Status SimulateVectorSetStubRmw(string key, RespCommand cmd, long arg1, out StringOutput output)
         {
             var storeWrapper = server.Provider.StoreWrapper;
             var functionsState = storeWrapper.CreateFunctionsState();
             var functions = new MainSessionFunctions(functionsState);
             ClassicAssert.IsTrue(storeWrapper.TryGetDatabase(0, out var database));
 
-            return database.Store.NewSession<FixedSpanByteKey, StringInput, StringOutput, long, MainSessionFunctions>(functions, false);
-        }
-
-        /// <summary>
-        /// Drives a single main-store VADD/VREM RMW carrying the given arg1 sentinel directly against the key.
-        /// </summary>
-        private Status SimulateVectorSetStubRmw(string key, RespCommand cmd, long arg1, out StringOutput output)
-        {
-            using var session = NewMainStoreSession();
+            using var session = database.Store.NewSession<FixedSpanByteKey, StringInput, StringOutput, long, MainSessionFunctions>(functions, false);
             var context = session.BasicContext;
 
             var input = new StringInput(cmd, arg1: arg1);
@@ -3799,7 +3782,12 @@ namespace Garnet.test
         /// </summary>
         private byte[] ReadRawVectorStub(string key)
         {
-            using var session = NewMainStoreSession();
+            var storeWrapper = server.Provider.StoreWrapper;
+            var functionsState = storeWrapper.CreateFunctionsState();
+            var functions = new MainSessionFunctions(functionsState);
+            ClassicAssert.IsTrue(storeWrapper.TryGetDatabase(0, out var database));
+
+            using var session = database.Store.NewSession<FixedSpanByteKey, StringInput, StringOutput, long, MainSessionFunctions>(functions, false);
             var context = session.BasicContext;
 
             Span<byte> stub = stackalloc byte[VectorManager.IndexSizeBytes];
