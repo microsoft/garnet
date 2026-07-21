@@ -716,6 +716,23 @@ namespace Garnet.server
         /// </summary>
         public static bool IsLegalOnVectorSet(this RespCommand cmd)
         => cmd is RespCommand.DEL or RespCommand.UNLINK or RespCommand.TYPE or RespCommand.DEBUG or RespCommand.RENAME or RespCommand.RENAMENX or RespCommand.VADD or RespCommand.VCARD or RespCommand.VDIM or RespCommand.VEMB or RespCommand.VGETATTR or RespCommand.VINFO or RespCommand.VISMEMBER or RespCommand.VLINKS or RespCommand.VRANDMEMBER or RespCommand.VREM or RespCommand.VSETATTR or RespCommand.VSIM;
+
+        /// <summary>
+        /// Returns true if <paramref name="cmd"/> is allowed while a session is in
+        /// pub/sub subscription mode (RESP2). Per the RESP protocol, only
+        /// (P|S)SUBSCRIBE, (P|S)UNSUBSCRIBE, PING, and QUIT are valid in this state.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static bool IsAllowedInSubscriptionMode(this RespCommand cmd)
+        {
+            return cmd is RespCommand.SUBSCRIBE
+                or RespCommand.UNSUBSCRIBE
+                or RespCommand.PSUBSCRIBE
+                or RespCommand.PUNSUBSCRIBE
+                or RespCommand.SSUBSCRIBE
+                or RespCommand.PING
+                or RespCommand.QUIT;
+        }
     }
 
     /// <summary>
