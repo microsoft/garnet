@@ -407,12 +407,8 @@ namespace Garnet
 
             foreach (var moduleCS in opts.LoadModuleCS)
             {
-                var moduleCSData = moduleCS.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-                if (moduleCSData.Length < 1)
+                if (!ModuleUtils.TryParseModuleSpec(moduleCS, out var modulePath, out var moduleArgs))
                     continue;
-
-                var modulePath = moduleCSData[0];
-                var moduleArgs = moduleCSData.Length > 1 ? moduleCSData.Skip(1).ToArray() : [];
 
                 if (!ModuleUtils.LoadAssemblies([modulePath], null, opts.ExtensionAllowUnsignedAssemblies,
                         out var loadedAssemblies, out var errorMsg, ignorePathCheckWhenUndefined: true)

@@ -319,7 +319,8 @@ namespace Garnet
             var isValid = true;
             foreach (var filePathArg in filePaths)
             {
-                var filePath = filePathArg.Split(' ')[0];
+                if (!ModuleUtils.TryParseModuleSpec(filePathArg, out var filePath, out _))
+                    continue;
                 var result = base.IsValid(filePath, validationContext);
                 if (result != null && result != ValidationResult.Success)
                 {

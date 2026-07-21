@@ -35,3 +35,33 @@ The `ModuleLoadContext` exposes the following APIs to register the module and it
 
 :::tip 
 As a reference of an implementation of a module, see the example in playground\SampleModule.
+:::
+
+## Loading a module
+
+A module can be loaded at server startup using the `--loadmodulecs` command line option (or the
+`LoadModuleCS` configuration setting), or at runtime using the `MODULE LOADCS` command.
+
+Each module is specified as a module path optionally followed by space-separated arguments that are
+passed to the module's `OnLoad` method through the `args` parameter:
+
+```
+--loadmodulecs "/path/to/MyModule.dll arg0 arg1"
+```
+
+Module paths that contain spaces are supported. A path is delimited from its arguments at the module
+assembly extension (`.dll` or `.exe`), so a path containing spaces loads correctly without any extra
+escaping:
+
+```
+--loadmodulecs "/path/to/My Modules/My Module.dll"
+--loadmodulecs "/path/to/My Modules/My Module.dll arg0 arg1"
+```
+
+Alternatively, the path may be wrapped in double quotes to explicitly separate it from its arguments:
+
+```
+--loadmodulecs "\"/path/to/My Modules/My Module.dll\" arg0 arg1"
+```
+
+Multiple modules can be loaded by providing a comma-separated list of module specifications.
