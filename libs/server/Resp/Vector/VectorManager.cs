@@ -211,6 +211,8 @@ namespace Garnet.server
             requestedDropsLookup = requestedDrops.GetAlternateLookup<ReadOnlySpan<byte>>();
 #endif
 
+            potentiallyDeleted = [];
+
             recoveredIndexes = new();
             recoveredMetadata = new();
 

@@ -176,21 +176,20 @@ namespace Garnet.server
         /// <inheritdoc/>
         public readonly void OnCheckpoint(CheckpointTrigger trigger, Guid checkpointToken)
         {
-            if (rangeIndexManager == null)
+            if (rangeIndexManager == null && vectorManager == null)
                 return;
 
             switch (trigger)
             {
                 case CheckpointTrigger.VersionShift:
-                    rangeIndexManager.SetCheckpointBarrier(checkpointToken);
+                    rangeIndexManager?.SetCheckpointBarrier(checkpointToken);
                     break;
                 case CheckpointTrigger.FlushBegin:
-                    rangeIndexManager.SnapshotAllTreesForCheckpoint(checkpointToken);
-                    rangeIndexManager.ClearCheckpointBarrier();
+                    rangeIndexManager?.SnapshotAllTreesForCheckpoint(checkpointToken);
+                    rangeIndexManager?.ClearCheckpointBarrier();
                     break;
                 case CheckpointTrigger.CheckpointCompleted:
-                    // No action — Tsavorite's checkpoint manager removes per-token snapshot dirs
-                    // when removeOutdated is true; per-flush snapshots are cleaned by OnTruncate.
+                    vectorManager?.CheckpointCompleted();
                     break;
             }
         }
@@ -267,10 +266,10 @@ namespace Garnet.server
         {
             if (vectorManager is not null && logRecord.RecordType == VectorManager.RecordType)
             {
-                vectorManager.RequestDeletion(logRecord.ValueSpan);
+                vectorManager.VectorSetPotentiallyDeleted(logRecord.KeyBytes, logRecord.ValueSpan);
             }
 
-            return true;
+            return false;
         }
     }
 }

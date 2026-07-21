@@ -37,7 +37,7 @@ namespace Garnet.test
                     tryRecover: false,
                     enableVectorSetPreview: true,
                     enableRangeIndexPreview: true,
-                    compactionType: EvictToDisk ? LogCompactionType.Scan : LogCompactionType.None,
+                    compactionType: EvictToDisk ? LogCompactionType.Lookup : LogCompactionType.None,
                     lowMemory: EvictToDisk,
                     mutablePercent: EvictToDisk ? 10 : 90,
                     indexMaxSize: EvictToDisk ? "1m" : default,
@@ -299,6 +299,8 @@ namespace Garnet.test
                 await s.SaveAsync(SaveType.ForegroundSave).ConfigureAwait(false);
 #pragma warning restore CS0618 // Type or member is obsolete
             }
+
+            vectorManager.WaitForCleanupRequests();
 
             vectorManager.GetContextState(vectorSetContext, out var inUse, out var isCleaningUp, out _);
 
