@@ -11,6 +11,7 @@ using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using Embedded.server;
 using Garnet.common;
 using Garnet.server;
 using NUnit.Framework;
@@ -3220,6 +3221,126 @@ namespace Garnet.test
 
             var sim = (RedisResult[])db.Execute("VSIM", [Key, "FP32", MemoryMarshal.Cast<float, byte>(query).ToArray(), "COUNT", "10", "EF", "64"]);
             ClassicAssert.IsNotEmpty(sim);
+        }
+
+        /// <summary>
+        /// Seeds <paramref name="count"/> random vectors into <paramref name="key"/>, then evicts the entire main
+        /// log to disk with <c>LogAccessor.FlushAndEvict</c> so any subsequent delete callback runs against
+        /// disk-resident records (<c>status.Found == false</c>). Returns the little-endian element ids in insertion order.
+        /// </summary>
+        private List<byte[]> SeedVectorSetAndFlushToDisk(IDatabase db, string key, int dim, int count)
+        {
+            var rng = new Random(0);
+
+            var ids = new List<byte[]>(count);
+            for (var i = 0; i < count; i++)
+            {
+                var vec = new float[dim];
+                for (var d = 0; d < dim; d++)
+                    vec[d] = (float)rng.NextDouble();
+
+                var id = new byte[4];
+                BinaryPrimitives.WriteInt32LittleEndian(id, i);
+                ids.Add(id);
+
+                var res = db.Execute("VADD", [key, "FP32", MemoryMarshal.Cast<float, byte>(vec).ToArray(), id, "NOQUANT"]);
+                ClassicAssert.AreEqual(1, (int)res, $"VADD #{i} should succeed");
+            }
+
+            var store = server.Provider.StoreWrapper.store;
+            store.Log.FlushAndEvict(wait: true);
+            ClassicAssert.AreEqual(store.Log.TailAddress, store.Log.HeadAddress, "the whole main log should have been evicted to disk");
+
+            return ids;
+        }
+
+        /// <summary>
+        /// A VREM whose element records have been fully flushed to disk must still succeed (end-to-end, over RESP).
+        ///
+        /// The DiskANN delete callback (<c>VectorManager.DeleteCallbackUnmanaged</c>) issues a Tsavorite
+        /// Delete for each of the element's namespaced records. For a disk-resident record that Delete reports
+        /// <c>status.Found == false</c> even though the key logically exists — Tsavorite deletes are tombstone
+        /// appends and never read the old record back. The callback must therefore treat a completed-but-not-found
+        /// delete as success (<c>status.IsCompletedSuccessfully</c>); gating the return value on <c>status.Found</c>
+        /// would make VREM spuriously fail for any element that had been evicted to disk.
+        /// </summary>
+        [Test]
+        public void VREMOnDiskFlushedElementSucceeds()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            const string Key = nameof(VREMOnDiskFlushedElementSucceeds);
+            const int Dim = 16;
+            const int Count = 32;
+
+            var ids = SeedVectorSetAndFlushToDisk(db, Key, Dim, Count);
+            var target = ids[Count / 2];
+
+            // VREM an element whose records are on disk: must succeed (return 1) despite the not-found delete.
+            var removed = (int)db.Execute("VREM", [Key, target]);
+            ClassicAssert.AreEqual(1, removed, "VREM of a disk-flushed element must succeed");
+
+            // Removing it again must now report not-found, and the set must remain usable.
+            var removedAgain = (int)db.Execute("VREM", [Key, target]);
+            ClassicAssert.AreEqual(0, removedAgain, "second VREM of the same element must report not-found");
+
+            // The set must stay consistent: a similarity search anchored on a surviving element returns every
+            // remaining member and never the removed one.
+            var survivor = ids[0];
+            var neighbors = (byte[][])db.Execute("VSIM", [Key, "ELE", survivor, "COUNT", Count.ToString(), "EPSILON", "1.0", "EF", "200"]);
+            ClassicAssert.AreEqual(Count - 1, neighbors.Length, "VSIM should return every surviving element exactly once");
+            CollectionAssert.DoesNotContain(neighbors.Select(n => BinaryPrimitives.ReadInt32LittleEndian(n)).ToList(), Count / 2, "the removed element must not appear in similarity results");
+        }
+
+        /// <summary>
+        /// Lower-level companion to <see cref="VREMOnDiskFlushedElementSucceeds"/> that drives the removal straight
+        /// through <see cref="VectorManager.TryRemove"/> (and therefore <c>DiskANNService.Remove</c>), bypassing RESP
+        /// parsing, integer encoding, and replication. It pins the bug to the exact layer it lived at: for a
+        /// disk-resident element the Tsavorite delete in <c>VectorManager.DeleteCallbackUnmanaged</c> completes with
+        /// <c>status.Found == false</c>. Before the fix the callback returned 0, <c>Service.Remove</c> returned false,
+        /// and <c>TryRemove</c> reported <see cref="VectorManagerResult.MissingElement"/>; after the fix it returns
+        /// <see cref="VectorManagerResult.OK"/>. A genuinely absent element still reports <c>MissingElement</c>.
+        /// </summary>
+        [Test]
+        public void VREMOnDiskFlushedElement_ServiceRemoveSucceeds()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            const string Key = nameof(VREMOnDiskFlushedElement_ServiceRemoveSucceeds);
+            const int Dim = 16;
+            const int Count = 32;
+
+            var ids = SeedVectorSetAndFlushToDisk(db, Key, Dim, Count);
+            var target = ids[Count / 2];
+
+            var session = new RespServerSession(0, new EmbeddedNetworkSender(), server.Provider.StoreWrapper, null, null, false);
+            var vectorManager = server.Provider.StoreWrapper.DefaultDatabase.VectorManager;
+            var keyBytes = Encoding.ASCII.GetBytes(Key);
+
+            // First removal targets a disk-resident element: Service.Remove must report success.
+            var removeResult = TryRemoveThroughService(vectorManager, session.storageSession, keyBytes, target);
+            ClassicAssert.AreEqual(VectorManagerResult.OK, removeResult, "Service.Remove must succeed for a disk-flushed element");
+
+            // The element is now gone from the graph, so a second removal genuinely misses.
+            var secondResult = TryRemoveThroughService(vectorManager, session.storageSession, keyBytes, target);
+            ClassicAssert.AreEqual(VectorManagerResult.MissingElement, secondResult, "removing an absent element must report MissingElement");
+
+            // Mirrors VectorStoreOps.VectorSetRemove: hold the shared index lock (which also binds ActiveThreadSession
+            // for the delete callback) while calling TryRemove, but skip RESP encoding and AOF replication.
+            static VectorManagerResult TryRemoveThroughService(VectorManager vectorManager, StorageSession storageSession, ReadOnlySpan<byte> key, ReadOnlySpan<byte> element)
+            {
+                var input = new StringInput(RespCommand.VREM, ref storageSession.parseState);
+                Span<byte> indexSpan = stackalloc byte[VectorManager.IndexSizeBytes];
+
+                using (vectorManager.ReadVectorIndex(storageSession, key, ref input, indexSpan, out var status))
+                {
+                    ClassicAssert.AreEqual(GarnetStatus.OK, status, "the flushed index must still be readable");
+
+                    return vectorManager.TryRemove(indexSpan, element);
+                }
+            }
         }
 
         [Test]

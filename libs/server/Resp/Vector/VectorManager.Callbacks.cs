@@ -388,7 +388,9 @@ namespace Garnet.server
             var status = ctx.Delete(keyWithNamespace);
             Debug.Assert(!status.IsPending, "Deletes should never go async");
 
-            return status.IsCompletedSuccessfully && status.Found ? (byte)1 : default;
+            // Note: we don't check status.Found here because Tsavorite deletes are just a tombstone entry.
+            // If the key was flushed to disk, status.Found will be false even though the key exists.
+            return status.IsCompletedSuccessfully ? (byte)1 : default;
         }
 
         [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
