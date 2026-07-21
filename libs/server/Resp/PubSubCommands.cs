@@ -3,7 +3,6 @@
 
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using Garnet.common;
 using Tsavorite.core;
 
@@ -21,9 +20,15 @@ namespace Garnet.server
         /// <inheritdoc />
         public override unsafe void Publish(PinnedSpanByte key, PinnedSpanByte value)
         {
+            // A session that publishes to a channel it is subscribed to re-enters this callback on the
+            // thread already holding the network sender lock (from the outer command's response path). In
+            // that reentrant case, write into the current output buffer and let the outer call own the lock
+            // and flush; the sender lock is not reentrant.
+            var reentrant = publishingThreadId == Environment.CurrentManagedThreadId;
             try
             {
-                networkSender.EnterAndGetResponseObject(out dcurr, out dend);
+                if (!reentrant)
+                    networkSender.EnterAndGetResponseObject(out dcurr, out dend);
 
                 WritePushLength(3);
 
@@ -35,7 +40,7 @@ namespace Garnet.server
                 WriteDirectLargeRespString(value.ReadOnlySpan);
 
                 // Flush the publish message for this subscriber
-                if (dcurr > networkSender.GetResponseObjectHead())
+                if (!reentrant && dcurr > networkSender.GetResponseObjectHead())
                     Send(networkSender.GetResponseObjectHead());
             }
             catch
@@ -44,16 +49,21 @@ namespace Garnet.server
             }
             finally
             {
-                networkSender.ExitAndReturnResponseObject();
+                if (!reentrant)
+                    networkSender.ExitAndReturnResponseObject();
             }
         }
 
         /// <inheritdoc />
         public override unsafe void PatternPublish(PinnedSpanByte pattern, PinnedSpanByte key, PinnedSpanByte value)
         {
+            // See Publish(): in the reentrant self-publish case, write into the existing buffer rather than
+            // re-acquiring the non-reentrant network sender lock.
+            var reentrant = publishingThreadId == Environment.CurrentManagedThreadId;
             try
             {
-                networkSender.EnterAndGetResponseObject(out dcurr, out dend);
+                if (!reentrant)
+                    networkSender.EnterAndGetResponseObject(out dcurr, out dend);
 
                 WritePushLength(4);
 
@@ -65,7 +75,7 @@ namespace Garnet.server
                 WriteDirectLargeRespString(key.ReadOnlySpan);
                 WriteDirectLargeRespString(value.ReadOnlySpan);
 
-                if (dcurr > networkSender.GetResponseObjectHead())
+                if (!reentrant && dcurr > networkSender.GetResponseObjectHead())
                     Send(networkSender.GetResponseObjectHead());
             }
             catch
@@ -74,7 +84,8 @@ namespace Garnet.server
             }
             finally
             {
-                networkSender.ExitAndReturnResponseObject();
+                if (!reentrant)
+                    networkSender.ExitAndReturnResponseObject();
             }
         }
 
@@ -100,7 +111,9 @@ namespace Garnet.server
                 return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_CLUSTER_DISABLED);
             }
 
-            Debug.Assert(isSubscriptionSession == false);
+            // A subscription-mode session may issue PUBLISH (RESP3, or RESP2 until rejected by
+            // IsAllowedInSubscriptionMode); the broker can then deliver the message back to this same
+            // session reentrantly, handled by the guard in Publish()/PatternPublish().
             // PUBLISH channel message => [*3\r\n$7\r\nPUBLISH\r\n$]7\r\nchannel\r\n$7\r\message\r\n
 
             var key = parseState.GetArgSliceByRef(0);
@@ -111,7 +124,19 @@ namespace Garnet.server
                 return AbortWithErrorMessage("ERR PUBLISH is disabled, enable it with --pubsub option."u8);
             }
 
-            var numClients = subscribeBroker.PublishNow(key, value);
+            // Set the publishing thread id only for the duration of the synchronous broadcast, so a
+            // reentrant self-delivery (publishing to a self-subscribed channel) can be detected in
+            // Publish()/PatternPublish() without paying this cost on the general command path.
+            int numClients;
+            publishingThreadId = Environment.CurrentManagedThreadId;
+            try
+            {
+                numClients = subscribeBroker.PublishNow(key, value);
+            }
+            finally
+            {
+                publishingThreadId = 0;
+            }
             if (storeWrapper.serverOptions.EnableCluster)
             {
                 var _key = parseState.GetArgSliceByRef(0).Span;

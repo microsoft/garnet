@@ -90,6 +90,8 @@ namespace Garnet.server
             var inputCopy = input;
             inputCopy.arg1 = VADDAppendLogArg;
 
+            ExceptionInjectionHelper.ResetAndWait(ExceptionInjectionType.VectorSet_Pause_Before_Synthetic_Replication_Rmw);
+
             var res = context.RMW((FixedSpanByteKey)key, ref inputCopy);
 
             if (res.IsPending)
@@ -121,6 +123,8 @@ namespace Garnet.server
             inputCopy.arg1 = VREMAppendLogArg;
 
             inputCopy.parseState.InitializeWithArgument(PinnedSpanByte.FromPinnedSpan(element));
+
+            ExceptionInjectionHelper.ResetAndWait(ExceptionInjectionType.VectorSet_Pause_Before_Synthetic_Replication_Rmw);
 
             var res = context.RMW((FixedSpanByteKey)key, ref inputCopy);
 

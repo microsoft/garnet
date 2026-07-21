@@ -139,6 +139,17 @@ namespace Garnet.common
         }
 
         /// <summary>
+        /// Synchronous, event-driven counterpart to <see cref="ResetAndWaitAsync"/>: signals arrival by
+        /// clearing the condition, then parks on the shared <see cref="TaskCompletionSource{TResult}"/>
+        /// until it is re-enabled.
+        /// </summary>
+        /// <param name="exceptionType"></param>
+        public static void ResetAndWait(ExceptionInjectionType exceptionType)
+        {
+            AsyncUtils.BlockingWait(ResetAndWaitAsync(exceptionType));
+        }
+
+        /// <summary>
         /// Wait on clear condition
         /// </summary>
         /// <param name="exceptionType"></param>
