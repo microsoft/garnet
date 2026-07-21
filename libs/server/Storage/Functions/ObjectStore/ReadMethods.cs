@@ -32,7 +32,11 @@ namespace Garnet.server
             if (input.header.type != 0)
             {
                 var garnetObject = (IGarnetObject)srcLogRecord.ValueObject;
-                if ((byte)input.header.type < CustomCommandManager.CustomTypeIdStartOffset)
+
+                // header.type == All signals a generic scan (COSCAN); dispatch it to the stored
+                // object's Operate (custom objects scan; built-in objects return WrongType).
+                if (input.header.type == GarnetObjectType.All ||
+                    (byte)input.header.type < CustomCommandManager.CustomTypeIdStartOffset)
                 {
                     var opResult = garnetObject.Operate(ref input, ref output, functionsState.respProtocolVersion);
                     if (output.HasWrongType)

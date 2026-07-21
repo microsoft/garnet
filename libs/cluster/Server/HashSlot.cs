@@ -6,7 +6,9 @@ using System.Runtime.InteropServices;
 namespace Garnet.cluster
 {
     /// <summary>
-    /// NodeRole identifier
+    /// Slot state.
+    /// Persisted in the cluster config (ClusterConfigSerializer) and gossiped, so values are
+    /// EXPLICIT and APPEND-ONLY: never change/reorder an existing value; add new states at the end.
     /// </summary>
     public enum SlotState : byte
     {
@@ -19,27 +21,27 @@ namespace Garnet.cluster
         /// <summary>
         /// Slot assigned and ready to be used.
         /// </summary>
-        STABLE,
+        STABLE = 0x1,
         /// <summary>
         /// Slot is being moved to another node.
         /// </summary>
-        MIGRATING,
+        MIGRATING = 0x2,
         /// <summary>
         /// Reverse of migrating, preparing node to receive commands for that slot.
         /// </summary>
-        IMPORTING,
+        IMPORTING = 0x3,
         /// <summary>
         /// Slot in FAIL state.
         /// </summary>
-        FAIL,
+        FAIL = 0x4,
         /// <summary>
         /// Not a slot state. Used with SETSLOT
         /// </summary>
-        NODE,
+        NODE = 0x5,
         /// <summary>
         /// Invalid slot state
         /// </summary>
-        INVALID,
+        INVALID = 0x6,
     }
 
     /// <summary>

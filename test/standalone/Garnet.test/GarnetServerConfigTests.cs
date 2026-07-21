@@ -1239,6 +1239,46 @@ namespace Garnet.test
         }
 
         [Test]
+        [TestCase(TestUtils.pemCertFile)]
+        [TestCase("testcert.crt")]
+        [TestCase("testcert.cer")]
+        public void CertFileName_AcceptsPemExtensions(string certFileName)
+        {
+            // Only the extension is under test here, so it's fine to point multiple extensions at the same PEM contents.
+            var certFilePath = certFileName;
+            if (certFileName != TestUtils.pemCertFile)
+            {
+                Directory.CreateDirectory(TestUtils.MethodTestDir);
+                certFilePath = Path.Combine(TestUtils.MethodTestDir, certFileName);
+                File.Copy(TestUtils.pemCertFile, certFilePath, overwrite: true);
+            }
+
+            string[] args = ["--tls", "--cert-file-name", certFilePath];
+            var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out var invalidOptions, out _, out _, silentMode: true);
+            ClassicAssert.IsTrue(parseSuccessful);
+            ClassicAssert.AreEqual(0, invalidOptions.Count);
+            ClassicAssert.AreEqual(certFilePath, options.CertFileName);
+
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
+        }
+
+        [Test]
+        public void CertFileName_RejectsUnsupportedExtension()
+        {
+            // File exists, but its extension is not one of the recognized certificate extensions.
+            Directory.CreateDirectory(TestUtils.MethodTestDir);
+            var unsupportedExtensionFile = Path.Combine(TestUtils.MethodTestDir, "testcert.txt");
+            File.Copy(TestUtils.certFile, unsupportedExtensionFile, overwrite: true);
+
+            string[] args = ["--tls", "--cert-file-name", unsupportedExtensionFile];
+            var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out _, out var invalidOptions, out _, out _, silentMode: true);
+            ClassicAssert.IsFalse(parseSuccessful);
+            ClassicAssert.IsTrue(invalidOptions.Contains(nameof(Options.CertFileName)));
+
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
+        }
+
+        [Test]
         [TestCase(ConnectionProtectionOption.No)]
         [TestCase(ConnectionProtectionOption.Local)]
         [TestCase(ConnectionProtectionOption.Yes)]
