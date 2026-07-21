@@ -15,13 +15,15 @@ namespace Tsavorite.core
     {
         private readonly OverflowPool<PageUnit<Empty>> freePagePool;
 
+#if DEBUG
         /// <summary>
         /// Test-only hook: when set and it returns true, <see cref="WriteAsync"/> drops the page flush instead of
         /// issuing the device write, so the bytes never become durable. This reproduces the graceful-shutdown
         /// durability race where an acked write's async flush has not completed before the log is disposed
-        /// (CommittedUntilAddress lags TailAddress). Null (and free) in production.
+        /// (CommittedUntilAddress lags TailAddress). Compiled out in Release.
         /// </summary>
         public static Func<bool> DropPageFlushTestHook;
+#endif
 
         /// <summary>Constructor</summary>
 #pragma warning disable IDE0290 // Use primary constructor
@@ -102,8 +104,10 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         protected override void WriteAsync<TContext>(long flushPage, DeviceIOCompletionCallback callback, PageAsyncFlushResult<TContext> asyncResult)
         {
+#if DEBUG
             if (DropPageFlushTestHook != null && DropPageFlushTestHook())
                 return;
+#endif
 
             WriteInlinePageAsync((IntPtr)pagePointers[flushPage % BufferSize],
                     (ulong)(AlignedPageSizeBytes * flushPage),
