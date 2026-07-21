@@ -368,8 +368,97 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// GETSET
+        /// SETC key value
+        /// SET variant that returns the AOF logical (start) address at which this write was recorded.
+        /// The returned address is a freshness token consumed by GETC to gate consistent replica reads.
+        /// The address is -1 when the write was not logged to the AOF (e.g. AOF disabled).
         /// </summary>
+        private bool NetworkSETC<TGarnetApi>(ref TGarnetApi storageApi)
+            where TGarnetApi : IGarnetApi
+        {
+            if (parseState.Count != 2)
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.SETC));
+
+            var key = parseState.GetArgSliceByRef(0);
+            var value = parseState.GetArgSliceByRef(1);
+
+            var status = storageApi.SET(key, value, out var address);
+
+            if (status == GarnetStatus.WRONGTYPE)
+            {
+                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
+                    SendAndReset();
+                return true;
+            }
+
+            WriteInt64(address);
+            return true;
+        }
+
+        /// <summary>
+        /// GETC key address timeout
+        /// GET variant that gates the read on an AOF freshness token produced by SETC.
+        /// On a replica, blocks until this node has applied — on the physical sublog that owns the key —
+        /// the AOF past the given logical address before reading, so the returned value is at least as
+        /// fresh as that write (and every write before it on that sublog). This works in BOTH single-log
+        /// and multi-log modes (single-log is just the one-sublog case). The caller-supplied
+        /// <c>timeout</c> (seconds; non-positive means wait indefinitely) bounds that wait. On a multi-log
+        /// replica the read still runs the read-consistency protocol as well, so GETC applies both the
+        /// consistency and the staleness (applied-address) checks. No wait occurs on a primary or with
+        /// AOF disabled.
+        /// </summary>
+        private bool NetworkGETC<TGarnetApi>(ref TGarnetApi storageApi)
+            where TGarnetApi : IGarnetApi
+        {
+            if (parseState.Count != 3)
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.GETC));
+
+            var key = parseState.GetArgSliceByRef(0);
+            if (!parseState.TryGetLong(1, out var address))
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER);
+            if (!parseState.TryGetInt(2, out var timeoutSeconds))
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER);
+
+            // The caller supplies the timeout in seconds; convert to milliseconds for the wait API.
+            // Non-positive means wait indefinitely; clamp overflow to int.MaxValue.
+            var timeoutMs = timeoutSeconds <= 0
+                ? 0
+                : (int)Math.Min((long)timeoutSeconds * 1000, int.MaxValue);
+
+            // Per-sublog freshness gate before the Tsavorite Read: block until this replica has applied
+            // the physical sublog that owns `key` past `address`. No-op on a primary / with AOF off.
+            // Works in BOTH single-log (sublog 0) and multi-log (per-key sublog) modes.
+            var clusterProvider = storeWrapper.clusterProvider;
+            if (clusterProvider is not null &&
+                !clusterProvider.TryWaitForAppliedAddress(key.ReadOnlySpan, address, timeoutMs))
+            {
+                WriteError(CmdStrings.RESP_ERR_GETC_TIMEOUT);
+                return true;
+            }
+
+            // GETC measures replication staleness on top of any consistency guarantees. On a multi-log
+            // replica the read below still runs the read-consistency protocol; the gate above adds the
+            // per-sublog applied-address (staleness) wait. Both checks apply.
+            StringInput input = new(RespCommand.GET, arg1: -1);
+            var output = GetStringOutput();
+            var status = storageApi.GET(key, ref input, ref output);
+
+            switch (status)
+            {
+                case GarnetStatus.WRONGTYPE:
+                    WriteError(CmdStrings.RESP_ERR_WRONG_TYPE);
+                    break;
+                case GarnetStatus.OK:
+                    ProcessOutput(output.SpanByteAndMemory);
+                    break;
+                case GarnetStatus.NOTFOUND:
+                    Debug.Assert(output.SpanByteAndMemory.IsSpanByte);
+                    WriteNull();
+                    break;
+            }
+
+            return true;
+        }
         private bool NetworkGETSET<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {

@@ -218,6 +218,21 @@ namespace Garnet.server
             return status.IsWrongType ? GarnetStatus.WRONGTYPE : GarnetStatus.OK;
         }
 
+        /// <summary>
+        /// SET that additionally returns the logical (start) address of the AOF record produced by this write.
+        /// Used by the SETC command to hand the client a freshness token for consistent replica reads.
+        /// <paramref name="address"/> is -1 when the write was not logged to the AOF (e.g. AOF disabled).
+        /// </summary>
+        public GarnetStatus SET<TStringContext>(PinnedSpanByte key, PinnedSpanByte value, out long address, ref TStringContext context)
+            where TStringContext : ITsavoriteContext<FixedSpanByteKey, StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
+        {
+            // Reset the side-channel so a missing AOF enqueue (e.g. AOF disabled) is reported as -1.
+            functionsState.lastEnqueuedAddress = -1;
+            var status = context.Upsert((FixedSpanByteKey)key, value.ReadOnlySpan);
+            address = functionsState.lastEnqueuedAddress;
+            return status.IsWrongType ? GarnetStatus.WRONGTYPE : GarnetStatus.OK;
+        }
+
         public GarnetStatus SET<TStringContext>(PinnedSpanByte key, ref StringInput input, PinnedSpanByte value, ref TStringContext context)
             where TStringContext : ITsavoriteContext<FixedSpanByteKey, StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
         {

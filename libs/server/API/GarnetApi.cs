@@ -90,6 +90,10 @@ namespace Garnet.server
             => storageSession.SET(key, value, ref stringContext);
 
         /// <inheritdoc />
+        public GarnetStatus SET(PinnedSpanByte key, PinnedSpanByte value, out long address)
+            => storageSession.SET(key, value, out address, ref stringContext);
+
+        /// <inheritdoc />
         public GarnetStatus SET(PinnedSpanByte key, ref StringInput input, PinnedSpanByte value)
             => storageSession.SET(key, ref input, value, ref stringContext);
 

@@ -144,6 +144,61 @@ for details.
 
 ---
 
+## Read-Your-Writes Consistency (SETC / GETC)
+
+`SETC` and `GETC` are a pair of Garnet-specific commands for measuring replica **staleness** (replication
+lag). `SETC` behaves like `SET` but additionally returns the
+**AOF logical address** at which the write was recorded — a *freshness token*. `GETC` behaves like `GET` but
+takes that token plus a timeout and, on a replica, waits until the replica has applied — on the physical
+sublog that owns the key — the AOF past that address before reading, guaranteeing the returned value is at
+least as fresh as the write identified by the token.
+
+`GETC` waits in **both single-log and multi-log** modes (single-log is simply the one-sublog case). On a
+multi-log replica the read additionally runs the read-consistency protocol, so `GETC` applies both the
+consistency and the staleness (applied-address) checks. On a primary, or with AOF disabled, there is nothing
+to wait for and the read is served immediately.
+
+### **SETC**
+
+#### **Syntax**
+
+```bash
+SETC key value
+```
+
+Sets `key` to hold the string `value` (overwriting any existing value, like `SET`) and returns the AOF
+logical address of the resulting write.
+
+#### **Response**
+
+- **Integer reply**: the AOF logical (start) address at which the write was recorded, or `-1` if the write
+  was not logged to the AOF (e.g. AOF is disabled).
+
+---
+
+### **GETC**
+
+#### **Syntax**
+
+```bash
+GETC key address timeout
+```
+
+Gets the string value of `key`. On a replica, waits up to `timeout` seconds
+(a non-positive `timeout` means wait indefinitely) until this node has applied — on the physical sublog that
+owns `key` — the AOF past `address` before reading. This applies in both single-log and multi-log modes; on a
+multi-log replica the read also runs the read-consistency protocol, so both the consistency and staleness
+checks apply. On a primary, or with AOF disabled, the read is served immediately and `address`/`timeout` are
+ignored.
+
+#### **Response**
+
+- **Bulk string reply**: the value of `key`.
+- **Nil reply**: if `key` does not exist.
+- **Error reply**: if the wait exceeds `timeout` before the replica catches up to `address`.
+
+---
+
 ## Native ETag Support
 
 Garnet provides support for ETags on raw strings. By using the ETag-related commands outlined below, you can associate any **string based key-value pair** inserted into Garnet with an automatically updated ETag.

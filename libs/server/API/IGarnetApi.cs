@@ -29,6 +29,13 @@ namespace Garnet.server
         GarnetStatus SET(PinnedSpanByte key, PinnedSpanByte value);
 
         /// <summary>
+        /// SET that also returns the logical (start) AOF address of the record produced by this write
+        /// (a freshness token for consistent replica reads via GETC). <paramref name="address"/> is -1
+        /// when the write was not logged to the AOF (e.g. AOF disabled).
+        /// </summary>
+        GarnetStatus SET(PinnedSpanByte key, PinnedSpanByte value, out long address);
+
+        /// <summary>
         /// SET
         /// </summary>
         GarnetStatus SET(PinnedSpanByte key, ref StringInput input, PinnedSpanByte value);

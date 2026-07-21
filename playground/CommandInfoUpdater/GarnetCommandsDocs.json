@@ -80,6 +80,56 @@
     ]
   },
   {
+    "Command": "SETC",
+    "Name": "SETC",
+    "Summary": "Sets the string value of a key and returns the AOF logical address (freshness token) at which the write was recorded.",
+    "Group": "String",
+    "Complexity": "O(1)",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "VALUE",
+        "DisplayText": "value",
+        "Type": "String"
+      }
+    ]
+  },
+  {
+    "Command": "GETC",
+    "Name": "GETC",
+    "Summary": "Gets the string value of a key, waiting (in single-log mode on a replica) up to the given timeout until the node has applied the AOF past the given address token before reading.",
+    "Group": "String",
+    "Complexity": "O(1)",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "ADDRESS",
+        "DisplayText": "address",
+        "Type": "Integer"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "TIMEOUT",
+        "DisplayText": "timeout",
+        "Type": "Integer"
+      }
+    ]
+  },
+  {
     "Command": "EXPDELSCAN",
     "Name": "EXPDELSCAN",
     "Group": "Generic",

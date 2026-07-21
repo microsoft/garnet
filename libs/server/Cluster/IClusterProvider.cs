@@ -93,6 +93,24 @@ namespace Garnet.server
         bool IsReplica(string nodeId);
 
         /// <summary>
+        /// Per-sublog freshness gate used by the GETC command.
+        /// On a replica, blocks until this node has APPLIED, on the physical sublog that owns
+        /// <paramref name="key"/>, past the given logical address <paramref name="address"/> (i.e. the
+        /// write recorded at that address, and everything before it on that sublog, is visible in the
+        /// store). In single-log mode there is one sublog (index 0); in multi-log mode each physical
+        /// sublog is an independent, totally-ordered stream, so freshness is a per-sublog scalar check.
+        /// This measures replication STALENESS and is intentionally independent of the multi-log
+        /// read-consistency protocol (which GETC bypasses). Returns immediately (true) when no wait is
+        /// required: on a primary, with AOF disabled, or for a negative <paramref name="address"/>
+        /// (write was not logged). Returns false if <paramref name="timeoutMs"/> elapses first.
+        /// </summary>
+        /// <param name="key">The key being read; selects the physical sublog to wait on.</param>
+        /// <param name="address">AOF logical (start) address token returned by SETC.</param>
+        /// <param name="timeoutMs">Maximum time to wait, in milliseconds; non-positive means wait indefinitely.</param>
+        /// <returns>True if caught up (or no wait needed); false on timeout.</returns>
+        bool TryWaitForAppliedAddress(ReadOnlySpan<byte> key, long address, int timeoutMs);
+
+        /// <summary>
         /// On checkpoint initiated
         /// </summary>
         /// <param name="CheckpointCoveredAofAddress"></param>

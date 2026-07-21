@@ -3551,6 +3551,21 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
+        public async Task GetCACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "GETC",
+                [DoGetCAsync]
+            ).ConfigureAwait(false);
+
+            static async Task DoGetCAsync(GarnetClient client)
+            {
+                string val = await client.ExecuteForStringResultAsync("GETC", ["foo", "0", "1000"]).ConfigureAwait(false);
+                ClassicAssert.IsNull(val);
+            }
+        }
+
+        [Test]
         public async Task GetSetACLsAsync()
         {
             int keyIx = 0;
@@ -5945,6 +5960,22 @@ namespace Garnet.test.Resp.ACL
             {
                 string val = await client.ExecuteForStringResultAsync("SET", ["foo", "bar", "XX", "KEEPTTL"]).ConfigureAwait(false);
                 ClassicAssert.AreEqual("OK", val);
+            }
+        }
+
+        [Test]
+        public async Task SetCACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "SETC",
+                [DoSetCAsync]
+            ).ConfigureAwait(false);
+
+            static async Task DoSetCAsync(GarnetClient client)
+            {
+                // AOF is disabled in this fixture, so SETC reports -1 (write not logged), but still returns an integer.
+                long val = await client.ExecuteForLongResultAsync("SETC", ["foo", "bar"]).ConfigureAwait(false);
+                ClassicAssert.AreEqual(-1, val);
             }
         }
 

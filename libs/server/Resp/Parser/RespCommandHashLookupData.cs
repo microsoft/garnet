@@ -26,6 +26,8 @@ namespace Garnet.server
             // String commands
             Add("GET", RespCommand.GET);
             Add("SET", RespCommand.SET);
+            Add("SETC", RespCommand.SETC);
+            Add("GETC", RespCommand.GETC);
             Add("DEL", RespCommand.DEL);
             Add("INCR", RespCommand.INCR);
             Add("DECR", RespCommand.DECR);

@@ -812,6 +812,7 @@ namespace Garnet.server
                 RespCommand.GET => NetworkGET(ref storageApi),
                 RespCommand.GETEX => NetworkGETEX(ref storageApi),
                 RespCommand.SET => NetworkSET(ref storageApi),
+                RespCommand.SETC => NetworkSETC(ref storageApi),
                 RespCommand.SETEX => NetworkSETEX(false, ref storageApi),
                 RespCommand.SETNX => NetworkSETNX(false, ref storageApi),
                 RespCommand.PSETEX => NetworkSETEX(true, ref storageApi),
@@ -1095,6 +1096,7 @@ namespace Garnet.server
                 RespCommand.CustomProcedure => NetworkCustomProcedure(),
                 //General key commands
                 RespCommand.DBSIZE => NetworkDBSIZE(ref storageApi),
+                RespCommand.GETC => NetworkGETC(ref storageApi),
                 RespCommand.KEYS => NetworkKEYS(ref storageApi),
                 RespCommand.SCAN => NetworkSCAN(ref storageApi),
                 RespCommand.TYPE => NetworkTYPE(ref storageApi),

@@ -782,7 +782,7 @@ namespace Garnet.server
                 value,
                 ref input,
                 epochAccessor,
-                out _);
+                out functionsState.lastEnqueuedAddress);
         }
 
         /// <summary>
@@ -817,7 +817,7 @@ namespace Garnet.server
                 key,
                 ref input,
                 epochAccessor,
-                out _);
+                out functionsState.lastEnqueuedAddress);
         }
 
         /// <summary>
@@ -837,7 +837,7 @@ namespace Garnet.server
                 key,
                 value: default,
                 epochAccessor,
-                out _);
+                out functionsState.lastEnqueuedAddress);
         }
 
         BitFieldCmdArgs GetBitFieldArguments(ref StringInput input)

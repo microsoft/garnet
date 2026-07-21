@@ -139,6 +139,35 @@ namespace Garnet.cluster
         }
 
         /// <inheritdoc />
+        public bool TryWaitForAppliedAddress(ReadOnlySpan<byte> key, long address, int timeoutMs)
+        {
+            // No gate needed when: the write was not logged (address < 0), AOF is off, or this node is
+            // not a replica (a primary always has the data at the requested address).
+            if (address < 0 || !serverOptions.EnableAOF || !IsReplica())
+                return true;
+
+            // Map the key to its physical sublog. In single-log mode this is always sublog 0; in
+            // multi-log mode each physical sublog is an independent, totally-ordered stream. Either way
+            // the freshness check collapses to one scalar comparison: has the replica APPLIED that
+            // sublog past this record's start address? The applied offset advances to the record's END
+            // once it is replayed into the store, so a value strictly greater than the start address
+            // means the record at `address` (and every record before it on that sublog) is now visible.
+            // NOTE: this measures replication STALENESS and is independent of the multi-log
+            // read-consistency protocol, which GETC bypasses for its read.
+            var sublogIdx = storeWrapper.appendOnlyFile.Log.GetPhysicalSublogIdx(key);
+            var timeoutTicks = timeoutMs <= 0 ? long.MaxValue : (long)((timeoutMs / 1000.0) * Stopwatch.Frequency);
+            var startTimestamp = Stopwatch.GetTimestamp();
+            while (replicationManager.GetSublogReplicationOffset(sublogIdx) <= address)
+            {
+                if (Stopwatch.GetTimestamp() - startTimestamp > timeoutTicks)
+                    return false;
+                Thread.Yield();
+            }
+
+            return true;
+        }
+
+        /// <inheritdoc />
         public void ResetGossipStats()
             => clusterManager?.gossipStats.Reset();
 

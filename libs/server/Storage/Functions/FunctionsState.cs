@@ -30,6 +30,14 @@ namespace Garnet.server
         public bool StoredProcMode;
         public readonly VectorManager vectorManager;
 
+        /// <summary>
+        /// Logical (start) address of the most recent AOF record enqueued by a write on this session.
+        /// Written by the post-write logging callbacks (WriteLogUpsert/WriteLogRMW/WriteLogDelete) and
+        /// read at the storage-session/API level immediately after a synchronous write to surface the
+        /// AOF address to the client (e.g. SETC). Not meaningful when AOF is disabled.
+        /// </summary>
+        public long lastEnqueuedAddress;
+
         internal ReadOnlySpan<byte> nilResp => respProtocolVersion >= 3 ? CmdStrings.RESP3_NULL_REPLY : CmdStrings.RESP_ERRNOTFOUND;
 
         public FunctionsState(GarnetAppendOnlyFile appendOnlyFile, WatchVersionMap watchVersionMap, StoreWrapper storeWrapper,
