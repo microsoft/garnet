@@ -161,6 +161,13 @@ namespace Garnet.test.cluster
             throw new ArgumentException(msg);
         }
 
+        public static void IgnoreIfExceptionInjectionDisabled()
+        {
+#if !DEBUG
+            Assert.Ignore("Relies on ExceptionInjectionHelper, only enabled in DEBUG builds");
+#endif
+        }
+
         public IPEndPoint[] GetEndpoints()
             => [.. endpoints.Select(x => (IPEndPoint)x)];
 

@@ -9,7 +9,7 @@ namespace Garnet.server
     class CustomObjectCommandWrapper
     {
         static readonly int MinMapSize = 8;
-        static readonly byte MaxSubId = 31; // RespInputHeader uses the 3 MSBs of SubId, so SubId must fit in the 5 LSBs
+        static readonly byte MaxSubId = 255; // SubId now occupies its own header byte (RespInputHeader.subId), so it may use the full byte range
 
         public readonly byte id;
         public readonly CustomObjectFactory factory;

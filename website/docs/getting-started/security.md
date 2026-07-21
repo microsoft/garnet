@@ -16,9 +16,12 @@ at `<root>/test/testcerts`). You need to start both the server and the client wi
 ## Using GarnetServer with TLS
 
 On the server side, you need to start Garnet with TLS enabled. From the command prompt, the parameters to add are `--tls` to enable TLS, details of the certificates such as certificate 
-name (we only accept .pfx files) via `--cert-file-name`, TLS certificate password via `--cert-password`, whether TLS client certificate is required via `--client-certificate-required`, issuer 
+name via `--cert-file-name`, TLS certificate password via `--cert-password`, whether TLS client certificate is required via `--client-certificate-required`, issuer 
 certificate to validate against via `--issuer-certificate-path`, and whether TLS checks certificate revocation via `--certificate-revocation-check-mode`. You can also use a certificate via
 subject name on Windows via `cert-subject-name`. Certificate refresh can be done automatically via the option `--cert-refresh-freq`.
+
+`--cert-file-name` accepts either a PKCS#12/PFX file, or a PEM-encoded certificate (`.pem`, `.crt`, `.cer`); the actual format is auto-detected from the file's contents. When pointing
+`--cert-file-name` at a PEM certificate, `--cert-password` is repurposed as the path to the matching PEM private key file, unless the private key is already included in the certificate file.
 
 ```bash
     GarnetServer --tls --cert-file-name testcert.pfx --cert-password placeholder
@@ -28,7 +31,8 @@ If you host your own GarnetServer via NuGet, you can specify the SSL connection 
 prototype sample of this as `GarnetTlsOptions.cs`.
 
 :::tip
-In case you have the private and public key files in .key and .crt formats, you can create the .pfx format using openssl:
+In case you have the private and public key files in .key and .crt formats, you can use them directly via `--cert-file-name <server-name>.crt --cert-password <server-name>.key`,
+or create the .pfx format using openssl:
 
 ```bash
     openssl pkcs12 -inkey <server-name>.key -in <server-name>.crt -export -out server-cert.pfx

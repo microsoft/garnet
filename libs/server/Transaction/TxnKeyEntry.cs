@@ -76,6 +76,15 @@ namespace Garnet.server
             }
         }
 
+        /// <summary>Number of keys registered for locking in this transaction.</summary>
+        internal int Count => keyCount;
+
+        /// <summary>
+        /// Hash of the key at <paramref name="index"/>. This is the Garnet key hash (equal to <c>GarnetLog.HASH</c> of the
+        /// key bytes), so it can be used directly for AOF sublog routing.
+        /// </summary>
+        internal long GetKeyHash(int index) => keys[index].keyHash;
+
         public void AddKey(PinnedSpanByte keyArgSlice, LockType type)
         {
             var keyHash = comparison.UnifiedTransactionalContext.GetKeyHash((FixedSpanByteKey)keyArgSlice);

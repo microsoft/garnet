@@ -26,6 +26,7 @@ The Azure Cosmos DB Garnet Cache implements a growing subset of the [open-source
 12. [SET](#set)
 13. [SORTED SET](#sorted-set)
 14. [STRING](#string)
+15. [VECTOR SET (Preview)](#vector-set)
 
 ## Full Commands List
 
@@ -164,7 +165,7 @@ The Azure Cosmos DB Garnet Cache implements a growing subset of the [open-source
 |  | [PUNSUBSCRIBE](../commands/analytics.md#punsubscribe) | ➕ |  |
 |  | [SUBSCRIBE](../commands/analytics.md#subscribe) | ➕ |  |
 |  | [UNSUBSCRIBE](../commands/analytics.md#unsubscribe) | ➕ |  |
-| <span id="scripting">**SCRIPTING**</span> | [EVAL](../commands/scripting-and-functions.md#eval) | ➕ |  |
+| <span id="scripting">**SCRIPTING**</span> | [EVAL](../commands/scripting-and-functions.md#eval) | ➕ | Scripting is disabled by default; contact [CosmosGarnetCache@service.microsoft.com](mailto:cosmosgarnetcache@service.microsoft.com) to enable. |
 |  | EVAL_RO | ➖ |  |
 |  | [EVALSHA](../commands/scripting-and-functions.md#evalsha) | ➕ |  |
 |  | EVALSHA_RO | ➖ |  |
@@ -278,6 +279,18 @@ The Azure Cosmos DB Garnet Cache implements a growing subset of the [open-source
 |  | [SETRANGE](../commands/raw-string.md#setrange) | ➕ |  |
 |  | [STRLEN](../commands/raw-string.md#strlen) | ➕ |  |
 |  | [SUBSTR](../commands/raw-string.md#substr) | ➕ | (Deprecated) |
+| <span id="vector-set">**VECTOR SET (Preview)**</span> | [VADD](../commands/vector-sets.md#vadd) | ➕ | Preview |
+|  | [VSIM](../commands/vector-sets.md#vsim) | ➕ | Preview |
+|  | [VREM](../commands/vector-sets.md#vrem) | ➕ | Preview |
+|  | [VEMB](../commands/vector-sets.md#vemb) | ➕ | Preview (no `RAW`) |
+|  | [VDIM](../commands/vector-sets.md#vdim) | ➕ | Preview |
+|  | [VINFO](../commands/vector-sets.md#vinfo) | ➕ | Preview |
+|  | [VGETATTR](../commands/vector-sets.md#vgetattr) | ➕ | Preview |
+|  | VCARD | ➖ | Not yet implemented |
+|  | VISMEMBER | ➖ | Not yet implemented |
+|  | VLINKS | ➖ | Not yet implemented |
+|  | VRANDMEMBER | ➖ | Not yet implemented |
+|  | VSETATTR | ➖ | Not yet implemented |
 
 
 ## Learn More

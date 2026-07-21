@@ -78,7 +78,7 @@ namespace Garnet.cluster
             this.logger = logger;
 
             if (clusterProvider.serverOptions.EnableRangeIndexPreview)
-                rangeIndexMigrationState = new RangeIndexMigrationReceiveState(clusterProvider.storeWrapper.DefaultDatabase.RangeIndexManager, logger);
+                rangeIndexMigrationState = new RangeIndexMigrationReceiveState(clusterProvider.storeWrapper.DefaultDatabase.RangeIndexManager, clusterProvider.storeWrapper.appendOnlyFile, logger);
         }
 
         public unsafe void ProcessClusterCommands(RespCommand command, VectorManager vectorManager, ref SessionParseState parseState, ref byte* dcurr, ref byte* dend)

@@ -90,6 +90,7 @@ namespace Garnet.test
         GarnetTestRangeIndex = 34700,
         GarnetTestScripting = 34800,
         GarnetTestVectorSet = 34900,
+        GarnetTestBfTreeInterop = 35000,
     }
 
     internal static class TestUtils
@@ -144,6 +145,9 @@ namespace Garnet.test
 
         public const string certFile = "testcert.pfx";
         public const string certPassword = "placeholder";
+
+        public const string pemCertFile = "testcert.pem";
+        public const string pemCertKeyFile = "testcert.key.pem";
 
         internal static bool IsRunningAzureTests
         {
@@ -253,6 +257,13 @@ namespace Garnet.test
                 Assert.Ignore("Environment variable RunAzureTests is not defined");
         }
 
+        public static void IgnoreIfExceptionInjectionDisabled()
+        {
+#if !DEBUG
+            Assert.Ignore("Relies on ExceptionInjectionHelper, only enabled in DEBUG builds");
+#endif
+        }
+
         public static void WaitUntilNextSecond(IDatabase db, long baseSeconds)
         {
             // LASTSAVE returns Unix seconds via DateTimeOffset.ToUnixTimeSeconds() so it has
@@ -282,6 +293,8 @@ namespace Garnet.test
             int pageCount = 0,
             bool enableAOF = false,
             bool enableTLS = false,
+            string tlsCertFileName = null,
+            string tlsCertPassword = null,
             bool disableObjects = false,
             int metricsSamplingFreq = -1,
             bool latencyMonitor = false,
@@ -385,8 +398,8 @@ namespace Garnet.test
                 WaitForCommit = commitWait,
                 AclStrictCustomCommands = aclStrictCustomCommands,
                 TlsOptions = enableTLS ? new GarnetTlsOptions(
-                    certFileName: certFile,
-                    certPassword: certPassword,
+                    certFileName: tlsCertFileName ?? certFile,
+                    certPassword: tlsCertPassword ?? certPassword,
                     clientCertificateRequired: true,
                     certificateRevocationCheckMode: X509RevocationMode.NoCheck,
                     issuerCertificatePath: null,

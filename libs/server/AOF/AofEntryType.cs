@@ -95,6 +95,12 @@ namespace Garnet.server
         /// Unified store delete
         /// </summary>
         UnifiedStoreDelete = 0x73,
+
+        /// <summary>
+        /// One chunk of a migrated Range Index's serialized BF-Tree file — an internal AOF-only
+        /// transport entry, replayed via <c>RangeIndexManager.HandleRangeIndexStreamReplay</c>.
+        /// </summary>
+        RangeIndexStreamChunk = 0x80,
     }
 
     internal enum AofStoreType : byte
@@ -124,7 +130,8 @@ namespace Garnet.server
             AofEntryType.UnifiedStoreStringUpsert or
             AofEntryType.UnifiedStoreObjectUpsert or
             AofEntryType.UnifiedStoreRMW or
-            AofEntryType.UnifiedStoreDelete => true,
+            AofEntryType.UnifiedStoreDelete or
+            AofEntryType.RangeIndexStreamChunk => true,
             _ => false,
         };
     }
