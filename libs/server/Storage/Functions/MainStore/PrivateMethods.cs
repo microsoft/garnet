@@ -362,6 +362,11 @@ namespace Garnet.server
 
         static (int, int) NormalizeRange(int start, int end, int len)
         {
+            // len == 0 has no valid range regardless of start/end; returning early also avoids
+            // a division/modulo by zero below when start < 0.
+            if (len == 0)
+                return (0, 0);
+
             if (start >= 0 && start <= len)//start in [0,len]
             {
                 if (end < 0 && (len + end) > 0)
