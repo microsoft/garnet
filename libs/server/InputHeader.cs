@@ -633,6 +633,16 @@ namespace Garnet.server
         public nint CallbackContext { get; set; }
         public nint Callback { get; set; }
 
+#if DEBUG
+        /// <summary>
+        /// DEBUG-only test hook. When non-zero, the RMW updaters invoke this pointer (as a plain Cdecl call, with no
+        /// SuppressGCTransition) to populate the value buffer instead of <see cref="Callback"/>. This lets managed
+        /// tests drive the RMW resize paths, whose production data callback is a SuppressGCTransition pointer that
+        /// cannot dispatch to a managed method. Compiled out of Release builds, so it has no production footprint.
+        /// </summary>
+        public nint TestCallback { get; set; }
+#endif
+
         public bool AlignmentExpected { get; set; }
 
         [MemberNotNullWhen(returnValue: true, member: nameof(MaxMigrationHeapAllocationSize))]

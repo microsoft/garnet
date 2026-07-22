@@ -298,12 +298,9 @@ namespace Garnet.server
 
                     unsafe
                     {
-                        // Callback takes: dataCallbackContext, dataPtr, dataLength
-                        var callback = (delegate* unmanaged[Cdecl, SuppressGCTransition]<nint, nint, nuint, void>)input.Callback;
-
                         var dataPtr = (nint)Unsafe.AsPointer(ref MemoryMarshal.GetReference(alignedValue));
                         var dataLen = (nuint)input.WriteDesiredSize;
-                        callback(input.CallbackContext, dataPtr, dataLen);
+                        InvokeDataCallback(in input, dataPtr, dataLen);
 
                         return logRecord.TrySetContentLengths(logRecord.ValueSpan.Length, in sizeInfo);
                     }
@@ -378,13 +375,10 @@ namespace Garnet.server
 
                     unsafe
                     {
-                        // Callback takes: dataCallbackContext, dataPtr, dataLength
-                        var callback = (delegate* unmanaged[Cdecl, SuppressGCTransition]<nint, nint, nuint, void>)input.Callback;
-
                         var dataPtr = (nint)Unsafe.AsPointer(ref MemoryMarshal.GetReference(newValueAligned));
                         var dataLen = (nuint)input.WriteDesiredSize;
 
-                        callback(input.CallbackContext, dataPtr, dataLen);
+                        InvokeDataCallback(in input, dataPtr, dataLen);
                     }
 
                     return dstLogRecord.TrySetContentLengths(dstLogRecord.ValueSpan.Length, in sizeInfo);
@@ -457,13 +451,10 @@ namespace Garnet.server
 
                     unsafe
                     {
-                        // Callback takes: dataCallbackContext, dataPtr, dataLength
-                        var callback = (delegate* unmanaged[Cdecl, SuppressGCTransition]<nint, nint, nuint, void>)input.Callback;
-
                         var dataPtr = (nint)Unsafe.AsPointer(ref MemoryMarshal.GetReference(alignedValue));
                         var dataLen = (nuint)input.WriteDesiredSize;
 
-                        callback(input.CallbackContext, dataPtr, dataLen);
+                        InvokeDataCallback(in input, dataPtr, dataLen);
                     }
 
                     return true;
@@ -511,6 +502,26 @@ namespace Garnet.server
         [DoesNotReturn]
         private static TReturn LogRecordOperationsNotExpected<TReturn>([CallerMemberName] string callerName = null, [CallerLineNumber] int lineNum = -1)
         => throw new InvalidOperationException($"LogRecord related operations are not expected, was: {callerName} on {lineNum}");
+
+        /// <summary>
+        /// Invokes the DiskANN data-fill callback that populates the value buffer during an RMW update. In DEBUG
+        /// builds a non-zero <c>VectorInput.TestCallback</c> is invoked instead (as a plain Cdecl call with
+        /// no SuppressGCTransition), which lets managed tests drive the RMW resize paths; production always uses the
+        /// SuppressGCTransition <see cref="VectorInput.Callback"/>.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private static unsafe void InvokeDataCallback(in VectorInput input, nint dataPtr, nuint dataLen)
+        {
+#if DEBUG
+            if (input.TestCallback != 0)
+            {
+                ((delegate* unmanaged[Cdecl]<nint, nint, nuint, void>)input.TestCallback)(input.CallbackContext, dataPtr, dataLen);
+                return;
+            }
+#endif
+            // Callback takes: dataCallbackContext, dataPtr, dataLength
+            ((delegate* unmanaged[Cdecl, SuppressGCTransition]<nint, nint, nuint, void>)input.Callback)(input.CallbackContext, dataPtr, dataLen);
+        }
 
         // TODO: Remove all this alignment hackery when Tsavorite can enforce it
 

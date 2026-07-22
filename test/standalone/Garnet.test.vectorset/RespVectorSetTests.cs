@@ -3967,6 +3967,48 @@ namespace Garnet.test
             WriteStageAndVerify("fizzy", "a shrunk element must read back the smaller value with no stale trailing bytes"); // 5 bytes
         }
 
+#if DEBUG
+        /// <summary>
+        /// Multi-stage exercise of the VectorSessionFunctions RMW resize path on a single element, the counterpart
+        /// to <see cref="VectorElementUpsertResizePreservesValue"/> but through the DiskANN ReadModifyWrite path:
+        /// an initial write (InitialUpdater) then an equal-size overwrite, a grow, and a shrink. Each stage must
+        /// fill and read back exactly the new size with no residue from the previous one. In the mutable region the
+        /// overwrites route to InPlaceUpdater, which must resize the record (adjusting the content length) rather
+        /// than writing past it on a grow or leaving stale trailing bytes on a shrink. In the read-only region each
+        /// overwrite routes to CopyUpdater, whose carry-over of the old value must be bounded so a shrink does not
+        /// overflow the smaller destination. Uses the DEBUG-only managed fill callback (VectorInput.TestCallback),
+        /// since the production data callback is a SuppressGCTransition pointer that cannot dispatch to managed code.
+        /// </summary>
+        [Test]
+        public void VectorElementRmwResizePreservesValue([Values(false, true)] bool inReadOnlyRegion)
+        {
+            var ns = new byte[] { 11 };
+            var key = new byte[] { 0, 0, 0, 0 };
+
+            void RmwStageAndVerify(int size, byte fill, string because)
+            {
+                if (inReadOnlyRegion)
+                {
+                    var store = server.Provider.StoreWrapper.store;
+                    store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, wait: true);
+                }
+
+                Status status = default;
+                ClassicAssert.DoesNotThrow(() => status = RmwVectorElement(ns, key, size, fill), because);
+                ClassicAssert.IsTrue(status.IsCompletedSuccessfully, $"{because} (status {status})");
+
+                var readBack = ReadVectorElement(ns, key);
+                ClassicAssert.AreEqual(size, readBack.Length, because);
+                CollectionAssert.AreEqual(Enumerable.Repeat(fill, size).ToArray(), readBack, because);
+            }
+
+            RmwStageAndVerify(9, 0xA1, "the initial RMW (InitialUpdater) must create and fill the element");                          // 9 bytes
+            RmwStageAndVerify(9, 0xB2, "an equal-size RMW must overwrite the value in place");                                        // 9 bytes
+            RmwStageAndVerify(11, 0xC3, "a grown RMW must not overflow and must read back the larger value");                        // 11 bytes
+            RmwStageAndVerify(5, 0xD4, "a shrunk RMW must read back the smaller value with no stale trailing bytes");                // 5 bytes
+        }
+#endif
+
         /// <summary>
         /// Drives a single VectorSessionFunctions Upsert of a namespaced element value, mirroring the production
         /// write path in <see cref="VectorManager"/>'s DiskANN write callback: AlignmentExpected input, a pinned
@@ -4041,6 +4083,56 @@ namespace Garnet.test
                 }
             }
         }
+
+#if DEBUG
+        /// <summary>
+        /// Drives a single VectorSessionFunctions RMW of a namespaced element, mirroring the production DiskANN
+        /// ReadModifyWrite callback: an AlignmentExpected input carrying the desired size and a data-fill callback,
+        /// against a dedicated Vector session. Uses the DEBUG-only <c>VectorInput.TestCallback</c> (a plain-Cdecl
+        /// managed fill) so the RMW resize paths run under a managed callback, which the production
+        /// SuppressGCTransition pointer forbids. A non-zero sentinel <c>Callback</c> selects the callback branch; it
+        /// is never dereferenced because TestCallback takes precedence.
+        /// </summary>
+        private unsafe Status RmwVectorElement(byte[] namespaceBytes, byte[] key, int size, byte fill)
+        {
+            var storeWrapper = server.Provider.StoreWrapper;
+            var functionsState = storeWrapper.CreateFunctionsState();
+            var functions = new VectorSessionFunctions(functionsState);
+            ClassicAssert.IsTrue(storeWrapper.TryGetDatabase(0, out var database));
+
+            using var session = database.Store.NewSession<VectorElementKey, VectorInput, VectorOutput, long, VectorSessionFunctions>(functions);
+            var context = session.BasicContext;
+
+            fixed (byte* nsPtr = namespaceBytes)
+            fixed (byte* keyPtr = key)
+            {
+                var elementKey = new VectorElementKey(new ReadOnlySpan<byte>(nsPtr, namespaceBytes.Length), new ReadOnlySpan<byte>(keyPtr, key.Length));
+                var input = new VectorInput
+                {
+                    AlignmentExpected = true,
+                    WriteDesiredSize = size,
+                    CallbackContext = (nint)fill,
+                    Callback = (nint)1,
+                    TestCallback = (nint)(delegate* unmanaged[Cdecl]<nint, nint, nuint, void>)&FillElement,
+                };
+                var output = new VectorOutput();
+
+                var status = context.RMW(elementKey, ref input, ref output);
+                if (status.IsPending)
+                    _ = context.CompletePending(wait: true);
+
+                return status;
+            }
+        }
+
+        /// <summary>
+        /// DEBUG-only element data-fill callback: fills the whole value buffer with the byte passed as context.
+        /// Invoked as a plain Cdecl function pointer from the RMW updaters via VectorInput.TestCallback.
+        /// </summary>
+        [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+        private static unsafe void FillElement(nint context, nint dataPtr, nuint dataLen)
+        => new Span<byte>((void*)dataPtr, (int)dataLen).Fill((byte)context);
+#endif
 
         /// <summary>
         /// Create a new GarnetServer instance with common parameters.
