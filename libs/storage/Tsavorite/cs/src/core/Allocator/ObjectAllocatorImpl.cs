@@ -1180,7 +1180,18 @@ namespace Tsavorite.core
 
             asyncResult.callback = callback;
             asyncResult.destinationPtr = destinationPtr;
-            asyncResult.maxAddressOffsetOnPage = aligned_read_length;
+
+            // Bound the object-record walk (in DeserializeObjectsOnPage) to the caller's valid-data extent when one was provided.
+            // For a partial page read the caller sets maxAddressOffsetOnPage to the scan/recovery end (untilAddress), which can be
+            // mid-page and is smaller than the sector-aligned device read length. Walking to the aligned length would process records
+            // that lie ABOVE untilAddress (the page physically continues past the requested range). Such a record can straddle the
+            // read end, so the fields GetObjectLogRecordStartPositionAndLengths reads near its tail -- the ObjectLogPosition word and
+            // the R11 value-length high bits -- fall past the bytes actually transferred and are read from the un-read buffer tail.
+            // That tail is only incidentally zero (the read buffer is cleared before the read); a different boundary alignment could
+            // bisect a field and yield arbitrary bytes. Either way the resulting position/length is bogus and corrupts the computed
+            // object-log range. Only fall back to the read length when the caller left the extent unset.
+            if (asyncResult.maxAddressOffsetOnPage == 0)
+                asyncResult.maxAddressOffsetOnPage = aligned_read_length;
 
             device.ReadAsync(alignedSourceAddress, destinationPtr, aligned_read_length, AsyncReadPageWithObjectsCallback<TContext>, asyncResult);
         }

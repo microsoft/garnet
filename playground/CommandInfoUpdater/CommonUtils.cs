@@ -137,6 +137,9 @@ namespace CommandInfoUpdater
             // Find commands / sub-commands to remove
             foreach (var existingCommand in existingCommandsInfo)
             {
+                // Skip commands in the ignore list so they are neither added nor removed
+                if (commandsToIgnore != null && commandsToIgnore.Contains(existingCommand.Key)) continue;
+
                 var existingSubCommands = existingCommand.Value.SubCommands;
 
                 // If supported commands do not contain existing parent command, add it to the list and indicate parent command should be removed
@@ -149,11 +152,14 @@ namespace CommandInfoUpdater
                 // If supported commands contain existing parent command and no sub-commands are indicated in existing commands, no sub-commands to remove
                 if (existingSubCommands == null) continue;
 
-                // Set sub-commands to remove as the difference between supported sub-commands and existing command's sub-commands
+                // Set sub-commands to remove as the difference between supported sub-commands and existing command's sub-commands,
+                // excluding any sub-commands in the ignore list
                 var subCommandsToRemove = (supportedCommands[existingCommand.Key].SubCommands == null
                         ? existingSubCommands
                         : existingSubCommands.Where(sc =>
                             !supportedCommands[existingCommand.Key].SubCommands!.ContainsKey(sc.Name)))
+                    .Where(sc => !subCommandsToIgnore.TryGetValue(existingCommand.Key, out var ignoredSubCommands) ||
+                                 !ignoredSubCommands.Contains(sc.Name))
                     .Select(sc => new SupportedCommand(sc.Name))
                     .ToArray();
 
@@ -177,7 +183,7 @@ namespace CommandInfoUpdater
         /// <param name="logger">Logger</param>
         /// <returns>True if user wishes to continue, false otherwise</returns>
         internal static bool GetUserConfirmation(IDictionary<SupportedCommand, bool> commandsToAdd, IDictionary<SupportedCommand, bool> commandsToRemove,
-            ILogger logger)
+            ILogger logger, bool autoConfirm = false)
         {
             var logCommandsToAdd = commandsToAdd.Where(kvp => kvp.Value).Select(c => c.Key.Command).ToList();
             var logSubCommandsToAdd = commandsToAdd.Where(c => c.Key.SubCommands != null)
@@ -202,6 +208,12 @@ namespace CommandInfoUpdater
             {
                 logger.LogInformation("No commands to update.");
                 return false;
+            }
+
+            if (autoConfirm)
+            {
+                logger.LogInformation("Auto-confirm (--yes) enabled, proceeding without prompting.");
+                return true;
             }
 
             logger.LogCritical("Would you like to continue? (Y/N)");

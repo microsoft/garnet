@@ -58,7 +58,10 @@ namespace Garnet.server
         /// Locks keys according to command's key specifications
         /// </summary>
         /// <param name="cmdInfo">Simplified command info</param>
-        internal void LockKeys(SimpleRespCommandInfo cmdInfo)
+        /// <param name="isSubCommand">Whether the command's key indices should be resolved as a subcommand (an extra
+        /// token consumed by the parser). This is <c>cmdInfo.IsSubCommand</c> for regular subcommands, but is also true
+        /// for BITOP, whose operation argument is consumed by the parser.</param>
+        internal void LockKeys(SimpleRespCommandInfo cmdInfo, bool isSubCommand)
         {
             if (cmdInfo.KeySpecs == null || cmdInfo.KeySpecs.Length == 0)
                 return;
@@ -67,7 +70,7 @@ namespace Garnet.server
 
             foreach (var keySpec in cmdInfo.KeySpecs)
             {
-                if (!respSession.parseState.TryGetKeySearchArgsFromSimpleKeySpec(keySpec, cmdInfo.IsSubCommand, out var searchArgs))
+                if (!respSession.parseState.TryGetKeySearchArgsFromSimpleKeySpec(keySpec, isSubCommand, out var searchArgs))
                     continue;
 
                 var isReadOnly = (keySpec.Flags & KeySpecificationFlags.RO) == KeySpecificationFlags.RO;
