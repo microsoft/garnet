@@ -3926,7 +3926,7 @@ namespace Garnet.test
             var storeWrapper = server.Provider.StoreWrapper;
             var firstWrite = true;
 
-            void WriteAndVerify(string content, string because)
+            void WriteAndVerify(string content, bool expectInPlace, string because)
             {
                 if (inReadOnlyRegion)
                 {
@@ -3961,8 +3961,10 @@ namespace Garnet.test
 
                             if (firstWrite || inReadOnlyRegion)
                                 ClassicAssert.IsTrue(status.Record.Created, $"a {(firstWrite ? "first" : "read-only")} write must append a new record");
+                            else if (expectInPlace)
+                                ClassicAssert.IsTrue(status.Record.InPlaceUpdated, $"a mutable overwrite that fits must update in place ({because})");
                             else
-                                ClassicAssert.IsTrue(status.Record.InPlaceUpdated, "a mutable-region overwrite must update the record in place");
+                                ClassicAssert.IsTrue(status.Record.Created, $"a mutable overwrite that outgrows the record must reallocate ({because})");
 
                             firstWrite = false;
                         }
@@ -3988,10 +3990,12 @@ namespace Garnet.test
                 }
             }
 
-            WriteAndVerify("fizz buzz", "the initial element write must round-trip the bytes verbatim");     // 9 bytes
-            WriteAndVerify("buzz fizz", "an equal-size overwrite must replace the value in place");          // 9 bytes
-            WriteAndVerify("hello world", "a grown element must not overflow and must read back the larger value"); // 11 bytes
-            WriteAndVerify("fizzy", "a shrunk element must read back the smaller value with no stale trailing bytes"); // 5 bytes
+            WriteAndVerify("spice", expectInPlace: false, "the initial element write must round-trip the bytes verbatim");                       // 5B  create
+            WriteAndVerify("worms", expectInPlace: true, "an equal-size overwrite must replace the value in place");                             // 5B  same size
+            WriteAndVerify("spicey", expectInPlace: true, "a <4B grow must be absorbed by the alignment slack and stay in place");               // 6B  grow +1
+            WriteAndVerify("he who controls the spice controls the universe", expectInPlace: false, "a >4B grow must not overflow and must reallocate to fit the larger value"); // 47B grow +41 (Dune)
+            WriteAndVerify("spice must flow!", expectInPlace: true, "a >4B shrink must read back the smaller value with no stale trailing bytes"); // 16B shrink -31
+            WriteAndVerify("spice must flow", expectInPlace: true, "a <4B shrink must read back the smaller value with no stale trailing bytes");  // 15B shrink -1
         }
 
         /// <summary>
