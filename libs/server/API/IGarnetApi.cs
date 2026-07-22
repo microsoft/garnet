@@ -345,6 +345,20 @@ namespace Garnet.server
 
         #endregion
 
+        #region OBJECT
+
+        /// <summary>
+        /// Inspects the internals of a key (OBJECT ENCODING / REFCOUNT / IDLETIME / FREQ).
+        /// The specific subcommand is carried in the input header command.
+        /// </summary>
+        /// <param name="key">Name of the key to inspect</param>
+        /// <param name="input"></param>
+        /// <param name="output"></param>
+        /// <returns>GarnetStatus</returns>
+        GarnetStatus OBJECT(PinnedSpanByte key, ref UnifiedInput input, ref UnifiedOutput output);
+
+        #endregion
+
         #region SortedSet Methods
 
         /// <summary>

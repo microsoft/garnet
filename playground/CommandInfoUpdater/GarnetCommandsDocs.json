@@ -1,5 +1,85 @@
 [
   {
+    "Command": "OBJECT",
+    "Name": "OBJECT",
+    "Summary": "A container for object introspection commands.",
+    "Group": "Generic",
+    "Complexity": "Depends on subcommand.",
+    "SubCommands": [
+      {
+        "Command": "OBJECT_ENCODING",
+        "Name": "OBJECT|ENCODING",
+        "Summary": "Returns the internal encoding of a Garnet object.",
+        "Group": "Generic",
+        "Complexity": "O(1)",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandKeyArgument",
+            "Name": "KEY",
+            "DisplayText": "key",
+            "Type": "Key",
+            "KeySpecIndex": 0
+          }
+        ]
+      },
+      {
+        "Command": "OBJECT_FREQ",
+        "Name": "OBJECT|FREQ",
+        "Summary": "Not supported in Garnet: always returns an error, as access frequency (LFU) is not tracked.",
+        "Group": "Generic",
+        "Complexity": "O(1)",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandKeyArgument",
+            "Name": "KEY",
+            "DisplayText": "key",
+            "Type": "Key",
+            "KeySpecIndex": 0
+          }
+        ]
+      },
+      {
+        "Command": "OBJECT_HELP",
+        "Name": "OBJECT|HELP",
+        "Summary": "Returns helpful text about the different subcommands.",
+        "Group": "Generic",
+        "Complexity": "O(1)"
+      },
+      {
+        "Command": "OBJECT_IDLETIME",
+        "Name": "OBJECT|IDLETIME",
+        "Summary": "Returns the idle time of a Garnet object; always 0, as Garnet does not track per-key idle time.",
+        "Group": "Generic",
+        "Complexity": "O(1)",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandKeyArgument",
+            "Name": "KEY",
+            "DisplayText": "key",
+            "Type": "Key",
+            "KeySpecIndex": 0
+          }
+        ]
+      },
+      {
+        "Command": "OBJECT_REFCOUNT",
+        "Name": "OBJECT|REFCOUNT",
+        "Summary": "Returns the reference count of a Garnet object; always 1, as Garnet does not share value objects.",
+        "Group": "Generic",
+        "Complexity": "O(1)",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandKeyArgument",
+            "Name": "KEY",
+            "DisplayText": "key",
+            "Type": "Key",
+            "KeySpecIndex": 0
+          }
+        ]
+      }
+    ]
+  },
+  {
     "Command": "EXPDELSCAN",
     "Name": "EXPDELSCAN",
     "Group": "Generic",
@@ -1517,6 +1597,13 @@
         "Summary": "Sent by primary to replica to force to FLUSH its database",
         "Group": "Cluster",
         "Complexity": "O(1)"
+      },
+      {
+        "Command": "CLUSTER_MLOG_KEY_TIME",
+        "Name": "CLUSTER|MLOG_KEY_TIME",
+        "Summary": "Returns sequence number for provided key.",
+        "Group": "Cluster",
+        "Complexity": "O(1)"
       }
     ]
   },
@@ -2123,6 +2210,7 @@
   },
   {
     "Command": "RIDEL",
+    "Name": "RI.DEL",
     "Summary": "Deletes an entry from a RangeIndex.",
     "Group": "Generic",
     "Complexity": "O(log N)",
@@ -2160,6 +2248,7 @@
   },
   {
     "Command": "RIGET",
+    "Name": "RI.GET",
     "Summary": "Gets the value of an entry in a RangeIndex.",
     "Group": "Generic",
     "Complexity": "O(log N)",
@@ -2197,6 +2286,7 @@
   },
   {
     "Command": "RIRANGE",
+    "Name": "RI.RANGE",
     "Summary": "Returns entries in a key range from a RangeIndex.",
     "Group": "Generic",
     "Complexity": "O(log N + M) where M is the number of entries returned",
@@ -2336,6 +2426,204 @@
         "Name": "VALUE",
         "DisplayText": "value",
         "Type": "String"
+      }
+    ]
+  },
+  {
+    "Command": "VADD",
+    "Name": "VADD",
+    "Summary": "Add a new element into the vector set.",
+    "Group": "Vector",
+    "Complexity": "O(log(N))",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      }
+    ]
+  },
+  {
+    "Command": "VCARD",
+    "Name": "VCARD",
+    "Summary": "Return the number of elements in a vector set.",
+    "Group": "Vector",
+    "Complexity": "O(1)",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      }
+    ]
+  },
+  {
+    "Command": "VDIM",
+    "Name": "VDIM",
+    "Summary": "Return the number of dimensions in a vector set.",
+    "Group": "Vector",
+    "Complexity": "O(1)",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      }
+    ]
+  },
+  {
+    "Command": "VEMB",
+    "Name": "VEMB",
+    "Summary": "Return the approximate vector associated with an element in a vector set.",
+    "Group": "Vector",
+    "Complexity": "O(1)",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      }
+    ]
+  },
+  {
+    "Command": "VGETATTR",
+    "Name": "VGETATTR",
+    "Summary": "Return the JSON attributes associated with the element in the vector set.",
+    "Group": "Vector",
+    "Complexity": "O(1)",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      }
+    ]
+  },
+  {
+    "Command": "VINFO",
+    "Name": "VINFO",
+    "Summary": "Return details about a vector set, including dimensions, quantization, and structure.",
+    "Group": "Vector",
+    "Complexity": "O(1)",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      }
+    ]
+  },
+  {
+    "Command": "VISMEMBER",
+    "Name": "VISMEMBER",
+    "Summary": "Determines whether a member belongs to vector set.",
+    "Group": "Vector",
+    "Complexity": "O(1)",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "ELEMENT",
+        "DisplayText": "element",
+        "Type": "String"
+      }
+    ]
+  },
+  {
+    "Command": "VLINKS",
+    "Name": "VLINKS",
+    "Summary": "Return the neighbors of an element in a vector set.",
+    "Group": "Vector",
+    "Complexity": "O(1)",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      }
+    ]
+  },
+  {
+    "Command": "VRANDMEMBER",
+    "Name": "VRANDMEMBER",
+    "Summary": "Return some number of random elements from a vector set.",
+    "Group": "Vector",
+    "Complexity": "O(1)",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      }
+    ]
+  },
+  {
+    "Command": "VREM",
+    "Name": "VREM",
+    "Summary": "Remove an element from a vector set.",
+    "Group": "Vector",
+    "Complexity": "O(log(N))",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      }
+    ]
+  },
+  {
+    "Command": "VSETATTR",
+    "Name": "VSETATTR",
+    "Summary": "Store attributes alongside a member of a vector set.",
+    "Group": "Vector",
+    "Complexity": "O(1)",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      }
+    ]
+  },
+  {
+    "Command": "VSIM",
+    "Name": "VSIM",
+    "Summary": "Return elements similar to a given vector or existing element of a vector set.",
+    "Group": "Vector",
+    "Complexity": "O(log(N))",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
       }
     ]
   }

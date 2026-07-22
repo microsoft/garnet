@@ -90,7 +90,7 @@ namespace Garnet.test.Resp.ACL
             ClassicAssert.IsTrue(RespCommandsInfo.TryGetRespCommandNames(out IReadOnlySet<string> advertisedCommands), "Couldn't get advertised RESP commands");
 
             // TODO: See if these commands could be identified programmatically
-            IEnumerable<string> withOnlySubCommands = ["ACL", "CLIENT", "CLUSTER", "CONFIG", "LATENCY", "MEMORY", "MODULE", "PUBSUB", "SCRIPT", "SLOWLOG"];
+            IEnumerable<string> withOnlySubCommands = ["ACL", "CLIENT", "CLUSTER", "CONFIG", "LATENCY", "MEMORY", "MODULE", "OBJECT", "PUBSUB", "SCRIPT", "SLOWLOG"];
             IEnumerable<string> notCoveredByACLs = allInfo.Where(static x => x.Value.Flags.HasFlag(RespCommandFlags.NoAuth)).Select(static kv => kv.Key);
 
             // Check tests against RespCommandsInfo
@@ -4809,6 +4809,82 @@ namespace Garnet.test.Resp.ACL
             {
                 string val = await client.ExecuteForStringResultAsync("MEMORY", ["USAGE", "foo", "SAMPLES", "10"]).ConfigureAwait(false);
                 ClassicAssert.IsNull(val);
+            }
+        }
+
+        [Test]
+        public async Task ObjectEncodingACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "OBJECT ENCODING",
+                [DoObjectEncodingAsync]
+            ).ConfigureAwait(false);
+
+            static async Task DoObjectEncodingAsync(GarnetClient client)
+            {
+                string val = await client.ExecuteForStringResultAsync("OBJECT", ["ENCODING", "foo"]).ConfigureAwait(false);
+                ClassicAssert.IsNull(val);
+            }
+        }
+
+        [Test]
+        public async Task ObjectFreqACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "OBJECT FREQ",
+                [DoObjectFreqAsync]
+            ).ConfigureAwait(false);
+
+            static async Task DoObjectFreqAsync(GarnetClient client)
+            {
+                string val = await client.ExecuteForStringResultAsync("OBJECT", ["FREQ", "foo"]).ConfigureAwait(false);
+                ClassicAssert.IsNull(val);
+            }
+        }
+
+        [Test]
+        public async Task ObjectIdletimeACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "OBJECT IDLETIME",
+                [DoObjectIdletimeAsync]
+            ).ConfigureAwait(false);
+
+            static async Task DoObjectIdletimeAsync(GarnetClient client)
+            {
+                string val = await client.ExecuteForStringResultAsync("OBJECT", ["IDLETIME", "foo"]).ConfigureAwait(false);
+                ClassicAssert.IsNull(val);
+            }
+        }
+
+        [Test]
+        public async Task ObjectRefcountACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "OBJECT REFCOUNT",
+                [DoObjectRefcountAsync]
+            ).ConfigureAwait(false);
+
+            static async Task DoObjectRefcountAsync(GarnetClient client)
+            {
+                string val = await client.ExecuteForStringResultAsync("OBJECT", ["REFCOUNT", "foo"]).ConfigureAwait(false);
+                ClassicAssert.IsNull(val);
+            }
+        }
+
+        [Test]
+        public async Task ObjectHelpACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "OBJECT HELP",
+                [DoObjectHelpAsync]
+            ).ConfigureAwait(false);
+
+            static async Task DoObjectHelpAsync(GarnetClient client)
+            {
+                string[] val = await client.ExecuteForStringArrayResultAsync("OBJECT", ["HELP"]).ConfigureAwait(false);
+                ClassicAssert.IsNotNull(val);
+                Assert.That(val.Length, Is.GreaterThan(0));
             }
         }
 

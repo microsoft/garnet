@@ -32,6 +32,10 @@ namespace Garnet.server
                 RespCommand.MIGRATE => HandleMigrate(in srcLogRecord, (int)input.arg1, ref output),
                 RespCommand.MEMORY_USAGE => HandleMemoryUsage(in srcLogRecord, ref output),
                 RespCommand.TYPE => HandleType(in srcLogRecord, ref output),
+                RespCommand.OBJECT_ENCODING => HandleObjectEncoding(in srcLogRecord, ref output),
+                RespCommand.OBJECT_REFCOUNT => HandleObjectRefCount(ref output),
+                RespCommand.OBJECT_IDLETIME => HandleObjectIdleTime(ref output),
+                RespCommand.OBJECT_FREQ => HandleObjectFreq(ref output),
                 RespCommand.TTL or
                 RespCommand.PTTL => HandleTtl(in srcLogRecord, ref output, cmd == RespCommand.PTTL),
                 RespCommand.EXPIRETIME or
@@ -39,6 +43,61 @@ namespace Garnet.server
                 RespCommand.RENAME => HandleRename(in srcLogRecord, ref output),
                 _ => throw new NotImplementedException(),
             };
+        }
+
+        private bool HandleObjectEncoding<TSourceLogRecord>(in TSourceLogRecord srcLogRecord,
+            ref UnifiedOutput output) where TSourceLogRecord : ISourceLogRecord
+        {
+            using var writer = new RespMemoryWriter(functionsState.respProtocolVersion, ref output.SpanByteAndMemory);
+
+            ReadOnlySpan<byte> encoding;
+            if (srcLogRecord.DataHeader.ValueIsObject)
+            {
+                // Garnet does not use the compact listpack/intset encodings; collections are stored as
+                // hashtable / linked-list / skiplist structures. Report the closest standard encoding name:
+                // hashtable (hash/set), quicklist (list), skiplist (sorted set).
+                encoding = srcLogRecord.ValueObject switch
+                {
+                    SortedSetObject => CmdStrings.skiplist,
+                    ListObject => CmdStrings.quicklist,
+                    SetObject => CmdStrings.hashtable,
+                    HashObject => CmdStrings.hashtable,
+                    _ => CmdStrings.hashtable,
+                };
+            }
+            else
+            {
+                // Garnet stores raw string values as bytes (inline or overflow); it has no native
+                // integer or embedded-string representation, so report "raw".
+                encoding = CmdStrings.raw;
+            }
+
+            writer.WriteBulkString(encoding);
+            return true;
+        }
+
+        private bool HandleObjectRefCount(ref UnifiedOutput output)
+        {
+            // Garnet does not share value objects, so the reference count is always 1.
+            using var writer = new RespMemoryWriter(functionsState.respProtocolVersion, ref output.SpanByteAndMemory);
+            writer.WriteInt64(1);
+            return true;
+        }
+
+        private bool HandleObjectIdleTime(ref UnifiedOutput output)
+        {
+            // Garnet does not track per-key LRU idle time.
+            using var writer = new RespMemoryWriter(functionsState.respProtocolVersion, ref output.SpanByteAndMemory);
+            writer.WriteInt64(0);
+            return true;
+        }
+
+        private bool HandleObjectFreq(ref UnifiedOutput output)
+        {
+            // Garnet does not implement an LFU maxmemory policy, so access frequency is not tracked.
+            using var writer = new RespMemoryWriter(functionsState.respProtocolVersion, ref output.SpanByteAndMemory);
+            writer.WriteError(CmdStrings.RESP_ERR_OBJECT_FREQ_UNSUPPORTED);
+            return true;
         }
 
         private bool HandleMemoryUsage<TSourceLogRecord>(in TSourceLogRecord srcLogRecord,
