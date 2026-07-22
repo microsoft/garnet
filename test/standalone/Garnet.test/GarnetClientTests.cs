@@ -613,29 +613,19 @@ namespace Garnet.test
                     .SetValue(networkWriter, new ThrowingNetworkSender());
 
                 using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(3));
-                // Flipped immediately before the waiter thread calls flushEvent.Wait, so the
-                // main thread has a deterministic (bounded-spin, not fixed-sleep) signal that
-                // the waiter is about to enter its wait rather than merely having started.
-                var aboutToWait = false;
-                Exception waiterException = null;
-                var waiterThread = new Thread(() =>
-                {
-                    Volatile.Write(ref aboutToWait, true);
-                    try { flushEvent.Wait(cts.Token); }
-                    catch (Exception ex) { waiterException = ex; }
-                })
-                { IsBackground = true };
-                waiterThread.Start();
-
-                var spinWait = new SpinWait();
-                while (!Volatile.Read(ref aboutToWait))
-                    spinWait.SpinOnce();
+                // WaitAsync registers with the underlying SemaphoreSlim synchronously, before
+                // returning - unlike the previous Wait()-on-a-background-thread approach, there
+                // is no window between "registered as a waiter" and "flush triggered" for a
+                // racing Set()/Dispose() to be missed, so no separate thread or readiness
+                // rendezvous is needed at all.
+                var waitTask = flushEvent.WaitAsync(cts.Token);
 
                 networkWriter.AsyncFlushPages(0, untilAddress);
 
-                ClassicAssert.IsTrue(waiterThread.Join(TimeSpan.FromSeconds(5)),
-                    "Waiter thread did not complete - FlushEvent was not signaled after a failed flush (regression)");
-                ClassicAssert.IsNull(waiterException, $"Waiter threw: {waiterException}");
+                var completed = waitTask.Wait(TimeSpan.FromSeconds(5));
+                ClassicAssert.IsTrue(completed,
+                    "FlushEvent was not signaled after a failed flush (regression)");
+                ClassicAssert.IsFalse(waitTask.IsFaulted, $"Wait faulted: {waitTask.Exception}");
             }
             finally
             {
