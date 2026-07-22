@@ -3925,7 +3925,7 @@ namespace Garnet.test
 
             var storeWrapper = server.Provider.StoreWrapper;
 
-            void WriteStageAndVerify(string content, string because)
+            void WriteAndVerify(string content, string because)
             {
                 if (inReadOnlyRegion)
                 {
@@ -3982,10 +3982,10 @@ namespace Garnet.test
                 }
             }
 
-            WriteStageAndVerify("fizz buzz", "the initial element write must round-trip the bytes verbatim");     // 9 bytes
-            WriteStageAndVerify("buzz fizz", "an equal-size overwrite must replace the value in place");          // 9 bytes
-            WriteStageAndVerify("hello world", "a grown element must not overflow and must read back the larger value"); // 11 bytes
-            WriteStageAndVerify("fizzy", "a shrunk element must read back the smaller value with no stale trailing bytes"); // 5 bytes
+            WriteAndVerify("fizz buzz", "the initial element write must round-trip the bytes verbatim");     // 9 bytes
+            WriteAndVerify("buzz fizz", "an equal-size overwrite must replace the value in place");          // 9 bytes
+            WriteAndVerify("hello world", "a grown element must not overflow and must read back the larger value"); // 11 bytes
+            WriteAndVerify("fizzy", "a shrunk element must read back the smaller value with no stale trailing bytes"); // 5 bytes
         }
 
         /// <summary>
