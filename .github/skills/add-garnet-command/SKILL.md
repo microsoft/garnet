@@ -483,6 +483,8 @@ new("DEBUG", RespCommand.DEBUG),
 
 Needed for commands that don't exist in standard Redis (e.g., `DELIFGREATER`, `SETIFMATCH`), or standard Redis commands whose info you need to override. Standard Redis commands (e.g., `DEBUG`, `GETDEL`) normally get their metadata from a running RESP server automatically via the CommandInfoUpdater tool — skip this step and Step 8c for those unless you need to override their info.
 
+> **Overriding a command that also exists on the baseline server** (e.g., `OBJECT`): the tool merges **per sub-command, by name** — your `GarnetCommandsInfo.json` / `GarnetCommandsDocs.json` entry wins and the baseline server fills in any sub-commands you did not specify. The override replaces the command's base fields wholesale (it is *not* a field-by-field merge), so include the parent command plus the sub-commands you want to control. This is how `OBJECT` reports Garnet-accurate sub-command summaries while the tool still generates the rest.
+
 Add a JSON entry:
 
 ```json
@@ -562,12 +564,16 @@ Do NOT invent new group names — the JSON deserializer will fail.
    dotnet run -f net10.0 --no-build -- --port 6399 --output ../../libs/resources
    ```
    (The `--port` must match the port of the local RESP server.)
-3. The tool will prompt `Would you like to continue? (Y/N)` **twice** (once for info, once for docs). Press `Y` for both.
+3. The tool will prompt `Would you like to continue? (Y/N)` **twice** (once for info, once for docs). Press `Y` for both, or pass `--yes` (see below) to auto-confirm.
 4. Kill the local RESP server afterward.
 
-**⚠️ Caveat:** The tool uses `Console.ReadKey()` which does NOT work with piped input. You must run it interactively (not via `echo "Y" | dotnet run ...`). For AI agents, use an async shell session and send `Y` keystrokes via interactive input (e.g., `write_bash`).
+**⚠️ Caveat:** By default the tool prompts via `Console.ReadKey()`, which does NOT work with piped input (`echo "Y" | dotnet run ...` fails). For non-interactive / scripted runs (including AI agents), pass **`--yes`** to auto-confirm both prompts; otherwise run it in a real interactive terminal.
 
 **⚠️ Caveat:** The tool requires a running RESP-compatible server (e.g., Valkey or Redis — **not** Garnet) to query standard command metadata. For Garnet-only commands, the tool reads from `GarnetCommandsInfo.json` and `GarnetCommandsDocs.json` instead.
+
+**⚠️ Caveat — unexpected "commands to remove":** If the tool reports commands *to remove* that you did not intend to delete, those commands exist in the resource files but are missing from `SupportedCommand.cs`. Register them in `SupportedCommand.cs` (and, for Garnet-only commands, in the override JSONs) rather than reaching for the `--ignore` flag. Every command Garnet ships should be registered, so a normal run needs **no `--ignore`**.
+
+> **See also:** [`playground/CommandInfoUpdater/README.md`](../../../playground/CommandInfoUpdater/README.md) documents the tool in full — the inputs you edit, the per-sub-command override/merge behavior, the baseline server (Docker), the `--ignore` escape hatch, and how to surgically regenerate a single command.
 
 ---
 

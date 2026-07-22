@@ -1492,6 +1492,78 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// OBJECT ENCODING|REFCOUNT|IDLETIME|FREQ key
+        /// </summary>
+        private bool NetworkOBJECT<TGarnetApi>(RespCommand subCommand, ref TGarnetApi storageApi)
+            where TGarnetApi : IGarnetApi
+        {
+            if (parseState.Count != 1)
+            {
+                var subCommandName = subCommand switch
+                {
+                    RespCommand.OBJECT_ENCODING => "object|encoding",
+                    RespCommand.OBJECT_FREQ => "object|freq",
+                    RespCommand.OBJECT_IDLETIME => "object|idletime",
+                    _ => "object|refcount",
+                };
+                return AbortWithWrongNumberOfArguments(subCommandName);
+            }
+
+            var key = parseState.GetArgSliceByRef(0);
+
+            var input = new UnifiedInput(subCommand);
+            var output = GetUnifiedOutput();
+
+            var status = storageApi.OBJECT(key, ref input, ref output);
+
+            if (status == GarnetStatus.OK)
+            {
+                ProcessOutput(output.SpanByteAndMemory);
+            }
+            else
+            {
+                // Missing key: reply with nil for all OBJECT subcommands.
+                WriteNull();
+            }
+
+            return true;
+        }
+
+        /// <summary>
+        /// OBJECT HELP
+        /// </summary>
+        private bool NetworkOBJECTHELP()
+        {
+            if (parseState.Count != 0)
+            {
+                return AbortWithWrongNumberOfArguments("object|help");
+            }
+
+            ReadOnlySpan<string> objectCommands =
+            [
+                "OBJECT <subcommand> [<arg> [value] [opt] ...]. Subcommands are:",
+                "ENCODING <key>",
+                "\tReturn the kind of internal representation used in order to store the value associated with a <key>.",
+                "FREQ <key>",
+                "\tNot supported in Garnet: always returns an error, as access frequency (LFU) is not tracked.",
+                "IDLETIME <key>",
+                "\tReturn the idle time of the <key>. Garnet does not track per-key idle time, so this is always 0.",
+                "REFCOUNT <key>",
+                "\tReturn the number of references of the value associated with the <key>. Garnet does not share value objects, so this is always 1.",
+                "HELP",
+                "\tPrints this help.",
+            ];
+
+            WriteArrayLength(objectCommands.Length);
+            foreach (var command in objectCommands)
+            {
+                WriteSimpleString(command);
+            }
+
+            return true;
+        }
+
+        /// <summary>
         /// ASYNC [ON|OFF|BARRIER]
         /// </summary>
         private bool NetworkASYNC()

@@ -237,7 +237,12 @@ namespace Garnet.server
             {
                 var base32Chars = "0123456789bcdefghjkmnpqrstuvwxyz"u8;
 
-                for (var i = 0; i < chars.Length; i++)
+                // A full 11-character geohash needs 55 bits (11 x 5), but only 52 bits of
+                // precision are stored. The final character cannot be derived from the stored
+                // bits, so for compatibility with standard geohash encoders it is always '0'.
+                chars[^1] = '0';
+
+                for (var i = 0; i < chars.Length - 1; i++)
                 {
                     // Shift and mask the five most significant bits for index to the base-32 table.
                     chars[i] = (char)base32Chars[(int)(hash >> (BitsOfPrecision - 5)) & 0x1F];
