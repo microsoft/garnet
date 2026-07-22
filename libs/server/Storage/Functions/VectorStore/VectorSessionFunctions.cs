@@ -365,10 +365,8 @@ namespace Garnet.server
                 {
                     Debug.Assert(input.WriteDesiredSize <= newValueAligned.Length, "Insufficient space for copy update, this should never happen");
 
-                    // Carry over only the overlapping prefix before the callback repopulates the buffer; bounding the
-                    // copy avoids overflowing the freshly-allocated destination on a shrink.
-                    var carryOver = Math.Min(oldValueAligned.Length, newValueAligned.Length);
-                    oldValueAligned[..carryOver].CopyTo(newValueAligned);
+                    // Must explicitly 0 before passing the buffer to the callback
+                    newValueAligned.Clear();
 
                     unsafe
                     {
