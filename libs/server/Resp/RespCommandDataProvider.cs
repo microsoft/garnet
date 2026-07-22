@@ -7,6 +7,7 @@ using System.Collections.ObjectModel;
 using System.IO;
 using System.Linq;
 using System.Text;
+using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Garnet.common;
@@ -106,6 +107,9 @@ namespace Garnet.server
         private static readonly JsonSerializerOptions SerializerOptions = new()
         {
             WriteIndented = true,
+            // Emit literal characters (e.g. ' + `) rather than \uXXXX escapes so the generated
+            // resource JSON files stay human-readable and diff-friendly.
+            Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
             DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingDefault,
             Converters = { new JsonStringEnumConverter(), new KeySpecConverter(), new RespCommandArgumentConverter() }
         };
@@ -134,7 +138,18 @@ namespace Garnet.server
                 var tmpRespCommandsData = new Dictionary<string, TData>(StringComparer.OrdinalIgnoreCase);
                 foreach (var data in respCommandsData)
                 {
-                    tmpRespCommandsData.Add(data.Name, data);
+                    if (string.IsNullOrWhiteSpace(data.Name))
+                    {
+                        logger?.LogError("Encountered a command entry with a missing or empty 'Name' field (Command: {command}) while parsing resp command data file (Path: {path}).", data.Command, path);
+                        return false;
+                    }
+
+                    if (!tmpRespCommandsData.TryAdd(data.Name, data))
+                    {
+                        logger?.LogError("Encountered a duplicate command 'Name' ({name}) while parsing resp command data file (Path: {path}).", data.Name, path);
+                        return false;
+                    }
+
                     if (data.SubCommands != null)
                     {
                         foreach (var subCommand in data.SubCommands)
