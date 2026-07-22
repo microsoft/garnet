@@ -13,10 +13,10 @@ using static Tsavorite.test.TestUtils;
 
 namespace Tsavorite.test.recovery
 {
-    using ObjAllocator = ObjectAllocator<StoreFunctions<LongKeyComparer, DefaultRecordTriggers>>;
-    using ObjStoreFunctions = StoreFunctions<LongKeyComparer, DefaultRecordTriggers>;
     using LargeObjAllocator = ObjectAllocator<StoreFunctions<TestObjectKey.Comparer, DefaultRecordTriggers>>;
     using LargeObjStoreFunctions = StoreFunctions<TestObjectKey.Comparer, DefaultRecordTriggers>;
+    using ObjAllocator = ObjectAllocator<StoreFunctions<LongKeyComparer, DefaultRecordTriggers>>;
+    using ObjStoreFunctions = StoreFunctions<LongKeyComparer, DefaultRecordTriggers>;
 
     /// <summary>
     /// Recovers an <see cref="ObjectAllocator{TStoreFunctions}"/> store's Snapshot checkpoint into a smaller memory budget
