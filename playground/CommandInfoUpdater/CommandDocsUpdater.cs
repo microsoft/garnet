@@ -27,7 +27,7 @@ namespace CommandInfoUpdater
         /// <param name="logger">Logger</param>
         /// <returns>True if file generated successfully</returns>
         public static bool TryUpdateCommandDocs(string outputDir, int respServerPort, IPAddress respServerHost,
-            IEnumerable<string> ignoreCommands, IReadOnlyDictionary<string, RespCommandsInfo> updatedCommandsInfo, bool force, ILogger logger)
+            IEnumerable<string> ignoreCommands, IReadOnlyDictionary<string, RespCommandsInfo> updatedCommandsInfo, bool force, ILogger logger, bool autoConfirm = false)
         {
             logger.LogInformation("Attempting to update RESP commands docs...");
 
@@ -53,7 +53,7 @@ namespace CommandInfoUpdater
             var (commandsToAdd, commandsToRemove) =
                 CommonUtils.GetCommandsToAddAndRemove(existingCommandsDocs, ignoreCommands, internalSubCommands);
 
-            if (!CommonUtils.GetUserConfirmation(commandsToAdd, commandsToRemove, logger))
+            if (!CommonUtils.GetUserConfirmation(commandsToAdd, commandsToRemove, logger, autoConfirm))
             {
                 logger.LogInformation("User cancelled update operation.");
                 return false;

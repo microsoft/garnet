@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using Garnet.common;
+using Microsoft.Extensions.Logging;
 
 namespace Garnet.server
 {
@@ -18,8 +19,9 @@ namespace Garnet.server
         /// <param name="supportedCommands">Mapping between command name, Garnet RespCommand and StoreType</param>
         /// <param name="commandInfo">Parsed RespCommandsInfo object</param>
         /// <param name="parentCommand">Name of parent command, null if none</param>
+        /// <param name="logger">Logger</param>
         /// <returns>True if parsing successful</returns>
-        public static unsafe bool TryReadFromResp(ref byte* ptr, byte* end, IReadOnlyDictionary<string, (RespCommand, StoreType)> supportedCommands, out RespCommandsInfo commandInfo, string parentCommand = null)
+        public static unsafe bool TryReadFromResp(ref byte* ptr, byte* end, IReadOnlyDictionary<string, (RespCommand, StoreType)> supportedCommands, out RespCommandsInfo commandInfo, string parentCommand = null, ILogger logger = null)
         {
             commandInfo = default;
 
@@ -46,9 +48,14 @@ namespace Garnet.server
             if (!RespReadUtils.TryReadUnsignedArrayLength(out var flagCount, ref ptr, end)) return false;
             for (var flagIdx = 0; flagIdx < flagCount; flagIdx++)
             {
-                if (!RespReadUtils.TryReadSimpleString(out var strFlag, ref ptr, end)
-                    || !EnumUtils.TryParseEnumFromDescription<RespCommandFlags>(strFlag, out var flag))
-                    return false;
+                if (!RespReadUtils.TryReadSimpleString(out var strFlag, ref ptr, end)) return false;
+                if (!EnumUtils.TryParseEnumFromDescription<RespCommandFlags>(strFlag, out var flag))
+                {
+                    // Skip flags Garnet does not model (e.g. a flag added or renamed by a newer server
+                    // version) rather than aborting the whole run; surface it so it can be reviewed.
+                    logger?.LogWarning("Skipping unrecognized command flag '{flag}' for command '{command}'.", strFlag, name);
+                    continue;
+                }
                 flags |= flag;
             }
 
@@ -69,9 +76,13 @@ namespace Garnet.server
             if (!RespReadUtils.TryReadUnsignedArrayLength(out var aclCatCount, ref ptr, end)) return false;
             for (var aclCatIdx = 0; aclCatIdx < aclCatCount; aclCatIdx++)
             {
-                if (!RespReadUtils.TryReadSimpleString(out var strAclCat, ref ptr, end)
-                    || !EnumUtils.TryParseEnumFromDescription<RespAclCategories>(strAclCat.TrimStart('@'), out var aclCat))
-                    return false;
+                if (!RespReadUtils.TryReadSimpleString(out var strAclCat, ref ptr, end)) return false;
+                if (!EnumUtils.TryParseEnumFromDescription<RespAclCategories>(strAclCat.TrimStart('@'), out var aclCat))
+                {
+                    // Skip ACL categories Garnet does not model rather than aborting; surface it for review.
+                    logger?.LogWarning("Skipping unrecognized ACL category '{aclCategory}' for command '{command}'.", strAclCat, name);
+                    continue;
+                }
                 aclCategories |= aclCat;
             }
 
@@ -92,7 +103,7 @@ namespace Garnet.server
             var subCommands = new List<RespCommandsInfo>();
             for (var scIdx = 0; scIdx < scCount; scIdx++)
             {
-                if (!TryReadFromResp(ref ptr, end, supportedCommands, out commandInfo, name))
+                if (!TryReadFromResp(ref ptr, end, supportedCommands, out commandInfo, name, logger))
                     return false;
 
                 subCommands.Add(commandInfo);
@@ -102,7 +113,7 @@ namespace Garnet.server
             commandInfo = new RespCommandsInfo()
             {
                 Command = supportedCommand.Item1,
-                Name = name.ToUpper(),
+                Name = name.ToUpperInvariant(),
                 IsInternal = false,
                 Arity = arity,
                 Flags = flags,

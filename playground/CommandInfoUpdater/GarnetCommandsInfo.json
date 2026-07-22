@@ -26,6 +26,19 @@
     "KeySpecifications": null,
     "SubCommands": [
       {
+        "Command": "CLUSTER_ADVANCE_TIME",
+        "Name": "CLUSTER|ADVANCE_TIME",
+        "IsInternal": true,
+        "Arity": 2,
+        "Flags": "Admin, NoMulti, NoScript",
+        "FirstKey": 0,
+        "LastKey": 0,
+        "Step": 0,
+        "AclCategories": "Admin, Dangerous, Slow, Garnet",
+        "KeySpecifications": null,
+        "SubCommands": null
+      },
+      {
         "Command": "CLUSTER_APPENDLOG",
         "Name": "CLUSTER|APPENDLOG",
         "IsInternal": true,
@@ -205,13 +218,12 @@
       {
         "Command": "CLUSTER_MLOG_KEY_TIME",
         "Name": "CLUSTER|MLOG_KEY_TIME",
-        "IsInternal": true,
         "Arity": -2,
-        "Flags": "Admin, NoScript, NoMulti",
+        "Flags": "Admin, NoScript, NoMulti, ReadOnly",
         "FirstKey": 0,
         "LastKey": 0,
         "Step": 0,
-        "AclCategories": "Admin, Dangerous, Slow, Garnet",
+        "AclCategories": "Admin, Slow, Garnet",
         "KeySpecifications": null,
         "SubCommands": null
       },
@@ -350,6 +362,14 @@
         "Arity": 4,
         "Flags": "Admin, NoMulti, NoScript",
         "AclCategories": "Admin, Dangerous, Slow, Garnet"
+      },
+      {
+        "Command": "CLUSTER_RESERVE",
+        "Name": "CLUSTER|RESERVE",
+        "IsInternal": true,
+        "Arity": 4,
+        "Flags": "Admin, NoMulti, NoScript",
+        "AclCategories": "Admin, Dangerous, Garnet"
       }
     ]
   },
@@ -1554,6 +1574,7 @@
   },
   {
     "Command": "RIGET",
+    "Name": "RI.GET",
     "IsInternal": false,
     "Arity": 3,
     "Flags": "Fast, ReadOnly",
@@ -1609,6 +1630,7 @@
   },
   {
     "Command": "RIRANGE",
+    "Name": "RI.RANGE",
     "IsInternal": false,
     "Arity": -4,
     "Flags": "ReadOnly",
@@ -1689,5 +1711,305 @@
       }
     ],
     "StoreType": "Main"
+  },
+  {
+    "Command": "VADD",
+    "Name": "VADD",
+    "Arity": -1,
+    "Flags": "DenyOom, Write, Module",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Fast, Write, Vector",
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Flags": "RW, Insert"
+      }
+    ]
+  },
+  {
+    "Command": "VCARD",
+    "Name": "VCARD",
+    "Arity": -1,
+    "Flags": "Fast, ReadOnly, Module",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Fast, Read, Vector",
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Flags": "RO"
+      }
+    ]
+  },
+  {
+    "Command": "VDIM",
+    "Name": "VDIM",
+    "Arity": -1,
+    "Flags": "Fast, ReadOnly, Module",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Fast, Read, Vector",
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Flags": "RO"
+      }
+    ]
+  },
+  {
+    "Command": "VEMB",
+    "Name": "VEMB",
+    "Arity": -1,
+    "Flags": "Fast, ReadOnly, Module",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Fast, Read, Vector",
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Flags": "RO"
+      }
+    ]
+  },
+  {
+    "Command": "VGETATTR",
+    "Name": "VGETATTR",
+    "Arity": -1,
+    "Flags": "Fast, ReadOnly, Module",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Fast, Read, Vector",
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Flags": "RO"
+      }
+    ]
+  },
+  {
+    "Command": "VINFO",
+    "Name": "VINFO",
+    "Arity": -1,
+    "Flags": "Fast, ReadOnly, Module",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Fast, Read, Vector",
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Flags": "RO"
+      }
+    ]
+  },
+  {
+    "Command": "VISMEMBER",
+    "Name": "VISMEMBER",
+    "Arity": 3,
+    "Flags": "Fast, ReadOnly",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Fast, Read, Vector",
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Flags": "RO"
+      }
+    ]
+  },
+  {
+    "Command": "VLINKS",
+    "Name": "VLINKS",
+    "Arity": -1,
+    "Flags": "Fast, ReadOnly, Module",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Fast, Read, Vector",
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Flags": "RO"
+      }
+    ]
+  },
+  {
+    "Command": "VRANDMEMBER",
+    "Name": "VRANDMEMBER",
+    "Arity": -1,
+    "Flags": "ReadOnly, Module",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Read, Slow, Vector",
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Flags": "RO"
+      }
+    ]
+  },
+  {
+    "Command": "VREM",
+    "Name": "VREM",
+    "Arity": -1,
+    "Flags": "Write, Module",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Slow, Write, Vector",
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Flags": "RW, Delete"
+      }
+    ]
+  },
+  {
+    "Command": "VSETATTR",
+    "Name": "VSETATTR",
+    "Arity": -1,
+    "Flags": "Fast, Write, Module",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Fast, Write, Vector",
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Flags": "RW, Insert"
+      }
+    ]
+  },
+  {
+    "Command": "VSIM",
+    "Name": "VSIM",
+    "Arity": -1,
+    "Flags": "ReadOnly, Module",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Read, Slow, Vector",
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Flags": "RO"
+      }
+    ]
   }
 ]

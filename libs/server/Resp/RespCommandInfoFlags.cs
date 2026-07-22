@@ -3,6 +3,7 @@
 
 using System;
 using System.ComponentModel;
+using Garnet.common;
 
 namespace Garnet.server
 {
@@ -48,6 +49,7 @@ namespace Garnet.server
         [Description("skip_monitor")]
         SkipMonitor = 1 << 16,
         [Description("skip_slowlog")]
+        [EnumDescriptionAlias("skip_commandlog")]
         SkipSlowLog = 1 << 17,
         [Description("stale")]
         Stale = 1 << 18,

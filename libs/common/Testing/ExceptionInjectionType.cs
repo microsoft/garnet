@@ -113,9 +113,17 @@ namespace Garnet.common
         /// </summary>
         RangeIndex_Migration_Receive_Pause_In_ProcessRecord,
         /// <summary>
+        /// Vector Set: pause after a VADD/VREM has modified the index but before append-log RMW against main store.
+        /// </summary>
+        VectorSet_Pause_Before_Synthetic_Replication_Rmw,
+        /// <summary>
         /// RangeIndex AOF replay: force PublishMigratedIndex to be treated as failed once a stream
         /// reassembles, to exercise the publish-failure throw path in ProcessStreamChunk.
         /// </summary>
         RangeIndex_Replay_Force_Publish_Failure,
+        /// <summary>
+        /// Vector Set: pause in the index-recreate window before RMW write refreshed index pointer back to the main store.
+        /// </summary>
+        VectorSet_Pause_Before_Recreate_Rmw,
     }
 }
