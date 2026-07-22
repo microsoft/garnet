@@ -3923,93 +3923,69 @@ namespace Garnet.test
             var ns = new byte[] { 11 };
             var key = new byte[] { 0, 0, 0, 0 };
 
+            var storeWrapper = server.Provider.StoreWrapper;
+
             void WriteStageAndVerify(string content, string because)
             {
                 if (inReadOnlyRegion)
                 {
-                    var store = server.Provider.StoreWrapper.store;
+                    var store = storeWrapper.store;
                     store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, wait: true);
                 }
 
                 var value = Encoding.ASCII.GetBytes(content);
-                ClassicAssert.DoesNotThrow(() => UpsertVectorElement(ns, key, value), because);
+                ClassicAssert.IsTrue(storeWrapper.TryGetDatabase(0, out var database));
 
-                var readBack = ReadVectorElement(ns, key);
-                CollectionAssert.AreEqual(value, readBack, because);
+                unsafe
+                {
+                    fixed (byte* nsPtr = ns)
+                    fixed (byte* keyPtr = key)
+                    fixed (byte* valuePtr = value)
+                    {
+                        var elementKey = new VectorElementKey(new ReadOnlySpan<byte>(nsPtr, ns.Length), new ReadOnlySpan<byte>(keyPtr, key.Length));
+
+                        using (var writeSession = database.Store.NewSession<VectorElementKey, VectorInput, VectorOutput, long, VectorSessionFunctions>(new VectorSessionFunctions(storeWrapper.CreateFunctionsState())))
+                        {
+                            var writeContext = writeSession.BasicContext;
+                            var input = new VectorInput { AlignmentExpected = true };
+                            var valueSpan = SpanByte.FromPinnedPointer(valuePtr, value.Length);
+                            var output = new VectorOutput();
+
+                            var status = writeContext.Upsert(elementKey, ref input, valueSpan, ref output);
+                            if (status.IsPending)
+                                _ = writeContext.CompletePending(wait: true);
+
+                            ClassicAssert.IsTrue(status.IsCompletedSuccessfully, because);
+                        }
+
+                        using (var readSession = database.Store.NewSession<VectorElementKey, VectorInput, VectorOutput, long, VectorSessionFunctions>(new VectorSessionFunctions(storeWrapper.CreateFunctionsState())))
+                        {
+                            var readContext = readSession.BasicContext;
+
+                            Span<byte> buffer = stackalloc byte[256];
+                            fixed (byte* bufferPtr = buffer)
+                            {
+                                var input = new VectorInput { AlignmentExpected = true, ReadDesiredSize = -1 };
+                                var output = new VectorOutput(bufferPtr, buffer.Length);
+
+                                var status = readContext.Read(elementKey, ref input, ref output);
+                                if (status.IsPending)
+                                    _ = readContext.CompletePending(wait: true);
+
+                                ClassicAssert.IsTrue(status.Found, "reading a written element must find the record");
+                                ClassicAssert.IsTrue(output.SpanByteAndMemory.IsSpanByte, "the element read must stay on the pinned span");
+
+                                CollectionAssert.AreEqual(value, output.SpanByteAndMemory.ReadOnlySpan.ToArray(), because);
+                            }
+                        }
+                    }
+                }
             }
 
             WriteStageAndVerify("fizz buzz", "the initial element write must round-trip the bytes verbatim");     // 9 bytes
             WriteStageAndVerify("buzz fizz", "an equal-size overwrite must replace the value in place");          // 9 bytes
             WriteStageAndVerify("hello world", "a grown element must not overflow and must read back the larger value"); // 11 bytes
             WriteStageAndVerify("fizzy", "a shrunk element must read back the smaller value with no stale trailing bytes"); // 5 bytes
-        }
-
-        /// <summary>Upserts a namespaced element value through VectorSessionFunctions against a dedicated Vector session.</summary>
-        private Status UpsertVectorElement(byte[] namespaceBytes, byte[] key, byte[] value)
-        {
-            var storeWrapper = server.Provider.StoreWrapper;
-            var functionsState = storeWrapper.CreateFunctionsState();
-            var functions = new VectorSessionFunctions(functionsState);
-            ClassicAssert.IsTrue(storeWrapper.TryGetDatabase(0, out var database));
-
-            using var session = database.Store.NewSession<VectorElementKey, VectorInput, VectorOutput, long, VectorSessionFunctions>(functions);
-            var context = session.BasicContext;
-
-            unsafe
-            {
-                fixed (byte* nsPtr = namespaceBytes)
-                fixed (byte* keyPtr = key)
-                fixed (byte* valuePtr = value)
-                {
-                    var elementKey = new VectorElementKey(new ReadOnlySpan<byte>(nsPtr, namespaceBytes.Length), new ReadOnlySpan<byte>(keyPtr, key.Length));
-                    var input = new VectorInput { AlignmentExpected = true };
-                    var valueSpan = SpanByte.FromPinnedPointer(valuePtr, value.Length);
-                    var output = new VectorOutput();
-
-                    var status = context.Upsert(elementKey, ref input, valueSpan, ref output);
-                    if (status.IsPending)
-                        _ = context.CompletePending(wait: true);
-
-                    return status;
-                }
-            }
-        }
-
-        /// <summary>Reads a namespaced element value back through VectorSessionFunctions.Reader, trimmed to the stored payload.</summary>
-        private byte[] ReadVectorElement(byte[] namespaceBytes, byte[] key)
-        {
-            var storeWrapper = server.Provider.StoreWrapper;
-            var functionsState = storeWrapper.CreateFunctionsState();
-            var functions = new VectorSessionFunctions(functionsState);
-            ClassicAssert.IsTrue(storeWrapper.TryGetDatabase(0, out var database));
-
-            using var session = database.Store.NewSession<VectorElementKey, VectorInput, VectorOutput, long, VectorSessionFunctions>(functions);
-            var context = session.BasicContext;
-
-            unsafe
-            {
-                fixed (byte* nsPtr = namespaceBytes)
-                fixed (byte* keyPtr = key)
-                {
-                    var elementKey = new VectorElementKey(new ReadOnlySpan<byte>(nsPtr, namespaceBytes.Length), new ReadOnlySpan<byte>(keyPtr, key.Length));
-
-                    Span<byte> buffer = stackalloc byte[256];
-                    fixed (byte* bufferPtr = buffer)
-                    {
-                        var input = new VectorInput { AlignmentExpected = true, ReadDesiredSize = -1 };
-                        var output = new VectorOutput(bufferPtr, buffer.Length);
-
-                        var status = context.Read(elementKey, ref input, ref output);
-                        if (status.IsPending)
-                            _ = context.CompletePending(wait: true);
-
-                        ClassicAssert.IsTrue(status.Found, "reading a written element must find the record");
-                        ClassicAssert.IsTrue(output.SpanByteAndMemory.IsSpanByte, "the element read must stay on the pinned span");
-
-                        return output.SpanByteAndMemory.ReadOnlySpan.ToArray();
-                    }
-                }
-            }
         }
 
         /// <summary>
