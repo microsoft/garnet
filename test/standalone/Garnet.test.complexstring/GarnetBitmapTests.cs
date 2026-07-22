@@ -1068,7 +1068,6 @@ namespace Garnet.test
             }
         }
 
-        // Regression tests for https://github.com/microsoft/garnet/issues/1954
         [Order(42)]
         [Test]
         [Category("BITFIELD")]
