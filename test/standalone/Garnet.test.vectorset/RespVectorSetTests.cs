@@ -3924,6 +3924,7 @@ namespace Garnet.test
             var key = new byte[] { 0, 0, 0, 0 };
 
             var storeWrapper = server.Provider.StoreWrapper;
+            var firstWrite = true;
 
             void WriteAndVerify(string content, string because)
             {
@@ -3936,6 +3937,9 @@ namespace Garnet.test
                 var value = Encoding.ASCII.GetBytes(content);
                 ClassicAssert.IsTrue(storeWrapper.TryGetDatabase(0, out var database));
 
+                using var session = database.Store.NewSession<VectorElementKey, VectorInput, VectorOutput, long, VectorSessionFunctions>(new VectorSessionFunctions(storeWrapper.CreateFunctionsState()));
+                var context = session.BasicContext;
+
                 unsafe
                 {
                     fixed (byte* nsPtr = ns)
@@ -3944,33 +3948,35 @@ namespace Garnet.test
                     {
                         var elementKey = new VectorElementKey(new ReadOnlySpan<byte>(nsPtr, ns.Length), new ReadOnlySpan<byte>(keyPtr, key.Length));
 
-                        using (var writeSession = database.Store.NewSession<VectorElementKey, VectorInput, VectorOutput, long, VectorSessionFunctions>(new VectorSessionFunctions(storeWrapper.CreateFunctionsState())))
                         {
-                            var writeContext = writeSession.BasicContext;
                             var input = new VectorInput { AlignmentExpected = true };
                             var valueSpan = SpanByte.FromPinnedPointer(valuePtr, value.Length);
                             var output = new VectorOutput();
 
-                            var status = writeContext.Upsert(elementKey, ref input, valueSpan, ref output);
+                            var status = context.Upsert(elementKey, ref input, valueSpan, ref output);
                             if (status.IsPending)
-                                _ = writeContext.CompletePending(wait: true);
+                                _ = context.CompletePending(wait: true);
 
                             ClassicAssert.IsTrue(status.IsCompletedSuccessfully, because);
+
+                            if (firstWrite || inReadOnlyRegion)
+                                ClassicAssert.IsTrue(status.Record.Created, $"a {(firstWrite ? "first" : "read-only")} write must append a new record");
+                            else
+                                ClassicAssert.IsTrue(status.Record.InPlaceUpdated, "a mutable-region overwrite must update the record in place");
+
+                            firstWrite = false;
                         }
 
-                        using (var readSession = database.Store.NewSession<VectorElementKey, VectorInput, VectorOutput, long, VectorSessionFunctions>(new VectorSessionFunctions(storeWrapper.CreateFunctionsState())))
                         {
-                            var readContext = readSession.BasicContext;
-
                             Span<byte> buffer = stackalloc byte[256];
                             fixed (byte* bufferPtr = buffer)
                             {
                                 var input = new VectorInput { AlignmentExpected = true, ReadDesiredSize = -1 };
                                 var output = new VectorOutput(bufferPtr, buffer.Length);
 
-                                var status = readContext.Read(elementKey, ref input, ref output);
+                                var status = context.Read(elementKey, ref input, ref output);
                                 if (status.IsPending)
-                                    _ = readContext.CompletePending(wait: true);
+                                    _ = context.CompletePending(wait: true);
 
                                 ClassicAssert.IsTrue(status.Found, "reading a written element must find the record");
                                 ClassicAssert.IsTrue(output.SpanByteAndMemory.IsSpanByte, "the element read must stay on the pinned span");
