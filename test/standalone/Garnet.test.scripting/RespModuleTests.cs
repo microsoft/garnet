@@ -420,7 +420,7 @@ namespace Garnet.test
         [Test]
         public void TestModuleLoadUsingLoadModuleCSWithSpaceInPath()
         {
-            // Reproduces issue #1951: a module path containing spaces must load correctly via --loadmodulecs.
+            // Reproduces issue #1951: a quoted module path containing spaces must load correctly via --loadmodulecs.
             var noOpModulePath = Path.Join(binPath, "NoOpModule.dll");
 
             // Copy the module into a directory (and file) whose names contain spaces.
@@ -434,7 +434,7 @@ namespace Garnet.test
                 disablePubSub: true,
                 extensionBinPaths: [spaceDir, binPath],
                 extensionAllowUnsignedAssemblies: true,
-                loadModulePaths: [spaceModulePath]);
+                loadModulePaths: [$"\"{spaceModulePath}\""]);
             server.Start();
 
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
@@ -453,8 +453,7 @@ namespace Garnet.test
         [Test]
         public void TestModuleLoadUsingLoadModuleCSWithSpaceInPathAndArgs()
         {
-            // A module path containing spaces followed by arguments must be delimited at the path
-            // boundary (resolved on disk), not split on every space (issue #1951).
+            // A quoted module path containing spaces, followed by arguments, must load correctly (issue #1951).
             var noOpModulePath = Path.Join(binPath, "NoOpModule.dll");
 
             var spaceDir = Path.Combine(TestUtils.MethodTestDir, "Garnet Modules");
@@ -466,36 +465,7 @@ namespace Garnet.test
                 disablePubSub: true,
                 extensionBinPaths: [spaceDir, binPath],
                 extensionAllowUnsignedAssemblies: true,
-                loadModulePaths: [$"{spaceModulePath} arg0 arg1"]);
-            server.Start();
-
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
-            var db = redis.GetDatabase(0);
-
-            var key = "mykey";
-            db.StringSet(key, "myval");
-
-            var retValue = db.Execute("NoOpModule.NOOPCMDREAD", key);
-            ClassicAssert.AreEqual("OK", (string)retValue);
-        }
-
-        [Test]
-        public void TestModuleLoadUsingLoadModuleCSWithDotDllDirectoryName()
-        {
-            // A module whose parent directory name contains a ".dll" fragment and a space must still
-            // load: the path is resolved on disk rather than split at the first ".dll" token.
-            var noOpModulePath = Path.Join(binPath, "NoOpModule.dll");
-
-            var trickyDir = Path.Combine(TestUtils.MethodTestDir, "plugins.dll cache");
-            Directory.CreateDirectory(trickyDir);
-            var trickyModulePath = Path.Combine(trickyDir, "NoOpModule.dll");
-            File.Copy(noOpModulePath, trickyModulePath, overwrite: true);
-
-            using var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir,
-                disablePubSub: true,
-                extensionBinPaths: [trickyDir, binPath],
-                extensionAllowUnsignedAssemblies: true,
-                loadModulePaths: [trickyModulePath]);
+                loadModulePaths: [$"\"{spaceModulePath}\" arg0 arg1"]);
             server.Start();
 
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());

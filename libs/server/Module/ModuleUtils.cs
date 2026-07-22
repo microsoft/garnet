@@ -16,33 +16,22 @@ namespace Garnet.server
     public class ModuleUtils
     {
         /// <summary>
-        /// Recognized file extensions for a C# module assembly.
-        /// </summary>
-        private static readonly string[] ModuleAssemblyExtensions = [".dll", ".exe"];
-
-        /// <summary>
         /// Parses a single module specification (as provided to the <c>--loadmodulecs</c> option) into its
         /// module path and optional arguments. The specification has the form
         /// <c>&lt;module-path&gt; [arg0 arg1 ...]</c>, where the path and each argument are separated by spaces.
         ///
-        /// Because a module path may itself contain spaces, the path is delimited from its arguments as follows:
+        /// The path is delimited from its arguments deterministically:
         /// <list type="number">
         /// <item>If the specification begins with a double quote, the path is the text between that quote and the
-        /// next double quote, and any remaining (space-separated) text is treated as the module arguments. Such a
-        /// specification is invalid (returns false) if the quote is not terminated or the quoted path is empty or
-        /// whitespace-only.</item>
-        /// <item>Otherwise, the filesystem is probed: starting from the whole specification, trailing space-separated
-        /// tokens are progressively treated as arguments until the remaining prefix exists as a file or directory
-        /// (the longest matching prefix is used as the path). This reliably handles paths containing spaces.</item>
-        /// <item>If no prefix exists on disk, the path is the text up to and including the first space-separated
-        /// token that ends with a recognized module assembly extension (.dll or .exe) - preserving any spaces
-        /// within the path - and the remaining tokens are treated as the module arguments.</item>
-        /// <item>If no such token is found either, the entire specification is treated as the module path with no
-        /// arguments.</item>
+        /// next double quote (so it may contain spaces), and any remaining space-separated text is treated as the
+        /// module arguments. Such a specification is invalid (returns false) if the quote is not terminated or the
+        /// quoted path is empty or whitespace-only.</item>
+        /// <item>Otherwise, the first space-separated token is the module path and the remaining tokens are its
+        /// arguments. A path that contains spaces must therefore be wrapped in double quotes.</item>
         /// </list>
         /// </summary>
         /// <param name="moduleSpec">The raw module specification string.</param>
-        /// <param name="modulePath">The parsed module path (may contain spaces).</param>
+        /// <param name="modulePath">The parsed module path.</param>
         /// <param name="moduleArgs">The parsed module arguments (empty if none).</param>
         /// <returns>True if a non-empty module path was parsed; otherwise false (e.g. empty, whitespace-only or
         /// malformed quoted specification).</returns>
@@ -56,9 +45,8 @@ namespace Garnet.server
 
             var spec = moduleSpec.Trim();
 
-            // 1) Explicitly double-quoted path: "<path>" [args...]
-            //    A leading double quote signals an explicitly quoted path; it must be terminated and
-            //    contain a non-empty, non-whitespace path, otherwise the specification is invalid.
+            // A double-quoted path may contain spaces: "<path>" [args...]. The quote must be terminated and the
+            // quoted path must be non-empty and non-whitespace, otherwise the specification is invalid.
             if (spec[0] == '"')
             {
                 var closingQuoteIdx = spec.IndexOf('"', 1);
@@ -74,75 +62,16 @@ namespace Garnet.server
                 return true;
             }
 
-            // 2) Unquoted path: prefer a path that actually exists on disk. Try the longest candidate
-            //    (the whole specification) first, then progressively strip trailing space-separated tokens
-            //    and treat them as arguments, until the remaining prefix exists as a file or directory. The
-            //    module and any arguments are resolved locally (during config validation and server startup),
-            //    so this reliably delimits a path containing spaces from its arguments, regardless of extension
-            //    casing or '.dll'/'.exe' fragments appearing in directory names.
-            if (TrySplitAtExistingPath(spec, out modulePath, out moduleArgs))
-                return true;
-
-            // 3) The path does not exist yet: fall back to the module assembly extension (.dll/.exe) to delimit
-            //    the path from its arguments, still preserving spaces within the path.
-            var tokenStart = 0;
-            while (tokenStart < spec.Length)
-            {
-                var spaceIdx = spec.IndexOf(' ', tokenStart);
-                var pathEnd = spaceIdx < 0 ? spec.Length : spaceIdx;
-                var candidatePath = spec[..pathEnd];
-
-                foreach (var ext in ModuleAssemblyExtensions)
-                {
-                    if (candidatePath.EndsWith(ext, StringComparison.Ordinal))
-                    {
-                        modulePath = candidatePath;
-                        moduleArgs = spaceIdx < 0 ? [] : SplitModuleArgs(spec[(spaceIdx + 1)..]);
-                        return true;
-                    }
-                }
-
-                if (spaceIdx < 0)
-                    break;
-                tokenStart = spaceIdx + 1;
-            }
-
-            // 4) Fallback: no recognized module extension token; treat the entire specification as the path.
-            modulePath = spec;
+            // Otherwise the path must not contain spaces: the first space-separated token is the path and the
+            // remaining tokens are its arguments. To use a path containing spaces, wrap it in double quotes.
+            var tokens = spec.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            modulePath = tokens[0];
+            moduleArgs = tokens.Length > 1 ? tokens[1..] : [];
             return true;
         }
 
         private static string[] SplitModuleArgs(string args)
             => args.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-
-        /// <summary>
-        /// Attempts to delimit the module path from its arguments by probing the filesystem. Starting from the
-        /// whole specification, trailing space-separated tokens are progressively treated as arguments until the
-        /// remaining prefix exists on disk as a file or directory (the longest matching prefix wins). This handles
-        /// paths that contain spaces without relying on the module assembly extension.
-        /// </summary>
-        private static bool TrySplitAtExistingPath(string spec, out string modulePath, out string[] moduleArgs)
-        {
-            modulePath = null;
-            moduleArgs = [];
-
-            var pathEnd = spec.Length;
-            while (true)
-            {
-                var candidatePath = spec[..pathEnd];
-                if (File.Exists(candidatePath) || Directory.Exists(candidatePath))
-                {
-                    modulePath = candidatePath;
-                    moduleArgs = pathEnd == spec.Length ? [] : SplitModuleArgs(spec[(pathEnd + 1)..]);
-                    return true;
-                }
-
-                var lastSpace = spec.LastIndexOf(' ', pathEnd - 1);
-                if (lastSpace < 0)
-                    return false;
-                pathEnd = lastSpace;
-            }
-        }
 
         /// <summary>
         /// Loads only the assemblies that the module at <paramref name="modulePath"/> references (transitively)

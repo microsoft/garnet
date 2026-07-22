@@ -49,18 +49,12 @@ passed to the module's `OnLoad` method through the `args` parameter:
 --loadmodulecs "/path/to/MyModule.dll arg0 arg1"
 ```
 
-Module paths that contain spaces are supported. The path is resolved against the filesystem (the longest
-prefix of the specification that exists as a file or directory is taken as the module path), so a path
-containing spaces loads correctly without any extra escaping:
+The first space-separated token is the module path and the remaining tokens are its arguments. A module
+path that itself contains spaces must therefore be wrapped in double quotes (any following tokens are
+still treated as arguments):
 
 ```
---loadmodulecs "/path/to/My Modules/My Module.dll"
---loadmodulecs "/path/to/My Modules/My Module.dll arg0 arg1"
-```
-
-Alternatively, the path may be wrapped in double quotes to explicitly separate it from its arguments:
-
-```
+--loadmodulecs "\"/path/to/My Modules/My Module.dll\""
 --loadmodulecs "\"/path/to/My Modules/My Module.dll\" arg0 arg1"
 ```
 
