@@ -633,9 +633,6 @@ namespace Garnet.server
         public nint CallbackContext { get; set; }
         public nint Callback { get; set; }
 
-        /// <summary>Test-only flag, honored only in DEBUG builds: invoke <see cref="Callback"/> as plain Cdecl (no SuppressGCTransition) so managed unit tests work.</summary>
-        public bool IsTestCallback { get; set; }
-
         public bool AlignmentExpected { get; set; }
 
         [MemberNotNullWhen(returnValue: true, member: nameof(MaxMigrationHeapAllocationSize))]

@@ -3963,43 +3963,6 @@ namespace Garnet.test
             WriteStageAndVerify("fizzy", "a shrunk element must read back the smaller value with no stale trailing bytes"); // 5 bytes
         }
 
-        /// <summary>
-        /// Exercises the VectorSessionFunctions RMW resize path (create, same-size, grow, shrink) on one element,
-        /// the DiskANN ReadModifyWrite counterpart to <see cref="VectorElementUpsertResizePreservesValue"/>. Each
-        /// stage must read back exactly the new size with no residue. Mutable region hits InPlaceUpdater, read-only
-        /// hits CopyUpdater. Uses the DEBUG-only managed fill callback (VectorInput.IsTestCallback).
-        /// </summary>
-        [Test]
-        public void VectorElementRmwResizePreservesValue([Values(false, true)] bool inReadOnlyRegion)
-        {
-            TestUtils.IgnoreIfNotDebugBuild();
-
-            var ns = new byte[] { 11 };
-            var key = new byte[] { 0, 0, 0, 0 };
-
-            void RmwStageAndVerify(int size, byte fill, string because)
-            {
-                if (inReadOnlyRegion)
-                {
-                    var store = server.Provider.StoreWrapper.store;
-                    store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, wait: true);
-                }
-
-                Status status = default;
-                ClassicAssert.DoesNotThrow(() => status = RmwVectorElement(ns, key, size, fill), because);
-                ClassicAssert.IsTrue(status.IsCompletedSuccessfully, $"{because} (status {status})");
-
-                var readBack = ReadVectorElement(ns, key);
-                ClassicAssert.AreEqual(size, readBack.Length, because);
-                CollectionAssert.AreEqual(Enumerable.Repeat(fill, size).ToArray(), readBack, because);
-            }
-
-            RmwStageAndVerify(9, 0xA1, "the initial RMW (InitialUpdater) must create and fill the element");                          // 9 bytes
-            RmwStageAndVerify(9, 0xB2, "an equal-size RMW must overwrite the value in place");                                        // 9 bytes
-            RmwStageAndVerify(11, 0xC3, "a grown RMW must not overflow and must read back the larger value");                        // 11 bytes
-            RmwStageAndVerify(5, 0xD4, "a shrunk RMW must read back the smaller value with no stale trailing bytes");                // 5 bytes
-        }
-
 
         /// <summary>Upserts a namespaced element value through VectorSessionFunctions against a dedicated Vector session.</summary>
         private Status UpsertVectorElement(byte[] namespaceBytes, byte[] key, byte[] value)
@@ -4068,48 +4031,6 @@ namespace Garnet.test
                 }
             }
         }
-
-        /// <summary>
-        /// Drives a single VectorSessionFunctions RMW of a namespaced element against a dedicated Vector session.
-        /// Sets the DEBUG-only <c>VectorInput.IsTestCallback</c> so the managed <c>Callback</c> fill runs as a plain
-        /// Cdecl call (the production SuppressGCTransition call can't dispatch to managed code).
-        /// </summary>
-        private unsafe Status RmwVectorElement(byte[] namespaceBytes, byte[] key, int size, byte fill)
-        {
-            var storeWrapper = server.Provider.StoreWrapper;
-            var functionsState = storeWrapper.CreateFunctionsState();
-            var functions = new VectorSessionFunctions(functionsState);
-            ClassicAssert.IsTrue(storeWrapper.TryGetDatabase(0, out var database));
-
-            using var session = database.Store.NewSession<VectorElementKey, VectorInput, VectorOutput, long, VectorSessionFunctions>(functions);
-            var context = session.BasicContext;
-
-            fixed (byte* nsPtr = namespaceBytes)
-            fixed (byte* keyPtr = key)
-            {
-                var elementKey = new VectorElementKey(new ReadOnlySpan<byte>(nsPtr, namespaceBytes.Length), new ReadOnlySpan<byte>(keyPtr, key.Length));
-                var input = new VectorInput
-                {
-                    AlignmentExpected = true,
-                    WriteDesiredSize = size,
-                    CallbackContext = (nint)fill,
-                    Callback = (nint)(delegate* unmanaged[Cdecl]<nint, nint, nuint, void>)&FillElement,
-                    IsTestCallback = true,
-                };
-                var output = new VectorOutput();
-
-                var status = context.RMW(elementKey, ref input, ref output);
-                if (status.IsPending)
-                    _ = context.CompletePending(wait: true);
-
-                return status;
-            }
-        }
-
-        /// <summary>Data-fill callback: fills the value buffer with the byte passed as context.</summary>
-        [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
-        private static unsafe void FillElement(nint context, nint dataPtr, nuint dataLen)
-        => new Span<byte>((void*)dataPtr, (int)dataLen).Fill((byte)context);
 
         /// <summary>
         /// Create a new GarnetServer instance with common parameters.

@@ -363,10 +363,11 @@ namespace Garnet.server
                 }
                 else
                 {
-                    Debug.Assert(input.WriteDesiredSize <= newValueAligned.Length, "Insufficient space for copy update, this should never happen");
+                    Debug.Assert(oldValueAligned.Length == newValueAligned.Length, "RMW values are fixed-size, old and new should match");
 
-                    // Must explicitly 0 before passing the buffer to the callback
-                    newValueAligned.Clear();
+                    // The DiskANN RMW callback reads the current value out of the buffer before writing (FSM
+                    // bit flips, neighbour appends), so carry it forward for the callback to modify.
+                    oldValueAligned.CopyTo(newValueAligned);
 
                     unsafe
                     {
@@ -430,17 +431,9 @@ namespace Garnet.server
                 }
                 else
                 {
-                    // Resize before the callback fills it; false means it can't grow in place, so Tsavorite falls back
-                    // to CopyUpdater. Otherwise the callback would overrun on a grow or leave a stale length on a shrink.
-                    pin?.Free();
-                    pin = null;
-
-                    var sizeInfo = new RecordSizeInfo() { FieldInfo = GetRMWModifiedFieldInfo(in logRecord, ref input) };
-                    functionsState.storeWrapper.store.Log.PopulateRecordSizeInfo(ref sizeInfo);
-                    if (!logRecord.TrySetContentLengths(sizeInfo.FieldInfo.ValueSize, in sizeInfo))
-                        return false;
-
-                    alignedValue = AlignOrPin(in logRecord, ref input, out pin);
+                    // The record is already the correct fixed size and holds the current value; the DiskANN RMW
+                    // callback modifies it in place.
+                    Debug.Assert(input.WriteDesiredSize <= alignedValue.Length, "Insufficient space for in-place update, this should never happen");
 
                     unsafe
                     {
@@ -499,13 +492,6 @@ namespace Garnet.server
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private static unsafe void InvokeDataCallback(ref VectorInput input, nint dataPtr, nuint dataLen)
         {
-#if DEBUG
-            if (input.IsTestCallback)
-            {
-                ((delegate* unmanaged[Cdecl]<nint, nint, nuint, void>)input.Callback)(input.CallbackContext, dataPtr, dataLen);
-                return;
-            }
-#endif
             // Callback takes: dataCallbackContext, dataPtr, dataLength
             ((delegate* unmanaged[Cdecl, SuppressGCTransition]<nint, nint, nuint, void>)input.Callback)(input.CallbackContext, dataPtr, dataLen);
         }
