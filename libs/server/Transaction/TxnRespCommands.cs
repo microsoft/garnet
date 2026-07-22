@@ -115,11 +115,15 @@ namespace Garnet.server
                 return true;
             }
 
+            // BITOP's operation argument (AND/OR/XOR/NOT/DIFF) is consumed by the parser, so its
+            // arity and key indices need the same -2 offset applied to subcommands (see slot verification).
+            var isSubCommand = commandInfo.IsSubCommand || cmd == RespCommand.BITOP;
+
             // Check if input is valid and abort if necessary
             // NOTE: Negative arity means it's an expected minimum of args. Positive means exact.
             var count = parseState.Count;
             var arity = commandInfo.Arity > 0 ? commandInfo.Arity - 1 : commandInfo.Arity + 1;
-            if (commandInfo.IsSubCommand)
+            if (isSubCommand)
                 arity = arity > 0 ? arity - 1 : arity + 1;
             var invalidNumArgs = arity > 0 ? count != arity : count < -arity;
 
@@ -190,7 +194,7 @@ namespace Garnet.server
                 txnManager.saveKeyRecvBufferPtr = recvBufferPtr;
             }
 
-            txnManager.LockKeys(commandInfo);
+            txnManager.LockKeys(commandInfo, isSubCommand);
 
             while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_QUEUED, ref dcurr, dend))
                 SendAndReset();
