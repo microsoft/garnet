@@ -3914,27 +3914,8 @@ namespace Garnet.test
         }
 
         /// <summary>
-        /// Baseline for the VectorSessionFunctions Upsert path: writing a namespaced element value through
-        /// InitialWriter and reading it back must round-trip the bytes verbatim.
-        /// </summary>
-        [Test]
-        public void VectorElementUpsertRoundTrips()
-        {
-            var ns = new byte[] { 11 };
-            var key = new byte[] { 0, 0, 0, 0 };
-            var value = Encoding.ASCII.GetBytes("hello world");
-
-            var status = UpsertVectorElement(ns, key, value);
-            ClassicAssert.IsTrue(status.IsCompletedSuccessfully, $"element upsert must complete (got {status})");
-
-            var readBack = ReadVectorElement(ns, key);
-            CollectionAssert.AreEqual(value, readBack, "reading a freshly-upserted element must return the written bytes verbatim");
-        }
-
-        /// <summary>
-        /// Exercises the VectorSessionFunctions Upsert resize path (create, same-size, grow, shrink) on one element;
-        /// each stage must round-trip the new value exactly with no residue. Mutable region hits InPlaceWriter,
-        /// read-only allocates a fresh record per overwrite.
+        /// Exercises the VectorSessionFunctions Upsert resize path (create, same-size, grow, shrink); each stage must
+        /// read back exactly with no residue. Mutable region hits InPlaceWriter, read-only allocates a fresh record.
         /// </summary>
         [Test]
         public void VectorElementUpsertResizePreservesValue([Values(false, true)] bool inReadOnlyRegion)
@@ -3962,7 +3943,6 @@ namespace Garnet.test
             WriteStageAndVerify("hello world", "a grown element must not overflow and must read back the larger value"); // 11 bytes
             WriteStageAndVerify("fizzy", "a shrunk element must read back the smaller value with no stale trailing bytes"); // 5 bytes
         }
-
 
         /// <summary>Upserts a namespaced element value through VectorSessionFunctions against a dedicated Vector session.</summary>
         private Status UpsertVectorElement(byte[] namespaceBytes, byte[] key, byte[] value)
