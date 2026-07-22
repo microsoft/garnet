@@ -15,6 +15,8 @@ namespace Tsavorite.test.recovery
 {
     using ObjAllocator = ObjectAllocator<StoreFunctions<LongKeyComparer, DefaultRecordTriggers>>;
     using ObjStoreFunctions = StoreFunctions<LongKeyComparer, DefaultRecordTriggers>;
+    using LargeObjAllocator = ObjectAllocator<StoreFunctions<TestObjectKey.Comparer, DefaultRecordTriggers>>;
+    using LargeObjStoreFunctions = StoreFunctions<TestObjectKey.Comparer, DefaultRecordTriggers>;
 
     /// <summary>
     /// Recovers an <see cref="ObjectAllocator{TStoreFunctions}"/> store's Snapshot checkpoint into a smaller memory budget
@@ -141,6 +143,98 @@ namespace Tsavorite.test.recovery
                     objlog.Dispose();
                     try { Directory.Delete(dir, recursive: true); } catch { }
                 }
+            }
+        }
+
+        static TsavoriteKV<LargeObjStoreFunctions, LargeObjAllocator> CreateObjectStore(IDevice log, IDevice objlog, string checkpointDir, long memorySize)
+            => new(new()
+            {
+                IndexSize = 1L << 20,
+                LogDevice = log,
+                ObjectLogDevice = objlog,
+                MutableFraction = 0.9,               // exercise the logMutableFraction read-only region (and its recovery flush)
+                PageSize = MinKvLogPageSize,
+                LogMemorySize = memorySize,
+                SegmentSize = 1L << 20,
+                CheckpointDir = checkpointDir,
+            }, StoreFunctions.Create(new TestObjectKey.Comparer(), () => new TestLargeObjectValue.Serializer(), DefaultRecordTriggers.Instance),
+               (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions));
+
+        /// <summary>
+        /// Companion to <see cref="RecoverSnapshotToLowerMemoryInlineOnly"/> that exercises the object path: records hold several-KB heap objects, so
+        /// recovery eviction is driven by the object heap (not just page count) — the deferred object-load pass must flush-and-evict snapshot object pages
+        /// (copying their objects into the main object-log) and deserialize the resident ones. Every object, resident or evicted-to-disk, must read back.
+        /// </summary>
+        [Test]
+        [Category("TsavoriteKV"), Category("CheckpointRestore")]
+        public async Task RecoverSnapshotToLowerMemoryWithObjects(
+            [Values(64 * 1024, 128 * 1024)] long recoveryMemorySize)
+        {
+            const int objSize = 2000;                // several-KB heap objects
+            const int numObjRecords = 1000;
+
+            var dir = MethodTestDir;
+            var checkpointDir = Path.Combine(dir, "checkpoints");
+            IDevice log = Devices.CreateLogDevice(Path.Combine(dir, "hlog.log"), deleteOnClose: false);
+            IDevice objlog = Devices.CreateLogDevice(Path.Combine(dir, "hlog.obj.log"), deleteOnClose: false);
+            try
+            {
+                Guid token;
+                using (var store1 = CreateObjectStore(log, objlog, checkpointDir, 128 * 1024))
+                {
+                    using (var session = store1.NewSession<TestObjectKey, TestLargeObjectInput, TestLargeObjectOutput, Empty, TestLargeObjectFunctions>(new TestLargeObjectFunctions()))
+                    {
+                        var bContext = session.BasicContext;
+                        for (var key = 0; key < numObjRecords; key++)
+                        {
+                            var value = new TestLargeObjectValue(objSize);
+                            value.value[0] = (byte)key;             // make each object's payload identifiable by key
+                            value.value[1] = (byte)(key >> 8);
+                            _ = bContext.Upsert(new TestObjectKey { key = key }, value);
+                        }
+                    }
+                    var (success, checkpointToken) = await store1.TakeFullCheckpointAsync(CheckpointType.Snapshot).ConfigureAwait(false);
+                    ClassicAssert.IsTrue(success);
+                    token = checkpointToken;
+                }
+
+                // Recover into a smaller budget so the large object heap forces heavy (heap-driven) eviction during recovery.
+                var store2 = CreateObjectStore(log, objlog, checkpointDir, recoveryMemorySize);
+                var tracker = new LogSizeTracker<LargeObjStoreFunctions, LargeObjAllocator>(store2.Log, recoveryMemorySize, recoveryMemorySize / 8, recoveryMemorySize / 16, logger: null);
+                store2.Log.SetLogSizeTracker(tracker);
+                _ = await store2.RecoverAsync(default, token).ConfigureAwait(false);
+
+                try
+                {
+                    using (var session = store2.NewSession<TestObjectKey, TestLargeObjectInput, TestLargeObjectOutput, Empty, TestLargeObjectFunctions>(new TestLargeObjectFunctions()))
+                    {
+                        var bContext = session.BasicContext;
+                        for (var key = 0; key < numObjRecords; key++)
+                        {
+                            TestLargeObjectInput input = new() { wantValueStyle = TestValueStyle.Object };
+                            TestLargeObjectOutput output = new();
+                            var status = bContext.Read(new TestObjectKey { key = key }, ref input, ref output);
+                            if (status.IsPending)
+                            {
+                                Assert.That(bContext.CompletePendingWithOutputs(out var completedOutputs, wait: true), Is.True);
+                                (status, output) = GetSinglePendingResult(completedOutputs);
+                            }
+                            ClassicAssert.IsTrue(status.Found, $"key {key} not found (recoveryMemorySize {recoveryMemorySize})");
+                            ClassicAssert.AreEqual(objSize, output.valueObject.value.Length, $"key {key} wrong object size");
+                            ClassicAssert.AreEqual((byte)key, output.valueObject.value[0], $"key {key} wrong object payload[0]");
+                            ClassicAssert.AreEqual((byte)(key >> 8), output.valueObject.value[1], $"key {key} wrong object payload[1]");
+                        }
+                    }
+                }
+                finally
+                {
+                    store2.Dispose();
+                }
+            }
+            finally
+            {
+                log.Dispose();
+                objlog.Dispose();
             }
         }
     }
