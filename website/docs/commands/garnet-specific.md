@@ -114,7 +114,7 @@ Runs the specific custom transactional procedure indetified by its ID.
     WATCHMS key [key ...]
 ```
 
-Same as [WATCH](transactions.md#watch), but specifies that the key is only present in the main (raw string) store.
+Same as [WATCH](transactions.md#watch), but specifies that the key holds a raw string value.
 
 ---
 
@@ -126,7 +126,7 @@ Same as [WATCH](transactions.md#watch), but specifies that the key is only prese
     WATCHOS key [key ...]
 ```
 
-Same as [WATCH](transactions.md#watch), but specifies that the key is only present in the object store.
+Same as [WATCH](transactions.md#watch), but specifies that the key holds an object value.
 
 ---
 

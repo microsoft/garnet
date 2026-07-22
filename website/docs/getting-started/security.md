@@ -16,7 +16,8 @@ at `<root>/test/testcerts`). You need to start both the server and the client wi
 ## Using GarnetServer with TLS
 
 On the server side, you need to start Garnet with TLS enabled. From the command prompt, the parameters to add are `--tls` to enable TLS, details of the certificates such as certificate 
-name via `--cert-file-name`, TLS certificate password via `--cert-password`, whether TLS client certificate is required via `--client-certificate-required`, issuer 
+name via `--cert-file-name`, TLS certificate password via `--cert-password`, whether a TLS client certificate is required via `--client-certificate-required`, whether a TLS server 
+certificate is required by clients established on the server side (e.g., for cluster gossip and replication) via `--server-certificate-required`, issuer 
 certificate to validate against via `--issuer-certificate-path`, and whether TLS checks certificate revocation via `--certificate-revocation-check-mode`. You can also use a certificate via
 subject name on Windows via `cert-subject-name`. Certificate refresh can be done automatically via the option `--cert-refresh-freq`.
 
@@ -161,17 +162,17 @@ If you have a certificate in a pfx format, you can extract all the certs and key
     openssl pkcs12 -in testcert.pfx -cacerts -nokeys -chain -out garnet-ca.crt 
     ```
 
-## Password Protected Sessions
+## Authenticated Sessions
 
-Garnet support password protected sessions, using the AUTH mechanism of the RESP protocol. When you create a Garnet server, you can specify enabling authentication via the flag --auth and the type of authentication you want to enable. The following are the options to enable or disable password protected connections:
+Garnet supports authenticated sessions, using the AUTH mechanism of the RESP protocol. When you create a Garnet server, you can specify the authentication mode via the flag `--auth`. The authentication mode determines how the AUTH command is processed and how clients are authenticated against Garnet. The supported modes are `NoAuth`, `Password`, `Aad`, `ACL`, and `AclWithAad`.
 
-* NoAuth, by default there is no password requirement.
+* NoAuth, the default, imposes no authentication requirement and Garnet accepts any and all connections.
 
 ```bash
     GarnetServer --auth NoAuth
 ```
 
-* Password, indicates to the server that clients should use **auth** command and a password, before sending requests.
+* Password indicates to the server that clients should use the **auth** command with a password before sending requests.
 
 Start the server including the password:
 
@@ -179,5 +180,23 @@ Start the server including the password:
     GarnetServer --auth Password --password <passwordplaceholder>
 ```
 
-With these two features, you can get basic security capabilities with your Garnet deployment. Please check with your team's security requirements whether this functionality is sufficient to match your 
+* Aad authenticates connections using a Microsoft Entra ID (AAD) token. Clients present a valid token via the **auth** command; because tokens expire, clients are expected to periodically refresh the token by re-running AUTH. Configure the authority via `--aad-authority`, the accepted audiences via `--aad-audiences`, the accepted issuers via `--aad-issuers`, and the authorized client application ids via `--aad-authorized-app-ids` (audiences, issuers, and app ids are comma-separated strings).
+
+```bash
+    GarnetServer --auth Aad --aad-authority <authority> --aad-audiences <aud1,aud2> --aad-issuers <iss1,iss2> --aad-authorized-app-ids <appId1,appId2>
+```
+
+* ACL validates new connections and commands against configured ACL users and access rules. The users and rules are loaded from an external ACL file specified via `--acl-file`.
+
+```bash
+    GarnetServer --auth ACL --acl-file <path-to-users.acl>
+```
+
+* AclWithAad combines ACL authorization with AAD token validation: the username is expected to be the object id of the client application or of a valid group the client belongs to, and the token is validated for claims. Set `--aad-validate-acl-username` to validate the username against the token. It uses both the ACL and AAD parameters described above.
+
+```bash
+    GarnetServer --auth AclWithAad --acl-file <path-to-users.acl> --aad-authority <authority> --aad-audiences <aud1,aud2> --aad-issuers <iss1,iss2> --aad-authorized-app-ids <appId1,appId2> --aad-validate-acl-username
+```
+
+With these features, you can get security capabilities with your Garnet deployment. Please check with your team's security requirements whether this functionality is sufficient to match your 
 needs. Note that if larger-than-memory data is enabled, we do not encrypt the data that spills to local disk, or the checkpoints. We also do not encrypt the actual data served in memory.
