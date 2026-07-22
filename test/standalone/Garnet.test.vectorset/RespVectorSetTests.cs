@@ -3914,6 +3914,182 @@ namespace Garnet.test
         }
 
         /// <summary>
+        /// Namespace of a per-element Attributes (SETATTR) record: ContextStep (8) + the Attributes term (3).
+        /// This is the one variable-length DiskANN term - unlike neighbor lists and vectors it grows/shrinks with
+        /// the attribute payload, so it is what actually exercises the Writer resize paths below.
+        /// </summary>
+        private const byte AttributesNamespace = 11;
+
+        /// <summary>
+        /// Baseline for the VectorSessionFunctions Upsert path: writing a namespaced element value through
+        /// InitialWriter and reading it back must round-trip the bytes verbatim.
+        /// </summary>
+        [Test]
+        public void VectorElementUpsertRoundTrips()
+        {
+            var ns = new byte[] { AttributesNamespace };
+            var key = new byte[] { 0, 0, 0, 0 };
+            var value = Encoding.ASCII.GetBytes("hello world");
+
+            var status = UpsertVectorElement(ns, key, value);
+            ClassicAssert.IsTrue(status.IsCompletedSuccessfully, $"element upsert must complete (got {status})");
+
+            var readBack = ReadVectorElement(ns, key);
+            CollectionAssert.AreEqual(value, readBack, "reading a freshly-upserted element must return the written bytes verbatim");
+        }
+
+        /// <summary>
+        /// An equal-size second Upsert lands on InPlaceWriter (mutable) and must replace the value with no
+        /// residue - the capacity is identical so this is the case that already works.
+        /// </summary>
+        [Test]
+        public void VectorElementUpsertSameSizeInPlaceOverwritePreservesValue()
+        {
+            var ns = new byte[] { AttributesNamespace };
+            var key = new byte[] { 0, 0, 0, 0 };
+
+            _ = UpsertVectorElement(ns, key, Encoding.ASCII.GetBytes("fizz buzz"));
+
+            var overwrite = Encoding.ASCII.GetBytes("buzz fizz");
+            _ = UpsertVectorElement(ns, key, overwrite);
+
+            var readBack = ReadVectorElement(ns, key);
+            CollectionAssert.AreEqual(overwrite, readBack, "an equal-size in-place element overwrite must replace the value");
+        }
+
+        /// <summary>
+        /// Growing an element value via a second Upsert. In the read-only region Tsavorite allocates a fresh,
+        /// correctly-sized record (InitialWriter); in the mutable region it routes to InPlaceWriter, which must
+        /// refuse to overflow the smaller existing record rather than blindly copying past its end. Either way a
+        /// subsequent read must return the larger value.
+        /// </summary>
+        [Test]
+        public void VectorElementUpsertGrowPreservesValue([Values(false, true)] bool inReadOnlyRegion)
+        {
+            var ns = new byte[] { AttributesNamespace };
+            var key = new byte[] { 0, 0, 0, 0 };
+            var small = Encoding.ASCII.GetBytes("fizz buzz");    // 9 bytes
+            var large = Encoding.ASCII.GetBytes("hello world");  // 11 bytes
+
+            var seed = UpsertVectorElement(ns, key, small);
+            ClassicAssert.IsTrue(seed.IsCompletedSuccessfully, $"seed upsert must complete (got {seed})");
+
+            if (inReadOnlyRegion)
+            {
+                var store = server.Provider.StoreWrapper.store;
+                store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, wait: true);
+            }
+
+            ClassicAssert.DoesNotThrow(() => UpsertVectorElement(ns, key, large), "growing an element value must not overflow the existing record");
+
+            var readBack = ReadVectorElement(ns, key);
+            CollectionAssert.AreEqual(large, readBack, "a grown element must read back as the larger value");
+        }
+
+        /// <summary>
+        /// Shrinking an element value via a second Upsert. In the read-only region a fresh record is allocated;
+        /// in the mutable region InPlaceWriter must update the content length so the read returns only the new
+        /// (shorter) value and none of the previous value's trailing bytes.
+        /// </summary>
+        [Test]
+        public void VectorElementUpsertShrinkPreservesValue([Values(false, true)] bool inReadOnlyRegion)
+        {
+            var ns = new byte[] { AttributesNamespace };
+            var key = new byte[] { 0, 0, 0, 0 };
+            var large = Encoding.ASCII.GetBytes("hello world");  // 11 bytes
+            var small = Encoding.ASCII.GetBytes("fizz buzz");    // 9 bytes
+
+            var seed = UpsertVectorElement(ns, key, large);
+            ClassicAssert.IsTrue(seed.IsCompletedSuccessfully, $"seed upsert must complete (got {seed})");
+
+            if (inReadOnlyRegion)
+            {
+                var store = server.Provider.StoreWrapper.store;
+                store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, wait: true);
+            }
+
+            _ = UpsertVectorElement(ns, key, small);
+
+            var readBack = ReadVectorElement(ns, key);
+            CollectionAssert.AreEqual(small, readBack, "a shrunk element must read back as the smaller value with no stale trailing bytes");
+        }
+
+        /// <summary>
+        /// Drives a single VectorSessionFunctions Upsert of a namespaced element value, mirroring the production
+        /// write path in <see cref="VectorManager"/>'s DiskANN write callback: AlignmentExpected input, a pinned
+        /// value span, against a dedicated Vector session.
+        /// </summary>
+        private Status UpsertVectorElement(byte[] namespaceBytes, byte[] key, byte[] value)
+        {
+            var storeWrapper = server.Provider.StoreWrapper;
+            var functionsState = storeWrapper.CreateFunctionsState();
+            var functions = new VectorSessionFunctions(functionsState);
+            ClassicAssert.IsTrue(storeWrapper.TryGetDatabase(0, out var database));
+
+            using var session = database.Store.NewSession<VectorElementKey, VectorInput, VectorOutput, long, VectorSessionFunctions>(functions);
+            var context = session.BasicContext;
+
+            unsafe
+            {
+                fixed (byte* nsPtr = namespaceBytes)
+                fixed (byte* keyPtr = key)
+                fixed (byte* valuePtr = value)
+                {
+                    var elementKey = new VectorElementKey(new ReadOnlySpan<byte>(nsPtr, namespaceBytes.Length), new ReadOnlySpan<byte>(keyPtr, key.Length));
+                    var input = new VectorInput { AlignmentExpected = true };
+                    var valueSpan = SpanByte.FromPinnedPointer(valuePtr, value.Length);
+                    var output = new VectorOutput();
+
+                    var status = context.Upsert(elementKey, ref input, valueSpan, ref output);
+                    if (status.IsPending)
+                        _ = context.CompletePending(wait: true);
+
+                    return status;
+                }
+            }
+        }
+
+        /// <summary>
+        /// Reads a namespaced element value back through VectorSessionFunctions.Reader, requesting alignment so the
+        /// returned span is trimmed to exactly the stored payload (excluding alignment padding).
+        /// </summary>
+        private byte[] ReadVectorElement(byte[] namespaceBytes, byte[] key)
+        {
+            var storeWrapper = server.Provider.StoreWrapper;
+            var functionsState = storeWrapper.CreateFunctionsState();
+            var functions = new VectorSessionFunctions(functionsState);
+            ClassicAssert.IsTrue(storeWrapper.TryGetDatabase(0, out var database));
+
+            using var session = database.Store.NewSession<VectorElementKey, VectorInput, VectorOutput, long, VectorSessionFunctions>(functions);
+            var context = session.BasicContext;
+
+            unsafe
+            {
+                fixed (byte* nsPtr = namespaceBytes)
+                fixed (byte* keyPtr = key)
+                {
+                    var elementKey = new VectorElementKey(new ReadOnlySpan<byte>(nsPtr, namespaceBytes.Length), new ReadOnlySpan<byte>(keyPtr, key.Length));
+
+                    Span<byte> buffer = stackalloc byte[256];
+                    fixed (byte* bufferPtr = buffer)
+                    {
+                        var input = new VectorInput { AlignmentExpected = true, ReadDesiredSize = -1 };
+                        var output = new VectorOutput(bufferPtr, buffer.Length);
+
+                        var status = context.Read(elementKey, ref input, ref output);
+                        if (status.IsPending)
+                            _ = context.CompletePending(wait: true);
+
+                        ClassicAssert.IsTrue(status.Found, "reading a written element must find the record");
+                        ClassicAssert.IsTrue(output.SpanByteAndMemory.IsSpanByte, "the element read must stay on the pinned span");
+
+                        return output.SpanByteAndMemory.ReadOnlySpan.ToArray();
+                    }
+                }
+            }
+        }
+
+        /// <summary>
         /// Create a new GarnetServer instance with common parameters.
         /// </summary>
         private static GarnetServer CreateGarnetServer(bool tryRecover, bool enableVectorSetPreview = true)
