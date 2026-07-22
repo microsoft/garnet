@@ -11,9 +11,10 @@ using Tsavorite.core;
 namespace Garnet.server
 {
     /// <summary>
-    /// Flags used by append-only file (AOF/WAL)
-    /// The byte representation only use the last 3 bits of the byte since the lower 5 bits of the "union" field that is used to store the flag stores other data (see RespInputHeader.FlagMask).
-    /// In the case of a Rawstring, the last 4 bits are used for flags, and the other 4 bits are unused of the byte.
+    /// Flags used by append-only file (AOF/WAL).
+    /// These occupy the top bits (32/64/128) of the header flags byte (RespInputHeader byte 2).
+    /// The object sub-operation id now lives in its own header byte (RespInputHeader.subId), so the
+    /// flags byte no longer shares space with it.
     /// </summary>
     [Flags]
     public enum RespInputFlags : byte
@@ -34,7 +35,18 @@ namespace Garnet.server
     }
 
     /// <summary>
-    /// Common input header for Garnet
+    /// Common input header for Garnet.
+    ///
+    /// Layout (3 bytes, explicit) is a discriminated union keyed by command category:
+    ///   byte 0-1 : <see cref="cmd"/> (ushort) — used by string/unified inputs.
+    ///   byte 0   : <see cref="type"/> (GarnetObjectType) — used by object inputs; overlaps cmd's low byte.
+    ///   byte 1   : <see cref="subId"/> (object sub-operation id) — used by object inputs; overlaps cmd's high byte.
+    ///   byte 2   : <see cref="flags"/> (<see cref="RespInputFlags"/>).
+    ///
+    /// Object inputs use { type, subId } and never read/write <see cref="cmd"/>; string/unified inputs use
+    /// <see cref="cmd"/> and never set <see cref="subId"/>. The two views are disjoint by command category
+    /// (store / AofEntryType), so sharing byte 1 between cmd's high byte and subId is safe. This gives the
+    /// object sub-operation a full byte (256 values/type) instead of the former 5 bits packed into flags.
     /// </summary>
     [StructLayout(LayoutKind.Explicit, Size = Size)]
     public struct RespInputHeader
@@ -44,14 +56,14 @@ namespace Garnet.server
         /// </summary>
         public const int Size = 3;
 
-        // Flag mask separates the lower bits (used for object-associated sub-operation IDs) from the upper bits (used for RespInputFlags).
-        internal const byte FlagMask = (byte)RespInputFlags.SetGet - 1;
-
         [FieldOffset(0)]
         internal RespCommand cmd;
 
         [FieldOffset(0)]
         internal GarnetObjectType type;
+
+        [FieldOffset(1)]
+        internal byte subId;
 
         [FieldOffset(2)]
         internal RespInputFlags flags;
@@ -93,32 +105,32 @@ namespace Garnet.server
 
         internal byte SubId
         {
-            get => (byte)((byte)flags & FlagMask);
-            set => flags = (RespInputFlags)(((byte)flags & ~FlagMask) | (byte)value);
+            get => subId;
+            set => subId = value;
         }
 
         internal SortedSetOperation SortedSetOp
         {
-            get => (SortedSetOperation)((byte)flags & FlagMask);
-            set => flags = (RespInputFlags)(((byte)flags & ~FlagMask) | (byte)value);
+            get => (SortedSetOperation)subId;
+            set => subId = (byte)value;
         }
 
         internal HashOperation HashOp
         {
-            get => (HashOperation)((byte)flags & FlagMask);
-            set => flags = (RespInputFlags)(((byte)flags & ~FlagMask) | (byte)value);
+            get => (HashOperation)subId;
+            set => subId = (byte)value;
         }
 
         internal SetOperation SetOp
         {
-            get => (SetOperation)((byte)flags & FlagMask);
-            set => flags = (RespInputFlags)(((byte)flags & ~FlagMask) | (byte)value);
+            get => (SetOperation)subId;
+            set => subId = (byte)value;
         }
 
         internal ListOperation ListOp
         {
-            get => (ListOperation)((byte)flags & FlagMask);
-            set => flags = (RespInputFlags)(((byte)flags & ~FlagMask) | (byte)value);
+            get => (ListOperation)subId;
+            set => subId = (byte)value;
         }
 
         /// <summary>
