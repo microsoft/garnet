@@ -101,6 +101,7 @@ namespace Garnet.server
         private readonly Func<IMessageConsumer> getTempSession;
 
         private bool requestCleanupTaskRunning;
+        private int postCheckpointTasksRunning;
 
         // Pause / resume coordination for the cleanup task vs concurrent Reset.
         //
@@ -440,7 +441,7 @@ namespace Garnet.server
         /// </summary>
         internal void WaitForCleanupRequests()
         {
-            while (!potentiallyDeleted.IsEmpty || requestCleanupTaskChannel.Reader.TryPeek(out _) || Volatile.Read(ref requestCleanupTaskRunning))
+            while (!potentiallyDeleted.IsEmpty || requestCleanupTaskChannel.Reader.TryPeek(out _) || Volatile.Read(ref requestCleanupTaskRunning) || Interlocked.CompareExchange(ref postCheckpointTasksRunning, 0, 0) != 0)
             {
                 _ = Thread.Yield();
             }
@@ -475,59 +476,72 @@ namespace Garnet.server
         /// </summary>
         public unsafe void CheckpointCompleted()
         {
-            using var session = (RespServerSession)getTempSession();
+            _ = Task.Run(() => QueueCleanups(this));
+            _ = Interlocked.Increment(ref postCheckpointTasksRunning);
 
-            // Just need a Vector Set command, which one doesn't matter
-            StringInput input = new(RespCommand.VINFO);
-            input.parseState.Initialize(1);
-
-            Span<byte> indexSpan = stackalloc byte[Index.Size];
-            var indexMem = SpanByteAndMemory.FromPinnedSpan(indexSpan);
-            StringOutput output = new(indexMem);
-
-            while (!potentiallyDeleted.IsEmpty)
+            static void QueueCleanups(VectorManager self)
             {
-                foreach (var (context, key) in potentiallyDeleted)
+                try
                 {
-                    if (potentiallyDeleted.TryRemove(context, out _))
+                    using var session = (RespServerSession)self.getTempSession();
+
+                    // Just need a Vector Set command, which one doesn't matter
+                    StringInput input = new(RespCommand.VINFO);
+                    input.parseState.Initialize(1);
+
+                    Span<byte> indexSpan = stackalloc byte[Index.Size];
+                    var indexMem = SpanByteAndMemory.FromPinnedSpan(indexSpan);
+                    StringOutput output = new(indexMem);
+
+                    while (!self.potentiallyDeleted.IsEmpty)
                     {
-                        bool needsDelete;
-
-                        fixed (byte* keyPtr = key)
+                        foreach (var (context, key) in self.potentiallyDeleted)
                         {
-                            ReadOnlySpan<byte> keySpan = new(keyPtr, key.Length);
-                            input.parseState.SetArgument(0, PinnedSpanByte.FromPinnedSpan(keySpan));
-
-                            var status = session.storageSession.Read_MainStore(key, ref input, ref output, ref session.storageSession.stringBasicContext);
-
-                            if (status != GarnetStatus.OK || !output.SpanByteAndMemory.IsSpanByte || output.SpanByteAndMemory.Length != Index.Size)
+                            if (self.potentiallyDeleted.TryRemove(context, out _))
                             {
-                                // WRONGTYPE or missing means the index is not longer live, and a wrong-sized value means we're corrupted somehow
-                                needsDelete = true;
-                            }
-                            else
-                            {
-                                // If the _context_ on this record has changed, that also means the old Vector Set is dead
-                                ReadIndex(output.SpanByteAndMemory.Span, out var liveContext, out _, out _, out _, out _, out _, out _, out _, out _);
-                                needsDelete = liveContext != context;
-                            }
-                        }
+                                bool needsDelete;
 
-                        if (needsDelete)
-                        {
-                            // No need to wait for marking, since the record is already "deleted"
-                            if (!requestCleanupTaskChannel.Writer.TryWrite((context, null)))
-                            {
-                                logger?.LogWarning("Could not request delete of abandoned Vector Set {key}", SpanByte.ToShortString(key));
-                            }
-                        }
+                                fixed (byte* keyPtr = key)
+                                {
+                                    ReadOnlySpan<byte> keySpan = new(keyPtr, key.Length);
+                                    input.parseState.SetArgument(0, PinnedSpanByte.FromPinnedSpan(keySpan));
 
-                        if (!output.SpanByteAndMemory.IsSpanByte || output.SpanByteAndMemory.Length != Index.Size)
-                        {
-                            output.SpanByteAndMemory.Dispose();
-                            output = new(indexMem);
+                                    var status = session.storageSession.Read_MainStore(key, ref input, ref output, ref session.storageSession.stringBasicContext);
+
+                                    if (status != GarnetStatus.OK || !output.SpanByteAndMemory.IsSpanByte || output.SpanByteAndMemory.Length != Index.Size)
+                                    {
+                                        // WRONGTYPE or missing means the index is not longer live, and a wrong-sized value means we're corrupted somehow
+                                        needsDelete = true;
+                                    }
+                                    else
+                                    {
+                                        // If the _context_ on this record has changed, that also means the old Vector Set is dead
+                                        ReadIndex(output.SpanByteAndMemory.Span, out var liveContext, out _, out _, out _, out _, out _, out _, out _, out _);
+                                        needsDelete = liveContext != context;
+                                    }
+                                }
+
+                                if (needsDelete)
+                                {
+                                    // No need to wait for marking, since the record is already "deleted"
+                                    if (!self.requestCleanupTaskChannel.Writer.TryWrite((context, null)))
+                                    {
+                                        self.logger?.LogWarning("Could not request delete of abandoned Vector Set {key}", SpanByte.ToShortString(key));
+                                    }
+                                }
+
+                                if (!output.SpanByteAndMemory.IsSpanByte || output.SpanByteAndMemory.Length != Index.Size)
+                                {
+                                    output.SpanByteAndMemory.Dispose();
+                                    output = new(indexMem);
+                                }
+                            }
                         }
                     }
+                }
+                finally
+                {
+                    _ = Interlocked.Decrement(ref self.postCheckpointTasksRunning);
                 }
             }
         }
