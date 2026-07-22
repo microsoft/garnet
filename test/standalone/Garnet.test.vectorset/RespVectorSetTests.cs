@@ -3914,20 +3914,13 @@ namespace Garnet.test
         }
 
         /// <summary>
-        /// Namespace of a per-element Attributes (SETATTR) record: ContextStep (8) + the Attributes term (3).
-        /// This is the one variable-length DiskANN term - unlike neighbor lists and vectors it grows/shrinks with
-        /// the attribute payload, so it is what actually exercises the Writer resize paths below.
-        /// </summary>
-        private const byte AttributesNamespace = 11;
-
-        /// <summary>
         /// Baseline for the VectorSessionFunctions Upsert path: writing a namespaced element value through
         /// InitialWriter and reading it back must round-trip the bytes verbatim.
         /// </summary>
         [Test]
         public void VectorElementUpsertRoundTrips()
         {
-            var ns = new byte[] { AttributesNamespace };
+            var ns = new byte[] { 11 };
             var key = new byte[] { 0, 0, 0, 0 };
             var value = Encoding.ASCII.GetBytes("hello world");
 
@@ -3945,7 +3938,7 @@ namespace Garnet.test
         [Test]
         public void VectorElementUpsertSameSizeInPlaceOverwritePreservesValue()
         {
-            var ns = new byte[] { AttributesNamespace };
+            var ns = new byte[] { 11 };
             var key = new byte[] { 0, 0, 0, 0 };
 
             _ = UpsertVectorElement(ns, key, Encoding.ASCII.GetBytes("fizz buzz"));
@@ -3966,7 +3959,7 @@ namespace Garnet.test
         [Test]
         public void VectorElementUpsertGrowPreservesValue([Values(false, true)] bool inReadOnlyRegion)
         {
-            var ns = new byte[] { AttributesNamespace };
+            var ns = new byte[] { 11 };
             var key = new byte[] { 0, 0, 0, 0 };
             var small = Encoding.ASCII.GetBytes("fizz buzz");    // 9 bytes
             var large = Encoding.ASCII.GetBytes("hello world");  // 11 bytes
@@ -3994,7 +3987,7 @@ namespace Garnet.test
         [Test]
         public void VectorElementUpsertShrinkPreservesValue([Values(false, true)] bool inReadOnlyRegion)
         {
-            var ns = new byte[] { AttributesNamespace };
+            var ns = new byte[] { 11 };
             var key = new byte[] { 0, 0, 0, 0 };
             var large = Encoding.ASCII.GetBytes("hello world");  // 11 bytes
             var small = Encoding.ASCII.GetBytes("fizz buzz");    // 9 bytes
