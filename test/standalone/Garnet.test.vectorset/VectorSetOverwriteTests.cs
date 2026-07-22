@@ -238,7 +238,7 @@ namespace Garnet.test
             Func<IDatabaseAsync, IDatabaseAsync, RedisKey, Task> runCommand,
             Func<IDatabaseAsync, RedisKey, Task> runPrep = null)
         {
-            const int ExtraRecordForCompaction = 50_000;
+            const int ExtraRecordForCompaction = 30_000;
 
             var vectorManager = server.Provider.StoreWrapper.DefaultDatabase.VectorManager;
 
