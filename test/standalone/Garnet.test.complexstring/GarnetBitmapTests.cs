@@ -1093,7 +1093,7 @@ namespace Garnet.test
 
             // Check result
             var res = (byte[])await db.StringGetAsync(Key).ConfigureAwait(false);
-            ClassicAssert.IsTrue(new byte[] { 255 }.SequenceEqual(res));
+            ClassicAssert.AreEqual(new byte[] { 255 }, res);
         }
 
         [Order(43)]
@@ -1101,9 +1101,9 @@ namespace Garnet.test
         [Category("BITFIELD")]
         public async Task BitopAndTransactionAsync()
         {
-            const string Key = nameof(BitopNotTransactionAsync);
-            const string KeyA = nameof(BitopNotTransactionAsync) + "A";
-            const string KeyB = nameof(BitopNotTransactionAsync) + "B";
+            const string Key = nameof(BitopAndTransactionAsync);
+            const string KeyA = nameof(BitopAndTransactionAsync) + "A";
+            const string KeyB = nameof(BitopAndTransactionAsync) + "B";
 
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase();
@@ -1123,7 +1123,7 @@ namespace Garnet.test
 
             // Check result
             var res = (byte[])await db.StringGetAsync(Key).ConfigureAwait(false);
-            ClassicAssert.IsTrue(new byte[] { 0b0001_1000 }.SequenceEqual(res));
+            ClassicAssert.AreEqual(new byte[] { 0b0001_1000 }, res);
         }
 
         private static long GetValueFromBitmap(ref byte[] bitmap, long offset, int bitCount, bool signed)
