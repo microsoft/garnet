@@ -3427,8 +3427,6 @@ namespace Garnet.test
                     var allAdds = new List<Task>();
                     for (var i = 0; i < NumVectorSets; i++)
                     {
-                        TestContext.Progress.WriteLine(i);
-
                         var keyName = $"{nameof(LotsOfVectorSetsAsync)}_{i}";
                         var elemName = $"x{i}";
                         var vector = new byte[(i * 3) + 1];
