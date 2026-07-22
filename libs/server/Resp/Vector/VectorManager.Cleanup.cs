@@ -476,9 +476,9 @@ namespace Garnet.server
         /// </summary>
         public unsafe void CheckpointCompleted()
         {
-            _ = Task.Run(() => QueueCleanups(this));
             _ = Interlocked.Increment(ref postCheckpointTasksRunning);
-
+            _ = Task.Run(() => QueueCleanups(this));
+            
             static void QueueCleanups(VectorManager self)
             {
                 try
