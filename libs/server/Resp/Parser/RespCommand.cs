@@ -196,6 +196,10 @@ namespace Garnet.server
         LRANGE,
         MEMORY_USAGE,
         MGET,
+        OBJECT_ENCODING,
+        OBJECT_FREQ,
+        OBJECT_IDLETIME,
+        OBJECT_REFCOUNT,
         PEXPIRETIME,
         PFCOUNT,
         PTTL,
@@ -354,6 +358,10 @@ namespace Garnet.server
 
         MEMORY,
         // MEMORY_USAGE is a read-only command, so moved up
+
+        OBJECT,
+        OBJECT_HELP,
+        // OBJECT_ENCODING/FREQ/IDLETIME/REFCOUNT are read-only commands, so moved up
 
         CONFIG,
         CONFIG_GET,

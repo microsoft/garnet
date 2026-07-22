@@ -1470,6 +1470,13 @@
         ]
       },
       {
+        "Command": "CLUSTER_MLOG_KEY_TIME",
+        "Name": "CLUSTER|MLOG_KEY_TIME",
+        "Summary": "Returns sequence number for provided key.",
+        "Group": "Cluster",
+        "Complexity": "O(1)"
+      },
+      {
         "Command": "CLUSTER_MYID",
         "Name": "CLUSTER|MYID",
         "Summary": "Returns the ID of a node.",
@@ -1636,13 +1643,6 @@
         "Command": "CLUSTER_SPUBLISH",
         "Name": "CLUSTER|SPUBLISH",
         "Summary": "Processes a forwarded published message from a node in the same shard",
-        "Group": "Cluster",
-        "Complexity": "O(1)"
-      },
-      {
-        "Command": "CLUSTER_MLOG_KEY_TIME",
-        "Name": "CLUSTER|MLOG_KEY_TIME",
-        "Summary": "Returns sequence number for provided key.",
         "Group": "Cluster",
         "Complexity": "O(1)"
       }
@@ -5657,6 +5657,86 @@
     "Complexity": "O(1)"
   },
   {
+    "Command": "OBJECT",
+    "Name": "OBJECT",
+    "Summary": "A container for object introspection commands.",
+    "Group": "Generic",
+    "Complexity": "Depends on subcommand.",
+    "SubCommands": [
+      {
+        "Command": "OBJECT_ENCODING",
+        "Name": "OBJECT|ENCODING",
+        "Summary": "Returns the internal encoding of a Garnet object.",
+        "Group": "Generic",
+        "Complexity": "O(1)",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandKeyArgument",
+            "Name": "KEY",
+            "DisplayText": "key",
+            "Type": "Key",
+            "KeySpecIndex": 0
+          }
+        ]
+      },
+      {
+        "Command": "OBJECT_FREQ",
+        "Name": "OBJECT|FREQ",
+        "Summary": "Not supported in Garnet: always returns an error, as access frequency (LFU) is not tracked.",
+        "Group": "Generic",
+        "Complexity": "O(1)",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandKeyArgument",
+            "Name": "KEY",
+            "DisplayText": "key",
+            "Type": "Key",
+            "KeySpecIndex": 0
+          }
+        ]
+      },
+      {
+        "Command": "OBJECT_HELP",
+        "Name": "OBJECT|HELP",
+        "Summary": "Returns helpful text about the different subcommands.",
+        "Group": "Generic",
+        "Complexity": "O(1)"
+      },
+      {
+        "Command": "OBJECT_IDLETIME",
+        "Name": "OBJECT|IDLETIME",
+        "Summary": "Returns the idle time of a Garnet object; always 0, as Garnet does not track per-key idle time.",
+        "Group": "Generic",
+        "Complexity": "O(1)",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandKeyArgument",
+            "Name": "KEY",
+            "DisplayText": "key",
+            "Type": "Key",
+            "KeySpecIndex": 0
+          }
+        ]
+      },
+      {
+        "Command": "OBJECT_REFCOUNT",
+        "Name": "OBJECT|REFCOUNT",
+        "Summary": "Returns the reference count of a Garnet object; always 1, as Garnet does not share value objects.",
+        "Group": "Generic",
+        "Complexity": "O(1)",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandKeyArgument",
+            "Name": "KEY",
+            "DisplayText": "key",
+            "Type": "Key",
+            "KeySpecIndex": 0
+          }
+        ]
+      }
+    ]
+  },
+  {
     "Command": "PERSIST",
     "Name": "PERSIST",
     "Summary": "Removes the expiration time of a key.",
@@ -6377,6 +6457,22 @@
     ]
   },
   {
+    "Command": "RICONFIG",
+    "Name": "RI.CONFIG",
+    "Summary": "Returns the configuration of a RangeIndex as alternating field-value pairs.",
+    "Group": "Generic",
+    "Complexity": "O(1)",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      }
+    ]
+  },
+  {
     "Command": "RICREATE",
     "Name": "RI.CREATE",
     "Summary": "Creates a new RangeIndex backed by a BfTree. Returns an error if the key already exists.",
@@ -6451,22 +6547,6 @@
         "Type": "Integer",
         "Token": "PAGESIZE",
         "ArgumentFlags": "Optional"
-      }
-    ]
-  },
-  {
-    "Command": "RICONFIG",
-    "Name": "RI.CONFIG",
-    "Summary": "Returns the configuration of a RangeIndex as alternating field-value pairs.",
-    "Group": "Generic",
-    "Complexity": "O(1)",
-    "Arguments": [
-      {
-        "TypeDiscriminator": "RespCommandKeyArgument",
-        "Name": "KEY",
-        "DisplayText": "key",
-        "Type": "Key",
-        "KeySpecIndex": 0
       }
     ]
   },
@@ -7371,50 +7451,6 @@
     ]
   },
   {
-    "Command": "SETWITHETAG",
-    "Name": "SETWITHETAG",
-    "Summary": "Sets a key-value pair with an ETag. If the key already exists, the value is overwritten and the ETag is incremented. Returns the ETag.",
-    "Group": "String",
-    "Complexity": "O(1)",
-    "Arguments": [
-      {
-        "TypeDiscriminator": "RespCommandKeyArgument",
-        "Name": "KEY",
-        "DisplayText": "key",
-        "Type": "Key",
-        "KeySpecIndex": 0
-      },
-      {
-        "TypeDiscriminator": "RespCommandBasicArgument",
-        "Name": "VALUE",
-        "DisplayText": "value",
-        "Type": "String"
-      },
-      {
-        "TypeDiscriminator": "RespCommandContainerArgument",
-        "Name": "EXPIRATION",
-        "Type": "OneOf",
-        "ArgumentFlags": "Optional",
-        "Arguments": [
-          {
-            "TypeDiscriminator": "RespCommandBasicArgument",
-            "Name": "SECONDS",
-            "DisplayText": "seconds",
-            "Type": "Integer",
-            "Token": "EX"
-          },
-          {
-            "TypeDiscriminator": "RespCommandBasicArgument",
-            "Name": "MILLISECONDS",
-            "DisplayText": "milliseconds",
-            "Type": "Integer",
-            "Token": "PX"
-          }
-        ]
-      }
-    ]
-  },
-  {
     "Command": "SETNX",
     "Name": "SETNX",
     "Summary": "Set the string value of a key only when the key doesn't exist.",
@@ -7463,6 +7499,50 @@
         "Name": "VALUE",
         "DisplayText": "value",
         "Type": "String"
+      }
+    ]
+  },
+  {
+    "Command": "SETWITHETAG",
+    "Name": "SETWITHETAG",
+    "Summary": "Sets a key-value pair with an ETag. If the key already exists, the value is overwritten and the ETag is incremented. Returns the ETag.",
+    "Group": "String",
+    "Complexity": "O(1)",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "VALUE",
+        "DisplayText": "value",
+        "Type": "String"
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "EXPIRATION",
+        "Type": "OneOf",
+        "ArgumentFlags": "Optional",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "SECONDS",
+            "DisplayText": "seconds",
+            "Type": "Integer",
+            "Token": "EX"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "MILLISECONDS",
+            "DisplayText": "milliseconds",
+            "Type": "Integer",
+            "Token": "PX"
+          }
+        ]
       }
     ]
   },
