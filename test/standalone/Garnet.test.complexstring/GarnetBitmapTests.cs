@@ -1513,7 +1513,7 @@ namespace Garnet.test
             switch (overflowType)
             {
                 case 0://wrap
-                    if ((bitCount < 64 && incrBy > maxAdd) || (value >= 0 && incrBy > 0 && incrBy > maxVal) ||
+                    if ((bitCount < 64 && incrBy > maxAdd) || (bitCount == 64 && value >= 0 && incrBy > 0 && (value + incrBy) < 0) ||
                         ((bitCount < 64 && incrBy < maxSub) || (value < 0 && incrBy < 0 && incrBy < maxSub)))
                     {
                         ulong signb = 1UL << (bitCount - 1);
@@ -1530,13 +1530,13 @@ namespace Garnet.test
                     }
                     return ((value + incrBy), false);
                 case 1://sat                                   
-                    if ((bitCount < 64 && incrBy > maxAdd) || (value >= 0 && incrBy > 0 && incrBy > maxVal))
+                    if ((bitCount < 64 && incrBy > maxAdd) || (bitCount == 64 && value >= 0 && incrBy > 0 && (value + incrBy) < 0))
                         return (maxVal, true);
                     if ((bitCount < 64 && incrBy < maxSub) || (value < 0 && incrBy < 0 && incrBy < maxSub))
                         return (minVal, true);
                     return ((value + incrBy), false);
                 case 2://fail // detect overflow/underflow do not do anything else
-                    if ((bitCount < 64 && incrBy > maxAdd) || (value >= 0 && incrBy > 0 && incrBy > maxVal) ||
+                    if ((bitCount < 64 && incrBy > maxAdd) || (bitCount == 64 && value >= 0 && incrBy > 0 && (value + incrBy) < 0) ||
                         ((bitCount < 64 && incrBy < maxSub) || (value < 0 && incrBy < 0 && incrBy < maxSub)))
                         return (0, true);
                     return ((value + incrBy), false);
@@ -1554,8 +1554,12 @@ namespace Garnet.test
             //underflow if sign bit is zero
             bool underflow = (result & signbit) == 0 && value < 0 && incrBy < 0;
             //if operands are both positive possibility of overflow
-            //overflow if any of the 64-bitcount most significant bits are set.
-            bool overflow = (ulong)(result & ~mask) > 0 && value >= 0 && incrBy > 0;
+            //overflow if any of the 64-bitcount most significant bits are set. At
+            //bitCount == 64 there are no such bits to check (mask covers the whole word),
+            //so overflow instead shows up as the sign bit flipping negative.
+            bool overflow = bitCount == 64
+                ? result < 0 && value >= 0 && incrBy > 0
+                : (ulong)(result & ~mask) > 0 && value >= 0 && incrBy > 0;
 
             switch (overflowType)
             {
@@ -2543,7 +2547,49 @@ namespace Garnet.test
             ClassicAssert.AreEqual(expected: new byte[] { 0x80, 0x80 }, actual: result);
         }
 
-        [Order(41)]
+        /// <summary>
+        /// Regression test for a signed 64-bit-specific gap in overflow detection: at
+        /// bitCount == 64 there are no "extra" high bits above the field to check (the field
+        /// spans the whole word), so the general-purpose overflow check silently never fired,
+        /// making OVERFLOW SAT clamp to nothing (silently wrapping instead) and OVERFLOW FAIL
+        /// silently succeed (instead of rejecting the write) whenever a signed 64-bit INCRBY
+        /// actually overflowed. WRAP was unaffected, since its result value already comes from
+        /// plain two's-complement long addition regardless of the overflow flag.
+        /// </summary>
+        [Test, Order(41)]
+        [Category("BITFIELD")]
+        public void BitmapBitfieldSigned64OverflowTest()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var key = "BitmapBitfieldSigned64OverflowTest";
+
+            // Overflow direction: SAT clamps to long.MaxValue and stores the clamped value.
+            db.Execute("BITFIELD", (RedisKey)key, "SET", "i64", 0, long.MaxValue - 5);
+            var satResult = (long)db.Execute("BITFIELD", (RedisKey)key, "OVERFLOW", "SAT", "INCRBY", "i64", 0, 100);
+            ClassicAssert.AreEqual(long.MaxValue, satResult);
+            ClassicAssert.AreEqual(long.MaxValue, (long)db.Execute("BITFIELD", (RedisKey)key, "GET", "i64", 0));
+
+            // Overflow direction: FAIL reports the overflow via a nil reply. (Whether the stored
+            // value itself is left untouched on FAIL is a separate, pre-existing question that
+            // applies at every bitCount, not something this fix changes - not asserted here.)
+            db.Execute("BITFIELD", (RedisKey)key, "SET", "i64", 0, long.MaxValue - 5);
+            var failResult = (RedisResult[])db.Execute("BITFIELD", (RedisKey)key, "OVERFLOW", "FAIL", "INCRBY", "i64", 0, 100);
+            ClassicAssert.IsTrue(failResult[0].IsNull);
+
+            // Underflow direction: SAT clamps to long.MinValue and stores the clamped value.
+            db.Execute("BITFIELD", (RedisKey)key, "SET", "i64", 0, long.MinValue + 5);
+            var satUnderflowResult = (long)db.Execute("BITFIELD", (RedisKey)key, "OVERFLOW", "SAT", "INCRBY", "i64", 0, -100);
+            ClassicAssert.AreEqual(long.MinValue, satUnderflowResult);
+            ClassicAssert.AreEqual(long.MinValue, (long)db.Execute("BITFIELD", (RedisKey)key, "GET", "i64", 0));
+
+            // Underflow direction: FAIL reports the overflow via a nil reply.
+            db.Execute("BITFIELD", (RedisKey)key, "SET", "i64", 0, long.MinValue + 5);
+            var failUnderflowResult = (RedisResult[])db.Execute("BITFIELD", (RedisKey)key, "OVERFLOW", "FAIL", "INCRBY", "i64", 0, -100);
+            ClassicAssert.IsTrue(failUnderflowResult[0].IsNull);
+        }
+
+        [Order(42)]
         [Test]
         [Category("BITFIELD")]
         public void BitmapBitFieldInvalidOptionsTest([Values(RespCommand.BITFIELD, RespCommand.BITFIELD_RO)] RespCommand testCmd)
