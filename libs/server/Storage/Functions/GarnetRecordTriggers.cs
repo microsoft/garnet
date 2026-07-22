@@ -265,10 +265,10 @@ namespace Garnet.server
         public readonly bool IsDeleted<TSourceLogRecord>(in TSourceLogRecord logRecord)
             where TSourceLogRecord : ISourceLogRecord
         {
-            //if (vectorManager is not null && logRecord.RecordType == VectorManager.RecordType)
-            //{
-            //    vectorManager.VectorSetPotentiallyDeleted(logRecord.KeyBytes, logRecord.ValueSpan);
-            //}
+            if (vectorManager is not null && logRecord.RecordType == VectorManager.RecordType)
+            {
+                vectorManager.VectorSetPotentiallyDeleted(logRecord.KeyBytes, logRecord.ValueSpan);
+            }
 
             return false;
         }
