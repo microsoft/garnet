@@ -3982,13 +3982,16 @@ namespace Garnet.test
 
             // Overwrite the same element with a mix of shorter and longer values; each write must resize the
             // record and read back exactly, with no leftover bytes from a previous (larger) value.
-            WriteAndVerify("aaaa");        // create,  4B
-            WriteAndVerify("bbbbbbbb");    // grow,    8B
-            WriteAndVerify("cc");          // shrink,  2B
-            WriteAndVerify("dddddddddd");  // grow,   10B
-            WriteAndVerify("eeeee");       // shrink,  5B
-            WriteAndVerify("fffffff");     // grow,    7B
-            WriteAndVerify("g");           // shrink,  1B
+            WriteAndVerify("aaaa");                             // create,   4B
+            WriteAndVerify("bbbbbbbb");                         // grow,     8B
+            WriteAndVerify("cc");                               // shrink,   2B
+            WriteAndVerify(new string('d', 40));               // grow,    40B
+            WriteAndVerify("eeeee");                            // shrink,   5B
+            WriteAndVerify(new string('f', 200));              // grow,   200B
+            WriteAndVerify(new string('g', 17));               // shrink,  17B
+            WriteAndVerify(new string('h', 100));              // grow,   100B
+            WriteAndVerify("i");                                // shrink,   1B
+            WriteAndVerify(new string('j', 63));               // grow,    63B
         }
 
         /// <summary>
