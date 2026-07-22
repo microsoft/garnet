@@ -392,7 +392,7 @@ Garnet calls into the following DiskANN functions:
  - [x] `void drop_index(ulong context, nint index)`
  - [x] `DiskANNInsertResult insert(ulong context, nint index, nint id_data, nuint id_len, nint vector_data, nuint vector_len, nint attribute_data, nuint attribute_len)`
  - [x] `byte remove(ulong context, nint index, nint id_data, nuint id_len)`
- - [ ] `byte set_attribute(ulong context, nint index, nint id_data, nuint id_len, nint attribute_data, nuint attribute_len)`
+ - [x] `byte set_attribute(ulong context, nint index, nint id_data, nuint id_len, nint attribute_data, nuint attribute_len)`
  - [x] `int search_vector(ulong context, nint index, nint vector_data, nuint vector_len, float delta, int search_exploration_factor, nint filter_data, nuint filter_len, nuint max_filtering_effort, nint output_ids, nuint output_ids_len, nint output_distances, nuint output_distances_len, nint continuation)`
  - [x] `int search_element(ulong context, nint index, nint id_data, nuint id_len, float delta, int search_exploration_factor, nint filter_data, nuint filter_len, nuint max_filtering_effort, nint output_ids, nuint output_ids_len, nint output_distances, nuint output_distances_len, nint continuation)`
  - [ ] `int continue_search(ulong context, nint index, nint continuation, nint output_ids, nuint output_ids_len, nint output_distances, nuint output_distances_len, nint new_continuation)`
