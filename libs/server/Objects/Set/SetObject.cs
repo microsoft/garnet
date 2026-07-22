@@ -13,26 +13,28 @@ namespace Garnet.server
 #pragma warning disable CS1591 // Missing XML comment for publicly visible type or member
 
     /// <summary>
-    /// Operations on Set
+    /// Operations on Set.
+    /// Persisted in the AOF via RespInputHeader.SubId, so values are EXPLICIT and APPEND-ONLY:
+    /// never change/reorder an existing value; add new operations at the end with the next value.
     /// </summary>
     public enum SetOperation : byte
     {
-        SADD,
-        SREM,
-        SPOP,
-        SMEMBERS,
-        SCARD,
-        SSCAN,
-        SMOVE,
-        SRANDMEMBER,
-        SISMEMBER,
-        SMISMEMBER,
-        SUNION,
-        SUNIONSTORE,
-        SDIFF,
-        SDIFFSTORE,
-        SINTER,
-        SINTERSTORE
+        SADD = 0,
+        SREM = 1,
+        SPOP = 2,
+        SMEMBERS = 3,
+        SCARD = 4,
+        SSCAN = 5,
+        SMOVE = 6,
+        SRANDMEMBER = 7,
+        SISMEMBER = 8,
+        SMISMEMBER = 9,
+        SUNION = 10,
+        SUNIONSTORE = 11,
+        SDIFF = 12,
+        SDIFFSTORE = 13,
+        SINTER = 14,
+        SINTERSTORE = 15,
     }
 
 

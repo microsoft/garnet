@@ -233,6 +233,12 @@ namespace Garnet.server
         public void ProcessAofRecordInternal(int virtualSublogIdx, byte* ptr, int length, bool asReplica, out bool isCheckpointStart, long logAddressSequenceNumber = 0)
         {
             var header = *(AofHeader*)ptr;
+
+            // Reject entries written by a newer Garnet version (higher AOF header version) rather than
+            // silently mis-interpreting them under this version's format.
+            if (header.aofHeaderVersion > AofHeader.MaxSupportedAofHeaderVersion)
+                throw new GarnetException($"Unsupported AOF header version {header.aofHeaderVersion}; this build supports up to version {AofHeader.MaxSupportedAofHeaderVersion}. The data may have been written by a newer Garnet version.");
+
             var replayContext = aofReplayCoordinator.GetReplayContext(virtualSublogIdx);
             isCheckpointStart = false;
 
@@ -451,13 +457,19 @@ namespace Garnet.server
             var bufferPtr = (byte*)Unsafe.AsPointer(ref replayContext.objectOutputBuffer[0]);
             var bufferLength = replayContext.objectOutputBuffer.Length;
             preprocessKey.PrepareKey(virtualSublogIdx, entryPtr, logAddressSequenceNumber, out var preparedParameters);
+
+            // Entries written before AOF header version 4 used the legacy RespCommand numbering
+            // (reads-first) and packed the object sub-operation id into the low 5 bits of the flags
+            // byte. Translate those on replay: remap header.cmd for string/unified entries and
+            // relocate the sub-op id for object RMW entries.
+            var legacyCmdFormat = header.aofHeaderVersion < 4;
             switch (header.opType)
             {
                 case AofEntryType.StoreUpsert:
-                    StoreUpsert(preparedParameters, stringContext, ref replayContext.parseState);
+                    StoreUpsert(preparedParameters, stringContext, ref replayContext.parseState, legacyCmdFormat);
                     break;
                 case AofEntryType.StoreRMW:
-                    StoreRMW(preparedParameters, stringContext, ref replayContext.parseState, activeVectorManager, activeRangeIndexManager, replayContext.respServerSession, obtainServerSession);
+                    StoreRMW(preparedParameters, stringContext, ref replayContext.parseState, activeVectorManager, activeRangeIndexManager, replayContext.respServerSession, obtainServerSession, legacyCmdFormat);
                     break;
                 case AofEntryType.RangeIndexStreamChunk:
                     HandleRangeIndexStreamChunk(preparedParameters, ref replayContext.parseState, activeRangeIndexManager, replayContext.respServerSession);
@@ -469,16 +481,16 @@ namespace Garnet.server
                     ObjectStoreUpsert(preparedParameters, objectContext, storeWrapper.GarnetObjectSerializer, bufferPtr, bufferLength);
                     break;
                 case AofEntryType.ObjectStoreRMW:
-                    ObjectStoreRMW(preparedParameters, objectContext, ref replayContext.parseState, bufferPtr, bufferLength);
+                    ObjectStoreRMW(preparedParameters, objectContext, ref replayContext.parseState, bufferPtr, bufferLength, legacyCmdFormat);
                     break;
                 case AofEntryType.ObjectStoreDelete:
                     ObjectStoreDelete(preparedParameters, objectContext);
                     break;
                 case AofEntryType.UnifiedStoreStringUpsert:
-                    UnifiedStoreStringUpsert(preparedParameters, unifiedContext, ref replayContext.parseState, bufferPtr, bufferLength);
+                    UnifiedStoreStringUpsert(preparedParameters, unifiedContext, ref replayContext.parseState, bufferPtr, bufferLength, legacyCmdFormat);
                     break;
                 case AofEntryType.UnifiedStoreRMW:
-                    UnifiedStoreRMW(preparedParameters, unifiedContext, ref replayContext.parseState, bufferPtr, bufferLength);
+                    UnifiedStoreRMW(preparedParameters, unifiedContext, ref replayContext.parseState, bufferPtr, bufferLength, legacyCmdFormat);
                     break;
                 case AofEntryType.UnifiedStoreObjectUpsert:
                     UnifiedStoreObjectUpsert(preparedParameters, unifiedContext, storeWrapper.GarnetObjectSerializer, bufferPtr, bufferLength);
@@ -493,7 +505,7 @@ namespace Garnet.server
             return true;
         }
 
-        static void StoreUpsert<TStringContext>(PreparedParameters preparedParameters, TStringContext stringContext, ref SessionParseState parseState)
+        static void StoreUpsert<TStringContext>(PreparedParameters preparedParameters, TStringContext stringContext, ref SessionParseState parseState, bool legacyCmdFormat)
             where TStringContext : ITsavoriteContext<FixedSpanByteKey, StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
         {
             var curr = preparedParameters.PayloadPtr;
@@ -502,6 +514,8 @@ namespace Garnet.server
 
             var stringInput = new StringInput { parseState = parseState };
             _ = stringInput.DeserializeFrom(curr);
+            if (legacyCmdFormat)
+                stringInput.header.cmd = LegacyRespCommand.FromV3(stringInput.header.cmd);
 
             StringOutput output = default;
             var upsertOptions = new UpsertOptions() { KeyHash = preparedParameters.KeyHash };
@@ -517,12 +531,15 @@ namespace Garnet.server
             VectorManager vectorManager,
             RangeIndexManager rangeIndexManager,
             RespServerSession activeServerSession,
-            Func<RespServerSession> obtainServerSession)
+            Func<RespServerSession> obtainServerSession,
+            bool legacyCmdFormat)
             where TStringContext : ITsavoriteContext<FixedSpanByteKey, StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
         {
             var curr = preparedParameters.PayloadPtr;
             var stringInput = new StringInput { parseState = parseState };
             _ = stringInput.DeserializeFrom(curr);
+            if (legacyCmdFormat)
+                stringInput.header.cmd = LegacyRespCommand.FromV3(stringInput.header.cmd);
 
             // VADD requires special handling, shove it over to the VectorManager
             if (stringInput.header.cmd == RespCommand.VADD)
@@ -604,13 +621,15 @@ namespace Garnet.server
                 output.SpanByteAndMemory.Dispose();
         }
 
-        static void ObjectStoreRMW<TObjectContext>(PreparedParameters preparedParameters, TObjectContext objectContext, ref SessionParseState parseState, byte* outputPtr, int outputLength)
+        static void ObjectStoreRMW<TObjectContext>(PreparedParameters preparedParameters, TObjectContext objectContext, ref SessionParseState parseState, byte* outputPtr, int outputLength, bool legacyCmdFormat)
             where TObjectContext : ITsavoriteContext<FixedSpanByteKey, ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
         {
             var curr = preparedParameters.PayloadPtr;
 
             var objectInput = new ObjectInput { parseState = parseState };
             _ = objectInput.DeserializeFrom(curr);
+            if (legacyCmdFormat)
+                RelocateLegacyObjectSubId(ref objectInput.header);
 
             // Call RMW with the reconstructed key & ObjectInput
             var output = ObjectOutput.FromPinnedPointer(outputPtr, outputLength);
@@ -623,11 +642,25 @@ namespace Garnet.server
                 output.SpanByteAndMemory.Dispose();
         }
 
+        /// <summary>
+        /// Pre-v4 object entries packed the sub-operation id into the low 5 bits of the flags byte
+        /// (RespInputHeader byte 2), with byte 1 unused. v4 moves the sub-op id into its own byte
+        /// (byte 1). When replaying a legacy object header, split the flags byte: low 5 bits become
+        /// the sub-op id, high 3 bits remain RespInputFlags.
+        /// </summary>
+        static void RelocateLegacyObjectSubId(ref RespInputHeader header)
+        {
+            const byte LegacySubIdMask = 0x1F; // low 5 bits held the sub-op id
+            var legacyFlags = (byte)header.flags;
+            header.subId = (byte)(legacyFlags & LegacySubIdMask);
+            header.flags = (RespInputFlags)(legacyFlags & ~LegacySubIdMask);
+        }
+
         static void ObjectStoreDelete<TObjectContext>(PreparedParameters preparedParameters, TObjectContext objectContext)
             where TObjectContext : ITsavoriteContext<FixedSpanByteKey, ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
             => objectContext.Delete((FixedSpanByteKey)preparedParameters.Key);
 
-        static void UnifiedStoreStringUpsert<TUnifiedContext>(PreparedParameters preparedParameters, TUnifiedContext unifiedContext, ref SessionParseState parseState, byte* outputPtr, int outputLength)
+        static void UnifiedStoreStringUpsert<TUnifiedContext>(PreparedParameters preparedParameters, TUnifiedContext unifiedContext, ref SessionParseState parseState, byte* outputPtr, int outputLength, bool legacyCmdFormat)
             where TUnifiedContext : ITsavoriteContext<FixedSpanByteKey, UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator>
         {
             var curr = preparedParameters.PayloadPtr;
@@ -637,6 +670,8 @@ namespace Garnet.server
 
             var unifiedInput = new UnifiedInput { parseState = parseState };
             _ = unifiedInput.DeserializeFrom(curr);
+            if (legacyCmdFormat)
+                unifiedInput.header.cmd = LegacyRespCommand.FromV3(unifiedInput.header.cmd);
 
             var output = UnifiedOutput.FromPinnedPointer(outputPtr, outputLength);
             var upsertOptions = new UpsertOptions() { KeyHash = preparedParameters.KeyHash };
@@ -660,12 +695,14 @@ namespace Garnet.server
                 output.SpanByteAndMemory.Dispose();
         }
 
-        static void UnifiedStoreRMW<TUnifiedContext>(PreparedParameters preparedParameters, TUnifiedContext unifiedContext, ref SessionParseState parseState, byte* outputPtr, int outputLength)
+        static void UnifiedStoreRMW<TUnifiedContext>(PreparedParameters preparedParameters, TUnifiedContext unifiedContext, ref SessionParseState parseState, byte* outputPtr, int outputLength, bool legacyCmdFormat)
             where TUnifiedContext : ITsavoriteContext<FixedSpanByteKey, UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator>
         {
             var curr = preparedParameters.PayloadPtr;
             var unifiedInput = new UnifiedInput { parseState = parseState };
             _ = unifiedInput.DeserializeFrom(curr);
+            if (legacyCmdFormat)
+                unifiedInput.header.cmd = LegacyRespCommand.FromV3(unifiedInput.header.cmd);
 
             // Call RMW with the reconstructed key & UnifiedInput
             var output = UnifiedOutput.FromPinnedPointer(outputPtr, outputLength);
