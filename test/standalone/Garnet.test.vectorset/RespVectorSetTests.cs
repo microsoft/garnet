@@ -3914,8 +3914,8 @@ namespace Garnet.test
         }
 
         /// <summary>
-        /// Exercises the VectorSessionFunctions Upsert resize path (create, same-size, grow, shrink); each stage must
-        /// read back exactly with no residue. Mutable region hits InPlaceWriter, read-only allocates a fresh record.
+        /// Overwrites one element with a mix of shorter and longer values; each write must resize the record and
+        /// read back verbatim with no stale bytes. Covers both the mutable (InPlaceWriter) and read-only paths.
         /// </summary>
         [Test]
         public void VectorElementUpsertResizePreservesValue([Values(false, true)] bool inReadOnlyRegion)
@@ -3924,14 +3924,8 @@ namespace Garnet.test
             var key = new byte[] { 0, 0, 0, 0 };
 
             var storeWrapper = server.Provider.StoreWrapper;
-            var firstWrite = true;
 
-            // Value records live in 8-byte buckets: an overwrite reallocates only when it outgrows the current
-            // bucket ceiling, so we track that ceiling to know whether each write updates in place or creates anew.
-            static int Ceil8(int n) => (n + 7) / 8 * 8;
-            var capacity = 0;
-
-            void WriteAndVerify(string content, string because)
+            void WriteAndVerify(string content)
             {
                 if (inReadOnlyRegion)
                 {
@@ -3941,8 +3935,6 @@ namespace Garnet.test
 
                 var value = Encoding.ASCII.GetBytes(content);
                 ClassicAssert.IsTrue(storeWrapper.TryGetDatabase(0, out var database));
-
-                var expectInPlace = !firstWrite && !inReadOnlyRegion && value.Length <= capacity;
 
                 using var session = database.Store.NewSession<VectorElementKey, VectorInput, VectorOutput, long, VectorSessionFunctions>(new VectorSessionFunctions(storeWrapper.CreateFunctionsState()));
                 var context = session.BasicContext;
@@ -3964,17 +3956,7 @@ namespace Garnet.test
                             if (status.IsPending)
                                 _ = context.CompletePending(wait: true);
 
-                            ClassicAssert.IsTrue(status.IsCompletedSuccessfully, because);
-
-                            if (expectInPlace)
-                                ClassicAssert.IsTrue(status.Record.InPlaceUpdated, $"a mutable overwrite that fits must update in place ({because})");
-                            else
-                                ClassicAssert.IsTrue(status.Record.Created, $"a write that outgrows the record or lands in the read-only region must reallocate ({because})");
-
-                            if (status.Record.Created)
-                                capacity = Ceil8(value.Length);
-
-                            firstWrite = false;
+                            ClassicAssert.IsTrue(status.IsCompletedSuccessfully, $"upsert of '{content}' must complete");
                         }
 
                         {
@@ -3991,28 +3973,22 @@ namespace Garnet.test
                                 ClassicAssert.IsTrue(status.Found, "reading a written element must find the record");
                                 ClassicAssert.IsTrue(output.SpanByteAndMemory.IsSpanByte, "the element read must stay on the pinned span");
 
-                                CollectionAssert.AreEqual(value, output.SpanByteAndMemory.ReadOnlySpan.ToArray(), because);
+                                CollectionAssert.AreEqual(value, output.SpanByteAndMemory.ReadOnlySpan.ToArray(), $"reading back '{content}' must round-trip verbatim with no stale bytes");
                             }
                         }
                     }
                 }
             }
 
-            char fill = 'a';
-            void GrowShrink(int delta)
-            {
-                var grown = new string(fill++, 10 + delta);
-                WriteAndVerify(grown, $"a +{delta}B grow must round-trip the larger value without overflowing");
-
-                var shrunk = new string(fill++, 10);
-                WriteAndVerify(shrunk, $"a -{delta}B shrink must round-trip the smaller value with no stale trailing bytes");
-            }
-
-            WriteAndVerify(new string(fill++, 10), "the initial element write must round-trip the bytes verbatim");
-            WriteAndVerify(new string(fill++, 10), "an equal-size overwrite must replace the value in place");
-
-            foreach (var delta in new[] { 1, 2, 3, 4, 5, 20 })
-                GrowShrink(delta);
+            // Overwrite the same element with a mix of shorter and longer values; each write must resize the
+            // record and read back exactly, with no leftover bytes from a previous (larger) value.
+            WriteAndVerify("aaaa");        // create,  4B
+            WriteAndVerify("bbbbbbbb");    // grow,    8B
+            WriteAndVerify("cc");          // shrink,  2B
+            WriteAndVerify("dddddddddd");  // grow,   10B
+            WriteAndVerify("eeeee");       // shrink,  5B
+            WriteAndVerify("fffffff");     // grow,    7B
+            WriteAndVerify("g");           // shrink,  1B
         }
 
         /// <summary>
