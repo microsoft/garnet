@@ -492,10 +492,15 @@ namespace Garnet.common
             // loop would keep failing and re-requesting the same insufficient capacity.
             if (length <= 0 || length < bytesWritten || length <= previousLength)
             {
+                // Thrown before any buffer is rented or pointer reassigned, so the failing
+                // command's own state is discarded cleanly (its RespMemoryWriter is always used
+                // in a `using` block) without touching anything shared across commands on this
+                // connection. Safe to keep the connection open for the client's next command.
                 throw new GarnetException(
                     $"RESP response of at least {(long)bytesWritten + extraLenHint} bytes exceeds the maximum " +
                     $"supported single-buffer size ({Array.MaxLength} bytes). Consider using a cursor-based " +
-                    "command (e.g. HSCAN instead of HGETALL) to retrieve large collections in batches.");
+                    "command (e.g. HSCAN instead of HGETALL) to retrieve large collections in batches.",
+                    disposeSession: false);
             }
 
             var newMem = MemoryPool<byte>.Shared.Rent(length);
