@@ -5,6 +5,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Numerics.Tensors;
+using System.Threading.Tasks;
 using Garnet.common;
 using Garnet.server;
 using NUnit.Framework;
@@ -1065,6 +1066,64 @@ namespace Garnet.test
                 stop.Cancel();
                 gcThread.Join();
             }
+        }
+
+        // Regression tests for https://github.com/microsoft/garnet/issues/1954
+        [Order(42)]
+        [Test]
+        [Category("BITFIELD")]
+        public async Task BitopNotTransactionAsync()
+        {
+            const string Key = nameof(BitopNotTransactionAsync);
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase();
+
+            _ = await db.StringSetAsync(Key, new byte[] { 0 }).ConfigureAwait(false);
+
+            // BITOP in transaction
+            {
+                var trans = db.CreateTransaction();
+                var opRes = trans.ExecuteAsync("BITOP", "NOT", Key, Key).ConfigureAwait(false);
+
+                _ = await trans.ExecuteAsync();
+
+                _ = await opRes;
+            }
+
+            // Check result
+            var res = (byte[])await db.StringGetAsync(Key).ConfigureAwait(false);
+            ClassicAssert.IsTrue(new byte[] { 255 }.SequenceEqual(res));
+        }
+
+        [Order(43)]
+        [Test]
+        [Category("BITFIELD")]
+        public async Task BitopAndTransactionAsync()
+        {
+            const string Key = nameof(BitopNotTransactionAsync);
+            const string KeyA = nameof(BitopNotTransactionAsync) + "A";
+            const string KeyB = nameof(BitopNotTransactionAsync) + "B";
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase();
+
+            _ = await db.StringSetAsync(KeyA, new byte[] { 0b1001_1001 }).ConfigureAwait(false);
+            _ = await db.StringSetAsync(KeyB, new byte[] { 0b0111_1110 }).ConfigureAwait(false);
+
+            // BITOP in transaction
+            {
+                var trans = db.CreateTransaction();
+                var opRes = trans.ExecuteAsync("BITOP", "AND", Key, KeyA, KeyB).ConfigureAwait(false);
+
+                _ = await trans.ExecuteAsync();
+
+                _ = await opRes;
+            }
+
+            // Check result
+            var res = (byte[])await db.StringGetAsync(Key).ConfigureAwait(false);
+            ClassicAssert.IsTrue(new byte[] { 0b0001_1000 }.SequenceEqual(res));
         }
 
         private static long GetValueFromBitmap(ref byte[] bitmap, long offset, int bitCount, bool signed)
