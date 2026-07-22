@@ -84,11 +84,6 @@ namespace Garnet.test
         [Test]
         public Task BITOPAsync()
         {
-            if (RunInTransaction)
-            {
-                ClassicAssert.Ignore("BITOP appears to be broken in transactions, restore this test when that's fixed");
-            }
-
             return TestVectorSetOverwrittenCommandAsync(RunCommandAsync, PrepCommandAsync);
 
             static async Task PrepCommandAsync(IDatabaseAsync readDB, RedisKey againstKey)
