@@ -432,9 +432,8 @@ namespace Garnet.server
                 }
                 else
                 {
-                    // Resize the record to the requested size before the callback fills it; false means it can't grow
-                    // in place, so Tsavorite falls back to CopyUpdater. Without this the callback would write past the
-                    // record on a grow or leave a stale content length on a shrink.
+                    // Resize before the callback fills it; false means it can't grow in place, so Tsavorite falls back
+                    // to CopyUpdater. Otherwise the callback would overrun on a grow or leave a stale length on a shrink.
                     pin?.Free();
                     pin = null;
 

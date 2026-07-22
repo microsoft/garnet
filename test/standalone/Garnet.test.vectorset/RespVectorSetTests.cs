@@ -3932,13 +3932,9 @@ namespace Garnet.test
         }
 
         /// <summary>
-        /// Multi-stage exercise of the VectorSessionFunctions Upsert resize path on a single element: initial
-        /// write, then an equal-size overwrite, a grow, and a shrink. Each stage must round-trip the new value
-        /// exactly, with no residue from the previous one. In the mutable region every overwrite routes to
-        /// InPlaceWriter, which must honour the destination record's capacity rather than blindly copying the new
-        /// value (growing overflows the smaller record; shrinking must shorten the content length instead of
-        /// leaving stale trailing bytes). In the read-only region Tsavorite instead allocates a fresh,
-        /// correctly-sized record for each overwrite.
+        /// Exercises the VectorSessionFunctions Upsert resize path (create, same-size, grow, shrink) on one element;
+        /// each stage must round-trip the new value exactly with no residue. Mutable region hits InPlaceWriter,
+        /// read-only allocates a fresh record per overwrite.
         /// </summary>
         [Test]
         public void VectorElementUpsertResizePreservesValue([Values(false, true)] bool inReadOnlyRegion)
@@ -3968,15 +3964,10 @@ namespace Garnet.test
         }
 
         /// <summary>
-        /// Multi-stage exercise of the VectorSessionFunctions RMW resize path on a single element, the counterpart
-        /// to <see cref="VectorElementUpsertResizePreservesValue"/> but through the DiskANN ReadModifyWrite path:
-        /// an initial write (InitialUpdater) then an equal-size overwrite, a grow, and a shrink. Each stage must
-        /// fill and read back exactly the new size with no residue from the previous one. In the mutable region the
-        /// overwrites route to InPlaceUpdater, which must resize the record (adjusting the content length) rather
-        /// than writing past it on a grow or leaving stale trailing bytes on a shrink. In the read-only region each
-        /// overwrite routes to CopyUpdater, whose carry-over of the old value must be bounded so a shrink does not
-        /// overflow the smaller destination. Uses the DEBUG-only managed fill callback (VectorInput.IsTestCallback),
-        /// since the production data callback is a SuppressGCTransition pointer that cannot dispatch to managed code.
+        /// Exercises the VectorSessionFunctions RMW resize path (create, same-size, grow, shrink) on one element,
+        /// the DiskANN ReadModifyWrite counterpart to <see cref="VectorElementUpsertResizePreservesValue"/>. Each
+        /// stage must read back exactly the new size with no residue. Mutable region hits InPlaceUpdater, read-only
+        /// hits CopyUpdater. Uses the DEBUG-only managed fill callback (VectorInput.IsTestCallback).
         /// </summary>
         [Test]
         public void VectorElementRmwResizePreservesValue([Values(false, true)] bool inReadOnlyRegion)
@@ -4010,11 +4001,7 @@ namespace Garnet.test
         }
 
 
-        /// <summary>
-        /// Drives a single VectorSessionFunctions Upsert of a namespaced element value, mirroring the production
-        /// write path in <see cref="VectorManager"/>'s DiskANN write callback: AlignmentExpected input, a pinned
-        /// value span, against a dedicated Vector session.
-        /// </summary>
+        /// <summary>Upserts a namespaced element value through VectorSessionFunctions against a dedicated Vector session.</summary>
         private Status UpsertVectorElement(byte[] namespaceBytes, byte[] key, byte[] value)
         {
             var storeWrapper = server.Provider.StoreWrapper;
@@ -4045,10 +4032,7 @@ namespace Garnet.test
             }
         }
 
-        /// <summary>
-        /// Reads a namespaced element value back through VectorSessionFunctions.Reader, requesting alignment so the
-        /// returned span is trimmed to exactly the stored payload (excluding alignment padding).
-        /// </summary>
+        /// <summary>Reads a namespaced element value back through VectorSessionFunctions.Reader, trimmed to the stored payload.</summary>
         private byte[] ReadVectorElement(byte[] namespaceBytes, byte[] key)
         {
             var storeWrapper = server.Provider.StoreWrapper;
@@ -4086,11 +4070,9 @@ namespace Garnet.test
         }
 
         /// <summary>
-        /// Drives a single VectorSessionFunctions RMW of a namespaced element, mirroring the production DiskANN
-        /// ReadModifyWrite callback: an AlignmentExpected input carrying the desired size and a data-fill callback,
-        /// against a dedicated Vector session. Sets the DEBUG-only <c>VectorInput.IsTestCallback</c> so the managed
-        /// <c>Callback</c> pointer is invoked as a plain Cdecl call, letting the RMW resize paths run under a managed
-        /// fill (the production SuppressGCTransition call forbids dispatching to managed code).
+        /// Drives a single VectorSessionFunctions RMW of a namespaced element against a dedicated Vector session.
+        /// Sets the DEBUG-only <c>VectorInput.IsTestCallback</c> so the managed <c>Callback</c> fill runs as a plain
+        /// Cdecl call (the production SuppressGCTransition call can't dispatch to managed code).
         /// </summary>
         private unsafe Status RmwVectorElement(byte[] namespaceBytes, byte[] key, int size, byte fill)
         {
@@ -4124,10 +4106,7 @@ namespace Garnet.test
             }
         }
 
-        /// <summary>
-        /// Element data-fill callback: fills the whole value buffer with the byte passed as context. Invoked as a
-        /// plain Cdecl function pointer from the RMW updaters via VectorInput.IsTestCallback.
-        /// </summary>
+        /// <summary>Data-fill callback: fills the value buffer with the byte passed as context.</summary>
         [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
         private static unsafe void FillElement(nint context, nint dataPtr, nuint dataLen)
         => new Span<byte>((void*)dataPtr, (int)dataLen).Fill((byte)context);
