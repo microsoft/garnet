@@ -3926,7 +3926,12 @@ namespace Garnet.test
             var storeWrapper = server.Provider.StoreWrapper;
             var firstWrite = true;
 
-            void WriteAndVerify(string content, bool expectInPlace, string because)
+            // Value records live in 8-byte buckets: an overwrite reallocates only when it outgrows the current
+            // bucket ceiling, so we track that ceiling to know whether each write updates in place or creates anew.
+            static int Ceil8(int n) => (n + 7) / 8 * 8;
+            var capacity = 0;
+
+            void WriteAndVerify(string content, string because)
             {
                 if (inReadOnlyRegion)
                 {
@@ -3936,6 +3941,8 @@ namespace Garnet.test
 
                 var value = Encoding.ASCII.GetBytes(content);
                 ClassicAssert.IsTrue(storeWrapper.TryGetDatabase(0, out var database));
+
+                var expectInPlace = !firstWrite && !inReadOnlyRegion && value.Length <= capacity;
 
                 using var session = database.Store.NewSession<VectorElementKey, VectorInput, VectorOutput, long, VectorSessionFunctions>(new VectorSessionFunctions(storeWrapper.CreateFunctionsState()));
                 var context = session.BasicContext;
@@ -3959,12 +3966,13 @@ namespace Garnet.test
 
                             ClassicAssert.IsTrue(status.IsCompletedSuccessfully, because);
 
-                            if (firstWrite || inReadOnlyRegion)
-                                ClassicAssert.IsTrue(status.Record.Created, $"a {(firstWrite ? "first" : "read-only")} write must append a new record");
-                            else if (expectInPlace)
+                            if (expectInPlace)
                                 ClassicAssert.IsTrue(status.Record.InPlaceUpdated, $"a mutable overwrite that fits must update in place ({because})");
                             else
-                                ClassicAssert.IsTrue(status.Record.Created, $"a mutable overwrite that outgrows the record must reallocate ({because})");
+                                ClassicAssert.IsTrue(status.Record.Created, $"a write that outgrows the record or lands in the read-only region must reallocate ({because})");
+
+                            if (status.Record.Created)
+                                capacity = Ceil8(value.Length);
 
                             firstWrite = false;
                         }
@@ -3990,12 +3998,21 @@ namespace Garnet.test
                 }
             }
 
-            WriteAndVerify("spice", expectInPlace: false, "the initial element write must round-trip the bytes verbatim");                       // 5B  create
-            WriteAndVerify("worms", expectInPlace: true, "an equal-size overwrite must replace the value in place");                             // 5B  same size
-            WriteAndVerify("spicey", expectInPlace: true, "a <4B grow must be absorbed by the alignment slack and stay in place");               // 6B  grow +1
-            WriteAndVerify("he who controls the spice controls the universe", expectInPlace: false, "a >4B grow must not overflow and must reallocate to fit the larger value"); // 47B grow +41 (Dune)
-            WriteAndVerify("spice must flow!", expectInPlace: true, "a >4B shrink must read back the smaller value with no stale trailing bytes"); // 16B shrink -31
-            WriteAndVerify("spice must flow", expectInPlace: true, "a <4B shrink must read back the smaller value with no stale trailing bytes");  // 15B shrink -1
+            char fill = 'a';
+            void GrowShrink(int delta)
+            {
+                var grown = new string(fill++, 10 + delta);
+                WriteAndVerify(grown, $"a +{delta}B grow must round-trip the larger value without overflowing");
+
+                var shrunk = new string(fill++, 10);
+                WriteAndVerify(shrunk, $"a -{delta}B shrink must round-trip the smaller value with no stale trailing bytes");
+            }
+
+            WriteAndVerify(new string(fill++, 10), "the initial element write must round-trip the bytes verbatim");
+            WriteAndVerify(new string(fill++, 10), "an equal-size overwrite must replace the value in place");
+
+            foreach (var delta in new[] { 1, 2, 3, 4, 5, 20 })
+                GrowShrink(delta);
         }
 
         /// <summary>
