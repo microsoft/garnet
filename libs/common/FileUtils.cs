@@ -68,7 +68,7 @@ namespace Garnet.common
             {
                 if (File.Exists(path))
                 {
-                    if ((anyExtension || Regex.IsMatch(path, extensionPattern, RegexOptions.IgnoreCase)) &&
+                    if ((anyExtension || Regex.IsMatch(path, extensionPattern)) &&
                         !ignoreFiles.Contains(Path.GetFileName(path)))
                     {
                         tmpFiles.Add(path);
@@ -98,7 +98,7 @@ namespace Garnet.common
 
                 foreach (var filePath in filePaths)
                 {
-                    if ((anyExtension || Regex.IsMatch(filePath, extensionPattern, RegexOptions.IgnoreCase)) &&
+                    if ((anyExtension || Regex.IsMatch(filePath, extensionPattern)) &&
                         !ignoreFiles.Contains(Path.GetFileName(path)))
                     {
                         tmpFiles.Add(filePath);

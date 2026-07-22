@@ -507,34 +507,5 @@ namespace Garnet.test
             var retValue = db.Execute("NoOpModule.NOOPCMDREAD", key);
             ClassicAssert.AreEqual("OK", (string)retValue);
         }
-
-        [Test]
-        public void TestModuleLoadUsingLoadModuleCSWithUppercaseExtension()
-        {
-            // Module assembly extensions are matched case-insensitively, so an uppercase .DLL/.EXE
-            // module path loads correctly (issue #1951 review).
-            var noOpModulePath = Path.Join(binPath, "NoOpModule.dll");
-
-            var upperDir = Path.Combine(TestUtils.MethodTestDir, "UpperExt");
-            Directory.CreateDirectory(upperDir);
-            var upperModulePath = Path.Combine(upperDir, "NoOpModule.DLL");
-            File.Copy(noOpModulePath, upperModulePath, overwrite: true);
-
-            using var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir,
-                disablePubSub: true,
-                extensionBinPaths: [upperDir, binPath],
-                extensionAllowUnsignedAssemblies: true,
-                loadModulePaths: [upperModulePath]);
-            server.Start();
-
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
-            var db = redis.GetDatabase(0);
-
-            var key = "mykey";
-            db.StringSet(key, "myval");
-
-            var retValue = db.Execute("NoOpModule.NOOPCMDREAD", key);
-            ClassicAssert.AreEqual("OK", (string)retValue);
-        }
     }
 }

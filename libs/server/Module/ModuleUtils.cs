@@ -94,7 +94,7 @@ namespace Garnet.server
 
                 foreach (var ext in ModuleAssemblyExtensions)
                 {
-                    if (candidatePath.EndsWith(ext, StringComparison.OrdinalIgnoreCase))
+                    if (candidatePath.EndsWith(ext, StringComparison.Ordinal))
                     {
                         modulePath = candidatePath;
                         moduleArgs = spaceIdx < 0 ? [] : SplitModuleArgs(spec[(spaceIdx + 1)..]);

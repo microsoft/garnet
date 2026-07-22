@@ -25,8 +25,11 @@ namespace Garnet.test
         // Explicitly quoted path with arguments
         [TestCase("\"C:\\Users\\John Doe\\MyModule.dll\" arg0 arg1", @"C:\Users\John Doe\MyModule.dll", new string[] { "arg0", "arg1" })]
         [TestCase("\"/opt/My Modules/My Module.dll\"", "/opt/My Modules/My Module.dll", new string[] { })]
-        // .exe extension, case-insensitive
-        [TestCase("/opt/My Modules/My Module.EXE", "/opt/My Modules/My Module.EXE", new string[] { })]
+        // Lowercase .exe with arguments is split via the extension heuristic (path does not exist here)
+        [TestCase("/opt/My Modules/My Module.exe arg0", "/opt/My Modules/My Module.exe", new string[] { "arg0" })]
+        // Uppercase extension is not a recognized module extension (matching is case-sensitive): a
+        // non-existent spec is treated as a whole path rather than split
+        [TestCase("/opt/My Modules/My Module.EXE arg0", "/opt/My Modules/My Module.EXE arg0", new string[] { })]
         // Leading/trailing whitespace is trimmed
         [TestCase("   /opt/garnet/Module.dll   ", "/opt/garnet/Module.dll", new string[] { })]
         // Directory path (no recognized extension) - whole spec treated as the path
