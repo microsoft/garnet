@@ -138,10 +138,8 @@ namespace Garnet.server
             var sizeInfo = new RecordSizeInfo() { FieldInfo = GetUpsertFieldInfo(logRecord, newValue, ref input) };
             functionsState.storeWrapper.store.Log.PopulateRecordSizeInfo(ref sizeInfo);
 
-            // Resize the existing record's value to the new payload, adjusting the content length. This returns false
-            // when the value cannot grow within the already-allocated record, in which case Tsavorite falls back to
-            // allocating a fresh, correctly-sized record (InitialWriter). Without this the copy below would overflow
-            // on a grow or leave stale trailing bytes on a shrink.
+            // Resize the value to the new payload; false means it can't grow in place, so Tsavorite reallocates via
+            // InitialWriter. Without this the copy below would overflow on a grow or leave stale bytes on a shrink.
             if (!logRecord.TrySetContentLengths(sizeInfo.FieldInfo.ValueSize, in sizeInfo))
                 return false;
 
@@ -300,7 +298,7 @@ namespace Garnet.server
                     {
                         var dataPtr = (nint)Unsafe.AsPointer(ref MemoryMarshal.GetReference(alignedValue));
                         var dataLen = (nuint)input.WriteDesiredSize;
-                        InvokeDataCallback(in input, dataPtr, dataLen);
+                        InvokeDataCallback(ref input, dataPtr, dataLen);
 
                         return logRecord.TrySetContentLengths(logRecord.ValueSpan.Length, in sizeInfo);
                     }
@@ -367,9 +365,8 @@ namespace Garnet.server
                 {
                     Debug.Assert(input.WriteDesiredSize <= newValueAligned.Length, "Insufficient space for copy update, this should never happen");
 
-                    // The destination is freshly allocated to the new size; carry over only the overlapping prefix of
-                    // the old value before the callback repopulates the buffer. Bounding the copy avoids overflowing
-                    // the destination when the new value is smaller than the old one (shrink).
+                    // Carry over only the overlapping prefix before the callback repopulates the buffer; bounding the
+                    // copy avoids overflowing the freshly-allocated destination on a shrink.
                     var carryOver = Math.Min(oldValueAligned.Length, newValueAligned.Length);
                     oldValueAligned[..carryOver].CopyTo(newValueAligned);
 
@@ -378,7 +375,7 @@ namespace Garnet.server
                         var dataPtr = (nint)Unsafe.AsPointer(ref MemoryMarshal.GetReference(newValueAligned));
                         var dataLen = (nuint)input.WriteDesiredSize;
 
-                        InvokeDataCallback(in input, dataPtr, dataLen);
+                        InvokeDataCallback(ref input, dataPtr, dataLen);
                     }
 
                     return dstLogRecord.TrySetContentLengths(dstLogRecord.ValueSpan.Length, in sizeInfo);
@@ -435,10 +432,9 @@ namespace Garnet.server
                 }
                 else
                 {
-                    // Resize the existing record to the requested size before the native callback fills it. Returns
-                    // false when the value can't grow within the already-allocated record, in which case Tsavorite
-                    // falls back to CopyUpdater with a fresh, correctly-sized record. Without this the callback below
-                    // would write past the record on a grow, or leave a stale content length on a shrink.
+                    // Resize the record to the requested size before the callback fills it; false means it can't grow
+                    // in place, so Tsavorite falls back to CopyUpdater. Without this the callback would write past the
+                    // record on a grow or leave a stale content length on a shrink.
                     pin?.Free();
                     pin = null;
 
@@ -454,7 +450,7 @@ namespace Garnet.server
                         var dataPtr = (nint)Unsafe.AsPointer(ref MemoryMarshal.GetReference(alignedValue));
                         var dataLen = (nuint)input.WriteDesiredSize;
 
-                        InvokeDataCallback(in input, dataPtr, dataLen);
+                        InvokeDataCallback(ref input, dataPtr, dataLen);
                     }
 
                     return true;
@@ -503,14 +499,8 @@ namespace Garnet.server
         private static TReturn LogRecordOperationsNotExpected<TReturn>([CallerMemberName] string callerName = null, [CallerLineNumber] int lineNum = -1)
         => throw new InvalidOperationException($"LogRecord related operations are not expected, was: {callerName} on {lineNum}");
 
-        /// <summary>
-        /// Invokes the DiskANN data-fill callback that populates the value buffer during an RMW update. In DEBUG
-        /// builds, when <c>VectorInput.IsTestCallback</c> is set the <see cref="VectorInput.Callback"/> pointer is
-        /// invoked as a plain Cdecl call (no SuppressGCTransition), which lets managed tests drive the RMW resize
-        /// paths; production always uses the SuppressGCTransition call.
-        /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private static unsafe void InvokeDataCallback(in VectorInput input, nint dataPtr, nuint dataLen)
+        private static unsafe void InvokeDataCallback(ref VectorInput input, nint dataPtr, nuint dataLen)
         {
 #if DEBUG
             if (input.IsTestCallback)

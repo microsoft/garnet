@@ -264,6 +264,13 @@ namespace Garnet.test
 #endif
         }
 
+        public static void IgnoreIfNotDebugBuild()
+        {
+#if !DEBUG
+            Assert.Ignore("Relies on DEBUG-only test hooks (e.g. VectorInput.IsTestCallback), only enabled in DEBUG builds");
+#endif
+        }
+
         public static void WaitUntilNextSecond(IDatabase db, long baseSeconds)
         {
             // LASTSAVE returns Unix seconds via DateTimeOffset.ToUnixTimeSeconds() so it has

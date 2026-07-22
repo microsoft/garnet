@@ -3967,7 +3967,6 @@ namespace Garnet.test
             WriteStageAndVerify("fizzy", "a shrunk element must read back the smaller value with no stale trailing bytes"); // 5 bytes
         }
 
-#if DEBUG
         /// <summary>
         /// Multi-stage exercise of the VectorSessionFunctions RMW resize path on a single element, the counterpart
         /// to <see cref="VectorElementUpsertResizePreservesValue"/> but through the DiskANN ReadModifyWrite path:
@@ -3982,6 +3981,8 @@ namespace Garnet.test
         [Test]
         public void VectorElementRmwResizePreservesValue([Values(false, true)] bool inReadOnlyRegion)
         {
+            TestUtils.IgnoreIfNotDebugBuild();
+
             var ns = new byte[] { 11 };
             var key = new byte[] { 0, 0, 0, 0 };
 
@@ -4007,7 +4008,7 @@ namespace Garnet.test
             RmwStageAndVerify(11, 0xC3, "a grown RMW must not overflow and must read back the larger value");                        // 11 bytes
             RmwStageAndVerify(5, 0xD4, "a shrunk RMW must read back the smaller value with no stale trailing bytes");                // 5 bytes
         }
-#endif
+
 
         /// <summary>
         /// Drives a single VectorSessionFunctions Upsert of a namespaced element value, mirroring the production
@@ -4084,7 +4085,6 @@ namespace Garnet.test
             }
         }
 
-#if DEBUG
         /// <summary>
         /// Drives a single VectorSessionFunctions RMW of a namespaced element, mirroring the production DiskANN
         /// ReadModifyWrite callback: an AlignmentExpected input carrying the desired size and a data-fill callback,
@@ -4125,13 +4125,12 @@ namespace Garnet.test
         }
 
         /// <summary>
-        /// DEBUG-only element data-fill callback: fills the whole value buffer with the byte passed as context.
-        /// Invoked as a plain Cdecl function pointer from the RMW updaters via VectorInput.TestCallback.
+        /// Element data-fill callback: fills the whole value buffer with the byte passed as context. Invoked as a
+        /// plain Cdecl function pointer from the RMW updaters via VectorInput.IsTestCallback.
         /// </summary>
         [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
         private static unsafe void FillElement(nint context, nint dataPtr, nuint dataLen)
         => new Span<byte>((void*)dataPtr, (int)dataLen).Fill((byte)context);
-#endif
 
         /// <summary>
         /// Create a new GarnetServer instance with common parameters.
