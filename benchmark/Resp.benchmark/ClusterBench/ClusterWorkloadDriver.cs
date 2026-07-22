@@ -187,6 +187,10 @@ namespace Resp.benchmark
             Console.WriteLine($"{"Replicas: " + totalReplicas,-28}{"Replica Reads: " + replicaReads,-28}");
             Console.WriteLine($"{"Workers: " + totalProviders,-28}{"Broadcast: " + (opts.Broadcast ? "Yes" : "No"),-28}");
             Console.WriteLine($"{"Workload Seed: " + opts.WorkloadSeed,-28}{"Offline Buffers: " + opts.OfflineBufferPermutations,-28}");
+            if (opts.Online)
+            {
+                Console.WriteLine($"{"Op Workload: " + string.Join(',', opts.OpWorkload),-28}{"Op Percent: " + string.Join(',', opts.OpPercent),-28}");
+            }
             Console.WriteLine("=======================================================");
             Console.WriteLine();
 
@@ -251,6 +255,10 @@ namespace Resp.benchmark
             Console.WriteLine($"{"Replicas: " + totalReplicas,-28}{"Replica Reads: " + replicaReads,-28}");
             Console.WriteLine($"{"Workers: " + workerCount,-28}{"Broadcast: " + (opts.Broadcast ? "Yes" : "No"),-28}");
             Console.WriteLine($"{"Workload Seed: " + opts.WorkloadSeed,-28}{"Offline Buffers: " + opts.OfflineBufferPermutations,-28}");
+            if (opts.Online)
+            {
+                Console.WriteLine($"{"Op Workload: " + string.Join(',', opts.OpWorkload),-28}{"Op Percent: " + string.Join(',', opts.OpPercent),-28}");
+            }
             Console.WriteLine("=======================================================");
             Console.WriteLine();
 

@@ -24,6 +24,12 @@ namespace Resp.benchmark
         readonly SlotKeyGenerator keyGen;
         readonly Random rng;
 
+        // Online workload distribution: per-iteration op is drawn from --op-workload weighted by
+        // the cumulative form of --op-percent. Null when no valid distribution is configured
+        // (falls back to the single --op).
+        readonly OpType[] opWorkload;
+        readonly int[] opCumulativePercent;
+
         // Dual-connection endpoints (replica can be null)
         readonly string primaryAddress;
         readonly int primaryPort;
@@ -72,6 +78,10 @@ namespace Resp.benchmark
             this.keyGen = new SlotKeyGenerator(shard, opts.KeyLength);
             this.histogram = new LongHistogram(HISTOGRAM_LOWER_BOUND, HISTOGRAM_UPPER_BOUND, 2);
 
+            // Build the online op-selection distribution (single-key ops only; validated up-front in DisabledFeatures).
+            this.opWorkload = opts.OpWorkload?.ToArray();
+            this.opCumulativePercent = BuildCumulativePercent(opts.OpPercent?.ToArray(), opWorkload);
+
             // Primary endpoint (always set)
             this.primaryAddress = shard.Address;
             this.primaryPort = shard.Port;
@@ -97,6 +107,47 @@ namespace Resp.benchmark
         /// <see cref="System.Random"/> produces for adjacent (base+index) seeds.
         /// </summary>
         public static int CombineSeed(int baseSeed, int component) => unchecked((baseSeed * 486187739) + component);
+
+        /// <summary>
+        /// Builds the cumulative form of the op-percent distribution (e.g. [60,30,10] -> [60,90,100]),
+        /// used by <see cref="SelectOpType"/> to draw a per-iteration op from the workload. Returns null
+        /// when the distribution is absent or malformed, in which case the loop falls back to the single --op.
+        /// </summary>
+        private static int[] BuildCumulativePercent(int[] percent, OpType[] workload)
+        {
+            if (workload == null || workload.Length == 0 || percent == null || percent.Length != workload.Length)
+                return null;
+
+            var cumulative = new int[percent.Length];
+            var acc = 0;
+            for (var i = 0; i < percent.Length; i++)
+            {
+                acc += percent[i];
+                cumulative[i] = acc;
+            }
+            return cumulative;
+        }
+
+        /// <summary>
+        /// Draws the next operation for an online iteration from --op-workload, weighted by --op-percent.
+        /// Falls back to the single --op when no valid distribution is configured.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private OpType SelectOpType()
+        {
+            if (opCumulativePercent == null)
+                return opts.Op;
+            if (opWorkload.Length == 1)
+                return opWorkload[0];
+
+            var p = rng.Next(100);
+            for (var i = 0; i < opCumulativePercent.Length; i++)
+            {
+                if (p < opCumulativePercent[i])
+                    return opWorkload[i];
+            }
+            return opWorkload[^1];
+        }
 
         /// <summary>
         /// Determines which endpoint to use for a given operation based on operation type and --replica-read-percent setting.
@@ -199,19 +250,9 @@ namespace Resp.benchmark
                 OpType.SET => Encoding.ASCII.GetBytes($"*3\r\n$3\r\nSET\r\n${key.Length}\r\n{key}\r\n${opts.ValueLength}\r\n{GenerateValue()}\r\n"),
                 OpType.INCR => Encoding.ASCII.GetBytes($"*2\r\n$4\r\nINCR\r\n${key.Length}\r\n{key}\r\n"),
                 OpType.DEL => Encoding.ASCII.GetBytes($"*2\r\n$3\r\nDEL\r\n${key.Length}\r\n{key}\r\n"),
-                OpType.MGET or OpType.MSET => throw new InvalidOperationException($"{op} requires multiple keys - use FormatMRequest"),
+                OpType.MGET or OpType.MSET => throw new InvalidOperationException($"{op} requires multiple keys and is only supported in offline mode (see AppendCommand)"),
                 _ => Encoding.ASCII.GetBytes($"*2\r\n$3\r\nGET\r\n${key.Length}\r\n{key}\r\n"),
             };
-        }
-
-        /// <summary>
-        /// Format MGET or MSET request with multiple keys generated inline.
-        /// </summary>
-        private byte[] FormatMRequest(OpType op, int keyCount, Random rng, int dbSize)
-        {
-            var sb = new StringBuilder(256);
-            AppendCommand(sb, op, keyCount, rng, dbSize);
-            return Encoding.UTF8.GetBytes(sb.ToString());
         }
 
         /// <summary>

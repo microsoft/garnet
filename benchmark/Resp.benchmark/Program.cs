@@ -116,21 +116,46 @@ namespace Resp.benchmark
 
             if (opts.Online)
             {
-                if (opts.Op != OpType.GET)
-                {
-                    Console.WriteLine($"OpType not supported for online benchmark (defaults to get/set)");
-                    return true;
-                }
-            }
-
-            if (opts.Online)
-            {
+                // Online mode issues one command per operation; in-flight parallelism is controlled by --itp.
+                // Force batch size to a single entry of 1 (batching/pipelining via --batchsize is an offline concept).
                 var batches = opts.BatchSize.ToList();
                 if (batches.Count != 1 || batches[0] != 1)
                 {
                     Console.WriteLine("Batch size parameter should be one entry of size 1, for the online benchmark, setting to [ 1 ]. Use --itp to control batch size instead.");
                     opts.BatchSize = [1];
                 }
+
+                if (opts.Op != OpType.GET)
+                {
+                    Console.WriteLine($"OpType not supported for online benchmark (defaults to get/set)");
+                    return true;
+                }
+
+                if (opts.ClusterBench)
+                {
+                    // Cluster-bench online is driven by the --op-workload / --op-percent distribution (not --op).
+                    var workload = opts.OpWorkload?.ToArray() ?? [];
+                    var percent = opts.OpPercent?.ToArray() ?? [];
+                    if (workload.Length == 0 || workload.Length != percent.Length)
+                    {
+                        Console.WriteLine("Online cluster-bench requires --op-workload and --op-percent to be non-empty and of equal length.");
+                        return true;
+                    }
+                    if (percent.Sum() != 100)
+                    {
+                        Console.WriteLine($"--op-percent must sum to 100 (got {percent.Sum()}).");
+                        return true;
+                    }
+                    foreach (var wop in workload)
+                    {
+                        if (wop is OpType.MGET or OpType.MSET)
+                        {
+                            Console.WriteLine($"{wop} is not supported in online cluster-bench (single-key ops only). Remove it from --op-workload.");
+                            return true;
+                        }
+                    }
+                }
+
                 if (opts.DbSize < opts.SortedSetCardinality)
                 {
                     Console.WriteLine("DB size cannot be smaller than SortedSet cardinality");

@@ -85,8 +85,6 @@ namespace Resp.benchmark
             long lastTotalOps = 0;
             var reportInterval = TimeSpan.FromSeconds(1);
             var summary = new LongHistogram(HISTOGRAM_LOWER_BOUND, HISTOGRAM_UPPER_BOUND, 2);
-            var batchSize = opts.BatchSize.First();
-            var keysPerOp = (opts.Op is OpType.MGET or OpType.MSET) ? batchSize : 1;
 
             while (sw.Elapsed < runTime)
             {
@@ -97,7 +95,7 @@ namespace Resp.benchmark
                 foreach (var provider in allProviders)
                 {
                     summary.Add(provider.Histogram);
-                    currentTotalOps += provider.OpsCompleted * keysPerOp;
+                    currentTotalOps += provider.OpsCompleted;
                 }
 
                 var iterOps = currentTotalOps - lastTotalOps;
