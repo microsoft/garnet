@@ -267,7 +267,7 @@ namespace Garnet.test
         public static void IgnoreIfNotDebugBuild()
         {
 #if !DEBUG
-            Assert.Ignore("Relies on DEBUG-only test hooks (e.g. VectorInput.IsTestCallback), only enabled in DEBUG builds");
+            Assert.Ignore("Relies on DEBUG-only test hooks");
 #endif
         }
 
