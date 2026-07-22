@@ -35,3 +35,37 @@ The `ModuleLoadContext` exposes the following APIs to register the module and it
 
 :::tip 
 As a reference of an implementation of a module, see the example in playground\SampleModule.
+:::
+
+## Loading a module
+
+A module can be loaded at server startup using the `--loadmodulecs` command line option (or the
+`LoadModuleCS` configuration setting), or at runtime using the `MODULE LOADCS` command.
+
+Each module is specified as a module path optionally followed by space-separated arguments that are
+passed to the module's `OnLoad` method through the `args` parameter:
+
+```
+--loadmodulecs "/path/to/MyModule.dll arg0 arg1"
+```
+
+The first space-separated token is the module path and the remaining tokens are its arguments. A module
+path that itself contains spaces must therefore be wrapped in double quotes. These quotes must be part of
+the module specification string that Garnet parses - they are **not** the same as any quoting your shell
+performs. Because a shell typically strips its own surrounding quotes, the quotes that need to reach
+Garnet usually have to be escaped on the command line (the exact escaping is shell-dependent):
+
+```
+# bash-style: the inner quotes are escaped so they are passed through to Garnet
+--loadmodulecs "\"/path/to/My Modules/My Module.dll\""
+--loadmodulecs "\"/path/to/My Modules/My Module.dll\" arg0 arg1"
+```
+
+When the module is specified via the `LoadModuleCS` configuration setting instead (e.g. in a JSON config
+file), no shell is involved; the double quotes are simply part of the string value (escaped per JSON):
+
+```
+"LoadModuleCS": [ "\"/path/to/My Modules/My Module.dll\" arg0 arg1" ]
+```
+
+Multiple modules can be loaded by providing a comma-separated list of module specifications.

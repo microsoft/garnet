@@ -34,7 +34,7 @@ namespace CommandInfoUpdater
             if (result.Length - resultStartIdx < 2) return false;
 
             if (result[resultStartIdx].Resp3Type != ResultType.BulkString) return false;
-            cmdName = result[resultStartIdx].ToString().ToUpper();
+            cmdName = result[resultStartIdx].ToString().ToUpperInvariant();
 
             if (result[resultStartIdx + 1].Resp3Type != ResultType.Array) return false;
             var elemCount = result[resultStartIdx + 1].Length;
@@ -148,7 +148,7 @@ namespace CommandInfoUpdater
                 if (string.Equals(key, "name"))
                 {
                     if (elemVal.Resp3Type != ResultType.BulkString) return false;
-                    name = elemVal.ToString().ToUpper();
+                    name = elemVal.ToString().ToUpperInvariant();
                 }
                 else if (string.Equals(key, "display_text"))
                 {

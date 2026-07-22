@@ -47,6 +47,13 @@ namespace Garnet.server
                     return false; // Key must already exist; don't create new
                 case RespCommand.RIRESTORE:
                     return false; // Key must already exist
+                case RespCommand.VADD:
+                    // Only this subset of args should do InitialUpdate - if we get any other ones it's possible a concurrent
+                    // DEL happened and we should not do InitialUpdate, otherwise we would ressurect a stub with garbage data.
+                    return input.arg1 is VectorManager.CreateIndexArg or VectorManager.MigrateElementKeyLogArg or VectorManager.MigrateIndexKeyLogArg;
+                case RespCommand.VREM:
+                    // VREM should never create a new record in InitialUpdate, only VADD should.
+                    return false;
                 default:
                     if (input.header.cmd > RespCommandExtensions.LastValidCommand)
                     {
@@ -291,15 +298,14 @@ namespace Garnet.server
                     break;
                 case RespCommand.VADD:
                     {
-                        if (input.arg1 is VectorManager.VADDAppendLogArg or VectorManager.MigrateElementKeyLogArg or VectorManager.MigrateIndexKeyLogArg)
+                        // NeedInitialUpdate ensures that only these args reach here
+                        Debug.Assert(input.arg1 is VectorManager.CreateIndexArg or VectorManager.MigrateElementKeyLogArg or VectorManager.MigrateIndexKeyLogArg, "InitialUpdater VADD arg1 called with invalid argument");
+
+                        // TODO: InitialUpdater will create a new vector index recorded initialized with garbage data
+                        // These synthetic ops should probably never trigger InitialUpdate? Since we do nothing here there will be a stub with garbage data.
+                        if (input.arg1 is VectorManager.MigrateElementKeyLogArg or VectorManager.MigrateIndexKeyLogArg)
                         {
                             // Synthetic op, do nothing
-                            break;
-                        }
-
-                        if (input.arg1 == VectorManager.VADDSetFlagsArg)
-                        {
-                            functionsState.logger?.LogError("InitialUpdater called with VADDSetFlagsArg, which should never happen");
                             break;
                         }
 
@@ -321,9 +327,6 @@ namespace Garnet.server
 
                         functionsState.vectorManager.CreateIndex(dims, reduceDims, quantizer, buildExplorationFactor, numLinks, distanceMetric, context, index, logRecord.ValueSpan);
                     }
-                    break;
-                case RespCommand.VREM:
-                    Debug.Assert(input.arg1 == VectorManager.VREMAppendLogArg, "Should only see VREM writes as part of replication");
                     break;
                 default:
                     if (input.header.cmd > RespCommandExtensions.LastValidCommand)
@@ -822,6 +825,14 @@ namespace Garnet.server
 
                     return TryCopyValueLengthToOutput(logRecord.ValueSpan, ref output) ? IPUResult.Succeeded : IPUResult.Failed;
                 case RespCommand.VADD:
+                    // If the key was concurrently deleted and re-typed (e.g. a raced String SET) the record is no longer
+                    // an index; cancel so no AOF entry is emitted.
+                    if (logRecord.RecordType != VectorManager.RecordType)
+                    {
+                        rmwInfo.Action = RMWAction.CancelOperation;
+                        return IPUResult.Failed;
+                    }
+
                     // Adding to an existing VectorSet is modeled as a read operations
                     //
                     // However, we do synthesize some (pointless) writes to implement replication (which we ignore here).
@@ -849,6 +860,14 @@ namespace Garnet.server
                     // Ignore everything else
                     return IPUResult.Succeeded;
                 case RespCommand.VREM:
+                    // Same rationale as the VADD case above: a synthetic VREM replication write requires an
+                    // existing index record. If the key was concurrently deleted and re-typed, cancel.
+                    if (logRecord.RecordType != VectorManager.RecordType)
+                    {
+                        rmwInfo.Action = RMWAction.CancelOperation;
+                        return IPUResult.Failed;
+                    }
+
                     // Removing from a VectorSet is modeled as a read operations
                     //
                     // However, we do synthesize some (pointless) writes to implement replication
@@ -970,6 +989,16 @@ namespace Garnet.server
                     return true;
                 case RespCommand.RIRESTORE:
                     // Copy to tail if needed, then IPU will set TreeHandle
+                    return true;
+                case RespCommand.VADD:
+                case RespCommand.VREM:
+                    // If the key was concurrently deleted and re-typed (e.g. a raced String SET), no index remains
+                    if (srcLogRecord.RecordType != VectorManager.RecordType)
+                    {
+                        rmwInfo.Action = RMWAction.CancelOperation;
+                        return false;
+                    }
+
                     return true;
                 default:
                     if (input.header.cmd > RespCommandExtensions.LastValidCommand)
@@ -1342,34 +1371,33 @@ namespace Garnet.server
                     break;
 
                 case RespCommand.VADD:
+                    // NeedCopyUpdate cancels when the record is no longer an index, so CopyUpdater is only reached for a genuine index record.
+                    Debug.Assert(srcLogRecord.RecordType == VectorManager.RecordType, "CopyUpdater reached for VADD on a non-index record");
+
+                    // Always copy to avoid corruption of the index record - otherwise the allocated destination will contain garbage data
+                    oldValue.CopyTo(dstLogRecord.ValueSpan);
+
                     if (input.arg1 == VectorManager.RecreateIndexArg)
                     {
                         // Recreate index
                         var newIndexPtr = MemoryMarshal.Read<nint>(input.parseState.GetArgSliceByRef(11).Span);
-
-                        oldValue.CopyTo(dstLogRecord.ValueSpan);
-
                         functionsState.vectorManager.RecreateIndex(newIndexPtr, dstLogRecord.ValueSpan);
-                    }
-                    else if (input.arg1 is VectorManager.VADDAppendLogArg or VectorManager.VREMAppendLogArg)
-                    {
-                        // VADD has triggered a CU of the index key - we want to do nothing but we have to copy to prevent corruption
-                        oldValue.CopyTo(dstLogRecord.ValueSpan);
                     }
                     else if (input.arg1 == VectorManager.VADDSetFlagsArg)
                     {
                         var flags = MemoryMarshal.Read<VectorSetFlags>(input.parseState.GetArgSliceByRef(0).Span);
-
-                        // CU implies we need to copy first
-                        oldValue.CopyTo(dstLogRecord.ValueSpan);
-
                         VectorManager.SetIndexFlags(dstLogRecord.ValueSpan, flags);
                     }
 
                     break;
 
                 case RespCommand.VREM:
+                    // NeedCopyUpdate cancels when the record is no longer an index, so CopyUpdater is only reached for a genuine index record.
+                    Debug.Assert(srcLogRecord.RecordType == VectorManager.RecordType, "CopyUpdater reached for VREM on a non-index record");
                     Debug.Assert(input.arg1 == VectorManager.VREMAppendLogArg, "Unexpected CopyUpdater call on VREM key");
+
+                    // Always copy to avoid corruption of the index record - otherwise the allocated destination will contain garbage data
+                    oldValue.CopyTo(dstLogRecord.ValueSpan);
                     break;
 
                 default:

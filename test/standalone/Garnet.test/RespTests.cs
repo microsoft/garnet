@@ -3575,6 +3575,33 @@ namespace Garnet.test
             ClassicAssert.AreEqual(value.Substring(5, 3), resp);
         }
 
+        /// <summary>
+        /// Regression test for GETRANGE on a key holding an empty string throwing
+        /// DivideByZeroException when start is negative (NormalizeRange's start %= len hits
+        /// len == 0). Real Redis returns an empty string for any range on an empty value.
+        /// </summary>
+        [Test]
+        public void GetRangeEmptyValueTest()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            string key = "emptyRangeKey";
+            ClassicAssert.IsTrue(db.StringSet(key, ""));
+
+            var resp = (string)db.StringGetRange(key, -1, -1);
+            ClassicAssert.AreEqual(string.Empty, resp);
+
+            resp = (string)db.StringGetRange(key, -1, 0);
+            ClassicAssert.AreEqual(string.Empty, resp);
+
+            resp = (string)db.StringGetRange(key, 0, 0);
+            ClassicAssert.AreEqual(string.Empty, resp);
+
+            resp = (string)db.StringGetRange(key, 0, -1);
+            ClassicAssert.AreEqual(string.Empty, resp);
+        }
+
         [Test]
         public void SetRangeTest()
         {

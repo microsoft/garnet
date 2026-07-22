@@ -16,6 +16,7 @@ using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using Garnet.common;
 using Garnet.server;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -2211,6 +2212,86 @@ namespace Garnet.test.cluster
 
             var vsimRes = (byte[][])context.clusterTestUtils.Execute(replica, "VSIM", [new RedisKey("foo"), "XB8", vectorData0]);
             ClassicAssert.IsTrue(vsimRes.Length > 0);
+        }
+
+        /// <summary>
+        /// Replica view of the delete-during-synthetic-replication race. A paused primary VADD is raced
+        /// by DEL then String SET, so its synthetic append-log RMW runs against a String record; the
+        /// updaters must cancel it (no AOF entry) so the replica stays converged with the primary.
+        /// </summary>
+        [Test]
+        public async Task ReplicaReplaysSyntheticVAddAgainstStringKeyAfterRacedDeleteAsync()
+        {
+            ClusterTestUtils.IgnoreIfExceptionInjectionDisabled();
+
+            const int PrimaryIndex = 0;
+            const int SecondaryIndex = 1;
+            const string Key = "foo";
+
+            _ = await SimpleSetupClusterAsync(DefaultShards, primaryCount: 1, replicaCount: 1, useTLS: false).ConfigureAwait(false);
+
+            var primary = (IPEndPoint)context.endpoints[PrimaryIndex];
+            var secondary = (IPEndPoint)context.endpoints[SecondaryIndex];
+
+            ClassicAssert.AreEqual("master", context.clusterTestUtils.RoleCommand(primary).Value);
+            ClassicAssert.AreEqual("slave", context.clusterTestUtils.RoleCommand(secondary).Value);
+
+            // The parked VADD blocks its own session thread, so DEL/SET must run on a different TCP connection.
+            using var opConn = await ConnectionMultiplexer.ConnectAsync(context.clusterTestUtils.GetRedisConfig(context.endpoints)).ConfigureAwait(false);
+            var opDb = opConn.GetDatabase();
+
+            Exception vaddError = null;
+            RedisResult vaddResult = null;
+
+            ExceptionInjectionHelper.EnableException(ExceptionInjectionType.VectorSet_Pause_Before_Synthetic_Replication_Rmw);
+            try
+            {
+                var vaddTask = Task.Run(() =>
+                {
+                    try
+                    {
+                        vaddResult = opDb.Execute("VADD", Key, "VALUES", "3", "1", "2", "3", "elemA");
+                    }
+                    catch (Exception ex)
+                    {
+                        vaddError = ex;
+                    }
+                });
+
+                // Wait until the primary VADD has built its index and parked right before writing the synthetic append-log entry to the AOF.
+                await ExceptionInjectionHelper.WaitOnClearAsync(ExceptionInjectionType.VectorSet_Pause_Before_Synthetic_Replication_Rmw).WaitAsync(TimeSpan.FromSeconds(30)).ConfigureAwait(false);
+
+                // DEL bypasses the vector lock the parked VADD still holds, so it wins the race; the following SET turns the key into a String.
+                var delRes = (long)context.clusterTestUtils.Execute(primary, "DEL", [new RedisKey(Key)]);
+                ClassicAssert.AreEqual(1, delRes);
+
+                var setRes = (string)context.clusterTestUtils.Execute(primary, "SET", [new RedisKey(Key), "not-a-vector-index"]);
+                ClassicAssert.AreEqual("OK", setRes);
+
+                // Release the parked VADD so it emits the synthetic append-log entry after DEL and SET.
+                ExceptionInjectionHelper.EnableException(ExceptionInjectionType.VectorSet_Pause_Before_Synthetic_Replication_Rmw);
+
+                await vaddTask.ConfigureAwait(false);
+            }
+            finally
+            {
+                ExceptionInjectionHelper.DisableException(ExceptionInjectionType.VectorSet_Pause_Before_Synthetic_Replication_Rmw);
+            }
+
+            var primaryType = (string)context.clusterTestUtils.Execute(primary, "TYPE", [new RedisKey(Key)]);
+            TestContext.Out.WriteLine($"[replica-synthetic-vadd] vaddResult={vaddResult}, vaddError={vaddError?.Message}, primaryType={primaryType}");
+
+            // Replaying the synthetic VADD against a String key must not livelock the replica nor stall replication: the AOF sync must converge.
+            context.clusterTestUtils.WaitForReplicaAofSync(PrimaryIndex, SecondaryIndex);
+
+            var readonlyOnReplica = (string)context.clusterTestUtils.Execute(secondary, "READONLY", []);
+            ClassicAssert.AreEqual("OK", readonlyOnReplica);
+
+            var replicaType = (string)context.clusterTestUtils.Execute(secondary, "TYPE", [new RedisKey(Key)]);
+            TestContext.Out.WriteLine($"[replica-synthetic-vadd] replicaType={replicaType}");
+
+            ClassicAssert.AreEqual("string", primaryType, "Synthetic VADD must not change the raced String key away from String on the primary");
+            ClassicAssert.AreEqual(primaryType, replicaType, "Replica diverged from primary after replaying a synthetic VADD against a String key");
         }
 
         private async Task<(List<ShardInfo> Shards, List<ushort> Slots)> SimpleSetupClusterAsync(int shardCount, int primaryCount, int replicaCount, bool onDemandCheckpoint = false, bool useTLS = true)

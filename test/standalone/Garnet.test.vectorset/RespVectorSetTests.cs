@@ -1390,9 +1390,7 @@ namespace Garnet.test
 
         private void InterruptedVectorSetDelete(ExceptionInjectionType faultLocation)
         {
-#if !DEBUG
-            ClassicAssert.Ignore("Relies on ExceptionInjectionHelper, disable in non-DEBUG");
-#endif
+            TestUtils.IgnoreIfExceptionInjectionDisabled();
 
             var key = $"{nameof(InterruptedVectorSetDelete)}_{faultLocation}";
 
@@ -1579,9 +1577,7 @@ namespace Garnet.test
 
         private async Task InterruptedVectorSetDeleteRecoveryAsync(ExceptionInjectionType faultLocation)
         {
-#if !DEBUG
-            ClassicAssert.Ignore("Relies on ExceptionInjectionHelper, disable in non-DEBUG");
-#endif
+            TestUtils.IgnoreIfExceptionInjectionDisabled();
 
             var key = $"{nameof(InterruptedVectorSetDeleteRecoveryAsync)}_{faultLocation}";
 
@@ -3635,6 +3631,286 @@ namespace Garnet.test
                 ClassicAssert.IsTrue(allKeys.Contains("foo"));
                 ClassicAssert.IsTrue(allKeys.Contains(nameof(HideInternalRecordsAsync)));
             }
+        }
+
+        [Test]
+        public async Task SyntheticReplicationRaceWithConcurrentDelMustNotResurrectKey([Values("VADD", "VREM")] string operation)
+        {
+            TestUtils.IgnoreIfExceptionInjectionDisabled();
+
+            var key = $"{nameof(SyntheticReplicationRaceWithConcurrentDelMustNotResurrectKey)}:{operation}";
+            const ExceptionInjectionType Pause = ExceptionInjectionType.VectorSet_Pause_Before_Synthetic_Replication_Rmw;
+
+            using var redisOp = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            using var redisDel = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var dbOp = redisOp.GetDatabase(0);
+            var dbDel = redisDel.GetDatabase(0);
+
+            var elem = new byte[] { 1, 0, 0, 0 };
+            var elem2 = new byte[] { 2, 0, 0, 0 };
+
+            // VREM needs an existing element to remove, so seed the index before arming the pause.
+            if (operation == "VREM")
+            {
+                dbOp.Execute("VADD", [key, "VALUES", "3", "1", "2", "3", (RedisValue)elem]);
+                dbOp.Execute("VADD", [key, "VALUES", "3", "4", "5", "6", (RedisValue)elem2]);
+            }
+
+            // Arm the pause in the synthetic-replication window.
+            ExceptionInjectionHelper.EnableException(Pause);
+            try
+            {
+                // Connection 1: run the operation; it modifies the index, then parks before its append-log RMW.
+                var opTask = operation == "VADD"
+                    ? Task.Run(() => dbOp.Execute("VADD", [key, "VALUES", "3", "1", "2", "3", (RedisValue)elem]))
+                    : Task.Run(() => dbOp.Execute("VREM", [key, (RedisValue)elem]));
+
+                await ExceptionInjectionHelper.WaitOnClearAsync(Pause).WaitAsync(TimeSpan.FromSeconds(30));
+
+                // Connection 2: DEL the parked key, tombstoning it while the operation holds a shared vector lock.
+                ClassicAssert.IsTrue(dbDel.KeyDelete(key), "DEL did not remove the parked vector-set key");
+
+                // Re-arm to release the parked operation; its synthetic append-log RMW now runs against the tombstoned key.
+                ExceptionInjectionHelper.EnableException(Pause);
+                var opReply = await opTask.WaitAsync(TimeSpan.FromSeconds(30));
+                ClassicAssert.AreEqual(1, (long)opReply, $"the raced {operation} must return its normal count (1), not surface the rejected synthetic RMW");
+            }
+            finally
+            {
+                ExceptionInjectionHelper.DisableException(Pause);
+            }
+
+            ClassicAssert.IsFalse(dbDel.KeyExists(key), "synthetic replication RMW resurrected a tombstoned key as a phantom index");
+        }
+
+        /// <summary>
+        /// Variant where the tombstoned key is re-SET as a String before the parked VADD's synthetic
+        /// append-log RMW runs. The synthetic RMW must leave the String intact — no type change,
+        /// value corruption, or recreate livelock.
+        /// </summary>
+        [Test]
+        public async Task SyntheticReplicationRaceWithConcurrentDelThenStringSetMustNotCorrupt()
+        {
+            TestUtils.IgnoreIfExceptionInjectionDisabled();
+
+            var key = nameof(SyntheticReplicationRaceWithConcurrentDelThenStringSetMustNotCorrupt);
+            const ExceptionInjectionType Pause = ExceptionInjectionType.VectorSet_Pause_Before_Synthetic_Replication_Rmw;
+            const string StringValue = "not-a-vector-index";
+
+            using var redisOp = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            using var redisRacer = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var dbOp = redisOp.GetDatabase(0);
+            var dbRacer = redisRacer.GetDatabase(0);
+
+            var elem = new byte[] { 1, 0, 0, 0 };
+
+            ExceptionInjectionHelper.EnableException(Pause);
+            try
+            {
+                // Connection 1: VADD creates the index, then parks before its append-log RMW.
+                var opTask = Task.Run(() => dbOp.Execute("VADD", [key, "VALUES", "3", "1", "2", "3", (RedisValue)elem]));
+
+                await ExceptionInjectionHelper.WaitOnClearAsync(Pause).WaitAsync(TimeSpan.FromSeconds(30));
+
+                // Connection 2: tombstone the vector-set key, then re-add it as a plain String.
+                ClassicAssert.IsTrue(dbRacer.KeyDelete(key), "DEL did not remove the parked vector-set key");
+                ClassicAssert.IsTrue(dbRacer.StringSet(key, StringValue), "SET did not store the String value");
+
+                // Release the parked VADD. Its synthetic append-log RMW cancels against the re-typed String,
+                // but the native add already ran, so the reply is the normal count (1) — last-writer DEL+SET wins.
+                ExceptionInjectionHelper.EnableException(Pause);
+                var opReply = await opTask.WaitAsync(TimeSpan.FromSeconds(30));
+                ClassicAssert.AreEqual(1, (long)opReply, "the raced VADD must return its normal count (1), not surface the canceled synthetic RMW");
+            }
+            finally
+            {
+                ExceptionInjectionHelper.DisableException(Pause);
+            }
+
+            ClassicAssert.AreEqual(RedisType.String, dbRacer.KeyType(key), "key type was changed away from String by the synthetic replication RMW");
+            ClassicAssert.AreEqual(StringValue, (string)dbRacer.StringGet(key), "String value was corrupted by the synthetic replication RMW");
+        }
+
+        /// <summary>
+        /// Every VADD/VREM arg1 sentinel, plus the default (0) and an arbitrary unknown value. Used by the
+        /// RMW contract-table tests to assert the two decision gates across the whole space of sentinels.
+        /// </summary>
+        private static readonly (string Name, long Arg1)[] VectorRmwArg1Sentinels =
+        [
+            (nameof(VectorManager.VADDAppendLogArg), VectorManager.VADDAppendLogArg),
+            (nameof(VectorManager.RecreateIndexArg), VectorManager.RecreateIndexArg),
+            (nameof(VectorManager.VREMAppendLogArg), VectorManager.VREMAppendLogArg),
+            (nameof(VectorManager.MigrateElementKeyLogArg), VectorManager.MigrateElementKeyLogArg),
+            (nameof(VectorManager.MigrateIndexKeyLogArg), VectorManager.MigrateIndexKeyLogArg),
+            (nameof(VectorManager.VADDSetFlagsArg), VectorManager.VADDSetFlagsArg),
+            (nameof(VectorManager.CreateIndexArg), VectorManager.CreateIndexArg),
+            ("DefaultZero", 0L),
+            ("ArbitraryUnknown", unchecked((long)0x5EED_BEEF_5EED_BEEFL)),
+        ];
+
+        /// <summary>
+        /// Drives a single main-store VADD/VREM RMW carrying the given arg1 sentinel directly against the key.
+        /// </summary>
+        private Status SimulateVectorSetStubRmw(string key, RespCommand cmd, long arg1, out StringOutput output)
+        {
+            var storeWrapper = server.Provider.StoreWrapper;
+            var functionsState = storeWrapper.CreateFunctionsState();
+            var functions = new MainSessionFunctions(functionsState);
+            ClassicAssert.IsTrue(storeWrapper.TryGetDatabase(0, out var database));
+
+            using var session = database.Store.NewSession<FixedSpanByteKey, StringInput, StringOutput, long, MainSessionFunctions>(functions, false);
+            var context = session.BasicContext;
+
+            var input = new StringInput(cmd, arg1: arg1);
+            output = new StringOutput();
+            ReadOnlySpan<byte> keySpan = Encoding.ASCII.GetBytes(key);
+            var status = context.RMW((FixedSpanByteKey)keySpan, ref input, ref output);
+            if (status.IsPending)
+                _ = context.CompletePending(wait: true);
+
+            return status;
+        }
+
+        /// <summary>
+        /// Reads the raw 56-byte index stub stored under a Vector Set key, mirroring the production read path in
+        /// <see cref="VectorManager.ReadOrCreateVectorIndex"/>: a VADD read with arg1 = 0 copies the value with no
+        /// RESP framing into a caller-pinned span. Used to assert the stub is preserved byte-for-byte across an RMW.
+        /// </summary>
+        private byte[] ReadRawVectorStub(string key)
+        {
+            var storeWrapper = server.Provider.StoreWrapper;
+            var functionsState = storeWrapper.CreateFunctionsState();
+            var functions = new MainSessionFunctions(functionsState);
+            ClassicAssert.IsTrue(storeWrapper.TryGetDatabase(0, out var database));
+
+            using var session = database.Store.NewSession<FixedSpanByteKey, StringInput, StringOutput, long, MainSessionFunctions>(functions, false);
+            var context = session.BasicContext;
+
+            Span<byte> stub = stackalloc byte[VectorManager.IndexSizeBytes];
+            var input = new StringInput(RespCommand.VADD, arg1: 0);
+            var output = StringOutput.FromPinnedSpan(stub);
+            ReadOnlySpan<byte> keySpan = Encoding.ASCII.GetBytes(key);
+            var status = context.Read((FixedSpanByteKey)keySpan, ref input, ref output);
+            if (status.IsPending)
+                _ = context.CompletePending(wait: true);
+
+            ClassicAssert.IsTrue(status.Found, $"reading the raw stub for {key} must find the index record");
+            ClassicAssert.IsTrue(output.SpanByteAndMemory.IsSpanByte, "the stub read must stay on the pinned span");
+            ClassicAssert.AreEqual(VectorManager.IndexSizeBytes, output.SpanByteAndMemory.Length, "the stub read returned an unexpected length");
+
+            return output.SpanByteAndMemory.ReadOnlySpan.ToArray();
+        }
+
+        /// <summary>
+        /// NeedInitialUpdate gate: on an absent key, every synthetic/stray VADD/VREM arg1 must reject (NOTFOUND,
+        /// no record) rather than resurrect a phantom index. The only args allowed to establish a record are
+        /// VADD's create allowlist (CreateIndexArg / Migrate*).
+        /// </summary>
+        [Test]
+        public void VectorRmwOnAbsentKeyRejectsSyntheticArgs([Values("VADD", "VREM")] string operation)
+        {
+            var cmd = operation == "VADD" ? RespCommand.VADD : RespCommand.VREM;
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            foreach (var (name, arg1) in VectorRmwArg1Sentinels)
+            {
+                if (cmd == RespCommand.VADD && arg1 is VectorManager.CreateIndexArg or VectorManager.MigrateElementKeyLogArg or VectorManager.MigrateIndexKeyLogArg)
+                    continue;
+
+                var key = $"{nameof(VectorRmwOnAbsentKeyRejectsSyntheticArgs)}:{operation}:{name}";
+                _ = db.KeyDelete(key);
+
+                var status = SimulateVectorSetStubRmw(key, cmd, arg1, out var output);
+
+                ClassicAssert.IsTrue(status.NotFound, $"{operation} with arg1={name} on an absent key must return NOTFOUND");
+                ClassicAssert.IsFalse(status.IsCanceled, $"{operation} with arg1={name} rejection must be NOTFOUND, not CANCELED");
+                ClassicAssert.IsFalse(output.HasError, $"{operation} with arg1={name} rejection must not surface an output error");
+                ClassicAssert.IsFalse(status.Record.Created, $"{operation} with arg1={name} rejection must not append a new record to the log");
+                ClassicAssert.IsFalse(db.KeyExists(key), $"{operation} with arg1={name} resurrected an absent key as a phantom index");
+            }
+        }
+
+        /// <summary>
+        /// Re-typed cancel gate: if the key was concurrently deleted and re-created as a String, a synthetic
+        /// VADD/VREM RMW carrying any arg1 must CANCEL before touching the record, leaving the String value and
+        /// type intact — no resurrection, corruption, or type change. Parameterized across both the mutable region
+        /// (InPlaceUpdater guard) and the read-only region (NeedCopyUpdate guard), which share the same cancel rule.
+        /// </summary>
+        [Test]
+        public void VectorRmwOnRetypedStringKeyIsCanceledAndPreservesValue([Values("VADD", "VREM")] string operation, [Values(false, true)] bool inReadOnlyRegion)
+        {
+            var cmd = operation == "VADD" ? RespCommand.VADD : RespCommand.VREM;
+            const string StringValue = "not-a-vector-index";
+
+            var store = server.Provider.StoreWrapper.store;
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            foreach (var (name, arg1) in VectorRmwArg1Sentinels)
+            {
+                var key = $"{nameof(VectorRmwOnRetypedStringKeyIsCanceledAndPreservesValue)}:{operation}:{name}";
+                _ = db.KeyDelete(key);
+                ClassicAssert.IsTrue(db.StringSet(key, StringValue), "test precondition: String seed must succeed");
+
+                if (inReadOnlyRegion)
+                    store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, wait: true);
+
+                var status = SimulateVectorSetStubRmw(key, cmd, arg1, out var output);
+
+                ClassicAssert.IsTrue(status.IsCanceled, $"{operation} with arg1={name} against a re-typed String key must CANCEL");
+                ClassicAssert.IsFalse(output.HasError, $"{operation} with arg1={name} cancel must not surface an output error");
+                ClassicAssert.IsFalse(status.Record.InPlaceUpdated, $"{operation} with arg1={name} cancel must not update the record in place");
+                ClassicAssert.IsFalse(status.Record.CopyUpdated, $"{operation} with arg1={name} cancel must not copy-update the record to the tail");
+                ClassicAssert.AreEqual(RedisType.String, db.KeyType(key), $"{operation} with arg1={name} changed the key type away from String");
+                ClassicAssert.AreEqual(StringValue, (string)db.StringGet(key), $"{operation} with arg1={name} corrupted the String value");
+            }
+        }
+
+        /// <summary>
+        /// Syntheticargs (VADDAppendLogArg / VREMAppendLogArg) must leave the index intact and copy if needed. Parameterized across both
+        /// the mutable region (InPlaceUpdater) and the read-only region (NeedCopyUpdate → CopyUpdater), so the
+        /// copy-to-tail path that must preserve the index is exercised.
+        /// </summary>
+        [Test]
+        public void VectorSyntheticAppendLogRmwOnLiveIndexProceedsAndPreservesIndex([Values("VADD", "VREM")] string operation, [Values(false, true)] bool inReadOnlyRegion)
+        {
+            var cmd = operation == "VADD" ? RespCommand.VADD : RespCommand.VREM;
+            var arg1 = operation == "VADD" ? VectorManager.VADDAppendLogArg : VectorManager.VREMAppendLogArg;
+            var key = $"{nameof(VectorSyntheticAppendLogRmwOnLiveIndexProceedsAndPreservesIndex)}:{operation}:{inReadOnlyRegion}";
+
+            var elem = new byte[] { 1, 0, 0, 0 };
+            var elem2 = new byte[] { 2, 0, 0, 0 };
+
+            var store = server.Provider.StoreWrapper.store;
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            _ = db.KeyDelete(key);
+            db.Execute("VADD", [key, "VALUES", "3", "1", "2", "3", (RedisValue)elem]);
+            db.Execute("VADD", [key, "VALUES", "3", "4", "5", "6", (RedisValue)elem2]);
+
+            var stubBefore = ReadRawVectorStub(key);
+
+            if (inReadOnlyRegion)
+                store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, wait: true);
+
+            var status = SimulateVectorSetStubRmw(key, cmd, arg1, out var output);
+
+            ClassicAssert.IsTrue(status.Found, $"synthetic {operation} append-log RMW on a live index must proceed (Found)");
+            ClassicAssert.IsFalse(status.IsCanceled, $"synthetic {operation} append-log RMW on a live index must not cancel");
+            if (inReadOnlyRegion)
+                ClassicAssert.IsTrue(status.Record.CopyUpdated, $"a read-only {operation} append-log RMW must take the CopyUpdater path (got {status})");
+            else
+                ClassicAssert.IsTrue(status.Record.InPlaceUpdated, $"a mutable {operation} append-log RMW must take the InPlaceUpdater path (got {status})");
+
+            ClassicAssert.IsFalse(output.HasError, $"synthetic {operation} append-log RMW on a live index must not surface an output error");
+            ClassicAssert.IsTrue(db.KeyExists(key), "synthetic append-log RMW dropped the live index");
+
+            var stubAfter = ReadRawVectorStub(key);
+            CollectionAssert.AreEqual(stubBefore, stubAfter, $"a {(inReadOnlyRegion ? "CopyUpdater" : "InPlaceUpdater")} {operation} append-log RMW must preserve the index stub bytes AS IS");
         }
 
         /// <summary>
