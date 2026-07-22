@@ -505,17 +505,17 @@ namespace Garnet.server
 
         /// <summary>
         /// Invokes the DiskANN data-fill callback that populates the value buffer during an RMW update. In DEBUG
-        /// builds a non-zero <c>VectorInput.TestCallback</c> is invoked instead (as a plain Cdecl call with
-        /// no SuppressGCTransition), which lets managed tests drive the RMW resize paths; production always uses the
-        /// SuppressGCTransition <see cref="VectorInput.Callback"/>.
+        /// builds, when <c>VectorInput.IsTestCallback</c> is set the <see cref="VectorInput.Callback"/> pointer is
+        /// invoked as a plain Cdecl call (no SuppressGCTransition), which lets managed tests drive the RMW resize
+        /// paths; production always uses the SuppressGCTransition call.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private static unsafe void InvokeDataCallback(in VectorInput input, nint dataPtr, nuint dataLen)
         {
 #if DEBUG
-            if (input.TestCallback != 0)
+            if (input.IsTestCallback)
             {
-                ((delegate* unmanaged[Cdecl]<nint, nint, nuint, void>)input.TestCallback)(input.CallbackContext, dataPtr, dataLen);
+                ((delegate* unmanaged[Cdecl]<nint, nint, nuint, void>)input.Callback)(input.CallbackContext, dataPtr, dataLen);
                 return;
             }
 #endif

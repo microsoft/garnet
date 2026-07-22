@@ -3976,7 +3976,7 @@ namespace Garnet.test
         /// overwrites route to InPlaceUpdater, which must resize the record (adjusting the content length) rather
         /// than writing past it on a grow or leaving stale trailing bytes on a shrink. In the read-only region each
         /// overwrite routes to CopyUpdater, whose carry-over of the old value must be bounded so a shrink does not
-        /// overflow the smaller destination. Uses the DEBUG-only managed fill callback (VectorInput.TestCallback),
+        /// overflow the smaller destination. Uses the DEBUG-only managed fill callback (VectorInput.IsTestCallback),
         /// since the production data callback is a SuppressGCTransition pointer that cannot dispatch to managed code.
         /// </summary>
         [Test]
@@ -4088,10 +4088,9 @@ namespace Garnet.test
         /// <summary>
         /// Drives a single VectorSessionFunctions RMW of a namespaced element, mirroring the production DiskANN
         /// ReadModifyWrite callback: an AlignmentExpected input carrying the desired size and a data-fill callback,
-        /// against a dedicated Vector session. Uses the DEBUG-only <c>VectorInput.TestCallback</c> (a plain-Cdecl
-        /// managed fill) so the RMW resize paths run under a managed callback, which the production
-        /// SuppressGCTransition pointer forbids. A non-zero sentinel <c>Callback</c> selects the callback branch; it
-        /// is never dereferenced because TestCallback takes precedence.
+        /// against a dedicated Vector session. Sets the DEBUG-only <c>VectorInput.IsTestCallback</c> so the managed
+        /// <c>Callback</c> pointer is invoked as a plain Cdecl call, letting the RMW resize paths run under a managed
+        /// fill (the production SuppressGCTransition call forbids dispatching to managed code).
         /// </summary>
         private unsafe Status RmwVectorElement(byte[] namespaceBytes, byte[] key, int size, byte fill)
         {
@@ -4112,8 +4111,8 @@ namespace Garnet.test
                     AlignmentExpected = true,
                     WriteDesiredSize = size,
                     CallbackContext = (nint)fill,
-                    Callback = (nint)1,
-                    TestCallback = (nint)(delegate* unmanaged[Cdecl]<nint, nint, nuint, void>)&FillElement,
+                    Callback = (nint)(delegate* unmanaged[Cdecl]<nint, nint, nuint, void>)&FillElement,
+                    IsTestCallback = true,
                 };
                 var output = new VectorOutput();
 
