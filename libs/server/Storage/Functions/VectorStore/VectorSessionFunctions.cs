@@ -296,9 +296,12 @@ namespace Garnet.server
 
                     unsafe
                     {
+                        // Callback takes: dataCallbackContext, dataPtr, dataLength
+                        var callback = (delegate* unmanaged[Cdecl, SuppressGCTransition]<nint, nint, nuint, void>)input.Callback;
+
                         var dataPtr = (nint)Unsafe.AsPointer(ref MemoryMarshal.GetReference(alignedValue));
                         var dataLen = (nuint)input.WriteDesiredSize;
-                        InvokeDataCallback(ref input, dataPtr, dataLen);
+                        callback(input.CallbackContext, dataPtr, dataLen);
 
                         return logRecord.TrySetContentLengths(logRecord.ValueSpan.Length, in sizeInfo);
                     }
@@ -363,21 +366,24 @@ namespace Garnet.server
                 }
                 else
                 {
-                    Debug.Assert(oldValueAligned.Length == newValueAligned.Length, "RMW values are fixed-size, old and new should match");
+                    Debug.Assert(input.WriteDesiredSize <= newValueAligned.Length, "Insufficient space for copy update, this should never happen");
+                    Debug.Assert(input.WriteDesiredSize <= oldValueAligned.Length, "Insufficient space for copy update, this should never happen");
 
-                    // The DiskANN RMW callback reads the current value out of the buffer before writing (FSM
-                    // bit flips, neighbour appends), so carry it forward for the callback to modify.
                     oldValueAligned.CopyTo(newValueAligned);
 
                     unsafe
                     {
+                        // Callback takes: dataCallbackContext, dataPtr, dataLength
+                        var callback = (delegate* unmanaged[Cdecl, SuppressGCTransition]<nint, nint, nuint, void>)input.Callback;
+
                         var dataPtr = (nint)Unsafe.AsPointer(ref MemoryMarshal.GetReference(newValueAligned));
                         var dataLen = (nuint)input.WriteDesiredSize;
 
-                        InvokeDataCallback(ref input, dataPtr, dataLen);
+                        callback(input.CallbackContext, dataPtr, dataLen);
                     }
 
-                    return dstLogRecord.TrySetContentLengths(dstLogRecord.ValueSpan.Length, in sizeInfo);
+                    return true;
+
                 }
             }
             finally
@@ -431,16 +437,17 @@ namespace Garnet.server
                 }
                 else
                 {
-                    // The record is already the correct fixed size and holds the current value; the DiskANN RMW
-                    // callback modifies it in place.
-                    Debug.Assert(input.WriteDesiredSize <= alignedValue.Length, "Insufficient space for in-place update, this should never happen");
+                    Debug.Assert(input.WriteDesiredSize <= alignedValue.Length, "Insufficient space for inplace update, this should never happen");
 
                     unsafe
                     {
+                        // Callback takes: dataCallbackContext, dataPtr, dataLength
+                        var callback = (delegate* unmanaged[Cdecl, SuppressGCTransition]<nint, nint, nuint, void>)input.Callback;
+
                         var dataPtr = (nint)Unsafe.AsPointer(ref MemoryMarshal.GetReference(alignedValue));
                         var dataLen = (nuint)input.WriteDesiredSize;
 
-                        InvokeDataCallback(ref input, dataPtr, dataLen);
+                        callback(input.CallbackContext, dataPtr, dataLen);
                     }
 
                     return true;
@@ -488,13 +495,6 @@ namespace Garnet.server
         [DoesNotReturn]
         private static TReturn LogRecordOperationsNotExpected<TReturn>([CallerMemberName] string callerName = null, [CallerLineNumber] int lineNum = -1)
         => throw new InvalidOperationException($"LogRecord related operations are not expected, was: {callerName} on {lineNum}");
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private static unsafe void InvokeDataCallback(ref VectorInput input, nint dataPtr, nuint dataLen)
-        {
-            // Callback takes: dataCallbackContext, dataPtr, dataLength
-            ((delegate* unmanaged[Cdecl, SuppressGCTransition]<nint, nint, nuint, void>)input.Callback)(input.CallbackContext, dataPtr, dataLen);
-        }
 
         // TODO: Remove all this alignment hackery when Tsavorite can enforce it
 
