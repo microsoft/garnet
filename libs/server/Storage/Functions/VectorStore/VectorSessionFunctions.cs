@@ -369,9 +369,12 @@ namespace Garnet.server
                 else
                 {
                     Debug.Assert(input.WriteDesiredSize <= newValueAligned.Length, "Insufficient space for copy update, this should never happen");
-                    Debug.Assert(input.WriteDesiredSize <= oldValueAligned.Length, "Insufficient space for copy update, this should never happen");
 
-                    oldValueAligned.CopyTo(newValueAligned);
+                    // The destination is freshly allocated to the new size; carry over only the overlapping prefix of
+                    // the old value before the callback repopulates the buffer. Bounding the copy avoids overflowing
+                    // the destination when the new value is smaller than the old one (shrink).
+                    var carryOver = Math.Min(oldValueAligned.Length, newValueAligned.Length);
+                    oldValueAligned[..carryOver].CopyTo(newValueAligned);
 
                     unsafe
                     {
@@ -384,8 +387,7 @@ namespace Garnet.server
                         callback(input.CallbackContext, dataPtr, dataLen);
                     }
 
-                    return true;
-
+                    return dstLogRecord.TrySetContentLengths(dstLogRecord.ValueSpan.Length, in sizeInfo);
                 }
             }
             finally
@@ -439,7 +441,19 @@ namespace Garnet.server
                 }
                 else
                 {
-                    Debug.Assert(input.WriteDesiredSize <= alignedValue.Length, "Insufficient space for inplace update, this should never happen");
+                    // Resize the existing record to the requested size before the native callback fills it. Returns
+                    // false when the value can't grow within the already-allocated record, in which case Tsavorite
+                    // falls back to CopyUpdater with a fresh, correctly-sized record. Without this the callback below
+                    // would write past the record on a grow, or leave a stale content length on a shrink.
+                    pin?.Free();
+                    pin = null;
+
+                    var sizeInfo = new RecordSizeInfo() { FieldInfo = GetRMWModifiedFieldInfo(in logRecord, ref input) };
+                    functionsState.storeWrapper.store.Log.PopulateRecordSizeInfo(ref sizeInfo);
+                    if (!logRecord.TrySetContentLengths(sizeInfo.FieldInfo.ValueSize, in sizeInfo))
+                        return false;
+
+                    alignedValue = AlignOrPin(in logRecord, ref input, out pin);
 
                     unsafe
                     {
