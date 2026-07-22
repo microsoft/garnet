@@ -3932,79 +3932,39 @@ namespace Garnet.test
         }
 
         /// <summary>
-        /// An equal-size second Upsert lands on InPlaceWriter (mutable) and must replace the value with no
-        /// residue - the capacity is identical so this is the case that already works.
+        /// Multi-stage exercise of the VectorSessionFunctions Upsert resize path on a single element: initial
+        /// write, then an equal-size overwrite, a grow, and a shrink. Each stage must round-trip the new value
+        /// exactly, with no residue from the previous one. In the mutable region every overwrite routes to
+        /// InPlaceWriter, which must honour the destination record's capacity rather than blindly copying the new
+        /// value (growing overflows the smaller record; shrinking must shorten the content length instead of
+        /// leaving stale trailing bytes). In the read-only region Tsavorite instead allocates a fresh,
+        /// correctly-sized record for each overwrite.
         /// </summary>
         [Test]
-        public void VectorElementUpsertSameSizeInPlaceOverwritePreservesValue()
+        public void VectorElementUpsertResizePreservesValue([Values(false, true)] bool inReadOnlyRegion)
         {
             var ns = new byte[] { 11 };
             var key = new byte[] { 0, 0, 0, 0 };
 
-            _ = UpsertVectorElement(ns, key, Encoding.ASCII.GetBytes("fizz buzz"));
-
-            var overwrite = Encoding.ASCII.GetBytes("buzz fizz");
-            _ = UpsertVectorElement(ns, key, overwrite);
-
-            var readBack = ReadVectorElement(ns, key);
-            CollectionAssert.AreEqual(overwrite, readBack, "an equal-size in-place element overwrite must replace the value");
-        }
-
-        /// <summary>
-        /// Growing an element value via a second Upsert. In the read-only region Tsavorite allocates a fresh,
-        /// correctly-sized record (InitialWriter); in the mutable region it routes to InPlaceWriter, which must
-        /// refuse to overflow the smaller existing record rather than blindly copying past its end. Either way a
-        /// subsequent read must return the larger value.
-        /// </summary>
-        [Test]
-        public void VectorElementUpsertGrowPreservesValue([Values(false, true)] bool inReadOnlyRegion)
-        {
-            var ns = new byte[] { 11 };
-            var key = new byte[] { 0, 0, 0, 0 };
-            var small = Encoding.ASCII.GetBytes("fizz buzz");    // 9 bytes
-            var large = Encoding.ASCII.GetBytes("hello world");  // 11 bytes
-
-            var seed = UpsertVectorElement(ns, key, small);
-            ClassicAssert.IsTrue(seed.IsCompletedSuccessfully, $"seed upsert must complete (got {seed})");
-
-            if (inReadOnlyRegion)
+            void WriteStageAndVerify(string content, string because)
             {
-                var store = server.Provider.StoreWrapper.store;
-                store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, wait: true);
+                if (inReadOnlyRegion)
+                {
+                    var store = server.Provider.StoreWrapper.store;
+                    store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, wait: true);
+                }
+
+                var value = Encoding.ASCII.GetBytes(content);
+                ClassicAssert.DoesNotThrow(() => UpsertVectorElement(ns, key, value), because);
+
+                var readBack = ReadVectorElement(ns, key);
+                CollectionAssert.AreEqual(value, readBack, because);
             }
 
-            ClassicAssert.DoesNotThrow(() => UpsertVectorElement(ns, key, large), "growing an element value must not overflow the existing record");
-
-            var readBack = ReadVectorElement(ns, key);
-            CollectionAssert.AreEqual(large, readBack, "a grown element must read back as the larger value");
-        }
-
-        /// <summary>
-        /// Shrinking an element value via a second Upsert. In the read-only region a fresh record is allocated;
-        /// in the mutable region InPlaceWriter must update the content length so the read returns only the new
-        /// (shorter) value and none of the previous value's trailing bytes.
-        /// </summary>
-        [Test]
-        public void VectorElementUpsertShrinkPreservesValue([Values(false, true)] bool inReadOnlyRegion)
-        {
-            var ns = new byte[] { 11 };
-            var key = new byte[] { 0, 0, 0, 0 };
-            var large = Encoding.ASCII.GetBytes("hello world");  // 11 bytes
-            var small = Encoding.ASCII.GetBytes("fizz buzz");    // 9 bytes
-
-            var seed = UpsertVectorElement(ns, key, large);
-            ClassicAssert.IsTrue(seed.IsCompletedSuccessfully, $"seed upsert must complete (got {seed})");
-
-            if (inReadOnlyRegion)
-            {
-                var store = server.Provider.StoreWrapper.store;
-                store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, wait: true);
-            }
-
-            _ = UpsertVectorElement(ns, key, small);
-
-            var readBack = ReadVectorElement(ns, key);
-            CollectionAssert.AreEqual(small, readBack, "a shrunk element must read back as the smaller value with no stale trailing bytes");
+            WriteStageAndVerify("fizz buzz", "the initial element write must round-trip the bytes verbatim");     // 9 bytes
+            WriteStageAndVerify("buzz fizz", "an equal-size overwrite must replace the value in place");          // 9 bytes
+            WriteStageAndVerify("hello world", "a grown element must not overflow and must read back the larger value"); // 11 bytes
+            WriteStageAndVerify("fizzy", "a shrunk element must read back the smaller value with no stale trailing bytes"); // 5 bytes
         }
 
         /// <summary>
