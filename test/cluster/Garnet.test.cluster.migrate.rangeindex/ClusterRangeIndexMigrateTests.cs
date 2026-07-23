@@ -219,7 +219,7 @@ namespace Garnet.test.cluster
 
         private void RestartNode(int nodeIndex)
         {
-            context.RestartNode(nodeIndex);
+            context.RestartNode(nodeIndex, ensureAofFlush: true);
             context.CreateConnection();
         }
 

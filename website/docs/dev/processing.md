@@ -19,7 +19,7 @@ The `ProcessMessages` method does a fast parsing of the incoming data to quickly
   This includes commands like GET, SET, DEL, RENAME, EXISTS, EXPIRE, TTL, INCR, PING, MULTI, EXEC, QUIT, etc.
 
 * `ProcessArrayCommands`  
-  If it is not one of the basic commands above, further parsing is performed to check if the incoming data matches any of the array commands - commands related to multiple keys, commands that operate using Object store, etc. like MGET, MSET, KEYS, SCAN, ZADD, ZREM, LPUSH, HSET, etc.
+  If it is not one of the basic commands above, further parsing is performed to check if the incoming data matches any of the array commands - commands related to multiple keys, object-type commands, etc. like MGET, MSET, KEYS, SCAN, ZADD, ZREM, LPUSH, HSET, etc.
 
 * `ProcessOtherCommands`  
   This caters to processing rest of the commands including `ProcessAdminCommands` (for commands like AUTH, CONFIG, CLUSTER, etc), custom commands, custom transactions, etc.
@@ -34,4 +34,4 @@ specific parameters from the incoming network buffer. Once the necessary argumen
 For example, see `NetworkIncrement` method in `BasicCommands.cs`.
 
 The storage layer methods perform the actual processing logic of the command. They do utilize the underlying Tsavorite layer's APIs for performing operations like Read, RMW, Upset, Delete. Also, additional processing logic is implemented in the Tsavorite callbacks.
-For example, see `Increment` method in `MainStoreOps.cs` and related methods in `MainStoreFunctions`.
+For example, see `Increment` method in `MainStoreOps.cs` and related methods in `MainSessionFunctions`.

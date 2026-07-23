@@ -18,13 +18,13 @@ The below section describes those ways and the appropriate scenario to use them.
 
 ## Custom Raw String Command
 
-This is used to operate on a single key with raw string values. The records are stored in the main store.
+This is used to operate on a single key with raw string values. The records are stored as raw-string values in Garnet's unified store.
 
 Details available [here](raw-strings.md).
 
 ## Custom Object Command
 
-This command operates on a single key as well, but on the object store.
+This command operates on a single key as well, but on data-structure (object) values in Garnet's unified store.
 This is used to expose commands that perform operations on custom data types.
 
 Details available [here](objects.md).
