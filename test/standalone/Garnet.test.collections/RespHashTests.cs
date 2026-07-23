@@ -904,6 +904,48 @@ namespace Garnet.test
             ClassicAssert.AreEqual(fieldValue, result[$"field:{numFields - 1}"]);
         }
 
+        /// <summary>
+        /// Actually reproduces https://github.com/microsoft/garnet/issues/1616 at the scale where
+        /// the pre-fix growth arithmetic broke down (total payload well beyond <see cref="Array.MaxLength"/>),
+        /// unlike <see cref="CanDoHGETALLOnLargeHashRequiringManyBufferGrowths"/> above. Field count and
+        /// size (250K x 20K) are sized so the total value payload alone (~4.7GB) is well past
+        /// <see cref="Array.MaxLength"/> (~2GB), guaranteeing HGETALL's single output buffer cannot hold
+        /// the response no matter how it grows. Fields are set one at a time (not as one bulk HSET) so
+        /// only the read/response path - not the write/command-parsing path - is put under this much
+        /// memory pressure. Suggested by kevin-montrose in review (see
+        /// https://github.com/microsoft/garnet/pull/1945) after pointing out that
+        /// CanDoHGETALLOnLargeHashRequiringManyBufferGrowths's ~5MB scale passes unmodified against
+        /// pre-fix `main` and so isn't real regression coverage for the issue.
+        /// </summary>
+        [Test]
+        public async Task HGETALLOnHashExceedingMaxSingleBufferSizeThrowsCleanlyAsync()
+        {
+            const string Key = nameof(HGETALLOnHashExceedingMaxSingleBufferSizeThrowsCleanlyAsync);
+            const int NumFields = 250_000;
+            const int FieldLength = 20_000;
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase();
+
+            var fieldValue = new string('v', FieldLength);
+
+            var writeTasks = new Task<bool>[NumFields];
+            for (var i = 0; i < NumFields; i++)
+                writeTasks[i] = db.HashSetAsync(Key, $"field:{i}", fieldValue);
+
+            var writeResults = await Task.WhenAll(writeTasks).ConfigureAwait(false);
+            ClassicAssert.IsTrue(writeResults.All(static x => x));
+
+            var ex = ClassicAssert.ThrowsAsync<RedisServerException>(() => db.HashGetAllAsync(Key));
+            ClassicAssert.That(ex.Message, Does.Contain("exceeds the maximum supported single-buffer size"));
+            ClassicAssert.That(ex.Message, Does.Contain("HSCAN instead of HGETALL"));
+
+            // disposeSession: false - the connection/session must still be usable for later commands,
+            // not just report a clean error once and then become unresponsive.
+            var pingResult = await db.ExecuteAsync("PING").ConfigureAwait(false);
+            ClassicAssert.AreEqual("PONG", (string)pingResult);
+        }
+
         [Test]
         public async Task CanDoHMSETMultipleTimes()
         {
