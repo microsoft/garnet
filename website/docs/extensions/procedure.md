@@ -20,14 +20,11 @@ These are the helper methods for developing custom procedures same as that of cu
 
 Registering the custom procedure is done on the server-side by calling the 
 
-`NewProcedure(string name, CustomProcedure customProcedure, RespCommandsInfo commandInfo = null)` 
+`NewProcedure(string name, Func<CustomProcedure> customProcedure, RespCommandsInfo commandInfo = null, RespCommandDocs commandDocs = null)` 
 
-method on the Garnet server object's `RegisterAPI` object with its name, an instance of the custom procedure class and optional commandInfo.
+method on the Garnet server object's `RegisterAPI` object with its name, a method that returns an instance of the custom procedure class, and optional commandInfo and commandDocs.
 
-**NOTE** When invoking APIs on `IGarnetApi` multiple times with large outputs, it is possible to exhaust the internal buffer capacity. If such usage scenarios are expected, the buffer could be reset as described below.
-* Retrieve the initial buffer offset using `IGarnetApi.GetScratchBufferOffset`
-* Invoke necessary apis on `IGarnetApi`
-* Reset the buffer back to where it was using `IGarnetApi.ResetScratchBuffer(offset)`
+**NOTE** When invoking APIs on `IGarnetApi` multiple times with large outputs, it is possible to exhaust the internal buffer capacity. If such usage scenarios are expected, the buffer could be reset by calling the parameterless `IGarnetApi.ResetScratchBuffer()`, which releases all allocated slices.
 
 :::tip 
 As a reference of an implementation of a custom procedure, see the example in GarnetServer\Extensions\Sum.cs.

@@ -3914,6 +3914,87 @@ namespace Garnet.test
         }
 
         /// <summary>
+        /// Overwrites one element with a mix of shorter and longer values; each write must resize the record and
+        /// read back verbatim with no stale bytes. Covers both the mutable (InPlaceWriter) and read-only paths.
+        /// </summary>
+        [Test]
+        public void VectorElementUpsertResizePreservesValue([Values(false, true)] bool inReadOnlyRegion)
+        {
+            var ns = new byte[] { 11 };
+            var key = new byte[] { 0, 0, 0, 0 };
+
+            var storeWrapper = server.Provider.StoreWrapper;
+
+            void WriteAndVerify(string content)
+            {
+                if (inReadOnlyRegion)
+                {
+                    var store = storeWrapper.store;
+                    store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, wait: true);
+                }
+
+                var value = Encoding.ASCII.GetBytes(content);
+                ClassicAssert.IsTrue(storeWrapper.TryGetDatabase(0, out var database));
+
+                using var session = database.Store.NewSession<VectorElementKey, VectorInput, VectorOutput, long, VectorSessionFunctions>(new VectorSessionFunctions(storeWrapper.CreateFunctionsState()));
+                var context = session.BasicContext;
+
+                unsafe
+                {
+                    fixed (byte* nsPtr = ns)
+                    fixed (byte* keyPtr = key)
+                    fixed (byte* valuePtr = value)
+                    {
+                        var elementKey = new VectorElementKey(new ReadOnlySpan<byte>(nsPtr, ns.Length), new ReadOnlySpan<byte>(keyPtr, key.Length));
+
+                        {
+                            var input = new VectorInput { AlignmentExpected = true };
+                            var valueSpan = SpanByte.FromPinnedPointer(valuePtr, value.Length);
+                            var output = new VectorOutput();
+
+                            var status = context.Upsert(elementKey, ref input, valueSpan, ref output);
+                            if (status.IsPending)
+                                _ = context.CompletePending(wait: true);
+
+                            ClassicAssert.IsTrue(status.IsCompletedSuccessfully, $"upsert of '{content}' must complete");
+                        }
+
+                        {
+                            Span<byte> buffer = stackalloc byte[256];
+                            fixed (byte* bufferPtr = buffer)
+                            {
+                                var input = new VectorInput { AlignmentExpected = true, ReadDesiredSize = -1 };
+                                var output = new VectorOutput(bufferPtr, buffer.Length);
+
+                                var status = context.Read(elementKey, ref input, ref output);
+                                if (status.IsPending)
+                                    _ = context.CompletePending(wait: true);
+
+                                ClassicAssert.IsTrue(status.Found, "reading a written element must find the record");
+                                ClassicAssert.IsTrue(output.SpanByteAndMemory.IsSpanByte, "the element read must stay on the pinned span");
+
+                                CollectionAssert.AreEqual(value, output.SpanByteAndMemory.ReadOnlySpan.ToArray(), $"reading back '{content}' must round-trip verbatim with no stale bytes");
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Overwrite the same element with a mix of shorter and longer values; each write must resize the
+            // record and read back exactly, with no leftover bytes from a previous (larger) value.
+            WriteAndVerify("aaaa");                             // create,   4B
+            WriteAndVerify("bbbbbbbb");                         // grow,     8B
+            WriteAndVerify("cc");                               // shrink,   2B
+            WriteAndVerify(new string('d', 40));               // grow,    40B
+            WriteAndVerify("eeeee");                            // shrink,   5B
+            WriteAndVerify(new string('f', 200));              // grow,   200B
+            WriteAndVerify(new string('g', 17));               // shrink,  17B
+            WriteAndVerify(new string('h', 100));              // grow,   100B
+            WriteAndVerify("i");                                // shrink,   1B
+            WriteAndVerify(new string('j', 63));               // grow,    63B
+        }
+
+        /// <summary>
         /// Create a new GarnetServer instance with common parameters.
         /// </summary>
         private static GarnetServer CreateGarnetServer(bool tryRecover, bool enableVectorSetPreview = true)
