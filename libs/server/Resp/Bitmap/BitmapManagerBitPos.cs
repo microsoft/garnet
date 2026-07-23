@@ -31,7 +31,7 @@ namespace Garnet.server
                 if (startOffset > endOffset) // If start offset beyond endOffset return 0
                     return -1;
 
-                endOffset = endOffset >= inputLen ? inputLen : endOffset;
+                endOffset = endOffset >= inputLen ? inputLen - 1 : endOffset;
                 // BYTE search
                 return BitPosByteSearch(input, inputLen, startOffset, endOffset, searchFor);
             }
@@ -50,7 +50,7 @@ namespace Garnet.server
                 if (startByteIndex > endByteIndex) // If start offset beyond endOffset return 0
                     return -1;
 
-                endOffset = endByteIndex >= inputLen ? bitLen : endOffset;
+                endOffset = endByteIndex >= inputLen ? bitLen - 1 : endOffset;
 
                 // BIT search
                 return BitPosBitSearch(input, inputLen, startOffset, endOffset, searchFor);
