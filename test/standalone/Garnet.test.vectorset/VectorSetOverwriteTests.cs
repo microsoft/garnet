@@ -3,6 +3,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Reflection;
 using System.Text;
@@ -52,7 +53,7 @@ namespace Garnet.test
         public void TearDown()
         {
             server.Dispose();
-            TestUtils.OnTearDown();
+            TestUtils.OnTearDown(waitForDelete: true);
         }
 
         [Test]
@@ -138,8 +139,20 @@ namespace Garnet.test
         [Test]
         public async Task SETAsync()
         {
-            await TestVectorSetOverwrittenCommandAsync(RunCommandPlainAsync).ConfigureAwait(false);
-            await TestVectorSetOverwrittenCommandAsync(RunCommandEXAsync).ConfigureAwait(false);
+            var sw = new Stopwatch();
+
+            for (var i = 0; i < 1_000; i++)
+            {
+                TestContext.Progress.WriteLine(i);
+                sw.Restart();
+                await TestVectorSetOverwrittenCommandAsync(RunCommandPlainAsync).ConfigureAwait(false);
+                await TestVectorSetOverwrittenCommandAsync(RunCommandEXAsync).ConfigureAwait(false);
+                TestContext.Progress.WriteLine($"\t: {sw.Elapsed}");
+
+
+                TearDown();
+                Setup();
+            }
 
             static async Task RunCommandPlainAsync(IDatabaseAsync executeDB, IDatabaseAsync readDB, RedisKey againstKey)
             {
@@ -237,7 +250,7 @@ namespace Garnet.test
 
             var vectorManager = server.Provider.StoreWrapper.DefaultDatabase.VectorManager;
 
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
+            using var redis = await ConnectionMultiplexer.ConnectAsync(TestUtils.GetConfig(allowAdmin: true)).ConfigureAwait(false);
             var s = redis.GetServers().Single();
             var db = redis.GetDatabase();
 
