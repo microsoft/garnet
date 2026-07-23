@@ -6112,42 +6112,6 @@
     ]
   },
   {
-    "Command": "PURGEBP",
-    "Name": "PURGEBP",
-    "Summary": "Purge cluster buffer pool for manager type.",
-    "Group": "Cluster",
-    "Arguments": [
-      {
-        "TypeDiscriminator": "RespCommandContainerArgument",
-        "Name": "MANAGERTYPE",
-        "Type": "OneOf",
-        "Arguments": [
-          {
-            "TypeDiscriminator": "RespCommandBasicArgument",
-            "Name": "MIGRATIONMANAGER",
-            "DisplayText": "migrationmanager",
-            "Type": "PureToken",
-            "Token": "MIGRATIONMANAGER"
-          },
-          {
-            "TypeDiscriminator": "RespCommandBasicArgument",
-            "Name": "REPLICATIONMANAGER",
-            "DisplayText": "replicationmanager",
-            "Type": "PureToken",
-            "Token": "REPLICATIONMANAGER"
-          },
-          {
-            "TypeDiscriminator": "RespCommandBasicArgument",
-            "Name": "SERVERLISTENER",
-            "DisplayText": "serverlistener",
-            "Type": "PureToken",
-            "Token": "SERVERLISTENER"
-          }
-        ]
-      }
-    ]
-  },
-  {
     "Command": "QUIT",
     "Name": "QUIT",
     "Summary": "Closes the connection.",

@@ -166,22 +166,6 @@ Error reply: `ERR Cannot execute EXPDELSCAN with background expired key deletion
 
 ---
 
-### PURGEBP
-
-#### Syntax
-
-```bash
-    PURGEBP <manager-type>
-```
-
-Purges the pinned network buffer pool held by the given manager and then forces a blocking garbage collection, returning the freed memory to the operating system. `manager-type` is one of `MigrationManager`, `ReplicationManager`, or `ServerListener`.
-
-#### Resp Reply
-
-Simple string reply: `GC completed for <manager-type>`.
-
----
-
 ## Native ETag Support
 
 Garnet provides support for ETags on raw strings. By using the ETag-related commands outlined below, you can associate any **string based key-value pair** inserted into Garnet with an automatically updated ETag.

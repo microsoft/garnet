@@ -73,7 +73,6 @@ namespace Garnet.server
                 RespCommand.DEBUG => NetworkDebug(),
                 RespCommand.REGISTERCS => NetworkRegisterCs(storeWrapper.customCommandManager),
                 RespCommand.MODULE_LOADCS => NetworkModuleLoad(storeWrapper.customCommandManager),
-                RespCommand.PURGEBP => NetworkPurgeBP(),
                 _ => cmdFound = false
             };
 
@@ -805,6 +804,17 @@ namespace Garnet.server
                 return true;
             }
 
+            if (command.EqualsUpperCaseSpanIgnoringCase(CmdStrings.PURGEBP))
+            {
+                if (parseState.Count != 2)
+                {
+                    return AbortWithWrongNumberOfArgumentsOrUnknownSubcommand(Encoding.ASCII.GetString(command),
+                                                                              nameof(RespCommand.DEBUG));
+                }
+
+                return NetworkPurgeBP(managerTypeArgIndex: 1);
+            }
+
             if (command.EqualsUpperCaseSpanIgnoringCase(CmdStrings.HELP))
             {
                 var help = new string[]
@@ -820,6 +830,9 @@ namespace Garnet.server
                     "\tTailAddress) so subsequent reads are served from disk.",
                     "FORCEGC [generation]",
                     "\tForce a blocking garbage collection of the given generation (default: max).",
+                    "PURGEBP <manager-type>",
+                    "\tPurge the network buffer pool for the given manager (MigrationManager,",
+                    "\tReplicationManager, or ServerListener) and force a blocking GC.",
                     "PANIC",
                     "\tCrash the server simulating a panic.",
                     "HELP",
