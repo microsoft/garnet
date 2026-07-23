@@ -86,6 +86,63 @@ namespace Garnet.test.Resp
         }
 
         /// <summary>
+        /// Both the current buffer capacity AND the incoming single item are simultaneously
+        /// large (each close to its individual maximum: <c>currentLength</c> near
+        /// <see cref="Array.MaxLength"/>, <c>extraLenHint</c> near <see cref="int.MaxValue"/>).
+        /// The <c>TestCase</c> values below are deliberately kept within <see cref="int"/>'s
+        /// valid range, since a real <c>extraLenHint</c> always comes from an actual
+        /// `int`-typed `Span&lt;byte&gt;.Length`/`string.Length` and can never exceed
+        /// <see cref="int.MaxValue"/>. Note that with two genuinely legitimate (non-negative)
+        /// <see cref="int"/> operands, their sum can reach at most
+        /// <c>2 * int.MaxValue = 2^32 - 2</c>, which is one less than
+        /// <see cref="uint.MaxValue"/> - so the old code's `(uint)extraLenHint + (uint)length`
+        /// addition itself could never actually overflow uint32 for any input this method
+        /// could legitimately be called with. The real old-code hazard was the *cast* of
+        /// `RoundUpToPowerOf2`'s `uint` result down to `int` once the total exceeded 2^31,
+        /// which is what this case (and <see cref="ComputeGrowth_LargeSingleItem_NeverShrinksOrOverflows"/>
+        /// above) exercises with legitimate inputs.
+        /// </summary>
+        [TestCase(0x7FFFFFC6, 0x7FFFFF00)] // currentLength = Array.MaxLength - 1, extraLenHint = Array.MaxLength - 199 (still satisfiable)
+        [TestCase(0x7FFFFFC7, 0x7FFFFF00)] // currentLength = Array.MaxLength, extraLenHint = Array.MaxLength - 199
+        public static void ComputeGrowth_LargeLengthAndLargeSingleItem_NeverShrinksOrOverflows(int currentLength, int extraLenHint)
+        {
+            var result = RespMemoryWriter.ComputeGrowth(currentLength, extraLenHint, lowerMinimum: false);
+
+            ClassicAssert.Positive(result, "Growth must never compute a non-positive capacity.");
+            ClassicAssert.GreaterOrEqual((long)result, currentLength,
+                "Growth must never shrink below what has already been allocated/written.");
+            ClassicAssert.GreaterOrEqual((long)result, extraLenHint,
+                "Growth must be large enough to actually hold the incoming item.");
+            ClassicAssert.LessOrEqual(result, Array.MaxLength,
+                "Growth must be clamped to Array.MaxLength, the hard ceiling for a single buffer.");
+        }
+
+        /// <summary>
+        /// Regression coverage for the actual gap kevin-montrose identified in review: once the
+        /// buffer is already sitting at the <see cref="Array.MaxLength"/> ceiling, growth must
+        /// report "no further growth is possible" (i.e. return exactly <c>currentLength</c>, not
+        /// something &gt; it) so that <c>ReallocateOutput</c>'s `length &lt;= previousLength` check
+        /// can tell the difference between real progress and a plateaued buffer, and raise a
+        /// clear, client-visible <see cref="GarnetException"/> (`disposeSession: false`) instead
+        /// of either looping forever re-renting an identically-sized buffer or overflowing into
+        /// an undersized one. This is what actually happens once a single RESP response (e.g. a
+        /// sufficiently large HGETALL) cannot fit in one managed buffer, regardless of exactly
+        /// which arithmetic step the pre-fix code failed on for the original report.
+        /// </summary>
+        [TestCase(0)]
+        [TestCase(1)]
+        [TestCase(1024)]
+        [TestCase(0x7FFFFF00)]
+        public static void ComputeGrowth_AtMaxCapacity_ReportsNoFurtherGrowthPossible(int extraLenHint)
+        {
+            var result = RespMemoryWriter.ComputeGrowth(Array.MaxLength, extraLenHint, lowerMinimum: false);
+
+            ClassicAssert.AreEqual(Array.MaxLength, result,
+                "Once already at the ceiling, ComputeGrowth must signal 'no growth occurred' " +
+                "(result == currentLength) rather than something that looks like progress.");
+        }
+
+        /// <summary>
         /// Sanity check that repeatedly applying ComputeGrowth - modeling the buffer
         /// doubling many times over the course of writing a very large response, starting
         /// from a non-power-of-two initial capacity as the live server does - is monotonic

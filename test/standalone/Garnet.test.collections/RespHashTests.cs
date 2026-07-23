@@ -868,12 +868,18 @@ namespace Garnet.test
         }
 
         /// <summary>
-        /// Regression test for https://github.com/microsoft/garnet/issues/1616: HGETALL on a
-        /// hash large enough that its serialized RESP response requires many output-buffer
-        /// reallocations used to throw (ArgumentOutOfRangeException / OverflowException) once
-        /// the buffer's capacity, while doubling, crossed certain internal boundaries. This
-        /// writes enough field/value pairs to force well over a dozen buffer growths and
-        /// verifies HGETALL still returns the full, correct data set instead of throwing.
+        /// General correctness check for HGETALL on a hash large enough that its serialized
+        /// RESP response requires many output-buffer reallocations: forces well over a dozen
+        /// buffer growths and verifies HGETALL still returns the full, correct data set.
+        ///
+        /// Note: this does NOT reproduce https://github.com/microsoft/garnet/issues/1616 - at
+        /// this scale (~5MB total payload) the response never gets anywhere near the buffer
+        /// capacities (~2^30-2^31 bytes) where the pre-fix growth arithmetic broke down, so this
+        /// test passes unmodified against pre-fix `main` too. The actual regression coverage for
+        /// #1616 is <see cref="Garnet.test.Resp.RespMemoryWriterTests.ComputeGrowth_AtMaxCapacity_ReportsNoFurtherGrowthPossible"/>,
+        /// a fast unit test directly against the growth arithmetic at the exact boundary that
+        /// was broken, since reproducing the multi-hundred-MB/GB scale end-to-end is impractical
+        /// for CI.
         /// </summary>
         [Test]
         public async Task CanDoHGETALLOnLargeHashRequiringManyBufferGrowths()
