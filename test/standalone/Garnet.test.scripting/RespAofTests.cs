@@ -333,7 +333,7 @@ namespace Garnet.test
                 // Verify 2nd string ttl
                 var recoveredValueTtl = db.KeyTimeToLive("AofExpiryRMWStoreRecoverTestKey2");
                 ClassicAssert.IsTrue(recoveredValueTtl.HasValue);
-                ClassicAssert.Less(recoveredValueTtl.Value.Milliseconds, 8500);
+                ClassicAssert.LessOrEqual(recoveredValueTtl.Value.TotalMilliseconds, 10_000);
                 ClassicAssert.Greater(recoveredValueTtl.Value.TotalSeconds, 0);
             }
 
@@ -409,7 +409,7 @@ namespace Garnet.test
                 // Verify 2nd string ttl
                 var recoveredValueTtl = db.KeyTimeToLive("AofExpiryUpsertStoreRecoverTestKey2");
                 ClassicAssert.IsTrue(recoveredValueTtl.HasValue);
-                ClassicAssert.Less(recoveredValueTtl.Value.Milliseconds, 8500);
+                ClassicAssert.LessOrEqual(recoveredValueTtl.Value.TotalMilliseconds, 10_000);
                 ClassicAssert.Greater(recoveredValueTtl.Value.TotalSeconds, 0);
             }
 

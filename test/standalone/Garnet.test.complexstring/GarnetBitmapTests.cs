@@ -5,6 +5,8 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Numerics.Tensors;
+using System.Runtime.InteropServices;
+using System.Threading.Tasks;
 using Garnet.common;
 using Garnet.server;
 using NUnit.Framework;
@@ -1067,6 +1069,63 @@ namespace Garnet.test
             }
         }
 
+        [Order(42)]
+        [Test]
+        [Category("BITFIELD")]
+        public async Task BitopNotTransactionAsync()
+        {
+            const string Key = nameof(BitopNotTransactionAsync);
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase();
+
+            _ = await db.StringSetAsync(Key, new byte[] { 0 }).ConfigureAwait(false);
+
+            // BITOP in transaction
+            {
+                var trans = db.CreateTransaction();
+                var opRes = trans.ExecuteAsync("BITOP", "NOT", Key, Key).ConfigureAwait(false);
+
+                _ = await trans.ExecuteAsync();
+
+                _ = await opRes;
+            }
+
+            // Check result
+            var res = (byte[])await db.StringGetAsync(Key).ConfigureAwait(false);
+            ClassicAssert.AreEqual(new byte[] { 255 }, res);
+        }
+
+        [Order(43)]
+        [Test]
+        [Category("BITFIELD")]
+        public async Task BitopAndTransactionAsync()
+        {
+            const string Key = nameof(BitopAndTransactionAsync);
+            const string KeyA = nameof(BitopAndTransactionAsync) + "A";
+            const string KeyB = nameof(BitopAndTransactionAsync) + "B";
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase();
+
+            _ = await db.StringSetAsync(KeyA, new byte[] { 0b1001_1001 }).ConfigureAwait(false);
+            _ = await db.StringSetAsync(KeyB, new byte[] { 0b0111_1110 }).ConfigureAwait(false);
+
+            // BITOP in transaction
+            {
+                var trans = db.CreateTransaction();
+                var opRes = trans.ExecuteAsync("BITOP", "AND", Key, KeyA, KeyB).ConfigureAwait(false);
+
+                _ = await trans.ExecuteAsync();
+
+                _ = await opRes;
+            }
+
+            // Check result
+            var res = (byte[])await db.StringGetAsync(Key).ConfigureAwait(false);
+            ClassicAssert.AreEqual(new byte[] { 0b0001_1000 }, res);
+        }
+
         private static long GetValueFromBitmap(ref byte[] bitmap, long offset, int bitCount, bool signed)
         {
             long startBit = offset;
@@ -1513,7 +1572,7 @@ namespace Garnet.test
             switch (overflowType)
             {
                 case 0://wrap
-                    if ((bitCount < 64 && incrBy > maxAdd) || (value >= 0 && incrBy > 0 && incrBy > maxVal) ||
+                    if ((bitCount < 64 && incrBy > maxAdd) || (bitCount == 64 && value >= 0 && incrBy > 0 && (value + incrBy) < 0) ||
                         ((bitCount < 64 && incrBy < maxSub) || (value < 0 && incrBy < 0 && incrBy < maxSub)))
                     {
                         ulong signb = 1UL << (bitCount - 1);
@@ -1530,13 +1589,13 @@ namespace Garnet.test
                     }
                     return ((value + incrBy), false);
                 case 1://sat                                   
-                    if ((bitCount < 64 && incrBy > maxAdd) || (value >= 0 && incrBy > 0 && incrBy > maxVal))
+                    if ((bitCount < 64 && incrBy > maxAdd) || (bitCount == 64 && value >= 0 && incrBy > 0 && (value + incrBy) < 0))
                         return (maxVal, true);
                     if ((bitCount < 64 && incrBy < maxSub) || (value < 0 && incrBy < 0 && incrBy < maxSub))
                         return (minVal, true);
                     return ((value + incrBy), false);
                 case 2://fail // detect overflow/underflow do not do anything else
-                    if ((bitCount < 64 && incrBy > maxAdd) || (value >= 0 && incrBy > 0 && incrBy > maxVal) ||
+                    if ((bitCount < 64 && incrBy > maxAdd) || (bitCount == 64 && value >= 0 && incrBy > 0 && (value + incrBy) < 0) ||
                         ((bitCount < 64 && incrBy < maxSub) || (value < 0 && incrBy < 0 && incrBy < maxSub)))
                         return (0, true);
                     return ((value + incrBy), false);
@@ -1554,8 +1613,12 @@ namespace Garnet.test
             //underflow if sign bit is zero
             bool underflow = (result & signbit) == 0 && value < 0 && incrBy < 0;
             //if operands are both positive possibility of overflow
-            //overflow if any of the 64-bitcount most significant bits are set.
-            bool overflow = (ulong)(result & ~mask) > 0 && value >= 0 && incrBy > 0;
+            //overflow if any of the 64-bitcount most significant bits are set. At
+            //bitCount == 64 there are no such bits to check (mask covers the whole word),
+            //so overflow instead shows up as the sign bit flipping negative.
+            bool overflow = bitCount == 64
+                ? result < 0 && value >= 0 && incrBy > 0
+                : (ulong)(result & ~mask) > 0 && value >= 0 && incrBy > 0;
 
             switch (overflowType)
             {
@@ -2346,6 +2409,76 @@ namespace Garnet.test
             ClassicAssert.AreEqual(-1, pos);
         }
 
+        /// <summary>
+        /// Regression test for an off-by-one clamp in BitPosDriver's BYTE-mode path: an explicit end
+        /// offset greater than or equal to the value's length was clamped to <c>inputLen</c> instead of
+        /// <c>inputLen - 1</c>, allowing BitPosByteSearch to read one byte past the end of the value
+        /// when no matching bit exists within the real data (mirrors the fix applied to BitCountDriver
+        /// in #1138, which was never mirrored to BITPOS).
+        ///
+        /// Calls BitmapManager.BitPosDriver directly against an unmanaged buffer with a known "canary"
+        /// byte placed immediately past the declared value length, so the out-of-bounds read is
+        /// deterministically observable: a matching bit hides in the canary byte, so the buggy driver
+        /// reports a real (non -1) position instead of -1, while the fixed driver never looks at it.
+        /// A plain end-to-end BITPOS call would rely on whatever bytes happen to follow the value on
+        /// the managed heap, which is not reliable enough to catch a one-byte overread.
+        /// </summary>
+        [Test]
+        [Category("BITPOS")]
+        public unsafe void BitmapBitPosOutOfBoundsEndOffsetByteModeTest()
+        {
+            const int valueLen = 8;
+            var buf = (byte*)NativeMemory.Alloc(valueLen + 1);
+            try
+            {
+                // Real value: no set bits anywhere within its declared bounds.
+                for (var i = 0; i < valueLen; i++)
+                    buf[i] = 0x00;
+
+                // Canary byte, one past the declared length. All bits set, so if the driver reads it
+                // while searching for a set bit, it will incorrectly report a position inside it.
+                buf[valueLen] = 0xFF;
+
+                var pos = BitmapManager.BitPosDriver(buf, valueLen, startOffset: 0, endOffset: 1_000_000, searchFor: 1, offsetType: 0x0);
+
+                ClassicAssert.AreEqual(-1, pos, "BITPOS BYTE mode must not read past the end of the value");
+            }
+            finally
+            {
+                NativeMemory.Free(buf);
+            }
+        }
+
+        /// <summary>
+        /// Same regression as <see cref="BitmapBitPosOutOfBoundsEndOffsetByteModeTest"/>, but for
+        /// BitPosDriver's BIT-mode path, whose equivalent clamp had the same off-by-one
+        /// (<c>bitLen</c> instead of <c>bitLen - 1</c>).
+        /// </summary>
+        [Test]
+        [Category("BITPOS")]
+        public unsafe void BitmapBitPosOutOfBoundsEndOffsetBitModeTest()
+        {
+            const int valueLen = 3;
+            var buf = (byte*)NativeMemory.Alloc(valueLen + 1);
+            try
+            {
+                // Real value: no set bits anywhere within its declared bounds (24 valid bit positions).
+                for (var i = 0; i < valueLen; i++)
+                    buf[i] = 0x00;
+
+                // Canary byte, one past the declared length. All bits set.
+                buf[valueLen] = 0xFF;
+
+                var pos = BitmapManager.BitPosDriver(buf, valueLen, startOffset: 0, endOffset: 1_000_000, searchFor: 1, offsetType: 0x1);
+
+                ClassicAssert.AreEqual(-1, pos, "BITPOS BIT mode must not read past the end of the value");
+            }
+            finally
+            {
+                NativeMemory.Free(buf);
+            }
+        }
+
         [Test]
         [Category("BITPOS")]
         public void BitmapBitPosBitModifierRequiresStartAndEndTest()
@@ -2543,7 +2676,49 @@ namespace Garnet.test
             ClassicAssert.AreEqual(expected: new byte[] { 0x80, 0x80 }, actual: result);
         }
 
-        [Order(41)]
+        /// <summary>
+        /// Regression test for a signed 64-bit-specific gap in overflow detection: at
+        /// bitCount == 64 there are no "extra" high bits above the field to check (the field
+        /// spans the whole word), so the general-purpose overflow check silently never fired,
+        /// making OVERFLOW SAT clamp to nothing (silently wrapping instead) and OVERFLOW FAIL
+        /// silently succeed (instead of rejecting the write) whenever a signed 64-bit INCRBY
+        /// actually overflowed. WRAP was unaffected, since its result value already comes from
+        /// plain two's-complement long addition regardless of the overflow flag.
+        /// </summary>
+        [Test, Order(41)]
+        [Category("BITFIELD")]
+        public void BitmapBitfieldSigned64OverflowTest()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var key = "BitmapBitfieldSigned64OverflowTest";
+
+            // Overflow direction: SAT clamps to long.MaxValue and stores the clamped value.
+            db.Execute("BITFIELD", (RedisKey)key, "SET", "i64", 0, long.MaxValue - 5);
+            var satResult = (long)db.Execute("BITFIELD", (RedisKey)key, "OVERFLOW", "SAT", "INCRBY", "i64", 0, 100);
+            ClassicAssert.AreEqual(long.MaxValue, satResult);
+            ClassicAssert.AreEqual(long.MaxValue, (long)db.Execute("BITFIELD", (RedisKey)key, "GET", "i64", 0));
+
+            // Overflow direction: FAIL reports the overflow via a nil reply. (Whether the stored
+            // value itself is left untouched on FAIL is a separate, pre-existing question that
+            // applies at every bitCount, not something this fix changes - not asserted here.)
+            db.Execute("BITFIELD", (RedisKey)key, "SET", "i64", 0, long.MaxValue - 5);
+            var failResult = (RedisResult[])db.Execute("BITFIELD", (RedisKey)key, "OVERFLOW", "FAIL", "INCRBY", "i64", 0, 100);
+            ClassicAssert.IsTrue(failResult[0].IsNull);
+
+            // Underflow direction: SAT clamps to long.MinValue and stores the clamped value.
+            db.Execute("BITFIELD", (RedisKey)key, "SET", "i64", 0, long.MinValue + 5);
+            var satUnderflowResult = (long)db.Execute("BITFIELD", (RedisKey)key, "OVERFLOW", "SAT", "INCRBY", "i64", 0, -100);
+            ClassicAssert.AreEqual(long.MinValue, satUnderflowResult);
+            ClassicAssert.AreEqual(long.MinValue, (long)db.Execute("BITFIELD", (RedisKey)key, "GET", "i64", 0));
+
+            // Underflow direction: FAIL reports the overflow via a nil reply.
+            db.Execute("BITFIELD", (RedisKey)key, "SET", "i64", 0, long.MinValue + 5);
+            var failUnderflowResult = (RedisResult[])db.Execute("BITFIELD", (RedisKey)key, "OVERFLOW", "FAIL", "INCRBY", "i64", 0, -100);
+            ClassicAssert.IsTrue(failUnderflowResult[0].IsNull);
+        }
+
+        [Order(42)]
         [Test]
         [Category("BITFIELD")]
         public void BitmapBitFieldInvalidOptionsTest([Values(RespCommand.BITFIELD, RespCommand.BITFIELD_RO)] RespCommand testCmd)
