@@ -30,12 +30,15 @@ Note that this list is subject to change as we continue to expand our API comman
 19. [SCRIPTING](#scripting)
 20. [SERVER](#server)
 21. [SET](#set)
-22. [SORTED SET](#sorted-set)
-23. [STREAM](#stream)
-24. [STRING](#string)
-25. [TRANSACTIONS](#transactions)
+22. [SLOWLOG](#slowlog)
+23. [SORTED SET](#sorted-set)
+24. [STREAM](#stream)
+25. [STRING](#string)
+26. [TRANSACTIONS](#transactions)
 
 ### Full Commands List
+
+Legend: ➕ = supported, ➖ = not supported.
 
 | Category | Command | Implemented in Garnet | Notes |
 | ------------- | ------------- | ------------- | ------------- | 
@@ -89,7 +92,8 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | [FAILOVER](cluster.md#cluster-failover) | ➕ |  |
 |  | FLUSHSLOTS | ➖ |  |
 |  | [FORGET](cluster.md#cluster-forget) | ➕ |  |
-|  | [GETKEYINSLOT](cluster.md#cluster-getkeysinslot) | ➕ |  |
+|  | [GETKEYSINSLOT](cluster.md#cluster-getkeysinslot) | ➕ |  |
+|  | HELP | ➕ |  |
 |  | [INFO](cluster.md#cluster-info) | ➕ |  |
 |  | [KEYSLOT](cluster.md#cluster-keyslot) | ➕ |  |
 |  | LINKS | ➖ |  |
@@ -105,9 +109,10 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | SAVECONFIG | ➖ |  |
 |  | [SET-CONFIG-EPOCH](cluster.md#cluster-set-config-epoch) | ➕ |  |
 |  | [SETSLOT](cluster.md#cluster-setslot) | ➕ |  |
-|  | SHARDS | ➖ |  |
-|  | [SLAVES](cluster.md#slaves) | ➕ | (Deprecated) |
+|  | [SHARDS](cluster.md#cluster-shards) | ➕ |  |
+|  | [SLAVES](cluster.md#cluster-replicas) | ➕ | (Deprecated) |
 |  | [SLOTS](cluster.md#cluster-slots) | ➕ | (deprecated) |
+|  | SPUBLISH | ➕ |  |
 | <span id="command">**COMMAND**</span> | [COMMAND](server.md#command) | ➕ |  |
 |  | [COUNT](server.md#command-count) | ➕ |  |
 |  | [DOCS](server.md#command-docs) | ➕ |  |
@@ -177,7 +182,7 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | [HPERSIST](data-structures.md#hpersist) | ➕ |  |
 |  | [HPEXPIRE](data-structures.md#hpexpire) | ➕ |  |
 |  | [HPEXPIREAT](data-structures.md#hpexpireat) | ➕ |  |
-|  | [HPEXPIRETIME](data-structures.md#hepxpiretime) | ➕ |  |
+|  | [HPEXPIRETIME](data-structures.md#hpexpiretime) | ➕ |  |
 |  | [HPTTL](data-structures.md#hpttl) | ➕ |  |
 |  | [HRANDFIELD](data-structures.md#hrandfield) | ➕ |  |
 |  | [HSCAN](data-structures.md#hscan) | ➕ |  |
@@ -203,7 +208,7 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | MOVE | ➖ |  |
 | <span id="latency">**LATENCY**</span> | DOCTOR | ➖ |  |
 |  | GRAPH | ➖ |  |
-|  | HELP | ➖ |  |
+|  | [HELP](server.md#latency-help) | ➕ |  |
 |  | [HISTOGRAM](server.md#latency-histogram) | ➕ |  |
 |  | HISTORY | ➖ |  |
 |  | LATEST | ➖ |  |
@@ -267,14 +272,13 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | SCRIPT HELP | ➖ |  |
 |  | SCRIPT KILL | ➖ |  |
 |  | [SCRIPT LOAD](scripting-and-functions.md#script-load) | ➕ |  |
-| <span id="server">**SERVER**</span> | ACL | ➖ |  |
-|  | BGREWRITEAOF | ➖ |  |
+| <span id="server">**SERVER**</span> | BGREWRITEAOF | ➖ |  |
 |  | [BGSAVE](checkpoint.md#bgsave) | ➕ |  |
 |  | [COMMITAOF](server.md#commitaof) | ➕ |  |
 |  | [CONFIG GET](server.md#config-get) | ➕ |  |
 |  | CONFIG HELP | ➖ |  |
 |  | CONFIG RESETSTAT | ➖ |  |
-|  | CONFIG REWRITE | ➖ |  |
+|  | CONFIG REWRITE | ➕ |  |
 |  | [CONFIG SET](server.md#config-set) | ➕ |  |
 |  | [DBSIZE](server.md#dbsize) | ➕ |  |
 |  | [DEBUG](server.md#debug) | ➕ | Internal command |
@@ -306,15 +310,15 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | [SMISMEMBER](data-structures.md#smismember) | ➕ |  |
 |  | [SMOVE](data-structures.md#smove) | ➕ |  |
 |  | [SPOP](data-structures.md#spop) | ➕ |  |
-|  | SPUBLISH | ➖ |  |
+|  | SPUBLISH | ➕ |  |
 |  | [SRANDMEMBER](data-structures.md#srandmember) | ➕ |  |
 |  | [SREM](data-structures.md#srem) | ➕ |  |
 |  | [SSCAN](data-structures.md#sscan) | ➕ |  |
-|  | SSUBSCRIBE | ➖ |  |
+|  | SSUBSCRIBE | ➕ |  |
 |  | [SUNION](data-structures.md#sunion) | ➕ |  |
 |  | [SUNIONSTORE](data-structures.md#sunionstore) | ➕ |  |
 |  | SUNSUBSCRIBE | ➖ |  |
-| <span id="sorted-set">**SLOWLOG**</span> | GET | ➕ |  |
+| <span id="slowlog">**SLOWLOG**</span> | GET | ➕ |  |
 |  | HELP | ➕ |  |
 |  | LEN | ➕ |  |
 |  | RESET | ➕ |  |
@@ -326,6 +330,9 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | [ZCOUNT](data-structures.md#zcount) | ➕ |  |
 |  | [ZDIFF](data-structures.md#zdiff) | ➕ |  |
 |  | [ZDIFFSTORE](data-structures.md#zdiffstore) | ➕ |  |
+|  | [ZEXPIRE](data-structures.md#zexpire) | ➕ |  |
+|  | [ZEXPIREAT](data-structures.md#zexpireat) | ➕ |  |
+|  | [ZEXPIRETIME](data-structures.md#zexpiretime) | ➕ |  |
 |  | [ZINCRBY](data-structures.md#zincrby) | ➕ |  |
 |  | [ZINTER](data-structures.md#zinter) | ➕ |  |
 |  | [ZINTERCARD](data-structures.md#zintercard) | ➕ |  |
@@ -333,8 +340,13 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | [ZLEXCOUNT](data-structures.md#zlexcount) | ➕ |  |
 |  | [ZMPOP](data-structures.md#zmpop) | ➕ |  |
 |  | [ZMSCORE](data-structures.md#zmscore) | ➕ |  |
+|  | [ZPERSIST](data-structures.md#zpersist) | ➕ |  |
+|  | [ZPEXPIRE](data-structures.md#zpexpire) | ➕ |  |
+|  | [ZPEXPIREAT](data-structures.md#zpexpireat) | ➕ |  |
+|  | [ZPEXPIRETIME](data-structures.md#zpexpiretime) | ➕ |  |
 |  | [ZPOPMAX](data-structures.md#zpopmax) | ➕ |  |
 |  | [ZPOPMIN](data-structures.md#zpopmin) | ➕ |  |
+|  | [ZPTTL](data-structures.md#zpttl) | ➕ |  |
 |  | [ZRANDMEMBER](data-structures.md#zrandmember) | ➕ |  |
 |  | [ZRANGE](data-structures.md#zrange) | ➕ |  |
 |  | [ZRANGEBYLEX](data-structures.md#zrangebylex) | ➕ | (Deprecated) |
@@ -351,6 +363,7 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | [ZREVRANK](data-structures.md#zrevrank) | ➕ |  |
 |  | [ZSCAN](data-structures.md#zscan) | ➕ |  |
 |  | [ZSCORE](data-structures.md#zscore) | ➕ |  |
+|  | [ZTTL](data-structures.md#zttl) | ➕ |  |
 |  | [ZUNION](data-structures.md#zunion) | ➕ |  |
 |  | [ZUNIONSTORE](data-structures.md#zunionstore) | ➕ |  |
 | <span id="stream">**STREAM**</span> | XACK | ➖ |  |

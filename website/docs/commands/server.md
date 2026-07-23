@@ -173,7 +173,7 @@ Subcommands:
 
 * `ERROR <string>`: Return a RESP error reply with `<string>` as the message.
 * `LOG <message>`: Write `<message>` to the server log.
-* `FLUSHANDEVICT`: Flush the main store's in-memory log to disk and evict it (shifts HeadAddress to TailAddress) so subsequent reads are served from disk.
+* `FLUSHANDEVICT`: Flush the store's in-memory log to disk and evict it (shifts HeadAddress to TailAddress) so subsequent reads are served from disk.
 * `FORCEGC [generation]`: Force a blocking garbage collection of the given generation (default: max). See [GC.Collect](https://learn.microsoft.com/en-us/dotnet/api/system.gc.collect).
 * `PANIC`: Crash the server, simulating a panic.
 * `HELP`: Print the subcommand list.
