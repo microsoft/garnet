@@ -16,6 +16,64 @@ namespace Garnet.server
     public class ModuleUtils
     {
         /// <summary>
+        /// Parses a single module specification (as provided to the <c>--loadmodulecs</c> option) into its
+        /// module path and optional arguments. The specification has the form
+        /// <c>&lt;module-path&gt; [arg0 arg1 ...]</c>, where the path and each argument are separated by spaces.
+        ///
+        /// The path is delimited from its arguments deterministically:
+        /// <list type="number">
+        /// <item>If the specification begins with a double quote, the path is the text between that quote and the
+        /// next double quote (so it may contain spaces), and any remaining space-separated text is treated as the
+        /// module arguments. Such a specification is invalid (returns false) if the quote is not terminated or the
+        /// quoted path is empty or whitespace-only.</item>
+        /// <item>Otherwise, the first space-separated token is the module path and the remaining tokens are its
+        /// arguments. A path that contains spaces must therefore be wrapped in double quotes.</item>
+        /// </list>
+        /// </summary>
+        /// <param name="moduleSpec">The raw module specification string.</param>
+        /// <param name="modulePath">The parsed module path.</param>
+        /// <param name="moduleArgs">The parsed module arguments (empty if none).</param>
+        /// <returns>True if a non-empty module path was parsed; otherwise false (e.g. empty, whitespace-only or
+        /// malformed quoted specification).</returns>
+        public static bool TryParseModuleSpec(string moduleSpec, out string modulePath, out string[] moduleArgs)
+        {
+            modulePath = null;
+            moduleArgs = [];
+
+            if (string.IsNullOrWhiteSpace(moduleSpec))
+                return false;
+
+            var spec = moduleSpec.Trim();
+
+            // A double-quoted path may contain spaces: "<path>" [args...]. The quote must be terminated and the
+            // quoted path must be non-empty and non-whitespace, otherwise the specification is invalid.
+            if (spec[0] == '"')
+            {
+                var closingQuoteIdx = spec.IndexOf('"', 1);
+                if (closingQuoteIdx < 0)
+                    return false;
+
+                var quotedPath = spec[1..closingQuoteIdx];
+                if (string.IsNullOrWhiteSpace(quotedPath))
+                    return false;
+
+                modulePath = quotedPath;
+                moduleArgs = SplitModuleArgs(spec[(closingQuoteIdx + 1)..]);
+                return true;
+            }
+
+            // Otherwise the path must not contain spaces: the first space-separated token is the path and the
+            // remaining tokens are its arguments. To use a path containing spaces, wrap it in double quotes.
+            var tokens = spec.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            modulePath = tokens[0];
+            moduleArgs = tokens.Length > 1 ? tokens[1..] : [];
+            return true;
+        }
+
+        private static string[] SplitModuleArgs(string args)
+            => args.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+
+        /// <summary>
         /// Loads only the assemblies that the module at <paramref name="modulePath"/> references (transitively)
         /// from <paramref name="binPath"/>, instead of loading every DLL in the directory.
         /// </summary>

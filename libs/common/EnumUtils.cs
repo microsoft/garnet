@@ -9,6 +9,27 @@ using System.Linq;
 namespace Garnet.common
 {
     /// <summary>
+    /// Specifies an additional description string that maps to an enum value when parsing from a
+    /// description (e.g. a wire-protocol alias used by a different or newer RESP server version).
+    /// Aliases affect parsing only; the primary <see cref="DescriptionAttribute"/> is still used
+    /// when converting an enum value back to its description.
+    /// </summary>
+    [AttributeUsage(AttributeTargets.Field, AllowMultiple = true)]
+    public sealed class EnumDescriptionAliasAttribute : Attribute
+    {
+        /// <summary>
+        /// The alias description string.
+        /// </summary>
+        public string Alias { get; }
+
+        /// <summary>
+        /// Creates a new <see cref="EnumDescriptionAliasAttribute"/>.
+        /// </summary>
+        /// <param name="alias">The alias description string.</param>
+        public EnumDescriptionAliasAttribute(string alias) => Alias = alias;
+    }
+
+    /// <summary>
     /// Utilities for enums
     /// </summary>
     public static class EnumUtils
@@ -103,6 +124,14 @@ namespace Garnet.common
                     if (!descToVals.ContainsKey(descAttr.Description))
                         descToVals.Add(descAttr.Description, new List<string>());
                     descToVals[descAttr.Description].Add(flagFieldInfo.Name);
+                }
+
+                // Register any parse-only aliases (e.g. wire names used by other RESP server versions)
+                foreach (var aliasAttr in flagFieldInfo.GetCustomAttributes(typeof(EnumDescriptionAliasAttribute), false).Cast<EnumDescriptionAliasAttribute>())
+                {
+                    if (!descToVals.ContainsKey(aliasAttr.Alias))
+                        descToVals.Add(aliasAttr.Alias, new List<string>());
+                    descToVals[aliasAttr.Alias].Add(flagFieldInfo.Name);
                 }
             }
 

@@ -214,6 +214,7 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> RESP_ERR_LUA_DISABLED => "ERR This instance has Lua scripting support disabled"u8;
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_WRONG_ARGUMENTS => "ERR wrong number of arguments for 'config|set' command"u8;
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_NOSUCHKEY => "ERR no such key"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_OBJECT_FREQ_UNSUPPORTED => "ERR OBJECT FREQ is not supported: Garnet does not track access frequency (no LFU maxmemory policy)."u8;
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_NESTED_MULTI => "ERR MULTI calls can not be nested"u8;
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_EXEC_WO_MULTI => "ERR EXEC without MULTI"u8;
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_DISCARD_WO_MULTI => "ERR DISCARD without MULTI"u8;
@@ -369,6 +370,12 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> stringt => "string"u8;
         public static ReadOnlySpan<byte> rangeindext => "rangeindex"u8;
         public static ReadOnlySpan<byte> none => "none"u8;
+
+        // OBJECT ENCODING result strings
+        public static ReadOnlySpan<byte> raw => "raw"u8;
+        public static ReadOnlySpan<byte> hashtable => "hashtable"u8;
+        public static ReadOnlySpan<byte> quicklist => "quicklist"u8;
+        public static ReadOnlySpan<byte> skiplist => "skiplist"u8;
 
         /// <summary>
         /// Register object types

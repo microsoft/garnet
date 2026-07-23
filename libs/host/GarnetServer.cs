@@ -407,16 +407,28 @@ namespace Garnet
 
             foreach (var moduleCS in opts.LoadModuleCS)
             {
-                var moduleCSData = moduleCS.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-                if (moduleCSData.Length < 1)
+                if (!ModuleUtils.TryParseModuleSpec(moduleCS, out var modulePath, out var moduleArgs))
+                {
+                    if (!string.IsNullOrWhiteSpace(moduleCS))
+                        logger?.LogError("Invalid module specification: {0}", moduleCS);
                     continue;
-
-                var modulePath = moduleCSData[0];
-                var moduleArgs = moduleCSData.Length > 1 ? moduleCSData.Skip(1).ToArray() : [];
+                }
 
                 if (!ModuleUtils.LoadAssemblies([modulePath], null, opts.ExtensionAllowUnsignedAssemblies,
-                        out var loadedAssemblies, out var errorMsg, ignorePathCheckWhenUndefined: true)
-                    || !ModuleRegistrar.Instance.LoadModule(customCommandManager, loadedAssemblies.ToList()[0], moduleArgs, logger, out errorMsg))
+                        out var loadedAssemblies, out var errorMsg, ignorePathCheckWhenUndefined: true))
+                {
+                    logger?.LogError("Module {0} failed to load with error {1}", modulePath, Encoding.UTF8.GetString(errorMsg));
+                    continue;
+                }
+
+                var assembliesList = loadedAssemblies.ToList();
+                if (assembliesList.Count == 0)
+                {
+                    logger?.LogError("Module {0} failed to load: no assembly was found at the specified path.", modulePath);
+                    continue;
+                }
+
+                if (!ModuleRegistrar.Instance.LoadModule(customCommandManager, assembliesList[0], moduleArgs, logger, out errorMsg))
                 {
                     logger?.LogError("Module {0} failed to load with error {1}", modulePath, Encoding.UTF8.GetString(errorMsg));
                 }
