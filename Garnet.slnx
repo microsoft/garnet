@@ -1,4 +1,10 @@
 <Solution>
+  <Configurations>
+    <BuildType Name="Debug" />
+    <BuildType Name="Release" />
+    <BuildType Name="Debug-Fast" />
+    <BuildType Name="Release-Fast" />
+  </Configurations>
   <Folder Name="/.azure/" />
   <Folder Name="/.azure/pipelines/">
     <File Path=".azure/pipelines/azure-pipelines-compliance-policheck.yml" />

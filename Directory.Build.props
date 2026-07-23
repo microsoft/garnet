@@ -57,4 +57,35 @@
     <PackageTags>Garnet key-value store cache dictionary hashtable concurrent persistent remote cluster Redis RESP</PackageTags>
   </PropertyGroup>
 
+  <!-- ============================ Local dev fast path ============================
+       Faster inner-loop builds. Enable either way (never active in CI):
+         * CLI:  dotnet build Garnet.slnx -p:FastDev=true
+         * Visual Studio: pick the "Debug-Fast" or "Release-Fast" solution
+           configuration from the toolbar dropdown (declared in Garnet.slnx).
+       Effect: builds a single target framework and skips analyzers, code-style
+       enforcement, and XML doc generation. Placed at the end of the file so it
+       overrides the defaults set above. -->
+  <PropertyGroup Condition="'$(Configuration)' == 'Debug-Fast' or '$(Configuration)' == 'Release-Fast'">
+    <FastDev Condition="'$(TF_BUILD)' != 'true' and '$(GITHUB_ACTIONS)' != 'true'">true</FastDev>
+  </PropertyGroup>
+
+  <!-- Custom configuration names don't get the SDK's automatic Debug/Release
+       codegen, so map them explicitly to their base configuration. -->
+  <PropertyGroup Condition="'$(Configuration)' == 'Debug-Fast'">
+    <DefineConstants>$(DefineConstants);DEBUG</DefineConstants>
+    <Optimize>false</Optimize>
+    <DebugSymbols>true</DebugSymbols>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)' == 'Release-Fast'">
+    <Optimize>true</Optimize>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(FastDev)' == 'true' and '$(TF_BUILD)' != 'true' and '$(GITHUB_ACTIONS)' != 'true'">
+    <TargetFrameworks>net10.0</TargetFrameworks>
+    <RunAnalyzers>false</RunAnalyzers>
+    <EnforceCodeStyleInBuild>false</EnforceCodeStyleInBuild>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+  </PropertyGroup>
+
 </Project>
