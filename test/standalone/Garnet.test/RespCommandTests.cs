@@ -147,6 +147,27 @@ namespace Garnet.test
         }
 
         /// <summary>
+        /// Verify that a command flag with a wire-name alias parses from either name, but still
+        /// serializes to its canonical description. Valkey 8.x renamed the "skip_slowlog" flag to
+        /// "skip_commandlog"; the CommandInfoUpdater tool must accept either so it can query metadata
+        /// from either a Redis or a Valkey baseline server.
+        /// </summary>
+        [Test]
+        public void RespCommandFlagAliasParsesTest()
+        {
+            ClassicAssert.IsTrue(EnumUtils.TryParseEnumFromDescription<RespCommandFlags>("skip_slowlog", out var canonical));
+            ClassicAssert.AreEqual(RespCommandFlags.SkipSlowLog, canonical);
+
+            ClassicAssert.IsTrue(EnumUtils.TryParseEnumFromDescription<RespCommandFlags>("skip_commandlog", out var alias));
+            ClassicAssert.AreEqual(RespCommandFlags.SkipSlowLog, alias);
+
+            // The alias affects parsing only — serialization still uses the canonical description.
+            var descriptions = EnumUtils.GetEnumDescriptions(RespCommandFlags.SkipSlowLog);
+            ClassicAssert.AreEqual(1, descriptions.Length);
+            ClassicAssert.AreEqual("skip_slowlog", descriptions[0]);
+        }
+
+        /// <summary>
         /// Verify info in SimpleRespCommandInfo matches information in full RespCommandsInfo
         /// </summary>
         [Test]

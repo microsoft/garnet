@@ -21,5 +21,8 @@ namespace CommandInfoUpdater
 
         [Option('i', "ignore", Required = false, Separator = ',', HelpText = "Command names to ignore (comma separated)")]
         public IEnumerable<string> IgnoreCommands { get; set; }
+
+        [Option('y', "yes", Required = false, Default = false, HelpText = "Automatically answer 'yes' to all confirmation prompts (for non-interactive / scripted runs)")]
+        public bool AutoConfirm { get; set; }
     }
 }

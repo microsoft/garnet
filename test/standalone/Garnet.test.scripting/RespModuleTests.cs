@@ -416,5 +416,66 @@ namespace Garnet.test
                       "and then restart the server.";
             ClassicAssert.AreEqual(err, ex.Message);
         }
+
+        [Test]
+        public void TestModuleLoadUsingLoadModuleCSWithSpaceInPath()
+        {
+            // Reproduces issue #1951: a quoted module path containing spaces must load correctly via --loadmodulecs.
+            var noOpModulePath = Path.Join(binPath, "NoOpModule.dll");
+
+            // Copy the module into a directory (and file) whose names contain spaces.
+            var spaceDir = Path.Combine(TestUtils.MethodTestDir, "Garnet Modules");
+            Directory.CreateDirectory(spaceDir);
+            var spaceModulePath = Path.Combine(spaceDir, "No Op Module.dll");
+            File.Copy(noOpModulePath, spaceModulePath, overwrite: true);
+            ClassicAssert.IsTrue(spaceModulePath.Contains(' '));
+
+            using var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir,
+                disablePubSub: true,
+                extensionBinPaths: [spaceDir, binPath],
+                extensionAllowUnsignedAssemblies: true,
+                loadModulePaths: [$"\"{spaceModulePath}\""]);
+            server.Start();
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var key = "mykey";
+            db.StringSet(key, "myval");
+
+            var retValue = db.Execute("NoOpModule.NOOPCMDREAD", key);
+            ClassicAssert.AreEqual("OK", (string)retValue);
+
+            retValue = db.Execute("NoOpModule.NOOPPROC");
+            ClassicAssert.AreEqual("OK", (string)retValue);
+        }
+
+        [Test]
+        public void TestModuleLoadUsingLoadModuleCSWithSpaceInPathAndArgs()
+        {
+            // A quoted module path containing spaces, followed by arguments, must load correctly (issue #1951).
+            var noOpModulePath = Path.Join(binPath, "NoOpModule.dll");
+
+            var spaceDir = Path.Combine(TestUtils.MethodTestDir, "Garnet Modules");
+            Directory.CreateDirectory(spaceDir);
+            var spaceModulePath = Path.Combine(spaceDir, "No Op Module.dll");
+            File.Copy(noOpModulePath, spaceModulePath, overwrite: true);
+
+            using var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir,
+                disablePubSub: true,
+                extensionBinPaths: [spaceDir, binPath],
+                extensionAllowUnsignedAssemblies: true,
+                loadModulePaths: [$"\"{spaceModulePath}\" arg0 arg1"]);
+            server.Start();
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var key = "mykey";
+            db.StringSet(key, "myval");
+
+            var retValue = db.Execute("NoOpModule.NOOPCMDREAD", key);
+            ClassicAssert.AreEqual("OK", (string)retValue);
+        }
     }
 }
