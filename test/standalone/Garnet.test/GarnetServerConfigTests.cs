@@ -111,6 +111,24 @@ namespace Garnet.test
         }
 
         [Test]
+        public void LoadModuleCsInvalidSpecIsRejected()
+        {
+            // A malformed quoted module specification must be rejected by validation rather than silently ignored.
+            var args = new[] { "--loadmodulecs", "\"\" arg0" };
+            var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out _, out var invalidOptions, out _, out _, silentMode: true);
+            ClassicAssert.IsFalse(parseSuccessful, "A malformed module specification must be rejected");
+            ClassicAssert.IsTrue(invalidOptions.Contains(nameof(Options.LoadModuleCS)));
+
+            // A valid, existing module path (with no arguments) is accepted. Quote the path so the spec
+            // parses as a single path even if the assembly location happens to contain spaces.
+            var validModule = Assembly.GetExecutingAssembly().Location;
+            args = ["--loadmodulecs", $"\"{validModule}\""];
+            parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out _, out invalidOptions, out _, out _, silentMode: true);
+            ClassicAssert.IsTrue(parseSuccessful, "An existing module path must be accepted");
+            ClassicAssert.AreEqual(0, invalidOptions.Count);
+        }
+
+        [Test]
         public void ImportExportConfigLocal()
         {
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);

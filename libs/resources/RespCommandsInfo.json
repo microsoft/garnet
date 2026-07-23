@@ -812,12 +812,11 @@
         "AclCategories": "Admin, Dangerous, Slow, Garnet"
       },
       {
-        "Command": "CLUSTER_RESERVE",
-        "Name": "CLUSTER|RESERVE",
-        "IsInternal": true,
-        "Arity": 4,
-        "Flags": "Admin, NoMulti, NoScript",
-        "AclCategories": "Admin, Dangerous, Garnet"
+        "Command": "CLUSTER_MLOG_KEY_TIME",
+        "Name": "CLUSTER|MLOG_KEY_TIME",
+        "Arity": -2,
+        "Flags": "Admin, NoMulti, NoScript, ReadOnly",
+        "AclCategories": "Admin, Slow, Garnet"
       },
       {
         "Command": "CLUSTER_MTASKS",
@@ -881,6 +880,14 @@
         "AclCategories": "Admin, Dangerous, Slow"
       },
       {
+        "Command": "CLUSTER_RESERVE",
+        "Name": "CLUSTER|RESERVE",
+        "IsInternal": true,
+        "Arity": 4,
+        "Flags": "Admin, NoMulti, NoScript",
+        "AclCategories": "Admin, Dangerous, Garnet"
+      },
+      {
         "Command": "CLUSTER_RESET",
         "Name": "CLUSTER|RESET",
         "Arity": -2,
@@ -900,14 +907,6 @@
         "Name": "CLUSTER|SEND_CKPT_METADATA",
         "IsInternal": true,
         "Arity": 4,
-        "Flags": "Admin, NoMulti, NoScript",
-        "AclCategories": "Admin, Dangerous, Slow, Garnet"
-      },
-      {
-        "Command": "CLUSTER_SNAPSHOT_DATA",
-        "Name": "CLUSTER|SNAPSHOT_DATA",
-        "IsInternal": true,
-        "Arity": 6,
         "Flags": "Admin, NoMulti, NoScript",
         "AclCategories": "Admin, Dangerous, Slow, Garnet"
       },
@@ -962,6 +961,14 @@
         "AclCategories": "Admin, Dangerous, Slow, Garnet"
       },
       {
+        "Command": "CLUSTER_SNAPSHOT_DATA",
+        "Name": "CLUSTER|SNAPSHOT_DATA",
+        "IsInternal": true,
+        "Arity": 6,
+        "Flags": "Admin, NoMulti, NoScript",
+        "AclCategories": "Admin, Dangerous, Slow, Garnet"
+      },
+      {
         "Command": "CLUSTER_SPUBLISH",
         "Name": "CLUSTER|SPUBLISH",
         "IsInternal": true,
@@ -986,13 +993,6 @@
             "Flags": "RO"
           }
         ]
-      },
-      {
-        "Command": "CLUSTER_MLOG_KEY_TIME",
-        "Name": "CLUSTER|MLOG_KEY_TIME",
-        "Arity": -2,
-        "Flags": "Admin, Readonly, NoMulti, NoScript",
-        "AclCategories": "Admin, Slow, Garnet"
       },
       {
         "Command": "CLUSTER_SYNC",
@@ -3460,6 +3460,133 @@
     "AclCategories": "Fast, Transaction"
   },
   {
+    "Command": "OBJECT",
+    "Name": "OBJECT",
+    "Arity": -2,
+    "AclCategories": "Slow",
+    "SubCommands": [
+      {
+        "Command": "OBJECT_ENCODING",
+        "Name": "OBJECT|ENCODING",
+        "Arity": 3,
+        "Flags": "ReadOnly",
+        "FirstKey": 2,
+        "LastKey": 2,
+        "Step": 1,
+        "AclCategories": "KeySpace, Read, Slow",
+        "Tips": [
+          "nondeterministic_output"
+        ],
+        "KeySpecifications": [
+          {
+            "BeginSearch": {
+              "TypeDiscriminator": "BeginSearchIndex",
+              "Index": 2
+            },
+            "FindKeys": {
+              "TypeDiscriminator": "FindKeysRange",
+              "LastKey": 0,
+              "KeyStep": 1,
+              "Limit": 0
+            },
+            "Flags": "RO"
+          }
+        ]
+      },
+      {
+        "Command": "OBJECT_FREQ",
+        "Name": "OBJECT|FREQ",
+        "Arity": 3,
+        "Flags": "ReadOnly",
+        "FirstKey": 2,
+        "LastKey": 2,
+        "Step": 1,
+        "AclCategories": "KeySpace, Read, Slow",
+        "Tips": [
+          "nondeterministic_output"
+        ],
+        "KeySpecifications": [
+          {
+            "BeginSearch": {
+              "TypeDiscriminator": "BeginSearchIndex",
+              "Index": 2
+            },
+            "FindKeys": {
+              "TypeDiscriminator": "FindKeysRange",
+              "LastKey": 0,
+              "KeyStep": 1,
+              "Limit": 0
+            },
+            "Flags": "RO"
+          }
+        ]
+      },
+      {
+        "Command": "OBJECT_HELP",
+        "Name": "OBJECT|HELP",
+        "Arity": 2,
+        "Flags": "Loading, Stale",
+        "AclCategories": "KeySpace, Slow"
+      },
+      {
+        "Command": "OBJECT_IDLETIME",
+        "Name": "OBJECT|IDLETIME",
+        "Arity": 3,
+        "Flags": "ReadOnly",
+        "FirstKey": 2,
+        "LastKey": 2,
+        "Step": 1,
+        "AclCategories": "KeySpace, Read, Slow",
+        "Tips": [
+          "nondeterministic_output"
+        ],
+        "KeySpecifications": [
+          {
+            "BeginSearch": {
+              "TypeDiscriminator": "BeginSearchIndex",
+              "Index": 2
+            },
+            "FindKeys": {
+              "TypeDiscriminator": "FindKeysRange",
+              "LastKey": 0,
+              "KeyStep": 1,
+              "Limit": 0
+            },
+            "Flags": "RO"
+          }
+        ]
+      },
+      {
+        "Command": "OBJECT_REFCOUNT",
+        "Name": "OBJECT|REFCOUNT",
+        "Arity": 3,
+        "Flags": "ReadOnly",
+        "FirstKey": 2,
+        "LastKey": 2,
+        "Step": 1,
+        "AclCategories": "KeySpace, Read, Slow",
+        "Tips": [
+          "nondeterministic_output"
+        ],
+        "KeySpecifications": [
+          {
+            "BeginSearch": {
+              "TypeDiscriminator": "BeginSearchIndex",
+              "Index": 2
+            },
+            "FindKeys": {
+              "TypeDiscriminator": "FindKeysRange",
+              "LastKey": 0,
+              "KeyStep": 1,
+              "Limit": 0
+            },
+            "Flags": "RO"
+          }
+        ]
+      }
+    ]
+  },
+  {
     "Command": "PERSIST",
     "Name": "PERSIST",
     "Arity": 2,
@@ -3924,32 +4051,6 @@
     "StoreType": "All"
   },
   {
-    "Command": "RICREATE",
-    "Name": "RI.CREATE",
-    "Arity": -2,
-    "Flags": "DenyOom, Write",
-    "FirstKey": 1,
-    "LastKey": 1,
-    "Step": 1,
-    "AclCategories": "Slow, Write, Garnet",
-    "KeySpecifications": [
-      {
-        "BeginSearch": {
-          "TypeDiscriminator": "BeginSearchIndex",
-          "Index": 1
-        },
-        "FindKeys": {
-          "TypeDiscriminator": "FindKeysRange",
-          "LastKey": 0,
-          "KeyStep": 1,
-          "Limit": 0
-        },
-        "Flags": "RW, Insert"
-      }
-    ],
-    "StoreType": "Main"
-  },
-  {
     "Command": "RICONFIG",
     "Name": "RI.CONFIG",
     "Arity": 2,
@@ -3971,6 +4072,32 @@
           "Limit": 0
         },
         "Flags": "RO, Access"
+      }
+    ],
+    "StoreType": "Main"
+  },
+  {
+    "Command": "RICREATE",
+    "Name": "RI.CREATE",
+    "Arity": -2,
+    "Flags": "DenyOom, Write",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Slow, Write, Garnet",
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Flags": "RW, Insert"
       }
     ],
     "StoreType": "Main"
@@ -4087,7 +4214,7 @@
     "FirstKey": 1,
     "LastKey": 1,
     "Step": 1,
-    "AclCategories": "Slow, Read, Garnet",
+    "AclCategories": "Read, Slow, Garnet",
     "KeySpecifications": [
       {
         "BeginSearch": {
@@ -4113,7 +4240,7 @@
     "FirstKey": 1,
     "LastKey": 1,
     "Step": 1,
-    "AclCategories": "Slow, Read, Garnet",
+    "AclCategories": "Read, Slow, Garnet",
     "KeySpecifications": [
       {
         "BeginSearch": {
@@ -4616,32 +4743,6 @@
     "StoreType": "Main"
   },
   {
-    "Command": "SETWITHETAG",
-    "Name": "SETWITHETAG",
-    "Arity": -3,
-    "Flags": "DenyOom, Write",
-    "FirstKey": 1,
-    "LastKey": 1,
-    "Step": 1,
-    "AclCategories": "Slow, String, Write",
-    "KeySpecifications": [
-      {
-        "BeginSearch": {
-          "TypeDiscriminator": "BeginSearchIndex",
-          "Index": 1
-        },
-        "FindKeys": {
-          "TypeDiscriminator": "FindKeysRange",
-          "LastKey": 0,
-          "KeyStep": 1,
-          "Limit": 0
-        },
-        "Flags": "RW, Insert, Update"
-      }
-    ],
-    "StoreType": "Main"
-  },
-  {
     "Command": "SETNX",
     "Name": "SETNX",
     "Arity": 3,
@@ -4689,6 +4790,32 @@
           "Limit": 0
         },
         "Flags": "RW, Update"
+      }
+    ],
+    "StoreType": "Main"
+  },
+  {
+    "Command": "SETWITHETAG",
+    "Name": "SETWITHETAG",
+    "Arity": -3,
+    "Flags": "DenyOom, Write",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Slow, String, Write",
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Flags": "RW, Update, Insert"
       }
     ],
     "StoreType": "Main"
@@ -5374,7 +5501,7 @@
     "FirstKey": 1,
     "LastKey": 1,
     "Step": 1,
-    "AclCategories": "Fast, Vector, Write",
+    "AclCategories": "Fast, Write, Vector",
     "KeySpecifications": [
       {
         "BeginSearch": {
@@ -5574,7 +5701,7 @@
     "FirstKey": 1,
     "LastKey": 1,
     "Step": 1,
-    "AclCategories": "Slow, Read, Vector",
+    "AclCategories": "Read, Slow, Vector",
     "KeySpecifications": [
       {
         "BeginSearch": {
@@ -5649,7 +5776,7 @@
     "FirstKey": 1,
     "LastKey": 1,
     "Step": 1,
-    "AclCategories": "Slow, Read, Vector",
+    "AclCategories": "Read, Slow, Vector",
     "KeySpecifications": [
       {
         "BeginSearch": {
