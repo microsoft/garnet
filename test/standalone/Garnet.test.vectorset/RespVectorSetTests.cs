@@ -2471,6 +2471,94 @@ namespace Garnet.test
 
         // TODO: FLUSHDB needs to cleanup too...
 
+        /// <summary>
+        /// Deterministic repro of the recreate-on-restore flake (PR #1967 / CI job 89250167325).
+        ///
+        /// The background vector-set cleanup scan (<see cref="VectorManager"/>'s cleanup task)
+        /// deletes element records matching a context id purely by its namespace, with no
+        /// generation/epoch tag, and context ids are recycled. In steady state a reuse barrier
+        /// keeps this safe: a context is not freed for reuse until its cleanup scan completes.
+        /// Recovery resets that barrier — <see cref="VectorManager.ResumePostRecovery"/> re-arms
+        /// cleanup for any context still marked in-use whose index record was not recovered, and
+        /// pumps the cleanup task. If a newer, live generation has recycled that context id, the
+        /// re-armed scan deletes the live generation's element records.
+        ///
+        /// This test drives that exact re-arm path via a test-only hook: it marks a still-live
+        /// context for cleanup and pumps the cleanup task, then saves/recovers to force a lazy
+        /// recreate that reads the now-deleted element records — so the recreated index is missing
+        /// its elements. Fails today; passes once cleanup is made generation-safe.
+        /// </summary>
+        [Test]
+        [Ignore("Reproduces the cleanup/recycle race; un-ignore once cleanup is generation-safe")]
+        public async Task RequeuedCleanupOnLiveContextLosesElementsOnRestoreAsync()
+        {
+            var addData1 = Enumerable.Range(0, 75).Select(static x => (byte)x).ToArray();
+            var addData2 = Enumerable.Range(0, 75).Select(static x => (byte)(x * 2)).ToArray();
+            var elem0 = new byte[] { 0, 0, 0, 0 };
+            var elem1 = new byte[] { 0, 0, 0, 1 };
+
+            var store = server.Provider.StoreWrapper;
+            var vectorManager = store.DefaultDatabase.VectorManager;
+
+            ulong context;
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))
+            {
+                var s = redis.GetServers()[0];
+                var db = redis.GetDatabase(0);
+
+                _ = db.KeyDelete("foo");
+                ClassicAssert.AreEqual(1, (int)db.Execute("VADD", ["foo", "XB8", addData1, elem0, "CAS", "NOQUANT", "EF", "16", "M", "32"]));
+                ClassicAssert.AreEqual(1, (int)db.Execute("VADD", ["foo", "XB8", addData2, elem1, "CAS", "NOQUANT", "EF", "16", "M", "32"]));
+
+                var before = (byte[][])db.Execute("VSIM", ["foo", "ELE", elem0]);
+                ClassicAssert.AreEqual(2, before.Length, "sanity: both elements present before the requeued cleanup");
+
+                // Resolve foo's currently-live context id.
+                unsafe
+                {
+                    var fooBytes = Encoding.ASCII.GetBytes("foo");
+                    fixed (byte* fooPtr = fooBytes)
+                    {
+                        var fooSpan = PinnedSpanByte.FromPinnedPointer(fooPtr, fooBytes.Length);
+                        var namespaces = vectorManager.GetNamespacesForKeys(store, [fooSpan], []);
+                        ClassicAssert.AreEqual(VectorManager.ContextStep, namespaces.Count);
+                        context = namespaces.Min();
+                    }
+                }
+
+                // Recovery re-arm on a LIVE context: mark it for cleanup and pump the cleanup task,
+                // exactly as ResumePostRecovery does for an in-use context whose index record was
+                // not recovered — which, after context-id recycling, targets a live generation.
+                vectorManager.TestOnlyRequeueCleanupForContext(context);
+
+                // Await the cleanup pass; FinishedCleaningUp clears the bit once the scan is done.
+                for (var waited = 0; vectorManager.TestOnlyIsCleaningUp(context); waited += 25)
+                {
+                    ClassicAssert.Less(waited, 30_000, "background cleanup did not complete in time");
+                    await Task.Delay(25);
+                }
+
+#pragma warning disable CS0618 // Intentionally doing bad things
+                s.Save(SaveType.ForegroundSave);
+#pragma warning restore CS0618
+
+                var commit = await server.Store.WaitForCommitAsync();
+                ClassicAssert.IsTrue(commit);
+                server.Dispose(deleteDir: false);
+
+                server = CreateGarnetServer(tryRecover: true);
+                server.Start();
+            }
+
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))
+            {
+                var db = redis.GetDatabase(0);
+
+                var after = (byte[][])db.Execute("VSIM", ["foo", "ELE", elem0]);
+                ClassicAssert.AreEqual(2, after.Length, "requeued cleanup on the live context deleted the vector set's elements");
+            }
+        }
+
         [Test]
         public void VINFO_NotFound()
         {

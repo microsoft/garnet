@@ -370,6 +370,42 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Test-only hook that reproduces the recovery re-arm in <see cref="ResumePostRecovery"/>
+        /// (see the "mark for cleanup" loop at its end): mark an in-use context for cleanup and
+        /// pump the background cleanup task. Recovery does exactly this for any context still
+        /// marked in-use whose index record was not recovered; because context ids are recycled
+        /// and the cleanup scan matches records by context namespace only (no generation tag),
+        /// this can delete the records of a newer, live generation that recycled the same id.
+        /// </summary>
+        public void TestOnlyRequeueCleanupForContext(ulong context)
+        {
+            var (contextIndex, contextValue) = ContextMetadata.DecomposeContext(context & ~(ContextStep - 1));
+
+            lock (this)
+            {
+                contextMetadatas[contextIndex].MarkCleaningUp(contextIndex != 0, contextValue);
+                _ = dirtyContextMetadatas.Add(contextIndex);
+            }
+
+            _ = cleanupTaskChannel.Writer.TryWrite(null);
+        }
+
+        /// <summary>
+        /// Test-only accessor: is the given context still marked for cleanup? Used to await a
+        /// requeued cleanup pass deterministically (the bit is cleared by FinishedCleaningUp
+        /// once the scan completes).
+        /// </summary>
+        public bool TestOnlyIsCleaningUp(ulong context)
+        {
+            var (contextIndex, contextValue) = ContextMetadata.DecomposeContext(context & ~(ContextStep - 1));
+
+            lock (this)
+            {
+                return contextMetadatas[contextIndex].IsCleaningUp(contextIndex != 0, contextValue);
+            }
+        }
+
+        /// <summary>
         /// Block any new cleanup-task iteration from starting and wait for the current one
         /// (if any) to finish. Callers (e.g., cluster re-attach paths) MUST balance every
         /// invocation with <see cref="ResumeCleanup"/>, ideally in a finally block.
