@@ -98,10 +98,10 @@ When all key-value pairs have migrated to the target node, the issuer has to res
 This method iterates over the list of provided keys and sends them over to the target node.
 This occurs in the following two phases: 
 1. find all keys provided by ```MIGRATE``` command and send them over to the *target* node.
-2. for all remaining keys not found in the main store, lookup into the object store, and if they are found send them over to the *target* node.
-It is possible that a given key cannot be retrieved from either store, because it might have expired.
+2. for all remaining keys, look them up in the store, and if they are found send them over to the *target* node.
+It is possible that a given key cannot be retrieved from the store, because it might have expired.
 In that case, execution proceeds to the next available key and no specific error is raised.
-When data transmission completes, and depending if COPY option is enabled, ```MigrateKeys``` deletes the keys from the both stores.
+When data transmission completes, and depending if COPY option is enabled, ```MigrateKeys``` deletes the keys from the store.
 
 ```csharp reference title="MigrateKeys Main Method"
 https://github.com/microsoft/garnet/blob/951cf82c120d4069e940e832db03bfa018c688ea/libs/cluster/Server/Migration/MigrateSessionKeys.cs#L146-L169
@@ -114,10 +114,10 @@ These options differ from the ```KEYS``` options in the following ways:
 
 1. There is no need to have specific knowledge of the individual keys that are being migrated and how they map to the associated slots. The user simply needs to provide just a slot number.
 2. State transitions are handled entirely on the server side.
-3. For the migration operation to complete, we have to scan both main and object stores to find and migrate all keys associated with a given slot. 
+3. For the migration operation to complete, we have to scan the store to find and migrate all keys associated with a given slot. The unified store holds both string and object data, so a single scan covers both.
 
 It might seem, based on the last bullet point from above that the migration operation using ```SLOTS``` or ```SLOTSRANGE``` is more expensive, especially if the slot that is being migrated contains only a few keys.
-However, it is generally less expensive compared to the ```KEYS``` option which requires multiple roundtrips between client and server (so any relevant keys can be used as input to the ```MIGRATE``` command), in addition to having to perform a full scan of both stores.
+However, it is generally less expensive compared to the ```KEYS``` option which requires multiple roundtrips between client and server (so any relevant keys can be used as input to the ```MIGRATE``` command), in addition to having to perform a full scan of the store.
 
 As shown in the code excerpt below, the ```MIGRATE SLOTS``` task will safely transition the state of a slot in the remote node config to ```IMPORTING``` and the slot state of the local node config to ```MIGRATING```, by relying on the epoch protection mechanism as described previously.
 Following, it will start migrating the data to the target node in batches.
