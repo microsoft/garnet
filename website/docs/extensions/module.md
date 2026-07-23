@@ -18,20 +18,20 @@ The `ModuleLoadContext` exposes the following APIs to register the module and it
     This must be the first step to register the module with its name and version information. All other registrations must be performed after this.
     The `ModuleActionStatus` enum returned indicates the status of module initialization with `Success` status confirming successful registration of the module.
 
-- `ModuleActionStatus RegisterCommand(string name, CustomRawStringFunctions customFunctions, CommandType type = CommandType.ReadModifyWrite, RespCommandsInfo commandInfo = null, long expirationTicks = 0)`
-    Any custom raw string command should be registered using this method with its `name`, implementation of the raw string command in `customFunctions`, `type` indicating whether it is an ReadModifyWrite or Read command (RMW is the default type), optional `commandInfo` to provide details like arity, key specification, acl categories, etc. and the optional `expirationTicks` to govern when the key expires.
+- `ModuleActionStatus RegisterCommand(string name, CustomRawStringFunctions customFunctions, CommandType type = CommandType.ReadModifyWrite, RespCommandsInfo commandInfo = null, RespCommandDocs commandDocs = null, long expirationTicks = 0)`
+    Any custom raw string command should be registered using this method with its `name`, implementation of the raw string command in `customFunctions`, `type` indicating whether it is an ReadModifyWrite or Read command (RMW is the default type), optional `commandInfo` and `commandDocs` to provide details like arity, key specification, acl categories, etc. and the optional `expirationTicks` to govern when the key expires.
 
-- `ModuleActionStatus RegisterTransaction(string name, Func<CustomTransactionProcedure> proc, RespCommandsInfo commandInfo = null)`
-    Transactions should get registered using this with its `name`, a method that returns the tansaction implementation `proc` and optional `commandInfo`.
+- `ModuleActionStatus RegisterTransaction(string name, Func<CustomTransactionProcedure> proc, RespCommandsInfo commandInfo = null, RespCommandDocs commandDocs = null)`
+    Transactions should get registered using this with its `name`, a method that returns the transaction implementation `proc` and optional `commandInfo` and `commandDocs`.
 
 - `ModuleActionStatus RegisterType(CustomObjectFactory factory)`
     Custom data types are registered using this method with `factory` being the implementation of the custom object factory that can create instances of the custom object.
 
-- `ModuleActionStatus RegisterCommand(string name, CustomObjectFactory factory, CustomObjectFunctions command, CommandType type = CommandType.ReadModifyWrite, RespCommandsInfo commandInfo = null)`
-    Custom object commands are registered using this with their `name`, `factory` instance registered already using the `RegisterType`, implementation of the custom object command in `command`, `type` indicating whether it is an ReadModifyWrite or Read command (RMW is the default type) and optional `commandInfo`.
+- `ModuleActionStatus RegisterCommand(string name, CustomObjectFactory factory, CustomObjectFunctions command, CommandType type = CommandType.ReadModifyWrite, RespCommandsInfo commandInfo = null, RespCommandDocs commandDocs = null)`
+    Custom object commands are registered using this with their `name`, `factory` instance registered already using the `RegisterType`, implementation of the custom object command in `command`, `type` indicating whether it is an ReadModifyWrite or Read command (RMW is the default type) and optional `commandInfo` and `commandDocs`.
 
-- `ModuleActionStatus RegisterProcedure(string name, CustomProcedure customScriptProc, RespCommandsInfo commandInfo = null)`
-    Custom non-transactional procedures are registered using this with their `name`, implementation as `customScriptProc` and optional `commandInfo`.
+- `ModuleActionStatus RegisterProcedure(string name, Func<CustomProcedure> customScriptProc, RespCommandsInfo commandInfo = null, RespCommandDocs commandDocs = null)`
+    Custom non-transactional procedures are registered using this with their `name`, implementation as `customScriptProc` and optional `commandInfo` and `commandDocs`.
 
 :::tip 
 As a reference of an implementation of a module, see the example in playground\SampleModule.

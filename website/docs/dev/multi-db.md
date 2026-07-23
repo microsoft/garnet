@@ -15,7 +15,7 @@ New clients will always connect to the default database (of index **0**). To swi
 
 Each logical database in Garnet is represented by a `GarnetDatabase` instance. Each such instance holds a reference to the database stores, AOF device as well as other database-specific data.\
 When the Garnet server instance is created, `StoreWrapper` instantiates a server-wide `IDatabaseManager`, which by default is a `SingleDatabaseManager` that that holds the default database.\
-The `IDatabaseManager` can be later upgraded to a `MultipleDatabaseManager`, if a non-zero database index is selected.\
+The `IDatabaseManager` can be later upgraded to a `MultiDatabaseManager`, if a non-zero database index is selected.\
 `StoreWrapper` in turn calls the `IDatabaseManager` to perform actions as checkpointing, AOF commits etc., which at each different implementation of `IDatabaseManager` will handle those in either a single-database or multiple-database context.
 
 Each `RespServerSession` manages a map of `GarnetDatabaseSession` instances, which represent per-database session data. Each `GarnetDatabaseSession` holds an instance of `StorageSession` as well as `GarnetApi` instances and a `TransactionManager` instance.\
@@ -50,7 +50,7 @@ flowchart LR
 
 ## Checkpointing, AOF & Recovery
 
-Each database's store data will be separately stored on its own directory. Checkpoints are stored in `CheckpointDir` defined in the confguration (and if not specified defaults to `LogDir`). Each store checkpoint data will then be stored in `Store/checkpoints` and `ObjectStore/checkpoints` respectively for the default database or in `Store/checkpoints_i` and `ObjectStore/checkpoints_i` for database of index `i`.\
+Each database's store data will be separately stored on its own directory. Checkpoints are stored in `CheckpointDir` defined in the configuration (and if not specified defaults to `LogDir`). The store's checkpoint data will then be stored in `Store/checkpoints` for the default database or in `Store/checkpoints_i` for database of index `i` (the store's object-log data is stored under `Store/hlog_objs`).\
 Similarly, AOF data will be stored in the same  `CheckpointDir` (and if not specified defaults to `LogDir`). Each database AOF data will be stored in `AOF` for the default database or in `AOF_i` for database of index `i`.
 
 Upon recovery, Garnet will extract the indexes of the saved databases from the aforementioned directory name pattern and recover any saved data matching the database index.

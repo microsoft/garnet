@@ -4,6 +4,10 @@ sidebar_label: Papers
 title: Research Papers
 ---
 
+## Garnet
+
+* B. Chandramouli, V. Zois, T. Hart, T. Zaccai, L. M. Maas, Y. Rajasekaran, D. Gehring. Garnet: A Next-Generation Cache-Store for Accelerating Applications and Services. <i>PVLDB 2026</i>. [[pdf](https://badrish.net/papers/garnet-vldb2026.pdf)]
+
 ## Key-Value Stores
 
 * Badrish Chandramouli, Guna Prasaad, Donald Kossmann, Justin Levandoski, James Hunter, Mike Barnett. FASTER: A Concurrent Key-Value Store with In-Place Updates. <i>2018 ACM SIGMOD International Conference on Management of Data (SIGMOD '18), Houston, TX, USA ACM June 10, 2018</i>

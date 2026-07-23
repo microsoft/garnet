@@ -29,7 +29,7 @@ Below, we summarize for each system the startup configuration used for our exper
 <details>
     <summary>Garnet</summary>
     ```bash
-          dotnet run -c Release --framework=net8.0 --project Garnet/main/GarnetServer -- \
+          dotnet run -c Release --framework=net10.0 --project Garnet/main/GarnetServer -- \
                 --bind $host \
                 --port $port \
                 --no-pubsub \
@@ -96,7 +96,7 @@ Overall, **Garnet**'s throughput relative to the other systems is consistently h
 <details>
     <summary>Varying number of client sessions or batchsize (GET)</summary>
     ```bash 
-        dotnet run -c Release --framework=net8.0 --project Garnet/benchmark/Resp.benchmark \
+        dotnet run -c Release --framework=net10.0 --project Garnet/benchmark/Resp.benchmark -- \
           --host $host \
           --port $port \
           --op GET \
@@ -129,7 +129,7 @@ Figure 3, showcase that as increase the number of client sessions, Garnet's late
 <details>
     <summary>Latency benchmark varying client sessions or batchsize (GET/SET)</summary>
     ```bash
-        dotnet run -c Release --framework=net8.0 --project Garnet/benchmark/Resp.benchmark
+        dotnet run -c Release --framework=net10.0 --project Garnet/benchmark/Resp.benchmark -- \
           --host $host \
           --port $port \
           --batchsize 1 \
@@ -189,7 +189,7 @@ This behavior is anticipated due to the inherent TCP network bottleneck.
 <details>
     <summary>Varying number of client sessions or payload size while operating on few keys</summary>
     ```bash
-        dotnet run -c Release --framework=net8.0 --project Garnet/benchmark/Resp.benchmark \
+        dotnet run -c Release --framework=net10.0 --project Garnet/benchmark/Resp.benchmark -- \
           --host $host \
           --port $port \
           --op PFADD \
@@ -215,7 +215,7 @@ Notice in both cases the throughput is lower compared to the previous experiment
 <details>
     <summary>Varying number of client sessions or payload size while operating on many keys (PFADD)</summary>
     ```bash
-        dotnet run -c Release --framework=net8.0 --project Garnet/benchmark/Resp.benchmark \
+        dotnet run -c Release --framework=net10.0 --project Garnet/benchmark/Resp.benchmark -- \
           --host $host \
           --port $port \
           --op PFADD \
@@ -257,7 +257,7 @@ In both cases,  **Garnet** consistently maintains higher throughput and better s
 <details>
     <summary>Varying number of client sessions (GETBIT/SETBIT/BITOP_NOT/BITOP_AND)</summary>
     ```bash
-        dotnet run -c Release --framework=net8.0 --project Garnet/benchmark/Resp.benchmark \
+        dotnet run -c Release --framework=net10.0 --project Garnet/benchmark/Resp.benchmark -- \
           --host $host \
           --port $port \
           --op GETBIT \
@@ -289,7 +289,7 @@ In fact, we observe significantly higher throughput with **Garnet** even at a sm
 <details>
     <summary>Varying batch size (GETBIT/SETBIT/BITOP_NOT/BITOP_AND)</summary>
     ```bash
-        dotnet run -c Release --framework=net8.0 --project Garnet/benchmark/Resp.benchmark \
+        dotnet run -c Release --framework=net10.0 --project Garnet/benchmark/Resp.benchmark -- \
           --host $host \
           --port $port \
           --op GETBIT \
