@@ -113,7 +113,7 @@ RESP representation:
 
         Implementation of SpanByte:
         
-        `<root>`\Tsavorite\cs\src\core\VarLen\SpanByte.cs
+        `libs/storage/Tsavorite/cs/src/core/VarLen/SpanByte.cs`
 
 
 ## Pull Request protocol
@@ -150,7 +150,7 @@ Any new feature, change to existing functionality or bug fixing needs to be done
 ```csharp
 
 /// <summary>
-/// Iterates the set of keys in the main store.
+/// Iterates the set of keys in the store.
 /// </summary>
 /// <param name="patternB">The pattern to apply for filtering</param>
 /// <param name="allKeys">When true the filter is omitted</param>
@@ -160,7 +160,7 @@ Any new feature, change to existing functionality or bug fixing needs to be done
 /// <param name="count">The size of the batch of keys</param>
 /// <param name="type">Type of key to filter out</param>
 /// <returns></returns>
-public bool DbScan(ArgSlice patternB, bool allKeys, long cursor, out long storeCursor, out List<byte[]> Keys,  long count = 10, Span<byte> type = default);
+public bool DbScan(PinnedSpanByte patternB, bool allKeys, long cursor, out long storeCursor, out List<byte[]> Keys,  long count = 10, ReadOnlySpan<byte> type = default);
 ```
 
 * As a good practice, follow the <b>camel case C# naming convention.</b>

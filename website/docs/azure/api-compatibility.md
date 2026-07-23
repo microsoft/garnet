@@ -61,7 +61,7 @@ The Azure Cosmos DB Garnet Cache implements a growing subset of the [open-source
 |  | [FAILOVER](../commands/cluster.md#cluster-failover) | ➖ |  |
 |  | FLUSHSLOTS | ➖ |  |
 |  | [FORGET](../commands/cluster.md#cluster-forget) | ➖ |  |
-|  | [GETKEYINSLOT](../commands/cluster.md#cluster-getkeysinslot) | ➖ |  |
+|  | [GETKEYSINSLOT](../commands/cluster.md#cluster-getkeysinslot) | ➖ |  |
 |  | [INFO](../commands/cluster.md#cluster-info) | ➖ |  |
 |  | [KEYSLOT](../commands/cluster.md#cluster-keyslot) | ➕ |  |
 |  | LINKS | ➖ |  |
@@ -78,7 +78,7 @@ The Azure Cosmos DB Garnet Cache implements a growing subset of the [open-source
 |  | [SET-CONFIG-EPOCH](../commands/cluster.md#cluster-set-config-epoch) | ➖ |  |
 |  | [SETSLOT](../commands/cluster.md#cluster-setslot) | ➖ |  |
 |  | SHARDS | ➖ |  |
-|  | [SLAVES](../commands/cluster.md#slaves) | ➖ | (Deprecated) |
+|  | [SLAVES](../commands/cluster.md#cluster-replicas) | ➖ | (Deprecated) |
 |  | [SLOTS](../commands/cluster.md#cluster-slots) | ➕ | (Deprecated) |
 | <span id="command">**COMMAND**</span> | [COMMAND](../commands/server.md#command) | ➖ |  |
 |  | [COUNT](../commands/server.md#command-count) | ➖ |  |
@@ -128,7 +128,7 @@ The Azure Cosmos DB Garnet Cache implements a growing subset of the [open-source
 |  | [HPERSIST](../commands/data-structures.md#hpersist) | ➕ |  |
 |  | [HPEXPIRE](../commands/data-structures.md#hpexpire) | ➕ |  |
 |  | [HPEXPIREAT](../commands/data-structures.md#hpexpireat) | ➕ |  |
-|  | [HPEXPIRETIME](../commands/data-structures.md#hepxpiretime) | ➕ |  |
+|  | [HPEXPIRETIME](../commands/data-structures.md#hpexpiretime) | ➕ |  |
 |  | [HPTTL](../commands/data-structures.md#hpttl) | ➕ |  |
 |  | [HRANDFIELD](../commands/data-structures.md#hrandfield) | ➕ |  |
 |  | [HSCAN](../commands/data-structures.md#hscan) | ➕ |  |
