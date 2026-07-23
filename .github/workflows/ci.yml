@@ -139,7 +139,7 @@ jobs:
       - name: Install dependencies
         run: dotnet restore
       - name: Run tests ${{ matrix.test }}
-        run: dotnet test test/standalone/${{ matrix.test }} -f ${{ matrix.framework }} --configuration ${{ matrix.configuration }} --logger "console;verbosity=detailed" --logger trx --results-directory "GarnetTestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}-${{ matrix.test }}" -- NUnit.DisplayName=FullName
+        run: dotnet test test/standalone/${{ matrix.test }} -f ${{ matrix.framework }} --configuration ${{ matrix.configuration }} --logger "console;verbosity=detailed" --logger "trx;LogFileName=${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}-${{ matrix.test }}.trx" --results-directory "GarnetTestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}-${{ matrix.test }}" -- NUnit.DisplayName=FullName
         timeout-minutes: 45 
       - name: Upload test results
         uses: actions/upload-artifact@v7
@@ -175,7 +175,7 @@ jobs:
       - name: Install dependencies
         run: dotnet restore
       - name: Run tests ${{ matrix.test }}
-        run: dotnet test test/cluster/${{ matrix.test }} -f ${{ matrix.framework }} --configuration ${{ matrix.configuration }} --logger "console;verbosity=detailed" --logger trx --blame-crash --blame-crash-dump-type full --blame-hang-timeout 30m --blame-hang-dump-type full --results-directory "GarnetTestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}-${{ matrix.test }}" -- NUnit.DisplayName=FullName
+        run: dotnet test test/cluster/${{ matrix.test }} -f ${{ matrix.framework }} --configuration ${{ matrix.configuration }} --logger "console;verbosity=detailed" --logger "trx;LogFileName=${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}-${{ matrix.test }}.trx" --blame-crash --blame-crash-dump-type full --blame-hang-timeout 30m --blame-hang-dump-type full --results-directory "GarnetTestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}-${{ matrix.test }}" -- NUnit.DisplayName=FullName
         timeout-minutes: 45 
       - name: Upload test results
         uses: actions/upload-artifact@v7
@@ -276,7 +276,7 @@ jobs:
           echo "TSAVORITE_TEST_DIR=$dir" >> $env:GITHUB_ENV
 
       - name: Run tests ${{ matrix.test }}
-        run: dotnet test ${{ env.TSAVORITE_TEST_DIR }} -f ${{ matrix.framework }} --configuration ${{ matrix.configuration }} --logger "console;verbosity=detailed" --logger trx --results-directory "TsavoriteTestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}-${{ matrix.test }}" -- NUnit.DisplayName=FullName
+        run: dotnet test ${{ env.TSAVORITE_TEST_DIR }} -f ${{ matrix.framework }} --configuration ${{ matrix.configuration }} --logger "console;verbosity=detailed" --logger "trx;LogFileName=${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}-${{ matrix.test }}.trx" --results-directory "TsavoriteTestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}-${{ matrix.test }}" -- NUnit.DisplayName=FullName
         timeout-minutes: 45
       - name: Upload test results
         uses: actions/upload-artifact@v7
