@@ -322,7 +322,6 @@ namespace Garnet.server
         LASTSAVE,
         BGSAVE,
         COMMITAOF,
-        PURGEBP,
         FAILOVER,
 
         // Custom commands

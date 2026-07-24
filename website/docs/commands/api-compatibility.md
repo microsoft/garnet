@@ -284,6 +284,7 @@ Legend: ➕ = supported, ➖ = not supported.
 |  | [DEBUG](server.md#debug) | ➕ | Internal command |
 |  | [FLUSHALL](server.md#flushall) | ➕ |  |
 |  | [FLUSHDB](server.md#flushdb) | ➕ |  |
+|  | [INFO](server.md#info) | ➕ |  |
 |  | [LASTSAVE](checkpoint.md#lastsave) | ➕ |  |
 |  | LOLWUT | ➖ |  |
 |  | [MONITOR](server.md#monitor) | ➕ |  |

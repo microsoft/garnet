@@ -227,6 +227,7 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_OFFSETOUTOFRANGE => "ERR offset is out of range"u8;
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_BIT_IS_NOT_INTEGER => "ERR bit is not an integer or out of range"u8;
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_BITOFFSET_IS_NOT_INTEGER => "ERR bit offset is not an integer or out of range"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_STRING_EXCEEDS_MAX_SIZE => "ERR string exceeds maximum allowed size (proto-max-bulk-len)"u8;
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_CURSORVALUE => "ERR cursor value should be equal or greater than 0."u8;
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_INVALIDCURSOR => "ERR invalid cursor"u8;
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_MALFORMED_REGISTERCS_COMMAND => "ERR malformed REGISTERCS command."u8;

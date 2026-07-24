@@ -3899,16 +3899,6 @@
     "AclCategories": "PubSub, Slow"
   },
   {
-    "Command": "PURGEBP",
-    "Name": "PURGEBP",
-    "Arity": 2,
-    "Flags": "Admin, NoMulti, NoScript, ReadOnly",
-    "FirstKey": 1,
-    "LastKey": 1,
-    "Step": 1,
-    "AclCategories": "Admin, Garnet"
-  },
-  {
     "Command": "QUIT",
     "Name": "QUIT",
     "Arity": -1,

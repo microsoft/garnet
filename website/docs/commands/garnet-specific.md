@@ -144,6 +144,28 @@ for details.
 
 ---
 
+### EXPDELSCAN
+
+#### Syntax
+
+```bash
+    EXPDELSCAN [dbid]
+```
+
+Scans the mutable region of the store and deletes all expired keys on demand. This lets you trigger expired-key deletion yourself (for example, from your own scheduler tuned to your workload) rather than relying on the background scan.
+
+`dbid` selects the logical database to scan (default: `0`).
+
+This command is rejected when the background expired-key deletion scan is enabled, that is, when the `ExpiredKeyDeletionScanFrequencySecs` (`--expired-key-deletion-scan-freq`) option is greater than `0`.
+
+#### Resp Reply
+
+Array reply: two integers — the number of expired records deleted, followed by the number of records scanned.
+
+Error reply: `ERR Cannot execute EXPDELSCAN with background expired key deletion scan enabled`.
+
+---
+
 ## Native ETag Support
 
 Garnet provides support for ETags on raw strings. By using the ETag-related commands outlined below, you can associate any **string based key-value pair** inserted into Garnet with an automatically updated ETag.
