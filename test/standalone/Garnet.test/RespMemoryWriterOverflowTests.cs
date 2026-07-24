@@ -52,8 +52,6 @@ namespace Garnet.test
             var writeReses = await Task.WhenAll(writeTasks).ConfigureAwait(false);
             ClassicAssert.IsTrue(writeReses.All(static x => x));
 
-            var x = await db.HashGetAllAsync(Key).ConfigureAwait(false);
-
             var exc = ClassicAssert.ThrowsAsync<RedisServerException>(() => db.HashGetAllAsync(Key));
             ClassicAssert.AreEqual($"ERR Exceeded maximum response size of ({Array.MaxLength:N0}) bytes", exc.Message);
         }
@@ -79,9 +77,7 @@ namespace Garnet.test
 
             _ = await Task.WhenAll(writeTasks).ConfigureAwait(false);
 
-            var x = await db.ListRangeAsync(Key).ConfigureAwait(false);
-
-            var exc = ClassicAssert.ThrowsAsync<RedisServerException>(() => db.HashGetAllAsync(Key));
+            var exc = ClassicAssert.ThrowsAsync<RedisServerException>(() => db.ListRangeAsync(Key));
             ClassicAssert.AreEqual($"ERR Exceeded maximum response size of ({Array.MaxLength:N0}) bytes", exc.Message);
         }
 
@@ -106,9 +102,7 @@ namespace Garnet.test
             var writeReses = await Task.WhenAll(writeTasks).ConfigureAwait(false);
             ClassicAssert.IsTrue(writeReses.All(static x => x));
 
-            var x = await db.SetMembersAsync(Key).ConfigureAwait(false);
-
-            var exc = ClassicAssert.ThrowsAsync<RedisServerException>(() => db.HashGetAllAsync(Key));
+            var exc = ClassicAssert.ThrowsAsync<RedisServerException>(() => db.SetMembersAsync(Key));
             ClassicAssert.AreEqual($"ERR Exceeded maximum response size of ({Array.MaxLength:N0}) bytes", exc.Message);
         }
 
@@ -133,9 +127,7 @@ namespace Garnet.test
             var writeReses = await Task.WhenAll(writeTasks).ConfigureAwait(false);
             ClassicAssert.IsTrue(writeReses.All(static x => x));
 
-            var x = await db.SortedSetRangeByScoreWithScoresAsync(Key).ConfigureAwait(false);
-
-            var exc = ClassicAssert.ThrowsAsync<RedisServerException>(() => db.HashGetAllAsync(Key));
+            var exc = ClassicAssert.ThrowsAsync<RedisServerException>(() => db.SortedSetRangeByScoreWithScoresAsync(Key));
             ClassicAssert.AreEqual($"ERR Exceeded maximum response size of ({Array.MaxLength:N0}) bytes", exc.Message);
         }
     }
