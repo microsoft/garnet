@@ -171,7 +171,7 @@ namespace Garnet.server
 
         private readonly int dbId;
 
-        private ConcurrentDictionary<ulong, byte> recoveredIndexes;
+        private ConcurrentDictionary<ulong, ushort> recoveredIndexes;
         private ConcurrentDictionary<int, ContextMetadata> recoveredMetadata;
 
         public VectorManager(int dbId, GarnetServerOptions serverOptions, Func<IMessageConsumer> getTempSession, ILoggerFactory loggerFactory)
@@ -309,11 +309,25 @@ namespace Garnet.server
                 }
 
                 // Any non-deleted records we recovered for contexts being deleted, we need to undo that
-                foreach (var (context, _) in recoveredIndexes)
+                foreach (var (context, slot) in recoveredIndexes)
                 {
                     var (contextIndex, contextValue) = ContextMetadata.DecomposeContext(context);
 
-                    if (contextMetadatas[contextIndex].IsCleaningUp(contextIndex != 0, contextValue))
+                    // A context whose index-config record was recovered is genuinely in use. If the
+                    // persisted metadata reports it free — the index-config write became durable but
+                    // UpdateContextMetadata's in-use bit did not (a crash, or a checkpoint taken, in the
+                    // window between the two) — reconcile it here. Otherwise NextVectorSetContext would
+                    // re-hand-out this context to an unrelated vector set, whose elements would then share
+                    // the recovered index's namespace and corrupt both sets.
+                    if (!contextMetadatas[contextIndex].IsInUse(contextIndex != 0, contextValue))
+                    {
+                        contextMetadatas[contextIndex].MarkInUse(contextIndex != 0, contextValue, slot);
+
+                        _ = dirtyContextMetadatas.Add(contextIndex);
+
+                        needsUpdated = true;
+                    }
+                    else if (contextMetadatas[contextIndex].IsCleaningUp(contextIndex != 0, contextValue))
                     {
                         contextMetadatas[contextIndex].ClearIsCleaningUp(contextIndex != 0, contextValue);
 
@@ -379,7 +393,7 @@ namespace Garnet.server
             }
 
             ReadIndex(record.ValueSpan, out var context, out _, out _, out _, out _, out _, out _, out _, out _);
-            recoveredIndexes[context] = 0;
+            recoveredIndexes[context] = HashSlotUtils.HashSlot(record.KeyBytes);
         }
 
         /// <summary>

@@ -125,5 +125,14 @@ namespace Garnet.common
         /// Vector Set: pause in the index-recreate window before RMW write refreshed index pointer back to the main store.
         /// </summary>
         VectorSet_Pause_Before_Recreate_Rmw,
+        /// <summary>
+        /// Vector Set: in the create-on-read path, THROW right after the index-config record (which pins
+        /// the chosen context) has been written to the store — and thus appended to the AOF — but BEFORE
+        /// <c>UpdateContextMetadata</c> flushes the matching in-use bit. This unwinds the create
+        /// immediately (releasing the vector-set lock and the store epoch), so a subsequent checkpoint +
+        /// recover reproduces the metadata-persistence-lags-index-write skew WITHOUT a live session
+        /// parked mid-operation to deadlock the checkpoint. Uses TriggerException.
+        /// </summary>
+        VectorSet_Interrupt_Before_Create_Metadata_Persist,
     }
 }

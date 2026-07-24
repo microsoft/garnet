@@ -2471,6 +2471,118 @@ namespace Garnet.test
 
         // TODO: FLUSHDB needs to cleanup too...
 
+        /// <summary>
+        /// Deterministic, REAL-operations repro of the vector-set context-reuse corruption using only
+        /// VADD / Save / recover plus a single timing gate (no synthetic state).
+        ///
+        /// Root cause: <see cref="VectorManager"/> persists the <c>ContextMetadata</c> in-use bitmap at
+        /// discrete points (<c>UpdateContextMetadata</c>), but writes the index-config record — which
+        /// pins the chosen context id — to the store immediately. In the create-on-read path the
+        /// index-config record is written (Locking.cs) BEFORE <c>UpdateContextMetadata</c> flushes the
+        /// matching in-use bit. A checkpoint taken in that window captures an index occupying context C
+        /// while the persisted metadata still reports C as free.
+        ///
+        /// After recovery the metadata hands C back out as a fresh context to the next vector set, so two
+        /// live indexes collide on the same context namespace. The cleanup scan matches records by
+        /// namespace only (no generation tag), so this is the same generation-unsafe reuse that causes
+        /// the recreate-on-restore flake.
+        ///
+        /// The gate <see cref="ExceptionInjectionType.VectorSet_Interrupt_Before_Create_Metadata_Persist"/>
+        /// makes foo's real VADD throw in exactly that window — after the index-config record is durable
+        /// but before the in-use bit is flushed; the test then checkpoints, recovers, and shows a
+        /// second vector set is issued foo's context. Fails today; passes once context reuse is made
+        /// checkpoint/generation-safe.
+        /// </summary>
+        [Test]
+        [CancelAfter(60000)]
+        public async Task CreateMetadataSkewRecyclesLiveContextOnRestoreAsync()
+        {
+            TestUtils.IgnoreIfExceptionInjectionDisabled();
+
+            // foo and bar carry IDENTICAL vector payloads (only their element ids differ). That way, if
+            // the two sets end up sharing a context namespace after restore, each set's VSIM is guaranteed
+            // to surface the other's element (distance 0) regardless of the epsilon threshold — making the
+            // namespace collision observable deterministically rather than dependent on vector distances.
+            var fooData = Enumerable.Range(0, 75).Select(static x => (byte)x).ToArray();
+            var barData = Enumerable.Range(0, 75).Select(static x => (byte)x).ToArray();
+            var fooElem = new byte[] { 0, 0, 0, 7 };
+            var barElem = new byte[] { 0, 0, 0, 9 };
+
+            const ExceptionInjectionType Gate = ExceptionInjectionType.VectorSet_Interrupt_Before_Create_Metadata_Persist;
+
+            using (var redisOp = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))
+            {
+                var dbOp = redisOp.GetDatabase(0);
+
+                // Arm the gate: foo's create-on-read writes its index-config record (which pins its
+                // context) and then THROWS before UpdateContextMetadata flushes the in-use bit. The throw
+                // unwinds the create, releasing the vector-set lock and the store epoch, so nothing is left
+                // parked mid-operation — which is exactly what lets us take a foreground checkpoint next
+                // without deadlocking (a checkpoint quiesces the store and would hang against a create that
+                // was merely PARKED here; a create that has already thrown holds nothing).
+                ExceptionInjectionHelper.EnableException(Gate);
+                try
+                {
+                    try
+                    {
+                        _ = dbOp.Execute("VADD", ["foo", "XB8", fooData, fooElem, "CAS", "NOQUANT", "EF", "16", "M", "32"]);
+                        Assert.Fail("foo's create was expected to be interrupted before persisting its context metadata");
+                    }
+                    catch (RedisException)
+                    {
+                        // Expected: the injected fault surfaces as a server/connection error for the VADD
+                        // and the faulted session tears its connection down.
+                    }
+
+                    // Checkpoint the skew window: foo's index-config record (which pins its context) is now
+                    // durable, but the persisted metadata still marks that context free. Recovery from a
+                    // checkpoint marks recovered vector indexes for lazy recreate-on-access, which is the
+                    // path the bug corrupts. A fresh connection is used because the injected fault dropped
+                    // foo's original connection.
+                    using (var redisSave = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))
+                    {
+                        var saveServer = redisSave.GetServers()[0];
+#pragma warning disable CS0618 // ForegroundSave is intentional here
+                        saveServer.Save(SaveType.ForegroundSave);
+#pragma warning restore CS0618
+                    }
+
+                    var commit = await server.Store.WaitForCommitAsync();
+                    ClassicAssert.IsTrue(commit);
+                }
+                finally
+                {
+                    ExceptionInjectionHelper.DisableException(Gate);
+                }
+
+                // Simulate a crash after the skewed checkpoint: recovery restores foo's index-config (and
+                // marks it for lazy recreate) but the persisted metadata reports foo's context free.
+                server.Dispose(deleteDir: false);
+                server = CreateGarnetServer(tryRecover: true);
+                server.Start();
+            }
+
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))
+            {
+                var db = redis.GetDatabase(0);
+
+                // A brand-new vector set bar must NOT be issued foo's recovered context. Under the bug the
+                // recovered metadata reports foo's context free, so bar is handed the very same context and
+                // its element lands in foo's recovered namespace.
+                ClassicAssert.AreEqual(1, (int)db.Execute("VADD", ["bar", "XB8", barData, barElem, "CAS", "NOQUANT", "EF", "16", "M", "32"]));
+
+                // bar must contain only its own element.
+                var barMembers = (byte[][])db.Execute("VSIM", ["bar", "XB8", barData, "COUNT", "100", "EPSILON", "1.0", "EF", "40"]);
+                ClassicAssert.AreEqual(1, barMembers.Length, "bar does not contain exactly its own element");
+
+                // foo's create was interrupted before it ever added an element, so foo MUST be empty after
+                // restore. Under the bug foo's recovered index shares bar's context namespace, so a
+                // similarity query on foo surfaces bar's element (Expected 0 But was 1).
+                var fooMembers = (byte[][])db.Execute("VSIM", ["foo", "XB8", barData, "COUNT", "100", "EPSILON", "1.0", "EF", "40"]);
+                ClassicAssert.AreEqual(0, fooMembers.Length, "foo surfaced bar's element — bar was issued foo's recovered context (namespace collision after restore)");
+            }
+        }
+
         [Test]
         public void VINFO_NotFound()
         {
