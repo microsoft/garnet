@@ -167,7 +167,6 @@ namespace Garnet.test
                 RespCommand.PEXPIRETIME,
                 RespCommand.PTTL,
                 RespCommand.PUBLISH,
-                RespCommand.PURGEBP,
                 RespCommand.REGISTERCS,
                 RespCommand.RENAME,
                 RespCommand.RENAMENX,
