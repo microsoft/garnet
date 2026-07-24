@@ -92,13 +92,13 @@ namespace Garnet.test.cluster
             credManager = new CredentialManager();
         }
 
-        public void ShutdownNode(IPEndPoint endpoint)
+        public void ShutdownNode(IPEndPoint endpoint, bool ensureAofFlush = false)
         {
             for (var i = 0; i < endpoints.Count; i++)
             {
                 if (endpoints[i] == endpoint)
                 {
-                    ShutdownNode(i);
+                    ShutdownNode(i, ensureAofFlush);
                     return;
                 }
             }
@@ -106,24 +106,31 @@ namespace Garnet.test.cluster
             throw new InvalidOperationException($"Could not find node for {endpoint}");
         }
 
-        public void ShutdownNode(int nodeIndex)
+        public void ShutdownNode(int nodeIndex, bool ensureAofFlush = false)
         {
             if (nodeIndex < 0 || nodeIndex >= nodes.Length)
             {
                 throw new ArgumentOutOfRangeException(nameof(nodeIndex));
             }
 
+            if (ensureAofFlush)
+            {
+                // Dispose doesn't ensure that inflight AOF commits to disk are completed, so for graceful shutdown in
+                // some tests, we need to manually ensure AOF flush before disposing the node.
+                AsyncUtils.BlockingWait(nodes[nodeIndex].Store.CommitAOFAsync(CancellationToken.None));
+            }
+
             nodes[nodeIndex].Dispose();
             nodes[nodeIndex] = null;
         }
 
-        public void RestartNode(IPEndPoint endpoint)
+        public void RestartNode(IPEndPoint endpoint, bool ensureAofFlush = false)
         {
             for (var i = 0; i < endpoints.Count; i++)
             {
                 if (endpoints[i] == endpoint)
                 {
-                    RestartNode(i);
+                    RestartNode(i, ensureAofFlush);
                     return;
                 }
             }
@@ -131,7 +138,7 @@ namespace Garnet.test.cluster
             throw new InvalidOperationException($"Could not find node for {endpoint}");
         }
 
-        public void RestartNode(int nodeIndex)
+        public void RestartNode(int nodeIndex, bool ensureAofFlush = false)
         {
             if (nodeIndex < 0 || nodeIndex >= nodes.Length)
             {
@@ -140,7 +147,7 @@ namespace Garnet.test.cluster
 
             if (nodes[nodeIndex] != null)
             {
-                ShutdownNode(nodeIndex);
+                ShutdownNode(nodeIndex, ensureAofFlush);
             }
 
             // We're restarting, leave state unaltered

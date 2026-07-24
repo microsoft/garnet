@@ -174,6 +174,8 @@ namespace Tsavorite.core
                     // See if we are copying to read cache or tail of log. If we already found the record in memory, we're done.
                     if (operationState.readCopyOptions.CopyFrom != ReadCopyFrom.None && !memoryRecord.IsSet)
                     {
+                        // status is already OperationStatus.SUCCESS here: FindTagAndTryEphemeralSLock (at the top of the loop) returns true
+                        // only after TryEphemeralSLock has set status to SUCCESS, and nothing below changes it before this point.
                         if (operationState.readCopyOptions.CopyTo == ReadCopyTo.MainLog)
                         {
                             // Plumb source logical address so PostCopyToTail can name per-flush snapshot files.

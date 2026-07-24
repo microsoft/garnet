@@ -39,6 +39,19 @@ namespace Tsavorite.core
         /// <summary>The maximum number of key or value bytes to copy into the buffer rather than enqueue a DirectWrite.</summary>
         internal const int MaxCopySpanLen = 128 * 1024;
 
+        /// <summary>
+        /// Gates the zero-copy direct-DMA write of large overflow key/value spans (the <c>else</c> branch of <see cref="WriteDirect(OverflowByteArray, ReadOnlySpan{byte}, RefCountedPinnedGCHandle)"/>).
+        /// Currently <c>false</c>: that path DMAs straight from a GC-pinned managed <see cref="OverflowByteArray"/> byte[], whose address is only
+        /// 8-byte aligned, but every Garnet device requires sector-aligned I/O (buffer, offset, and length) on the O_DIRECT path, so it throws on
+        /// the native device; its multi-segment sub-path also has latent bugs. Until a proper zero-copy fix lands (sector-aligned source + gap-aware
+        /// recovery/reader/read-ahead + a correct iterative multi-segment writer), all overflow spans are routed through the sector-aligned buffered
+        /// <see cref="Write(ReadOnlySpan{byte}, System.Threading.CancellationToken)"/> path. The direct-DMA code below is intentionally retained for
+        /// that follow-up; fix its known recursion/alignment bugs before re-enabling.
+        /// It is deliberately <c>static readonly</c> (not <c>const</c>) so the retained direct-DMA branch stays reachable and never trips an
+        /// unreachable-code diagnostic (CS0162) under <c>TreatWarningsAsErrors</c>, regardless of how the gate condition below is later refactored.
+        /// </summary>
+        static readonly bool EnableDirectObjectLogWrite = false;
+
         /// <summary>If true, we are in the Serialize call. If not we ignore things like <see cref="valueObjectBytesWritten"/> etc.</summary>
         bool inSerialize;
 
@@ -157,7 +170,8 @@ namespace Tsavorite.core
         /// <param name="refCountedGCHandle">The refcounted GC handle if this is a recursive call</param>
         void WriteDirect(OverflowByteArray overflow, ReadOnlySpan<byte> fullDataSpan, RefCountedPinnedGCHandle refCountedGCHandle)
         {
-            if (overflow.Length <= MaxCopySpanLen)
+            // Route through the sector-aligned buffered Write() path unless the direct-DMA path is explicitly enabled (see EnableDirectObjectLogWrite).
+            if (!EnableDirectObjectLogWrite || overflow.Length <= MaxCopySpanLen)
                 Write(fullDataSpan);
             else
             {
