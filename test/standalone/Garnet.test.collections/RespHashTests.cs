@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading;
@@ -910,12 +911,13 @@ namespace Garnet.test
         /// unlike <see cref="CanDoHGETALLOnLargeHashRequiringManyBufferGrowths"/> above. Field count and
         /// size (250K x 20K) are sized so the total value payload alone (~4.7GB) is well past
         /// <see cref="Array.MaxLength"/> (~2GB), guaranteeing HGETALL's single output buffer cannot hold
-        /// the response no matter how it grows. Fields are set one at a time (not as one bulk HSET) so
-        /// only the read/response path - not the write/command-parsing path - is put under this much
-        /// memory pressure. Suggested by kevin-montrose in review (see
-        /// https://github.com/microsoft/garnet/pull/1945) after pointing out that
-        /// CanDoHGETALLOnLargeHashRequiringManyBufferGrowths's ~5MB scale passes unmodified against
-        /// pre-fix `main` and so isn't real regression coverage for the issue.
+        /// the response no matter how it grows. Originally suggested by kevin-montrose in review (see
+        /// https://github.com/microsoft/garnet/pull/1945) as 250K individual single-field HSETs, so only
+        /// the read/response path - not the write/command-parsing path - would be put under memory
+        /// pressure; that shape turned out not to survive real CI (250K concurrent round trips exceeded
+        /// the 30s client timeout on Linux and reset the connection on Windows, independent of the fix
+        /// under test). Batched into chunks of 1,000 fields/HSET (250 round trips instead of 250,000) to
+        /// keep write-side overhead low while keeping the same total payload and field count.
         /// </summary>
         [Test]
         public async Task HGETALLOnHashExceedingMaxSingleBufferSizeThrowsCleanlyAsync()
@@ -923,18 +925,24 @@ namespace Garnet.test
             const string Key = nameof(HGETALLOnHashExceedingMaxSingleBufferSizeThrowsCleanlyAsync);
             const int NumFields = 250_000;
             const int FieldLength = 20_000;
+            const int BatchSize = 1_000;
 
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var config = TestUtils.GetConfig();
+            config.SyncTimeout = config.AsyncTimeout = (int)TimeSpan.FromMinutes(2).TotalMilliseconds;
+            using var redis = ConnectionMultiplexer.Connect(config);
             var db = redis.GetDatabase();
 
             var fieldValue = new string('v', FieldLength);
 
-            var writeTasks = new Task<bool>[NumFields];
-            for (var i = 0; i < NumFields; i++)
-                writeTasks[i] = db.HashSetAsync(Key, $"field:{i}", fieldValue);
-
-            var writeResults = await Task.WhenAll(writeTasks).ConfigureAwait(false);
-            ClassicAssert.IsTrue(writeResults.All(static x => x));
+            var batchTasks = new List<Task>();
+            for (var batchStart = 0; batchStart < NumFields; batchStart += BatchSize)
+            {
+                var batchEntries = new HashEntry[Math.Min(BatchSize, NumFields - batchStart)];
+                for (var j = 0; j < batchEntries.Length; j++)
+                    batchEntries[j] = new HashEntry($"field:{batchStart + j}", fieldValue);
+                batchTasks.Add(db.HashSetAsync(Key, batchEntries));
+            }
+            await Task.WhenAll(batchTasks).ConfigureAwait(false);
 
             var ex = ClassicAssert.ThrowsAsync<RedisServerException>(() => db.HashGetAllAsync(Key));
             ClassicAssert.That(ex.Message, Does.Contain("exceeds the maximum supported single-buffer size"));
