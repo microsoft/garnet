@@ -2141,6 +2141,9 @@ namespace Garnet.test
             ClassicAssert.AreEqual(3, (long)result);
         }
 
+        // Creates 3 sorted sets (fields expiring in 2s, 4s, and never), forces them to disk,
+        // then verifies the 2s field expires first and the 4s field expires later while the
+        // non-expiring set survives - exercising the on-disk TTL deserialization path.
         [Test]
         public async Task CanDoSortedSetExpireLTM()
         {
@@ -2182,8 +2185,7 @@ namespace Garnet.test
                 new SortedSetEntry("Field2", 2)
             ]);
 
-            // Force records to disk deterministically instead of filling the store, so no CPU-dependent work sits
-            // between setting the TTLs and the expiry checks (#1981).
+            // Force records to disk
             var storeLog = this.server.Provider.StoreWrapper.store.Log;
             storeLog.FlushAndEvict(wait: true);
 
