@@ -147,7 +147,7 @@ namespace Garnet.test
         [TearDown]
         public void TearDown()
         {
-            server.Dispose();
+            server?.Dispose();
             try
             {
                 if (aclFile != null)
@@ -3539,6 +3539,58 @@ return count";
 
             ClassicAssert.IsTrue(exc.Message.Contains("not allowed from script"),
                 $"SUBSCRIBE should remain blocked in scripts, got: {exc.Message}");
+        }
+
+        /// <summary>
+        /// Reproduces the Lua allocator corruption that occurs when a session (and its Lua state)
+        /// is disposed while a script is still executing on another thread.
+        ///
+        /// The Lua allocators are single-thread-by-design: one script runs on one thread at a time.
+        /// Disposing the session calls <c>SessionScriptCache.Clear</c> -> <c>LuaRunner.Dispose</c> ->
+        /// <c>lua_close</c>, which frees the entire Lua heap. If a worker thread is concurrently inside
+        /// <c>LuaRunner.RunForSession</c> allocating on that same allocator, the free-list is corrupted.
+        ///
+        /// To make the otherwise-tiny race window reliable, the script does nothing but allocate in a
+        /// tight loop, so a dispose landing at any moment overlaps an in-flight allocation.
+        /// </summary>
+        [Test]
+        public void DisposeDuringScriptExecutionAllocatorRace()
+        {
+            // Allocates continuously on the Lua heap, keeping a worker thread inside the allocator.
+            // The iteration count is sized so the script runs for a few seconds: long enough to still
+            // be executing when the dispose lands, but bounded so the (fixed) dispose wait stays short.
+            const string BusyAllocScript = @"
+                local x
+                for i = 1, 5000000 do
+                    x = { i, i, i, i, i, i, i, i }
+                end
+                return 1";
+
+            var scriptConn = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = scriptConn.GetDatabase(0);
+
+            // Fire the long-running script without awaiting; it keeps allocating on the Lua heap.
+            var scriptTask = db.ScriptEvaluateAsync(BusyAllocScript);
+
+            // Give the script time to enter the allocation loop.
+            Thread.Sleep(250);
+
+            // Dispose the server while the script is mid-allocation. Without the fix this frees the
+            // Lua heap (lua_close) concurrently with allocation -> allocator corruption / crash.
+            var toDispose = server;
+            server = null;
+            toDispose.Dispose();
+
+            try
+            {
+                _ = scriptTask.GetAwaiter().GetResult();
+            }
+            catch
+            {
+                // Expected: the connection is dropped when the server is disposed mid-script.
+            }
+
+            scriptConn.Dispose();
         }
 
     }
