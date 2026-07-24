@@ -335,9 +335,10 @@ namespace Garnet.server
         /// <summary>
         /// Run a resolved script for the current session.
         /// 
-        /// Gated so it cannot execute while the session's Lua state is being disposed; if the session
-        /// is disposing this is a no-op. On failure the runner is removed from the session cache from
-        /// inside the guarded window, so it can't race disposal on the runner dictionary.
+        /// Gated so it can't execute while the session's Lua state is being disposed. If disposing,
+        /// <see cref="SessionScriptCache.StartRunningScript"/> returns false and this is a no-op: no reply
+        /// is written since the connection is already closing. On failure the runner is removed inside the
+        /// guarded window so it can't race disposal.
         /// </summary>
         private void RunScriptForSession(int count, LuaRunner runner, ScriptHashKey scriptKey)
         {
