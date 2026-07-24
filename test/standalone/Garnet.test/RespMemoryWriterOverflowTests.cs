@@ -13,7 +13,9 @@ namespace Garnet.test
     [TestFixture]
     public class RespMemoryWriterOverflowTests : TestBase
     {
-        GarnetServer server;
+        private const int BatchSize = 1_000;
+
+        private GarnetServer server;
 
         [SetUp]
         public void Setup()
@@ -27,7 +29,7 @@ namespace Garnet.test
         public void TearDown()
         {
             server.Dispose();
-            TestUtils.OnTearDown();
+            TestUtils.OnTearDown(waitForDelete: true);
         }
 
         [Test]
@@ -42,18 +44,22 @@ namespace Garnet.test
 
             var fieldValue = new string('h', FieldLength);
 
-            var writeTasks = new Task<bool>[NumFields];
-
-            for (var i = 0; i < NumFields; i++)
+            for (var i = 0; i < NumFields; i += BatchSize)
             {
-                writeTasks[i] = db.HashSetAsync(Key, $"field:{i}", fieldValue);
+                var writeTasks = new Task<bool>[BatchSize];
+                writeTasks.AsSpan().Fill(Task.FromResult(true));
+
+                for (var j = 0; j < writeTasks.Length; j++)
+                {
+                    writeTasks[j] = db.HashSetAsync(Key, $"field:{(i + j)}", fieldValue);
+                }
+
+                var writeReses = await Task.WhenAll(writeTasks).ConfigureAwait(false);
+                ClassicAssert.IsTrue(writeReses.All(static x => x));
             }
 
-            var writeReses = await Task.WhenAll(writeTasks).ConfigureAwait(false);
-            ClassicAssert.IsTrue(writeReses.All(static x => x));
-
             var exc = ClassicAssert.ThrowsAsync<RedisServerException>(() => db.HashGetAllAsync(Key));
-            ClassicAssert.AreEqual($"ERR Exceeded maximum response size of ({Array.MaxLength:N0}) bytes", exc.Message);
+            ClassicAssert.AreEqual($"ERR Garnet Exception: Exceeded maximum response size of ({Array.MaxLength:N0}) bytes", exc.Message);
         }
 
         [Test]
@@ -68,17 +74,21 @@ namespace Garnet.test
 
             var elementValue = new string('l', ElementLength);
 
-            var writeTasks = new Task<long>[NumElements];
-
-            for (var i = 0; i < NumElements; i++)
+            for (var i = 0; i < NumElements; i += BatchSize)
             {
-                writeTasks[i] = db.ListLeftPushAsync(Key, elementValue);
+                var writeTasks = new Task[BatchSize];
+                writeTasks.AsSpan().Fill(Task.CompletedTask);
+
+                for (var j = 0; j < writeTasks.Length; j++)
+                {
+                    writeTasks[j] = db.ListRightPushAsync(Key, elementValue);
+                }
+
+                await Task.WhenAll(writeTasks).ConfigureAwait(false);
             }
 
-            _ = await Task.WhenAll(writeTasks).ConfigureAwait(false);
-
             var exc = ClassicAssert.ThrowsAsync<RedisServerException>(() => db.ListRangeAsync(Key));
-            ClassicAssert.AreEqual($"ERR Exceeded maximum response size of ({Array.MaxLength:N0}) bytes", exc.Message);
+            ClassicAssert.AreEqual($"ERR Garnet Exception: Exceeded maximum response size of ({Array.MaxLength:N0}) bytes", exc.Message);
         }
 
         [Test]
@@ -91,19 +101,25 @@ namespace Garnet.test
             using var redis = await ConnectionMultiplexer.ConnectAsync(TestUtils.GetConfig()).ConfigureAwait(false);
             var db = redis.GetDatabase();
 
-            var writeTasks = new Task<bool>[NumMembers];
+            var longValue = new string('s', MemberLength);
 
-            for (var i = 0; i < NumMembers; i++)
+            for (var i = 0; i < NumMembers; i += BatchSize)
             {
-                var memberName = $"{i}_{new string('s', MemberLength)}";
-                writeTasks[i] = db.SetAddAsync(Key, memberName);
+                var writeTasks = new Task<bool>[BatchSize];
+                writeTasks.AsSpan().Fill(Task.FromResult(true));
+
+                for (var j = 0; j < writeTasks.Length; j++)
+                {
+                    var memberName = $"{(i + j)}_{longValue}";
+                    writeTasks[j] = db.SetAddAsync(Key, memberName);
+                }
+
+                var writeReses = await Task.WhenAll(writeTasks).ConfigureAwait(false);
+                ClassicAssert.IsTrue(writeReses.All(static x => x));
             }
 
-            var writeReses = await Task.WhenAll(writeTasks).ConfigureAwait(false);
-            ClassicAssert.IsTrue(writeReses.All(static x => x));
-
             var exc = ClassicAssert.ThrowsAsync<RedisServerException>(() => db.SetMembersAsync(Key));
-            ClassicAssert.AreEqual($"ERR Exceeded maximum response size of ({Array.MaxLength:N0}) bytes", exc.Message);
+            ClassicAssert.AreEqual($"ERR Garnet Exception: Exceeded maximum response size of ({Array.MaxLength:N0}) bytes", exc.Message);
         }
 
         [Test]
@@ -116,19 +132,25 @@ namespace Garnet.test
             using var redis = await ConnectionMultiplexer.ConnectAsync(TestUtils.GetConfig()).ConfigureAwait(false);
             var db = redis.GetDatabase();
 
-            var writeTasks = new Task<bool>[NumMembers];
+            var longValue = new string('z', MemberLength);
 
-            for (var i = 0; i < NumMembers; i++)
+            for (var i = 0; i < NumMembers; i += BatchSize)
             {
-                var memberName = $"{i}_{new string('z', MemberLength)}";
-                writeTasks[i] = db.SortedSetAddAsync(Key, memberName, i);
+                var writeTasks = new Task<bool>[BatchSize];
+                writeTasks.AsSpan().Fill(Task.FromResult(true));
+
+                for (var j = 0; j < writeTasks.Length; j++)
+                {
+                    var memberName = $"{(i + j)}_{longValue}";
+                    writeTasks[j] = db.SortedSetAddAsync(Key, memberName, (i + j));
+                }
+
+                var writeReses = await Task.WhenAll(writeTasks).ConfigureAwait(false);
+                ClassicAssert.IsTrue(writeReses.All(static x => x));
             }
 
-            var writeReses = await Task.WhenAll(writeTasks).ConfigureAwait(false);
-            ClassicAssert.IsTrue(writeReses.All(static x => x));
-
             var exc = ClassicAssert.ThrowsAsync<RedisServerException>(() => db.SortedSetRangeByScoreWithScoresAsync(Key));
-            ClassicAssert.AreEqual($"ERR Exceeded maximum response size of ({Array.MaxLength:N0}) bytes", exc.Message);
+            ClassicAssert.AreEqual($"ERR Garnet Exception: Exceeded maximum response size of ({Array.MaxLength:N0}) bytes", exc.Message);
         }
     }
 }

@@ -507,7 +507,7 @@ namespace Garnet.common
             }
 
             if (length <= 0)
-                throw new OverflowException("length");
+                throw new GarnetException($"Exceeded maximum response size of ({Array.MaxLength:N0}) bytes", disposeSession: false);
 
             var newMem = MemoryPool<byte>.Shared.Rent(length);
             var newPtrHandle = newMem.Memory.Pin();
