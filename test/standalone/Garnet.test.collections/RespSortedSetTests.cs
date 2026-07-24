@@ -2192,7 +2192,7 @@ namespace Garnet.test
             var info = TestUtils.GetStoreAddressInfo(server, includeReadCache: true);
             ClassicAssert.Greater(info.HeadAddress, info.BeginAddress);
 
-            // Small fields have expired; large fields are still alive. Re-evict so each field is read from disk.
+            // Small fields have expired; large fields are still alive. Ensure evicted so each field is read from disk.
             await Task.Delay(TimeSpan.FromSeconds(smallExpireSeconds + checkBufferSeconds)).ConfigureAwait(false);
             storeLog.FlushAndEvict(wait: true);
 
@@ -2213,7 +2213,7 @@ namespace Garnet.test
             ClassicAssert.Greater(ttl[0].Score, 0);
             ClassicAssert.LessOrEqual(ttl[0].Score, 2000);
 
-            // Large fields have now expired too. Re-evict so the reads come from disk.
+            // Large fields have now expired too. Ensure evicted so the reads come from disk.
             await Task.Delay(TimeSpan.FromSeconds(largeExpireSeconds - smallExpireSeconds)).ConfigureAwait(false);
             storeLog.FlushAndEvict(wait: true);
 
