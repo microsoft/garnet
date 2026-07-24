@@ -399,6 +399,14 @@ namespace Garnet.server
                 return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_OFFSETOUTOFRANGE);
             }
 
+            // Reject offsets that would push the resulting value past the maximum record size,
+            // to avoid the storage layer throwing (and consequently dropping the connection).
+            var value = parseState.GetArgSliceByRef(2);
+            if ((long)offset + value.Length > BitmapManager.MaxBitmapPayloadBytes)
+            {
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_STRING_EXCEEDS_MAX_SIZE);
+            }
+
             var input = new StringInput(RespCommand.SETRANGE, ref parseState, startIdx: 1);
 
             Span<byte> outputBuffer = stackalloc byte[NumUtils.MaximumFormatInt64Length];
