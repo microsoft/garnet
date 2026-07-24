@@ -147,7 +147,7 @@ namespace Garnet.test
         [TearDown]
         public void TearDown()
         {
-            server.Dispose();
+            server?.Dispose();
             try
             {
                 if (aclFile != null)
@@ -3539,6 +3539,56 @@ return count";
 
             ClassicAssert.IsTrue(exc.Message.Contains("not allowed from script"),
                 $"SUBSCRIBE should remain blocked in scripts, got: {exc.Message}");
+        }
+
+        /// <summary>
+        /// Disposing a session while a script runs on another thread frees the Lua heap
+        /// (<c>lua_close</c>) underneath the single-threaded allocator, corrupting it. The script here
+        /// only allocates in a tight loop, so a concurrent dispose reliably lands mid-allocation.
+        /// </summary>
+        [Test]
+        public void DisposeDuringScriptExecutionAllocatorRace()
+        {
+            // Signals (via a store write another connection can observe) that execution has begun, then
+            // allocates in a tight loop. Kept short so the concurrent dispose's drain wait stays small.
+            const string BusyAllocScript = @"
+                redis.call('SET', KEYS[1], '1')
+                local x
+                for i = 1, 1000000 do
+                    x = { i, i, i, i, i, i, i, i }
+                end
+                return 1";
+
+            const string StartedKey = "alloc-race-started";
+
+            using var scriptConn = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            using var probeConn = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = scriptConn.GetDatabase(0);
+            var probeDb = probeConn.GetDatabase(0);
+
+            // Fire the script without awaiting; it keeps allocating on the Lua heap.
+            var scriptTask = db.ScriptEvaluateAsync(BusyAllocScript, [(RedisKey)StartedKey]);
+
+            // Wait until the script has actually entered execution (bounded), so the dispose lands
+            // mid-run regardless of how quickly the host starts the script.
+            var sw = Stopwatch.StartNew();
+            while (!probeDb.KeyExists(StartedKey) && sw.ElapsedMilliseconds < 5000)
+                Thread.Sleep(5);
+
+            // Dispose the server while the script is mid-allocation. In a previous regression, this
+            // would free the Lua heap (lua_close) concurrently with allocation -> corruption / crash.
+            var toDispose = server;
+            server = null;
+            toDispose.Dispose();
+
+            try
+            {
+                _ = scriptTask.GetAwaiter().GetResult();
+            }
+            catch
+            {
+                // Expected: the connection is dropped when the server is disposed mid-script.
+            }
         }
 
     }
