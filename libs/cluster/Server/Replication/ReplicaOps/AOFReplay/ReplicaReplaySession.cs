@@ -106,6 +106,7 @@ namespace Garnet.cluster
                 {
                     // Synchronous replay
                     replicaReplayDriverStore.GetReplayDriver(physicalSublogIdx).Consume(record, recordLength, currentAddress, nextAddress, isProtected: false);
+                    replicaReplayDriverStore.GetReplayDriver(physicalSublogIdx).Throttle();
                 }
                 else
                 {

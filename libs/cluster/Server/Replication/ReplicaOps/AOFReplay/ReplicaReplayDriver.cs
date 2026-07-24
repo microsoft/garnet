@@ -238,7 +238,7 @@ namespace Garnet.cluster
                     do
                     {
                         cts.Token.ThrowIfCancellationRequested();
-                        Thread.Yield();
+                        Thread.Sleep(10);
                     } while (!AllPeersReached(rcm, myMax));
                 }
 
