@@ -239,7 +239,9 @@ namespace Garnet.cluster
                 {
                     var (address, port) = config.GetLocalNodePrimaryAddress();
                     var primaryLinkStatus = clusterManager.GetPrimaryLinkStatus(config);
-                    var replicationOffsetLag = storeWrapper.appendOnlyFile.Log.TailAddress.AggregateDiff(replicationManager.ReplicationOffset);
+                    var replicationOffsetAccLag = storeWrapper.appendOnlyFile.Log.TailAddress.AggregateDiff(replicationManager.ReplicationOffset);
+                    var replicationOffsetVectorLag = storeWrapper.appendOnlyFile.Log.TailAddress.Diff(replicationManager.ReplicationOffset);
+                    var rcm = storeWrapper.appendOnlyFile.readConsistencyManager;
                     replicationInfo.Add(new("master_host", address));
                     replicationInfo.Add(new("master_port", port.ToString()));
                     replicationInfo.Add(primaryLinkStatus[0]);
@@ -250,8 +252,11 @@ namespace Garnet.cluster
                     replicationInfo.Add(new("slave_read_only", "1"));
                     replicationInfo.Add(new("replica_announced", "1"));
                     replicationInfo.Add(new("master_sync_last_io_seconds_ago", replicationManager.LastPrimarySyncSeconds.ToString()));
-                    replicationInfo.Add(new("replication_offset_lag", replicationOffsetLag.ToString()));
-                    replicationInfo.Add(new("replication_offset_max_lag", storeWrapper.runtimeConfig.GetInt(ServerConfigType.REPLICATION_OFFSET_MAX_LAG).ToString()));
+                    replicationInfo.Add(new("replication_offset_vector_lag", replicationOffsetVectorLag.ToString()));
+                    replicationInfo.Add(new("replication_offset_acc_lag", replicationOffsetAccLag.ToString()));
+                    replicationInfo.Add(new("replication_offset_max_lag", storeWrapper.serverOptions.ReplicationOffsetMaxLag.ToString()));
+                    replicationInfo.Add(new("physical_sublog_max_sequence_vector", rcm == null ? "-1" : rcm.GetPhysicalSublogMaxSequenceVector()));
+                    replicationInfo.Add(new("physical_sublog_max_drift_sequence_vector", rcm == null ? "-1" : rcm.GetPhysicalSublogMaxDriftSequenceVector()));
                 }
                 else
                 {

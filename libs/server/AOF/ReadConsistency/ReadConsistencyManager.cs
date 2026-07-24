@@ -4,6 +4,7 @@
 using System;
 using System.Linq;
 using System.Runtime.CompilerServices;
+using System.Text;
 using System.Threading;
 
 namespace Garnet.server
@@ -69,6 +70,39 @@ namespace Garnet.server
             for (var rt = 0; rt < replayTaskCount; rt++)
                 max = Math.Max(max, Volatile.Read(ref vsrs[startIdx + rt].MaxRef));
             return max;
+        }
+
+        public string GetPhysicalSublogMaxSequenceVector()
+        {
+            StringBuilder stringBuilder = new();
+            var sublogCount = serverOptions.AofPhysicalSublogCount;
+            _ = stringBuilder.Append(GetPhysicalSublogMax(0));
+            for (var s = 1; s < sublogCount; s++){
+                _ = stringBuilder.Append(',');
+                _ = stringBuilder.Append(GetPhysicalSublogMax(s));
+            }
+            return stringBuilder.ToString();
+        }
+
+        public unsafe string GetPhysicalSublogMaxDriftSequenceVector()
+        {
+            var sublogCount = serverOptions.AofPhysicalSublogCount;
+            var physicalSublogMaxSequenceVector = stackalloc long[sublogCount];
+
+            var maxSequenceNumber = 0L;
+            for (var s = 0; s < sublogCount; s++)
+            {
+                physicalSublogMaxSequenceVector[s] = GetPhysicalSublogMax(s);
+                maxSequenceNumber = Math.Max(maxSequenceNumber, physicalSublogMaxSequenceVector[s]);
+            }
+            StringBuilder stringBuilder = new();
+            _ = stringBuilder.Append(maxSequenceNumber - physicalSublogMaxSequenceVector[0]);
+            for (var s = 1; s < sublogCount; s++)
+            {
+                _ = stringBuilder.Append(',');
+                _ = stringBuilder.Append(maxSequenceNumber - physicalSublogMaxSequenceVector[s]);
+            }
+            return stringBuilder.ToString();
         }
 
         /// <summary>
