@@ -114,7 +114,7 @@ Runs the specific custom transactional procedure indetified by its ID.
     WATCHMS key [key ...]
 ```
 
-Same as [WATCH](transactions.md#watch), but specifies that the key is only present in the main (raw string) store.
+Same as [WATCH](transactions.md#watch), but specifies that the key holds a raw string value.
 
 ---
 
@@ -126,7 +126,7 @@ Same as [WATCH](transactions.md#watch), but specifies that the key is only prese
     WATCHOS key [key ...]
 ```
 
-Same as [WATCH](transactions.md#watch), but specifies that the key is only present in the object store.
+Same as [WATCH](transactions.md#watch), but specifies that the key holds an object value.
 
 ---
 
@@ -141,6 +141,28 @@ Async interface to Garnet when accessing larger-than-memory data. See [this link
 This the equivalent of `MODULE LOAD` in the original RESP protocol. This loads a self-contained module in which the module 
 initialization code registers all relevant commands and transactions automatically. See [this page](../dev/custom-commands.md) 
 for details.
+
+---
+
+### EXPDELSCAN
+
+#### Syntax
+
+```bash
+    EXPDELSCAN [dbid]
+```
+
+Scans the mutable region of the store and deletes all expired keys on demand. This lets you trigger expired-key deletion yourself (for example, from your own scheduler tuned to your workload) rather than relying on the background scan.
+
+`dbid` selects the logical database to scan (default: `0`).
+
+This command is rejected when the background expired-key deletion scan is enabled, that is, when the `ExpiredKeyDeletionScanFrequencySecs` (`--expired-key-deletion-scan-freq`) option is greater than `0`.
+
+#### Resp Reply
+
+Array reply: two integers — the number of expired records deleted, followed by the number of records scanned.
+
+Error reply: `ERR Cannot execute EXPDELSCAN with background expired key deletion scan enabled`.
 
 ---
 

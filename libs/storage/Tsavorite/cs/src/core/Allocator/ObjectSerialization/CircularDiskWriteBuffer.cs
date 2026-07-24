@@ -159,7 +159,7 @@ namespace Tsavorite.core
 
             // Issue the last ObjectLog write for this partial flush.
             var buffer = GetCurrentBuffer();
-            Debug.Assert(IsAligned(alignedMainLogFlushAddress, (int)device.SectorSize), "alignedMainLogFlushAddress is not aligned to sector size");
+            Debug.Assert(IsAligned(alignedMainLogFlushAddress, (int)mainLogDevice.SectorSize), "alignedMainLogFlushAddress is not aligned to sector size");
             Debug.Assert(IsAligned(buffer.flushedUntilPosition, (int)device.SectorSize), $"flushedUntilPosition {buffer.flushedUntilPosition} is not sector-aligned");
             Debug.Assert(buffer.currentPosition >= buffer.flushedUntilPosition, $"buffer.currentPosition {buffer.currentPosition} must be >= buffer.flushedUntilPosition {buffer.flushedUntilPosition}");
 
@@ -208,7 +208,9 @@ namespace Tsavorite.core
         /// <summary>Flush to disk for a span that is not associated with a particular buffer, such as fully-interior spans of a large overflow key or value.</summary>
         internal unsafe void FlushToDevice(byte* spanPtr, int spanLength, DiskWriteCallbackContext writeCallbackContext)
         {
+            Debug.Assert(IsAligned((ulong)spanPtr, (int)device.SectorSize), "Span pointer is not aligned to sector size");
             Debug.Assert(IsAligned(spanLength, (int)device.SectorSize), "Span is not aligned to sector size");
+            Debug.Assert(IsAligned(filePosition.Offset, (int)device.SectorSize), "filePosition.Offset is not aligned to sector size");
 
             _ = Interlocked.Increment(ref numInFlightWrites);
             device.WriteAsync((IntPtr)spanPtr, filePosition.SegmentId, filePosition.Offset, (uint)spanLength, FlushToDeviceCallback, writeCallbackContext);
@@ -219,8 +221,9 @@ namespace Tsavorite.core
         /// that write is to main or object log.</summary>
         internal unsafe void FlushToMainLogDevice(byte* spanPtr, int spanLength, IDevice mainLogDevice, ulong alignedMainLogFlushAddress, DiskWriteCallbackContext writeCallbackContext)
         {
-            Debug.Assert(IsAligned(spanLength, (int)device.SectorSize), "Span is not aligned to sector size");
-            Debug.Assert(IsAligned(alignedMainLogFlushAddress, (int)device.SectorSize), "mainLogAlignedDeviceOffset is not aligned to sector size");
+            Debug.Assert(IsAligned((ulong)spanPtr, (int)mainLogDevice.SectorSize), "Span pointer is not aligned to sector size");
+            Debug.Assert(IsAligned(spanLength, (int)mainLogDevice.SectorSize), "Span is not aligned to sector size");
+            Debug.Assert(IsAligned(alignedMainLogFlushAddress, (int)mainLogDevice.SectorSize), "alignedMainLogFlushAddress is not aligned to sector size");
 
             _ = Interlocked.Increment(ref numInFlightWrites);
             mainLogDevice.WriteAsync((IntPtr)spanPtr, alignedMainLogFlushAddress, (uint)spanLength, FlushToDeviceCallback, writeCallbackContext);

@@ -108,9 +108,9 @@ namespace Tsavorite.test.recovery.objects
         }
 
         // After recovering an object store into a smaller memory budget (so snapshot object pages are evicted and their objects are read back from the
-        // main object-log that RecoverSnapshotPages copied them into), compact the log and truncate it, then verify every record is still readable.
-        // Compaction reads each live record's objects from the main object-log (validating the copied positions), and Truncate drops the now-stale main-log
-        // and object-log segments using each page header's lowest-object-log position (which the recovery flush set to the main object-log).
+        // main object-log that the recovery flush copied them into), compact the read-only (evicted) region and truncate it, then verify every record is
+        // still readable. Compaction reads each live evicted record's objects from the main object-log (validating the copied positions), and Truncate drops
+        // the now-stale main-log and object-log segments using each page header's lowest-object-log position (which the recovery flush set to the main object-log).
         [Test]
         [Category("TsavoriteKV"), Category("CheckpointRestore")]
         public async Task SnapshotRecoveryThenCompactTruncate(
@@ -150,8 +150,9 @@ namespace Tsavorite.test.recovery.objects
                 {
                     var bContext = session.BasicContext;
 
-                    // Compact the entire recovered region (reading each live record's objects from the main object-log), then truncate the stale segments.
-                    var compactUntil = session.Compact(store.Log.TailAddress, compactionType);
+                    // Compact the read-only (evicted) region up to SafeReadOnlyAddress — the resident recovered pages above it are the still-mutable snapshot
+                    // region and cannot be compacted — reading each live evicted record's objects from the main object-log, then truncate the stale segments.
+                    var compactUntil = session.Compact(store.Log.SafeReadOnlyAddress, compactionType);
                     store.Log.Truncate();
                     ClassicAssert.AreEqual(compactUntil, store.Log.BeginAddress, "BeginAddress should advance to compactUntil after Truncate");
 

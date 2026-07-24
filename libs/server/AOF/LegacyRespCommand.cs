@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Collections.Generic;
 using Garnet.common;
 
 namespace Garnet.server
@@ -65,6 +66,14 @@ namespace Garnet.server
         ];
 
         /// <summary>
+        /// v3 read-only/admin commands that have since been removed from <see cref="RespCommand"/> (for example,
+        /// folded into DEBUG as a subcommand). These were never persisted in the AOF, so their v3 numeric slot is
+        /// never read back and maps to <see cref="RespCommand.NONE"/>. Declared before <see cref="V3ToCurrent"/>
+        /// so it is initialized before <see cref="BuildMap"/> runs.
+        /// </summary>
+        private static readonly HashSet<string> RemovedNonPersistedV3Commands = new(StringComparer.Ordinal) { "PURGEBP" };
+
+        /// <summary>
         /// Lookup table: v3 numeric value -> current <see cref="RespCommand"/>. Index 0 (NONE) and any
         /// value outside the built-in range map to themselves.
         /// </summary>
@@ -79,6 +88,16 @@ namespace Garnet.server
             {
                 if (!Enum.TryParse<RespCommand>(V3Order[i], out var current))
                 {
+                    // A read-only/admin command that has since been removed from the enum (e.g. folded into DEBUG
+                    // as a subcommand). It was never persisted in the AOF (only write commands are), so its v3
+                    // numeric slot is never read back; map it to NONE. Removing a persisted (write) command is NOT
+                    // permitted here and still fails fast.
+                    if (RemovedNonPersistedV3Commands.Contains(V3Order[i]))
+                    {
+                        map[i + 1] = RespCommand.NONE;
+                        continue;
+                    }
+
                     throw new GarnetException(
                         $"v3 RespCommand '{V3Order[i]}' (legacy AOF value {i + 1}) no longer maps to a current RespCommand. " +
                         "Renaming or removing a persisted (write) command breaks v3 AOF compatibility; add an explicit mapping.");
