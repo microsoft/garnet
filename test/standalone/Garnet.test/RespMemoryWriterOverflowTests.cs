@@ -36,8 +36,8 @@ namespace Garnet.test
         public async Task HashAsync()
         {
             const string Key = nameof(HashAsync);
-            const int NumFields = 250_000;
-            const int FieldLength = 20_000;
+            const int NumFields = 60_000;
+            const int FieldLength = 40_000;
 
             using var redis = await ConnectionMultiplexer.ConnectAsync(TestUtils.GetConfig()).ConfigureAwait(false);
             var db = redis.GetDatabase();
@@ -66,7 +66,7 @@ namespace Garnet.test
         public async Task ListAsync()
         {
             const string Key = nameof(ListAsync);
-            const int NumElements = 250_000;
+            const int NumElements = 60_000;
             const int ElementLength = 40_000;
 
             using var redis = await ConnectionMultiplexer.ConnectAsync(TestUtils.GetConfig()).ConfigureAwait(false);
@@ -95,7 +95,7 @@ namespace Garnet.test
         public async Task SetAsync()
         {
             const string Key = nameof(SetAsync);
-            const int NumMembers = 250_000;
+            const int NumMembers = 60_000;
             const int MemberLength = 40_000;
 
             using var redis = await ConnectionMultiplexer.ConnectAsync(TestUtils.GetConfig()).ConfigureAwait(false);
@@ -126,7 +126,7 @@ namespace Garnet.test
         public async Task SortedSetAsync()
         {
             const string Key = nameof(SortedSetAsync);
-            const int NumMembers = 250_000;
+            const int NumMembers = 60_000;
             const int MemberLength = 40_000;
 
             using var redis = await ConnectionMultiplexer.ConnectAsync(TestUtils.GetConfig()).ConfigureAwait(false);
