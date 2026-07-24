@@ -3670,6 +3670,19 @@ namespace Garnet.test
             ClassicAssert.IsTrue(db.StringSet(key, value));
             ex = Assert.Throws<RedisServerException>(() => db.StringSetRange(key, -1, newValue));
             ClassicAssert.AreEqual(Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_OFFSETOUTOFRANGE), ex.Message);
+
+            // offset + value length beyond the max record size -> RedisServerException
+            // ("ERR string exceeds maximum allowed size (proto-max-bulk-len)"),
+            // instead of the storage layer throwing and the connection being dropped
+            ClassicAssert.IsTrue(db.KeyDelete(key));
+            ex = Assert.Throws<RedisServerException>(() => db.StringSetRange(key, 600_000_000, newValue));
+            ClassicAssert.AreEqual(Encoding.ASCII.GetString(CmdStrings.RESP_ERR_STRING_EXCEEDS_MAX_SIZE), ex.Message);
+
+            // the connection must still be usable after the rejected command above
+            ClassicAssert.IsTrue(db.StringSet(key, value));
+            resp = db.StringGet(key);
+            ClassicAssert.AreEqual(value, resp);
+            ClassicAssert.IsTrue(db.KeyDelete(key));
         }
 
         [Test]
