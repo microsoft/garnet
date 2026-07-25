@@ -194,6 +194,7 @@ To add a new Garnet server setting:
 - Central package version management via `Directory.Packages.props`
 - XML doc comments (`/// <summary>`) are strongly recommended on public methods, with `<param>` tags for each parameter; analyzer rules for missing docs are currently configured as suggestions (see `.editorconfig`)
 - Comment format: `// Comment starting with a capital letter` (one space after `//`)
+- Keep comments tight, factual, and to the point: describe what the code does and why, in the present tense. Don't narrate history, reference issues/PRs, or describe problems, bugs, or prior approaches.
 
 ### Performance Conventions
 
