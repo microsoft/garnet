@@ -31,6 +31,20 @@ namespace Garnet.server
         public readonly ReadOnlySpan<PinnedSpanByte> Parameters
             => session.parseState.Parameters;
 
+        // Explicitly implement these two IReadArgBatch members (rather than inheriting the interface
+        // defaults) so calls through the generic TBatch constraint bind to these struct methods directly
+        // instead of boxing this struct on every invocation. InitialIORecordSize is read once per key in
+        // the ContextReadWithPrefetch loop, so relying on the default would box once per key (e.g. 100
+        // boxes / ~4.8 KB for a 100-key MGET). Both return the same values as the interface defaults.
+
+        /// <inheritdoc/>
+        public readonly int InitialIORecordSize
+        => KVSettings.UseDefaultInitialIORecordSize;
+
+        /// <inheritdoc/>
+        public readonly ReadCopyOptions ReadCopyOptions
+        => default;
+
         private readonly bool HasGoneAsync
         => !runningStatus.IsEmpty;
 
