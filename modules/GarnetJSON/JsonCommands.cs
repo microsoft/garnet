@@ -112,11 +112,12 @@ namespace GarnetJSON
 
             var parseState = input.parseState;
 
-            var outputArr = new List<byte[]>();
             var isSuccess = false;
             ReadOnlySpan<byte> errorMessage = default;
+            List<byte[]> outputArr;
             if (parseState.Count == 0)
             {
+                outputArr = new List<byte[]>();
                 ReadOnlySpan<byte> path = default;
                 isSuccess = garnetJsonObject.TryGet(path, outputArr, out errorMessage);
             }
@@ -159,6 +160,15 @@ namespace GarnetJSON
                     }
                 }
 
+                // Root fast path: a single "$" with no formatting options serializes the whole document
+                // directly into the output, avoiding the List/byte[] allocations of the general path.
+                if (paths.Length == 1 && indent is null && newLine is null && space is null &&
+                    paths[0].ReadOnlySpan.Length == 1 && paths[0].ReadOnlySpan[0] == (byte)'$')
+                {
+                    return garnetJsonObject.TryGetRoot(ref writer);
+                }
+
+                outputArr = new List<byte[]>();
                 isSuccess = garnetJsonObject.TryGet(paths, outputArr, out errorMessage, indent, newLine, space);
             }
 
@@ -174,8 +184,12 @@ namespace GarnetJSON
             }
             else
             {
-                writer.Realloc(outputArr.Select(x => x.Length).Sum());
-                writer.WriteBulkString(outputArr);
+                var span = System.Runtime.InteropServices.CollectionsMarshal.AsSpan(outputArr);
+                var totalLen = 0;
+                foreach (var b in span)
+                    totalLen += b.Length;
+                writer.Realloc(totalLen);
+                writer.WriteBulkString(span, totalLen);
             }
 
             return true;

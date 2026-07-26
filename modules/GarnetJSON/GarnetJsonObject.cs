@@ -7,6 +7,7 @@ using System.Text;
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using Garnet.common;
 using Garnet.server;
 using GarnetJSON.JSONPath;
 using Tsavorite.core;
@@ -46,6 +47,14 @@ namespace GarnetJSON
 
         private static readonly JsonSerializerOptions IndentedJsonSerializerOptions =
             new() { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping, WriteIndented = true };
+
+        private static readonly JsonWriterOptions DefaultJsonWriterOptions =
+            new() { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
+
+        // Thread-static reusable buffers for the root-path GET fast path (TryGetRoot), so it serializes
+        // in-place without allocating a byte[] per call or a List to hold it.
+        [ThreadStatic] private static ArrayBufferWriter<byte>? rootGetBuffer;
+        [ThreadStatic] private static Utf8JsonWriter? rootGetWriter;
 
         private static readonly byte[] OpenBoxBracket = Encoding.UTF8.GetBytes("[");
         private static readonly byte[] CloseBoxBracket = Encoding.UTF8.GetBytes("]");
@@ -158,6 +167,37 @@ namespace GarnetJSON
         }
 
         /// <summary>
+        /// Fast path for the root ("$") GET with no formatting options: serializes the whole document,
+        /// wrapped in the JSONPath result array, directly into <paramref name="writer"/> as a RESP bulk
+        /// string. Reuses thread-static buffers, so it allocates nothing per call in steady state.
+        /// </summary>
+        public bool TryGetRoot(ref RespMemoryWriter writer)
+        {
+            if (rootNode is null)
+            {
+                writer.WriteNull();
+                return true;
+            }
+
+            var buffer = rootGetBuffer ??= new ArrayBufferWriter<byte>();
+            buffer.ResetWrittenCount();
+
+            buffer.GetSpan(1)[0] = (byte)'[';
+            buffer.Advance(1);
+
+            var jsonWriter = rootGetWriter ??= new Utf8JsonWriter(buffer, DefaultJsonWriterOptions);
+            jsonWriter.Reset(buffer);
+            rootNode.WriteTo(jsonWriter);
+            jsonWriter.Flush();
+
+            buffer.GetSpan(1)[0] = (byte)']';
+            buffer.Advance(1);
+
+            writer.WriteBulkString(buffer.WrittenSpan);
+            return true;
+        }
+
+        /// <summary>
         /// Tries to get the JSON value for the specified path and writes it to the output stream.
         /// System.Text.Json doesn't support customizing indentation, new line, and space github/runtime#111899, so for now if any of these are set, we will use the default indented serializer options
         /// </summary>
@@ -183,6 +223,19 @@ namespace GarnetJSON
                         indent is null && newLine is null && space is null
                             ? DefaultJsonSerializerOptions
                             : IndentedJsonSerializerOptions));
+                    return true;
+                }
+
+                // Root path ("$"): the whole document is the single JSONPath result, so serialize it
+                // directly (wrapped in the result array) and skip path-string + JSONPath evaluation.
+                if (path.Length == 1 && path[0] == (byte)'$')
+                {
+                    output.Add(OpenBoxBracket);
+                    output.Add(JsonSerializer.SerializeToUtf8Bytes(rootNode,
+                        indent is null && newLine is null && space is null
+                            ? DefaultJsonSerializerOptions
+                            : IndentedJsonSerializerOptions));
+                    output.Add(CloseBoxBracket);
                     return true;
                 }
 
