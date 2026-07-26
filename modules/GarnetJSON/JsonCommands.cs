@@ -185,11 +185,13 @@ namespace GarnetJSON
             else
             {
                 var span = System.Runtime.InteropServices.CollectionsMarshal.AsSpan(outputArr);
-                var totalLen = 0;
+                long totalLen = 0;
                 foreach (var b in span)
                     totalLen += b.Length;
-                writer.Realloc(totalLen);
-                writer.WriteBulkString(span, totalLen);
+                if (totalLen > int.MaxValue)
+                    return AbortWithErrorMessage(ref writer, "ERR JSON.GET result exceeds the maximum bulk string length"u8);
+                writer.Realloc((int)totalLen);
+                writer.WriteBulkString(span, (int)totalLen);
             }
 
             return true;

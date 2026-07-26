@@ -56,6 +56,11 @@ namespace GarnetJSON
         [ThreadStatic] private static ArrayBufferWriter<byte>? rootGetBuffer;
         [ThreadStatic] private static Utf8JsonWriter? rootGetWriter;
 
+        // Upper bound on the retained thread-static root-GET buffer. ArrayBufferWriter only grows, so a
+        // one-off large document is dropped afterwards instead of permanently inflating a long-lived
+        // session thread's buffer.
+        private const int MaxRetainedRootGetBufferBytes = 64 * 1024;
+
         private static readonly byte[] OpenBoxBracket = Encoding.UTF8.GetBytes("[");
         private static readonly byte[] CloseBoxBracket = Encoding.UTF8.GetBytes("]");
         private static readonly byte[] OpenCurlyBracket = Encoding.UTF8.GetBytes("{");
@@ -194,6 +199,15 @@ namespace GarnetJSON
             buffer.Advance(1);
 
             writer.WriteBulkString(buffer.WrittenSpan);
+
+            // Release the buffers if a large document grew them past the retention cap, so the peak
+            // capacity is not held for the life of the thread.
+            if (buffer.Capacity > MaxRetainedRootGetBufferBytes)
+            {
+                rootGetWriter.Dispose();
+                rootGetBuffer = null;
+                rootGetWriter = null;
+            }
             return true;
         }
 
