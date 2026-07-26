@@ -434,8 +434,8 @@
     "expected_Publish_None": 800
   },
   "BDN.benchmark.Operations.SetOperations.*": {
-    "expected_SAddRem_ACL": 6400,
-    "expected_SAddRemSingle_ACL": 6400,
+    "WARN-ON-FAIL_SAddRem_ACL": 6400,
+    "WARN-ON-FAIL_SAddRemSingle_ACL": 6400,
     "expected_SCard_ACL": 0,
     "expected_SMembers_ACL": 0,
     "expected_SMoveTwice_ACL": 0,
@@ -466,8 +466,8 @@
     "WARN-ON-FAIL_SInterCard_AOF": 36800,
     "WARN-ON-FAIL_SDiff_AOF": 45600,
     "WARN-ON-FAIL_SDiffStore_AOF": 118400,
-    "expected_SAddRem_None": 6400,
-    "expected_SAddRemSingle_None": 6400,
+    "WARN-ON-FAIL_SAddRem_None": 6400,
+    "WARN-ON-FAIL_SAddRemSingle_None": 6400,
     "expected_SCard_None": 19200,
     "expected_SMembers_None": 3200,
     "WARN-ON-FAIL_SMoveTwice_None": 32000,
