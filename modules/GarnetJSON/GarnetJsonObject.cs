@@ -51,12 +51,13 @@ namespace GarnetJSON
         private static readonly JsonWriterOptions DefaultJsonWriterOptions =
             new() { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
 
-        // Thread-static reusable buffers for the root-path GET fast path (TryGetRoot), so it serializes
-        // in-place without allocating a byte[] per call or a List to hold it.
+        // Thread-static reusable buffer/writer for the GET serialization fast paths (root TryGetRoot and
+        // the non-root TryGetToWriter), so they serialize straight into RESP output instead of allocating
+        // a byte[] per matched node plus a List to hold them.
         [ThreadStatic] private static ArrayBufferWriter<byte>? rootGetBuffer;
         [ThreadStatic] private static Utf8JsonWriter? rootGetWriter;
 
-        // Upper bound on the retained thread-static root-GET buffer. ArrayBufferWriter only grows, so a
+        // Upper bound on the retained thread-static GET buffer. ArrayBufferWriter only grows, so a
         // one-off large document is dropped afterwards instead of permanently inflating a long-lived
         // session thread's buffer.
         private const int MaxRetainedRootGetBufferBytes = 64 * 1024;
@@ -212,6 +213,63 @@ namespace GarnetJSON
         }
 
         /// <summary>
+        /// Fast path for a non-root GET with no formatting options: evaluates the JSONPath and writes the
+        /// matched nodes as a single RESP bulk string (a JSON array) straight into <paramref name="writer"/>,
+        /// serializing into a thread-static buffer instead of allocating a byte[] per matched node plus a
+        /// List to hold them. Output is byte-identical to the general <c>TryGet</c> path.
+        /// </summary>
+        public bool TryGetToWriter(ReadOnlySpan<byte> path, ref RespMemoryWriter writer, out byte[]? errorMessage)
+        {
+            errorMessage = null;
+            try
+            {
+                // A null root has no matches; the general path returns an empty output list, which the
+                // caller renders as RESP null.
+                if (rootNode is null)
+                {
+                    writer.WriteNull();
+                    return true;
+                }
+
+                var pathStr = Encoding.UTF8.GetString(path);
+                var result = rootNode.SelectNodes(pathStr);
+
+                var buffer = rootGetBuffer ??= new ArrayBufferWriter<byte>();
+                buffer.ResetWrittenCount();
+                var jsonWriter = rootGetWriter ??= new Utf8JsonWriter(buffer, DefaultJsonWriterOptions);
+                jsonWriter.Reset(buffer);
+
+                jsonWriter.WriteStartArray();
+                foreach (var item in result)
+                {
+                    if (item is null)
+                        jsonWriter.WriteNullValue();
+                    else
+                        item.WriteTo(jsonWriter);
+                }
+                jsonWriter.WriteEndArray();
+                jsonWriter.Flush();
+
+                writer.WriteBulkString(buffer.WrittenSpan);
+
+                // Release the buffers if a large result grew them past the retention cap, so the peak
+                // capacity is not held for the life of the thread.
+                if (buffer.Capacity > MaxRetainedRootGetBufferBytes)
+                {
+                    rootGetWriter.Dispose();
+                    rootGetBuffer = null;
+                    rootGetWriter = null;
+                }
+                return true;
+            }
+            catch (JsonException ex)
+            {
+                errorMessage = Encoding.UTF8.GetBytes(ex.Message);
+                return false;
+            }
+        }
+
+        /// <summary>
         /// Tries to get the JSON value for the specified path and writes it to the output stream.
         /// System.Text.Json doesn't support customizing indentation, new line, and space github/runtime#111899, so for now if any of these are set, we will use the default indented serializer options
         /// </summary>
@@ -262,9 +320,7 @@ namespace GarnetJSON
                 {
                     if (!isFirst)
                         output.Add(Comma);
-
                     isFirst = false;
-
                     output.Add(JsonSerializer.SerializeToUtf8Bytes(item,
                         indent is null && newLine is null && space is null
                             ? DefaultJsonSerializerOptions

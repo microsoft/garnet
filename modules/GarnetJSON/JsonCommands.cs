@@ -162,10 +162,19 @@ namespace GarnetJSON
 
                 // Root fast path: a single "$" with no formatting options serializes the whole document
                 // directly into the output, avoiding the List/byte[] allocations of the general path.
-                if (paths.Length == 1 && indent is null && newLine is null && space is null &&
-                    paths[0].ReadOnlySpan.Length == 1 && paths[0].ReadOnlySpan[0] == (byte)'$')
+                if (paths.Length == 1 && indent is null && newLine is null && space is null)
                 {
-                    return garnetJsonObject.TryGetRoot(ref writer);
+                    var singlePath = paths[0].ReadOnlySpan;
+
+                    // "$" is the whole document, so skip JSONPath evaluation entirely.
+                    if (singlePath.Length == 1 && singlePath[0] == (byte)'$')
+                        return garnetJsonObject.TryGetRoot(ref writer);
+
+                    // Other single paths: evaluate JSONPath and write the matched nodes straight to the
+                    // output buffer, avoiding the List<byte[]> (one byte[] per matched node) of the general path.
+                    if (!garnetJsonObject.TryGetToWriter(singlePath, ref writer, out var pathError))
+                        AbortWithErrorMessage(ref writer, pathError);
+                    return true;
                 }
 
                 outputArr = new List<byte[]>();
@@ -188,7 +197,7 @@ namespace GarnetJSON
                 long totalLen = 0;
                 foreach (var b in span)
                     totalLen += b.Length;
-                if (totalLen > int.MaxValue)
+                if (totalLen > Array.MaxLength)
                     return AbortWithErrorMessage(ref writer, "ERR JSON.GET result exceeds the maximum bulk string length"u8);
                 writer.Realloc((int)totalLen);
                 writer.WriteBulkString(span, (int)totalLen);
