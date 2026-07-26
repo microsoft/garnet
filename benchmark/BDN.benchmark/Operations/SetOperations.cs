@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System.Text;
 using BenchmarkDotNet.Attributes;
 using Embedded.server;
 
@@ -13,7 +14,6 @@ namespace BDN.benchmark.Operations
     public unsafe class SetOperations : OperationsBase
     {
         static ReadOnlySpan<byte> SADDREM => "*3\r\n$4\r\nSADD\r\n$4\r\nkey1\r\n$6\r\nmember\r\n*3\r\n$4\r\nSREM\r\n$4\r\nkey1\r\n$6\r\nmember\r\n"u8;
-        static ReadOnlySpan<byte> SADDREM_SINGLE => "*3\r\n$4\r\nSADD\r\n$4\r\nkey1\r\n$4\r\nelem\r\n*3\r\n$4\r\nSREM\r\n$4\r\nkey1\r\n$4\r\nelem\r\n"u8;
         static ReadOnlySpan<byte> SCARD => "*2\r\n$5\r\nSCARD\r\n$4\r\nkey2\r\n"u8;
         static ReadOnlySpan<byte> SMEMBERS => "*2\r\n$8\r\nSMEMBERS\r\n$4\r\nkey2\r\n"u8;
         static ReadOnlySpan<byte> SMOVE_TWICE => "*4\r\n$5\r\nSMOVE\r\n$4\r\nkey2\r\n$4\r\nkey3\r\n$1\r\na\r\n*4\r\n$5\r\nSMOVE\r\n$4\r\nkey3\r\n$4\r\nkey2\r\n$1\r\na\r\n"u8;
@@ -28,14 +28,28 @@ namespace BDN.benchmark.Operations
         static ReadOnlySpan<byte> SINTERCARD => "*4\r\n$10\r\nSINTERCARD\r\n$1\r\n2\r\n$4\r\nkey2\r\n$4\r\nkey3\r\n"u8;
         static ReadOnlySpan<byte> SDIFF => "*3\r\n$5\r\nSDIFF\r\n$4\r\nkey2\r\n$4\r\nkey3\r\n"u8;
         static ReadOnlySpan<byte> SDIFFSTORE => "*4\r\n$10\r\nSDIFFSTORE\r\n$4\r\ndest\r\n$4\r\nkey2\r\n$4\r\nkey3\r\n"u8;
-        Request sAddRem, sAddRemSingle, sCard, sMembers, sMoveTwice, sIsMember, sMIsMember, sRandMemberSingle, sScan, sUnion, sUnionStore,
+        Request sAddRem, sAddPopSingle, sCard, sMembers, sMoveTwice, sIsMember, sMIsMember, sRandMemberSingle, sScan, sUnion, sUnionStore,
             sInter, sInterStore, sInterCard, sDiff, sDiffStore;
+
+        // Distinct SADD member per op (pool >> set size) so a re-added member is always already
+        // popped and the set never shrinks; with the seeded keepers it never empties, so SPOP runs
+        // in-place instead of deleting and recreating the key.
+        static List<byte> BuildAddPopSingleBatch()
+        {
+            var sb = new StringBuilder();
+            for (var i = 0; i < batchSize; i++)
+            {
+                sb.Append($"*3\r\n$4\r\nSADD\r\n$4\r\nkey1\r\n$4\r\ne{i:D3}\r\n");
+                sb.Append("*2\r\n$4\r\nSPOP\r\n$4\r\nkey1\r\n");
+            }
+            return new List<byte>(Encoding.ASCII.GetBytes(sb.ToString()));
+        }
 
         public override void GlobalSetup()
         {
             base.GlobalSetup();
             SetupOperation(ref sAddRem, SADDREM);
-            SetupOperation(ref sAddRemSingle, SADDREM_SINGLE);
+            SetupOperation(ref sAddPopSingle, BuildAddPopSingleBatch());
             SetupOperation(ref sCard, SCARD);
             SetupOperation(ref sMembers, SMEMBERS);
             SetupOperation(ref sMoveTwice, SMOVE_TWICE);
@@ -55,16 +69,17 @@ namespace BDN.benchmark.Operations
             SlowConsumeMessage("*4\r\n$4\r\nSADD\r\n$4\r\nkey2\r\n$1\r\na\r\n$1\r\nb\r\n"u8);
             SlowConsumeMessage("*5\r\n$4\r\nSADD\r\n$4\r\nkey3\r\n$1\r\nb\r\n$1\r\nc\r\n$1\r\nd\r\n"u8);
 
-            // Seed key1 with a keeper so SADD/SREM operate on a persistent set that is never emptied,
-            // keeping the operations in-place instead of recreating the key each iteration.
-            SlowConsumeMessage("*3\r\n$4\r\nSADD\r\n$4\r\nkey1\r\n$6\r\nkeeper\r\n"u8);
+            // Seed key1 with several keepers so SADD/SREM (SAddRem) and SADD/SPOP (SAddPopSingle) operate
+            // on a persistent set that never empties, keeping the operations in-place instead of recreating
+            // the key each iteration.
+            SlowConsumeMessage("*6\r\n$4\r\nSADD\r\n$4\r\nkey1\r\n$4\r\nkpr0\r\n$4\r\nkpr1\r\n$4\r\nkpr2\r\n$4\r\nkpr3\r\n"u8);
         }
 
         [Benchmark]
         public void SAddRem() => Send(sAddRem);
 
         [Benchmark]
-        public void SAddRemSingle() => Send(sAddRemSingle);
+        public void SAddPopSingle() => Send(sAddPopSingle);
 
         [Benchmark]
         public void SCard() => Send(sCard);
