@@ -77,21 +77,7 @@ namespace Garnet.server
         public ReadOnlySpan<byte> InputSpan => new(input, 0, inputOffset);
 
         /// <summary>Wrap the streamed object value chunks as a <see cref="ReadOnlySequence{T}"/> (no data copy).</summary>
-        public ReadOnlySequence<byte> GetValueSequence()
-        {
-            if (valueChunks is null || valueChunks.Count == 0)
-                return ReadOnlySequence<byte>.Empty;
-            // Common case: a single chunk holds the whole value — wrap that buffer directly, with no ChunkSegment allocation.
-            if (valueChunks.Count == 1)
-                return new ReadOnlySequence<byte>(valueChunks[0]);
-            ChunkSegment first = null, last = null;
-            foreach (var chunk in valueChunks)
-            {
-                last = new ChunkSegment(chunk, last);
-                first ??= last;
-            }
-            return new ReadOnlySequence<byte>(first, 0, last, last.Memory.Length);
-        }
+        public ReadOnlySequence<byte> GetValueSequence() => ReadOnlySequenceBuilder.FromChunks(valueChunks);
 
         /// <summary>Verify each component's accumulated length matches the chunk header's declared full length.</summary>
         public void Verify()
@@ -125,19 +111,6 @@ namespace Garnet.server
             }
             isComplete = true;
             return false;
-        }
-
-        sealed class ChunkSegment : ReadOnlySequenceSegment<byte>
-        {
-            public ChunkSegment(byte[] array, ChunkSegment previous)
-            {
-                Memory = array;
-                if (previous is not null)
-                {
-                    previous.Next = this;
-                    RunningIndex = previous.RunningIndex + previous.Memory.Length;
-                }
-            }
         }
     }
 

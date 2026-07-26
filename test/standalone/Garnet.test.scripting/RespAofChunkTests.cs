@@ -1,6 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
@@ -24,10 +25,12 @@ namespace Garnet.test
         int aofPhysicalSublogCount = 1;
         string pageSize = "512k";
         string aofPageSize = "1m";
+        string memorySize = "256m";
+        string aofMemorySize = "64m";
 
         GarnetServer CreateServer(bool tryRecover)
             => TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableAOF: true, tryRecover: tryRecover,
-                memorySize: "256m", pageSize: pageSize, aofPageSize: aofPageSize, aofMemorySize: "64m",
+                memorySize: memorySize, pageSize: pageSize, aofPageSize: aofPageSize, aofMemorySize: aofMemorySize,
                 replayTaskCount: replayTaskCount, aofPhysicalSublogCount: aofPhysicalSublogCount);
 
         [SetUp]
@@ -39,6 +42,8 @@ namespace Garnet.test
             aofPhysicalSublogCount = 1;
             pageSize = "512k";
             aofPageSize = "1m";
+            memorySize = "256m";
+            aofMemorySize = "64m";
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
             server = CreateServer(tryRecover: false);
             server.Start();
@@ -169,6 +174,66 @@ namespace Garnet.test
             }
         }
 
+        // Deterministic field value so we can verify a huge object without holding every value in memory.
+        static byte[] MakeFieldBytes(int fieldIndex, int size)
+        {
+            var v = new byte[size];
+            var seed = (byte)(fieldIndex * 131 + 7);
+            for (var j = 0; j < size; j++)
+                v[j] = (byte)(seed + j);
+            return v;
+        }
+
+        [Test]
+        [Explicit("Heavy: builds up to a >6 GB object (needs ~20 GB RAM); run on demand. Exercises AOF object chunking across and past the 2 GB (int-overflow) boundary at several sizes.")]
+        public async Task AofHugeObjectChunkRecoverTest(
+            [Values(512L * 1024 * 1024, 1024L * 1024 * 1024, 2048L * 1024 * 1024, 6L * 1024 * 1024 * 1024)] long targetBytes)
+        {
+            // A hash of ~targetBytes exercises the AOF object-chunking length arithmetic at/around/beyond 2 GB. A rename
+            // re-upserts the whole object (ObjectStoreUpsert) as one huge entry, chunked across pages and reconstructed on recovery.
+            const int fieldSize = 16 * 1024 * 1024;              // 16 MB per field
+            var fieldCount = (int)(targetBytes / fieldSize);
+            const string key1 = "hugehash1";
+            const string key2 = "hugehash2";
+
+            // Generous main-store memory so the object stays resident; the main-store page and AOF in-memory region scale
+            // with the object (pageSize = targetBytes/128, aofMemorySize = targetBytes/4) so a proportional number of pages
+            // is exercised. Sizes are raw byte counts; the allocator rounds each down to the previous power of 2.
+            server.Dispose(false);
+            memorySize = "16g";
+            pageSize = (targetBytes / 128).ToString();
+            aofPageSize = "64m";
+            aofMemorySize = (targetBytes / 4).ToString();
+            server = CreateServer(tryRecover: false);
+            server.Start();
+
+            var config = TestUtils.GetConfig();
+            config.SyncTimeout = (int)TimeSpan.FromMinutes(10).TotalMilliseconds;
+
+            using (var redis = ConnectionMultiplexer.Connect(config))
+            {
+                var db = redis.GetDatabase(0);
+                for (var i = 0; i < fieldCount; i++)
+                    db.HashSet(key1, "f" + i, MakeFieldBytes(i, fieldSize));
+                ClassicAssert.IsTrue(db.KeyRename(key1, key2));
+                ClassicAssert.AreEqual(fieldCount, db.HashLength(key2));
+            }
+
+            _ = await server.Store.CommitAOFAsync(default);
+            RestartForRecovery();
+
+            using (var redis = ConnectionMultiplexer.Connect(config))
+            {
+                var db = redis.GetDatabase(0);
+                ClassicAssert.AreEqual(fieldCount, db.HashLength(key2));
+                for (var i = 0; i < fieldCount; i++)
+                {
+                    var got = (byte[])db.HashGet(key2, "f" + i);
+                    ClassicAssert.AreEqual(MakeFieldBytes(i, fieldSize), got, $"field f{i}");
+                }
+            }
+        }
+
         [Test]
         public async Task AofLargeSortedSetChunkRecoverTest()
         {
@@ -292,7 +357,7 @@ namespace Garnet.test
             {
                 var db = redis.GetDatabase(0);
                 var tasks = Enumerable.Range(0, writers)
-                    .Select(i => Task.Run(() => db.StringSet("ilkey" + i, expected[i])))
+                    .Select(i => db.StringSetAsync("ilkey" + i, expected[i]))
                     .ToArray();
                 await Task.WhenAll(tasks);
             }
@@ -324,15 +389,9 @@ namespace Garnet.test
                 var db = redis.GetDatabase(0);
                 var tasks = new System.Collections.Generic.List<Task>();
                 for (var i = 0; i < bigWriters; i++)
-                {
-                    var idx = i;
-                    tasks.Add(Task.Run(() => db.StringSet("big" + idx, big[idx])));
-                }
+                    tasks.Add(db.StringSetAsync("big" + i, big[i]));
                 for (var i = 0; i < smallKeys; i++)
-                {
-                    var idx = i;
-                    tasks.Add(Task.Run(() => db.StringSet("small" + idx, "v" + idx)));
-                }
+                    tasks.Add(db.StringSetAsync("small" + i, "v" + i));
                 await Task.WhenAll(tasks);
             }
 

@@ -589,17 +589,20 @@ namespace Garnet.cluster
                         chunkedRecordReassembler ??= new();
                         if (chunkedRecordReassembler.Append(chunkSpan, moreChunksFollow))
                         {
-                            var record = chunkedRecordReassembler.Record;
-                            fixed (byte* recordPtr = record)
+                            var isObject = CompleteChunkedRecord(storeWrapper, out var contiguous, out var header, out var valueObject);
+                            chunkedRecordReassembler.Reset();
+                            var recordBytes = isObject ? header : contiguous;
+                            fixed (byte* recordPtr = recordBytes)
                             {
-                                diskLogRecord = DiskLogRecord.DeserializeChunked(PinnedSpanByte.FromPinnedPointer(recordPtr, record.Length),
-                                    storeWrapper.GarnetObjectSerializer, transientObjectIdMap, storeWrapper.storeFunctions);
+                                var recordSpan = PinnedSpanByte.FromPinnedPointer(recordPtr, recordBytes.Length);
+                                diskLogRecord = isObject
+                                    ? DiskLogRecord.DeserializeChunkedObject(recordSpan, valueObject, transientObjectIdMap)
+                                    : DiskLogRecord.DeserializeChunked(recordSpan, storeWrapper.GarnetObjectSerializer, transientObjectIdMap, storeWrapper.storeFunctions);
                                 _ = basicGarnetApi.SET(in diskLogRecord);
                                 storeWrapper.storeFunctions.OnDisposeDiskRecord(ref diskLogRecord, DisposeReason.DeserializedFromDisk);
                                 diskLogRecord.Dispose();
                                 diskLogRecord = default; // prevent double-trigger in catch
                             }
-                            chunkedRecordReassembler.Reset();
                         }
                     }
                     else

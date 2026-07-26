@@ -1013,6 +1013,67 @@ namespace Garnet.test.cluster
             context.logger.LogDebug("Done ClusterMigrateLargeValueChunked");
         }
 
+        // Deterministic field value so a huge hash can be verified without holding every value in memory.
+        static byte[] MakeHashFieldBytes(int fieldIndex, int size)
+        {
+            var v = new byte[size];
+            var seed = (byte)(fieldIndex * 131 + 7);
+            for (var j = 0; j < size; j++)
+                v[j] = (byte)(seed + j);
+            return v;
+        }
+
+        [Test, Order(101)]
+        [Category("CLUSTER")]
+        [Explicit("Heavy: builds up to a >6 GB hash object (needs ~20 GB RAM); run on demand. Exercises migration object chunking past the 2 GB (int-overflow) boundary via the in-epoch segmented serialize.")]
+        public void ClusterMigrateHugeObjectChunked(
+            [Values(1024L * 1024 * 1024, 6L * 1024 * 1024 * 1024)] long targetBytes)
+        {
+            // Migrate a single large hash whose serialized form exceeds the send buffer (and, at 6 GB, int.MaxValue). The object
+            // value is serialized in-epoch into segments and sent as ChunkedLogRecord chunks; the target reassembles the object
+            // via a ReadOnlySequence.
+            const int fieldSize = 16 * 1024 * 1024;              // 16 MB per field
+            var fieldCount = (int)(targetBytes / fieldSize);
+
+            context.CreateInstances(defaultShards, useTLS: UseTLS, memorySize: "16g");
+            context.CreateConnection(useTLS: UseTLS);
+            _ = context.clusterTestUtils.SimpleSetupCluster(logger: context.logger);
+
+            var sourceNodeIndex = 1;
+            var targetNodeIndex = 2;
+            var sourceNodeId = context.clusterTestUtils.GetNodeIdFromNode(sourceNodeIndex, context.logger);
+            var targetNodeId = context.clusterTestUtils.GetNodeIdFromNode(targetNodeIndex, context.logger);
+
+            var key = "{abc}hugehash";
+            var slot = ClusterTestUtils.HashSlot(Encoding.ASCII.GetBytes(key));
+            ClassicAssert.AreEqual(7638, slot);
+
+            // Build the hash on the source (cluster routes by key slot).
+            var db = context.clusterTestUtils.GetDatabase();
+            for (var i = 0; i < fieldCount; i++)
+                db.HashSet(key, "f" + i, MakeHashFieldBytes(i, fieldSize));
+            ClassicAssert.AreEqual(fieldCount, db.HashLength(key));
+
+            // Migrate the slot source -> target.
+            ClassicAssert.AreEqual("OK", context.clusterTestUtils.SetSlot(targetNodeIndex, slot, "IMPORTING", sourceNodeId, logger: context.logger));
+            ClassicAssert.AreEqual("OK", context.clusterTestUtils.SetSlot(sourceNodeIndex, slot, "MIGRATING", targetNodeId, logger: context.logger));
+
+            var keysInSlot = context.clusterTestUtils.GetKeysInSlot(sourceNodeIndex, slot, 1, context.logger);
+            context.clusterTestUtils.MigrateKeys(context.clusterTestUtils.GetEndPoint(sourceNodeIndex), context.clusterTestUtils.GetEndPoint(targetNodeIndex), keysInSlot, context.logger);
+
+            ClassicAssert.AreEqual("OK", context.clusterTestUtils.SetSlot(targetNodeIndex, slot, "NODE", targetNodeId, logger: context.logger));
+            context.clusterTestUtils.BumpEpoch(targetNodeIndex, waitForSync: true, logger: context.logger);
+            ClassicAssert.AreEqual("OK", context.clusterTestUtils.SetSlot(sourceNodeIndex, slot, "NODE", targetNodeId, logger: context.logger));
+            context.clusterTestUtils.BumpEpoch(sourceNodeIndex, waitForSync: true, logger: context.logger);
+
+            // Verify each field on the target (reads route to the new slot owner).
+            ClassicAssert.AreEqual(fieldCount, db.HashLength(key));
+            for (var i = 0; i < fieldCount; i++)
+                ClassicAssert.AreEqual(MakeHashFieldBytes(i, fieldSize), (byte[])db.HashGet(key, "f" + i), $"field f{i}");
+
+            context.clusterTestUtils.WaitForMigrationCleanup(logger: context.logger);
+        }
+
         [Test, Order(10)]
         [Category("CLUSTER")]
         public void ClusterSimpleMigrateKeysWithObjects()

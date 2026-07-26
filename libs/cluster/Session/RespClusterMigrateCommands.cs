@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Buffers;
 using System.Diagnostics;
 using System.Threading.Tasks;
 using Garnet.client;
@@ -19,6 +20,38 @@ namespace Garnet.cluster
 
         // Per-connection reassembly state for MigrationRecordSpanType.ChunkedLogRecord records whose chunks may span commands.
         ChunkedRecordReassembler chunkedRecordReassembler;
+
+        /// <summary>
+        /// Complete a reassembled <see cref="MigrationRecordSpanType.ChunkedLogRecord"/>. A non-inline object value is streamed
+        /// from a <see cref="System.Buffers.ReadOnlySequence{T}"/> and deserialized with the object serializer (so it can exceed
+        /// 2 GB), returned pre-deserialized alongside the small inline+key header; every other record is returned as one
+        /// contiguous buffer. Returns true when the record has a streamed object value.
+        /// </summary>
+        unsafe bool CompleteChunkedRecord(StoreWrapper storeWrapper, out byte[] contiguous, out byte[] header, out IHeapObject valueObject)
+        {
+            var sequence = chunkedRecordReassembler.AsSequence();
+
+            // Peek a prefix covering the inline portion to learn whether the object value must be streamed and where it starts.
+            Span<byte> prefix = stackalloc byte[256];
+            var prefixLen = (int)Math.Min(prefix.Length, chunkedRecordReassembler.Length);
+            sequence.Slice(0, prefixLen).CopyTo(prefix);
+            var objectValueStart = DiskLogRecord.GetChunkedObjectValueStart(prefix[..prefixLen], out var isObjectRecord);
+
+            if (!isObjectRecord)
+            {
+                // Inline or overflow-value record (<= 2 GB): reassemble contiguously for the standard deserialize.
+                contiguous = sequence.ToArray();
+                header = null;
+                valueObject = null;
+                return false;
+            }
+
+            // Object value (possibly > 2 GB): keep the small inline+key header contiguous; stream the object value from the tail.
+            header = sequence.Slice(0, objectValueStart).ToArray();
+            valueObject = (IHeapObject)storeWrapper.GarnetObjectSerializer.Deserialize(sequence.Slice(objectValueStart));
+            contiguous = null;
+            return true;
+        }
 
         /// <summary>
         /// Logging of migrate session status
@@ -154,11 +187,15 @@ namespace Garnet.cluster
                                     chunkedRecordReassembler ??= new();
                                     if (chunkedRecordReassembler.Append(chunkSpan, moreChunksFollow))
                                     {
-                                        var record = chunkedRecordReassembler.Record;
-                                        fixed (byte* recordPtr = record)
+                                        var isObject = CompleteChunkedRecord(storeWrapper, out var contiguous, out var header, out var valueObject);
+                                        chunkedRecordReassembler.Reset();
+                                        var recordBytes = isObject ? header : contiguous;
+                                        fixed (byte* recordPtr = recordBytes)
                                         {
-                                            diskLogRecord = DiskLogRecord.DeserializeChunked(PinnedSpanByte.FromPinnedPointer(recordPtr, record.Length),
-                                                storeWrapper.GarnetObjectSerializer, transientObjectIdMap, storeWrapper.storeFunctions);
+                                            var recordSpan = PinnedSpanByte.FromPinnedPointer(recordPtr, recordBytes.Length);
+                                            diskLogRecord = isObject
+                                                ? DiskLogRecord.DeserializeChunkedObject(recordSpan, valueObject, transientObjectIdMap)
+                                                : DiskLogRecord.DeserializeChunked(recordSpan, storeWrapper.GarnetObjectSerializer, transientObjectIdMap, storeWrapper.storeFunctions);
 
                                             var slot = HashSlotUtils.HashSlot(diskLogRecord.Key);
                                             if (!currentConfig.IsImportingSlot(slot)) // Slot is not in importing state
@@ -177,7 +214,6 @@ namespace Garnet.cluster
                                             diskLogRecord.Dispose();
                                             diskLogRecord = default; // prevent double-trigger in finally
                                         }
-                                        chunkedRecordReassembler.Reset();
                                     }
 
                                     i++;

@@ -95,6 +95,55 @@ namespace Garnet.test.cluster
 
         }
 
+        // Deterministic field value so a huge hash can be verified without holding every value in memory.
+        static byte[] MakeHashFieldBytes(int fieldIndex, int size)
+        {
+            var v = new byte[size];
+            var seed = (byte)(fieldIndex * 131 + 7);
+            for (var j = 0; j < size; j++)
+                v[j] = (byte)(seed + j);
+            return v;
+        }
+
+        [Test, Order(101)]
+        [Category("REPLICATION")]
+        [Explicit("Heavy: builds up to a >6 GB hash object (needs ~20 GB RAM); run on demand. Exercises diskless-sync object streaming past the 2 GB (int-overflow) boundary.")]
+        public void ClusterDisklessSyncHugeObjectChunked(
+            [Values(1024L * 1024 * 1024, 6L * 1024 * 1024 * 1024)] long targetBytes)
+        {
+            const int fieldSize = 16 * 1024 * 1024;              // 16 MB per field
+            var fieldCount = (int)(targetBytes / fieldSize);
+            var nodes_count = 2;
+            var primaryIndex = 0;
+            var replicaIndex = 1;
+            context.CreateInstances(nodes_count, disableObjects: false, enableAOF: true, useTLS: useTLS, enableDisklessSync: true,
+                timeout: timeout, sublogCount: sublogCount, memorySize: "16g", AofPageSize: "64m", AofMemorySize: "256m");
+            context.CreateConnection(useTLS: useTLS);
+
+            _ = context.clusterTestUtils.AddDelSlotsRange(primaryIndex, [(0, 16383)], addslot: true, logger: context.logger);
+            context.clusterTestUtils.SetConfigEpoch(primaryIndex, primaryIndex + 1, logger: context.logger);
+            context.clusterTestUtils.SetConfigEpoch(replicaIndex, replicaIndex + 1, logger: context.logger);
+            context.clusterTestUtils.Meet(primaryIndex, replicaIndex, logger: context.logger);
+            context.clusterTestUtils.WaitUntilNodeIsKnown(primaryIndex, replicaIndex, logger: context.logger);
+
+            // Build a large hash on the primary (a single object far larger than the send buffer, and at 6 GB past int.MaxValue).
+            var key = "hugehash";
+            var db = context.clusterTestUtils.GetDatabase();
+            for (var i = 0; i < fieldCount; i++)
+                db.HashSet(key, "f" + i, MakeHashFieldBytes(i, fieldSize));
+            ClassicAssert.AreEqual(fieldCount, db.HashLength(key));
+
+            // Full diskless sync streams the object to the replica as chunks.
+            _ = context.clusterTestUtils.ClusterReplicate(replicaNodeIndex: replicaIndex, primaryNodeIndex: primaryIndex, logger: context.logger);
+            context.clusterTestUtils.WaitForReplicaAofSync(primaryIndex, replicaIndex, logger: context.logger);
+
+            // Promote the replica so routed reads hit it, then verify it received the whole object.
+            Failover(replicaIndex);
+            ClassicAssert.AreEqual(fieldCount, db.HashLength(key));
+            for (var i = 0; i < fieldCount; i++)
+                ClassicAssert.AreEqual(MakeHashFieldBytes(i, fieldSize), (byte[])db.HashGet(key, "f" + i), $"field f{i}");
+        }
+
         /// <summary>
         /// Attach empty replica after primary has been populated with some data
         /// </summary>

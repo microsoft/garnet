@@ -2,6 +2,9 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Buffers;
+using System.Collections.Generic;
+using Garnet.common;
 
 namespace Garnet.cluster
 {
@@ -11,28 +14,40 @@ namespace Garnet.cluster
     /// the receiver appends each chunk's payload here until the final chunk (its continuation flag clear), then deserializes the
     /// reassembled record. One instance is held per connection because a record's chunks may span multiple commands.
     /// </summary>
+    /// <remarks>
+    /// Chunks are kept as a list of buffers (not copied into one contiguous array) and exposed as a <see cref="ReadOnlySequence{T}"/>
+    /// via the shared <see cref="Garnet.common.ReadOnlySequenceBuilder"/> (as the AOF reader's <c>ChunkedAccumulator.GetValueSequence</c>
+    /// does): this lets an object value exceed 2 GB (the max length of a single <c>byte[]</c>) and be deserialized as a stream with
+    /// no giant contiguous copy.
+    /// </remarks>
     internal sealed class ChunkedRecordReassembler
     {
-        byte[] buffer = new byte[1024];
-        int length;
+        readonly List<byte[]> chunks = [];
+        long length;
 
         /// <summary>
-        /// Append one chunk's payload. Returns true when the record is complete (<paramref name="moreChunksFollow"/> is false),
-        /// after which <see cref="Record"/> is the reassembled record and the caller must <see cref="Reset"/> before the next record.
+        /// Append one chunk's payload (copied into an owned buffer). Returns true when the record is complete
+        /// (<paramref name="moreChunksFollow"/> is false), after which <see cref="AsSequence"/> is the reassembled record and the
+        /// caller must <see cref="Reset"/> before the next record.
         /// </summary>
         public bool Append(ReadOnlySpan<byte> chunk, bool moreChunksFollow)
         {
-            if (length + chunk.Length > buffer.Length)
-                Array.Resize(ref buffer, Math.Max(length + chunk.Length, buffer.Length * 2));
-            chunk.CopyTo(buffer.AsSpan(length));
+            chunks.Add(chunk.ToArray());
             length += chunk.Length;
             return !moreChunksFollow;
         }
 
-        /// <summary>The reassembled record bytes (valid once <see cref="Append"/> returns true).</summary>
-        public ReadOnlySpan<byte> Record => new(buffer, 0, length);
+        /// <summary>Total reassembled length (may exceed <see cref="int.MaxValue"/>).</summary>
+        public long Length => length;
 
-        /// <summary>Reset for the next record (keeps the buffer for reuse).</summary>
-        public void Reset() => length = 0;
+        /// <summary>The reassembled record bytes as a sequence (valid once <see cref="Append"/> returns true).</summary>
+        public ReadOnlySequence<byte> AsSequence() => ReadOnlySequenceBuilder.FromChunks(chunks);
+
+        /// <summary>Reset for the next record (keeps the buffer-list capacity for reuse).</summary>
+        public void Reset()
+        {
+            chunks.Clear();
+            length = 0;
+        }
     }
 }
