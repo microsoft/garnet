@@ -93,8 +93,10 @@ public class BaseConfig : ManualConfig
         _ = WithOrderer(new BDN.benchmark.NamespaceTypeOrderer());
         _ = AddColumn(CategoriesColumn.Default);
 
-        // Server GC with blocking (non-concurrent) collections keeps MemoryDiagnoser's process-wide
-        // allocation measurement deterministic across benchmark iterations.
+        // Server GC (blocking, non-concurrent) matches production for the latency numbers. Its larger
+        // allocation quantum can still intermittently inflate MemoryDiagnoser (notably on .NET 10), so
+        // object-store allocation gates are warn-only. A dedicated Workstation-GC job would measure
+        // allocation deterministically and allow hard gates (follow-up).
         var baseJob = Job.Default.WithGcServer(true).WithGcConcurrent(false);
 
         Net8BaseJob = baseJob
