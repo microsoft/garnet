@@ -13,7 +13,7 @@ namespace BDN.benchmark.Operations
     public unsafe class SetOperations : OperationsBase
     {
         static ReadOnlySpan<byte> SADDREM => "*3\r\n$4\r\nSADD\r\n$4\r\nkey1\r\n$6\r\nmember\r\n*3\r\n$4\r\nSREM\r\n$4\r\nkey1\r\n$6\r\nmember\r\n"u8;
-        static ReadOnlySpan<byte> SADDPOP_SINGLE => "*3\r\n$4\r\nSADD\r\n$4\r\nkey1\r\n$6\r\nmember\r\n*2\r\n$4\r\nSPOP\r\n$4\r\nkey1\r\n"u8;
+        static ReadOnlySpan<byte> SADDREM_SINGLE => "*3\r\n$4\r\nSADD\r\n$4\r\nkey1\r\n$4\r\nelem\r\n*3\r\n$4\r\nSREM\r\n$4\r\nkey1\r\n$4\r\nelem\r\n"u8;
         static ReadOnlySpan<byte> SCARD => "*2\r\n$5\r\nSCARD\r\n$4\r\nkey2\r\n"u8;
         static ReadOnlySpan<byte> SMEMBERS => "*2\r\n$8\r\nSMEMBERS\r\n$4\r\nkey2\r\n"u8;
         static ReadOnlySpan<byte> SMOVE_TWICE => "*4\r\n$5\r\nSMOVE\r\n$4\r\nkey2\r\n$4\r\nkey3\r\n$1\r\na\r\n*4\r\n$5\r\nSMOVE\r\n$4\r\nkey3\r\n$4\r\nkey2\r\n$1\r\na\r\n"u8;
@@ -28,14 +28,14 @@ namespace BDN.benchmark.Operations
         static ReadOnlySpan<byte> SINTERCARD => "*4\r\n$10\r\nSINTERCARD\r\n$1\r\n2\r\n$4\r\nkey2\r\n$4\r\nkey3\r\n"u8;
         static ReadOnlySpan<byte> SDIFF => "*3\r\n$5\r\nSDIFF\r\n$4\r\nkey2\r\n$4\r\nkey3\r\n"u8;
         static ReadOnlySpan<byte> SDIFFSTORE => "*4\r\n$10\r\nSDIFFSTORE\r\n$4\r\ndest\r\n$4\r\nkey2\r\n$4\r\nkey3\r\n"u8;
-        Request sAddRem, sAddPopSingle, sCard, sMembers, sMoveTwice, sIsMember, sMIsMember, sRandMemberSingle, sScan, sUnion, sUnionStore,
+        Request sAddRem, sAddRemSingle, sCard, sMembers, sMoveTwice, sIsMember, sMIsMember, sRandMemberSingle, sScan, sUnion, sUnionStore,
             sInter, sInterStore, sInterCard, sDiff, sDiffStore;
 
         public override void GlobalSetup()
         {
             base.GlobalSetup();
             SetupOperation(ref sAddRem, SADDREM);
-            SetupOperation(ref sAddPopSingle, SADDPOP_SINGLE);
+            SetupOperation(ref sAddRemSingle, SADDREM_SINGLE);
             SetupOperation(ref sCard, SCARD);
             SetupOperation(ref sMembers, SMEMBERS);
             SetupOperation(ref sMoveTwice, SMOVE_TWICE);
@@ -54,13 +54,17 @@ namespace BDN.benchmark.Operations
             // Pre-populate data
             SlowConsumeMessage("*4\r\n$4\r\nSADD\r\n$4\r\nkey2\r\n$1\r\na\r\n$1\r\nb\r\n"u8);
             SlowConsumeMessage("*5\r\n$4\r\nSADD\r\n$4\r\nkey3\r\n$1\r\nb\r\n$1\r\nc\r\n$1\r\nd\r\n"u8);
+
+            // Seed key1 with a keeper so SADD/SREM operate on a persistent set that is never emptied,
+            // keeping the operations in-place instead of recreating the key each iteration.
+            SlowConsumeMessage("*3\r\n$4\r\nSADD\r\n$4\r\nkey1\r\n$6\r\nkeeper\r\n"u8);
         }
 
         [Benchmark]
         public void SAddRem() => Send(sAddRem);
 
         [Benchmark]
-        public void SAddPopSingle() => Send(sAddPopSingle);
+        public void SAddRemSingle() => Send(sAddRemSingle);
 
         [Benchmark]
         public void SCard() => Send(sCard);

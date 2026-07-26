@@ -93,7 +93,9 @@ public class BaseConfig : ManualConfig
         _ = WithOrderer(new BDN.benchmark.NamespaceTypeOrderer());
         _ = AddColumn(CategoriesColumn.Default);
 
-        var baseJob = Job.Default.WithGcServer(true);
+        // Server GC with blocking (non-concurrent) collections keeps MemoryDiagnoser's process-wide
+        // allocation measurement deterministic across benchmark iterations.
+        var baseJob = Job.Default.WithGcServer(true).WithGcConcurrent(false);
 
         Net8BaseJob = baseJob
             .WithRuntime(CoreRuntime.Core80)
