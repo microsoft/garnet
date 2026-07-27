@@ -22,17 +22,17 @@ namespace BDN.benchmark.Operations
         static ReadOnlySpan<byte> ZINTERCARD => "*4\r\n$10\r\nZINTERCARD\r\n$1\r\n2\r\n$1\r\nc\r\n$1\r\nh\r\n"u8;
         static ReadOnlySpan<byte> ZINTERSTORE => "*5\r\n$11\r\nZINTERSTORE\r\n$4\r\ndest\r\n$1\r\n2\r\n$1\r\nc\r\n$1\r\nh\r\n"u8;
         static ReadOnlySpan<byte> ZLEXCOUNT => "*4\r\n$9\r\nZLEXCOUNT\r\n$1\r\nc\r\n$1\r\n-\r\n$1\r\n+\r\n"u8;
-        static ReadOnlySpan<byte> ZMPOP => "*4\r\n$5\r\nZMPOP\r\n$1\r\n1\r\n$1\r\nc\r\n$3\r\nMIN\r\n*4\r\n$4\r\nZADD\r\n$1\r\nc\r\n$1\r\n1\r\n$1\r\nd\r\n"u8;
+        static ReadOnlySpan<byte> ZMPOP => "*4\r\n$5\r\nZMPOP\r\n$1\r\n1\r\n$1\r\nm\r\n$3\r\nMIN\r\n*4\r\n$4\r\nZADD\r\n$1\r\nm\r\n$1\r\n1\r\n$1\r\nd\r\n"u8;
         static ReadOnlySpan<byte> ZMSCORE => "*3\r\n$7\r\nZMSCORE\r\n$1\r\nc\r\n$1\r\nd\r\n"u8;
-        static ReadOnlySpan<byte> ZPOPMAX => "*2\r\n$7\r\nZPOPMAX\r\n$1\r\nc\r\n*4\r\n$4\r\nZADD\r\n$1\r\nc\r\n$1\r\n1\r\n$1\r\nd\r\n"u8;
-        static ReadOnlySpan<byte> ZPOPMIN => "*2\r\n$7\r\nZPOPMIN\r\n$1\r\nc\r\n*4\r\n$4\r\nZADD\r\n$1\r\nc\r\n$1\r\n1\r\n$1\r\nd\r\n"u8;
+        static ReadOnlySpan<byte> ZPOPMAX => "*2\r\n$7\r\nZPOPMAX\r\n$1\r\np\r\n*4\r\n$4\r\nZADD\r\n$1\r\np\r\n$1\r\n1\r\n$1\r\nd\r\n"u8;
+        static ReadOnlySpan<byte> ZPOPMIN => "*2\r\n$7\r\nZPOPMIN\r\n$1\r\nq\r\n*4\r\n$4\r\nZADD\r\n$1\r\nq\r\n$1\r\n1\r\n$1\r\nd\r\n"u8;
         static ReadOnlySpan<byte> ZRANDMEMBER => "*2\r\n$10\r\nZRANDMEMBER\r\n$1\r\nc\r\n"u8;
         static ReadOnlySpan<byte> ZRANGE => "*4\r\n$6\r\nZRANGE\r\n$1\r\nc\r\n$1\r\n0\r\n$1\r\n1\r\n"u8;
         static ReadOnlySpan<byte> ZRANGESTORE => "*5\r\n$11\r\nZRANGESTORE\r\n$4\r\ndest\r\n$1\r\nc\r\n$1\r\n0\r\n$1\r\n1\r\n"u8;
         static ReadOnlySpan<byte> ZRANK => "*3\r\n$5\r\nZRANK\r\n$1\r\nc\r\n$1\r\nd\r\n"u8;
         static ReadOnlySpan<byte> ZREMRANGEBYLEX => "*4\r\n$14\r\nZREMRANGEBYLEX\r\n$1\r\nc\r\n$1\r\n-\r\n$1\r\n+\r\n*4\r\n$4\r\nZADD\r\n$1\r\nc\r\n$1\r\n1\r\n$1\r\nd\r\n"u8;
         static ReadOnlySpan<byte> ZREMRANGEBYRANK => "*4\r\n$15\r\nZREMRANGEBYRANK\r\n$1\r\nc\r\n$1\r\n0\r\n$1\r\n1\r\n*4\r\n$4\r\nZADD\r\n$1\r\nc\r\n$1\r\n1\r\n$1\r\nd\r\n"u8;
-        static ReadOnlySpan<byte> ZREMRANGEBYSCORE => "*4\r\n$16\r\nZREMRANGEBYSCORE\r\n$1\r\nc\r\n$1\r\n0\r\n$1\r\n2\r\n*4\r\n$4\r\nZADD\r\n$1\r\nc\r\n$1\r\n1\r\n$1\r\nd\r\n"u8;
+        static ReadOnlySpan<byte> ZREMRANGEBYSCORE => "*4\r\n$16\r\nZREMRANGEBYSCORE\r\n$1\r\nr\r\n$1\r\n0\r\n$1\r\n2\r\n*4\r\n$4\r\nZADD\r\n$1\r\nr\r\n$1\r\n1\r\n$1\r\nd\r\n"u8;
         static ReadOnlySpan<byte> ZREVRANK => "*3\r\n$8\r\nZREVRANK\r\n$1\r\nc\r\n$1\r\nd\r\n"u8;
         static ReadOnlySpan<byte> ZSCAN => "*6\r\n$5\r\nZSCAN\r\n$1\r\nc\r\n$1\r\n0\r\n$5\r\nCOUNT\r\n$1\r\n5\r\n"u8;
         static ReadOnlySpan<byte> ZSCORE => "*3\r\n$6\r\nZSCORE\r\n$1\r\nc\r\n$1\r\nd\r\n"u8;
@@ -80,6 +80,14 @@ namespace BDN.benchmark.Operations
             SlowConsumeMessage("*4\r\n$4\r\nZADD\r\n$1\r\nc\r\n$1\r\n1\r\n$1\r\nd\r\n"u8);
             SlowConsumeMessage("*6\r\n$4\r\nZADD\r\n$1\r\nh\r\n$1\r\n1\r\n$1\r\nd\r\n$1\r\n2\r\n$1\r\ne\r\n"u8);
             SlowConsumeMessage("*4\r\n$4\r\nZADD\r\n$4\r\ndest\r\n$1\r\n1\r\n$1\r\nd\r\n"u8);
+
+            // Dedicated keys for the pop/remove benchmarks, each seeded with a keeper "k" scored so
+            // the benchmarked command removes "d" (re-added every iteration) but never "k". The set
+            // stays non-empty, keeping the operation in-place instead of deleting and recreating the key.
+            SlowConsumeMessage("*6\r\n$4\r\nZADD\r\n$1\r\np\r\n$1\r\n0\r\n$1\r\nk\r\n$1\r\n1\r\n$1\r\nd\r\n"u8); // ZPOPMAX pops max "d", keeper "k" score 0
+            SlowConsumeMessage("*6\r\n$4\r\nZADD\r\n$1\r\nq\r\n$1\r\n1\r\n$1\r\nd\r\n$1\r\n2\r\n$1\r\nk\r\n"u8); // ZPOPMIN pops min "d", keeper "k" score 2
+            SlowConsumeMessage("*6\r\n$4\r\nZADD\r\n$1\r\nm\r\n$1\r\n1\r\n$1\r\nd\r\n$1\r\n2\r\n$1\r\nk\r\n"u8); // ZMPOP MIN pops min "d", keeper "k" score 2
+            SlowConsumeMessage("*6\r\n$4\r\nZADD\r\n$1\r\nr\r\n$1\r\n1\r\n$1\r\nd\r\n$1\r\n3\r\n$1\r\nk\r\n"u8); // ZREMRANGEBYSCORE 0 2 removes "d", keeper "k" score 3
         }
 
         [Benchmark]
