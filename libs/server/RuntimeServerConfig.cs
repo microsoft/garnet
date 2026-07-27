@@ -236,7 +236,12 @@ namespace Garnet.server
                     {
                         if (!int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var seconds))
                             return $"ERR Invalid value for '{meta.Name}': expected an integer number of seconds.";
-                        // <= 0 is stored as-is and interpreted as an infinite timeout on read.
+                        // <= 0 denotes an infinite timeout (see GetTimeSpan); normalize to 0 so CONFIG GET
+                        // never reports a negative value that would be silently reinterpreted as infinite.
+                        if (seconds < 0)
+                            seconds = 0;
+                        if (seconds < meta.Min || seconds > meta.Max)
+                            return $"ERR Value for '{meta.Name}' is out of range ({meta.Min}..{meta.Max}).";
                         Volatile.Write(ref values[(int)type], seconds);
                         return null;
                     }

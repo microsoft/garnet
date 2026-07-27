@@ -40,6 +40,7 @@ namespace Garnet.server
             // Extract requested parameters. All CONFIG parameters (settable and read-only) are served
             // through the runtime config table.
             List<ServerConfigType> parameters = null;
+            HashSet<ServerConfigType> seen = null;
             var returnAll = false;
             for (var i = 0; i < parseState.Count; i++)
             {
@@ -57,6 +58,12 @@ namespace Garnet.server
                 }
 
                 if (serverConfigType == ServerConfigType.NONE)
+                    continue;
+
+                // De-duplicate repeated parameters, keeping the first occurrence to preserve order and
+                // avoid emitting duplicate keys (which are invalid in a RESP3 map response).
+                seen ??= [];
+                if (!seen.Add(serverConfigType))
                     continue;
                 (parameters ??= []).Add(serverConfigType);
             }
