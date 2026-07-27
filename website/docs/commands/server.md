@@ -175,6 +175,7 @@ Subcommands:
 * `LOG <message>`: Write `<message>` to the server log.
 * `FLUSHANDEVICT`: Flush the store's in-memory log to disk and evict it (shifts HeadAddress to TailAddress) so subsequent reads are served from disk.
 * `FORCEGC [generation]`: Force a blocking garbage collection of the given generation (default: max). See [GC.Collect](https://learn.microsoft.com/en-us/dotnet/api/system.gc.collect).
+* `PURGEBP <manager-type>`: Purge the network buffer pool held by the given manager (`MigrationManager`, `ReplicationManager`, or `ServerListener`) and force a blocking GC, returning freed memory to the OS.
 * `PANIC`: Crash the server, simulating a panic.
 * `HELP`: Print the subcommand list.
 
@@ -205,6 +206,45 @@ Delete all the keys of the currently selected DB. This command never fails.
 #### Resp Reply
 
 Simple string reply: OK.
+
+---
+### INFO
+#### Syntax
+
+```bash
+INFO [section [section ...]]
+```
+
+Returns information and statistics about the server, organized into sections. Each section is introduced by a `# <Section>` header line, followed by `field:value` lines. With no argument, a default set of sections is returned. One or more section names may be supplied to return only those sections. The pseudo-section keywords `DEFAULT` and `EVERYTHING` select the default set, `ALL` selects the default set excluding `MODULES`, `RESET` resets the statistics counters, and `HELP` returns the list of supported section names.
+
+The more expensive sections — `STOREHASHTABLE`, `STOREREVIV`, `HLOGSCAN`, `COMMANDSTATS`, and `KEYSPACE` — are not part of the default (nor the `ALL`/`EVERYTHING`) set and must be requested explicitly by name.
+
+Sections:
+
+* `SERVER`: General server information such as version, mode, and uptime.
+* `MEMORY`: Process and store memory-usage metrics.
+* `CLUSTER`: Cluster-mode status.
+* `REPLICATION`: Replication role and per-link status.
+* `STATS`: General statistics such as commands processed, keyspace hits/misses, and network I/O.
+* `STORE`: Per-database store details, including the current and last-checkpointed version, system state, hash-index bucket counts and sizes, and the hybrid-log and read-cache page/memory/heap sizes together with the key log addresses (`Log.BeginAddress`, `Log.HeadAddress`, `Log.SafeReadOnlyAddress`, `Log.FlushedUntilAddress`, `Log.TailAddress`, and the corresponding `ReadCache.*` addresses).
+* `STOREHASHTABLE`: Per-database dump of the hash-table bucket distribution (how records are spread across the index bucket chains); useful for diagnosing index sizing.
+* `STOREREVIV`: Per-database revivification (deleted-record free list) statistics.
+* `PERSISTENCE`: Checkpoint and append-only-file persistence information.
+* `CLIENTS`: Connected-client statistics.
+* `KEYSPACE`: Per-database key counts. Requested explicitly only, since it requires a full log scan.
+* `MODULES`: Loaded module information.
+* `BPSTATS`: Shared network buffer-pool statistics.
+* `CINFO`: Cluster checkpoint information.
+* `HLOGSCAN`: Scan-based size distribution of the in-memory portion of the hybrid log.
+* `COMMANDSTATS`: Per-command usage statistics (calls, failures, rejections). Requires the `CommandStatsMonitor` (`--commandstats-monitor`) option to be enabled.
+
+#### Resp Reply
+
+One of the following:
+
+* For a section query (or no argument): Verbatim string reply (RESP3) / Bulk string reply (RESP2) with the requested sections and their fields.
+* For `HELP`: Array reply listing the supported section names.
+* For `RESET`: Simple string reply `OK`.
 
 ---
 ### LATENCY HELP

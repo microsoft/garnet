@@ -78,16 +78,7 @@ namespace Garnet.server
             }
             else
             {
-                // We assume here that ExecuteScript does not raise exceptions
-                sessionScriptCache.StartRunningScript(runner);
-                var res = TryExecuteScript(count - 1, runner);
-                sessionScriptCache.StopRunningScript();
-
-                if (!res)
-                {
-                    // Note we DON'T dispose the script handle because this is just the session cache
-                    sessionScriptCache.Remove(scriptKey);
-                }
+                RunScriptForSession(count, runner, scriptKey);
             }
 
             return true;
@@ -168,15 +159,7 @@ namespace Garnet.server
             }
             else
             {
-                // We assume here that ExecuteScript does not raise exceptions
-                sessionScriptCache.StartRunningScript(runner);
-                var res = TryExecuteScript(count - 1, runner);
-                sessionScriptCache.StopRunningScript();
-
-                if (!res)
-                {
-                    sessionScriptCache.Remove(onStackScriptKey);
-                }
+                RunScriptForSession(count, runner, onStackScriptKey);
             }
 
             return true;
@@ -347,6 +330,34 @@ namespace Garnet.server
             }
 
             return true;
+        }
+
+        /// <summary>
+        /// Run a resolved script for the current session.
+        /// 
+        /// Gated so it can't execute while the session's Lua state is being disposed. If disposing,
+        /// <see cref="SessionScriptCache.StartRunningScript"/> returns false and this is a no-op: no reply
+        /// is written since the connection is already closing. On failure the runner is removed inside the
+        /// guarded window so it can't race disposal.
+        /// </summary>
+        private void RunScriptForSession(int count, LuaRunner runner, ScriptHashKey scriptKey)
+        {
+            // We assume here that ExecuteScript does not raise exceptions
+            if (!sessionScriptCache.StartRunningScript(runner))
+                return;
+
+            try
+            {
+                if (!TryExecuteScript(count - 1, runner))
+                {
+                    // Note we DON'T dispose the script handle because this is just the session cache
+                    sessionScriptCache.Remove(scriptKey);
+                }
+            }
+            finally
+            {
+                sessionScriptCache.StopRunningScript();
+            }
         }
 
         /// <summary>

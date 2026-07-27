@@ -322,7 +322,6 @@ namespace Garnet.server
         LASTSAVE,
         BGSAVE,
         COMMITAOF,
-        PURGEBP,
         FAILOVER,
 
         // Custom commands
@@ -824,7 +823,9 @@ namespace Garnet.server
             var remainingBytes = bytesRead - readHead;
 
             // SIMD fast path delegated to non-inlined helper to keep this method small enough to inline.
-            if (Vector128.IsHardwareAccelerated && remainingBytes >= 16)
+            // Gate on the leading '*': SIMD patterns are array-framed, so inline commands (e.g. PING\r\n)
+            // skip the scan and fall through to FastParseInlineCommand.
+            if (Vector128.IsHardwareAccelerated && remainingBytes >= 16 && *ptr == (byte)'*')
             {
                 var simdResult = SimdFastParse(ptr, out count);
                 if (simdResult != RespCommand.NONE)
