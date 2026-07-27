@@ -102,9 +102,13 @@ namespace Garnet.server
         {
             // Create manager only if sharded log is enabled
             if (!serverOptions.MultiLogEnabled) return;
-            var currentVersion = readConsistencyManager?.CurrentVersion ?? 0L;
+            var previous = readConsistencyManager;
+            var currentVersion = previous?.CurrentVersion ?? 0L;
             var _readConsistencyManager = new ReadConsistencyManager(currentVersion + 1, this, serverOptions);
-            _ = Interlocked.CompareExchange(ref readConsistencyManager, _readConsistencyManager, readConsistencyManager);
+            _ = Interlocked.CompareExchange(ref readConsistencyManager, _readConsistencyManager, previous);
+            // Release any replay thread parked in the old barrier; it would otherwise wait on a round
+            // that the new manager's replayers no longer participate in.
+            previous?.replayBarrier.Disable();
         }
 
         /// <summary>
