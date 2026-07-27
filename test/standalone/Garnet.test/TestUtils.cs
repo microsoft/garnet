@@ -344,7 +344,8 @@ namespace Garnet.test
             string aofPageSize = null,
             bool copyReadsToTail = false,
             int replayTaskCount = 1,
-            bool failOnRecoveryError = false
+            bool failOnRecoveryError = false,
+            RespProtocolMode allowedProtocols = RespProtocolMode.Both
             )
         {
             if (useAzureStorage)
@@ -397,6 +398,7 @@ namespace Garnet.test
                 CommitFrequencyMs = commitFrequencyMs,
                 WaitForCommit = commitWait,
                 AclStrictCustomCommands = aclStrictCustomCommands,
+                AllowedProtocols = allowedProtocols,
                 TlsOptions = enableTLS ? new GarnetTlsOptions(
                     certFileName: tlsCertFileName ?? certFile,
                     certPassword: tlsCertPassword ?? certPassword,

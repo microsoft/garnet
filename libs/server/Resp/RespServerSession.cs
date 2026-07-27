@@ -653,9 +653,14 @@ namespace Garnet.server
 
                     if (CheckACLPermissions(cmd) && (noScriptPassed = CheckScriptPermissions(cmd)))
                     {
+                        if (!IsCommandAllowedByRespProtocolPolicy(cmd))
+                        {
+                            WriteError(CmdStrings.RESP_ERR_PROTOCOL_VERSION_NOT_ALLOWED);
+                            commandStats?.IncrementRejected(cmd);
+                        }
                         // In RESP2, only a small set of commands are allowed while in subscription mode.
                         // RESP3 uses distinct push types for subscription messages, so all commands are valid.
-                        if (isSubscriptionSession && respProtocolVersion == 2 && !cmd.IsAllowedInSubscriptionMode())
+                        else if (isSubscriptionSession && respProtocolVersion == 2 && !cmd.IsAllowedInSubscriptionMode())
                         {
                             while (!RespWriteUtils.TryWriteError(string.Format(CmdStrings.GenericPubSubCommandNotAllowed, cmd.ToString()), ref dcurr, dend))
                                 SendAndReset();
@@ -738,6 +743,15 @@ namespace Garnet.server
                     networkSender.DisposeNetworkSender(true);
                 }
             }
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private bool IsCommandAllowedByRespProtocolPolicy(RespCommand cmd)
+        {
+            if (storeWrapper.serverOptions.AllowedProtocols == RespProtocolMode.Both || cmd == RespCommand.HELLO)
+                return true;
+
+            return storeWrapper.serverOptions.IsRespProtocolVersionAllowed(respProtocolVersion);
         }
 
         // Make first command in string as uppercase
