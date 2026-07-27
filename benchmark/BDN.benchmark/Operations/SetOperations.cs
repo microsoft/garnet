@@ -13,8 +13,8 @@ namespace BDN.benchmark.Operations
     public unsafe class SetOperations : OperationsBase
     {
         static ReadOnlySpan<byte> SADDREM => "*3\r\n$4\r\nSADD\r\n$4\r\nkey1\r\n$6\r\nmember\r\n*3\r\n$4\r\nSREM\r\n$4\r\nkey1\r\n$6\r\nmember\r\n"u8;
-        // Adds two fixed members and pops one, so the set oscillates between 2 and 1 members and is never
-        // emptied -> the key is never deleted/recreated, so there is no object-store log churn.
+        // SADD adds two members and SPOP removes one, so the set is never emptied and key1 is never
+        // deleted/recreated -> no object-store log churn (which would make allocation vary run to run).
         static ReadOnlySpan<byte> SADDPOP_SINGLE => "*4\r\n$4\r\nSADD\r\n$4\r\nkey1\r\n$1\r\na\r\n$1\r\nb\r\n*2\r\n$4\r\nSPOP\r\n$4\r\nkey1\r\n"u8;
         static ReadOnlySpan<byte> SCARD => "*2\r\n$5\r\nSCARD\r\n$4\r\nkey2\r\n"u8;
         static ReadOnlySpan<byte> SMEMBERS => "*2\r\n$8\r\nSMEMBERS\r\n$4\r\nkey2\r\n"u8;
@@ -57,8 +57,8 @@ namespace BDN.benchmark.Operations
             SlowConsumeMessage("*4\r\n$4\r\nSADD\r\n$4\r\nkey2\r\n$1\r\na\r\n$1\r\nb\r\n"u8);
             SlowConsumeMessage("*5\r\n$4\r\nSADD\r\n$4\r\nkey3\r\n$1\r\nb\r\n$1\r\nc\r\n$1\r\nd\r\n"u8);
 
-            // Seed key1 with a keeper so SAddRem (SADD+SREM) never empties it; SAddPopSingle keeps itself
-            // non-empty by adding two members and popping one.
+            // Seed key1 with a keeper so SAddRem (SADD+SREM of one member) never empties it and the key
+            // is never deleted/recreated.
             SlowConsumeMessage("*3\r\n$4\r\nSADD\r\n$4\r\nkey1\r\n$6\r\nkeeper\r\n"u8);
         }
 
