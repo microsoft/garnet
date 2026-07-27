@@ -93,11 +93,15 @@ public class BaseConfig : ManualConfig
         _ = WithOrderer(new BDN.benchmark.NamespaceTypeOrderer());
         _ = AddColumn(CategoriesColumn.Default);
 
-        // Server GC (blocking, non-concurrent) matches production for the latency numbers. Its larger
-        // allocation quantum can still intermittently inflate MemoryDiagnoser (notably on .NET 10), so
-        // object-store allocation gates are warn-only. A dedicated Workstation-GC job would measure
-        // allocation deterministically and allow hard gates (follow-up).
-        var baseJob = Job.Default.WithGcServer(true).WithGcConcurrent(false);
+        // Workstation GC (non-concurrent) so MemoryDiagnoser measures allocation accurately. Under
+        // Server GC, GC.GetTotalAllocatedBytes(precise:false) intermittently over-counts by the
+        // per-heap allocation-context budgets whenever a GC resets those contexts mid-measurement,
+        // producing roving spikes (e.g. FilterPath 61k->407k, Recursive->47M; mostly .NET 10) that are
+        // a measurement artifact, not real allocation. Workstation GC's single heap eliminates this,
+        // giving deterministic allocation suitable for hard regression gates. These are single-client
+        // benchmarks, so Server GC gave no latency benefit here -- measured latency is equal-or-slightly
+        // better under Workstation GC.
+        var baseJob = Job.Default.WithGcServer(false).WithGcConcurrent(false);
 
         Net8BaseJob = baseJob
             .WithRuntime(CoreRuntime.Core80)
