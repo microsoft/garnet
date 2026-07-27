@@ -4,10 +4,13 @@ using System;
 using System.Linq;
 using System.Net;
 using System.Net.Sockets;
+using System.Reflection;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using Garnet.client;
 using Garnet.common;
+using Garnet.networking;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 
@@ -567,6 +570,97 @@ namespace Garnet.test
 
             result = await db.ExecuteForStringResultAsync("PING").ConfigureAwait(false);
             ClassicAssert.AreEqual("PONG", result);
+        }
+
+        /// <summary>
+        /// Regression test for: NetworkWriter.AsyncFlushPages swallows send failures without
+        /// releasing the flush-completion event, hanging callers blocked on FlushEvent (e.g.
+        /// GarnetClient.InternalExecuteNoResponse, used by cluster PUBLISH forwarding). A
+        /// thread is parked in flushEvent.Wait (mirroring a caller already blocked when the
+        /// connection dies) before the failing flush is triggered; if AsyncFlushPageCallback
+        /// is not invoked when networkSender.SendResponse throws, that thread is never
+        /// released and only unblocks via our cancellation-token timeout (which the
+        /// assertions below turn into a test failure instead of a hang).
+        /// </summary>
+        [Test]
+        public void AsyncFlushPagesSignalsFlushEventOnSendFailure()
+        {
+            using var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir);
+            server.Start();
+
+            using var db = new GarnetClient(TestUtils.EndPoint, sendPageSize: 1 << 12);
+            db.Connect();
+
+            var networkWriter = (NetworkWriter)typeof(GarnetClient)
+                .GetField("networkWriter", BindingFlags.NonPublic | BindingFlags.Instance)
+                .GetValue(db);
+
+            networkWriter.epoch.Resume();
+            try
+            {
+                // Reserve some space in the send buffer so AsyncFlushPages below has a real
+                // (non-empty) range to send, exercising the networkSender.SendResponse call
+                // rather than the empty-range fast path.
+                var (_, address) = networkWriter.TryAllocate(64, out var flushEvent);
+                ClassicAssert.GreaterOrEqual(address, 0);
+                var untilAddress = networkWriter.GetTailAddress();
+
+                // Simulate the connection being disposed/broken concurrently with the flush,
+                // as happens in production when a gossip timeout tears down the connection:
+                // make the send throw.
+                typeof(NetworkWriter)
+                    .GetField("networkSender", BindingFlags.NonPublic | BindingFlags.Instance)
+                    .SetValue(networkWriter, new ThrowingNetworkSender());
+
+                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+                // WaitAsync registers with the underlying SemaphoreSlim synchronously, before
+                // returning - unlike the previous Wait()-on-a-background-thread approach, there
+                // is no window between "registered as a waiter" and "flush triggered" for a
+                // racing Set()/Dispose() to be missed, so no separate thread or readiness
+                // rendezvous is needed at all.
+                var waitTask = flushEvent.WaitAsync(cts.Token);
+
+                networkWriter.AsyncFlushPages(0, untilAddress);
+
+                var completed = waitTask.Wait(TimeSpan.FromSeconds(5));
+                ClassicAssert.IsTrue(completed,
+                    "FlushEvent was not signaled after a failed flush (regression)");
+                ClassicAssert.IsFalse(waitTask.IsFaulted, $"Wait faulted: {waitTask.Exception}");
+            }
+            finally
+            {
+                networkWriter.epoch.Suspend();
+            }
+        }
+
+        /// <summary>
+        /// Network sender stub whose SendResponse always throws, simulating the underlying
+        /// connection being disposed/broken concurrently with a page flush.
+        /// </summary>
+        sealed unsafe class ThrowingNetworkSender : INetworkSender
+        {
+            readonly MaxSizeSettings maxSizeSettings = new();
+
+            public MaxSizeSettings GetMaxSizeSettings => maxSizeSettings;
+            public string RemoteEndpointName => "";
+            public string LocalEndpointName => "";
+            public bool IsLocalConnection() => true;
+            public void Dispose() { }
+            public void DisposeNetworkSender(bool waitForSendCompletion) { }
+            public void Enter() { }
+            public void EnterAndGetResponseObject(out byte* head, out byte* tail) => throw new NotSupportedException();
+            public void Exit() { }
+            public void ExitAndReturnResponseObject() { }
+            public void GetResponseObject() { }
+            public byte* GetResponseObjectHead() => throw new NotSupportedException();
+            public byte* GetResponseObjectTail() => throw new NotSupportedException();
+            public void ReturnResponseObject() { }
+            public void SendCallback(object context) { }
+            public bool SendResponse(int offset, int size) => throw new NotSupportedException();
+            public void SendResponse(byte[] buffer, int offset, int count, object context)
+                => throw new Exception("Simulated send failure (connection disposed)");
+            public void Throttle() { }
+            public bool TryClose() => false;
         }
     }
 }
