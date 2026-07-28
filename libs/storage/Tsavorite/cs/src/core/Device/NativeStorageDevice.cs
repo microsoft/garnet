@@ -1018,7 +1018,11 @@ namespace Tsavorite.core
         [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
         private void ThrowMisaligned(ulong offset, uint length, IntPtr buffer, string op)
         {
-            throw new IOException(
+            // TsavoriteException (not IOException): this is a precondition/validation failure on the
+            // caller-supplied arguments before any kernel submission, consistent with the other
+            // configuration guards in this class (segment/sector-size checks). IOException here is
+            // reserved for actual kernel I/O completion failures (see the Read/Write callbacks).
+            throw new TsavoriteException(
                 $"NativeStorageDevice.{op}: misaligned I/O — sector size is {SectorSize}, but " +
                 $"offset=0x{offset:X16}, length={length}, buffer=0x{buffer.ToInt64():X16}. " +
                 "All three values must be a multiple of the device sector size for the " +
