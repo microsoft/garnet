@@ -320,14 +320,16 @@ All callbacks take a `ulong context` parameter which identifies the Vector Set i
 
 The most complicated of our callbacks, the signature is:
 ```csharp
-void ReadCallbackUnmanaged(ulong context, uint numKeys, nint keysData, nuint keysLength, nint dataCallback, nint dataCallbackContext)
+void ReadCallbackUnmanaged(ulong context, uint numKeys, uint valueLengthHint, nint keysData, nuint keysLength, nint dataCallback, nint dataCallbackContext)
 ```
 
 `context` identifies which Vector Set is being operated on AND the associated namespace, `numKeys` tells us how many keys have been encoded into `keysData`, `keysData` and `keysLength` define a `Span<byte>` of length prefixied keys, `dataCallback` is a `delegate* unmanaged[Cdecl, SuppressGCTransition]<int, nint, nint, nuint, void>` used to push found keys back into DiskANN, and `dataCallbackContext` is passed back unaltered to `dataCallback`.
 
+`valueLengthHint` is the number of bytes DiskANN expects _each_ record to be if found.  This value is just a hint, it's OK if it's wrong.  It is better to be too large than too small, within reason.
+
 In the `Span<byte>` defined by `keysData` and `keysLength` the keys are length prefixed with a 4-byte little endian `int`.
 
-As we find keys, we invoke `dataCallback(index, dataCallbackContext, keyPointer, keyLength)`.  If a key is not found, its index is simply skipped.  The benefits of this is that we don't copy data out of the Tsavorite log as part of reads, DiskANN is able to do distance calculations and traversal over in-place data.
+As we find keys, we invoke `dataCallback(index, dataCallbackContext, dataPointer, dataLengthLength)`.  Invocations may be out of order, so `index` must be used to correlate data with keys.  If a key is not found, its index is simply skipped.  The benefits of this is that we don't copy data out of the Tsavorite log as part of reads, DiskANN is able to do distance calculations and traversal over in-place data.
 
 > [!NOTE]
 > Each invocation of `dataCallback` is a managed -&gt; native transition, which can add up very quickly.  We've reduced that as much as possible with function points and `SuppressGCTransition`, but that comes with risks.
@@ -394,6 +396,12 @@ void LogCallbackUnmanaged(ulong context, nint logMessage, nuint logMessageLength
 `context` identifies which Vector Set is being operated on AND the associated namespace, and `logMessage` and `logMessageLength` represent a `Span<byte>` of the log message.
 
 The log message is UTF8 encoded text.
+
+This log message is enriched on the Garnet side with:
+ - The context without namespace bits
+ - A text version of the namespace
+ - Our best guess at the Vector Set currently operated on
+ - The number of arguments for the command being processed
 
 ### DiskANN Functions
 

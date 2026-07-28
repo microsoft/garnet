@@ -1736,7 +1736,7 @@ namespace Garnet.test
                 fixed (int* dataPtr = data)
                 {
                     var keyData = PinnedSpanByte.FromPinnedPointer((byte*)dataPtr, data.Length * sizeof(int));
-                    var batch = new VectorManager.VectorReadBatch(input.Callback, input.CallbackContext, 1, keyData, namespaceBytes);
+                    var batch = new VectorManager.VectorReadBatch(input.Callback, input.CallbackContext, 1, keyData, namespaceBytes, new ReadCopyOptions { CopyFrom = ReadCopyFrom.AllImmutable, CopyTo = ReadCopyTo.MainLog }, 0);
 
                     var iters = 0;
                     for (var i = 0; i < batch.Count; i++)
@@ -1786,7 +1786,7 @@ namespace Garnet.test
                 fixed (int* dataPtr = data)
                 {
                     var keyData = PinnedSpanByte.FromPinnedPointer((byte*)dataPtr, data.Length * sizeof(int));
-                    var batch = new VectorManager.VectorReadBatch(input.Callback, input.CallbackContext, 7, keyData, namespaceBytes);
+                    var batch = new VectorManager.VectorReadBatch(input.Callback, input.CallbackContext, 7, keyData, namespaceBytes, new ReadCopyOptions { CopyFrom = ReadCopyFrom.AllImmutable, CopyTo = ReadCopyTo.MainLog }, 0);
 
                     var iters = 0;
                     for (var i = 0; i < batch.Count; i++)
@@ -1840,7 +1840,7 @@ namespace Garnet.test
                 fixed (int* dataPtr = data)
                 {
                     var keyData = PinnedSpanByte.FromPinnedPointer((byte*)dataPtr, data.Length * sizeof(int));
-                    var batch = new VectorManager.VectorReadBatch(input.Callback, input.CallbackContext, 7, keyData, namespaceBytes);
+                    var batch = new VectorManager.VectorReadBatch(input.Callback, input.CallbackContext, 7, keyData, namespaceBytes, new ReadCopyOptions { CopyFrom = ReadCopyFrom.AllImmutable, CopyTo = ReadCopyTo.MainLog }, 0);
 
                     var rand = new Random(2025_10_06_00);
 
@@ -1898,7 +1898,7 @@ namespace Garnet.test
                 fixed (byte* dataPtr = data)
                 {
                     var keyData = PinnedSpanByte.FromPinnedPointer((byte*)dataPtr, data.Length);
-                    var batch = new VectorManager.VectorReadBatch(input.Callback, input.CallbackContext, 1, keyData, namespaceBytes);
+                    var batch = new VectorManager.VectorReadBatch(input.Callback, input.CallbackContext, 1, keyData, namespaceBytes, new ReadCopyOptions { CopyFrom = ReadCopyFrom.AllImmutable, CopyTo = ReadCopyTo.MainLog }, 0);
 
                     var iters = 0;
                     for (var i = 0; i < batch.Count; i++)
@@ -2017,7 +2017,7 @@ namespace Garnet.test
                 fixed (byte* dataPtr = data)
                 {
                     var keyData = PinnedSpanByte.FromPinnedPointer((byte*)dataPtr, data.Length);
-                    var batch = new VectorManager.VectorReadBatch(input.Callback, input.CallbackContext, 8, keyData, namespaceBytes);
+                    var batch = new VectorManager.VectorReadBatch(input.Callback, input.CallbackContext, 8, keyData, namespaceBytes, new ReadCopyOptions { CopyFrom = ReadCopyFrom.AllImmutable, CopyTo = ReadCopyTo.MainLog }, 0);
 
                     var iters = 0;
                     for (var i = 0; i < batch.Count; i++)
@@ -2150,7 +2150,7 @@ namespace Garnet.test
                 fixed (byte* dataPtr = data)
                 {
                     var keyData = PinnedSpanByte.FromPinnedPointer((byte*)dataPtr, data.Length);
-                    var batch = new VectorManager.VectorReadBatch(input.Callback, input.CallbackContext, 8, keyData, namespaceBytes);
+                    var batch = new VectorManager.VectorReadBatch(input.Callback, input.CallbackContext, 8, keyData, namespaceBytes, new ReadCopyOptions { CopyFrom = ReadCopyFrom.AllImmutable, CopyTo = ReadCopyTo.MainLog }, 0);
 
                     var rand = new Random(2025_10_06_01);
 
