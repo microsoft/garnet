@@ -27,7 +27,7 @@ namespace Tsavorite.test
             public bool SawFinal { get; private set; }
             public int ChunkCount { get; private set; }
 
-            public int Consume<TContext>(ReadOnlySpan<byte> first, ReadOnlySpan<byte> second, bool isComplete, TContext context)
+            public int Consume<TContext>(ReadOnlySpan<byte> first, ReadOnlySpan<byte> second, bool isStart, bool isComplete, TContext context)
             {
                 ClassicAssert.IsFalse(SawFinal, "no chunk may follow the final chunk");
                 stream.Write(first);
@@ -39,7 +39,7 @@ namespace Tsavorite.test
                 return first.Length + second.Length;
             }
 
-            public int Consume<TContext, TKey, TInput>(ReadOnlySpan<byte> first, ReadOnlySpan<byte> second, bool isComplete, TKey key, ref TInput input, TContext context)
+            public int Consume<TContext, TKey, TInput>(ReadOnlySpan<byte> first, ReadOnlySpan<byte> second, bool isStart, bool isComplete, TKey key, ref TInput input, TContext context)
                 where TKey : IKey
 #if NET9_0_OR_GREATER
                 , allows ref struct

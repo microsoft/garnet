@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Buffers;
 using System.Diagnostics;
 using System.Threading.Tasks;
 using Garnet.client;
@@ -27,30 +26,27 @@ namespace Garnet.cluster
         /// 2 GB), returned pre-deserialized alongside the small inline+key header; every other record is returned as one
         /// contiguous buffer. Returns true when the record has a streamed object value.
         /// </summary>
-        unsafe bool CompleteChunkedRecord(StoreWrapper storeWrapper, out byte[] contiguous, out byte[] header, out IHeapObject valueObject)
+        /// <summary>
+        /// Build the <see cref="DiskLogRecord"/> for a completed chunked record from the pieces reassembled by
+        /// <see cref="chunkedRecordReassembler"/>: a fully-inline record from its contiguous inline buffer, else the inline portion
+        /// plus the pre-populated overflow key/value and/or the streamed (now deserialized) object value.
+        /// <paramref name="headerPtr"/> must point at the pinned inline buffer (<see cref="ChunkedRecordReassembler.InlineBuffer"/>)
+        /// and remain pinned while the returned record is used.
+        /// </summary>
+        unsafe DiskLogRecord CompleteChunkedRecordReassembly(byte* headerPtr, StoreWrapper storeWrapper, ObjectIdMap transientObjectIdMap)
         {
-            var sequence = chunkedRecordReassembler.AsSequence();
+            var reassembler = chunkedRecordReassembler;
+            var headerSpan = PinnedSpanByte.FromPinnedPointer(headerPtr, reassembler.InlineSize);
+            if (reassembler.RecordIsInline)
+                return DiskLogRecord.Deserialize(headerSpan, storeWrapper.GarnetObjectSerializer, transientObjectIdMap, storeWrapper.storeFunctions);
 
-            // Peek a prefix covering the inline portion to learn whether the object value must be streamed and where it starts.
-            Span<byte> prefix = stackalloc byte[256];
-            var prefixLen = (int)Math.Min(prefix.Length, chunkedRecordReassembler.Length);
-            sequence.Slice(0, prefixLen).CopyTo(prefix);
-            var objectValueStart = DiskLogRecord.GetChunkedObjectValueStart(prefix[..prefixLen], out var isObjectRecord);
+            // Non-inline: deserialize the streamed object value (if any) from its chunks, then assign the pre-populated pieces.
+            IHeapObject valueObject = null;
+            if (reassembler.IsObjectValue)
+                valueObject = (IHeapObject)storeWrapper.GarnetObjectSerializer.Deserialize(reassembler.ObjectValueSequence());
 
-            if (!isObjectRecord)
-            {
-                // Inline or overflow-value record (<= 2 GB): reassemble contiguously for the standard deserialize.
-                contiguous = sequence.ToArray();
-                header = null;
-                valueObject = null;
-                return false;
-            }
-
-            // Object value (possibly > 2 GB): keep the small inline+key header contiguous; stream the object value from the tail.
-            header = sequence.Slice(0, objectValueStart).ToArray();
-            valueObject = (IHeapObject)storeWrapper.GarnetObjectSerializer.Deserialize(sequence.Slice(objectValueStart));
-            contiguous = null;
-            return true;
+            return DiskLogRecord.CompleteDeserializeChunkedRecord(headerSpan, reassembler.KeyOverflow, reassembler.ValueOverflow,
+                valueObject, reassembler.KeyLength, reassembler.ValueLength, transientObjectIdMap);
         }
 
         /// <summary>
@@ -187,15 +183,10 @@ namespace Garnet.cluster
                                     chunkedRecordReassembler ??= new();
                                     if (chunkedRecordReassembler.Append(chunkSpan, moreChunksFollow))
                                     {
-                                        var isObject = CompleteChunkedRecord(storeWrapper, out var contiguous, out var header, out var valueObject);
-                                        chunkedRecordReassembler.Reset();
-                                        var recordBytes = isObject ? header : contiguous;
-                                        fixed (byte* recordPtr = recordBytes)
+                                        // The reassembler owns the inline buffer; pin it while the record it backs is used.
+                                        fixed (byte* headerPtr = chunkedRecordReassembler.InlineBuffer)
                                         {
-                                            var recordSpan = PinnedSpanByte.FromPinnedPointer(recordPtr, recordBytes.Length);
-                                            diskLogRecord = isObject
-                                                ? DiskLogRecord.DeserializeChunkedObject(recordSpan, valueObject, transientObjectIdMap)
-                                                : DiskLogRecord.DeserializeChunked(recordSpan, storeWrapper.GarnetObjectSerializer, transientObjectIdMap, storeWrapper.storeFunctions);
+                                            diskLogRecord = CompleteChunkedRecordReassembly(headerPtr, storeWrapper, transientObjectIdMap);
 
                                             var slot = HashSlotUtils.HashSlot(diskLogRecord.Key);
                                             if (!currentConfig.IsImportingSlot(slot)) // Slot is not in importing state
@@ -214,6 +205,7 @@ namespace Garnet.cluster
                                             diskLogRecord.Dispose();
                                             diskLogRecord = default; // prevent double-trigger in finally
                                         }
+                                        chunkedRecordReassembler.Reset();
                                     }
 
                                     i++;

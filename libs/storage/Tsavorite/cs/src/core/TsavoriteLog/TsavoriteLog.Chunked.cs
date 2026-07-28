@@ -193,7 +193,7 @@ namespace Tsavorite.core
             BeginInflightEnqueue();
             try
             {
-                _ = Consume(value, default, isComplete: true, key, ref input, state);
+                _ = Consume(value, default, isStart: true, isComplete: true, key, ref input, state);
             }
             finally
             {
@@ -238,11 +238,11 @@ namespace Tsavorite.core
         }
 
         /// <summary>Value-only chunk consume (the read side). Not yet implemented; wired up for a future deserialize path.</summary>
-        public int Consume<TContext>(ReadOnlySpan<byte> first, ReadOnlySpan<byte> second, bool isComplete, TContext context)
+        public int Consume<TContext>(ReadOnlySpan<byte> first, ReadOnlySpan<byte> second, bool isStart, bool isComplete, TContext context)
             => throw new NotImplementedException("Value-only chunk consume (read side) is not yet implemented");
 
         /// <inheritdoc/>
-        public unsafe int Consume<TContext, TKey, TInput>(ReadOnlySpan<byte> first, ReadOnlySpan<byte> second, bool isComplete, TKey key, ref TInput input, TContext context)
+        public unsafe int Consume<TContext, TKey, TInput>(ReadOnlySpan<byte> first, ReadOnlySpan<byte> second, bool isStart, bool isComplete, TKey key, ref TInput input, TContext context)
             where TKey : IKey
 #if NET9_0_OR_GREATER
             , allows ref struct

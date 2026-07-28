@@ -230,3 +230,37 @@ sequenceDiagram
     R->>R: Verify component lengths vs header
     R->>S: dispatch reassembled op, key plus value sequence plus input
 ```
+
+---
+
+## 6. Call sequence (code paths)
+
+The AOF logs an **operation** (opType + key + value/input); a chunkable op is split across entries on write and
+reassembled on replay. Indentation = call depth; a multi-step flow may sit on one line (`a → b → c`), and *italic*
+sub-items are terse notes.
+
+**Write** — a chunkable mutating op logs to the AOF:
+
+- `GarnetLog.Enqueue(opType, key, value, input)`
+  - *`GarnetLog.cs`; chunks when `key + value + input > TsavoriteLog.MinPartialAllocSize` (`IsChunkable`)*
+  - `EnqueueSpanChunked(...)` — or — `EnqueueObjectChunked(...)`
+    - *span key/value op vs object-value op*
+    - `TsavoriteLog.EnqueueChunkedObject(header, key, input, objectSerializer, value)`
+      - *`TsavoriteLog.Chunked.cs`*
+      - `ChunkedObjectSerializer.Serialize()` → `TsavoriteLog.Consume(first, second, key, input)` → `WriteOneRecord(...)`
+        - *stream the object value through a bounded ring; each drain packs the components — **key**, then **value**, then **input** — as `[i32 prefix|cont][data]` segments into one page-tail chunk entry (`AofBasicChunkHeader`/`AofShardedChunkHeader`), splitting a component across entries as needed*
+        - *carrier: the AOF chunk entries themselves — no write-side accumulator; segments go straight to the log → **AOF pages***
+
+**Replay** — read the chunk entries back and apply to the store:
+
+- `AofProcessor.ProcessAofRecordInternal(ptr, length)`
+  - *`AofProcessor.cs`; per scanned entry*
+  - `AofChunkedRecordReader.ReadChunk(ptr, length, out acc)` → `AppendChunk(...)`
+    - *accumulate this entry's segments into the record's `ChunkedAccumulator`; true once every component has arrived*
+    - *populates `ChunkedAccumulator.key` / `.value` (span value) / `.input`; an **object value**'s chunks append to `.valueChunks` (`List<byte[]>`)*
+  - `ProcessAofRecordInternal(acc)` → `ReplayOp(acc)`
+    - *`AofProcessor.ChunkReplay.cs`; record complete → dispatch by opType*
+    - `stringContext.Upsert(key, input, value)`
+      - *`StoreUpsert`: inline / overflow string value → store*
+    - `ObjectStoreUpsert(acc, ...)` → `GarnetObjectSerializer.Deserialize(acc.GetValueSequence())` → `objectContext.Upsert(key, valueObject)`
+      - *object value: stream-deserialize from the `ReadOnlySequence` over `.valueChunks` (no giant contiguous copy; supports values over 2 GB) → store*

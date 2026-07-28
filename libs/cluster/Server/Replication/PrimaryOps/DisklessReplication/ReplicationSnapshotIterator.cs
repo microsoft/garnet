@@ -38,6 +38,10 @@ namespace Garnet.cluster
         long currentFlushEventCount = 0;
         long lastFlushEventCount = 0;
 
+        // Whether the record currently being serialized may be emitted as a whole LogRecord if it fits one send buffer (set by
+        // WriteRecord for a prefix-free object record); Consume detects "fit one buffer" from the chunker's isStart+isComplete.
+        bool wholeRecordEmittable;
+
         AofAddress CheckpointCoveredAddress { get; set; }
 
         public SnapshotIteratorManager(ReplicationSyncManager replicationSyncManager, CancellationToken cancellationToken, ILogger logger = null)
@@ -112,10 +116,11 @@ namespace Garnet.cluster
         }
 
         /// <summary>
-        /// Serialize and send one record to all active replica sessions. A fully-inline record that fits one send buffer is
-        /// sent whole (type <see cref="MigrationRecordSpanType.LogRecord"/>); anything larger (an inline record too big for the
-        /// buffer, an overflow key/value, or an object value) is streamed as chunks (type
-        /// <see cref="MigrationRecordSpanType.ChunkedLogRecord"/>) so records larger than the send buffer are supported.
+        /// Serialize and send one record to all active replica sessions. A record that fits one send buffer is sent whole (type
+        /// <see cref="MigrationRecordSpanType.LogRecord"/>): a fully-inline record directly, and a prefix-free object record
+        /// (inline key + object value) via <c>Consume</c> when it drains in one piece. Anything larger — an inline record
+        /// too big for the buffer, an overflow key/value, or a large object value — is streamed as
+        /// <see cref="MigrationRecordSpanType.ChunkedLogRecord"/> chunks so records larger than the send buffer are supported.
         /// </summary>
         public bool WriteRecord<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, RecordMetadata recordMetadata, long numberOfRecords)
             where TSourceLogRecord : ISourceLogRecord
@@ -138,7 +143,11 @@ namespace Garnet.cluster
             }
 
             // Chunked path: DiskLogRecord.Serialize drains through the chunker to this consumer's Consume, which fans each chunk
-            // out to all sessions with the continuation flag set until the record's final chunk.
+            // out to all sessions with the continuation flag set until the record's final chunk. A prefix-free object record
+            // (inline key + object value: its chunk stream is exactly the [inline][object] whole-record layout) that fits the
+            // chunker's ring arrives as one complete drain, which Consume emits as a whole LogRecord so the receiver deserializes
+            // it directly from the buffer instead of via a single-chunk reassembly.
+            wholeRecordEmittable = !srcLogRecord.DataHeader.RecordIsInline && srcLogRecord.DataHeader.KeyIsInline && srcLogRecord.DataHeader.ValueIsObject;
             DiskLogRecord.Serialize(in srcLogRecord, valueObjectSerializer, chunker, this);
             return !cancellationToken.IsCancellationRequested;
         }
@@ -208,8 +217,17 @@ namespace Garnet.cluster
         }
 
         /// <inheritdoc/>
-        int IChunkedObjectSerializerConsumer.Consume<TContext>(ReadOnlySpan<byte> first, ReadOnlySpan<byte> second, bool isComplete, TContext context)
+        int IChunkedObjectSerializerConsumer.Consume<TContext>(ReadOnlySpan<byte> first, ReadOnlySpan<byte> second, bool isStart, bool isComplete, TContext context)
         {
+            // A prefix-free object record that fit the chunker's ring arrives as one complete, contiguous drain (isStart and
+            // isComplete on the same drain): send it as a whole LogRecord so the receiver deserializes it directly from the
+            // buffer (no single-chunk reassembly).
+            if (isStart && wholeRecordEmittable && isComplete && second.IsEmpty)
+            {
+                _ = FanOutRecordSpan(first, MigrationRecordSpanType.LogRecord);
+                return first.Length;
+            }
+
             // Each drained run is one chunk to every session; the continuation flag is clear only on the final run of the record.
             var consumed = FanOutChunk(first, moreChunksFollow: !second.IsEmpty || !isComplete);
             if (!second.IsEmpty)
@@ -218,7 +236,7 @@ namespace Garnet.cluster
         }
 
         /// <inheritdoc/>
-        int IChunkedObjectSerializerConsumer.Consume<TContext, TKey, TInput>(ReadOnlySpan<byte> first, ReadOnlySpan<byte> second, bool isComplete, TKey key, ref TInput input, TContext context)
+        int IChunkedObjectSerializerConsumer.Consume<TContext, TKey, TInput>(ReadOnlySpan<byte> first, ReadOnlySpan<byte> second, bool isStart, bool isComplete, TKey key, ref TInput input, TContext context)
             => throw new NotSupportedException("The network chunk path serializes only the value; the key is sent inline.");
 
         public void OnStop(bool completed, long numberOfRecords, long targetVersion)

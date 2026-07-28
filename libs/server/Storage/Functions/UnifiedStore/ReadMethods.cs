@@ -137,7 +137,7 @@ namespace Garnet.server
             //   - overflow key     -> accumulator (shallow ref; store keys are immutable so the backing array is stable),
             //   - overflow value   -> accumulator (deep copy; the store value may be mutated once we release the epoch),
             //   - object value     -> accumulator (serialized into a chunk list; may exceed 2 GB).
-            var acc = output.Accumulator ??= new MigrationChunkAccumulator();
+            var acc = output.Accumulator ??= new MigrationChunkWriterAccumulator();
             acc.Reset();
 
             acc.InlineLength = DiskLogRecord.SerializeInlinePortionForMigration(in srcLogRecord, functionsState.memoryPool, ref output.SpanByteAndMemory);

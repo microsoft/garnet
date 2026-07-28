@@ -15,15 +15,17 @@ namespace Tsavorite.core
     {
         /// <summary>
         /// Consume serialized value bytes only (no key or input). Used by the read side to reassemble an object value from its
-        /// chunks. <paramref name="isComplete"/> is true on the final call (its combined span length may be zero).
+        /// chunks. <paramref name="isStart"/> is true on the first call of a serialization; <paramref name="isComplete"/> is true
+        /// on the final call (its combined span length may be zero). Both are true when the whole value fits one drain.
         /// </summary>
         /// <typeparam name="TContext">Caller state type passed through unchanged (e.g. the write-side chunk state).</typeparam>
         /// <param name="first">The first (contiguous) run of available bytes.</param>
         /// <param name="second">The wrapped-around run of available bytes; empty when the ring is not wrapped.</param>
+        /// <param name="isStart">True on the first chunk of the value.</param>
         /// <param name="isComplete">True on the final chunk of the value.</param>
         /// <param name="context">Caller state, passed through unchanged.</param>
         /// <returns>The number of bytes consumed.</returns>
-        int Consume<TContext>(ReadOnlySpan<byte> first, ReadOnlySpan<byte> second, bool isComplete, TContext context);
+        int Consume<TContext>(ReadOnlySpan<byte> first, ReadOnlySpan<byte> second, bool isStart, bool isComplete, TContext context);
 
         /// <summary>
         /// Consume serialized value bytes together with the record's key and input (the write side, which packs key, value, and
@@ -34,12 +36,13 @@ namespace Tsavorite.core
         /// <typeparam name="TInput">The record input type.</typeparam>
         /// <param name="first">The first (contiguous) run of available value bytes.</param>
         /// <param name="second">The wrapped-around run of available value bytes; empty when the ring is not wrapped.</param>
+        /// <param name="isStart">True on the first chunk of the value.</param>
         /// <param name="isComplete">True on the final chunk of the value.</param>
         /// <param name="key">The record's key.</param>
         /// <param name="input">The record's input.</param>
         /// <param name="context">Caller state, passed through unchanged.</param>
         /// <returns>The number of value bytes consumed.</returns>
-        int Consume<TContext, TKey, TInput>(ReadOnlySpan<byte> first, ReadOnlySpan<byte> second, bool isComplete, TKey key, ref TInput input, TContext context)
+        int Consume<TContext, TKey, TInput>(ReadOnlySpan<byte> first, ReadOnlySpan<byte> second, bool isStart, bool isComplete, TKey key, ref TInput input, TContext context)
             where TKey : IKey
 #if NET9_0_OR_GREATER
             , allows ref struct

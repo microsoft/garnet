@@ -3,6 +3,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using Tsavorite.core;
 using Tsavorite.core.Allocator.ObjectSerialization;
 
@@ -26,11 +27,16 @@ namespace Garnet.server
     ///     <c>byte[]</c>), filled via <see cref="IChunkedObjectSerializerConsumer"/>.</item>
     /// </list>
     /// </remarks>
-    public sealed class MigrationChunkAccumulator : IChunkedObjectSerializerConsumer
+    public sealed class MigrationChunkWriterAccumulator : IChunkedObjectSerializerConsumer
     {
         /// <summary>Serializer ring-buffer size used to stream an object value into <see cref="objectValueChunks"/>; each drained
         /// run becomes one owned chunk.</summary>
         const int ObjectSerializeBufferSize = 4 * 1024 * 1024;
+
+        /// <summary>Reused across records to serialize object values: this accumulator persists across a migration's keys (it lives
+        /// on the reused <see cref="UnifiedOutput.Accumulator"/>), so the <see cref="ObjectSerializeBufferSize"/> ring is allocated
+        /// once per migration rather than once per object. Created lazily on the first object value.</summary>
+        ChunkedObjectSerializer<byte> objectChunker;
 
         // Overflow key: shallow reference to the store's immutable key array (no copy).
         OverflowByteArray keyOverflow;
@@ -73,17 +79,18 @@ namespace Garnet.server
             => valueOverflow = value.AsReadOnlySpan(0).ToArray();
 
         /// <summary>Serialize an object value into <see cref="objectValueChunks"/> via the chunked serializer, which drains here as
-        /// its ring fills, so the whole serialized form is never materialized at once (and may exceed 2 GB).</summary>
+        /// its ring fills, so the whole serialized form is never materialized at once (and may exceed 2 GB). The serializer is
+        /// reused across records so its ring is allocated once (see <see cref="objectChunker"/>).</summary>
         public void SerializeObjectValue(IHeapObject valueObject, IObjectSerializer<IHeapObject> serializer)
         {
             hasObjectValue = true;
-            var chunker = new ChunkedObjectSerializer<byte>(this, ObjectSerializeBufferSize);
-            chunker.BeginSerialize(context: 0);
-            using var stream = chunker.GetStream();
+            objectChunker ??= new ChunkedObjectSerializer<byte>(this, ObjectSerializeBufferSize);
+            objectChunker.BeginSerialize(context: 0);
+            using var stream = objectChunker.GetStream();
             serializer.BeginSerialize(stream);
             serializer.Serialize(valueObject);
             serializer.EndSerialize();
-            chunker.EndSerialize();
+            objectChunker.EndSerialize();
         }
 
         /// <summary>True if the record has an overflow key.</summary>
@@ -118,8 +125,12 @@ namespace Garnet.server
         }
 
         /// <inheritdoc/>
-        public int Consume<TContext>(ReadOnlySpan<byte> first, ReadOnlySpan<byte> second, bool isComplete, TContext context)
+        public int Consume<TContext>(ReadOnlySpan<byte> first, ReadOnlySpan<byte> second, bool isStart, bool isComplete, TContext context)
         {
+            // This consumer always consumes the whole buffer (returns first.Length + second.Length), so the serializer's ring
+            // never wraps: each drain starts clean at offset 0 with all data contiguous in 'first'. Thus 'second' is always empty
+            // here (one owned chunk per drain). The second.ToArray() below is a release-mode safety net only.
+            Debug.Assert(second.IsEmpty, "MigrationChunkWriterAccumulator consumes the whole buffer each drain, so the wrapped 'second' span must be empty.");
             if (!first.IsEmpty)
                 objectValueChunks.Add(first.ToArray());
             if (!second.IsEmpty)
@@ -128,7 +139,7 @@ namespace Garnet.server
         }
 
         /// <inheritdoc/>
-        public int Consume<TContext, TKey, TInput>(ReadOnlySpan<byte> first, ReadOnlySpan<byte> second, bool isComplete, TKey key, ref TInput input, TContext context)
+        public int Consume<TContext, TKey, TInput>(ReadOnlySpan<byte> first, ReadOnlySpan<byte> second, bool isStart, bool isComplete, TKey key, ref TInput input, TContext context)
             where TKey : IKey
 #if NET9_0_OR_GREATER
             , allows ref struct

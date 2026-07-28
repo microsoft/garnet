@@ -46,6 +46,9 @@ namespace Tsavorite.core.Allocator.ObjectSerialization
         int tail;
         /// <summary>Number of valid (unconsumed) bytes currently in the ring; disambiguates head==tail empty vs full.</summary>
         int count;
+        /// <summary>True until the first drain of the current serialization; passed to the consumer as <c>isStart</c>. Set by
+        /// <see cref="BeginSerialize"/> / <see cref="Serialize"/>.</summary>
+        bool firstDrainPending;
 
         protected ChunkedObjectSerializer(IChunkedObjectSerializerConsumer consumer, IObjectSerializer<IHeapObject> serializer, IHeapObject valueObject, int bufferSize)
         {
@@ -68,7 +71,11 @@ namespace Tsavorite.core.Allocator.ObjectSerialization
 
         /// <summary>Set the context for a manual chunked write (see the network-path constructor); follow with
         /// <see cref="WriteBytes"/> / <see cref="GetStream"/> and finish with <see cref="EndSerialize"/>.</summary>
-        public void BeginSerialize(TContext context) => this.context = context;
+        public void BeginSerialize(TContext context)
+        {
+            this.context = context;
+            firstDrainPending = true;
+        }
 
         /// <summary>Append raw bytes to the chunk stream, draining to the consumer as the ring fills.</summary>
         public void WriteBytes(ReadOnlySpan<byte> bytes) => Write(bytes);
@@ -88,6 +95,7 @@ namespace Tsavorite.core.Allocator.ObjectSerialization
         public void Serialize(TContext context)
         {
             this.context = context;
+            firstDrainPending = true;
             using var stream = new ChunkStreamWriter(this);
             serializer.BeginSerialize(stream);
             serializer.Serialize(valueObject);
@@ -101,10 +109,11 @@ namespace Tsavorite.core.Allocator.ObjectSerialization
         /// </summary>
         /// <param name="first">The contiguous run of available bytes (from tail to head or the buffer end).</param>
         /// <param name="second">The wrapped run of available bytes; empty when the ring is not wrapped.</param>
+        /// <param name="isStart">True on the first drain of the value.</param>
         /// <param name="isComplete">True on the final drain of the value.</param>
         /// <returns>The number of bytes consumed (0..<c>first.Length + second.Length</c>).</returns>
-        protected virtual int Drain(ReadOnlySpan<byte> first, ReadOnlySpan<byte> second, bool isComplete)
-            => consumer.Consume(first, second, isComplete, context);
+        protected virtual int Drain(ReadOnlySpan<byte> first, ReadOnlySpan<byte> second, bool isStart, bool isComplete)
+            => consumer.Consume(first, second, isStart, isComplete, context);
 
         // Append bytes into the ring, draining (isComplete: false) whenever it fills.
         void Write(ReadOnlySpan<byte> src)
@@ -141,7 +150,9 @@ namespace Tsavorite.core.Allocator.ObjectSerialization
             var secondLen = count - firstLen;
             var second = secondLen > 0 ? new ReadOnlySpan<byte>(buffer, 0, secondLen) : default;
 
-            var consumed = Drain(first, second, isComplete);
+            var isStart = firstDrainPending;
+            firstDrainPending = false;
+            var consumed = Drain(first, second, isStart, isComplete);
             if (consumed < 0 || consumed > count)
                 throw new TsavoriteException($"Chunk consumer returned invalid consumed count {consumed} for {count} bytes");
 
@@ -158,6 +169,10 @@ namespace Tsavorite.core.Allocator.ObjectSerialization
             {
                 DrainOnce(isComplete: true);
             } while (count > 0);
+
+            // Reset the (now-empty) ring to position 0 so the next serialization drains contiguously (a record that fits the ring
+            // arrives as a single un-wrapped span); this lets a consumer recognize a whole record from one drain.
+            head = tail = 0;
         }
 
         /// <summary>A write-only <see cref="Stream"/> that funnels serialized bytes into the owning serializer's ring buffer.</summary>
@@ -218,7 +233,7 @@ namespace Tsavorite.core.Allocator.ObjectSerialization
         public int InputSerializedLength => inputSerializedLength;
 
         /// <inheritdoc/>
-        protected override int Drain(ReadOnlySpan<byte> first, ReadOnlySpan<byte> second, bool isComplete)
-            => consumer.Consume(first, second, isComplete, key, ref input, context);
+        protected override int Drain(ReadOnlySpan<byte> first, ReadOnlySpan<byte> second, bool isStart, bool isComplete)
+            => consumer.Consume(first, second, isStart, isComplete, key, ref input, context);
     }
 }
