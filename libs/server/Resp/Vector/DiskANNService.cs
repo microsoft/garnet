@@ -44,7 +44,7 @@ namespace Garnet.server
             delegate* unmanaged[Cdecl]<ulong, nint, nuint, nint, nuint, byte> writeCallback,
             delegate* unmanaged[Cdecl]<ulong, nint, nuint, byte> deleteCallback,
             delegate* unmanaged[Cdecl]<ulong, nint, nuint, nuint, nint, nint, byte> readModifyWriteCallback,
-            delegate* unmanaged[Cdecl]<ulong, uint, byte> filterCallback,
+            delegate* unmanaged[Cdecl]<ulong, nint, nuint, byte> filterCallback,
             delegate* unmanaged[Cdecl]<ulong, nint, nuint, void> logCallback,
             out bool quantizationRequested
         )
@@ -74,7 +74,7 @@ namespace Garnet.server
             delegate* unmanaged[Cdecl]<ulong, nint, nuint, nint, nuint, byte> writeCallback,
             delegate* unmanaged[Cdecl]<ulong, nint, nuint, byte> deleteCallback,
             delegate* unmanaged[Cdecl]<ulong, nint, nuint, nuint, nint, nint, byte> readModifyWriteCallback,
-            delegate* unmanaged[Cdecl]<ulong, uint, byte> filterCallback,
+            delegate* unmanaged[Cdecl]<ulong, nint, nuint, byte> filterCallback,
             delegate* unmanaged[Cdecl]<ulong, nint, nuint, void> logCallback,
             out bool quantizationRequested
         )

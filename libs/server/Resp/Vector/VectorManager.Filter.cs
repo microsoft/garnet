@@ -8,7 +8,6 @@ using System.Diagnostics;
 using System.Runtime.CompilerServices;
 #endif
 using System.Runtime.InteropServices;
-using Tsavorite.core;
 
 namespace Garnet.server
 {
@@ -263,7 +262,7 @@ namespace Garnet.server
         /// Shared filter evaluation logic for both single and batch callbacks.
         /// Reads the candidate's external ID and attributes, then evaluates the compiled filter.
         /// </summary>
-        private static unsafe byte EvaluateCandidateFilter(ulong context, uint internalId)
+        private static unsafe byte EvaluateCandidateFilter(ulong context, ReadOnlySpan<byte> attr)
         {
             Debug.Assert(InlineFilterStatePtr != null, "Shouldn't call without pinning a filter state");
             ref var state
@@ -273,53 +272,23 @@ namespace Garnet.server
                 = ref *InlineFilterStatePtr;
 #endif
 
-            // 1. Read external ID for this internal_id via ExtMap
-            Span<byte> iidKey = stackalloc byte[sizeof(uint)];
-            BinaryPrimitives.WriteUInt32LittleEndian(iidKey, internalId);
-
-            Span<byte> eidBuf = stackalloc byte[128];
-            var eidMem = SpanByteAndMemory.FromPinnedSpan(eidBuf);
-            try
+            // 3. Rebuild ExprProgram from thread-static state pointers
+            var program = new ExprProgram
             {
-                if (!ReadSizeUnknown(context | DiskANNService.ExternalIdMap, true, iidKey, ref eidMem))
-                    return 0; // can't find external ID → exclude
+                Instructions = state.InstrBuf,
+                TuplePool = state.TuplePoolBuf,
+                RuntimePool = state.RuntimePoolBuf,
+                RuntimePoolLength = 0,
+            };
 
-                // 2. Read attributes by external ID
-                Span<byte> attrBuf = stackalloc byte[256];
-                var attrMem = SpanByteAndMemory.FromPinnedSpan(attrBuf);
-                try
-                {
-                    if (!ReadSizeUnknown(context | DiskANNService.Attributes, true, eidMem.ReadOnlySpan, ref attrMem))
-                        return 0; // no attributes → exclude
+            program.ResetRuntimePool();
 
-                    // 3. Rebuild ExprProgram from thread-static state pointers
-                    var program = new ExprProgram
-                    {
-                        Instructions = state.InstrBuf,
-                        TuplePool = state.TuplePoolBuf,
-                        RuntimePool = state.RuntimePoolBuf,
-                        RuntimePoolLength = 0,
-                    };
+            AttributeExtractor.ExtractFields(attr, state.FilterBytes, state.SelectorRanges, state.ExtractedFields, ref program);
 
-                    program.ResetRuntimePool();
+            var stack = new ExprStack(state.StackBuf);
+            var pass = ExprRunner.Run(ref program, attr, state.FilterBytes, state.SelectorRanges, state.ExtractedFields, ref stack);
 
-                    AttributeExtractor.ExtractFields(attrMem.ReadOnlySpan, state.FilterBytes, state.SelectorRanges, state.ExtractedFields, ref program);
-
-                    var stack = new ExprStack(state.StackBuf);
-                    var pass = ExprRunner.Run(ref program, attrMem.ReadOnlySpan, state.FilterBytes, state.SelectorRanges, state.ExtractedFields, ref stack);
-
-                    return pass ? (byte)1 : (byte)0;
-                }
-                finally
-                {
-                    attrMem.Memory?.Dispose();
-                }
-            }
-            finally
-            {
-                eidMem.Memory?.Dispose();
-            }
+            return pass ? (byte)1 : (byte)0;
         }
-
     }
 }

@@ -221,7 +221,7 @@ namespace Garnet.server
         private unsafe delegate* unmanaged[Cdecl]<ulong, nint, nuint, nint, nuint, byte> WriteCallbackPtr { get; } = &WriteCallbackUnmanaged;
         private unsafe delegate* unmanaged[Cdecl]<ulong, nint, nuint, byte> DeleteCallbackPtr { get; } = &DeleteCallbackUnmanaged;
         private unsafe delegate* unmanaged[Cdecl]<ulong, nint, nuint, nuint, nint, nint, byte> ReadModifyWriteCallbackPtr { get; } = &ReadModifyWriteCallbackUnmanaged;
-        private unsafe delegate* unmanaged[Cdecl]<ulong, uint, byte> InlineFilterCallbackPtr { get; } = &FilterCallbackUnmanaged;
+        private unsafe delegate* unmanaged[Cdecl]<ulong, nint, nuint, byte> FilterCallbackPtr { get; } = &FilterCallbackUnmanaged;
         private unsafe delegate* unmanaged[Cdecl]<ulong, nint, nuint, void> LogCallbackPtr { get; } = &LogCallbackUnmanaged;
 
         /// <summary>
@@ -398,9 +398,9 @@ namespace Garnet.server
         }
 
         [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
-        private static byte FilterCallbackUnmanaged(ulong context, uint internalId)
+        private static unsafe byte FilterCallbackUnmanaged(ulong context, nint valueData, nuint valueLength)
         {
-            return EvaluateCandidateFilter(context, internalId);
+            return EvaluateCandidateFilter(context, new ReadOnlySpan<byte>((byte*)valueData, (int)valueLength));
         }
 
         private static unsafe bool ReadSizeUnknown(ulong context, bool forceAlignment, ReadOnlySpan<byte> key, ref SpanByteAndMemory value)

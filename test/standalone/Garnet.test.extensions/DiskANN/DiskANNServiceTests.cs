@@ -20,11 +20,11 @@ namespace Garnet.test
     [TestFixture]
     public class DiskANNServiceTests : TestBase
     {
-        private delegate void ReadCallbackDelegate(ulong context, uint numKeys, nint keysData, nuint keysLength, nint dataCallback, nint dataCallbackContext);
+        private delegate void ReadCallbackDelegate(ulong context, uint numKeys, uint valueLengthHint,  nint keysData, nuint keysLength, nint dataCallback, nint dataCallbackContext);
         private delegate byte WriteCallbackDelegate(ulong context, nint keyData, nuint keyLength, nint writeData, nuint writeLength);
         private delegate byte DeleteCallbackDelegate(ulong context, nint keyData, nuint keyLength);
         private delegate byte ReadModifyWriteCallbackDelegate(ulong context, nint keyData, nuint keyLength, nuint writeLength, nint dataCallback, nint dataCallbackContext);
-        private delegate byte InlineFilterCallbackDelegate(ulong context, uint internalId);
+        private delegate byte InlineFilterCallbackDelegate(ulong context, nint attrData, nuint attrDataLength);
         private delegate void LogCallbackDelegate(ulong context, nint logMessage, nuint logMessageLength);
 
         private sealed class ContextAndKeyComparer : IEqualityComparer<(ulong Context, byte[] Data)>
@@ -68,6 +68,7 @@ namespace Garnet.test
             unsafe void ReadCallback(
                 ulong context,
                 uint numKeys,
+                uint valueLengthHint,
                 nint keysData,
                 nuint keysLength,
                 nint dataCallback,
@@ -161,7 +162,7 @@ namespace Garnet.test
                 return 1;
             }
 
-            byte InlineFilterCallback(ulong context, uint internalId)
+            byte InlineFilterCallback(ulong context, nint attrData, nuint attrDataLength)
             {
                 return 1;
             }
@@ -279,6 +280,7 @@ namespace Garnet.test
             unsafe void ReadCallback(
                 ulong context,
                 uint numKeys,
+                uint valueLengthHint,
                 nint keysData,
                 nuint keysLength,
                 nint dataCallback,
@@ -372,7 +374,7 @@ namespace Garnet.test
                 return 1;
             }
 
-            byte InlineFilterCallback(ulong context, uint internalId)
+            byte InlineFilterCallback(ulong context, nint attrData, nuint attrDataLength)
             {
                 return 1;
             }

@@ -386,6 +386,19 @@ Newly allocated values are guaranteed to be all zeros.
 
 The callback returns 1 if the key-value pair was found or created, and 0 if some error occurred.
 
+### Filter Callback
+
+A simple callback providing a way for _Garnet_ to tell DiskANN if an attribute matches the current filter.  Its signature is:
+```csharp
+byte FilterCallbackUnmanaged(ulong context, nint valueData, nuint valueLength)
+```
+
+`context` identifies whcih Vector Set is being operated on (the associated namespace is ignored), and `valueData` and `valueLength` represent a `Span<byte>` of the attribute to check.
+
+The current filter is ambient state that Garnet has already parsed and validated.
+
+If the attribute matches the current filter, 1 is returned and otherwise 0 is returned.
+
 ### Log Callback
 
 A simple callback providing a way for DiskANN to log richer error messages into Garnet.  Its signature is:
