@@ -1715,12 +1715,18 @@ namespace Garnet.server
             }
 
             var output = new ObjectOutput();
+
+            // Attempt collection on all keys, but remember if we operated on a WRONGTYPE key
+            var res = GarnetStatus.OK;
             foreach (var key in keys)
             {
-                RMWObjectStoreOperation(key.ToArray(), ref input, ref objectContext, ref output);
+                if (RMWObjectStoreOperation(key.ToArray(), ref input, ref objectContext, ref output) == GarnetStatus.WRONGTYPE)
+                {
+                    res = GarnetStatus.WRONGTYPE;
+                }
             }
 
-            return GarnetStatus.OK;
+            return res;
         }
 
         /// <summary>

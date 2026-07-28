@@ -217,6 +217,8 @@ namespace Garnet.server
             requestedDropsLookup = requestedDrops.GetAlternateLookup<ReadOnlySpan<byte>>();
 #endif
 
+            potentiallyDeleted = [];
+
             recoveredIndexes = new();
             recoveredMetadata = new();
 
@@ -1345,6 +1347,25 @@ namespace Garnet.server
             range = quantType == VectorQuantType.Q8 ? 1.0 : null;
 
             return true;
+        }
+
+        /// <summary>
+        /// Determine if the given element is a member of the vector set.
+        /// </summary>
+        internal bool IsMember(ReadOnlySpan<byte> indexSpan, ReadOnlySpan<byte> element)
+        {
+            ReadIndex(indexSpan, out var context, out _, out _, out _, out _, out _, out _, out _, out _);
+
+            Span<byte> internalId = stackalloc byte[sizeof(int)];
+            var internalIdBytes = SpanByteAndMemory.FromPinnedSpan(internalId);
+            var foundInternalId = ReadSizeUnknown(context | DiskANNService.InternalIdMap, forceAlignment: true, element, ref internalIdBytes);
+            if (foundInternalId)
+            {
+                Debug.Assert(internalIdBytes.IsSpanByte, "Shouldn't have allocated for this op");
+                return true;
+            }
+
+            return false;
         }
 
         [Conditional("DEBUG")]

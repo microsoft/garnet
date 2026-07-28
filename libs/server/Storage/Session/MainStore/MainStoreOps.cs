@@ -65,6 +65,12 @@ namespace Garnet.server
                     epochChanged = true;
                 }
             }
+
+
+            if (status.IsWrongType)
+            {
+                return GarnetStatus.WRONGTYPE;
+            }
             else if (status.NotFound)
             {
                 incr_session_notfound();
@@ -135,6 +141,10 @@ namespace Garnet.server
                 incr_session_found();
                 return GarnetStatus.OK;
             }
+            else if (status.IsWrongType)
+            {
+                return GarnetStatus.WRONGTYPE;
+            }
             else
             {
                 incr_session_notfound();
@@ -158,6 +168,10 @@ namespace Garnet.server
             {
                 incr_session_found();
                 return GarnetStatus.OK;
+            }
+            else if (status.IsWrongType)
+            {
+                return GarnetStatus.WRONGTYPE;
             }
             else
             {
@@ -184,7 +198,18 @@ namespace Garnet.server
             if (status.IsPending)
                 CompletePendingForSession(ref status, ref output, ref context);
 
-            return status.Found ? GarnetStatus.OK : GarnetStatus.NOTFOUND;
+            if (status.Found)
+            {
+                return GarnetStatus.OK;
+            }
+            else if (status.IsWrongType)
+            {
+                return GarnetStatus.WRONGTYPE;
+            }
+            else
+            {
+                return GarnetStatus.NOTFOUND;
+            }
         }
 
         public unsafe GarnetStatus GETRANGE<TStringContext>(PinnedSpanByte key, ref StringInput input, ref StringOutput output, ref TStringContext context)
@@ -203,6 +228,10 @@ namespace Garnet.server
             {
                 incr_session_found();
                 return GarnetStatus.OK;
+            }
+            else if (status.IsWrongType)
+            {
+                return GarnetStatus.WRONGTYPE;
             }
             else
             {
@@ -241,7 +270,11 @@ namespace Garnet.server
                 StopPendingMetrics();
             }
 
-            if (status.NotFound)
+            if (status.IsWrongType)
+            {
+                return GarnetStatus.WRONGTYPE;
+            }
+            else if (status.NotFound)
             {
                 incr_session_notfound();
                 return GarnetStatus.NOTFOUND;
@@ -297,7 +330,11 @@ namespace Garnet.server
                 StopPendingMetrics();
             }
 
-            if (status.NotFound)
+            if (status.IsWrongType)
+            {
+                return GarnetStatus.WRONGTYPE;
+            }
+            else if (status.NotFound)
             {
                 incr_session_notfound();
                 return GarnetStatus.NOTFOUND;
@@ -348,6 +385,7 @@ namespace Garnet.server
                 {
                     var srcKey = input.parseState.GetArgSliceByRef(i);
                     var srcVal = input.parseState.GetArgSliceByRef(i + 1);
+
                     SET(srcKey, srcVal, ref context);
                 }
             }
@@ -429,6 +467,11 @@ namespace Garnet.server
                 StopPendingMetrics();
             }
 
+            if (status.IsWrongType)
+            {
+                return GarnetStatus.WRONGTYPE;
+            }
+
             Debug.Assert(output.SpanByteAndMemory.IsSpanByte);
 
             return GarnetStatus.OK;
@@ -467,6 +510,11 @@ namespace Garnet.server
             if (status.IsPending)
                 CompletePendingForSession(ref status, ref sbmOut, ref context);
 
+            if (status.IsWrongType)
+            {
+                return GarnetStatus.WRONGTYPE;
+            }
+
             Debug.Assert(sbmOut.SpanByteAndMemory.IsSpanByte);
             output.Length = sbmOut.SpanByteAndMemory.Length;
 
@@ -479,6 +527,12 @@ namespace Garnet.server
             var status = context.RMW((FixedSpanByteKey)key, ref input, ref output);
             if (status.IsPending)
                 CompletePendingForSession(ref status, ref output, ref context);
+
+            if (status.IsWrongType)
+            {
+                return GarnetStatus.WRONGTYPE;
+            }
+
             return GarnetStatus.OK;
         }
 
@@ -500,6 +554,13 @@ namespace Garnet.server
             var status = context.RMW((FixedSpanByteKey)key, ref input, ref stringOutput);
             if (status.IsPending)
                 CompletePendingForSession(ref status, ref stringOutput, ref context);
+
+
+            if (status.IsWrongType)
+            {
+                output = 0;
+                return GarnetStatus.WRONGTYPE;
+            }
 
             Debug.Assert(stringOutput.SpanByteAndMemory.IsSpanByte);
 
@@ -556,7 +617,16 @@ namespace Garnet.server
         {
             PinnedSpanByte val1, val2;
             var status1 = GET(key1, out val1, ref context);
+            if (status1 == GarnetStatus.WRONGTYPE)
+            {
+                return status1;
+            }
+
             var status2 = GET(key2, out val2, ref context);
+            if (status2 == GarnetStatus.WRONGTYPE)
+            {
+                return status2;
+            }
 
             var writer = new RespMemoryWriter(functionsState.respProtocolVersion, ref output.SpanByteAndMemory);
 

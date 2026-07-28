@@ -237,6 +237,10 @@ namespace Garnet.server
                 {
                     return GarnetStatus.OK;
                 }
+                else if (statusOp == GarnetStatus.WRONGTYPE)
+                {
+                    return GarnetStatus.WRONGTYPE;
+                }
                 else if (statusOp == GarnetStatus.OK)
                 {
                     if (sourceList.GarnetObject is not ListObject srcListObject)
@@ -256,7 +260,7 @@ namespace Garnet.server
                             destinationList.GarnetObject = new ListObject();
                         }
 
-                        if (destinationList.GarnetObject is not ListObject listObject)
+                        if (statusOp == GarnetStatus.WRONGTYPE || destinationList.GarnetObject is not ListObject listObject)
                             return GarnetStatus.WRONGTYPE;
 
                         dstListObject = listObject;
