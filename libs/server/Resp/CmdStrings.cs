@@ -370,6 +370,7 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> STRING => "STRING"u8;
         public static ReadOnlySpan<byte> stringt => "string"u8;
         public static ReadOnlySpan<byte> rangeindext => "rangeindex"u8;
+        public static ReadOnlySpan<byte> vectorsett => "vectorset"u8;
         public static ReadOnlySpan<byte> none => "none"u8;
 
         // OBJECT ENCODING result strings

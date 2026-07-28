@@ -622,6 +622,35 @@ namespace Garnet.server
         #endregion
 
         #region Vector Sets
+
+        /// <inheritdoc/>
+        public GarnetStatus VectorSetCardinality(PinnedSpanByte key, out long card)
+        {
+            garnetApi.WATCH(key, StoreType.Main);
+            return garnetApi.VectorSetCardinality(key, out card);
+        }
+
+        /// <inheritdoc/>
+        public GarnetStatus VectorSetIsMember(PinnedSpanByte key, PinnedSpanByte element)
+        {
+            garnetApi.WATCH(key, StoreType.Main);
+            return garnetApi.VectorSetIsMember(key, element);
+        }
+
+        /// <inheritdoc/>
+        public GarnetStatus VectorSetLinks(PinnedSpanByte key, PinnedSpanByte element, bool withScores, ref SpanByteAndMemory idResults, ref SpanByteAndMemory distanceResults)
+        {
+            garnetApi.WATCH(key, StoreType.Main);
+            return garnetApi.VectorSetLinks(key, element, withScores, ref idResults, ref distanceResults);
+        }
+
+        /// <inheritdoc/>
+        public GarnetStatus VectorSetRandomMembers(PinnedSpanByte key, int count, ref SpanByteAndMemory idResults)
+        {
+            garnetApi.WATCH(key, StoreType.Main);
+            return garnetApi.VectorSetRandomMembers(key, count, ref idResults);
+        }
+
         /// <inheritdoc/>
         public GarnetStatus VectorSetValueSimilarity(PinnedSpanByte key, VectorValueType valueType, PinnedSpanByte value, int count, float delta, int searchExplorationFactor, PinnedSpanByte filter, int maxFilteringEffort, bool includeAttributes, ref SpanByteAndMemory outputIds, out VectorIdFormat outputIdFormat, out ReadOnlySpan<byte> errorMessage, ref SpanByteAndMemory outputDistances, ref SpanByteAndMemory outputAttributes, out VectorManagerResult result, ref SpanByteAndMemory filterBitmap)
         {

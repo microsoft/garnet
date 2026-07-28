@@ -188,9 +188,7 @@ namespace Garnet.server
             parseState.InitializeWithArguments([dimsArg, reduceDimsArg, valueTypeArg, valuesArg, elementArg, quantizerArg, buildExplorationFactorArg, attributesArg, numLinksArg, distanceMetricArg]);
 
             var input = new StringInput(RespCommand.VADD, ref parseState);
-
             Span<byte> indexSpan = stackalloc byte[VectorManager.IndexSizeBytes];
-
             using (vectorManager.ReadOrCreateVectorIndex(this, key, ref input, indexSpan, out var status))
             {
                 if (status != GarnetStatus.OK)
@@ -220,10 +218,10 @@ namespace Garnet.server
         [SkipLocalsInit]
         public unsafe GarnetStatus VectorSetRemove(PinnedSpanByte key, PinnedSpanByte element)
         {
+            parseState.InitializeWithArgument(key);
+
             var input = new StringInput(RespCommand.VREM, ref parseState);
-
             Span<byte> indexSpan = stackalloc byte[VectorManager.IndexSizeBytes];
-
             using (vectorManager.ReadVectorIndex(this, key, ref input, indexSpan, out var status))
             {
                 if (status != GarnetStatus.OK)
@@ -248,6 +246,33 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Update attribute on an element in a Vector Set.
+        /// 
+        /// Returns <see cref="GarnetStatus.NOTFOUND"/> if Vector Set does not exist, or element is not a member.
+        /// 
+        /// Removing an attribute is modelled as setting an empty attribute.
+        /// </summary>
+        [SkipLocalsInit]
+        public GarnetStatus VectorSetSetAttribute(PinnedSpanByte key, PinnedSpanByte element, PinnedSpanByte attribute)
+        {
+            parseState.InitializeWithArgument(key);
+
+            var input = new StringInput(RespCommand.VSETATTR, ref parseState);
+            Span<byte> indexSpan = stackalloc byte[VectorManager.IndexSizeBytes];
+            using (vectorManager.ReadVectorIndex(this, key, ref input, indexSpan, out var status))
+            {
+                if (status != GarnetStatus.OK)
+                {
+                    return status;
+                }
+
+                // TODO: Implement!
+
+                return GarnetStatus.NOTFOUND;
+            }
+        }
+
+        /// <summary>
         /// Perform a similarity search on an existing Vector Set given a vector as a bunch of floats.
         /// </summary>
         [SkipLocalsInit]
@@ -257,9 +282,7 @@ namespace Garnet.server
 
             // Get the index
             var input = new StringInput(RespCommand.VSIM, ref parseState);
-
             Span<byte> indexSpan = stackalloc byte[VectorManager.IndexSizeBytes];
-
             using (vectorManager.ReadVectorIndex(this, key, ref input, indexSpan, out var status))
             {
                 if (status != GarnetStatus.OK)
@@ -285,9 +308,7 @@ namespace Garnet.server
             parseState.InitializeWithArgument(key);
 
             var input = new StringInput(RespCommand.VSIM, ref parseState);
-
             Span<byte> indexSpan = stackalloc byte[VectorManager.IndexSizeBytes];
-
             using (vectorManager.ReadVectorIndex(this, key, ref input, indexSpan, out var status))
             {
                 if (status != GarnetStatus.OK)
@@ -311,9 +332,7 @@ namespace Garnet.server
             parseState.InitializeWithArgument(key);
 
             var input = new StringInput(RespCommand.VEMB, ref parseState);
-
             Span<byte> indexSpan = stackalloc byte[VectorManager.IndexSizeBytes];
-
             using (vectorManager.ReadVectorIndex(this, key, ref input, indexSpan, out var status))
             {
                 if (status != GarnetStatus.OK)
@@ -339,9 +358,7 @@ namespace Garnet.server
             parseState.InitializeWithArgument(key);
 
             var input = new StringInput(RespCommand.VEMB, ref parseState);
-
             Span<byte> indexSpan = stackalloc byte[VectorManager.IndexSizeBytes];
-
             using (vectorManager.ReadVectorIndex(this, key, ref input, indexSpan, out var status))
             {
                 if (status != GarnetStatus.OK)
@@ -367,9 +384,7 @@ namespace Garnet.server
             parseState.InitializeWithArgument(key);
 
             var input = new StringInput(RespCommand.VDIM, ref parseState);
-
             Span<byte> indexSpan = stackalloc byte[VectorManager.IndexSizeBytes];
-
             using (vectorManager.ReadVectorIndex(this, key, ref input, indexSpan, out var status))
             {
                 if (status != GarnetStatus.OK)
@@ -422,6 +437,110 @@ namespace Garnet.server
                 VectorManager.ReadIndex(indexSpan, out var context, out vectorDimensions, out reducedDimensions, out quantType, out buildExplorationFactor, out numberOfLinks, out distanceMetricType, out _, out var indexPtr);
                 size = (long)NativeDiskANNMethods.card(context, indexPtr);
 
+                return GarnetStatus.OK;
+            }
+        }
+
+        /// <summary>
+        /// Get number of vectors in Vector Set.
+        /// </summary>
+        internal GarnetStatus VectorSetCardinality(PinnedSpanByte key, out long card)
+        {
+            parseState.InitializeWithArgument(key);
+
+            var input = new StringInput(RespCommand.VCARD, ref parseState);
+            Span<byte> indexSpan = stackalloc byte[VectorManager.IndexSizeBytes];
+            using (vectorManager.ReadVectorIndex(this, key, ref input, indexSpan, out var status))
+            {
+                if (status != GarnetStatus.OK)
+                {
+                    card = 0;
+                    return status;
+                }
+
+                // After a successful read we extract metadata
+                VectorManager.ReadIndex(indexSpan, out var context, out _, out _, out _, out _, out _, out _, out _, out var indexPtr);
+                card = (long)NativeDiskANNMethods.card(context, indexPtr);
+
+                return GarnetStatus.OK;
+            }
+        }
+
+        /// <summary>
+        /// Determine if an element is a member of a Vector Set.
+        /// </summary>
+        internal GarnetStatus VectorSetIsMember(PinnedSpanByte key, PinnedSpanByte element)
+        {
+            parseState.InitializeWithArgument(key);
+
+            var input = new StringInput(RespCommand.VISMEMBER, ref parseState);
+            Span<byte> indexSpan = stackalloc byte[VectorManager.IndexSizeBytes];
+            using (vectorManager.ReadVectorIndex(this, key, ref input, indexSpan, out var status))
+            {
+                if (status != GarnetStatus.OK)
+                {
+                    return status;
+                }
+
+                // After a successful read we extract metadata
+                if (vectorManager.IsMember(indexSpan, element))
+                {
+                    return GarnetStatus.OK;
+                }
+                else
+                {
+                    return GarnetStatus.NOTFOUND;
+                }
+            }
+        }
+
+        /// <summary>
+        /// Determine neighbors of a given element, and (optionally) the distance to each neighbor.
+        /// </summary>
+        internal GarnetStatus VectorSetLinks(PinnedSpanByte key, PinnedSpanByte element, bool withScores, ref SpanByteAndMemory idResults, ref SpanByteAndMemory memoryResults)
+        {
+            parseState.InitializeWithArgument(key);
+
+            var input = new StringInput(RespCommand.VLINKS, ref parseState);
+            Span<byte> indexSpan = stackalloc byte[VectorManager.IndexSizeBytes];
+            using (vectorManager.ReadVectorIndex(this, key, ref input, indexSpan, out var status))
+            {
+                if (status != GarnetStatus.OK)
+                {
+                    return status;
+                }
+
+                // TODO: Implement!
+                idResults.Length = 0;
+                memoryResults.Length = 0;
+                return GarnetStatus.OK;
+            }
+        }
+
+        /// <summary>
+        /// Fetch random elements from the given Vector Set.
+        /// 
+        /// If <paramref name="count"/> is &lt; 0 we allow duplicates, if <paramref name="count"/> &gt; 0 we remove duplicates.
+        /// 
+        /// It is OK to fetch fewer than the requested number of elements.
+        /// 
+        /// On success, <paramref name="idResults"/> has length prefixed element names.
+        /// </summary>
+        internal GarnetStatus VectorSetRandomMembers(PinnedSpanByte key, int count, ref SpanByteAndMemory idResults)
+        {
+            parseState.InitializeWithArgument(key);
+
+            var input = new StringInput(RespCommand.VRANDMEMBER, ref parseState);
+            Span<byte> indexSpan = stackalloc byte[VectorManager.IndexSizeBytes];
+            using (vectorManager.ReadVectorIndex(this, key, ref input, indexSpan, out var status))
+            {
+                if (status != GarnetStatus.OK)
+                {
+                    return status;
+                }
+
+                // TODO: Implement!
+                idResults.Length = 0;
                 return GarnetStatus.OK;
             }
         }

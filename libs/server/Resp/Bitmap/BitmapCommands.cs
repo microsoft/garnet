@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System.Buffers;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -157,6 +158,8 @@ namespace Garnet.server
 
             if (status == GarnetStatus.OK)
                 dcurr += output.SpanByteAndMemory.Length;
+            else if (status == GarnetStatus.WRONGTYPE)
+                WriteError(CmdStrings.RESP_ERR_WRONG_TYPE);
 
             return true;
         }
@@ -188,6 +191,8 @@ namespace Garnet.server
             if (status == GarnetStatus.NOTFOUND)
                 while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
                     SendAndReset();
+            else if (status == GarnetStatus.WRONGTYPE)
+                WriteError(CmdStrings.RESP_ERR_WRONG_TYPE);
             else
                 dcurr += output.SpanByteAndMemory.Length;
 
@@ -247,6 +252,10 @@ namespace Garnet.server
             {
                 while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
                     SendAndReset();
+            }
+            else if (status == GarnetStatus.WRONGTYPE)
+            {
+                WriteError(CmdStrings.RESP_ERR_WRONG_TYPE);
             }
 
             return true;
@@ -333,6 +342,10 @@ namespace Garnet.server
             {
                 ProcessOutput(output.SpanByteAndMemory);
             }
+            else if (status == GarnetStatus.WRONGTYPE)
+            {
+                WriteError(CmdStrings.RESP_ERR_WRONG_TYPE);
+            }
             else if (status == GarnetStatus.NOTFOUND)
             {
                 var resp = bSetValSlice[0] == '0' ? CmdStrings.RESP_RETURN_VAL_0 : CmdStrings.RESP_RETURN_VAL_N1;
@@ -367,9 +380,17 @@ namespace Garnet.server
 
             var input = new StringInput(RespCommand.BITOP, ref parseState);
 
-            _ = storageApi.StringBitOperation(ref input, bitOp, out var result);
-            while (!RespWriteUtils.TryWriteInt64(result, ref dcurr, dend))
-                SendAndReset();
+            var res = storageApi.StringBitOperation(ref input, bitOp, out var result);
+
+            if (res == GarnetStatus.WRONGTYPE)
+            {
+                WriteError(CmdStrings.RESP_ERR_WRONG_TYPE);
+            }
+            else
+            {
+                while (!RespWriteUtils.TryWriteInt64(result, ref dcurr, dend))
+                    SendAndReset();
+            }
 
             return true;
         }
@@ -393,6 +414,7 @@ namespace Garnet.server
             PinnedSpanByte overflowTypeSlice = default;
             var secondaryCommandArgs = new SecondaryCommandList();
 
+            var hasWriteSubCommands = false;
             var currTokenIdx = 1;
             while (currTokenIdx < parseState.Count)
             {
@@ -456,6 +478,9 @@ namespace Garnet.server
                                                     );
                     }
 
+                    // SET and INCRBY modify the value stored
+                    hasWriteSubCommands = true;
+
                     // Validate value
                     if (currTokenIdx >= parseState.Count || !parseState.TryGetLong(currTokenIdx, out _))
                     {
@@ -470,7 +495,7 @@ namespace Garnet.server
             }
 
             return StringBitFieldAction(ref storageApi, key, RespCommand.BITFIELD,
-                                     secondaryCommandArgs, isOverflowTypeSet, overflowTypeSlice);
+                                     secondaryCommandArgs, hasWriteSubCommands, isOverflowTypeSet, overflowTypeSlice);
         }
 
         /// <summary>
@@ -528,56 +553,143 @@ namespace Garnet.server
                 secondaryCommandArgs.Add((RespCommand.GET, [commandSlice, encodingSlice, offsetSlice]));
             }
 
-            return StringBitFieldAction(ref storageApi, key, RespCommand.BITFIELD_RO, secondaryCommandArgs);
+            return StringBitFieldAction(ref storageApi, key, RespCommand.BITFIELD_RO, secondaryCommandArgs, hasWriteCommands: false);
         }
 
         private bool StringBitFieldAction<TGarnetApi>(ref TGarnetApi storageApi,
                                                       PinnedSpanByte sbKey,
                                                       RespCommand cmd,
                                                       SecondaryCommandList secondaryCommandArgs,
+                                                      bool hasWriteCommands,
                                                       bool isOverflowTypeSet = false,
                                                       PinnedSpanByte overflowTypeSlice = default)
             where TGarnetApi : IGarnetApi
         {
-            while (!RespWriteUtils.TryWriteArrayLength(secondaryCommandArgs.Count, ref dcurr, dend))
-                SendAndReset();
-
             var input = new StringInput(cmd);
 
-            for (var i = 0; i < secondaryCommandArgs.Count; i++)
+            var startDCurr = dcurr;
+
+            var arrayLengthWritten = RespWriteUtils.TryWriteArrayLength(secondaryCommandArgs.Count, ref dcurr, dend);
+
+            if (secondaryCommandArgs.Count == 1)
             {
-                var opCode = secondaryCommandArgs[i].Item1;
-                var opArgs = secondaryCommandArgs[i].Item2;
-                parseState.Initialize(opArgs.Length + (isOverflowTypeSet ? 1 : 0));
-
-                for (var j = 0; j < opArgs.Length; j++)
+                // Special case, this is a single command so we never need to use a transaction
+                _ = HandleFirstSubCommand(this, secondaryCommandArgs, sbKey, isOverflowTypeSet, overflowTypeSlice, ref storageApi, startDCurr, arrayLengthWritten, ref input);
+                return true;
+            }
+            else
+            {
+                // For multiple commands, we need to be in a transaction so the type doesn't change under us
+                using (txnManager.PromoteToTransaction(TransactionStoreTypes.Main, sbKey, hasWriteCommands ? LockType.Exclusive : LockType.Shared))
                 {
-                    parseState.SetArgument(j, opArgs[j]);
-                }
+                    // First sub command has to deal with WRONGTYPE and array length
+                    if (HandleFirstSubCommand(this, secondaryCommandArgs, sbKey, isOverflowTypeSet, overflowTypeSlice, ref transactionalGarnetApi, startDCurr, arrayLengthWritten, ref input))
+                    {
+                        // WRONGTYPE, nothing left to do
+                        return true;
+                    }
 
-                if (isOverflowTypeSet)
-                {
-                    parseState.SetArgument(opArgs.Length, overflowTypeSlice);
-                }
+                    // Remainder don't have to worry about array length not bein present, nor WRONGTYPE responses
+                    for (var i = 1; i < secondaryCommandArgs.Count; i++)
+                    {
+                        var opCode = secondaryCommandArgs[i].Item1;
+                        var opArgs = secondaryCommandArgs[i].Item2;
+                        parseState.Initialize(opArgs.Length + (isOverflowTypeSet ? 1 : 0));
 
-                input.parseState = parseState;
+                        for (var j = 0; j < opArgs.Length; j++)
+                        {
+                            parseState.SetArgument(j, opArgs[j]);
+                        }
 
-                var output = GetStringOutput();
-                var status = storageApi.StringBitField(sbKey, ref input, opCode,
-                    ref output);
+                        if (isOverflowTypeSet)
+                        {
+                            parseState.SetArgument(opArgs.Length, overflowTypeSlice);
+                        }
 
-                if (status == GarnetStatus.NOTFOUND && opCode == RespCommand.GET)
-                {
-                    while (!RespWriteUtils.TryWriteInt32(0, ref dcurr, dend))
-                        SendAndReset();
-                }
-                else
-                {
-                    ProcessOutput(output.SpanByteAndMemory);
+                        input.parseState = parseState;
+
+                        var output = GetStringOutput();
+                        var status = transactionalGarnetApi.StringBitField(sbKey, ref input, opCode,
+                            ref output);
+
+                        if (status == GarnetStatus.NOTFOUND && opCode == RespCommand.GET)
+                        {
+                            while (!RespWriteUtils.TryWriteInt32(0, ref dcurr, dend))
+                                SendAndReset();
+                        }
+                        else
+                        {
+                            ProcessOutput(output.SpanByteAndMemory);
+                        }
+                    }
                 }
             }
 
             return true;
+
+            // Handle first subcommand in a BITFIELD*; this is special because we _might_ not have written array length yet, and we have to check for WRONGTYPE
+            //
+            // Returns true if we error'd out and the whole command response was written
+            // Returns false if more work is left to be done
+            static bool HandleFirstSubCommand<TSubGarnetApi>(RespServerSession self, SecondaryCommandList secondaryCommandArgs, PinnedSpanByte sbKey, bool isOverflowTypeSet, PinnedSpanByte overflowTypeSlice, ref TSubGarnetApi storageApi, byte* startDCurr, bool arrayLengthWritten, ref StringInput input)
+                where TSubGarnetApi : IGarnetApi
+            {
+                var opCode = secondaryCommandArgs[0].Item1;
+                var opArgs = secondaryCommandArgs[0].Item2;
+                self.parseState.Initialize(opArgs.Length + (isOverflowTypeSet ? 1 : 0));
+
+                for (var j = 0; j < opArgs.Length; j++)
+                {
+                    self.parseState.SetArgument(j, opArgs[j]);
+                }
+
+                if (isOverflowTypeSet)
+                {
+                    self.parseState.SetArgument(opArgs.Length, overflowTypeSlice);
+                }
+
+                input.parseState = self.parseState;
+
+                var output = self.GetStringOutput();
+                var status = storageApi.StringBitField(sbKey, ref input, opCode, ref output);
+
+                // WRONGTYPE needs to overwrite the array length, if we wrote it
+                if (status == GarnetStatus.WRONGTYPE)
+                {
+                    self.dcurr = startDCurr;
+                    self.WriteError(CmdStrings.RESP_ERR_WRONG_TYPE);
+                    return true;
+                }
+                else
+                {
+                    // Most of the time the array length will have fit, but we have to handle the case where it wasn't
+                    if (!arrayLengthWritten)
+                    {
+                        // If we have any result written inline, copy it out before we write the array length
+                        if (output.SpanByteAndMemory.IsSpanByte && output.SpanByteAndMemory.Length > 0)
+                        {
+                            var mem = MemoryPool<byte>.Shared.Rent(output.SpanByteAndMemory.Length);
+                            output.SpanByteAndMemory.ReadOnlySpan.CopyTo(mem.Memory.Span);
+
+                            output.SpanByteAndMemory = new(mem, output.SpanByteAndMemory.Length);
+                        }
+
+                        self.WriteArrayLength(secondaryCommandArgs.Count);
+                    }
+
+                    // Handle result
+                    if (status == GarnetStatus.NOTFOUND && opCode == RespCommand.GET)
+                    {
+                        self.WriteInt32(0);
+                    }
+                    else
+                    {
+                        self.ProcessOutput(output.SpanByteAndMemory);
+                    }
+                }
+
+                return false;
+            }
         }
     }
 }
