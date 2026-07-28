@@ -54,7 +54,7 @@ Applications where high throughput requirements drive infrastructure costs. Garn
 | **Pub/Sub**           | Publish/subscribe messaging |
 | [**Authentication**](./security.md#authentication-and-access-control) | Microsoft Entra ID RBAC |
 | [**Network isolation**](./security.md#network-security) | Virtual network support with no public internet access |
-| [**Encryption**](./security.md#encryption-at-rest) | At rest and in transit with TLS |
+| [**Encryption**](./security.md#data-encryption) | At rest and in transit with TLS |
 | [**Monitoring**](./monitoring.md)        | Azure Monitor Metrics |
 | **Updates**           | Automatic updates with zero downtime when replication is enabled |
 

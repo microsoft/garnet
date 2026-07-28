@@ -4942,41 +4942,6 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
-        public async Task PurgeBPACLsAsync()
-        {
-            // Uses exceptions for control flow, as we're not setting up replicas here
-
-            await CheckCommandsAsync(
-                "PURGEBP",
-                [DoPurgeBPClusterAsync, DoPurgeBPAsync]
-            ).ConfigureAwait(false);
-
-            static async Task DoPurgeBPClusterAsync(GarnetClient client)
-            {
-                try
-                {
-                    await client.ExecuteForStringResultAsync("PURGEBP", ["MigrationManager"]).ConfigureAwait(false);
-                    Assert.Fail("Shouldn't be reachable, cluster isn't enabled");
-                }
-                catch (Exception e)
-                {
-                    if (e.Message == "ERR This instance has cluster support disabled")
-                    {
-                        return;
-                    }
-
-                    throw;
-                }
-            }
-
-            static async Task DoPurgeBPAsync(GarnetClient client)
-            {
-                string val = await client.ExecuteForStringResultAsync("PURGEBP", ["ServerListener"]).ConfigureAwait(false);
-                ClassicAssert.AreEqual("GC completed for ServerListener", val);
-            }
-        }
-
-        [Test]
         public async Task ModuleLoadCSACLsAsync()
         {
             // MODULE isn't a proper redis command, but this is the placeholder today... so validate it for completeness
@@ -7874,10 +7839,8 @@ namespace Garnet.test.Resp.ACL
 
             static async Task DoVCardAsync(GarnetClient client)
             {
-                // TODO: this is a placeholder implementation
-
-                string val = await client.ExecuteForStringResultAsync("VCARD", ["foo"]).ConfigureAwait(false);
-                ClassicAssert.AreEqual("OK", val);
+                var val = await client.ExecuteForStringResultAsync("VCARD", ["foo"]).ConfigureAwait(false);
+                ClassicAssert.AreEqual("0", val);
             }
         }
 
@@ -7958,10 +7921,8 @@ namespace Garnet.test.Resp.ACL
 
             static async Task DoVIsMemberAsync(GarnetClient client)
             {
-                // TODO: this is a placeholder implementation
-
-                string val = await client.ExecuteForStringResultAsync("VISMEMBER", ["foo"]).ConfigureAwait(false);
-                ClassicAssert.AreEqual("OK", val);
+                var val = await client.ExecuteForStringResultAsync("VISMEMBER", ["foo", "bar"]).ConfigureAwait(false);
+                ClassicAssert.AreEqual("0", val);
             }
         }
 
@@ -7977,8 +7938,8 @@ namespace Garnet.test.Resp.ACL
             {
                 // TODO: this is a placeholder implementation
 
-                string val = await client.ExecuteForStringResultAsync("VLINKS", ["foo"]).ConfigureAwait(false);
-                ClassicAssert.AreEqual("OK", val);
+                var val = await client.ExecuteForStringResultAsync("VLINKS", ["foo", "bar"]).ConfigureAwait(false);
+                ClassicAssert.IsNull(val);
             }
         }
 
@@ -7994,8 +7955,8 @@ namespace Garnet.test.Resp.ACL
             {
                 // TODO: this is a placeholder implementation
 
-                string val = await client.ExecuteForStringResultAsync("VRANDMEMBER", ["foo"]).ConfigureAwait(false);
-                ClassicAssert.AreEqual("OK", val);
+                var val = await client.ExecuteForStringResultAsync("VRANDMEMBER", ["foo"]).ConfigureAwait(false);
+                ClassicAssert.IsNull(val);
             }
         }
 
@@ -8026,8 +7987,8 @@ namespace Garnet.test.Resp.ACL
             {
                 // TODO: this is a placeholder implementation
 
-                string val = await client.ExecuteForStringResultAsync("VSETATTR", ["foo"]).ConfigureAwait(false);
-                ClassicAssert.AreEqual("OK", val);
+                var val = await client.ExecuteForStringResultAsync("VSETATTR", ["foo", "bar", "fizz"]).ConfigureAwait(false);
+                ClassicAssert.AreEqual("0", val);
             }
         }
 

@@ -180,8 +180,6 @@ master_replid2: secondary replication id (currently not being used).
 master_repl_offset: current primary AOF offset.
 store_current_safe_aof_address: AOF address covered by latest checkpoint
 store_recovered_safe_aof_address:  AOF address covered by the recovered checkpoint
-object_store_current_safe_aof_address: AOF address covered by latest checkpoint of object store
-object_store_recovered_safe_aof_address: AOF address covered by recovered checkpoint of object store
 
 ```bash
 192.168.1.26:7000> info replication
@@ -195,8 +193,6 @@ master_repl_offset:136
 second_repl_offset:136
 store_current_safe_aof_address:0
 store_recovered_safe_aof_address:0
-object_store_current_safe_aof_address:0
-object_store_recovered_safe_aof_address:0
 slave0:ip=192.168.1.26,port=7001,state=online,offset=136,lag=0
 slave1:ip=192.168.1.26,port=7002,state=online,offset=136,lag=0
 192.168.1.26:7000> exit
@@ -212,8 +208,6 @@ master_repl_offset:136
 second_repl_offset:136
 store_current_safe_aof_address:0
 store_recovered_safe_aof_address:0
-object_store_current_safe_aof_address:0
-object_store_recovered_safe_aof_address:0
 master_host:192.168.1.26
 master_port:7000
 master_link_status:up

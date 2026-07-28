@@ -156,6 +156,9 @@ namespace Garnet.server
                     Debug.Assert(output.SpanByteAndMemory.IsSpanByte);
                     WriteNull();
                     break;
+                case GarnetStatus.WRONGTYPE:
+                    WriteError(CmdStrings.RESP_ERR_WRONG_TYPE);
+                    break;
             }
 
             return true;
@@ -354,11 +357,14 @@ namespace Garnet.server
 
             var status = storageApi.SET(key, value);
 
+            // Type already stored in key which requires an explicit delete
             if (status == GarnetStatus.WRONGTYPE)
             {
-                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
-                    SendAndReset();
-                return true;
+                using (txnManager.PromoteToTransaction(TransactionStoreTypes.Main | TransactionStoreTypes.Object, key, LockType.Exclusive))
+                {
+                    _ = storageSession.DELETE(key, ref storageSession.unifiedTransactionalContext);
+                    _ = storageSession.SET(key, value, ref storageSession.stringTransactionalContext);
+                }
             }
 
             while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
@@ -399,15 +405,30 @@ namespace Garnet.server
                 return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_OFFSETOUTOFRANGE);
             }
 
+            // Reject offsets that would push the resulting value past the maximum record size,
+            // to avoid the storage layer throwing (and consequently dropping the connection).
+            var value = parseState.GetArgSliceByRef(2);
+            if ((long)offset + value.Length > BitmapManager.MaxBitmapPayloadBytes)
+            {
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_STRING_EXCEEDS_MAX_SIZE);
+            }
+
             var input = new StringInput(RespCommand.SETRANGE, ref parseState, startIdx: 1);
 
             Span<byte> outputBuffer = stackalloc byte[NumUtils.MaximumFormatInt64Length];
             var output = PinnedSpanByte.FromPinnedSpan(outputBuffer);
 
-            _ = storageApi.SETRANGE(key, ref input, ref output);
+            var res = storageApi.SETRANGE(key, ref input, ref output);
 
-            while (!RespWriteUtils.TryWriteIntegerFromBytes(outputBuffer.Slice(0, output.Length), ref dcurr, dend))
-                SendAndReset();
+            if (res == GarnetStatus.WRONGTYPE)
+            {
+                WriteError(CmdStrings.RESP_ERR_WRONG_TYPE);
+            }
+            else
+            {
+                while (!RespWriteUtils.TryWriteIntegerFromBytes(outputBuffer.Slice(0, output.Length), ref dcurr, dend))
+                    SendAndReset();
+            }
 
             return true;
         }
@@ -433,6 +454,10 @@ namespace Garnet.server
             {
                 sessionMetrics?.incr_total_found();
                 ProcessOutput(output.SpanByteAndMemory);
+            }
+            else if (status == GarnetStatus.WRONGTYPE)
+            {
+                WriteError(CmdStrings.RESP_ERR_WRONG_TYPE);
             }
             else
             {
@@ -472,7 +497,17 @@ namespace Garnet.server
             var value = parseState.GetArgSliceByRef(2);
 
             var input = new StringInput(RespCommand.SETEX, 0, valMetadata);
-            _ = storageApi.SET(key, ref input, value);
+            var res = storageApi.SET(key, ref input, value);
+
+            // Type already stored in key which requires an explicit delete
+            if (res == GarnetStatus.WRONGTYPE)
+            {
+                using (txnManager.PromoteToTransaction(TransactionStoreTypes.Main | TransactionStoreTypes.Object, key, LockType.Exclusive))
+                {
+                    _ = storageSession.DELETE(key, ref storageSession.unifiedTransactionalContext);
+                    _ = storageSession.SET(key, ref input, value, ref storageSession.stringTransactionalContext);
+                }
+            }
 
             while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                 SendAndReset();
@@ -680,6 +715,16 @@ namespace Garnet.server
             {
                 var status = storageApi.SET_Conditional(key, ref input);
 
+                // Type already stored in key which requires an explicit delete
+                if (status == GarnetStatus.WRONGTYPE)
+                {
+                    using (txnManager.PromoteToTransaction(TransactionStoreTypes.Main | TransactionStoreTypes.Object, key, LockType.Exclusive))
+                    {
+                        _ = storageSession.DELETE(key, ref storageSession.unifiedTransactionalContext);
+                        status = storageSession.SET_Conditional(key, ref input, ref storageSession.stringTransactionalContext);
+                    }
+                }
+
                 // KEEPTTL without flags doesn't care whether it was found or not.
                 if (cmd == RespCommand.SETKEEPTTL)
                 {
@@ -712,9 +757,13 @@ namespace Garnet.server
                 input.header.SetSetGetFlag();
 
                 var output = GetStringOutput();
-                GarnetStatus status = storageApi.SET_Conditional(key, ref input, ref output);
+                var status = storageApi.SET_Conditional(key, ref input, ref output);
 
-                if (status != GarnetStatus.NOTFOUND)
+                if (status == GarnetStatus.WRONGTYPE)
+                {
+                    WriteError(CmdStrings.RESP_ERR_WRONG_TYPE);
+                }
+                else if (status != GarnetStatus.NOTFOUND)
                 {
                     ProcessOutput(output.SpanByteAndMemory);
                 }
@@ -753,17 +802,25 @@ namespace Garnet.server
             StringOutput stringOutput = new(new SpanByteAndMemory(output));
 
             var input = new StringInput(cmd, 0, incrByValue);
-            _ = storageApi.Increment(key, ref input, ref stringOutput);
-            output.Length = stringOutput.SpanByteAndMemory.Length;
+            var res = storageApi.Increment(key, ref input, ref stringOutput);
 
-            if (!stringOutput.HasError)
+            if (res == GarnetStatus.WRONGTYPE)
             {
-                while (!RespWriteUtils.TryWriteIntegerFromBytes(outputBuffer.Slice(0, output.Length), ref dcurr, dend))
-                    SendAndReset();
+                WriteError(CmdStrings.RESP_ERR_WRONG_TYPE);
             }
             else
             {
-                WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER);
+                output.Length = stringOutput.SpanByteAndMemory.Length;
+
+                if (!stringOutput.HasError)
+                {
+                    while (!RespWriteUtils.TryWriteIntegerFromBytes(outputBuffer.Slice(0, output.Length), ref dcurr, dend))
+                        SendAndReset();
+                }
+                else
+                {
+                    WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER);
+                }
             }
 
             return true;
@@ -791,27 +848,35 @@ namespace Garnet.server
             var output = PinnedSpanByte.FromPinnedSpan(outputBuffer);
             StringOutput stringOutput = new(new SpanByteAndMemory(output));
 
-            _ = storageApi.IncrementByFloat(key, ref stringOutput, dbl);
-            output.Length = stringOutput.SpanByteAndMemory.Length;
+            var res = storageApi.IncrementByFloat(key, ref stringOutput, dbl);
 
-            if (!stringOutput.HasError)
+            if (res == GarnetStatus.WRONGTYPE)
             {
-                while (!RespWriteUtils.TryWriteBulkString(output.ReadOnlySpan, ref dcurr, dend))
-                    SendAndReset();
+                WriteError(CmdStrings.RESP_ERR_WRONG_TYPE);
             }
             else
             {
-                if ((stringOutput.OutputFlags & StringOutputFlags.NaNOrInfinityError) != 0)
+                output.Length = stringOutput.SpanByteAndMemory.Length;
+
+                if (!stringOutput.HasError)
                 {
-                    WriteError(CmdStrings.RESP_ERR_GENERIC_NAN_INFINITY_INCR);
-                }
-                else if ((stringOutput.OutputFlags & StringOutputFlags.InvalidTypeError) != 0)
-                {
-                    WriteError(CmdStrings.RESP_ERR_NOT_VALID_FLOAT);
+                    while (!RespWriteUtils.TryWriteBulkString(output.ReadOnlySpan, ref dcurr, dend))
+                        SendAndReset();
                 }
                 else
                 {
-                    throw new GarnetException($"Unrecognized return output flags value: {stringOutput.OutputFlags}");
+                    if ((stringOutput.OutputFlags & StringOutputFlags.NaNOrInfinityError) != 0)
+                    {
+                        WriteError(CmdStrings.RESP_ERR_GENERIC_NAN_INFINITY_INCR);
+                    }
+                    else if ((stringOutput.OutputFlags & StringOutputFlags.InvalidTypeError) != 0)
+                    {
+                        WriteError(CmdStrings.RESP_ERR_NOT_VALID_FLOAT);
+                    }
+                    else
+                    {
+                        throw new GarnetException($"Unrecognized return output flags value: {stringOutput.OutputFlags}");
+                    }
                 }
             }
 
@@ -831,10 +896,16 @@ namespace Garnet.server
             Span<byte> outputBuffer = stackalloc byte[NumUtils.MaximumFormatInt64Length];
             var output = StringOutput.FromPinnedSpan(outputBuffer);
 
-            storageApi.APPEND(sbKey, ref input, ref output);
-
-            while (!RespWriteUtils.TryWriteIntegerFromBytes(outputBuffer.Slice(0, output.SpanByteAndMemory.Length), ref dcurr, dend))
-                SendAndReset();
+            var res = storageApi.APPEND(sbKey, ref input, ref output);
+            if (res == GarnetStatus.WRONGTYPE)
+            {
+                WriteError(CmdStrings.RESP_ERR_WRONG_TYPE);
+            }
+            else
+            {
+                while (!RespWriteUtils.TryWriteIntegerFromBytes(outputBuffer.Slice(0, output.SpanByteAndMemory.Length), ref dcurr, dend))
+                    SendAndReset();
+            }
 
             return true;
         }
@@ -978,6 +1049,9 @@ namespace Garnet.server
                 case GarnetStatus.NOTFOUND:
                     while (!RespWriteUtils.TryWriteInt32(0, ref dcurr, dend))
                         SendAndReset();
+                    break;
+                case GarnetStatus.WRONGTYPE:
+                    WriteError(CmdStrings.RESP_ERR_WRONG_TYPE);
                     break;
             }
 

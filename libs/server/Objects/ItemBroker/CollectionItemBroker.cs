@@ -549,7 +549,7 @@ namespace Garnet.server
                     return false;
 
                 // Check for type match between the observer and the source object type
-                if ((GarnetObjectType)osObject.GarnetObject.Type != objectType)
+                if (statusOp == GarnetStatus.WRONGTYPE || (GarnetObjectType)osObject.GarnetObject.Type != objectType)
                 {
                     // Return a type mismatch result if we should fail on source object type mismatch
                     if (failOnSrcTypeMismatch)
@@ -570,7 +570,7 @@ namespace Garnet.server
                         dstObj = osDstObject.GarnetObject;
 
                         // If there is a destination object type mismatch, we should always return a type mismatch result
-                        if ((GarnetObjectType)dstObj.Type != objectType)
+                        if (dstStatusOp == GarnetStatus.WRONGTYPE || (GarnetObjectType)dstObj.Type != objectType)
                         {
                             result = CollectionItemResult.TypeMismatch;
                             return true;

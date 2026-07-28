@@ -46,14 +46,27 @@ namespace Garnet.server
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.MSET));
             }
 
-            for (int c = 0; c < parseState.Count; c += 2)
+            for (var c = 0; c < parseState.Count; c += 2)
             {
                 var key = parseState.GetArgSliceByRef(c);
                 var val = parseState.GetArgSliceByRef(c + 1);
-                _ = storageApi.SET(key, val);
+
+                var res = storageApi.SET(key, val);
+
+                // Type already stored in key which requires an explicit delete
+                if (res == GarnetStatus.WRONGTYPE)
+                {
+                    using (txnManager.PromoteToTransaction(TransactionStoreTypes.Main | TransactionStoreTypes.Object, key, LockType.Exclusive))
+                    {
+                        _ = storageSession.DELETE(key, ref storageSession.unifiedTransactionalContext);
+                        _ = storageSession.SET(key, val, ref storageSession.stringTransactionalContext);
+                    }
+                }
             }
+
             while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                 SendAndReset();
+
             return true;
         }
 
@@ -452,7 +465,14 @@ namespace Garnet.server
             var output = GetStringOutput();
             var status = storageApi.LCS(key1, key2, ref output, lenOnly, withIndices, withMatchLen, minMatchLen);
 
-            ProcessOutput(output.SpanByteAndMemory);
+            if (status == GarnetStatus.WRONGTYPE)
+            {
+                WriteError(CmdStrings.RESP_ERR_WRONG_TYPE);
+            }
+            else
+            {
+                ProcessOutput(output.SpanByteAndMemory);
+            }
 
             return true;
         }

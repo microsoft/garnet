@@ -40,7 +40,7 @@ title: Summary of Garnet Features
 * Tsavorite storage engine optimized for scalable memory access
 * Space reuse for memory tier to prevent fragmentation
 * Hybrid log-structured storage design with in-place updates in memory
-* Configurable memory size control (index, log, objects)
+* Configurable memory size control for index, log, and heap objects
 
 ## Tiered Storage
 

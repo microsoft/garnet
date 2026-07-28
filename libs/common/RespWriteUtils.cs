@@ -381,6 +381,29 @@ namespace Garnet.common
         }
 
         /// <summary>
+        /// Write bulk string from a span of chunks (no enumerator/LINQ allocation).
+        /// <paramref name="length"/> must be the sum of the chunk lengths.
+        /// </summary>
+        public static bool TryWriteBulkString(ReadOnlySpan<byte[]> items, int length, ref byte* curr, byte* end)
+        {
+            var itemDigits = NumUtils.CountDigits(length);
+            int totalLen = 1 + itemDigits + 2 + length + 2;
+            if (totalLen > (int)(end - curr))
+                return false;
+
+            *curr++ = (byte)'$';
+            NumUtils.WriteInt32(length, itemDigits, ref curr);
+            WriteNewline(ref curr);
+            foreach (var item in items)
+            {
+                item.CopyTo(new Span<byte>(curr, item.Length));
+                curr += item.Length;
+            }
+            WriteNewline(ref curr);
+            return true;
+        }
+
+        /// <summary>
         /// Encodes the <paramref name="chars"/> as ASCII bulk string to <paramref name="curr"/>
         /// </summary>
         public static bool TryWriteAsciiBulkString(ReadOnlySpan<char> chars, ref byte* curr, byte* end)

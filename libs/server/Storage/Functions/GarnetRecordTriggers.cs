@@ -11,7 +11,7 @@ namespace Garnet.server
     /// to handle per-record cleanup on delete, eviction, flush, copy-to-tail, log truncation,
     /// and disk read for BfTree stubs (RangeIndex).
     /// </summary>
-    public readonly struct GarnetRecordTriggers : IRecordTriggers
+    public readonly struct GarnetRecordTriggers : IRecordTriggers, ICompactionFunctions
     {
         /// <summary>
         /// Cache size tracker for heap size accounting.
@@ -176,21 +176,20 @@ namespace Garnet.server
         /// <inheritdoc/>
         public readonly void OnCheckpoint(CheckpointTrigger trigger, Guid checkpointToken)
         {
-            if (rangeIndexManager == null)
+            if (rangeIndexManager == null && vectorManager == null)
                 return;
 
             switch (trigger)
             {
                 case CheckpointTrigger.VersionShift:
-                    rangeIndexManager.SetCheckpointBarrier(checkpointToken);
+                    rangeIndexManager?.SetCheckpointBarrier(checkpointToken);
                     break;
                 case CheckpointTrigger.FlushBegin:
-                    rangeIndexManager.SnapshotAllTreesForCheckpoint(checkpointToken);
-                    rangeIndexManager.ClearCheckpointBarrier();
+                    rangeIndexManager?.SnapshotAllTreesForCheckpoint(checkpointToken);
+                    rangeIndexManager?.ClearCheckpointBarrier();
                     break;
                 case CheckpointTrigger.CheckpointCompleted:
-                    // No action — Tsavorite's checkpoint manager removes per-token snapshot dirs
-                    // when removeOutdated is true; per-flush snapshots are cleaned by OnTruncate.
+                    vectorManager?.CheckpointCompleted();
                     break;
             }
         }
@@ -260,6 +259,18 @@ namespace Garnet.server
         public readonly void OnTruncate(long newBeginAddress)
         {
             rangeIndexManager?.OnTruncateImpl(newBeginAddress);
+        }
+
+        /// <inheritdoc/>
+        public readonly bool IsDeleted<TSourceLogRecord>(in TSourceLogRecord logRecord)
+            where TSourceLogRecord : ISourceLogRecord
+        {
+            if (vectorManager is not null && logRecord.RecordType == VectorManager.RecordType)
+            {
+                vectorManager.VectorSetPotentiallyDeleted(logRecord.KeyBytes, logRecord.ValueSpan);
+            }
+
+            return false;
         }
     }
 }

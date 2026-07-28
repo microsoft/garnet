@@ -112,6 +112,20 @@ namespace Garnet.common
         }
 
         /// <summary>
+        /// Write bulk string from a span of chunks. <paramref name="stringLen"/> must be the sum of the
+        /// chunk lengths; avoids the LINQ/enumerator allocation of the <see cref="IEnumerable{T}"/> overload.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void WriteBulkString(ReadOnlySpan<byte[]> items, int stringLen)
+        {
+            while (!RespWriteUtils.TryWriteBulkString(items, stringLen, ref curr, end))
+            {
+                var len = RespWriteUtils.GetBulkStringLength(stringLen);
+                ReallocateOutput(len);
+            }
+        }
+
+        /// <summary>
         /// Writes the contents of <paramref name="span"/> as byte array to memory.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -507,7 +521,7 @@ namespace Garnet.common
             }
 
             if (length <= 0)
-                throw new OverflowException("length");
+                throw new GarnetException($"Exceeded maximum response size of ({Array.MaxLength:N0}) bytes", disposeSession: false);
 
             var newMem = MemoryPool<byte>.Shared.Rent(length);
             var newPtrHandle = newMem.Memory.Pin();

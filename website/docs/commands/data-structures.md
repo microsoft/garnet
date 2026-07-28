@@ -463,7 +463,7 @@ Error reply: ERR HCOLLECT scan already in progress
     BLMOVE source destination <LEFT | RIGHT> <LEFT | RIGHT> timeout
 ```
 
-BLMOVE is the blocking variant of [LMOVE](#lmove-lmove). When source contains elements, this command behaves exactly like LMOVE. When used inside a MULTI/EXEC block, this command behaves exactly like LMOVE. When source is empty, Garnet will block the connection until another client pushes to it or until timeout (a double value specifying the maximum number of seconds to block) is reached. A timeout of zero can be used to block indefinitely.
+BLMOVE is the blocking variant of [LMOVE](#lmove). When source contains elements, this command behaves exactly like LMOVE. When used inside a MULTI/EXEC block, this command behaves exactly like LMOVE. When source is empty, Garnet will block the connection until another client pushes to it or until timeout (a double value specifying the maximum number of seconds to block) is reached. A timeout of zero can be used to block indefinitely.
 
 ---
 
@@ -904,7 +904,7 @@ Keys that do not exist are considered to be empty sets.
     SUNIONSTORE destination key [key ...]
 ```
 
-This command is equal to [SUNION](#SUNION), but instead of returning the resulting set, it is stored in **destination**.
+This command is equal to [SUNION](#sunion), but instead of returning the resulting set, it is stored in **destination**.
 
 If **destination** already exists, it is overwritten.
 
@@ -931,7 +931,7 @@ Keys that do not exist are considered to be empty sets.
     SINTERSTORE destination key [key ...]
 ```
 
-This command is equal to [SINTER](#INTER), but instead of returning the resulting set, it is stored in **destination**.
+This command is equal to [SINTER](#sinter), but instead of returning the resulting set, it is stored in **destination**.
 
 If **destination** already exists, it is overwritten.
 
@@ -974,7 +974,7 @@ Returns the members of the set resulting from the difference between the **first
     SDIFFSTORE destination key [key ...]
 ```
 
-This command is equal to [SDIFF](#SDIFF), but instead of returning the resulting set, it is stored in **destination**. 
+This command is equal to [SDIFF](#sdiff), but instead of returning the resulting set, it is stored in **destination**. 
 
 If **destination** already exists, it is overwritten.
 

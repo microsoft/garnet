@@ -108,9 +108,9 @@ cf333332b44a32fa70c30862b6d9535e9bac19f9 127.0.0.1:7001@17001,hostname03 master 
 127.0.0.1:7000> cluster keyslot x
 (integer) 16287
 127.0.0.1:7000> get x
-(error) MOVED 16287 10.159.2.73:7002
+(error) MOVED 16287 127.0.0.1:7002
 127.0.0.1:7000> set x 1234
-(error) MOVED 16287 10.159.2.73:7002
+(error) MOVED 16287 127.0.0.1:7002
 127.0.0.1:7000> cluster keyslot wxz
 (integer) 949
 127.0.0.1:7000> set wxz 1234

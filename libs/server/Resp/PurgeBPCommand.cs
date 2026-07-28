@@ -44,15 +44,9 @@ namespace Garnet.server
 
     internal sealed unsafe partial class RespServerSession : ServerSessionBase
     {
-        private bool NetworkPurgeBP()
+        private bool NetworkPurgeBP(int managerTypeArgIndex)
         {
-            // Expecting exactly 1 argument
-            if (parseState.Count != 1)
-            {
-                return AbortWithWrongNumberOfArguments(nameof(RespCommand.PURGEBP));
-            }
-
-            if (!parseState.TryGetManagerType(0, out var managerType))
+            if (!parseState.TryGetManagerType(managerTypeArgIndex, out var managerType))
             {
                 return AbortWithErrorMessage(CmdStrings.RESP_SYNTAX_ERROR);
             }

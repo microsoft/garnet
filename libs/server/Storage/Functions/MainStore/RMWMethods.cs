@@ -410,6 +410,13 @@ namespace Garnet.server
                 return false;
             }
 
+            // WRONGTYPE all updates on Vector Sets from non-Vector Set commands
+            if (logRecord.RecordType == VectorManager.RecordType && !input.header.cmd.IsLegalOnVectorSet())
+            {
+                rmwInfo.Action = RMWAction.WrongType;
+                return false;
+            }
+
             var ipuResult = InPlaceUpdaterWorker(ref logRecord, ref input, ref output, ref rmwInfo);
             switch (ipuResult)
             {
@@ -1035,6 +1042,13 @@ namespace Garnet.server
             // Do not pre-get newValue = dstLogRecord.ValueSpan here, because it may change, e.g. moving between inline and overflow
 
             RespCommand cmd = input.header.cmd;
+
+            // WRONGTYPE all updates on Vector Sets from non-Vector Set commands
+            if (srcLogRecord.RecordType == VectorManager.RecordType && !cmd.IsLegalOnVectorSet())
+            {
+                rmwInfo.Action = RMWAction.WrongType;
+                return false;
+            }
 
             switch (cmd)
             {

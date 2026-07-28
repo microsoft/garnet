@@ -446,7 +446,7 @@ namespace Garnet.server
                         break;
 
                     case LogCompactionType.Scan:
-                        storeLog.Compact<PinnedSpanByte, Empty, Empty>(untilAddress, CompactionType.Scan);
+                        storeLog.Compact<PinnedSpanByte, Empty, Empty, GarnetRecordTriggers>(db.Store.StoreFunctions.recordTriggers, untilAddress, CompactionType.Scan);
                         if (compactionForceDelete)
                         {
                             await CompactionCommitAofAsync(db).ConfigureAwait(false);
@@ -455,7 +455,7 @@ namespace Garnet.server
                         break;
 
                     case LogCompactionType.Lookup:
-                        storeLog.Compact<PinnedSpanByte, Empty, Empty>(untilAddress, CompactionType.Lookup);
+                        storeLog.Compact<PinnedSpanByte, Empty, Empty, GarnetRecordTriggers>(db.Store.StoreFunctions.recordTriggers, untilAddress, CompactionType.Lookup);
                         if (compactionForceDelete)
                         {
                             await CompactionCommitAofAsync(db).ConfigureAwait(false);

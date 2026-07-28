@@ -1193,42 +1193,6 @@
     ]
   },
   {
-    "Command": "PURGEBP",
-    "Name": "PURGEBP",
-    "Group": "Cluster",
-    "Summary": "Purge cluster buffer pool for manager type.",
-    "Arguments": [
-      {
-        "TypeDiscriminator": "RespCommandContainerArgument",
-        "Name": "MANAGERTYPE",
-        "Type": "OneOf",
-        "Arguments": [
-          {
-            "TypeDiscriminator": "RespCommandBasicArgument",
-            "Name": "MIGRATIONMANAGER",
-            "DisplayText": "migrationmanager",
-            "Type": "PureToken",
-            "Token": "MIGRATIONMANAGER"
-          },
-          {
-            "TypeDiscriminator": "RespCommandBasicArgument",
-            "Name": "REPLICATIONMANAGER",
-            "DisplayText": "replicationmanager",
-            "Type": "PureToken",
-            "Token": "REPLICATIONMANAGER"
-          },
-          {
-            "TypeDiscriminator": "RespCommandBasicArgument",
-            "Name": "SERVERLISTENER",
-            "DisplayText": "serverlistener",
-            "Type": "PureToken",
-            "Token": "SERVERLISTENER"
-          }
-        ]
-      }
-    ]
-  },
-  {
     "Command": "RENAME",
     "Name": "RENAME",
     "Summary": "Renames a key and overwrites the destination.",

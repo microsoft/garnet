@@ -278,7 +278,6 @@ namespace Garnet.server
             Add("COMMITAOF", RespCommand.COMMITAOF);
             Add("FLUSHALL", RespCommand.FLUSHALL);
             Add("FLUSHDB", RespCommand.FLUSHDB);
-            Add("PURGEBP", RespCommand.PURGEBP);
             Add("FAILOVER", RespCommand.FAILOVER);
             Add("MONITOR", RespCommand.MONITOR);
             Add("REGISTERCS", RespCommand.REGISTERCS);

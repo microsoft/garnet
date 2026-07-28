@@ -220,7 +220,6 @@ namespace CommandInfoUpdater
             ]),
             new("MGET", RespCommand.MGET, StoreType.Main),
             new("MIGRATE", RespCommand.MIGRATE),
-            new("PURGEBP", RespCommand.PURGEBP),
             new("MODULE", RespCommand.MODULE, StoreType.None,
             [
                 new("MODULE|LOADCS", RespCommand.MODULE_LOADCS),

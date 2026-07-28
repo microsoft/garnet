@@ -33,6 +33,9 @@ namespace Garnet.server
                     Debug.Assert(output.SpanByteAndMemory.IsSpanByte);
                     WriteNull();
                     break;
+                case GarnetStatus.WRONGTYPE:
+                    WriteError(CmdStrings.RESP_ERR_WRONG_TYPE);
+                    break;
                 default:
                     ProcessOutput(output.SpanByteAndMemory);
                     break;
@@ -60,6 +63,9 @@ namespace Garnet.server
                 case GarnetStatus.NOTFOUND:
                     Debug.Assert(output.SpanByteAndMemory.IsSpanByte);
                     WriteNull();
+                    break;
+                case GarnetStatus.WRONGTYPE:
+                    WriteError(CmdStrings.RESP_ERR_WRONG_TYPE);
                     break;
                 default:
                     ProcessOutput(output.SpanByteAndMemory);
@@ -286,7 +292,18 @@ namespace Garnet.server
                 input.header.SetSetGetFlag();
 
             var output = GetStringOutput();
-            storageApi.SET_ETagConditional(key, ref input, ref output);
+            var res = storageApi.SET_ETagConditional(key, ref input, ref output);
+
+            // Type already stored in key which requires an explicit delete
+            if (res == GarnetStatus.WRONGTYPE)
+            {
+                using (txnManager.PromoteToTransaction(TransactionStoreTypes.Main | TransactionStoreTypes.Object, key, LockType.Exclusive))
+                {
+                    _ = storageSession.DELETE(key, ref storageSession.unifiedTransactionalContext);
+                    _ = storageSession.SET_Conditional(key, ref input, ref output, ref storageSession.stringTransactionalContext);
+                }
+            }
+
             ProcessOutput(output.SpanByteAndMemory);
             return true;
         }

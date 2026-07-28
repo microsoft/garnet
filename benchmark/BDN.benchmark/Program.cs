@@ -93,7 +93,11 @@ public class BaseConfig : ManualConfig
         _ = WithOrderer(new BDN.benchmark.NamespaceTypeOrderer());
         _ = AddColumn(CategoriesColumn.Default);
 
-        var baseJob = Job.Default.WithGcServer(true);
+        // Workstation GC (non-concurrent) so MemoryDiagnoser measures allocation deterministically. Under
+        // Server GC, GC.GetTotalAllocatedBytes(precise:false) intermittently over-counts by the per-heap
+        // allocation-context budgets when a GC resets those contexts mid-measurement, spuriously inflating
+        // the reported allocation. These single-client benchmarks show no latency difference under Workstation GC.
+        var baseJob = Job.Default.WithGcServer(false).WithGcConcurrent(false);
 
         Net8BaseJob = baseJob
             .WithRuntime(CoreRuntime.Core80)
