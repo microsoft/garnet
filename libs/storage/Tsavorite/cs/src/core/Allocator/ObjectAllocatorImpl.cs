@@ -914,13 +914,11 @@ namespace Tsavorite.core
                                             epoch.Suspend();
                                     }
 
-                                    // WriteRecordObjects can do disk IO and must not hold the epoch. SetObjectLogRecordStartPositionAndLength
-                                    // writes the on-disk-encoded lengths and ObjectLogPosition into the disk-image record (srcBuffer copy).
-                                    // The main-log allocator page is left untouched by these calls.
-                                    logRecord.SetReuseObjectIdForSize();
-
+                                    // WriteRecordObjects can do disk IO and must not hold the epoch. The setter below writes the length hints
+                                    // and ObjectLogPosition into the disk-image record (srcBuffer copy); the main-log allocator page is left
+                                    // untouched. Records are always written in the current hint-based format (never the downlevel encoding).
                                     var valueObjectLength = logWriter.WriteRecordObjects(in keyOverflow, in valueOverflow, in valueObject);
-                                    logRecord.SetObjectLogRecordStartPositionAndLength(recordStartPosition, valueObjectLength);
+                                    logRecord.SetObjectLogPositionAndLengthHints(recordStartPosition, valueObjectLength);
                                 }
                                 else
                                 {
@@ -929,8 +927,8 @@ namespace Tsavorite.core
                                         // Snapshot-region recovery flush: the record's objects live only in the snapshot object-log. Copy their bytes
                                         // into the main object-log (appended at the current objectLogTail via logWriter) so the page becomes durable and
                                         // can be evicted, then repoint the disk-image record to that main object-log position. The objects are NOT
-                                        // deserialized at this point, so read the position/lengths from the R11 encoding (not from objectIdMap), and use
-                                        // RepointObjectLogPosition (which preserves the unchanged lengths) rather than SetRecoveredObjectLogRecordStartPosition.
+                                        // deserialized at this point, so read the position/lengths from the record's on-disk encoding (not from objectIdMap),
+                                        // and repoint (which preserves the record's unchanged lengths and format flag) rather than SetRecoveredObjectLogRecordStartPosition.
                                         var snapshotPositionWord = logRecord.GetObjectLogRecordStartPositionAndLengths(out var copyKeyLength, out var copyValueLength);
                                         var copyObjectLength = (ulong)copyKeyLength + copyValueLength;
 
@@ -1307,7 +1305,14 @@ namespace Tsavorite.core
         {
             var recordAddress = Math.Max(startAddress, GetFirstValidLogicalAddressOnPage(page));
             var endAddress = Math.Min(untilAddress, GetLogicalAddressOfStartOfPage(page + 1));
-            long totalSize = 0;
+
+            // These are disk-image records (recovery, before object deserialization), so their ObjectLogPosition and RDH hints hold the
+            // on-disk values (the objectId slots hold stale ids, so the legacy decode would read garbage here). Estimate the page's
+            // object-log bytes as the span from the first object record's start position to the last object record's start position plus
+            // that last record's RDH length hints. This is a best guess (the eviction/budget logic tolerates an over-estimate).
+            ObjectLogFilePositionInfo startPosition = new(), endPosition = new();
+            var endKeyLength = 0;
+            ulong endValueLength = 0;
 
             while (recordAddress < endAddress)
             {
@@ -1322,12 +1327,16 @@ namespace Tsavorite.core
 
                 if (logRecord.Info.Valid && logRecord.DataHeader.RecordHasObjects)
                 {
-                    _ = logRecord.GetObjectLogRecordStartPositionAndLengths(out var keyLength, out var valueLength);
-                    totalSize += keyLength + (long)valueLength;
+                    endPosition = new(logRecord.GetObjectLogRecordStartPositionAndLengths(out endKeyLength, out endValueLength), objectLogTail.SegmentSizeBits);
+                    if (!startPosition.IsSet)
+                        startPosition = endPosition;
                 }
             }
 
-            return totalSize;
+            if (!startPosition.IsSet)
+                return 0;
+            endPosition.Advance((ulong)endKeyLength + endValueLength);
+            return (long)(endPosition - startPosition);
         }
 
         /// <summary>
@@ -1413,6 +1422,8 @@ namespace Tsavorite.core
 
                 if (logRecord.Info.Valid && logRecord.DataHeader.RecordHasObjects)
                 {
+                    // Disk-image record (recovery, before object deserialization): use the format-aware decode for a best-guess per-record
+                    // object size (exact below the field sentinel). The objectId slots hold stale ids, so the legacy decode is not usable here.
                     _ = logRecord.GetObjectLogRecordStartPositionAndLengths(out var keyLength, out var valueLength);
                     overBudgetAmount -= keyLength + (long)valueLength;
                     if (overBudgetAmount <= 0)

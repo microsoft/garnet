@@ -24,8 +24,10 @@ namespace Tsavorite.core
         // ── Flag bits in the top 4 bits of word (bits 60-63) ─────────────────────────
 
         /// <summary>Bit position of the <c>ReuseObjectIdForSize</c> flag in <see cref="word"/>.
-        /// When set, the on-disk overflow/object length is encoded as (RDH KeyLength/ValueLength field low bits) + (objectId slot at keyAddress/valueAddress high 32 bits),
-        /// and the object-log stream contains NO length prefix. Set always in current code; reserved for a future variant where the length is communicated differently.</summary>
+        /// When set, the on-disk overflow/object length uses the legacy split encoding: (RDH KeyLength/ValueLength field low bits) +
+        /// (objectId slot at keyAddress/valueAddress high 32 bits), with no length framing in the object-log stream. When clear, the record
+        /// uses the hint-based format (RDH field holds a read-size hint; the authoritative length comes from the object-log stream framing).
+        /// The flag is the per-record discriminator selecting the legacy read/decode path.</summary>
         internal const int kReuseObjectIdForSizeBit = 63;
         internal const ulong kReuseObjectIdForSizeMask = 1UL << kReuseObjectIdForSizeBit;
 

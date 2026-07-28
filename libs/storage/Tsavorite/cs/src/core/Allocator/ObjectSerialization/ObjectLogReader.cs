@@ -93,12 +93,11 @@ namespace Tsavorite.core
 #endif
         {
             Debug.Assert(logRecord.DataHeader.RecordHasObjects, "Inline records should have been checked by the caller");
-            Debug.Assert(logRecord.HasReuseObjectIdForSize, "ReadRecordObjects requires the ReuseObjectIdForSize flag to be set on the ObjectLogPosition");
             if (readBuffers is null)
                 throw new TsavoriteException("ReadBuffers are required to ReadRecordObjects");
 
-            // R11 encoding: lengths returned by GetObjectLogRecordStartPositionAndLengths combine the RDH low bits with the next 32 bits
-            // from the int* slot at keyAddress/valueAddress. No length prefix is in the object stream.
+            // GetObjectLogRecordStartPositionAndLengths returns the exact overflow/object lengths: from the RDH hints for a hint-format
+            // record, or from the split RDH+objectId-slot encoding for a legacy record. The object stream carries no separate length prefix.
             var positionWord = logRecord.GetObjectLogRecordStartPositionAndLengths(out var keyLength, out var valueLength);
             if (!readBuffers.OnBeginRecord(new ObjectLogFilePositionInfo(positionWord, segmentSizeBits)))
                 throw new TsavoriteException("ReadRecordObjects found no data available in ReadBuffers");
@@ -112,9 +111,8 @@ namespace Tsavorite.core
             {
                 if (logRecord.DataHeader.KeyIsOverflow)
                 {
-                    // This assignment also allocates the slot in ObjectIdMap, overwriting the int* slot at keyAddress
-                    // (which held the high 32 bits of the on-disk key length per R11). The raw RDH KeyLength is restored
-                    // to ObjectIdSize by OnObjectReadComplete below.
+                    // This assignment also allocates the slot in ObjectIdMap, overwriting whatever the objectId slot at keyAddress held
+                    // on disk (a stale objectId for a hint-format record, or the key length high bits for a legacy record).
                     logRecord.KeyOverflow = new OverflowByteArray(keyLength, startOffset: 0, endOffset: 0, zeroInit: false);
                     _ = Read(logRecord.KeyOverflow.Span);
                     if (!requestedKey.IsEmpty && !storeFunctions.KeysEqual(requestedKey, logRecord))

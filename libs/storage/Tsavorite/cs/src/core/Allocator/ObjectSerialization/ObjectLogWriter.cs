@@ -101,9 +101,9 @@ namespace Tsavorite.core
         /// Write Overflow and Object Keys and values in a <see cref="LogRecord"/> to the device.
         /// </summary>
         /// <remarks>This only writes Overflow and Object Keys and Values; inline portions of the record are written separately by the caller.
-        /// <para>R11: no length prefix is written. The on-disk length is encoded in the disk-image record's RDH KeyLength/ValueLength
-        /// field (low 12/22 bits) + the int* slot at keyAddress/valueAddress (next 32 bits) — see
-        /// <see cref="LogRecord.SetObjectLogRecordStartPositionAndLength"/>. The reader reconstructs the length from those fields.</para></remarks>
+        /// <para>No length prefix is written to the object stream. The on-disk length is a read-size hint in the disk-image record's RDH
+        /// KeyLength/ValueLength field (see <see cref="LogRecord.SetObjectLogPositionAndLengthHints"/>). Databases written before this format
+        /// use the legacy split RDH + objectId-slot encoding, read via <see cref="LogRecord.GetObjectLogRecordStartPositionAndLengths_v20"/>.</para></remarks>
         /// <returns>The number of bytes written for the value object, if any.</returns>
         public ulong WriteRecordObjects(in OverflowByteArray keyOverflow, in OverflowByteArray valueOverflow, in IHeapObject valueObject)
         {

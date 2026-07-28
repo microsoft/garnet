@@ -7,6 +7,7 @@ using System.Buffers.Binary;
 using System.Diagnostics;
 using System.IO;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using Tsavorite.core.Allocator.ObjectSerialization;
 
 #pragma warning disable CS1591 // Missing XML comment for publicly visible type or member
@@ -346,9 +347,9 @@ namespace Tsavorite.core
             chunker.BeginSerialize(context);
 
             // Emit the inline portion. Copy it to a scratch buffer so we can reset the filler length (the record may have been
-            // shrunk) and, for a non-inline record, encode the overflow key/value lengths into the RDH. For a streamed object
-            // value the length is not yet known, so its RDH value-length is left zero (SetObjectLogRecordStartPositionAndLength
-            // ignores the passed length for an overflow value and uses it verbatim for an object value); the receiver derives it.
+            // shrunk) and, for a non-inline record, encode the overflow key/value lengths into the RDH as hint/sentinel (the objectId
+            // slots keep the real objectIds). For a streamed object value the length is not known here, so its RDH value length is left
+            // as-is; the receiver derives it.
             var rented = ArrayPool<byte>.Shared.Rent(alignedInlineRecordSize);
             try
             {
@@ -359,8 +360,9 @@ namespace Tsavorite.core
                     scratchRecord.SetFillerLength(alignedInlineRecordSize - actualSize);
                     if (!dataHeader.RecordIsInline)
                     {
-                        var fakeFilePos = new ObjectLogFilePositionInfo((ulong)alignedInlineRecordSize, segSizeBits: 0);
-                        scratchRecord.SetObjectLogRecordStartPositionAndLength(fakeFilePos, valueObjectLength: 0);
+                        var keyLen = dataHeader.KeyIsOverflow ? logRecord.KeyOverflow.Length : 0;
+                        var valueLen = dataHeader.ValueIsOverflow ? logRecord.ValueOverflow.Length : 0;
+                        scratchRecord.SetChunkedFlushOverflowLengths(keyLen, valueLen);
                     }
                 }
 
@@ -374,19 +376,21 @@ namespace Tsavorite.core
 
             if (!dataHeader.RecordIsInline)
             {
-                // Each overflow key/value is preceded by its 4-byte length so the receiver allocates the overflow buffer
-                // up front and populates it directly from the stream. An object value is streamed with no prefix (length derived).
+                // An overflow key/value is preceded by its 4-byte length prefix only when its length is at or above the RDH field
+                // sentinel; below the sentinel the receiver takes the length from the RDH hint. An object value is streamed with no prefix.
                 if (dataHeader.KeyIsOverflow)
                 {
                     var keySpan = logRecord.KeyOverflow.ReadOnlySpan;
-                    WriteChunkedLengthPrefix(chunker, keySpan.Length);
+                    if (OverflowKeyHasLengthPrefix(keySpan.Length))
+                        WriteChunkedLengthPrefix(chunker, keySpan.Length);
                     chunker.WriteBytes(keySpan);
                 }
 
                 if (dataHeader.ValueIsOverflow)
                 {
                     var valueSpan = logRecord.ValueOverflow.ReadOnlySpan;
-                    WriteChunkedLengthPrefix(chunker, valueSpan.Length);
+                    if (OverflowValueHasLengthPrefix(valueSpan.Length))
+                        WriteChunkedLengthPrefix(chunker, valueSpan.Length);
                     chunker.WriteBytes(valueSpan);
                 }
                 else if (dataHeader.ValueIsObject)
@@ -401,6 +405,31 @@ namespace Tsavorite.core
             }
 
             chunker.EndSerialize();
+        }
+
+        /// <summary>Length-prefix policy for an overflow key on the migration/replication stream: a full-length <c>int</c> prefix precedes
+        /// the key data iff its length is at or above the RDH KeyLength field sentinel; below the sentinel the length is carried exactly in
+        /// the RDH KeyLength hint and no prefix is written.</summary>
+        public static bool OverflowKeyHasLengthPrefix(long keyLength) => keyLength >= (long)RecordDataHeader.kKeyLengthLowBitsMask;
+
+        /// <summary>Length-prefix policy for an overflow value on the migration/replication stream: a full-length <c>int</c> prefix precedes
+        /// the value data iff its length is at or above the RDH ValueLength field sentinel; below the sentinel the length is carried exactly
+        /// in the RDH ValueLength hint and no prefix is written.</summary>
+        public static bool OverflowValueHasLengthPrefix(long valueLength) => valueLength >= (long)RecordDataHeader.kValueLengthLowBitsMask;
+
+        /// <summary>Patch, in place, the RDH KeyLength/ValueLength hint fields of an already-serialized inline record image to the given
+        /// actual lengths (the exact length if below the field sentinel, else the sentinel). The caller must own the buffer backing
+        /// <paramref name="recordSpan"/> (a transient send buffer). Used to record a single-buffer object value's length in the RDH after
+        /// the record is assembled, so the receiver reads every out-of-line length from the RDH hint, consistent with the flush format.</summary>
+        /// <param name="recordSpan">The writable serialized inline record image whose RDH is patched (starts with RecordInfo + RecordDataHeader).</param>
+        /// <param name="keyLength">Actual overflow key length (ignored unless the key is overflow).</param>
+        /// <param name="valueLength">Actual overflow value or serialized object length (ignored if the value is inline).</param>
+        public static void PatchSerializedOverflowLengthHints(Span<byte> recordSpan, int keyLength, long valueLength)
+        {
+            // A writable Span is required: MemoryMarshal.AsRef over a ReadOnlySpan yields a readonly ref whose mutations are dropped by a
+            // defensive copy (the length hint would silently stay unset). A ref-local into the writable span mutates the buffer in place.
+            ref var dataHeader = ref MemoryMarshal.AsRef<RecordDataHeader>(recordSpan.Slice(RecordInfo.Size));
+            dataHeader.SetOverflowLengthHints(keyLength, valueLength);
         }
 
         // Write a 4-byte little-endian length prefix for an overflow key/value on the chunked send path.
@@ -443,14 +472,14 @@ namespace Tsavorite.core
 
             if (!logRecord.DataHeader.RecordIsInline)
             {
-                // Encode the overflow key length and (for an overflow value) the value length into the RDH; an object value's
-                // length is left zero (streamed; the receiver derives it). SetObjectLogRecordStartPositionAndLength reads the
-                // overflow lengths from the store's ObjectIdMap, so this must run in-epoch.
-                var fakeFilePos = new ObjectLogFilePositionInfo((ulong)alignedInlineRecordSize, segSizeBits: 0);
+                // Encode the overflow key/value lengths into the RDH as hint/sentinel so Deserialize can locate them; an object value's
+                // length is left as-is (streamed; the receiver derives it). Reading the overflow lengths requires the store epoch.
+                var keyLen = logRecord.DataHeader.KeyIsOverflow ? logRecord.KeyOverflow.Length : 0;
+                var valueLen = logRecord.DataHeader.ValueIsOverflow ? logRecord.ValueOverflow.Length : 0;
                 fixed (byte* ptr = output.Span)
                 {
                     var serializedLogRecord = new LogRecord((long)ptr, logRecord.objectIdMap);
-                    serializedLogRecord.SetObjectLogRecordStartPositionAndLength(fakeFilePos, valueObjectLength: 0);
+                    serializedLogRecord.SetChunkedFlushOverflowLengths(keyLen, valueLen);
                 }
             }
             return alignedInlineRecordSize;
@@ -501,9 +530,10 @@ namespace Tsavorite.core
         /// <summary>
         /// Deserialize a whole record image (the non-chunked <c>MigrationRecordSpanType.LogRecord</c> path) created by
         /// <see cref="SerializeInlinePortionForMigration"/> + the migration accumulator: a fully-inline record, or an inline
-        /// portion followed by an overflow key and either an overflow value or an object value. An object value is the tail of
-        /// the image, so its length is derived from <paramref name="recordSpan"/> (the sender leaves the RDH object length zero);
-        /// the object deserializes directly from the buffer with no chunk reassembly.
+        /// portion followed by an overflow key and either an overflow value or an object value. Each out-of-line length is read from
+        /// the RDH hint (or a stream length prefix / the image tail when the RDH holds the sentinel); the sender records a single-buffer
+        /// object value's length in the RDH via <see cref="PatchSerializedOverflowLengthHints"/>. The object deserializes directly from
+        /// the buffer with no chunk reassembly.
         /// </summary>
         /// <param name="recordSpan">The whole record bytes.</param>
         /// <param name="valueObjectSerializer">Serializer used to deserialize an object value.</param>
@@ -513,38 +543,62 @@ namespace Tsavorite.core
             TStoreFunctions storeFunctions)
             where TStoreFunctions : IStoreFunctions
         {
-            // Serialize() did not change the state of the KeyIsInline/ValueIsInline/ValueIsObject bits, but it did change the value at the ObjectId
-            // location to be serialized length. Create a transient logRecord to decode these and restore the objectId values.
+            // Serialize() did not change the KeyIsInline/ValueIsInline/ValueIsObject bits, but it encoded the overflow key/value lengths
+            // into the RDH as hint/sentinel. Create a transient logRecord to decode these; the objectId slots are (re)allocated on assignment.
             var ptr = recordSpan.ToPointer();
             var serializedLogRecord = new LogRecord((long)ptr, transientObjectIdMap);
-            if (serializedLogRecord.DataHeader.RecordIsInline)
+            var dataHeader = serializedLogRecord.DataHeader;
+            if (dataHeader.RecordIsInline)
                 return new(serializedLogRecord);
-            var offset = serializedLogRecord.GetObjectLogRecordStartPositionAndLengths(out var keyLength, out var valueLength);
+
+            // Overflow key/value data follows the (aligned) inline portion. Each overflow length comes from the RDH hint, unless the RDH
+            // field holds the sentinel, in which case a full-length int prefix precedes the data.
+            var offset = (ulong)RoundUp(serializedLogRecord.ActualSize, Constants.kRecordAlignment);
 
             // Note: Similar logic to this is in ObjectLogReader.ReadObjects.
             var keyWasSet = false;
             try
             {
-                if (serializedLogRecord.DataHeader.KeyIsOverflow)
+                if (dataHeader.KeyIsOverflow)
                 {
-                    // This assignment also allocates the slot in ObjectIdMap. The RecordDataHeader length info should be unchanged from ObjectIdSize.
+                    int keyLength;
+                    if (dataHeader.KeyLengthIsSentinel)
+                    {
+                        keyLength = BinaryPrimitives.ReadInt32LittleEndian(recordSpan.ReadOnlySpan.Slice((int)offset));
+                        offset += sizeof(int);
+                    }
+                    else
+                        keyLength = dataHeader.GetKeyLengthRaw();
+
+                    // This assignment also allocates the slot in ObjectIdMap.
                     serializedLogRecord.KeyOverflow = new OverflowByteArray(keyLength, startOffset: 0, endOffset: 0, zeroInit: false);
                     recordSpan.ReadOnlySpan.Slice((int)offset, keyLength).CopyTo(serializedLogRecord.KeyOverflow.Span);
                     offset += (uint)keyLength;
                     keyWasSet = true;
                 }
 
-                if (serializedLogRecord.DataHeader.ValueIsOverflow)
+                if (dataHeader.ValueIsOverflow)
                 {
-                    // This assignment also allocates the slot in ObjectIdMap. The RecordDataHeader length info should be unchanged from ObjectIdSize.
-                    serializedLogRecord.ValueOverflow = new OverflowByteArray((int)valueLength, startOffset: 0, endOffset: 0, zeroInit: false);
-                    recordSpan.ReadOnlySpan.Slice((int)offset, (int)valueLength).CopyTo(serializedLogRecord.ValueOverflow.Span);
+                    int valueLength;
+                    if (dataHeader.ValueLengthIsSentinel)
+                    {
+                        valueLength = BinaryPrimitives.ReadInt32LittleEndian(recordSpan.ReadOnlySpan.Slice((int)offset));
+                        offset += sizeof(int);
+                    }
+                    else
+                        valueLength = dataHeader.GetValueLengthRaw();
+
+                    // This assignment also allocates the slot in ObjectIdMap.
+                    serializedLogRecord.ValueOverflow = new OverflowByteArray(valueLength, startOffset: 0, endOffset: 0, zeroInit: false);
+                    recordSpan.ReadOnlySpan.Slice((int)offset, valueLength).CopyTo(serializedLogRecord.ValueOverflow.Span);
                 }
                 else
                 {
-                    // The object value is the remainder of the record image (its length is not encoded up front), so deserialize
-                    // it directly from the buffer tail.
-                    var objectValueLength = (int)((ulong)recordSpan.Length - offset);
+                    // Object value length comes from the RDH hint, or (when the RDH holds the sentinel) the record image's tail, which is
+                    // exactly the object bytes. The sender records the length in the RDH after assembling the record.
+                    var objectValueLength = dataHeader.ValueLengthIsSentinel
+                        ? (int)((ulong)recordSpan.Length - offset)
+                        : dataHeader.GetValueLengthRaw();
                     var stream = new UnmanagedMemoryStream(ptr + offset, objectValueLength);
                     valueObjectSerializer.BeginDeserialize(stream);
                     valueObjectSerializer.Deserialize(out var valueObject);
@@ -573,8 +627,7 @@ namespace Tsavorite.core
         public static int GetChunkedRecordInlineSize(ReadOnlySpan<byte> header)
         {
             Debug.Assert(header.Length >= Constants.FixedHeaderSize, "header must cover at least the fixed record header");
-            fixed (byte* ptr = header)
-                return RoundUp(new LogRecord((long)ptr).ActualSize, Constants.kRecordAlignment);
+            return MemoryMarshal.AsRef<RecordDataHeader>(header.Slice(RecordInfo.Size)).GetAlignedComponentSum();
         }
 
         /// <summary>The fixed record header size (RecordInfo + RecordDataHeader); the chunked receiver needs this many bytes to read
@@ -628,11 +681,6 @@ namespace Tsavorite.core
                 throw;
             }
         }
-
-        /// <summary>
-        /// Return the serialized size of the contained logRecord.
-        /// </summary>
-        public readonly int GetSerializedSize() => logRecord.GetSerializedSize();
 
         #endregion Serialization to and from expanded record format
     }

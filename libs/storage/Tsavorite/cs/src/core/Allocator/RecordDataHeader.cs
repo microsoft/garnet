@@ -35,11 +35,13 @@ namespace Tsavorite.core
     ///     <item>Bits 56–63: Namespace byte (with encoding indicating if there are many extra namespace bytes; if so, they precede
     ///         the Key data bytes). (Byte-aligned at byte 7.)</item>
     /// </list>
-    /// <para>Disk-write paths (<see cref="LogRecord.SetObjectLogRecordStartPositionAndLength"/>) write the low <see cref="kKeyLengthBits"/> /
-    /// <see cref="kValueLengthBits"/> bits of the on-disk overflow/object length into the RDH KeyLength/ValueLength field, with the next
-    /// 32 bits stored in the objectId slot at keyAddress/valueAddress. After read-back (<see cref="LogRecord.OnObjectReadComplete"/>)
-    /// the raw RDH fields are restored to <see cref="ObjectIdMap.ObjectIdSize"/> so the runtime "non-inline → property returns
-    /// ObjectIdSize" invariant holds.</para>
+    /// <para>Disk-write paths (<see cref="LogRecord.SetObjectLogPositionAndLengthHints"/>) write the low <see cref="kKeyLengthBits"/> /
+    /// <see cref="kValueLengthBits"/> bits of the on-disk overflow/object length into the RDH KeyLength/ValueLength field as a read-size
+    /// hint (the authoritative length comes from the object-log stream framing); a length at or above the field maximum is capped at that
+    /// maximum sentinel. The property getters still return <see cref="ObjectIdMap.ObjectIdSize"/> for non-inline keys/values regardless of
+    /// the raw hint, so the runtime "non-inline → property returns ObjectIdSize" invariant holds. (Databases written before this format use
+    /// the legacy split encoding, read via <see cref="LogRecord.GetObjectLogRecordStartPositionAndLengths_v20"/>: RDH low bits plus the
+    /// next 32 bits in the objectId slot at keyAddress/valueAddress.)</para>
     /// <para>RecordLength is no longer stored; it is derived from the header alone:
     /// <c>alignedSum = RoundUp(Constants.FixedHeaderSize + ExtendedNamespaceLength + KeyLength + ValueLength + OptionalSize, kRecordAlignment)</c>;
     /// <c>recordLength = alignedSum + (FillerWords &lt;&lt; 3)</c>. Because everything that defines record length is in this 8-byte
@@ -290,6 +292,34 @@ namespace Tsavorite.core
         /// where the field may hold the low <see cref="kValueLengthBits"/> bits of the on-disk overflow/object length (not the effective <see cref="ValueLength"/>).</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal readonly int GetValueLengthRaw() => (int)((word >> kValueLengthShift) & kValueLengthLowBitsMask);
+
+        /// <summary>True if the raw KeyLength field holds the sentinel (its maximum value): the actual overflow key length is at or above
+        /// the field maximum, so it is carried out of band (a stream length prefix on the network, or a chunk header on disk).</summary>
+        public readonly bool KeyLengthIsSentinel => GetKeyLengthRaw() == (int)kKeyLengthLowBitsMask;
+
+        /// <summary>True if the raw ValueLength field holds the sentinel (its maximum value): the actual overflow/object value length is at
+        /// or above the field maximum, so it is carried out of band (a stream length prefix on the network, or a chunk header on disk).</summary>
+        public readonly bool ValueLengthIsSentinel => GetValueLengthRaw() == (int)kValueLengthLowBitsMask;
+
+        /// <summary>The raw KeyLength field value (the read-size hint; the exact overflow key length when below the sentinel). The
+        /// <see cref="KeyLength"/> property returns ObjectIdSize for an overflow key, so use this to read the encoded hint.</summary>
+        public readonly int KeyLengthHint => GetKeyLengthRaw();
+
+        /// <summary>The raw ValueLength field value (the read-size hint; the exact overflow/object value length when below the sentinel).
+        /// The <see cref="ValueLength"/> property returns ObjectIdSize for a non-inline value, so use this to read the encoded hint.</summary>
+        public readonly int ValueLengthHint => GetValueLengthRaw();
+
+        /// <summary>Sets the KeyLength/ValueLength fields to the out-of-line read-size hints: the exact length when below the field sentinel,
+        /// else the sentinel (the field maximum). Inline fields and absent components are left unchanged.</summary>
+        /// <param name="keyActualLength">Actual overflow key length (applied only when the key is overflow).</param>
+        /// <param name="valueActualLength">Actual overflow value or serialized object length (applied only when the value is out of line).</param>
+        public void SetOverflowLengthHints(int keyActualLength, long valueActualLength)
+        {
+            if (KeyIsOverflow)
+                KeyLength = keyActualLength >= (int)kKeyLengthLowBitsMask ? (int)kKeyLengthLowBitsMask : keyActualLength;
+            if (ValueIsOverflow || ValueIsObject)
+                ValueLength = valueActualLength >= (long)kValueLengthLowBitsMask ? (int)kValueLengthLowBitsMask : (int)valueActualLength;
+        }
 
         internal readonly int ExtendedNamespaceLength
         {

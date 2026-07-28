@@ -17,9 +17,9 @@ namespace Garnet.cluster
     /// incoming byte stream by component so each out-of-line component lands directly in its final buffer (no intermediate copy).
     /// A record too large for one send buffer is sent as a sequence of chunks (each framed <c>[int chunkLength | continuation]
     /// [chunk bytes]</c>); the payloads concatenate into the serialized record stream:
-    /// <c>[inline portion][int keyLen][overflow key][int valueLen][overflow value | object bytes]</c> — each overflow key/value is
-    /// preceded by its 4-byte length; an object value is streamed with no prefix. One instance is held per connection
-    /// because a record's chunks may span multiple commands.
+    /// <c>[inline portion][overflow key][overflow value | object bytes]</c> — an overflow key/value is preceded by a 4-byte length
+    /// prefix only when its length is at or above the RDH field sentinel (below the sentinel the length is the RDH hint); an object
+    /// value is streamed with no prefix. One instance is held per connection because a record's chunks may span multiple commands.
     /// </summary>
     /// <remarks>
     /// As chunk bytes arrive they are routed by a small state machine keyed off the record's data header (read directly from the
@@ -180,20 +180,37 @@ namespace Garnet.cluster
             if (header.RecordIsInline)
                 return Phase.Complete;
             if (header.KeyIsOverflow)
-                return Phase.KeyLengthPrefix;
-            if (header.ValueIsOverflow)
-                return Phase.ValueLengthPrefix;
-            if (header.ValueIsObject)
-                return Phase.ObjectData;
-            return Phase.Complete; // Non-inline with inline key and inline value (nothing out of line); should not occur.
+                return BeginKey(in header);
+            return BeginValue(in header);
         }
 
         // Transition after the overflow key is complete, based on what value (if any) follows.
-        Phase AfterKey()
+        Phase AfterKey() => BeginValue(RecordHeader);
+
+        // Begin the overflow key: read its length from a stream prefix if the RDH holds the sentinel, else take the exact length from the
+        // RDH hint and allocate/read directly (no prefix on the wire).
+        Phase BeginKey(in RecordDataHeader header)
         {
-            var header = RecordHeader;
+            if (header.KeyLengthIsSentinel)
+                return Phase.KeyLengthPrefix;
+            keyLength = header.KeyLengthHint;
+            keyOverflow = OverflowByteArray.AllocateData(keyLength);
+            keyFilled = 0;
+            return Phase.KeyData;
+        }
+
+        // Begin the value component (if any): overflow value (prefix or RDH-hint length, like the key), object value, or inline value.
+        Phase BeginValue(in RecordDataHeader header)
+        {
             if (header.ValueIsOverflow)
-                return Phase.ValueLengthPrefix;
+            {
+                if (header.ValueLengthIsSentinel)
+                    return Phase.ValueLengthPrefix;
+                valueLength = header.ValueLengthHint;
+                valueOverflow = OverflowByteArray.AllocateData(valueLength);
+                valueFilled = 0;
+                return Phase.ValueData;
+            }
             if (header.ValueIsObject)
                 return Phase.ObjectData;
             return Phase.Complete; // Inline value (part of the inline portion).

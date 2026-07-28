@@ -1491,25 +1491,23 @@ namespace Tsavorite.core
             => DataHeaderRef.InitializeForRevivification(ref sizeInfo, physicalAddress);
 
         /// <summary>
-        /// Sets the lengths of Overflow Keys and Values and Object values into the disk-image copy of the log record before the main-log page is flushed.
+        /// Writes the object-log start position and the key/value read-size length hints into the disk-image copy of the log record
+        /// before the main-log page is flushed, using the hint-based on-disk format.
         /// </summary>
         /// <param name="objectLogFilePosition">The starting position of the serialized key and value data in the object log.</param>
         /// <param name="valueObjectLength">The serialized length of the value object if it is an object and not inline or overflow. Overflow
         ///     fields have their length known from the <see cref="OverflowByteArray.Length"/> property.</param>
         /// <remarks>
-        /// <para>R11 encoding: for overflow keys, low 12 bits of actual length go into the RDH KeyLength field and the next 32 bits
-        /// overwrite the int* at keyAddress (which previously held the objectId) — total 44 bits → 16 TB max key. For overflow values
-        /// or object values, low 22 bits go into the RDH ValueLength field and the next 32 bits overwrite the int* at valueAddress —
-        /// total 54 bits → 16 PB max. The ObjectLogPosition word has the <see cref="ObjectLogFilePositionInfo.kReuseObjectIdForSizeBit"/>
-        /// flag set so the reader knows the encoding to expect.</para>
-        /// <para>IMPORTANT: Overwrites the int* slots that held the in-memory objectIds, so this is only safe to call in the disk-image
-        /// copy of the log record (srcBuffer), not in the live main-log record.</para>
+        /// The RDH KeyLength/ValueLength fields receive the actual out-of-line length, which the caller guarantees is below the field
+        /// sentinel and thus exact. These are read-size hints only; the authoritative out-of-line length comes from the object-log stream
+        /// framing. The objectId slots at keyAddress/valueAddress are left untouched (so this is safe on the live main-log record), and the
+        /// ObjectLogPosition word is written with the ReuseObjectIdForSize flag cleared, marking the record as hint-format for the reader.
         /// </remarks>
-        internal readonly void SetObjectLogRecordStartPositionAndLength(in ObjectLogFilePositionInfo objectLogFilePosition, ulong valueObjectLength)
+        internal readonly void SetObjectLogPositionAndLengthHints(in ObjectLogFilePositionInfo objectLogFilePosition, ulong valueObjectLength)
         {
             if (DataHeader.RecordIsInline)   // ValueIsInline is true; if the record is fully inline, we should not be called here
             {
-                Debug.Fail("Cannot call SetObjectLogRecordStartPositionAndLength for an inline record");
+                Debug.Fail("Cannot call SetObjectLogPositionAndLengthHints for an inline record");
                 return;
             }
 
@@ -1517,50 +1515,37 @@ namespace Tsavorite.core
 
             var (valueLength, valueAddress) = dataHeader.GetValueFieldInfo(physicalAddress);
 
-            // Write ObjectLogPosition with the ReuseObjectIdForSize flag set so the reader knows the on-disk encoding.
+            // Write ObjectLogPosition with the ReuseObjectIdForSize flag cleared, marking the hint-based format.
             var objectLogPositionPtr = (ulong*)GetObjectLogPositionAddress(valueAddress + valueLength);
-            *objectLogPositionPtr = objectLogFilePosition.word | ObjectLogFilePositionInfo.kReuseObjectIdForSizeMask;
+            *objectLogPositionPtr = objectLogFilePosition.word;
 
-            // Overflow key: low 12 bits → RDH KeyLength; next 32 bits → int* slot at keyAddress (overwriting the in-memory objectId).
+            // Read the out-of-line lengths (from the objectIdMap for overflow; the passed value for an object) and write them as RDH
+            // hints (SetOverflowLengthHints caps at the sentinel for a length at or above the field maximum). The objectId slots are left
+            // untouched, so this is safe on the live record.
+            var keyLen = 0;
             if (dataHeader.KeyIsOverflow)
             {
                 var (_, keyAddress) = dataHeader.GetKeyFieldInfo(physicalAddress);
-                var overflow = objectIdMap.GetOverflowByteArray(*(int*)keyAddress);
-                var actualKeyLength = (ulong)overflow.Length;
-                dataHeader.KeyLength = (int)(actualKeyLength & RecordDataHeader.kKeyLengthLowBitsMask);
-                *(int*)keyAddress = (int)(actualKeyLength >> RecordDataHeader.kKeyLengthBits);
+                keyLen = objectIdMap.GetOverflowByteArray(*(int*)keyAddress).Length;
             }
-
-            // Overflow value or Object value: low 22 bits → RDH ValueLength; next 32 bits → int* slot at valueAddress.
-            if (dataHeader.ValueIsOverflow)
-            {
-                var overflow = objectIdMap.GetOverflowByteArray(*(int*)valueAddress);
-                var actualValueLength = (ulong)overflow.Length;
-                dataHeader.ValueLength = (int)(actualValueLength & RecordDataHeader.kValueLengthLowBitsMask);
-                *(int*)valueAddress = (int)(actualValueLength >> RecordDataHeader.kValueLengthBits);
-            }
-            else if (dataHeader.ValueIsObject)
-            {
-                dataHeader.ValueLength = (int)(valueObjectLength & RecordDataHeader.kValueLengthLowBitsMask);
-                *(uint*)valueAddress = (uint)(valueObjectLength >> RecordDataHeader.kValueLengthBits);
-            }
+            var valLen = dataHeader.ValueIsOverflow ? (long)objectIdMap.GetOverflowByteArray(*(int*)valueAddress).Length : (long)valueObjectLength;
+            dataHeader.SetOverflowLengthHints(keyLen, valLen);
 
             // Atomic publish via SetDataHeader.
             SetDataHeader(dataHeader);
         }
 
         /// <summary>
-        /// Repoints this record's object-log position word to <paramref name="objectLogFilePosition"/> without touching the R11-encoded
-        /// key/value lengths (in the RDH fields and the int* slots at keyAddress/valueAddress) or the <see cref="ObjectIdMap"/>.
+        /// Repoints this record's object-log position word to <paramref name="objectLogFilePosition"/> without touching the
+        /// key/value length hints (in the RDH fields) or the <see cref="ObjectIdMap"/>, preserving the record's existing format flag.
         /// </summary>
         /// <param name="objectLogFilePosition">The new object-log position (e.g. the main object-log position a snapshot record's bytes were copied to).</param>
         /// <remarks>
-        /// Used by the snapshot-recovery flush, which copies a record's object bytes from the snapshot object-log to the main object-log and must
-        /// repoint the disk-image record to the main position. The record's objects are NOT deserialized at this point (objectIdMap is empty and the
-        /// int* slots still hold the on-disk R11 length high-bits), so unlike <see cref="SetObjectLogRecordStartPositionAndLength"/> and
-        /// <see cref="SetRecoveredObjectLogRecordStartPosition"/> this must not read the lengths from objectIdMap. The existing R11 length encoding
-        /// is preserved as-is, since the copied lengths are unchanged.
-        /// <para>IMPORTANT: Like the other position setters, this is only safe to call on the disk-image copy of the record (srcBuffer).</para>
+        /// Used by the snapshot-recovery flush, which copies a record's object bytes from the snapshot object-log to the main object-log
+        /// verbatim and must repoint the disk-image record to the main position. The record's objects are NOT deserialized at this point,
+        /// so unlike the setters this does not read lengths from objectIdMap; the copied lengths and encoding are unchanged, so the existing
+        /// ReuseObjectIdForSize flag is preserved (a downlevel record copied verbatim stays downlevel; a hint-format record stays hint-format).
+        /// <para>Only safe to call on the disk-image copy of the record.</para>
         /// </remarks>
         internal readonly void RepointObjectLogPosition(in ObjectLogFilePositionInfo objectLogFilePosition)
         {
@@ -1572,37 +1557,28 @@ namespace Tsavorite.core
 
             var (valueLength, valueAddress) = DataHeader.GetValueFieldInfo(physicalAddress);
             var objectLogPositionPtr = (ulong*)GetObjectLogPositionAddress(valueAddress + valueLength);
-            *objectLogPositionPtr = objectLogFilePosition.word | ObjectLogFilePositionInfo.kReuseObjectIdForSizeMask;
+            var existingFlag = *objectLogPositionPtr & ObjectLogFilePositionInfo.kReuseObjectIdForSizeMask;
+            *objectLogPositionPtr = objectLogFilePosition.word | existingFlag;
         }
 
         /// <summary>
-        /// Returns the object log position for the start of the key (if any) and value (if any), with the length encoded per R11:
-        /// (low N bits from RDH KeyLength/ValueLength) + (next 32 bits from int* slot at keyAddress/valueAddress).
+        /// Returns the object-log start position for this record and the key/value read-size length hints. For hint-format records
+        /// (ReuseObjectIdForSize clear) the hints are the raw RDH KeyLength/ValueLength fields; for legacy records (flag set) the decode
+        /// is delegated to <see cref="GetObjectLogRecordStartPositionAndLengths_v20"/>.
         /// </summary>
-        /// <param name="keyLength">Outputs key length; will always be for overflow</param>
-        /// <param name="valueObjectLength">Outputs value length; will be for overflow or object</param>
+        /// <param name="keyLength">Outputs the key length hint (exact for an overflow key below the field sentinel).</param>
+        /// <param name="valueObjectLength">Outputs the value length hint (exact for an overflow/object value below the field sentinel).</param>
         /// <returns>The object log position word for this record, with flag bits masked off (segment+offset only).</returns>
         internal readonly ulong GetObjectLogRecordStartPositionAndLengths(out int keyLength, out ulong valueObjectLength)
         {
-            var dataHeader = DataHeader;
-            if (dataHeader.KeyIsOverflow)
-            {
-                var (_ /*kLen*/, keyAddress) = dataHeader.GetKeyFieldInfo(physicalAddress);
-                // Combine low 12 bits (RDH) with next 32 bits (int* slot at keyAddress).
-                var keyHighBits = (ulong)(uint)*(int*)keyAddress;
-                var combinedKeyLength = (keyHighBits << RecordDataHeader.kKeyLengthBits) | (ulong)(uint)dataHeader.GetKeyLengthRaw();
-                Debug.Assert(combinedKeyLength <= int.MaxValue, $"Key length {combinedKeyLength} exceeds int.MaxValue");
-                keyLength = (int)combinedKeyLength;
-            }
-            else // KeyIsInline is true; keyLength will be ignored
-                keyLength = 0;
+            if (HasReuseObjectIdForSize)
+                return GetObjectLogRecordStartPositionAndLengths_v20(out keyLength, out valueObjectLength);
 
-            var (valueLength, valueAddress) = dataHeader.GetValueFieldInfo(physicalAddress);
-            if (dataHeader.ValueIsOverflow || dataHeader.ValueIsObject)
-            {
-                var valueHighBits = (ulong)(uint)*(int*)valueAddress;
-                valueObjectLength = (valueHighBits << RecordDataHeader.kValueLengthBits) | (ulong)(uint)dataHeader.GetValueLengthRaw();
-            }
+            var dataHeader = DataHeader;
+            keyLength = dataHeader.KeyIsOverflow ? dataHeader.GetKeyLengthRaw() : 0;   // KeyIsInline: keyLength is ignored
+
+            if (!dataHeader.ValueIsInline)
+                valueObjectLength = (ulong)(uint)dataHeader.GetValueLengthRaw();
             else // ValueIsInline is true; valueLength will be ignored
             {
                 valueObjectLength = 0;
@@ -1621,12 +1597,12 @@ namespace Tsavorite.core
         /// <summary>
         /// For recovery, we have already deserialized all objects and know their lengths: Overflow is in the Key or Value field,
         /// and Object is in the ObjectLogPosition field. So we can set up the pagePositionInfo for this record directly rather than
-        /// re-serializing, which also keeps the objectLogTail consistent.
+        /// re-serializing, which also keeps the objectLogTail consistent. Always writes the hint-based format (RDH length hints, objectId
+        /// slots untouched, ReuseObjectIdForSize cleared) — recovery re-writes records in the current format regardless of their source.
         /// </summary>
         /// <param name="pagePositionInfo">The cumulative position on the page (starting from the PageHeader)</param>
         /// <remarks>
         /// IMPORTANT: This is only to be called in the disk image copy of the log record, not in the actual log record itself.
-        /// See <see cref="SetObjectLogRecordStartPositionAndLength"/> for encoding details.
         /// </remarks>
         /// <returns>The total "serialized" lengths from this LogRecord; will be 0 for inline records. Caller will adjust for
         ///     segment boundaries.</returns>
@@ -1634,7 +1610,7 @@ namespace Tsavorite.core
         {
             if (DataHeader.RecordIsInline)
             {
-                Debug.Fail("Cannot call SetRecoveredObjectLogRecordStartPositionAndLengths for an inline record");
+                Debug.Fail("Cannot call SetRecoveredObjectLogRecordStartPosition for an inline record");
                 return 0;
             }
 
@@ -1644,47 +1620,34 @@ namespace Tsavorite.core
 
             // For ValueObject, the deserialized length was stored at objectLogPositionPtr by SetDeserializedValueObject; save it.
             var valueObjectLength = *objectLogPositionPtr;
-            *objectLogPositionPtr = pagePositionInfo.word | ObjectLogFilePositionInfo.kReuseObjectIdForSizeMask;
 
-            ulong objectLengths = 0;
+            ulong keyLen = 0;
             if (dataHeader.KeyIsOverflow)
             {
                 var (_ /*kLen*/, keyAddress) = dataHeader.GetKeyFieldInfo(physicalAddress);
-                var overflow = objectIdMap.GetOverflowByteArray(*(int*)keyAddress);
-                objectLengths += (uint)overflow.Length;
-                var actualKeyLength = (ulong)overflow.Length;
-                dataHeader.KeyLength = (int)(actualKeyLength & RecordDataHeader.kKeyLengthLowBitsMask);
-                *(int*)keyAddress = (int)(actualKeyLength >> RecordDataHeader.kKeyLengthBits);
+                keyLen = (ulong)objectIdMap.GetOverflowByteArray(*(int*)keyAddress).Length;
             }
+            var valLen = dataHeader.ValueIsOverflow ? (ulong)objectIdMap.GetOverflowByteArray(*(int*)valueAddress).Length
+                       : (dataHeader.ValueIsObject ? valueObjectLength : 0UL);
 
-            if (dataHeader.ValueIsOverflow)
-            {
-                var overflow = objectIdMap.GetOverflowByteArray(*(int*)valueAddress);
-                objectLengths += (uint)overflow.Length;
-                var actualValueLength = (ulong)overflow.Length;
-                dataHeader.ValueLength = (int)(actualValueLength & RecordDataHeader.kValueLengthLowBitsMask);
-                *(int*)valueAddress = (int)(actualValueLength >> RecordDataHeader.kValueLengthBits);
-            }
-            else if (dataHeader.ValueIsObject)
-            {
-                objectLengths += valueObjectLength;
-                dataHeader.ValueLength = (int)(valueObjectLength & RecordDataHeader.kValueLengthLowBitsMask);
-                *(uint*)valueAddress = (uint)(valueObjectLength >> RecordDataHeader.kValueLengthBits);
-            }
+            // Write the position with the flag cleared and the exact lengths as RDH hints (capped at the sentinel), objectId slots untouched.
+            *objectLogPositionPtr = pagePositionInfo.word;
+            dataHeader.SetOverflowLengthHints((int)keyLen, (long)valLen);
 
             // Atomic publish via SetDataHeader.
             SetDataHeader(dataHeader);
-            return objectLengths;
+            return keyLen + valLen;
         }
 
-        /// <summary>Whether the <c>ReuseObjectIdForSize</c> flag is set on this record's ObjectLogPosition slot. The flag indicates
-        /// that overflow/object lengths are encoded as (RDH KeyLength/ValueLength low bits) + (objectId slot high 32 bits), and the
-        /// object-log stream contains NO length prefix.</summary>
+        /// <summary>Whether the <c>ReuseObjectIdForSize</c> flag is set on this record's ObjectLogPosition slot. When set, the record
+        /// uses the legacy split length encoding (RDH KeyLength/ValueLength low bits + objectId slot high 32 bits, no object-log stream
+        /// length framing); when clear, the record uses the hint-based format. This is the per-record discriminator selecting the
+        /// <c>_v20</c> decode.</summary>
         internal readonly bool HasReuseObjectIdForSize
             => ObjectLogFilePositionInfo.GetReuseObjectIdForSize((ulong*)GetObjectLogPositionAddress(GetOptionalStartAddress()));
 
-        /// <summary>Set the <c>ReuseObjectIdForSize</c> flag on this record's ObjectLogPosition slot. Must be called before
-        /// <see cref="ObjectLogWriter{TStoreFunctions}.WriteRecordObjects"/> to honor the encoding contract.</summary>
+        /// <summary>Set the <c>ReuseObjectIdForSize</c> flag on this record's ObjectLogPosition slot, marking the legacy split length
+        /// encoding.</summary>
         internal readonly void SetReuseObjectIdForSize()
             => ObjectLogFilePositionInfo.SetReuseObjectIdForSize((ulong*)GetObjectLogPositionAddress(GetOptionalStartAddress()));
 
@@ -1732,14 +1695,7 @@ namespace Tsavorite.core
         internal readonly void SetChunkedFlushOverflowLengths(int keyActualLength, long valueActualLength)
         {
             var localDataHeader = DataHeader;
-            if (localDataHeader.KeyIsOverflow)
-                localDataHeader.KeyLength = keyActualLength >= (int)RecordDataHeader.kKeyLengthLowBitsMask
-                    ? (int)RecordDataHeader.kKeyLengthLowBitsMask
-                    : keyActualLength;
-            if (localDataHeader.ValueIsOverflow || localDataHeader.ValueIsObject)
-                localDataHeader.ValueLength = valueActualLength >= (long)RecordDataHeader.kValueLengthLowBitsMask
-                    ? (int)RecordDataHeader.kValueLengthLowBitsMask
-                    : (int)valueActualLength;
+            localDataHeader.SetOverflowLengthHints(keyActualLength, valueActualLength);
             SetDataHeader(localDataHeader);
         }
 
@@ -1771,19 +1727,6 @@ namespace Tsavorite.core
             }
 
             SetDataHeader(localDataHeader);
-        }
-
-        /// <summary>
-        /// Return the serialized size of the contained logRecord.
-        /// </summary>
-        public readonly int GetSerializedSize()
-        {
-            var recordSize = AllocatedSize;
-            if (DataHeader.RecordIsInline)
-                return recordSize;
-
-            _ = GetObjectLogRecordStartPositionAndLengths(out var keyLength, out var valueLength);
-            return recordSize + keyLength + (int)valueLength;
         }
 
         public readonly long CalculateHeapMemorySize()
