@@ -838,10 +838,26 @@ namespace Garnet.server
                             outputDistances,
                             out continuation
                         );
+
+                        if (found >= 0)
+                        {
+                            while (continuation != 0)
+                            {
+                                var additionalResults = ContinueSearch(context, indexPtr, continuation, found, ref outputIds, ref outputDistances, out continuation);
+
+                                if (additionalResults < 0)
+                                {
+                                    found = additionalResults;
+                                    break;
+                                }
+
+                                found += additionalResults;
+                            }
+                        }
                     }
                     finally
                     {
-                        ActiveThreadSession.scratchBufferBuilder.RewindScratchBuffer(bufferSlice);
+                        _ = ActiveThreadSession.scratchBufferBuilder.RewindScratchBuffer(bufferSlice);
 
                         unsafe
                         {
@@ -865,6 +881,22 @@ namespace Garnet.server
                             outputDistances,
                             out continuation
                         );
+
+                    if (found >= 0)
+                    {
+                        while (continuation != 0)
+                        {
+                            var additionalResults = ContinueSearch(context, indexPtr, continuation, found, ref outputIds, ref outputDistances, out continuation);
+
+                            if (additionalResults < 0)
+                            {
+                                found = additionalResults;
+                                break;
+                            }
+
+                            found += additionalResults;
+                        }
+                    }
                 }
             }
 
@@ -887,12 +919,6 @@ namespace Garnet.server
                 EnsureFilterBitmapSize(ref filterBitmap, found);
 
                 _ = ApplyPostFilter(filter, found, outputAttributes.ReadOnlySpan, filterBitmap.Span, ActiveThreadSession.scratchBufferBuilder);
-            }
-
-            if (continuation != 0)
-            {
-                // TODO: paged results!
-                throw new NotImplementedException();
             }
 
             outputDistances.Length = sizeof(float) * found;
@@ -1007,6 +1033,22 @@ namespace Garnet.server
                         out continuation
                     );
 
+                    if (found >= 0)
+                    {
+                        while (continuation != 0)
+                        {
+                            var additionalResults = ContinueSearch(context, indexPtr, continuation, found, ref outputIds, ref outputDistances, out continuation);
+
+                            if (additionalResults < 0)
+                            {
+                                found = additionalResults;
+                                break;
+                            }
+
+                            found += additionalResults;
+                        }
+                    }
+
                 }
                 finally
                 {
@@ -1032,7 +1074,23 @@ namespace Garnet.server
                     outputIds,
                     outputDistances,
                     out continuation
-                    );
+                );
+
+                if (found >= 0)
+                {
+                    while (continuation != 0)
+                    {
+                        var additionalResults = ContinueSearch(context, indexPtr, continuation, found, ref outputIds, ref outputDistances, out continuation);
+
+                        if (additionalResults < 0)
+                        {
+                            found = additionalResults;
+                            break;
+                        }
+
+                        found += additionalResults;
+                    }
+                }
             }
 
             if (found < 0)
@@ -1055,18 +1113,61 @@ namespace Garnet.server
                 _ = ApplyPostFilter(filter, found, outputAttributes.ReadOnlySpan, filterBitmap.Span, ActiveThreadSession.scratchBufferBuilder);
             }
 
-            if (continuation != 0)
-            {
-                // TODO: paged results!
-                throw new NotImplementedException();
-            }
-
             outputDistances.Length = sizeof(float) * found;
 
             // Default assumption is length prefixed
             outputIdFormat = VectorIdFormat.I32LengthPrefixed;
 
             return VectorManagerResult.OK;
+        }
+
+        /// <summary>
+        /// Continue a search that previously produced partial results.
+        /// 
+        /// All search_xxx methods continue in the same way, so this method is held in common.
+        /// 
+        /// Returns number of new results fetched, and sets <paramref name="continuation"/> to a non-0 value if additional calls are necessary.
+        /// </summary>
+        internal int ContinueSearch(ulong context, nint indexPtr, nint oldContinuation, int foundSoFar, ref SpanByteAndMemory outputIds, ref SpanByteAndMemory outputDistances, out nint continuation)
+        {
+            Debug.Assert(oldContinuation != 0, "Expected non-zero continuation");
+
+            // Only ids can grow, so double them each time
+            var newIdSpace = MemoryPool<byte>.Shared.Rent(outputIds.Span.Length * 2);
+            outputIds.ReadOnlySpan.CopyTo(newIdSpace.Memory.Span);
+
+            // TODO: Could remember this offset?  It's a relatively rare occurrence so maybe not worth optimizing
+            var writeIdsInto = newIdSpace.Memory.Span;
+            for (var i = 0; i < foundSoFar; i++)
+            {
+                var skip = BinaryPrimitives.ReadInt32LittleEndian(writeIdsInto);
+                writeIdsInto = writeIdsInto[(sizeof(int) + skip)..];
+            }
+
+            var writeDistancesInto = outputDistances.Span[(sizeof(float) * foundSoFar)..];
+            Debug.Assert(!writeDistancesInto.IsEmpty, "Expected space for remaining distances");
+
+            int count;
+            unsafe
+            {
+                // Guarantee these are pinned
+                fixed (byte* idPtr = writeIdsInto)
+                fixed (byte* distancePtr = writeDistancesInto)
+                {
+                    count = Service.ContinueSearch(context, indexPtr, oldContinuation, writeIdsInto, writeDistancesInto, out continuation);
+                }
+            }
+
+            // Error case, terminate 
+            if (count < 0)
+            {
+                Debug.Assert(continuation == 0, "Expected no additional continuations on error result");
+                return count;
+            }
+
+            // Update ids on success
+            outputIds = new(newIdSpace, newIdSpace.Memory.Length);
+            return count;
         }
 
         /// <summary>

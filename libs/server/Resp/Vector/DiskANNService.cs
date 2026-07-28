@@ -115,10 +115,8 @@ namespace Garnet.server
             return NativeDiskANNMethods.build_quant_table(context, index) == 1;
         }
 
-        public void BackfillQuantizedVectors(ulong context, nint index, int taskIndex, int taskCount)
-        {
-            NativeDiskANNMethods.backfill_quant_vectors(context, index, (nuint)taskIndex, (nuint)taskCount);
-        }
+        public bool BackfillQuantizedVectors(ulong context, nint index, int taskIndex, int taskCount)
+        => NativeDiskANNMethods.backfill_quant_vectors(context, index, (nuint)taskIndex, (nuint)taskCount) == 1;
 
         public bool Remove(ulong context, nint index, ReadOnlySpan<byte> id)
         {
@@ -300,9 +298,18 @@ namespace Garnet.server
             }
         }
 
-        public int ContinueSearch(ulong context, nint index, nint continuation, Span<byte> outputIds, Span<float> outputDistances, out nint newContinuation)
+        public int ContinueSearch(ulong context, nint index, nint continuation, Span<byte> outputIds, Span<byte> outputDistances, out nint newContinuation)
         {
-            throw new NotImplementedException();
+            var output_ids_data = (nint)Unsafe.AsPointer(ref MemoryMarshal.GetReference(outputIds));
+            var output_ids_len = (nuint)outputIds.Length;
+
+            var output_distances_data = (nint)Unsafe.AsPointer(ref MemoryMarshal.GetReference(outputDistances));
+            var output_distances_len = (nuint)outputDistances.Length;
+
+            newContinuation = 0;
+            var newContinuationPtr = (nint)Unsafe.AsPointer(ref newContinuation);
+
+            return NativeDiskANNMethods.continue_search(context, index, continuation, output_ids_data, output_ids_len, output_distances_data, output_distances_len, newContinuationPtr);
         }
 
         public bool CheckInternalIdValid(ulong context, nint index, ReadOnlySpan<byte> internalId)
@@ -464,7 +471,7 @@ namespace Garnet.server
         );
 
         [LibraryImport(DISKANN_GARNET)]
-        public static partial void backfill_quant_vectors(
+        public static partial byte backfill_quant_vectors(
             ulong context,
             nint index,
             nuint task_index,
