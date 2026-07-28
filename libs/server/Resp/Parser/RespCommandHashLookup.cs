@@ -97,6 +97,9 @@ namespace Garnet.server
         private static CommandEntry[] memorySubTable;
         private static int memorySubTableMask;
 
+        private static CommandEntry[] objectSubTable;
+        private static int objectSubTableMask;
+
         private static CommandEntry[] bitopSubTable;
         private static int bitopSubTableMask;
 
@@ -127,6 +130,7 @@ namespace Garnet.server
             moduleSubTable = BuildSubTable(ModuleSubcommands, out moduleSubTableMask);
             pubsubSubTable = BuildSubTable(PubsubSubcommands, out pubsubSubTableMask);
             memorySubTable = BuildSubTable(MemorySubcommands, out memorySubTableMask);
+            objectSubTable = BuildSubTable(ObjectSubcommands, out objectSubTableMask);
             bitopSubTable = BuildSubTable(BitopSubcommands, out bitopSubTableMask);
 
             // Validate all subcommand tables are round-trip correct
@@ -141,6 +145,7 @@ namespace Garnet.server
             ValidateSubTable(RespCommand.MODULE, ModuleSubcommands, moduleSubTable, moduleSubTableMask);
             ValidateSubTable(RespCommand.PUBSUB, PubsubSubcommands, pubsubSubTable, pubsubSubTableMask);
             ValidateSubTable(RespCommand.MEMORY, MemorySubcommands, memorySubTable, memorySubTableMask);
+            ValidateSubTable(RespCommand.OBJECT, ObjectSubcommands, objectSubTable, objectSubTableMask);
             ValidateSubTable(RespCommand.BITOP, BitopSubcommands, bitopSubTable, bitopSubTableMask);
 
             // Validate primary table: every inserted command must round-trip via Lookup
@@ -284,6 +289,7 @@ namespace Garnet.server
                 RespCommand.MODULE => (moduleSubTable, moduleSubTableMask),
                 RespCommand.PUBSUB => (pubsubSubTable, pubsubSubTableMask),
                 RespCommand.MEMORY => (memorySubTable, memorySubTableMask),
+                RespCommand.OBJECT => (objectSubTable, objectSubTableMask),
                 RespCommand.BITOP => (bitopSubTable, bitopSubTableMask),
                 _ => (null, 0)
             };

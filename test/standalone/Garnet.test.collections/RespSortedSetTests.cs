@@ -2141,6 +2141,9 @@ namespace Garnet.test
             ClassicAssert.AreEqual(3, (long)result);
         }
 
+        // Creates 3 sorted sets (fields expiring in 2s, 4s, and never), forces them to disk,
+        // then verifies the 2s field expires first and the 4s field expires later while the
+        // non-expiring set survives - exercising the on-disk TTL deserialization path.
         [Test]
         public async Task CanDoSortedSetExpireLTM()
         {
@@ -2151,6 +2154,10 @@ namespace Garnet.test
             string[] smallExpireKeys = ["user:user0", "user:user1"];
             string[] largeExpireKeys = ["user:user2", "user:user3"];
 
+            const int smallExpireSeconds = 2;
+            const int largeExpireSeconds = 4;
+            const int checkBufferSeconds = 1;
+
             foreach (var key in smallExpireKeys)
             {
                 db.SortedSetAdd(key,
@@ -2158,7 +2165,7 @@ namespace Garnet.test
                     new SortedSetEntry("Field1", 1),
                     new SortedSetEntry("Field2", 2)
                 ]);
-                db.Execute("ZEXPIRE", key, "2", "MEMBERS", "1", "Field1");
+                db.Execute("ZEXPIRE", key, smallExpireSeconds.ToString(CultureInfo.InvariantCulture), "MEMBERS", "1", "Field1");
             }
 
             foreach (var key in largeExpireKeys)
@@ -2168,25 +2175,26 @@ namespace Garnet.test
                     new SortedSetEntry("Field1", 1),
                     new SortedSetEntry("Field2", 2)
                 ]);
-                db.Execute("ZEXPIRE", key, "4", "MEMBERS", "1", "Field1");
+                db.Execute("ZEXPIRE", key, largeExpireSeconds.ToString(CultureInfo.InvariantCulture), "MEMBERS", "1", "Field1");
             }
 
-            // Create LTM (larger than memory) DB by inserting 1000 keys
-            for (int i = 4; i < 1000; i++)
-            {
-                var key = "user:user" + i;
-                db.SortedSetAdd(key,
-                [
-                    new SortedSetEntry("Field1", 1),
-                    new SortedSetEntry("Field2", 2)
-                ]);
-            }
+            // A normal key that must survive the whole test intact.
+            db.SortedSetAdd("user:persistent",
+            [
+                new SortedSetEntry("Field1", 1),
+                new SortedSetEntry("Field2", 2)
+            ]);
+
+            // Force records to disk
+            var storeLog = this.server.Provider.StoreWrapper.store.Log;
+            storeLog.FlushAndEvict(wait: true);
 
             var info = TestUtils.GetStoreAddressInfo(server, includeReadCache: true);
-            // Ensure data has spilled to disk
             ClassicAssert.Greater(info.HeadAddress, info.BeginAddress);
 
-            await Task.Delay(2000).ConfigureAwait(false);
+            // Small fields have expired; large fields are still alive. Ensure evicted so each field is read from disk.
+            await Task.Delay(TimeSpan.FromSeconds(smallExpireSeconds + checkBufferSeconds)).ConfigureAwait(false);
+            storeLog.FlushAndEvict(wait: true);
 
             var result = db.SortedSetScore(smallExpireKeys[0], "Field1");
             ClassicAssert.IsNull(result);
@@ -2205,14 +2213,16 @@ namespace Garnet.test
             ClassicAssert.Greater(ttl[0].Score, 0);
             ClassicAssert.LessOrEqual(ttl[0].Score, 2000);
 
-            await Task.Delay(2000).ConfigureAwait(false);
+            // Large fields have now expired too. Ensure evicted so the reads come from disk.
+            await Task.Delay(TimeSpan.FromSeconds(largeExpireSeconds - smallExpireSeconds)).ConfigureAwait(false);
+            storeLog.FlushAndEvict(wait: true);
 
             result = db.SortedSetScore(largeExpireKeys[0], "Field1");
             ClassicAssert.IsNull(result);
             result = db.SortedSetScore(largeExpireKeys[1], "Field1");
             ClassicAssert.IsNull(result);
 
-            var data = db.SortedSetRangeByRankWithScores("user:user4");
+            var data = db.SortedSetRangeByRankWithScores("user:persistent");
             ClassicAssert.AreEqual(2, data.Length);
             ClassicAssert.AreEqual("Field1", data[0].Element.ToString());
             ClassicAssert.AreEqual(1, data[0].Score);

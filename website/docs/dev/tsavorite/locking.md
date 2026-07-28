@@ -40,7 +40,7 @@ Transient locks are never held across pending I/O or other Wait operations. All 
 Here is an example of the above two use cases, condensed from the unit tests in `TransactionalUnsafeContextTests.cs`:
 
 ```cs
-    var luContext = session.GetTransactionalUnsafeContext();
+    var luContext = session.TransactionalUnsafeContext;
     luContext.BeginUnsafe();
     luContext.BeginTransaction();
 

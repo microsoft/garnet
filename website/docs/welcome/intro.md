@@ -7,7 +7,7 @@ slug: /
 
 # Welcome to Garnet
 
-Garnet is a new remote cache-store from Microsoft Research, that is designed to be extremely fast, extensible, 
+Garnet is a remote cache-store that is designed to be extremely fast, extensible, 
 and low latency. Garnet is thread-scalable within a single node. It also supports sharded cluster execution, 
 with replication, checkpointing, failover, and transactions. It can operate over main memory as well as 
 tiered storage (such as SSD and Azure Storage). Garnet supports a rich API surface and a powerful extensibility 
@@ -16,11 +16,6 @@ model.
 Garnet uses Redis' RESP as its primary wire protocol. Thus, one can use Garnet with unmodified Redis clients 
 [available](https://redis.io/docs/latest/develop/connect/clients/) in most programming languages, for example, with [StackExchange.Redis](https://github.com/StackExchange/StackExchange.Redis)
 in C#. Compared to other open-source cache-stores, you get much better performance, latency, extensibility, and durability features.
-
-Note that Garnet is a research project from Microsoft Research, and the project should be treated as such. That said, we are a bunch 
-of highly passionate researchers and developers working on it full-time at the moment to make it as stable and efficient as we 
-can. Our goal is to create a vibrant community around Garnet. In fact, Garnet has been of sufficiently high quality that several 
-first-party and platform teams at Microsoft have deployed versions of Garnet internally for many months now.
 
 Garnet offers the following key advantages:
 * Orders-of-magnitude better server throughput (ops/sec) with small batches and many client sessions, relative to
@@ -52,6 +47,8 @@ Garnet supports a large (and growing) [API surface](../commands/api-compatibilit
 * Admin ops such as PING, QUIT, CONFIG, RESET, TIME.
 * ACL support.
 * Publish/subscribe, transactions, and Lua scripting support.
+* Vector database support (preview) using DiskANN.
+* Range index support (preview) using Bf-Tree.
 
 The list is growing over time, and we would love to hear from you on what APIs you want the most!
 
@@ -88,8 +85,8 @@ overhead while delivering the performance advantages of Garnet. It's currently i
 
 ### Self-Hosted Garnet
 For development, research, or custom deployments, the open-source Garnet server provides complete control over your 
-infrastructure. Garnet is a research project from Microsoft Research that has been deployed by several 
-first-party and platform teams at Microsoft for many months.
+infrastructure. Garnet has been successfully deployed by various 
+first-party and platform teams at Microsoft for many years.
 
 **Key benefits:**
 - Complete control over infrastructure

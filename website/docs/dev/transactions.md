@@ -51,16 +51,16 @@ Transactions in Garnet are implemented using the following classes:
 #### Queueing Commands:
 
 When TxnManager goes to *Started* state, it will (1) queue any command afterward and (2) save any key that is used in those commands to lock at the execution time using 2PL.
-In order to queue commands, they are **let to live in the network buffer**. Using the `TrySkip` function in `RespServerSession`. To lock the keys at the time of execution, we save pointers to the actual memory location of keys in the network buffer using an array of `TxnKeyEntry` that has an `ArgSlice` and the lock type (Shared or Exclusive).
+In order to queue commands, they are **let to live in the network buffer**. Using the `TrySkip` function in `RespServerSession`. To lock the keys at the time of execution, we save pointers to the actual memory location of keys in the network buffer using an array of `TxnKeyEntry` that has a `PinnedSpanByte` and the lock type (Shared or Exclusive).
 
-`TrySkip` function uses `RespCommandsInfo` class to skip the correct number of tokens and detects syntax errors. `RespCommandsinfo` stores the number of `Arity` or arguments of each command. E.g., the `GET` command's arity is two. The command token `GET` and one key. We store the minimum number of arguments with a negative value for the commands that can have multiple arguments. `SET` command's arity is  -3 means that it requires at least three arguments (including command toke).
+`TrySkip` function uses `RespCommandsInfo` class to skip the correct number of tokens and detects syntax errors. `RespCommandsInfo` stores the number of `Arity` or arguments of each command. E.g., the `GET` command's arity is two. The command token `GET` and one key. We store the minimum number of arguments with a negative value for the commands that can have multiple arguments. `SET` command's arity is  -3 means that it requires at least three arguments (including command token).
 
-During the `TrySkip` we call `TransactionManager.GetKeys`, which goes over the arguments and stores `TxnKeyEntry` for each key in the arguments.
+During the `TrySkip` we call `TxnKeyManager.LockKeys`, which is key-spec driven: it reads the command's `SimpleRespCommandInfo` key specifications and stores a `TxnKeyEntry` for each key in the arguments.
 
 #### Execution
 
-When the the `TxnState` is *Started* and we encounter the `EXEC` we call `TransactionManager.Run()`. What this functions does:
-1. first acquires the `LockableContext` for the main store and/or object store based on the store type.
+When the `TxnState` is *Started* and we encounter the `EXEC` we call `TransactionManager.Run()`. What this function does:
+1. first acquires the `TransactionalContext` for the store based on the store type.
 2. Goes over `TxnKeyEntry`s and locks all the needed keys.
 3. Calls `WatchedKeyContainer.ValidateWatchVersion()`
     - It goes over all the watched keys and checks whether their version is the same as the time watch or not
@@ -99,14 +99,14 @@ It Monitors modifications on the keys. Every time a watched key gets modified, w
     - For in-memory records, we only increment version **watched keys**. The keys that are watched in Garnet use the `Modified` bit in Tsavorite to track modification (more on Modified bit Below)
     - For records in the disk, we increment the version for **copy-update** RMWs and Upserts. **We intentionally accept this overhead because copy updates are less often, and the overhead is not crucial.**
 
-    - Increment the version in `MainStoreFunctions` and `ObjectStoreFunctions`:
+    - Increment the version in `MainSessionFunctions` and `ObjectSessionFunctions`:
         - `InPlaceUpdater` if it is watched
-        - `ConcurrentWriter` if it is watched
-        - `ConcurrentDeleter` if it is watched
-        - `PostSingleWriter`
+        - `InPlaceWriter` if it is watched
+        - `InPlaceDeleter` if it is watched
+        - `PostInitialWriter`
         - `PostInitialUpdater`
         - `PostCopyUpdater`
-        - `PostSingleDeleter`
+        - `PostInitialDeleter`
 
 #### Modified Bit
 
@@ -114,7 +114,7 @@ The Modified bit tracks modifications in records in Tsavorite. The modified bit 
 
 #### Watch
 
--   We add a `ClientSesssion.ResetModified(ref Key key)` API.
+-   We add a `ClientSession.ResetModified(ref Key key)` API. It takes a `TKey`, and Garnet passes a `FixedSpanByteKey`.
     -   CAS the `RecordInfo` word into the same word, but with the **modified bit reset**.
 - When somebody watches a key in Garnet, we call `ResetModified` API and store that key in `WatchedKeyContainer`.
 - At the time of watch, we read a version of that record from the version map and store it alongside the key in `WatchedKeyContainer`.
@@ -136,9 +136,9 @@ We have written a micro-benchmark `TxnPerfBench` to test client transactions. Th
 
  It looks like the online benchmark, and can have different percentages of different workloads:
  ```
- dotnet run -c Release -t 2 -b 1 --dbsize 1024 -x --client SERedis --op-workload WATCH_TXN --op-percent 100
- dotnet run -c Release -t 2 -b 1 --dbsize 1024 -x --client SERedis --op-workload READ_TXN,WRITE_TXN --op-percent 50,50
- dotnet run -c Release -t 2 -b 1 --dbsize 1024 -x --client SERedis --op-workload READ_WRITE_TXN --op-percent 100
+ dotnet run -c Release -f net10.0 -- -t 2 -b 1 --dbsize 1024 -x --client SERedis --op-workload WATCH_TXN --op-percent 100
+ dotnet run -c Release -f net10.0 -- -t 2 -b 1 --dbsize 1024 -x --client SERedis --op-workload READ_TXN,WRITE_TXN --op-percent 50,50
+ dotnet run -c Release -f net10.0 -- -t 2 -b 1 --dbsize 1024 -x --client SERedis --op-workload READ_WRITE_TXN --op-percent 100
  ```
 
 Before running the benchmark, we load data with `opts.DbSize` number of records. It also accepts the number of reads and writes per transaction:

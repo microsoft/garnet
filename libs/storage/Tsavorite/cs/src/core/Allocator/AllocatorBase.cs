@@ -2106,7 +2106,10 @@ namespace Tsavorite.core
                 context = context,
                 handle = completed,
                 cts = cts,
-                readBuffers = readBuffers
+                readBuffers = readBuffers,
+                // Default to a full page; overridden below for a partial last page. This bounds the object-record walk in
+                // ObjectAllocatorImpl.DeserializeObjectsOnPage to the valid data extent, not the sector-aligned device read length.
+                maxAddressOffsetOnPage = PageSize
             };
 
             ulong offsetInFile = (ulong)(AlignedPageSizeBytes * readPage);
@@ -2116,6 +2119,12 @@ namespace Tsavorite.core
             if (adjustedUntilAddress > 0 && ((adjustedUntilAddress - (long)offsetInFile) < PageSize))
             {
                 readLength = (uint)(adjustedUntilAddress - (long)offsetInFile);
+                // Record the scan's true end (untilAddress) before rounding up to a sector boundary: the object-record walk must
+                // stop here. untilAddress can be mid-page, so the sector-aligned read pulls in records that lie ABOVE the requested
+                // range and can straddle the read end -- their ObjectLogPosition word and R11 value-length high bits then fall past
+                // the bytes actually transferred and are read from the un-read (only incidentally zeroed) buffer tail, yielding a
+                // bogus position/length. Such records must not be parsed as in-range records.
+                asyncResult.maxAddressOffsetOnPage = readLength;
                 readLength = (uint)((readLength + (sectorSize - 1)) & ~(sectorSize - 1));
             }
 

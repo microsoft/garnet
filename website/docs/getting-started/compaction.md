@@ -5,8 +5,8 @@ title: Log Compaction
 ---
 
 When Garnet is configured to run with storage using `EnableStorageTier` or `--storage-tier`, data that does not fit in memory will spill to disk storage.
-Data on disk is split into segments, with one physical file per segment. The size of each segment is configured using `SegmentSize` or `--segment` for
-the main store, and `ObjectStoreSegmentSize` or `--obj-segment` for the object store.
+Data on disk is split into segments, with one physical file per segment. The size of each main-log segment is configured using `SegmentSize` or `--segment`,
+and the size of each object-log segment is configured using `ObjectLogSegmentSize` or `--object-log-segment`.
 
 File segments continue to get created and added over time, so we need a way to delete older segments. This is where compaction comes in.
 
@@ -14,8 +14,7 @@ File segments continue to get created and added over time, so we need a way to d
 
 You can configure `CompactionFrequencySecs` or `--compaction-freq`, which creates a task that wakes up every so often to try compaction. If the number
 of segments on disk exceeds `CompactionMaxSegments` or `--compaction-max-segments`, compaction runs using the specified strategy so that we end up with
-at most `CompactionMaxSegments` active segments. The oldest segments are our chosen candidates for compaction. For the object store, the corresponding
-switch is `ObjectStoreCompactionMaxSegments` or `--obj-compaction-max-segments`.
+at most `CompactionMaxSegments` active segments. The oldest segments are our chosen candidates for compaction.
 
 
 ## Compaction Strategy

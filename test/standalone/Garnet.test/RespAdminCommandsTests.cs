@@ -385,9 +385,19 @@ namespace Garnet.test
         [TestCase("16k", "16k")]
         [TestCase("25k", "18k")]
         [TestCase("25k", "64k")]
+        // #1950: recovering into a power-of-two page-count memory budget (BufferSize == MaxAllocatedPageCount) whose
+        // highTargetSize exceeds BufferSize pages, with a snapshot larger than that budget, surfaced a read-time
+        // eviction that freed budget but not enough circular-buffer slots, silently dropping a snapshot page.
+        [TestCase("512k", "64k")]
+        [TestCase("512k", "128k")]
         public void SeSaveRecoverMultipleKeysTest(string memorySize, string recoveryMemorySize)
         {
             var disableObj = true;
+
+            // The #1950 regression needs the snapshot to span more pages than the (power-of-two) recovery budget, which
+            // takes more than the ~16 pages a 1000-key snapshot fills; scale up only for the large-memory permutations.
+            var memKB = int.Parse(memorySize.AsSpan(0, memorySize.Length - 1));
+            var numKeys = memKB >= 128 ? 3000 : 1000;
 
             server.Dispose();
             server = CreateGarnetServer(MethodTestDir, disableObjects: disableObj, lowMemory: true, memorySize: memorySize, pageSize: $"{MinKvLogPageSize}", enableAOF: true);
@@ -396,10 +406,10 @@ namespace Garnet.test
             using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))
             {
                 var db = redis.GetDatabase(0);
-                for (int i = 0; i < 1000; i++)
+                for (int i = 0; i < numKeys; i++)
                     db.StringSet($"SeSaveRecoverTestKey{i:0000}", $"SeSaveRecoverTestValue");
 
-                for (int i = 0; i < 1000; i++)
+                for (int i = 0; i < numKeys; i++)
                 {
                     var recoveredValue = db.StringGet($"SeSaveRecoverTestKey{i:0000}");
                     ClassicAssert.AreEqual("SeSaveRecoverTestValue", recoveredValue.ToString());
@@ -412,10 +422,10 @@ namespace Garnet.test
                 server.Save(SaveType.BackgroundSave);
                 while (server.LastSave().Ticks == DateTimeOffset.FromUnixTimeSeconds(0).Ticks) Thread.Sleep(10);
 
-                for (int i = 1000; i < 2000; i++)
+                for (int i = numKeys; i < 2 * numKeys; i++)
                     db.StringSet($"SeSaveRecoverTestKey{i:0000}", $"SeSaveRecoverTestValue");
 
-                for (int i = 1000; i < 2000; i++)
+                for (int i = numKeys; i < 2 * numKeys; i++)
                 {
                     var recoveredValue = db.StringGet($"SeSaveRecoverTestKey{i:0000}");
                     ClassicAssert.AreEqual("SeSaveRecoverTestValue", recoveredValue.ToString());
@@ -431,7 +441,7 @@ namespace Garnet.test
             using (var redis = ConnectionMultiplexer.Connect(GetConfig(allowAdmin: true)))
             {
                 var db = redis.GetDatabase(0);
-                for (int i = 0; i < 2000; i++)
+                for (int i = 0; i < 2 * numKeys; i++)
                 {
                     var recoveredValue = db.StringGet($"SeSaveRecoverTestKey{i:0000}");
                     ClassicAssert.AreEqual("SeSaveRecoverTestValue", recoveredValue.ToString(), $"Key SeSaveRecoverTestKey{i:0000}");

@@ -66,7 +66,7 @@ For source and reproduction instructions, see the
 
 ## Overview
 
-Each Vector Set is identified by a Garnet key in the main store. Under the hood, the key holds a small index "stub"
+Each Vector Set is identified by a Garnet key in the store. Under the hood, the key holds a small index "stub"
 that points at a DiskANN graph index. The vector algorithms themselves are stateless — they offload all of their state, both
 the per-element vectors and the graph adjacency lists, into key-value pairs in Tsavorite (kept in dedicated internal
 namespaces alongside per-element attributes). They reach that state through read/write/delete callbacks rather

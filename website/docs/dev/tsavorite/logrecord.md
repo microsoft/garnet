@@ -6,41 +6,41 @@ title: LogRecord
 
 # `LogRecord`
 
-The `LogRecord` struct is a major revision in the Tsavorite `ISessionFunctions` design. It replaces individual `ref key` and `ref value` parameters in the `ISessionFunctions` methods (as well as endoding optional `ETag` and `Expiration` into the Value) with a single `LogRecord`, which may be either `LogRecord` for in-memory log records, or `DiskLogRecord` for on-disk records. These `LogRecord` have properties for `Key` and `Value` as well as making `Etag` and `Expiration` first-class properties. There are a number of additional changes in this design as well, as shown in the following sections.
+The `LogRecord` struct is central to the Tsavorite `ISessionFunctions` design. Rather than passing individual `ref key` and `ref value` parameters to the `ISessionFunctions` methods (and encoding optional `ETag` and `Expiration` into the Value), the methods receive a single `LogRecord`, which is either `LogRecord` for in-memory log records or `DiskLogRecord` for on-disk records. These `LogRecord` types have properties for `Key` and `Value` and make `ETag` and `Expiration` first-class properties. The following sections describe the design in more detail.
 
-Much of the record-related logic of the allocators (e.g. `SpanByteAllocator`) has been moved into the `LogRecord` structs.
+Much of the record-related logic of the allocators (e.g. `SpanByteAllocator`) lives in the `LogRecord` structs.
 
 See [RecordDataHeader](#recorddataheader) for details of the layout, including `RecordType`, `Namespace`, and the ObjectLogPosition ulong if the record is not inline (has an Overflow Key and/or an Overflow or Object value).
 
-## `SpanByte` and `ArgSlice` are now `PinnedSpanByte` or `ReadOnlySpan<byte>`
+## Keys and Values as `PinnedSpanByte` or `ReadOnlySpan<byte>`
 
-To clarify that the element must be a pointer to a pinned span of bytes, the `SpanByte` and `ArgSlice` types have been replaced with `PinnedSpanByte` and `ReadOnlySpan<byte>`. The `PinnedSpanByte` is similar to the earlier `SpanByte`; a struct that wraps a pointer to a pinned span of bytes. Its construction has been changed from direct constructor calls to static `FromPinned*` calls, e.g. `FromLengthPrefixedPinnedPointer`. This is mostly used for cases where `(ReadOnly)Span<byte>` are not possible due to restrictions on their use; further work could reduce these areas.
+Tsavorite uses `PinnedSpanByte` and `ReadOnlySpan<byte>` for keys and values. A `PinnedSpanByte` is a struct that wraps a pointer to a pinned span of bytes; it is constructed through static `FromPinned*` calls, e.g. `FromLengthPrefixedPinnedPointer`. It is mostly used for cases where `(ReadOnly)Span<byte>` are not possible due to restrictions on their use; further work could reduce these areas.
 
 There are still areas where direct `byte*` are used, such as number parsing. Later work can revisit this to use `(ReadOnly)Span<byte>` instead if there is no performance impact.
 
-The `SpanByte` class now exists only as a static utility class that provides extension functions `(ReadOnly)Span<byte>`.
+The `SpanByte` class is a static utility class that provides extension functions over `(ReadOnly)Span<byte>`.
 
-## All Keys are now `ReadOnlySpan<byte>` at the Tsavorite Level
+## All Keys are `ReadOnlySpan<byte>` at the Tsavorite Level
 
-Originally, Tsavorite was templated on the `TKey` generic type, which was either `SpanByte` for the string store or `byte[]` for the object store. In this revision, all keys at the Tsavorite level are now `ReadOnlySpan<byte>`. At the Garnet processing level, they may be `PinnedSpanByte` at the `GarnetApi` layer and above. Any key structure must be converted to a stream of bytes and a `ReadOnlySpan<byte>` or `PinnedSpanByte` created over this. This can be a stack variable (which is not subject to GC) or a pinned pointer. 
+At the Tsavorite level, all keys are `ReadOnlySpan<byte>`. At the Garnet processing level, they may be `PinnedSpanByte` at the `GarnetApi` layer and above. Any key structure must be converted to a stream of bytes with a `ReadOnlySpan<byte>` or `PinnedSpanByte` created over it. This can be a stack variable (which is not subject to GC) or a pinned pointer. 
 
-This has simplified the signature and internal implementation of TsavoriteKV itself, the sessions, allocators, ISessionFunctions, Compaction, Iterators, and so on. And we now have only two allocators, `SpanByteAllocator` and the new `ObjectAllocator`.
+This keeps the signature and internal implementation of TsavoriteKV itself, the sessions, allocators, ISessionFunctions, Compaction, Iterators, and so on, simple. Tsavorite has two allocators, `SpanByteAllocator` and `ObjectAllocator`.
 
-## Removal of `BlittableAllocator`
+## Stack-based Keys and Values
 
-As part of the migration to `SpanByte`-only keys, `BlittableAllocator` has been removed. Tsavorite Unit Tests such as `BasicTests` and the YCSB benchmark's fixed-length test illustrate simple ways to use stack-based 'long' keys and values with `SpanByte`. This does incur some log record space overhead for the key's or value's length bytes, described below under `LogRecord`.
+Tsavorite Unit Tests such as `BasicTests` and the YCSB benchmark's fixed-length test illustrate simple ways to use stack-based 'long' keys and values with `SpanByte`. This does incur some log record space overhead for the key's or value's length bytes, described below under `LogRecord`.
 
-A reduced form of `BlittableAllocator`, renamed `TsavoriteLogAllocator`, is still used by `TsavoriteLog`.
+`TsavoriteLog` uses its own `TsavoriteLogAllocator`.
 
-## Replace `GenericAllocator` with `ObjectAllocator`
+## `ObjectAllocator`
 
-With the move to `SpanByte`-only keys we also created a new `ObjectAllocator` for a store that uses an object value type. `GenericAllocator` is not able to take SpanByte keys, and stored both key and value in a separate managed array; `ObjectAllocator` uses native allocations, the same as `SpanByteAllocator`.
+`ObjectAllocator` backs a store that uses an object value type. It uses native allocations, the same as `SpanByteAllocator`.
 
 ### IHeapObject
 
 An object field's object must inherit from `IHeapObject`. The Garnet processing layer uses `IGarnetObject`, which inherits from `IHeapObject`). The Tsavorite Unit Tests use object types that implement `IHeapObject`.
 
-`IHeapObject` provides methods for object management by core Tsavorite and Garnet processing. One significant property is `MemorySize`, the size the object takes in memory. This includes .NET object overhead as well as the size of the actual data. It is used in object size tracking.
+`IHeapObject` provides methods for object management by core Tsavorite and Garnet processing. One significant property is `HeapMemorySize`, the size the object takes in memory. This includes .NET object overhead as well as the size of the actual data. It is used in object size tracking.
 
 There are a number of other methods on IHeapObject, mostly to handle serialization.
 
@@ -76,15 +76,15 @@ To keep the size of the main log record tractable, we provide an option for `Obj
 
 ## `ISourceLogRecord`
 
-In this revision of Tsavorite, the individual "ref key" and "ref value" (as well as "ref recordInfo") parameters to `ISessionFunctions` methods have been replaced by a single `LogRecord` parameter. Not only does this consolidate those record attributes, it also encapsulate the "optional" record attributes of `ETag` and `Expiration`, as well as managing the `FillerLength` that allows records to shrink and re-expand in place. Previously the `ISessionFunctions` implementation had to manage the "extra" length; that is now automatically handled by the `LogRecord`. Similarly, `ETag` and `Expiration` previously were encoded into the Value `SpanByte` or a field of the object and this required tracking additional metadata and shifting when these values were added/removed; these too are now managed by the `LogRecord` as first-class properties.
+The individual "ref key" and "ref value" (as well as "ref recordInfo") parameters to `ISessionFunctions` methods are consolidated into a single `LogRecord` parameter. This also encapsulates the "optional" record attributes of `ETag` and `Expiration`, and manages the `FillerLength` that allows records to shrink and re-expand in place. The `LogRecord` automatically handles the "extra" length. `ETag` and `Expiration` are managed by the `LogRecord` as first-class properties rather than being encoded into the Value `SpanByte` or a field of the object, which would otherwise require tracking additional metadata and shifting when these values are added or removed.
 
-As part of this change, keys are now always `ReadOnlySpan<byte>` at the Tsavorite level. At the processing layer, they are initially `PinnedSpanBytes`; these have a `ReadOnlySpan` property that is called to convert them to `ReadOnlySpan<byte>` at the GarnetApi/StorageApi boundary.
+As part of this, keys are always `ReadOnlySpan<byte>` at the Tsavorite level. At the processing layer, they are initially `PinnedSpanByte`; these have a `ReadOnlySpan` property that is called to convert them to `ReadOnlySpan<byte>` at the GarnetApi/StorageApi boundary.
 
-Although we have two allocators, there is only one `LogRecord` family; we do not have separate `StringLogRecord` and `ObjectLogRecord`. There are a couple reasons for this:
-  - It would be more complex to maintain them, especially as we have multiple implementations of `ISourceLogRecord`.
-  - Iterators would no longer be able to iterate both stores.
+Although there are two allocators, there is only one `LogRecord` family; there are no separate `StringLogRecord` and `ObjectLogRecord`. There are a couple reasons for this:
+  - It would be more complex to maintain them, especially as there are multiple implementations of `ISourceLogRecord`.
+  - Iterators would not be able to iterate both stores.
   - The `ObjectAllocator` can have `SpanByte`, overflow `byte[]`, or `IHeapObject` values, so the `LogRecord` must be able to handle both.
-This decision may be revisited in the future; for example, `SpanByteAllocator` currently cannot have overflow keys or values, so a much leaner implementation could be used for that case. This would require a `TLogRecord` generic type in place of the earlier `TKey` and `TValue` types that have been removed in this revision.
+This decision may be revisited in the future; for example, `SpanByteAllocator` currently cannot have overflow keys or values, so a much leaner implementation could be used for that case. This would require a `TLogRecord` generic type rather than separate per-key and per-value generic types.
 
 `ISourceLogRecord` defines the common operations among a number of `LogRecord` implementations. These common operations are summarized here, and the implementations are described below.
   - Obtaining the RecordInfo header. There is both a "ref" (mutable) and non-"ref" (readonly) form.
@@ -166,7 +166,7 @@ The DiskLogRecord is an `ISourceLogRecord` that is backed by a `LogRecord`. See 
 
 `PendingState` carries information through the IO process and provides the source record (via its `DiskLogRecord`, which is an `ISourceLogRecord`) for RMW copy updates.
 
-Previously `PendingContext` had separate `HeapContainers` for keys and values. However, for operations such as conditional insert for Copy-To-Tail or Compaction, we need to carry through the entire log record (including optionals). In the case of records read from disk (e.g. Compaction), it is easiest to pass the `LogRecord` in its entirety, including its `SectorAlignedMemory` buffer, in the `DiskLogRecord`. So now PendingState will also serialize the Key passed to Upsert or RMW, and the value passed to Upsert, as a `DiskLogRecord`. `PendingState` still carries the `HeapContainer` for Input, and `CompletedOutputs` must still retain the Key's `ConditionallyHoistedKey`.
+`PendingState` serializes the Key passed to Upsert or RMW, and the value passed to Upsert, as a `DiskLogRecord`. For operations such as conditional insert for Copy-To-Tail or Compaction, it needs to carry through the entire log record (including optionals). In the case of records read from disk (e.g. Compaction), it is easiest to pass the `LogRecord` in its entirety, including its `SectorAlignedMemory` buffer, in the `DiskLogRecord`. `PendingState` also carries the `HeapContainer` for Input, and `CompletedOutputs` retains the Key's `ConditionallyHoistedKey`.
 
 For Compaction or other operations that must carry an in-memory record's data through the pending process, `PendingState` serializes that in-memory `LogRecord` to its `DiskLogRecord`.
 
@@ -180,4 +180,4 @@ For Compaction or other operations that must carry an in-memory record's data th
 
 ## Migration and Replication
 
-Key migration and diskless Replication have been converted to serialize the record to a `DiskLogRecord` on the sending side, and on the receiving side call one of the new `Upsert` overloads that take a `TSourceLogRecord` as the Value. This serialization mimics the writing to disk, but instead of a separate file or memory allocation, it allocates one chunk large enough for the entire inline portion followed by the out-of-line portions appended after the inline portion. Note that this limits the capacity of out-of-line allocations to a single network buffer; there is a pending work item to provide "chunked" output to (and read from) the network buffer.
+Key migration and diskless Replication serialize the record to a `DiskLogRecord` on the sending side, and on the receiving side call one of the `Upsert` overloads that take a `TSourceLogRecord` as the Value. This serialization mimics the writing to disk, but instead of a separate file or memory allocation, it allocates one chunk large enough for the entire inline portion followed by the out-of-line portions appended after the inline portion. Note that this limits the capacity of out-of-line allocations to a single network buffer; there is a pending work item to provide "chunked" output to (and read from) the network buffer.

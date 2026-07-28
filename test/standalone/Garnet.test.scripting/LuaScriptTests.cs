@@ -147,7 +147,7 @@ namespace Garnet.test
         [TearDown]
         public void TearDown()
         {
-            server.Dispose();
+            server?.Dispose();
             try
             {
                 if (aclFile != null)
@@ -3384,5 +3384,212 @@ return count";
                 ClassicAssert.True(timeout, "Thread did not exit in expected time");
             }
         }
+
+        // Probe payload used by SubscribeConfirmed to confirm a subscription is active on the server
+        // before the real Lua-driven PUBLISH is issued.
+        private const string LuaPublishProbe = "__lua_publish_probe__";
+
+        /// <summary>
+        /// Subscribes to <paramref name="channel"/> with <paramref name="handler"/>, then blocks until
+        /// the subscription is confirmed active by publishing probe messages until one is received.
+        ///
+        /// This works around a StackExchange.Redis behavior where <see cref="ISubscriber.Subscribe(RedisChannel, Action{RedisChannel, RedisValue}, CommandFlags)"/>
+        /// may return before the server has registered the subscription.
+        /// </summary>
+        private static void SubscribeConfirmed(
+            ISubscriber sub,
+            IDatabase db,
+            RedisChannel channel,
+            Action<RedisChannel, RedisValue> handler)
+        {
+            using var probeReceived = new ManualResetEvent(false);
+            sub.Subscribe(channel, (recvChannel, message) =>
+            {
+                if (message == LuaPublishProbe)
+                {
+                    probeReceived.Set();
+                }
+                else
+                {
+                    handler(recvChannel, message);
+                }
+            });
+
+            for (var i = 0; i < 20; i++)
+            {
+                _ = db.Publish(channel, LuaPublishProbe);
+                if (probeReceived.WaitOne(TimeSpan.FromMilliseconds(100)))
+                {
+                    break;
+                }
+            }
+
+            ClassicAssert.IsTrue(
+                probeReceived.WaitOne(TimeSpan.Zero),
+                $"Subscription to {(string)channel} did not become active within the probe window.");
+        }
+
+        /// <summary>
+        /// Blocks until the server reports at least <paramref name="expected"/> subscribers on
+        /// <paramref name="channel"/>, or fails the test if that count is not reached in time.
+        /// </summary>
+        private static void WaitForSubscriberCount(IDatabase db, RedisChannel channel, int expected)
+        {
+            var server = db.Multiplexer.GetServer(TestUtils.EndPoint);
+            for (var i = 0; i < 50; i++)
+            {
+                if (server.SubscriptionSubscriberCount(channel) >= expected)
+                {
+                    return;
+                }
+
+                Thread.Sleep(100);
+            }
+
+            ClassicAssert.AreEqual(
+                expected,
+                server.SubscriptionSubscriberCount(channel),
+                $"Did not observe {expected} subscriber(s) on {(string)channel}.");
+        }
+
+        // A single subscriber receives a message published from inside a Lua script via redis.call('PUBLISH', ...).
+        [Test]
+        public void LuaPublishSucceeds_WhenCalledViaRedisCall()
+        {
+            using var subRedis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var sub = subRedis.GetSubscriber();
+            var db = redis.GetDatabase(0);
+
+            var channel = RedisChannel.Literal("lua_pub_basic");
+            const string Payload = "hello-from-lua";
+            using var received = new ManualResetEvent(false);
+            RedisValue lastMessage = default;
+
+            SubscribeConfirmed(sub, db, channel, (_, msg) =>
+            {
+                lastMessage = msg;
+                received.Set();
+            });
+
+            var count = (int)(long)db.ScriptEvaluate(
+                "return redis.call('PUBLISH', KEYS[1], ARGV[1])",
+                [new RedisKey("lua_pub_basic")],
+                [new RedisValue(Payload)]);
+
+            Assert.Multiple(() =>
+            {
+                ClassicAssert.AreEqual(1, count, "PUBLISH should report exactly one subscriber.");
+                ClassicAssert.IsTrue(received.WaitOne(TimeSpan.FromMilliseconds(500)),
+                    "Subscriber did not receive the Lua-published message.");
+                ClassicAssert.AreEqual(Payload, (string)lastMessage);
+            });
+
+            sub.Unsubscribe(channel);
+        }
+
+        // PUBLISH from Lua returns the number of clients that received the message.
+        [Test]
+        public void LuaPublishReturnsSubscriberCount()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var channel = RedisChannel.Literal("lua_pub_count");
+            const int SubscriberCount = 3;
+            var muxs = new List<ConnectionMultiplexer>();
+
+            try
+            {
+                for (var i = 0; i < SubscriberCount; i++)
+                {
+                    var mux = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+                    muxs.Add(mux);
+                    mux.GetSubscriber().Subscribe(channel, (_, _) => { });
+                }
+
+                WaitForSubscriberCount(db, channel, SubscriberCount);
+
+                var count = (int)(long)db.ScriptEvaluate(
+                    "return redis.call('PUBLISH', KEYS[1], ARGV[1])",
+                    [new RedisKey("lua_pub_count")],
+                    [new RedisValue("ping")]);
+
+                ClassicAssert.AreEqual(SubscriberCount, count,
+                    "Lua PUBLISH should report every active subscriber.");
+            }
+            finally
+            {
+                foreach (var mux in muxs)
+                {
+                    mux.Dispose();
+                }
+            }
+        }
+
+        // SUBSCRIBE remains blocked inside Lua scripts by the NoScript bitmap (Redis protocol compliant).
+        [Test]
+        public void LuaSubscribe_StillNoScriptBlocked()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var exc = ClassicAssert.Throws<RedisServerException>(() =>
+                db.ScriptEvaluate("return redis.call('SUBSCRIBE', KEYS[1])", [new RedisKey("any_channel")]));
+
+            ClassicAssert.IsTrue(exc.Message.Contains("not allowed from script"),
+                $"SUBSCRIBE should remain blocked in scripts, got: {exc.Message}");
+        }
+
+        /// <summary>
+        /// Disposing a session while a script runs on another thread frees the Lua heap
+        /// (<c>lua_close</c>) underneath the single-threaded allocator, corrupting it. The script here
+        /// only allocates in a tight loop, so a concurrent dispose reliably lands mid-allocation.
+        /// </summary>
+        [Test]
+        public void DisposeDuringScriptExecutionAllocatorRace()
+        {
+            // Signals (via a store write another connection can observe) that execution has begun, then
+            // allocates in a tight loop. Kept short so the concurrent dispose's drain wait stays small.
+            const string BusyAllocScript = @"
+                redis.call('SET', KEYS[1], '1')
+                local x
+                for i = 1, 1000000 do
+                    x = { i, i, i, i, i, i, i, i }
+                end
+                return 1";
+
+            const string StartedKey = "alloc-race-started";
+
+            using var scriptConn = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            using var probeConn = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = scriptConn.GetDatabase(0);
+            var probeDb = probeConn.GetDatabase(0);
+
+            // Fire the script without awaiting; it keeps allocating on the Lua heap.
+            var scriptTask = db.ScriptEvaluateAsync(BusyAllocScript, [(RedisKey)StartedKey]);
+
+            // Wait until the script has actually entered execution (bounded), so the dispose lands
+            // mid-run regardless of how quickly the host starts the script.
+            var sw = Stopwatch.StartNew();
+            while (!probeDb.KeyExists(StartedKey) && sw.ElapsedMilliseconds < 5000)
+                Thread.Sleep(5);
+
+            // Dispose the server while the script is mid-allocation. In a previous regression, this
+            // would free the Lua heap (lua_close) concurrently with allocation -> corruption / crash.
+            var toDispose = server;
+            server = null;
+            toDispose.Dispose();
+
+            try
+            {
+                _ = scriptTask.GetAwaiter().GetResult();
+            }
+            catch
+            {
+                // Expected: the connection is dropped when the server is disposed mid-script.
+            }
+        }
+
     }
 }
