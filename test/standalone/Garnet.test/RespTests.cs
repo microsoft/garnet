@@ -2666,21 +2666,22 @@ namespace Garnet.test
             resp = (bool)db.Execute($"{command}", args);
             ClassicAssert.IsFalse(resp);// NX return false existing expiry
 
-            args[1] = 50;
+            var ttlSmall = command.Equals("EXPIRE") ? 50 : 50000; // 50 seconds or 50000 ms
+            args[1] = ttlSmall;
             args[2] = testCaseSensitivity ? "xx" : "XX";// XX -- Set expiry only when the key has an existing expiry
             resp = (bool)db.Execute($"{command}", args);
             ClassicAssert.IsTrue(resp);// XX return true existing expiry
 
             var time = db.KeyTimeToLive(key);
             ClassicAssert.Greater(time.Value.TotalSeconds, 0);
-            ClassicAssert.LessOrEqual(time.Value.TotalSeconds, (int)args[1]);
+            ClassicAssert.LessOrEqual(time.Value.TotalSeconds, ttlSmall);
 
             args[1] = 1;
             args[2] = testCaseSensitivity ? "Gt" : "GT";// GT -- Set expiry only when the new expiry is greater than current one
             resp = (bool)db.Execute($"{command}", args);
             ClassicAssert.IsFalse(resp); // GT return false new expiry < current expiry
 
-            args[1] = 1000;
+            args[1] = command.Equals("EXPIRE") ? 1000 : 1000000; // 1000 seconds or 1000000 ms
             args[2] = testCaseSensitivity ? "gT" : "GT";// GT -- Set expiry only when the new expiry is greater than current one
             resp = (bool)db.Execute($"{command}", args);
             ClassicAssert.IsTrue(resp); // GT return true new expiry > current expiry
@@ -2689,12 +2690,12 @@ namespace Garnet.test
             ClassicAssert.Greater(command.Equals("EXPIRE") ?
                     time.Value.TotalSeconds : time.Value.TotalMilliseconds, 500);
 
-            args[1] = 2000;
+            args[1] = command.Equals("EXPIRE") ? 2000 : 2000000; // must be > GT value above
             args[2] = testCaseSensitivity ? "lt" : "LT";// LT -- Set expiry only when the new expiry is less than current one
             resp = (bool)db.Execute($"{command}", args);
             ClassicAssert.IsFalse(resp); // LT return false new expiry > current expiry
 
-            args[1] = 500;
+            args[1] = command.Equals("EXPIRE") ? 500 : 500000; // must be < GT value above
             args[2] = testCaseSensitivity ? "lT" : "LT";// LT -- Set expiry only when the new expiry is less than current one
             resp = (bool)db.Execute($"{command}", args);
             ClassicAssert.IsTrue(resp); // LT return true new expiry < current expiry
@@ -3574,6 +3575,33 @@ namespace Garnet.test
             ClassicAssert.AreEqual(value.Substring(5, 3), resp);
         }
 
+        /// <summary>
+        /// Regression test for GETRANGE on a key holding an empty string throwing
+        /// DivideByZeroException when start is negative (NormalizeRange's start %= len hits
+        /// len == 0). Real Redis returns an empty string for any range on an empty value.
+        /// </summary>
+        [Test]
+        public void GetRangeEmptyValueTest()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            string key = "emptyRangeKey";
+            ClassicAssert.IsTrue(db.StringSet(key, ""));
+
+            var resp = (string)db.StringGetRange(key, -1, -1);
+            ClassicAssert.AreEqual(string.Empty, resp);
+
+            resp = (string)db.StringGetRange(key, -1, 0);
+            ClassicAssert.AreEqual(string.Empty, resp);
+
+            resp = (string)db.StringGetRange(key, 0, 0);
+            ClassicAssert.AreEqual(string.Empty, resp);
+
+            resp = (string)db.StringGetRange(key, 0, -1);
+            ClassicAssert.AreEqual(string.Empty, resp);
+        }
+
         [Test]
         public void SetRangeTest()
         {
@@ -3642,6 +3670,19 @@ namespace Garnet.test
             ClassicAssert.IsTrue(db.StringSet(key, value));
             ex = Assert.Throws<RedisServerException>(() => db.StringSetRange(key, -1, newValue));
             ClassicAssert.AreEqual(Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_OFFSETOUTOFRANGE), ex.Message);
+
+            // offset + value length beyond the max record size -> RedisServerException
+            // ("ERR string exceeds maximum allowed size (proto-max-bulk-len)"),
+            // instead of the storage layer throwing and the connection being dropped
+            ClassicAssert.IsTrue(db.KeyDelete(key));
+            ex = Assert.Throws<RedisServerException>(() => db.StringSetRange(key, 600_000_000, newValue));
+            ClassicAssert.AreEqual(Encoding.ASCII.GetString(CmdStrings.RESP_ERR_STRING_EXCEEDS_MAX_SIZE), ex.Message);
+
+            // the connection must still be usable after the rejected command above
+            ClassicAssert.IsTrue(db.StringSet(key, value));
+            resp = db.StringGet(key);
+            ClassicAssert.AreEqual(value, resp);
+            ClassicAssert.IsTrue(db.KeyDelete(key));
         }
 
         [Test]

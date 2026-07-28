@@ -362,6 +362,11 @@ namespace Garnet.server
 
         static (int, int) NormalizeRange(int start, int end, int len)
         {
+            // len == 0 has no valid range regardless of start/end; returning early also avoids
+            // a division/modulo by zero below when start < 0.
+            if (len == 0)
+                return (0, 0);
+
             if (start >= 0 && start <= len)//start in [0,len]
             {
                 if (end < 0 && (len + end) > 0)
@@ -792,6 +797,13 @@ namespace Garnet.server
             if (functionsState.StoredProcMode) return;
 
             if (input.header.cmd == RespCommand.VADD && input.arg1 is not (VectorManager.VADDAppendLogArg or VectorManager.MigrateElementKeyLogArg or VectorManager.MigrateIndexKeyLogArg or VectorManager.VADDSetFlagsArg))
+            {
+                return;
+            }
+
+            // Migrated RangeIndex publish: the chunked range index stream is logged separately and is the
+            // single AOF source of truth, so skip auto-logging this RICREATE (see StreamedPublishLogArg).
+            if (input.header.cmd == RespCommand.RICREATE && input.arg1 == RangeIndexManager.StreamedPublishLogArg)
             {
                 return;
             }

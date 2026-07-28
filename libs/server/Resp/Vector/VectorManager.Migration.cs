@@ -143,7 +143,7 @@ namespace Garnet.server
         {
             StringInput input = default;
             input.header.cmd = RespCommand.VADD;
-            input.arg1 = RecreateIndexArg;
+            input.arg1 = CreateIndexArg;
 
             ReadIndex(value, out var context, out var dimensions, out var reduceDims, out var quantType, out var buildExplorationFactor, out var numLinks, out var distanceMetric, out _, out var indexPtr);
 

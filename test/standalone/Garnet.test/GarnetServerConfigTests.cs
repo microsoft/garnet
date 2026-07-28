@@ -92,6 +92,43 @@ namespace Garnet.test
         }
 
         [Test]
+        public void RangeIndexPreviewRequiresMinimumAofPageSize()
+        {
+            // Range index preview needs an AOF page large enough for a migrated stream chunk (>= 512k).
+            var args = new[] { "--enable-range-index-preview", "--aof-page-size", "256k" };
+            var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out _, out _, out _, out _, silentMode: true);
+            ClassicAssert.IsFalse(parseSuccessful, "aof-page-size below 512k must be rejected when range index preview is enabled");
+
+            // A page at the threshold is accepted.
+            args = ["--enable-range-index-preview", "--aof-page-size", "512k"];
+            parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out _, out _, out _, out _, silentMode: true);
+            ClassicAssert.IsTrue(parseSuccessful, "aof-page-size at 512k must be accepted when range index preview is enabled");
+
+            // The constraint only applies when the preview is enabled.
+            args = ["--aof-page-size", "256k"];
+            parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out _, out _, out _, out _, silentMode: true);
+            ClassicAssert.IsTrue(parseSuccessful, "aof-page-size below 512k must be accepted when range index preview is disabled");
+        }
+
+        [Test]
+        public void LoadModuleCsInvalidSpecIsRejected()
+        {
+            // A malformed quoted module specification must be rejected by validation rather than silently ignored.
+            var args = new[] { "--loadmodulecs", "\"\" arg0" };
+            var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out _, out var invalidOptions, out _, out _, silentMode: true);
+            ClassicAssert.IsFalse(parseSuccessful, "A malformed module specification must be rejected");
+            ClassicAssert.IsTrue(invalidOptions.Contains(nameof(Options.LoadModuleCS)));
+
+            // A valid, existing module path (with no arguments) is accepted. Quote the path so the spec
+            // parses as a single path even if the assembly location happens to contain spaces.
+            var validModule = Assembly.GetExecutingAssembly().Location;
+            args = ["--loadmodulecs", $"\"{validModule}\""];
+            parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out _, out invalidOptions, out _, out _, silentMode: true);
+            ClassicAssert.IsTrue(parseSuccessful, "An existing module path must be accepted");
+            ClassicAssert.AreEqual(0, invalidOptions.Count);
+        }
+
+        [Test]
         public void ImportExportConfigLocal()
         {
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
@@ -1217,6 +1254,46 @@ namespace Garnet.test
             string[] args = ["--unixsocketperm", "888"];
             var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out _, out _, out _, out _, silentMode: true);
             ClassicAssert.IsFalse(parseSuccessful);
+        }
+
+        [Test]
+        [TestCase(TestUtils.pemCertFile)]
+        [TestCase("testcert.crt")]
+        [TestCase("testcert.cer")]
+        public void CertFileName_AcceptsPemExtensions(string certFileName)
+        {
+            // Only the extension is under test here, so it's fine to point multiple extensions at the same PEM contents.
+            var certFilePath = certFileName;
+            if (certFileName != TestUtils.pemCertFile)
+            {
+                Directory.CreateDirectory(TestUtils.MethodTestDir);
+                certFilePath = Path.Combine(TestUtils.MethodTestDir, certFileName);
+                File.Copy(TestUtils.pemCertFile, certFilePath, overwrite: true);
+            }
+
+            string[] args = ["--tls", "--cert-file-name", certFilePath];
+            var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out var invalidOptions, out _, out _, silentMode: true);
+            ClassicAssert.IsTrue(parseSuccessful);
+            ClassicAssert.AreEqual(0, invalidOptions.Count);
+            ClassicAssert.AreEqual(certFilePath, options.CertFileName);
+
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
+        }
+
+        [Test]
+        public void CertFileName_RejectsUnsupportedExtension()
+        {
+            // File exists, but its extension is not one of the recognized certificate extensions.
+            Directory.CreateDirectory(TestUtils.MethodTestDir);
+            var unsupportedExtensionFile = Path.Combine(TestUtils.MethodTestDir, "testcert.txt");
+            File.Copy(TestUtils.certFile, unsupportedExtensionFile, overwrite: true);
+
+            string[] args = ["--tls", "--cert-file-name", unsupportedExtensionFile];
+            var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out _, out var invalidOptions, out _, out _, silentMode: true);
+            ClassicAssert.IsFalse(parseSuccessful);
+            ClassicAssert.IsTrue(invalidOptions.Contains(nameof(Options.CertFileName)));
+
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
         }
 
         [Test]

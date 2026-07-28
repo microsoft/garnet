@@ -333,6 +333,9 @@ namespace Garnet.client
                     {
                         logger?.LogError(ex, "Exception calling networkSender.SendResponse in AsyncFlushPages");
                         networkHandler.Dispose();
+                        // Still signal completion for this page so FlushEvent waiters (e.g. GarnetClient
+                        // callers blocked in InternalExecuteNoResponse) are not left hanging indefinitely.
+                        AsyncFlushPageCallback(asyncResult);
                     }
                 }
                 if (flushPage == endPage) break;

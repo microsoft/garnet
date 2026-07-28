@@ -64,7 +64,7 @@ Lifetime tracks log addresses (cleared by `OnTruncate(newBA)`).
 ```
 {riLogRoot}/
     <hash>.data.bftree              # bftree's working file (disk-backed) / cold-restore staging (memory-backed)
-    <hash>.scratch.cpr              # CPR snapshot-enable path passed at create/recover (use_snapshot); no longer written — snapshots go directly to the flush/checkpoint/migration file
+    <hash>.scratch.cpr              # CPR snapshot-enable path passed at create/recover (use_snapshot); not written — snapshots go directly to the flush/checkpoint/migration file
     <hash>.<addr:x16>.flush.bftree  # immutable per-flush snapshot
 ```
 
@@ -766,12 +766,14 @@ public static bool IsLegalOnRangeIndex(this RespCommand cmd)
 ### Step 2: Add RESP commands to the parser
 
 > **Reference:** `libs/server/Resp/Parser/RespCommand.cs`
-> - Read commands are defined before `APPEND` (the last read command is just before `APPEND`)
-> - Write commands are defined starting at `APPEND`
-> - Read/write classification uses enum ordering: `cmd <= LastReadCommand` ⟹ read-only
-> - Fast parsing: `FastParseArrayCommand()` uses `ulong` pointer comparisons for short
->   fixed-length commands
-> - Longer/unusual commands fall through to `SlowParseCommand()`
+> - The enum is **writes-first**: write commands occupy a dense, explicitly-numbered block
+>   `APPEND = 1 .. BITOP_DIFF = 120` immediately after `NONE` (these are the only persisted
+>   RespCommand values); read commands follow, then scripts (EVAL/EVALSHA)
+> - Read/write classification uses enum **ranges**: `FirstReadCommand <= cmd <= LastReadCommand`
+>   ⟹ read-only; `FirstWriteCommand <= cmd <= LastWriteCommand` ⟹ write
+> - Array-form commands are parsed by `ArrayParseCommand()`
+> - Command names are resolved via `HashLookupCommand()`, an O(1) hash-table lookup
+>   populated by `RespCommandHashLookupData.PopulatePrimaryTable()`
 
 **Add enum values:**
 
@@ -795,10 +797,10 @@ RICREATE,     // RI.CREATE key [options]
 ```
 
 **Parsing:** RI commands are dot-prefixed (`RI.SET`), so they won't fit the 4-char fast
-path. Add a branch in `SlowParseCommand()` or a dedicated `ParseRangeIndexCommand()`:
+path. Add a branch in `ArrayParseCommand()` or a dedicated `ParseRangeIndexCommand()`:
 
 ```csharp
-// In SlowParseCommand or equivalent:
+// In ArrayParseCommand or equivalent:
 if (length >= 4 && ptr[0] == 'R' && ptr[1] == 'I' && ptr[2] == '.')
 {
     return ParseRangeIndexCommand(ptr + 3, length - 3);
@@ -1384,7 +1386,7 @@ public sealed partial class RangeIndexManager
         stub.ProcessInstanceId = processInstanceId;
     }
 
-    /// Deserialize stub from main store value.
+    /// Deserialize stub from the store value.
     internal static void ReadIndex(ReadOnlySpan<byte> value,
         out nint treePtr, out ulong cacheSize,
         out uint minRecordSize, out uint maxRecordSize,
@@ -1662,12 +1664,11 @@ case RespCommand.RICREATE:
 ### Step 9: Wire into Main Store Read Methods
 
 > **Reference:** `libs/server/Storage/Functions/MainStore/ReadMethods.cs`
-> - `SingleReader()` — validates record type before allowing reads
-> - `ConcurrentReader()` — same pattern for concurrent access
+> - `Reader()` — validates the record type before allowing reads
 > Currently, `ReadMethods.cs` checks `ValueIsObject` to reject string commands on
 > object records. Add analogous guards using the `RecordType` byte.
 
-Add type-safety guards in both `SingleReader` and `ConcurrentReader`:
+Add type-safety guards in `Reader`:
 
 ```csharp
 // Add RangeIndex type-safety checks:
@@ -2612,7 +2613,7 @@ When sending a checkpoint to a replica, we must send these additional files.
 
 ```csharp
 // In CheckpointFileType.cs, add:
-RANGEINDEX_SNAPSHOT = 11,  // BfTree snapshot file
+RANGEINDEX_SNAPSHOT = 8,  // BfTree snapshot file
 ```
 
 #### 2. Extend `SendCheckpoint()` to send BfTree snapshots
@@ -2675,7 +2676,7 @@ and restores from the snapshot files at the expected paths.
 points to a process-local native `BfTree` whose on-disk data file lives outside Tsavorite
 (`{riLogRoot}/{key_hash}.data.bftree`). The target node has no access to that
 file. We must ship the entire tree-data file alongside the stub, and the target must
-rebuild the native `BfTree` from it before publishing a usable stub into its main store.
+rebuild the native `BfTree` from it before publishing a usable stub into its store.
 
 #### Architecture
 
@@ -2758,7 +2759,7 @@ The stream format across one or more chunks:
 
 3. **Snapshot details.** `SnapshotForMigration` (in `RangeIndexManager.Migration.cs`):
    - Acquires the per-key exclusive lock.
-   - Re-reads the stub from the main store (`RIGET`) under the lock to get a fresh `TreeHandle`.
+   - Re-reads the stub from the store (`RIGET`) under the lock to get a fresh `TreeHandle`.
    - If the tree is live (`TreeHandle ≠ 0`, in `liveIndexes`): takes a CPR snapshot
      **directly into** `{riLogRoot}/migration-tmp/{guid}.bftree`
      (`CprSnapshotByPtr(handle, dest)`), using `TryClaimSnapshot`/`ReleaseSnapshot`

@@ -31,7 +31,7 @@ namespace CommandInfoUpdater
         /// <param name="updatedCommandsInfo">Updated command info data</param>
         /// <returns>True if file generated successfully</returns>
         public static bool TryUpdateCommandInfo(string outputDir, int respServerPort, IPAddress respServerHost,
-            IEnumerable<string> ignoreCommands, bool force, ILogger logger, out IReadOnlyDictionary<string, RespCommandsInfo> updatedCommandsInfo)
+            IEnumerable<string> ignoreCommands, bool force, ILogger logger, out IReadOnlyDictionary<string, RespCommandsInfo> updatedCommandsInfo, bool autoConfirm = false)
         {
             logger.LogInformation("Attempting to update RESP commands info...");
             updatedCommandsInfo = default;
@@ -47,7 +47,7 @@ namespace CommandInfoUpdater
             var (commandsToAdd, commandsToRemove) =
                 CommonUtils.GetCommandsToAddAndRemove(existingCommandsInfo, ignoreCommands, null);
 
-            if (!CommonUtils.GetUserConfirmation(commandsToAdd, commandsToRemove, logger))
+            if (!CommonUtils.GetUserConfirmation(commandsToAdd, commandsToRemove, logger, autoConfirm))
             {
                 logger.LogInformation("User cancelled update operation.");
                 return false;
@@ -215,7 +215,7 @@ namespace CommandInfoUpdater
                 // Parse each command's command info
                 for (var cmdIdx = 0; cmdIdx < cmdCount; cmdIdx++)
                 {
-                    if (!RespCommandInfoParser.TryReadFromResp(ref ptr, end, supportedCommands, out var command))
+                    if (!RespCommandInfoParser.TryReadFromResp(ref ptr, end, supportedCommands, out var command, logger: logger))
                     {
                         logger.LogError("Unable to read RESP command info from server for command {command}", commandsToQuery[cmdIdx]);
                         return false;

@@ -5,6 +5,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Security.Cryptography;
+using Garnet.common;
 using Garnet.server.ACL;
 using Garnet.server.Auth;
 using Garnet.server.Lua;
@@ -36,6 +37,11 @@ namespace Garnet.server
         LuaRunner timeoutRunningScript;
         LuaTimeoutManager.Registration timeoutRegistration;
 
+        // Tracks in-flight script executions so disposal can wait for a running script to
+        // finish before freeing the Lua state. The Lua allocators are single-thread-by-design,
+        // so closing the state (lua_close) concurrently with an executing script corrupts the heap.
+        readonly ActiveWorkerMonitor scriptRunMonitor = new();
+
         // Provides a unique value for script invocations
         //
         // It doesn't need to be globally unique, it just needs to be able
@@ -52,7 +58,10 @@ namespace Garnet.server
             this.logger = logger;
 
             scratchBufferNetworkSender = new ScratchBufferNetworkSender();
-            processor = new RespServerSession(0, scratchBufferNetworkSender, storeWrapper, null, authenticator, false);
+            // Pass storeWrapper.subscribeBroker so Lua scripts can use publish-side Pub/Sub
+            // commands (e.g. redis.call('PUBLISH', ...)) consistently with network sessions.
+            // SUBSCRIBE/PSUBSCRIBE remain blocked by the NoScript bitmap.
+            processor = new RespServerSession(0, scratchBufferNetworkSender, storeWrapper, storeWrapper.subscribeBroker, authenticator, false);
 
             // There's some parsing involved in these, so save them off per-session
             memoryManagementMode = storeWrapper.serverOptions.LuaOptions.MemoryManagementMode;
@@ -78,21 +87,29 @@ namespace Garnet.server
         /// 
         /// Enables timeouts, if they are configured.
         /// 
-        /// Should always be paired with a call to <see cref="StopRunningScript"/>.
+        /// Returns <c>false</c> if the session is being disposed, in which case the caller
+        /// must NOT execute the script (the Lua state may be freed concurrently).
+        /// 
+        /// Should always be paired with a call to <see cref="StopRunningScript"/> when it returns <c>true</c>.
         /// </summary>
-        public void StartRunningScript(LuaRunner script)
+        public bool StartRunningScript(LuaRunner script)
         {
+            if (!scriptRunMonitor.TryEnter())
+                return false;
+
             if (timeoutRegistration != null)
             {
                 timeoutRegistration.SetCookie(++timeoutRunningCookie);
                 timeoutRunningScript = script;
             }
+
+            return true;
         }
 
         /// <summary>
         /// Indicate that a script has stopped running.
         /// 
-        /// Should always be paired with a call to <see cref="StartRunningScript"/>.
+        /// Should always be paired with a preceding call to <see cref="StartRunningScript"/> that returned <c>true</c>.
         /// </summary>
         public void StopRunningScript()
         {
@@ -101,6 +118,8 @@ namespace Garnet.server
                 timeoutRegistration.SetCookie(0);
                 timeoutRunningScript = null;
             }
+
+            _ = scriptRunMonitor.Exit();
         }
 
         /// <summary>
@@ -234,6 +253,11 @@ namespace Garnet.server
         /// </summary>
         public void Clear()
         {
+            // Prevent new script executions and block until any in-flight script has exited before
+            // disposing runners (which frees the Lua state via lua_close). This avoids corrupting the
+            // single-threaded Lua allocator by freeing it while a script is still executing.
+            scriptRunMonitor.Dispose();
+
             timeoutRegistration?.Dispose();
             timeoutRegistration = null;
 

@@ -174,8 +174,9 @@ namespace Garnet.cluster
         /// <inheritdoc />
         public void SafeTruncateAOF(in AofAddress truncateUntil)
         {
-            if (clusterManager.CurrentConfig.LocalNodeRole == NodeRole.PRIMARY)
-                replicationManager.AofSyncDriverStore.SafeTruncateAof(truncateUntil);
+            var role = clusterManager.CurrentConfig.LocalNodeRole;
+            if (role == NodeRole.PRIMARY)
+                replicationManager.AofSyncDriverStore.SafeTruncateAof(role, truncateUntil);
             else
             {
                 if (serverOptions.FastAofTruncate)

@@ -874,7 +874,7 @@ namespace Garnet.test
 
             var fs = new FileStream(filePath, FileMode.Open, FileAccess.Read);
             var serializer = new RangeIndexChunkedSerializer(Encoding.UTF8.GetBytes("k"), CreateStub(), 16);
-            var reader = new RangeIndexMigrationReader(serializer, fs, filePath, 256);
+            var reader = new RangeIndexMigrationReader(serializer, fs, filePath, readBufferSize: 256);
 
             reader.Dispose();
             ClassicAssert.IsFalse(File.Exists(filePath), "Temp snapshot file should be deleted on dispose");
@@ -1492,7 +1492,7 @@ namespace Garnet.test
                 // The reader owns the FileStream and srcPath (deletes it on Dispose).
                 var serializer = new RangeIndexChunkedSerializer(key, stub, fileData.Length);
                 var fs = new FileStream(srcPath, FileMode.Open, FileAccess.Read);
-                using var reader = new RangeIndexMigrationReader(serializer, fs, srcPath, chunkSize);
+                using var reader = new RangeIndexMigrationReader(serializer, fs, srcPath, readBufferSize: chunkSize);
                 while (!reader.IsComplete)
                 {
                     var len = await reader.ReadNextChunkAsync(buffer);
@@ -1547,7 +1547,7 @@ namespace Garnet.test
             // Claim 1000 file bytes but only 10 exist on disk.
             var serializer = new RangeIndexChunkedSerializer(Encoding.UTF8.GetBytes("k"), CreateStub(), 1000);
             var fs = new FileStream(srcPath, FileMode.Open, FileAccess.Read);
-            using var reader = new RangeIndexMigrationReader(serializer, fs, srcPath, 256);
+            using var reader = new RangeIndexMigrationReader(serializer, fs, srcPath, readBufferSize: 256);
 
             var buffer = new byte[256];
             Assert.ThrowsAsync<Exception>(async () =>
@@ -1569,7 +1569,7 @@ namespace Garnet.test
 
             var serializer = new RangeIndexChunkedSerializer(Encoding.UTF8.GetBytes("k"), CreateStub(), 4096);
             var fs = new FileStream(srcPath, FileMode.Open, FileAccess.Read);
-            using var reader = new RangeIndexMigrationReader(serializer, fs, srcPath, 64);
+            using var reader = new RangeIndexMigrationReader(serializer, fs, srcPath, readBufferSize: 64);
 
             using var cts = new CancellationTokenSource();
             cts.Cancel();
@@ -1592,7 +1592,7 @@ namespace Garnet.test
             var serializer = new RangeIndexChunkedSerializer(Encoding.UTF8.GetBytes("k"), CreateStub(), 8);
 
             Assert.Throws<ArgumentOutOfRangeException>(() =>
-                new RangeIndexMigrationReader(serializer, fs, srcPath, 0));
+                new RangeIndexMigrationReader(serializer, fs, srcPath, readBufferSize: 0));
         }
 
         /// <summary>
@@ -1608,7 +1608,7 @@ namespace Garnet.test
             var serializer = new RangeIndexChunkedSerializer(Encoding.UTF8.GetBytes("k"), CreateStub(), 64);
             var fs = new FileStream(srcPath, FileMode.Open, FileAccess.Read);
             // A small internal read buffer is fine; the destination is what must be >= trailer size.
-            using var reader = new RangeIndexMigrationReader(serializer, fs, srcPath, 8);
+            using var reader = new RangeIndexMigrationReader(serializer, fs, srcPath, readBufferSize: 8);
 
             ClassicAssert.Greater(RangeIndexChunkedSerializer.MinChunkSize, 0);
             var tooSmall = new byte[RangeIndexChunkedSerializer.MinChunkSize - 1];

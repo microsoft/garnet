@@ -598,6 +598,31 @@ namespace Garnet.server
         }
 
         /// <inheritdoc/>
+        public abstract (long keyCount, long expireCount) GetKeyspaceStats(int dbId);
+
+        /// <summary>
+        /// Count live keys and live keys with an expiration set for the given database via a full store scan.
+        /// Uses a dedicated per-database storage session guarded by <see cref="GarnetDatabase.KeyspaceScanLock"/>,
+        /// since INFO can be issued concurrently by multiple sessions.
+        /// </summary>
+        /// <param name="db">Database to scan.</param>
+        /// <returns>A tuple of (live keys, live keys with an expiration set).</returns>
+        protected (long keyCount, long expireCount) GetDatabaseKeyspaceStats(GarnetDatabase db)
+        {
+            lock (db.KeyspaceScanLock)
+            {
+                if (db.KeyspaceScanStorageSession == null)
+                {
+                    var scratchBufferBuilder = new ScratchBufferBuilder();
+                    var scratchBufferAllocator = new ScratchBufferAllocator();
+                    db.KeyspaceScanStorageSession = new StorageSession(StoreWrapper, scratchBufferBuilder, scratchBufferAllocator, null, null, db.Id, readSessionState: null, db.VectorManager, Logger);
+                }
+
+                return db.KeyspaceScanStorageSession.KeyspaceStats();
+            }
+        }
+
+        /// <inheritdoc/>
         public abstract (HybridLogScanMetrics mainStore, HybridLogScanMetrics objectStore)[] CollectHybridLogStats();
 
         protected (HybridLogScanMetrics mainStore, HybridLogScanMetrics objectStore) CollectHybridLogStatsForDb(GarnetDatabase db)

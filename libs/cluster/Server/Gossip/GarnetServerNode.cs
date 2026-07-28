@@ -66,6 +66,9 @@ namespace Garnet.cluster
         /// </summary>
         const int defaultMaxOutstandingTask = 8;
 
+        internal static int GetClientTimeoutMilliseconds(int clusterTimeoutSeconds)
+            => clusterTimeoutSeconds <= 0 ? 0 : (int)Math.Min((long)clusterTimeoutSeconds * 1000, int.MaxValue);
+
         /// <summary>
         /// GarnetServerNode constructor
         /// </summary>
@@ -83,7 +86,7 @@ namespace Garnet.cluster
                 tlsOptions,
                 sendPageSize: opts.DisablePubSub ? defaultSendPageSize : Math.Max(defaultSendPageSize, (int)opts.PubSubPageSizeBytes()),
                 maxOutstandingTasks: defaultMaxOutstandingTask,
-                timeoutMilliseconds: opts.ClusterTimeout <= 0 ? 0 : TimeSpan.FromSeconds(opts.ClusterTimeout).Milliseconds,
+                timeoutMilliseconds: GetClientTimeoutMilliseconds(opts.ClusterTimeout),
                 authUsername: clusterProvider.clusterManager.clusterProvider.ClusterUsername,
                 authPassword: clusterProvider.clusterManager.clusterProvider.ClusterPassword,
                 epoch: epoch,
@@ -133,7 +136,7 @@ namespace Garnet.cluster
         void UpdateGossipRecv() => this.gossipRecv = DateTimeOffset.UtcNow.Ticks;
         void ResetCts()
         {
-            bool internalCtsDisposed = false;
+            var internalCtsDisposed = false;
             internalCts.Cancel();
             if (!internalCts.TryReset())
             {
@@ -304,6 +307,11 @@ namespace Garnet.cluster
                 }
 
                 locked = true;
+                if (!gc.IsConnected)
+                {
+                    logger?.LogError($"{nameof(TryClusterPublish)}: client not connected; skipping publish forwarding");
+                    return;
+                }
                 gc.ExecuteClusterPublishNoResponse(cmd, channel, message);
             }
             finally

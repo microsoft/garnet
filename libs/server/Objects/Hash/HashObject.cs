@@ -22,30 +22,32 @@ namespace Garnet.server
 #pragma warning disable CS1591 // Missing XML comment for publicly visible type or member
 
     /// <summary>
-    /// Operations on Hash
+    /// Operations on Hash.
+    /// Persisted in the AOF via RespInputHeader.SubId, so values are EXPLICIT and APPEND-ONLY:
+    /// never change/reorder an existing value; add new operations at the end with the next value.
     /// </summary>
     public enum HashOperation : byte
     {
-        HCOLLECT,
-        HEXPIRE,
-        HTTL,
-        HPERSIST,
-        HGET,
-        HMGET,
-        HSET,
-        HMSET,
-        HSETNX,
-        HLEN,
-        HDEL,
-        HEXISTS,
-        HGETALL,
-        HKEYS,
-        HVALS,
-        HINCRBY,
-        HINCRBYFLOAT,
-        HRANDFIELD,
-        HSCAN,
-        HSTRLEN
+        HCOLLECT = 0,
+        HEXPIRE = 1,
+        HTTL = 2,
+        HPERSIST = 3,
+        HGET = 4,
+        HMGET = 5,
+        HSET = 6,
+        HMSET = 7,
+        HSETNX = 8,
+        HLEN = 9,
+        HDEL = 10,
+        HEXISTS = 11,
+        HGETALL = 12,
+        HKEYS = 13,
+        HVALS = 14,
+        HINCRBY = 15,
+        HINCRBYFLOAT = 16,
+        HRANDFIELD = 17,
+        HSCAN = 18,
+        HSTRLEN = 19,
     }
 
 

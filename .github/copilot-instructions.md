@@ -92,7 +92,7 @@ Full guide: https://microsoft.github.io/garnet/docs/dev/garnet-api
 ### Steps for a new built-in command:
 
 1. **Define the command**: Add enum value to `RespCommand` in `libs/server/Resp/Parser/RespCommand.cs`. For object commands (List, SortedSet, Hash, Set), also add a value to the `[ObjectName]Operation` enum in `libs/server/Objects/[ObjectName]/[ObjectName]Object.cs`.
-2. **Add parsing logic**: In `libs/server/Resp/Parser/RespCommand.cs`, add to `FastParseCommand` (fixed arg count) or `FastParseArrayCommand` (variable args).
+2. **Add parsing logic**: In `libs/server/Resp/Parser/RespCommandHashLookupData.cs`, add an entry to `PopulatePrimaryTable()` (e.g., `Add("MYNEWCMD", RespCommand.MYNEWCMD)`). For commands with subcommands, set `hasSub: true` and add a subcommand table. The hash table provides O(1) lookup for all command name lengths.
 3. **Declare the API method**: Add method signature to `IGarnetReadApi` (read-only) or `IGarnetApi` (read-write) in `libs/server/API/IGarnetApi.cs`.
 4. **Implement the network handler**: Add a method to `RespServerSession` (the class is split across ~22 partial `.cs` files — object commands go in `libs/server/Resp/Objects/[ObjectName]Commands.cs`, others in `libs/server/Resp/BasicCommands.cs`, `ArrayCommands.cs`, `AdminCommands.cs`, `KeyAdminCommands.cs`, etc.). The handler parses arguments from the network buffer via `parseState.GetArgSliceByRef(i)` (returns `ref PinnedSpanByte`), calls the storage API, and writes the RESP response using `RespWriteUtils` helper methods, then calls `SendAndReset()` to flush the response buffer.
 5. **Add dispatch route**: In `libs/server/Resp/RespServerSession.cs`, add a case to `ProcessBasicCommands` or `ProcessArrayCommands` calling the handler from step 4.
@@ -194,6 +194,7 @@ To add a new Garnet server setting:
 - Central package version management via `Directory.Packages.props`
 - XML doc comments (`/// <summary>`) are strongly recommended on public methods, with `<param>` tags for each parameter; analyzer rules for missing docs are currently configured as suggestions (see `.editorconfig`)
 - Comment format: `// Comment starting with a capital letter` (one space after `//`)
+- Keep comments tight, factual, and to the point: describe what the code does and why, in the present tense. Don't narrate history, reference issues/PRs, or describe problems, bugs, or prior approaches.
 
 ### Performance Conventions
 

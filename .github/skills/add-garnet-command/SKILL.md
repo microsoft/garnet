@@ -46,35 +46,50 @@ Adding a single new command touches **at minimum** these areas:
 
 **File:** `libs/server/Resp/Parser/RespCommand.cs`
 
-The `RespCommand` enum is divided into sections with **ordering that matters**:
+The `RespCommand` enum is **writes-first**: write (mutating) commands occupy a dense,
+explicitly-numbered block immediately after `NONE`, followed by reads, scripts, and non-data:
 
 ```
-Read commands:     BITCOUNT ... ZUNION     (before APPEND)
-Write commands:    APPEND ... BITOP_DIFF   (after APPEND)
-Script commands:   EVAL, EVALSHA
+Write commands:    APPEND = 1 ... BITOP_DIFF = 120   (EXPLICIT values; the ONLY persisted values)
+Read commands:     BITCOUNT ... RISCAN               (auto-numbered; never persisted)
+Script commands:   EVAL, EVALSHA                     (LastDataCommand = EVALSHA)
 Non-key commands:  PING, SUBSCRIBE, etc.
 Admin commands:    AUTH, CONFIG, etc.
 ```
 
-**Read/write classification uses enum ordering:**
-- `cmd < RespCommand.APPEND` → read-only
-- `cmd >= RespCommand.APPEND && cmd <= RespCommand.BITOP_DIFF` → write
+**Why writes-first:** the write command's numeric value is persisted to disk (serialized into
+`RespInputHeader.cmd` in the AOF and streamed to replicas). Keeping writes in a dense,
+explicitly-numbered leading block makes those values **stable** — adding a read/admin command
+(which is never persisted) cannot shift them.
 
-**Rules:**
-- Read-only commands go **before** `APPEND`
-- Write commands go **between** `APPEND` and `BITOP_DIFF`
-- Update the boundary comments if you add before `APPEND` or after `BITOP_DIFF`
-- Place alphabetically within the appropriate section
+**Read/write classification uses enum ranges (positional constants, not hardcoded values):**
+- `RespCommandExtensions.FirstWriteCommand (APPEND=1) .. LastWriteCommand (BITOP_DIFF=120)` → write
+- `FirstReadCommand .. LastReadCommand (= EVAL - 1)` → read-only
+
+**Rules for adding a command:**
+- **Write (mutating) command:** APPEND it at the **end** of the write block, immediately before
+  the `// Read-only commands` marker, with the **next explicit value** (e.g. `MYCMD = 121,`).
+  Then update `LastWriteCommand` if it is no longer `BITOP_DIFF`. **Never** insert into the middle
+  of the write block or change/reuse an existing value — persisted values must be append-only.
+- **Read-only / script / non-data command:** add it in the appropriate (auto-numbered) section.
+  These are never persisted, so their values may shift freely.
+- Adding a write shifts the auto-numbered reads up by one — that is harmless (reads aren't
+  persisted) and requires no other change.
+
+**Guardrails (do not bypass):**
+- `PersistedEnumStabilityTests` snapshots the write-block values and asserts the write range
+  contains exactly the write commands. If you change an existing write value it fails — that is a
+  breaking on-disk change requiring an `AofHeader.AofHeaderVersion` bump + a legacy remap in
+  `AofProcessor` / `LegacyRespCommand`, not an edited expected value.
+- If a new write command's value ever approaches the custom command range (`0xFEFF`), that is also
+  caught by a test.
 
 **Boundary markers to watch (search for these comments):**
 ```csharp
-ZUNION,  // Note: Last read command is determined by APPEND - 1
-APPEND, // Note: Update FirstWriteCommand if adding new write commands before this
-BITOP_DIFF, // Note: Update LastWriteCommand if adding new write commands after this
+APPEND = 1, // Note: FirstWriteCommand — keep as the first write command
+BITOP_DIFF = 120, // Note: LastWriteCommand — append new write commands after this with the next value
 EVALSHA, // Note: Update LastDataCommand if adding new data commands after this
 ```
-
-**⚠️ Caveat:** The boundary comments in the source may not be on the actual last/first entry (e.g., `ZSCORE` has the comment but `ZUNION` follows it). The real boundary is determined by code: `LastReadCommand = RespCommand.APPEND - 1`. Always check the actual enum ordering, not just the comments.
 
 ---
 
@@ -82,17 +97,39 @@ EVALSHA, // Note: Update LastDataCommand if adding new data commands after this
 
 **File:** `libs/server/Resp/Parser/RespCommand.cs`
 
-Two parsing paths exist:
+Two parsing tiers exist:
 
-### Fast path: `FastParseCommand()` / `FastParseArrayCommand()`
-Two fast-path methods exist with different constraints:
-- **`FastParseCommand()`**: For commands with a fixed number of arguments and command names up to **9 characters**. Uses `ulong` pointer comparisons on `(count << 4) | length` patterns.
-- **`FastParseArrayCommand()`**: For commands with a variable number of arguments and command names up to **16 characters**. Uses similar `ulong` comparison patterns but accommodates longer names.
+### Hash table path: `RespCommandHashLookup` (primary path for most commands)
+The hash table in `libs/server/Resp/Parser/RespCommandHashLookupData.cs` provides O(1) lookup for all built-in commands. This is the **recommended path for all new commands**.
 
-Only add here if the command name is a simple word (no dots or special characters).
+**To add a new primary command**, add one line to `PopulatePrimaryTable()` in `RespCommandHashLookupData.cs`:
+```csharp
+Add("DELIFGREATER", RespCommand.DELIFGREATER);
+```
 
-### Slow path: `SlowParseCommand()`
-For longer names, dot-prefixed names (like `RI.CREATE`), or names that don't fit the fast-path pattern.
+**To add a command with subcommands** (e.g., `MYPARENT SUBCMD`):
+1. Add the parent with `hasSub: true` in `PopulatePrimaryTable()`:
+   ```csharp
+   Add("MYPARENT", RespCommand.MYPARENT, hasSub: true);
+   ```
+2. Define the subcommand array in `RespCommandHashLookupData.cs`:
+   ```csharp
+   private static readonly (string Name, RespCommand Command)[] MyparentSubcommands =
+   [
+       ("SUBCMD1", RespCommand.MYPARENT_SUBCMD1),
+       ("SUBCMD2", RespCommand.MYPARENT_SUBCMD2),
+   ];
+   ```
+3. Build the table in the static constructor in `RespCommandHashLookup.cs`:
+   ```csharp
+   myparentSubTable = BuildSubTable(MyparentSubcommands, out myparentSubTableMask);
+   ```
+4. Wire it into `LookupSubcommand()` in `RespCommandHashLookup.cs`:
+   ```csharp
+   RespCommand.MYPARENT => (myparentSubTable, myparentSubTableMask),
+   ```
+
+**⚠️ Important:** Use the exact wire-protocol spelling for the hash table name string. Some commands use hyphens (e.g., `"SET-CONFIG-EPOCH"` not `"SETCONFIGEPOCH"`). Check `CmdStrings.cs` for the canonical spelling.
 
 **⚠️ Convention:** Define the command name string in **`libs/server/Resp/CmdStrings.cs`** and reference it from the parser, rather than using inline `"..."u8` literals. This keeps command name strings centralized and reusable (e.g., for error messages).
 
@@ -101,26 +138,12 @@ For longer names, dot-prefixed names (like `RI.CREATE`), or names that don't fit
 public static ReadOnlySpan<byte> DELIFGREATER => "DELIFGREATER"u8;
 ```
 
-**Pattern for slow-path commands:**
-```csharp
-else if (command.SequenceEqual(CmdStrings.DELIFGREATER))
-{
-    return RespCommand.DELIFGREATER;
-}
-```
+### SIMD fast path: `FastParseCommand()` (optional, for hottest commands only)
+Static `Vector128<byte>` patterns defined in `libs/server/Resp/Parser/RespCommandSimdPatterns.cs` that match the full RESP encoding (`*N\r\n$L\r\nCMD\r\n`) in a single 16-byte comparison. Use the `RespPattern(argCount, "CMD")` helper to create new patterns. Only needed for the most performance-critical commands with:
+- Fixed argument count (single digit)
+- Command names of 3-6 characters (total encoded length must fit in 16 bytes)
 
-**Pattern for dot-prefixed commands (e.g., `RI.CREATE`):**
-```csharp
-else if (command.SequenceEqual(CmdStrings.RICREATE))
-{
-    return RespCommand.RICREATE;
-}
-```
-
-Add this before the final `return RespCommand.INVALID;` at the end of `SlowParseCommand`.
-
-**⚠️ Caveat: Dot-prefixed commands and ACL**
-If your command uses a dot (e.g., `RI.CREATE`), you must also update **`libs/server/ACL/ACLParser.cs`** so that the ACL system can map the dotted wire name to the enum name. Search for how existing dot-handling works (look for `Replace(".", "")` or similar normalization).
+Most new commands should **NOT** be added here — the hash table + MRU cache provide excellent performance for all commands. Only add SIMD patterns if benchmarking shows the command is a bottleneck.
 
 ---
 
@@ -241,7 +264,15 @@ private unsafe bool SortedSetAdd<TGarnetApi>(ref TGarnetApi storageApi)
 - The actual data operation logic lives in `libs/server/Objects/[ObjectName]/[ObjectName]ObjectImpl.cs`, dispatched via the operation enum
 
 **For new object sub-operations:**
-Add a value to the `[ObjectName]Operation` enum in `libs/server/Objects/[ObjectName]/[ObjectName]Object.cs` and handle it in the `Operate` method's switch statement.
+Add a value to the `[ObjectName]Operation` enum in `libs/server/Objects/[ObjectName]/[ObjectName]Object.cs`
+and handle it in the `Operate` method's switch statement.
+
+> **⚠️ Persisted, append-only:** the object operation enums (`HashOperation`, `ListOperation`,
+> `SetOperation`, `SortedSetOperation`) have **explicit values** and are serialized to the AOF via
+> `RespInputHeader.SubId`. **Append** the new operation at the **end** with the next explicit value;
+> never insert into the middle, reorder, or change an existing value. `PersistedEnumStabilityTests`
+> guards these values. The id occupies a full header byte, so up to 256 sub-operations per type are
+> allowed.
 
 ### Unified command note
 
@@ -452,6 +483,8 @@ new("DEBUG", RespCommand.DEBUG),
 
 Needed for commands that don't exist in standard Redis (e.g., `DELIFGREATER`, `SETIFMATCH`), or standard Redis commands whose info you need to override. Standard Redis commands (e.g., `DEBUG`, `GETDEL`) normally get their metadata from a running RESP server automatically via the CommandInfoUpdater tool — skip this step and Step 8c for those unless you need to override their info.
 
+> **Overriding a command that also exists on the baseline server** (e.g., `OBJECT`): the tool merges **per sub-command, by name** — your `GarnetCommandsInfo.json` / `GarnetCommandsDocs.json` entry wins and the baseline server fills in any sub-commands you did not specify. The override replaces the command's base fields wholesale (it is *not* a field-by-field merge), so include the parent command plus the sub-commands you want to control. This is how `OBJECT` reports Garnet-accurate sub-command summaries while the tool still generates the rest.
+
 Add a JSON entry:
 
 ```json
@@ -531,12 +564,16 @@ Do NOT invent new group names — the JSON deserializer will fail.
    dotnet run -f net10.0 --no-build -- --port 6399 --output ../../libs/resources
    ```
    (The `--port` must match the port of the local RESP server.)
-3. The tool will prompt `Would you like to continue? (Y/N)` **twice** (once for info, once for docs). Press `Y` for both.
+3. The tool will prompt `Would you like to continue? (Y/N)` **twice** (once for info, once for docs). Press `Y` for both, or pass `--yes` (see below) to auto-confirm.
 4. Kill the local RESP server afterward.
 
-**⚠️ Caveat:** The tool uses `Console.ReadKey()` which does NOT work with piped input. You must run it interactively (not via `echo "Y" | dotnet run ...`). For AI agents, use an async shell session and send `Y` keystrokes via interactive input (e.g., `write_bash`).
+**⚠️ Caveat:** By default the tool prompts via `Console.ReadKey()`, which does NOT work with piped input (`echo "Y" | dotnet run ...` fails). For non-interactive / scripted runs (including AI agents), pass **`--yes`** to auto-confirm both prompts; otherwise run it in a real interactive terminal.
 
 **⚠️ Caveat:** The tool requires a running RESP-compatible server (e.g., Valkey or Redis — **not** Garnet) to query standard command metadata. For Garnet-only commands, the tool reads from `GarnetCommandsInfo.json` and `GarnetCommandsDocs.json` instead.
+
+**⚠️ Caveat — unexpected "commands to remove":** If the tool reports commands *to remove* that you did not intend to delete, those commands exist in the resource files but are missing from `SupportedCommand.cs`. Register them in `SupportedCommand.cs` (and, for Garnet-only commands, in the override JSONs) rather than reaching for the `--ignore` flag. Every command Garnet ships should be registered, so a normal run needs **no `--ignore`**.
+
+> **See also:** [`playground/CommandInfoUpdater/README.md`](../../../playground/CommandInfoUpdater/README.md) documents the tool in full — the inputs you edit, the per-sub-command override/merge behavior, the baseline server (Docker), the `--ignore` escape hatch, and how to surgically regenerate a single command.
 
 ---
 

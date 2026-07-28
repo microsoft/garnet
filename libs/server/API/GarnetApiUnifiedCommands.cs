@@ -23,6 +23,14 @@ namespace Garnet.server
 
         #endregion
 
+        #region OBJECT
+
+        /// <inheritdoc />
+        public GarnetStatus OBJECT(PinnedSpanByte key, ref UnifiedInput input, ref UnifiedOutput output)
+            => storageSession.Read_UnifiedStore(key, ref input, ref output, ref unifiedContext);
+
+        #endregion
+
         #region TYPE
 
         /// <inheritdoc />

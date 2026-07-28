@@ -319,7 +319,12 @@ namespace Garnet
             var isValid = true;
             foreach (var filePathArg in filePaths)
             {
-                var filePath = filePathArg.Split(' ')[0];
+                if (!ModuleUtils.TryParseModuleSpec(filePathArg, out var filePath, out _))
+                {
+                    isValid = false;
+                    errorSb.AppendLine($"Invalid module specification: '{filePathArg}'.");
+                    continue;
+                }
                 var result = base.IsValid(filePath, validationContext);
                 if (result != null && result != ValidationResult.Success)
                 {
@@ -572,7 +577,7 @@ namespace Garnet
     internal sealed class CertFileValidationAttribute : FilePathValidationAttribute
     {
         internal CertFileValidationAttribute(bool fileMustExist, bool directoryMustExist, bool isRequired) : base(
-            fileMustExist, directoryMustExist, isRequired, [".pfx"])
+            fileMustExist, directoryMustExist, isRequired, [".pfx", ".pem", ".crt", ".cer"])
         {
         }
 
