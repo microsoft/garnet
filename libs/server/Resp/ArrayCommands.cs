@@ -56,26 +56,10 @@ namespace Garnet.server
                 // Type already stored in key which requires an explicit delete
                 if (res == GarnetStatus.WRONGTYPE)
                 {
-                    var createTransaction = false;
-                    if (txnManager.state != TxnState.Running)
-                    {
-                        createTransaction = true;
-                        txnManager.AddTransactionStoreTypes(TransactionStoreTypes.Main | TransactionStoreTypes.Object);
-                        txnManager.SaveKeyEntryToLock(key, LockType.Exclusive);
-                        _ = txnManager.Run(true);
-                    }
-
-                    try
+                    using (txnManager.PromoteToTransaction(TransactionStoreTypes.Main | TransactionStoreTypes.Object, key, LockType.Exclusive))
                     {
                         _ = storageSession.DELETE(key, ref storageSession.unifiedTransactionalContext);
                         _ = storageSession.SET(key, val, ref storageSession.stringTransactionalContext);
-                    }
-                    finally
-                    {
-                        if (createTransaction)
-                        {
-                            txnManager.Commit(true);
-                        }
                     }
                 }
             }

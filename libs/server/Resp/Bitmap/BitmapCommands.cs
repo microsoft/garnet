@@ -579,17 +579,8 @@ namespace Garnet.server
             }
             else
             {
-                // For multiple commands, we need to be in a transaction so the type doesn't chang eunder us
-                var createTransaction = false;
-                if (txnManager.state != TxnState.Running)
-                {
-                    createTransaction = true;
-                    txnManager.AddTransactionStoreTypes(TransactionStoreTypes.Main);
-                    txnManager.SaveKeyEntryToLock(sbKey, hasWriteCommands ? LockType.Exclusive : LockType.Shared);
-                    _ = txnManager.Run(true);
-                }
-
-                try
+                // For multiple commands, we need to be in a transaction so the type doesn't change under us
+                using (txnManager.PromoteToTransaction(TransactionStoreTypes.Main, sbKey, hasWriteCommands ? LockType.Exclusive : LockType.Shared))
                 {
                     // First sub command has to deal with WRONGTYPE and array length
                     if (HandleFirstSubCommand(this, secondaryCommandArgs, sbKey, isOverflowTypeSet, overflowTypeSlice, ref transactionalGarnetApi, startDCurr, arrayLengthWritten, ref input))
@@ -630,13 +621,6 @@ namespace Garnet.server
                         {
                             ProcessOutput(output.SpanByteAndMemory);
                         }
-                    }
-                }
-                finally
-                {
-                    if (createTransaction)
-                    {
-                        txnManager.Commit(true);
                     }
                 }
             }
