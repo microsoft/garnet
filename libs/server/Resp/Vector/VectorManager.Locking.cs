@@ -175,7 +175,7 @@ namespace Garnet.server
                         bool requestQuantization;
                         unsafe
                         {
-                            newlyAllocatedIndex = Service.RecreateIndex(indexContext, dims, reduceDims, quantType, buildExplorationFactor, numLinks, distanceMetric, ReadCallbackPtr, WriteCallbackPtr, DeleteCallbackPtr, ReadModifyWriteCallbackPtr, InlineFilterCallbackPtr, out requestQuantization);
+                            newlyAllocatedIndex = Service.RecreateIndex(indexContext, dims, reduceDims, quantType, buildExplorationFactor, numLinks, distanceMetric, ReadCallbackPtr, WriteCallbackPtr, DeleteCallbackPtr, ReadModifyWriteCallbackPtr, InlineFilterCallbackPtr, LogCallbackPtr, out requestQuantization);
                         }
 
                         input.header.cmd = RespCommand.VADD;
@@ -371,7 +371,7 @@ namespace Garnet.server
 
                             unsafe
                             {
-                                newlyAllocatedIndex = Service.RecreateIndex(indexContext, dims, reduceDims, quantType, buildExplorationFactor, numLinks, distanceMetric, ReadCallbackPtr, WriteCallbackPtr, DeleteCallbackPtr, ReadModifyWriteCallbackPtr, InlineFilterCallbackPtr, out requestQuantization);
+                                newlyAllocatedIndex = Service.RecreateIndex(indexContext, dims, reduceDims, quantType, buildExplorationFactor, numLinks, distanceMetric, ReadCallbackPtr, WriteCallbackPtr, DeleteCallbackPtr, ReadModifyWriteCallbackPtr, InlineFilterCallbackPtr, LogCallbackPtr, out requestQuantization);
                             }
 
                             input.parseState.EnsureCapacity(12);
@@ -403,7 +403,7 @@ namespace Garnet.server
 
                             unsafe
                             {
-                                newlyAllocatedIndex = Service.CreateIndex(indexContext, dims, reduceDims, quantizer, buildExplorationFactor, numLinks, distanceMetric, ReadCallbackPtr, WriteCallbackPtr, DeleteCallbackPtr, ReadModifyWriteCallbackPtr, InlineFilterCallbackPtr, out requestQuantization);
+                                newlyAllocatedIndex = Service.CreateIndex(indexContext, dims, reduceDims, quantizer, buildExplorationFactor, numLinks, distanceMetric, ReadCallbackPtr, WriteCallbackPtr, DeleteCallbackPtr, ReadModifyWriteCallbackPtr, InlineFilterCallbackPtr, LogCallbackPtr, out requestQuantization);
                             }
 
                             input.parseState.EnsureCapacity(12);

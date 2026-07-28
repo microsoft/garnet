@@ -6,7 +6,9 @@ using System.Buffers;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using System.Text;
 using Garnet.common;
+using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 
 namespace Garnet.server
@@ -242,6 +244,7 @@ namespace Garnet.server
         private unsafe delegate* unmanaged[Cdecl]<ulong, nint, nuint, byte> DeleteCallbackPtr { get; } = &DeleteCallbackUnmanaged;
         private unsafe delegate* unmanaged[Cdecl]<ulong, nint, nuint, nuint, nint, nint, byte> ReadModifyWriteCallbackPtr { get; } = &ReadModifyWriteCallbackUnmanaged;
         private unsafe delegate* unmanaged[Cdecl]<ulong, uint, byte> InlineFilterCallbackPtr { get; } = &FilterCallbackUnmanaged;
+        private unsafe delegate* unmanaged[Cdecl]<ulong, nint, nuint, void> LogCallbackPtr { get; } = &LogCallbackUnmanaged;
 
         /// <summary>
         /// Used to thread the active <see cref="StorageSession"/> across p/invoke and reverse p/invoke boundaries into DiskANN.
@@ -332,6 +335,68 @@ namespace Garnet.server
                 NeighborListIOSize = checked((int)numLinks * sizeof(int)) + VectorRecordReadOverheadBytes,
                 QuantizedVectorIOSize = quantizedValueBytes + VectorRecordReadOverheadBytes,
             };
+        }
+
+        [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+        private static unsafe void LogCallbackUnmanaged(ulong context, nint logMessage, nuint logMessageLength)
+        {
+            const int MaxVectorSetLogNameLength = 64;
+
+            if (ActiveThreadSession == null)
+            {
+                // Can't do anything here
+                return;
+            }
+
+            var msgUtf8Raw = new ReadOnlySpan<byte>((byte*)logMessage, (int)logMessageLength);
+            var msg = Encoding.UTF8.GetString(msgUtf8Raw);
+
+            var contextNoNs = context & ~(ContextStep - 1);
+            var nsBits = context & (ContextStep - 1);
+
+            var ns =
+                nsBits switch
+                {
+                    DiskANNService.Attributes => nameof(DiskANNService.Attributes),
+                    DiskANNService.ExternalIdMap => nameof(DiskANNService.ExternalIdMap),
+                    DiskANNService.FullVector => nameof(DiskANNService.FullVector),
+                    DiskANNService.InternalIdMap => nameof(DiskANNService.InternalIdMap),
+                    DiskANNService.NeighborList => nameof(DiskANNService.NeighborList),
+                    DiskANNService.QuantizedVector => nameof(DiskANNService.QuantizedVector),
+                    _ => $"!!UNKNOWN ({nsBits})!!",
+                };
+
+            string vectorSet;
+            int args;
+            if (ActiveThreadSession.parseState.Count > 0)
+            {
+                args = ActiveThreadSession.parseState.Count;
+                var probablyVectorSet = ActiveThreadSession.parseState.GetArgSliceByRef(0).ReadOnlySpan;
+
+                if (probablyVectorSet.Length > MaxVectorSetLogNameLength)
+                {
+                    vectorSet = $"(Escaped for length ({probablyVectorSet.Length}): {SpanByte.ToShortString(probablyVectorSet, MaxVectorSetLogNameLength)})";
+                }
+                else
+                {
+                    try
+                    {
+                        vectorSet = Encoding.UTF8.GetString(probablyVectorSet);
+                    }
+                    catch
+                    {
+                        vectorSet = $"(Escaped non-utf8: {SpanByte.ToShortString(probablyVectorSet, MaxVectorSetLogNameLength)})";
+                    }
+                }
+            }
+            else
+            {
+                vectorSet = "";
+                args = 0;
+            }
+
+            // TODO: It'd be nice to get the command in here as well
+            ActiveThreadSession.vectorManager.logger?.LogWarning("DiskANN Log Message={msg}, Context={contextNoNs}, Namespace={ns}, VectorSet={vectorSet}, CommandArgsCount={args}", msg, contextNoNs, ns, vectorSet, args);
         }
 
         [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]

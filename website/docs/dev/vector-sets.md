@@ -384,11 +384,22 @@ Newly allocated values are guaranteed to be all zeros.
 
 The callback returns 1 if the key-value pair was found or created, and 0 if some error occurred.
 
+### Log Callback
+
+A simple callback providing a way for DiskANN to log richer error messages into Garnet.  Its signature is:
+```csharp
+void LogCallbackUnmanaged(ulong context, nint logMessage, nuint logMessageLength)
+```
+
+`context` identifies which Vector Set is being operated on AND the associated namespace, and `logMessage` and `logMessageLength` represent a `Span<byte>` of the log message.
+
+The log message is UTF8 encoded text.
+
 ### DiskANN Functions
 
 Garnet calls into the following DiskANN functions:
 
- - [x] `nint create_index(ulong context, uint dimensions, uint reduceDims, VectorQuantType quantType, VectorDistanceMetricType distanceMetric, uint buildExplorationFactor, uint numLinks, nint readCallback, nint writeCallback, nint deleteCallback, nint readModifyWriteCallback, nint filterCallback, out bool quantizationNeeded)`
+ - [x] `nint create_index(ulong context, uint dimensions, uint reduceDims, VectorQuantType quantType, VectorDistanceMetricType distanceMetric, uint buildExplorationFactor, uint numLinks, nint readCallback, nint writeCallback, nint deleteCallback, nint readModifyWriteCallback, nint filterCallback, nint logCallback, out bool quantizationNeeded)`
  - [x] `void drop_index(ulong context, nint index)`
  - [x] `DiskANNInsertResult insert(ulong context, nint index, nint id_data, nuint id_len, nint vector_data, nuint vector_len, nint attribute_data, nuint attribute_len)`
  - [x] `byte remove(ulong context, nint index, nint id_data, nuint id_len)`

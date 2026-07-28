@@ -9,6 +9,7 @@ using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using System.Text;
 using Garnet.server;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -24,6 +25,7 @@ namespace Garnet.test
         private delegate byte DeleteCallbackDelegate(ulong context, nint keyData, nuint keyLength);
         private delegate byte ReadModifyWriteCallbackDelegate(ulong context, nint keyData, nuint keyLength, nuint writeLength, nint dataCallback, nint dataCallbackContext);
         private delegate byte InlineFilterCallbackDelegate(ulong context, uint internalId);
+        private delegate void LogCallbackDelegate(ulong context, nint logMessage, nuint logMessageLength);
 
         private sealed class ContextAndKeyComparer : IEqualityComparer<(ulong Context, byte[] Data)>
         {
@@ -159,9 +161,16 @@ namespace Garnet.test
                 return 1;
             }
 
-            unsafe byte InlineFilterCallback(ulong context, uint internalId)
+            byte InlineFilterCallback(ulong context, uint internalId)
             {
                 return 1;
+            }
+
+            unsafe void LogCallback(ulong context, nint logMessage, nuint logMessageLength)
+            {
+                var text = Encoding.UTF8.GetString(new ReadOnlySpan<byte>((byte*)logMessage, (int)logMessageLength));
+
+                TestContext.Progress.WriteLine($"LogCallback({context}, \"{text}\")");
             }
 
             ReadCallbackDelegate readDel = ReadCallback;
@@ -169,14 +178,16 @@ namespace Garnet.test
             DeleteCallbackDelegate deleteDel = DeleteCallback;
             ReadModifyWriteCallbackDelegate rmwDel = ReadModifyWriteCallback;
             InlineFilterCallbackDelegate filterDel = InlineFilterCallback;
+            LogCallbackDelegate logDel = LogCallback;
 
             var readFuncPtr = Marshal.GetFunctionPointerForDelegate(readDel);
             var writeFuncPtr = Marshal.GetFunctionPointerForDelegate(writeDel);
             var deleteFuncPtr = Marshal.GetFunctionPointerForDelegate(deleteDel);
             var rmwFuncPtr = Marshal.GetFunctionPointerForDelegate(rmwDel);
             var filterFuncPtr = Marshal.GetFunctionPointerForDelegate(filterDel);
+            var logFuncPtr = Marshal.GetFunctionPointerForDelegate(logDel);
 
-            var rawIndex = NativeDiskANNMethods.create_index(Context, 75, 0, VectorQuantType.XNoQuant_U8, VectorDistanceMetricType.L2, 10, 10, readFuncPtr, writeFuncPtr, deleteFuncPtr, rmwFuncPtr, filterFuncPtr, out _);
+            var rawIndex = NativeDiskANNMethods.create_index(Context, 75, 0, VectorQuantType.XNoQuant_U8, VectorDistanceMetricType.L2, 10, 10, readFuncPtr, writeFuncPtr, deleteFuncPtr, rmwFuncPtr, filterFuncPtr, logFuncPtr, out _);
 
             Span<byte> id = [0, 1, 2, 3];
             Span<byte> elem = Enumerable.Range(0, 75).Select(static x => (byte)x).ToArray();
@@ -361,25 +372,33 @@ namespace Garnet.test
                 return 1;
             }
 
-            unsafe byte InlineFilterCallback(ulong context, uint internalId)
+            byte InlineFilterCallback(ulong context, uint internalId)
             {
                 return 1;
             }
 
+            unsafe void LogCallback(ulong context, nint logMessage, nuint logMessageLength)
+            {
+                var text = Encoding.UTF8.GetString(new ReadOnlySpan<byte>((byte*)logMessage, (int)logMessageLength));
+
+                TestContext.Progress.WriteLine($"LogCallback({context}, \"{text}\")");
+            }
 
             ReadCallbackDelegate readDel = ReadCallback;
             WriteCallbackDelegate writeDel = WriteCallback;
             DeleteCallbackDelegate deleteDel = DeleteCallback;
             ReadModifyWriteCallbackDelegate rmwDel = ReadModifyWriteCallback;
             InlineFilterCallbackDelegate filterDel = InlineFilterCallback;
+            LogCallbackDelegate logDel = LogCallback;
 
             var readFuncPtr = Marshal.GetFunctionPointerForDelegate(readDel);
             var writeFuncPtr = Marshal.GetFunctionPointerForDelegate(writeDel);
             var deleteFuncPtr = Marshal.GetFunctionPointerForDelegate(deleteDel);
             var rmwFuncPtr = Marshal.GetFunctionPointerForDelegate(rmwDel);
             var filterFuncPtr = Marshal.GetFunctionPointerForDelegate(filterDel);
+            var logFuncPtr = Marshal.GetFunctionPointerForDelegate(logDel);
 
-            var rawIndex = NativeDiskANNMethods.create_index(Context, 75, 0, VectorQuantType.XNoQuant_U8, VectorDistanceMetricType.L2, 10, 10, readFuncPtr, writeFuncPtr, deleteFuncPtr, rmwFuncPtr, filterFuncPtr, out _);
+            var rawIndex = NativeDiskANNMethods.create_index(Context, 75, 0, VectorQuantType.XNoQuant_U8, VectorDistanceMetricType.L2, 10, 10, readFuncPtr, writeFuncPtr, deleteFuncPtr, rmwFuncPtr, filterFuncPtr, logFuncPtr, out _);
 
             Span<byte> id = [0, 1, 2, 3];
             Span<byte> elem = Enumerable.Range(0, 75).Select(static x => (byte)x).ToArray();
@@ -424,7 +443,7 @@ namespace Garnet.test
             {
                 NativeDiskANNMethods.drop_index(Context, rawIndex);
 
-                rawIndex = NativeDiskANNMethods.create_index(Context, 75, 0, VectorQuantType.XNoQuant_U8, VectorDistanceMetricType.L2, 10, 10, readFuncPtr, writeFuncPtr, deleteFuncPtr, rmwFuncPtr, filterFuncPtr, out _);
+                rawIndex = NativeDiskANNMethods.create_index(Context, 75, 0, VectorQuantType.XNoQuant_U8, VectorDistanceMetricType.L2, 10, 10, readFuncPtr, writeFuncPtr, deleteFuncPtr, rmwFuncPtr, filterFuncPtr, logFuncPtr, out _);
             }
 
             // Search value

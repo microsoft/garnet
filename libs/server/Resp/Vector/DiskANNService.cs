@@ -45,6 +45,7 @@ namespace Garnet.server
             delegate* unmanaged[Cdecl]<ulong, nint, nuint, byte> deleteCallback,
             delegate* unmanaged[Cdecl]<ulong, nint, nuint, nuint, nint, nint, byte> readModifyWriteCallback,
             delegate* unmanaged[Cdecl]<ulong, uint, byte> filterCallback,
+            delegate* unmanaged[Cdecl]<ulong, nint, nuint, void> logCallback,
             out bool quantizationRequested
         )
         {
@@ -53,7 +54,7 @@ namespace Garnet.server
 #endif
             unsafe
             {
-                var ret = NativeDiskANNMethods.create_index(context, dimensions, reduceDims, quantType, distanceMetric, buildExplorationFactor, numLinks, (nint)readCallback, (nint)writeCallback, (nint)deleteCallback, (nint)readModifyWriteCallback, (nint)filterCallback, out quantizationRequested);
+                var ret = NativeDiskANNMethods.create_index(context, dimensions, reduceDims, quantType, distanceMetric, buildExplorationFactor, numLinks, (nint)readCallback, (nint)writeCallback, (nint)deleteCallback, (nint)readModifyWriteCallback, (nint)filterCallback, (nint)logCallback, out quantizationRequested);
 
                 Debug.Assert(ret != 0, "create_index failed, returning a null pointer - this shouldn't be possible");
 
@@ -74,9 +75,10 @@ namespace Garnet.server
             delegate* unmanaged[Cdecl]<ulong, nint, nuint, byte> deleteCallback,
             delegate* unmanaged[Cdecl]<ulong, nint, nuint, nuint, nint, nint, byte> readModifyWriteCallback,
             delegate* unmanaged[Cdecl]<ulong, uint, byte> filterCallback,
+            delegate* unmanaged[Cdecl]<ulong, nint, nuint, void> logCallback,
             out bool quantizationRequested
         )
-        => CreateIndex(context, dimensions, reduceDims, quantType, buildExplorationFactor, numLinks, distanceMetricType, readCallback, writeCallback, deleteCallback, readModifyWriteCallback, filterCallback, out quantizationRequested);
+        => CreateIndex(context, dimensions, reduceDims, quantType, buildExplorationFactor, numLinks, distanceMetricType, readCallback, writeCallback, deleteCallback, readModifyWriteCallback, filterCallback, logCallback, out quantizationRequested);
 
         public void DropIndex(ulong context, nint index)
         {
@@ -345,6 +347,7 @@ namespace Garnet.server
             nint deleteCallback,
             nint readModifyWriteCallback,
             nint filterCallback,
+            nint logCallback,
             [MarshalAs(UnmanagedType.U1)] out bool quantizationNeeded
         );
 
