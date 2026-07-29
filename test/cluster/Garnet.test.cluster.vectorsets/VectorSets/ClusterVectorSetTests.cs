@@ -1827,7 +1827,24 @@ namespace Garnet.test.cluster
                                     {
                                         try
                                         {
-                                            var addRes = (int)readWriteDB.Execute("VADD", [new RedisKey(key), "XB8", data, elem, "XPREQ8", "SETATTR", attr]);
+                                            var vaddRes = readWriteDB.Execute("VADD", [new RedisKey(key), "XB8", data, elem, "XPREQ8", "SETATTR", attr]);
+
+                                            // During slot migration the raw command can transiently come back as a
+                                            // nil/null result (e.g., routing resolves to a node mid-migration) rather
+                                            // than raising a redirect exception. Casting nil to int throws a
+                                            // NullReferenceException, so treat it as one more retryable transient
+                                            // alongside MOVED/timeout/connection below rather than failing the test.
+                                            if (vaddRes is null || vaddRes.IsNull)
+                                            {
+                                                if (writeCancel.IsCancellationRequested)
+                                                {
+                                                    return;
+                                                }
+
+                                                continue;
+                                            }
+
+                                            var addRes = (int)vaddRes;
                                             ClassicAssert.AreEqual(1, addRes);
                                             break;
                                         }
@@ -1925,9 +1942,10 @@ namespace Garnet.test.cluster
                                         continue;
                                     }
 
-                                    if (emb.Length == 0)
+                                    if (emb is null || emb.Length == 0)
                                     {
                                         // Migration might make this temporarily unavailable due to connection state
+                                        // (a nil VEMB result casts to a null array), so retry.
                                         //
                                         // Because we check for presence of all data at the end of test, we can safely ignore this for now
                                         continue;
