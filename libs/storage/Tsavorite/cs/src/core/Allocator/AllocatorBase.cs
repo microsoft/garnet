@@ -2376,7 +2376,14 @@ namespace Tsavorite.core
             try
             {
                 if (errorCode != 0)
+                {
                     logger?.LogError("AsyncFlushPageToDeviceCallback error: {errorCode}", errorCode);
+
+                    // Fault the snapshot's flush-completion so the checkpoint fails rather than committing a snapshot with
+                    // an unwritten page; the Release() below still frees buffers and its CompleteFlush becomes a no-op.
+                    ((PageAsyncFlushResult<Empty>)context).flushCompletionTracker?.SetException(
+                        new TsavoriteException($"Snapshot page flush failed with error code {errorCode}"));
+                }
 
                 var result = (PageAsyncFlushResult<Empty>)context;
                 var epochTaken = epoch.ResumeIfNotProtected();

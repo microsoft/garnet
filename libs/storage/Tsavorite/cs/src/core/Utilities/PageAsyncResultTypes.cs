@@ -217,12 +217,13 @@ namespace Tsavorite.core
         /// <summary>This write is associated with a <see cref="DiskWriteBuffer"/> so we need to signal the countdown event for that buffer when we are done.</summary>
         public void SetBufferCountdownEvent(CountdownEvent countdownEvent) => bufferCountdownEvent = countdownEvent;
 
-        public long Release()
+        public long Release(uint errorCode = 0)
         {
             refCountedGCHandle?.Release();
             if (gcHandle.IsAllocated)
                 gcHandle.Free();
             _ = bufferCountdownEvent?.Signal();
+            countdownCallbackAndContext?.RecordError(errorCode);
             return countdownCallbackAndContext?.Decrement() ?? 0;
         }
     }
@@ -255,12 +256,16 @@ namespace Tsavorite.core
         private uint numBytes;
         /// <summary>Number of in-flight operations</summary>
         internal long count;
+        /// <summary>First non-zero device error observed across the batch of writes (0 == no error). Propagated to <see cref="callback"/> so an upper
+        /// layer (e.g. <see cref="AllocatorBase{TStoreFunctions, TAllocator}"/>.AsyncFlushPageCallback) does not treat a failed flush as successful and
+        /// advance FlushedUntilAddress past unflushed data.</summary>
+        private int firstErrorCode;
 
         public override string ToString()
         {
             var callbackString = callback is null ? "null" : callback.ToString();
             var contextString = callback is null ? "null" : context.ToString();
-            return $"numBytes {numBytes}, count {count}, callback {callbackString}, context {contextString}";
+            return $"numBytes {numBytes}, count {count}, firstErrorCode {firstErrorCode}, callback {callbackString}, context {contextString}";
         }
 
         public void Set(DeviceIOCompletionCallback callback, object context, uint numBytes)
@@ -272,11 +277,18 @@ namespace Tsavorite.core
 
         internal void Increment() => _ = Interlocked.Increment(ref count);
 
+        /// <summary>Record a device write error; the first non-zero error is retained and forwarded to the caller's callback on final completion.</summary>
+        internal void RecordError(uint errorCode)
+        {
+            if (errorCode != 0)
+                _ = Interlocked.CompareExchange(ref firstErrorCode, (int)errorCode, 0);
+        }
+
         internal long Decrement()
         {
             var remaining = Interlocked.Decrement(ref count);
             if (remaining == 0)
-                callback?.Invoke(errorCode: 0, numBytes, context);
+                callback?.Invoke(errorCode: (uint)firstErrorCode, numBytes, context);
             return remaining;
         }
     }
