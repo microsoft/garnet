@@ -1933,13 +1933,19 @@ namespace Tsavorite.core
             var copyObjects = snapshotObjectLogDevice is not null;
             for (var flushPage = flushPageStart; flushPage < (flushPageStart + numPages); flushPage++)
             {
+                var pageStartAddress = GetLogicalAddressOfStartOfPage(flushPage);
+                var flushFromAddress = Math.Max(scanFromAddress, pageStartAddress);
                 var asyncResult = new PageAsyncFlushResult<TContext>()
                 {
                     page = flushPage,
                     context = context,
                     count = 1,
-                    partial = false,
-                    fromAddress = Math.Max(scanFromAddress, GetLogicalAddressOfStartOfPage(flushPage)),
+                    // A recovery flush starts at scanFromAddress, which may be mid-page at the first record past the PageHeader.
+                    // In that case it is a front-partial flush: the write length is derived from untilAddress (the page end)
+                    // rather than a full page, and the PageHeader is re-included when the page is written. The snapshot/hybrid-log
+                    // boundary that selects which records copy their objects is carried separately via formerFlushedUntilAddress.
+                    partial = flushFromAddress > pageStartAddress,
+                    fromAddress = flushFromAddress,
                     untilAddress = GetLogicalAddressOfStartOfPage(flushPage + 1),
                     flushRequestState = FlushRequestState.Recovery,
                     recoverySnapshotObjectLogDevice = snapshotObjectLogDevice,
