@@ -381,6 +381,12 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Reconcile recovered Vector Set state with the store. Must run after every store recovery,
+        /// including a replica's disk-based full sync.
+        /// </summary>
+        public void RecoverVectorSets() => databaseManager.RecoverVectorSets();
+
+        /// <summary>
         /// Take checkpoint of all active databases (or a specified database)
         /// </summary>
         /// <param name="background">True if method can return before checkpoint is taken</param>
