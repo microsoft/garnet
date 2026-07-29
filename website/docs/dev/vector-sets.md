@@ -423,10 +423,13 @@ Garnet calls into the following DiskANN functions:
  - [x] `nint create_index(ulong context, uint dimensions, uint reduceDims, VectorQuantType quantType, VectorDistanceMetricType distanceMetric, uint buildExplorationFactor, uint numLinks, nint readCallback, nint writeCallback, nint deleteCallback, nint readModifyWriteCallback, nint filterCallback, nint logCallback, out bool quantizationNeeded)`
  - [x] `void drop_index(ulong context, nint index)`
  - [x] `DiskANNInsertResult insert(ulong context, nint index, nint id_data, nuint id_len, nint vector_data, nuint vector_len, nint attribute_data, nuint attribute_len)`
+   * `vector_data` must be aligned for the quantizers underlying type (i.e. 4-byte for NOQUANT, 1-byte for XBIN_U8, etc.)
  - [x] `byte remove(ulong context, nint index, nint id_data, nuint id_len)`
  - [x] `byte set_attribute(ulong context, nint index, nint id_data, nuint id_len, nint attribute_data, nuint attribute_len)`
  - [x] `int search_vector(ulong context, nint index, nint vector_data, nuint vector_len, float delta, int search_exploration_factor, nint filter_data, nuint filter_len, nuint max_filtering_effort, nint output_ids, nuint output_ids_len, nint output_distances, nuint output_distances_len, nint continuation)`
+   * `vector_data` must be aligned as with `insert(...)`
  - [x] `int search_element(ulong context, nint index, nint id_data, nuint id_len, float delta, int search_exploration_factor, nint filter_data, nuint filter_len, nuint max_filtering_effort, nint output_ids, nuint output_ids_len, nint output_distances, nuint output_distances_len, nint continuation)`
+ - [ ] `int search_neighbors(ulong context, nint index, nint id_data, nuint id_len, nint output_ids, nuint output_ids_len, nint output_distances, nuint output_distances_len, nint continuation)`
  - [ ] `int continue_search(ulong context, nint index, nint continuation, nint output_ids, nuint output_ids_len, nint output_distances, nuint output_distances_len, nint new_continuation)`
  - [ ] `ulong card(ulong context, nint index)`
  - [x] `byte check_internal_id_valid(ulong context, nint index, nint internal_id, nuint internal_id_len)`
@@ -442,6 +445,9 @@ Garnet calls into the following DiskANN functions:
   - `index` is always a pointer created by DiskANN and returned from `create_index`
   - `context` is always the `Context` value created by Garnet and stored in [`Index`](#indexes) for a Vector Set, this implies it is always a non-0 multiple of 8
   - `search_vector`, `search_element`, and `continue_search` all return the number of ids written into `output_ids`, and if there are more values to return they set the `nint` _pointed to by_ `continuation` or `new_continuation`
+  - DiskANN guarantees that any keys it provides are aligned in records, i.e. they are multiples of 4-bytes in length
+  - Garnet guarantees any values it provides to _`dataCallbacks`_ are 4-byte aligned
+    * Importantly Garnet does not guarantee id holding parameters to DiskANN functions are aligned unless otherwise noted
 
 ### Vector Filter Expressions (`VSIM ... FILTER`)
 
