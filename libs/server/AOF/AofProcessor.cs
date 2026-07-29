@@ -152,8 +152,10 @@ namespace Garnet.server
         /// </summary>
         public void Dispose()
         {
+            // Drain but don't shut down: the VectorManager belongs to the database, and startup AOF
+            // recovery builds a transient AofProcessor. Completing the replay channel here would make
+            // HandleVectorSetAddReplication silently drop every VADD replicated afterwards.
             activeVectorManager?.WaitForVectorOperationsToComplete();
-            activeVectorManager?.ShutdownReplayTasks();
             activeRangeIndexManager?.DisposeIncompleteStreamReassembly();
             aofReplayCoordinator?.Dispose();
         }
