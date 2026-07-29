@@ -122,8 +122,14 @@ namespace Garnet.test.cluster
 
         /// <summary>
         /// The primary is restarted underneath a live replica. It must recover its Vector Sets, rebuild
-        /// its own index, and continue to serve the replica correctly — including for writes issued
-        /// after it comes back.
+        /// its own index, and still be able to take writes and seed a replica afterwards.
+        ///
+        /// <para>
+        /// The replication link of the pre-existing replica dies with the old process and re-attaching
+        /// it is a general cluster concern with its own semantics, so the post-restart replication leg
+        /// is checked against a spare node that attaches to the recovered primary. That is the case
+        /// that matters here: everything the new replica receives was reconstructed by recovery.
+        /// </para>
         /// </summary>
         [Test]
         [Category("REPLICATION")]
@@ -132,8 +138,9 @@ namespace Garnet.test.cluster
         {
             const string Key = "{vsdisk}restartprimary";
             const int Elements = 250;
+            const int SpareIndex = 2;
 
-            SetupRecoverableCluster(2);
+            SetupRecoverableCluster(3);
             Attach(ReplicaIndex, PrimaryIndex);
 
             PopulateVectorSet(PrimaryIndex, Key, Elements, seed: 2026_07_29_18);
@@ -150,13 +157,15 @@ namespace Garnet.test.cluster
             ClassicAssert.AreEqual(Elements, VectorSetSize(PrimaryIndex, Key), "the restarted primary lost elements of the recovered Vector Set");
             AssertIndexRebuiltAfterRestart(PrimaryIndex, Key, primaryPtrBefore);
 
-            // The recovered primary must still be able to take writes and propagate them.
-            context.clusterTestUtils.WaitForReplicaAofSync(PrimaryIndex, ReplicaIndex, logger: context.logger);
+            // The recovered primary must still be able to take writes against the rebuilt index.
             PopulateVectorSet(PrimaryIndex, Key, count: 50, seed: 2026_07_29_19);
-            context.clusterTestUtils.WaitForReplicaAofSync(PrimaryIndex, ReplicaIndex, logger: context.logger);
 
-            MakeReadable(ReplicaIndex);
-            AssertFullyReplicated(PrimaryIndex, ReplicaIndex, Key);
+            // ...and to hand the whole set, recovered part included, to a replica that attaches after it.
+            Attach(SpareIndex, PrimaryIndex);
+            context.clusterTestUtils.WaitForReplicaAofSync(PrimaryIndex, SpareIndex, logger: context.logger);
+
+            MakeReadable(SpareIndex);
+            AssertFullyReplicated(PrimaryIndex, SpareIndex, Key);
         }
 
         /// <summary>

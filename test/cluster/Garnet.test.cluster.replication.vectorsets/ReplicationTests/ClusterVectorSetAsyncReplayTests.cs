@@ -126,19 +126,20 @@ namespace Garnet.test.cluster
             const string FirstKey = "{vsdisk}asyncpar1";
             const string SecondKey = "{vsdisk}asyncpar2";
             const string ThirdKey = "{vsdisk}asyncpar3";
-            const int FirstElements = 200;
-            const int SecondElements = 150;
-            const int ThirdElements = 80;
+            const int Rounds = 4;
+            const int FirstPerRound = 50;
+            const int SecondPerRound = 37;
+            const int ThirdPerRound = 20;
 
             SetupAsyncReplayCluster(2, disklessSync: false, replayTaskCount: 4, vectorSetReplayTaskCount: 4);
             Attach(ReplicaIndex, PrimaryIndex);
 
             // Interleaved so the replay tasks see records for the three keys mixed together.
-            for (var round = 0; round < 4; round++)
+            for (var round = 0; round < Rounds; round++)
             {
-                PopulateVectorSet(PrimaryIndex, FirstKey, FirstElements / 4, seed: 2026_07_29_29 + round);
-                PopulateVectorSet(PrimaryIndex, SecondKey, SecondElements / 4, seed: 2026_07_29_33 + round);
-                PopulateVectorSet(PrimaryIndex, ThirdKey, ThirdElements / 4, seed: 2026_07_29_37 + round);
+                PopulateVectorSet(PrimaryIndex, FirstKey, FirstPerRound, seed: 2026_07_29_29 + round);
+                PopulateVectorSet(PrimaryIndex, SecondKey, SecondPerRound, seed: 2026_07_29_33 + round);
+                PopulateVectorSet(PrimaryIndex, ThirdKey, ThirdPerRound, seed: 2026_07_29_37 + round);
             }
 
             context.clusterTestUtils.WaitForReplicaAofSync(PrimaryIndex, ReplicaIndex, logger: context.logger);
@@ -148,9 +149,9 @@ namespace Garnet.test.cluster
             AssertFullyReplicated(PrimaryIndex, ReplicaIndex, SecondKey);
             AssertFullyReplicated(PrimaryIndex, ReplicaIndex, ThirdKey);
 
-            ClassicAssert.AreEqual(FirstElements, VectorSetSize(ReplicaIndex, FirstKey));
-            ClassicAssert.AreEqual(SecondElements, VectorSetSize(ReplicaIndex, SecondKey));
-            ClassicAssert.AreEqual(ThirdElements, VectorSetSize(ReplicaIndex, ThirdKey));
+            ClassicAssert.AreEqual(Rounds * FirstPerRound, VectorSetSize(ReplicaIndex, FirstKey));
+            ClassicAssert.AreEqual(Rounds * SecondPerRound, VectorSetSize(ReplicaIndex, SecondKey));
+            ClassicAssert.AreEqual(Rounds * ThirdPerRound, VectorSetSize(ReplicaIndex, ThirdKey));
         }
     }
 }

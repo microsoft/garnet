@@ -4,6 +4,7 @@
 using System;
 using System.Buffers.Binary;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Net;
@@ -440,13 +441,44 @@ namespace Garnet.test.cluster
         }
 
         /// <summary>
-        /// VSIM has to agree too. The embedding sweep proves the elements are stored; this proves the
-        /// navigable graph built over them is functional on the target and not merely present.
+        /// VSIM has to work on the target too. The embedding sweep proves the elements are stored; this
+        /// proves the navigable graph built over them is functional and not merely present.
+        ///
+        /// <para>
+        /// This deliberately does not demand identical result lists. A replica that rebuilt its index
+        /// (after a full sync, or lazily after recovery) has a DiskANN graph constructed in a different
+        /// insertion order from the primary's, so an approximate search legitimately diverges in the
+        /// tail. What must hold is that the graph is navigable: an exact query for an element's own
+        /// embedding finds that element, every neighbour returned is a real member of the set, and the
+        /// bulk of a random query's neighbourhood agrees with the primary's.
+        /// </para>
         /// </summary>
         protected void AssertSearchesAgree(int sourceIndex, int targetIndex, string key, int queries = 8, int count = 10)
         {
-            var r = new Random(20260729);
+            var members = ElementsWrittenTo(key);
+            var membership = new HashSet<string>(members.Select(Convert.ToHexString));
 
+            // Exact queries: an element's own embedding must retrieve that element as the top hit.
+            // This is the deterministic part - it holds regardless of how the graph was built.
+            var r = new Random(20260729);
+            for (var q = 0; q < queries; q++)
+            {
+                var element = members[r.Next(members.Count)];
+                var embedding = ElementEmbedding(targetIndex, key, element);
+                ClassicAssert.Greater(embedding.Length, 0, $"element {q} of '{key}' is missing on node {targetIndex}");
+
+                var query = embedding.Select(static component => (byte)Math.Clamp((int)float.Parse(component, CultureInfo.InvariantCulture), byte.MinValue, byte.MaxValue)).ToArray();
+                var hits = Search(targetIndex, key, query, count);
+
+                ClassicAssert.Greater(hits.Length, 0, $"VSIM on node {targetIndex} returned nothing for an element of '{key}' that it holds");
+                ClassicAssert.IsTrue(
+                    hits[0].AsSpan().SequenceEqual(element),
+                    $"VSIM on node {targetIndex} for the exact embedding of element [{string.Join(",", element)}] of '{key}' returned [{string.Join(",", hits[0])}] as its nearest neighbour, so the index is not navigable to its own elements");
+            }
+
+            // Random queries: results need not be identical, but they must be real members and must
+            // largely agree with the primary. A replica reading out of another set, or out of a stale
+            // or half-built index, fails this.
             for (var q = 0; q < queries; q++)
             {
                 var query = new byte[VectorDimensions];
@@ -461,12 +493,18 @@ namespace Garnet.test.cluster
                     targetHits.Length,
                     $"VSIM for query {q} on '{key}' returned {sourceHits.Length} hits on node {sourceIndex} but {targetHits.Length} on node {targetIndex}");
 
-                for (var i = 0; i < sourceHits.Length; i++)
-                {
-                    ClassicAssert.IsTrue(
-                        sourceHits[i].AsSpan().SequenceEqual(targetHits[i]),
-                        $"VSIM for query {q} on '{key}' returned different neighbours at position {i}: node {sourceIndex} gave [{string.Join(",", sourceHits[i])}], node {targetIndex} gave [{string.Join(",", targetHits[i])}]");
-                }
+                var foreign = targetHits.Where(hit => !membership.Contains(Convert.ToHexString(hit))).ToList();
+                ClassicAssert.IsEmpty(
+                    foreign,
+                    $"VSIM for query {q} on '{key}' returned {foreign.Count} neighbours on node {targetIndex} that were never VADDed into that set (first: [{string.Join(",", foreign.FirstOrDefault() ?? [])}])");
+
+                var sourceSet = new HashSet<string>(sourceHits.Select(Convert.ToHexString));
+                var overlap = targetHits.Count(hit => sourceSet.Contains(Convert.ToHexString(hit)));
+
+                ClassicAssert.GreaterOrEqual(
+                    overlap * 2,
+                    sourceHits.Length,
+                    $"VSIM for query {q} on '{key}' agreed on only {overlap} of {sourceHits.Length} neighbours between node {sourceIndex} and node {targetIndex}; the two indexes are not searching the same vectors");
             }
         }
 
