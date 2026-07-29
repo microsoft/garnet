@@ -2138,6 +2138,35 @@ namespace Garnet.test
 
         [Test]
         [Category("BITCOUNT")]
+        public void BitmapBitCountBitBoundaryUnderflowTest()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var key = "BitmapBitCountBitBoundaryUnderflowTest";
+            // 0x80 = 10000000b: only the most-significant bit (bit index 0) is set.
+            _ = db.StringSet(key, new byte[] { 0x80 });
+
+            // Single-bit range ending on a byte boundary (endOffset % 8 == 7).
+            // Regression: a byte-mask integer underflow made this return 1 for an unset bit.
+            var count = db.StringBitCount(key, 7, 7, StringIndexType.Bit);
+            ClassicAssert.AreEqual(0, count);
+
+            // The set bit (index 0) must still be counted correctly.
+            count = db.StringBitCount(key, 0, 0, StringIndexType.Bit);
+            ClassicAssert.AreEqual(1, count);
+
+            // Full-byte range crossing the boundary must count exactly the one set bit.
+            count = db.StringBitCount(key, 0, 7, StringIndexType.Bit);
+            ClassicAssert.AreEqual(1, count);
+
+            // Full-key BIT range (0 -1) whose end lands on a byte boundary.
+            count = db.StringBitCount(key, 0, -1, StringIndexType.Bit);
+            ClassicAssert.AreEqual(1, count);
+        }
+
+        [Test]
+        [Category("BITCOUNT")]
         public void BitmapBitCountLongBitOffsetParsingTest()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
@@ -2149,7 +2178,11 @@ namespace Garnet.test
             var offset = (long)int.MaxValue + 1024;
             var count = (long)db.Execute("BITCOUNT", key, (-offset).ToString(), "-1", "BIT");
 
-            ClassicAssert.AreEqual(8, count);
+            // The out-of-range negative start is clamped to -MaxOffsetForBitmapLength and then
+            // wrapped modulo the bit length (Garnet's negative-offset semantics), landing on bit
+            // index 1; the end (-1) wraps to bit index 7. So bits 1..7 of 0xFF are counted => 7.
+            // (This previously asserted 8 only because of a byte-mask underflow in BitCountDriver.)
+            ClassicAssert.AreEqual(7, count);
         }
 
         [Test]
