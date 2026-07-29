@@ -20,7 +20,7 @@ namespace Garnet.test
     [TestFixture]
     public class DiskANNServiceTests : TestBase
     {
-        private delegate void ReadCallbackDelegate(ulong context, uint numKeys, uint valueLengthHint,  nint keysData, nuint keysLength, nint dataCallback, nint dataCallbackContext);
+        private delegate void ReadCallbackDelegate(ulong context, uint numKeys, uint valueLengthHint, nint keysData, nuint keysLength, nint dataCallback, nint dataCallbackContext);
         private delegate byte WriteCallbackDelegate(ulong context, nint keyData, nuint keyLength, nint writeData, nuint writeLength);
         private delegate byte DeleteCallbackDelegate(ulong context, nint keyData, nuint keyLength);
         private delegate byte ReadModifyWriteCallbackDelegate(ulong context, nint keyData, nuint keyLength, nuint writeLength, nint dataCallback, nint dataCallbackContext);

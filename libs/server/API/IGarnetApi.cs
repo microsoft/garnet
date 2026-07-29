@@ -2144,7 +2144,7 @@ namespace Garnet.server
         /// 
         /// On success, <paramref name="idResults"/> has length prefixed element names, and <paramref name="distanceResults"/> has a float for each of those elements.
         /// </summary>
-        GarnetStatus VectorSetLinks(PinnedSpanByte key, PinnedSpanByte element,  ref SpanByteAndMemory idResults, ref SpanByteAndMemory distanceResults);
+        GarnetStatus VectorSetLinks(PinnedSpanByte key, PinnedSpanByte element, ref SpanByteAndMemory idResults, ref SpanByteAndMemory distanceResults);
 
         /// <summary>
         /// Fetch random elements from the given Vector Set.
