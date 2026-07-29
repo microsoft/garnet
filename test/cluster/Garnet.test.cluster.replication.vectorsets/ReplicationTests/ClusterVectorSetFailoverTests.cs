@@ -10,21 +10,8 @@ using NUnit.Framework.Legacy;
 namespace Garnet.test.cluster
 {
     /// <summary>
-    /// Failover with populated Vector Sets.
-    ///
-    /// <para>
-    /// The one pre-existing failover test for Vector Sets,
-    /// <c>FailoverStopsVectorManagerReplicationTasksAsync</c>, asserts only that
-    /// <c>VectorManager.AreReplicationTasksActive</c> flips on the right node. Nothing checked that the
-    /// data survived the role swap, that the promoted node owns the index it is now the authority for,
-    /// or that the demoted node re-syncs correctly.
-    /// </para>
-    /// <para>
-    /// Failover matters here because it inverts the direction of every subsequent transfer. A replica
-    /// that received an index record now becomes the source of truth for it, and the old primary — the
-    /// node that originally allocated the native handle — becomes a receiver. Any handle that was
-    /// aliased rather than rebuilt gets a second chance to be observed, now from the other side.
-    /// </para>
+    /// Failover coverage for populated Vector Sets. Promotion reverses replication direction,
+    /// so aliased handles get observed from the other side.
     /// </summary>
     [TestFixture]
     [NonParallelizable]
@@ -62,10 +49,7 @@ namespace Garnet.test.cluster
             ClassicAssert.AreEqual("slave", context.clusterTestUtils.RoleCommand(Node(oldPrimaryIndex), logger: context.logger).Value);
         }
 
-        /// <summary>
-        /// The basic guarantee nobody was checking: after promotion the new primary still holds every
-        /// element, and the demoted node agrees with it.
-        /// </summary>
+        /// <summary>After promotion, the new primary must keep every element and the demoted node must agree.</summary>
         [Test]
         [Category("REPLICATION")]
         [CancelAfter(180_000)]
@@ -92,15 +76,8 @@ namespace Garnet.test.cluster
         }
 
         /// <summary>
-        /// After promotion the new primary must be able to <em>extend</em> the Vector Set it inherited,
-        /// and the demoted node — the process that originally allocated the native handle — must take
-        /// those writes correctly.
-        ///
-        /// <para>
-        /// This is the interesting direction. The old primary already has a live index for this key
-        /// from when it was the writer, so anything that fails to reset that state cleanly will show up
-        /// as a divergence between the two nodes here.
-        /// </para>
+        /// After promotion, the new primary extends the inherited set and replicates those writes
+        /// back to the demoted original writer.
         /// </summary>
         [Test]
         [Category("REPLICATION")]
@@ -122,7 +99,7 @@ namespace Garnet.test.cluster
 
             FailoverTo(ReplicaIndex, PrimaryIndex);
 
-            // ReplicaIndex is now the primary; write through it.
+            // ReplicaIndex is now primary; write through it.
             PopulateVectorSet(ReplicaIndex, Key, AddedElements, seed: 2026_07_29_23);
             context.clusterTestUtils.WaitForReplicaAofSync(ReplicaIndex, PrimaryIndex, logger: context.logger);
 
@@ -133,9 +110,7 @@ namespace Garnet.test.cluster
         }
 
         /// <summary>
-        /// Failing back and forth repeatedly. Each swap re-points the replication stream, so any state
-        /// that is reset on one transition but not the other accumulates; running several rounds
-        /// surfaces that where a single failover would not.
+        /// Repeated failovers re-point the replication stream several times, surfacing state that only resets in one direction.
         /// </summary>
         [Test]
         [Category("REPLICATION")]

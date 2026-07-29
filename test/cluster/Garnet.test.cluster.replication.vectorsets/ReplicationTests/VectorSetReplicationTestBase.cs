@@ -20,31 +20,8 @@ using Tsavorite.core;
 namespace Garnet.test.cluster
 {
     /// <summary>
-    /// Shared harness for Vector Set replication tests.
-    ///
-    /// <para>
-    /// The fixtures built on this cover the four ways an index record can reach a node other than the
-    /// one that built it: a diskless streaming full sync, a disk-based checkpoint full sync, recovery
-    /// of a persisted checkpoint after a restart, and a failover that promotes a replica. Each is a
-    /// separate transport with its own sanitization story, so each needs its own coverage.
-    /// </para>
-    /// <para>
-    /// Two independent things are asserted throughout, because either can hold while the other is
-    /// broken:
-    /// </para>
-    /// <list type="number">
-    /// <item>
-    /// <b>Index ownership</b> (<see cref="AssertOwnsItsIndex"/>) — the structural invariant. A node may
-    /// only dereference a native DiskANN handle it allocated itself.
-    /// </item>
-    /// <item>
-    /// <b>Element-level equality</b> (<see cref="AssertVectorSetsMatch"/>) — every element VADDed on
-    /// the source must exist on the target with a byte-identical embedding, the cardinality and
-    /// dimensionality must agree, and VSIM must return the same neighbours from both. Matching
-    /// cardinality alone is far too weak: an aliased index reports the <em>source's</em> count
-    /// perfectly well.
-    /// </item>
-    /// </list>
+    /// Shared harness for Vector Set replication tests. Asserts both index ownership
+    /// and element-level equality, since either can hold while the other is broken.
     /// </summary>
     public abstract class VectorSetReplicationTestBase : TestBase
     {
@@ -52,28 +29,17 @@ namespace Garnet.test.cluster
         protected const int VectorDimensions = 64;
 
         /// <summary>
-        /// Enough plain keys to push the outstanding AOF past
-        /// <c>replicaDisklessSyncFullSyncAofThreshold</c>, so a re-attach is guaranteed to take the
-        /// full sync path instead of an incremental replay.
+        /// Enough padding keys to force a re-attach down the full-sync path instead of incremental replay.
         /// </summary>
         protected const int FullSyncForcingKeys = 256;
 
-        /// <summary>
-        /// Marker <c>SyncMetadata</c> logs when a replica took a diskless streaming full sync rather
-        /// than replaying AOF. Diskless-only: <c>SyncMetadata</c> lives entirely in the diskless path.
-        /// </summary>
+        /// <summary>Diskless full-sync marker emitted by SyncMetadata.</summary>
         private const string DisklessFullSyncMarker = "recoverFullSync:True";
 
-        /// <summary>
-        /// Disk-based equivalent. The checkpoint-transmitting path has no <c>SyncMetadata</c>, so the
-        /// signal that a full sync happened is the primary shipping the main store checkpoint.
-        /// </summary>
+        /// <summary>Disk-based full-sync marker emitted when the primary ships a checkpoint.</summary>
         private const string DiskBasedFullSyncMarker = "Sending main store checkpoint";
 
-        /// <summary>
-        /// Tees the node logs into a buffer so tests can assert on what replication actually did,
-        /// rather than assuming it.
-        /// </summary>
+        /// <summary>Captures node logs while still forwarding them to the test output.</summary>
         protected sealed class CaptureLogWriter(TextWriter passThrough) : TextWriter
         {
             private readonly StringBuilder buffer = new();
@@ -104,16 +70,10 @@ namespace Garnet.test.cluster
         protected readonly int timeout = (int)TimeSpan.FromSeconds(15).TotalSeconds;
         protected readonly int testTimeout = (int)TimeSpan.FromSeconds(180).TotalSeconds;
 
-        /// <summary>
-        /// Everything written through <see cref="PopulateVectorSet"/>, so the replica can be checked
-        /// element by element against what was actually added rather than against itself.
-        /// </summary>
+        /// <summary>Elements written through PopulateVectorSet, used for source-vs-target checks.</summary>
         private readonly Dictionary<string, List<byte[]>> writtenElements = [];
 
-        /// <summary>
-        /// Every fixture here needs Trace, because the only signal that distinguishes a full sync from
-        /// an incremental AOF replay is <c>SyncMetadata</c>, logged at that level.
-        /// </summary>
+        /// <summary>Trace logging is required to distinguish full sync from incremental replay.</summary>
         protected abstract Dictionary<string, LogLevel> MonitorTests { get; }
 
         [SetUp]
@@ -138,10 +98,7 @@ namespace Garnet.test.cluster
         #region cluster formation
 
         /// <summary>
-        /// Gives <paramref name="primaryIndex"/> the whole slot range and introduces every node to it,
-        /// without attaching anything yet. Leaving the attach to the caller is what lets a fixture
-        /// populate the primary <em>before</em> a replica exists, which is the only way to make a full
-        /// sync carry a live index record.
+        /// Assigns all slots to primaryIndex and introduces the other nodes without attaching replicas.
         /// </summary>
         protected void FormCluster(int primaryIndex, params int[] otherIndexes)
         {
@@ -166,9 +123,7 @@ namespace Garnet.test.cluster
             context.clusterTestUtils.WaitForReplicaAofSync(primaryIndex, replicaIndex, logger: context.logger);
         }
 
-        /// <summary>
-        /// Detaches a replica and re-introduces it, so the subsequent attach starts from scratch.
-        /// </summary>
+        /// <summary>Detaches and re-introduces a replica so the next attach starts from scratch.</summary>
         protected void ResetReplica(int replicaIndex, int primaryIndex)
         {
             _ = context.clusterTestUtils.ClusterReset(replicaIndex, soft: true, expiry: 1, logger: context.logger);
@@ -181,9 +136,7 @@ namespace Garnet.test.cluster
             }
         }
 
-        /// <summary>
-        /// Moves the primary far enough ahead that a re-attach cannot be served incrementally.
-        /// </summary>
+        /// <summary>Moves the primary far enough ahead that a re-attach cannot be incremental.</summary>
         protected void PushPrimaryAhead(int primaryIndex)
         {
             var primary = Node(primaryIndex);
@@ -212,11 +165,7 @@ namespace Garnet.test.cluster
 
         protected int DiskBasedFullSyncCount() => CountLogOccurrences(DiskBasedFullSyncMarker);
 
-        /// <summary>
-        /// The precondition most of these fixtures rest on. If an attach quietly degrades into an
-        /// incremental AOF replay the replica rebuilds its own index from VADD payloads and the test
-        /// would pass for entirely the wrong reason.
-        /// </summary>
+        /// <summary>Asserts the attach took diskless full sync, not incremental replay.</summary>
         protected void AssertTookFullSync(int since = 0)
         {
             ClassicAssert.Greater(
@@ -225,9 +174,7 @@ namespace Garnet.test.cluster
                 "no new diskless streaming full sync was observed, so this test is not exercising the scenario it claims to");
         }
 
-        /// <summary>
-        /// Disk-based counterpart of <see cref="AssertTookFullSync"/>.
-        /// </summary>
+        /// <summary>Disk-based counterpart of AssertTookFullSync.</summary>
         protected void AssertTookDiskBasedFullSync(int since = 0)
         {
             ClassicAssert.Greater(
@@ -237,10 +184,8 @@ namespace Garnet.test.cluster
         }
 
         /// <summary>
-        /// Takes a real checkpoint and waits for it to land. Going through <c>LASTSAVE</c> rather than
-        /// just issuing <c>SAVE</c> is what makes this deterministic: <c>LASTSAVE</c> has one-second
-        /// resolution, so a checkpoint taken within the same second as the previous one is
-        /// indistinguishable from it.
+        /// Takes a checkpoint after waiting past LASTSAVE's one-second resolution, so
+        /// WaitCheckpoint observes the new save.
         /// </summary>
         protected void TakeCheckpoint(int nodeIndex)
         {
@@ -257,10 +202,7 @@ namespace Garnet.test.cluster
         }
 
         /// <summary>
-        /// Spins until <paramref name="nodeIndex"/> answers for <paramref name="key"/> rather than
-        /// redirecting. After a slot migration the receiving primary's replicas need a moment to pick
-        /// up the new ownership, and a read issued in that window comes back as a MOVED error rather
-        /// than as data.
+        /// Waits until nodeIndex serves key instead of returning MOVED after a slot migration.
         /// </summary>
         protected void WaitUntilServes(int nodeIndex, string key)
         {
@@ -286,11 +228,8 @@ namespace Garnet.test.cluster
         #region vector set operations
 
         /// <summary>
-        /// Adds <paramref name="count"/> deterministic elements, recording each one so the replica can
-        /// later be verified against what was actually written.
-        ///
-        /// XB8 input combined with XPREQ8 round-trips exactly through VEMB, which is what makes an
-        /// element-by-element embedding comparison meaningful rather than approximate.
+        /// Adds deterministic XB8 elements and records them so targets can be compared with the
+        /// actual writes. XPREQ8 round-trips exactly through VEMB.
         /// </summary>
         protected void PopulateVectorSet(int nodeIndex, string key, int count, int seed)
         {
@@ -319,16 +258,12 @@ namespace Garnet.test.cluster
 
         protected IReadOnlyList<byte[]> ElementsWrittenTo(string key) => writtenElements.TryGetValue(key, out var e) ? e : [];
 
-        /// <summary>
-        /// The read that reaches the native handle: VINFO's <c>size</c> field goes all the way down to
-        /// <c>NativeDiskANNMethods.card</c>, which is exactly where the production SIGSEGV landed.
-        /// </summary>
+        /// <summary>Reads VINFO size, the path that reaches NativeDiskANNMethods.card.</summary>
         protected long VectorSetSize(int nodeIndex, string key)
         {
             var reply = context.clusterTestUtils.Execute(Node(nodeIndex), "VINFO", [key], logger: context.logger);
 
-            // ClusterTestUtils.Execute swallows exceptions and hands back the message as a bulk string,
-            // so a node that died or rejected the read arrives here as a non-array reply.
+            // Execute returns failures as bulk strings, so non-array replies mean the read failed.
             if (reply.Resp2Type != ResultType.Array)
                 Assert.Fail($"VINFO on '{key}' at node {nodeIndex} did not return an array, got {reply.Resp2Type}: {reply}");
 
@@ -355,9 +290,7 @@ namespace Garnet.test.cluster
             return (long)reply;
         }
 
-        /// <summary>
-        /// The stored embedding for a single element, or an empty array when the element is absent.
-        /// </summary>
+        /// <summary>Returns the stored embedding for an element, or an empty array when absent.</summary>
         protected string[] ElementEmbedding(int nodeIndex, string key, byte[] element)
         {
             var reply = context.clusterTestUtils.Execute(Node(nodeIndex), "VEMB", [key, element], skipLogging: true);
@@ -381,15 +314,8 @@ namespace Garnet.test.cluster
         #region assertions
 
         /// <summary>
-        /// Full element-level comparison of a Vector Set on two nodes.
-        ///
-        /// <para>
-        /// Checks, in order of increasing strength: cardinality, dimensionality, that every element
-        /// written to the source is present on the target with a byte-identical embedding, and that
-        /// VSIM returns the same neighbours from both. The embedding sweep is the important one — it is
-        /// the only check that would notice a replica which reports the right count but has lost, or
-        /// silently substituted, the underlying vectors.
-        /// </para>
+        /// Compares cardinality, dimensions, embeddings, and VSIM behavior against the elements
+        /// actually written; the embedding sweep catches correct counts with wrong vectors.
         /// </summary>
         protected void AssertVectorSetsMatch(int sourceIndex, int targetIndex, string key)
         {
@@ -441,25 +367,15 @@ namespace Garnet.test.cluster
         }
 
         /// <summary>
-        /// VSIM has to work on the target too. The embedding sweep proves the elements are stored; this
-        /// proves the navigable graph built over them is functional and not merely present.
-        ///
-        /// <para>
-        /// This deliberately does not demand identical result lists. A replica that rebuilt its index
-        /// (after a full sync, or lazily after recovery) has a DiskANN graph constructed in a different
-        /// insertion order from the primary's, so an approximate search legitimately diverges in the
-        /// tail. What must hold is that the graph is navigable: an exact query for an element's own
-        /// embedding finds that element, every neighbour returned is a real member of the set, and the
-        /// bulk of a random query's neighbourhood agrees with the primary's.
-        /// </para>
+        /// Verifies VSIM on the target without requiring identical tails: rebuilt approximate-NN
+        /// graphs can legitimately return different tail orderings.
         /// </summary>
         protected void AssertSearchesAgree(int sourceIndex, int targetIndex, string key, int queries = 8, int count = 10)
         {
             var members = ElementsWrittenTo(key);
             var membership = new HashSet<string>(members.Select(Convert.ToHexString));
 
-            // Exact queries: an element's own embedding must retrieve that element as the top hit.
-            // This is the deterministic part - it holds regardless of how the graph was built.
+            // Exact queries must find the element itself regardless of graph construction.
             var r = new Random(20260729);
             for (var q = 0; q < queries; q++)
             {
@@ -476,9 +392,7 @@ namespace Garnet.test.cluster
                     $"VSIM on node {targetIndex} for the exact embedding of element [{string.Join(",", element)}] of '{key}' returned [{string.Join(",", hits[0])}] as its nearest neighbour, so the index is not navigable to its own elements");
             }
 
-            // Random queries: results need not be identical, but they must be real members and must
-            // largely agree with the primary. A replica reading out of another set, or out of a stale
-            // or half-built index, fails this.
+            // Random-query tails may differ, but hits must be real members and broadly agree.
             for (var q = 0; q < queries; q++)
             {
                 var query = new byte[VectorDimensions];
@@ -509,25 +423,15 @@ namespace Garnet.test.cluster
         }
 
         /// <summary>
-        /// Blocks until <paramref name="nodeIndex"/> has actually applied every replicated VADD.
-        ///
-        /// <para>
-        /// AOF offsets are not enough on their own. A replica does not apply VADDs inline: it queues
-        /// them onto <c>VectorManager</c>'s replication replay channel and a pool of background tasks
-        /// drains them, so the offset reported by <c>WaitForReplicaAofSync</c> runs ahead of the state
-        /// of the index — the record itself is created by the replay. Reading in that window sees a set
-        /// that is missing entirely, or short of elements.
-        /// </para>
+        /// AOF offsets are insufficient: replicas queue VADDs onto VectorManager's replay
+        /// channel, so offset sync can run ahead of index state.
         /// </summary>
         protected void WaitForVectorReplay(int nodeIndex)
             => GetStoreWrapper(context.nodes[nodeIndex]).DefaultDatabase.VectorManager.WaitForVectorOperationsToComplete();
 
         /// <summary>
-        /// Reads the native DiskANN handle a node currently has persisted for <paramref name="key"/>.
-        ///
-        /// This deliberately goes through <c>Read_MainStore</c> rather than
-        /// <c>VectorManager.ReadVectorIndex</c>. The latter consults <c>NeedsRecreate</c> and will
-        /// lazily rebuild the index, which would rewrite the very field under test.
+        /// Reads the persisted DiskANN handle via Read_MainStore so ReadVectorIndex cannot
+        /// lazily rebuild and rewrite it.
         /// </summary>
         protected nint ReadPersistedIndexPtr(int nodeIndex, string key)
         {
@@ -557,23 +461,8 @@ namespace Garnet.test.cluster
         }
 
         /// <summary>
-        /// The <c>HandleIsLocal</c> invariant from <c>tla/VectorIndexLifetime.tla</c>, which is what
-        /// every counterexample TLC produced actually violates. A node may only ever dereference an
-        /// index handle it allocated itself.
-        ///
-        /// <para>
-        /// This has to be asserted structurally rather than through the RESP surface. Cluster tests run
-        /// every node inside a single process, so a foreign handle is still mapped and valid when the
-        /// receiving node dereferences it: that node quietly answers out of the other's live index and
-        /// every black-box read looks correct — including the element-level checks above. Only in a
-        /// real deployment, where the nodes are separate processes, does the same aliasing become the
-        /// observed SIGSEGV. This is why both kinds of assertion are needed.
-        /// </para>
-        /// <para>
-        /// A zero handle satisfies the invariant trivially — it is the sanitized state, and the index
-        /// is rebuilt lazily on first access — so this only fails when a node holds a genuinely foreign
-        /// non-zero pointer.
-        /// </para>
+        /// Asserts a node does not hold another node's DiskANN handle. A zero handle is valid
+        /// after sanitization until lazy rebuild; only foreign non-zero pointers fail.
         /// </summary>
         protected void AssertOwnsItsIndex(int nodeIndex, int otherNodeIndex, string key)
         {
@@ -590,15 +479,8 @@ namespace Garnet.test.cluster
         }
 
         /// <summary>
-        /// Both halves of the contract in one call: the target holds exactly the data the source does
-        /// <em>and</em> is not aliasing the source's index.
-        ///
-        /// <para>
-        /// Order matters. The data assertions run first because reading is what drives the lazy
-        /// <c>Service.RecreateIndex</c> rebuild; checking ownership beforehand would inspect a record
-        /// whose pointer has been sanitized to zero but not yet repopulated, which tells us nothing.
-        /// After the reads both nodes are expected to hold live, and necessarily distinct, handles.
-        /// </para>
+        /// Asserts data equality before ownership because reads trigger lazy rebuild; checking
+        /// ownership first can see the expected zero sanitized pointer.
         /// </summary>
         protected void AssertFullyReplicated(int sourceIndex, int targetIndex, string key)
         {

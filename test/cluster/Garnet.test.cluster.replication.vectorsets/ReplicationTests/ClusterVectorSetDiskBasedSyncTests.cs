@@ -10,25 +10,8 @@ using NUnit.Framework.Legacy;
 namespace Garnet.test.cluster
 {
     /// <summary>
-    /// Vector Sets carried to a replica by a <em>disk-based</em> (checkpoint) full sync.
-    ///
-    /// <para>
-    /// This is the counterpart transport to <see cref="ClusterVectorSetDisklessSyncTests"/> and it had
-    /// no coverage at all. The pre-existing cluster Vector Set fixture attaches its replicas at setup
-    /// and only then writes, so replicas full-sync against an <em>empty</em> store and no index record
-    /// ever crosses the wire; everything after that arrives as replicated VADD payloads over AOF. The
-    /// interesting case — a replica taking a checkpoint of an already-populated Vector Set — was never
-    /// exercised.
-    /// </para>
-    /// <para>
-    /// Unlike the diskless path, this one is expected to be safe by construction: the replica recovers
-    /// the received checkpoint from disk, and <c>Recovery.cs</c> fires
-    /// <c>GarnetRecordTriggers.OnDiskRead</c> per record during that pass, which zeroes
-    /// <c>IndexPtr</c> and forces the lazy <c>Service.RecreateIndex</c> rebuild. That is a code-reading
-    /// argument, not a tested one, and the gate is itself conditional
-    /// (<c>CallOnDiskRead =&gt; rangeIndexManager != null || vectorManager != null</c>), so a
-    /// regression there would otherwise be silent. These tests pin that behaviour down.
-    /// </para>
+    /// Disk-based full-sync coverage for populated Vector Sets. The replica recovers a shipped
+    /// checkpoint, so OnDiskRead must zero IndexPtr and force lazy rebuild.
     /// </summary>
     [TestFixture]
     [NonParallelizable]
@@ -46,9 +29,7 @@ namespace Garnet.test.cluster
         };
 
         /// <summary>
-        /// Stands up <paramref name="nodeCount"/> nodes with diskless sync explicitly <b>off</b>, so a
-        /// replica attach transmits a checkpoint. <c>OnDemandCheckpoint</c> ensures the primary has one
-        /// to send even though nothing has explicitly saved.
+        /// Creates a checkpoint-sync cluster; OnDemandCheckpoint gives the primary a checkpoint to ship.
         /// </summary>
         private void SetupDiskBasedCluster(int nodeCount)
         {
@@ -64,12 +45,8 @@ namespace Garnet.test.cluster
         }
 
         /// <summary>
-        /// The disk-based analogue of
-        /// <see cref="ClusterVectorSetDisklessSyncTests.VectorSetReadableOnReplicaAfterDisklessFullSync"/>.
-        ///
-        /// The Vector Set is fully populated <em>before</em> the replica exists, so the attach has no
-        /// choice but to carry the index record inside a checkpoint. The replica must end up with its
-        /// own index and with every element that was written.
+        /// Populates before the replica exists so the attach carries the index record in a checkpoint.
+        /// The replica must rebuild its own index and keep every element.
         /// </summary>
         [Test]
         [Category("REPLICATION")]
@@ -93,12 +70,8 @@ namespace Garnet.test.cluster
         }
 
         /// <summary>
-        /// Disk-based analogue of
-        /// <see cref="ClusterVectorSetDisklessSyncTests.VectorSetsStayPartitionedAcrossDisklessFullSync"/>.
-        ///
-        /// Several Vector Sets of deliberately different sizes travel in one checkpoint. If recovery
-        /// were to mis-handle the per-record context, one key could end up answering out of another's
-        /// index; the element sweep catches that even when the cardinalities happen to line up.
+        /// Several differently sized sets travel in one checkpoint. Element checks catch any
+        /// per-record recovery mix-up that aliases one set's index to another.
         /// </summary>
         [Test]
         [Category("REPLICATION")]
@@ -134,8 +107,7 @@ namespace Garnet.test.cluster
         }
 
         /// <summary>
-        /// Several replicas each take their own checkpoint of the same populated primary. As in the
-        /// diskless fan-out case, no two nodes may share a handle.
+        /// Several replicas each take a checkpoint from the same populated primary; no two nodes may share a handle.
         /// </summary>
         [Test]
         [Category("REPLICATION")]
@@ -176,14 +148,8 @@ namespace Garnet.test.cluster
         }
 
         /// <summary>
-        /// The replica is attached and in sync first, so it builds its own index from VADD payloads,
-        /// and only then is it detached and forced to re-sync from a checkpoint.
-        ///
-        /// <para>
-        /// This is the disk-based shape of the production incident: the node already holds a working
-        /// Vector Set, loses its link, and comes back through a full sync. Its own index must be
-        /// discarded and rebuilt rather than left aliasing whatever the checkpoint carried.
-        /// </para>
+        /// Detaches an already-synced replica and forces checkpoint re-sync. It must discard
+        /// prior index state and rebuild from the checkpoint.
         /// </summary>
         [Test]
         [Category("REPLICATION")]

@@ -288,9 +288,8 @@ namespace Garnet.server
                     }
                 }
 
-                // Cleared rather than released: recovery can run more than once per process
-                // (a replica re-recovers the store on every disk-based full sync), and the
-                // recovery record triggers write into these before ResumePostRecovery runs.
+                // Cleared, not released: a replica re-recovers the store on every disk-based full sync,
+                // and the recovery record triggers write into these before ResumePostRecovery runs.
                 recoveredMetadata.Clear();
 
                 // If we come up and contexts are marked for migration, that means the migration FAILED

@@ -10,39 +10,9 @@ using NUnit.Framework.Legacy;
 namespace Garnet.test.cluster
 {
     /// <summary>
-    /// Vector Sets carried to another node by a <em>diskless</em> full sync.
-    ///
-    /// <para>
-    /// The diskless snapshot iterator streams raw Tsavorite log records verbatim
-    /// (<c>ReplicationSnapshotIterator</c> -&gt; <c>DiskLogRecord.Serialize</c>). A Vector Set's index
-    /// record persists the native DiskANN handle <c>IndexPtr</c> at offset 8 of its 56-byte value
-    /// (<c>VectorManager.Index</c>), so the replica receives the <em>primary's</em> pointer.
-    /// </para>
-    /// <para>
-    /// The only hook that zeroes that field is <c>GarnetRecordTriggers.OnDiskRead</c>, which by
-    /// definition never fires for records streamed straight into memory. Since
-    /// <c>VectorManager.NeedsRecreate</c> is exactly <c>indexPtr == 0</c>, a non-zero foreign pointer
-    /// is indistinguishable from a healthy local one, the lazy <c>Service.RecreateIndex</c> rebuild is
-    /// skipped, and the raw value reaches the P/Invoke unvalidated. In production this faults the
-    /// replica with SIGSEGV inside <c>NativeDiskANNMethods.card</c>.
-    /// </para>
-    /// <para>
-    /// The pre-existing cluster Vector Set fixture cannot catch this. It goes through
-    /// <c>SimpleSetupClusterAsync</c>, which never passes <c>enableDisklessSync</c>, and it attaches
-    /// replicas up front and then writes, so each replica builds its own native index from replicated
-    /// VADD payloads. The defect needs an <em>already-populated</em> Vector Set to travel over a full
-    /// sync.
-    /// </para>
-    /// <para>
-    /// These are the executable form of the TLA+ model in <c>tla/VectorIndexLifetime.tla</c>. Every
-    /// counterexample TLC produced shares one 6-step trace: <c>SyncReset</c> -&gt;
-    /// <c>PrimaryCreate(k1)</c> -&gt; <c>SyncSnapshot</c> -&gt; <c>BeginRead(k1)</c> -&gt;
-    /// <c>Deref</c>. The three preconditions it isolates are what each test sets up: (1) the receiving
-    /// node takes a full sync, (2) the source's record for the key carries a live non-zero handle at
-    /// snapshot time, and (3) the receiving node subsequently reads that key. The
-    /// <c>MC_Vec_QuiesceOnly_Buggy</c> scenario still failed, which is why none of these tests need to
-    /// race anything: a quiet, fully serialized read after the sync completes is enough.
-    /// </para>
+    /// Diskless full-sync coverage for populated Vector Sets. The iterator streams IndexPtr,
+    /// so the receiver must sanitize and rebuild before the TLA+ quiet-read counterexample.
+    /// Executable form of the model in tla/VectorIndexLifetime.tla.
     /// </summary>
     [TestFixture]
     [NonParallelizable]
@@ -61,10 +31,7 @@ namespace Garnet.test.cluster
             [nameof(VectorSetMigratedBetweenPrimariesWithDisklessSync)] = LogLevel.Trace,
         };
 
-        /// <summary>
-        /// Stands up <paramref name="nodeCount"/> nodes configured for diskless sync with the full-sync
-        /// AOF threshold pinned low, gives node 0 every slot, and introduces the rest to it.
-        /// </summary>
+        /// <summary>Creates a diskless-sync cluster with a low threshold so re-attach takes full sync.</summary>
         private void SetupDisklessCluster(int nodeCount)
         {
             context.CreateInstances(
@@ -79,8 +46,7 @@ namespace Garnet.test.cluster
         }
 
         /// <summary>
-        /// The model's <c>SyncReset</c> followed by <c>SyncSnapshot</c>: detach the replica, move the
-        /// primary far enough ahead that the re-attach cannot be served incrementally, then re-attach.
+        /// Forces the model's reset/snapshot path: detach, move past incremental replay, then re-attach.
         /// </summary>
         private void ForceDisklessFullSync(int replicaIndex = ReplicaIndex)
         {
@@ -94,13 +60,8 @@ namespace Garnet.test.cluster
         }
 
         /// <summary>
-        /// Executable form of <c>MC_Vec_Buggy</c> / <c>MC_Vec_Segfault_Buggy</c>, which violate
-        /// <c>HandleIsLocal</c> and <c>NoSegfault</c>.
-        ///
-        /// A Vector Set that already exists on the primary is carried to the replica by a diskless full
-        /// sync, and the replica is then asked to read it. The replica receives the index record with
-        /// the primary's <c>IndexPtr</c> intact, never rebuilds the index locally, and the first read
-        /// that reaches <c>NativeDiskANNMethods.card</c> dereferences a handle it does not own.
+        /// A populated set travels by diskless full sync, then the replica reads it. This catches
+        /// foreign IndexPtr dereferences that used to surface at NativeDiskANNMethods.card.
         /// </summary>
         [Test]
         [Category("REPLICATION")]
@@ -113,8 +74,7 @@ namespace Garnet.test.cluster
             SetupDisklessCluster(2);
             Attach(ReplicaIndex, PrimaryIndex);
 
-            // Written while the replica is attached, so it arrives as VADD payloads and the replica
-            // builds its own native index. This much already works today.
+            // Attached writes arrive as VADD replay, so the replica builds its own index.
             PopulateVectorSet(PrimaryIndex, Key, Elements, seed: 2026_07_29_00);
             context.clusterTestUtils.WaitForReplicaAofSync(PrimaryIndex, ReplicaIndex, logger: context.logger);
 
@@ -128,13 +88,8 @@ namespace Garnet.test.cluster
         }
 
         /// <summary>
-        /// Executable form of <c>MC_Vec_WrongIndex_Buggy</c>, which violates <c>NoWrongIndex</c>.
-        ///
-        /// With more than one Vector Set in play a streamed foreign handle can resolve to a different
-        /// live index rather than to unmapped memory, in which case the read succeeds and quietly
-        /// reports another set's contents. Two sets of deliberately different sizes make that
-        /// substitution visible: each key must report exactly its own elements, and the element-level
-        /// sweep catches the case where the counts happen to line up but the vectors do not.
+        /// Multiple sets can make a foreign handle point at the wrong live index instead of faulting.
+        /// Different sizes plus element checks expose cross-set substitution.
         /// </summary>
         [Test]
         [Category("REPLICATION")]
@@ -163,19 +118,14 @@ namespace Garnet.test.cluster
             AssertFullyReplicated(PrimaryIndex, ReplicaIndex, SmallKey);
             AssertFullyReplicated(PrimaryIndex, ReplicaIndex, LargeKey);
 
-            // Explicit cross-check of the substitution the model describes: neither key may report the
-            // other's cardinality.
+            // Neither key may report the other's cardinality.
             ClassicAssert.AreEqual(SmallElements, VectorSetSize(ReplicaIndex, SmallKey), "small set must not report elements belonging to another Vector Set");
             ClassicAssert.AreEqual(LargeElements, VectorSetSize(ReplicaIndex, LargeKey), "large set must report exactly its own elements");
         }
 
         /// <summary>
-        /// Executable form of the <c>MC_Vec_NoFullSync</c> control, which TLC verified.
-        ///
-        /// Identical to <see cref="VectorSetReadableOnReplicaAfterDisklessFullSync"/> except that the
-        /// replica never takes a full sync. Removing that single step is what makes the model safe, so
-        /// this test must pass even while the others fail; if it ever fails the defect is not the one
-        /// the model describes and the rest of this fixture is measuring the wrong thing.
+        /// Control: without full sync, replicated VADD payloads build the replica's local index,
+        /// so this should pass even if full-sync cases fail.
         /// </summary>
         [Test]
         [Category("REPLICATION")]
@@ -193,19 +143,13 @@ namespace Garnet.test.cluster
 
             MakeReadable(ReplicaIndex);
 
-            // The control's whole point: without a full sync the replica builds its own index from
-            // replicated VADD payloads, so this holds today and pins down the full sync as the cause.
+            // Without full sync, VADD replay builds a local index and isolates full sync as the cause.
             AssertFullyReplicated(PrimaryIndex, ReplicaIndex, Key);
         }
 
         /// <summary>
-        /// Gap: diskless coverage beyond a single replica.
-        ///
-        /// Every replica attaching to a populated primary takes its own streaming full sync, so each
-        /// one independently receives the same foreign <c>IndexPtr</c>. All of them must end up with
-        /// their own index and the full element set — a fix that only sanitizes the first sync session,
-        /// or that hangs the sanitization off shared per-primary state, would pass the two-node tests
-        /// and fail here.
+        /// Every replica takes its own diskless full sync from the same populated primary.
+        /// Each must rebuild its own index, not share per-primary state.
         /// </summary>
         [Test]
         [Category("REPLICATION")]
@@ -218,7 +162,7 @@ namespace Garnet.test.cluster
 
             SetupDisklessCluster(1 + ReplicaCount);
 
-            // Populated before any replica exists, so every attach must carry the index record itself.
+            // Populated before any replica exists, so each attach carries the index record.
             PopulateVectorSet(PrimaryIndex, Key, Elements, seed: 2026_07_29_06);
 
             var before = FullSyncCount();
@@ -236,7 +180,7 @@ namespace Garnet.test.cluster
                 AssertFullyReplicated(PrimaryIndex, replica, Key);
             }
 
-            // No two nodes may share a handle, not just replica-vs-primary.
+            // No two nodes may share a handle.
             for (var a = 0; a <= ReplicaCount; a++)
             {
                 for (var b = a + 1; b <= ReplicaCount; b++)
@@ -247,12 +191,8 @@ namespace Garnet.test.cluster
         }
 
         /// <summary>
-        /// Gap: diskless full sync followed by a failover.
-        ///
-        /// A replica that took a full sync is promoted, which makes it the authority for data it never
-        /// built an index for. The old primary then attaches to it and syncs back the other way, so the
-        /// same record makes a second crossing in the opposite direction. Both nodes must still own
-        /// their own index and hold every element.
+        /// Promotes a replica after diskless full sync, then syncs back to the old primary.
+        /// The record crosses both directions and both nodes must own their indexes.
         /// </summary>
         [Test]
         [Category("REPLICATION")]
@@ -273,7 +213,6 @@ namespace Garnet.test.cluster
             MakeReadable(ReplicaIndex);
             AssertFullyReplicated(PrimaryIndex, ReplicaIndex, Key);
 
-            // Promote the replica. Roles now swap: ReplicaIndex is the primary, PrimaryIndex the replica.
             context.ClusterFailoverSpinWait(ReplicaIndex, context.logger);
             context.clusterTestUtils.WaitForReplicaAofSync(ReplicaIndex, PrimaryIndex, logger: context.logger);
 
@@ -283,8 +222,7 @@ namespace Garnet.test.cluster
             MakeReadable(PrimaryIndex);
             AssertFullyReplicated(ReplicaIndex, PrimaryIndex, Key);
 
-            // The promoted node must still accept writes into the set it inherited, and they must reach
-            // the demoted one.
+            // Inherited sets must still accept writes and replicate them back.
             PopulateVectorSet(ReplicaIndex, Key, count: 50, seed: 2026_07_29_08);
             context.clusterTestUtils.WaitForReplicaAofSync(ReplicaIndex, PrimaryIndex, logger: context.logger);
 
@@ -293,12 +231,8 @@ namespace Garnet.test.cluster
         }
 
         /// <summary>
-        /// Gap: slot migration while diskless sync is enabled.
-        ///
-        /// Migration is a third transport for an index record (<c>SetContextForMigration</c>) and it
-        /// runs concurrently with replication. This moves a populated Vector Set between two primaries
-        /// that each have a replica, then requires all four nodes to be consistent and, critically, for
-        /// no two of them to share a handle.
+        /// Migrates a populated Vector Set between primaries while diskless sync is enabled.
+        /// All four nodes must agree and no two may share a handle.
         /// </summary>
         [Test]
         [Category("REPLICATION")]
@@ -325,7 +259,7 @@ namespace Garnet.test.cluster
             var primary0Id = context.clusterTestUtils.ClusterMyId(primary0, logger: context.logger);
             var slots = context.clusterTestUtils.ClusterSlots(primary0, logger: context.logger);
 
-            // Find a key that hashes into a slot Primary0 actually owns.
+            // Find a key that hashes into a slot Primary0 owns.
             string key;
             int hashSlot;
             var ix = 0;
@@ -346,7 +280,7 @@ namespace Garnet.test.cluster
             WaitUntilServes(Replica0, key);
             AssertFullyReplicated(Primary0, Replica0, key);
 
-            // Captured before the migration: once the slot moves, Primary0 drops the record entirely.
+            // Read before migration because Primary0 drops the record once the slot moves.
             var handleBeforeMigration = ReadPersistedIndexPtr(Primary0, key);
             ClassicAssert.AreNotEqual(nint.Zero, handleBeforeMigration);
 
@@ -363,8 +297,7 @@ namespace Garnet.test.cluster
             WaitUntilServes(Replica1, key);
             AssertFullyReplicated(Primary1, Replica1, key);
 
-            // The migrated-to primary must serve an index it built itself rather than the handle the
-            // source primary was using, which is meaningless in this process once the slot has moved.
+            // The migrated-to primary must build its own index, not reuse Primary0's handle.
             var handleAfterMigration = ReadPersistedIndexPtr(Primary1, key);
             ClassicAssert.AreNotEqual(nint.Zero, handleAfterMigration, $"node {Primary1} should have built its own index for '{key}'");
             ClassicAssert.AreNotEqual(handleBeforeMigration, handleAfterMigration, $"node {Primary1} adopted node {Primary0}'s DiskANN handle for '{key}' across the migration");

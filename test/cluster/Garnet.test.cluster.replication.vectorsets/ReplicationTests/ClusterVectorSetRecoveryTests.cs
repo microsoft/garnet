@@ -10,20 +10,8 @@ using NUnit.Framework.Legacy;
 namespace Garnet.test.cluster
 {
     /// <summary>
-    /// Vector Sets across a process restart inside a cluster.
-    ///
-    /// <para>
-    /// Restart is the fourth way a persisted index record can be read by a process that did not create
-    /// it — here the "other process" is the node's own previous incarnation. The <c>IndexPtr</c> stored
-    /// in the checkpoint belongs to an address space that no longer exists, so recovery must discard it
-    /// and let <c>Service.RecreateIndex</c> rebuild lazily. <c>Recovery.cs</c> does that by firing
-    /// <c>GarnetRecordTriggers.OnDiskRead</c> per record as it loads pages.
-    /// </para>
-    /// <para>
-    /// The standalone suite covers <c>SAVE</c> + <c>tryRecover</c> well, but no cluster test did, and
-    /// in a cluster the recovered node immediately re-enters a replication relationship — so a stale
-    /// handle would not merely fault locally, it would propagate.
-    /// </para>
+    /// Restart recovery for clustered Vector Sets. A checkpointed IndexPtr belongs to the old
+    /// process and must be discarded so lazy rebuild creates a local index before replication resumes.
     /// </summary>
     [TestFixture]
     [NonParallelizable]
@@ -60,8 +48,7 @@ namespace Garnet.test.cluster
         }
 
         /// <summary>
-        /// Forces a checkpoint so the restart has something to recover from rather than replaying the
-        /// whole AOF.
+        /// Forces a checkpoint so restart recovers persisted records instead of replaying the whole AOF.
         /// </summary>
         private void Checkpoint(int nodeIndex)
         {
@@ -69,10 +56,7 @@ namespace Garnet.test.cluster
             TakeCheckpoint(nodeIndex);
         }
 
-        /// <summary>
-        /// A handle recovered from a checkpoint belongs to a dead process. Whatever the node ends up
-        /// dereferencing after recovery, it must not be the pointer it wrote before it went down.
-        /// </summary>
+        /// <summary>A recovered handle must differ from the dead process's handle.</summary>
         private void AssertIndexRebuiltAfterRestart(int nodeIndex, string key, nint beforeRestart)
         {
             var after = ReadPersistedIndexPtr(nodeIndex, key);
@@ -84,8 +68,8 @@ namespace Garnet.test.cluster
         }
 
         /// <summary>
-        /// The replica is restarted while the primary stays up. It must rebuild its own index from the
-        /// recovered checkpoint, keep every element, and end up agreeing with the primary again.
+        /// Restarts the replica while the primary stays up; it must rebuild, keep every element,
+        /// and agree with the primary.
         /// </summary>
         [Test]
         [Category("REPLICATION")]
@@ -113,23 +97,15 @@ namespace Garnet.test.cluster
 
             MakeReadable(ReplicaIndex);
 
-            // Reading first is what drives the lazy rebuild, so the data assertions have to come before
-            // the pointer is inspected.
+            // Reading first drives lazy rebuild, so inspect the pointer afterwards.
             AssertVectorSetsMatch(PrimaryIndex, ReplicaIndex, Key);
             AssertIndexRebuiltAfterRestart(ReplicaIndex, Key, replicaPtrBefore);
             AssertOwnsItsIndex(ReplicaIndex, PrimaryIndex, Key);
         }
 
         /// <summary>
-        /// The primary is restarted underneath a live replica. It must recover its Vector Sets, rebuild
-        /// its own index, and still be able to take writes and seed a replica afterwards.
-        ///
-        /// <para>
-        /// The replication link of the pre-existing replica dies with the old process and re-attaching
-        /// it is a general cluster concern with its own semantics, so the post-restart replication leg
-        /// is checked against a spare node that attaches to the recovered primary. That is the case
-        /// that matters here: everything the new replica receives was reconstructed by recovery.
-        /// </para>
+        /// Restarts the primary under a live replica, then verifies recovery can still accept
+        /// writes and seed a newly attached replica.
         /// </summary>
         [Test]
         [Category("REPLICATION")]
@@ -157,10 +133,8 @@ namespace Garnet.test.cluster
             ClassicAssert.AreEqual(Elements, VectorSetSize(PrimaryIndex, Key), "the restarted primary lost elements of the recovered Vector Set");
             AssertIndexRebuiltAfterRestart(PrimaryIndex, Key, primaryPtrBefore);
 
-            // The recovered primary must still be able to take writes against the rebuilt index.
             PopulateVectorSet(PrimaryIndex, Key, count: 50, seed: 2026_07_29_19);
 
-            // ...and to hand the whole set, recovered part included, to a replica that attaches after it.
             Attach(SpareIndex, PrimaryIndex);
             context.clusterTestUtils.WaitForReplicaAofSync(PrimaryIndex, SpareIndex, logger: context.logger);
 
@@ -169,9 +143,7 @@ namespace Garnet.test.cluster
         }
 
         /// <summary>
-        /// Whole-cluster restart: both nodes recover independently from their own checkpoints, so both
-        /// are reading records written by processes that no longer exist. Neither may come back holding
-        /// its old handle, and they must still agree element for element.
+        /// Restarts both nodes from checkpoints; both must discard old handles and still match element for element.
         /// </summary>
         [Test]
         [Category("REPLICATION")]

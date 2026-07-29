@@ -381,8 +381,8 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Reconcile Vector Set state discovered by the recovery record triggers with the recovered store.
-        /// Must run after every store recovery, including a replica's disk-based full sync.
+        /// Reconcile recovered Vector Set state with the store. Must run after every store recovery,
+        /// including a replica's disk-based full sync.
         /// </summary>
         public void RecoverVectorSets() => databaseManager.RecoverVectorSets();
 

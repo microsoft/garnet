@@ -566,11 +566,9 @@ namespace Garnet.cluster
 
                         diskLogRecord = DiskLogRecord.Deserialize(recordSpan, storeWrapper.GarnetObjectSerializer, transientObjectIdMap, storeWrapper.storeFunctions);
 
-                        // A Vector Set index record persists the primary's native DiskANN handle in its
-                        // value, and diskless sync streams records verbatim into memory. Nothing else
-                        // clears it on this path: GarnetRecordTriggers.OnDiskRead only fires for records
-                        // faulted in from disk. Left alone, VectorManager.NeedsRecreate would see a
-                        // non-zero pointer, skip the rebuild, and hand a foreign address to DiskANN.
+                        // Diskless sync streams records verbatim, so the index record still carries the
+                        // primary's native DiskANN handle. OnDiskRead only fires for records faulted in
+                        // from disk, so nothing else clears it on this path.
                         if (diskLogRecord.RecordType == VectorManager.RecordType)
                             VectorManager.ClearIndexPointer(diskLogRecord.ValueSpan);
 

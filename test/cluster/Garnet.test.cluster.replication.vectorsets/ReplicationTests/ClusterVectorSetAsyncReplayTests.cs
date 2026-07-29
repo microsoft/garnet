@@ -10,21 +10,8 @@ using NUnit.Framework.Legacy;
 namespace Garnet.test.cluster
 {
     /// <summary>
-    /// Vector Sets under <em>asynchronous</em> AOF replay.
-    ///
-    /// <para>
-    /// With <c>asyncReplay</c> the replica applies the AOF stream on background replay tasks rather
-    /// than inline, so VADD records are handed to <c>VectorManager</c> off the network path and,
-    /// with more than one replay task, concurrently with each other. Vector Set replication had no
-    /// coverage under this configuration at all — the whole
-    /// <c>Garnet.test.cluster.replication.asyncreplay</c> project contains zero vector references.
-    /// </para>
-    /// <para>
-    /// This matters beyond ordinary throughput concerns because a Vector Set VADD is not a simple
-    /// value write: it mutates a native index behind the record. Async replay changes which thread
-    /// performs that mutation and how it interleaves with a concurrent full sync, so it is a genuinely
-    /// different execution of the same logical path.
-    /// </para>
+    /// Vector Set coverage for asynchronous AOF replay. VADDs mutate native indexes on
+    /// VectorManager replay tasks, so async replay is a distinct execution path.
     /// </summary>
     [TestFixture]
     [NonParallelizable]
@@ -57,10 +44,7 @@ namespace Garnet.test.cluster
             FormCluster(PrimaryIndex, [.. Enumerable.Range(1, nodeCount - 1)]);
         }
 
-        /// <summary>
-        /// The baseline that was missing entirely: VADDs replicated to an attached replica that is
-        /// replaying asynchronously must still land, in full, with identical embeddings.
-        /// </summary>
+        /// <summary>Baseline: asynchronously replayed VADDs must land with identical embeddings.</summary>
         [Test]
         [Category("REPLICATION")]
         [CancelAfter(180_000)]
@@ -80,9 +64,8 @@ namespace Garnet.test.cluster
         }
 
         /// <summary>
-        /// Async replay combined with a diskless full sync — the configuration that carries the index
-        /// record. The replica must rebuild its own index from the streamed record and then correctly
-        /// apply the asynchronously replayed VADDs that follow it.
+        /// Combines async replay with diskless full sync of the index record; the replica rebuilds
+        /// the streamed index and applies later VADDs.
         /// </summary>
         [Test]
         [Category("REPLICATION")]
@@ -95,7 +78,7 @@ namespace Garnet.test.cluster
 
             SetupAsyncReplayCluster(2, disklessSync: true);
 
-            // Populated before the replica exists, so the attach must carry the index record.
+            // Populated before the replica exists, so attach carries the index record.
             PopulateVectorSet(PrimaryIndex, Key, Elements, seed: 2026_07_29_27);
 
             var before = FullSyncCount();
@@ -105,7 +88,7 @@ namespace Garnet.test.cluster
             MakeReadable(ReplicaIndex);
             AssertFullyReplicated(PrimaryIndex, ReplicaIndex, Key);
 
-            // Writes after the sync exercise async replay against an index the replica just rebuilt.
+            // Writes after sync exercise async replay against the rebuilt index.
             PopulateVectorSet(PrimaryIndex, Key, AfterSyncElements, seed: 2026_07_29_28);
             context.clusterTestUtils.WaitForReplicaAofSync(PrimaryIndex, ReplicaIndex, logger: context.logger);
 
@@ -114,9 +97,7 @@ namespace Garnet.test.cluster
         }
 
         /// <summary>
-        /// Several replay tasks and several dedicated Vector Set replay tasks, so VADDs for multiple
-        /// keys are applied concurrently on the replica. Distinct keys must not interfere: each has to
-        /// end up with exactly its own elements.
+        /// Multiple replay tasks apply VADDs for different keys concurrently; each key must keep exactly its own elements.
         /// </summary>
         [Test]
         [Category("REPLICATION")]
@@ -134,7 +115,7 @@ namespace Garnet.test.cluster
             SetupAsyncReplayCluster(2, disklessSync: false, replayTaskCount: 4, vectorSetReplayTaskCount: 4);
             Attach(ReplicaIndex, PrimaryIndex);
 
-            // Interleaved so the replay tasks see records for the three keys mixed together.
+            // Interleaved so replay tasks see records for all three keys mixed together.
             for (var round = 0; round < Rounds; round++)
             {
                 PopulateVectorSet(PrimaryIndex, FirstKey, FirstPerRound, seed: 2026_07_29_29 + round);

@@ -320,8 +320,8 @@ namespace Garnet.cluster
                 logger?.LogInformation("Initializing AOF");
                 storeWrapper.appendOnlyFile.Log.Initialize(beginAddress, recoveredReplicationOffset);
 
-                // The store was recovered again, so the Vector Set contexts discovered by the recovery
-                // record triggers have to be reconciled just like they are on the startup recovery path.
+                // The store was recovered again, so recovered Vector Set contexts need reconciling just
+                // as they are on the startup path.
                 storeWrapper.RecoverVectorSets();
 
                 // Before we can use the replication offset, we must wait for queued Vector Set ops to complete
