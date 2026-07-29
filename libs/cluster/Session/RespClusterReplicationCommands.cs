@@ -565,6 +565,13 @@ namespace Garnet.cluster
                             return false;
 
                         diskLogRecord = DiskLogRecord.Deserialize(recordSpan, storeWrapper.GarnetObjectSerializer, transientObjectIdMap, storeWrapper.storeFunctions);
+
+                        // Diskless sync streams records verbatim, so the index record still carries the
+                        // primary's native DiskANN handle. OnDiskRead only fires for records faulted in
+                        // from disk, so nothing else clears it on this path.
+                        if (diskLogRecord.RecordType == VectorManager.RecordType)
+                            VectorManager.ClearIndexPointer(diskLogRecord.ValueSpan);
+
                         _ = basicGarnetApi.SET(in diskLogRecord);
                         storeWrapper.storeFunctions.OnDisposeDiskRecord(ref diskLogRecord, DisposeReason.DeserializedFromDisk);
                         diskLogRecord.Dispose();

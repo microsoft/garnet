@@ -706,7 +706,7 @@ namespace Garnet.server
         /// 
         /// Next time the record is touched, we'll recreate the index.
         /// </summary>
-        internal static void ClearIndexPointer(Span<byte> value)
+        public static void ClearIndexPointer(Span<byte> value)
         {
             if (value.Length != IndexSize)
             {

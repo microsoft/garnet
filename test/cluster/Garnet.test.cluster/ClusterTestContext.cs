@@ -38,6 +38,7 @@ namespace Garnet.test.cluster
         ClusterReplicationRangeIndex = 7800,
         ClusterMultiLogDiskless = 7900,
         ClusterMigrateRangeIndex = 8000,
+        ClusterReplicationVectorSets = 8100,
     }
 
     public class ClusterTestContext
