@@ -645,10 +645,10 @@ namespace Garnet.server
         }
 
         /// <inheritdoc/>
-        public GarnetStatus VectorSetRandomMembers(PinnedSpanByte key, int count, ref SpanByteAndMemory idResults)
+        public GarnetStatus VectorSetRandomMembers(PinnedSpanByte key, int count, ref SpanByteAndMemory idResults, out int actualCount)
         {
             garnetApi.WATCH(key, StoreType.Main);
-            return garnetApi.VectorSetRandomMembers(key, count, ref idResults);
+            return garnetApi.VectorSetRandomMembers(key, count, ref idResults, out actualCount);
         }
 
         /// <inheritdoc/>

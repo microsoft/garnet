@@ -2155,7 +2155,7 @@ namespace Garnet.server
         /// 
         /// On success, <paramref name="idResults"/> has length prefixed element names.
         /// </summary>
-        GarnetStatus VectorSetRandomMembers(PinnedSpanByte key, int count, ref SpanByteAndMemory idResults);
+        GarnetStatus VectorSetRandomMembers(PinnedSpanByte key, int count, ref SpanByteAndMemory idResults, out int actualCount);
 
         /// <summary>
         /// Perform a similarity search given a vector and these parameters.

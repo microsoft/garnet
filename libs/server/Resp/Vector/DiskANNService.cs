@@ -298,6 +298,25 @@ namespace Garnet.server
             }
         }
 
+        public bool RandomMembers(
+            ulong context,
+            nint index,
+            int count,
+            Span<byte> outputIds
+        )
+        {
+            var output_ids = Unsafe.AsPointer(ref MemoryMarshal.GetReference(outputIds));
+            var output_ids_len = outputIds.Length;
+
+            return NativeDiskANNMethods.random_members(
+                context,
+                index,
+                (uint)count,
+                (nint)output_ids,
+                (nuint)output_ids_len
+            ) == 1;
+        }
+
         public int ContinueSearch(ulong context, nint index, nint continuation, Span<byte> outputIds, Span<byte> outputDistances, out nint newContinuation)
         {
             var output_ids_data = (nint)Unsafe.AsPointer(ref MemoryMarshal.GetReference(outputIds));
@@ -476,6 +495,15 @@ namespace Garnet.server
             nint index,
             nuint task_index,
             nuint task_count
+        );
+
+        [LibraryImport(DISKANN_GARNET)]
+        public static partial byte random_members(
+            ulong context,
+            nint index,
+            uint count,
+            nint output_ids,
+            nuint output_ids_len
         );
     }
 }

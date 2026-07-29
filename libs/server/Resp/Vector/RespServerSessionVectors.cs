@@ -1769,7 +1769,7 @@ namespace Garnet.server
             try
             {
 
-                var res = storageApi.VectorSetRandomMembers(key, count, ref idResult);
+                var res = storageApi.VectorSetRandomMembers(key, count, ref idResult, out var actualCount);
 
                 switch (res)
                 {
@@ -1789,9 +1789,18 @@ namespace Garnet.server
 
                     case GarnetStatus.OK:
                         {
-                            // TODO: implement!
-                            while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
-                                SendAndReset();
+                            WriteArrayLength(actualCount);
+                            var remainingIds = idResult.ReadOnlySpan;
+
+                            while (!remainingIds.IsEmpty)
+                            {
+                                var idLen = BinaryPrimitives.ReadInt32LittleEndian(remainingIds);
+                                var id = remainingIds.Slice(sizeof(int), idLen);
+
+                                WriteBulkString(id);
+
+                                remainingIds = remainingIds[(sizeof(int) + idLen)..];
+                            }
                         }
                         break;
                 }

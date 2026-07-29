@@ -526,7 +526,7 @@ namespace Garnet.server
         /// 
         /// On success, <paramref name="idResults"/> has length prefixed element names.
         /// </summary>
-        internal GarnetStatus VectorSetRandomMembers(PinnedSpanByte key, int count, ref SpanByteAndMemory idResults)
+        internal GarnetStatus VectorSetRandomMembers(PinnedSpanByte key, int count, ref SpanByteAndMemory idResults, out int actualCount)
         {
             parseState.InitializeWithArgument(key);
 
@@ -536,12 +536,12 @@ namespace Garnet.server
             {
                 if (status != GarnetStatus.OK)
                 {
+                    actualCount = 0;
                     return status;
                 }
 
-                // TODO: Implement!
-                idResults.Length = 0;
-                return GarnetStatus.OK;
+                var result = vectorManager.RandomMembers(key, Math.Abs(count), allowDuplicates: count < 0, ref idResults, out actualCount);
+                return result == VectorManagerResult.OK ? GarnetStatus.OK : GarnetStatus.NOTFOUND;
             }
         }
 
