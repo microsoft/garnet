@@ -570,10 +570,6 @@ namespace Garnet.server
                 logger?.LogCritical(ex, "ProcessMessages threw an exception:");
                 // The session is no longer usable, dispose it
                 networkSender.Dispose();
-                // Rethrow so the network receive loop (HandleReceiveWithoutTLS / the TLS SslReader loops) tears the
-                // connection down deterministically. Swallowing it here and returning 0 would let the loop re-enter
-                // TryConsumeMessages on the just-disposed sender (null response-object pointers -> NullReferenceException).
-                throw;
             }
             finally
             {
