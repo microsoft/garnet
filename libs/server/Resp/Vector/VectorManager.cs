@@ -1637,6 +1637,50 @@ namespace Garnet.server
             }
         }
 
+        /// <summary>
+        /// Get the neighbors of a <paramref name="element"/> in a Vector Set, along with distances to each neighbor.
+        /// </summary>
+        internal VectorManagerResult GetNeighbors(ReadOnlySpan<byte> indexSpan, ReadOnlySpan<byte> element, ref SpanByteAndMemory outputIds, ref SpanByteAndMemory outputDistances)
+        {
+            ReadIndex(indexSpan, out var context, out _, out _, out _, out _, out _, out _, out _, out var indexPtr);
+
+            var found = Service.SearchNeighbors(context, indexPtr, element, outputIds, outputDistances, out var continuation);
+
+            if (found < 0)
+            {
+                Debug.Assert(continuation == 0, "Shouldn't have more results after failure");
+
+                logger?.LogError("GetNeighbors failed with {res} for context {context}", found, context);
+
+                return VectorManagerResult.BadParams;
+            }
+
+            while (continuation != 0)
+            {
+                var additionalResults = ContinueSearch(context, indexPtr, continuation, found, ref outputIds, ref outputDistances, out continuation);
+
+                if (additionalResults < 0)
+                {
+                    Debug.Assert(continuation == 0, "Shouldn't have more results after failure");
+
+                    logger?.LogError("GetNeighbors failed in ContinueSearch with {additionalResults} for context {context}", additionalResults, context);
+
+                    found = additionalResults;
+                    break;
+                }
+
+                found += additionalResults;
+            }
+
+            if (found < 0)
+            {
+                return VectorManagerResult.BadParams;
+            }
+
+            outputDistances.Length = sizeof(float) * found;
+            return VectorManagerResult.OK;
+        }
+
         [Conditional("DEBUG")]
         private static void AssertHaveStorageSession()
         {

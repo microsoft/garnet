@@ -298,6 +298,80 @@ namespace Garnet.server
             }
         }
 
+        public int SearchNeighbors(
+            ulong context,
+            nint index,
+            ReadOnlySpan<byte> id,
+            SpanByteAndMemory outputIds,
+            SpanByteAndMemory outputDistances,
+            out nint continuation
+        )
+        {
+            var id_data = Unsafe.AsPointer(ref MemoryMarshal.GetReference(id));
+            var id_len = id.Length;
+
+            void* output_ids;
+            void* output_distances;
+
+            GCHandle? outputIdsHandle = null;
+            GCHandle? outputDistancesHandle = null;
+            try
+            {
+                if (!outputIds.IsSpanByte)
+                {
+                    var getRes = MemoryMarshal.TryGetArray<byte>(outputIds.Memory.Memory, out var arrSeg);
+                    Debug.Assert(getRes, "Should always be able to get array to pin");
+
+                    outputIdsHandle = GCHandle.Alloc(arrSeg.Array, GCHandleType.Pinned);
+                    output_ids = Unsafe.AsPointer(ref MemoryMarshal.GetArrayDataReference(arrSeg.Array));
+                }
+                else
+                {
+                    outputIdsHandle = null;
+                    output_ids = Unsafe.AsPointer(ref MemoryMarshal.GetReference(outputIds.Span));
+                }
+
+                var output_ids_len = outputIds.Length;
+
+                if (!outputDistances.IsSpanByte)
+                {
+                    var getRes = MemoryMarshal.TryGetArray<byte>(outputDistances.Memory.Memory, out var arrSeg);
+                    Debug.Assert(getRes, "Should always be able to get array to pin");
+
+                    outputDistancesHandle = GCHandle.Alloc(arrSeg.Array, GCHandleType.Pinned);
+                    output_distances = Unsafe.AsPointer(ref MemoryMarshal.GetArrayDataReference(arrSeg.Array));
+                }
+                else
+                {
+                    outputDistancesHandle = null;
+                    output_distances = Unsafe.AsPointer(ref MemoryMarshal.GetReference(outputDistances.Span));
+                }
+
+                var output_distances_len = outputDistances.Length / sizeof(float);
+
+                continuation = 0;
+                ref var continuationRef = ref continuation;
+                var continuationAddr = (nint)Unsafe.AsPointer(ref continuationRef);
+
+                return NativeDiskANNMethods.search_neighbors(
+                    context,
+                    index,
+                    (nint)id_data,
+                    (nuint)id_len,
+                    (nint)output_ids,
+                    (nuint)output_ids_len,
+                    (nint)output_distances,
+                    (nuint)output_distances_len,
+                    continuationAddr
+                );
+            }
+            finally
+            {
+                outputIdsHandle?.Free();
+                outputDistancesHandle?.Free();
+            }
+        }
+
         public bool RandomMembers(
             ulong context,
             nint index,
@@ -442,6 +516,19 @@ namespace Garnet.server
             nint filter_data,
             nuint filter_len,
             nuint max_filtering_effort,
+            nint output_ids,
+            nuint output_ids_len,
+            nint output_distances,
+            nuint output_distances_len,
+            nint continuation
+        );
+
+        [LibraryImport(DISKANN_GARNET)]
+        public static partial int search_neighbors(
+            ulong context,
+            nint index,
+            nint id_data,
+            nuint id_len,
             nint output_ids,
             nuint output_ids_len,
             nint output_distances,

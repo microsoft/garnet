@@ -638,10 +638,10 @@ namespace Garnet.server
         }
 
         /// <inheritdoc/>
-        public GarnetStatus VectorSetLinks(PinnedSpanByte key, PinnedSpanByte element, bool withScores, ref SpanByteAndMemory idResults, ref SpanByteAndMemory distanceResults)
+        public GarnetStatus VectorSetLinks(PinnedSpanByte key, PinnedSpanByte element, ref SpanByteAndMemory idResults, ref SpanByteAndMemory distanceResults)
         {
             garnetApi.WATCH(key, StoreType.Main);
-            return garnetApi.VectorSetLinks(key, element, withScores, ref idResults, ref distanceResults);
+            return garnetApi.VectorSetLinks(key, element, ref idResults, ref distanceResults);
         }
 
         /// <inheritdoc/>

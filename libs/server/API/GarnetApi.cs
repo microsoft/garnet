@@ -386,8 +386,8 @@ namespace Garnet.server
         => storageSession.VectorSetIsMember(key, element);
 
         /// <inheritdoc/>
-        public GarnetStatus VectorSetLinks(PinnedSpanByte key, PinnedSpanByte element, bool withScores, ref SpanByteAndMemory idResults, ref SpanByteAndMemory distanceResults)
-        => storageSession.VectorSetLinks(key, element, withScores, ref idResults, ref distanceResults);
+        public GarnetStatus VectorSetLinks(PinnedSpanByte key, PinnedSpanByte element, ref SpanByteAndMemory idResults, ref SpanByteAndMemory distanceResults)
+        => storageSession.VectorSetLinks(key, element, ref idResults, ref distanceResults);
 
         /// <inheritdoc/>
         public GarnetStatus VectorSetRandomMembers(PinnedSpanByte key, int count, ref SpanByteAndMemory idResults, out int actualCount)

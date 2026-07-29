@@ -497,7 +497,7 @@ namespace Garnet.server
         /// <summary>
         /// Determine neighbors of a given element, and (optionally) the distance to each neighbor.
         /// </summary>
-        internal GarnetStatus VectorSetLinks(PinnedSpanByte key, PinnedSpanByte element, bool withScores, ref SpanByteAndMemory idResults, ref SpanByteAndMemory memoryResults)
+        internal GarnetStatus VectorSetLinks(PinnedSpanByte key, PinnedSpanByte element, ref SpanByteAndMemory idResults, ref SpanByteAndMemory distanceResults)
         {
             parseState.InitializeWithArgument(key);
 
@@ -510,10 +510,8 @@ namespace Garnet.server
                     return status;
                 }
 
-                // TODO: Implement!
-                idResults.Length = 0;
-                memoryResults.Length = 0;
-                return GarnetStatus.OK;
+                var res = vectorManager.GetNeighbors(indexSpan, element, ref idResults, ref distanceResults);
+                return res == VectorManagerResult.OK && distanceResults.Length > 0 ? GarnetStatus.OK : GarnetStatus.NOTFOUND;
             }
         }
 
