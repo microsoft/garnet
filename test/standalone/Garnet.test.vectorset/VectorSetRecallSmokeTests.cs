@@ -19,7 +19,7 @@ namespace Garnet.test
     ///   * quantization mode (NOQUANT / Q8 / BIN),
     ///   * larger-than-memory (records spill to the storage tier during load, or are evicted to disk),
     ///   * read-cache vs copy-reads-to-tail vs neither,
-    ///   * save -> restart -> recover (optionally evicting the recovered graph back to disk).
+    ///   * save -> restart -> recover (optionally recovering into a much smaller log).
     ///
     /// The invariant under test is <b>physical robustness</b>: a graph that answers queries well while
     /// resident in memory must keep answering them well once the same records are served from disk, or
@@ -154,23 +154,28 @@ namespace Garnet.test
 
         /// <summary>
         /// Build a graph, checkpoint it, restart the server and recover. Recall must survive the round
-        /// trip. When <paramref name="evictAfterRecover"/> is set, the recovered graph is flushed to disk
-        /// before querying — exercising recover + served-from-disk (larger-than-memory) together.
+        /// trip. When <paramref name="recoverIntoSmallerLog"/> is set, the graph is recovered into a much
+        /// smaller log (same, valid page geometry) so its records no longer fit in memory and are served
+        /// from disk — recovering onto a "smaller box" must still work correctly.
         /// </summary>
         [Test]
         public async Task RecallSurvivesSaveAndRecover(
             [Values("NOQUANT", "Q8", "BIN")] string quant,
-            [Values(false, true)] bool evictAfterRecover)
+            [Values(false, true)] bool recoverIntoSmallerLog)
         {
+            // Vector sets require PageSize >= 16K; keep it fixed across build + recover (checkpoints are
+            // page-size sensitive), and only shrink the log *memory* on recover.
             server = TestUtils.CreateGarnetServer(
                 TestUtils.MethodTestDir,
+                memorySize: "8m",
+                pageSize: "16k",
                 enableAOF: true,
                 aofMemorySize: "2g",
                 enableVectorSetPreview: true);
             server.Start();
 
             var data = GenerateData(500);
-            var key = $"recover_{quant}_{evictAfterRecover}";
+            var key = $"recover_{quant}_{recoverIntoSmallerLog}";
 
             double before;
             using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))
@@ -190,10 +195,13 @@ namespace Garnet.test
                 ClassicAssert.IsTrue(committed, "checkpoint commit did not complete");
             }
 
-            // Restart and recover from the checkpoint (same log/page geometry — checkpoints are size-sensitive).
+            // Restart and recover. Optionally recover into a much smaller log (same 16K pages) so the
+            // recovered graph spills to disk — "recover onto a smaller box".
             server.Dispose(deleteDir: false);
             server = TestUtils.CreateGarnetServer(
                 TestUtils.MethodTestDir,
+                memorySize: recoverIntoSmallerLog ? "64k" : "8m",
+                pageSize: "16k",
                 enableAOF: true,
                 aofMemorySize: "2g",
                 tryRecover: true,
@@ -204,15 +212,12 @@ namespace Garnet.test
             {
                 var db = redis.GetDatabase(0);
 
-                if (evictAfterRecover)
-                {
-                    _ = db.Execute("DEBUG", "FLUSHANDEVICT");
-                    AssertEvictedToDisk(redis, "recovered records should have been evicted to disk");
-                }
+                if (recoverIntoSmallerLog)
+                    AssertEvictedToDisk(redis, "recovering into a smaller log should leave records on disk");
 
                 var after = MeasureRecall(db, key, data);
                 ClassicAssert.GreaterOrEqual(after, before - MaxRecallDrop,
-                    $"{quant} [evictAfterRecover={evictAfterRecover}]: recall collapsed after save+restart+recover " +
+                    $"{quant} [recoverIntoSmallerLog={recoverIntoSmallerLog}]: recall collapsed after save+restart+recover " +
                     $"(before {before:F3} -> after {after:F3}). For Q8 this is the known " +
                     "quantization-table-lost-on-recreate bug (diskann-garnet 4.0.0).");
             }
