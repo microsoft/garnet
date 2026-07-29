@@ -747,17 +747,19 @@ namespace Tsavorite.core
                 else
                 {
                     startOffset = 0;    // Include the PageHeader in the page output
-                    // numBytesToWrite already spans the whole page measured from the page start, so the
-                    // page-relative end must not exceed the page: a full-page flush writes exactly the page
-                    // and never past it (which, when a segment holds a single page, would cross into the
-                    // next segment). Records never span pages, so this only clamps the header double-count.
-                    if (endOffset > PageSize)
-                        endOffset = PageSize;
                     numBytesToWrite = (uint)(endOffset - startOffset);
                 }
             }
             else
                 Debug.Assert(asyncResult.flushRequestState != FlushRequestState.Recovery, "FlushRequestState.IsForRecovery should always be done an entire page at a time");
+
+            // A page write must never extend past the page: records never span pages, and when a segment
+            // holds a single page this also keeps the write within its segment (NativeStorageDevice rejects,
+            // and managed devices silently grow, a write whose end exceeds the segment). Clamp defensively so
+            // no flush path (full-page recovery whose fromAddress starts past the PageHeader, mid-page start,
+            // or partial snapshot) can push the write end past the page boundary.
+            if (startOffset + (int)numBytesToWrite > PageSize)
+                numBytesToWrite = (uint)(PageSize - startOffset);
 
             var alignedStartOffset = RoundDown(startOffset, (int)device.SectorSize);
             var startPadding = startOffset - alignedStartOffset;

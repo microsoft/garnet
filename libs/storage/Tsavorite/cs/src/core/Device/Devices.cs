@@ -66,15 +66,23 @@ namespace Tsavorite.core
         /// <summary>
         /// Get default device type for the current platform. <see cref="DeviceType.Native"/> maps to the
         /// OS-optimized backend: <see cref="LocalStorageDevice"/> on Windows and <see cref="NativeStorageDevice"/>
-        /// (libaio / io_uring) on Linux. Platforms without a Native implementation (e.g. macOS) fall back to the
-        /// managed <see cref="DeviceType.RandomAccess"/> device.
+        /// (libaio / io_uring) on Linux. The Linux native library is currently shipped only for x64, so other
+        /// Linux architectures (e.g. arm64) and platforms without a Native implementation (e.g. macOS) fall back
+        /// to the managed <see cref="DeviceType.RandomAccess"/> device.
         /// </summary>
         /// <returns></returns>
         public static DeviceType GetDefaultDeviceType()
         {
-            return RuntimeInformation.IsOSPlatform(OSPlatform.Windows) || RuntimeInformation.IsOSPlatform(OSPlatform.Linux)
-                ? DeviceType.Native
-                : DeviceType.RandomAccess;
+            if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+                return DeviceType.Native;
+
+            // NativeStorageDevice on Linux loads a prebuilt native library that is only shipped for x64
+            // (runtimes/linux-x64). On other Linux architectures the library is absent/unloadable, so fall
+            // back to the managed RandomAccess device rather than failing on the first storage IO.
+            if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux) && RuntimeInformation.ProcessArchitecture == Architecture.X64)
+                return DeviceType.Native;
+
+            return DeviceType.RandomAccess;
         }
     }
 }
