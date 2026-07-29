@@ -19,8 +19,10 @@ namespace Tsavorite.core
         Native = 1,
 
         /// <summary>
-        /// Use device based on .NET RandomAccess. This is the default only on platforms that have no
-        /// <see cref="Native"/> implementation (e.g. macOS); Windows and Linux default to <see cref="Native"/>.
+        /// Use device based on .NET RandomAccess. This is the default on platforms that have no
+        /// <see cref="Native"/> implementation for the current OS/architecture: macOS, and non-x64 Linux
+        /// (e.g. arm64), since the Linux native library is currently shipped only for x64. Windows and
+        /// x64 Linux default to <see cref="Native"/>.
         /// </summary>
         RandomAccess = 2,
 

@@ -264,7 +264,7 @@ namespace Tsavorite.core
         public override string ToString()
         {
             var callbackString = callback is null ? "null" : callback.ToString();
-            var contextString = callback is null ? "null" : context.ToString();
+            var contextString = context is null ? "null" : context.ToString();
             return $"numBytes {numBytes}, count {count}, firstErrorCode {firstErrorCode}, callback {callbackString}, context {contextString}";
         }
 
@@ -273,6 +273,10 @@ namespace Tsavorite.core
             this.callback = callback;
             this.context = context;
             this.numBytes = numBytes;
+            // Intentionally do NOT reset firstErrorCode here. A fresh instance is created per partial flush
+            // (CircularDiskWriteBuffer.OnBeginPartialFlush -> new()), and within a flush a device write can
+            // complete with an error and call RecordError before OnPartialFlushComplete installs the callback
+            // via Set(). Resetting here would discard such a pre-Set error and let a failed flush report success.
         }
 
         internal void Increment() => _ = Interlocked.Increment(ref count);
