@@ -170,6 +170,7 @@ namespace Garnet.server
                 AdvanceTo(i);
 
                 ReadOnlySpan<byte> keyBytes = new(currentPtr + 4, currentLen);
+                Debug.Assert((keyBytes.Length % 4) == 0, "Unaligned key provided by DiskANN");
 
                 key = new(NamespaceBytes, keyBytes);
             }
@@ -364,6 +365,8 @@ namespace Garnet.server
         [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
         private static byte DeleteCallbackUnmanaged(ulong context, nint keyData, nuint keyLength)
         {
+            Debug.Assert((keyLength % 4) == 0, "Unaligned key provided by DiskANN");
+
             var keyWithNamespace = MakeVectorElementKey(context, keyData, keyLength);
 
             ref var ctx = ref ActiveThreadSession.vectorBasicContext;
@@ -377,6 +380,8 @@ namespace Garnet.server
         [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
         private static byte ReadModifyWriteCallbackUnmanaged(ulong context, nint keyData, nuint keyLength, nuint writeLength, nint dataCallback, nint dataCallbackContext)
         {
+            Debug.Assert((keyLength % 4) == 0, "Unaligned key provided by DiskANN");
+
             var keyWithNamespace = MakeVectorElementKey(context, keyData, keyLength);
 
             ref var ctx = ref ActiveThreadSession.vectorBasicContext;
