@@ -747,6 +747,12 @@ namespace Tsavorite.core
                 else
                 {
                     startOffset = 0;    // Include the PageHeader in the page output
+                    // numBytesToWrite already spans the whole page measured from the page start, so the
+                    // page-relative end must not exceed the page: a full-page flush writes exactly the page
+                    // and never past it (which, when a segment holds a single page, would cross into the
+                    // next segment). Records never span pages, so this only clamps the header double-count.
+                    if (endOffset > PageSize)
+                        endOffset = PageSize;
                     numBytesToWrite = (uint)(endOffset - startOffset);
                 }
             }
