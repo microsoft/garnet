@@ -185,14 +185,7 @@ namespace Garnet.server
             // Constant size indicated
             if (needsAlignmentPadding)
             {
-                // CopyUpdater copies the full existing value into the new record before invoking the
-                // DiskANN callback (which reads it back as part of its read-modify-write). The
-                // destination must therefore be large enough to hold whichever is larger: the requested
-                // write size (padded for alignment), or the existing value being copied in. Sizing it to
-                // only WriteDesiredSize truncates a shrinking update and overflows the CopyTo in
-                // CopyUpdater ("Destination is too short").
-                var valueSize = Math.Max(input.WriteDesiredSize + ValueAlignmentBytes, value.Length);
-                return new() { KeySize = srcLogRecord.Key.Length, ValueSize = valueSize, ExtendedNamespaceSize = GetExtendedNamespaceSize(in srcLogRecord) };
+                return new() { KeySize = srcLogRecord.Key.Length, ValueSize = input.WriteDesiredSize + ValueAlignmentBytes, ExtendedNamespaceSize = GetExtendedNamespaceSize(in srcLogRecord) };
             }
             else
             {
