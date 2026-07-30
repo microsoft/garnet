@@ -3770,6 +3770,7 @@ namespace Garnet.test
             (nameof(VectorManager.MigrateIndexKeyLogArg), VectorManager.MigrateIndexKeyLogArg),
             (nameof(VectorManager.VADDSetFlagsArg), VectorManager.VADDSetFlagsArg),
             (nameof(VectorManager.CreateIndexArg), VectorManager.CreateIndexArg),
+            (nameof(VectorManager.VSETATTRAppendLogArg), VectorManager.VSETATTRAppendLogArg),
             ("DefaultZero", 0L),
             ("ArbitraryUnknown", unchecked((long)0x5EED_BEEF_5EED_BEEFL)),
         ];
