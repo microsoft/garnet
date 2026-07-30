@@ -99,6 +99,18 @@ namespace Tsavorite.core
         /// </summary>
         internal bool isDirty;
 
+        /// <summary>
+        /// Pool-internal: the free-list stripe this buffer was rented from, recorded at
+        /// <see cref="SectorAlignedBufferPool.Get(int,bool)"/> time so the matching
+        /// <see cref="SectorAlignedBufferPool.Return(SectorAlignedMemory)"/> enqueues it back
+        /// to its ORIGIN stripe regardless of which thread returns it. Without this, a buffer
+        /// rented on one thread and returned on another (e.g. a page flush issued by a session
+        /// thread and completed on a device drainer, or a RESP disk read completed off the
+        /// issuing thread) would strand on the returner's stripe while the renter's stripe
+        /// keeps allocating fresh buffers — an unbounded pinned-object-heap (POH) leak.
+        /// </summary>
+        internal int stripe;
+
         private int level;
         internal int Level => level
 #if CHECK_FREE
@@ -268,9 +280,12 @@ namespace Tsavorite.core
         /// Number of per-level free-list stripes (power of two). Each (level, stripe) pair has its own
         /// <see cref="ConcurrentQueue{T}"/>, so concurrent renters/returners on different threads touch
         /// different cache lines instead of contending on a single per-level queue. A thread is assigned a
-        /// stable stripe on first use (<see cref="CurrentStripe"/>); because a disk read rents its buffer and
-        /// returns it on the same session thread, rent and return hit the same stripe — near-zero contention
-        /// and self-balancing. Sized well above typical NUMA-node thread counts to keep collisions rare.
+        /// stable stripe on first use (<see cref="CurrentStripe"/>) and rents from it; the buffer records its
+        /// origin stripe (<see cref="SectorAlignedMemory.stripe"/>) and <see cref="Return"/> enqueues it back
+        /// to that origin, so rent and return always land on the same stripe even when a different thread
+        /// returns the buffer (page-flush completion on a drainer, off-thread RESP read completion). This keeps
+        /// the free-list bounded by peak concurrent in-flight rather than leaking on cross-thread returns.
+        /// Sized well above typical NUMA-node thread counts to keep collisions rare.
         /// </summary>
         private const int stripes = 128;
 
@@ -398,7 +413,7 @@ namespace Tsavorite.core
                     page.handle.Free();
                     page.handle = default;
                 }
-                GetOrCreateQueue(page.Level * stripes + CurrentStripe()).Enqueue(page);
+                GetOrCreateQueue(page.Level * stripes + page.stripe).Enqueue(page);
             }
             else
             {
@@ -451,7 +466,8 @@ namespace Tsavorite.core
             int required_bytes = numRecords * recordSize;
             int requiredSize = RoundUp(required_bytes, sectorSize);
             int index = Position(requiredSize / sectorSize);
-            var q = GetOrCreateQueue(index * stripes + CurrentStripe());
+            int st = CurrentStripe();
+            var q = GetOrCreateQueue(index * stripes + st);
 
             if (!Disabled && q.TryDequeue(out SectorAlignedMemory page))
             {
@@ -475,6 +491,7 @@ namespace Tsavorite.core
                 }
                 page.required_bytes = required_bytes;
                 page.clearOnReturn = clearOnReturn;
+                page.stripe = st;
                 return page;
             }
 
@@ -492,6 +509,7 @@ namespace Tsavorite.core
             // Freshly-allocated buffer from GC.AllocateArray is zero-init; isDirty stays false.
             page.clearOnReturn = clearOnReturn;
             page.pool = this;
+            page.stripe = st;
             return page;
         }
 
