@@ -114,7 +114,7 @@ namespace Resp.benchmark
             int offset;
 
             if (randomServe)
-                offset = r.Next(NumBuffs);
+                offset = Random.Shared.Next(NumBuffs);
             else
                 offset = (Interlocked.Increment(ref seqNo) - 1) % NumBuffs;
 
@@ -126,7 +126,7 @@ namespace Resp.benchmark
         {
             int offset;
             if (randomServe)
-                offset = r.Next(flatRequestBuffer.Count);
+                offset = Random.Shared.Next(flatRequestBuffer.Count);
             else
                 offset = (Interlocked.Increment(ref seqNo) - 1) % flatRequestBuffer.Count;
 

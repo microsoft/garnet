@@ -287,7 +287,7 @@ namespace Resp.benchmark
                 var bench = new RespPerfBench(opts, 0, redis);
 
                 if (!opts.SkipLoad)
-                    bench.LoadData(keyLen: keyLen, valueLen: valueLen, numericValue: opts.Op == OpType.INCR);
+                    bench.LoadData(loadDbThreads: opts.LoadThreads, keyLen: keyLen, valueLen: valueLen, numericValue: opts.Op == OpType.INCR);
 
                 // --runtime 0 seeds the keyspace only; skip the run phase.
                 if (opts.RunTime != 0)
