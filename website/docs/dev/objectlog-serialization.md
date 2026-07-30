@@ -140,6 +140,16 @@ and the completion marks the page durable even though the superseding tail recor
 durable — a crash can then recover a cleared/malformed old record. The synchronous `srcBuffer` copy captures a
 point-in-time image and the async write reads that isolated buffer, avoiding the hazard.
 
+**Why "invalidate before clear" is not enough.** An attempt to make no-copy safe by making every mutator flip the record
+to **Invalid atomically before** clearing its fields (`SealAndInvalidate()` then `OnDispose`, matching the elide path in
+`CreateNewRecordUpsert`/RMW, and changing `CreateNewRecordDelete` to do the same) was implemented and **reverted**: it does
+not close the race. The async device write reads the live page *over the whole I/O duration*, so it can read the old
+**Valid** `RecordInfo` at one instant and the concurrently-cleared body at a later instant — persisting a torn *Valid*
+record even though the flip to Invalid happened in between. Invalidate-before-clear only helps an in-memory reader (which
+sees one atomic word); it cannot help a byte-by-byte device read of a mutating buffer. (Separately, not only Delete mutates
+Valid read-only sources: RMW expiration and object CopyUpdate also clear/dispose the source before sealing.) The copy path
+is safe precisely because the device reads a private `srcBuffer` snapshot that no concurrent operation touches.
+
 **Path to a safe no-copy:** a page-level freeze that blocks all in-place record mutation (seal/dispose) for records in an
 in-flight flush range until I/O completion (e.g. a per-page flush-in-progress guard checked by the seal/dispose sites), so
 the live page is byte-stable for the whole device write. This is a non-trivial protocol change to the epoch-sensitive
