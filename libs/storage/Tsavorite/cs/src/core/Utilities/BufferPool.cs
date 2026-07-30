@@ -263,9 +263,30 @@ namespace Tsavorite.core
         public static bool UnpinOnReturn;
 
         private const int levels = 32;
+
+        /// <summary>
+        /// Number of per-level free-list stripes (power of two). Each (level, stripe) pair has its own
+        /// <see cref="ConcurrentQueue{T}"/>, so concurrent renters/returners on different threads touch
+        /// different cache lines instead of contending on a single per-level queue. A thread is assigned a
+        /// stable stripe on first use (<see cref="CurrentStripe"/>); because a disk read rents its buffer and
+        /// returns it on the same session thread, rent and return hit the same stripe — near-zero contention
+        /// and self-balancing. Sized well above typical NUMA-node thread counts to keep collisions rare.
+        /// </summary>
+        private const int stripes = 128;
+
         private readonly int recordSize;
         private readonly int sectorSize;
+
+        /// <summary>Per-(level, stripe) free-lists, flattened as <c>queue[level * stripes + stripe]</c>. Slots are allocated lazily.</summary>
         private readonly ConcurrentQueue<SectorAlignedMemory>[] queue;
+
+        /// <summary>Stable per-thread stripe, biased by one so the default (0) means "unassigned". Shared across pool instances so a thread uses one stripe everywhere.</summary>
+        [ThreadStatic]
+        private static int t_stripePlusOne;
+
+        /// <summary>Round-robin stripe dispenser; the first <see cref="stripes"/> distinct threads get distinct stripes.</summary>
+        private static int stripeAssignCounter = -1;
+
 #if CHECK_FOR_LEAKS
         static int totalGets, totalReturns;
 #endif
@@ -277,9 +298,38 @@ namespace Tsavorite.core
         /// <param name="sectorSize">Sector size, e.g. from log device</param>
         public SectorAlignedBufferPool(int recordSize, int sectorSize)
         {
-            queue = new ConcurrentQueue<SectorAlignedMemory>[levels];
+            queue = new ConcurrentQueue<SectorAlignedMemory>[levels * stripes];
             this.recordSize = recordSize;
             this.sectorSize = sectorSize;
+        }
+
+        /// <summary>
+        /// The calling thread's stable free-list stripe, assigned on first use via a shared round-robin counter.
+        /// Kept constant for a thread's lifetime so its rents and returns land in the same per-level queue.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private static int CurrentStripe()
+        {
+            int s = t_stripePlusOne;
+            if (s == 0)
+            {
+                s = (Interlocked.Increment(ref stripeAssignCounter) & (stripes - 1)) + 1;
+                t_stripePlusOne = s;
+            }
+            return s - 1;
+        }
+
+        /// <summary>Returns the free-list at <paramref name="slot"/>, allocating it on first use.</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private ConcurrentQueue<SectorAlignedMemory> GetOrCreateQueue(int slot)
+        {
+            var q = queue[slot];
+            if (q is null)
+            {
+                var localPool = new ConcurrentQueue<SectorAlignedMemory>();
+                q = Interlocked.CompareExchange(ref queue[slot], localPool, null) ?? localPool;
+            }
+            return q;
         }
 
         public void EnsureSize(ref SectorAlignedMemory page, int size)
@@ -321,7 +371,7 @@ namespace Tsavorite.core
             page.Free = true;
 #endif // CHECK_FREE
 
-            Debug.Assert(queue[page.Level] != null);
+            Debug.Assert((uint)page.Level < levels);
             page.available_bytes = 0;
             page.required_bytes = 0;
             page.valid_offset = 0;
@@ -348,7 +398,7 @@ namespace Tsavorite.core
                     page.handle.Free();
                     page.handle = default;
                 }
-                queue[page.Level].Enqueue(page);
+                GetOrCreateQueue(page.Level * stripes + CurrentStripe()).Enqueue(page);
             }
             else
             {
@@ -401,13 +451,9 @@ namespace Tsavorite.core
             int required_bytes = numRecords * recordSize;
             int requiredSize = RoundUp(required_bytes, sectorSize);
             int index = Position(requiredSize / sectorSize);
-            if (queue[index] == null)
-            {
-                var localPool = new ConcurrentQueue<SectorAlignedMemory>();
-                Interlocked.CompareExchange(ref queue[index], localPool, null);
-            }
+            var q = GetOrCreateQueue(index * stripes + CurrentStripe());
 
-            if (!Disabled && queue[index].TryDequeue(out SectorAlignedMemory page))
+            if (!Disabled && q.TryDequeue(out SectorAlignedMemory page))
             {
 #if CHECK_FREE
                 page.Free = false;
@@ -458,7 +504,7 @@ namespace Tsavorite.core
 #if CHECK_FOR_LEAKS
             Debug.Assert(totalGets == totalReturns);
 #endif
-            for (int i = 0; i < levels; i++)
+            for (int i = 0; i < queue.Length; i++)
             {
                 if (queue[i] == null) continue;
                 while (queue[i].TryDequeue(out SectorAlignedMemory result))
@@ -471,7 +517,7 @@ namespace Tsavorite.core
         /// </summary>
         public void Print()
         {
-            for (int i = 0; i < levels; i++)
+            for (int i = 0; i < queue.Length; i++)
             {
                 if (queue[i] == null) continue;
                 foreach (var item in queue[i])

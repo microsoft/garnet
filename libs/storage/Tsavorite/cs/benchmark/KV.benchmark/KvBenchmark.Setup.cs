@@ -141,7 +141,8 @@ namespace Tsavorite.kvbench
                     deleteOnClose: true,
                     disableFileBuffering: true,
                     numCompletionThreads: numCt,
-                    ioBackend: opts.ResolvedIoBackend);
+                    ioBackend: opts.ResolvedIoBackend,
+                    numIoContexts: opts.DeviceIoContexts);
             }
             else if (devType == DeviceType.Null)
             {

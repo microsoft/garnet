@@ -43,6 +43,17 @@ class Thread {
   static constexpr size_t kMaxNumThreads = 256;
 
  private:
+  /// Cache-line-padded atomic flag: exactly one slot per line. acquire_id()/release_id() run
+  /// on every device IO and CAS+store the calling thread's own id_used_ slot; without padding
+  /// the 1-byte atomics pack ~64 per line, so nearby thread indices (next_index_++ hands out
+  /// 0,1,2,... so the first N threads land in one line) false-share it and every submit/complete
+  /// ping-pongs the line across cores (profiled at ~13% CPU at multi-million IOPS). 128-byte
+  /// alignment also defeats the adjacent-line spatial prefetcher and mirrors the managed
+  /// NativeStorageDevice shard spacing.
+  struct alignas(128) PaddedAtomicFlag {
+    std::atomic<bool> flag;
+  };
+
   /// Encapsulates a thread ID, getting a free ID from the Thread class when the thread starts, and
   /// releasing it back to the Thread class, when the thread exits.
   class ThreadId {
@@ -109,7 +120,7 @@ class Thread {
       uint32_t end = start + 2 * kMaxNumThreads;
       for (uint32_t id = start; id < end; ++id) {
         bool expected = false;
-        if (id_used_[id % kMaxNumThreads].compare_exchange_strong(expected, true)) {
+        if (id_used_[id % kMaxNumThreads].flag.compare_exchange_strong(expected, true)) {
           return id % kMaxNumThreads;
         }
       }
@@ -126,8 +137,8 @@ class Thread {
 
   inline static void ReleaseEntry(uint32_t id) {
     assert(id != ThreadId::kInvalidId);
-    assert(id_used_[id].load());
-    id_used_[id] = false;
+    assert(id_used_[id].flag.load());
+    id_used_[id].flag = false;
 #ifdef COUNT_ACTIVE_THREADS
     int32_t result = --current_num_threads_;
 #endif
@@ -139,8 +150,9 @@ class Thread {
 
   /// Next thread index to consider.
   static std::atomic<uint32_t> next_index_;
-  /// Which thread IDs have already been taken.
-  static std::atomic<bool> id_used_[kMaxNumThreads];
+  /// Which thread IDs have already been taken. Each flag is cache-line padded (PaddedAtomicFlag)
+  /// so the per-IO acquire/release CAS+store on a thread's own slot does not false-share.
+  static PaddedAtomicFlag id_used_[kMaxNumThreads];
 
 #ifdef COUNT_ACTIVE_THREADS
   static std::atomic<int32_t> current_num_threads_;
