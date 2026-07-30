@@ -29,10 +29,16 @@ namespace Resp.benchmark
                     RunOnlineLightClient(primaryEndpoint, replicaEndpoint, startSignal, runTime);
                     break;
                 case ClientType.GarnetClientSession:
-                    RunOnlineGarnetClientSession(primaryEndpoint, replicaEndpoint, startSignal, runTime);
+                    if (opts.IntraThreadParallelism > 1)
+                        RunOnlineGarnetClientSessionParallel(primaryEndpoint, replicaEndpoint, startSignal, runTime);
+                    else
+                        RunOnlineGarnetClientSession(primaryEndpoint, replicaEndpoint, startSignal, runTime);
                     break;
                 case ClientType.GarnetClient:
-                    RunOnlineGarnetClient(primaryEndpoint, replicaEndpoint, startSignal, runTime);
+                    if (opts.IntraThreadParallelism > 1)
+                        RunOnlineGarnetClientParallel(primaryEndpoint, replicaEndpoint, startSignal, runTime);
+                    else
+                        RunOnlineGarnetClient(primaryEndpoint, replicaEndpoint, startSignal, runTime);
                     break;
                 default:
                     throw new NotSupportedException($"Client type {opts.Client} not supported in cluster bench mode.");
@@ -161,6 +167,90 @@ namespace Resp.benchmark
 
                 var sw = Stopwatch.StartNew();
                 var dbSizePerShard = opts.DbSize;
+
+                while (!done && sw.Elapsed < runTime)
+                {
+                    var opStart = Stopwatch.GetTimestamp();
+                    var op = SelectOpType();
+                    var useReplica = ShouldUseReplica(op);
+                    var client = (useReplica && replicaClient != null) ? replicaClient : primaryClient;
+                    var key = keyGen.GenerateKey(rng, rng.Next(dbSizePerShard));
+
+                    switch (op)
+                    {
+                        case OpType.SET:
+                            client.Execute("SET", key, GenerateValue());
+                            break;
+                        case OpType.INCR:
+                            client.Execute("INCR", key);
+                            break;
+                        case OpType.DEL:
+                            client.Execute("DEL", key);
+                            break;
+                        default:
+                            client.Execute("GET", key);
+                            break;
+                    }
+
+                    client.CompletePending();
+
+                    var elapsed = Stopwatch.GetTimestamp() - opStart;
+
+                    if (elapsed > HISTOGRAM_LOWER_BOUND && elapsed < HISTOGRAM_UPPER_BOUND)
+                        histogram.RecordValue(elapsed);
+
+                    _ = Interlocked.Increment(ref opsCompleted);
+                    if (useReplica && replicaClient != null)
+                        _ = Interlocked.Increment(ref replicaOps);
+                    else
+                        _ = Interlocked.Increment(ref primaryOps);
+                }
+            }
+            finally
+            {
+                replicaClient?.Dispose();
+            }
+        }
+
+        private void RunOnlineGarnetClientSessionParallel(IPEndPoint primaryEndpoint, IPEndPoint replicaEndpoint, ManualResetEventSlim startSignal, TimeSpan runTime)
+        {
+            var bufferSize = Math.Max(131072, opts.IntraThreadParallelism * opts.ValueLength);
+            using var primaryClient = new GarnetClientSession(
+                primaryEndpoint,
+                new NetworkBufferSettings(bufferSize),
+                tlsOptions: opts.EnableTLS ? BenchUtils.GetTlsOptions(opts.TlsHost, opts.CertFileName, opts.CertPassword) : null);
+
+            primaryClient.Connect();
+
+            if (opts.Auth != null)
+            {
+                primaryClient.Execute("AUTH", opts.Auth);
+                primaryClient.CompletePending();
+            }
+
+            GarnetClientSession replicaClient = null;
+            if (replicaEndpoint != null)
+            {
+                replicaClient = new GarnetClientSession(
+                    replicaEndpoint,
+                    new NetworkBufferSettings(bufferSize),
+                    tlsOptions: opts.EnableTLS ? BenchUtils.GetTlsOptions(opts.TlsHost, opts.CertFileName, opts.CertPassword) : null);
+
+                replicaClient.Connect();
+
+                if (opts.Auth != null)
+                {
+                    replicaClient.Execute("AUTH", opts.Auth);
+                    replicaClient.CompletePending();
+                }
+            }
+
+            try
+            {
+                startSignal.Wait();
+
+                var sw = Stopwatch.StartNew();
+                var dbSizePerShard = opts.DbSize;
                 var itp = opts.IntraThreadParallelism;
 
                 while (!done && sw.Elapsed < runTime)
@@ -172,30 +262,26 @@ namespace Resp.benchmark
                     for (var p = 0; p < itp; p++)
                     {
                         var op = SelectOpType();
-
-                        // Route based on operation type
                         var useReplica = ShouldUseReplica(op);
                         var client = (useReplica && replicaClient != null) ? replicaClient : primaryClient;
-
                         var key = keyGen.GenerateKey(rng, rng.Next(dbSizePerShard));
 
                         switch (op)
                         {
                             case OpType.SET:
-                                client.Execute("SET", key, GenerateValue());
+                                client.ExecuteBatch(["SET", key, GenerateValue()]);
                                 break;
                             case OpType.INCR:
-                                client.Execute("INCR", key);
+                                client.ExecuteBatch(["INCR", key]);
                                 break;
                             case OpType.DEL:
-                                client.Execute("DEL", key);
+                                client.ExecuteBatch(["DEL", key]);
                                 break;
                             default:
-                                client.Execute("GET", key);
+                                client.ExecuteBatch(["GET", key]);
                                 break;
                         }
 
-                        // Track routing
                         if (useReplica && replicaClient != null)
                             replicaCount++;
                         else
@@ -254,6 +340,76 @@ namespace Resp.benchmark
 
                 var sw = Stopwatch.StartNew();
                 var dbSizePerShard = opts.DbSize;
+
+                while (!done && sw.Elapsed < runTime)
+                {
+                    var opStart = Stopwatch.GetTimestamp();
+                    var op = SelectOpType();
+                    var useReplica = ShouldUseReplica(op);
+                    var client = (useReplica && replicaClient != null) ? replicaClient : primaryClient;
+                    var key = keyGen.GenerateKey(rng, rng.Next(dbSizePerShard));
+
+                    Task task = op switch
+                    {
+                        OpType.SET => client.StringSetAsync(key, GenerateValue()),
+                        OpType.INCR => client.ExecuteForStringResultAsync("INCR", [key]),
+                        OpType.DEL => client.ExecuteForStringResultAsync("DEL", [key]),
+                        _ => client.StringGetAsMemoryAsync(key),
+                    };
+
+                    task.GetAwaiter().GetResult();
+
+                    var elapsed = Stopwatch.GetTimestamp() - opStart;
+
+                    if (elapsed > HISTOGRAM_LOWER_BOUND && elapsed < HISTOGRAM_UPPER_BOUND)
+                        histogram.RecordValue(elapsed);
+
+                    _ = Interlocked.Increment(ref opsCompleted);
+                    if (useReplica && replicaClient != null)
+                        _ = Interlocked.Increment(ref replicaOps);
+                    else
+                        _ = Interlocked.Increment(ref primaryOps);
+                }
+            }
+            finally
+            {
+                primaryClient.Dispose();
+                replicaClient?.Dispose();
+            }
+        }
+
+        private void RunOnlineGarnetClientParallel(IPEndPoint primaryEndpoint, IPEndPoint replicaEndpoint, ManualResetEventSlim startSignal, TimeSpan runTime)
+        {
+            var primaryClient = new GarnetClient(
+                primaryEndpoint,
+                opts.EnableTLS ? BenchUtils.GetTlsOptions(opts.TlsHost, opts.CertFileName, opts.CertPassword) : null,
+                recordLatency: opts.ClientHistogram);
+
+            primaryClient.Connect();
+
+            if (opts.Auth != null)
+                _ = primaryClient.ExecuteForStringResultAsync("AUTH", [opts.Auth]).GetAwaiter().GetResult();
+
+            GarnetClient replicaClient = null;
+            if (replicaEndpoint != null)
+            {
+                replicaClient = new GarnetClient(
+                    replicaEndpoint,
+                    opts.EnableTLS ? BenchUtils.GetTlsOptions(opts.TlsHost, opts.CertFileName, opts.CertPassword) : null,
+                    recordLatency: opts.ClientHistogram);
+
+                replicaClient.Connect();
+
+                if (opts.Auth != null)
+                    _ = replicaClient.ExecuteForStringResultAsync("AUTH", [opts.Auth]).GetAwaiter().GetResult();
+            }
+
+            try
+            {
+                startSignal.Wait();
+
+                var sw = Stopwatch.StartNew();
+                var dbSizePerShard = opts.DbSize;
                 var itp = opts.IntraThreadParallelism;
 
                 while (!done && sw.Elapsed < runTime)
@@ -266,11 +422,8 @@ namespace Resp.benchmark
                     for (var p = 0; p < itp; p++)
                     {
                         var op = SelectOpType();
-
-                        // Route based on operation type
                         var useReplica = ShouldUseReplica(op);
                         var client = (useReplica && replicaClient != null) ? replicaClient : primaryClient;
-
                         var key = keyGen.GenerateKey(rng, rng.Next(dbSizePerShard));
 
                         tasks[p] = op switch
@@ -281,7 +434,6 @@ namespace Resp.benchmark
                             _ => client.StringGetAsMemoryAsync(key),
                         };
 
-                        // Track routing
                         if (useReplica && replicaClient != null)
                             replicaCount++;
                         else
