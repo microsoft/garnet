@@ -601,11 +601,20 @@ namespace Garnet.server
         {
             AssertHaveStorageSession();
 
-            ReadIndex(indexValue, out var context, out _, out _, out var quantType, out _, out _, out _, out _, out var indexPtr);
+            ReadIndex(indexValue, out var context, out _, out _, out _, out _, out _, out _, out _, out var indexPtr);
 
             var del = Service.Remove(context, indexPtr, element);
 
             return del ? VectorManagerResult.OK : VectorManagerResult.MissingElement;
+        }
+
+        internal bool TrySetAttribute(ReadOnlySpan<byte> indexValue, ReadOnlySpan<byte> element, ReadOnlySpan<byte> attribute)
+        {
+            AssertHaveStorageSession();
+
+            ReadIndex(indexValue, out var context, out _, out _, out _, out _, out _, out _, out _, out var indexPtr);
+
+            return Service.SetAttribute(context, indexPtr, element, attribute);
         }
 
         /// <summary>

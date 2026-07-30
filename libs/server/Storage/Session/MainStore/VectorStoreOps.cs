@@ -266,7 +266,10 @@ namespace Garnet.server
                     return status;
                 }
 
-                // TODO: Implement!
+                if (vectorManager.TrySetAttribute(indexSpan, element, attribute))
+                {
+                    return GarnetStatus.OK;
+                }
 
                 return GarnetStatus.NOTFOUND;
             }

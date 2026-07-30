@@ -318,6 +318,17 @@ namespace Garnet.server
 
             return NativeDiskANNMethods.check_external_id_valid(context, index, (nint)external_id_data, (nuint)external_id_len) == 1;
         }
+
+        public bool SetAttribute(ulong context, nint index, ReadOnlySpan<byte> externalId, ReadOnlySpan<byte> attribute)
+        {
+            var external_id_data = Unsafe.AsPointer(ref MemoryMarshal.GetReference(externalId));
+            var external_id_len = externalId.Length;
+
+            var attribute_data = Unsafe.AsPointer(ref MemoryMarshal.GetReference(attribute));
+            var attribute_len = attribute.Length;
+
+            return NativeDiskANNMethods.set_attribute(context, index, (nint)external_id_data, (nuint)external_id_len, (nint)attribute_data, (nuint)attribute_len) == 1;
+        }
     }
 
     public static partial class NativeDiskANNMethods
