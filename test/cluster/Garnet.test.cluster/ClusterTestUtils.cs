@@ -2966,6 +2966,10 @@ namespace Garnet.test.cluster
         public Role RoleCommand(int nodeIndex, ILogger logger = null)
             => RoleCommand(endpoints[nodeIndex].ToIPEndPoint(), logger);
 
+        /// <summary>Asserts the node's replication role, e.g. "master" or "slave".</summary>
+        public void AssertRole(int nodeIndex, string expectedRole, ILogger logger = null)
+            => ClassicAssert.AreEqual(expectedRole, RoleCommand(nodeIndex, logger).Value, $"node {nodeIndex} should be {expectedRole}");
+
         public Role RoleCommand(IPEndPoint endPoint, ILogger logger = null)
         {
             try

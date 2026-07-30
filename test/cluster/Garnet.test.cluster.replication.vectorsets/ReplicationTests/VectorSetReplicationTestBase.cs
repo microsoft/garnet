@@ -82,8 +82,8 @@ namespace Garnet.test.cluster
             context.ClusterFailoverSpinWait(replicaIndex, context.logger);
             context.clusterTestUtils.WaitForReplicaAofSync(replicaIndex, oldPrimaryIndex, logger: context.logger);
 
-            ClassicAssert.AreEqual("master", context.clusterTestUtils.RoleCommand(context.clusterTestUtils.GetEndPoint(replicaIndex), logger: context.logger).Value);
-            ClassicAssert.AreEqual("slave", context.clusterTestUtils.RoleCommand(context.clusterTestUtils.GetEndPoint(oldPrimaryIndex), logger: context.logger).Value);
+            context.clusterTestUtils.AssertRole(replicaIndex, "master", context.logger);
+            context.clusterTestUtils.AssertRole(oldPrimaryIndex, "slave", context.logger);
         }
 
         protected void MakeReadable(int nodeIndex)
