@@ -93,6 +93,15 @@ namespace Tsavorite.core
         bool TryComplete();
 
         /// <summary>
+        /// Try to complete async IO completions for only the calling thread's affine completion
+        /// context/ring, rather than scanning all of them. Used by the inline submitter-thread
+        /// completion path to avoid redundant per-context work when many threads drain concurrently.
+        /// Devices that do not shard completions may simply fall back to <see cref="TryComplete"/>.
+        /// </summary>
+        /// <returns></returns>
+        bool TryCompleteMine();
+
+        /// <summary>
         /// Whether device should be throttled at this instant (i.e., caller should stop issuing new I/Os)
         /// </summary>
         /// <returns></returns>

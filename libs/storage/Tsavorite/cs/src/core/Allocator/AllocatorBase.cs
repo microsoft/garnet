@@ -497,6 +497,9 @@ namespace Tsavorite.core
 
         internal virtual bool TryComplete() => device.TryComplete();
 
+        /// <summary>Drain only the calling thread's affine device completion context (see <see cref="IDevice.TryCompleteMine"/>).</summary>
+        internal virtual bool TryCompleteMine() => device.TryCompleteMine();
+
         /// <summary>Dispose allocator</summary>
         public virtual void Dispose()
         {
@@ -2344,7 +2347,7 @@ namespace Tsavorite.core
             {
                 while (device.Throttle())
                 {
-                    _ = device.TryComplete();
+                    _ = Constants.InlineDrainAffine ? device.TryCompleteMine() : device.TryComplete();
                     _ = Thread.Yield();
                     epoch.ProtectAndDrain();
                 }

@@ -252,9 +252,11 @@ class QueueIoHandler {
   /// against any cross-instance index reuse (which would be a memory-safety bug
   /// if A had more shards than B).
   /// </para>
-  io_context_t pick_context() {
+  /// Index (into io_objects_) of the calling thread's affine context. Shared by pick_context()
+  /// (submit) and TryCompleteMine() (drain) so a thread reaps from the same context it submits to.
+  int pick_context_index() {
     if (io_objects_.size() == 1) {
-      return io_objects_[0];
+      return 0;
     }
     thread_local const QueueIoHandler* tls_owner = nullptr;
     thread_local int tls_idx = -1;
@@ -263,7 +265,21 @@ class QueueIoHandler {
       tls_idx = static_cast<int>(
           submit_counter_.fetch_add(1, std::memory_order_relaxed) % io_objects_.size());
     }
-    return io_objects_[tls_idx];
+    return tls_idx;
+  }
+
+  io_context_t pick_context() {
+    return io_objects_[pick_context_index()];
+  }
+
+  /// Drain ONLY the calling thread's affine context (the one pick_context() submits to). The inline
+  /// submitter-thread completion path (Tsavorite's CompletePending / AsyncGetFromDisk throttle-wait)
+  /// is the primary reaper at high IOPS; having each run thread poll just its own context issues one
+  /// io_getevents per poll instead of walking every context (Nx fewer syscalls and no cross-context
+  /// aio ring-lock contention). Coverage is preserved because each context has sharing submitters
+  /// and/or a dedicated drainer (QueueRunFor). Reaps a batch per call (see trycomplete_batch_events()).
+  bool TryCompleteMine() {
+    return TryCompleteFor(pick_context_index());
   }
 
   /// Invoked whenever a Linux AIO completes.
@@ -317,6 +333,11 @@ class QueueIoHandler {
   /// the completion drainer without waiting on the QueueRun timeout. Returns 0 on
   /// success, -1 on failure.
   int Wake(int idx);
+
+  /// Submit the calling thread's accumulated read batch (opt-in via GARNET_SUBMIT_BATCH).
+  /// No-op when batching is disabled or the batch is empty. Runs on the submitting thread
+  /// (the batch is thread_local). Returns the number of iocbs submitted to the kernel.
+  int FlushSubmits();
 
  private:
   void Init(int num_contexts) {
@@ -551,11 +572,9 @@ class UringIoHandler {
   /// cross-instance index reuse, which would otherwise be an out-of-bounds read on B's
   /// rings_/sq_locks_ when A had more rings than B. (Mirrors QueueIoHandler::pick_context.)
   /// </para>
-  void pick_ring(struct io_uring*& ring_out, SpinLock*& lock_out) {
+  int pick_ring_index() {
     if (rings_.size() == 1) {
-      ring_out = rings_[0];
-      lock_out = sq_locks_[0];
-      return;
+      return 0;
     }
     thread_local const UringIoHandler* tls_owner = nullptr;
     thread_local int my_ring_idx = -1;
@@ -564,8 +583,18 @@ class UringIoHandler {
       my_ring_idx = static_cast<int>(
           submit_counter_.fetch_add(1, std::memory_order_relaxed) % rings_.size());
     }
-    ring_out = rings_[my_ring_idx];
-    lock_out = sq_locks_[my_ring_idx];
+    return my_ring_idx;
+  }
+
+  void pick_ring(struct io_uring*& ring_out, SpinLock*& lock_out) {
+    int idx = pick_ring_index();
+    ring_out = rings_[idx];
+    lock_out = sq_locks_[idx];
+  }
+
+  /// Drain ONLY the calling thread's affine ring (mirrors QueueIoHandler::TryCompleteMine).
+  bool TryCompleteMine() {
+    return TryCompleteFor(pick_ring_index());
   }
 
   struct IoCallbackContext {
@@ -603,6 +632,10 @@ class UringIoHandler {
   /// The CQE is dispatched with a sentinel context that the dispatcher skips. Returns 0 on
   /// success, -1 on failure.
   int Wake(int idx);
+
+  /// Interface parity with QueueIoHandler. The io_uring backend submits per-op today, so this
+  /// is a no-op. Returns 0.
+  int FlushSubmits();
 
 private:
   void Init(int num_rings) {

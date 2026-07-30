@@ -10,6 +10,16 @@ namespace Tsavorite.core
         /// Size of cache line in bytes
         public const int kCacheLineBytes = 64;
 
+        /// <summary>
+        /// When true, the inline submitter-thread device drain reaps only the calling thread's
+        /// affine completion context (<see cref="IDevice.TryCompleteMine"/>) instead of walking
+        /// every context (<see cref="IDevice.TryComplete"/>). Measured NEUTRAL at the saturated
+        /// peak (many run threads sharing few io_contexts), so it is OFF by default; opt in with
+        /// GARNET_INLINE_DRAIN_AFFINE=1 (useful at lower thread counts with spare cores).
+        /// </summary>
+        public static readonly bool InlineDrainAffine =
+            System.Environment.GetEnvironmentVariable("GARNET_INLINE_DRAIN_AFFINE") == "1";
+
         // RecordInfo has a long field, so it should be aligned to 8-bytes
         public const int kRecordAlignment = 8;
         public const int kRecordAlignmentMask = kRecordAlignment - 1;

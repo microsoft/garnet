@@ -638,6 +638,12 @@ namespace Tsavorite.core
         [DllImport(NativeLibraryName, EntryPoint = "NativeDevice_TryComplete", CallingConvention = CallingConvention.Cdecl)]
         static extern bool NativeDevice_TryComplete(IntPtr device);
 
+        [DllImport(NativeLibraryName, EntryPoint = "NativeDevice_TryCompleteMine", CallingConvention = CallingConvention.Cdecl)]
+        static extern bool NativeDevice_TryCompleteMine(IntPtr device);
+
+        [DllImport(NativeLibraryName, EntryPoint = "NativeDevice_FlushSubmits", CallingConvention = CallingConvention.Cdecl)]
+        static extern int NativeDevice_FlushSubmits(IntPtr device);
+
         [DllImport(NativeLibraryName, EntryPoint = "NativeDevice_QueueRun", CallingConvention = CallingConvention.Cdecl)]
         static extern int NativeDevice_QueueRun(IntPtr device, int timeout_secs);
 
@@ -1588,7 +1594,66 @@ namespace Tsavorite.core
             try
             {
                 var dev = Volatile.Read(ref nativeDevice);
-                return dev != IntPtr.Zero && NativeDevice_TryComplete(dev);
+                if (dev == IntPtr.Zero)
+                    return false;
+                // Flush this thread's accumulated read batch (opt-in batched submit) before
+                // draining. This is the throttle-spin safety net: a submitter that spins on
+                // Throttle()/TryComplete (AllocatorBase.AsyncGetFromDisk) always submits its
+                // own pending reads here, so an under-threshold batch can never stall behind a
+                // throttle wait. No-op when batching is disabled/empty.
+                _ = NativeDevice_FlushSubmits(dev);
+                return NativeDevice_TryComplete(dev);
+            }
+            finally
+            {
+                ReleaseLease(shard);
+            }
+        }
+
+        /// <summary>
+        /// Drain only the calling thread's affine native context/ring (the one its submits land on),
+        /// instead of walking every context like <see cref="TryComplete"/>. The inline submitter-thread
+        /// completion path (Tsavorite CompletePending / AsyncGetFromDisk throttle-wait) is the primary
+        /// reaper at high IOPS; polling just this thread's own context issues one io_getevents per poll
+        /// rather than one per context, cutting completion-drain syscalls (and the cross-context aio
+        /// ring-lock contention) by roughly the context count. All contexts stay covered because each
+        /// has sharing submitters and/or a dedicated completion (drainer) thread.
+        /// </summary>
+        public override bool TryCompleteMine()
+        {
+            if (!TryLease(out int shard))
+                return false;
+            try
+            {
+                var dev = Volatile.Read(ref nativeDevice);
+                if (dev == IntPtr.Zero)
+                    return false;
+                _ = NativeDevice_FlushSubmits(dev);
+                return NativeDevice_TryCompleteMine(dev);
+            }
+            finally
+            {
+                ReleaseLease(shard);
+            }
+        }
+
+        /// <summary>
+        /// Submit the calling thread's accumulated read batch (opt-in batched libaio submit,
+        /// enabled via the GARNET_SUBMIT_BATCH env var on the native side). No-op when batching
+        /// is disabled or the batch is empty. Must be called on the thread that issued the reads
+        /// (the native accumulation buffer is thread-local). Callers issue a burst of reads then
+        /// call this to submit the sub-threshold tail before waiting on completions.
+        /// </summary>
+        public void FlushSubmits()
+        {
+            if (Volatile.Read(ref disposedFlag) != 0) return;
+            if (!TryLease(out int shard))
+                return;
+            try
+            {
+                var dev = Volatile.Read(ref nativeDevice);
+                if (dev != IntPtr.Zero)
+                    _ = NativeDevice_FlushSubmits(dev);
             }
             finally
             {

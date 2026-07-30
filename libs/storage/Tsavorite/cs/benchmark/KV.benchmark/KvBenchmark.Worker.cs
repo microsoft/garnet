@@ -205,6 +205,12 @@ namespace Tsavorite.kvbench
             // Run-phase batch depth (hoisted out of the hot loop). Clamp to >=1.
             long runBatch = Math.Max(1, Options.BatchSize);
 
+            // Batched-submit tail flush: when the native device accumulates read submits (opt-in
+            // via GARNET_SUBMIT_BATCH), flush this thread's sub-threshold tail after each issued
+            // read batch so all reads are submitted before we wait on their completions. Null for
+            // non-native devices (flush is then a no-op we skip). Hoisted; the cast is one-time.
+            var flushDev = device as Tsavorite.core.NativeStorageDevice;
+
             while (!Volatile.Read(ref doneFlag))
             {
                 long chunk_idx = Interlocked.Add(ref globalChunkIdx, runBatch) - runBatch;
@@ -272,6 +278,10 @@ namespace Tsavorite.kvbench
                         ++writes_done;
                     }
                 }
+
+                // Submit the sub-threshold tail of accumulated read submits for this batch (see
+                // flushDev). No-op when batching is disabled or the device is not native.
+                flushDev?.FlushSubmits();
 
                 Volatile.Write(ref slot.Value, reads_done + writes_done + deletes_done);
             }
