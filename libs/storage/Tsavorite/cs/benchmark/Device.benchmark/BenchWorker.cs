@@ -114,8 +114,15 @@ namespace Device.benchmark
                 {
                     while (!_benchmarkPool.TryDequeue(out op))
                     {
+                        // Pool empty: every buffer this worker owns is in flight. The device's
+                        // dedicated completion-drainer threads refill the pool via Callback, so
+                        // we only help drain here as a liveness fallback. This is rarely hit
+                        // because the per-thread throttle caps in-flight well below batchSize.
+                        // Draining on the fast path (after every submit) is an anti-pattern: the
+                        // single-event TryComplete serializes all submitters on context 0's kernel
+                        // ring mutex (profiled at ~26% CPU in osq_lock), so keep it off the hot path.
+                        device.TryComplete();
                         Thread.Yield();
-                        continue;
                     }
                     long sectorCount = (long)(fileSize / sectorSize);
                     long sector = threadRnd.NextInt64(0, (long)sectorCount) * sectorSize;
@@ -123,7 +130,6 @@ namespace Device.benchmark
                     while (device.Throttle()) Thread.Yield();
                     localTotalSubmitted++;
                     device.ReadAsync((ulong)sector, (IntPtr)dest, (uint)sectorSize, Callback, op);
-                    device.TryComplete();
                 }
             }
             finally

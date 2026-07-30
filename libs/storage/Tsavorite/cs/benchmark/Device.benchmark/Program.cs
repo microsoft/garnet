@@ -241,7 +241,8 @@ namespace Device.benchmark
                     capacity: -1,
                     numCompletionThreads: opts.CompletionThreads > 0 ? opts.CompletionThreads : 1,
                     ioBackend: ParseBackend(opts.IoBackend),
-                    logger: null),
+                    logger: null,
+                    numIoContexts: opts.IoContexts),
                 DeviceType.FileStream => new ManagedLocalStorageDevice(fileName, true, false, true, -1, false, false, false),
                 DeviceType.RandomAccess => new RandomAccessLocalStorageDevice(fileName, true, true, true, -1, false, false, false),
                 _ => throw new ArgumentOutOfRangeException()

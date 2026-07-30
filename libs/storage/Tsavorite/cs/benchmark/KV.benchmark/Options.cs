@@ -129,6 +129,17 @@ namespace Tsavorite.kvbench
                        "Environment.ProcessorCount for LocalMemory).")]
         public int DeviceCompletionThreads { get; set; }
 
+        [Option("device-io-contexts", Required = false, Default = 0,
+            HelpText = "DeviceType.Native on Linux only: number of independent kernel io_contexts " +
+                       "(libaio) / io_uring rings the device creates, decoupled from the number of " +
+                       "drainer threads (--device-completion-threads). Submitters map to rings via " +
+                       "per-thread affinity, so setting this >= submitter concurrency makes io_submit " +
+                       "contention-free (no shared per-context aio ring/completion lock across unrelated " +
+                       "submitters) and spreads completion posting across more rings; the drainers each " +
+                       "range-drain a contiguous slice of the rings. 0 = 1 ring per drainer (legacy). " +
+                       "Clamped up to --device-completion-threads.")]
+        public int DeviceIoContexts { get; set; }
+
         [Option("device-inline-completion", Required = false, Default = false,
             HelpText = "DeviceType.LocalMemory only: complete IOs inline on the submitting thread (no " +
                        "completion threads or rings; copy + callback run synchronously). Isolates the " +
