@@ -291,7 +291,7 @@ namespace Garnet.cluster
 
                     await replayIterator.BulkConsumeAllAsync(
                         this,
-                        runtimeConfig.GetInt(ServerConfigType.REPLICA_SYNC_DELAY_MS),
+                        runtimeConfig.GetInt(ServerConfigType.REPLICA_SYNC_DELAY),
                         maxChunkSize: 1 << 20,
                         cts.Token).ConfigureAwait(false);
                 }

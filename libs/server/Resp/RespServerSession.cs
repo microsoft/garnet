@@ -481,7 +481,7 @@ namespace Garnet.server
                 LatencyMetrics?.Start(LatencyMetricsType.NET_RS_LAT);
                 // Refresh the slow log threshold from the runtime config so CONFIG SET slowlog-log-slower-than
                 // takes effect on already-connected sessions at the next batch.
-                var slowLogThresholdConfig = storeWrapper.runtimeConfig.GetInt(ServerConfigType.SLOWLOG_LOG_SLOWER_THAN_MICROS);
+                var slowLogThresholdConfig = storeWrapper.runtimeConfig.GetInt(ServerConfigType.SLOWLOG_LOG_SLOWER_THAN);
                 slowLogThreshold = slowLogThresholdConfig > 0 ? (long)(slowLogThresholdConfig * OutputScalingFactor.TimeStampToMicroseconds) : 0;
                 if (slowLogThreshold > 0)
                 {

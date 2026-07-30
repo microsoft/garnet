@@ -203,8 +203,7 @@ namespace Garnet.server
                 {
                     foreach (var (type, value) in dynamicSets)
                     {
-                        var error = storeWrapper.runtimeConfig.TrySet(type, value);
-                        if (error != null)
+                        if (!storeWrapper.runtimeConfig.TrySet(type, value, out var error))
                             AppendError(sbErrorMsg, error);
                     }
                 }

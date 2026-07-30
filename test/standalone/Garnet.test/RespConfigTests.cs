@@ -16,6 +16,11 @@ using static Tsavorite.core.Utility;
 
 namespace Garnet.test
 {
+    enum RuntimeConfigByteBackedEnum : byte
+    {
+        Value
+    }
+
     /// <summary>
     /// Test dynamically changing server configuration using CONFIG SET command.
     /// </summary>
@@ -797,6 +802,64 @@ namespace Garnet.test
             ClassicAssert.AreEqual("500", Get(db, "object-scan-count-limit"));
         }
 
+        [Test]
+        public void RuntimeServerConfigRejectsNonInt32BackedEnum()
+        {
+            var runtimeConfig = new RuntimeServerConfig(new GarnetServerOptions());
+
+            var exception = Assert.Throws<InvalidOperationException>(
+                () => runtimeConfig.GetEnum<RuntimeConfigByteBackedEnum>(ServerConfigType.COMPACTION_TYPE));
+            Assert.That(exception.Message, Does.Contain("must use Int32 as their underlying type"));
+        }
+
+        /// <summary>
+        /// Verifies that a duration-valued option can be read through every unit it declares, and that a
+        /// non-positive value is surfaced as an infinite timeout where that is the documented meaning.
+        /// </summary>
+        [Test]
+        public void RuntimeServerConfigExposesDurationsInEveryDeclaredUnit()
+        {
+            var runtimeConfig = new RuntimeServerConfig(new GarnetServerOptions { ReplicaSyncDelayMs = 5000 });
+
+            ClassicAssert.AreEqual(5000, runtimeConfig.GetInt(ServerConfigType.REPLICA_SYNC_DELAY));
+            ClassicAssert.AreEqual(5000, runtimeConfig.GetMilliseconds(ServerConfigType.REPLICA_SYNC_DELAY));
+            ClassicAssert.AreEqual(5, runtimeConfig.GetSeconds(ServerConfigType.REPLICA_SYNC_DELAY));
+            ClassicAssert.AreEqual(TimeSpan.FromSeconds(5), runtimeConfig.GetTimeSpan(ServerConfigType.REPLICA_SYNC_DELAY));
+
+            // cluster-node-timeout treats a non-positive value as no timeout.
+            ClassicAssert.IsTrue(runtimeConfig.TrySet(ServerConfigType.CLUSTER_NODE_TIMEOUT, "0", out var error));
+            ClassicAssert.IsNull(error);
+            ClassicAssert.AreEqual(Timeout.InfiniteTimeSpan, runtimeConfig.GetTimeSpan(ServerConfigType.CLUSTER_NODE_TIMEOUT));
+
+            // A negative value is normalized rather than reported back as negative.
+            ClassicAssert.IsTrue(runtimeConfig.TrySet(ServerConfigType.CLUSTER_NODE_TIMEOUT, "-3", out error));
+            ClassicAssert.IsNull(error);
+            ClassicAssert.AreEqual("0", runtimeConfig.Format(ServerConfigType.CLUSTER_NODE_TIMEOUT));
+        }
+
+        /// <summary>
+        /// Verifies that the slow log can be enabled at runtime on a server that started with it disabled,
+        /// which requires the threshold to be read live rather than captured at startup.
+        /// </summary>
+        [Test]
+        public void ConfigSetSlowLogThresholdTakesEffectAtRuntime()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            // The server starts with the slow log disabled.
+            ClassicAssert.AreEqual("0", ((RedisResult[])db.Execute("CONFIG", "GET", "slowlog-log-slower-than"))[1].ToString());
+
+            // Enable it with a threshold low enough that every command qualifies.
+            ClassicAssert.AreEqual("OK", db.Execute("CONFIG", "SET", "slowlog-log-slower-than", "100").ToString());
+            ClassicAssert.AreEqual("100", ((RedisResult[])db.Execute("CONFIG", "GET", "slowlog-log-slower-than"))[1].ToString());
+
+            for (var i = 0; i < 5; i++)
+                _ = db.StringSet($"slowlog-key-{i}", "value");
+
+            ClassicAssert.Greater((int)db.Execute("SLOWLOG", "LEN"), 0);
+        }
+
         /// <summary>
         /// Verifies that CONFIG SET rejects malformed / out-of-range values for runtime-adjustable options
         /// and that a rejected value does not mutate the option.
@@ -808,13 +871,17 @@ namespace Garnet.test
             var db = redis.GetDatabase(0);
 
             // Out-of-range integer (min is 0).
-            _ = Assert.Throws<RedisServerException>(() => db.Execute("CONFIG", "SET", "replica-sync-delay", "-5"));
+            var outOfRange = Assert.Throws<RedisServerException>(() => db.Execute("CONFIG", "SET", "replica-sync-delay", "-5"));
+            ClassicAssert.AreEqual("ERR Value for 'replica-sync-delay' is out of range (0..2147483647).", outOfRange.Message);
             // Non-integer value.
-            _ = Assert.Throws<RedisServerException>(() => db.Execute("CONFIG", "SET", "compaction-max-segments", "abc"));
+            var notInteger = Assert.Throws<RedisServerException>(() => db.Execute("CONFIG", "SET", "compaction-max-segments", "abc"));
+            ClassicAssert.AreEqual("ERR Invalid value for 'compaction-max-segments': expected an integer.", notInteger.Message);
             // Invalid enum value.
-            _ = Assert.Throws<RedisServerException>(() => db.Execute("CONFIG", "SET", "compaction-type", "Bogus"));
+            var badEnum = Assert.Throws<RedisServerException>(() => db.Execute("CONFIG", "SET", "compaction-type", "Bogus"));
+            ClassicAssert.AreEqual("ERR Invalid value for 'compaction-type': 'Bogus'.", badEnum.Message);
             // Invalid boolean value.
-            _ = Assert.Throws<RedisServerException>(() => db.Execute("CONFIG", "SET", "sg-get", "maybe"));
+            var badBool = Assert.Throws<RedisServerException>(() => db.Execute("CONFIG", "SET", "sg-get", "maybe"));
+            ClassicAssert.AreEqual("ERR Invalid value for 'sg-get': expected 'yes' or 'no'.", badBool.Message);
 
             // A rejected value must not have mutated the option.
             var res = (RedisResult[])db.Execute("CONFIG", "GET", "compaction-max-segments");
@@ -833,9 +900,12 @@ namespace Garnet.test
             var db = redis.GetDatabase(0);
 
             // CONFIG SET on read-only parameters is rejected.
-            _ = Assert.Throws<RedisServerException>(() => db.Execute("CONFIG", "SET", "appendonly", "yes"));
-            _ = Assert.Throws<RedisServerException>(() => db.Execute("CONFIG", "SET", "databases", "32"));
-            _ = Assert.Throws<RedisServerException>(() => db.Execute("CONFIG", "SET", "timeout", "10"));
+            var appendOnly = Assert.Throws<RedisServerException>(() => db.Execute("CONFIG", "SET", "appendonly", "yes"));
+            ClassicAssert.AreEqual("ERR Option 'appendonly' is read-only and cannot be set at runtime.", appendOnly.Message);
+            var databases = Assert.Throws<RedisServerException>(() => db.Execute("CONFIG", "SET", "databases", "32"));
+            ClassicAssert.AreEqual("ERR Option 'databases' is read-only and cannot be set at runtime.", databases.Message);
+            var timeout = Assert.Throws<RedisServerException>(() => db.Execute("CONFIG", "SET", "timeout", "10"));
+            ClassicAssert.AreEqual("ERR Option 'timeout' is read-only and cannot be set at runtime.", timeout.Message);
 
             // CONFIG GET * returns a name/value map including read-only and per-session parameters.
             var all = (RedisResult[])db.Execute("CONFIG", "GET", "*");

@@ -216,13 +216,7 @@ namespace Garnet.server
             this.serverOptions = serverOptions;
             // Share the runtime config table across cloned wrappers (e.g. the AOF copy ctor) so that a
             // CONFIG SET is observed consistently; otherwise seed a fresh table from the startup options.
-            this.runtimeConfig = runtimeConfig ?? new RuntimeServerConfig();
-            if (runtimeConfig == null)
-            {
-                this.runtimeConfig.Init(serverOptions);
-                // The primary wrapper owns the table and provides live state for read-only parameters.
-                this.runtimeConfig.SetOwner(this);
-            }
+            this.runtimeConfig = runtimeConfig ?? new RuntimeServerConfig(serverOptions);
             this.subscribeBroker = subscribeBroker;
             this.customCommandManager = customCommandManager;
             this.loggerFactory = loggerFactory;
@@ -242,8 +236,9 @@ namespace Garnet.server
 
             logger?.LogTrace("StoreWrapper logging frequency: {loggingFrequency} seconds.", this.loggingFrequency);
 
-            if (serverOptions.SlowLogThreshold > 0)
-                this.slowLogContainer = new SlowLogContainer(serverOptions.SlowLogMaxEntries);
+            // The slow log threshold is runtime-adjustable, so the container is always allocated: a session
+            // may start recording after a CONFIG SET even when the startup threshold disabled the slow log.
+            this.slowLogContainer = new SlowLogContainer(serverOptions.SlowLogMaxEntries);
 
             if (!serverOptions.DisableObjects)
                 this.itemBroker = new CollectionItemBroker();
@@ -699,7 +694,7 @@ namespace Garnet.server
 
                     await databaseManager.DoCompactionAsync(token, logger).ConfigureAwait(false);
 
-                    if (!serverOptions.CompactionForceDelete)
+                    if (!runtimeConfig.GetBool(ServerConfigType.COMPACTION_FORCE_DELETE))
                         logger?.LogInformation("NOTE: Take a checkpoint (SAVE/BGSAVE) in order to actually delete the older data segments (files) from disk");
                     else
                         logger?.LogInformation("NOTE: Compaction will delete files, make sure checkpoint/recovery is not being used");

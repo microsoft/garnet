@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -124,7 +124,7 @@ namespace Garnet.cluster
                 var isLeader = GetSessionStore.IsFirst(replicaSyncSession);
                 // Give opportunity to other replicas to attach for streaming sync
                 // Only leader waits because it is the one that initiates the sync driver, so everybody else will wait for it to complete.
-                var disklessSyncDelay = ClusterProvider.storeWrapper.runtimeConfig.GetInt(ServerConfigType.REPL_DISKLESS_SYNC_DELAY_SECONDS);
+                var disklessSyncDelay = ClusterProvider.storeWrapper.runtimeConfig.GetInt(ServerConfigType.REPL_DISKLESS_SYNC_DELAY);
                 if (disklessSyncDelay > 0 && isLeader)
                     Thread.Sleep(TimeSpan.FromSeconds(disklessSyncDelay));
 

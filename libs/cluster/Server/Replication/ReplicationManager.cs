@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -182,7 +182,7 @@ namespace Garnet.cluster
         /// </summary>
         public void EnsureReplication(ClusterSession activeSession, IEnumerable<IClusterSession> allClusterSessions)
         {
-            var pollFrequency = clusterProvider.storeWrapper.runtimeConfig.GetInt(ServerConfigType.CLUSTER_REPLICATION_REESTABLISHMENT_TIMEOUT_SECONDS);
+            var pollFrequency = clusterProvider.storeWrapper.runtimeConfig.GetInt(ServerConfigType.CLUSTER_REPLICATION_REESTABLISHMENT_TIMEOUT);
 
             if (pollFrequency == 0)
             {
@@ -689,7 +689,7 @@ namespace Garnet.cluster
                                     else
                                         converged = false;
                                 }
-                                await Task.Delay(storeWrapper.runtimeConfig.GetInt(ServerConfigType.AOF_TAIL_WITNESS_FREQ_MS), token).ConfigureAwait(false);
+                                await Task.Delay(storeWrapper.runtimeConfig.GetInt(ServerConfigType.AOF_TAIL_WITNESS_FREQ), token).ConfigureAwait(false);
                             }
                         }
                     }

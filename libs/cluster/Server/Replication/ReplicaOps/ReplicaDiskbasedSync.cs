@@ -181,13 +181,13 @@ namespace Garnet.cluster
                     // 5. Primary will initiate aof sync task
                     // 6. Primary releases checkpoint
                     // Exception injection point for testing cluster reset during disk-based replication
-                    await ExceptionInjectionHelper.ResetAndWaitAsync(ExceptionInjectionType.Replication_InProgress_During_DiskBased_Replica_Attach_Sync).WaitAsync(storeWrapper.runtimeConfig.GetTimeSpan(ServerConfigType.REPL_ATTACH_TIMEOUT_SECONDS), linkedCts.Token).ConfigureAwait(false);
+                    await ExceptionInjectionHelper.ResetAndWaitAsync(ExceptionInjectionType.Replication_InProgress_During_DiskBased_Replica_Attach_Sync).WaitAsync(storeWrapper.runtimeConfig.GetTimeSpan(ServerConfigType.REPL_ATTACH_TIMEOUT), linkedCts.Token).ConfigureAwait(false);
                     var resp = await gcs.ExecuteClusterInitiateReplicaSync(
                         nodeId,
                         PrimaryReplId,
                         cEntry.ToByteArray(),
                         beginAddress.Span,
-                        tailAddress.Span).WaitAsync(storeWrapper.runtimeConfig.GetTimeSpan(ServerConfigType.REPL_ATTACH_TIMEOUT_SECONDS), linkedCts.Token).ConfigureAwait(false);
+                        tailAddress.Span).WaitAsync(storeWrapper.runtimeConfig.GetTimeSpan(ServerConfigType.REPL_ATTACH_TIMEOUT), linkedCts.Token).ConfigureAwait(false);
                 }
                 catch (Exception ex)
                 {
