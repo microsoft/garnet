@@ -1,7 +1,6 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System.Linq;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 
@@ -30,9 +29,8 @@ namespace Garnet.test.cluster
                 replayTaskCount: replayTaskCount,
                 vectorSetReplayTaskCount: vectorSetReplayTaskCount,
                 timeout: timeout);
-            context.CreateConnection();
 
-            context.clusterTestUtils.FormCluster(PrimaryIndex, [.. Enumerable.Range(1, nodeCount - 1)], context.logger);
+            FormClusterAllNodes(nodeCount);
         }
 
         /// <summary>Baseline: asynchronously replayed VADDs must land with identical embeddings.</summary>

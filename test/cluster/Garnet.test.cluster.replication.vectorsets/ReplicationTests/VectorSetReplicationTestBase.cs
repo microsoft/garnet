@@ -69,16 +69,21 @@ namespace Garnet.test.cluster
             }
         }
 
-        /// <summary>
-        /// Takes a checkpoint after waiting past LASTSAVE's one-second resolution, so
-        /// WaitCheckpoint observes the new save.
-        /// </summary>
-        protected void TakeCheckpoint(int nodeIndex)
+        /// <summary>Opens a connection and forms a single-primary cluster over every created node.</summary>
+        protected void FormClusterAllNodes(int nodeCount, int primaryIndex = 0)
         {
-            var lastSave = context.clusterTestUtils.LastSave(nodeIndex, logger: context.logger);
-            context.clusterTestUtils.WaitUntilNextSecond(nodeIndex, lastSave, logger: context.logger);
-            context.clusterTestUtils.Checkpoint(nodeIndex, logger: context.logger);
-            context.clusterTestUtils.WaitCheckpoint(nodeIndex, lastSave, logger: context.logger);
+            context.CreateConnection();
+            context.clusterTestUtils.FormCluster(primaryIndex, nodeCount, context.logger);
+        }
+
+        /// <summary>Promotes replicaIndex, waits for the demoted node to sync, and asserts the roles swapped.</summary>
+        protected void FailoverTo(int replicaIndex, int oldPrimaryIndex)
+        {
+            context.ClusterFailoverSpinWait(replicaIndex, context.logger);
+            context.clusterTestUtils.WaitForReplicaAofSync(replicaIndex, oldPrimaryIndex, logger: context.logger);
+
+            ClassicAssert.AreEqual("master", context.clusterTestUtils.RoleCommand(context.clusterTestUtils.GetEndPoint(replicaIndex), logger: context.logger).Value);
+            ClassicAssert.AreEqual("slave", context.clusterTestUtils.RoleCommand(context.clusterTestUtils.GetEndPoint(oldPrimaryIndex), logger: context.logger).Value);
         }
 
         protected void MakeReadable(int nodeIndex)

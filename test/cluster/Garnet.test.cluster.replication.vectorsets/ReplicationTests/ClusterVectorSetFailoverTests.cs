@@ -1,7 +1,6 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System.Linq;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 
@@ -26,18 +25,8 @@ namespace Garnet.test.cluster
                 enableDisklessSync: false,
                 OnDemandCheckpoint: true,
                 timeout: timeout);
-            context.CreateConnection();
 
-            context.clusterTestUtils.FormCluster(PrimaryIndex, [.. Enumerable.Range(1, nodeCount - 1)], context.logger);
-        }
-
-        private void FailoverTo(int replicaIndex, int oldPrimaryIndex)
-        {
-            context.ClusterFailoverSpinWait(replicaIndex, context.logger);
-            context.clusterTestUtils.WaitForReplicaAofSync(replicaIndex, oldPrimaryIndex, logger: context.logger);
-
-            ClassicAssert.AreEqual("master", context.clusterTestUtils.RoleCommand(context.clusterTestUtils.GetEndPoint(replicaIndex), logger: context.logger).Value);
-            ClassicAssert.AreEqual("slave", context.clusterTestUtils.RoleCommand(context.clusterTestUtils.GetEndPoint(oldPrimaryIndex), logger: context.logger).Value);
+            FormClusterAllNodes(nodeCount);
         }
 
         /// <summary>After promotion, the new primary must keep every element and the demoted node must agree.</summary>

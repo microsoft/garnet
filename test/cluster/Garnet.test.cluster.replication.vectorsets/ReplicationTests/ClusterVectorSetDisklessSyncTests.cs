@@ -28,9 +28,8 @@ namespace Garnet.test.cluster
                 enableDisklessSync: true,
                 replicaDisklessSyncFullSyncAofThreshold: "1k",
                 timeout: timeout);
-            context.CreateConnection();
 
-            context.clusterTestUtils.FormCluster(PrimaryIndex, [.. Enumerable.Range(1, nodeCount - 1)], context.logger);
+            FormClusterAllNodes(nodeCount);
         }
 
         /// <summary>
@@ -191,11 +190,7 @@ namespace Garnet.test.cluster
             MakeReadable(ReplicaIndex);
             AssertFullyReplicated(PrimaryIndex, ReplicaIndex, Key);
 
-            context.ClusterFailoverSpinWait(ReplicaIndex, context.logger);
-            context.clusterTestUtils.WaitForReplicaAofSync(ReplicaIndex, PrimaryIndex, logger: context.logger);
-
-            ClassicAssert.AreEqual("master", context.clusterTestUtils.RoleCommand(context.clusterTestUtils.GetEndPoint(ReplicaIndex), logger: context.logger).Value);
-            ClassicAssert.AreEqual("slave", context.clusterTestUtils.RoleCommand(context.clusterTestUtils.GetEndPoint(PrimaryIndex), logger: context.logger).Value);
+            FailoverTo(ReplicaIndex, PrimaryIndex);
 
             MakeReadable(PrimaryIndex);
             AssertFullyReplicated(ReplicaIndex, PrimaryIndex, Key);

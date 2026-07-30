@@ -2202,6 +2202,12 @@ namespace Garnet.test.cluster
         }
 
         /// <summary>
+        /// Assigns all slots to primaryIndex and introduces every other node in [0, nodeCount) without attaching replicas.
+        /// </summary>
+        public void FormCluster(int primaryIndex, int nodeCount, ILogger logger = null)
+            => FormCluster(primaryIndex, [.. Enumerable.Range(0, nodeCount).Where(i => i != primaryIndex)], logger);
+
+        /// <summary>
         /// Assigns all slots to primaryIndex and introduces the other nodes without attaching replicas.
         /// </summary>
         public void FormCluster(int primaryIndex, int[] otherIndexes, ILogger logger = null)
