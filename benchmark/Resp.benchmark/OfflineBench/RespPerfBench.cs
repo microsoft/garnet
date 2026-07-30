@@ -479,8 +479,13 @@ namespace Resp.benchmark
             while (!done)
             {
                 var reqArgs = rg.GetRequestArgs();
-                reqArgs.Insert(0, "MSET");
-                c.Execute([.. reqArgs]);
+                // reqArgs is a shared, cached list owned by ReqGen; never mutate it.
+                // Build a fresh argument array with the command prepended instead.
+                var args = new string[reqArgs.Count + 1];
+                args[0] = "MSET";
+                for (var k = 0; k < reqArgs.Count; k++)
+                    args[k + 1] = reqArgs[k];
+                c.Execute(args);
                 c.CompletePending(true);
                 numReqs++;
                 if (numReqs == maxReqs) break;
