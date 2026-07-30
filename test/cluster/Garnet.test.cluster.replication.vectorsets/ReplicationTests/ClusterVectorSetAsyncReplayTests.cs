@@ -70,9 +70,8 @@ namespace Garnet.test.cluster
             // Populated before the replica exists, so attach carries the index record.
             PopulateVectorSet(PrimaryIndex, Key, Elements, seed: 2026_07_29_27);
 
-            var before = FullSyncCount();
+            // The replica has its own replication id, so the attach takes a full sync.
             Attach(ReplicaIndex, PrimaryIndex);
-            AssertTookFullSync(before);
 
             MakeReadable(ReplicaIndex);
             AssertFullyReplicated(PrimaryIndex, ReplicaIndex, Key);

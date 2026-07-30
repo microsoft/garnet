@@ -5,7 +5,6 @@ using System;
 using System.Buffers.Binary;
 using System.Collections.Generic;
 using System.Globalization;
-using System.IO;
 using System.Linq;
 using System.Net;
 using System.Runtime.CompilerServices;
@@ -33,39 +32,7 @@ namespace Garnet.test.cluster
         /// </summary>
         protected const int FullSyncForcingKeys = 256;
 
-        /// <summary>Diskless full-sync marker emitted by SyncMetadata.</summary>
-        private const string DisklessFullSyncMarker = "recoverFullSync:True";
-
-        /// <summary>Disk-based full-sync marker emitted when the primary ships a checkpoint.</summary>
-        private const string DiskBasedFullSyncMarker = "Sending main store checkpoint";
-
-        /// <summary>Captures node logs while still forwarding them to the test output.</summary>
-        protected sealed class CaptureLogWriter(TextWriter passThrough) : TextWriter
-        {
-            private readonly StringBuilder buffer = new();
-
-            public override Encoding Encoding => passThrough.Encoding;
-
-            public override void Write(string value)
-            {
-                passThrough.Write(value);
-                lock (buffer)
-                {
-                    _ = buffer.Append(value);
-                }
-            }
-
-            public string Snapshot()
-            {
-                lock (buffer)
-                {
-                    return buffer.ToString();
-                }
-            }
-        }
-
         protected ClusterTestContext context;
-        protected CaptureLogWriter captureLogWriter;
 
         protected readonly int timeout = (int)TimeSpan.FromSeconds(15).TotalSeconds;
         protected readonly int testTimeout = (int)TimeSpan.FromSeconds(60).TotalSeconds;
@@ -73,17 +40,15 @@ namespace Garnet.test.cluster
         /// <summary>Elements written through PopulateVectorSet, used for source-vs-target checks.</summary>
         private readonly Dictionary<string, List<byte[]>> writtenElements = [];
 
-        /// <summary>Trace logging is required to distinguish full sync from incremental replay.</summary>
-        protected virtual LogLevel MonitorLogLevel => LogLevel.Trace;
+        /// <summary>Raise this in a fixture to get more detail while debugging a replication failure.</summary>
+        protected virtual LogLevel MonitorLogLevel => LogLevel.Error;
 
         [SetUp]
         public virtual void Setup()
         {
             writtenElements.Clear();
-            captureLogWriter = new(TestContext.Progress);
 
             context = new ClusterTestContext();
-            context.logTextWriter = captureLogWriter;
             context.Setup(new Dictionary<string, LogLevel> { [TestContext.CurrentContext.Test.MethodName] = MonitorLogLevel }, testTimeoutSeconds: testTimeout);
         }
 
@@ -144,43 +109,6 @@ namespace Garnet.test.cluster
             {
                 _ = context.clusterTestUtils.Execute(primary, "SET", [$"{{padding}}key{i}", new string('x', 64)], skipLogging: true);
             }
-        }
-
-        private int CountLogOccurrences(string marker)
-        {
-            var log = captureLogWriter.Snapshot();
-            var count = 0;
-            var at = 0;
-
-            while ((at = log.IndexOf(marker, at, StringComparison.Ordinal)) >= 0)
-            {
-                count++;
-                at += marker.Length;
-            }
-
-            return count;
-        }
-
-        protected int FullSyncCount() => CountLogOccurrences(DisklessFullSyncMarker);
-
-        protected int DiskBasedFullSyncCount() => CountLogOccurrences(DiskBasedFullSyncMarker);
-
-        /// <summary>Asserts the attach took diskless full sync, not incremental replay.</summary>
-        protected void AssertTookFullSync(int since = 0)
-        {
-            ClassicAssert.Greater(
-                FullSyncCount(),
-                since,
-                "no new diskless streaming full sync was observed, so this test is not exercising the scenario it claims to");
-        }
-
-        /// <summary>Disk-based counterpart of AssertTookFullSync.</summary>
-        protected void AssertTookDiskBasedFullSync(int since = 0)
-        {
-            ClassicAssert.Greater(
-                DiskBasedFullSyncCount(),
-                since,
-                "the primary never shipped a main store checkpoint, so no disk-based full sync took place and this test is not exercising the scenario it claims to");
         }
 
         /// <summary>

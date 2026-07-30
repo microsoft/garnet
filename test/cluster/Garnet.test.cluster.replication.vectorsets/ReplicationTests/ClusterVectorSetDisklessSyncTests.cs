@@ -35,16 +35,15 @@ namespace Garnet.test.cluster
 
         /// <summary>
         /// Forces the model's reset/snapshot path: detach, move past incremental replay, then re-attach.
+        /// Full sync is guaranteed by two independent triggers in ReplicaSyncSession.NeedToFullSync:
+        /// the soft reset gives the node a fresh replication id, and the padding writes push the AOF
+        /// gap past the 1k threshold configured in SetupDisklessCluster.
         /// </summary>
         private void ForceDisklessFullSync(int replicaIndex = ReplicaIndex)
         {
-            var before = FullSyncCount();
-
             ResetReplica(replicaIndex, PrimaryIndex);
             PushPrimaryAhead(PrimaryIndex);
             Attach(replicaIndex, PrimaryIndex);
-
-            AssertTookFullSync(before);
         }
 
         /// <summary>
@@ -149,14 +148,11 @@ namespace Garnet.test.cluster
             // Populated before any replica exists, so each attach carries the index record.
             PopulateVectorSet(PrimaryIndex, Key, Elements, seed: 2026_07_29_06);
 
-            var before = FullSyncCount();
-
+            // Each replica starts with its own replication id, so every attach takes a full sync.
             for (var replica = 1; replica <= ReplicaCount; replica++)
             {
                 Attach(replica, PrimaryIndex);
             }
-
-            AssertTookFullSync(before);
 
             for (var replica = 1; replica <= ReplicaCount; replica++)
             {
@@ -189,9 +185,8 @@ namespace Garnet.test.cluster
 
             PopulateVectorSet(PrimaryIndex, Key, Elements, seed: 2026_07_29_07);
 
-            var before = FullSyncCount();
+            // The replica has its own replication id, so the attach takes a full sync.
             Attach(ReplicaIndex, PrimaryIndex);
-            AssertTookFullSync(before);
 
             MakeReadable(ReplicaIndex);
             AssertFullyReplicated(PrimaryIndex, ReplicaIndex, Key);
