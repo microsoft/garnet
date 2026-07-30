@@ -1,9 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System.Collections.Generic;
 using System.Linq;
-using Microsoft.Extensions.Logging;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 
@@ -19,13 +17,6 @@ namespace Garnet.test.cluster
     {
         private const int PrimaryIndex = 0;
         private const int ReplicaIndex = 1;
-
-        protected override Dictionary<string, LogLevel> MonitorTests => new()
-        {
-            [nameof(VectorSetSurvivesFailover)] = LogLevel.Trace,
-            [nameof(PromotedReplicaServesVectorSetToDemotedPrimary)] = LogLevel.Trace,
-            [nameof(VectorSetSurvivesRepeatedFailovers)] = LogLevel.Trace,
-        };
 
         private void SetupCluster(int nodeCount)
         {
@@ -52,7 +43,6 @@ namespace Garnet.test.cluster
         /// <summary>After promotion, the new primary must keep every element and the demoted node must agree.</summary>
         [Test]
         [Category("REPLICATION")]
-        [CancelAfter(180_000)]
         public void VectorSetSurvivesFailover()
         {
             const string Key = "{vsdisk}failoverbasic";
@@ -81,7 +71,6 @@ namespace Garnet.test.cluster
         /// </summary>
         [Test]
         [Category("REPLICATION")]
-        [CancelAfter(180_000)]
         public void PromotedReplicaServesVectorSetToDemotedPrimary()
         {
             const string Key = "{vsdisk}failoverwrite";
@@ -114,7 +103,6 @@ namespace Garnet.test.cluster
         /// </summary>
         [Test]
         [Category("REPLICATION")]
-        [CancelAfter(180_000)]
         public void VectorSetSurvivesRepeatedFailovers()
         {
             const string Key = "{vsdisk}failoverloop";

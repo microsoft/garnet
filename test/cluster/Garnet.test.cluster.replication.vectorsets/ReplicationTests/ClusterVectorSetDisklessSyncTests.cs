@@ -1,9 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System.Collections.Generic;
 using System.Linq;
-using Microsoft.Extensions.Logging;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 
@@ -20,16 +18,6 @@ namespace Garnet.test.cluster
     {
         private const int PrimaryIndex = 0;
         private const int ReplicaIndex = 1;
-
-        protected override Dictionary<string, LogLevel> MonitorTests => new()
-        {
-            [nameof(VectorSetReadableOnReplicaAfterDisklessFullSync)] = LogLevel.Trace,
-            [nameof(VectorSetsStayPartitionedAcrossDisklessFullSync)] = LogLevel.Trace,
-            [nameof(VectorSetReadableOnReplicaWithoutFullSync)] = LogLevel.Trace,
-            [nameof(VectorSetReplicatedToEveryReplicaByDisklessFullSync)] = LogLevel.Trace,
-            [nameof(VectorSetSurvivesFailoverAfterDisklessFullSync)] = LogLevel.Trace,
-            [nameof(VectorSetMigratedBetweenPrimariesWithDisklessSync)] = LogLevel.Trace,
-        };
 
         /// <summary>Creates a diskless-sync cluster with a low threshold so re-attach takes full sync.</summary>
         private void SetupDisklessCluster(int nodeCount)
@@ -65,7 +53,6 @@ namespace Garnet.test.cluster
         /// </summary>
         [Test]
         [Category("REPLICATION")]
-        [CancelAfter(180_000)]
         public void VectorSetReadableOnReplicaAfterDisklessFullSync()
         {
             const string Key = "{vsdisk}solo";
@@ -93,7 +80,6 @@ namespace Garnet.test.cluster
         /// </summary>
         [Test]
         [Category("REPLICATION")]
-        [CancelAfter(180_000)]
         public void VectorSetsStayPartitionedAcrossDisklessFullSync()
         {
             // Same hash slot, so both keys live on the single primary in this topology.
@@ -129,7 +115,6 @@ namespace Garnet.test.cluster
         /// </summary>
         [Test]
         [Category("REPLICATION")]
-        [CancelAfter(180_000)]
         public void VectorSetReadableOnReplicaWithoutFullSync()
         {
             const string Key = "{vsdisk}control";
@@ -153,7 +138,6 @@ namespace Garnet.test.cluster
         /// </summary>
         [Test]
         [Category("REPLICATION")]
-        [CancelAfter(180_000)]
         public void VectorSetReplicatedToEveryReplicaByDisklessFullSync()
         {
             const string Key = "{vsdisk}fanout";
@@ -196,7 +180,6 @@ namespace Garnet.test.cluster
         /// </summary>
         [Test]
         [Category("REPLICATION")]
-        [CancelAfter(180_000)]
         public void VectorSetSurvivesFailoverAfterDisklessFullSync()
         {
             const string Key = "{vsdisk}failover";
@@ -236,7 +219,6 @@ namespace Garnet.test.cluster
         /// </summary>
         [Test]
         [Category("REPLICATION")]
-        [CancelAfter(180_000)]
         public void VectorSetMigratedBetweenPrimariesWithDisklessSync()
         {
             const int Primary0 = 0;

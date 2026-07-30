@@ -68,13 +68,13 @@ namespace Garnet.test.cluster
         protected CaptureLogWriter captureLogWriter;
 
         protected readonly int timeout = (int)TimeSpan.FromSeconds(15).TotalSeconds;
-        protected readonly int testTimeout = (int)TimeSpan.FromSeconds(180).TotalSeconds;
+        protected readonly int testTimeout = (int)TimeSpan.FromSeconds(60).TotalSeconds;
 
         /// <summary>Elements written through PopulateVectorSet, used for source-vs-target checks.</summary>
         private readonly Dictionary<string, List<byte[]>> writtenElements = [];
 
         /// <summary>Trace logging is required to distinguish full sync from incremental replay.</summary>
-        protected abstract Dictionary<string, LogLevel> MonitorTests { get; }
+        protected virtual LogLevel MonitorLogLevel => LogLevel.Trace;
 
         [SetUp]
         public virtual void Setup()
@@ -84,7 +84,7 @@ namespace Garnet.test.cluster
 
             context = new ClusterTestContext();
             context.logTextWriter = captureLogWriter;
-            context.Setup(MonitorTests, testTimeoutSeconds: testTimeout);
+            context.Setup(new Dictionary<string, LogLevel> { [TestContext.CurrentContext.Test.MethodName] = MonitorLogLevel }, testTimeoutSeconds: testTimeout);
         }
 
         [TearDown]

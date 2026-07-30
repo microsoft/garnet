@@ -1,9 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System.Collections.Generic;
 using System.Linq;
-using Microsoft.Extensions.Logging;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 
@@ -19,13 +17,6 @@ namespace Garnet.test.cluster
     {
         private const int PrimaryIndex = 0;
         private const int ReplicaIndex = 1;
-
-        protected override Dictionary<string, LogLevel> MonitorTests => new()
-        {
-            [nameof(VectorSetReplicatedUnderAsyncReplay)] = LogLevel.Trace,
-            [nameof(VectorSetReplicatedUnderAsyncReplayAfterFullSync)] = LogLevel.Trace,
-            [nameof(VectorSetReplicatedUnderParallelAsyncReplay)] = LogLevel.Trace,
-        };
 
         private void SetupAsyncReplayCluster(int nodeCount, bool disklessSync, int replayTaskCount = 1, int vectorSetReplayTaskCount = 0)
         {
@@ -47,7 +38,6 @@ namespace Garnet.test.cluster
         /// <summary>Baseline: asynchronously replayed VADDs must land with identical embeddings.</summary>
         [Test]
         [Category("REPLICATION")]
-        [CancelAfter(180_000)]
         public void VectorSetReplicatedUnderAsyncReplay()
         {
             const string Key = "{vsdisk}async";
@@ -69,7 +59,6 @@ namespace Garnet.test.cluster
         /// </summary>
         [Test]
         [Category("REPLICATION")]
-        [CancelAfter(180_000)]
         public void VectorSetReplicatedUnderAsyncReplayAfterFullSync()
         {
             const string Key = "{vsdisk}asyncfullsync";
@@ -101,7 +90,6 @@ namespace Garnet.test.cluster
         /// </summary>
         [Test]
         [Category("REPLICATION")]
-        [CancelAfter(180_000)]
         public void VectorSetReplicatedUnderParallelAsyncReplay()
         {
             const string FirstKey = "{vsdisk}asyncpar1";
