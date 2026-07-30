@@ -120,7 +120,9 @@ Insert a vector with the given element ID into a Vector Set, creating the index 
 
 ```bash
 VADD key [REDUCE dim] (FP32 vector | XB8 vector | VALUES n v1 ... vN) element
-         [CAS] [NOQUANT | XPREQ8] [EF n] [SETATTR attr] [M n]
+         [CAS]
+         [NOQUANT | Q8 | BIN | XNOQUANT_U8 | XNOQUANT_I8 | XBIN_U8 | XBIN_I8]
+         [EF n] [SETATTR attr] [M n]
          [XDISTANCE_METRIC L2 | COSINE | IP | XCOSINE_NORMALIZED]
 ```
 
@@ -136,9 +138,9 @@ VADD key [REDUCE dim] (FP32 vector | XB8 vector | VALUES n v1 ... vN) element
 
 | Option | Default | Description |
 |--------|---------|-------------|
-| `REDUCE dim` | _disabled_ | Project the input vector down to `dim` dimensions. `dim` must be ≤ the input dimensions. Not allowed with `XPREQ8`. Only honored on the first `VADD` (when the index is created). |
+| `REDUCE dim` | _disabled_ | Project the input vector down to `dim` dimensions. `dim` must be ≤ the input dimensions. Not supported with the `XNOQUANT_*` / `XBIN_*` quantizers. Only honored on the first `VADD` (when the index is created). |
 | `CAS` | _off_ | Accepted for parser compatibility with Redis; currently a no-op. |
-| `NOQUANT` \| `XPREQ8` | _required_ | Quantization (see [Quantization](#quantization)). `Q8` and `BIN` are parsed but rejected with `ERR Unsupported quantization type`. |
+| _quantizer token_ | `Q8` | Quantization (see [Quantization](#quantization)). All of `NOQUANT`, `Q8`, `BIN`, and the Garnet `X*` extensions are supported. |
 | `EF n` | `200` | Build-time exploration factor (DiskANN `R` candidate-list size). Must be in `[1, 1000000]`. |
 | `SETATTR attr` | _none_ | Attach an arbitrary byte string to the element (typically a JSON object). Retrieve later with `VGETATTR` or via `WITHATTRIBS` on `VSIM`. |
 | `M n` | `16` | DiskANN max out-degree per node. Must be in `[4, 4096]`. |
@@ -157,17 +159,24 @@ VADD movies FP32 <16-byte float blob> dune XDISTANCE_METRIC COSINE M 32
 VADD movies VALUES 3 0.12 0.34 0.56 inception \
      NOQUANT SETATTR "{\"year\":2010,\"rating\":4.2}" XDISTANCE_METRIC COSINE
 
-# Insert a uint8 vector with the XPREQ8 pseudo-quantizer
-VADD photos XB8 <128-byte blob> photo:42 XPREQ8
+# Insert a uint8 vector with the XNOQUANT_U8 pseudo-quantizer
+VADD photos XB8 <128-byte blob> photo:42 XNOQUANT_U8
 ```
 
 #### Resp Reply
 
-- RESP2: integer `:1` if a new element was inserted, `:0` if the element was already present.
+- RESP2: integer reply. Currently always `:1` on a successful insert (see the warning below).
 - RESP3: boolean `true` / `false`.
 - Errors include `ERR Vector dimension mismatch`, `ERR REDUCE dimension must be <= vector dimensions`,
   `ERR M must be an integer between 4 and 4096`, `ERR EF must be an integer between 1 and 1000000`,
   `ERR vector exceeds maximum of 65536 dimensions`, `ERR Vector Set key cannot be empty`.
+
+:::warning
+Re-adding an element ID that is already present does **not** currently replace it in place. `VADD` returns `:1`
+rather than `:0`, the index `size` grows by one, and the element can be returned more than once by `VSIM`.
+`VEMB` reads back the most recently written vector. Until this is fixed, issue `VREM key element` before
+re-adding an existing element ID.
+:::
 
 ---
 
@@ -187,10 +196,10 @@ Array of 14 elements — 7 alternating field-name / value pairs:
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `quant-type` | simple string | One of `f32`, `bin`, `q8`, `xpreq8` |
+| `quant-type` | simple string | One of `f32`, `q8`, `bin`, `xnoquant_u8`, `xnoquant_i8`, `xbin_u8`, `xbin_i8` |
 | `distance-metric` | simple string | One of `l2`, `cosine`, `inner-product`, `cosine-normalized` |
 | `input-vector-dimensions` | integer (bulk string) | Dimensions of the input vector |
-| `reduced-dimensions` | integer (bulk string) | Dimensions stored in the index (after `REDUCE`); same as `input-vector-dimensions` if no projection |
+| `reduced-dimensions` | integer (bulk string) | Dimensions stored in the index after `REDUCE`, or `0` when no projection is configured |
 | `build-exploration-factor` | integer (bulk string) | `EF` used at build time |
 | `num-links` | integer (bulk string) | `M` (max out-degree) |
 | `size` | integer (bulk string) | Number of elements currently in the index |
@@ -206,7 +215,7 @@ Returns a null array if the key does not exist; `WRONGTYPE` if the key holds a d
  5) "input-vector-dimensions"
  6) "768"
  7) "reduced-dimensions"
- 8) "768"
+ 8) "0"
  9) "build-exploration-factor"
 10) "200"
 11) "num-links"
@@ -219,7 +228,8 @@ Returns a null array if the key does not exist; `WRONGTYPE` if the key holds a d
 
 ### VDIM
 
-Return the input vector dimensions (i.e. the dimension before any `REDUCE`).
+Return the dimensionality of the vectors stored in the index — that is, the `REDUCE` dimension when a projection
+is configured, otherwise the input vector dimension.
 
 #### Syntax
 
@@ -264,7 +274,7 @@ Re-running `DEL key` (or letting expiration / `FLUSHDB` cover it) finishes the c
 
 Standard key-management commands work on Vector Set keys:
 
-- `TYPE key` currently reports `string` for Vector Set keys (a dedicated reply name is not yet wired up).
+- `TYPE key` reports `vectorset` for Vector Set keys.
 - `EXPIRE` / `PEXPIRE` / `EXPIREAT` / `PERSIST` / `TTL` / `PTTL` set, query, and clear TTLs the same way as any
   other key. When a Vector Set key expires, the vector index is dropped in the background, matching the behavior
   of explicit `DEL`.
@@ -298,17 +308,18 @@ Integer reply: `:1` if the element was removed, `:0` if it was not present (or t
 
 ### VEMB
 
-Return the stored vector for an element as an array of textual floats.
+Return the stored vector for an element.
 
 #### Syntax
 
 ```bash
-VEMB key element
+VEMB key element [RAW]
 ```
 
 #### Resp Reply
 
-Array of bulk strings, one per dimension. Returns an empty array if the element is not present in the index.
+Without `RAW`, an array of bulk strings, one per dimension. Returns an empty array if the element is not present
+in the index.
 
 ```text
 > VEMB movies dune
@@ -318,8 +329,25 @@ Array of bulk strings, one per dimension. Returns an empty array if the element 
 ...
 ```
 
+With `RAW`, an array describing the internally stored representation:
+
+| # | Field | Description |
+|---|-------|-------------|
+| 1 | quantization name | `fp32` for `NOQUANT`; `q8` for `Q8` / `XNOQUANT_U8` / `XNOQUANT_I8`; `bin` for `BIN` / `XBIN_U8` / `XBIN_I8` |
+| 2 | raw blob | The bytes DiskANN stored for the quantized vector. For the `*NOQUANT*` quantizers this is the original vector. |
+| 3 | L2 norm | Currently a placeholder value. |
+| 4 | quantization range | Present **only** when the quantizer is `Q8`. Currently a placeholder value. |
+
+```text
+> VEMB movies dune RAW
+1) "fp32"
+2) "\x00\x00\x80?\x00\x00\x00@\x00\x00@@"
+3) "1"
+```
+
 :::note
-The `RAW` form (`VEMB key element RAW`) is parsed but not yet implemented — invoking it currently throws.
+The L2 norm and quantization range elements are dummy placeholder values in the current preview build — do not
+rely on them.
 :::
 
 ---
@@ -388,7 +416,7 @@ The query's effective dimension must match the index's `input-vector-dimensions`
 
 #### Resp Reply
 
-A flat RESP array. The number of elements per result depends on which `WITH*` flags are set:
+**RESP2** — a flat array. The number of elements per result depends on which `WITH*` flags are set:
 
 | Flags | Items per result | Order |
 |-------|------------------|-------|
@@ -401,9 +429,19 @@ Scores are returned as bulk strings (decimal text). When `WITHATTRIBS` is set an
 slot is an empty bulk string. The result is in similarity order (closest first). Results may be fewer than `COUNT`
 if the candidate set is smaller.
 
-:::note
-`VSIM` currently only supports RESP2. Calling it in a RESP3 session is not yet implemented.
-:::
+**RESP3** — with no `WITH*` flag the reply is a flat array of IDs. With `WITHSCORES` and/or `WITHATTRIBS` the
+reply is a **map** keyed by element ID, and scores are returned as RESP3 doubles rather than bulk strings:
+
+```text
+# RESP3, WITHSCORES
+%2
+$1 a
+,0
+$1 b
+,0.75
+```
+
+When both `WITHSCORES` and `WITHATTRIBS` are given, each map value is a two-element array of `score` and `attr`.
 
 #### Examples
 
@@ -464,8 +502,8 @@ Filters are compiled and evaluated with zero heap allocation on the hot path, so
 | Max eval stack depth | 16 | Postfix evaluation depth |
 | Max parenthesis nesting | 128 | Bounded by the token buffer |
 
-Missing attributes cause the filter to evaluate to false for that candidate. Compile errors yield an empty result
-set rather than a server-side error.
+Missing attributes cause the filter to evaluate to false for that candidate. An expression that fails to compile
+returns `ERR Compiling filter failed`. An empty `FILTER ""` is treated as no filter at all.
 
 #### Examples
 
@@ -483,15 +521,37 @@ VSIM movies VALUES 3 0.12 0.34 0.56 FILTER ".year != null and .rating >= 4.0"
 
 The active quantizer determines how vectors are stored internally and which input forms are valid.
 
-| Token | Status | Notes |
-|-------|--------|-------|
-| `NOQUANT` | ✅ Supported | Store input as `float32`. Works with `FP32`, `XB8`, and `VALUES` inputs (uint8 bytes are widened to floats). |
-| `XPREQ8` | ✅ Supported | Garnet extension: stores the input `uint8` bytes verbatim with no further quantization. Requires `XB8` input and is incompatible with `REDUCE`. |
-| `Q8` | ❌ Rejected | Parsed for compatibility; returns `ERR Unsupported quantization type`. |
-| `BIN` | ❌ Rejected | Parsed for compatibility; returns `ERR Unsupported quantization type`. |
+| Token | `VINFO` `quant-type` | Status | Notes |
+|-------|----------------------|--------|-------|
+| `NOQUANT` | `f32` | ✅ Supported | Store input as `float32`. Works with `FP32`, `XB8`, and `VALUES` inputs (uint8 bytes are widened to floats). |
+| `Q8` | `q8` | ✅ Supported | Redis-compatible 8-bit scalar quantization. Vectors are stored full-precision on insert; a quantization table is built asynchronously in the background and existing vectors are then backfilled (see below). |
+| `BIN` | `bin` | ✅ Supported | Redis-compatible binary (1 bit/dimension) quantization, using the same asynchronous table-build + backfill flow as `Q8`. |
+| `XNOQUANT_U8` | `xnoquant_u8` | ✅ Supported | Garnet extension: stores the input bytes verbatim with no further quantization, as **unsigned** `uint8`. |
+| `XNOQUANT_I8` | `xnoquant_i8` | ✅ Supported | As `XNOQUANT_U8`, but the bytes are interpreted as **signed** `int8`. |
+| `XBIN_U8` | `xbin_u8` | ✅ Supported | Garnet extension: binary quantization over pre-supplied **unsigned** `uint8` input. |
+| `XBIN_I8` | `xbin_i8` | ✅ Supported | Garnet extension: binary quantization over pre-supplied **signed** `int8` input. |
+| `XPREQ8` | `xnoquant_u8` | ⚠️ Deprecated alias | Kept for backwards compatibility; identical to `XNOQUANT_U8`. Prefer `XNOQUANT_U8` in new code. |
 
-If no quantizer is specified on the first `VADD`, the default is `Q8`, which currently fails — supply `NOQUANT` (or
-`XPREQ8` for uint8 data) explicitly.
+If no quantizer is specified on the first `VADD`, the default is `Q8`.
+
+The `X*` quantizers accept `XB8` input (the fastest path — the bytes are used directly with no conversion or
+validation) but also accept `FP32` and `VALUES`. With the latter forms each element must already be in the
+quantizer's byte range, otherwise the insert is rejected:
+
+```
+ERR Vector contains element that is < 0 or > 255, operation will lose precision
+ERR Vector contains element that is < -128 or > 127, operation will lose precision
+```
+
+`REDUCE` is not supported together with the `XNOQUANT_*` / `XBIN_*` quantizers; combining them fails with
+`ERR asked quantization mismatch with existing vector set`. `REDUCE` works with `NOQUANT`, `Q8`, and `BIN`.
+
+:::note
+`Q8` and `BIN` quantization is applied **asynchronously**. A `VADD` always stores the full-precision vector first;
+background tasks then build the quantization table for the index and backfill quantized vectors. Until that
+completes, searches run against full-precision data, so on very small or very young indexes `Q8`/`BIN` results are
+identical to `NOQUANT`. This is transparent to callers apart from the recall/latency profile.
+:::
 
 ## Distance Metrics
 
@@ -523,8 +583,8 @@ Vector Set keys are type-safe:
 
 ## Not Yet Implemented
 
-These commands are reachable through the parser but currently return `+OK` regardless of arguments. They are
-reserved for future implementation:
+These commands are recognized by the parser and dispatched to a handler, but the underlying storage operation is
+not implemented yet. They are reserved for future implementation:
 
 | Command | Intended behavior |
 |---------|--------------------|
@@ -534,7 +594,20 @@ reserved for future implementation:
 | `VRANDMEMBER key [count]` | Return random element IDs. |
 | `VSETATTR key element attr` | Update an element's attribute in place. Today the only way to set/replace an attribute is to re-run `VADD ... SETATTR`. |
 
-Treat these as no-ops in preview builds — do not rely on their return value.
+:::warning
+Argument validation and key lookup are wired up, so these commands behave sensibly when the key is missing or
+holds another type — `VCARD` / `VISMEMBER` / `VSETATTR` return `:0`, `VLINKS` / `VRANDMEMBER` return a nil reply,
+and a non-Vector-Set key returns `WRONGTYPE`.
+
+However, invoking any of them against an **existing Vector Set key** returns
+
+```
+ERR Garnet Exception: Unsupported operation on input
+```
+
+**and closes the client connection.** Do not call them in preview builds. Clients with automatic reconnection
+will recover, but any pipelined commands still in flight on that connection are lost.
+:::
 
 ---
 
@@ -558,7 +631,7 @@ Treat these as no-ops in preview builds — do not rely on their return value.
  5) "input-vector-dimensions"
  6) "3"
  7) "reduced-dimensions"
- 8) "3"
+ 8) "0"
  9) "build-exploration-factor"
 10) "200"
 11) "num-links"

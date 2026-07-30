@@ -430,7 +430,7 @@ Legend: ➕ = supported, ➖ = not supported.
 | <span id="vectorset">**VECTOR SET (Preview)**</span> | [VADD](vector-sets.md#vadd) | ➕ | Preview |
 |  | [VSIM](vector-sets.md#vsim) | ➕ | Preview |
 |  | [VREM](vector-sets.md#vrem) | ➕ | Preview |
-|  | [VEMB](vector-sets.md#vemb) | ➕ | Preview (no `RAW`) |
+|  | [VEMB](vector-sets.md#vemb) | ➕ | Preview |
 |  | [VDIM](vector-sets.md#vdim) | ➕ | Preview |
 |  | [VINFO](vector-sets.md#vinfo) | ➕ | Preview |
 |  | [VGETATTR](vector-sets.md#vgetattr) | ➕ | Preview |
