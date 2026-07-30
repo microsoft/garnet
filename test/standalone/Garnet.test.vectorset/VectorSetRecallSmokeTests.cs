@@ -30,11 +30,11 @@ namespace Garnet.test
     /// fixed graph parameters) so the tests are stable and fast.
     ///
     /// NOTE: the Q8 (8-bit scalar) cases that read from disk (FlushAndEvict, larger-than-memory load,
-    /// and recover) are EXPECTED TO FAIL against diskann-garnet 4.0.0: the per-dimension Q8
-    /// quantization table is native in-memory-only state that is lost when the index is recreated after
-    /// eviction/recovery and cannot be rebuilt, so codes are decoded with a missing table and recall
-    /// collapses (~1.0 -> ~0.02-0.11). NOQUANT and BIN (table-free) are robust. This is a deliberate
-    /// regression guard, not a flaky test. See gist 52a9739f8963462d695576b5c1fe9deb.
+    /// and recover) used to fail against diskann-garnet 4.0.0/4.0.1 because the per-dimension Q8
+    /// quantization table was native in-memory-only state that was lost when the index is recreated
+    /// after eviction/recovery, so codes were decoded with a missing table and recall collapsed
+    /// (~1.0 -> ~0.02-0.11). This was fixed in diskann-garnet 4.0.2; the Q8 disk cases now pass and
+    /// stand as regression guards. NOQUANT and BIN (table-free) were always robust.
     /// </summary>
     [TestFixture]
     public class VectorSetRecallSmokeTests : TestBase
@@ -55,7 +55,8 @@ namespace Garnet.test
         private const double MinInMemoryRecall = 0.80;
 
         // Robustness budget: a physical-config change (evict-to-disk / recover) may only cost this much
-        // recall. NOQUANT/BIN cost ~0.0; the Q8 disk bug costs ~0.9 and blows through this budget.
+        // recall. NOQUANT/BIN/Q8 all cost ~0.0 on 4.0.2; the pre-4.0.2 Q8 disk bug cost ~0.9 and blew
+        // through this budget.
         private const double MaxRecallDrop = 0.20;
 
         private global::Garnet.GarnetServer server;
@@ -114,8 +115,8 @@ namespace Garnet.test
             var onDisk = MeasureRecall(db, key, data);
             ClassicAssert.GreaterOrEqual(onDisk, inMemory - MaxRecallDrop,
                 $"{quant} [{readMode}]: recall collapsed after eviction to disk " +
-                $"(in-memory {inMemory:F3} -> on-disk {onDisk:F3}). For Q8 this is the known " +
-                "quantization-table-lost-on-recreate bug (diskann-garnet 4.0.0).");
+                $"(in-memory {inMemory:F3} -> on-disk {onDisk:F3}). For Q8, a regression here is the " +
+                "quantization-table-lost-on-recreate bug fixed in diskann-garnet 4.0.2.");
         }
 
         /// <summary>
@@ -149,7 +150,7 @@ namespace Garnet.test
             var onDisk = MeasureRecall(db, key, data);
             ClassicAssert.GreaterOrEqual(onDisk, MinInMemoryRecall,
                 $"{quant}: recall {onDisk:F3} is broken for a graph built and served larger-than-memory. " +
-                "For Q8 this is the known quantization-table-lost-on-recreate bug (diskann-garnet 4.0.0).");
+                "For Q8, a regression here is the quantization-table-lost-on-recreate bug fixed in diskann-garnet 4.0.2.");
         }
 
         /// <summary>
@@ -218,8 +219,8 @@ namespace Garnet.test
                 var after = MeasureRecall(db, key, data);
                 ClassicAssert.GreaterOrEqual(after, before - MaxRecallDrop,
                     $"{quant} [recoverIntoSmallerLog={recoverIntoSmallerLog}]: recall collapsed after save+restart+recover " +
-                    $"(before {before:F3} -> after {after:F3}). For Q8 this is the known " +
-                    "quantization-table-lost-on-recreate bug (diskann-garnet 4.0.0).");
+                    $"(before {before:F3} -> after {after:F3}). For Q8, a regression here is the " +
+                    "quantization-table-lost-on-recreate bug fixed in diskann-garnet 4.0.2.");
             }
         }
 
