@@ -107,19 +107,40 @@ namespace Tsavorite.core
         /// <returns>The number of bytes written for the value object, if any.</returns>
         public ulong WriteRecordObjects(in OverflowByteArray keyOverflow, in OverflowByteArray valueOverflow, in IHeapObject valueObject)
         {
-            // If the key is overflow, start with that.
+            // If the key is overflow, start with that. A key at/above the RDH KeyLength sentinel carries its full length in a leading
+            // ChunkHeader (the RDH KeyLength field holds only the sentinel); below the sentinel the RDH holds the exact length (no header).
             if (!keyOverflow.IsEmpty)
+            {
+                if (keyOverflow.Length >= (int)RecordDataHeader.kKeyLengthLowBitsMask)
+                    WriteOverflowChunkHeader(keyOverflow.Length);
                 WriteDirect(keyOverflow);
+            }
 
             // Now do value overflow or object, if either is present.
             if (!valueOverflow.IsEmpty)
+            {
+                // A value at/above the RDH ValueLength sentinel carries its full length in a leading ChunkHeader (symmetric with the key);
+                // below the sentinel the RDH holds the exact length (no header).
+                if (valueOverflow.Length >= (int)RecordDataHeader.kValueLengthLowBitsMask)
+                    WriteOverflowChunkHeader(valueOverflow.Length);
                 WriteDirect(valueOverflow);
+            }
             else if (valueObject is not null)
                 DoSerialize(valueObject);
 
             // Signal completion.
             flushBuffers.OnRecordComplete();
             return valueObjectBytesWritten;
+        }
+
+        /// <summary>Write the 8-byte <see cref="ChunkHeader"/> that precedes an overflow key/value whose length is at/above the RDH field
+        /// sentinel: <see cref="ChunkHeader.currentLength"/> carries the full length (single header, no continuation; DMA alignment padding
+        /// is 0 on the buffered write path). See website/docs/dev/objectlog-serialization.md.</summary>
+        void WriteOverflowChunkHeader(int overflowLength)
+        {
+            ChunkHeader header = default;
+            header.currentLength = (uint)overflowLength;
+            Write(new ReadOnlySpan<byte>(&header, ChunkHeader.TotalSize));
         }
 
         /// <summary>

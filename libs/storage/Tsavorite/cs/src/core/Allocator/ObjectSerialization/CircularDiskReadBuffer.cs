@@ -33,6 +33,13 @@ namespace Tsavorite.core
         /// <summary>Track the remaining length to be read for one or more records for Object values, and we can also read some or all of Overflow values into the buffer.</summary>
         ulong unreadLengthRemaining;
 
+        /// <summary>Physical bytes already read into the buffers beyond the logical length requested so far, because each partial read is
+        /// rounded up to sector alignment. A subsequent <see cref="ExtendUnreadLengthRemaining"/> (e.g. an overflow key/value whose true
+        /// length, read from its <see cref="ChunkHeader"/>, exceeds the capped RDH-sentinel hint that sized the initial read) is first
+        /// satisfied from this already-present data before <see cref="unreadLengthRemaining"/> grows, so a small extent increase does not
+        /// spuriously fill an additional read buffer that would never be consumed (leaving a dangling in-flight read).</summary>
+        ulong readAheadSlack;
+
         internal CircularDiskReadBuffer(SectorAlignedBufferPool bufferPool, int bufferSize, int numBuffers, IDevice objectLogDevice, ILogger logger)
         {
             this.bufferPool = bufferPool;
@@ -102,6 +109,11 @@ namespace Tsavorite.core
 
             // We may not have had a sector-aligned amount of remaining unread data.
             var alignedReadLength = RoundUp(unalignedReadLength, (int)objectLogDevice.SectorSize);
+
+            // The rounding-up read some physical bytes past the logical request; track them so a later ExtendUnreadLengthRemaining can be
+            // satisfied from this already-present data rather than issuing a new read into a buffer that would never be consumed.
+            readAheadSlack += (uint)(alignedReadLength - unalignedReadLength);
+
             buffer.ReadFromDevice(nextFileReadPosition, bufferStartPosition, (uint)alignedReadLength, ReadFromDeviceCallback);
 
             // Advance the filePosition. This used aligned read length so may advance it past end of record but that's OK because
@@ -130,6 +142,7 @@ namespace Tsavorite.core
             Debug.Assert(totalLength > 0, "TotalLength cannot be 0");
             nextFileReadPosition = startFilePosition;
             unreadLengthRemaining = totalLength;
+            readAheadSlack = 0;
 
             // Initialize all buffers
             for (var ii = 0; ii < buffers.Length; ii++)
@@ -150,6 +163,40 @@ namespace Tsavorite.core
                     break;
                 DoReadBuffer(ii, recordStartPosition);
                 recordStartPosition = 0;  // After the first read, subsequent reads start on an aligned address
+            }
+        }
+
+        /// <summary>
+        /// Extend the remaining read-ahead length by <paramref name="extra"/> bytes so subsequent buffer fills reach further. Used when a
+        /// record's on-disk extent exceeds the initial estimate — e.g. an overflow key/value at/above the RDH field sentinel whose true
+        /// length (read from its <see cref="ChunkHeader"/>) is larger than the capped sentinel hint that sized the initial read.
+        /// </summary>
+        internal void ExtendUnreadLengthRemaining(long extra)
+        {
+            Debug.Assert(extra >= 0, $"ExtendUnreadLengthRemaining extra ({extra}) must be non-negative");
+            unreadLengthRemaining += (ulong)extra;
+
+            // If data still remains to be read, the ring may be under-primed (the initial fill stops when unreadLengthRemaining hits 0), so
+            // fill the empty buffers ahead of the current one; otherwise MoveToNextBuffer would advance onto an un-primed buffer and stop.
+            // Before each fill, absorb physical read-ahead slack (bytes already present because prior reads -- including earlier iterations
+            // of this loop -- were rounded up to sector alignment): the reader consumes those bytes from the existing buffer, so they must
+            // reduce the remaining need. This prevents filling a buffer that would never be consumed (its in-flight read would then race the
+            // 'using' disposal of this CircularDiskReadBuffer on the single-record read path, which does not wait for reads on success).
+            // Skip buffers that already had a read issued (readIssued) -- including still-in-flight initial fills; using readIssued rather
+            // than HasData/HasInFlightRead avoids a race where a completed-but-not-yet-visible endPosition makes a primed buffer look empty
+            // and get re-read at the wrong file offset, leaving a gap in the record.
+            for (var idx = GetNextBufferIndex(currentIndex); idx != currentIndex; idx = GetNextBufferIndex(idx))
+            {
+                var absorbed = Math.Min(unreadLengthRemaining, readAheadSlack);
+                readAheadSlack -= absorbed;
+                unreadLengthRemaining -= absorbed;
+                if (unreadLengthRemaining == 0)
+                    break;
+
+                var buf = buffers[idx];
+                if (buf is not null && buf.readIssued)
+                    continue;
+                DoReadBuffer(idx, unalignedReadStartPosition: 0);
             }
         }
 

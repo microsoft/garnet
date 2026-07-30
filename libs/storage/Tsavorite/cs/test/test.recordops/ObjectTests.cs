@@ -271,6 +271,59 @@ namespace Tsavorite.test.Objects
         }
 
         [Test, Category(TsavoriteKVTestCategory), Category(LogRecordCategory), Category(SmokeTestCategory), Category(ObjectIdMapCategory)]
+        //[Repeat(50)]
+        public void LargeObjectDiskWriteReadChunkedValue([Values(
+            IStreamBuffer.BufferSize * 4,                 // exactly 4 buffers (>= the 16 MB ValueLength sentinel): full-buffer count only, 0 final pages
+            (IStreamBuffer.BufferSize * 4) + 4096,        // 4 buffers + one 4 KB final page
+            (IStreamBuffer.BufferSize * 4) + 5000,        // 4 buffers + a non-page-aligned tail (exercises the final-page round-up)
+            (IStreamBuffer.BufferSize * 5) + 123456       // 5 buffers + an odd tail
+            )] int baseValueSize)
+        {
+            // Small (inline) key, big (>= 16 MB ValueLength sentinel) object value: validates the chunked ValueLength encoding
+            // (bit-23 full-buffer count + final-4KB-page count) and the reader's read-ahead extent decode for values whose exact
+            // serialized length does not fit the 24-bit field.
+            using var session = store.NewSession<TestObjectKey, TestLargeObjectInput, TestLargeObjectOutput, Empty, TestLargeObjectFunctions>(new TestLargeObjectFunctions());
+            var bContext = session.BasicContext;
+
+            var input = new TestLargeObjectInput();
+            var output = new TestLargeObjectOutput();
+            const int numRec = 3;
+            for (int ii = 0; ii < numRec; ii++)
+            {
+                var key = new TestObjectKey { key = ii };
+                var value = new TestLargeObjectValue(baseValueSize + (ii * 4096));
+                new Span<byte>(value.value).Fill(0x42);
+                _ = bContext.Upsert(key, ref input, value, ref output);
+            }
+
+            // Test before and after the flush (the chunked encoding only affects the on-disk read).
+            DoRead(onDisk: false);
+            store.Log.FlushAndEvict(wait: true);
+            DoRead(onDisk: true);
+
+            void DoRead(bool onDisk)
+            {
+                TestLargeObjectInput input = new() { wantValueStyle = TestValueStyle.Object };
+                for (int ii = 0; ii < numRec; ii++)
+                {
+                    var output = new TestLargeObjectOutput();
+                    var key = new TestObjectKey { key = ii };
+
+                    var status = bContext.Read(key, ref input, ref output, Empty.Default);
+                    Assert.That(status.IsPending, Is.EqualTo(onDisk), $"IsPending ({status.IsPending}) != onDisk");
+                    if (status.IsPending)
+                        (status, output) = bContext.GetSinglePendingResult();
+                    Assert.That(status.Found, Is.True, $"record# {ii}, onDisk {onDisk}");
+
+                    Assert.That(output.valueObject.value.Length, Is.EqualTo(baseValueSize + (ii * 4096)), $"record# {ii}, onDisk {onDisk}");
+                    var badIndex = new ReadOnlySpan<byte>(output.valueObject.value).IndexOfAnyExcept((byte)0x42);
+                    if (badIndex != -1)
+                        Assert.Fail($"Unexpected byte value at index {badIndex}, onDisk {onDisk}, record# {ii}: {output.valueObject.value[badIndex]}");
+                }
+            }
+        }
+
+        [Test, Category(TsavoriteKVTestCategory), Category(LogRecordCategory), Category(SmokeTestCategory), Category(ObjectIdMapCategory)]
         //[Repeat(300)]
         public void LargeObjectMultiFlushedPages([Values(SerializeKeyValueSize.Thirty, SerializeKeyValueSize.OneK)] SerializeKeyValueSize serializeValueSize)
         {
@@ -630,6 +683,67 @@ namespace Tsavorite.test.Objects
                     var badIndex = new ReadOnlySpan<byte>(output.valueArray).IndexOfAnyExcept((byte)len);
                     if (badIndex != -1)
                         Assert.Fail($"len {len}, onDisk {onDisk}: unexpected byte {output.valueArray[badIndex]} at index {badIndex}");
+                }
+            }
+        }
+
+        [Test, Category(TsavoriteKVTestCategory), Category(LogRecordCategory), Category(SmokeTestCategory), Category(ObjectIdMapCategory)]
+        public void LargeOverflowValueChunkedTest([Values(
+            (IStreamBuffer.BufferSize * 4) + 5000,        // >= the 16 MB ValueLength sentinel: full length carried in a leading ChunkHeader
+            (IStreamBuffer.BufferSize * 5) + 123456
+            )] int valueLength)
+        {
+            // Recreate the store with MaxInlineValueSize == 0 so the large raw byte value is stored as an overflow value (not an object),
+            // exercising the >= sentinel overflow-value leading-ChunkHeader read path (symmetric with a large overflow key).
+            store?.Dispose();
+            store = new(new()
+            {
+                IndexSize = 1L << 13,
+                LogDevice = log,
+                ObjectLogDevice = objlog,
+                MutableFraction = 0.1,
+                LogMemorySize = LogMemorySize,
+                PageSize = PageSize,
+                MaxInlineValueSize = 0
+            }, StoreFunctions.Create(new TestObjectKey.Comparer(), () => new TestObjectValue.Serializer(), DefaultRecordTriggers.Instance)
+                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
+            );
+
+            using var session = store.NewSession<TestObjectKey, TestLargeObjectInput, TestLargeObjectOutput, Empty, TestLargeObjectFunctions>(new TestLargeObjectFunctions());
+            var bContext = session.BasicContext;
+
+            const int numRec = 2;
+            for (var ii = 0; ii < numRec; ii++)
+            {
+                var key = new TestObjectKey { key = ii };
+                var value = new byte[valueLength + (ii * 4096)];
+                new Span<byte>(value).Fill((byte)(0x30 + ii));
+                _ = bContext.Upsert(key, value.AsSpan(), Empty.Default);
+            }
+
+            DoReads(onDisk: false);
+            store.Log.FlushAndEvict(wait: true);
+            DoReads(onDisk: true);
+
+            void DoReads(bool onDisk)
+            {
+                for (var ii = 0; ii < numRec; ii++)
+                {
+                    var expectedLen = valueLength + (ii * 4096);
+                    var key = new TestObjectKey { key = ii };
+                    TestLargeObjectInput input = new() { wantValueStyle = TestValueStyle.Overflow, expectedSpanLength = expectedLen };
+                    TestLargeObjectOutput output = new();
+
+                    var status = bContext.Read(key, ref input, ref output, Empty.Default);
+                    Assert.That(status.IsPending, Is.EqualTo(onDisk), $"record# {ii}, onDisk {onDisk}");
+                    if (status.IsPending)
+                        (status, output) = bContext.GetSinglePendingResult();
+                    Assert.That(status.Found, Is.True, $"record# {ii}, onDisk {onDisk}");
+
+                    Assert.That(output.valueArray.Length, Is.EqualTo(expectedLen), $"record# {ii}, onDisk {onDisk}");
+                    var badIndex = new ReadOnlySpan<byte>(output.valueArray).IndexOfAnyExcept((byte)(0x30 + ii));
+                    if (badIndex != -1)
+                        Assert.Fail($"record# {ii}, onDisk {onDisk}: unexpected byte {output.valueArray[badIndex]} at index {badIndex}");
                 }
             }
         }

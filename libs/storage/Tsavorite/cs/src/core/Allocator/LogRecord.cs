@@ -1529,7 +1529,7 @@ namespace Tsavorite.core
                 keyLen = objectIdMap.GetOverflowByteArray(*(int*)keyAddress).Length;
             }
             var valLen = dataHeader.ValueIsOverflow ? (long)objectIdMap.GetOverflowByteArray(*(int*)valueAddress).Length : (long)valueObjectLength;
-            dataHeader.SetOverflowLengthHints(keyLen, valLen);
+            dataHeader.SetObjectLogLengthHints(keyLen, valLen);
 
             // Atomic publish via SetDataHeader.
             SetDataHeader(dataHeader);
@@ -1578,7 +1578,7 @@ namespace Tsavorite.core
             keyLength = dataHeader.KeyIsOverflow ? dataHeader.GetKeyLengthRaw() : 0;   // KeyIsInline: keyLength is ignored
 
             if (!dataHeader.ValueIsInline)
-                valueObjectLength = (ulong)(uint)dataHeader.GetValueLengthRaw();
+                valueObjectLength = RecordDataHeader.DecodeFlushValueExtent((uint)dataHeader.GetValueLengthRaw(), dataHeader.ValueIsObject);
             else // ValueIsInline is true; valueLength will be ignored
             {
                 valueObjectLength = 0;
@@ -1632,7 +1632,7 @@ namespace Tsavorite.core
 
             // Write the position with the flag cleared and the exact lengths as RDH hints (capped at the sentinel), objectId slots untouched.
             *objectLogPositionPtr = pagePositionInfo.word;
-            dataHeader.SetOverflowLengthHints((int)keyLen, (long)valLen);
+            dataHeader.SetObjectLogLengthHints((int)keyLen, (long)valLen);
 
             // Atomic publish via SetDataHeader.
             SetDataHeader(dataHeader);

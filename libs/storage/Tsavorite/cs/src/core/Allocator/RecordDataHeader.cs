@@ -321,6 +321,128 @@ namespace Tsavorite.core
                 ValueLength = valueActualLength >= (long)kValueLengthLowBitsMask ? (int)kValueLengthLowBitsMask : (int)valueActualLength;
         }
 
+        // ── Flush (v2.2) non-inline ValueLength encoding ─────────────────────────────────────────────────────────
+        // For a non-inline value, the FLUSH object-log format encodes the read extent into the 24-bit ValueLength field
+        // (the ValueLength property still returns ObjectIdSize; read the encoding via GetValueLengthRaw()):
+        //   Object value, bit 23 set   -> Chunked object: bits 0-11 = full-buffer count, bits 12-21 = final-buffer 4KB-page count
+        //                                 (the read-ahead extent; the object stream is dense with no per-chunk framing and the
+        //                                 deserializer self-terminates). Used when the serialized length is >= one buffer.
+        //   Object value, bit 23 clear -> Headerless object: bits 0-22 = exact serialized length (< one buffer).
+        //   Overflow value < sentinel  -> Exact byte length in the full 24-bit field.
+        //   Overflow value == sentinel -> Length is at/above the field maximum; the full length precedes the bytes in a leading
+        //                                 ChunkHeader (symmetric with a >= sentinel overflow KEY, whose KeyLength field is likewise the
+        //                                 sentinel). The reader reads the header and extends the read-ahead (ReadOverflowHeaderLengthAndExtend).
+        // Decode via DecodeFlushValueExtent (branches on ValueIsObject). Reader (ObjectLogReader) selects overflow-vs-object from the RDH.
+        // Bit 22 (kFlushOverflowHeaderBit) and EncodeFlushOverflowHeader are RESERVED for a future precise first-read-hint for a headered
+        // overflow value (currently the sentinel path reads one buffer up front, then extends); they are not used or read today.
+        // The network (migration/replication) path uses SetOverflowLengthHints (sentinel-capped) instead; see
+        // website/docs/dev/objectlog-serialization.md.
+        internal const int kFlushChunkedObjectBit = 23;
+        internal const uint kFlushChunkedObjectMask = 1u << kFlushChunkedObjectBit;
+        internal const int kFlushOverflowHeaderBit = 22;
+        internal const uint kFlushOverflowHeaderMask = 1u << kFlushOverflowHeaderBit;
+
+        internal const int kFlushBufferCountBits = 12;                                   // bits 0-11
+        internal const uint kFlushBufferCountMask = (1u << kFlushBufferCountBits) - 1;
+        internal const int kFlushFinalPageShift = kFlushBufferCountBits;                 // bits 12-21
+        internal const int kFlushFinalPageBits = 10;
+        internal const uint kFlushFinalPageMask = (1u << kFlushFinalPageBits) - 1;
+        internal const int kFlushReadHintBits = 22;                                      // bits 0-21
+        internal const uint kFlushReadHintMask = (1u << kFlushReadHintBits) - 1;
+
+        internal const int kFlushMaxBufferCount = (int)kFlushBufferCountMask;            // 4095 buffers (16 GB @ 4 MB)
+        internal const int kFlushMaxFinalPages = (int)kFlushFinalPageMask;              // 1023 pages (4 MB @ 4 KB)
+        internal const int kFlushMaxReadHint = (int)kFlushReadHintMask;                 // 4194303 bytes (< 4 MB)
+
+        /// <summary>Encode a chunked (multi-buffer) object value's read extent into the 24-bit ValueLength field: full-buffer count +
+        /// final-buffer 4 KB-page count.</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal static uint EncodeFlushChunkedObject(int bufferCount, int finalBufferPages)
+        {
+            Debug.Assert((uint)bufferCount <= kFlushBufferCountMask, $"bufferCount {bufferCount} exceeds {kFlushBufferCountBits}-bit max");
+            Debug.Assert((uint)finalBufferPages <= kFlushFinalPageMask, $"finalBufferPages {finalBufferPages} exceeds {kFlushFinalPageBits}-bit max");
+            return kFlushChunkedObjectMask | ((uint)finalBufferPages << kFlushFinalPageShift) | (uint)bufferCount;
+        }
+
+        /// <summary>Encode an overflow value that has a single leading header: bits 0-21 hold the first-buffer read hint (at most one buffer).</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal static uint EncodeFlushOverflowHeader(int firstReadHint)
+        {
+            Debug.Assert((uint)firstReadHint <= kFlushReadHintMask, $"firstReadHint {firstReadHint} exceeds {kFlushReadHintBits}-bit max");
+            return kFlushOverflowHeaderMask | (uint)firstReadHint;
+        }
+
+        /// <summary>Encode a headerless small value: bits 0-21 hold the exact byte length (must be less than one buffer).</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal static uint EncodeFlushHeaderless(int exactLength)
+        {
+            Debug.Assert((uint)exactLength <= kFlushReadHintMask, $"exactLength {exactLength} exceeds {kFlushReadHintBits}-bit max");
+            return (uint)exactLength;
+        }
+
+        /// <summary>True if the flush ValueLength encoding is a chunked (multi-buffer) object.</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal static bool FlushValueIsChunkedObject(uint encoded) => (encoded & kFlushChunkedObjectMask) != 0;
+        /// <summary>Full-buffer count of a chunked object (valid only when <see cref="FlushValueIsChunkedObject"/>).</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal static int FlushChunkedBufferCount(uint encoded) => (int)(encoded & kFlushBufferCountMask);
+        /// <summary>Final-buffer 4 KB-page count of a chunked object (valid only when <see cref="FlushValueIsChunkedObject"/>).</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal static int FlushChunkedFinalPages(uint encoded) => (int)((encoded >> kFlushFinalPageShift) & kFlushFinalPageMask);
+        /// <summary>True if a non-chunked value has a single leading overflow header (valid only when not <see cref="FlushValueIsChunkedObject"/>).</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal static bool FlushValueHasOverflowHeader(uint encoded) => (encoded & kFlushOverflowHeaderMask) != 0;
+        /// <summary>The first-buffer read hint (overflow-with-header) or the exact length (headerless): bits 0-21.</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal static int FlushValueReadHintOrExact(uint encoded) => (int)(encoded & kFlushReadHintMask);
+
+        /// <summary>Size (bytes) of a chunked object's final-buffer page unit; the final-buffer page count in the chunked encoding is measured in these.</summary>
+        internal const int kFlushFinalPageSize = 1 << 12;                                // 4 KB
+
+        /// <summary>Encode a non-inline object value's serialized length into the 24-bit ValueLength field for the FLUSH format: the exact
+        /// length when it fits headerless (&lt; one buffer), else the chunked (multi-buffer) full-buffer + final-4KB-page extent.</summary>
+        internal static uint EncodeFlushObjectValue(long serializedLength)
+        {
+            if (serializedLength <= kFlushMaxReadHint)
+                return EncodeFlushHeaderless((int)serializedLength);
+
+            // Chunked: round the extent up to a 4 KB page and split into full-BufferSize buffers plus a final-buffer page count. The reader
+            // sizes its read-ahead from this (>= serializedLength, over by < 4 KB); the deserializer self-terminates at the exact length.
+            var extent = RoundUp(serializedLength, kFlushFinalPageSize);
+            var fullBuffers = (int)(extent / IStreamBuffer.BufferSize);
+            var finalPages = (int)((extent - (long)fullBuffers * IStreamBuffer.BufferSize) / kFlushFinalPageSize);
+            if (fullBuffers > kFlushMaxBufferCount)
+                throw new TsavoriteException($"Serialized object length {serializedLength} exceeds the {(long)kFlushMaxBufferCount * IStreamBuffer.BufferSize}-byte chunked-object encoding limit");
+            return EncodeFlushChunkedObject(fullBuffers, finalPages);
+        }
+
+        /// <summary>Decode a FLUSH ValueLength encoding to the read-ahead byte extent: the chunked object full-buffer + final-page extent for
+        /// a chunked object, else the raw field — the exact length for a headerless value, or the sentinel for an overflow value with a
+        /// leading header (whose true length the reader learns from that header and then extends by).</summary>
+        internal static ulong DecodeFlushValueExtent(uint encoded, bool valueIsObject)
+        {
+            if (valueIsObject && FlushValueIsChunkedObject(encoded))
+                return (ulong)FlushChunkedBufferCount(encoded) * (ulong)IStreamBuffer.BufferSize
+                     + (ulong)FlushChunkedFinalPages(encoded) * kFlushFinalPageSize;
+            return encoded;
+        }
+
+        /// <summary>FLUSH-format variant of <see cref="SetOverflowLengthHints"/>: sets the KeyLength field to the sentinel-capped overflow
+        /// key length, and the ValueLength field to the FLUSH object-value encoding (exact/chunked, see <see cref="EncodeFlushObjectValue"/>)
+        /// for an object value, or the sentinel-capped exact length for an overflow value (its full length precedes the bytes in a leading
+        /// ChunkHeader when it is at/above the sentinel).</summary>
+        /// <param name="keyActualLength">Actual overflow key length (applied only when the key is overflow).</param>
+        /// <param name="valueActualLength">Actual overflow value or serialized object length (applied only when the value is out of line).</param>
+        public void SetObjectLogLengthHints(int keyActualLength, long valueActualLength)
+        {
+            if (KeyIsOverflow)
+                KeyLength = keyActualLength >= (int)kKeyLengthLowBitsMask ? (int)kKeyLengthLowBitsMask : keyActualLength;
+            if (ValueIsObject)
+                ValueLength = (int)EncodeFlushObjectValue(valueActualLength);
+            else if (ValueIsOverflow)
+                ValueLength = valueActualLength >= (long)kValueLengthLowBitsMask ? (int)kValueLengthLowBitsMask : (int)valueActualLength;
+        }
+
         internal readonly int ExtendedNamespaceLength
         {
             [MethodImpl(MethodImplOptions.AggressiveInlining)]

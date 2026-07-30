@@ -36,6 +36,13 @@ namespace Tsavorite.core
         /// must move to the next buffer.</summary>
         internal int endPosition;
 
+        /// <summary>True once a device read has been issued into this buffer and not yet cleared by <see cref="Initialize"/>. Set and cleared
+        /// only on the reader thread (in <see cref="ReadFromDevice"/> and <see cref="Initialize"/>), so it is a race-free indicator of "this
+        /// buffer already holds, or is loading, data" -- unlike <see cref="HasData"/>/<see cref="HasInFlightRead"/>, whose underlying
+        /// <see cref="endPosition"/> and <see cref="countdownEvent"/> are updated from the IO completion callback and can be observed in a
+        /// transiently inconsistent state (endPosition not yet visible after the countdown is signaled) by a thread that does not wait.</summary>
+        internal bool readIssued;
+
         /// <summary>
         /// The starting position in the file that we read this buffer from.
         /// </summary>
@@ -57,6 +64,7 @@ namespace Tsavorite.core
         internal void Initialize()
         {
             currentPosition = endPosition = NoPosition;
+            readIssued = false;
         }
 
         internal ReadOnlySpan<byte> GetTailSpan(int start) => new(memory.GetValidPointer() + start, currentPosition - start);
@@ -75,6 +83,7 @@ namespace Tsavorite.core
 
             currentPosition = startPosition;
             endPosition = 0;
+            readIssued = true;
             device.ReadAsync(filePosition.SegmentId, filePosition.Offset, (IntPtr)memory.aligned_pointer, (uint)alignedReadLength, callback, context: this);
         }
 
@@ -106,6 +115,11 @@ namespace Tsavorite.core
 
         public void Dispose()
         {
+            // Drain any in-flight read before returning the memory to the pool: read-ahead (fill-ahead or backfill) reads may not have
+            // been consumed, and their completion callback writes to this memory. If it were returned to the shared pool first, a later
+            // reader reusing that memory could be corrupted by the late-completing read. The callback always signals (even on error).
+            if (countdownEvent is not null && !countdownEvent.IsSet)
+                countdownEvent.Wait();
             memory?.Return();
             memory = null;
             countdownEvent?.Dispose();

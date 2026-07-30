@@ -29,8 +29,9 @@ record's out-of-line pieces — an **overflow key**, an **overflow value**, or a
 2. **Fetch-ahead** — learn a record's total object-log extent *before* touching the object log, so the whole read-ahead
    ring fills immediately (no serial "read a header, then issue the real read").
 3. **Zero overhead for small objects** — a small object/overflow (e.g. a 5-int list) pays **no** per-chunk header.
-4. **No-copy flush** — the main-log page is written to the device directly from live memory, so flush may make only
-   **non-destructive** edits to the live record (§7).
+4. **No-copy-ready format** — the format lets flush make only **non-destructive** edits to the live record, so the page
+   *could* be written to the device directly from live memory (the remaining blocker is concurrent record mutation, not the
+   format; see §7).
 5. **Maximal object-log address space** — spend as few `ObjectLogPosition` flag bits as possible.
 
 Mechanism: encode a record's out-of-line **extent in the RDH length fields** (already in the reader's hand) → drives
@@ -46,14 +47,26 @@ Inline fields = **just the byte length**. The encodings below apply only to **no
 
 ### 2.1 `ValueLength` (24 bits) — non-inline value
 
-| `C` (bit 23) | `H` (bit 22) | Meaning | low 22 bits |
-|---|---|---|---|
-| 1 | — | **Chunked object** (multi-buffer; per-buffer continuation headers). | `[11:0]` full-buffer count (→16 GB); `[21:12]` final-buffer 4 KB-page count. |
-| 0 | 1 | **Overflow with one header** (len ≥ sentinel and/or DMA padding). One chunk, no continuation; full len in header. | first-buffer read hint (≤ 4 MB). |
-| 0 | 0 | **Headerless** small object/overflow (< `MaxCopySpanLen`, copied, no DMA). | **exact** byte length (< 4 MB). |
+Decoded by `RecordDataHeader.DecodeFlushValueExtent` (branches on `ValueIsObject`); encoded by `SetObjectLogLengthHints`.
 
-Read hint/exact length capped at 22 bits (4 MB, the buffer single-read limit). Size-tracker converts count→bytes
-(expands budget to ~16 GB); reconcile against real heap size after deserialize.
+**Object value:**
+
+| `C` (bit 23) | Meaning | low bits |
+|---|---|---|
+| 1 | **Chunked object** (serialized length ≥ one buffer). Dense stream, **no** per-chunk framing; the count is the read-ahead extent and the deserializer self-terminates. | `[11:0]` full-buffer count (→16 GB); `[21:12]` final-buffer 4 KB-page count. |
+| 0 | **Headerless object** (serialized length < one buffer). | `[21:0]` **exact** serialized length (< 4 MB). |
+
+**Overflow value** (length known up front, full 24-bit exact range):
+
+| `ValueLength` | Meaning |
+|---|---|
+| `< sentinel` (`< 2^24-1`) | exact byte length. |
+| `== sentinel` (`2^24-1`) | length ≥ the field maximum; full length carried in a leading `ChunkHeader` (symmetric with a ≥-sentinel overflow **key**). Reader reads the header and extends the read-ahead (`ReadOverflowHeaderLengthAndExtend`). |
+
+> Bit 22 (`kFlushOverflowHeaderBit` / `EncodeFlushOverflowHeader`) is **reserved** for a future precise first-read hint for a
+> headered overflow value; it is not written or read today (the sentinel path reads one buffer up front, then extends).
+> Objects ≥ 16 GB (buffer count > 4095) throw; per-buffer continuation headers for that saturation case are not implemented.
+> Size-tracker converts count→bytes; reconcile against real heap size after deserialize.
 
 ### 2.2 `KeyLength` (10 bits) — non-inline (overflow) key
 
@@ -109,11 +122,30 @@ DMA-padded short key only), bits 60–61 reserved.
 
 ## 7. No-copy flush
 
-Only **non-destructive** edits to the live record:
-- **RDH raw `KeyLength`/`ValueLength`** — property returns `ObjectIdSize` for non-inline regardless of raw bits; record
-  immutable in read-only region during flush; raw bits captured on disk.
-- **`ObjectLogPosition`** — in-memory-unused; safe to stamp.
-- **objectId slots** — left live; meaningless on disk; reader re-allocates.
+**Status: attempted, reverted — blocked by a concurrent-mutation hazard.** A no-copy flush would write the live main-log
+page to the device directly (stamping the length hints + `ObjectLogPosition` into the live records in place), skipping the
+sector-aligned `srcBuffer` copy. The stamping itself is **non-destructive** to in-memory readers:
+- **RDH raw `KeyLength`/`ValueLength`** — the property returns `ObjectIdSize` for non-inline regardless of raw bits, so
+  `AllocatedSize`/`GetValueFieldInfo`/the `ObjectLogPosition` slot address are unchanged; the raw bits are the on-disk read hint.
+- **`ObjectLogPosition`** — read only by the flush/recovery disk-image paths, never by a normal in-memory read/upsert.
+- **objectId slots** — left live and untouched; meaningless on disk; the reader re-allocates.
+
+**Why it is unsafe as a direct swap:** the copy path isolates the asynchronous device write from *post-submission
+mutation of the flushed records*. Records in the read-only region (down to `HeadAddress`) are **not content-immutable**:
+any `Upsert`/`RMW`/`Delete` that supersedes such a record seals it in place (`RecordInfo.Seal()`), and `Delete`
+additionally disposes it (`OnDispose` → `ClearHeapFields` + `ClearOptionals`) — see `InternalDelete` (searches to
+`HeadAddress`; `OnDispose` + `Seal` the main-log source) and `ObjectAllocatorImpl.OnDispose`. A ReadOnly flush does not
+hold the epoch during the device write, so with no-copy the device can observe these torn / half-cleared bytes mid-write
+and the completion marks the page durable even though the superseding tail record (tombstone / new value) may not be
+durable — a crash can then recover a cleared/malformed old record. The synchronous `srcBuffer` copy captures a
+point-in-time image and the async write reads that isolated buffer, avoiding the hazard.
+
+**Path to a safe no-copy:** a page-level freeze that blocks all in-place record mutation (seal/dispose) for records in an
+in-flight flush range until I/O completion (e.g. a per-page flush-in-progress guard checked by the seal/dispose sites), so
+the live page is byte-stable for the whole device write. This is a non-trivial protocol change to the epoch-sensitive
+flush/seal interaction and is deferred pending design agreement. Output would be byte-identical to the copy path (perf only).
+
+## 9. Recovery & positions
 
 ---
 
@@ -134,12 +166,17 @@ bound = successor position / object-log tail), not a single additive delta.
 
 ## 9. Recovery & positions
 
-- **Verbatim copy** by **raw on-disk extent** (successor-position diff, bounded by checkpoint tail), not
-  `keyHint+valueHint`; copy headers/padding intact; advance dest by bytes actually copied.
+- **Snapshot-region verbatim copy** (`ObjectAllocatorImpl` snapshot-recovery flush): each record's bytes are copied from the
+  snapshot object-log to the main object-log sized by its RDH `KeyLength+ValueLength` hints. That equals the true on-disk
+  extent for a **headerless** record, and safely **over-copies** a **chunked object** (the reader repositions per record via
+  `OnBeginRecord` and the deserializer self-terminates, so trailing bytes are ignored on read-back — validated by the 40 MB
+  `MultiListObjectTest`). A record with a **leading `ChunkHeader`** (≥-sentinel overflow key or overflow value) would be
+  **under-copied** and truncated, so that case currently **throws** (fail-fast) pending the exact-extent fix below.
+  - **TODO:** size the copy by the **raw on-disk extent** (successor object-log position difference, bounded by the snapshot
+    tail for the last record on a page) so headered records copy correctly; then remove the guard.
 - **Preserve all flag bits** (`0xF << 60`) in `RepointObjectLogPosition`, `SetObjectLogPositionAndLengthHints`,
   `SetRecoveredObjectLogRecordStartPosition`.
-- **Validate:** overflow length within limits; chunk `currentLength` nonzero when continuation set and ≤ capacity;
-  cumulative object ≤ `IHeapObject.MaxSerializedObjectSize`.
+- **Validate:** overflow length within limits; cumulative object ≤ `IHeapObject.MaxSerializedObjectSize`.
 
 ---
 

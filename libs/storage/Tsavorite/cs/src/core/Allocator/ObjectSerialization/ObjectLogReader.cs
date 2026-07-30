@@ -111,9 +111,12 @@ namespace Tsavorite.core
             {
                 if (logRecord.DataHeader.KeyIsOverflow)
                 {
+                    // For a key at/above the RDH KeyLength sentinel, its full length precedes the key bytes in a leading ChunkHeader;
+                    // otherwise the sentinel-capped hint is the exact length.
+                    var actualKeyLength = logRecord.DataHeader.KeyLengthIsSentinel ? ReadOverflowHeaderLengthAndExtend(keyLength) : keyLength;
                     // This assignment also allocates the slot in ObjectIdMap, overwriting whatever the objectId slot at keyAddress held
                     // on disk (a stale objectId for a hint-format record, or the key length high bits for a legacy record).
-                    logRecord.KeyOverflow = new OverflowByteArray(keyLength, startOffset: 0, endOffset: 0, zeroInit: false);
+                    logRecord.KeyOverflow = new OverflowByteArray(actualKeyLength, startOffset: 0, endOffset: 0, zeroInit: false);
                     _ = Read(logRecord.KeyOverflow.Span);
                     if (!requestedKey.IsEmpty && !storeFunctions.KeysEqual(requestedKey, logRecord))
                         return false;
@@ -122,11 +125,17 @@ namespace Tsavorite.core
 
                 if (logRecord.DataHeader.ValueIsOverflow)
                 {
-                    logRecord.ValueOverflow = new OverflowByteArray((int)valueLength, startOffset: 0, endOffset: 0, zeroInit: false);
+                    // For an overflow value at/above the RDH ValueLength sentinel, its full length precedes the value bytes in a leading
+                    // ChunkHeader (symmetric with the key); otherwise the sentinel-capped hint is the exact length.
+                    var actualValueLength = logRecord.DataHeader.ValueLengthIsSentinel ? ReadOverflowHeaderLengthAndExtend((long)valueLength) : (int)valueLength;
+                    logRecord.ValueOverflow = new OverflowByteArray(actualValueLength, startOffset: 0, endOffset: 0, zeroInit: false);
                     _ = Read(logRecord.ValueOverflow.Span);
                 }
                 else if (logRecord.DataHeader.ValueIsObject)
                 {
+                    // Chunked (multi-buffer, >= sentinel) and headerless (< sentinel, exact) objects both size their read-ahead from the RDH
+                    // ValueLength encoding decoded in GetObjectLogRecordStartPositionAndLengths; the object stream carries no per-chunk framing
+                    // and the deserializer self-terminates, so nothing extra is parsed here.
                     DoDeserialize(ref logRecord);
                 }
 
@@ -139,6 +148,31 @@ namespace Tsavorite.core
                 logRecord.OnDeserializationError(keyWasSet);
                 throw;
             }
+        }
+
+        /// <summary>For an overflow key/value whose RDH length field is the sentinel (its true length is at/above the field maximum), read
+        /// the leading 8-byte <see cref="ChunkHeader"/> that carries the full length, extend the read-ahead by the amount the capped
+        /// sentinel hint under-counted (the header plus the excess of the true length over the sentinel), and return the true length.</summary>
+        int ReadOverflowHeaderLengthAndExtend(long cappedSentinelHint)
+        {
+            var actualLength = ReadOverflowChunkHeaderLength();
+            readBuffers.ExtendUnreadLengthRemaining(ChunkHeader.TotalSize + actualLength - cappedSentinelHint);
+            return actualLength;
+        }
+
+        /// <summary>Read the 8-byte <see cref="ChunkHeader"/> that precedes an overflow (key or value) whose RDH length field is at/above the
+        /// sentinel, returning the full overflow length from <see cref="ChunkHeader.currentLength"/>.
+        /// <para>This issues no extra IO: the sentinel length was already included in the read total passed to
+        /// <see cref="CircularDiskReadBuffer.OnBeginReadRecords"/> — the single-record read path sums the sentinel-capped KeyLength and
+        /// ValueLength hints (see <c>ObjectAllocatorImpl.VerifyRecordFromDiskCallback</c>), and multi-record scans size from absolute
+        /// position differences — so the header bytes are already present in the read-ahead ring. The header may still span read buffers, so
+        /// it is read through the buffered <see cref="Read(Span{byte}, CancellationToken)"/>.</para></summary>
+        int ReadOverflowChunkHeaderLength()
+        {
+            ChunkHeader header = default;
+            var n = Read(new Span<byte>(&header, ChunkHeader.TotalSize));
+            Debug.Assert(n == ChunkHeader.TotalSize, $"Expected {ChunkHeader.TotalSize} ChunkHeader bytes but read {n}");
+            return (int)header.currentLength;
         }
 
         /// <inheritdoc/>
