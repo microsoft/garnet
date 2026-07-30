@@ -32,6 +32,84 @@ namespace {
 constexpr int kSubmitYieldBudget = 16;
 } // anonymous namespace
 
+namespace {
+// --- Batched libaio submit (opt-in via GARNET_SUBMIT_BATCH env var) ---
+// Per-submitter-thread accumulation of prepared READ iocbs. Reads are appended here and
+// submitted in bulk via io_submit(ctx, N, ...) when the batch reaches the threshold or an
+// explicit FlushSubmits() is requested, cutting io_submit syscalls (and the per-call kernel
+// aio-context mutex acquisition) by ~N. Writes are never batched: the memory-bounded log
+// flush path needs prompt write submission. All iocbs in a thread's batch target that
+// thread's pick_context() ctx (stable per thread for a given handler), so io_submit(ctx, N)
+// is valid. Ownership: an appended iocb's per-op io_context + caller-context copy have been
+// released from their RAII guards, so the batch owns them until the bulk io_submit transfers
+// them to the kernel (success) or FlushLibaioBatch delivers an error + frees them.
+struct LibaioSubmitBatch {
+  io_context_t ctx = nullptr;
+  std::vector<struct iocb*> iocbs;
+};
+thread_local LibaioSubmitBatch t_libaio_batch;
+
+// Number of reads to accumulate before an auto-flush. 1 (default, env unset) == no batching:
+// submit immediately, byte-for-byte legacy behaviour. Read once from GARNET_SUBMIT_BATCH.
+inline size_t libaio_batch_threshold() {
+  static const size_t v = [] {
+    const char* s = ::getenv("GARNET_SUBMIT_BATCH");
+    long n = s ? ::atol(s) : 1;
+    if (n < 1) n = 1;
+    if (n > 1024) n = 1024;
+    return static_cast<size_t>(n);
+  }();
+  return v;
+}
+
+// Max completions to reap per io_getevents in the opportunistic TryComplete()/TryCompleteFor()
+// poll. Reaping >1 event per syscall amortises the io_getevents call + its kernel aio-context
+// ring-lock across many completions when several are ready (bursty / lower-QD completion), and is
+// harmless at the saturated peak (the poll simply returns fewer than the max). Always on with a
+// small default of 8 (matching IO_BATCH_EVENTS, the dedicated-drainer reap batch); tunable via
+// GARNET_TRYCOMPLETE_BATCH (clamped 1..kTryCompleteMaxEvents; set 1 for the legacy 1-event poll).
+constexpr int kTryCompleteMaxEvents = 128;
+inline int trycomplete_batch_events() {
+  static const int v = [] {
+    const char* s = ::getenv("GARNET_TRYCOMPLETE_BATCH");
+    long n = s ? ::atol(s) : 8;
+    if (n < 1) n = 1;
+    if (n > kTryCompleteMaxEvents) n = kTryCompleteMaxEvents;
+    return static_cast<int>(n);
+  }();
+  return v;
+}
+
+// Flush the calling thread's accumulated read batch: submit all queued iocbs to their ctx via
+// io_submit(ctx, N). Handles partial submits (io_submit may accept fewer than N) and transient
+// ring-full (return 0 / -EAGAIN) by yielding and retrying the remaining. A permanent per-iocb
+// error delivers IOError to that read's callback (mirroring IoCompletionCallback) and drops it.
+// Returns the count submitted to the kernel. Runs on the same thread that accumulated (the batch
+// is thread_local), so no cross-thread synchronization is needed.
+int FlushLibaioBatch() {
+  auto& b = t_libaio_batch;
+  const size_t n = b.iocbs.size();
+  if (n == 0) return 0;
+  struct iocb** base = b.iocbs.data();
+  size_t done = 0;
+  int submitted = 0;
+  while (done < n) {
+    int r = ::io_submit(b.ctx, static_cast<long>(n - done), base + done);
+    if (r > 0) { done += static_cast<size_t>(r); submitted += r; continue; }
+    if (r == 0 || r == -EAGAIN) {
+      // Ring transiently full; the throttle bounds in-flight below ring depth so this is rare.
+      ::sched_yield();
+      continue;
+    }
+    // Permanent error on base[done]: deliver IOError to its callback and free it, then skip.
+    QueueIoHandler::IoCompletionCallback(b.ctx, base[done], -EIO, 0);
+    ++done;
+  }
+  b.iocbs.clear();
+  return submitted;
+}
+} // anonymous namespace
+
 using namespace FASTER::core;
 
 #ifdef _DEBUG
@@ -189,15 +267,17 @@ bool QueueIoHandler::TryCompleteFor(int idx) {
   if (ctx == 0) return false;
   struct timespec timeout;
   std::memset(&timeout, 0, sizeof(timeout));
-  struct io_event events[1];
-  int result = ::io_getevents(ctx, 1, 1, events, &timeout);
-  if(result == 1) {
-    io_callback_t callback = reinterpret_cast<io_callback_t>(events[0].data);
-    callback(ctx, events[0].obj, events[0].res, events[0].res2);
-    return true;
-  } else {
-    return false;
+  struct io_event events[kTryCompleteMaxEvents];
+  // Reap up to a batch of ready completions in a single (non-blocking, timeout=0) io_getevents,
+  // amortising the syscall + kernel aio-context ring-lock over many events. min_nr stays 1 so a
+  // zeroed timeout makes this a pure poll (returns immediately with 0..max ready events).
+  int result = ::io_getevents(ctx, 1, trycomplete_batch_events(), events, &timeout);
+  if (result <= 0) return false;
+  for (int i = 0; i < result; ++i) {
+    io_callback_t callback = reinterpret_cast<io_callback_t>(events[i].data);
+    callback(ctx, events[i].obj, events[i].res, events[i].res2);
   }
+  return true;
 }
 
 #define IO_BATCH_EVENTS	8		/* number of events to batch up */
@@ -284,6 +364,12 @@ int QueueIoHandler::Wake(int idx) {
     return 0;
 }
 
+// Flush the calling thread's accumulated read batch (see FlushLibaioBatch). Called on the
+// submitting thread from the managed layer (explicit tail flush + throttle-spin safety net).
+int QueueIoHandler::FlushSubmits() {
+    return FlushLibaioBatch();
+}
+
 Status QueueFile::Open(FileCreateDisposition create_disposition, const FileOptions& options,
                        QueueIoHandler* handler, bool* exists) {
   int flags = 0;
@@ -355,7 +441,29 @@ Status QueueFile::ScheduleOperation(FileOperationType operationType, uint8_t* bu
   // effectively contention-free at the kernel side.
   io_context_t ctx = handler_->pick_context();
 
-  // Exactly one iocb is prepared. io_submit return values for N_prepared == 1:
+  // Batched submit (opt-in via GARNET_SUBMIT_BATCH>1): accumulate READ iocbs per-thread and
+  // submit them in bulk to cut io_submit syscalls (and per-call kernel aio-ctx mutex hits).
+  // Writes are never batched (log flush needs prompt submission). The iocb + its caller-context
+  // copy are handed to the thread-local batch, which owns them until the bulk io_submit
+  // transfers them to the kernel (or FlushLibaioBatch errors + frees them). The batch always
+  // targets this thread's stable ctx; a defensive flush handles any ctx change.
+  const size_t batchThreshold = libaio_batch_threshold();
+  if (batchThreshold > 1 && operationType == FileOperationType::Read) {
+    auto& b = t_libaio_batch;
+    if (!b.iocbs.empty() && b.ctx != ctx) {
+      FlushLibaioBatch();
+    }
+    b.ctx = ctx;
+    b.iocbs.push_back(iocbs[0]);
+    caller_copy_guard.release();
+    io_context.release();
+    if (b.iocbs.size() >= batchThreshold) {
+      FlushLibaioBatch();
+    }
+    return Status::Ok;
+  }
+
+
   //   1            : kernel accepted; one completion will fire.
   //   0 or -EAGAIN : transient kernel ring full; brief in-epoch yield, then unwind.
   //                  The iocb is not queued; we still own it.
@@ -562,6 +670,12 @@ int UringIoHandler::Wake(int idx) {
     // io_uring_submit flushes all pending SQEs and returns the count; any res >= 1 means our
     // wake no-op reached the kernel (it may also have flushed stale no-ops in front of it).
     return res >= 1 ? 0 : -1;
+}
+
+// io_uring backend does not accumulate a submit batch (it submits per-op today), so a flush is
+// a no-op. Present so NativeDeviceImpl<UringIoHandler> satisfies the INativeDevice interface.
+int UringIoHandler::FlushSubmits() {
+    return 0;
 }
 
 Status UringFile::Open(FileCreateDisposition create_disposition, const FileOptions& options,

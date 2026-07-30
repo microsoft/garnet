@@ -174,6 +174,8 @@ public:
 
     virtual int CreateDir(const std::string& dir, bool delete_existing) = 0;
     virtual bool TryComplete() = 0;
+    /// Drain only the calling thread's affine context/ring (see QueueIoHandler::TryCompleteMine).
+    virtual bool TryCompleteMine() = 0;
     virtual uint64_t GetFileSize(uint64_t segment) = 0;
     virtual void RemoveSegment(uint64_t segment) = 0;
     virtual int QueueRun(int timeout_secs) = 0;
@@ -185,6 +187,10 @@ public:
     /// waiting on the QueueRunFor timeout (which is otherwise a per-context shutdown stall).
     /// Returns 0 on success, -1 on failure (out-of-range ctx_idx, unable to submit, etc).
     virtual int Wake(int ctx_idx) = 0;
+    /// Submit the calling thread's accumulated submit batch (opt-in batched libaio submit).
+    /// No-op when batching is disabled/empty or on backends that submit per-op. Runs on the
+    /// calling (submitter) thread. Returns the number of IOs submitted to the kernel.
+    virtual int FlushSubmits() = 0;
     /// Number of submission/completion shards. >= 1.
     virtual int num_io_contexts() const = 0;
 };
@@ -533,6 +539,10 @@ public:
         return handler_.TryComplete();
     }
 
+    bool TryCompleteMine() override {
+        return handler_.TryCompleteMine();
+    }
+
     uint64_t GetFileSize(uint64_t segment) override {
         // log_.size() can lazily OpenSegment(), whose bundle-expand path calls
         // epoch_->BumpCurrentEpoch() (it must publish the new file bundle and defer freeing the
@@ -560,6 +570,10 @@ public:
 
     int Wake(int ctx_idx) override {
         return handler_.Wake(ctx_idx);
+    }
+
+    int FlushSubmits() override {
+        return handler_.FlushSubmits();
     }
 
     int num_io_contexts() const override {
