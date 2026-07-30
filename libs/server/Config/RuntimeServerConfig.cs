@@ -8,6 +8,7 @@ using System.Globalization;
 using System.Runtime.CompilerServices;
 using System.Text;
 using System.Threading;
+using Garnet.common;
 
 namespace Garnet.server
 {
@@ -246,35 +247,36 @@ namespace Garnet.server
             };
         }
 
-        /// <summary>Current value of <paramref name="type"/> as <typeparamref name="TEnum"/>.</summary>
+        /// <summary>
+        /// Current value of <paramref name="type"/> as <typeparamref name="TEnum"/>.
+        /// </summary>
+        /// <typeparam name="TEnum">Enum type the option is declared as.</typeparam>
+        /// <param name="type">Configuration parameter to read.</param>
+        /// <returns>The current value as a declared member of <typeparamref name="TEnum"/>.</returns>
+        /// <exception cref="InvalidOperationException">
+        /// The slot does not hold a declared member of <typeparamref name="TEnum"/>. Unreachable in
+        /// practice: every write goes through <see cref="TrySet"/>, which rejects undeclared values.
+        /// Unlike the debug-only assertions above, this check is retained in release builds so a corrupt
+        /// slot surfaces as a fault rather than an out-of-range enum flowing into the server.
+        /// </exception>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public TEnum GetEnum<TEnum>(ServerConfigType type) where TEnum : unmanaged, Enum
         {
             AssertKind(type, ConfigKind.Enum);
+            Debug.Assert(Meta[(int)type].EnumType == typeof(TEnum),
+                $"Configuration '{type}' is declared as '{Meta[(int)type].EnumType}' and cannot be read as '{typeof(TEnum)}'.");
 
-            // The slot holds the underlying value widened to 64 bits; narrow it back to the width of
-            // TEnum before reinterpreting, so the result is correct regardless of the backing type.
+            // The slot holds the underlying value widened to 64 bits (long)
             var raw = Volatile.Read(ref values[(int)type]);
-            switch (Unsafe.SizeOf<TEnum>())
+
+            // Use the extension method to validate boundaries, check definition, and safely narrow/cast
+            if (!raw.TryParseToEnum(out TEnum enumValue))
             {
-                case sizeof(byte):
-                    {
-                        var narrowed = unchecked((byte)raw);
-                        return Unsafe.As<byte, TEnum>(ref narrowed);
-                    }
-                case sizeof(ushort):
-                    {
-                        var narrowed = unchecked((ushort)raw);
-                        return Unsafe.As<ushort, TEnum>(ref narrowed);
-                    }
-                case sizeof(uint):
-                    {
-                        var narrowed = unchecked((uint)raw);
-                        return Unsafe.As<uint, TEnum>(ref narrowed);
-                    }
-                default:
-                    return Unsafe.As<long, TEnum>(ref raw);
+                throw new InvalidOperationException(
+                    $"The raw configuration value {raw} is out of bounds or not a defined member of enum {typeof(TEnum).Name}.");
             }
+
+            return enumValue;
         }
 
         /// <summary>
@@ -353,7 +355,7 @@ namespace Garnet.server
                     }
                 case ConfigKind.Enum:
                     {
-                        if (!TryParseEnum(meta, value, out var parsed))
+                        if (!value.TryParseEnumToLong(meta.EnumType, out var parsed))
                         {
                             error = $"ERR Invalid value for '{meta.Name}': '{value}'.";
                             return false;
@@ -459,111 +461,6 @@ namespace Garnet.server
             }
         }
 
-        /// <summary>
-        /// Parse an enum-valued option from either its underlying numeric value or a member name.
-        /// A numeric value is parsed as the enum's declared underlying type — so it neither overflows
-        /// nor silently wraps — and is accepted only if it names a declared member, so a value that
-        /// CONFIG GET could not render back as a name is rejected.
-        /// </summary>
-        /// <param name="meta">Metadata of the option being set.</param>
-        /// <param name="value">Value as supplied on the CONFIG SET wire.</param>
-        /// <param name="parsed">Underlying value of the resolved enum member, widened to 64 bits.</param>
-        /// <returns><see langword="true"/> if the value names a declared member.</returns>
-        static bool TryParseEnum(in ConfigMeta meta, string value, out long parsed)
-        {
-            var underlyingType = Enum.GetUnderlyingType(meta.EnumType);
-            if (TryParseUnderlying(underlyingType, value, out parsed))
-                return Enum.IsDefined(meta.EnumType, ToUnderlyingValue(underlyingType, parsed));
-
-            if (!Enum.TryParse(meta.EnumType, value, ignoreCase: true, out var boxed) ||
-                !Enum.IsDefined(meta.EnumType, boxed))
-            {
-                parsed = 0;
-                return false;
-            }
-
-            parsed = ToInt64(underlyingType, boxed);
-            return true;
-
-            // Parse a numeric literal as the given underlying type, widening the result into the 64-bit slot.
-            // Signed types sign-extend and unsigned types zero-extend, so ToUnderlyingValue recovers the
-            // original value exactly.
-            static bool TryParseUnderlying(Type underlyingType, string value, out long parsed)
-            {
-                const NumberStyles Styles = NumberStyles.Integer;
-                var culture = CultureInfo.InvariantCulture;
-
-                switch (Type.GetTypeCode(underlyingType))
-                {
-                    case TypeCode.SByte:
-                        {
-                            var ok = sbyte.TryParse(value, Styles, culture, out var v);
-                            parsed = v;
-                            return ok;
-                        }
-                    case TypeCode.Byte:
-                        {
-                            var ok = byte.TryParse(value, Styles, culture, out var v);
-                            parsed = v;
-                            return ok;
-                        }
-                    case TypeCode.Int16:
-                        {
-                            var ok = short.TryParse(value, Styles, culture, out var v);
-                            parsed = v;
-                            return ok;
-                        }
-                    case TypeCode.UInt16:
-                        {
-                            var ok = ushort.TryParse(value, Styles, culture, out var v);
-                            parsed = v;
-                            return ok;
-                        }
-                    case TypeCode.Int32:
-                        {
-                            var ok = int.TryParse(value, Styles, culture, out var v);
-                            parsed = v;
-                            return ok;
-                        }
-                    case TypeCode.UInt32:
-                        {
-                            var ok = uint.TryParse(value, Styles, culture, out var v);
-                            parsed = v;
-                            return ok;
-                        }
-                    case TypeCode.UInt64:
-                        {
-                            var ok = ulong.TryParse(value, Styles, culture, out var v);
-                            parsed = unchecked((long)v);
-                            return ok;
-                        }
-                    default:
-                        return long.TryParse(value, Styles, culture, out parsed);
-                }
-            }
-        }
-
-        // Narrow a slot value back to a boxed instance of the enum's underlying type, as required by
-        // Enum.IsDefined and Enum.GetName.
-        static object ToUnderlyingValue(Type underlyingType, long raw) => Type.GetTypeCode(underlyingType) switch
-        {
-            TypeCode.SByte => unchecked((sbyte)raw),
-            TypeCode.Byte => unchecked((byte)raw),
-            TypeCode.Int16 => unchecked((short)raw),
-            TypeCode.UInt16 => unchecked((ushort)raw),
-            TypeCode.Int32 => unchecked((int)raw),
-            TypeCode.UInt32 => unchecked((uint)raw),
-            TypeCode.UInt64 => unchecked((ulong)raw),
-            _ => raw,
-        };
-
-        // Widen a boxed enum member to the 64-bit slot representation.
-        static long ToInt64(Type underlyingType, object boxed) => Type.GetTypeCode(underlyingType) switch
-        {
-            TypeCode.UInt64 => unchecked((long)Convert.ToUInt64(boxed, CultureInfo.InvariantCulture)),
-            _ => Convert.ToInt64(boxed, CultureInfo.InvariantCulture),
-        };
-
         /// <summary>Current value of <paramref name="type"/> as its RESP string representation.</summary>
         public string RespFormat(ServerConfigType type)
         {
@@ -577,7 +474,7 @@ namespace Garnet.server
                 ConfigKind.Int32 => ((int)raw).ToString(CultureInfo.InvariantCulture),
                 ConfigKind.Int64 => raw.ToString(CultureInfo.InvariantCulture),
                 ConfigKind.Bool => raw != 0 ? "yes" : "no",
-                ConfigKind.Enum => Enum.GetName(meta.EnumType, ToUnderlyingValue(Enum.GetUnderlyingType(meta.EnumType), raw))
+                ConfigKind.Enum => Enum.GetName(meta.EnumType, raw.ToEnumLiteral(Enum.GetUnderlyingType(meta.EnumType)))
                     ?? raw.ToString(CultureInfo.InvariantCulture),
                 _ => raw.ToString(CultureInfo.InvariantCulture),
             };
