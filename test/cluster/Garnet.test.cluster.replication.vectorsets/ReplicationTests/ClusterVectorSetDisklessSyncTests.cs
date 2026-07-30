@@ -194,8 +194,8 @@ namespace Garnet.test.cluster
             context.ClusterFailoverSpinWait(ReplicaIndex, context.logger);
             context.clusterTestUtils.WaitForReplicaAofSync(ReplicaIndex, PrimaryIndex, logger: context.logger);
 
-            ClassicAssert.AreEqual("master", context.clusterTestUtils.RoleCommand(Node(ReplicaIndex), logger: context.logger).Value);
-            ClassicAssert.AreEqual("slave", context.clusterTestUtils.RoleCommand(Node(PrimaryIndex), logger: context.logger).Value);
+            ClassicAssert.AreEqual("master", context.clusterTestUtils.RoleCommand(context.clusterTestUtils.GetEndPoint(ReplicaIndex), logger: context.logger).Value);
+            ClassicAssert.AreEqual("slave", context.clusterTestUtils.RoleCommand(context.clusterTestUtils.GetEndPoint(PrimaryIndex), logger: context.logger).Value);
 
             MakeReadable(PrimaryIndex);
             AssertFullyReplicated(ReplicaIndex, PrimaryIndex, Key);
@@ -231,8 +231,8 @@ namespace Garnet.test.cluster
 
             _ = context.clusterTestUtils.SimpleSetupCluster(primary_count: 2, replica_count: 1, logger: context.logger);
 
-            var primary0 = Node(Primary0);
-            var primary1 = Node(Primary1);
+            var primary0 = context.clusterTestUtils.GetEndPoint(Primary0);
+            var primary1 = context.clusterTestUtils.GetEndPoint(Primary1);
             var primary0Id = context.clusterTestUtils.ClusterMyId(primary0, logger: context.logger);
             var slots = context.clusterTestUtils.ClusterSlots(primary0, logger: context.logger);
 

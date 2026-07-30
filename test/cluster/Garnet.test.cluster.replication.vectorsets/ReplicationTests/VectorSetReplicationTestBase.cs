@@ -6,7 +6,6 @@ using System.Buffers.Binary;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
-using System.Net;
 using System.Runtime.CompilerServices;
 using System.Text;
 using Garnet.server;
@@ -58,8 +57,6 @@ namespace Garnet.test.cluster
             context?.TearDown();
         }
 
-        protected IPEndPoint Node(int index) => (IPEndPoint)context.endpoints[index];
-
         #region cluster formation
 
         /// <summary>
@@ -104,7 +101,7 @@ namespace Garnet.test.cluster
         /// <summary>Moves the primary far enough ahead that a re-attach cannot be incremental.</summary>
         protected void PushPrimaryAhead(int primaryIndex)
         {
-            var primary = Node(primaryIndex);
+            var primary = context.clusterTestUtils.GetEndPoint(primaryIndex);
             for (var i = 0; i < FullSyncForcingKeys; i++)
             {
                 _ = context.clusterTestUtils.Execute(primary, "SET", [$"{{padding}}key{i}", new string('x', 64)], skipLogging: true);
@@ -125,7 +122,7 @@ namespace Garnet.test.cluster
 
         protected void MakeReadable(int nodeIndex)
         {
-            var ok = (string)context.clusterTestUtils.Execute(Node(nodeIndex), "READONLY", [], logger: context.logger);
+            var ok = (string)context.clusterTestUtils.Execute(context.clusterTestUtils.GetEndPoint(nodeIndex), "READONLY", [], logger: context.logger);
             ClassicAssert.AreEqual("OK", ok);
         }
 
@@ -134,7 +131,7 @@ namespace Garnet.test.cluster
         /// </summary>
         protected void WaitUntilServes(int nodeIndex, string key)
         {
-            var endpoint = Node(nodeIndex);
+            var endpoint = context.clusterTestUtils.GetEndPoint(nodeIndex);
 
             for (var attempt = 0; attempt < 200; attempt++)
             {
@@ -161,7 +158,7 @@ namespace Garnet.test.cluster
         /// </summary>
         protected void PopulateVectorSet(int nodeIndex, string key, int count, int seed)
         {
-            var endpoint = Node(nodeIndex);
+            var endpoint = context.clusterTestUtils.GetEndPoint(nodeIndex);
             var r = new Random(seed);
 
             if (!writtenElements.TryGetValue(key, out var elements))
@@ -189,7 +186,7 @@ namespace Garnet.test.cluster
         /// <summary>Reads VINFO size, the path that reaches NativeDiskANNMethods.card.</summary>
         protected long VectorSetSize(int nodeIndex, string key)
         {
-            var reply = context.clusterTestUtils.Execute(Node(nodeIndex), "VINFO", [key], logger: context.logger);
+            var reply = context.clusterTestUtils.Execute(context.clusterTestUtils.GetEndPoint(nodeIndex), "VINFO", [key], logger: context.logger);
 
             // Execute returns failures as bulk strings, so non-array replies mean the read failed.
             if (reply.Resp2Type != ResultType.Array)
@@ -211,7 +208,7 @@ namespace Garnet.test.cluster
 
         protected long VectorSetDimensions(int nodeIndex, string key)
         {
-            var reply = context.clusterTestUtils.Execute(Node(nodeIndex), "VDIM", [key], logger: context.logger);
+            var reply = context.clusterTestUtils.Execute(context.clusterTestUtils.GetEndPoint(nodeIndex), "VDIM", [key], logger: context.logger);
             if (reply.Resp2Type != ResultType.Integer)
                 Assert.Fail($"VDIM on '{key}' at node {nodeIndex} did not return an integer, got {reply.Resp2Type}: {reply}");
 
@@ -221,7 +218,7 @@ namespace Garnet.test.cluster
         /// <summary>Returns the stored embedding for an element, or an empty array when absent.</summary>
         protected string[] ElementEmbedding(int nodeIndex, string key, byte[] element)
         {
-            var reply = context.clusterTestUtils.Execute(Node(nodeIndex), "VEMB", [key, element], skipLogging: true);
+            var reply = context.clusterTestUtils.Execute(context.clusterTestUtils.GetEndPoint(nodeIndex), "VEMB", [key, element], skipLogging: true);
             if (reply.Resp2Type != ResultType.Array)
                 Assert.Fail($"VEMB on '{key}' at node {nodeIndex} did not return an array, got {reply.Resp2Type}: {reply}");
 
@@ -230,7 +227,7 @@ namespace Garnet.test.cluster
 
         protected byte[][] Search(int nodeIndex, string key, byte[] query, int count)
         {
-            var reply = context.clusterTestUtils.Execute(Node(nodeIndex), "VSIM", [key, "XB8", query, "COUNT", count.ToString()], skipLogging: true);
+            var reply = context.clusterTestUtils.Execute(context.clusterTestUtils.GetEndPoint(nodeIndex), "VSIM", [key, "XB8", query, "COUNT", count.ToString()], skipLogging: true);
             if (reply.Resp2Type != ResultType.Array)
                 Assert.Fail($"VSIM on '{key}' at node {nodeIndex} did not return an array, got {reply.Resp2Type}: {reply}");
 

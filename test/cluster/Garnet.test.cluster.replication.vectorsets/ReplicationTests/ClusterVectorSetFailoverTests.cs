@@ -36,8 +36,8 @@ namespace Garnet.test.cluster
             context.ClusterFailoverSpinWait(replicaIndex, context.logger);
             context.clusterTestUtils.WaitForReplicaAofSync(replicaIndex, oldPrimaryIndex, logger: context.logger);
 
-            ClassicAssert.AreEqual("master", context.clusterTestUtils.RoleCommand(Node(replicaIndex), logger: context.logger).Value);
-            ClassicAssert.AreEqual("slave", context.clusterTestUtils.RoleCommand(Node(oldPrimaryIndex), logger: context.logger).Value);
+            ClassicAssert.AreEqual("master", context.clusterTestUtils.RoleCommand(context.clusterTestUtils.GetEndPoint(replicaIndex), logger: context.logger).Value);
+            ClassicAssert.AreEqual("slave", context.clusterTestUtils.RoleCommand(context.clusterTestUtils.GetEndPoint(oldPrimaryIndex), logger: context.logger).Value);
         }
 
         /// <summary>After promotion, the new primary must keep every element and the demoted node must agree.</summary>
