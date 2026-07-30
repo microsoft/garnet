@@ -40,7 +40,7 @@ namespace Tsavorite.core
     /// hint (the authoritative length comes from the object-log stream framing); a length at or above the field maximum is capped at that
     /// maximum sentinel. The property getters still return <see cref="ObjectIdMap.ObjectIdSize"/> for non-inline keys/values regardless of
     /// the raw hint, so the runtime "non-inline → property returns ObjectIdSize" invariant holds. (Databases written before this format use
-    /// the legacy split encoding, read via <see cref="LogRecord.GetObjectLogRecordStartPositionAndLengths_v20"/>: RDH low bits plus the
+    /// the legacy split encoding, read via <see cref="LogRecord.GetObjectLogRecordStartPositionAndLengths_v21"/>: RDH low bits plus the
     /// next 32 bits in the objectId slot at keyAddress/valueAddress.)</para>
     /// <para>RecordLength is no longer stored; it is derived from the header alone:
     /// <c>alignedSum = RoundUp(Constants.FixedHeaderSize + ExtendedNamespaceLength + KeyLength + ValueLength + OptionalSize, kRecordAlignment)</c>;

@@ -13,7 +13,13 @@ namespace Tsavorite.core
     /// </summary>
     public struct HybridLogRecoveryInfo
     {
-        public const int CheckpointVersion = 7;
+        /// <summary>Current checkpoint version written by this build. v8 = the object-log chunk-framing format ("v2.2"); v7 = the
+        /// downlevel split/objectId-slot object-log encoding ("v2.1", read via <see cref="LogRecord.GetObjectLogRecordStartPositionAndLengths_v21"/>).</summary>
+        public const int CheckpointVersion = 8;
+
+        /// <summary>Oldest checkpoint version this build can recover. v7 (v2.1) checkpoints remain readable; a v2.1 binary (which only
+        /// accepts v7) rejects a v8 checkpoint, so the version acts as the file-level v2.1-vs-v2.2 discriminator.</summary>
+        public const int MinRecoverableCheckpointVersion = 7;
 
         /// <summary>
         /// HybridLogRecoveryVersion 
@@ -130,8 +136,8 @@ namespace Tsavorite.core
             var value = reader.ReadLine();
             var cversion = int.Parse(value);
 
-            if (cversion != CheckpointVersion)
-                throw new TsavoriteException($"Invalid checkpoint version {cversion} encountered, current version is {CheckpointVersion}, cannot recover with this checkpoint");
+            if (cversion < MinRecoverableCheckpointVersion || cversion > CheckpointVersion)
+                throw new TsavoriteException($"Invalid checkpoint version {cversion} encountered, this build recovers versions {MinRecoverableCheckpointVersion}..{CheckpointVersion}, cannot recover with this checkpoint");
 
             hybridLogRecoveryVersion = cversion;
 

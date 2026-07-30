@@ -1564,7 +1564,7 @@ namespace Tsavorite.core
         /// <summary>
         /// Returns the object-log start position for this record and the key/value read-size length hints. For hint-format records
         /// (ReuseObjectIdForSize clear) the hints are the raw RDH KeyLength/ValueLength fields; for legacy records (flag set) the decode
-        /// is delegated to <see cref="GetObjectLogRecordStartPositionAndLengths_v20"/>.
+        /// is delegated to <see cref="GetObjectLogRecordStartPositionAndLengths_v21"/>.
         /// </summary>
         /// <param name="keyLength">Outputs the key length hint (exact for an overflow key below the field sentinel).</param>
         /// <param name="valueObjectLength">Outputs the value length hint (exact for an overflow/object value below the field sentinel).</param>
@@ -1572,7 +1572,7 @@ namespace Tsavorite.core
         internal readonly ulong GetObjectLogRecordStartPositionAndLengths(out int keyLength, out ulong valueObjectLength)
         {
             if (HasReuseObjectIdForSize)
-                return GetObjectLogRecordStartPositionAndLengths_v20(out keyLength, out valueObjectLength);
+                return GetObjectLogRecordStartPositionAndLengths_v21(out keyLength, out valueObjectLength);
 
             var dataHeader = DataHeader;
             keyLength = dataHeader.KeyIsOverflow ? dataHeader.GetKeyLengthRaw() : 0;   // KeyIsInline: keyLength is ignored
@@ -1642,7 +1642,7 @@ namespace Tsavorite.core
         /// <summary>Whether the <c>ReuseObjectIdForSize</c> flag is set on this record's ObjectLogPosition slot. When set, the record
         /// uses the legacy split length encoding (RDH KeyLength/ValueLength low bits + objectId slot high 32 bits, no object-log stream
         /// length framing); when clear, the record uses the hint-based format. This is the per-record discriminator selecting the
-        /// <c>_v20</c> decode.</summary>
+        /// <c>_v21</c> decode.</summary>
         internal readonly bool HasReuseObjectIdForSize
             => ObjectLogFilePositionInfo.GetReuseObjectIdForSize((ulong*)GetObjectLogPositionAddress(GetOptionalStartAddress()));
 
