@@ -66,7 +66,7 @@ namespace Garnet.test
         [TearDown]
         public void TearDown()
         {
-            try { server?.Dispose(); } catch { /* best effort */ }
+            server?.Dispose();
             server = null;
             TestUtils.OnTearDown();
         }
@@ -105,7 +105,9 @@ namespace Garnet.test
                 $"{quant}: in-memory recall {inMemory:F3} is below the sanity floor — the graph is not usable even in memory");
 
             // Force the main store's hybrid log to disk; subsequent reads are served from the storage tier.
-            _ = db.Execute("DEBUG", "FLUSHANDEVICT");
+            var flushResult = (string)db.Execute("DEBUG", "FLUSHANDEVICT");
+            ClassicAssert.IsTrue(flushResult is not null && flushResult.StartsWith("OK"),
+                $"DEBUG FLUSHANDEVICT should succeed; got '{flushResult}'");
             AssertEvictedToDisk(redis, "records should have been evicted to disk by FLUSHANDEVICT");
 
             var onDisk = MeasureRecall(db, key, data);
@@ -185,7 +187,7 @@ namespace Garnet.test
 
                 // Take a foreground checkpoint and wait for it to be durable.
 #pragma warning disable CS0618 // ForegroundSave is obsolete but is what the recovery tests use
-                redis.GetServers()[0].Save(SaveType.ForegroundSave);
+                redis.GetServers().Single().Save(SaveType.ForegroundSave);
 #pragma warning restore CS0618
                 var committed = await server.Store.WaitForCommitAsync();
                 ClassicAssert.IsTrue(committed, "checkpoint commit did not complete");
@@ -349,7 +351,7 @@ namespace Garnet.test
 
         private static void AssertEvictedToDisk(ConnectionMultiplexer redis, string message)
         {
-            var info = TestUtils.GetStoreAddressInfo(redis.GetServers()[0]);
+            var info = TestUtils.GetStoreAddressInfo(redis.GetServers().Single());
             ClassicAssert.Greater(info.HeadAddress, info.BeginAddress, message);
         }
     }
