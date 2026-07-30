@@ -16,11 +16,6 @@ using static Tsavorite.core.Utility;
 
 namespace Garnet.test
 {
-    enum RuntimeConfigByteBackedEnum : byte
-    {
-        Value
-    }
-
     /// <summary>
     /// Test dynamically changing server configuration using CONFIG SET command.
     /// </summary>
@@ -786,6 +781,10 @@ namespace Garnet.test
             ClassicAssert.AreEqual("OK", db.Execute("CONFIG", "SET", "compaction-type", "Lookup").ToString());
             ClassicAssert.AreEqual("Lookup", Get(db, "compaction-type"));
 
+            // An enum option also accepts its underlying numeric value, and reports back the member name.
+            ClassicAssert.AreEqual("OK", db.Execute("CONFIG", "SET", "compaction-type", "1").ToString());
+            ClassicAssert.AreEqual(nameof(LogCompactionType.Shift), Get(db, "compaction-type"));
+
             // Timeout option expressed in seconds.
             ClassicAssert.AreEqual("OK", db.Execute("CONFIG", "SET", "repl-attach-timeout", "30").ToString());
             ClassicAssert.AreEqual("30", Get(db, "repl-attach-timeout"));
@@ -802,14 +801,32 @@ namespace Garnet.test
             ClassicAssert.AreEqual("500", Get(db, "object-scan-count-limit"));
         }
 
+        /// <summary>
+        /// Verifies that an enum-valued option round-trips through its member name and through its
+        /// underlying numeric value, and that a numeric value naming no declared member is rejected.
+        /// </summary>
         [Test]
-        public void RuntimeServerConfigRejectsNonInt32BackedEnum()
+        public void RuntimeServerConfigRoundTripsEnumOption()
         {
             var runtimeConfig = new RuntimeServerConfig(new GarnetServerOptions());
 
-            var exception = Assert.Throws<InvalidOperationException>(
-                () => runtimeConfig.GetEnum<RuntimeConfigByteBackedEnum>(ServerConfigType.COMPACTION_TYPE));
-            Assert.That(exception.Message, Does.Contain("must use Int32 as their underlying type"));
+            // Member name, matched without regard to case.
+            ClassicAssert.IsTrue(runtimeConfig.TrySet(ServerConfigType.COMPACTION_TYPE, "lookup", out var error));
+            ClassicAssert.IsNull(error);
+            ClassicAssert.AreEqual(LogCompactionType.Lookup, runtimeConfig.GetEnum<LogCompactionType>(ServerConfigType.COMPACTION_TYPE));
+            ClassicAssert.AreEqual(nameof(LogCompactionType.Lookup), runtimeConfig.RespFormat(ServerConfigType.COMPACTION_TYPE));
+
+            // Underlying numeric value, reported back as the member name.
+            ClassicAssert.IsTrue(runtimeConfig.TrySet(ServerConfigType.COMPACTION_TYPE,
+                ((int)LogCompactionType.Shift).ToString(), out error));
+            ClassicAssert.IsNull(error);
+            ClassicAssert.AreEqual(LogCompactionType.Shift, runtimeConfig.GetEnum<LogCompactionType>(ServerConfigType.COMPACTION_TYPE));
+            ClassicAssert.AreEqual(nameof(LogCompactionType.Shift), runtimeConfig.RespFormat(ServerConfigType.COMPACTION_TYPE));
+
+            // A numeric value naming no declared member leaves the option untouched.
+            ClassicAssert.IsFalse(runtimeConfig.TrySet(ServerConfigType.COMPACTION_TYPE, "999", out error));
+            ClassicAssert.AreEqual("ERR Invalid value for 'compaction-type': '999'.", error);
+            ClassicAssert.AreEqual(LogCompactionType.Shift, runtimeConfig.GetEnum<LogCompactionType>(ServerConfigType.COMPACTION_TYPE));
         }
 
         /// <summary>
@@ -834,7 +851,7 @@ namespace Garnet.test
             // A negative value is normalized rather than reported back as negative.
             ClassicAssert.IsTrue(runtimeConfig.TrySet(ServerConfigType.CLUSTER_NODE_TIMEOUT, "-3", out error));
             ClassicAssert.IsNull(error);
-            ClassicAssert.AreEqual("0", runtimeConfig.Format(ServerConfigType.CLUSTER_NODE_TIMEOUT));
+            ClassicAssert.AreEqual("0", runtimeConfig.RespFormat(ServerConfigType.CLUSTER_NODE_TIMEOUT));
         }
 
         /// <summary>
@@ -879,6 +896,9 @@ namespace Garnet.test
             // Invalid enum value.
             var badEnum = Assert.Throws<RedisServerException>(() => db.Execute("CONFIG", "SET", "compaction-type", "Bogus"));
             ClassicAssert.AreEqual("ERR Invalid value for 'compaction-type': 'Bogus'.", badEnum.Message);
+            // An out-of-range numeric value does not name a declared member and is rejected.
+            var numericEnumOutOfRange = Assert.Throws<RedisServerException>(() => db.Execute("CONFIG", "SET", "compaction-type", "999"));
+            ClassicAssert.AreEqual("ERR Invalid value for 'compaction-type': '999'.", numericEnumOutOfRange.Message);
             // Invalid boolean value.
             var badBool = Assert.Throws<RedisServerException>(() => db.Execute("CONFIG", "SET", "sg-get", "maybe"));
             ClassicAssert.AreEqual("ERR Invalid value for 'sg-get': expected 'yes' or 'no'.", badBool.Message);

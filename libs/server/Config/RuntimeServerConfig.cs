@@ -85,7 +85,7 @@ namespace Garnet.server
                 ConfigTimeUnit timeUnit = ConfigTimeUnit.None, bool nonPositiveIsInfinite = false)
             {
                 if ((kind & ConfigKind.Enum) != 0)
-                    EnsureInt32BackedEnum(enumType);
+                    EnsureSupportedEnum(enumType);
                 EnsureValidKind(name, kind, timeUnit);
                 m[(int)t] = new ConfigMeta(name, kind, min, max, enumType, IsRuntime: true, ReadOnly: false,
                     timeUnit, nonPositiveIsInfinite);
@@ -251,11 +251,30 @@ namespace Garnet.server
         public TEnum GetEnum<TEnum>(ServerConfigType type) where TEnum : unmanaged, Enum
         {
             AssertKind(type, ConfigKind.Enum);
-            EnsureInt32BackedEnum(typeof(TEnum));
-            Debug.Assert(Meta[(int)type].EnumType == typeof(TEnum),
-                $"Configuration '{type}' is declared as '{Meta[(int)type].EnumType}' and cannot be read as '{typeof(TEnum)}'.");
-            var value = (int)Volatile.Read(ref values[(int)type]);
-            return Unsafe.As<int, TEnum>(ref value);
+
+            // The slot holds the underlying value widened to 64 bits; narrow it back to the width of
+            // TEnum before reinterpreting, so the result is correct regardless of the backing type.
+            var raw = Volatile.Read(ref values[(int)type]);
+            switch (Unsafe.SizeOf<TEnum>())
+            {
+                case sizeof(byte):
+                    {
+                        var narrowed = unchecked((byte)raw);
+                        return Unsafe.As<byte, TEnum>(ref narrowed);
+                    }
+                case sizeof(ushort):
+                    {
+                        var narrowed = unchecked((ushort)raw);
+                        return Unsafe.As<ushort, TEnum>(ref narrowed);
+                    }
+                case sizeof(uint):
+                    {
+                        var narrowed = unchecked((uint)raw);
+                        return Unsafe.As<uint, TEnum>(ref narrowed);
+                    }
+                default:
+                    return Unsafe.As<long, TEnum>(ref raw);
+            }
         }
 
         /// <summary>
@@ -334,13 +353,12 @@ namespace Garnet.server
                     }
                 case ConfigKind.Enum:
                     {
-                        if (!Enum.TryParse(meta.EnumType, value, ignoreCase: true, out var parsed) ||
-                            !Enum.IsDefined(meta.EnumType, parsed))
+                        if (!TryParseEnum(meta, value, out var parsed))
                         {
                             error = $"ERR Invalid value for '{meta.Name}': '{value}'.";
                             return false;
                         }
-                        Volatile.Write(ref values[(int)type], Convert.ToInt32(parsed, CultureInfo.InvariantCulture));
+                        Volatile.Write(ref values[(int)type], parsed);
                         return true;
                     }
                 default:
@@ -348,34 +366,6 @@ namespace Garnet.server
                     return false;
             }
         }
-
-        /// <summary>Current value of <paramref name="type"/> as its RESP string representation.</summary>
-        public string Format(ServerConfigType type)
-        {
-            ref readonly var meta = ref Meta[(int)type];
-            if (meta.ReadOnly)
-                return FormatReadOnly(type);
-
-            var raw = Volatile.Read(ref values[(int)type]);
-            return (meta.Kind & ConfigKind.StorageMask) switch
-            {
-                ConfigKind.Int32 => ((int)raw).ToString(CultureInfo.InvariantCulture),
-                ConfigKind.Int64 => raw.ToString(CultureInfo.InvariantCulture),
-                ConfigKind.Bool => raw != 0 ? "yes" : "no",
-                ConfigKind.Enum => Enum.GetName(meta.EnumType, (int)raw) ?? ((int)raw).ToString(CultureInfo.InvariantCulture),
-                _ => raw.ToString(CultureInfo.InvariantCulture),
-            };
-        }
-
-        // Compute the value of a read-only parameter from live server state. These are server-wide values.
-        string FormatReadOnly(ServerConfigType type) => type switch
-        {
-            ServerConfigType.TIMEOUT => "0",
-            ServerConfigType.SAVE => "",
-            ServerConfigType.APPENDONLY => serverOptions.EnableAOF ? "yes" : "no",
-            ServerConfigType.DATABASES => serverOptions.MaxDatabases.ToString(CultureInfo.InvariantCulture),
-            _ => "",
-        };
 
         /// <summary>Canonical wire name of <paramref name="type"/>.</summary>
         public static string Name(ServerConfigType type) => Meta[(int)type].Name;
@@ -444,11 +434,163 @@ namespace Garnet.server
                     $"Configuration '{name}' declares a time unit but no duration views.");
         }
 
-        static void EnsureInt32BackedEnum(Type enumType)
+        static void EnsureSupportedEnum(Type enumType)
         {
-            if (enumType == null || !enumType.IsEnum || Enum.GetUnderlyingType(enumType) != typeof(int))
+            if (enumType == null || !enumType.IsEnum)
                 throw new InvalidOperationException(
-                    $"Runtime configuration enums must use {nameof(Int32)} as their underlying type; '{enumType}' does not.");
+                    $"Runtime configuration option declares '{enumType}', which is not an enum type.");
+
+            // Every value is widened into the 64-bit slot, so any integral backing type is supported.
+            // The guard exists to reject a backing type that could not round-trip through the slot.
+            switch (Type.GetTypeCode(Enum.GetUnderlyingType(enumType)))
+            {
+                case TypeCode.SByte:
+                case TypeCode.Byte:
+                case TypeCode.Int16:
+                case TypeCode.UInt16:
+                case TypeCode.Int32:
+                case TypeCode.UInt32:
+                case TypeCode.Int64:
+                case TypeCode.UInt64:
+                    return;
+                default:
+                    throw new InvalidOperationException(
+                        $"Enum '{enumType}' is backed by '{Enum.GetUnderlyingType(enumType)}', which is not supported.");
+            }
+        }
+
+        /// <summary>
+        /// Parse an enum-valued option from either its underlying numeric value or a member name.
+        /// A numeric value is parsed as the enum's declared underlying type — so it neither overflows
+        /// nor silently wraps — and is accepted only if it names a declared member, so a value that
+        /// CONFIG GET could not render back as a name is rejected.
+        /// </summary>
+        /// <param name="meta">Metadata of the option being set.</param>
+        /// <param name="value">Value as supplied on the CONFIG SET wire.</param>
+        /// <param name="parsed">Underlying value of the resolved enum member, widened to 64 bits.</param>
+        /// <returns><see langword="true"/> if the value names a declared member.</returns>
+        static bool TryParseEnum(in ConfigMeta meta, string value, out long parsed)
+        {
+            var underlyingType = Enum.GetUnderlyingType(meta.EnumType);
+            if (TryParseUnderlying(underlyingType, value, out parsed))
+                return Enum.IsDefined(meta.EnumType, ToUnderlyingValue(underlyingType, parsed));
+
+            if (!Enum.TryParse(meta.EnumType, value, ignoreCase: true, out var boxed) ||
+                !Enum.IsDefined(meta.EnumType, boxed))
+            {
+                parsed = 0;
+                return false;
+            }
+
+            parsed = ToInt64(underlyingType, boxed);
+            return true;
+
+            // Parse a numeric literal as the given underlying type, widening the result into the 64-bit slot.
+            // Signed types sign-extend and unsigned types zero-extend, so ToUnderlyingValue recovers the
+            // original value exactly.
+            static bool TryParseUnderlying(Type underlyingType, string value, out long parsed)
+            {
+                const NumberStyles Styles = NumberStyles.Integer;
+                var culture = CultureInfo.InvariantCulture;
+
+                switch (Type.GetTypeCode(underlyingType))
+                {
+                    case TypeCode.SByte:
+                        {
+                            var ok = sbyte.TryParse(value, Styles, culture, out var v);
+                            parsed = v;
+                            return ok;
+                        }
+                    case TypeCode.Byte:
+                        {
+                            var ok = byte.TryParse(value, Styles, culture, out var v);
+                            parsed = v;
+                            return ok;
+                        }
+                    case TypeCode.Int16:
+                        {
+                            var ok = short.TryParse(value, Styles, culture, out var v);
+                            parsed = v;
+                            return ok;
+                        }
+                    case TypeCode.UInt16:
+                        {
+                            var ok = ushort.TryParse(value, Styles, culture, out var v);
+                            parsed = v;
+                            return ok;
+                        }
+                    case TypeCode.Int32:
+                        {
+                            var ok = int.TryParse(value, Styles, culture, out var v);
+                            parsed = v;
+                            return ok;
+                        }
+                    case TypeCode.UInt32:
+                        {
+                            var ok = uint.TryParse(value, Styles, culture, out var v);
+                            parsed = v;
+                            return ok;
+                        }
+                    case TypeCode.UInt64:
+                        {
+                            var ok = ulong.TryParse(value, Styles, culture, out var v);
+                            parsed = unchecked((long)v);
+                            return ok;
+                        }
+                    default:
+                        return long.TryParse(value, Styles, culture, out parsed);
+                }
+            }
+        }
+
+        // Narrow a slot value back to a boxed instance of the enum's underlying type, as required by
+        // Enum.IsDefined and Enum.GetName.
+        static object ToUnderlyingValue(Type underlyingType, long raw) => Type.GetTypeCode(underlyingType) switch
+        {
+            TypeCode.SByte => unchecked((sbyte)raw),
+            TypeCode.Byte => unchecked((byte)raw),
+            TypeCode.Int16 => unchecked((short)raw),
+            TypeCode.UInt16 => unchecked((ushort)raw),
+            TypeCode.Int32 => unchecked((int)raw),
+            TypeCode.UInt32 => unchecked((uint)raw),
+            TypeCode.UInt64 => unchecked((ulong)raw),
+            _ => raw,
+        };
+
+        // Widen a boxed enum member to the 64-bit slot representation.
+        static long ToInt64(Type underlyingType, object boxed) => Type.GetTypeCode(underlyingType) switch
+        {
+            TypeCode.UInt64 => unchecked((long)Convert.ToUInt64(boxed, CultureInfo.InvariantCulture)),
+            _ => Convert.ToInt64(boxed, CultureInfo.InvariantCulture),
+        };
+
+        /// <summary>Current value of <paramref name="type"/> as its RESP string representation.</summary>
+        public string RespFormat(ServerConfigType type)
+        {
+            ref readonly var meta = ref Meta[(int)type];
+            if (meta.ReadOnly)
+                return RespFormatReadonly(type);
+
+            var raw = Volatile.Read(ref values[(int)type]);
+            return (meta.Kind & ConfigKind.StorageMask) switch
+            {
+                ConfigKind.Int32 => ((int)raw).ToString(CultureInfo.InvariantCulture),
+                ConfigKind.Int64 => raw.ToString(CultureInfo.InvariantCulture),
+                ConfigKind.Bool => raw != 0 ? "yes" : "no",
+                ConfigKind.Enum => Enum.GetName(meta.EnumType, ToUnderlyingValue(Enum.GetUnderlyingType(meta.EnumType), raw))
+                    ?? raw.ToString(CultureInfo.InvariantCulture),
+                _ => raw.ToString(CultureInfo.InvariantCulture),
+            };
+
+            // Compute the value of a read-only parameter from live server state. These are server-wide values.
+            string RespFormatReadonly(ServerConfigType type) => type switch
+            {
+                ServerConfigType.TIMEOUT => "0",
+                ServerConfigType.SAVE => "",
+                ServerConfigType.APPENDONLY => serverOptions.EnableAOF ? "yes" : "no",
+                ServerConfigType.DATABASES => serverOptions.MaxDatabases.ToString(CultureInfo.InvariantCulture),
+                _ => "",
+            };
         }
     }
 }

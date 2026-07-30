@@ -87,7 +87,7 @@ namespace Garnet.server
                     else
                     {
                         name = RuntimeServerConfig.Name(configType);
-                        value = storeWrapper.runtimeConfig.Format(configType);
+                        value = storeWrapper.runtimeConfig.RespFormat(configType);
                     }
 
                     while (!RespWriteUtils.TryWriteAsciiBulkString(name, ref dcurr, dend))
