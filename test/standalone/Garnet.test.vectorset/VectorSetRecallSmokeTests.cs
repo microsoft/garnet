@@ -29,12 +29,9 @@ namespace Garnet.test
     /// Everything is single-threaded (one connection, sequential VADD) and deterministic (fixed seed,
     /// fixed graph parameters) so the tests are stable and fast.
     ///
-    /// NOTE: the Q8 (8-bit scalar) cases that read from disk (FlushAndEvict, larger-than-memory load,
-    /// and recover) used to fail against diskann-garnet 4.0.0/4.0.1 because the per-dimension Q8
-    /// quantization table was native in-memory-only state that was lost when the index is recreated
-    /// after eviction/recovery, so codes were decoded with a missing table and recall collapsed
-    /// (~1.0 -> ~0.02-0.11). This was fixed in diskann-garnet 4.0.2; the Q8 disk cases now pass and
-    /// stand as regression guards. NOQUANT and BIN (table-free) were always robust.
+    /// All three quantization modes must stay robust across the disk paths. For Q8 (8-bit scalar) this
+    /// guards the per-dimension quantization table surviving index recreation after eviction or
+    /// recovery; NOQUANT and BIN are table-free.
     /// </summary>
     [TestFixture]
     public class VectorSetRecallSmokeTests : TestBase
@@ -55,8 +52,7 @@ namespace Garnet.test
         private const double MinInMemoryRecall = 0.80;
 
         // Robustness budget: a physical-config change (evict-to-disk / recover) may only cost this much
-        // recall. NOQUANT/BIN/Q8 all cost ~0.0 on 4.0.2; the pre-4.0.2 Q8 disk bug cost ~0.9 and blew
-        // through this budget.
+        // recall. A healthy graph costs ~0.0; a broken one collapses well past this budget.
         private const double MaxRecallDrop = 0.20;
 
         private global::Garnet.GarnetServer server;
@@ -115,8 +111,8 @@ namespace Garnet.test
             var onDisk = MeasureRecall(db, key, data);
             ClassicAssert.GreaterOrEqual(onDisk, inMemory - MaxRecallDrop,
                 $"{quant} [{readMode}]: recall collapsed after eviction to disk " +
-                $"(in-memory {inMemory:F3} -> on-disk {onDisk:F3}). For Q8, a regression here is the " +
-                "quantization-table-lost-on-recreate bug fixed in diskann-garnet 4.0.2.");
+                $"(in-memory {inMemory:F3} -> on-disk {onDisk:F3}). For Q8, this indicates the " +
+                "quantization table did not survive index recreation.");
         }
 
         /// <summary>
@@ -129,8 +125,7 @@ namespace Garnet.test
             [Values("NOQUANT", "Q8", "BIN")] string quant)
         {
             // A 256 KB log with 32 KB pages is much smaller than the ~800-node graph, so inserts spill
-            // and construction pages earlier records back from disk. (The 4 KB-page lowMemory helper also
-            // forces spill but is an order of magnitude slower here.)
+            // and construction pages earlier records back from disk.
             server = TestUtils.CreateGarnetServer(
                 TestUtils.MethodTestDir,
                 memorySize: "256k",
@@ -150,7 +145,7 @@ namespace Garnet.test
             var onDisk = MeasureRecall(db, key, data);
             ClassicAssert.GreaterOrEqual(onDisk, MinInMemoryRecall,
                 $"{quant}: recall {onDisk:F3} is broken for a graph built and served larger-than-memory. " +
-                "For Q8, a regression here is the quantization-table-lost-on-recreate bug fixed in diskann-garnet 4.0.2.");
+                "For Q8, this indicates the quantization table did not survive index recreation.");
         }
 
         /// <summary>
@@ -219,8 +214,8 @@ namespace Garnet.test
                 var after = MeasureRecall(db, key, data);
                 ClassicAssert.GreaterOrEqual(after, before - MaxRecallDrop,
                     $"{quant} [recoverIntoSmallerLog={recoverIntoSmallerLog}]: recall collapsed after save+restart+recover " +
-                    $"(before {before:F3} -> after {after:F3}). For Q8, a regression here is the " +
-                    "quantization-table-lost-on-recreate bug fixed in diskann-garnet 4.0.2.");
+                    $"(before {before:F3} -> after {after:F3}). For Q8, this indicates the " +
+                    "quantization table did not survive index recreation.");
             }
         }
 
