@@ -59,45 +59,6 @@ namespace Garnet.test.cluster
 
         #region cluster formation
 
-        /// <summary>
-        /// Assigns all slots to primaryIndex and introduces the other nodes without attaching replicas.
-        /// </summary>
-        protected void FormCluster(int primaryIndex, params int[] otherIndexes)
-        {
-            _ = context.clusterTestUtils.AddDelSlotsRange(primaryIndex, [(0, 16383)], addslot: true, logger: context.logger);
-            context.clusterTestUtils.SetConfigEpoch(primaryIndex, primaryIndex + 1, logger: context.logger);
-
-            foreach (var other in otherIndexes)
-            {
-                context.clusterTestUtils.SetConfigEpoch(other, other + 1, logger: context.logger);
-                context.clusterTestUtils.Meet(primaryIndex, other, logger: context.logger);
-                context.clusterTestUtils.WaitUntilNodeIsKnown(primaryIndex, other, logger: context.logger);
-            }
-        }
-
-        protected void Attach(int replicaIndex, int primaryIndex, bool waitForRecovery = false)
-        {
-            _ = context.clusterTestUtils.ClusterReplicate(replicaNodeIndex: replicaIndex, primaryNodeIndex: primaryIndex, logger: context.logger);
-
-            if (waitForRecovery)
-                context.clusterTestUtils.WaitForReplicaRecovery(replicaIndex, context.logger);
-
-            context.clusterTestUtils.WaitForReplicaAofSync(primaryIndex, replicaIndex, logger: context.logger);
-        }
-
-        /// <summary>Detaches and re-introduces a replica so the next attach starts from scratch.</summary>
-        protected void ResetReplica(int replicaIndex, int primaryIndex)
-        {
-            _ = context.clusterTestUtils.ClusterReset(replicaIndex, soft: true, expiry: 1, logger: context.logger);
-            context.clusterTestUtils.BumpEpoch(replicaIndex, logger: context.logger);
-
-            while (!context.clusterTestUtils.IsKnown(replicaIndex, primaryIndex, logger: context.logger))
-            {
-                ClusterTestUtils.BackOff(cancellationToken: context.cts.Token);
-                context.clusterTestUtils.Meet(replicaIndex, primaryIndex, logger: context.logger);
-            }
-        }
-
         /// <summary>Moves the primary far enough ahead that a re-attach cannot be incremental.</summary>
         protected void PushPrimaryAhead(int primaryIndex)
         {

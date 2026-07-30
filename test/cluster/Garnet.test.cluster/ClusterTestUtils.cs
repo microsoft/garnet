@@ -2201,6 +2201,46 @@ namespace Garnet.test.cluster
             }
         }
 
+        /// <summary>
+        /// Assigns all slots to primaryIndex and introduces the other nodes without attaching replicas.
+        /// </summary>
+        public void FormCluster(int primaryIndex, int[] otherIndexes, ILogger logger = null)
+        {
+            _ = AddDelSlotsRange(primaryIndex, [(0, 16383)], addslot: true, logger: logger);
+            SetConfigEpoch(primaryIndex, primaryIndex + 1, logger: logger);
+
+            foreach (var other in otherIndexes)
+            {
+                SetConfigEpoch(other, other + 1, logger: logger);
+                Meet(primaryIndex, other, logger: logger);
+                WaitUntilNodeIsKnown(primaryIndex, other, logger: logger);
+            }
+        }
+
+        /// <summary>Attaches a replica to a primary and waits until it is in sync.</summary>
+        public void Attach(int replicaIndex, int primaryIndex, bool waitForRecovery = false, ILogger logger = null)
+        {
+            _ = ClusterReplicate(replicaNodeIndex: replicaIndex, primaryNodeIndex: primaryIndex, logger: logger);
+
+            if (waitForRecovery)
+                WaitForReplicaRecovery(replicaIndex, logger);
+
+            WaitForReplicaAofSync(primaryIndex, replicaIndex, logger: logger);
+        }
+
+        /// <summary>Detaches and re-introduces a replica so the next attach starts from scratch.</summary>
+        public void ResetReplica(int replicaIndex, int primaryIndex, ILogger logger = null)
+        {
+            _ = ClusterReset(replicaIndex, soft: true, expiry: 1, logger: logger);
+            BumpEpoch(replicaIndex, logger: logger);
+
+            while (!IsKnown(replicaIndex, primaryIndex, logger: logger))
+            {
+                BackOff(cancellationToken: context.cts.Token);
+                Meet(replicaIndex, primaryIndex, logger: logger);
+            }
+        }
+
         public string ClusterReplicate(int replicaNodeIndex, int primaryNodeIndex, bool async = false, bool failEx = true, ILogger logger = null)
         {
             var primaryId = ClusterMyId(primaryNodeIndex, logger: logger);

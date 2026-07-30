@@ -28,7 +28,7 @@ namespace Garnet.test.cluster
                 timeout: timeout);
             context.CreateConnection();
 
-            FormCluster(PrimaryIndex, [.. Enumerable.Range(1, nodeCount - 1)]);
+            context.clusterTestUtils.FormCluster(PrimaryIndex, [.. Enumerable.Range(1, nodeCount - 1)], context.logger);
         }
 
         private void FailoverTo(int replicaIndex, int oldPrimaryIndex)
@@ -49,7 +49,7 @@ namespace Garnet.test.cluster
             const int Elements = 250;
 
             SetupCluster(2);
-            Attach(ReplicaIndex, PrimaryIndex);
+            context.clusterTestUtils.Attach(ReplicaIndex, PrimaryIndex, logger: context.logger);
 
             PopulateVectorSet(PrimaryIndex, Key, Elements, seed: 2026_07_29_21);
             context.clusterTestUtils.WaitForReplicaAofSync(PrimaryIndex, ReplicaIndex, logger: context.logger);
@@ -78,7 +78,7 @@ namespace Garnet.test.cluster
             const int AddedElements = 150;
 
             SetupCluster(2);
-            Attach(ReplicaIndex, PrimaryIndex);
+            context.clusterTestUtils.Attach(ReplicaIndex, PrimaryIndex, logger: context.logger);
 
             PopulateVectorSet(PrimaryIndex, Key, InitialElements, seed: 2026_07_29_22);
             context.clusterTestUtils.WaitForReplicaAofSync(PrimaryIndex, ReplicaIndex, logger: context.logger);
@@ -111,7 +111,7 @@ namespace Garnet.test.cluster
             const int Rounds = 3;
 
             SetupCluster(2);
-            Attach(ReplicaIndex, PrimaryIndex);
+            context.clusterTestUtils.Attach(ReplicaIndex, PrimaryIndex, logger: context.logger);
 
             PopulateVectorSet(PrimaryIndex, Key, InitialElements, seed: 2026_07_29_24);
             context.clusterTestUtils.WaitForReplicaAofSync(PrimaryIndex, ReplicaIndex, logger: context.logger);

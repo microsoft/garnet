@@ -32,7 +32,7 @@ namespace Garnet.test.cluster
                 timeout: timeout);
             context.CreateConnection();
 
-            FormCluster(PrimaryIndex, [.. Enumerable.Range(1, nodeCount - 1)]);
+            context.clusterTestUtils.FormCluster(PrimaryIndex, [.. Enumerable.Range(1, nodeCount - 1)], context.logger);
         }
 
         /// <summary>Baseline: asynchronously replayed VADDs must land with identical embeddings.</summary>
@@ -44,7 +44,7 @@ namespace Garnet.test.cluster
             const int Elements = 300;
 
             SetupAsyncReplayCluster(2, disklessSync: false);
-            Attach(ReplicaIndex, PrimaryIndex);
+            context.clusterTestUtils.Attach(ReplicaIndex, PrimaryIndex, logger: context.logger);
 
             PopulateVectorSet(PrimaryIndex, Key, Elements, seed: 2026_07_29_26);
             context.clusterTestUtils.WaitForReplicaAofSync(PrimaryIndex, ReplicaIndex, logger: context.logger);
@@ -71,7 +71,7 @@ namespace Garnet.test.cluster
             PopulateVectorSet(PrimaryIndex, Key, Elements, seed: 2026_07_29_27);
 
             // The replica has its own replication id, so the attach takes a full sync.
-            Attach(ReplicaIndex, PrimaryIndex);
+            context.clusterTestUtils.Attach(ReplicaIndex, PrimaryIndex, logger: context.logger);
 
             MakeReadable(ReplicaIndex);
             AssertFullyReplicated(PrimaryIndex, ReplicaIndex, Key);
@@ -100,7 +100,7 @@ namespace Garnet.test.cluster
             const int ThirdPerRound = 20;
 
             SetupAsyncReplayCluster(2, disklessSync: false, replayTaskCount: 4, vectorSetReplayTaskCount: 4);
-            Attach(ReplicaIndex, PrimaryIndex);
+            context.clusterTestUtils.Attach(ReplicaIndex, PrimaryIndex, logger: context.logger);
 
             // Interleaved so replay tasks see records for all three keys mixed together.
             for (var round = 0; round < Rounds; round++)

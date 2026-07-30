@@ -30,7 +30,7 @@ namespace Garnet.test.cluster
                 timeout: timeout);
             context.CreateConnection();
 
-            FormCluster(PrimaryIndex, [.. Enumerable.Range(1, nodeCount - 1)]);
+            context.clusterTestUtils.FormCluster(PrimaryIndex, [.. Enumerable.Range(1, nodeCount - 1)], context.logger);
         }
 
         /// <summary>
@@ -41,9 +41,9 @@ namespace Garnet.test.cluster
         /// </summary>
         private void ForceDisklessFullSync(int replicaIndex = ReplicaIndex)
         {
-            ResetReplica(replicaIndex, PrimaryIndex);
+            context.clusterTestUtils.ResetReplica(replicaIndex, PrimaryIndex, context.logger);
             PushPrimaryAhead(PrimaryIndex);
-            Attach(replicaIndex, PrimaryIndex);
+            context.clusterTestUtils.Attach(replicaIndex, PrimaryIndex, logger: context.logger);
         }
 
         /// <summary>
@@ -58,7 +58,7 @@ namespace Garnet.test.cluster
             const int Elements = 500;
 
             SetupDisklessCluster(2);
-            Attach(ReplicaIndex, PrimaryIndex);
+            context.clusterTestUtils.Attach(ReplicaIndex, PrimaryIndex, logger: context.logger);
 
             // Attached writes arrive as VADD replay, so the replica builds its own index.
             PopulateVectorSet(PrimaryIndex, Key, Elements, seed: 2026_07_29_00);
@@ -88,7 +88,7 @@ namespace Garnet.test.cluster
             const int LargeElements = 400;
 
             SetupDisklessCluster(2);
-            Attach(ReplicaIndex, PrimaryIndex);
+            context.clusterTestUtils.Attach(ReplicaIndex, PrimaryIndex, logger: context.logger);
 
             PopulateVectorSet(PrimaryIndex, LargeKey, LargeElements, seed: 2026_07_29_02);
             PopulateVectorSet(PrimaryIndex, SmallKey, SmallElements, seed: 2026_07_29_03);
@@ -120,7 +120,7 @@ namespace Garnet.test.cluster
             const int Elements = 500;
 
             SetupDisklessCluster(2);
-            Attach(ReplicaIndex, PrimaryIndex);
+            context.clusterTestUtils.Attach(ReplicaIndex, PrimaryIndex, logger: context.logger);
 
             PopulateVectorSet(PrimaryIndex, Key, Elements, seed: 2026_07_29_04);
             context.clusterTestUtils.WaitForReplicaAofSync(PrimaryIndex, ReplicaIndex, logger: context.logger);
@@ -151,7 +151,7 @@ namespace Garnet.test.cluster
             // Each replica starts with its own replication id, so every attach takes a full sync.
             for (var replica = 1; replica <= ReplicaCount; replica++)
             {
-                Attach(replica, PrimaryIndex);
+                context.clusterTestUtils.Attach(replica, PrimaryIndex, logger: context.logger);
             }
 
             for (var replica = 1; replica <= ReplicaCount; replica++)
@@ -186,7 +186,7 @@ namespace Garnet.test.cluster
             PopulateVectorSet(PrimaryIndex, Key, Elements, seed: 2026_07_29_07);
 
             // The replica has its own replication id, so the attach takes a full sync.
-            Attach(ReplicaIndex, PrimaryIndex);
+            context.clusterTestUtils.Attach(ReplicaIndex, PrimaryIndex, logger: context.logger);
 
             MakeReadable(ReplicaIndex);
             AssertFullyReplicated(PrimaryIndex, ReplicaIndex, Key);
