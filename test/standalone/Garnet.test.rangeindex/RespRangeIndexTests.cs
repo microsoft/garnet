@@ -315,27 +315,35 @@ namespace Garnet.test
             ClassicAssert.IsTrue(ex.Message.StartsWith("WRONGTYPE"));
         }
 
-        /// <summary>
-        /// Verifies WRONGTYPE error when SET is used on an existing RangeIndex key,
-        /// and confirms the RI key's data is not corrupted.
-        /// </summary>
-        [Test]
-        public void RINormalSetOnRangeIndexKeyTest()
-        {
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
-            var db = redis.GetDatabase(0);
+        // TODO: We used to forbid SET'ing over an RI - but that's a weird break from Redis
+        //       This was tested in RINormalSetOnRangeIndexKeyTest
+        //
+        //       Now we allow SET (and it's ilk) to overwrite an RI.
+        //
+        //       We should have a set of tests that check that RI's are appropriately cleaned
+        //       up after being overwriten
 
-            db.Execute("RI.CREATE", "myindex", "DISK", "CACHESIZE", "65536", "MINRECORD", "8");
-            db.Execute("RI.SET", "myindex", "field1", "value1");
+        ///// <summary>
+        ///// Verifies WRONGTYPE error when SET is used on an existing RangeIndex key,
+        ///// and confirms the RI key's data is not corrupted.
+        ///// </summary>
+        //[Test]
+        //public void RINormalSetOnRangeIndexKeyTest()
+        //{
+        //    using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+        //    var db = redis.GetDatabase(0);
 
-            // SET on a RI key returns WRONGTYPE error
-            var ex = Assert.Throws<RedisServerException>(() => db.StringSet("myindex", "overwrite"));
-            ClassicAssert.IsTrue(ex.Message.StartsWith("WRONGTYPE"));
+        //    db.Execute("RI.CREATE", "myindex", "DISK", "CACHESIZE", "65536", "MINRECORD", "8");
+        //    db.Execute("RI.SET", "myindex", "field1", "value1");
 
-            // Verify the RI key is still intact
-            var val = db.Execute("RI.GET", "myindex", "field1");
-            ClassicAssert.AreEqual("value1", (string)val);
-        }
+        //    // SET on a RI key returns WRONGTYPE error
+        //    var ex = Assert.Throws<RedisServerException>(() => db.StringSet("myindex", "overwrite"));
+        //    ClassicAssert.IsTrue(ex.Message.StartsWith("WRONGTYPE"));
+
+        //    // Verify the RI key is still intact
+        //    var val = db.Execute("RI.GET", "myindex", "field1");
+        //    ClassicAssert.AreEqual("value1", (string)val);
+        //}
 
         /// <summary>
         /// Verifies AOF replay: checkpoint base state, then apply post-checkpoint mutations

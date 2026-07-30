@@ -180,6 +180,12 @@ namespace Garnet.server
         private readonly bool HandleEtagNeedCopyUpdate<TSourceLogRecord>(RespCommand cmd, in TSourceLogRecord srcLogRecord, ref StringInput input, ref StringOutput output, ref RMWInfo rmwInfo)
             where TSourceLogRecord : ISourceLogRecord
         {
+            if (srcLogRecord.RecordType != 0)
+            {
+                rmwInfo.Action = RMWAction.WrongType;
+                return false;
+            }
+
             long existingEtag = srcLogRecord.DataHeader.HasETag ? srcLogRecord.ETag : LogRecord.NoETag;
 
             return cmd switch

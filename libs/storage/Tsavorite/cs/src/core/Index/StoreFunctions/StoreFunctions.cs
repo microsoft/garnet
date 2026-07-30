@@ -28,7 +28,7 @@ namespace Tsavorite.core
         readonly Func<IObjectSerializer<IHeapObject>> valueSerializerCreator = valueSerializerCreator;
 
         /// <summary>Dispose a record</summary>
-        readonly TRecordTriggers recordTriggers = recordTriggers;
+        public readonly TRecordTriggers recordTriggers = recordTriggers;
 
         /// <summary>Optional checkpoint completion callback, set separately from ctor.</summary>
         Action checkpointCompletionCallback = () => { };

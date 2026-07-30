@@ -150,6 +150,8 @@ namespace Garnet.server
             {
                 if (srcLogRecord.RecordType == RangeIndexManager.RangeIndexRecordType)
                     writer.WriteSimpleString(CmdStrings.rangeindext);
+                else if (srcLogRecord.RecordType == VectorManager.RecordType)
+                    writer.WriteSimpleString(CmdStrings.vectorsett);
                 else
                     writer.WriteSimpleString(CmdStrings.stringt);
             }

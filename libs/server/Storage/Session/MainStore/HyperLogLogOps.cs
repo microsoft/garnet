@@ -135,6 +135,9 @@ namespace Garnet.server
                     // Handle case merging source key does not exist
                     if (status == GarnetStatus.NOTFOUND)
                         continue;
+                    if (status == GarnetStatus.WRONGTYPE)
+                        return status;
+
                     // The PFCOUNT/PFMERGE backend is contracted to populate SpanByte (sector-aligned native
                     // memory we passed in) and never overflow to heap Memory. Assert the contract so any
                     // future regression is caught immediately rather than silently returning garbage.
@@ -232,6 +235,8 @@ namespace Garnet.server
                     // Handle case merging source key does not exist
                     if (status == GarnetStatus.NOTFOUND)
                         continue;
+                    if (status == GarnetStatus.WRONGTYPE)
+                        return status;
 
                     // The PFCOUNT/PFMERGE backend is contracted to populate SpanByte (sector-aligned native
                     // memory we passed in) and never overflow to heap Memory. Assert the contract so any
