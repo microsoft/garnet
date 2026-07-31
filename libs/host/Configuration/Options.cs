@@ -216,8 +216,17 @@ namespace Garnet
         [Option("aof-replay-task-count", Required = false, HelpText = "Number of replay tasks per physical sublog at the replica.")]
         public int AofReplayTaskCount { get; set; }
 
-        [Option("aof-replay-max-drift", Required = false, HelpText = "Maximum allowed drift in key sequence numbers between physical sublog replay drivers. When a driver is ahead of the slowest peer by more than this value, it yields. Only effective when aof-physical-sublog-count > 1. -1 = disabled.")]
-        public long AofReplayMaxDrift { get; set; }
+        [IntRangeValidation(-1, int.MaxValue, isRequired: false)]
+        [Option("aof-replay-drift-threshold", Required = false, HelpText = "Cross-sublog replay drift, in sequence-number units, tolerated on a replica before a replay-align barrier round is triggered. -1 disables the barrier.")]
+        public int AofReplayDriftThreshold { get; set; }
+
+        [IntRangeValidation(0, int.MaxValue, isRequired: false)]
+        [Option("aof-replay-drift-check-freq", Required = false, HelpText = "How often cross-sublog drift is re-checked during replay, as a multiple of aof-replay-drift-threshold. 0 = readers about to wait are the only round source.")]
+        public int AofReplayDriftCheckFreq { get; set; }
+
+        [IntRangeValidation(-1, int.MaxValue, isRequired: false)]
+        [Option("aof-barrier-spin-us", Required = false, HelpText = "How long a replay thread spins at the replay-align barrier before sleeping: -1 = spin forever, 0 = never spin, >0 = spin up to that many microseconds then sleep.")]
+        public int AofBarrierSpinUs { get; set; }
 
         [IntRangeValidation(0, int.MaxValue)]
         [Option("aof-tail-witness-freq", Required = false, HelpText = "Polling frequency of the background task responsible for moving time ahead for all physical sublogs (Used only with physical sublog value >1).")]
@@ -880,7 +889,9 @@ namespace Garnet
                 AofSegmentSize = AofSegmentSize,
                 AofPhysicalSublogCount = AofPhysicalSublogCount,
                 AofReplayTaskCount = AofReplayTaskCount,
-                AofReplayMaxDrift = AofReplayMaxDrift,
+                AofReplayDriftThreshold = AofReplayDriftThreshold,
+                AofReplayDriftCheckFreq = AofReplayDriftCheckFreq,
+                AofBarrierSpinUs = AofBarrierSpinUs,
                 AofTailWitnessFreqMs = AofTailWitnessFreqMs,
                 CommitFrequencyMs = CommitFrequencyMs,
                 WaitForCommit = WaitForCommit.GetValueOrDefault(),
