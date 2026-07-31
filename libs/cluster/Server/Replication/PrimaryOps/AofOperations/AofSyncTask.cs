@@ -28,6 +28,13 @@ namespace Garnet.cluster
             TsavoriteLogScanSingleIterator iter;
             long previousAddress;
 
+            readonly bool timePulseEnabled;
+            readonly GarnetAppendOnlyFile appendOnlyFile;
+            readonly TsavoriteLog physicalSublog;
+            readonly long[] pulseTailSnapshot;
+            readonly long[] pulseTailScratch;
+            long lastAdvanceTimePulse;
+
             /// <summary>
             /// Return start address for this AofSyncTask
             /// </summary>
@@ -77,6 +84,15 @@ namespace Garnet.cluster
                 this.localNodeId = localNodeId;
                 this.remoteNodeId = remoteNodeId;
                 this.cts = cts;
+                appendOnlyFile = clusterProvider.storeWrapper.appendOnlyFile;
+                timePulseEnabled = clusterProvider.serverOptions.MultiLogEnabled;
+                if (timePulseEnabled)
+                {
+                    physicalSublog = appendOnlyFile.Log.GetSubLog(physicalSublogIdx);
+                    pulseTailSnapshot = new long[clusterProvider.serverOptions.AofPhysicalSublogCount];
+                    pulseTailScratch = new long[clusterProvider.serverOptions.AofPhysicalSublogCount];
+                    Array.Fill(pulseTailSnapshot, -1L);
+                }
                 garnetClient = new GarnetClientSession(
                             endPoint,
                             this.clusterProvider.replicationManager.GetAofSyncNetworkBufferSettings,
@@ -137,6 +153,7 @@ namespace Garnet.cluster
                     // Set task address to nextAddress, as the iterator is currently at nextAddress
                     // (records at currentAddress are already sent above)
                     previousAddress = nextAddress;
+                    lastAdvanceTimePulse = Environment.TickCount64;
                 }
                 catch (Exception ex)
                 {
@@ -162,6 +179,44 @@ namespace Garnet.cluster
                 // Trigger flush while we are out of epoch protection
                 garnetClient.CompletePending(false);
                 garnetClient.Throttle();
+                SendAdvanceTimePulse();
+            }
+
+            void SendAdvanceTimePulse()
+            {
+                if (!timePulseEnabled || iter == null)
+                    return;
+
+                var now = Environment.TickCount64;
+                if (now - lastAdvanceTimePulse < clusterProvider.serverOptions.AofTailWitnessFreqMs)
+                    return;
+
+                var anyTailMoved = false;
+                for (var i = 0; i < pulseTailScratch.Length; i++)
+                {
+                    pulseTailScratch[i] = appendOnlyFile.Log.GetTailAddress(i);
+                    anyTailMoved |= pulseTailScratch[i] != pulseTailSnapshot[i];
+                }
+
+                if (!anyTailMoved)
+                {
+                    lastAdvanceTimePulse = now;
+                    return;
+                }
+
+                var sequenceNumber = appendOnlyFile.GetLargerThanMaximumSequenceNumber();
+                if (iter.NextAddress < physicalSublog.TailAddress)
+                {
+                    lastAdvanceTimePulse = now;
+                    return;
+                }
+
+                garnetClient.ExecuteClusterAdvanceTime(physicalSublogIdx, sequenceNumber);
+                garnetClient.CompletePending(false);
+
+                for (var i = 0; i < pulseTailSnapshot.Length; i++)
+                    pulseTailSnapshot[i] = pulseTailScratch[i];
+                lastAdvanceTimePulse = now;
             }
 
             public async Task RunAofSyncTaskAsync(AofSyncDriver aofSyncDriver)
@@ -191,6 +246,7 @@ namespace Garnet.cluster
                     var resp = await garnetClient.ExecuteClusterAppendLogInit(localNodeId, physicalSublogIdx, -1, -1, -1);
                     if (!resp.Equals("OK"))
                         throw new GarnetException("Failed to initialize AofSync stream!");
+                    lastAdvanceTimePulse = Environment.TickCount64;
 
                     await iter.BulkConsumeAllAsync(
                         this,
