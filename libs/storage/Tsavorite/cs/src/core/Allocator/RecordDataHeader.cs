@@ -443,6 +443,100 @@ namespace Tsavorite.core
                 ValueLength = valueActualLength >= (long)kValueLengthLowBitsMask ? (int)kValueLengthLowBitsMask : (int)valueActualLength;
         }
 
+        // ── Flush (v2.2) out-of-line VALUE length encoding (low 12 bits of the ValueLength field) ─────────────────────
+        // Supersedes the bit-23-chunked / bit-22-overflow-header / 24-bit-exact scheme above (which is being retired as
+        // the writer/reader are rewired). Only the low 12 bits of the (physically 24-bit) ValueLength field are used for
+        // an out-of-line (overflow or object) value; the ValueLength property still returns ObjectIdSize, so the encoding
+        // is read via GetValueLengthRaw():
+        //   bit 11 (isExactSize) set   -> bits 0-9 are the EXACT byte length (0..1023); NO ChunkHeader precedes the value.
+        //   bit 11 clear               -> bits 0-9 are the count of 4 KB pages spanned by the value's total on-disk extent
+        //                                 (leading ChunkHeader + any DMA alignment padding + data); a ChunkHeader precedes
+        //                                 the value (bit 10 set). kOutOfLinePageSentinel (1023) is the sentinel: the extent
+        //                                 is at/above 1023*4 KB (~4 MB), so the reader fetches in 4 MB blocks and learns the
+        //                                 exact length(s) from the ChunkHeader(s) -- overflow: full length; object: per-chunk
+        //                                 length + ContinuationFlag.
+        //   bit 10 (hasHeader)         -> a leading ChunkHeader precedes the value bytes. Always set when isExactSize is clear.
+        // A value <= kOutOfLineExactSizeCutoff (1023) bytes is encoded headerless (isExactSize); a longer value is encoded as
+        // a page count (+ header). The cutoff is 1023 because that is the largest exact byte length the 10-bit payload holds;
+        // above it only a page count fits, so the exact length must move into the ChunkHeader. This keeps small objects/overflow
+        // values free of a header's space cost while giving a precise (no 4 MB over-read) initial read size for larger values.
+        // KeyLength keeps its own 10-bit sentinel (KeyLengthIsSentinel); keys are never chunked and, being <= 1023 at the
+        // sentinel (<< MaxCopySpanLen), always carry a ChunkHeader when DMA-padded, so no separate has-header bit is needed.
+        internal const int kOutOfLinePayloadBits = 10;                                    // bits 0-9
+        internal const uint kOutOfLinePayloadMask = (1u << kOutOfLinePayloadBits) - 1;    // 1023
+        internal const int kOutOfLinePageSentinel = (int)kOutOfLinePayloadMask;           // 1023 pages -> read in 4 MB blocks
+        internal const int kFlushValueHasHeaderBit = 10;
+        internal const uint kFlushValueHasHeaderMask = 1u << kFlushValueHasHeaderBit;
+        internal const int kFlushValueIsExactSizeBit = 11;
+        internal const uint kFlushValueIsExactSizeMask = 1u << kFlushValueIsExactSizeBit;
+
+        /// <summary>Largest out-of-line value length (bytes) encoded headerless (isExactSize); a longer value gets a ChunkHeader
+        /// and a 4 KB-page-count encoding. 1023 = the largest value the 10-bit exact-size payload can hold.</summary>
+        internal const int kOutOfLineExactSizeCutoff = (int)kOutOfLinePayloadMask;        // 1023
+
+        /// <summary>Size (bytes) of the 4 KB page unit used by the page-count encoding.</summary>
+        internal const int kFlushPageSize = 1 << 12;                                      // 4 KB
+
+        /// <summary>Largest exactly-representable page count (one below the sentinel); its read-ahead extent is
+        /// 1022*4 KB = 4 MB - 8 KB, just under one 4 MB read buffer -- which is why 1023 is reserved as the sentinel.</summary>
+        internal const int kFlushMaxExactPageCount = kOutOfLinePageSentinel - 1;          // 1022
+
+        /// <summary>Encode an out-of-line (overflow or object) value's on-disk extent into the low 12 bits of the ValueLength
+        /// field. A value at/below <see cref="kOutOfLineExactSizeCutoff"/> is encoded as its exact byte length (headerless);
+        /// a longer value is encoded as the count of 4 KB pages its total on-disk extent spans, with the has-header bit set
+        /// (the exact length is carried in a leading <see cref="ChunkHeader"/>). A page count at/above the sentinel is clamped
+        /// to the sentinel, telling the reader to fetch in 4 MB blocks.</summary>
+        /// <param name="dataLength">The value's data length in bytes (overflow byte count or serialized object length).</param>
+        /// <param name="totalOnDiskExtent">The value's total on-disk extent in bytes: leading ChunkHeader + any alignment
+        ///   padding + data. Ignored for the headerless (exact) case.</param>
+        internal static uint EncodeFlushOutOfLineValue(long dataLength, long totalOnDiskExtent)
+        {
+            Debug.Assert(dataLength >= 0, $"dataLength {dataLength} must be non-negative");
+            if (dataLength <= kOutOfLineExactSizeCutoff)
+                return kFlushValueIsExactSizeMask | (uint)dataLength;                     // headerless, exact byte size
+            var pageCount = (int)((totalOnDiskExtent + kFlushPageSize - 1) / kFlushPageSize);
+            if (pageCount >= kOutOfLinePageSentinel)
+                pageCount = kOutOfLinePageSentinel;
+            Debug.Assert(pageCount > 0, $"page count {pageCount} must be positive for a headered value (dataLength {dataLength}, extent {totalOnDiskExtent})");
+            return kFlushValueHasHeaderMask | (uint)pageCount;                            // page count + header
+        }
+
+        /// <summary>True if the out-of-line value is encoded as an exact byte length (headerless).</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal static bool FlushValueIsExactSize(uint encoded) => (encoded & kFlushValueIsExactSizeMask) != 0;
+
+        /// <summary>True if a leading <see cref="ChunkHeader"/> precedes the out-of-line value bytes.</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal static bool FlushValueHasHeader(uint encoded) => (encoded & kFlushValueHasHeaderMask) != 0;
+
+        /// <summary>The exact byte length of a headerless value (valid only when <see cref="FlushValueIsExactSize"/>).</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal static int FlushValueExactByteSize(uint encoded) => (int)(encoded & kOutOfLinePayloadMask);
+
+        /// <summary>The 4 KB-page count of a headered value (valid only when not <see cref="FlushValueIsExactSize"/>).</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal static int FlushValuePageCount(uint encoded) => (int)(encoded & kOutOfLinePayloadMask);
+
+        /// <summary>True if a headered value's page count is the sentinel (extent at/above 1023*4 KB): the reader fetches in
+        /// 4 MB blocks and learns the exact length(s) from the ChunkHeader(s).</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal static bool FlushValuePageCountIsSentinel(uint encoded) => (int)(encoded & kOutOfLinePayloadMask) == kOutOfLinePageSentinel;
+
+        /// <summary>The initial read-ahead extent (bytes) for an out-of-line value: the exact byte size for a headerless value,
+        /// the page count * 4 KB for a headered value below the sentinel, or one 4 MB read buffer for a sentinel page count.
+        /// The header/padding are included in a headered value's page count, so this covers the whole framing for a
+        /// below-sentinel value; a sentinel value's true length comes from its ChunkHeader(s) and the reader extends.</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal static ulong DecodeFlushValueInitialReadExtent(uint encoded)
+        {
+            if (FlushValueIsExactSize(encoded))
+                return (ulong)(uint)FlushValueExactByteSize(encoded);
+            var pageCount = FlushValuePageCount(encoded);
+            if (pageCount == kOutOfLinePageSentinel)
+                return (ulong)IStreamBuffer.BufferSize;                                   // 4 MB block
+            return (ulong)(uint)pageCount * kFlushPageSize;
+        }
+
         internal readonly int ExtendedNamespaceLength
         {
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
