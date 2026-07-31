@@ -1534,6 +1534,25 @@ namespace Garnet.test
         }
 
         [Test]
+        public void ClusterClientAnnounceEndpointTest()
+        {
+            var args = new[]
+            {
+                "--cluster-client-announce-ip", "203.0.113.10",
+                "--cluster-client-announce-port", "17000",
+                "--cluster-client-announce-hostname", "node.example.com"
+            };
+
+            var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out _, out _, out _);
+            ClassicAssert.IsTrue(parseSuccessful);
+
+            var serverOptions = options.GetServerOptions();
+            ClassicAssert.AreEqual("203.0.113.10", serverOptions.ClusterClientAnnounceIp);
+            ClassicAssert.AreEqual(17000, serverOptions.ClusterClientAnnouncePort);
+            ClassicAssert.AreEqual("node.example.com", serverOptions.ClusterClientAnnounceHostname);
+        }
+
+        [Test]
         public void RevivificationFlagOrderingIndependence()
         {
             // Specifying --reviv alongside explicit bin sizes and counts should work

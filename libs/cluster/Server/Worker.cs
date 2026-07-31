@@ -70,6 +70,26 @@ namespace Garnet.cluster
         public string hostname;
 
         /// <summary>
+        /// IP address advertised to clients.
+        /// </summary>
+        public string ClientAddress;
+
+        /// <summary>
+        /// Port advertised to clients.
+        /// </summary>
+        public int ClientPort;
+
+        /// <summary>
+        /// Hostname advertised to clients.
+        /// </summary>
+        public string ClientHostname;
+
+        /// <summary>
+        /// Whether this worker came from a config that supports client endpoint metadata.
+        /// </summary>
+        public bool HasClientEndpointMetadata;
+
+        /// <summary>
         /// ToString
         /// </summary>
         /// <returns></returns>

@@ -8,6 +8,8 @@ namespace Garnet.cluster
 {
     internal sealed partial class ClusterConfig
     {
+        private const byte ClientEndpointExtensionVersion = 1;
+
         /// <summary>
         /// Peek the serialization version from a config byte array without full deserialization.
         /// </summary>
@@ -71,10 +73,37 @@ namespace Garnet.cluster
                     writer.Write(worker.hostname);
             }
 
+            if (HasClientEndpointMetadata())
+            {
+                writer.Write(ClientEndpointExtensionVersion);
+                for (int i = 1; i < workers.Length; i++)
+                {
+                    Worker worker = workers[i];
+                    writer.Write(worker.HasClientEndpointMetadata);
+                    if (!worker.HasClientEndpointMetadata)
+                        continue;
+
+                    WriteNullableString(writer, worker.ClientAddress);
+                    writer.Write(worker.ClientPort);
+                    WriteNullableString(writer, worker.ClientHostname);
+                }
+            }
+
             byte[] byteArray = ms.ToArray();
             writer.Dispose();
             ms.Dispose();
             return byteArray;
+        }
+
+        private bool HasClientEndpointMetadata()
+        {
+            for (int i = 1; i < workers.Length; i++)
+            {
+                if (workers[i].HasClientEndpointMetadata)
+                    return true;
+            }
+
+            return false;
         }
 
         private void SerializeSlotMap(ref MemoryStream ms, ref BinaryWriter writer)
@@ -159,10 +188,41 @@ namespace Garnet.cluster
                     newWorkers[i].hostname = reader.ReadString();
             }
 
+            if (ms.Position < ms.Length)
+            {
+                byte extensionVersion = reader.ReadByte();
+                if (extensionVersion != ClientEndpointExtensionVersion)
+                    throw new InvalidDataException($"Incompatible client endpoint extension version: expected {ClientEndpointExtensionVersion}, got {extensionVersion}");
+
+                for (int i = 1; i < numWorkers; i++)
+                {
+                    newWorkers[i].HasClientEndpointMetadata = reader.ReadBoolean();
+                    if (!newWorkers[i].HasClientEndpointMetadata)
+                        continue;
+
+                    newWorkers[i].ClientAddress = ReadNullableString(reader);
+                    newWorkers[i].ClientPort = reader.ReadInt32();
+                    newWorkers[i].ClientHostname = ReadNullableString(reader);
+                }
+            }
+
+            if (ms.Position != ms.Length)
+                throw new InvalidDataException("Invalid ClusterConfig payload: trailing data after client endpoint extension");
+
             reader.Dispose();
             ms.Dispose();
             return new ClusterConfig(newSlotMap, newWorkers);
         }
+
+        private static void WriteNullableString(BinaryWriter writer, string value)
+        {
+            writer.Write(value != null);
+            if (value != null)
+                writer.Write(value);
+        }
+
+        private static string ReadNullableString(BinaryReader reader)
+            => reader.ReadBoolean() ? reader.ReadString() : null;
 
         private static HashSlot[] DeserializeSlotMap(ref BinaryReader reader)
         {

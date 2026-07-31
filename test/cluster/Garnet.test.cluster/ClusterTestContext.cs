@@ -288,6 +288,9 @@ namespace Garnet.test.cluster
         /// <param name="expiredObjectCollectionFrequencySecs"></param>
         /// <param name="clusterPreferredEndpointType"></param>
         /// <param name="useClusterAnnounceHostname"></param>
+        /// <param name="clusterClientAnnounceIp"></param>
+        /// <param name="clusterClientAnnouncePortBase"></param>
+        /// <param name="clusterClientAnnounceHostname"></param>
         /// <param name="vectorSetReplayTaskCount"></param>
         /// <param name="threadPoolMinIOCompletionThreads"></param>
         public void CreateInstances(
@@ -339,6 +342,9 @@ namespace Garnet.test.cluster
             int expiredObjectCollectionFrequencySecs = 0,
             ClusterPreferredEndpointType clusterPreferredEndpointType = ClusterPreferredEndpointType.Ip,
             bool useClusterAnnounceHostname = false,
+            string clusterClientAnnounceIp = null,
+            int clusterClientAnnouncePortBase = 0,
+            string clusterClientAnnounceHostname = null,
             int vectorSetReplayTaskCount = 0,
             int threadPoolMinIOCompletionThreads = 0,
             bool enableRangeIndexPreview = false)
@@ -399,6 +405,9 @@ namespace Garnet.test.cluster
                 expiredObjectCollectionFrequencySecs: expiredObjectCollectionFrequencySecs,
                 clusterPreferredEndpointType: clusterPreferredEndpointType,
                 clusterAnnounceHostname: useClusterAnnounceHostname ? "localhost" : null,
+                clusterClientAnnounceIp: clusterClientAnnounceIp,
+                clusterClientAnnouncePortBase: clusterClientAnnouncePortBase,
+                clusterClientAnnounceHostname: clusterClientAnnounceHostname,
                 vectorSetReplayTaskCount: vectorSetReplayTaskCount,
                 threadPoolMinIOCompletionThreads: threadPoolMinIOCompletionThreads,
                 enableRangeIndexPreview: enableRangeIndexPreview);

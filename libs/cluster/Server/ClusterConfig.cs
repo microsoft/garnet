@@ -41,8 +41,8 @@ namespace Garnet.cluster
         public const int MAX_HASH_SLOT_VALUE = 16384;
 
         /// <summary>
-        /// Version of the cluster config serialization format.
-        /// Increment when the binary layout of <see cref="ToByteArray"/>/<see cref="FromByteArray"/> changes.
+        /// Version of the required cluster config serialization prefix.
+        /// Optional trailing extensions retain this version when older readers can ignore them.
         /// </summary>
         public const byte ClusterConfigVersion = 1;
 
@@ -110,6 +110,10 @@ namespace Garnet.cluster
             workers[RESERVED_WORKER_ID].ReplicaOfNodeId = null;
             workers[RESERVED_WORKER_ID].ReplicationOffset = 0;
             workers[RESERVED_WORKER_ID].hostname = null;
+            workers[RESERVED_WORKER_ID].ClientAddress = null;
+            workers[RESERVED_WORKER_ID].ClientPort = 0;
+            workers[RESERVED_WORKER_ID].ClientHostname = null;
+            workers[RESERVED_WORKER_ID].HasClientEndpointMetadata = false;
         }
 
         /// <summary>
@@ -122,7 +126,7 @@ namespace Garnet.cluster
         /// <param name="role">Local worker role.</param>
         /// <param name="replicaOfNodeId">Local worker primary id.</param>
         /// <param name="hostname">Local worker hostname.</param>
-        /// <returns>Instance of local config with update local worker info.</returns>
+        /// <returns>Instance of local config with updated local worker information.</returns>
         public ClusterConfig InitializeLocalWorker(
             string nodeId,
             string address,
@@ -131,6 +135,69 @@ namespace Garnet.cluster
             NodeRole role,
             string replicaOfNodeId,
             string hostname)
+            => InitializeLocalWorker(
+                nodeId,
+                address,
+                port,
+                configEpoch,
+                role,
+                replicaOfNodeId,
+                hostname,
+                clientAddress: null,
+                clientPort: 0,
+                clientHostname: null,
+                hasClientEndpointMetadata: false);
+
+        /// <summary>
+        /// Initialize local worker with separate client endpoint information.
+        /// </summary>
+        /// <param name="nodeId">Local worker node-id.</param>
+        /// <param name="address">Local worker IP address.</param>
+        /// <param name="port">Local worker port.</param>
+        /// <param name="configEpoch">Local worker config epoch.</param>
+        /// <param name="role">Local worker role.</param>
+        /// <param name="replicaOfNodeId">Local worker primary id.</param>
+        /// <param name="hostname">Local worker hostname.</param>
+        /// <param name="clientAddress">IP address advertised to clients.</param>
+        /// <param name="clientPort">Port advertised to clients.</param>
+        /// <param name="clientHostname">Hostname advertised to clients.</param>
+        /// <returns>Instance of local config with update local worker info.</returns>
+        public ClusterConfig InitializeLocalWorker(
+            string nodeId,
+            string address,
+            int port,
+            long configEpoch,
+            NodeRole role,
+            string replicaOfNodeId,
+            string hostname,
+            string clientAddress,
+            int clientPort,
+            string clientHostname)
+            => InitializeLocalWorker(
+                nodeId,
+                address,
+                port,
+                configEpoch,
+                role,
+                replicaOfNodeId,
+                hostname,
+                clientAddress,
+                clientPort,
+                clientHostname,
+                hasClientEndpointMetadata: true);
+
+        private ClusterConfig InitializeLocalWorker(
+            string nodeId,
+            string address,
+            int port,
+            long configEpoch,
+            NodeRole role,
+            string replicaOfNodeId,
+            string hostname,
+            string clientAddress,
+            int clientPort,
+            string clientHostname,
+            bool hasClientEndpointMetadata)
         {
             var newWorkers = new Worker[workers.Length];
             Array.Copy(workers, newWorkers, workers.Length);
@@ -142,6 +209,10 @@ namespace Garnet.cluster
             newWorkers[LOCAL_WORKER_ID].ReplicaOfNodeId = replicaOfNodeId;
             newWorkers[LOCAL_WORKER_ID].ReplicationOffset = 0;
             newWorkers[LOCAL_WORKER_ID].hostname = hostname;
+            newWorkers[LOCAL_WORKER_ID].ClientAddress = clientAddress;
+            newWorkers[LOCAL_WORKER_ID].ClientPort = clientPort;
+            newWorkers[LOCAL_WORKER_ID].ClientHostname = clientHostname;
+            newWorkers[LOCAL_WORKER_ID].HasClientEndpointMetadata = hasClientEndpointMetadata;
             return new ClusterConfig(slotMap, newWorkers);
         }
 
@@ -410,6 +481,17 @@ namespace Garnet.cluster
             var workerId = GetWorkerIdFromNodeId(nodeId);
             return workerId == 0 ? null : workers[workerId].hostname;
         }
+
+        private (string address, int port, string hostname) GetClientEndpointFromNodeId(string nodeId)
+        {
+            if (nodeId == null)
+                return (null, -1, null);
+
+            var workerId = GetWorkerIdFromNodeId(nodeId);
+            return workerId == RESERVED_WORKER_ID
+                ? (null, -1, null)
+                : (GetClientAddress(workerId), GetClientPort(workerId), GetClientHostname(workerId));
+        }
         #endregion
 
         #region GetFromSlot
@@ -472,7 +554,7 @@ namespace Garnet.cluster
         {
             var workerId = GetWorkerIdFromSlot(slot);
 
-            return (GetEndpointByPreferredType(workerId, type), workers[workerId].Port);
+            return (GetClientEndpointByPreferredType(workerId, type), GetClientPort(workerId));
         }
 
         /// <summary>
@@ -485,19 +567,31 @@ namespace Garnet.cluster
         {
             var workerId = slotMap[slot]._workerId;
 
-            return (GetEndpointByPreferredType(workerId, type), workers[workerId].Port);
+            return (GetClientEndpointByPreferredType(workerId, type), GetClientPort(workerId));
         }
 
-        private string GetEndpointByPreferredType(int workerId, ClusterPreferredEndpointType type)
+        private string GetClientEndpointByPreferredType(int workerId, ClusterPreferredEndpointType type)
         {
             return type switch
             {
-                ClusterPreferredEndpointType.Ip => workers[workerId].Address,
-                ClusterPreferredEndpointType.Hostname => string.IsNullOrEmpty(workers[workerId].hostname) ? "?" : workers[workerId].hostname,
+                ClusterPreferredEndpointType.Ip => GetClientAddress(workerId),
+                ClusterPreferredEndpointType.Hostname => string.IsNullOrEmpty(GetClientHostname(workerId)) ? "?" : GetClientHostname(workerId),
                 ClusterPreferredEndpointType.Unknown => "?",
                 _ => "?"
             };
         }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private string GetClientAddress(int workerId)
+            => string.IsNullOrEmpty(workers[workerId].ClientAddress) ? workers[workerId].Address : workers[workerId].ClientAddress;
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private int GetClientPort(int workerId)
+            => workers[workerId].ClientPort == 0 ? workers[workerId].Port : workers[workerId].ClientPort;
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private string GetClientHostname(int workerId)
+            => string.IsNullOrEmpty(workers[workerId].ClientHostname) ? workers[workerId].hostname : workers[workerId].ClientHostname;
 
         /// <summary>
         /// Get endpoint of node from node-id.
@@ -721,8 +815,9 @@ namespace Garnet.cluster
 
             void AppendFormattedNodeInfo(StringBuilder sb, int workerId, bool connected)
             {
-                var ip = workers[workerId].Address;
-                var hostname = workers[workerId].hostname;
+                var ip = GetClientAddress(workerId);
+                var port = GetClientPort(workerId);
+                var hostname = GetClientHostname(workerId);
                 var hasHostname = !string.IsNullOrEmpty(hostname);
                 var role = workers[workerId].Role == NodeRole.PRIMARY ? "master" : "slave";
 
@@ -741,7 +836,7 @@ namespace Garnet.cluster
                 sb.Append("$2\r\nid\r\n");
                 sb.Append("$40\r\n").Append(workers[workerId].Nodeid).Append("\r\n");
                 sb.Append("$4\r\nport\r\n");
-                sb.Append(':').Append(workers[workerId].Port).Append("\r\n");
+                sb.Append(':').Append(port).Append("\r\n");
                 sb.Append("$2\r\nip\r\n");
                 sb.Append('$').Append(ip.Length).Append("\r\n").Append(ip).Append("\r\n");
                 sb.Append("$8\r\nendpoint\r\n");
@@ -781,8 +876,7 @@ namespace Garnet.cluster
 
             foreach (var replicaId in replicaIds)
             {
-                var (replicaIp, replicaPort) = GetWorkerAddressFromNodeId(replicaId);
-                var replicaHostname = GetHostNameFromNodeId(replicaId);
+                var (replicaIp, replicaPort, replicaHostname) = GetClientEndpointFromNodeId(replicaId);
                 AppendNodeNetworkingInfo(sb, replicaIp, replicaPort, replicaId, replicaHostname, preferredEndpointType);
             }
         }
@@ -892,10 +986,10 @@ namespace Garnet.cluster
                 }
 
                 int currSlotWorkerId = slotMap[slotStart].workerId;
-                var address = workers[currSlotWorkerId].Address;
-                var port = workers[currSlotWorkerId].Port;
+                var address = GetClientAddress(currSlotWorkerId);
+                var port = GetClientPort(currSlotWorkerId);
                 var nodeid = workers[currSlotWorkerId].Nodeid;
-                var hostname = workers[currSlotWorkerId].hostname;
+                var hostname = GetClientHostname(currSlotWorkerId);
                 var replicas = GetReplicaIds(nodeid);
                 slotEnd--;
                 AppendFormattedSlotInfo(sb, slotStart, slotEnd, address, port, nodeid, hostname, replicas, preferredEndpointType);
@@ -1111,47 +1205,76 @@ namespace Garnet.cluster
                 if (workerBanList.ContainsKey(senderConfig.workers[i].Nodeid))
                     continue;
 
-                newConfig = newConfig.MergeWorkerInfo(senderConfig.workers[i]);
+                newConfig = newConfig.MergeWorkerInfo(senderConfig.workers[i], i == LOCAL_WORKER_ID);
             }
 
             return newConfig.MergeSlotMap(senderConfig, logger);
         }
 
-        private ClusterConfig MergeWorkerInfo(Worker worker)
+        private ClusterConfig MergeWorkerInfo(Worker worker, bool isSender)
         {
             ushort workerId = RESERVED_WORKER_ID;
+            var updateWorker = false;
+            var updateClientEndpoint = false;
             // Find workerId offset from my local configuration
             for (var i = 1; i < workers.Length; i++)
             {
                 if (workers[i].Nodeid.Equals(worker.Nodeid, StringComparison.OrdinalIgnoreCase))
                 {
-                    // Update only if received config epoch is strictly greater
-                    if (worker.ConfigEpoch <= workers[i].ConfigEpoch) return this;
                     workerId = (ushort)i;
+                    updateWorker = worker.ConfigEpoch > workers[i].ConfigEpoch;
+                    updateClientEndpoint = ((isSender && worker.ConfigEpoch >= workers[i].ConfigEpoch) ||
+                                            (updateWorker && worker.HasClientEndpointMetadata)) &&
+                                           !HasMatchingClientEndpoint(workers[i], worker);
+                    if (!updateWorker && !updateClientEndpoint)
+                        return this;
                     break;
                 }
             }
 
-            var newWorkers = workers;
+            Worker[] newWorkers;
             // Check if we need to add worker to the known workers list
             if (workerId == RESERVED_WORKER_ID)
             {
                 newWorkers = new Worker[workers.Length + 1];
                 workerId = (ushort)workers.Length;
                 Array.Copy(workers, newWorkers, workers.Length);
+                updateWorker = true;
+                updateClientEndpoint = true;
+            }
+            else
+            {
+                newWorkers = new Worker[workers.Length];
+                Array.Copy(workers, newWorkers, workers.Length);
             }
 
-            // Insert or update worker information
-            newWorkers[workerId].Address = worker.Address;
-            newWorkers[workerId].Port = worker.Port;
-            newWorkers[workerId].Nodeid = worker.Nodeid;
-            newWorkers[workerId].ConfigEpoch = worker.ConfigEpoch;
-            newWorkers[workerId].Role = worker.Role;
-            newWorkers[workerId].ReplicaOfNodeId = worker.ReplicaOfNodeId;
-            newWorkers[workerId].hostname = worker.hostname;
+            if (updateWorker)
+            {
+                newWorkers[workerId].Address = worker.Address;
+                newWorkers[workerId].Port = worker.Port;
+                newWorkers[workerId].Nodeid = worker.Nodeid;
+                newWorkers[workerId].ConfigEpoch = worker.ConfigEpoch;
+                newWorkers[workerId].Role = worker.Role;
+                newWorkers[workerId].ReplicaOfNodeId = worker.ReplicaOfNodeId;
+                newWorkers[workerId].hostname = worker.hostname;
+            }
+
+            if (updateClientEndpoint)
+            {
+                newWorkers[workerId].ClientAddress = worker.ClientAddress;
+                newWorkers[workerId].ClientPort = worker.ClientPort;
+                newWorkers[workerId].ClientHostname = worker.ClientHostname;
+                newWorkers[workerId].HasClientEndpointMetadata = worker.HasClientEndpointMetadata;
+            }
 
             return new(slotMap, newWorkers);
         }
+
+        private static bool HasMatchingClientEndpoint(Worker current, Worker incoming)
+            => current.HasClientEndpointMetadata == incoming.HasClientEndpointMetadata &&
+               current.ClientPort == incoming.ClientPort &&
+               string.Equals(current.ClientAddress, incoming.ClientAddress, StringComparison.Ordinal) &&
+               string.Equals(current.ClientHostname, incoming.ClientHostname, StringComparison.Ordinal);
 
         public ClusterConfig MergeSlotMap(ClusterConfig senderConfig, ILogger logger = null)
         {
