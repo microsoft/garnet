@@ -35,6 +35,16 @@ namespace Garnet.cluster
             readonly long[] pulseTailScratch;
             long lastAdvanceTimePulse;
 
+            // Byte-progress gate for refreshing the backpressure shipped watermark: republish only
+            // after shipping publishDeltaBytes since the last publish. previousAddress advances only
+            // when a chunk ships, so a caught-up (idle) sublog never publishes, and a busy one
+            // batches many chunks per publish. With backpressure disabled the publish block is
+            // skipped entirely.
+            readonly AofSyncDriverStore aofSyncDriverStore;
+            readonly bool backpressureEnabled;
+            readonly long publishDeltaBytes;
+            long lastPublishedShippedAddress;
+
             /// <summary>
             /// Return start address for this AofSyncTask
             /// </summary>
@@ -59,6 +69,7 @@ namespace Garnet.cluster
             /// AofSyncTask constructor
             /// </summary>
             /// <param name="clusterProvider"></param>
+            /// <param name="aofSyncDriverStore"></param>
             /// <param name="physicalSublogIdx"></param>
             /// <param name="endPoint"></param>
             /// <param name="startAddress"></param>
@@ -68,6 +79,7 @@ namespace Garnet.cluster
             /// <param name="logger"></param>
             public AofSyncTask(
                 ClusterProvider clusterProvider,
+                AofSyncDriverStore aofSyncDriverStore,
                 int physicalSublogIdx,
                 IPEndPoint endPoint,
                 long startAddress,
@@ -78,6 +90,7 @@ namespace Garnet.cluster
             {
                 var currentConfig = clusterProvider.clusterManager.CurrentConfig;
                 this.clusterProvider = clusterProvider;
+                this.aofSyncDriverStore = aofSyncDriverStore;
                 this.physicalSublogIdx = physicalSublogIdx;
                 this.startAddress = startAddress;
                 previousAddress = startAddress;
@@ -92,6 +105,12 @@ namespace Garnet.cluster
                     pulseTailSnapshot = new long[clusterProvider.serverOptions.AofPhysicalSublogCount];
                     pulseTailScratch = new long[clusterProvider.serverOptions.AofPhysicalSublogCount];
                     Array.Fill(pulseTailSnapshot, -1L);
+                }
+                backpressureEnabled = appendOnlyFile?.backpressure != null;
+                if (backpressureEnabled)
+                {
+                    publishDeltaBytes = appendOnlyFile.backpressure.PublishDeltaBytes;
+                    lastPublishedShippedAddress = startAddress;
                 }
                 garnetClient = new GarnetClientSession(
                             endPoint,
@@ -179,6 +198,19 @@ namespace Garnet.cluster
                 // Trigger flush while we are out of epoch protection
                 garnetClient.CompletePending(false);
                 garnetClient.Throttle();
+
+                // Refresh the shipped watermark in the backpressure gate outside epoch protection,
+                // gated on shipped byte-progress: republish once this task has shipped
+                // publishDeltaBytes since its last publish. This is a freshness hint only; a stale
+                // watermark is safe because appenders self-check conservatively. previousAddress
+                // advances only in Consume, so a caught-up sublog does no work while idle, and a
+                // draining one advances the watermark so stalled appenders progress as it ships.
+                if (backpressureEnabled && previousAddress - lastPublishedShippedAddress >= publishDeltaBytes)
+                {
+                    lastPublishedShippedAddress = previousAddress;
+                    aofSyncDriverStore.PublishShippedAddress(physicalSublogIdx);
+                }
+
                 SendAdvanceTimePulse();
             }
 

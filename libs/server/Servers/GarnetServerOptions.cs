@@ -355,6 +355,14 @@ namespace Garnet.server
         public int ReplicationOffsetMaxLag = -1;
 
         /// <summary>
+        /// Stall primary AOF appends when the replication lag exceeds this budget: a whole-log
+        /// budget divided evenly per sublog (each sublog stalls at tail-minus-shipped over an even
+        /// 1/m share). -1: disabled, >=1: max lag in bytes. Pair with ReplicationOffsetMaxLag on
+        /// replicas for end-to-end backpressure.
+        /// </summary>
+        public long AofShipMaxLag = -1;
+
+        /// <summary>
         /// Whether we truncate AOF as soon as replicas are fed (not just after checkpoints)
         /// </summary>
         public bool FastAofTruncate = false;
