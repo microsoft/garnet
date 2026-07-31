@@ -548,6 +548,7 @@ namespace Garnet.cluster
 
             TrackImportProgress(recordCount, recordCount == 0);
             var storeWrapper = clusterProvider.storeWrapper;
+            var vectorManager = storeWrapper.DefaultDatabase.VectorManager;
             var transientObjectIdMap = storeWrapper.store.Log.TransientObjectIdMap;
 
             DiskLogRecord diskLogRecord = default;
@@ -571,6 +572,12 @@ namespace Garnet.cluster
                         // from disk, so nothing else clears it on this path.
                         if (diskLogRecord.RecordType == VectorManager.RecordType)
                             VectorManager.ClearIndexPointer(diskLogRecord.ValueSpan);
+
+                        // Diskless sync SETs records verbatim, bypassing the metadata RMW path that
+                        // maintains the in-memory context reservation. Feed the streamed index and
+                        // ContextMetadata records into recovery bookkeeping so the reservation is
+                        // rebuilt once the stream completes (see TryReplicaDisklessRecovery).
+                        vectorManager?.RecoverStreamedRecord(ref diskLogRecord);
 
                         _ = basicGarnetApi.SET(in diskLogRecord);
                         storeWrapper.storeFunctions.OnDisposeDiskRecord(ref diskLogRecord, DisposeReason.DeserializedFromDisk);

@@ -326,6 +326,22 @@ namespace Garnet.test.cluster
         /// </summary>
         protected nint ReadPersistedIndexPtr(int nodeIndex, string key)
         {
+            ReadPersistedIndexFields(nodeIndex, key, out _, out var indexPtr);
+            return indexPtr;
+        }
+
+        /// <summary>
+        /// Reads the persisted context id for a Vector Set. Two distinct sets must never share a
+        /// context; a collision means the allocator handed out a context that another set owns.
+        /// </summary>
+        protected ulong ReadPersistedContext(int nodeIndex, string key)
+        {
+            ReadPersistedIndexFields(nodeIndex, key, out var ctx, out _);
+            return ctx;
+        }
+
+        private void ReadPersistedIndexFields(int nodeIndex, string key, out ulong ctx, out nint indexPtr)
+        {
             var storeWrapper = GetStoreWrapper(context.nodes[nodeIndex]);
             var db = storeWrapper.DefaultDatabase;
 
@@ -346,9 +362,7 @@ namespace Garnet.test.cluster
             ClassicAssert.IsTrue(output.SpanByteAndMemory.IsSpanByte, $"index record for '{key}' did not come back inline");
             ClassicAssert.AreEqual(VectorManager.IndexSize, output.SpanByteAndMemory.Length, $"value under '{key}' is not a Vector Set index record");
 
-            VectorManager.ReadIndex(output.SpanByteAndMemory.Span, out _, out _, out _, out _, out _, out _, out _, out _, out var indexPtr);
-
-            return indexPtr;
+            VectorManager.ReadIndex(output.SpanByteAndMemory.Span, out ctx, out _, out _, out _, out _, out _, out _, out _, out indexPtr);
         }
 
         /// <summary>

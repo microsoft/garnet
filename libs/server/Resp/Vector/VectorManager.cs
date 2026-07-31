@@ -273,6 +273,11 @@ namespace Garnet.server
 
             lock (this)
             {
+                // A runtime full sync (diskless) may reach here without the recovery hooks ever
+                // allocating these — treat a missing set as empty rather than faulting.
+                recoveredMetadata ??= new();
+                recoveredIndexes ??= new();
+
                 // Any ContextMetadatas we found need to be restored
                 if (!recoveredMetadata.IsEmpty)
                 {
@@ -373,7 +378,8 @@ namespace Garnet.server
         /// <summary>
         /// Called during recovery for each Vector Set index key.
         /// </summary>
-        public void RecoveredVectorSetIndexKey(ref LogRecord record)
+        public void RecoveredVectorSetIndexKey<TSourceLogRecord>(ref TSourceLogRecord record)
+            where TSourceLogRecord : ISourceLogRecord
         {
             if (record.ValueSpan.Length != IndexSize)
             {
@@ -381,20 +387,26 @@ namespace Garnet.server
             }
 
             ReadIndex(record.ValueSpan, out var context, out _, out _, out _, out _, out _, out _, out _, out _);
-            recoveredIndexes[context] = 0;
+
+            lock (this)
+            {
+                recoveredIndexes ??= new();
+                recoveredIndexes[context] = 0;
+            }
         }
 
         /// <summary>
         /// Called during recovery for each ContextMetadata record.
         /// </summary>
-        public void RecoveredContextMetadata(ref LogRecord record)
+        public void RecoveredContextMetadata<TSourceLogRecord>(ref TSourceLogRecord record)
+            where TSourceLogRecord : ISourceLogRecord
         {
-            if (record.ValueSpan.Length != ContextMetadata.Size || record.KeyBytes.Length != sizeof(int))
+            if (record.ValueSpan.Length != ContextMetadata.Size || record.Key.Length != sizeof(int))
             {
                 return;
             }
 
-            var index = BinaryPrimitives.ReadInt32LittleEndian(record.KeyBytes);
+            var index = BinaryPrimitives.ReadInt32LittleEndian(record.Key);
             var metadata = MemoryMarshal.Cast<byte, ContextMetadata>(record.ValueSpan)[0];
 
             // During recovery, we can trim off empty ContextMetadata
@@ -405,9 +417,39 @@ namespace Garnet.server
                 return;
             }
 
-            if (!recoveredMetadata.TryAdd(index, metadata))
+            lock (this)
             {
-                throw new GarnetException($"Recovered multiple instances of the same ContextMetadata: {index}");
+                recoveredMetadata ??= new();
+                if (!recoveredMetadata.TryAdd(index, metadata))
+                {
+                    throw new GarnetException($"Recovered multiple instances of the same ContextMetadata: {index}");
+                }
+            }
+        }
+
+        /// <summary>
+        /// Route a record streamed in during a diskless full sync into the recovery bookkeeping so that
+        /// <see cref="ResumePostRecovery"/> can rebuild the in-memory context reservation. Diskless sync
+        /// SETs records straight into the store, bypassing the metadata RMW path that maintains the
+        /// reservation bitmap, so without this a fresh Vector Set created after the sync can be handed a
+        /// context that a streamed set already owns.
+        /// </summary>
+        public void RecoverStreamedRecord<TSourceLogRecord>(ref TSourceLogRecord record)
+            where TSourceLogRecord : ISourceLogRecord
+        {
+            if (!IsEnabled || record.Info.Tombstone)
+            {
+                return;
+            }
+
+            var ns = record.Namespace;
+            if (ns.Length == 1 && ns[0] == MetadataNamespace)
+            {
+                RecoveredContextMetadata(ref record);
+            }
+            else if (record.RecordType == RecordType)
+            {
+                RecoveredVectorSetIndexKey(ref record);
             }
         }
 

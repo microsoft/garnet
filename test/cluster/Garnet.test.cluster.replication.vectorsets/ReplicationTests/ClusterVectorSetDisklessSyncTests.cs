@@ -204,6 +204,46 @@ namespace Garnet.test.cluster
         }
 
         /// <summary>
+        /// A brand-new Vector Set created on a node that received a set by diskless full sync must
+        /// not be handed the streamed set's context. The stream-in path installs the index record
+        /// but never reserves its context in the receiver's allocator, so the next allocation can
+        /// collide with it. Promoting the receiver makes it writable so the fresh create runs there.
+        /// </summary>
+        [Test]
+        [Category("REPLICATION")]
+        public void FreshVectorSetDoesNotReuseStreamedContextAfterDisklessFullSync()
+        {
+            const string StreamedKey = "{vsctx}streamed";
+            const string FreshKey = "{vsctx}fresh";
+            const int Elements = 200;
+
+            SetupDisklessCluster(2);
+
+            PopulateVectorSet(PrimaryIndex, StreamedKey, Elements, seed: 2026_07_29_10);
+
+            // The replica has its own replication id, so the attach takes a full sync that carries
+            // the streamed set's index record (and its context) verbatim.
+            context.clusterTestUtils.Attach(ReplicaIndex, PrimaryIndex, logger: context.logger);
+
+            MakeReadable(ReplicaIndex);
+            AssertFullyReplicated(PrimaryIndex, ReplicaIndex, StreamedKey);
+
+            // Promote the receiver so the fresh create allocates a context on the very node that
+            // took the diskless full sync.
+            FailoverTo(ReplicaIndex, PrimaryIndex);
+
+            var streamedContext = ReadPersistedContext(ReplicaIndex, StreamedKey);
+
+            PopulateVectorSet(ReplicaIndex, FreshKey, count: 50, seed: 2026_07_29_11);
+            var freshContext = ReadPersistedContext(ReplicaIndex, FreshKey);
+
+            ClassicAssert.AreNotEqual(
+                streamedContext,
+                freshContext,
+                $"a fresh Vector Set '{FreshKey}' was handed the streamed set '{StreamedKey}' context ({streamedContext}); the diskless full-sync receiver never reserved the streamed context, so the allocator reissued it");
+        }
+
+        /// <summary>
         /// Migrates a populated Vector Set between primaries while diskless sync is enabled.
         /// All four nodes must agree and no two may share a handle.
         /// </summary>
