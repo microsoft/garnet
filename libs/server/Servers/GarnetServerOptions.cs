@@ -95,11 +95,22 @@ namespace Garnet.server
         public int AofReplayTaskCount = 1;
 
         /// <summary>
-        /// Maximum allowed drift (in key sequence numbers) between the fastest and slowest physical sublog replay drivers.
-        /// When a driver is ahead of the slowest peer by more than this value, it yields until the gap closes.
-        /// Only effective when AofPhysicalSublogCount > 1. -1 = disabled (no throttling).
+        /// Cross-sublog replay drift, in sequence-number units, tolerated before a replay-align
+        /// barrier round is triggered. -1 disables the barrier.
         /// </summary>
-        public long AofReplayMaxDrift = -1;
+        public int AofReplayDriftThreshold = -1;
+
+        /// <summary>
+        /// How often cross-sublog drift is re-checked during replay, as a multiple of
+        /// AofReplayDriftThreshold. 0 leaves readers about to wait as the only round source.
+        /// </summary>
+        public int AofReplayDriftCheckFreq = 0;
+
+        /// <summary>
+        /// How long a replay thread spins at the replay-align barrier before sleeping:
+        /// -1 spins forever, 0 sleeps immediately, and a positive value spins for that many microseconds.
+        /// </summary>
+        public int AofBarrierSpinUs = 0;
 
         /// <summary>
         /// Polling frequency of the background task responsible for moving time ahead for all physical sublogs (Used only with physical sublog value >1).

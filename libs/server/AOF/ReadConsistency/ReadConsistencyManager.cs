@@ -31,20 +31,20 @@ namespace Garnet.server
         /// before the reader will trigger a replay-side synchronization barrier. -1 disables the
         /// barrier so the reader never activates a round.
         /// </summary>
-        readonly long replayDriftThreshold = serverOptions.AofReplayMaxDrift;
+        readonly long replayDriftThreshold = serverOptions.AofReplayDriftThreshold;
 
         /// <summary>
         /// Whether the reader bounds replay drift at all: false when the barrier is disabled
         /// (threshold -1) or there is a single virtual sublog (no cross-sublog drift to bound).
         /// </summary>
-        readonly bool driftBoundingEnabled = serverOptions.AofReplayMaxDrift >= 0 && serverOptions.AofVirtualSublogCount > 1;
+        readonly bool driftBoundingEnabled = serverOptions.AofReplayDriftThreshold >= 0 && serverOptions.AofVirtualSublogCount > 1;
 
         /// <summary>
         /// Cooperative barrier used to bound inter-virtual-sublog replay drift. The reader activates it
         /// on demand when it observes a large drift while about to wait; replay threads align on it via
         /// per-record CheckAndWait calls. One participant per virtual sublog (one replay thread each).
         /// </summary>
-        public readonly ReplayAlignBarrier replayBarrier = new(serverOptions.AofVirtualSublogCount, 0);
+        public readonly ReplayAlignBarrier replayBarrier = new(serverOptions.AofVirtualSublogCount, serverOptions.AofBarrierSpinUs);
 
         /// <summary>
         /// Get sequence number for provided key.
@@ -175,7 +175,7 @@ namespace Garnet.server
             // Pause this replay thread when it has run ahead of an active round's target, bounding
             // drift from the lagging sublogs. Fast path is a single Volatile.Read + compare when no
             // round is active.
-            replayBarrier.CheckAndWait(vsrs[virtualSublogIdx].Max);
+            replayBarrier.CheckAndWait(virtualSublogIdx, vsrs[virtualSublogIdx].Max);
             vsrs[virtualSublogIdx].UpdateKeySequenceNumber(keyHash, sequenceNumber);
         }
 
