@@ -757,8 +757,17 @@ namespace Tsavorite.core
             var startPadding = startOffset - alignedStartOffset;
             var alignedBufferSize = RoundUp(startPadding + (int)numBytesToWrite, (int)device.SectorSize);
 
-            // The srcBuffer path copies the record bytes out, mutates the copy's objectId slots with the on-disk lengths,
-            // then writes the copy to disk. The live main-log record stays intact for subsequent in-memory operations.
+            // Two flush strategies stamp the on-disk length hints + ObjectLogPosition into the record image before writing it:
+            //  - Copy path (Snapshot/Recovery/partial/unaligned flushes): copy the record bytes into srcBuffer, stamp the COPY, write the copy.
+            //    A Snapshot flush also needs the copy to SetInvalid v+1 records in the disk image only; a Recovery flush reads the deferred-load
+            //    length back out of the live ObjectLogPosition slot.
+            //  - No-copy path (plain ReadOnly full-page, sector-aligned flush; useLivePage below): stamp the LIVE records in place and write the live
+            //    page directly. Correctness relies on the OnDispose contract that a record stays READABLE (byte-consistent) throughout a flush --
+            //    OnDispose implementations copy off whatever they need for cleanup rather than tearing the record's flush-critical bytes -- so the
+            //    async device write always observes a consistent record even if a concurrent op supersedes it. The stamping is non-destructive to
+            //    in-memory readers (the ValueLength property masks the raw field to ObjectIdSize; the objectId slot is untouched), and the page stays
+            //    resident throughout the flush (HeadAddress <= FlushedUntilAddress until this flush completes).
+            var useLivePage = asyncResult.flushRequestState == FlushRequestState.ReadOnly && !asyncResult.partial && startPadding == 0;
 
             // If we are in snapshot checkpoint we will need to acquire the epoch whenever we access the log record or oidMap; we will not have the epoch
             // when we enter here. If we are in recovery, we will not have the epoch either, but we don't need to acquire it as there are no other operations
@@ -791,41 +800,52 @@ namespace Tsavorite.core
                 // won't be disposed before we're done). TODO: Loop on successive subsets of the page's records to make this initial copy buffer smaller.
                 var objectIdMap = objectPages[flushPage % BufferSize].objectIdMap;
 
-                srcBuffer = bufferPool.Get(alignedBufferSize);
-                asyncResult.freeBuffer1 = srcBuffer;
-
-                // Read back the first sector if the start is not aligned (this means we already wrote a partially-filled sector with ObjectLog fields set).
-                if (startPadding > 0)
+                byte* recordsBasePtr, diskWritePtr;
+                if (useLivePage)
                 {
-                    // TODO: This will potentially overwrite partial sectors (with the same data) if this is a partial flush; a workaround would be difficult.
-                    // TODO: Cache the last sector flushed in readBuffers so we can avoid this Read.
-                    PageAsyncReadResult<Empty> result = new() { handle = new CountdownEvent(1) };
-                    device.ReadAsync(alignedMainLogFlushPageAddress + (ulong)alignedStartOffset, (IntPtr)srcBuffer.aligned_pointer, (uint)sectorSize, AsyncReadPageCallback, result);
-                    result.handle.Wait();
-                    result.DisposeHandle();
+                    // No copy: address the live page directly. recordsBasePtr is page-relative (record at pageOffset is at logPagePointer + pageOffset);
+                    // diskWritePtr is the sector-aligned start (startPadding == 0 here, so alignedStartOffset == startOffset).
+                    recordsBasePtr = (byte*)logPagePointer;
+                    diskWritePtr = (byte*)logPagePointer + alignedStartOffset;
                 }
-
-                try
+                else
                 {
-                    if (pulseEpoch)
-                        epoch.Resume();
+                    srcBuffer = bufferPool.Get(alignedBufferSize);
+                    asyncResult.freeBuffer1 = srcBuffer;
 
-                    // Copy from the record start position (startOffset) in the main log page to the src buffer starting at its offset in the first sector (startPadding).
-                    var allocatorPageSpan = new Span<byte>((byte*)logPagePointer + startOffset, (int)numBytesToWrite);
-                    allocatorPageSpan.CopyTo(srcBuffer.TotalValidSpan.Slice(startPadding));
-                    srcBuffer.available_bytes = (int)numBytesToWrite + startPadding;
-                }
-                finally
-                {
-                    if (pulseEpoch)
-                        epoch.Suspend();
-                }
+                    // Read back the first sector if the start is not aligned (this means we already wrote a partially-filled sector with ObjectLog fields set).
+                    if (startPadding > 0)
+                    {
+                        // TODO: This will potentially overwrite partial sectors (with the same data) if this is a partial flush; a workaround would be difficult.
+                        // TODO: Cache the last sector flushed in readBuffers so we can avoid this Read.
+                        PageAsyncReadResult<Empty> result = new() { handle = new CountdownEvent(1) };
+                        device.ReadAsync(alignedMainLogFlushPageAddress + (ulong)alignedStartOffset, (IntPtr)srcBuffer.aligned_pointer, (uint)sectorSize, AsyncReadPageCallback, result);
+                        result.handle.Wait();
+                        result.DisposeHandle();
+                    }
 
-                // recordsBasePtr is the page-relative base pointer such that (recordsBasePtr + pageOffset) points to the record at that page offset.
-                // srcBuffer holds data starting at alignedStartOffset, so we subtract alignedStartOffset to get the same page-relative addressing.
-                var recordsBasePtr = srcBuffer.GetValidPointer() - alignedStartOffset;
-                // diskWritePtr is the pointer passed to device.WriteAsync — the sector-aligned start of the data to write.
-                var diskWritePtr = srcBuffer.GetValidPointer();
+                    try
+                    {
+                        if (pulseEpoch)
+                            epoch.Resume();
+
+                        // Copy from the record start position (startOffset) in the main log page to the src buffer starting at its offset in the first sector (startPadding).
+                        var allocatorPageSpan = new Span<byte>((byte*)logPagePointer + startOffset, (int)numBytesToWrite);
+                        allocatorPageSpan.CopyTo(srcBuffer.TotalValidSpan.Slice(startPadding));
+                        srcBuffer.available_bytes = (int)numBytesToWrite + startPadding;
+                    }
+                    finally
+                    {
+                        if (pulseEpoch)
+                            epoch.Suspend();
+                    }
+
+                    // recordsBasePtr is the page-relative base pointer such that (recordsBasePtr + pageOffset) points to the record at that page offset.
+                    // srcBuffer holds data starting at alignedStartOffset, so we subtract alignedStartOffset to get the same page-relative addressing.
+                    recordsBasePtr = srcBuffer.GetValidPointer() - alignedStartOffset;
+                    // diskWritePtr is the pointer passed to device.WriteAsync — the sector-aligned start of the data to write.
+                    diskWritePtr = srcBuffer.GetValidPointer();
+                }
 
                 if (asyncResult.flushBuffers is not null)
                 {
@@ -914,9 +934,10 @@ namespace Tsavorite.core
                                             epoch.Suspend();
                                     }
 
-                                    // WriteRecordObjects can do disk IO and must not hold the epoch. The setter below writes the length hints
-                                    // and ObjectLogPosition into the disk-image record (srcBuffer copy); the main-log allocator page is left
-                                    // untouched. Records are always written in the current hint-based format (never the downlevel encoding).
+                                    // WriteRecordObjects can do disk IO and must not hold the epoch. The setter below writes the length hints and
+                                    // ObjectLogPosition into the record image being flushed: the srcBuffer copy on the copy path, or the live main-log
+                                    // record on the no-copy path (useLivePage; non-destructive to in-memory readers). Records are always written in the
+                                    // current hint-based format (never the downlevel encoding).
                                     var valueObjectLength = logWriter.WriteRecordObjects(in keyOverflow, in valueOverflow, in valueObject);
                                     logRecord.SetObjectLogPositionAndLengthHints(recordStartPosition, valueObjectLength);
                                 }

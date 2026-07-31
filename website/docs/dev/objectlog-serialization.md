@@ -122,9 +122,11 @@ DMA-padded short key only), bits 60–61 reserved.
 
 ## 7. No-copy flush
 
-**Status: attempted, reverted — blocked by a concurrent-mutation hazard.** A no-copy flush would write the live main-log
-page to the device directly (stamping the length hints + `ObjectLogPosition` into the live records in place), skipping the
-sector-aligned `srcBuffer` copy. The stamping itself is **non-destructive** to in-memory readers:
+**Status: enabled, relying on the OnDispose "readable-during-flush" contract.** A plain **ReadOnly, full-page,
+sector-aligned** flush writes the live main-log page to the device directly (stamping the length hints + `ObjectLogPosition`
+into the live records in place), skipping the sector-aligned `srcBuffer` copy (`ObjectAllocatorImpl.WriteAsync`, gated by
+`useLivePage = flushRequestState == ReadOnly && !partial && startPadding == 0`; Snapshot/Recovery/partial/unaligned still
+copy). The stamping itself is **non-destructive** to in-memory readers:
 - **RDH raw `KeyLength`/`ValueLength`** — the property returns `ObjectIdSize` for non-inline regardless of raw bits, so
   `AllocatedSize`/`GetValueFieldInfo`/the `ObjectLogPosition` slot address are unchanged; the raw bits are the on-disk read hint.
 - **`ObjectLogPosition`** — read only by the flush/recovery disk-image paths, never by a normal in-memory read/upsert.
@@ -150,10 +152,20 @@ sees one atomic word); it cannot help a byte-by-byte device read of a mutating b
 Valid read-only sources: RMW expiration and object CopyUpdate also clear/dispose the source before sealing.) The copy path
 is safe precisely because the device reads a private `srcBuffer` snapshot that no concurrent operation touches.
 
-**Path to a safe no-copy:** a page-level freeze that blocks all in-place record mutation (seal/dispose) for records in an
-in-flight flush range until I/O completion (e.g. a per-page flush-in-progress guard checked by the seal/dispose sites), so
-the live page is byte-stable for the whole device write. This is a non-trivial protocol change to the epoch-sensitive
-flush/seal interaction and is deferred pending design agreement. Output would be byte-identical to the copy path (perf only).
+**The OnDispose contract that makes it safe.** No-copy is correct **iff** a record stays byte-consistent (readable)
+throughout a flush of its page. This is a **contract on `OnDispose` implementations**: rather than tearing a record's
+flush-critical bytes (`ObjectLogPosition`, the record header/layout) in place while an async device write may be reading
+them, an `OnDispose` **copies off** whatever it needs for cleanup (the heap object to dispose, the app's external-resource
+handle) and leaves the record's on-disk image intact until the record is evicted (i.e. after the flush is durable). Given
+that contract, the async device write always observes a consistent record even if a concurrent `Upsert`/`RMW`/`Delete`
+supersedes it (the only other in-place mutation, `Seal()`, is a single atomic `RecordInfo` word write). Output is
+byte-identical to the copy path (perf only).
+
+> **Caveat (current impl):** `ObjectAllocatorImpl.OnDispose` today calls `ClearHeapFields`, which for an inline-key object
+> record removes `ObjectLogPosition` and rewrites the header/filler **non-atomically**, so it does not yet strictly honor
+> the contract. To make the contract hold for every store, that clearing must be made flush-safe (copy off + defer the
+> layout change to eviction). The `srcBuffer` copy path is unconditionally safe regardless, because the device reads a
+> private snapshot that no concurrent operation touches.
 
 ## 9. Recovery & positions
 
