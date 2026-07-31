@@ -92,23 +92,39 @@ namespace Garnet.server
                     timeUnit, nonPositiveIsInfinite);
             }
 
-            void SetReadOnly(ServerConfigType t, string name, ConfigKind kind, ConfigTimeUnit timeUnit = ConfigTimeUnit.None)
+            void SetReadOnly(ServerConfigType t, string name, ConfigKind kind,
+                Func<GarnetServerOptions, string> formatter, ConfigTimeUnit timeUnit = ConfigTimeUnit.None)
             {
                 EnsureValidKind(name, kind, timeUnit);
-                m[(int)t] = new ConfigMeta(name, kind, 0, 0, null, IsRuntime: true, ReadOnly: true, timeUnit);
+                m[(int)t] = new ConfigMeta(name, kind, 0, 0, null, IsRuntime: true, ReadOnly: true,
+                    TimeUnit: timeUnit, ReadOnlyFormatter: formatter);
             }
 
             // Read-only parameters: exposed through CONFIG GET (and GET *) via this table, but CONFIG SET
-            // rejects them because they are constants or physical (require restart). Their values are
-            // computed in FormatReadOnly from the startup GarnetServerOptions.
+            // rejects them because they are constants or physical (require restart). Their CONFIG GET value
+            // is computed by the per-option formatter, which reads directly from the startup
+            // GarnetServerOptions (the read-only fall-through) — no runtime slot is used.
             // NOTE: slave-read-only is intentionally NOT here: it is a per-session value (READWRITE/READONLY,
             // https://redis.io/docs/latest/commands/readwrite/) and is handled directly by the CONFIG GET
             // handler, which has the calling session in scope.
             SetReadOnly(ServerConfigType.TIMEOUT, "timeout",
-                ConfigKind.Int32 | ConfigKind.Seconds | ConfigKind.TimeSpan, ConfigTimeUnit.Seconds);
-            SetReadOnly(ServerConfigType.SAVE, "save", ConfigKind.String);
-            SetReadOnly(ServerConfigType.APPENDONLY, "appendonly", ConfigKind.Bool);
-            SetReadOnly(ServerConfigType.DATABASES, "databases", ConfigKind.Int32);
+                ConfigKind.Int32 | ConfigKind.Seconds | ConfigKind.TimeSpan, static _ => "0", ConfigTimeUnit.Seconds);
+            SetReadOnly(ServerConfigType.SAVE, "save", ConfigKind.String, static _ => "");
+            SetReadOnly(ServerConfigType.APPENDONLY, "appendonly", ConfigKind.Bool,
+                static o => o.EnableAOF ? "yes" : "no");
+            SetReadOnly(ServerConfigType.DATABASES, "databases", ConfigKind.Int32,
+                static o => o.MaxDatabases.ToString(CultureInfo.InvariantCulture));
+
+            // Read-only non-numeric parameters resolved directly from the startup options (file paths,
+            // sockets, physical toggles). These have no runtime slot and are surfaced purely for CONFIG GET.
+            SetReadOnly(ServerConfigType.DIR, "dir", ConfigKind.String,
+                static o => o.CheckpointBaseDirectory);
+            SetReadOnly(ServerConfigType.LOGDIR, "logdir", ConfigKind.String,
+                static o => o.LogDir ?? string.Empty);
+            SetReadOnly(ServerConfigType.UNIXSOCKET, "unixsocket", ConfigKind.String,
+                static o => o.UnixSocketPath ?? string.Empty);
+            SetReadOnly(ServerConfigType.CLUSTER_ENABLED, "cluster-enabled", ConfigKind.Bool,
+                static o => o.EnableCluster ? "yes" : "no");
 
             Set(ServerConfigType.CLUSTER_NODE_TIMEOUT, "cluster-node-timeout",
                 ConfigKind.Int32 | ConfigKind.Seconds | ConfigKind.TimeSpan, 0, int.MaxValue,
@@ -466,7 +482,8 @@ namespace Garnet.server
         {
             ref readonly var meta = ref Meta[(int)type];
             if (meta.ReadOnly)
-                return RespFormatReadonly(type);
+                // Read-only fall-through: the value comes straight from the live startup options.
+                return meta.ReadOnlyFormatter?.Invoke(serverOptions) ?? string.Empty;
 
             var raw = Volatile.Read(ref values[(int)type]);
             return (meta.Kind & ConfigKind.StorageMask) switch
@@ -477,16 +494,6 @@ namespace Garnet.server
                 ConfigKind.Enum => Enum.GetName(meta.EnumType, raw.ToEnumLiteral(Enum.GetUnderlyingType(meta.EnumType)))
                     ?? raw.ToString(CultureInfo.InvariantCulture),
                 _ => raw.ToString(CultureInfo.InvariantCulture),
-            };
-
-            // Compute the value of a read-only parameter from live server state. These are server-wide values.
-            string RespFormatReadonly(ServerConfigType type) => type switch
-            {
-                ServerConfigType.TIMEOUT => "0",
-                ServerConfigType.SAVE => "",
-                ServerConfigType.APPENDONLY => serverOptions.EnableAOF ? "yes" : "no",
-                ServerConfigType.DATABASES => serverOptions.MaxDatabases.ToString(CultureInfo.InvariantCulture),
-                _ => "",
             };
         }
     }

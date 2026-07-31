@@ -32,5 +32,13 @@ namespace Garnet.server
         SLOWLOG_LOG_SLOWER_THAN,
         OBJECT_SCAN_COUNT_LIMIT,
         SG_GET,
+
+        // Read-only, non-numeric parameters (file paths, sockets, physical toggles). Exposed through
+        // CONFIG GET via the read-only fall-through — their value is read directly from the startup
+        // GarnetServerOptions and CONFIG SET rejects them. They have no backing long[] slot.
+        DIR,
+        LOGDIR,
+        UNIXSOCKET,
+        CLUSTER_ENABLED,
     }
 }
