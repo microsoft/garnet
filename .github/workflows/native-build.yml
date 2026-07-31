@@ -111,8 +111,14 @@ jobs:
         run: |
           $dst = "staging/${{ matrix.rid }}/native"
           New-Item -ItemType Directory -Force -Path $dst | Out-Null
-          Copy-Item "libs/storage/Tsavorite/cc/build/src/Release/native_device.dll" $dst
-          Copy-Item "libs/storage/Tsavorite/cc/build/src/Release/native_device.pdb" $dst
+          # The CMakeLists overrides CMAKE_RUNTIME_OUTPUT_DIRECTORY, so the exact folder under
+          # build/ varies by generator/config; locate the outputs recursively rather than assuming a path.
+          $dll = Get-ChildItem -Recurse -Path "libs/storage/Tsavorite/cc/build" -Filter native_device.dll | Select-Object -First 1
+          $pdb = Get-ChildItem -Recurse -Path "libs/storage/Tsavorite/cc/build" -Filter native_device.pdb | Select-Object -First 1
+          if (-not $dll) { throw "native_device.dll was not produced by the build" }
+          Copy-Item $dll.FullName $dst
+          if ($pdb) { Copy-Item $pdb.FullName $dst }
+          Get-ChildItem $dst
 
       - name: Verify exports
         shell: pwsh
