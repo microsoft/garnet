@@ -20,18 +20,33 @@ namespace Garnet.server
         public EndPoint[] EndPoints { get; set; } = [new IPEndPoint(IPAddress.Loopback, 6379)];
 
         /// <summary>
-        /// Cluster announce Endpoint
+        /// Endpoint advertised for node-to-node connections and used for clients by default.
         /// </summary>
         public EndPoint ClusterAnnounceEndpoint { get; set; }
 
         /// <summary>
-        /// Cluster announce Hostname
+        /// Hostname advertised by the cluster and used for clients by default.
         /// </summary>
         public string ClusterAnnounceHostname { get; set; }
 
         /// <summary>
+        /// IP address advertised to clients. The cluster announce address is used when unset.
+        /// </summary>
+        public string ClusterClientAnnounceIp { get; set; }
+
+        /// <summary>
+        /// Port advertised to clients. The cluster announce port is used when zero.
+        /// </summary>
+        public int ClusterClientAnnouncePort { get; set; }
+
+        /// <summary>
+        /// Hostname advertised to clients. The cluster announce hostname is used when unset.
+        /// </summary>
+        public string ClusterClientAnnounceHostname { get; set; }
+
+        /// <summary>
         /// Cluster Preferred Endpoint Type
-        /// Used in cluster redirection messages, cluster slots 
+        /// Used in cluster redirection messages and client-facing cluster metadata.
         /// </summary>
         public ClusterPreferredEndpointType ClusterPreferredEndpointType { get; set; }
 

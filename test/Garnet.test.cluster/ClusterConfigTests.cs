@@ -1,5 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net;
@@ -7,6 +8,7 @@ using System.Text;
 using Allure.NUnit;
 using Garnet.cluster;
 using Garnet.common;
+using Garnet.server;
 using Microsoft.Extensions.Logging;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -180,6 +182,82 @@ namespace Garnet.test.cluster
             // Round-trip should succeed
             var restored = ClusterConfig.FromByteArray(configBytes);
             Assert.That(restored.LocalNodeId, Is.EqualTo(config.LocalNodeId));
+        }
+
+        [Test]
+        [Category("CLUSTER-CONFIG"), CancelAfter(1000)]
+        public void ClusterClientEndpointRoundTripTest()
+        {
+            const string transportAddress = "127.0.0.1";
+            const int transportPort = 7001;
+            const string clientAddress = "203.0.113.10";
+            const int clientPort = 17001;
+            const string clientHostname = "node.example.com";
+
+            var config = new ClusterConfig().InitializeLocalWorker(
+                Generator.CreateHexId(),
+                transportAddress,
+                transportPort,
+                configEpoch: 1,
+                Garnet.cluster.NodeRole.PRIMARY,
+                null,
+                "internal.example.com",
+                clientAddress,
+                clientPort,
+                clientHostname);
+            config = config.AssignSlots([0], ClusterConfig.LOCAL_WORKER_ID, SlotState.STABLE);
+
+            Assert.That(config.GetWorkerAddress(ClusterConfig.LOCAL_WORKER_ID), Is.EqualTo((transportAddress, transportPort)));
+            Assert.That(config.GetEndpointFromSlot(0, ClusterPreferredEndpointType.Ip), Is.EqualTo((clientAddress, clientPort)));
+            Assert.That(config.GetEndpointFromSlot(0, ClusterPreferredEndpointType.Hostname), Is.EqualTo((clientHostname, clientPort)));
+            Assert.That(config.AskEndpointFromSlot(0, ClusterPreferredEndpointType.Ip), Is.EqualTo((clientAddress, clientPort)));
+
+            var restored = ClusterConfig.FromByteArray(config.ToByteArray());
+            Assert.That(restored.GetWorkerAddress(ClusterConfig.LOCAL_WORKER_ID), Is.EqualTo((transportAddress, transportPort)));
+            Assert.That(restored.GetEndpointFromSlot(0, ClusterPreferredEndpointType.Ip), Is.EqualTo((clientAddress, clientPort)));
+            Assert.That(restored.GetEndpointFromSlot(0, ClusterPreferredEndpointType.Hostname), Is.EqualTo((clientHostname, clientPort)));
+            Assert.That(restored.AskEndpointFromSlot(0, ClusterPreferredEndpointType.Ip), Is.EqualTo((clientAddress, clientPort)));
+        }
+
+        [Test]
+        [Category("CLUSTER-CONFIG"), CancelAfter(1000)]
+        public void LegacyClusterConfigUsesTransportEndpointTest()
+        {
+            const string transportAddress = "127.0.0.1";
+            const int transportPort = 7001;
+            var nodeId = Generator.CreateHexId();
+
+            var config = new ClusterConfig().InitializeLocalWorker(
+                nodeId,
+                transportAddress,
+                transportPort,
+                configEpoch: 1,
+                Garnet.cluster.NodeRole.PRIMARY,
+                null,
+                "internal.example.com");
+            config = config.AssignSlots([0], ClusterConfig.LOCAL_WORKER_ID, SlotState.STABLE);
+
+            var legacyBytes = config.ToByteArray();
+            var extendedConfig = new ClusterConfig().InitializeLocalWorker(
+                nodeId,
+                transportAddress,
+                transportPort,
+                configEpoch: 1,
+                Garnet.cluster.NodeRole.PRIMARY,
+                null,
+                "internal.example.com",
+                "203.0.113.10",
+                17001,
+                "node.example.com");
+            extendedConfig = extendedConfig.AssignSlots([0], ClusterConfig.LOCAL_WORKER_ID, SlotState.STABLE);
+            var extendedBytes = extendedConfig.ToByteArray();
+
+            Assert.That(extendedBytes.Length, Is.GreaterThan(legacyBytes.Length));
+            Assert.That(extendedBytes.AsSpan(0, legacyBytes.Length).SequenceEqual(legacyBytes), Is.True);
+
+            var restored = ClusterConfig.FromByteArray(legacyBytes);
+            Assert.That(restored.GetEndpointFromSlot(0, ClusterPreferredEndpointType.Ip), Is.EqualTo((transportAddress, transportPort)));
+            Assert.That(restored.GetEndpointFromSlot(0, ClusterPreferredEndpointType.Hostname), Is.EqualTo(("internal.example.com", transportPort)));
         }
 
         [Test, Order(5)]

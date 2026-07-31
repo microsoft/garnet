@@ -200,6 +200,9 @@ namespace Garnet.cluster
         private void InitLocal(string address, int port, bool recoverConfig)
         {
             var hostname = serverOptions.ClusterAnnounceHostname;
+            var clientAddress = serverOptions.ClusterClientAnnounceIp;
+            var clientPort = serverOptions.ClusterClientAnnouncePort;
+            var clientHostname = serverOptions.ClusterClientAnnounceHostname;
             if (recoverConfig)
             {
                 var conf = currentConfig;
@@ -210,7 +213,10 @@ namespace Garnet.cluster
                     configEpoch: conf.LocalNodeConfigEpoch,
                     role: conf.LocalNodeRole,
                     replicaOfNodeId: conf.LocalNodePrimaryId,
-                    hostname: string.IsNullOrEmpty(hostname) ? Format.GetHostName() : hostname);
+                    hostname: string.IsNullOrEmpty(hostname) ? Format.GetHostName() : hostname,
+                    clientAddress: clientAddress,
+                    clientPort: clientPort,
+                    clientHostname: clientHostname);
             }
             else
             {
@@ -221,7 +227,10 @@ namespace Garnet.cluster
                     configEpoch: 0,
                     NodeRole.PRIMARY,
                     null,
-                    hostname: string.IsNullOrEmpty(hostname) ? Format.GetHostName() : hostname);
+                    hostname: string.IsNullOrEmpty(hostname) ? Format.GetHostName() : hostname,
+                    clientAddress: clientAddress,
+                    clientPort: clientPort,
+                    clientHostname: clientHostname);
             }
         }
 

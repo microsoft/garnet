@@ -536,6 +536,9 @@ namespace Garnet.test
             int expiredObjectCollectionFrequencySecs = 0,
             ClusterPreferredEndpointType clusterPreferredEndpointType = ClusterPreferredEndpointType.Ip,
             string clusterAnnounceHostname = null,
+            string clusterClientAnnounceIp = null,
+            int clusterClientAnnouncePortBase = 0,
+            string clusterClientAnnounceHostname = null,
             int vectorSetReplayTaskCount = 0,
             int threadPoolMinIOCompletionThreads = 0)
         {
@@ -604,6 +607,9 @@ namespace Garnet.test
                     expiredObjectCollectionFrequencySecs: expiredObjectCollectionFrequencySecs,
                     clusterPreferredEndpointType: clusterPreferredEndpointType,
                     clusterAnnounceHostname: clusterAnnounceHostname,
+                    clusterClientAnnounceIp: clusterClientAnnounceIp,
+                    clusterClientAnnouncePort: clusterClientAnnouncePortBase == 0 ? 0 : clusterClientAnnouncePortBase + i,
+                    clusterClientAnnounceHostname: clusterClientAnnounceHostname,
                     vectorSetReplayTaskCount: vectorSetReplayTaskCount,
                     threadPoolMinIOCompletionThreads: threadPoolMinIOCompletionThreads);
 
@@ -686,6 +692,9 @@ namespace Garnet.test
             int expiredObjectCollectionFrequencySecs = 0,
             ClusterPreferredEndpointType clusterPreferredEndpointType = ClusterPreferredEndpointType.Ip,
             string clusterAnnounceHostname = null,
+            string clusterClientAnnounceIp = null,
+            int clusterClientAnnouncePort = 0,
+            string clusterClientAnnounceHostname = null,
             bool enableVectorSetPreview = true,
             int vectorSetReplayTaskCount = 0,
             bool enableRangeIndexPreview = false,
@@ -800,6 +809,9 @@ namespace Garnet.test
                 ReplicaDisklessSyncFullSyncAofThreshold = replicaDisklessSyncFullSyncAofThreshold,
                 ClusterAnnounceEndpoint = clusterAnnounceEndpoint,
                 ClusterAnnounceHostname = clusterAnnounceHostname,
+                ClusterClientAnnounceIp = clusterClientAnnounceIp,
+                ClusterClientAnnouncePort = clusterClientAnnouncePort,
+                ClusterClientAnnounceHostname = clusterClientAnnounceHostname,
                 ClusterPreferredEndpointType = clusterPreferredEndpointType,
                 DeviceType = deviceType,
                 ClusterReplicationReestablishmentTimeout = clusterReplicationReestablishmentTimeout,
