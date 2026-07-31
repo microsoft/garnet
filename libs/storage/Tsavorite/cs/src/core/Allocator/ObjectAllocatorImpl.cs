@@ -950,20 +950,42 @@ namespace Tsavorite.core
                                         // can be evicted, then repoint the disk-image record to that main object-log position. The objects are NOT
                                         // deserialized at this point, so read the position/lengths from the record's on-disk encoding (not from objectIdMap),
                                         // and repoint (which preserves the record's unchanged lengths and format flag) rather than SetRecoveredObjectLogRecordStartPosition.
-                                        //
-                                        // The copy is sized by the RDH KeyLength/ValueLength hints (below). That equals the true on-disk extent for a
-                                        // headerless record, and safely OVER-copies a chunked object value (the reader repositions per record via
-                                        // OnBeginRecord and the deserializer self-terminates, so any trailing bytes are ignored on read-back). But a
-                                        // record with a leading ChunkHeader -- an overflow key or overflow value at/above its RDH sentinel -- would be
-                                        // UNDER-copied: the sentinel hint omits the 8-byte header and the length beyond the sentinel, so the verbatim copy
-                                        // truncates the record and mis-frames the value. Copying such a record correctly needs its exact raw on-disk extent
-                                        // (the successor object-log position difference, bounded by the snapshot tail for the last record on a page); until
-                                        // that is wired here, fail fast rather than silently corrupt the recovered record.
-                                        if (logRecord.DataHeader.KeyLengthIsSentinel || (logRecord.DataHeader.ValueIsOverflow && logRecord.DataHeader.ValueLengthIsSentinel))
-                                            throw new TsavoriteException("Snapshot recovery of a record whose overflow key or overflow value is at/above the RDH length sentinel (i.e. carries a leading ChunkHeader) is not yet supported by the verbatim object-log copy path; the copy would under-count the header and truncate the record.");
-
                                         var snapshotPositionWord = logRecord.GetObjectLogRecordStartPositionAndLengths(out var copyKeyLength, out var copyValueLength);
-                                        var copyObjectLength = (ulong)copyKeyLength + copyValueLength;
+
+                                        // Size the verbatim copy by the record's exact raw on-disk extent. For a headerless record -- and for a chunked
+                                        // object value, whose DecodeFlushValueExtent hint over-reads by < 4 KB harmlessly -- the RDH KeyLength/ValueLength
+                                        // hints equal (or safely exceed) the extent, so use them. But a record whose overflow key or value is at/above its
+                                        // RDH sentinel carries a leading 8-byte ChunkHeader plus the length beyond the sentinel, which the hint omits: the
+                                        // hint UNDER-counts and a hint-sized copy would truncate. Size such a record by the successor object record's
+                                        // snapshot position minus this record's -- exactly this record's full key+value+header(s)+alignment/straddle padding
+                                        // verbatim (any trailing over-copy is ignored by the reader, which re-frames from the record's own ChunkHeader).
+                                        ulong copyObjectLength;
+                                        if (logRecord.DataHeader.KeyLengthIsSentinel || (logRecord.DataHeader.ValueIsOverflow && logRecord.DataHeader.ValueLengthIsSentinel))
+                                        {
+                                            var thisPosition = new ObjectLogFilePositionInfo(snapshotPositionWord, objectLogTail.SegmentSizeBits);
+                                            copyObjectLength = 0;
+                                            for (var scanAddress = physicalAddress + logRecordSize; scanAddress < endPhysicalAddress;)
+                                            {
+                                                var scanRecord = new LogRecord(scanAddress);
+                                                scanAddress += scanRecord.AllocatedSize;
+                                                if (scanRecord.Info.Valid && scanRecord.DataHeader.RecordHasObjects)
+                                                {
+                                                    var successorPosition = new ObjectLogFilePositionInfo(scanRecord.GetObjectLogRecordStartPositionAndLengths(out _, out _), objectLogTail.SegmentSizeBits);
+                                                    copyObjectLength = successorPosition - thisPosition;
+                                                    break;
+                                                }
+                                            }
+
+                                            // The last object record on the page has no successor to bound it; its exact extent would require reading its
+                                            // ChunkHeader (up to the full overflow length away for a headered key). That remains unsupported -- fail fast
+                                            // rather than silently truncate the recovered record.
+                                            if (copyObjectLength == 0)
+                                                throw new TsavoriteException("Snapshot recovery of a record whose overflow key/value is at/above the RDH sentinel (carries a leading ChunkHeader) and is the last object record on its page is not yet supported by the verbatim object-log copy path; its exact on-disk extent needs a ChunkHeader read.");
+                                        }
+                                        else
+                                        {
+                                            copyObjectLength = (ulong)copyKeyLength + copyValueLength;
+                                        }
 
                                         // Demand-load the snapshot object reader on the first valid record with objects, so pages with few or no object
                                         // records avoid an up-front full-page pre-pass. The read-ahead range is sized by scanning forward from here.

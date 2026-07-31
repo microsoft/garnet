@@ -237,5 +237,98 @@ namespace Tsavorite.test.recovery
                 objlog.Dispose();
             }
         }
+
+        static TsavoriteKV<LargeObjStoreFunctions, LargeObjAllocator> CreateOverflowStore(IDevice log, IDevice objlog, string checkpointDir, long memorySize)
+            => new(new()
+            {
+                IndexSize = 1L << 20,
+                LogDevice = log,
+                ObjectLogDevice = objlog,
+                MutableFraction = 0.9,
+                PageSize = MinKvLogPageSize,
+                LogMemorySize = memorySize,
+                SegmentSize = 1L << 30,              // large object-log segment so a 16 MB+ overflow value is not split across segments
+                MaxInlineValueSize = 0,              // store raw byte[] values as overflow (not objects)
+                CheckpointDir = checkpointDir,
+            }, StoreFunctions.Create(new TestObjectKey.Comparer(), () => new TestObjectValue.Serializer(), DefaultRecordTriggers.Instance),
+               (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions));
+
+        /// <summary>
+        /// Snapshot-recovers records whose overflow VALUE is at/above the 16 MB RDH ValueLength sentinel, so each carries a leading
+        /// ChunkHeader. The snapshot-region recovery copy cannot size such a record by the RDH KeyLength/ValueLength hints (they cap at
+        /// the sentinel and omit the header + the length beyond it); instead it sizes by the successor object record's snapshot position
+        /// minus this record's, copying the record's exact raw key+value+header+padding extent verbatim. A trailing small (headerless)
+        /// overflow record keeps the headered ones off the last-record-on-page path (still guarded). Recovery uses a small heap budget so
+        /// the object page is evicted and thus flushed through the snapshot-copy path. Every value must read back byte-for-byte.
+        /// </summary>
+        [Test]
+        [Category("TsavoriteKV"), Category("CheckpointRestore")]
+        public async Task RecoverSnapshotHeaderedOverflowValue()
+        {
+            const int headeredLen = (16 * 1024 * 1024) + 5000;   // >= the 2^24-1 ValueLength sentinel -> leading ChunkHeader
+            const int numHeadered = 3;                           // keys 0..2 are headered (non-last); key 3 is a small trailing overflow (last on page)
+            const int smallLen = 1024;
+
+            static byte[] MakeValue(int key, int len) { var v = new byte[len]; new Span<byte>(v).Fill((byte)(0x30 + key)); return v; }
+
+            var dir = MethodTestDir;
+            var checkpointDir = Path.Combine(dir, "checkpoints");
+            IDevice log = Devices.CreateLogDevice(Path.Combine(dir, "hlog.log"), deleteOnClose: false);
+            IDevice objlog = Devices.CreateLogDevice(Path.Combine(dir, "hlog.obj.log"), deleteOnClose: false);
+            try
+            {
+                Guid token;
+                using (var store1 = CreateOverflowStore(log, objlog, checkpointDir, 1L << 20))
+                {
+                    using (var session = store1.NewSession<TestObjectKey, TestLargeObjectInput, TestLargeObjectOutput, Empty, TestLargeObjectFunctions>(new TestLargeObjectFunctions()))
+                    {
+                        var bContext = session.BasicContext;
+                        for (var key = 0; key < numHeadered; key++)
+                            _ = bContext.Upsert(new TestObjectKey { key = key }, MakeValue(key, headeredLen).AsSpan(), Empty.Default);
+                        _ = bContext.Upsert(new TestObjectKey { key = numHeadered }, MakeValue(numHeadered, smallLen).AsSpan(), Empty.Default);
+                    }
+                    var (success, checkpointToken) = await store1.TakeFullCheckpointAsync(CheckpointType.Snapshot).ConfigureAwait(false);
+                    ClassicAssert.IsTrue(success);
+                    token = checkpointToken;
+                }
+
+                // Recover into a small heap budget so the object page is evicted during recovery and thus flushed via the snapshot-copy path.
+                var store2 = CreateOverflowStore(log, objlog, checkpointDir, 1L << 20);
+                var budget = 4L << 20;
+                var tracker = new LogSizeTracker<LargeObjStoreFunctions, LargeObjAllocator>(store2.Log, budget, budget / 8, budget / 16, logger: null);
+                store2.Log.SetLogSizeTracker(tracker);
+                _ = await store2.RecoverAsync(default, token).ConfigureAwait(false);
+                try
+                {
+                    using var session = store2.NewSession<TestObjectKey, TestLargeObjectInput, TestLargeObjectOutput, Empty, TestLargeObjectFunctions>(new TestLargeObjectFunctions());
+                    var bContext = session.BasicContext;
+                    for (var key = 0; key <= numHeadered; key++)
+                    {
+                        var expectedLen = key < numHeadered ? headeredLen : smallLen;
+                        TestLargeObjectInput input = new() { wantValueStyle = TestValueStyle.Overflow, expectedSpanLength = expectedLen };
+                        TestLargeObjectOutput output = new();
+                        var status = bContext.Read(new TestObjectKey { key = key }, ref input, ref output, Empty.Default);
+                        if (status.IsPending)
+                        {
+                            ClassicAssert.IsTrue(bContext.CompletePendingWithOutputs(out var completedOutputs, wait: true));
+                            (status, output) = GetSinglePendingResult(completedOutputs);
+                        }
+                        ClassicAssert.IsTrue(status.Found, $"key {key} not found");
+                        ClassicAssert.AreEqual(expectedLen, output.valueArray.Length, $"key {key} wrong length");
+                        var badIndex = new ReadOnlySpan<byte>(output.valueArray).IndexOfAnyExcept((byte)(0x30 + key));
+                        ClassicAssert.AreEqual(-1, badIndex, $"key {key} unexpected byte at index {badIndex}");
+                    }
+                }
+                finally
+                {
+                    store2.Dispose();
+                }
+            }
+            finally
+            {
+                log.Dispose();
+                objlog.Dispose();
+            }
+        }
     }
 }
