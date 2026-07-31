@@ -160,17 +160,7 @@ namespace Garnet.server
                 return new() { KeySize = srcLogRecord.Key.Length, ValueSize = value.Length + (-input.WriteDesiredSize), ExtendedNamespaceSize = GetExtendedNamespaceSize(in srcLogRecord) };
             }
 
-            var needsAlignmentPadding = input.AlignmentExpected || input.Callback != 0;
-
-            // Constant size indicated
-            if (needsAlignmentPadding)
-            {
-                return new() { KeySize = srcLogRecord.Key.Length, ValueSize = input.WriteDesiredSize, ExtendedNamespaceSize = GetExtendedNamespaceSize(in srcLogRecord) };
-            }
-            else
-            {
-                return new() { KeySize = srcLogRecord.Key.Length, ValueSize = input.WriteDesiredSize, ExtendedNamespaceSize = GetExtendedNamespaceSize(in srcLogRecord) };
-            }
+            return new() { KeySize = srcLogRecord.Key.Length, ValueSize = input.WriteDesiredSize, ExtendedNamespaceSize = GetExtendedNamespaceSize(in srcLogRecord) };
         }
 
         /// <summary>Initial expected length of value object when populated by RMW using given input</summary>
@@ -182,21 +172,12 @@ namespace Garnet.server
         {
             var effectiveWriteDesiredSize = input.WriteDesiredSize;
 
-            var needsAlignmentPadding = input.AlignmentExpected || input.Callback != 0;
-
             if (effectiveWriteDesiredSize < 0)
             {
                 effectiveWriteDesiredSize = -effectiveWriteDesiredSize;
             }
 
-            if (!needsAlignmentPadding)
-            {
-                return new() { KeySize = key.KeyBytes.Length, ValueSize = effectiveWriteDesiredSize, ExtendedNamespaceSize = GetExtendedNamespaceSize(in key) };
-            }
-            else
-            {
-                return new() { KeySize = key.KeyBytes.Length, ValueSize = effectiveWriteDesiredSize, ExtendedNamespaceSize = GetExtendedNamespaceSize(in key) };
-            }
+            return new() { KeySize = key.KeyBytes.Length, ValueSize = effectiveWriteDesiredSize, ExtendedNamespaceSize = GetExtendedNamespaceSize(in key) };
         }
 
         /// <summary>Length of value object, when populated by Upsert using given value and input</summary>

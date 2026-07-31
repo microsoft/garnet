@@ -52,7 +52,6 @@ namespace Garnet.server
 #endif
 
             VectorInput input = default;
-            input.AlignmentExpected = true;
             VectorOutput outputSpan = new(new SpanByteAndMemory());
 
             // When we migrate a record we expand the namespace to always occupy 4-bytes

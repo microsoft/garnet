@@ -349,7 +349,6 @@ namespace Garnet.server
 
             ref var ctx = ref ActiveThreadSession.vectorBasicContext;
             VectorInput input = new();
-            input.AlignmentExpected = true;
             var valueSpan = SpanByte.FromPinnedPointer((byte*)writeData, (int)writeLength);
             VectorOutput outputSpan = new();
 
@@ -408,7 +407,7 @@ namespace Garnet.server
             return EvaluateCandidateFilter(context, new ReadOnlySpan<byte>((byte*)valueData, (int)valueLength));
         }
 
-        private static unsafe bool ReadSizeUnknown(ulong context, bool forceAlignment, ReadOnlySpan<byte> key, ref SpanByteAndMemory value)
+        private static unsafe bool ReadSizeUnknown(ulong context, ReadOnlySpan<byte> key, ref SpanByteAndMemory value)
         {
             Debug.Assert(context <= uint.MaxValue, "Contexts > 2^32-1 are not supported");
 
@@ -424,9 +423,6 @@ namespace Garnet.server
                 VectorInput input = new();
                 input.ReadDesiredSize = -1;
 
-                // Sometimes we read DiskANN written data from the .NET side
-                // If that's the case, we need to pad for alignment even though .NET doesn't require it
-                input.AlignmentExpected = forceAlignment;
                 fixed (byte* ptr = value.Span)
                 {
                     VectorOutput asSpanByte = new(ptr, value.Length);

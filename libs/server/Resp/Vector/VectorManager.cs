@@ -1183,7 +1183,7 @@ namespace Garnet.server
         {
             AssertHaveStorageSession();
             ReadIndex(indexValue, out var context, out _, out _, out _, out _, out _, out _, out _, out _);
-            var found = ReadSizeUnknown(context | DiskANNService.Attributes, forceAlignment: true, element, ref outputAttributes);
+            var found = ReadSizeUnknown(context | DiskANNService.Attributes, element, ref outputAttributes);
             return found ? VectorManagerResult.OK : VectorManagerResult.MissingElement;
         }
 
@@ -1243,7 +1243,7 @@ namespace Garnet.server
                         attributeMem.Length = attributeMem.SpanByte.Length;
                     }
 
-                    var found = ReadSizeUnknown(context | DiskANNService.Attributes, forceAlignment: true, id, ref attributeMem);
+                    var found = ReadSizeUnknown(context | DiskANNService.Attributes, id, ref attributeMem);
 
                     // Copy attribute into output buffer, length prefixed, resizing as necessary
                     var neededSpace = 4 + (found ? attributeMem.Length : 0);
@@ -1310,7 +1310,7 @@ namespace Garnet.server
             var internalIdBytes = SpanByteAndMemory.FromPinnedSpan(internalId);
             try
             {
-                if (!ReadSizeUnknown(context | DiskANNService.InternalIdMap, forceAlignment: true, element, ref internalIdBytes))
+                if (!ReadSizeUnknown(context | DiskANNService.InternalIdMap, element, ref internalIdBytes))
                 {
                     return false;
                 }
@@ -1326,7 +1326,7 @@ namespace Garnet.server
             var asBytes = SpanByteAndMemory.FromPinnedSpan(asBytesSpan);
             try
             {
-                if (!ReadSizeUnknown(context | DiskANNService.FullVector, forceAlignment: true, internalId, ref asBytes))
+                if (!ReadSizeUnknown(context | DiskANNService.FullVector, internalId, ref asBytes))
                 {
                     return false;
                 }
@@ -1390,7 +1390,7 @@ namespace Garnet.server
             var internalIdBytes = SpanByteAndMemory.FromPinnedSpan(internalId);
             try
             {
-                if (!ReadSizeUnknown(context | DiskANNService.InternalIdMap, forceAlignment: true, element, ref internalIdBytes))
+                if (!ReadSizeUnknown(context | DiskANNService.InternalIdMap, element, ref internalIdBytes))
                 {
                     norm = double.NaN;
                     range = null;
@@ -1418,7 +1418,7 @@ namespace Garnet.server
             // Get the RAW view - we're leaking DiskANN internal details here but that's _kind of_ the point
             while (true)
             {
-                if (ReadSizeUnknown(readContext, forceAlignment: true, internalId, ref quantizedValues))
+                if (ReadSizeUnknown(readContext, internalId, ref quantizedValues))
                 {
                     break;
                 }
@@ -1451,7 +1451,7 @@ namespace Garnet.server
 
             Span<byte> internalId = stackalloc byte[sizeof(int)];
             var internalIdBytes = SpanByteAndMemory.FromPinnedSpan(internalId);
-            var foundInternalId = ReadSizeUnknown(context | DiskANNService.InternalIdMap, forceAlignment: true, element, ref internalIdBytes);
+            var foundInternalId = ReadSizeUnknown(context | DiskANNService.InternalIdMap, element, ref internalIdBytes);
             if (foundInternalId)
             {
                 Debug.Assert(internalIdBytes.IsSpanByte, "Shouldn't have allocated for this op");
