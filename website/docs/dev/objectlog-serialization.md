@@ -189,13 +189,17 @@ bound = successor position / object-log tail), not a single additive delta.
 ## 9. Recovery & positions
 
 - **Snapshot-region verbatim copy** (`ObjectAllocatorImpl` snapshot-recovery flush): each record's bytes are copied from the
-  snapshot object-log to the main object-log sized by its RDH `KeyLength+ValueLength` hints. That equals the true on-disk
-  extent for a **headerless** record, and safely **over-copies** a **chunked object** (the reader repositions per record via
-  `OnBeginRecord` and the deserializer self-terminates, so trailing bytes are ignored on read-back — validated by the 40 MB
-  `MultiListObjectTest`). A record with a **leading `ChunkHeader`** (≥-sentinel overflow key or overflow value) would be
-  **under-copied** and truncated, so that case currently **throws** (fail-fast) pending the exact-extent fix below.
-  - **TODO:** size the copy by the **raw on-disk extent** (successor object-log position difference, bounded by the snapshot
-    tail for the last record on a page) so headered records copy correctly; then remove the guard.
+  snapshot object-log to the main object-log. A **headerless** record and a **chunked object** are sized by the RDH
+  `KeyLength+ValueLength` hints — exact for headerless, and a safe **over-copy** for a chunked object (the reader repositions
+  per record via `OnBeginRecord` and the deserializer self-terminates, so trailing bytes are ignored on read-back — validated
+  by the 40 MB `MultiListObjectTest`). A record with a **leading `ChunkHeader`** (≥-sentinel overflow key or overflow value)
+  is sized instead by the **successor object record's snapshot position minus this record's** — exactly this record's raw
+  key+value+header+padding extent, copied verbatim (`successor.pos ≥ this.pos + extent`, so it never under-copies; trailing
+  over-copy is ignored on read-back). Validated by `RecoverSnapshotHeaderedOverflowValue`.
+  - **Remaining guard:** a headered record that is the **last object record on its page** has no successor to bound it (its
+    exact extent would need a `ChunkHeader` read up to the full overflow length away, and no snapshot per-page object-log end
+    is available in the per-page recovery flush), so that narrow case still **throws** (fail-fast). Full removal needs a
+    ChunkHeader-driven copy for the last record or a page-object-log-end bound.
 - **Preserve all flag bits** (`0xF << 60`) in `RepointObjectLogPosition`, `SetObjectLogPositionAndLengthHints`,
   `SetRecoveredObjectLogRecordStartPosition`.
 - **Validate:** overflow length within limits; cumulative object ≤ `IHeapObject.MaxSerializedObjectSize`.
