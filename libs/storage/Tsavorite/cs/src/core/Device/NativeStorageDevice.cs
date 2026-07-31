@@ -148,14 +148,20 @@ namespace Tsavorite.core
 
         static NativeStorageDevice()
         {
+            // Select the prebuilt for the current OS/architecture/libc. The prebuilts are laid out under
+            // runtimes/<rid>/native/ (NuGet RID convention) so a single package can carry per-platform binaries;
+            // musl-based Linux (e.g. Alpine) uses the "linux-musl-*" RID because its binaries link the musl libc
+            // and the plain "libaio.so.1"/"liburing.so.2" SONAMEs, whereas the glibc "linux-*" build links the
+            // t64 "libaio.so.1t64" and cannot load on musl.
+            var rid = GetNativeRuntimeIdentifier();
             if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
             {
-                NativeLibraryPath = "runtimes/win-x64/native/native_device.dll";
+                NativeLibraryPath = $"runtimes/{rid}/native/native_device.dll";
                 LibaioFallbackLibraryPath = null;
             }
             else
             {
-                // We ship two Linux native libraries:
+                // We ship two Linux native libraries per RID:
                 //   * libnative_device.so         — built with USE_URING=ON, links libaio AND
                 //     liburing. Used on hosts that have liburing2 installed; exposes both the
                 //     Libaio and Uring backends.
@@ -167,10 +173,34 @@ namespace Tsavorite.core
                 // no function-pointer indirection) while still giving end-users on stock
                 // distributions a libnative_device that loads cleanly without installing
                 // liburing manually.
-                NativeLibraryPath = "runtimes/linux-x64/native/libnative_device.so";
-                LibaioFallbackLibraryPath = "runtimes/linux-x64/native/libnative_device_libaio.so";
+                NativeLibraryPath = $"runtimes/{rid}/native/libnative_device.so";
+                LibaioFallbackLibraryPath = $"runtimes/{rid}/native/libnative_device_libaio.so";
             }
             NativeLibrary.SetDllImportResolver(typeof(NativeStorageDevice).Assembly, ImportResolver);
+        }
+
+        /// <summary>
+        /// Computes the NuGet runtime identifier (RID) subfolder under runtimes/&lt;rid&gt;/native/ from which to load
+        /// the prebuilt native device for the current process. Linux distinguishes glibc ("linux-&lt;arch&gt;") from musl
+        /// ("linux-musl-&lt;arch&gt;", e.g. Alpine) because the two are not binary-compatible. Only the RIDs whose prebuilts
+        /// are actually shipped will resolve; others fail the load and the caller falls back to a managed device.
+        /// </summary>
+        static string GetNativeRuntimeIdentifier()
+        {
+            var arch = RuntimeInformation.ProcessArchitecture switch
+            {
+                Architecture.X64 => "x64",
+                Architecture.Arm64 => "arm64",
+                Architecture.X86 => "x86",
+                Architecture.Arm => "arm",
+                var other => other.ToString().ToLowerInvariant()
+            };
+
+            if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+                return $"win-{arch}";
+            if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
+                return $"osx-{arch}";
+            return IsMuslRuntime ? $"linux-musl-{arch}" : $"linux-{arch}";
         }
 
         static IntPtr ImportResolver(string libraryName, Assembly assembly, DllImportSearchPath? searchPath)
@@ -289,8 +319,10 @@ namespace Tsavorite.core
         /// they are unsupported: fabricating a libaio compat symlink and retrying the load would bind
         /// the glibc library against musl's libaio and crash. On musl we skip the compat shim and let
         /// the load fail cleanly so the caller can fall back to a managed device.
+        /// Exposed so <see cref="Devices.GetDefaultDeviceType"/> does not pick <see cref="DeviceType.Native"/>
+        /// as the default on musl (which would fail on the first storage IO).
         /// </summary>
-        static readonly bool IsMuslRuntime = DetectMuslRuntime();
+        internal static readonly bool IsMuslRuntime = DetectMuslRuntime();
 
         static bool DetectMuslRuntime()
         {
@@ -888,8 +920,8 @@ namespace Tsavorite.core
                         $"Available backends: default={available.defaultAvailable}, io_uring={available.uringAvailable}. " +
                         (ioBackendConfig == IoBackend.Uring
                             ? "The io_uring backend requires liburing.so.2 to be present at process start. " +
-                              "Install it (Debian/Ubuntu: 'sudo apt-get install -y liburing2'; Fedora/RHEL: 'sudo dnf install -y liburing') and restart the process. " +
-                              "Alpine (musl) is not supported by the prebuilt native library — use a glibc-based image or fall back to a managed device. " +
+                              "Install it (Debian/Ubuntu: 'sudo apt-get install -y liburing2'; Fedora/RHEL: 'sudo dnf install -y liburing'; Alpine: 'apk add liburing') and restart the process. " +
+                              "Note: many container runtimes block io_uring_setup via their default seccomp profile (init fails with EPERM); run with a profile that permits io_uring, or use the libaio backend. " +
                               "The libaio backend (selected with IoBackend.Default / IoBackend.Libaio) is always available and does not require liburing."
                             : "Verify the native library matches the requested backend."));
                 }

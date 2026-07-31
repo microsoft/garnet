@@ -10,12 +10,16 @@ The resulting library is named `native_device.dll` on Windows and
 underlying IO backend at runtime is done via the C# `IoBackend` enum, which
 Garnet surfaces as `--device-io-backend default|libaio|uring`.
 
-> **Note on the prebuilt artifacts.** Prebuilt binaries are checked in at
-> `libs/storage/Tsavorite/cs/src/core/Device/runtimes/{linux-x64,win-x64}/native/`
-> and copied into `bin/` at build time. If you change C++ sources you must
-> rebuild *and* re-check in the matching prebuilt for the platform you changed,
-> otherwise consumers will not see your changes. See "Updating the shipped
-> prebuilt binaries" below.
+> **Note on the prebuilt artifacts.** Prebuilt binaries are checked in under
+> `libs/storage/Tsavorite/cs/src/core/Device/runtimes/<rid>/native/` (one folder per
+> runtime identifier — currently `linux-x64`, `linux-musl-x64`, and `win-x64`) and
+> copied into `bin/` at build time. The C# `NativeStorageDevice` loader resolves the
+> folder for the current OS/architecture/libc at load time. If you change C++ sources
+> you must rebuild *and* re-check in the matching prebuilt for every platform you
+> changed. The easiest way to regenerate all of them canonically is the **Build Native
+> Device** GitHub workflow (`.github/workflows/native-build.yml`), which builds each RID
+> and can open a PR updating the checked-in binaries; see "Updating the shipped prebuilt
+> binaries" below for the manual path.
 
 ## Runtime dependencies (end users)
 
@@ -181,17 +185,25 @@ The native device links against `aio` (libaio) and, when `USE_URING=ON`
 On **Debian / Ubuntu** (including Ubuntu 24.04 with the t64 ABI transition):
 
 ```sh
-sudo apt-get install build-essential cmake libaio-dev liburing-dev
+sudo apt-get install build-essential cmake libaio-dev liburing-dev uuid-dev
 ```
 
 On **Fedora / RHEL / Azure Linux**:
 
 ```sh
-sudo dnf install gcc-c++ cmake libaio-devel liburing-devel
+sudo dnf install gcc-c++ cmake libaio-devel liburing-devel libuuid-devel
 ```
 
-On **Alpine** (musl): the prebuilt won't load — Alpine images use the
-managed `LocalStorageDevice` instead.
+On **Alpine** (musl):
+
+```sh
+sudo apk add build-base cmake linux-headers libaio-dev liburing-dev util-linux-dev
+```
+
+Alpine **is** supported: a musl prebuilt is shipped under
+`runtimes/linux-musl-x64/native/` (its binaries link `libaio.so.1`/`liburing.so.2`
+and the musl C runtime, unlike the glibc `linux-x64` build which needs
+`libaio.so.1t64`). The C# loader selects it automatically on musl hosts.
 
 CMake **3.21 or newer** is required.
 
@@ -265,7 +277,36 @@ The C# project copies the prebuilt native libraries from
 output directory at build time. After rebuilding, copy the new artifact over
 the corresponding file in that directory and check it in.
 
-**Linux (`linux-x64`):**
+**Preferred: regenerate all platforms via CI.** The **Build Native Device**
+workflow (`.github/workflows/native-build.yml`) builds every RID
+(`linux-x64`, `linux-arm64`, `linux-musl-x64`, `linux-musl-arm64`, `win-x64`,
+`win-arm64`) and, when dispatched with `update_repo = true`, opens a PR that
+overwrites the checked-in prebuilts. It also runs automatically on any change
+to `libs/storage/Tsavorite/cc/**` to verify all platforms still build. This is
+the canonical way to refresh the binaries.
+
+**Linux, by hand.** The `build-native.sh` helper next to this README builds
+both flavours (`libnative_device.so` with `USE_URING=ON` and
+`libnative_device_libaio.so` with `USE_URING=OFF`), normalizes the libaio
+SONAME, and verifies the exported entrypoints. Point it at the RID folder you
+want to refresh (install the build dependencies listed at the top of the script
+first):
+
+```sh
+# from libs/storage/Tsavorite/cc:
+./build-native.sh ../cs/src/core/Device/runtimes/linux-x64/native
+```
+
+For musl (`linux-musl-x64`) run the same script inside an Alpine container so it
+links against musl and the plain `libaio.so.1` SONAME:
+
+```sh
+docker run --rm -v "$PWD/../../../../..:/w" -w /w alpine:3.20 sh -c \
+  'apk add --no-cache build-base cmake linux-headers libaio-dev liburing-dev util-linux-dev && \
+   libs/storage/Tsavorite/cc/build-native.sh libs/storage/Tsavorite/cs/src/core/Device/runtimes/linux-musl-x64/native'
+```
+
+**Linux (`linux-x64`), the individual cmake steps:**
 
 ```sh
 # from libs/storage/Tsavorite/cc, after a Release build with USE_URING=ON:

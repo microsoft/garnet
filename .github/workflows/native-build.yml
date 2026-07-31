@@ -1,0 +1,213 @@
+# Builds the canonical Tsavorite native device prebuilt binaries for every
+# supported runtime identifier (RID) and, on demand, opens a PR that updates the
+# checked-in prebuilts under
+# libs/storage/Tsavorite/cs/src/core/Device/runtimes/<rid>/native/.
+#
+# Why this exists: the native device (libaio / io_uring on Linux, IOCP on Windows)
+# is a C++ library that must be compiled per OS/arch/libc. The C# NativeStorageDevice
+# loader resolves runtimes/<rid>/native/<lib> for the current platform, so we ship one
+# prebuilt per RID. This workflow is the single, reproducible source of those binaries.
+#
+# Coverage:
+#   linux-x64, linux-arm64            (glibc, ubuntu:24.04 container; arm64 via QEMU)
+#   linux-musl-x64, linux-musl-arm64  (musl,  alpine:3.20 container; arm64 via QEMU)
+#   win-x64, win-arm64                (MSVC on windows-latest; arm64 cross-compiled)
+#
+# macOS is intentionally absent: the native C++ (file_linux.cc) is hard-wired to
+# libaio/io_uring/O_DIRECT, which do not exist on macOS. A macOS backend
+# (file_darwin.cc using POSIX AIO / kqueue + F_NOCACHE) is a separate work item; until
+# then macOS falls back to the managed RandomAccess device.
+name: Build Native Device
+
+on:
+  workflow_dispatch:
+    inputs:
+      update_repo:
+        description: "After building, open a PR updating the checked-in prebuilt native binaries"
+        type: boolean
+        default: true
+  # On changes to the native sources, build + verify all RIDs (does NOT touch the repo).
+  push:
+    paths:
+      - 'libs/storage/Tsavorite/cc/**'
+      - '.github/workflows/native-build.yml'
+  pull_request:
+    paths:
+      - 'libs/storage/Tsavorite/cc/**'
+      - '.github/workflows/native-build.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  build-linux:
+    name: Build ${{ matrix.rid }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { rid: linux-x64,        image: 'ubuntu:24.04', platform: linux/amd64, libc: glibc }
+          - { rid: linux-arm64,      image: 'ubuntu:24.04', platform: linux/arm64, libc: glibc }
+          - { rid: linux-musl-x64,   image: 'alpine:3.20',  platform: linux/amd64, libc: musl }
+          - { rid: linux-musl-arm64, image: 'alpine:3.20',  platform: linux/arm64, libc: musl }
+    steps:
+      - uses: actions/checkout@v4
+
+      # Register QEMU so the arm64 containers can run on the x64 runner. No-op for amd64.
+      - name: Enable QEMU (arm64 emulation)
+        if: endsWith(matrix.platform, 'arm64')
+        run: docker run --rm --privileged tonistiigi/binfmt --install arm64
+
+      - name: Build native libraries
+        run: |
+          set -euo pipefail
+          mkdir -p "staging/${{ matrix.rid }}/native"
+          if [ "${{ matrix.libc }}" = "glibc" ]; then
+            DEPS="export DEBIAN_FRONTEND=noninteractive; apt-get update -qq && apt-get install -y -qq build-essential cmake libaio-dev liburing-dev uuid-dev patchelf binutils file"
+          else
+            DEPS="apk add --no-cache build-base cmake linux-headers libaio-dev liburing-dev util-linux-dev file"
+          fi
+          docker run --rm --platform ${{ matrix.platform }} \
+            -v "$GITHUB_WORKSPACE:/w" -w /w "${{ matrix.image }}" \
+            sh -c "$DEPS && libs/storage/Tsavorite/cc/build-native.sh /w/staging/${{ matrix.rid }}/native"
+
+      - name: Show results
+        run: |
+          ls -la "staging/${{ matrix.rid }}/native"
+          file "staging/${{ matrix.rid }}/native"/*.so
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: native-${{ matrix.rid }}
+          path: staging/${{ matrix.rid }}/native/*
+          if-no-files-found: error
+
+  build-windows:
+    name: Build ${{ matrix.rid }}
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { rid: win-x64,   arch: x64 }
+          - { rid: win-arm64, arch: ARM64 }
+    steps:
+      - uses: actions/checkout@v4
+
+      # CMakeLists builds with /Qspectre /guard:cf /sdl, which require the matching
+      # Spectre-mitigated CRT libraries. x64's are preinstalled on the hosted image;
+      # ensure both x64 and ARM64 Spectre components are present so either target links.
+      - name: Ensure MSVC Spectre-mitigated libraries
+        shell: pwsh
+        run: |
+          $vsWhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $installPath = & $vsWhere -latest -products * -property installationPath
+          $installer = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\setup.exe"
+          $components = @(
+            "Microsoft.VisualStudio.Component.VC.Runtimes.x86.x64.Spectre",
+            "Microsoft.VisualStudio.Component.VC.Runtimes.ARM64.Spectre",
+            "Microsoft.VisualStudio.Component.VC.Tools.ARM64"
+          )
+          $args = @("modify", "--installPath", "`"$installPath`"", "--quiet", "--norestart", "--nocache")
+          foreach ($c in $components) { $args += @("--add", $c) }
+          Write-Host "Ensuring components: $($components -join ', ')"
+          $p = Start-Process -FilePath $installer -ArgumentList $args -Wait -PassThru -NoNewWindow
+          # 0 = success, 3010 = success/reboot required; anything else is only a warning here
+          if ($p.ExitCode -ne 0 -and $p.ExitCode -ne 3010) {
+            Write-Warning "VS installer exited with $($p.ExitCode); the required Spectre libs may already be present."
+          }
+
+      - name: Configure and build
+        shell: pwsh
+        run: |
+          cd libs/storage/Tsavorite/cc
+          cmake -G "Visual Studio 17 2022" -A ${{ matrix.arch }} -B build
+          cmake --build build --config Release
+
+      - name: Stage artifacts
+        shell: pwsh
+        run: |
+          $dst = "staging/${{ matrix.rid }}/native"
+          New-Item -ItemType Directory -Force -Path $dst | Out-Null
+          Copy-Item "libs/storage/Tsavorite/cc/build/src/Release/native_device.dll" $dst
+          Copy-Item "libs/storage/Tsavorite/cc/build/src/Release/native_device.pdb" $dst
+
+      - name: Verify exports
+        shell: pwsh
+        run: |
+          $dumpbin = (Get-ChildItem "C:\Program Files\Microsoft Visual Studio\2022\*\VC\Tools\MSVC\*\bin\Hostx64\x64\dumpbin.exe" | Select-Object -First 1).FullName
+          $exports = & $dumpbin /exports "staging/${{ matrix.rid }}/native/native_device.dll"
+          if (-not ($exports | Select-String 'NativeDevice_CreateWithBackend')) {
+            throw "native_device.dll is missing NativeDevice_CreateWithBackend export"
+          }
+          Write-Host "Exports verified."
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: native-${{ matrix.rid }}
+          path: staging/${{ matrix.rid }}/native/*
+          if-no-files-found: error
+
+  # Opens a PR that copies the freshly built binaries over the checked-in prebuilts.
+  # Runs only for a manual dispatch with update_repo = true. Never commits to a
+  # protected branch directly; a human reviews and merges the generated PR.
+  update-repo:
+    name: Open PR updating checked-in prebuilts
+    needs: [build-linux, build-windows]
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.update_repo }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all native artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: staging
+          pattern: native-*
+
+      - name: Copy artifacts over checked-in prebuilts
+        run: |
+          set -euo pipefail
+          base="libs/storage/Tsavorite/cs/src/core/Device/runtimes"
+          for d in staging/native-*; do
+            rid="$(basename "$d" | sed 's/^native-//')"
+            echo "Updating runtimes/$rid/native/"
+            mkdir -p "$base/$rid/native"
+            cp -f "$d"/* "$base/$rid/native/"
+          done
+          # Keep executable bit off Windows binaries, on for .so
+          find "$base" -name '*.so' -exec chmod 755 {} +
+          git status --porcelain "$base"
+
+      - name: Create or update pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          base="libs/storage/Tsavorite/cs/src/core/Device/runtimes"
+          if [ -z "$(git status --porcelain "$base")" ]; then
+            echo "No changes to the checked-in prebuilts; nothing to do."
+            exit 0
+          fi
+          branch="bot/update-native-device-binaries"
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -B "$branch"
+          git add "$base"
+          git commit -m "[Tsavorite] Update prebuilt native device binaries
+
+          Regenerated by the Build Native Device workflow (run ${{ github.run_id }})."
+          git push --force-with-lease --set-upstream origin "$branch"
+          if gh pr view "$branch" --json number >/dev/null 2>&1; then
+            echo "PR already open for $branch; branch updated."
+          else
+            gh pr create --base "${{ github.ref_name }}" --head "$branch" \
+              --title "[Tsavorite] Update prebuilt native device binaries" \
+              --body "Automated update of the checked-in native device prebuilts under \`$base\`, produced by the **Build Native Device** workflow (run ${{ github.run_id }}).
+
+          Each \`runtimes/<rid>/native/\` folder carries the uring-enabled \`libnative_device.so\`/\`native_device.dll\` and (on Linux) the libaio-only \`libnative_device_libaio.so\` fallback. Review the diff and the workflow logs, then merge to ship the refreshed binaries."
+          fi
