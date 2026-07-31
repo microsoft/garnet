@@ -41,6 +41,13 @@ namespace Garnet.cluster
         /// </summary>
         internal readonly DoubleTurnstileBarrier barrier;
 
+        long pendingPulseSequenceNumber;
+        long appliedPulseSequenceNumber;
+        long stagedPulseSequenceNumber;
+        readonly int directVirtualSublogIdx;
+
+        internal long StagedPulseSequenceNumber => Volatile.Read(ref stagedPulseSequenceNumber);
+
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool ResumeReplay() => activeWorkerMonitor.TryEnter();
 
@@ -67,6 +74,7 @@ namespace Garnet.cluster
             replayIterator = null;
             activeWorkerMonitor = new();
             physicalSublog = appendOnlyFile.Log.GetSubLog(physicalSublogIdx);
+            directVirtualSublogIdx = appendOnlyFile.GetVirtualSublogIdx(physicalSublogIdx, 0);
             this.cts = cts;
             this.logger = logger;
 
@@ -211,8 +219,65 @@ namespace Garnet.cluster
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void Throttle()
-        { }
+            => TryApplyPendingPulse();
         #endregion
+
+        public void SignalTimeAdvance(long sequenceNumber)
+        {
+            if (sequenceNumber <= Volatile.Read(ref pendingPulseSequenceNumber))
+                return;
+            Volatile.Write(ref pendingPulseSequenceNumber, sequenceNumber);
+
+            var sessionThreadOwnsReplay = serverOptions.ReplicationOffsetMaxLag == 0 || replayIterator == null;
+            if (!sessionThreadOwnsReplay || !ResumeReplay())
+                return;
+
+            try
+            {
+                TryApplyPendingPulse();
+            }
+            finally
+            {
+                SuspendReplay();
+            }
+        }
+
+        void TryApplyPendingPulse()
+        {
+            var pending = Volatile.Read(ref pendingPulseSequenceNumber);
+            if (pending <= appliedPulseSequenceNumber)
+                return;
+            if (replicationManager.GetSublogReplicationOffset(physicalSublogIdx) != physicalSublog.TailAddress)
+                return;
+
+            ApplyPulse(pending);
+            appliedPulseSequenceNumber = pending;
+        }
+
+        unsafe void ApplyPulse(long sequenceNumber)
+        {
+            if (serverOptions.AofReplayTaskCount == 1)
+            {
+                appendOnlyFile.readConsistencyManager.AdvanceVirtualSublogTime(directVirtualSublogIdx, sequenceNumber);
+                return;
+            }
+
+            Volatile.Write(ref stagedPulseSequenceNumber, sequenceNumber);
+            try
+            {
+                replayBatchContext.Record = null;
+                replayBatchContext.RecordLength = 0;
+                replayBatchContext.CurrentAddress = 0;
+                replayBatchContext.NextAddress = 0;
+                replayBatchContext.IsProtected = false;
+                barrier.SignalWorkReadyWait(serverOptions.ReplicaSyncTimeout, cts.Token);
+                barrier.SignalWorkCompletedWait(serverOptions.ReplicaSyncTimeout, cts.Token);
+            }
+            finally
+            {
+                Volatile.Write(ref stagedPulseSequenceNumber, 0);
+            }
+        }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void ValidateSublogIndex(int physicalSublogIdx)

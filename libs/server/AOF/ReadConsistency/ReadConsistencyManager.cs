@@ -157,6 +157,18 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Advances an idle virtual sublog from an in-band primary pulse and registers a
+        /// non-blocking arrival at any active replay-alignment round.
+        /// </summary>
+        /// <param name="virtualSublogIdx"></param>
+        /// <param name="sequenceNumber"></param>
+        public void AdvanceVirtualSublogTime(int virtualSublogIdx, long sequenceNumber)
+        {
+            vsrs[virtualSublogIdx].UpdateMaxSequenceNumber(sequenceNumber);
+            replayBarrier.CheckAndArrive(virtualSublogIdx, vsrs[virtualSublogIdx].Max);
+        }
+
+        /// <summary>
         /// Update max sequence number of virtual sublog associated with the specified virtual sublogIdx.
         /// </summary>
         /// <param name="virtualSublogIdx"></param>
