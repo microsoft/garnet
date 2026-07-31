@@ -134,7 +134,15 @@ namespace Device.benchmark
             }
             finally
             {
-                while (_benchmarkPool.Count < batchSize) Thread.Yield();
+                // Drain until every buffer this worker owns has returned. TryComplete() also
+                // flushes this thread's deferred read batch (opt-in GARNET_SUBMIT_BATCH), so a
+                // sub-threshold tail submitted during the last iterations is guaranteed to reach
+                // the kernel and complete here rather than stranding the shutdown wait.
+                while (_benchmarkPool.Count < batchSize)
+                {
+                    device.TryComplete();
+                    Thread.Yield();
+                }
                 // Authoritative throughput counter (successful ops only) is updated in the
                 // callback. We also publish the per-thread submission count for diagnostics
                 // (helps spot pathological submit/complete ratios under errors).

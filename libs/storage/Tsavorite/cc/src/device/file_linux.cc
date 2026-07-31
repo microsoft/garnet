@@ -529,6 +529,50 @@ inline void DispatchUringCqe(int io_res, UringIoHandler::IoCallbackContext* cont
     lss_allocator.Free(context);
 }
 
+// ---------------------------------------------------------------------------------------------
+// io_uring batched submit (opt-in via GARNET_SUBMIT_BATCH; default 1 == submit per-op == legacy).
+// Mirrors the libaio batch (FlushLibaioBatch): a submitter thread accumulates prepared READ SQEs
+// and defers io_uring_submit until a threshold, coalescing many reads into ONE submit syscall.
+// Only a thread that solely owns its ring (UringIoHandler::try_own_ring) defers; writes always
+// submit immediately (log-flush latency). Every deferred SQE already carries its io_context as
+// user_data, so once ANY later submit on the ring flushes it, exactly one completion is
+// dispatched. The managed completion/throttle path (NativeStorageDevice.TryComplete/
+// TryCompleteMine/FlushSubmits -> NativeDevice_FlushSubmits -> UringIoHandler::FlushSubmits)
+// flushes this thread's batch before it waits on in-flight completions, so a sub-threshold batch
+// can never stall the AllocatorBase.AsyncGetFromDisk throttle (no lost-flush deadlock).
+// ---------------------------------------------------------------------------------------------
+
+// Stable, nonzero per-thread id used to CAS ring ownership.
+inline uint64_t uring_thread_id() {
+    static std::atomic<uint64_t> g_next{ 0 };
+    thread_local uint64_t id = g_next.fetch_add(1, std::memory_order_relaxed) + 1;
+    return id;
+}
+
+// Batch size threshold read once from GARNET_SUBMIT_BATCH (shared with the libaio backend).
+// 1 (default/unset) disables batching -> byte-for-byte legacy per-op submit.
+inline size_t uring_batch_threshold() {
+    static const size_t threshold = [] {
+        const char* s = ::getenv("GARNET_SUBMIT_BATCH");
+        long n = (s != nullptr) ? ::atol(s) : 1;
+        if (n < 1) n = 1;
+        if (n > 1024) n = 1024;
+        return static_cast<size_t>(n);
+    }();
+    return threshold;
+}
+
+// Per-thread deferred-submit state. A thread holds deferred SQEs on AT MOST one ring at a time
+// (switching rings/handlers flushes the prior batch first), so a single slot suffices.
+struct UringSubmitBatch {
+    const UringIoHandler* handler = nullptr;  // handler whose ring holds the deferred SQEs
+    struct io_uring* ring = nullptr;          // ring the SQEs were prepared on
+    SpinLock* sq_lock = nullptr;              // that ring's SQ lock
+    int ring_idx = -1;                        // that ring's index (for drain-assist)
+    int pending = 0;                          // count of deferred, not-yet-submitted SQEs
+};
+thread_local UringSubmitBatch t_uring_batch;
+
 } // anonymous namespace
 
 bool UringIoHandler::TryComplete() {
@@ -672,10 +716,38 @@ int UringIoHandler::Wake(int idx) {
     return res >= 1 ? 0 : -1;
 }
 
-// io_uring backend does not accumulate a submit batch (it submits per-op today), so a flush is
-// a no-op. Present so NativeDeviceImpl<UringIoHandler> satisfies the INativeDevice interface.
+// Flush this thread's deferred io_uring READ batch for THIS handler, if any. Invoked by the
+// managed completion/throttle path before it waits on in-flight completions, guaranteeing a
+// sub-threshold batch is always submitted (no lost-flush stall). Returns the number of SQEs the
+// final submit reported flushing (0 if nothing was pending or a peer already flushed them).
 int UringIoHandler::FlushSubmits() {
-    return 0;
+    UringSubmitBatch& b = t_uring_batch;
+    if (b.pending <= 0 || b.handler != this) return 0;
+
+    int flushed = 0;
+    int retries = 0;
+    b.sq_lock->Acquire();
+    while (true) {
+        int res = io_uring_submit(b.ring);
+        if (res >= 1) { flushed = res; break; }     // our deferred SQEs reached the kernel
+        if (res == 0) break;                         // nothing to flush (a peer already did)
+        if (res == -EAGAIN || res == -EBUSY) {
+            // CQ ring full: help drain THIS ring's completions to free space, then retry so the
+            // deferred reads are never stranded behind a full CQ (would deadlock the throttle).
+            b.sq_lock->Release();
+            TryCompleteFor(b.ring_idx);
+            if (retries++ >= kSubmitYieldBudget) ::sched_yield();
+            b.sq_lock->Acquire();
+            continue;
+        }
+        break;                                       // permanent error: SQEs keep their user_data
+                                                     // and flush on the next submit/Wake.
+    }
+    b.sq_lock->Release();
+    // In all cases the deferred SQEs are now either in the kernel or still queued in the ring with
+    // valid user_data (flushed by the next submit); either way this thread no longer owes a flush.
+    b.pending = 0;
+    return flushed;
 }
 
 Status UringFile::Open(FileCreateDisposition create_disposition, const FileOptions& options,
@@ -731,7 +803,8 @@ Status UringFile::ScheduleOperation(FileOperationType operationType, uint8_t* bu
   // pick_ring distributes submissions across rings via atomic round-robin (single ring under N=1).
   struct io_uring* ring = nullptr;
   SpinLock* sq_lock = nullptr;
-  handler_->pick_ring(ring, sq_lock);
+  int ring_idx = -1;
+  handler_->pick_ring(ring, sq_lock, ring_idx);
 
   // Acquire an SQE. io_uring_get_sqe returns nullptr when the SQ ring is full; brief in-lock-free
   // yield budget, then unwind — same rationale and contract as the libaio path
@@ -746,9 +819,20 @@ Status UringFile::ScheduleOperation(FileOperationType operationType, uint8_t* bu
     sq_lock->Acquire();
     sqe = io_uring_get_sqe(ring);
     if (sqe != nullptr) break;
+    // SQ ring is full. If this thread has deferred (batched) SQEs sitting in THIS ring, submit
+    // them now to let the kernel consume the SQ and free a slot for the retry. This also upholds
+    // the invariant that we never unwind to a wait (Status::Pending) with un-submitted SQEs.
+    {
+      UringSubmitBatch& fb = t_uring_batch;
+      if (fb.pending > 0 && fb.handler == handler_ && fb.ring == ring) {
+        if (io_uring_submit(ring) >= 1) fb.pending = 0;  // still holding sq_lock
+      }
+    }
     sq_lock->Release();
     if (retries >= kSubmitYieldBudget) {
-      // Unwind to NativeDeviceImpl::SubmitWithEpoch to wait without holding the epoch.
+      // Flush any residual deferred SQEs (FlushSubmits is a no-op if none) so nothing is left
+      // un-submitted across the out-of-epoch wait, then unwind to SubmitWithEpoch.
+      handler_->FlushSubmits();
       return Status::Pending;
     }
     ::sched_yield();
@@ -762,6 +846,48 @@ Status UringFile::ScheduleOperation(FileOperationType operationType, uint8_t* bu
     io_uring_prep_writev(sqe, fd_, &io_context->vec_, 1, offset);
   }
   io_uring_sqe_set_data(sqe, io_context.get());
+
+  // ---- Batched submit fast path (opt-in; default threshold 1 == disabled == legacy) ----
+  // If batching is enabled, this is a READ, and this thread solely owns this ring, DEFER
+  // io_uring_submit: leave the prepared SQE (already carrying its io_context as user_data) in the
+  // SQ and return Ok without a submit syscall, coalescing many reads into one later submit. Writes
+  // always submit immediately below. `batched_owner` tells the tail to clear the batch counter
+  // once the accumulated SQEs are actually flushed.
+  bool batched_owner = false;
+  {
+    const size_t batch_threshold = uring_batch_threshold();
+    if (batch_threshold > 1 && is_read) {
+      UringSubmitBatch& b = t_uring_batch;
+      // A thread holds deferred SQEs on at most one ring; if it is switching to a different
+      // handler/ring, flush the prior batch first so those reads are never stranded (the managed
+      // FlushSubmits for that handler would no longer see them once we repurpose this slot).
+      if (b.pending > 0 && (b.handler != handler_ || b.ring != ring)) {
+        b.sq_lock->Acquire();
+        io_uring_submit(b.ring);
+        b.sq_lock->Release();
+        b.pending = 0;
+      }
+      if (handler_->try_own_ring(ring_idx, uring_thread_id())) {
+        batched_owner = true;
+        b.handler = handler_;
+        b.ring = ring;
+        b.sq_lock = sq_lock;
+        b.ring_idx = ring_idx;
+        ++b.pending;
+        if (static_cast<size_t>(b.pending) < batch_threshold) {
+          // Under threshold: hand io_context ownership to the queued SQE and return without a
+          // submit syscall. The SQE flushes when the batch fills, on the next op, or when the
+          // managed layer calls FlushSubmits before waiting.
+          sq_lock->Release();
+          caller_copy_guard.release();
+          io_context.release();
+          return Status::Ok;
+        }
+        // Threshold reached: fall through to submit the whole accumulated batch now.
+      }
+      // Not the ring owner (shared ring): fall through to immediate per-op submit.
+    }
+  }
 
   // Submit. io_uring_submit() flushes ALL SQEs pending in this ring's SQ ring (everything between
   // the kernel-consumed head and our just-prepared SQE at the tail) and returns the COUNT flushed
@@ -804,11 +930,16 @@ Status UringFile::ScheduleOperation(FileOperationType operationType, uint8_t* bu
   sq_lock->Release();
   if (res < 1) {
     // RAII frees io_context/caller_context_copy on return. Unwind -> SubmitWithEpoch retries the
-    // whole op outside the epoch; a permanent error surfaces to the caller.
+    // whole op outside the epoch; a permanent error surfaces to the caller. Any prior deferred
+    // SQEs remain live in the ring (valid user_data) and flush on the retry's/next submit, so
+    // clear our batch counter to avoid re-counting them.
+    if (batched_owner) t_uring_batch.pending = 0;
     return unwind ? Status::Pending : Status::IOError;
   }
 
-  // res >= 1: ownership transferred to the kernel.
+  // res >= 1: ownership transferred to the kernel. A batched submit flushed the whole accumulated
+  // run (io_uring_submit drains every queued SQE), so the batch is now empty.
+  if (batched_owner) t_uring_batch.pending = 0;
   caller_copy_guard.release();
   io_context.release();
   return Status::Ok;

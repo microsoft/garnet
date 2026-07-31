@@ -592,6 +592,31 @@ class UringIoHandler {
     lock_out = sq_locks_[idx];
   }
 
+  /// pick_ring overload that also returns the chosen ring index (needed by the batched-submit
+  /// path for ring ownership + FlushSubmits/drain-assist targeting).
+  void pick_ring(struct io_uring*& ring_out, SpinLock*& lock_out, int& idx_out) {
+    int idx = pick_ring_index();
+    idx_out = idx;
+    ring_out = rings_[idx];
+    lock_out = sq_locks_[idx];
+  }
+
+  /// Try to claim exclusive batch-submit ownership of ring `idx` for thread `tid` (nonzero).
+  /// Deferring io_uring_submit is only safe when the calling thread is the SOLE submitter on a
+  /// ring; otherwise a peer thread's submit would flush this thread's not-yet-accounted SQEs.
+  /// Ownership is sticky (first claimant wins, released only at teardown), consistent with
+  /// pick_ring_index()'s stable thread->ring affinity. When more submitters than rings share a
+  /// ring, one thread wins ownership and the rest fall back to immediate per-op submit.
+  bool try_own_ring(int idx, uint64_t tid) {
+    if (idx < 0 || idx >= static_cast<int>(ring_owner_.size())) return false;
+    std::atomic<uint64_t>& owner = *ring_owner_[idx];
+    uint64_t cur = owner.load(std::memory_order_relaxed);
+    if (cur == tid) return true;
+    if (cur != 0) return false;
+    uint64_t expected = 0;
+    return owner.compare_exchange_strong(expected, tid, std::memory_order_relaxed);
+  }
+
   /// Drain ONLY the calling thread's affine ring (mirrors QueueIoHandler::TryCompleteMine).
   bool TryCompleteMine() {
     return TryCompleteFor(pick_ring_index());
@@ -677,6 +702,10 @@ private:
       sq_locks_.push_back(sq_locks[i].release());
       cq_locks_.push_back(cq_locks[i].release());
     }
+    ring_owner_.reserve(num_rings);
+    for (int i = 0; i < num_rings; ++i) {
+      ring_owner_.push_back(std::make_unique<std::atomic<uint64_t>>(0));
+    }
   }
 
   /// The io_urings for all the I/Os. Size == num_contexts(). All entries non-null once initialized.
@@ -689,6 +718,10 @@ private:
   std::vector<SpinLock*> cq_locks_;
   /// Round-robin submit counter; only consulted when rings_.size() > 1.
   std::atomic<uint64_t> submit_counter_{ 0 };
+  /// Per-ring batch-submit owner thread id (0 == unowned). A submitter CASes its nonzero id in to
+  /// earn permission to DEFER io_uring_submit on that ring (see try_own_ring); unowned or foreign
+  /// rings always submit per-op. One atomic per ring; index-aligned with rings_.
+  std::vector<std::unique_ptr<std::atomic<uint64_t>>> ring_owner_;
   /// Per-ring io_uring SQ depth passed to io_uring_queue_init(). Power of two, defaulted to
   /// (and floored at) kMaxEvents; sized up from the device throttle limit by the 3-arg ctor.
   int max_events_ = kMaxEvents;
