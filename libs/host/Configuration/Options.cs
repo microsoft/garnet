@@ -426,6 +426,9 @@ namespace Garnet
         [Option("replica-offset-max-lag", Required = false, HelpText = "Throttle ClusterAppendLog when replica.AOFTailAddress - ReplicationOffset > ReplicationOffsetMaxLag. 0: Synchronous replay,  >=1: background replay with specified lag, -1: infinite lag")]
         public int ReplicationOffsetMaxLag { get; set; }
 
+        [Option("aof-ship-max-lag", Required = false, HelpText = "Stall primary AOF appends when the replication lag exceeds this budget, divided evenly per sublog (each sublog stalls at an even 1/m share). -1: disabled, >=1: max lag in bytes.")]
+        public long AofShipMaxLag { get; set; }
+
         [OptionValidation]
         [Option("main-memory-replication", Required = false, HelpText = "Use main-memory replication model.")]
         public bool? MainMemoryReplication { get; set; }
@@ -943,6 +946,7 @@ namespace Garnet
                 EnableScatterGatherGet = EnableScatterGatherGet.GetValueOrDefault(true),
                 ReplicaSyncDelayMs = ReplicaSyncDelayMs,
                 ReplicationOffsetMaxLag = ReplicationOffsetMaxLag,
+                AofShipMaxLag = AofShipMaxLag,
                 FastAofTruncate = GetFastAofTruncate(logger),
                 OnDemandCheckpoint = OnDemandCheckpoint.GetValueOrDefault(),
                 ReplicaDisklessSync = ReplicaDisklessSync.GetValueOrDefault(),

@@ -100,7 +100,7 @@ namespace Garnet.cluster
 
             aofSyncTasks = new AofSyncTask[clusterProvider.serverOptions.AofPhysicalSublogCount];
             for (var physicalSublogIdx = 0; physicalSublogIdx < aofSyncTasks.Length; physicalSublogIdx++)
-                aofSyncTasks[physicalSublogIdx] = new AofSyncTask(clusterProvider, physicalSublogIdx, endPoint, startAddress[physicalSublogIdx], localNodeId, remoteNodeId, cts, logger);
+                aofSyncTasks[physicalSublogIdx] = new AofSyncTask(clusterProvider, aofSyncDriverStore, physicalSublogIdx, endPoint, startAddress[physicalSublogIdx], localNodeId, remoteNodeId, cts, logger);
         }
 
         /// <summary>

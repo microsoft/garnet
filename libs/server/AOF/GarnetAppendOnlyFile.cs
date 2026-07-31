@@ -35,6 +35,13 @@ namespace Garnet.server
         /// </summary>
         public GarnetLog Log { get; private set; }
 
+        /// <summary>
+        /// Primary-side replication backpressure gate. The cluster layer publishes each physical
+        /// sublog's min shipped address into it; the append paths in <see cref="GarnetLog"/> stall
+        /// on it. Null unless AofShipMaxLag is set.
+        /// </summary>
+        public readonly AofBackpressure backpressure;
+
         public readonly GarnetServerOptions serverOptions;
 
         public long HeaderSize => Log.HeaderSize;
@@ -71,13 +78,19 @@ namespace Garnet.server
             if (serverOptions.AofPhysicalSublogCount > 1)
                 seqNumGen = new SequenceNumberGenerator(0);
             this.logger = logger;
+            // Must be before Log is constructed, which caches it for the append paths.
+            backpressure = serverOptions.AofShipMaxLag > 0 ? new AofBackpressure(serverOptions, logger) : null;
             Log = new(this, serverOptions, logSettings, logger);
         }
 
         /// <summary>
         /// Dispose append only file
         /// </summary>
-        public void Dispose() => Log.Dispose();
+        public void Dispose()
+        {
+            backpressure?.Dispose();
+            Log.Dispose();
+        }
 
         /// <summary>
         /// Get a sequence number that is strictly greater than any sequence number assigned to records
