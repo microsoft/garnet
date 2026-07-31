@@ -95,34 +95,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # CMakeLists builds with /Qspectre /guard:cf /sdl, which require the matching
-      # Spectre-mitigated CRT libraries. x64's are preinstalled on the hosted image;
-      # ensure both x64 and ARM64 Spectre components are present so either target links.
-      - name: Ensure MSVC Spectre-mitigated libraries
-        shell: pwsh
-        run: |
-          $vsWhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
-          $installPath = & $vsWhere -latest -products * -property installationPath
-          $installer = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\setup.exe"
-          $components = @(
-            "Microsoft.VisualStudio.Component.VC.Runtimes.x86.x64.Spectre",
-            "Microsoft.VisualStudio.Component.VC.Runtimes.ARM64.Spectre",
-            "Microsoft.VisualStudio.Component.VC.Tools.ARM64"
-          )
-          $args = @("modify", "--installPath", "`"$installPath`"", "--quiet", "--norestart", "--nocache")
-          foreach ($c in $components) { $args += @("--add", $c) }
-          Write-Host "Ensuring components: $($components -join ', ')"
-          $p = Start-Process -FilePath $installer -ArgumentList $args -Wait -PassThru -NoNewWindow
-          # 0 = success, 3010 = success/reboot required; anything else is only a warning here
-          if ($p.ExitCode -ne 0 -and $p.ExitCode -ne 3010) {
-            Write-Warning "VS installer exited with $($p.ExitCode); the required Spectre libs may already be present."
-          }
-
       - name: Configure and build
         shell: pwsh
         run: |
           cd libs/storage/Tsavorite/cc
-          cmake -G "Visual Studio 17 2022" -A ${{ matrix.arch }} -B build
+          # Let CMake pick the installed Visual Studio generator (the hosted image's VS major
+          # version changes over time, e.g. 2022 -> 2026); -A selects the target architecture.
+          # The hosted Windows image already includes the Spectre-mitigated CRT that CMakeLists
+          # requires via /Qspectre, and the ARM64 VC toolset, so no extra component install is needed.
+          cmake -A ${{ matrix.arch }} -B build
           cmake --build build --config Release
 
       - name: Stage artifacts
@@ -136,7 +117,8 @@ jobs:
       - name: Verify exports
         shell: pwsh
         run: |
-          $dumpbin = (Get-ChildItem "C:\Program Files\Microsoft Visual Studio\2022\*\VC\Tools\MSVC\*\bin\Hostx64\x64\dumpbin.exe" | Select-Object -First 1).FullName
+          $vsPath = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath
+          $dumpbin = (Get-ChildItem "$vsPath\VC\Tools\MSVC\*\bin\Hostx64\x64\dumpbin.exe" | Select-Object -First 1).FullName
           $exports = & $dumpbin /exports "staging/${{ matrix.rid }}/native/native_device.dll"
           if (-not ($exports | Select-String 'NativeDevice_CreateWithBackend')) {
             throw "native_device.dll is missing NativeDevice_CreateWithBackend export"
