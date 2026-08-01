@@ -330,5 +330,74 @@ namespace Tsavorite.test.recovery
                 objlog.Dispose();
             }
         }
+
+        /// <summary>
+        /// FoldOver-recovers multiple records whose overflow VALUE is headered (> 1023 bytes: a leading ChunkHeader precedes the data).
+        /// FoldOver recovery reuses the on-disk object bytes in place and reconstructs each record's object-log position by accumulating
+        /// per-record extents; if that accumulation advances by the data length only (omitting the ChunkHeader + any DMA/straddle padding),
+        /// the second and later records' reconstructed positions drift earlier and read back corrupted. Every value must read back
+        /// byte-for-byte, which fails if the extent accounting under-counts a headered value.
+        /// </summary>
+        [Test]
+        [Category("TsavoriteKV"), Category("CheckpointRestore")]
+        public async Task RecoverFoldOverHeaderedOverflowValue([Values(2000, 200000)] int headeredLen)
+        {
+            const int numRecords = 4;   // multiple headered records so any per-record extent drift compounds and is detected
+
+            static byte[] MakeValue(int key, int len) { var v = new byte[len]; new Span<byte>(v).Fill((byte)(0x41 + key)); return v; }
+
+            var dir = MethodTestDir;
+            var checkpointDir = Path.Combine(dir, "checkpoints");
+            IDevice log = Devices.CreateLogDevice(Path.Combine(dir, "hlog.log"), deleteOnClose: false);
+            IDevice objlog = Devices.CreateLogDevice(Path.Combine(dir, "hlog.obj.log"), deleteOnClose: false);
+            try
+            {
+                Guid token;
+                using (var store1 = CreateOverflowStore(log, objlog, checkpointDir, 1L << 26))
+                {
+                    using (var session = store1.NewSession<TestObjectKey, TestLargeObjectInput, TestLargeObjectOutput, Empty, TestLargeObjectFunctions>(new TestLargeObjectFunctions()))
+                    {
+                        var bContext = session.BasicContext;
+                        for (var key = 0; key < numRecords; key++)
+                            _ = bContext.Upsert(new TestObjectKey { key = key }, MakeValue(key, headeredLen).AsSpan(), Empty.Default);
+                    }
+                    var (success, checkpointToken) = await store1.TakeFullCheckpointAsync(CheckpointType.FoldOver).ConfigureAwait(false);
+                    ClassicAssert.IsTrue(success);
+                    token = checkpointToken;
+                }
+
+                var store2 = CreateOverflowStore(log, objlog, checkpointDir, 1L << 26);
+                _ = await store2.RecoverAsync(default, token).ConfigureAwait(false);
+                try
+                {
+                    using var session = store2.NewSession<TestObjectKey, TestLargeObjectInput, TestLargeObjectOutput, Empty, TestLargeObjectFunctions>(new TestLargeObjectFunctions());
+                    var bContext = session.BasicContext;
+                    for (var key = 0; key < numRecords; key++)
+                    {
+                        TestLargeObjectInput input = new() { wantValueStyle = TestValueStyle.Overflow, expectedSpanLength = headeredLen };
+                        TestLargeObjectOutput output = new();
+                        var status = bContext.Read(new TestObjectKey { key = key }, ref input, ref output, Empty.Default);
+                        if (status.IsPending)
+                        {
+                            ClassicAssert.IsTrue(bContext.CompletePendingWithOutputs(out var completedOutputs, wait: true));
+                            (status, output) = GetSinglePendingResult(completedOutputs);
+                        }
+                        ClassicAssert.IsTrue(status.Found, $"key {key} not found");
+                        ClassicAssert.AreEqual(headeredLen, output.valueArray.Length, $"key {key} wrong length");
+                        var badIndex = new ReadOnlySpan<byte>(output.valueArray).IndexOfAnyExcept((byte)(0x41 + key));
+                        ClassicAssert.AreEqual(-1, badIndex, $"key {key} unexpected byte at index {badIndex}");
+                    }
+                }
+                finally
+                {
+                    store2.Dispose();
+                }
+            }
+            finally
+            {
+                log.Dispose();
+                objlog.Dispose();
+            }
+        }
     }
 }
