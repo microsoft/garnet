@@ -1009,6 +1009,17 @@ namespace Tsavorite.core
             int requestedIoContexts = numIoContexts <= 0 ? this.numCompletionThreadsConfig : numIoContexts;
             if (requestedIoContexts < this.numCompletionThreadsConfig)
                 requestedIoContexts = this.numCompletionThreadsConfig;
+            // Optional override to decouple the io_uring ring count from the completion-thread
+            // (drainer) count. Giving each submitter thread its own ring (rings >= submitter
+            // threads) avoids the shared-ring non-owner submit path. Clamped up to
+            // numCompletionThreads so every drainer owns at least one ring.
+            if (Environment.GetEnvironmentVariable("GARNET_DEVICE_IO_CONTEXTS") is string ioCtxEnv &&
+                int.TryParse(ioCtxEnv, out var envIoContexts) && envIoContexts > 0)
+            {
+                requestedIoContexts = envIoContexts < this.numCompletionThreadsConfig
+                    ? this.numCompletionThreadsConfig : envIoContexts;
+                Console.Error.WriteLine($"[io-contexts] GARNET_DEVICE_IO_CONTEXTS override: rings={requestedIoContexts} drainers={this.numCompletionThreadsConfig}");
+            }
             this.numIoContextsConfig = requestedIoContexts;
             this.ioBackendConfig = ioBackend;
             this.logger = logger;
