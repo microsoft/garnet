@@ -69,11 +69,21 @@ namespace Garnet.cluster
         }
 
         /// <summary>
-        /// Return previous address for a specific sublog without copying the full AofAddress struct
+        /// Return previous address for a specific sublog without copying the full AofAddress struct.
+        /// This is the address actually shipped (Consume'd) to the replica, used to bound AOF
+        /// truncation conservatively.
         /// </summary>
         /// <param name="physicalSublogIdx">Index of the physical sublog.</param>
         /// <returns>The previous address of the specified sublog's sync task.</returns>
         public long GetPreviousAddress(int physicalSublogIdx) => aofSyncTasks[physicalSublogIdx].PreviousAddress;
+
+        /// <summary>
+        /// Return the shipped watermark address for a specific sublog (the monotonic high-water this
+        /// replica's sync task has shipped/scanned past), used to drive the backpressure gate.
+        /// </summary>
+        /// <param name="physicalSublogIdx">Index of the physical sublog.</param>
+        /// <returns>The shipped watermark address of the specified sublog's sync task.</returns>
+        public long GetShippedWatermarkAddress(int physicalSublogIdx) => aofSyncTasks[physicalSublogIdx].ShippedWatermarkAddress;
 
         /// <summary>
         /// Return start address for a specific sublog without copying the full AofAddress struct
