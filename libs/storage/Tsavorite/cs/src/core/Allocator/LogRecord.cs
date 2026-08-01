@@ -1503,7 +1503,7 @@ namespace Tsavorite.core
         /// framing. The objectId slots at keyAddress/valueAddress are left untouched (so this is safe on the live main-log record), and the
         /// ObjectLogPosition word is written with the ReuseObjectIdForSize flag cleared, marking the record as hint-format for the reader.
         /// </remarks>
-        internal readonly void SetObjectLogPositionAndLengthHints(in ObjectLogFilePositionInfo objectLogFilePosition, ulong valueObjectLength)
+        internal readonly void SetObjectLogPositionAndLengthHints(in ObjectLogFilePositionInfo objectLogFilePosition, ulong valueObjectLength, int valueAlignmentPadding = 0)
         {
             if (DataHeader.RecordIsInline)   // ValueIsInline is true; if the record is fully inline, we should not be called here
             {
@@ -1520,8 +1520,8 @@ namespace Tsavorite.core
             *objectLogPositionPtr = objectLogFilePosition.word;
 
             // Read the out-of-line lengths (from the objectIdMap for overflow; the passed value for an object) and write them as RDH
-            // hints (SetOverflowLengthHints caps at the sentinel for a length at or above the field maximum). The objectId slots are left
-            // untouched, so this is safe on the live record.
+            // hints. For an overflow value the writer's O_DIRECT alignment padding is included in the page-count read hint. The objectId
+            // slots are left untouched, so this is safe on the live record.
             var keyLen = 0;
             if (dataHeader.KeyIsOverflow)
             {
@@ -1529,7 +1529,7 @@ namespace Tsavorite.core
                 keyLen = objectIdMap.GetOverflowByteArray(*(int*)keyAddress).Length;
             }
             var valLen = dataHeader.ValueIsOverflow ? (long)objectIdMap.GetOverflowByteArray(*(int*)valueAddress).Length : (long)valueObjectLength;
-            dataHeader.SetObjectLogLengthHints(keyLen, valLen);
+            dataHeader.SetObjectLogLengthHints(keyLen, valLen, valueAlignmentPadding);
 
             // Atomic publish via SetDataHeader.
             SetDataHeader(dataHeader);

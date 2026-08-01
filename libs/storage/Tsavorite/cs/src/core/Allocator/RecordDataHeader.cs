@@ -433,7 +433,7 @@ namespace Tsavorite.core
         /// ChunkHeader when it is at/above the sentinel).</summary>
         /// <param name="keyActualLength">Actual overflow key length (applied only when the key is overflow).</param>
         /// <param name="valueActualLength">Actual overflow value or serialized object length (applied only when the value is out of line).</param>
-        public void SetObjectLogLengthHints(int keyActualLength, long valueActualLength)
+        public void SetObjectLogLengthHints(int keyActualLength, long valueActualLength, int valueAlignmentPadding = 0)
         {
             if (KeyIsOverflow)
                 KeyLength = keyActualLength >= (int)kKeyLengthLowBitsMask ? (int)kKeyLengthLowBitsMask : keyActualLength;
@@ -442,9 +442,11 @@ namespace Tsavorite.core
             else if (ValueIsOverflow)
             {
                 // Overflow value uses the v2.2 encoding: headerless exact size when <= 1023, else a leading ChunkHeader + a 4 KB-page-count
-                // (or sentinel) read hint. The buffered on-disk extent is data (headerless) else ChunkHeader.TotalSize + data; DMA alignment
-                // padding (>= MaxCopySpanLen) adds to the extent and is threaded from the writer in the DMA path (0 on the buffered path).
-                var extent = valueActualLength <= kOutOfLineExactSizeCutoff ? valueActualLength : ChunkHeader.TotalSize + valueActualLength;
+                // (or sentinel) read hint. The on-disk extent = data (headerless) else ChunkHeader.TotalSize + DMA alignment padding + data;
+                // the padding is 0 on the buffered write path and the O_DIRECT padding the writer applied on the DMA path.
+                var extent = valueActualLength <= kOutOfLineExactSizeCutoff
+                    ? valueActualLength
+                    : ChunkHeader.TotalSize + valueAlignmentPadding + valueActualLength;
                 ValueLength = (int)EncodeFlushOutOfLineValue(valueActualLength, extent);
             }
         }

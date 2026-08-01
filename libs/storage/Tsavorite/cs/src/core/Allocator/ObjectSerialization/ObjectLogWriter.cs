@@ -3,7 +3,6 @@
 
 using System;
 using System.Diagnostics;
-using System.Runtime.InteropServices;
 using System.Threading;
 using static Tsavorite.core.Utility;
 
@@ -40,17 +39,15 @@ namespace Tsavorite.core
         internal const int MaxCopySpanLen = 128 * 1024;
 
         /// <summary>
-        /// Gates the zero-copy direct-DMA write of large overflow key/value spans (the <c>else</c> branch of <see cref="WriteDirect(OverflowByteArray, ReadOnlySpan{byte}, RefCountedPinnedGCHandle)"/>).
-        /// Currently <c>false</c>: that path DMAs straight from a GC-pinned managed <see cref="OverflowByteArray"/> byte[], whose address is only
-        /// 8-byte aligned, but every Garnet device requires sector-aligned I/O (buffer, offset, and length) on the O_DIRECT path, so it throws on
-        /// the native device; its multi-segment sub-path also has latent bugs. Until a proper zero-copy fix lands (sector-aligned source + gap-aware
-        /// recovery/reader/read-ahead + a correct iterative multi-segment writer), all overflow spans are routed through the sector-aligned buffered
-        /// <see cref="Write(ReadOnlySpan{byte}, System.Threading.CancellationToken)"/> path. The direct-DMA code below is intentionally retained for
-        /// that follow-up; fix its known recursion/alignment bugs before re-enabling.
-        /// It is deliberately <c>static readonly</c> (not <c>const</c>) so the retained direct-DMA branch stays reachable and never trips an
-        /// unreachable-code diagnostic (CS0162) under <c>TreatWarningsAsErrors</c>, regardless of how the gate condition below is later refactored.
+        /// Enables the zero-copy direct-DMA write of large overflow key/value spans (> <see cref="MaxCopySpanLen"/>) in
+        /// <see cref="WriteOverflowDma(in OverflowByteArray)"/>: the ChunkHeader + alignment padding + a small source-alignment initial
+        /// fragment are copied through the buffer so the DMA disk offset lands on a sector boundary while the DMA source (the pinned byte[]
+        /// data) is also sector-aligned; the sector-aligned interior is DMA'd straight from the byte[], and a small end fragment (plus any
+        /// remainder past a 1 GB segment boundary) is copied through the buffer. Set to <c>false</c> to route all overflow spans through the
+        /// sector-aligned buffered <see cref="Write(ReadOnlySpan{byte}, System.Threading.CancellationToken)"/> path (identical on-disk output).
+        /// Deliberately <c>static readonly</c> (not <c>const</c>) so both branches of the gate stay reachable under <c>TreatWarningsAsErrors</c>.
         /// </summary>
-        static readonly bool EnableDirectObjectLogWrite = false;
+        static readonly bool EnableDirectObjectLogWrite = true;
 
         /// <summary>If true, we are in the Serialize call. If not we ignore things like <see cref="valueObjectBytesWritten"/> etc.</summary>
         bool inSerialize;
@@ -107,24 +104,22 @@ namespace Tsavorite.core
         /// <returns>The number of bytes written for the value object, if any.</returns>
         public ulong WriteRecordObjects(in OverflowByteArray keyOverflow, in OverflowByteArray valueOverflow, in IHeapObject valueObject)
         {
-            // If the key is overflow, start with that. A key at/above the RDH KeyLength sentinel carries its full length in a leading
-            // ChunkHeader (the RDH KeyLength field holds only the sentinel); below the sentinel the RDH holds the exact length (no header).
+            lastValueAlignmentPadding = 0;
+
+            // If the key is overflow, start with that. A key at/above the RDH KeyLength sentinel (1023) carries its full length in a leading
+            // ChunkHeader; below the sentinel the RDH holds the exact length (no header). The key's DMA alignment padding is recovered by the
+            // reader from the ChunkHeader (it is not encoded in the RDH sentinel), so it is not threaded back here.
             if (!keyOverflow.IsEmpty)
-            {
-                if (keyOverflow.Length >= (int)RecordDataHeader.kKeyLengthLowBitsMask)
-                    WriteOverflowChunkHeader(keyOverflow.Length);
-                WriteDirect(keyOverflow);
-            }
+                _ = WriteOverflowComponent(keyOverflow, hasHeader: keyOverflow.Length >= (int)RecordDataHeader.kKeyLengthLowBitsMask);
 
             // Now do value overflow or object, if either is present.
             if (!valueOverflow.IsEmpty)
             {
-                // Overflow value uses the v2.2 encoding: a value > kOutOfLineExactSizeCutoff (1023) carries its full length in a leading
-                // ChunkHeader (the RDH ValueLength holds only a 4 KB-page/sentinel read hint plus the has-header bit); a value <= 1023 is
-                // headerless (the RDH holds the exact length, isExactSize).
-                if (valueOverflow.Length > RecordDataHeader.kOutOfLineExactSizeCutoff)
-                    WriteOverflowChunkHeader(valueOverflow.Length);
-                WriteDirect(valueOverflow);
+                // Overflow value uses the v2.2 encoding: a value > kOutOfLineExactSizeCutoff (1023) carries its full length (and any DMA
+                // alignment padding) in a leading ChunkHeader, and the RDH ValueLength encodes a 4 KB-page/sentinel read hint (which must
+                // include the padding) plus the has-header bit; a value <= 1023 is headerless (exact length in the RDH). The value's
+                // alignment padding is threaded back so the RDH page-count read hint spans the header + padding + data.
+                lastValueAlignmentPadding = WriteOverflowComponent(valueOverflow, hasHeader: valueOverflow.Length > RecordDataHeader.kOutOfLineExactSizeCutoff);
             }
             else if (valueObject is not null)
                 DoSerialize(valueObject);
@@ -134,13 +129,39 @@ namespace Tsavorite.core
             return valueObjectBytesWritten;
         }
 
-        /// <summary>Write the 8-byte <see cref="ChunkHeader"/> that precedes an overflow key/value whose length is at/above the RDH field
-        /// sentinel: <see cref="ChunkHeader.currentLength"/> carries the full length (single header, no continuation; DMA alignment padding
-        /// is 0 on the buffered write path). See website/docs/dev/objectlog-serialization.md.</summary>
-        void WriteOverflowChunkHeader(int overflowLength)
+        /// <summary>The O_DIRECT alignment padding (bytes between the ChunkHeader and the sector-aligned data start) applied to the most
+        /// recently written overflow VALUE; 0 for a buffered or headerless value. Read by <see cref="LogRecord.SetObjectLogPositionAndLengthHints"/>
+        /// so the RDH page-count read hint spans header + padding + data. Reset at the start of each <see cref="WriteRecordObjects"/>.</summary>
+        internal int lastValueAlignmentPadding;
+
+        /// <summary>Write one overflow component (key or value): its leading <see cref="ChunkHeader"/> (when <paramref name="hasHeader"/>) and
+        /// its bytes. Large components (> <see cref="MaxCopySpanLen"/>) are written mostly by direct O_DIRECT DMA from the pinned byte[] (see
+        /// <see cref="WriteOverflowDma"/>); smaller ones are copied through the sector-aligned write buffer. Returns the DMA alignment padding
+        /// applied (0 for the buffered path).</summary>
+        int WriteOverflowComponent(in OverflowByteArray overflow, bool hasHeader)
+        {
+            if (EnableDirectObjectLogWrite && overflow.Length > MaxCopySpanLen)
+            {
+                Debug.Assert(hasHeader, $"A DMA-eligible overflow (length {overflow.Length} > {MaxCopySpanLen}) must always have a header");
+                return WriteOverflowDma(overflow);
+            }
+
+            // Buffered path: header (no DMA padding) then the data copied through the buffer.
+            if (hasHeader)
+                WriteOverflowChunkHeader(overflow.Length, alignmentPadding: 0);
+            Write(overflow.ReadOnlySpan);
+            return 0;
+        }
+
+        /// <summary>Write the 8-byte <see cref="ChunkHeader"/> that precedes an overflow key/value with a leading header:
+        /// <see cref="ChunkHeader.currentLength"/> carries the full length (single header, no continuation) and
+        /// <see cref="ChunkHeader.alignmentPadding"/> the O_DIRECT alignment padding between the header and the sector-aligned data start
+        /// (0 on the buffered path). See website/docs/dev/objectlog-serialization.md.</summary>
+        void WriteOverflowChunkHeader(int overflowLength, uint alignmentPadding)
         {
             ChunkHeader header = default;
             header.currentLength = (uint)overflowLength;
+            header.alignmentPadding = alignmentPadding;
             Write(new ReadOnlySpan<byte>(&header, ChunkHeader.TotalSize));
         }
 
@@ -181,92 +202,75 @@ namespace Tsavorite.core
             flushBuffers.OnRecordComplete();
         }
 
-        /// <summary>Start off the write using the full span of the <see cref="OverflowByteArray"/>.</summary>
-        /// <param name="overflow">The <see cref="OverflowByteArray"/> to write.</param>
-        void WriteDirect(OverflowByteArray overflow) => WriteDirect(overflow, overflow.ReadOnlySpan, refCountedGCHandle: default);
-
-        /// <summary>Write the <paramref name="fullDataSpan"/> of the <paramref name="overflow"/>.</summary>
-        /// <param name="overflow">The <see cref="OverflowByteArray"/> to write.</param>
-        /// <param name="fullDataSpan">The span of <paramref name="overflow"/> to write. Initially it is the full <paramref name="overflow"/>; if the write
-        ///   spans segments, then it is a recursive call for the last segment's fraction.</param>
-        /// <param name="refCountedGCHandle">The refcounted GC handle if this is a recursive call</param>
-        void WriteDirect(OverflowByteArray overflow, ReadOnlySpan<byte> fullDataSpan, RefCountedPinnedGCHandle refCountedGCHandle)
+        /// <summary>Write a large overflow (key or value) mostly by direct O_DIRECT DMA from its pinned byte[], avoiding a copy through the
+        /// write buffer. Layout on disk: [ChunkHeader][alignmentPadding][data]. The ChunkHeader + alignment padding + a small source-alignment
+        /// initial fragment are copied through the buffer so the DMA disk offset lands on a sector boundary while the DMA source (the pinned
+        /// byte[] data) is also sector-aligned; the sector-aligned interior is DMA'd straight from the byte[]; a small end fragment (and any
+        /// remainder past a 1 GB segment boundary) is copied through the buffer. Returns the alignment padding (bytes after the header before
+        /// the data). See website/docs/dev/objectlog-serialization.md.</summary>
+        int WriteOverflowDma(in OverflowByteArray overflow)
         {
-            // Route through the sector-aligned buffered Write() path unless the direct-DMA path is explicitly enabled (see EnableDirectObjectLogWrite).
-            if (!EnableDirectObjectLogWrite || overflow.Length <= MaxCopySpanLen)
-                Write(fullDataSpan);
-            else
+            var sectorSize = (int)device.SectorSize;
+            var length = overflow.Length;
+            var dataSpan = overflow.ReadOnlySpan;
+
+            var gcHandle = overflow.Pin();
+            var gcHandleIssued = false;
+            try
             {
-                // 1. Write the sector-aligning start fragment into the buffers and flush the current buffer (if we cross a buffer boundary,
-                //    previous buffers will already have been flushed).
-                var dataStart = 0;
-                var copyLength = RoundUp(writeBuffer.currentPosition, (int)device.SectorSize) - writeBuffer.currentPosition;
-                if (copyLength != 0)
-                {
-                    Debug.Assert(refCountedGCHandle is null, $"If refCountedGCHandle is not null then buffer.currentPosition ({writeBuffer.currentPosition}) should already be sector-aligned");
-                    Write(fullDataSpan.Slice(dataStart, copyLength));
-                    dataStart += copyLength;
+                var dataPtr = (byte*)gcHandle.AddrOfPinnedObject() + overflow.StartOffset;
+                ObjectLogDmaAlignment.Compute((ulong)dataPtr, writeBuffer.currentPosition, sectorSize, out var sourceFragment, out var headerPadding);
+
+                // ChunkHeader + zero alignment padding + the source-alignment initial fragment, copied through the buffer. After these, the
+                // buffer write position (and thus the DMA disk offset) is sector-aligned, and dataPtr + sourceFragment is sector-aligned.
+                WriteOverflowChunkHeader(length, (uint)headerPadding);
+                WritePadding(headerPadding);
+                if (sourceFragment > 0)
+                    Write(dataSpan.Slice(0, sourceFragment));
+                Debug.Assert(IsAligned(writeBuffer.currentPosition, sectorSize), $"currentPosition ({writeBuffer.currentPosition}) must be sector-aligned before the DMA");
+
+                // Flush the buffer so filePosition.Offset is at the sector-aligned data start (unless a buffer boundary already flushed it).
+                if (writeBuffer.currentPosition > writeBuffer.flushedUntilPosition)
                     flushBuffers.FlushCurrentBuffer();
-                }
+                Debug.Assert(IsAligned(flushBuffers.filePosition.Offset, sectorSize), $"DMA filePosition.Offset ({flushBuffers.filePosition.Offset}) must be sector-aligned");
 
-                // 2. Flush the sector-aligned span interior. We are writing direct to the device from a byte[], so we have to pin the array.
-                //    We may have to split across multiple segments.
-                var interiorLen = RoundDown(overflow.Array.Length - dataStart, (int)device.SectorSize);
-                var segmentRemainingLen = flushBuffers.filePosition.RemainingSizeInSegment;
-                var gcHandle = (refCountedGCHandle is null) ? GCHandle.Alloc(overflow.Array, GCHandleType.Pinned) : default;
-                var localGcHandle = refCountedGCHandle?.gcHandle ?? gcHandle;
-                var overflowStartPtr = (byte*)localGcHandle.AddrOfPinnedObject() + overflow.StartOffset;
-                if ((uint)interiorLen <= segmentRemainingLen)
+                // DMA the sector-aligned interior that fits in the current 1 GB segment. Any remainder past the segment boundary (rare) plus
+                // the end fragment is copied through the buffer, which handles the segment crossing.
+                var interior = length - sourceFragment;
+                var segmentFit = (int)Math.Min((long)interior, (long)flushBuffers.filePosition.RemainingSizeInSegment);
+                var dmaLength = RoundDown(segmentFit, sectorSize);
+                if (dmaLength > 0)
                 {
-                    // We have enough room in the segment to write the full interior span in one chunk.
-                    var writeCallback = refCountedGCHandle is null
-                        ? flushBuffers.CreateDiskWriteCallbackContext(gcHandle)
-                        : flushBuffers.CreateDiskWriteCallbackContext(refCountedGCHandle);
-                    flushBuffers.FlushToDevice(overflowStartPtr + dataStart, interiorLen, writeCallback);
-                    dataStart += interiorLen;
-                }
-                else
-                {
-                    // Multi-segment write so we will need to refcount the GCHandle. SegmentRemainingLength is <= int.MaxValue so we can cast it to int.
-                    // TODO: This and other segment-limiting logic could be pushed down into StorageDeviceBase, which could iterate on the segments.
-                    // However this could have complications with e.g. callback and countdown counts (there would be more than one callback invocation
-                    // on that; this could be handled by defining some way for the StorageDeviceBase to know the calback uses a CountdownEvent and
-                    // incrementing that count, or by having a local callback, similarly to how CircularDiskWriteBuffer handles multiple possibly-concurrent
-                    // writes before calling the main callback, that handles doing the "final" callback). In this case we could defer the "segment id" logic
-                    // to StorageDeviceBase, and just have a ulong position, from which we could compute the segment id (e.g. for truncation), and
-                    // ObjectLogFilePositionInfo would be simplified.
-                    Debug.Assert(segmentRemainingLen <= int.MaxValue, $"segmentRemainingLen ({segmentRemainingLen}) should be <= int.MaxValue");
-
-                    // Create the refcounted pinned GCHandle with a refcount of 1, so that if a read completes while we're still setting up, we won't get an early unpin.
-                    refCountedGCHandle ??= new RefCountedPinnedGCHandle(gcHandle, initialCount: 1);
-
-                    // Copy chunks to segments and advance the segment.
-                    while (interiorLen > (int)segmentRemainingLen)
-                    {
-                        var writeCallback = flushBuffers.CreateDiskWriteCallbackContext(refCountedGCHandle);
-                        flushBuffers.FlushToDevice(overflowStartPtr + dataStart, (int)segmentRemainingLen, writeCallback);
-                        dataStart += (int)segmentRemainingLen;
-
-                        Debug.Assert(flushBuffers.filePosition.RemainingSizeInSegment == 0, $"Expected to be at end of segment but there were {flushBuffers.filePosition.RemainingSizeInSegment} bytes remaining");
-                        flushBuffers.filePosition.AdvanceToNextSegment();
-                        segmentRemainingLen = flushBuffers.filePosition.RemainingSizeInSegment;
-                    }
-
-                    // Now we know we will fit in the last segment, so call recursively to optimize the "copy vs. direct" final fragment.
-                    // First adjust the endPosition in case we don't have a full buffer of space remaining in the segment.
-                    if ((ulong)writeBuffer.RemainingCapacity > flushBuffers.filePosition.RemainingSizeInSegment)
-                        writeBuffer.endPosition = (int)flushBuffers.filePosition.RemainingSizeInSegment - writeBuffer.currentPosition;
-                    WriteDirect(overflow, fullDataSpan.Slice(dataStart), refCountedGCHandle);
+                    var writeCallback = flushBuffers.CreateDiskWriteCallbackContext(gcHandle);
+                    gcHandleIssued = true;   // ownership transferred: the callback frees the handle on completion
+                    flushBuffers.FlushToDevice(dataPtr + sourceFragment, dmaLength, writeCallback);
                 }
 
-                // 3. Copy the end sector-aligning fragment to the buffers.
-                if (dataStart < overflow.Length)
-                    Write(fullDataSpan.Slice(dataStart));
+                var written = sourceFragment + dmaLength;
+                if (written < length)
+                    Write(dataSpan.Slice(written));   // end fragment + any cross-segment remainder (managed copy; safe regardless of the pin)
+                return headerPadding;
             }
-
-            // Release the initial refcount on this, if we created it. This will let it final-release when all writes are complete.
-            refCountedGCHandle?.Release();
+            finally
+            {
+                // If no DMA was issued, we still own the handle; otherwise the write callback owns and frees it.
+                if (!gcHandleIssued)
+                    gcHandle.Free();
+            }
         }
+
+        /// <summary>Write <paramref name="count"/> zero bytes of O_DIRECT alignment padding through the buffer (the reader skips them).
+        /// <paramref name="count"/> is less than the device sector size.</summary>
+        void WritePadding(int count)
+        {
+            if (count == 0)
+                return;
+            zeroPadding ??= new byte[(int)device.SectorSize];
+            Write(new ReadOnlySpan<byte>(zeroPadding, 0, count));
+        }
+
+        /// <summary>Lazily-allocated zeroed buffer (device sector size) used to write O_DIRECT alignment padding; never mutated.</summary>
+        byte[] zeroPadding;
 
         /// <inheritdoc/>
         public void Write(ReadOnlySpan<byte> data, CancellationToken cancellationToken = default)

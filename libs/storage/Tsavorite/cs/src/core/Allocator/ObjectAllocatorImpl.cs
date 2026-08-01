@@ -939,7 +939,7 @@ namespace Tsavorite.core
                                     // record on the no-copy path (useLivePage; non-destructive to in-memory readers). Records are always written in the
                                     // current hint-based format (never the downlevel encoding).
                                     var valueObjectLength = logWriter.WriteRecordObjects(in keyOverflow, in valueOverflow, in valueObject);
-                                    logRecord.SetObjectLogPositionAndLengthHints(recordStartPosition, valueObjectLength);
+                                    logRecord.SetObjectLogPositionAndLengthHints(recordStartPosition, valueObjectLength, logWriter.lastValueAlignmentPadding);
                                 }
                                 else
                                 {
