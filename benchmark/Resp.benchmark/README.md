@@ -36,7 +36,7 @@ Always measure on a **Release** build. `dotnet $RB --help` lists all flags.
 |---|---|---|
 | `--op` | `GET` | Op to benchmark (offline): GET, MGET, INCR, SET, ZADD, ... |
 | `--dbsize` | `1024` | Distinct keys (pre-loaded unless `-s`). |
-| `--valuelength` | `8` | Value bytes (use `100` for KV.benchmark parity). |
+| `--valuelength` | `8` | Value bytes (use `--keylength 16 --valuelength 96` = 128 B record for KV/Device parity). |
 | `-t` | `1,2,4,8,16,32` | Thread-count sweep (offline). |
 | `-b` | `4096` | Requests per pipeline (offline; dominant throughput knob, `1024` is a good default). Online forces `1`. |
 | `--runtime` | `15` | Seconds per cell. `0` = load only (no run). |
@@ -63,22 +63,43 @@ dotnet $RB -s --op GET --dbsize 16777216 --valuelength 100 -t 1,2,4,8,16,32 -b 1
 ### 2. NVMe storage-bound — reads hit real disk
 
 Tier the store with a tiny memory log so ~99.9% of a 100 M dataset is on NVMe and
-every GET is a 4 KB random fetch. Use **100 M × 100 B** (smaller datasets touch few
-NAND dies and understate device IOPS).
+every GET is a random device fetch. Use **100 M × 128 B** records (`--keylength 16
+--valuelength 96`, matching the KV/Device benchmarks — 128 B records read over the
+array's 512 B sectors). Reference host: **8×NVMe RAID-0** (`/raid`, `fio` 4K ceiling
+≈ **8.24 M IOPS**); Garnet sustains **~7.2 M** end-to-end (≈ 87% of `fio`).
 
 ```bash
-DATA=/mnt/nvme/garnet; mkdir -p $DATA
-numactl --cpunodebind=0 --membind=0 dotnet $GS --port 6379 \
-  --memory 16m --page 4m --segment 1g --index 4g --storage-tier --logdir $DATA \
-  --device-type Native --device-io-backend libaio --device-throttle-limit 512 \
-  --logger-level Warning &
-numactl --cpunodebind=0 --membind=0 dotnet $RB --op MSET --dbsize 100000000 --valuelength 100 -t 8 -b 1024 --runtime 0
-numactl --cpunodebind=0 --membind=0 dotnet $RB -s --op GET --dbsize 100000000 --valuelength 100 -t 1,2,4,8,16,32 -b 1024 --runtime 15
+DATA=/raid/garnet; mkdir -p $DATA
+# Server pinned to NUMA node 0, client driven from node 1:
+numactl --cpunodebind=0 --membind=0 dotnet $GS --port 6379 --bind 127.0.0.1 \
+  --memory 16m --page 4m --segment 1g --index 8g --storage-tier --logdir $DATA \
+  --device-type Native --device-io-backend Libaio --device-completion-threads 8 \
+  --device-throttle-limit 4096 --logger-level Warning &
+numactl --cpunodebind=1 --membind=1 dotnet $RB --op MSET --dbsize 100000000 \
+  --keylength 16 --valuelength 96 --client LightClient --load-threads 32 -b 4096 --runtime 0
+numactl --cpunodebind=1 --membind=1 dotnet $RB -s --op GET --dbsize 100000000 \
+  --keylength 16 --valuelength 96 --client LightClient -t 8,32,64 -b 4096 --runtime 12
 ```
 
-- `--index 4g` for 100 M keys (default 128 m → 3–4× slowdown from hash chains).
-- `libaio` is fastest on Linux (`uring` to compare; `Default` → RandomAccess, slower).
-  `--device-throttle-limit 512` is safe on fast NVMe; lower to 128 on SATA.
+| backend | NUMA | t=8 | t=32 | t=64 |
+|---|---|---|---|---|
+| Libaio | srv node-0 / cli node-1 | 1.95 M | 6.17 M | **7.21 M** |
+| Libaio | no pin | 1.66 M | 4.84 M | 6.38 M |
+| Uring (`--device-completion-threads 32`) | srv node-0 / cli node-1 | 1.93 M | 5.45 M | 6.08 M |
+| Uring (`--device-completion-threads 32`) | no pin | 1.73 M | 4.74 M | 5.41 M |
+
+- `--index 8g` for 100 M keys (default 128 m → 3–4× slowdown from hash chains).
+- Peak is at **t=64**: unlike the raw device (peaks at t=32), the RESP server's
+  pipelined client connections drive in-flight depth through the server's own
+  network + completion threads, so more client threads keep helping.
+- **NUMA pinning matters most here** (stateful server): pinning the server to node 0
+  and the client to node 1 lifts t=32 from 4.84 → 6.17 M and t=64 from 6.38 → 7.21 M.
+- `Libaio` is fastest on Linux. For **`Uring`** the server has no `--device-io-contexts`
+  flag — it creates **one ring per completion thread** — so raise
+  `--device-completion-threads 32` to give uring enough rings (see
+  [Device README](../../libs/storage/Tsavorite/cs/benchmark/Device.benchmark/README.md#nvme-storage-bound));
+  even so it trails libaio here. `Default` → RandomAccess (slower).
+- `--device-throttle-limit 4096` suits this array; lower to 512/128 on a single/SATA disk.
 
 ### 3. Memory-device-bound — reads hit the in-RAM device
 
