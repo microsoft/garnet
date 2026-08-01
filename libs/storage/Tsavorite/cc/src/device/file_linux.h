@@ -618,8 +618,12 @@ class UringIoHandler {
   }
 
   /// Drain ONLY the calling thread's affine ring (mirrors QueueIoHandler::TryCompleteMine).
+  /// Reaps a batch per call (up to kCqeBatch) in one cq_lock section with dispatch outside the
+  /// lock, so the inline submitter-thread completion path (Tsavorite CompletePending /
+  /// AsyncGetFromDisk throttle-wait) drains its own ring the same batch-at-a-time way the
+  /// dedicated drainer's QueueRunFor does, rather than one io_uring_peek_cqe per completion.
   bool TryCompleteMine() {
-    return TryCompleteFor(pick_ring_index());
+    return TryCompleteMineBatch(pick_ring_index());
   }
 
   struct IoCallbackContext {
@@ -648,6 +652,9 @@ class UringIoHandler {
   bool TryComplete();
   /// Drain one completion from ring `idx`.
   bool TryCompleteFor(int idx);
+  /// Non-blocking batch drain of ring `idx` (the caller's affine ring): reaps up to kCqeBatch
+  /// completions in a single cq_lock section. Backs TryCompleteMine().
+  bool TryCompleteMineBatch(int idx);
   /// Drain completions across all rings (back-compat for callers that do not know about sharding).
   int QueueRun(int timeout_secs);
   /// Drain completions on ring `idx` only.
