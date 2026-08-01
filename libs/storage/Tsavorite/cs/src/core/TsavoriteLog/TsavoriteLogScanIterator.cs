@@ -124,11 +124,8 @@ namespace Tsavorite.core
                 {
                     if (throttleMs == 0)
                     {
-                        // Park on the iterator's enqueue signal instead of busy-spinning: this yields the
-                        // thread (so other sublogs make progress), wakes immediately when a new page is
-                        // enqueued (no fixed delay), and returns false to exit cleanly when the log ends.
-                        if (!await WaitAsync(token).ConfigureAwait(false))
-                            return;
+                        token.ThrowIfCancellationRequested();
+                        await Task.Yield();
                     }
                     else
                     {
