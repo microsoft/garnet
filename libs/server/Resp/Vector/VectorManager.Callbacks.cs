@@ -57,12 +57,13 @@ namespace Garnet.server
             }
 
             /// <summary>
-            /// Per-term read-copy policy. The small per-element records (NeighborList adjacency, QuantizedVector,
-            /// internal/external id maps) are copied back into memory on disk read — to <see cref="StubReadCopyTo"/>
-            /// (the read cache when enabled, else the main-log tail) — so later hops and queries serve them from
-            /// memory. The large raw FullVector and Attributes/Metadata are served from disk (CopyTo=None): quantized
-            /// sets use the raw vector only for reranking, and for no-quant sets caching it yields no net gain once the
-            /// working set exceeds the read cache, as copying these large records in costs more than the reads it saves.
+            /// Per-term read-copy policy. The per-node records touched during traversal and rerank — NeighborList
+            /// adjacency, QuantizedVector, the internal/external id maps, and the per-node Metadata block — are
+            /// copied back into memory on a disk read (to <see cref="StubReadCopyTo"/>: the read cache when enabled,
+            /// else the main-log tail) so later hops and queries serve them from memory, bounding disk traffic to the
+            /// visited working set. The raw FullVector and Attributes are served from disk (CopyTo=None): the raw
+            /// vector is touched once per rerank candidate and is large, and for no-quant sets caching it yields no
+            /// net gain once the working set exceeds memory, as copying it in costs more than the reads it saves.
             /// </summary>
             public readonly ReadCopyOptions ReadCopyOptions
             {
@@ -73,6 +74,7 @@ namespace Garnet.server
                     {
                         case DiskANNService.NeighborList:
                         case DiskANNService.QuantizedVector:
+                        case DiskANNService.Metadata:
                         case DiskANNService.InternalIdMap:
                         case DiskANNService.ExternalIdMap:
                             return new ReadCopyOptions { CopyFrom = ReadCopyFrom.AllImmutable, CopyTo = ActiveThreadSession.vectorManager.StubReadCopyTo };
@@ -293,10 +295,14 @@ namespace Garnet.server
         internal readonly ReadCopyTo StubReadCopyTo;
 
         /// <summary>
-        /// Per-record overhead (RecordInfo + key + length prefixes) added to the value size when computing the
-        /// initial disk-read size, so the whole record lands in one IO. Generous; the read is sector-aligned downstream.
+        /// Per-record overhead (RecordInfo + RecordDataHeader + namespace + key + record alignment) added to the
+        /// value size when computing the initial disk-read size, so the whole record lands in one IO — in particular
+        /// the FullVector, which is always served from disk. The fixed header is 16 bytes, the namespace and internal
+        /// id key are 4 bytes each; 128 leaves generous slack for alignment and any per-value prefix. Over-sizing is
+        /// free here (the read is sector-aligned downstream, so this rounds to the same sectors as the value alone);
+        /// under-sizing would force a second IO.
         /// </summary>
-        private const int VectorRecordReadOverheadBytes = 64;
+        private const int VectorRecordReadOverheadBytes = 128;
 
         /// <summary>
         /// Compute and stash the per-term initial disk-read sizes from the active vector set's geometry, so that
