@@ -74,6 +74,8 @@ namespace Garnet.server
             replayTaskCount = serverOptions.AofReplayTaskCount;
             // GarnetAppendOnlyFile constructs the gate before this ctor, so it is safe to cache.
             backpressure = appendOnlyFile.backpressure;
+            // Give the gate a back-reference so its stall diagnostic can read live tail/safe-tail.
+            backpressure?.SetLog(this);
         }
 
         public TsavoriteLog SingleLog => singleLog.log;
@@ -276,6 +278,26 @@ namespace Garnet.server
             {
                 Debug.Assert(sublogIdx < shardedLog.Length);
                 return shardedLog.sublog[sublogIdx].TailAddress;
+            }
+        }
+
+        /// <summary>
+        /// Gets the safe tail address (largest address below which every byte has been fully written)
+        /// for a specific sublog. Diagnostic helper for the backpressure stall log.
+        /// </summary>
+        /// <param name="sublogIdx">Index of the physical sublog.</param>
+        /// <returns>The safe tail address of the specified sublog.</returns>
+        internal long GetSafeTailAddress(int sublogIdx)
+        {
+            if (singleLog != null)
+            {
+                Debug.Assert(sublogIdx == 0);
+                return singleLog.log.SafeTailAddress;
+            }
+            else
+            {
+                Debug.Assert(sublogIdx < shardedLog.Length);
+                return shardedLog.sublog[sublogIdx].SafeTailAddress;
             }
         }
 
