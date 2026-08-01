@@ -103,30 +103,38 @@ namespace Garnet.server
             WaitSlow(sublogIdx, tailAddress);
         }
 
-        void WaitSlow(int sublogIdx, long tailAddress)
+        void WaitSlow(int sublogIdx, long capturedTail)
         {
             var parkedSince = Environment.TickCount64;
             var lastLog = 0L;
-            while (!disposed && tailAddress - Volatile.Read(ref shippedWatermark[sublogIdx].Value) > perSublogBudget)
+            while (!disposed)
             {
+                // Gate on the live tail, not the value captured at entry. The AOF sublog tail can
+                // settle below the entry snapshot (in-flight reservations that never finalize, or a
+                // truncate/reset under fast-aof-truncate + null device), which would leave a frozen
+                // capturedTail permanently above the reachable watermark and park the appender
+                // forever. The correct backpressure measure is the current unshipped backlog,
+                // liveTail - watermark; re-reading it each iteration self-heals against tail retreat
+                // and lets the gate release the instant the shipper catches up.
+                var liveTail = log?.GetTailAddress(sublogIdx) ?? capturedTail;
+                var watermark = Volatile.Read(ref shippedWatermark[sublogIdx].Value);
+                if (liveTail - watermark <= perSublogBudget)
+                    break;
+
                 // Diagnostic: a thread that stays parked periodically dumps the addresses that gate
-                // it, so a repro can distinguish a stale watermark (shipper caught up but not
-                // publishing to the tail) from a captured-tail read that never clears. The captured
-                // tailAddress is the frozen value the gate is waiting against; currentTail/safeTail
-                // are read live. Diagnostic-only, no behavior change.
+                // it, so a repro can distinguish a stale watermark from a retreated tail. capturedTail
+                // is the value observed at entry; currentTail/safeTail are read live. Diagnostic-only.
                 if (logger != null)
                 {
                     var now = Environment.TickCount64;
                     if (now - parkedSince >= StallLogInitialMs && now - lastLog >= StallLogIntervalMs)
                     {
                         lastLog = now;
-                        var watermark = Volatile.Read(ref shippedWatermark[sublogIdx].Value);
-                        var currentTail = log?.GetTailAddress(sublogIdx) ?? -1;
                         var safeTail = log?.GetSafeTailAddress(sublogIdx) ?? -1;
                         logger.LogWarning(
                             "AofBackpressure stall [sublog {sublogIdx}] parkedMs={parkedMs}: capturedTail={capturedTail}, currentTail={currentTail}, safeTail={safeTail}, shippedWatermark={watermark}, capturedLag={capturedLag}, currentLag={currentLag}, budget={budget}",
-                            sublogIdx, now - parkedSince, tailAddress, currentTail, safeTail, watermark,
-                            tailAddress - watermark, currentTail - watermark, perSublogBudget);
+                            sublogIdx, now - parkedSince, capturedTail, liveTail, safeTail, watermark,
+                            capturedTail - watermark, liveTail - watermark, perSublogBudget);
                     }
                 }
                 Thread.Sleep(PollIntervalMs);
