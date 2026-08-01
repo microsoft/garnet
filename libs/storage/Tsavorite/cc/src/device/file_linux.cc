@@ -613,6 +613,50 @@ bool UringIoHandler::TryCompleteFor(int idx) {
   return false;
 }
 
+// Non-blocking batch drain of ONE ring (the caller's affine ring), reaping up to kCqeBatch
+// completions in a single cq_lock section with dispatch moved outside the lock. This is the
+// io_uring analogue of libaio's batched TryCompleteMine (io_getevents up to
+// trycomplete_batch_events): the inline submitter-thread completion path (Tsavorite
+// CompletePending / AsyncGetFromDisk throttle-wait) reaps its own ring a batch at a time
+// instead of one io_uring_peek_cqe per call, cutting per-completion cq_lock + peek overhead ~Nx.
+// Mirrors QueueRunFor's phase-2 (snapshot-before-advance, dispatch-after-release) but is a single
+// non-blocking pass (no wait, no drain-until-empty loop) so it stays a bounded poll.
+bool UringIoHandler::TryCompleteMineBatch(int idx) {
+  if (idx < 0 || idx >= static_cast<int>(rings_.size())) return false;
+  struct io_uring* ring = rings_[idx];
+  if (ring == nullptr) return false;
+  SpinLock* cq_lock = cq_locks_[idx];
+
+  constexpr unsigned kCqeBatch = 64;
+  struct io_uring_cqe* cqes[kCqeBatch];
+  struct DrainSlot {
+    int io_res;
+    UringIoHandler::IoCallbackContext* context;
+  } snapshot[kCqeBatch];
+
+  cq_lock->Acquire();
+  unsigned n = io_uring_peek_batch_cqe(ring, cqes, kCqeBatch);
+  if (n == 0) {
+    cq_lock->Release();
+    return false;
+  }
+  for (unsigned i = 0; i < n; ++i) {
+    snapshot[i].io_res = cqes[i]->res;
+    snapshot[i].context = reinterpret_cast<UringIoHandler::IoCallbackContext*>(
+        io_uring_cqe_get_data(cqes[i]));
+  }
+  io_uring_cq_advance(ring, n);
+  cq_lock->Release();
+
+  // Dispatch outside the lock. null user_data marks wake-up / rewritten-after-failed-submit SQEs
+  // (no caller context); skip them, exactly as TryCompleteFor / QueueRunFor do.
+  for (unsigned i = 0; i < n; ++i) {
+    if (snapshot[i].context == nullptr) continue;
+    DispatchUringCqe(snapshot[i].io_res, snapshot[i].context);
+  }
+  return true;
+}
+
 int UringIoHandler::QueueRun(int timeout_secs) {
   // Compat: drain across all rings. First ring uses the full timeout; subsequent rings poll.
   if (rings_.empty()) return 0;
