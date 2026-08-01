@@ -40,6 +40,14 @@ namespace Garnet.server
         public const int PollIntervalMs = 1;
 
         /// <summary>
+        /// A stalled appender begins emitting the diagnostic stall log after being parked this long,
+        /// then re-emits at most once per this interval, so a persistent stall dumps the gating
+        /// addresses without flooding the log on transient backpressure.
+        /// </summary>
+        const long StallLogInitialMs = 1000;
+        const long StallLogIntervalMs = 1000;
+
+        /// <summary>
         /// Byte-progress interval for refreshing the shipped watermark: the shipping side
         /// republishes only after shipping this many bytes since its last publish, so a caught-up
         /// sublog does no work and a busy one batches many chunks per publish. This only affects
@@ -62,6 +70,10 @@ namespace Garnet.server
         volatile bool disposed;
 
         readonly ILogger logger;
+
+        // Back-reference to the owning log, set after construction, so the stall diagnostic can read
+        // the live tail / safe-tail for a parked sublog. Diagnostic-only; never used for gating.
+        GarnetLog log;
 
         public AofBackpressure(GarnetServerOptions serverOptions, ILogger logger = null)
         {
@@ -93,9 +105,39 @@ namespace Garnet.server
 
         void WaitSlow(int sublogIdx, long tailAddress)
         {
+            var parkedSince = Environment.TickCount64;
+            var lastLog = 0L;
             while (!disposed && tailAddress - Volatile.Read(ref shippedWatermark[sublogIdx].Value) > perSublogBudget)
+            {
+                // Diagnostic: a thread that stays parked periodically dumps the addresses that gate
+                // it, so a repro can distinguish a stale watermark (shipper caught up but not
+                // publishing to the tail) from a captured-tail read that never clears. The captured
+                // tailAddress is the frozen value the gate is waiting against; currentTail/safeTail
+                // are read live. Diagnostic-only, no behavior change.
+                if (logger != null)
+                {
+                    var now = Environment.TickCount64;
+                    if (now - parkedSince >= StallLogInitialMs && now - lastLog >= StallLogIntervalMs)
+                    {
+                        lastLog = now;
+                        var watermark = Volatile.Read(ref shippedWatermark[sublogIdx].Value);
+                        var currentTail = log?.GetTailAddress(sublogIdx) ?? -1;
+                        var safeTail = log?.GetSafeTailAddress(sublogIdx) ?? -1;
+                        logger.LogWarning(
+                            "AofBackpressure stall [sublog {sublogIdx}] parkedMs={parkedMs}: capturedTail={capturedTail}, currentTail={currentTail}, safeTail={safeTail}, shippedWatermark={watermark}, capturedLag={capturedLag}, currentLag={currentLag}, budget={budget}",
+                            sublogIdx, now - parkedSince, tailAddress, currentTail, safeTail, watermark,
+                            tailAddress - watermark, currentTail - watermark, perSublogBudget);
+                    }
+                }
                 Thread.Sleep(PollIntervalMs);
+            }
         }
+
+        /// <summary>
+        /// Set the owning log back-reference used by the stall diagnostic. Called once during log
+        /// construction; not used on any gating path.
+        /// </summary>
+        internal void SetLog(GarnetLog log) => this.log = log;
 
         /// <summary>
         /// Publish sublog <paramref name="sublogIdx"/>'s min shipped address across attached
