@@ -45,6 +45,17 @@ namespace Garnet.cluster
             readonly long publishDeltaBytes;
             long lastPublishedShippedAddress;
 
+            // Monotonic high-water of the address this task has shipped/scanned past, published to
+            // the backpressure gate. Folds the iterator's scan position (which advances even across
+            // null-device skips of evicted, unshippable pages) with previousAddress, so it reaches
+            // the tail when the shipper is caught up. Read cross-thread by the driver-store min, so
+            // access via Volatile.
+            long shippedWatermarkAddress;
+            // Shipped high-water observed at the previous Throttle, used to detect an idle
+            // (caught-up) shipper so the final watermark is published even when previousAddress
+            // stops advancing.
+            long lastThrottleShipped;
+
             /// <summary>
             /// Return start address for this AofSyncTask
             /// </summary>
@@ -54,6 +65,12 @@ namespace Garnet.cluster
             /// Return previous address for this AofSyncTask
             /// </summary>
             public long PreviousAddress => previousAddress;
+
+            /// <summary>
+            /// Monotonic high-water address this task has shipped/scanned past, published to the
+            /// backpressure gate as this replica's shipped watermark for the sublog.
+            /// </summary>
+            public long ShippedWatermarkAddress => Volatile.Read(ref shippedWatermarkAddress);
 
             /// <summary>
             /// Check if client connection is healthy
@@ -111,6 +128,8 @@ namespace Garnet.cluster
                 {
                     publishDeltaBytes = appendOnlyFile.backpressure.PublishDeltaBytes;
                     lastPublishedShippedAddress = startAddress;
+                    shippedWatermarkAddress = startAddress;
+                    lastThrottleShipped = startAddress;
                 }
                 garnetClient = new GarnetClientSession(
                             endPoint,
@@ -199,16 +218,31 @@ namespace Garnet.cluster
                 garnetClient.CompletePending(false);
                 garnetClient.Throttle();
 
-                // Refresh the shipped watermark in the backpressure gate outside epoch protection,
-                // gated on shipped byte-progress: republish once this task has shipped
-                // publishDeltaBytes since its last publish. This is a freshness hint only; a stale
-                // watermark is safe because appenders self-check conservatively. previousAddress
-                // advances only in Consume, so a caught-up sublog does no work while idle, and a
-                // draining one advances the watermark so stalled appenders progress as it ships.
-                if (backpressureEnabled && previousAddress - lastPublishedShippedAddress >= publishDeltaBytes)
+                // Refresh the shipped watermark in the backpressure gate outside epoch protection.
+                // The shipped high-water folds the iterator's scan position with previousAddress:
+                // previousAddress advances only in Consume, but a null-device skip advances the
+                // iterator (past evicted, unshippable pages) without a Consume, so previousAddress
+                // alone can freeze below the tail while the shipper idle-spins near it. Publish
+                // either after shipping publishDeltaBytes (busy path: bound coherence traffic) or
+                // once the shipper stops advancing (idle path: land the final watermark). Without
+                // the idle publish the watermark ratchets one-way and a caught-up shipper never
+                // republishes, deadlocking appenders parked in the gate. A stale watermark is safe
+                // because appenders self-check conservatively.
+                if (backpressureEnabled)
                 {
-                    lastPublishedShippedAddress = previousAddress;
-                    aofSyncDriverStore.PublishShippedAddress(physicalSublogIdx);
+                    var iterNext = iter?.NextAddress ?? previousAddress;
+                    var shipped = previousAddress > iterNext ? previousAddress : iterNext;
+                    if (shipped > shippedWatermarkAddress)
+                        Volatile.Write(ref shippedWatermarkAddress, shipped);
+
+                    var pending = shippedWatermarkAddress - lastPublishedShippedAddress;
+                    var idle = shippedWatermarkAddress == lastThrottleShipped;
+                    if (pending > 0 && (pending >= publishDeltaBytes || idle))
+                    {
+                        lastPublishedShippedAddress = shippedWatermarkAddress;
+                        aofSyncDriverStore.PublishShippedAddress(physicalSublogIdx);
+                    }
+                    lastThrottleShipped = shippedWatermarkAddress;
                 }
 
                 SendAdvanceTimePulse();

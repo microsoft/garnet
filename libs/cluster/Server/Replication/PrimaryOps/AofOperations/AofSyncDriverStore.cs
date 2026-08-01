@@ -229,7 +229,7 @@ namespace Garnet.cluster
                 if (!_disposed && numDrivers > 0)
                 {
                     for (var i = 0; i < numDrivers; i++)
-                        minShipped = Math.Min(minShipped, syncDrivers[i].GetPreviousAddress(physicalSublogIdx));
+                        minShipped = Math.Min(minShipped, syncDrivers[i].GetShippedWatermarkAddress(physicalSublogIdx));
                 }
             }
             finally
@@ -269,7 +269,7 @@ namespace Garnet.cluster
                     {
                         var minShipped = long.MaxValue;
                         for (var i = 0; i < numDrivers; i++)
-                            minShipped = Math.Min(minShipped, syncDrivers[i].GetPreviousAddress(physicalSublogIdx));
+                            minShipped = Math.Min(minShipped, syncDrivers[i].GetShippedWatermarkAddress(physicalSublogIdx));
                         backpressure.PublishShippedAddress(physicalSublogIdx, minShipped);
                     }
                 }
