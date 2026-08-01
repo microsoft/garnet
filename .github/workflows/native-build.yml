@@ -29,11 +29,6 @@
 #   linux-x64, linux-arm64            (glibc, ubuntu:24.04 container; arm64 via QEMU)
 #   linux-musl-x64, linux-musl-arm64  (musl,  alpine:3.20 container; arm64 via QEMU)
 #   win-x64, win-arm64                (MSVC on windows-latest; arm64 cross-compiled)
-#
-# macOS is intentionally absent: the native C++ (file_linux.cc) is hard-wired to
-# libaio/io_uring/O_DIRECT, which do not exist on macOS. A macOS backend
-# (file_darwin.cc using POSIX AIO / kqueue + F_NOCACHE) is a separate work item; until
-# then macOS falls back to the managed RandomAccess device.
 name: Build Native Device
 
 on:

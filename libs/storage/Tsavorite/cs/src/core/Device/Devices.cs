@@ -68,7 +68,7 @@ namespace Tsavorite.core
         /// OS-optimized backend: <see cref="LocalStorageDevice"/> on Windows and <see cref="NativeStorageDevice"/>
         /// (libaio / io_uring) on Linux. Prebuilt Linux native libraries are shipped for x64 for both glibc
         /// (<c>linux-x64</c>) and musl (<c>linux-musl-x64</c>, e.g. Alpine). Linux architectures without a shipped
-        /// prebuilt (e.g. arm64) and platforms without a Native implementation (e.g. macOS) fall back to the managed
+        /// prebuilt (e.g. arm64) and platforms without a Native implementation fall back to the managed
         /// <see cref="DeviceType.RandomAccess"/> device.
         /// </summary>
         /// <returns></returns>
