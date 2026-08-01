@@ -10,7 +10,7 @@ using Microsoft.Extensions.Logging;
 namespace Garnet.server
 {
     /// <summary>
-    /// Primary-side replication backpressure for the AOF, constructed only when AofShipMaxLag
+    /// Primary-side replication backpressure for the AOF, constructed only when AofSyncMaxLagBytes
     /// is set (a null gate means disabled; call sites gate with ?.). Without it, an in-memory AOF
     /// (null device with fast-aof-truncate) recycles pages past unshipped records and silently
     /// drops them for a lagging replica.
@@ -25,8 +25,8 @@ namespace Garnet.server
     /// advancing tail drives the computed lag up and it stalls itself: safety rests on the appender
     /// measuring its own tail against the watermark, not on any publish landing in time.
     ///
-    /// The budget is AofShipMaxLag (a whole-log budget) divided evenly per sublog, matching the
-    /// replica-side ReplicationOffsetMaxLag convention. The watermark is read-mostly: appenders
+    /// The budget is AofSyncMaxLagBytes (a whole-log budget) divided evenly per sublog, matching the
+    /// replica-side AofReplayMaxLagBytes convention. The watermark is read-mostly: appenders
     /// only read it, the shipping side writes it periodically, so its cache line stays shared in
     /// appender caches between publishes and coherence traffic scales with publish frequency, not
     /// append frequency. Publish frequency therefore trades throughput (a fresher watermark stalls
@@ -67,14 +67,14 @@ namespace Garnet.server
         {
             this.logger = logger;
             var sublogCount = serverOptions.AofPhysicalSublogCount;
-            perSublogBudget = Math.Max(1, serverOptions.AofShipMaxLag / sublogCount);
+            perSublogBudget = Math.Max(1, serverOptions.AofSyncMaxLagBytes / sublogCount);
             PublishDeltaBytes = Math.Max(1, perSublogBudget / 8);
             shippedWatermark = new PaddedLong[sublogCount];
             // No replica attached yet: a max watermark makes the computed lag non-positive, so
             // nothing stalls until the shipping side publishes real shipped addresses on attach.
             for (var i = 0; i < sublogCount; i++)
                 shippedWatermark[i].Value = long.MaxValue;
-            logger?.LogInformation("AofBackpressure enabled: per-sublog budget {perSublogBudget} bytes across {sublogCount} sublogs (AofShipMaxLag {total} total), publish delta {PublishDeltaBytes} bytes", perSublogBudget, sublogCount, serverOptions.AofShipMaxLag, PublishDeltaBytes);
+            logger?.LogInformation("AofBackpressure enabled: per-sublog budget {perSublogBudget} bytes across {sublogCount} sublogs (AofSyncMaxLagBytes {total} total), publish delta {PublishDeltaBytes} bytes", perSublogBudget, sublogCount, serverOptions.AofSyncMaxLagBytes, PublishDeltaBytes);
         }
 
         /// <summary>

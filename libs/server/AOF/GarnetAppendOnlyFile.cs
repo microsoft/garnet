@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -38,7 +38,7 @@ namespace Garnet.server
         /// <summary>
         /// Primary-side replication backpressure gate. The cluster layer publishes each physical
         /// sublog's min shipped address into it; the append paths in <see cref="GarnetLog"/> stall
-        /// on it. Null unless AofShipMaxLag is set.
+        /// on it. Null unless AofSyncMaxLagBytes is set.
         /// </summary>
         public readonly AofBackpressure backpressure;
 
@@ -79,7 +79,7 @@ namespace Garnet.server
                 seqNumGen = new SequenceNumberGenerator(0);
             this.logger = logger;
             // Must be before Log is constructed, which caches it for the append paths.
-            backpressure = serverOptions.AofShipMaxLag > 0 ? new AofBackpressure(serverOptions, logger) : null;
+            backpressure = serverOptions.AofSyncMaxLagBytes > 0 ? new AofBackpressure(serverOptions, logger) : null;
             Log = new(this, serverOptions, logSettings, logger);
         }
 
