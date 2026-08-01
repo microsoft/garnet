@@ -167,8 +167,6 @@ byte-identical to the copy path (perf only).
 > layout change to eviction). The `srcBuffer` copy path is unconditionally safe regardless, because the device reads a
 > private snapshot that no concurrent operation touches.
 
-## 9. Recovery & positions
-
 ---
 
 ## 8. Reader flow
@@ -200,18 +198,42 @@ bound = successor position / object-log tail), not a single additive delta.
     exact extent would need a `ChunkHeader` read up to the full overflow length away, and no snapshot per-page object-log end
     is available in the per-page recovery flush), so that narrow case still **throws** (fail-fast). Full removal needs a
     ChunkHeader-driven copy for the last record or a page-object-log-end bound.
-- **Preserve all flag bits** (`0xF << 60`) in `RepointObjectLogPosition`, `SetObjectLogPositionAndLengthHints`,
-  `SetRecoveredObjectLogRecordStartPosition`.
+- **Flag bits:** `RepointObjectLogPosition` and `SetObjectLogPositionAndLengthHints` preserve the reserved position-word flag
+  bits; `RepointObjectLogPosition` additionally preserves **bit 63** (a verbatim-copied downlevel record stays downlevel).
+  `SetRecoveredObjectLogRecordStartPosition` intentionally **clears bit 63** — it converts the record to v2.2.
+- **v2.1 reposition guard:** because that conversion does not insert a `ChunkHeader`, if a downlevel source would convert to
+  a headered overflow key (≥ 1023) / value (> 1023) it **throws (fail-fast)** rather than silently corrupt (see §10). No-op
+  for v2.2 sources (bit 63 never set).
 - **Validate:** overflow length within limits; cumulative object ≤ `IHeapObject.MaxSerializedObjectSize`.
 
 ---
 
 ## 10. Versioning & downlevel
 
-- New format written going forward; **v2.1** headerless hint format stays **readable**, never written, via `*_v21`
-  decoders (`LogRecord_v21.cs`; previous `_v20` renamed to `_v21`), selected by the position bit-63 flag.
-- **Open (confirm):** exact v2.1-vs-new discriminator (checkpoint/file version bump vs per-record bit-63) and the
-  version mapping of the renamed decoders. Pre-flag downlevel binaries must **reject**, not misread, the new format.
+- **Checkpoint versions (resolved):** the current chunk-framing format is **v2.2 = checkpoint version 8**
+  (`HybridLogRecoveryInfo.CheckpointVersion`); the downlevel split/objectId-slot encoding is **v2.1 = version 7**
+  (`MinRecoverableCheckpointVersion`). This build recovers v7 and v8. A v2.1 binary (which only accepts v7) rejects a v8
+  checkpoint, so the checkpoint version is the file-level v2.1-vs-v2.2 discriminator — pre-flag binaries **reject** rather
+  than misread.
+- **Per-record discriminator:** `ObjectLogPosition` **bit 63** (`ReuseObjectIdForSize`). Set = v2.1 (split length = RDH low
+  bits + objectId-slot high 32 bits; dense object-log stream, no `ChunkHeader`s), read via the `*_v21` decoders
+  (`LogRecord_v21.cs`; previous `_v20` renamed to `_v21`). Clear = the current hint format. New records are only ever
+  written in the current format.
+- **v2.1 → v2.2 recovery:** v2.1 object-log bytes are byte-identical to the current **headerless** (small overflow) and
+  **chunked-object** (dense, no per-chunk header) encodings, so those records convert by simply repointing. The paths:
+  - *FoldOver* recovery does **not** re-flush the object log (only Snapshot-region pages are flushed on eviction); records
+    are read via `*_v21` and upgrade lazily on the next normal eviction.
+  - *Snapshot* fuzzy-region **verbatim copy** (`RepointObjectLogPosition`) **preserves** bit 63, so those records stay v2.1.
+  - *Snapshot* stable-boundary **reposition** (`SetRecoveredObjectLogRecordStartPosition`) is the only path that clears the
+    flag and converts to v2.2. A **large overflow key (≥ 1023) / value (> 1023)** would there need a leading `ChunkHeader`
+    that the dense v2.1 bytes lack; inserting it on recovery (which grows the object log and shifts following positions) is
+    **not yet implemented**, so that narrow case **throws (fail-fast)** rather than silently corrupting. `SetDeserializedValueObject`
+    preserves bit 63 across the deserialized-length store so an object-value source is still detectable there.
+- **Chunk length cap (forward-looking):** any future `ChunkHeader`-based split must cap each chunk at **`1<<30`** bytes —
+  `ChunkHeader.currentLength` is a 32-bit int whose top bit is `ContinuationFlag`. Objects are headerless/dense today (they
+  never hit this); it bites only once objects become headered.
+- **Untestable today:** new records are never written in v2.1, so full v2.1→v2.2 header-insertion conversion cannot be
+  validated without a v2.1 checkpoint fixture/writer — do not ship it unvalidated.
 
 ---
 
