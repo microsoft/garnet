@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -110,7 +110,7 @@ namespace Garnet.server
         /// How long a replay thread spins at the replay-align barrier before sleeping:
         /// -1 spins forever, 0 sleeps immediately, and a positive value spins for that many microseconds.
         /// </summary>
-        public int AofBarrierSpinUs = 0;
+        public int AofReplayBarrierSpinUs = 0;
 
         /// <summary>
         /// Polling frequency of the background task responsible for moving time ahead for all physical sublogs (Used only with physical sublog value >1).
@@ -350,17 +350,17 @@ namespace Garnet.server
         public int ReplicaSyncDelayMs = 5;
 
         /// <summary>
-        /// Throttle ClusterAppendLog when replica.AOFTailAddress - ReplicationOffset > ReplicationOffsetMaxLag. 0: Synchronous replay,  >=1: background replay with specified lag, -1: infinite lag
+        /// Throttle ClusterAppendLog when replica.AOFTailAddress - ReplicationOffset > AofReplayMaxLagBytes. 0: Synchronous replay,  >=1: background replay with specified lag, -1: infinite lag
         /// </summary>
-        public int ReplicationOffsetMaxLag = -1;
+        public int AofReplayMaxLagBytes = -1;
 
         /// <summary>
         /// Stall primary AOF appends when the replication lag exceeds this budget: a whole-log
         /// budget divided evenly per sublog (each sublog stalls at tail-minus-shipped over an even
-        /// 1/m share). -1: disabled, >=1: max lag in bytes. Pair with ReplicationOffsetMaxLag on
+        /// 1/m share). -1: disabled, >=1: max lag in bytes. Pair with AofReplayMaxLagBytes on
         /// replicas for end-to-end backpressure.
         /// </summary>
-        public long AofShipMaxLag = -1;
+        public long AofSyncMaxLagBytes = -1;
 
         /// <summary>
         /// Whether we truncate AOF as soon as replicas are fed (not just after checkpoints)

@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -254,7 +254,7 @@ namespace Garnet.cluster
                     replicationInfo.Add(new("master_sync_last_io_seconds_ago", replicationManager.LastPrimarySyncSeconds.ToString()));
                     replicationInfo.Add(new("replication_offset_vector_lag", replicationOffsetVectorLag.ToString()));
                     replicationInfo.Add(new("replication_offset_acc_lag", replicationOffsetAccLag.ToString()));
-                    replicationInfo.Add(new("replication_offset_max_lag", storeWrapper.serverOptions.ReplicationOffsetMaxLag.ToString()));
+                    replicationInfo.Add(new("aof_replay_max_lag_bytes", storeWrapper.serverOptions.AofReplayMaxLagBytes.ToString()));
                     replicationInfo.Add(new("physical_sublog_max_sequence_vector", rcm == null ? "-1" : rcm.GetPhysicalSublogMaxSequenceVector()));
                     replicationInfo.Add(new("physical_sublog_max_drift_sequence_vector", rcm == null ? "-1" : rcm.GetPhysicalSublogMaxDriftSequenceVector()));
                 }

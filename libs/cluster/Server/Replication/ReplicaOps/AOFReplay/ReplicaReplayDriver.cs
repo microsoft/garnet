@@ -228,7 +228,7 @@ namespace Garnet.cluster
                 return;
             Volatile.Write(ref pendingPulseSequenceNumber, sequenceNumber);
 
-            var sessionThreadOwnsReplay = serverOptions.ReplicationOffsetMaxLag == 0 || replayIterator == null;
+            var sessionThreadOwnsReplay = serverOptions.AofReplayMaxLagBytes == 0 || replayIterator == null;
             if (!sessionThreadOwnsReplay || !ResumeReplay())
                 return;
 
@@ -330,7 +330,7 @@ namespace Garnet.cluster
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void ThrottlePrimary()
         {
-            while (runtimeConfig.GetInt(ServerConfigType.REPLICATION_OFFSET_MAX_LAG) is var maxLag && maxLag != -1 && replayIterator != null &&
+            while (runtimeConfig.GetInt(ServerConfigType.AOF_REPLAY_MAX_LAG_BYTES) is var maxLag && maxLag != -1 && replayIterator != null &&
                 appendOnlyFile.Log.GetTailAddress(physicalSublogIdx) - replicationManager.GetReplicationOffset(physicalSublogIdx) > maxLag)
             {
                 cts.Token.ThrowIfCancellationRequested();

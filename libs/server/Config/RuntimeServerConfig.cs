@@ -164,7 +164,7 @@ namespace Garnet.server
             Set(ServerConfigType.REPLICA_SYNC_DELAY, "replica-sync-delay",
                 ConfigKind.Int32 | ConfigKind.Milliseconds | ConfigKind.Seconds | ConfigKind.TimeSpan, 0, int.MaxValue,
                 timeUnit: ConfigTimeUnit.Milliseconds);
-            Set(ServerConfigType.REPLICATION_OFFSET_MAX_LAG, "replica-offset-max-lag", ConfigKind.Int32, -1, int.MaxValue);
+            Set(ServerConfigType.AOF_REPLAY_MAX_LAG_BYTES, "aof-replay-max-lag-bytes", ConfigKind.Int32, -1, int.MaxValue);
             Set(ServerConfigType.AOF_TAIL_WITNESS_FREQ, "aof-tail-witness-freq",
                 ConfigKind.Int32 | ConfigKind.Milliseconds | ConfigKind.Seconds | ConfigKind.TimeSpan, 0, int.MaxValue,
                 timeUnit: ConfigTimeUnit.Milliseconds);
@@ -243,9 +243,8 @@ namespace Garnet.server
         {
             values[(int)ServerConfigType.CLUSTER_NODE_TIMEOUT] = o.ClusterTimeout;
             values[(int)ServerConfigType.REPLICA_SYNC_DELAY] = o.ReplicaSyncDelayMs;
-            values[(int)ServerConfigType.REPLICATION_OFFSET_MAX_LAG] = o.ReplicationOffsetMaxLag;
+            values[(int)ServerConfigType.AOF_REPLAY_MAX_LAG_BYTES] = o.AofReplayMaxLagBytes;
             values[(int)ServerConfigType.AOF_TAIL_WITNESS_FREQ] = o.AofTailWitnessFreqMs;
-            values[(int)ServerConfigType.AOF_REPLAY_MAX_DRIFT] = o.AofReplayMaxDrift;
             values[(int)ServerConfigType.REPL_DISKLESS_SYNC_DELAY] = o.ReplicaDisklessSyncDelay;
             values[(int)ServerConfigType.REPL_ATTACH_TIMEOUT] = SecondsFromTimeSpan(o.ReplicaAttachTimeout);
             values[(int)ServerConfigType.CLUSTER_REPLICATION_REESTABLISHMENT_TIMEOUT] = o.ClusterReplicationReestablishmentTimeout;

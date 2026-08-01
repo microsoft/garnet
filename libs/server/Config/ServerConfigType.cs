@@ -20,9 +20,8 @@ namespace Garnet.server
         // the value through every unit it supports, so it is not encoded in the member name.
         CLUSTER_NODE_TIMEOUT,
         REPLICA_SYNC_DELAY,
-        REPLICATION_OFFSET_MAX_LAG,
+        AOF_REPLAY_MAX_LAG_BYTES,
         AOF_TAIL_WITNESS_FREQ,
-        AOF_REPLAY_MAX_DRIFT,
         REPL_DISKLESS_SYNC_DELAY,
         REPL_ATTACH_TIMEOUT,
         CLUSTER_REPLICATION_REESTABLISHMENT_TIMEOUT,
