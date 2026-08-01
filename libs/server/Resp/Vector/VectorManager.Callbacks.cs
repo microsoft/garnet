@@ -298,9 +298,11 @@ namespace Garnet.server
         /// Per-record overhead (RecordInfo + RecordDataHeader + namespace + key + record alignment) added to the
         /// value size when computing the initial disk-read size, so the whole record lands in one IO — in particular
         /// the FullVector, which is always served from disk. The fixed header is 16 bytes, the namespace and internal
-        /// id key are 4 bytes each; 128 leaves generous slack for alignment and any per-value prefix. Over-sizing is
-        /// free here (the read is sector-aligned downstream, so this rounds to the same sectors as the value alone);
-        /// under-sizing would force a second IO.
+        /// id key are 4 bytes each; 128 covers those plus record alignment and any per-value prefix. Downstream the
+        /// requested length is rounded up to the device sector size, so this overhead is free only within that
+        /// sector-alignment slack: while value+overhead rounds up to the same sectors the full record occupies
+        /// anyway it adds no IO, but a larger bump that crossed a sector boundary would read an extra sector.
+        /// Under-sizing forces a second IO.
         /// </summary>
         private const int VectorRecordReadOverheadBytes = 128;
 
