@@ -12,14 +12,15 @@ Garnet surfaces as `--device-io-backend default|libaio|uring`.
 
 > **Note on the prebuilt artifacts.** Prebuilt binaries are checked in under
 > `libs/storage/Tsavorite/cs/src/core/Device/runtimes/<rid>/native/` (one folder per
-> runtime identifier — currently `linux-x64`, `linux-musl-x64`, and `win-x64`) and
-> copied into `bin/` at build time. The C# `NativeStorageDevice` loader resolves the
-> folder for the current OS/architecture/libc at load time. If you change C++ sources
-> you must rebuild *and* re-check in the matching prebuilt for every platform you
-> changed. The easiest way to regenerate all of them canonically is the **Build Native
-> Device** GitHub workflow (`.github/workflows/native-build.yml`), which builds each RID
-> and can open a PR updating the checked-in binaries; see "Updating the shipped prebuilt
-> binaries" below for the manual path.
+> runtime identifier — `linux-x64`, `linux-arm64`, `linux-musl-x64`, `linux-musl-arm64`,
+> `win-x64`, and `win-arm64`) and copied into `bin/` at build time. The C#
+> `NativeStorageDevice` loader resolves the folder for the current OS/architecture/libc at
+> load time. If you change C++ sources you must rebuild *and* re-check in the matching
+> prebuilt for every platform you changed. The easiest way to regenerate all of them
+> canonically is the **Build Native Device** GitHub workflow
+> (`.github/workflows/native-build.yml`): dispatch it on your branch with
+> `update_repo = true` and it builds each RID and commits the refreshed binaries onto your
+> branch. See "Updating the shipped prebuilt binaries" below for details and the manual path.
 
 ## Runtime dependencies (end users)
 
@@ -280,10 +281,26 @@ the corresponding file in that directory and check it in.
 **Preferred: regenerate all platforms via CI.** The **Build Native Device**
 workflow (`.github/workflows/native-build.yml`) builds every RID
 (`linux-x64`, `linux-arm64`, `linux-musl-x64`, `linux-musl-arm64`, `win-x64`,
-`win-arm64`) and, when dispatched with `update_repo = true`, opens a PR that
-overwrites the checked-in prebuilts. It also runs automatically on any change
-to `libs/storage/Tsavorite/cc/**` to verify all platforms still build. This is
-the canonical way to refresh the binaries.
+`win-arm64`) and verifies the exported C ABI. It runs automatically in
+**build-only** mode on any change under `libs/storage/Tsavorite/cc/**` (docs like
+this README are excluded) to confirm every platform still compiles.
+
+When you are working on a PR branch that changes the native device and want the
+refreshed binaries in your branch, dispatch it on your branch with
+`update_repo = true`:
+
+```sh
+gh workflow run native-build.yml --ref <your-branch> -f update_repo=true
+```
+
+It rebuilds every RID from your branch's C++ and commits the updated
+`runtimes/<rid>/native/` binaries **straight onto `<your-branch>`**, so the open
+PR updates in place — the C# CI (`ci.yml`) then tests against your new native
+code. (Dispatching on `main`/`dev` opens a review PR instead of pushing
+directly.) Note: a push made with the default `GITHUB_TOKEN` does not start new
+workflow runs, so `ci.yml` picks up the new binaries on your next push or a
+manual re-run unless a maintainer has configured a `NATIVE_BINARIES_PAT` secret.
+This is the canonical way to refresh the binaries.
 
 **Linux, by hand.** The `build-native.sh` helper next to this README builds
 both flavours (`libnative_device.so` with `USE_URING=ON` and
