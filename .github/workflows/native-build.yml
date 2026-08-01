@@ -114,14 +114,51 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # CMakeLists builds with /Qspectre /guard:cf /sdl and links the Spectre-mitigated CRT, so a
+      # missing "Spectre-mitigated libs" component fails the link with MSB8040 (see cc/README.md,
+      # "Install the Spectre-mitigated CRT libraries"). The hosted image normally ships these, but
+      # verify explicitly and install on demand so the build does not silently depend on the image.
+      - name: Ensure MSVC Spectre-mitigated CRT libraries
+        shell: pwsh
+        run: |
+          $arch = '${{ matrix.arch }}'.ToLowerInvariant()   # x64 | arm64
+          $vsPath = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath
+          $msvc = Join-Path $vsPath 'VC\Tools\MSVC'
+          function Test-Spectre {
+            if (-not (Test-Path $msvc)) { return $false }
+            [bool](Get-ChildItem $msvc -Directory |
+              Where-Object { Test-Path (Join-Path $_.FullName "lib\spectre\$arch") } |
+              Select-Object -First 1)
+          }
+          if (Test-Spectre) {
+            Write-Host "Spectre-mitigated CRT for $arch is present."
+          } else {
+            Write-Host "Spectre-mitigated CRT for $arch not found; installing VS components..."
+            $installer = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\setup.exe"
+            $components = @('Microsoft.VisualStudio.Component.VC.Runtimes.x86.x64.Spectre')
+            if ($arch -eq 'arm64') {
+              $components += @(
+                'Microsoft.VisualStudio.Component.VC.Runtimes.ARM64.Spectre',
+                'Microsoft.VisualStudio.Component.VC.Tools.ARM64')
+            }
+            $vsArgs = @('modify','--installPath', $vsPath, '--quiet','--norestart','--nocache')
+            foreach ($c in $components) { $vsArgs += @('--add', $c) }
+            $p = Start-Process -FilePath $installer -ArgumentList $vsArgs -Wait -PassThru -NoNewWindow
+            if ($p.ExitCode -notin @(0,3010)) {
+              throw "VS installer failed (exit $($p.ExitCode)) installing: $($components -join ', ')"
+            }
+            if (-not (Test-Spectre)) { throw "Spectre-mitigated CRT for $arch still missing after install." }
+            Write-Host "Installed Spectre-mitigated CRT for $arch."
+          }
+
       - name: Configure and build
         shell: pwsh
         run: |
           cd libs/storage/Tsavorite/cc
           # Let CMake pick the installed Visual Studio generator (the hosted image's VS major
           # version changes over time, e.g. 2022 -> 2026); -A selects the target architecture.
-          # The hosted Windows image already includes the Spectre-mitigated CRT that CMakeLists
-          # requires via /Qspectre, and the ARM64 VC toolset, so no extra component install is needed.
+          # The Spectre-mitigated CRT that CMakeLists requires via /Qspectre is ensured by the
+          # previous step.
           cmake -A ${{ matrix.arch }} -B build
           cmake --build build --config Release
 
@@ -139,16 +176,31 @@ jobs:
           if ($pdb) { Copy-Item $pdb.FullName $dst }
           Get-ChildItem $dst
 
-      - name: Verify exports
+      - name: Verify exports and security mitigations
         shell: pwsh
         run: |
           $vsPath = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath
           $dumpbin = (Get-ChildItem "$vsPath\VC\Tools\MSVC\*\bin\Hostx64\x64\dumpbin.exe" | Select-Object -First 1).FullName
-          $exports = & $dumpbin /exports "staging/${{ matrix.rid }}/native/native_device.dll"
+          $dll = "staging/${{ matrix.rid }}/native/native_device.dll"
+
+          $exports = & $dumpbin /exports $dll
           if (-not ($exports | Select-String 'NativeDevice_CreateWithBackend')) {
             throw "native_device.dll is missing NativeDevice_CreateWithBackend export"
           }
           Write-Host "Exports verified."
+
+          # Confirm the security flags in CMakeLists (/guard:cf and /GS /sdl, set alongside /Qspectre)
+          # actually took effect in the produced binary: Control Flow Guard and the stack Security
+          # Cookie both appear in the PE load config for a correctly mitigated build.
+          $cfg = & $dumpbin /loadconfig $dll
+          $cfg | Write-Host
+          if (-not ($cfg | Select-String -Quiet -Pattern 'Guard')) {
+            throw "Control Flow Guard (/guard:cf) not present in $dll — security flags did not take effect"
+          }
+          if (-not ($cfg | Select-String -Quiet -Pattern 'Security Cookie')) {
+            throw "Stack Security Cookie (/GS,/sdl) not present in $dll — security flags did not take effect"
+          }
+          Write-Host "Security mitigations verified: Control Flow Guard + Security Cookie present."
 
       - uses: actions/upload-artifact@v4
         with:
