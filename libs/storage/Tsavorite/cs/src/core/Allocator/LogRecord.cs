@@ -330,7 +330,12 @@ namespace Tsavorite.core
 
             // Adding valueAddress and length is the same as GetOptionalStartAddress() but faster
             var objectLogPositionPtr = (ulong*)GetObjectLogPositionAddress(valueAddress + valueLength);
-            *objectLogPositionPtr = deserializedLength;
+
+            // Preserve the downlevel (v2.1) ReuseObjectIdForSize flag (bit 63) across the length store, so recovery can still detect a
+            // downlevel source in SetRecoveredObjectLogRecordStartPosition. A real deserialized length is far below bit 63, so there is no
+            // collision, and the flag is never set on a v2.2 record (this OR is then a no-op).
+            var existingReuseObjectIdForSizeFlag = *objectLogPositionPtr & ObjectLogFilePositionInfo.kReuseObjectIdForSizeMask;
+            *objectLogPositionPtr = deserializedLength | existingReuseObjectIdForSizeFlag;
 
             // Restore raw ValueLength to ObjectIdSize for the in-memory invariant if needed (atomic via local + SetDataHeader).
             var localDataHeader = DataHeader;
@@ -1623,8 +1628,14 @@ namespace Tsavorite.core
             var (valueLength, valueAddress) = dataHeader.GetValueFieldInfo(physicalAddress);
             var objectLogPositionPtr = (ulong*)GetObjectLogPositionAddress(valueAddress + valueLength);
 
-            // For ValueObject, the deserialized length was stored at objectLogPositionPtr by SetDeserializedValueObject; save it.
-            var valueObjectLength = *objectLogPositionPtr;
+            // The downlevel (v2.1) ReuseObjectIdForSize flag survives to here on the slot: overflow values never pass through
+            // SetDeserializedValueObject, and for object values SetDeserializedValueObject preserves it. It identifies a downlevel source
+            // (split length encoding; dense object-log stream with no ChunkHeaders). It is never set on a v2.2 record.
+            var wasReuseObjectIdForSize = (*objectLogPositionPtr & ObjectLogFilePositionInfo.kReuseObjectIdForSizeMask) != 0;
+
+            // For ValueObject, the deserialized length was stored at objectLogPositionPtr by SetDeserializedValueObject; save it (masking
+            // off the preserved downlevel flag bit -- a no-op for v2.2, where the flag is clear).
+            var valueObjectLength = *objectLogPositionPtr & ~ObjectLogFilePositionInfo.kReuseObjectIdForSizeMask;
 
             ulong keyLen = 0;
             if (dataHeader.KeyIsOverflow)
@@ -1634,6 +1645,22 @@ namespace Tsavorite.core
             }
             var valLen = dataHeader.ValueIsOverflow ? (ulong)objectIdMap.GetOverflowByteArray(*(int*)valueAddress).Length
                        : (dataHeader.ValueIsObject ? valueObjectLength : 0UL);
+
+            // Converting a downlevel (v2.1) source to the current (v2.2) hint format is only byte-safe when the current encoding is
+            // headerless: a v2.1 object-log stream carries no ChunkHeaders, so its bytes match the current headerless (small overflow) and
+            // chunked-object (dense, no per-chunk header) encodings and can be repointed as-is. But a large overflow key (>= the 1023
+            // KeyLength sentinel) or overflow value (> kOutOfLineExactSizeCutoff) that the current format encodes WITH a leading ChunkHeader
+            // has no such header in the downlevel bytes; clearing the flag and setting the hint-with-header encoding here would make the
+            // reader consume 8 bytes of the value as a bogus header. Re-serializing to insert the header during recovery (which grows the
+            // object log and shifts following positions) is not yet implemented, so fail fast rather than silently corrupt. A v2.2 source
+            // never sets the flag, so this never fires for it.
+            if (wasReuseObjectIdForSize
+                    && (keyLen >= RecordDataHeader.kKeyLengthLowBitsMask
+                        || (dataHeader.ValueIsOverflow && valLen > (ulong)RecordDataHeader.kOutOfLineExactSizeCutoff)))
+            {
+                throw new TsavoriteException(
+                    "Recovering a downlevel (v2.1) checkpoint record whose large overflow key/value requires a v2.2 leading ChunkHeader is not yet supported by the recovery reposition path (the v2.1 object log has no header, and header insertion during recovery is not implemented).");
+            }
 
             // Write the position with the flag cleared and the exact lengths as RDH hints (capped at the sentinel), objectId slots untouched.
             *objectLogPositionPtr = pagePositionInfo.word;
