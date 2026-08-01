@@ -111,9 +111,9 @@ namespace Tsavorite.core
             {
                 if (logRecord.DataHeader.KeyIsOverflow)
                 {
-                    // For a key at/above the RDH KeyLength sentinel, its full length precedes the key bytes in a leading ChunkHeader;
+                    // For a key at/above the RDH KeyLength sentinel (1023), its full length precedes the key bytes in a leading ChunkHeader;
                     // otherwise the sentinel-capped hint is the exact length.
-                    var actualKeyLength = logRecord.DataHeader.KeyLengthIsSentinel ? ReadOverflowHeaderLengthAndExtend(keyLength) : keyLength;
+                    var actualKeyLength = logRecord.DataHeader.KeyLengthIsSentinel ? ReadOverflowHeaderAndExtend(keyLength) : keyLength;
                     // This assignment also allocates the slot in ObjectIdMap, overwriting whatever the objectId slot at keyAddress held
                     // on disk (a stale objectId for a hint-format record, or the key length high bits for a legacy record).
                     logRecord.KeyOverflow = new OverflowByteArray(actualKeyLength, startOffset: 0, endOffset: 0, zeroInit: false);
@@ -125,9 +125,12 @@ namespace Tsavorite.core
 
                 if (logRecord.DataHeader.ValueIsOverflow)
                 {
-                    // For an overflow value at/above the RDH ValueLength sentinel, its full length precedes the value bytes in a leading
-                    // ChunkHeader (symmetric with the key); otherwise the sentinel-capped hint is the exact length.
-                    var actualValueLength = logRecord.DataHeader.ValueLengthIsSentinel ? ReadOverflowHeaderLengthAndExtend((long)valueLength) : (int)valueLength;
+                    // Overflow value v2.2 encoding: a value with the has-header bit set carries its exact length (and any DMA alignment
+                    // padding) in a leading ChunkHeader; a headerless (isExactSize) value has its exact length in the RDH ValueLength field.
+                    var encodedValue = (uint)logRecord.DataHeader.GetValueLengthRaw();
+                    var actualValueLength = RecordDataHeader.FlushValueHasHeader(encodedValue)
+                        ? ReadOverflowHeaderAndExtend((long)valueLength)
+                        : RecordDataHeader.FlushValueExactByteSize(encodedValue);
                     logRecord.ValueOverflow = new OverflowByteArray(actualValueLength, startOffset: 0, endOffset: 0, zeroInit: false);
                     _ = Read(logRecord.ValueOverflow.Span);
                 }
@@ -150,29 +153,58 @@ namespace Tsavorite.core
             }
         }
 
-        /// <summary>For an overflow key/value whose RDH length field is the sentinel (its true length is at/above the field maximum), read
-        /// the leading 8-byte <see cref="ChunkHeader"/> that carries the full length, extend the read-ahead by the amount the capped
-        /// sentinel hint under-counted (the header plus the excess of the true length over the sentinel), and return the true length.</summary>
-        int ReadOverflowHeaderLengthAndExtend(long cappedSentinelHint)
+        /// <summary>For an overflow key/value with a leading 8-byte <see cref="ChunkHeader"/> (key at/above its 1023 sentinel; value with the
+        /// v2.2 has-header bit set), read that header, extend the read-ahead to cover the full on-disk extent (header + any DMA alignment
+        /// padding + data) beyond what the initial read already accounted for, skip the alignment padding, and return the exact data length.</summary>
+        /// <param name="alreadyAccounted">Bytes this component already contributed to the initial read total: the key's sentinel-capped RDH
+        /// hint, or the value's v2.2 initial read-ahead extent (page count * 4 KB, one 4 MB block for the sentinel, or the exact size).</param>
+        int ReadOverflowHeaderAndExtend(long alreadyAccounted)
         {
-            var actualLength = ReadOverflowChunkHeaderLength();
-            readBuffers.ExtendUnreadLengthRemaining(ChunkHeader.TotalSize + actualLength - cappedSentinelHint);
-            return actualLength;
+            var currentLength = ReadOverflowChunkHeader(out var alignmentPadding);
+
+            // Extend the read-ahead only by the shortfall of the full on-disk extent over what the initial read already covered. The initial
+            // read for a below-sentinel value already includes the header (page count rounds the whole extent up to 4 KB), so the shortfall is
+            // <= 0 and no extend is issued; a sentinel value (initial read one 4 MB block) or a sentinel-capped key extends by the remainder.
+            var extra = (ChunkHeader.TotalSize + (long)alignmentPadding + currentLength) - alreadyAccounted;
+            if (extra > 0)
+                readBuffers.ExtendUnreadLengthRemaining(extra);
+
+            // Skip any O_DIRECT alignment padding between the header and the sector-aligned data start (0 on the buffered write path).
+            if (alignmentPadding > 0)
+                SkipReadBytes(alignmentPadding);
+            return currentLength;
         }
 
-        /// <summary>Read the 8-byte <see cref="ChunkHeader"/> that precedes an overflow (key or value) whose RDH length field is at/above the
-        /// sentinel, returning the full overflow length from <see cref="ChunkHeader.currentLength"/>.
-        /// <para>This issues no extra IO: the sentinel length was already included in the read total passed to
-        /// <see cref="CircularDiskReadBuffer.OnBeginReadRecords"/> — the single-record read path sums the sentinel-capped KeyLength and
-        /// ValueLength hints (see <c>ObjectAllocatorImpl.VerifyRecordFromDiskCallback</c>), and multi-record scans size from absolute
-        /// position differences — so the header bytes are already present in the read-ahead ring. The header may still span read buffers, so
-        /// it is read through the buffered <see cref="Read(Span{byte}, CancellationToken)"/>.</para></summary>
-        int ReadOverflowChunkHeaderLength()
+        /// <summary>Read the 8-byte <see cref="ChunkHeader"/> that precedes an overflow (key or value) with a leading header, returning the
+        /// full overflow length from <see cref="ChunkHeader.currentLength"/> and its O_DIRECT alignment padding via <paramref name="alignmentPadding"/>.
+        /// <para>This issues no extra IO: the header is included in the value's v2.2 initial read extent (or the key's sentinel-capped hint)
+        /// passed to <see cref="CircularDiskReadBuffer.OnBeginReadRecords"/> — the single-record read path sums those per-component hints (see
+        /// <c>ObjectAllocatorImpl.VerifyRecordFromDiskCallback</c>) and multi-record scans size from absolute position differences — so the
+        /// header bytes are already present in the read-ahead ring. The header may still span read buffers or a segment boundary, so it is read
+        /// through the buffered <see cref="Read(Span{byte}, CancellationToken)"/>.</para></summary>
+        int ReadOverflowChunkHeader(out int alignmentPadding)
         {
             ChunkHeader header = default;
             var n = Read(new Span<byte>(&header, ChunkHeader.TotalSize));
-            Debug.Assert(n == ChunkHeader.TotalSize, $"Expected {ChunkHeader.TotalSize} ChunkHeader bytes but read {n}");
+            if (n != ChunkHeader.TotalSize)
+                throw new TsavoriteException($"Expected {ChunkHeader.TotalSize} ChunkHeader bytes but read {n}");
+            alignmentPadding = (int)header.alignmentPadding;
             return (int)header.currentLength;
+        }
+
+        /// <summary>Consume and discard <paramref name="count"/> bytes from the read stream (e.g. O_DIRECT alignment padding between an overflow
+        /// ChunkHeader and its sector-aligned data). <paramref name="count"/> is less than the device sector size.</summary>
+        void SkipReadBytes(int count)
+        {
+            Span<byte> discard = stackalloc byte[512];
+            while (count > 0)
+            {
+                var chunk = count < discard.Length ? count : discard.Length;
+                var n = Read(discard.Slice(0, chunk));
+                if (n != chunk)
+                    throw new TsavoriteException($"Expected to skip {chunk} alignment-padding bytes but read {n}");
+                count -= chunk;
+            }
         }
 
         /// <inheritdoc/>

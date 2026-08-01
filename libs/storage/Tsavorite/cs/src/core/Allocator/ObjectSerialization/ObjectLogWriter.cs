@@ -119,9 +119,10 @@ namespace Tsavorite.core
             // Now do value overflow or object, if either is present.
             if (!valueOverflow.IsEmpty)
             {
-                // A value at/above the RDH ValueLength sentinel carries its full length in a leading ChunkHeader (symmetric with the key);
-                // below the sentinel the RDH holds the exact length (no header).
-                if (valueOverflow.Length >= (int)RecordDataHeader.kValueLengthLowBitsMask)
+                // Overflow value uses the v2.2 encoding: a value > kOutOfLineExactSizeCutoff (1023) carries its full length in a leading
+                // ChunkHeader (the RDH ValueLength holds only a 4 KB-page/sentinel read hint plus the has-header bit); a value <= 1023 is
+                // headerless (the RDH holds the exact length, isExactSize).
+                if (valueOverflow.Length > RecordDataHeader.kOutOfLineExactSizeCutoff)
                     WriteOverflowChunkHeader(valueOverflow.Length);
                 WriteDirect(valueOverflow);
             }

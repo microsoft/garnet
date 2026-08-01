@@ -440,7 +440,13 @@ namespace Tsavorite.core
             if (ValueIsObject)
                 ValueLength = (int)EncodeFlushObjectValue(valueActualLength);
             else if (ValueIsOverflow)
-                ValueLength = valueActualLength >= (long)kValueLengthLowBitsMask ? (int)kValueLengthLowBitsMask : (int)valueActualLength;
+            {
+                // Overflow value uses the v2.2 encoding: headerless exact size when <= 1023, else a leading ChunkHeader + a 4 KB-page-count
+                // (or sentinel) read hint. The buffered on-disk extent is data (headerless) else ChunkHeader.TotalSize + data; DMA alignment
+                // padding (>= MaxCopySpanLen) adds to the extent and is threaded from the writer in the DMA path (0 on the buffered path).
+                var extent = valueActualLength <= kOutOfLineExactSizeCutoff ? valueActualLength : ChunkHeader.TotalSize + valueActualLength;
+                ValueLength = (int)EncodeFlushOutOfLineValue(valueActualLength, extent);
+            }
         }
 
         // ── Flush (v2.2) out-of-line VALUE length encoding (low 12 bits of the ValueLength field) ─────────────────────

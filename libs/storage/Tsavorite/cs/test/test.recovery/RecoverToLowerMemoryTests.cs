@@ -254,20 +254,20 @@ namespace Tsavorite.test.recovery
                (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions));
 
         /// <summary>
-        /// Snapshot-recovers records whose overflow VALUE is at/above the 16 MB RDH ValueLength sentinel, so each carries a leading
-        /// ChunkHeader. The snapshot-region recovery copy cannot size such a record by the RDH KeyLength/ValueLength hints (they cap at
-        /// the sentinel and omit the header + the length beyond it); instead it sizes by the successor object record's snapshot position
-        /// minus this record's, copying the record's exact raw key+value+header+padding extent verbatim. A trailing small (headerless)
-        /// overflow record keeps the headered ones off the last-record-on-page path (still guarded). Recovery uses a small heap budget so
+        /// Snapshot-recovers records whose overflow VALUE is at/above the ~4 MB page-count sentinel, so each carries a leading ChunkHeader
+        /// AND its RDH page-count read hint (one 4 MB block) may UNDER-count the true extent. The snapshot-region recovery copy cannot size
+        /// such a record by the RDH KeyLength/ValueLength hints; instead it sizes by the successor object record's snapshot position minus
+        /// this record's, copying the record's exact raw key+value+header+padding extent verbatim. A trailing small (headerless, at most
+        /// 1023 B) overflow record keeps the headered ones off the last-record-on-page path (still guarded). Recovery uses a small heap budget so
         /// the object page is evicted and thus flushed through the snapshot-copy path. Every value must read back byte-for-byte.
         /// </summary>
         [Test]
         [Category("TsavoriteKV"), Category("CheckpointRestore")]
         public async Task RecoverSnapshotHeaderedOverflowValue()
         {
-            const int headeredLen = (16 * 1024 * 1024) + 5000;   // >= the 2^24-1 ValueLength sentinel -> leading ChunkHeader
-            const int numHeadered = 3;                           // keys 0..2 are headered (non-last); key 3 is a small trailing overflow (last on page)
-            const int smallLen = 1024;
+            const int headeredLen = (16 * 1024 * 1024) + 5000;   // >= the ~4 MB page-count sentinel -> leading ChunkHeader + under-counting hint
+            const int numHeadered = 3;                           // keys 0..2 are sentinel-headered (non-last); key 3 is a small trailing overflow (last on page)
+            const int smallLen = 1000;                           // <= kOutOfLineExactSizeCutoff (1023) -> headerless (isExactSize), sized exactly by its hint
 
             static byte[] MakeValue(int key, int len) { var v = new byte[len]; new Span<byte>(v).Fill((byte)(0x30 + key)); return v; }
 

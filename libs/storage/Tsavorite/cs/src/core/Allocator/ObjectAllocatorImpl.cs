@@ -952,15 +952,18 @@ namespace Tsavorite.core
                                         // and repoint (which preserves the record's unchanged lengths and format flag) rather than SetRecoveredObjectLogRecordStartPosition.
                                         var snapshotPositionWord = logRecord.GetObjectLogRecordStartPositionAndLengths(out var copyKeyLength, out var copyValueLength);
 
-                                        // Size the verbatim copy by the record's exact raw on-disk extent. For a headerless record -- and for a chunked
-                                        // object value, whose DecodeFlushValueExtent hint over-reads by < 4 KB harmlessly -- the RDH KeyLength/ValueLength
-                                        // hints equal (or safely exceed) the extent, so use them. But a record whose overflow key or value is at/above its
-                                        // RDH sentinel carries a leading 8-byte ChunkHeader plus the length beyond the sentinel, which the hint omits: the
-                                        // hint UNDER-counts and a hint-sized copy would truncate. Size such a record by the successor object record's
-                                        // snapshot position minus this record's -- exactly this record's full key+value+header(s)+alignment/straddle padding
-                                        // verbatim (any trailing over-copy is ignored by the reader, which re-frames from the record's own ChunkHeader).
+                                        // Size the verbatim copy by the record's exact raw on-disk extent. For a headerless record, a
+                                        // below-sentinel headered overflow value (its page-count hint rounds the header+data up to 4 KB, so it
+                                        // OVER-counts safely), and a chunked object value (its DecodeFlushValueExtent hint over-reads by < 4 KB
+                                        // harmlessly), the RDH KeyLength/ValueLength hints equal or safely exceed the extent, so use them. But a
+                                        // record whose overflow key is at its 1023 sentinel, or whose overflow value is at the page-count sentinel
+                                        // (extent >= ~4 MB, so the 4 MB hint may UNDER-count the true length), carries a leading ChunkHeader whose
+                                        // length the hint omits: a hint-sized copy would truncate. Size such a record by the successor object
+                                        // record's snapshot position minus this record's -- exactly this record's full key+value+header(s)+alignment/
+                                        // straddle padding verbatim (any trailing over-copy is ignored by the reader, which re-frames from the header).
                                         ulong copyObjectLength;
-                                        if (logRecord.DataHeader.KeyLengthIsSentinel || (logRecord.DataHeader.ValueIsOverflow && logRecord.DataHeader.ValueLengthIsSentinel))
+                                        if (logRecord.DataHeader.KeyLengthIsSentinel
+                                                || (logRecord.DataHeader.ValueIsOverflow && RecordDataHeader.FlushValuePageCountIsSentinel((uint)logRecord.DataHeader.GetValueLengthRaw())))
                                         {
                                             var thisPosition = new ObjectLogFilePositionInfo(snapshotPositionWord, objectLogTail.SegmentSizeBits);
                                             copyObjectLength = 0;

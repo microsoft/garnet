@@ -1578,7 +1578,12 @@ namespace Tsavorite.core
             keyLength = dataHeader.KeyIsOverflow ? dataHeader.GetKeyLengthRaw() : 0;   // KeyIsInline: keyLength is ignored
 
             if (!dataHeader.ValueIsInline)
-                valueObjectLength = RecordDataHeader.DecodeFlushValueExtent((uint)dataHeader.GetValueLengthRaw(), dataHeader.ValueIsObject);
+            {
+                var rawValueLength = (uint)dataHeader.GetValueLengthRaw();
+                valueObjectLength = dataHeader.ValueIsObject
+                    ? RecordDataHeader.DecodeFlushValueExtent(rawValueLength, valueIsObject: true)     // object: current hint encoding
+                    : RecordDataHeader.DecodeFlushValueInitialReadExtent(rawValueLength);              // overflow: v2.2 initial read-ahead extent
+            }
             else // ValueIsInline is true; valueLength will be ignored
             {
                 valueObjectLength = 0;
