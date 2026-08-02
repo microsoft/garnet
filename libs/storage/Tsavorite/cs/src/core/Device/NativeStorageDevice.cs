@@ -79,6 +79,13 @@ namespace Tsavorite.core
         const int ShardStride = 16;
 
         /// <summary>
+        /// Interval (milliseconds) between <see cref="activeShards"/> reconciliations — see
+        /// <see cref="MaybeReconcileActiveShards"/>. Chosen small enough to track submitter-thread churn promptly
+        /// yet large enough that the periodic shard scan is negligible (a few hundred scans/second at most).
+        /// </summary>
+        const long ReconcileIntervalMs = 200;
+
+        /// <summary>
         /// Size of the in-flight completion-tracking pool (the <see cref="results"/> array): one entry per slot
         /// across all shards. Pure managed memory (no kernel cost).
         /// </summary>
@@ -147,11 +154,24 @@ namespace Tsavorite.core
         int nextShardSeq;
 
         /// <summary>
-        /// Number of distinct shards that have been handed out (i.e. distinct submitter threads seen). Used by
-        /// <see cref="Throttle"/> to split the global <see cref="StorageDeviceBase.ThrottleLimit"/> into a
-        /// per-thread in-flight budget so the device-wide cap is preserved without a global in-flight counter.
+        /// Estimate of the number of CONCURRENTLY-active submitter threads, used by <see cref="PerThreadLimit"/>
+        /// to split the global <see cref="StorageDeviceBase.ThrottleLimit"/> into a per-thread in-flight budget
+        /// so the device-wide cap is preserved without a global in-flight counter. <see cref="AssignShard"/>
+        /// increments it the first time a thread submits (immediate, conservative — new threads instantly get a
+        /// fair share), and <see cref="MaybeReconcileActiveShards"/> periodically reconciles it DOWN to actual
+        /// shard occupancy so it does not ratchet up as the .NET ThreadPool retires and re-injects submitter
+        /// threads. Without that reconcile, a long-lived device under ThreadPool churn would see this grow
+        /// unbounded (every fresh thread bumps it, thread exit never decrements it), collapsing the per-thread
+        /// budget and progressively starving the device queue depth — a slow, restart-only-recoverable decline.
         /// </summary>
         int activeShards;
+
+        /// <summary>
+        /// <see cref="Environment.TickCount64"/> at/after which the next <see cref="activeShards"/> reconciliation
+        /// is due. A plain (non-atomic) read gates the reconcile on the hot completion path; concurrent completers
+        /// racing to reconcile is harmless (the scan is idempotent). See <see cref="MaybeReconcileActiveShards"/>.
+        /// </summary>
+        long nextReconcileTicks;
 
         /// <summary>
         /// Effective in-flight throttle used by <see cref="Throttle"/>, i.e. <c>min(ThrottleLimit, MaxThrottle)</c>
@@ -731,6 +751,33 @@ namespace Tsavorite.core
         }
 
         /// <summary>
+        /// Periodically reconciles <see cref="activeShards"/> DOWN to the number of shards currently carrying
+        /// in-flight IO (≈ the number of concurrently-active submitter threads). <see cref="AssignShard"/> only
+        /// ever increments <see cref="activeShards"/> — a .NET ThreadPool worker that submits once and is later
+        /// retired never decrements it — so without this the divisor ratchets up as the pool churns threads,
+        /// shrinking <see cref="PerThreadLimit"/> and starving the device queue over the process's lifetime
+        /// (a slow decline only a restart recovers). Reconciling from live occupancy makes the divisor track
+        /// actual concurrency: births are counted immediately (in <see cref="AssignShard"/>), deaths are reclaimed
+        /// here. Time-gated by a cheap non-atomic <see cref="Environment.TickCount64"/> check so it is effectively
+        /// free on the hot completion path (a full scan runs at most every <see cref="ReconcileIntervalMs"/> ms).
+        /// Concurrent completers racing here is harmless: the scan is idempotent and the write is a plain store.
+        /// </summary>
+        void MaybeReconcileActiveShards()
+        {
+            long now = Environment.TickCount64;
+            if (now < Volatile.Read(ref nextReconcileTicks))
+                return;
+            Volatile.Write(ref nextReconcileTicks, now + ReconcileIntervalMs);
+            int occupied = 0;
+            for (int s = 0; s < NumShards; s++)
+            {
+                if (Volatile.Read(ref shardSubmitted[s * ShardStride]) - Volatile.Read(ref shardCompleted[s * ShardStride]) > 0)
+                    occupied++;
+            }
+            Volatile.Write(ref activeShards, occupied < 1 ? 1 : occupied);
+        }
+
+        /// <summary>
         /// Rents a free completion-tracking slot offset from the calling submitter's shard. Under the throttle a
         /// shard never holds more than <see cref="MaxPerThreadInFlight"/> slots at once (&lt; <see cref="SlotsPerShard"/>),
         /// so the fast <see cref="ConcurrentQueue{T}.TryDequeue"/> path always succeeds; the spin is a safety net for
@@ -824,6 +871,7 @@ namespace Tsavorite.core
         void _callback(IntPtr context, int errorCode, ulong numBytes)
         {
             if (s_instrument) Interlocked.Increment(ref completeCount);
+            MaybeReconcileActiveShards();
             int offset = (int)context;
             var result = results[offset];
             // CRITICAL: this method is invoked via a function pointer from native code (libaio /
