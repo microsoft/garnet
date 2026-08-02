@@ -27,7 +27,7 @@ namespace Garnet.server
             int rightBitIndex = (1 << endBitOffset);
 
             byte mask = (byte)(rightBitIndex - leftBitIndex);
-            return (long)Popcnt.X64.PopCount((ulong)(mask & payload));
+            return BitOperations.PopCount((uint)(mask & payload));
         }
 
         /// <summary>
