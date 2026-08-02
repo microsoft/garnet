@@ -123,6 +123,36 @@ Peaks near the physical core count, then falls off. Use a large `--throttle-limi
   10–30%).
 - **`--file-size`** must be a multiple of `1024 × --sector-size`.
 
+## Completion model & high-latency (cloud) devices
+
+The completion path is **block-on-signal**, not busy-spin. A read that misses
+memory goes pending; the waiting thread suspends its epoch and parks on the
+session's `readyResponses` semaphore (`SemaphoreSlim`, via `WaitPending`). The
+background drainer parks in the kernel — `io_getevents(min_nr=1, timeout)`
+(libaio) or `io_uring_wait_cqe_timeout` (uring; rings are created with flags `0`,
+so **no SQPOLL** kernel poller) — and releases the semaphore when a completion
+lands. A waiting reader therefore burns no CPU during the device-latency window;
+this is the steady state on a **high-latency (cloud) device** (Azure/EBS-class,
+~0.5–2 ms), where throughput is latency×concurrency-bound, as it must be.
+
+Two poll levers exist only to reach the local-NVMe ceiling; neither is a hot
+idle-spin, and both fall through to the block-on-signal path when completions are
+not immediately ready:
+
+- **Inline affine drain** (`GARNET_INLINE_DRAIN_AFFINE`, default on): before
+  parking, the reader does **one** non-blocking peek of its own ring
+  (`TryCompleteMine`). On a saturated fast array the completion is usually already
+  there, so the reader never parks (poll-driven → peak IOPS). On a cloud device the
+  peek usually misses and the thread parks on the semaphore. Set
+  `GARNET_INLINE_DRAIN_AFFINE=0` for high-latency devices so readers park directly
+  and let the drainer wake them.
+- **Submit-side backpressure**: `AsyncGetFromDisk` spins **only** while a thread's
+  in-flight exceeds its per-thread `--throttle-limit` share, and it drains
+  completions on each turn. A request/response reader holds ≤1 in-flight, so it
+  never hits this; it engages only for bulk multi-issue callers (recovery/scan).
+  Size `--throttle-limit` to the device's bandwidth-delay product (deep queues are
+  how you hide cloud latency) and the spin stays at the ceiling only.
+
 ## Output
 
 ```
