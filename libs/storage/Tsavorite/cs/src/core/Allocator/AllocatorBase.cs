@@ -181,6 +181,10 @@ namespace Tsavorite.core
         /// <summary>Log Device</summary>
         protected readonly IDevice device;
 
+        /// <summary>The underlying log <see cref="IDevice"/> (e.g. for backend-specific hooks such as
+        /// NativeStorageDevice ring-affinity release).</summary>
+        internal IDevice Device => device;
+
         /// <summary>Sector size</summary>
         protected readonly int sectorSize;
         #endregion

@@ -194,6 +194,18 @@ namespace Tsavorite.core
         readonly int numCompletionThreadsConfig;
         readonly int numIoContextsConfig;
         readonly IoBackend ioBackendConfig;
+        readonly bool sessionRingAffinityEnabled;
+
+        /// <summary>
+        /// LightEpoch-style ring affinity only: set on the submitting thread when it issues a disk
+        /// read (the point at which the native side picks/owns an io_uring ring), and consumed+cleared
+        /// at the caller's network-batch boundary via <see cref="EndBatchReleaseRing"/>. A batch that
+        /// performs zero disk reads (pure in-memory hits) never enters <see cref="ReadAsync"/>, so this
+        /// stays false and the batch boundary does no ring work at all — the release cost is paid only
+        /// when a ring was actually acquired.
+        /// </summary>
+        [ThreadStatic]
+        static bool t_ringSubmitPending;
 
         /// <summary>
         /// Runtime segment size in bytes that the native shim was asked to use. Populated by
@@ -664,6 +676,9 @@ namespace Tsavorite.core
         [DllImport(NativeLibraryName, EntryPoint = "NativeDevice_FlushSubmits", CallingConvention = CallingConvention.Cdecl)]
         static extern int NativeDevice_FlushSubmits(IntPtr device);
 
+        [DllImport(NativeLibraryName, EntryPoint = "NativeDevice_ReleaseRing", CallingConvention = CallingConvention.Cdecl)]
+        static extern void NativeDevice_ReleaseRing(IntPtr device);
+
         [DllImport(NativeLibraryName, EntryPoint = "NativeDevice_QueueRun", CallingConvention = CallingConvention.Cdecl)]
         static extern int NativeDevice_QueueRun(IntPtr device, int timeout_secs);
 
@@ -1070,6 +1085,8 @@ namespace Tsavorite.core
             }
             this.numIoContextsConfig = requestedIoContexts;
             this.ioBackendConfig = ioBackend;
+            this.sessionRingAffinityEnabled = (Environment.GetEnvironmentVariable("GARNET_RING_LE_AFFINITY") is string leEnv)
+                && leEnv != "0" && leEnv.Length > 0;
             this.logger = logger;
 
             ThrottleLimit = 120;
@@ -1380,6 +1397,12 @@ namespace Tsavorite.core
             try
             {
                 int _result = NativeDevice_ReadAsync(nativeDevice, ((ulong)segmentId << segmentSizeBits) | sourceAddress, destinationAddress, readLength, _callbackDelegate, (IntPtr)offset);
+
+                // Ring was picked/owned inside the native submit above; mark this thread so its
+                // network-batch boundary releases it (LightEpoch-style reclaim). Set even on a failed
+                // submit — a ring may still have been acquired before the error.
+                if (sessionRingAffinityEnabled)
+                    t_ringSubmitPending = true;
 
                 if (_result != 0)
                     throw new IOException($"Error reading from log file (status {_result}){FormatNativeError()}", _result);
@@ -1713,6 +1736,56 @@ namespace Tsavorite.core
                 var dev = Volatile.Read(ref nativeDevice);
                 if (dev != IntPtr.Zero)
                     _ = NativeDevice_FlushSubmits(dev);
+            }
+            finally
+            {
+                ReleaseLease(shard);
+            }
+        }
+
+        /// <summary>
+        /// Whether LightEpoch-style ring affinity (GARNET_RING_LE_AFFINITY=1) is enabled. When on,
+        /// callers should call <see cref="EndBatchReleaseRing"/> at their network-batch boundary so a
+        /// churned-away thread never leaves a stale ring owner.
+        /// Read once at construction; the native side reads the same env var independently.
+        /// </summary>
+        public bool SessionRingAffinityEnabled => sessionRingAffinityEnabled;
+
+        /// <summary>
+        /// LightEpoch-style network-batch boundary hook. Releases the calling thread's io_uring ring
+        /// ownership so it can be reclaimed by a future thread — but ONLY if this thread actually
+        /// submitted a disk read during the batch (tracked by <see cref="t_ringSubmitPending"/>). A
+        /// batch of pure in-memory hits never called <see cref="ReadAsync"/>, so this returns after a
+        /// single thread-static read with no P/Invoke and no ring work. Inert when LE affinity is off.
+        /// Must run on the same thread that issued the reads (ring/submit state is thread-local).
+        /// </summary>
+        public void EndBatchReleaseRing()
+        {
+            if (!sessionRingAffinityEnabled) return;
+            if (!t_ringSubmitPending) return;
+            t_ringSubmitPending = false;
+            // Flush any submit still buffered by GARNET_SUBMIT_BATCH, then hand the ring back.
+            FlushSubmits();
+            ReleaseRing();
+        }
+
+        /// <summary>
+        /// Release the calling thread's LightEpoch-style ring ownership so it can be reclaimed.
+        /// No-op when LE affinity is disabled or the backend has no ring ownership. Must run on the
+        /// thread that issued the reads (the preferred-ring state is thread-local on the native side).
+        /// Prefer <see cref="EndBatchReleaseRing"/> from hot paths — it skips the P/Invoke entirely
+        /// for batches that did no disk I/O.
+        /// </summary>
+        public void ReleaseRing()
+        {
+            if (Volatile.Read(ref disposedFlag) != 0) return;
+            if (!TryLease(out int shard))
+                return;
+            try
+            {
+                var dev = Volatile.Read(ref nativeDevice);
+                if (dev != IntPtr.Zero)
+                    NativeDevice_ReleaseRing(dev);
             }
             finally
             {

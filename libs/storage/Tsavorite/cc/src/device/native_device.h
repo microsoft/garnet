@@ -191,6 +191,10 @@ public:
     /// No-op when batching is disabled/empty or on backends that submit per-op. Runs on the
     /// calling (submitter) thread. Returns the number of IOs submitted to the kernel.
     virtual int FlushSubmits() = 0;
+    /// Release the calling thread's LightEpoch-style ring ownership (GARNET_RING_LE_AFFINITY).
+    /// Called at the network-batch boundary so a churned-away submitter thread never leaves a
+    /// stale ring owner. No-op when LE affinity is disabled or on backends without ring ownership.
+    virtual void ReleaseRing() = 0;
     /// Number of submission/completion shards. >= 1.
     virtual int num_io_contexts() const = 0;
 };
@@ -574,6 +578,10 @@ public:
 
     int FlushSubmits() override {
         return handler_.FlushSubmits();
+    }
+
+    void ReleaseRing() override {
+        handler_.release_my_ring();
     }
 
     int num_io_contexts() const override {
