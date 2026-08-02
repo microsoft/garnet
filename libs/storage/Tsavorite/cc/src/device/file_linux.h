@@ -339,6 +339,11 @@ class QueueIoHandler {
   /// (the batch is thread_local). Returns the number of iocbs submitted to the kernel.
   int FlushSubmits();
 
+  /// LightEpoch-style ring-affinity reclaim hook. The libaio backend has no io_uring ring
+  /// ownership (it uses per-thread io_context affinity via pick_context), so this is a no-op;
+  /// it exists only to satisfy the INativeDevice::ReleaseRing() forwarding on both backends.
+  void release_my_ring() {}
+
  private:
   void Init(int num_contexts) {
     // Build into temporary vectors and only publish to members on full success.
@@ -576,6 +581,9 @@ class UringIoHandler {
     if (rings_.size() == 1) {
       return 0;
     }
+    if (le_affinity_enabled()) {
+      return pick_ring_index_le();
+    }
     thread_local const UringIoHandler* tls_owner = nullptr;
     thread_local int my_ring_idx = -1;
     if (tls_owner != this || my_ring_idx < 0 || my_ring_idx >= static_cast<int>(rings_.size())) {
@@ -584,6 +592,54 @@ class UringIoHandler {
           submit_counter_.fetch_add(1, std::memory_order_relaxed) % rings_.size());
     }
     return my_ring_idx;
+  }
+
+  /// Thread-local preferred ring for LightEpoch-style affinity (mirrors LightEpoch's
+  /// Metadata.startOffset1). Retained across batches so a returning thread re-grabs the SAME
+  /// (cache-warm) ring; reset when the thread migrates to a different handler instance.
+  static int& le_pref_tls() { static thread_local int v = -1; return v; }
+  static const UringIoHandler*& le_owner_tls() { static thread_local const UringIoHandler* v = nullptr; return v; }
+
+  /// LightEpoch-style ring acquire. Keeps a thread-local preferred ring; re-claims it if it is
+  /// free or already ours (warm fast path), otherwise probes forward for a free ring and remembers
+  /// it as the new preferred ("replace with a new one"). Ownership is dropped at the batch boundary
+  /// by release_my_ring(), so — unlike the sticky committed model — a retired ThreadPool thread
+  /// never leaves a permanently-poisoned ring. Uses the same uring_thread_id() the submit path's
+  /// try_own_ring uses, so the claim made here is honoured there.
+  int pick_ring_index_le() {
+    const int n = static_cast<int>(rings_.size());
+    const uint64_t myid = uring_thread_id();
+    if (le_owner_tls() != this) { le_owner_tls() = this; le_pref_tls() = -1; }
+    int& pref = le_pref_tls();
+    // Warm fast path: I already own my preferred ring.
+    if (pref >= 0 && pref < n &&
+        ring_owner_[pref]->load(std::memory_order_relaxed) == myid) {
+      return pref;
+    }
+    // Seed the preferred ring on first use (round-robin against other threads).
+    if (pref < 0 || pref >= n) {
+      pref = static_cast<int>(submit_counter_.fetch_add(1, std::memory_order_relaxed) % n);
+    }
+    // (Re)claim the preferred ring if free or already ours.
+    uint64_t expected = 0;
+    if (ring_owner_[pref]->load(std::memory_order_relaxed) == myid ||
+        ring_owner_[pref]->compare_exchange_strong(expected, myid, std::memory_order_relaxed)) {
+      return pref;
+    }
+    // Preferred taken by another (live or churned-away) owner: probe forward for a free ring and
+    // adopt it as the new preferred.
+    for (int k = 1; k < n; ++k) {
+      int cand = pref + k;
+      if (cand >= n) cand -= n;
+      uint64_t exp2 = 0;
+      if (ring_owner_[cand]->compare_exchange_strong(exp2, myid, std::memory_order_relaxed)) {
+        pref = cand;
+        return cand;
+      }
+    }
+    // All rings owned (live submitters > rings): fall back to the preferred ring; try_own_ring will
+    // see a foreign owner and this thread will submit per-op (no deferral) until a ring frees up.
+    return pref;
   }
 
   void pick_ring(struct io_uring*& ring_out, SpinLock*& lock_out) {
@@ -604,9 +660,10 @@ class UringIoHandler {
   /// Try to claim exclusive batch-submit ownership of ring `idx` for thread `tid` (nonzero).
   /// Deferring io_uring_submit is only safe when the calling thread is the SOLE submitter on a
   /// ring; otherwise a peer thread's submit would flush this thread's not-yet-accounted SQEs.
-  /// Ownership is sticky (first claimant wins, released only at teardown), consistent with
-  /// pick_ring_index()'s stable thread->ring affinity. When more submitters than rings share a
-  /// ring, one thread wins ownership and the rest fall back to immediate per-op submit.
+  /// In the default (sticky) model ownership is released only at teardown; under
+  /// le_affinity_enabled() the claim is made in pick_ring_index_le() and dropped at the batch
+  /// boundary by release_my_ring(). Either way, when more submitters than rings share a ring, one
+  /// thread wins ownership and the rest fall back to immediate per-op submit.
   bool try_own_ring(int idx, uint64_t tid) {
     if (idx < 0 || idx >= static_cast<int>(ring_owner_.size())) return false;
     std::atomic<uint64_t>& owner = *ring_owner_[idx];
@@ -615,6 +672,23 @@ class UringIoHandler {
     if (cur != 0) return false;
     uint64_t expected = 0;
     return owner.compare_exchange_strong(expected, tid, std::memory_order_relaxed);
+  }
+
+  /// Release the calling thread's LightEpoch-style ring ownership so it can be reclaimed by any
+  /// thread (fixes dead-tid poisoning). Called at the network-batch boundary — the reliable
+  /// "suspend" point after which the thread will not submit again until its next batch. The
+  /// preferred index is retained (warm re-acquire next batch). No-op when LE affinity is disabled
+  /// or the thread owns no ring on this handler.
+  void release_my_ring() {
+    if (!le_affinity_enabled() || le_owner_tls() != this) return;
+    int pref = le_pref_tls();
+    if (pref < 0 || pref >= static_cast<int>(ring_owner_.size())) return;
+    std::atomic<uint64_t>& owner = *ring_owner_[pref];
+    uint64_t myid = uring_thread_id();
+    uint64_t cur = owner.load(std::memory_order_relaxed);
+    if (cur == myid) {
+      owner.store(0, std::memory_order_relaxed);
+    }
   }
 
   /// Drain ONLY the calling thread's affine ring (mirrors QueueIoHandler::TryCompleteMine).
@@ -661,6 +735,21 @@ class UringIoHandler {
   /// Whether TryCompleteMine() uses the batch-reap (default true). GARNET_URING_BATCH_REAP=0
   /// forces the legacy single-CQE reap for ablation/measurement. Read once.
   static bool batch_reap_enabled();
+  /// Whether LightEpoch-style ring affinity is enabled (GARNET_RING_LE_AFFINITY=1). When on,
+  /// pick_ring_index keeps a thread-local preferred ring that is CAS-claimed and re-used warm
+  /// (probing for a free ring on collision, like LightEpoch's startOffset probe), and ownership
+  /// is released at the network-batch boundary (release_my_ring) instead of being sticky until
+  /// teardown — so churned-away .NET ThreadPool threads never leave a stale (dead-tid) owner. Read once.
+  static bool le_affinity_enabled();
+
+  /// Stable, nonzero per-thread id used to CAS ring ownership. Shared by pick_ring_index()'s
+  /// LightEpoch-style acquire and the submit path's try_own_ring so both agree on "who owns this
+  /// ring". Defined inline (single shared counter across the one device translation unit).
+  static uint64_t uring_thread_id() {
+    static std::atomic<uint64_t> g_next{ 0 };
+    static thread_local uint64_t id = g_next.fetch_add(1, std::memory_order_relaxed) + 1;
+    return id;
+  }
   /// Drain completions across all rings (back-compat for callers that do not know about sharding).
   int QueueRun(int timeout_secs);
   /// Drain completions on ring `idx` only.

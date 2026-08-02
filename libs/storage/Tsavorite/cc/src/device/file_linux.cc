@@ -542,12 +542,9 @@ inline void DispatchUringCqe(int io_res, UringIoHandler::IoCallbackContext* cont
 // can never stall the AllocatorBase.AsyncGetFromDisk throttle (no lost-flush deadlock).
 // ---------------------------------------------------------------------------------------------
 
-// Stable, nonzero per-thread id used to CAS ring ownership.
-inline uint64_t uring_thread_id() {
-    static std::atomic<uint64_t> g_next{ 0 };
-    thread_local uint64_t id = g_next.fetch_add(1, std::memory_order_relaxed) + 1;
-    return id;
-}
+// UringIoHandler::uring_thread_id() (defined inline in the header) is the single source of the
+// stable per-thread id used to CAS ring ownership, so pick_ring_index_le() and the submit path's
+// try_own_ring() below agree on the owner.
 
 // Batch size threshold read once from GARNET_SUBMIT_BATCH (shared with the libaio backend).
 // 1 (default/unset) disables batching -> byte-for-byte legacy per-op submit.
@@ -664,6 +661,19 @@ bool UringIoHandler::batch_reap_enabled() {
   static const bool v = [] {
     const char* s = ::getenv("GARNET_URING_BATCH_REAP");
     long n = s ? ::atol(s) : 1;
+    return n != 0;
+  }();
+  return v;
+}
+
+bool UringIoHandler::le_affinity_enabled() {
+  static const bool v = [] {
+    const char* s = ::getenv("GARNET_RING_LE_AFFINITY");
+    long n = s ? ::atol(s) : 0;
+    if (n != 0) {
+      ::fprintf(stderr, "[ring-le-affinity] enabled: LightEpoch-style per-thread ring affinity "
+                        "(warm preferred ring + probe-replace + batch-boundary release)\n");
+    }
     return n != 0;
   }();
   return v;
@@ -923,7 +933,7 @@ Status UringFile::ScheduleOperation(FileOperationType operationType, uint8_t* bu
         b.sq_lock->Release();
         b.pending = 0;
       }
-      if (handler_->try_own_ring(ring_idx, uring_thread_id())) {
+      if (handler_->try_own_ring(ring_idx, UringIoHandler::uring_thread_id())) {
         batched_owner = true;
         b.handler = handler_;
         b.ring = ring;
