@@ -623,7 +623,10 @@ class UringIoHandler {
   /// AsyncGetFromDisk throttle-wait) drains its own ring the same batch-at-a-time way the
   /// dedicated drainer's QueueRunFor does, rather than one io_uring_peek_cqe per completion.
   bool TryCompleteMine() {
-    return TryCompleteMineBatch(pick_ring_index());
+    int idx = pick_ring_index();
+    // Default: batch-reap up to kCqeBatch CQEs per call. GARNET_URING_BATCH_REAP=0 falls back to
+    // the legacy single-CQE reap (TryCompleteFor) purely for ablation/measurement of the batch-reap.
+    return batch_reap_enabled() ? TryCompleteMineBatch(idx) : TryCompleteFor(idx);
   }
 
   struct IoCallbackContext {
@@ -655,6 +658,9 @@ class UringIoHandler {
   /// Non-blocking batch drain of ring `idx` (the caller's affine ring): reaps up to kCqeBatch
   /// completions in a single cq_lock section. Backs TryCompleteMine().
   bool TryCompleteMineBatch(int idx);
+  /// Whether TryCompleteMine() uses the batch-reap (default true). GARNET_URING_BATCH_REAP=0
+  /// forces the legacy single-CQE reap for ablation/measurement. Read once.
+  static bool batch_reap_enabled();
   /// Drain completions across all rings (back-compat for callers that do not know about sharding).
   int QueueRun(int timeout_secs);
   /// Drain completions on ring `idx` only.

@@ -657,6 +657,18 @@ bool UringIoHandler::TryCompleteMineBatch(int idx) {
   return true;
 }
 
+// Opt-out gate for the TryCompleteMine batch-reap (default ON). GARNET_URING_BATCH_REAP=0 falls
+// back to the legacy single-CQE reap (TryCompleteFor) so the batch-reap's throughput impact can be
+// measured without a revert-build. Read once.
+bool UringIoHandler::batch_reap_enabled() {
+  static const bool v = [] {
+    const char* s = ::getenv("GARNET_URING_BATCH_REAP");
+    long n = s ? ::atol(s) : 1;
+    return n != 0;
+  }();
+  return v;
+}
+
 int UringIoHandler::QueueRun(int timeout_secs) {
   // Compat: drain across all rings. First ring uses the full timeout; subsequent rings poll.
   if (rings_.empty()) return 0;
