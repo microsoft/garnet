@@ -327,6 +327,23 @@ class ThreadPoolIoHandler {
       return 1; // single IOCP per-device; sharding not applicable
   }
 
+  /// The Windows IOCP path completes on threadpool threads (IoCompletionCallback), so there is
+  /// no caller-affine ring to inline-drain; mirror TryComplete() and report nothing was reaped.
+  inline static constexpr bool TryCompleteMine() {
+      return false;
+  }
+
+  /// No submit batching on the Windows IOCP path (each ScheduleOperation submits immediately),
+  /// so there is nothing to flush. Present to satisfy NativeDeviceImpl<H>::FlushSubmits.
+  inline static constexpr int FlushSubmits() {
+      return 0;
+  }
+
+  /// io_uring ring ownership is Linux-only, so there is no leased ring to release on Windows.
+  /// No-op present to satisfy NativeDeviceImpl<H>::ReleaseRing.
+  inline static void release_my_ring() {
+  }
+
  private:
   /// The parent threadpool.
   WindowsPtpThreadPool threadpool_;
