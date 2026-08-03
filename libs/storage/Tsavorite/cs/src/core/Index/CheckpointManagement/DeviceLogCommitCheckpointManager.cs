@@ -397,6 +397,9 @@ namespace Tsavorite.core
             {
                 device.ReadAsync(address, (IntPtr)pbuffer.aligned_pointer,
                     (uint)numBytesToRead, IOCallback, null);
+                // Flush this thread's batched submits so this single read isn't stranded in an unsubmitted
+                // per-thread batch (GARNET_SUBMIT_BATCH) before we block on it. No-op for immediate-submit devices.
+                device.TryComplete();
                 semaphore.Wait();
 
                 buffer = new byte[numBytesToRead];
