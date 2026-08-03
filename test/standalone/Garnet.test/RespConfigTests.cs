@@ -945,5 +945,68 @@ namespace Garnet.test
             // A settable runtime parameter.
             ClassicAssert.IsTrue(map.ContainsKey("replica-sync-delay"));
         }
+
+        /// <summary>
+        /// Verifies that the read-only AOF parameters are exposed through CONFIG GET (and GET *) but reject
+        /// CONFIG SET because they describe the physical AOF layout / startup-only toggles.
+        /// </summary>
+        [Test]
+        public void ConfigAofReadOnlyParametersTest()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            string[] readOnly =
+            [
+                "aof-memory", "aof-page-size", "aof-segment-size", "aof-physical-sublog-count",
+                "aof-replay-task-count", "aof-commit-wait", "aof-size-limit", "fast-aof-truncate",
+                "aof-null-device",
+            ];
+
+            foreach (var name in readOnly)
+            {
+                // Exposed through CONFIG GET.
+                var res = (RedisResult[])db.Execute("CONFIG", "GET", name);
+                ClassicAssert.AreEqual(2, res.Length);
+                ClassicAssert.AreEqual(name, res[0].ToString());
+
+                // But rejected by CONFIG SET.
+                var ex = Assert.Throws<RedisServerException>(() => db.Execute("CONFIG", "SET", name, res[1].ToString()));
+                ClassicAssert.AreEqual($"ERR Option '{name}' is read-only and cannot be set at runtime.", ex.Message);
+            }
+
+            // All appear in CONFIG GET *.
+            var all = (RedisResult[])db.Execute("CONFIG", "GET", "*");
+            var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            for (var i = 0; i < all.Length; i += 2)
+                map[all[i].ToString()] = all[i + 1].ToString();
+            foreach (var name in readOnly)
+                ClassicAssert.IsTrue(map.ContainsKey(name), $"CONFIG GET * missing '{name}'.");
+        }
+
+        /// <summary>
+        /// Verifies that the runtime-adjustable AOF options round-trip through CONFIG GET / CONFIG SET and
+        /// that out-of-range values are rejected.
+        /// </summary>
+        [Test]
+        public void ConfigAofRuntimeAdjustableParametersTest()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            static string Get(IDatabase db, string name)
+            {
+                var res = (RedisResult[])db.Execute("CONFIG", "GET", name);
+                ClassicAssert.AreEqual(2, res.Length);
+                ClassicAssert.AreEqual(name, res[0].ToString());
+                return res[1].ToString();
+            }
+
+            // aof-size-limit-enforce-frequency round-trips.
+            ClassicAssert.AreEqual("OK", db.Execute("CONFIG", "SET", "aof-size-limit-enforce-frequency", "10").ToString());
+            ClassicAssert.AreEqual("10", Get(db, "aof-size-limit-enforce-frequency"));
+            var negative = Assert.Throws<RedisServerException>(() => db.Execute("CONFIG", "SET", "aof-size-limit-enforce-frequency", "-1"));
+            ClassicAssert.AreEqual("ERR Value for 'aof-size-limit-enforce-frequency' is out of range (0..2147483647).", negative.Message);
+        }
     }
 }

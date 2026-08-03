@@ -32,6 +32,7 @@ namespace Garnet.server
         SLOWLOG_LOG_SLOWER_THAN,
         OBJECT_SCAN_COUNT_LIMIT,
         SG_GET,
+        AOF_SIZE_LIMIT_ENFORCE_FREQUENCY,
 
         // Read-only, non-numeric parameters (file paths, sockets, physical toggles). Exposed through
         // CONFIG GET via the read-only fall-through — their value is read directly from the startup
@@ -40,5 +41,18 @@ namespace Garnet.server
         LOGDIR,
         UNIXSOCKET,
         CLUSTER_ENABLED,
+
+        // Read-only AOF parameters (physical layout / startup-only toggles). Exposed through CONFIG GET
+        // via the read-only fall-through; CONFIG SET rejects them because they require a restart to take
+        // effect. They have no backing long[] slot.
+        AOF_MEMORY,
+        AOF_PAGE_SIZE,
+        AOF_SEGMENT_SIZE,
+        AOF_PHYSICAL_SUBLOG_COUNT,
+        AOF_REPLAY_TASK_COUNT,
+        AOF_COMMIT_WAIT,
+        AOF_SIZE_LIMIT,
+        FAST_AOF_TRUNCATE,
+        AOF_NULL_DEVICE,
     }
 }

@@ -126,6 +126,28 @@ namespace Garnet.server
             SetReadOnly(ServerConfigType.CLUSTER_ENABLED, "cluster-enabled", ConfigKind.Bool,
                 static o => o.EnableCluster ? "yes" : "no");
 
+            // Read-only AOF parameters resolved directly from the startup options. These describe the
+            // physical AOF layout or startup-only toggles and require a restart to change, so CONFIG SET
+            // rejects them; they have no runtime slot and are surfaced purely for CONFIG GET.
+            SetReadOnly(ServerConfigType.AOF_MEMORY, "aof-memory", ConfigKind.String,
+                static o => o.AofMemorySize ?? string.Empty);
+            SetReadOnly(ServerConfigType.AOF_PAGE_SIZE, "aof-page-size", ConfigKind.String,
+                static o => o.AofPageSize ?? string.Empty);
+            SetReadOnly(ServerConfigType.AOF_SEGMENT_SIZE, "aof-segment-size", ConfigKind.String,
+                static o => o.AofSegmentSize ?? string.Empty);
+            SetReadOnly(ServerConfigType.AOF_PHYSICAL_SUBLOG_COUNT, "aof-physical-sublog-count", ConfigKind.Int32,
+                static o => o.AofPhysicalSublogCount.ToString(CultureInfo.InvariantCulture));
+            SetReadOnly(ServerConfigType.AOF_REPLAY_TASK_COUNT, "aof-replay-task-count", ConfigKind.Int32,
+                static o => o.AofReplayTaskCount.ToString(CultureInfo.InvariantCulture));
+            SetReadOnly(ServerConfigType.AOF_COMMIT_WAIT, "aof-commit-wait", ConfigKind.Bool,
+                static o => o.WaitForCommit ? "yes" : "no");
+            SetReadOnly(ServerConfigType.AOF_SIZE_LIMIT, "aof-size-limit", ConfigKind.String,
+                static o => o.AofSizeLimit ?? string.Empty);
+            SetReadOnly(ServerConfigType.FAST_AOF_TRUNCATE, "fast-aof-truncate", ConfigKind.Bool,
+                static o => o.FastAofTruncate ? "yes" : "no");
+            SetReadOnly(ServerConfigType.AOF_NULL_DEVICE, "aof-null-device", ConfigKind.Bool,
+                static o => o.UseAofNullDevice ? "yes" : "no");
+
             Set(ServerConfigType.CLUSTER_NODE_TIMEOUT, "cluster-node-timeout",
                 ConfigKind.Int32 | ConfigKind.Seconds | ConfigKind.TimeSpan, 0, int.MaxValue,
                 timeUnit: ConfigTimeUnit.Seconds, nonPositiveIsInfinite: true);
@@ -154,6 +176,11 @@ namespace Garnet.server
                 timeUnit: ConfigTimeUnit.Microseconds);
             Set(ServerConfigType.OBJECT_SCAN_COUNT_LIMIT, "object-scan-count-limit", ConfigKind.Int32, 0, int.MaxValue);
             Set(ServerConfigType.SG_GET, "sg-get", ConfigKind.Bool, 0, 1);
+
+            // AOF size-limit enforcement frequency (seconds): the background checkpoint-enforcement task
+            // re-reads this each iteration, so CONFIG SET takes effect on the running task.
+            Set(ServerConfigType.AOF_SIZE_LIMIT_ENFORCE_FREQUENCY, "aof-size-limit-enforce-frequency",
+                ConfigKind.Int32, 0, int.MaxValue);
 
             return m;
         }
@@ -200,6 +227,7 @@ namespace Garnet.server
             values[(int)ServerConfigType.SLOWLOG_LOG_SLOWER_THAN] = o.SlowLogThreshold;
             values[(int)ServerConfigType.OBJECT_SCAN_COUNT_LIMIT] = o.ObjectScanCountLimit;
             values[(int)ServerConfigType.SG_GET] = o.EnableScatterGatherGet ? 1 : 0;
+            values[(int)ServerConfigType.AOF_SIZE_LIMIT_ENFORCE_FREQUENCY] = o.AofSizeLimitEnforceFrequencySecs;
         }
 
         /// <summary>Current value of <paramref name="type"/> as a 32-bit integer, in its native unit.</summary>

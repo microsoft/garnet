@@ -640,7 +640,7 @@ namespace Garnet.server
             {
                 while (true)
                 {
-                    await Task.Delay(TimeSpan.FromSeconds(serverOptions.AofSizeLimitEnforceFrequencySecs), token).ConfigureAwait(false);
+                    await Task.Delay(TimeSpan.FromSeconds(runtimeConfig.GetInt(ServerConfigType.AOF_SIZE_LIMIT_ENFORCE_FREQUENCY)), token).ConfigureAwait(false);
                     if (token.IsCancellationRequested) break;
 
                     await databaseManager.TaskCheckpointBasedOnAofSizeLimitAsync(aofSizeLimit, token, logger).ConfigureAwait(false);
