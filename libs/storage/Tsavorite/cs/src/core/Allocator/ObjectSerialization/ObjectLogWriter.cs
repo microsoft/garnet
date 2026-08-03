@@ -35,6 +35,30 @@ namespace Tsavorite.core
         /// <summary>For object serialization, the cumulative length of the value bytes.</summary>
         ulong valueObjectBytesWritten;
 
+        // ── Object chunk framing (headered value objects, data length > RecordDataHeader.kOutOfLineExactSizeCutoff) ──────────
+        // On-disk layout: [prefix headerless bytes][hdr_1][chunk_1]…[hdr_N][chunk_N]. A value whose data length is <= the cutoff
+        // is fully headerless. Beyond the cutoff, a chunk == one write-buffer's (or segment's) worth of object data; each 8-byte
+        // ChunkHeader is written on an 8-byte-aligned object-log position (so it never straddles a buffer/segment boundary) and its
+        // currentLength (| ContinuationFlag) is BACK-FILLED when the buffer fills or the object ends -- so the header is finalized
+        // while still in the unflushed buffer. Headers are APPENDED (position advances monotonically), never inserted-with-slide.
+        // WriteObjectData runs its OWN explicit buffer loop (it does NOT reuse WriteRawBuffered, whose local segmentRemainingLen
+        // would be corrupted by header pokes -- the prior multi-segment bug); header pokes/back-fills poke the buffer memory directly.
+        internal const int ObjectHeaderlessPrefixLen = RecordDataHeader.kOutOfLineExactSizeCutoff;   // 1023
+
+        /// <summary>True once the current value object has crossed the headerless prefix and is emitting ChunkHeaders.</summary>
+        bool objectHeadered;
+
+        /// <summary>Buffer offset of the current object chunk's placeholder <see cref="ChunkHeader"/> to back-fill; -1 if none is pending.</summary>
+        int currentChunkHeaderBufferPos;
+
+        /// <summary>Object-log position captured at the start of the current value-object serialization; the on-disk extent is the monotonic
+        /// distance from here to the end, used to set the RDH read-ahead page-count hint.</summary>
+        ObjectLogFilePositionInfo objectStartPosition;
+
+        /// <summary>The total on-disk extent (prefix + 8-align padding + ChunkHeaders + data) of the most recently serialized value object;
+        /// read by <see cref="LogRecord.SetObjectLogPositionAndLengthHints"/> for the RDH page-count hint. 0 if the record has no object value.</summary>
+        internal ulong lastObjectExtent;
+
         /// <summary>The maximum number of key or value bytes to copy into the buffer rather than enqueue a DirectWrite.</summary>
         internal const int MaxCopySpanLen = 128 * 1024;
 
@@ -105,6 +129,7 @@ namespace Tsavorite.core
         public ulong WriteRecordObjects(in OverflowByteArray keyOverflow, in OverflowByteArray valueOverflow, in IHeapObject valueObject)
         {
             lastValueAlignmentPadding = 0;
+            lastObjectExtent = 0;
 
             // If the key is overflow, start with that. A key at/above the RDH KeyLength sentinel (1023) carries its full length in a leading
             // ChunkHeader; below the sentinel the RDH holds the exact length (no header). The key's DMA alignment padding is recovered by the
@@ -122,7 +147,13 @@ namespace Tsavorite.core
                 lastValueAlignmentPadding = WriteOverflowComponent(valueOverflow, hasHeader: valueOverflow.Length > RecordDataHeader.kOutOfLineExactSizeCutoff);
             }
             else if (valueObject is not null)
+            {
                 DoSerialize(valueObject);
+
+                // The on-disk extent (prefix + 8-align padding + ChunkHeaders + data) is the monotonic distance from the object's start
+                // position, used for the RDH page-count read-ahead hint. Positive because object headers are appended (never slide-inserted).
+                lastObjectExtent = flushBuffers.GetNextRecordStartPosition() - objectStartPosition;
+            }
 
             // Signal completion.
             flushBuffers.OnRecordComplete();
@@ -173,8 +204,12 @@ namespace Tsavorite.core
         /// </summary>
         /// <param name="reader">The reader over the snapshot object-log, positioned at the record to copy.</param>
         /// <param name="totalLength">The total number of object-log bytes for the record (key plus value).</param>
-        public void CopyRecoveredObjectBytes(ObjectLogReader<TStoreFunctions> reader, ulong totalLength)
+        /// <param name="allowShortRead">When true (the last object record on a page, sized by an over-counting RDH hint), stop at end-of-data
+        ///   instead of throwing; the trailing over-copy is re-framed away by the reader on read-back, so a short copy is harmless.</param>
+        /// <returns>The number of object-log bytes actually copied (equal to <paramref name="totalLength"/> unless a short read stopped it).</returns>
+        public ulong CopyRecoveredObjectBytes(ObjectLogReader<TStoreFunctions> reader, ulong totalLength, bool allowShortRead = false)
         {
+            var copied = 0UL;
             if (totalLength > 0)
             {
                 var buffer = flushBuffers.bufferPool.Get(IStreamBuffer.BufferSize);
@@ -187,9 +222,14 @@ namespace Tsavorite.core
                         var requestLength = (int)Math.Min(remaining, (ulong)chunkSpan.Length);
                         var bytesRead = reader.Read(chunkSpan.Slice(0, requestLength));
                         if (bytesRead == 0)
+                        {
+                            if (allowShortRead)
+                                break;
                             throw new TsavoriteException("Unexpected end of snapshot object-log data while copying objects during recovery");
+                        }
                         Write(chunkSpan.Slice(0, bytesRead));
                         remaining -= (ulong)bytesRead;
+                        copied += (ulong)bytesRead;
                     }
                 }
                 finally
@@ -200,6 +240,7 @@ namespace Tsavorite.core
 
             // Signal completion, as WriteRecordObjects does.
             flushBuffers.OnRecordComplete();
+            return copied;
         }
 
         /// <summary>Write a large overflow (key or value) mostly by direct O_DIRECT DMA from its pinned byte[], avoiding a copy through the
@@ -275,8 +316,21 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         public void Write(ReadOnlySpan<byte> data, CancellationToken cancellationToken = default)
         {
-            // This is called by valueObjectSerializer.Serialize() as well as internally. No other calls should write data to flushBuffer.memory in a way
-            // that increments flushBuffer.currentPosition, since we manage chained-chunk continuation and DiskPageHeader offsetting here.
+            // The value-object serializer's writes are chunk-framed (headerless prefix + back-filled per-buffer ChunkHeaders); all other
+            // writes (overflow bytes/headers/padding, the recovery verbatim copy) go straight to the raw buffered path.
+            if (inSerialize)
+            {
+                WriteObjectData(data, cancellationToken);
+                return;
+            }
+            WriteRawBuffered(data, cancellationToken);
+        }
+
+        /// <summary>Raw buffered write: copy <paramref name="data"/> into the sector-aligned write buffer, splitting across buffer and 1 GB
+        /// segment boundaries (flushing full buffers via <see cref="OnBufferComplete"/>). Used for overflow bytes/headers/padding and the
+        /// recovery verbatim copy. Never called while serializing an object (that path is <see cref="WriteObjectData"/>).</summary>
+        void WriteRawBuffered(ReadOnlySpan<byte> data, CancellationToken cancellationToken = default)
+        {
 
             // Copy to the buffer. If it does not fit in the remaining capacity, we will write as much as does, flush the buffer, and move to next buffer.
             var dataStart = 0;
@@ -300,12 +354,6 @@ namespace Tsavorite.core
                 data.Slice(dataStart, (int)requestLength).CopyTo(writeBuffer.memory.TotalValidSpan.Slice(writeBuffer.currentPosition));
                 dataStart += (int)requestLength;
                 writeBuffer.currentPosition += (int)requestLength;
-                if (inSerialize)
-                {
-                    valueObjectBytesWritten += requestLength;
-                    if (valueObjectBytesWritten >= IHeapObject.MaxSerializedObjectSize)
-                        throw new TsavoriteException($"Object serialized size currently at {valueObjectBytesWritten} which exceeds max serialization limit of {IHeapObject.MaxSerializedObjectSize}");
-                }
 
                 // See if we're at the end of the buffer or segment.
                 if (writeBuffer.RemainingCapacity == 0 || segmentRemainingLen == 0)
@@ -333,10 +381,11 @@ namespace Tsavorite.core
 
         void DoSerialize(IHeapObject valueObject)
         {
-            // valueCumulativeLength is only relevant for object serialization; we increment it on all device writes to avoid "if", so here we reset it to the appropriate
-            // "start at 0" by making it the negative of currentPosition. Subsequently if we write e.g. an int, we'll have Length and Position = (-currentPosition + currentPosition + 4).
             inSerialize = true;
             valueObjectBytesWritten = 0;
+            objectHeadered = false;
+            currentChunkHeaderBufferPos = -1;
+            objectStartPosition = flushBuffers.GetNextRecordStartPosition();
 
             // If we haven't yet instantiated the serializer do so now.
             if (valueObjectSerializer is null)
@@ -352,7 +401,122 @@ namespace Tsavorite.core
 
         void OnSerializeComplete(IHeapObject valueObject)
         {
+            // Finalize the last chunk's ChunkHeader (no continuation) before it flushes.
+            if (objectHeadered && currentChunkHeaderBufferPos >= 0)
+                BackfillObjectChunkHeader(hasContinuation: false);
             inSerialize = false;
+
+            if (valueObjectBytesWritten >= IHeapObject.MaxSerializedObjectSize)
+                throw new TsavoriteException($"Object serialized size {valueObjectBytesWritten} exceeds max serialization limit of {IHeapObject.MaxSerializedObjectSize}");
+        }
+
+        // ── Object chunk-framing write path (see the ObjectHeaderlessPrefixLen field comment and website/docs/dev/objectlog-serialization.md) ──
+
+        /// <summary>Serialize object data through the chunk-framing path: the first <see cref="ObjectHeaderlessPrefixLen"/> data bytes are
+        /// written headerless; beyond that, a fresh 8-aligned <see cref="ChunkHeader"/> is inserted and each buffer's chunk is back-filled at
+        /// the buffer boundary. Runs its own explicit buffer loop (not <see cref="WriteRawBuffered"/>).</summary>
+        void WriteObjectData(ReadOnlySpan<byte> data, CancellationToken cancellationToken)
+        {
+            var dataStart = 0;
+            while (dataStart < data.Length)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (!objectHeadered)
+                {
+                    var prefixRoom = ObjectHeaderlessPrefixLen - (int)valueObjectBytesWritten;
+                    if (prefixRoom > 0)
+                    {
+                        dataStart += CopyObjectDataBytes(data.Slice(dataStart), prefixRoom);
+                        continue;
+                    }
+
+                    // Prefix complete -> 8-align and insert the first chunk header, transitioning to the headered phase.
+                    StartObjectHeaderedPhase();
+                    continue;
+                }
+                dataStart += CopyObjectDataBytes(data.Slice(dataStart), int.MaxValue);
+            }
+        }
+
+        /// <summary>Copy up to min(<paramref name="maxLen"/>, remaining buffer capacity) DATA bytes into the write buffer, counting them as
+        /// object data; if the buffer fills, advance to the next buffer (back-filling/poking the chunk header when headered). Returns bytes copied.</summary>
+        int CopyObjectDataBytes(ReadOnlySpan<byte> data, int maxLen)
+        {
+            var n = Math.Min(Math.Min(data.Length, maxLen), writeBuffer.RemainingCapacity);
+            if (n > 0)
+            {
+                data.Slice(0, n).CopyTo(writeBuffer.memory.TotalValidSpan.Slice(writeBuffer.currentPosition));
+                writeBuffer.currentPosition += n;
+                valueObjectBytesWritten += (uint)n;
+            }
+            if (writeBuffer.RemainingCapacity == 0)
+                AdvanceObjectBuffer();
+            return n;
+        }
+
+        /// <summary>Called when the write buffer fills during object serialization: back-fill the current chunk header (if headered), flush the
+        /// buffer, advance the segment if this flush filled it, move to the next buffer, and poke a fresh placeholder header (if headered).</summary>
+        void AdvanceObjectBuffer()
+        {
+            if (objectHeadered && currentChunkHeaderBufferPos >= 0)
+                BackfillObjectChunkHeader(hasContinuation: true);
+            flushBuffers.FlushCurrentBuffer();
+
+            // The Offset setter masks a value of SegmentSize to 0, so Offset == 0 after a (non-empty) flush means the flush filled the segment.
+            if (flushBuffers.filePosition.Offset == 0)
+                flushBuffers.filePosition.AdvanceToNextSegment();
+            writeBuffer = flushBuffers.MoveToAndInitializeNextBuffer();
+
+            if (objectHeadered)
+                PokeObjectChunkPlaceholder();
+        }
+
+        /// <summary>At the end of the headerless prefix: 8-align the object-log position (padding through the buffer) and write the first chunk's
+        /// placeholder <see cref="ChunkHeader"/>, entering the headered phase.</summary>
+        void StartObjectHeaderedPhase()
+        {
+            var padLen = (int)((8 - (flushBuffers.GetNextRecordStartPosition().Offset & 7)) & 7);
+            while (padLen > 0)
+            {
+                var n = Math.Min(padLen, writeBuffer.RemainingCapacity);
+                writeBuffer.memory.TotalValidSpan.Slice(writeBuffer.currentPosition, n).Clear();
+                writeBuffer.currentPosition += n;
+                padLen -= n;
+                if (writeBuffer.RemainingCapacity == 0)
+                    AdvanceObjectBuffer();   // objectHeadered still false here, so this is a plain flush+next (no header)
+            }
+
+            objectHeadered = true;
+            PokeObjectChunkPlaceholder();
+        }
+
+        /// <summary>Poke an empty placeholder <see cref="ChunkHeader"/> (to be back-filled) at the current 8-aligned buffer position. Fails fast on
+        /// the rare zero-length-chunk case (a header landing exactly at buffer_end-8), which only the first post-prefix header can hit.</summary>
+        void PokeObjectChunkPlaceholder()
+        {
+            Debug.Assert((flushBuffers.GetNextRecordStartPosition().Offset & 7) == 0, "ChunkHeader must be written on an 8-byte-aligned object-log position");
+            var room = writeBuffer.RemainingCapacity;
+            if (room == ChunkHeader.TotalSize)
+                throw new TsavoriteException("Object chunk framing: a ChunkHeader landed at buffer_end-8 (zero-length-chunk case) which is not yet implemented; see website/docs/dev/objectlog-serialization.md.");
+            Debug.Assert(room > ChunkHeader.TotalSize, $"no room for a ChunkHeader plus data (RemainingCapacity {room})");
+
+            ChunkHeader placeholder = default;
+            currentChunkHeaderBufferPos = writeBuffer.currentPosition;
+            new ReadOnlySpan<byte>(&placeholder, ChunkHeader.TotalSize).CopyTo(writeBuffer.memory.TotalValidSpan.Slice(writeBuffer.currentPosition));
+            writeBuffer.currentPosition += ChunkHeader.TotalSize;
+        }
+
+        /// <summary>Back-fill the current chunk's placeholder <see cref="ChunkHeader.currentLength"/> (| <see cref="ChunkedRecordConstants.ContinuationFlag"/>
+        /// when <paramref name="hasContinuation"/>) with the chunk's data length (the bytes written since the header), while it is still in the unflushed buffer.</summary>
+        void BackfillObjectChunkHeader(bool hasContinuation)
+        {
+            var chunkDataLen = writeBuffer.currentPosition - (currentChunkHeaderBufferPos + ChunkHeader.TotalSize);
+            Debug.Assert(chunkDataLen >= 0, $"chunk data length {chunkDataLen} must be non-negative");
+            var currentLength = (uint)chunkDataLen;
+            if (hasContinuation)
+                currentLength |= unchecked((uint)ChunkedRecordConstants.ContinuationFlag);
+            *(uint*)(writeBuffer.memory.GetValidPointer() + currentChunkHeaderBufferPos) = currentLength;   // currentLength is at ChunkHeader FieldOffset(0)
+            currentChunkHeaderBufferPos = -1;
         }
 
         /// <inheritdoc/>

@@ -1508,7 +1508,7 @@ namespace Tsavorite.core
         /// framing. The objectId slots at keyAddress/valueAddress are left untouched (so this is safe on the live main-log record), and the
         /// ObjectLogPosition word is written with the ReuseObjectIdForSize flag cleared, marking the record as hint-format for the reader.
         /// </remarks>
-        internal readonly void SetObjectLogPositionAndLengthHints(in ObjectLogFilePositionInfo objectLogFilePosition, ulong valueObjectLength, int valueAlignmentPadding = 0)
+        internal readonly void SetObjectLogPositionAndLengthHints(in ObjectLogFilePositionInfo objectLogFilePosition, ulong valueObjectLength, int valueAlignmentPadding = 0, long valueObjectExtent = 0)
         {
             if (DataHeader.RecordIsInline)   // ValueIsInline is true; if the record is fully inline, we should not be called here
             {
@@ -1534,7 +1534,7 @@ namespace Tsavorite.core
                 keyLen = objectIdMap.GetOverflowByteArray(*(int*)keyAddress).Length;
             }
             var valLen = dataHeader.ValueIsOverflow ? (long)objectIdMap.GetOverflowByteArray(*(int*)valueAddress).Length : (long)valueObjectLength;
-            dataHeader.SetObjectLogLengthHints(keyLen, valLen, valueAlignmentPadding);
+            dataHeader.SetObjectLogLengthHints(keyLen, valLen, valueAlignmentPadding, valueObjectExtent);
 
             // Atomic publish via SetDataHeader.
             SetDataHeader(dataHeader);
@@ -1585,9 +1585,9 @@ namespace Tsavorite.core
             if (!dataHeader.ValueIsInline)
             {
                 var rawValueLength = (uint)dataHeader.GetValueLengthRaw();
-                valueObjectLength = dataHeader.ValueIsObject
-                    ? RecordDataHeader.DecodeFlushValueExtent(rawValueLength, valueIsObject: true)     // object: current hint encoding
-                    : RecordDataHeader.DecodeFlushValueInitialReadExtent(rawValueLength);              // overflow: v2.2 initial read-ahead extent
+                // Both object and overflow values use the v2.2 12-bit out-of-line encoding: this returns the initial read-ahead extent
+                // (exact size, page-count * 4 KB, or one 4 MB block for the sentinel; the reader follows/extends the framing from there).
+                valueObjectLength = RecordDataHeader.DecodeFlushValueInitialReadExtent(rawValueLength);
             }
             else // ValueIsInline is true; valueLength will be ignored
             {
@@ -1656,15 +1656,17 @@ namespace Tsavorite.core
             // never sets the flag, so this never fires for it.
             if (wasReuseObjectIdForSize
                     && (keyLen >= RecordDataHeader.kKeyLengthLowBitsMask
-                        || (dataHeader.ValueIsOverflow && valLen > (ulong)RecordDataHeader.kOutOfLineExactSizeCutoff)))
+                        || ((dataHeader.ValueIsOverflow || dataHeader.ValueIsObject) && valLen > (ulong)RecordDataHeader.kOutOfLineExactSizeCutoff)))
             {
                 throw new TsavoriteException(
-                    "Recovering a downlevel (v2.1) checkpoint record whose large overflow key/value requires a v2.2 leading ChunkHeader is not yet supported by the recovery reposition path (the v2.1 object log has no header, and header insertion during recovery is not implemented).");
+                    "Recovering a downlevel (v2.1) checkpoint record whose large overflow key/value or object requires a v2.2 leading ChunkHeader is not yet supported by the recovery reposition path (the v2.1 object log has no header, and header insertion during recovery is not implemented).");
             }
 
             // Write the position with the flag cleared and the exact lengths as RDH hints (capped at the sentinel), objectId slots untouched.
+            // For an object value, valLen is the stored on-disk EXTENT (prefix + headers + padding + data), used for both the has-header
+            // decision (extent > cutoff) and the page-count hint.
             *objectLogPositionPtr = pagePositionInfo.word;
-            dataHeader.SetObjectLogLengthHints((int)keyLen, (long)valLen);
+            dataHeader.SetObjectLogLengthHints((int)keyLen, (long)valLen, valueObjectExtent: dataHeader.ValueIsObject ? (long)valLen : 0);
 
             // Atomic publish via SetDataHeader.
             SetDataHeader(dataHeader);

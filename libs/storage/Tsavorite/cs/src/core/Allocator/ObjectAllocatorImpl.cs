@@ -948,7 +948,7 @@ namespace Tsavorite.core
                                     // record on the no-copy path (useLivePage; non-destructive to in-memory readers). Records are always written in the
                                     // current hint-based format (never the downlevel encoding).
                                     var valueObjectLength = logWriter.WriteRecordObjects(in keyOverflow, in valueOverflow, in valueObject);
-                                    logRecord.SetObjectLogPositionAndLengthHints(recordStartPosition, valueObjectLength, logWriter.lastValueAlignmentPadding);
+                                    logRecord.SetObjectLogPositionAndLengthHints(recordStartPosition, valueObjectLength, logWriter.lastValueAlignmentPadding, (long)logWriter.lastObjectExtent);
                                 }
                                 else
                                 {
@@ -971,8 +971,9 @@ namespace Tsavorite.core
                                         // record's snapshot position minus this record's -- exactly this record's full key+value+header(s)+alignment/
                                         // straddle padding verbatim (any trailing over-copy is ignored by the reader, which re-frames from the header).
                                         ulong copyObjectLength;
+                                        var copyIsLastRecord = false;
                                         if (logRecord.DataHeader.KeyLengthIsSentinel
-                                                || (logRecord.DataHeader.ValueIsOverflow && RecordDataHeader.FlushValuePageCountIsSentinel((uint)logRecord.DataHeader.GetValueLengthRaw())))
+                                                || ((logRecord.DataHeader.ValueIsOverflow || logRecord.DataHeader.ValueIsObject) && RecordDataHeader.FlushValueHasHeader((uint)logRecord.DataHeader.GetValueLengthRaw())))
                                         {
                                             var thisPosition = new ObjectLogFilePositionInfo(snapshotPositionWord, objectLogTail.SegmentSizeBits);
                                             copyObjectLength = 0;
@@ -988,11 +989,15 @@ namespace Tsavorite.core
                                                 }
                                             }
 
-                                            // The last object record on the page has no successor to bound it; its exact extent would require reading its
-                                            // ChunkHeader (up to the full overflow length away for a headered key). That remains unsupported -- fail fast
-                                            // rather than silently truncate the recovered record.
+                                            // The last object record on the page has no successor to bound its exact extent. Fall back to the
+                                            // (over-counting) RDH key+value hints -- the snapshot read-ahead was sized WITH those hints, and being
+                                            // the last record there is no following record to overshoot; the trailing over-copy is re-framed away by
+                                            // the reader on read-back. allowShortRead below stops the copy cleanly at end-of-data.
                                             if (copyObjectLength == 0)
-                                                throw new TsavoriteException("Snapshot recovery of a record whose overflow key/value is at/above the RDH sentinel (carries a leading ChunkHeader) and is the last object record on its page is not yet supported by the verbatim object-log copy path; its exact on-disk extent needs a ChunkHeader read.");
+                                            {
+                                                copyObjectLength = (ulong)copyKeyLength + copyValueLength;
+                                                copyIsLastRecord = true;
+                                            }
                                         }
                                         else
                                         {
@@ -1010,9 +1015,9 @@ namespace Tsavorite.core
                                         // then stream the record's bytes verbatim into the main object-log.
                                         if (!snapshotObjectReadBuffers.OnBeginRecord(new ObjectLogFilePositionInfo(snapshotPositionWord, objectLogTail.SegmentSizeBits)))
                                             throw new TsavoriteException("No snapshot object-log data available while copying objects during recovery");
-                                        logWriter.CopyRecoveredObjectBytes(snapshotObjectReader, copyObjectLength);
                                         logRecord.RepointObjectLogPosition(mainRecordPosition);
-                                        recoveryOngoingPageHeader.Advance(copyObjectLength);
+                                        var copiedLength = logWriter.CopyRecoveredObjectBytes(snapshotObjectReader, copyObjectLength, allowShortRead: copyIsLastRecord);
+                                        recoveryOngoingPageHeader.Advance(copyIsLastRecord ? copiedLength : copyObjectLength);
                                     }
                                     else
                                     {

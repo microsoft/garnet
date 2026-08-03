@@ -428,17 +428,24 @@ namespace Tsavorite.core
         }
 
         /// <summary>FLUSH-format variant of <see cref="SetOverflowLengthHints"/>: sets the KeyLength field to the sentinel-capped overflow
-        /// key length, and the ValueLength field to the FLUSH object-value encoding (exact/chunked, see <see cref="EncodeFlushObjectValue"/>)
-        /// for an object value, or the sentinel-capped exact length for an overflow value (its full length precedes the bytes in a leading
-        /// ChunkHeader when it is at/above the sentinel).</summary>
+        /// key length, and the ValueLength field to the v2.2 12-bit out-of-line encoding (headerless exact size, or a leading-ChunkHeader +
+        /// 4 KB-page-count/sentinel read hint) for an out-of-line value -- for BOTH overflow and object values.</summary>
         /// <param name="keyActualLength">Actual overflow key length (applied only when the key is overflow).</param>
-        /// <param name="valueActualLength">Actual overflow value or serialized object length (applied only when the value is out of line).</param>
-        public void SetObjectLogLengthHints(int keyActualLength, long valueActualLength, int valueAlignmentPadding = 0)
+        /// <param name="valueActualLength">Actual overflow value or serialized object DATA length (applied only when the value is out of line).</param>
+        /// <param name="valueAlignmentPadding">Overflow O_DIRECT alignment padding (overflow value only); included in the overflow extent.</param>
+        /// <param name="valueObjectExtent">The object value's total on-disk extent (prefix + 8-align padding + ChunkHeaders + data); required
+        ///   for an object value (its page-count hint). For a headerless object (data length &lt;= cutoff) it equals the data length.</param>
+        public void SetObjectLogLengthHints(int keyActualLength, long valueActualLength, int valueAlignmentPadding = 0, long valueObjectExtent = 0)
         {
             if (KeyIsOverflow)
                 KeyLength = keyActualLength >= (int)kKeyLengthLowBitsMask ? (int)kKeyLengthLowBitsMask : keyActualLength;
             if (ValueIsObject)
-                ValueLength = (int)EncodeFlushObjectValue(valueActualLength);
+            {
+                // Object value uses the same v2.2 12-bit encoding as overflow: headerless exact size when the DATA length <= cutoff, else a
+                // page-count (from the on-disk extent) with the has-header bit set. The writer supplies the extent (prefix + padding + per-chunk
+                // ChunkHeaders + data). A headerless object's extent equals its data length.
+                ValueLength = (int)EncodeFlushOutOfLineValue(valueActualLength, valueObjectExtent);
+            }
             else if (ValueIsOverflow)
             {
                 // Overflow value uses the v2.2 encoding: headerless exact size when <= 1023, else a leading ChunkHeader + a 4 KB-page-count

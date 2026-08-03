@@ -36,6 +36,23 @@ namespace Tsavorite.core
         /// <summary>The cumulative length of object data read from the device during deserialization.</summary>
         internal ulong deserializedLength;
 
+        // ── Object chunk-framing read state (headered value objects; see ObjectLogWriter.ObjectHeaderlessPrefixLen) ──
+        /// <summary>Cumulative object-log bytes consumed since the record began (key + value; data + ChunkHeaders + padding); used to
+        /// 8-align the first ChunkHeader after the prefix and to compute the object value's on-disk extent for recovery.</summary>
+        ulong recordStreamConsumed;
+        /// <summary>True while reading a headered object: <see cref="Read"/> strips ChunkHeaders/padding and follows continuation.</summary>
+        bool objectChunked;
+        /// <summary>The object's RDH page count is the sentinel: extend the read-ahead in 4 MB blocks as chunks are consumed.</summary>
+        bool objectSentinel;
+        /// <summary>Headerless-prefix DATA bytes still to serve before the first ChunkHeader.</summary>
+        long objectPrefixRemaining;
+        /// <summary>DATA bytes still to serve in the current chunk.</summary>
+        long objectChunkRemaining;
+        /// <summary>Whether the 8-align skip before the first ChunkHeader has been performed.</summary>
+        bool objectFirstHeaderRead;
+        /// <summary>Low 3 bits of the record's object-log start offset, for the first-header 8-align.</summary>
+        int objectRecordStartOffsetLow3;
+
         /// <summary>The total capacity of the buffer.</summary>
         public bool IsForWrite => false;
 
@@ -99,8 +116,13 @@ namespace Tsavorite.core
             // GetObjectLogRecordStartPositionAndLengths returns the exact overflow/object lengths: from the RDH hints for a hint-format
             // record, or from the split RDH+objectId-slot encoding for a legacy record. The object stream carries no separate length prefix.
             var positionWord = logRecord.GetObjectLogRecordStartPositionAndLengths(out var keyLength, out var valueLength);
-            if (!readBuffers.OnBeginRecord(new ObjectLogFilePositionInfo(positionWord, segmentSizeBits)))
+            var recordStartPosition = new ObjectLogFilePositionInfo(positionWord, segmentSizeBits);
+            if (!readBuffers.OnBeginRecord(recordStartPosition))
                 throw new TsavoriteException("ReadRecordObjects found no data available in ReadBuffers");
+
+            // Reset per-record object-stream tracking; capture the low 3 bits of the record's object-log start offset for the first-header 8-align.
+            recordStreamConsumed = 0;
+            objectRecordStartOffsetLow3 = (int)(recordStartPosition.Offset & 7);
 
             // TODO: Optimize the reading of large internal sector-aligned parts of Overflow Keys and Values to read directly into the overflow, similar to how ObjectLogWriter writes
             //       directly from overflow. This requires changing the read-ahead in CircularDiskReadBuffer.OnBeginReadRecords and the "backfill" in CircularDiskReadBuffer.MoveToNextBuffer.
@@ -136,10 +158,21 @@ namespace Tsavorite.core
                 }
                 else if (logRecord.DataHeader.ValueIsObject)
                 {
-                    // Chunked (multi-buffer, >= sentinel) and headerless (< sentinel, exact) objects both size their read-ahead from the RDH
-                    // ValueLength encoding decoded in GetObjectLogRecordStartPositionAndLengths; the object stream carries no per-chunk framing
-                    // and the deserializer self-terminates, so nothing extra is parsed here.
+                    // A headered object (data length > cutoff) is [prefix][hdr][chunk]…; the reader strips headers/padding and follows the
+                    // continuation chain in ReadObjectData. A headerless object (isExactSize) is a plain dense stream. The deserializer
+                    // self-terminates in both cases.
+                    var encodedValue = (uint)logRecord.DataHeader.GetValueLengthRaw();
+                    if (RecordDataHeader.FlushValueHasHeader(encodedValue))
+                    {
+                        objectChunked = true;
+                        objectSentinel = RecordDataHeader.FlushValuePageCountIsSentinel(encodedValue);
+                        objectPrefixRemaining = ObjectLogWriter<TStoreFunctions>.ObjectHeaderlessPrefixLen;
+                        objectChunkRemaining = 0;
+                        objectFirstHeaderRead = false;
+                    }
                     DoDeserialize(ref logRecord);
+                    objectChunked = false;
+                    objectSentinel = false;
                 }
 
                 // Restore non-inline length fields to ObjectIdSize for in-memory record length correctness.
@@ -210,8 +243,18 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         public int Read(Span<byte> destinationSpan, CancellationToken cancellationToken = default)
         {
-            // This is called by valueObjectSerializer.Deserialize() to read up to destinationSpan.Length bytes.
-            // It is also currently called internally for Overflow.
+            // A headered value object is read through the chunk-stripping path; everything else (overflow, headerless object, ChunkHeader
+            // reads, padding skips) reads raw stream bytes.
+            if (objectChunked)
+                return ReadObjectData(destinationSpan, cancellationToken);
+            return ReadRawStream(destinationSpan, cancellationToken);
+        }
+
+        /// <summary>Read up to <paramref name="destinationSpan"/>.Length raw bytes from the object-log read-ahead ring, extending the ring in
+        /// 4 MB blocks for a sentinel object still being deserialized. Tracks <see cref="recordStreamConsumed"/> (and, during deserialize,
+        /// <see cref="deserializedLength"/>).</summary>
+        int ReadRawStream(Span<byte> destinationSpan, CancellationToken cancellationToken = default)
+        {
             var prevCopyLength = 0;
             var destinationSpanAppend = destinationSpan.Slice(prevCopyLength);
 
@@ -231,6 +274,7 @@ namespace Tsavorite.core
                 {
                     buffer.AvailableSpan.Slice(0, copyLength).CopyTo(destinationSpanAppend);
                     buffer.currentPosition += copyLength;
+                    recordStreamConsumed += (uint)copyLength;
                     if (inDeserialize)
                         deserializedLength += (uint)copyLength;
                     if (copyLength == destinationSpanAppend.Length)
@@ -247,10 +291,86 @@ namespace Tsavorite.core
             }
         }
 
+        /// <summary>Serve object DATA bytes to the deserializer, transparently stripping the headerless-prefix boundary, the 8-align padding,
+        /// per-chunk <see cref="ChunkHeader"/>s, and zero-length continuation chunks. The deserializer self-terminates, so this is driven by
+        /// its requested lengths.</summary>
+        int ReadObjectData(Span<byte> destinationSpan, CancellationToken cancellationToken)
+        {
+            var filled = 0;
+            while (filled < destinationSpan.Length)
+            {
+                if (objectPrefixRemaining > 0)
+                {
+                    var want = (int)Math.Min(objectPrefixRemaining, destinationSpan.Length - filled);
+                    var n = ReadRawStream(destinationSpan.Slice(filled, want), cancellationToken);
+                    if (n == 0)
+                        break;
+                    objectPrefixRemaining -= n;
+                    filled += n;
+                    continue;
+                }
+                if (objectChunkRemaining == 0)
+                {
+                    if (!AdvanceToNextObjectChunk())
+                        break;
+                    continue;
+                }
+                var m = (int)Math.Min(objectChunkRemaining, destinationSpan.Length - filled);
+                var got = ReadRawStream(destinationSpan.Slice(filled, m), cancellationToken);
+                if (got == 0)
+                    break;
+                objectChunkRemaining -= got;
+                filled += got;
+            }
+            return filled;
+        }
+
+        /// <summary>Advance to the next object chunk: on the first call, skip the 8-align padding after the prefix; then read the next
+        /// <see cref="ChunkHeader"/>, skipping zero-length continuation chunks. Returns false if a terminal (non-continuation) empty chunk ends the object.</summary>
+        bool AdvanceToNextObjectChunk()
+        {
+            if (!objectFirstHeaderRead)
+            {
+                // The first ChunkHeader is 8-aligned in the object-log; skip the padding written after the 1023-byte prefix.
+                var padLen = (8 - ((objectRecordStartOffsetLow3 + (int)(recordStreamConsumed & 7)) & 7)) & 7;
+                if (padLen > 0)
+                {
+                    Span<byte> discard = stackalloc byte[8];
+                    var n = ReadRawStream(discard.Slice(0, padLen));
+                    if (n != padLen)
+                        throw new TsavoriteException($"Expected {padLen} object 8-align pad bytes but read {n}");
+                }
+                objectFirstHeaderRead = true;
+            }
+
+            while (true)
+            {
+                ChunkHeader header = default;
+                var n = ReadRawStream(new Span<byte>(&header, ChunkHeader.TotalSize));
+                if (n != ChunkHeader.TotalSize)
+                    throw new TsavoriteException($"Expected {ChunkHeader.TotalSize} object ChunkHeader bytes but read {n}");
+                var raw = header.currentLength;
+                objectChunkRemaining = raw & ~unchecked((uint)ChunkedRecordConstants.ContinuationFlag);
+                var continues = (raw & unchecked((uint)ChunkedRecordConstants.ContinuationFlag)) != 0;
+                if (objectChunkRemaining > 0)
+                {
+                    // Keep the read-ahead ring ahead of consumption for a sentinel object (its initial read-ahead is only one 4 MB block):
+                    // proactively request this chunk's data plus the next chunk's header, mirroring the overflow ReadOverflowHeaderAndExtend pattern.
+                    if (objectSentinel)
+                        readBuffers.ExtendUnreadLengthRemaining(objectChunkRemaining + ChunkHeader.TotalSize);
+                    return true;                // a real (possibly final) chunk
+                }
+                if (!continues)
+                    return false;               // terminal zero-length chunk: object done
+                // zero-length continuation chunk (boundary filler): read the next header.
+            }
+        }
+
         void DoDeserialize(ref LogRecord logRecord)
         {
             deserializedLength = 0;
             inDeserialize = true;
+            var startConsumed = recordStreamConsumed;   // the object value's on-disk bytes begin here (after the key)
 
             // If we haven't yet instantiated the serializer do so now.
             if (valueObjectSerializer is null)
@@ -261,7 +381,11 @@ namespace Tsavorite.core
             }
 
             valueObjectSerializer.Deserialize(out var valueObject);
-            logRecord.SetDeserializedValueObject(valueObject, deserializedLength);
+
+            // Store the object value's on-disk EXTENT (data + 8-align padding + ChunkHeaders for a headered object; == data length for a
+            // headerless one), not the deserialized data length, so recovery reconstructs the correct on-disk footprint and RDH page-count hint.
+            var objectExtent = recordStreamConsumed - startConsumed;
+            logRecord.SetDeserializedValueObject(valueObject, objectExtent);
             OnDeserializeComplete(valueObject);
         }
 
