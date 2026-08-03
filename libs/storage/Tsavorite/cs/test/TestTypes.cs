@@ -23,6 +23,9 @@ namespace Tsavorite.test
         // Not always pinned, so don't assume it is
         public readonly bool IsPinned => false;
 
+        /// <inheritdoc/>
+        public readonly bool IsEmpty => false;
+
         public ReadOnlySpan<byte> KeyBytes => MemoryMarshal.Cast<long, byte>(MemoryMarshal.CreateReadOnlySpan(ref kfield1, 2));
 
         /// <inheritdoc/>
@@ -73,6 +76,9 @@ namespace Tsavorite.test
 
         // Not always pinned, so don't assume it is
         public readonly bool IsPinned => false;
+
+        /// <inheritdoc/>
+        public readonly bool IsEmpty => false;
 
         public ReadOnlySpan<byte> KeyBytes => MemoryMarshal.Cast<long, byte>(MemoryMarshal.CreateReadOnlySpan(ref kfield1, 2));
 
