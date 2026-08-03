@@ -825,7 +825,7 @@ namespace Tsavorite.test
         // (a) GetSectorSize uses NativeDevice_ProbeAlignment in the ctor;
         // (b) Initialize cross-checks the C# probe against the kernel's authoritative value;
         // (c) ReadAsync/WriteAsync reject misaligned offsets/lengths/buffers with a clean
-        //     IOException instead of letting the kernel return cryptic EINVAL.
+        //     TsavoriteException instead of letting the kernel return cryptic EINVAL.
         // ---------------------------------------------------------------------------------
 
         [Test]
@@ -879,7 +879,7 @@ namespace Tsavorite.test
         {
             // Issue a read with an offset that's not a multiple of SectorSize. The libaio path
             // would return -EINVAL via the callback (or assert in debug builds); the managed
-            // guard must surface this synchronously with a clean IOException that names the
+            // guard must surface this synchronously with a clean TsavoriteException that names the
             // misaligned input.
             var path = Path.Combine(TestUtils.MethodTestDir, "test.log");
             using var device = new NativeStorageDevice(path, deleteOnClose: true);
@@ -890,7 +890,7 @@ namespace Tsavorite.test
             try
             {
                 ulong unaligned = sector - 1; // smaller than sector, definitely misaligned
-                Assert.Throws<IOException>(() => device.ReadAsync(0, unaligned, ptr, length, (_, _, _) => { }, null));
+                Assert.Throws<TsavoriteException>(() => device.ReadAsync(0, unaligned, ptr, length, (_, _, _) => { }, null));
             }
             finally { GC.KeepAlive(buf); }
         }
@@ -908,7 +908,7 @@ namespace Tsavorite.test
             try
             {
                 uint bad = sector + 1; // not a multiple of sector
-                Assert.Throws<IOException>(() => device.WriteAsync(ptr, 0, 0, bad, (_, _, _) => { }, null));
+                Assert.Throws<TsavoriteException>(() => device.WriteAsync(ptr, 0, 0, bad, (_, _, _) => { }, null));
             }
             finally { GC.KeepAlive(buf); }
         }
@@ -925,7 +925,7 @@ namespace Tsavorite.test
             try
             {
                 IntPtr misalignedPtr = ptr + 1; // misaligned buffer pointer
-                Assert.Throws<IOException>(() => device.WriteAsync(misalignedPtr, 0, 0, sector, (_, _, _) => { }, null));
+                Assert.Throws<TsavoriteException>(() => device.WriteAsync(misalignedPtr, 0, 0, sector, (_, _, _) => { }, null));
             }
             finally { GC.KeepAlive(buf); }
         }
