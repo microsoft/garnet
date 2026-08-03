@@ -249,6 +249,9 @@ namespace Garnet.server
             var initOrSameSublog = replicaReadSessionContext.lastVirtualSublogIdx == -1 || replicaReadSessionContext.lastVirtualSublogIdx == virtualSublogIdx;
             var mssn = replicaReadSessionContext.maximumSessionSequenceNumber;
 
+            // Prefetch the key's sketch slot for later post-read update (AfterConsistentReadKey)
+            vsrs[virtualSublogIdx].PrefetchKeySequenceNumber(keyHash);
+
             // Here we have to wait for replay to catch up
             // Don't have to wait if reading from same sublog or maximumSessionTimestamp is behind the sublog frontier timestamp
             if (!initOrSameSublog && mssn >= replicaReadSessionContext.cachedSublogMax[virtualSublogIdx])
