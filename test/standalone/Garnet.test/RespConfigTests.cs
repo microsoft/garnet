@@ -1009,4 +1009,144 @@ namespace Garnet.test
             ClassicAssert.AreEqual("ERR Value for 'aof-size-limit-enforce-frequency' is out of range (0..2147483647).", negative.Message);
         }
     }
+
+    /// <summary>
+    /// Tests for runtime CONFIG SET of background-task frequencies whose change is enacted by a task
+    /// lifecycle action (start / kill / restart) wired through <c>ConfigMeta.UpdateAction</c>.
+    /// </summary>
+    [TestFixture]
+    public class RespConfigTaskLifecycleTests : TestBase
+    {
+        GarnetServer server;
+
+        [SetUp]
+        public void Setup()
+        {
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            server?.Dispose();
+            TestUtils.OnTearDown();
+        }
+
+        static string Get(IDatabase db, string name)
+        {
+            var res = (RedisResult[])db.Execute("CONFIG", "GET", name);
+            ClassicAssert.AreEqual(2, res.Length);
+            ClassicAssert.AreEqual(name, res[0].ToString());
+            return res[1].ToString();
+        }
+
+        /// <summary>
+        /// When the server starts with per-operation auto-commit (aof-commit-freq 0), the value is fixed
+        /// into the AOF log at startup: runtime CONFIG SET is rejected and the option is left unchanged.
+        /// </summary>
+        [Test]
+        public void ConfigCommitFreqRejectedWhenStartedAtZeroTest()
+        {
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableAOF: true, commitFrequencyMs: 0);
+            server.Start();
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            ClassicAssert.AreEqual("0", Get(db, "aof-commit-freq"));
+
+            var toZero = Assert.Throws<RedisServerException>(() => db.Execute("CONFIG", "SET", "aof-commit-freq", "0"));
+            ClassicAssert.AreEqual("ERR 'aof-commit-freq' cannot be set to 0 at runtime; per-operation auto-commit is fixed at startup.", toZero.Message);
+
+            var fromZero = Assert.Throws<RedisServerException>(() => db.Execute("CONFIG", "SET", "aof-commit-freq", "100"));
+            ClassicAssert.AreEqual("ERR 'aof-commit-freq' cannot be changed at runtime because the server started with per-operation auto-commit (0).", fromZero.Message);
+
+            ClassicAssert.AreEqual("0", Get(db, "aof-commit-freq"));
+        }
+
+        /// <summary>
+        /// When the server starts with periodic commit (aof-commit-freq &gt; 0), the safe {-1, &gt; 0}
+        /// transitions are accepted and enacted by restarting / killing the commit task, while a move to 0
+        /// remains rejected and leaves the value intact.
+        /// </summary>
+        [Test]
+        public void ConfigCommitFreqRuntimeAdjustableTest()
+        {
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableAOF: true, commitFrequencyMs: 100);
+            server.Start();
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            ClassicAssert.AreEqual("100", Get(db, "aof-commit-freq"));
+
+            // -1 disables the periodic task (manual commit).
+            ClassicAssert.AreEqual("OK", db.Execute("CONFIG", "SET", "aof-commit-freq", "-1").ToString());
+            ClassicAssert.AreEqual("-1", Get(db, "aof-commit-freq"));
+
+            // A positive value re-enables / retunes the task.
+            ClassicAssert.AreEqual("OK", db.Execute("CONFIG", "SET", "aof-commit-freq", "250").ToString());
+            ClassicAssert.AreEqual("250", Get(db, "aof-commit-freq"));
+
+            // 0 remains rejected because auto-commit cannot be toggled on a live log.
+            var toZero = Assert.Throws<RedisServerException>(() => db.Execute("CONFIG", "SET", "aof-commit-freq", "0"));
+            ClassicAssert.AreEqual("ERR 'aof-commit-freq' cannot be set to 0 at runtime; per-operation auto-commit is fixed at startup.", toZero.Message);
+            ClassicAssert.AreEqual("250", Get(db, "aof-commit-freq"));
+        }
+
+        /// <summary>
+        /// expired-key-deletion-scan-freq toggles the background scan task, which in turn gates the
+        /// on-demand EXPDELSCAN command — verifying that the admin command reads the runtime value rather
+        /// than the startup value.
+        /// </summary>
+        [Test]
+        public void ConfigExpiredKeyDeletionScanRuntimeAdjustableTest()
+        {
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, expiredKeyDeletionScanFrequencySecs: -1);
+            server.Start();
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            ClassicAssert.AreEqual("-1", Get(db, "expired-key-deletion-scan-freq"));
+
+            // With the background scan disabled, on-demand EXPDELSCAN is allowed.
+            Assert.DoesNotThrow(() => db.Execute("EXPDELSCAN"));
+
+            // Enabling the background scan starts the task and disables the on-demand command.
+            ClassicAssert.AreEqual("OK", db.Execute("CONFIG", "SET", "expired-key-deletion-scan-freq", "5").ToString());
+            ClassicAssert.AreEqual("5", Get(db, "expired-key-deletion-scan-freq"));
+            var ex = Assert.Throws<RedisServerException>(() => db.Execute("EXPDELSCAN"));
+            ClassicAssert.AreEqual("ERR Cannot execute EXPDELSCAN with background expired key deletion scan enabled", ex.Message);
+
+            // Disabling it again kills the task and re-enables the on-demand command.
+            ClassicAssert.AreEqual("OK", db.Execute("CONFIG", "SET", "expired-key-deletion-scan-freq", "-1").ToString());
+            ClassicAssert.AreEqual("-1", Get(db, "expired-key-deletion-scan-freq"));
+            Assert.DoesNotThrow(() => db.Execute("EXPDELSCAN"));
+        }
+
+        /// <summary>
+        /// expired-object-collection-freq round-trips through CONFIG GET / CONFIG SET and starts / kills
+        /// the background collection task accordingly.
+        /// </summary>
+        [Test]
+        public void ConfigExpiredObjectCollectionRuntimeAdjustableTest()
+        {
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir);
+            server.Start();
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            ClassicAssert.AreEqual("0", Get(db, "expired-object-collection-freq"));
+
+            // Enabling starts the collection task.
+            ClassicAssert.AreEqual("OK", db.Execute("CONFIG", "SET", "expired-object-collection-freq", "5").ToString());
+            ClassicAssert.AreEqual("5", Get(db, "expired-object-collection-freq"));
+
+            // Disabling kills it.
+            ClassicAssert.AreEqual("OK", db.Execute("CONFIG", "SET", "expired-object-collection-freq", "0").ToString());
+            ClassicAssert.AreEqual("0", Get(db, "expired-object-collection-freq"));
+
+            // Out-of-range values are rejected.
+            var negative = Assert.Throws<RedisServerException>(() => db.Execute("CONFIG", "SET", "expired-object-collection-freq", "-1"));
+            ClassicAssert.AreEqual("ERR Value for 'expired-object-collection-freq' is out of range (0..2147483647).", negative.Message);
+        }
+    }
 }

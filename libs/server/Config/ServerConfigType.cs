@@ -34,6 +34,12 @@ namespace Garnet.server
         SG_GET,
         AOF_SIZE_LIMIT_ENFORCE_FREQUENCY,
 
+        // Runtime-adjustable options whose change requires a lifecycle action on a background task
+        // (start / kill / restart), enacted through the ConfigMeta.UpdateAction during CONFIG SET.
+        AOF_COMMIT_FREQ,
+        EXPIRED_OBJECT_COLLECTION_FREQ,
+        EXPIRED_KEY_DELETION_SCAN_FREQ,
+
         // Read-only, non-numeric parameters (file paths, sockets, physical toggles). Exposed through
         // CONFIG GET via the read-only fall-through — their value is read directly from the startup
         // GarnetServerOptions and CONFIG SET rejects them. They have no backing long[] slot.

@@ -49,6 +49,11 @@ namespace Garnet.server
         // read exclusively through the typed accessors so a CONFIG SET is observed everywhere.
         readonly GarnetServerOptions serverOptions;
 
+        // Owning server, through which update actions reach the live background tasks (AOF commit, expiry
+        // collection/scan) to enact lifecycle changes. Null in unit tests that construct the config
+        // standalone, in which case an update action simply stores the value with no lifecycle effect.
+        readonly StoreWrapper owner;
+
         /// <summary>All configuration types handled by this table.</summary>
         public static ReadOnlySpan<ServerConfigType> RuntimeTypes => runtimeTypes;
 
@@ -56,10 +61,15 @@ namespace Garnet.server
         /// Create a runtime configuration seeded from the startup options.
         /// </summary>
         /// <param name="serverOptions">Startup options supplying the initial value of every slot.</param>
-        public RuntimeServerConfig(GarnetServerOptions serverOptions)
+        /// <param name="owner">
+        /// Owning server, through which update actions enact task lifecycle changes. May be
+        /// <see langword="null"/> for a standalone configuration with no live server to act on.
+        /// </param>
+        public RuntimeServerConfig(GarnetServerOptions serverOptions, StoreWrapper owner = null)
         {
             ArgumentNullException.ThrowIfNull(serverOptions);
             this.serverOptions = serverOptions;
+            this.owner = owner;
             Init(serverOptions);
         }
 
@@ -83,13 +93,14 @@ namespace Garnet.server
             var m = new ConfigMeta[TableSize];
 
             void Set(ServerConfigType t, string name, ConfigKind kind, long min, long max, Type enumType = null,
-                ConfigTimeUnit timeUnit = ConfigTimeUnit.None, bool nonPositiveIsInfinite = false)
+                ConfigTimeUnit timeUnit = ConfigTimeUnit.None, bool nonPositiveIsInfinite = false,
+                ConfigUpdateAction updateAction = null)
             {
                 if ((kind & ConfigKind.Enum) != 0)
                     EnsureSupportedEnum(enumType);
                 EnsureValidKind(name, kind, timeUnit);
                 m[(int)t] = new ConfigMeta(name, kind, min, max, enumType, IsRuntime: true, ReadOnly: false,
-                    timeUnit, nonPositiveIsInfinite);
+                    timeUnit, nonPositiveIsInfinite, UpdateAction: updateAction);
             }
 
             void SetReadOnly(ServerConfigType t, string name, ConfigKind kind,
@@ -182,6 +193,24 @@ namespace Garnet.server
             Set(ServerConfigType.AOF_SIZE_LIMIT_ENFORCE_FREQUENCY, "aof-size-limit-enforce-frequency",
                 ConfigKind.Int32, 0, int.MaxValue);
 
+            // Background-task frequencies whose change is enacted by restarting / killing the owning task
+            // through the UpdateAction: the tasks capture their interval at start, so a runtime change
+            // requires a kill+restart rather than a re-read.
+            //
+            // aof-commit-freq (ms): -1 = manual commit (no periodic task), > 0 = periodic commit interval.
+            // A value of 0 (per-operation auto-commit) is baked into the AOF log at startup and cannot be
+            // toggled on a live log; ApplyCommitFrequencyUpdate rejects moving to 0 and rejects any change
+            // when the server started at 0.
+            Set(ServerConfigType.AOF_COMMIT_FREQ, "aof-commit-freq", ConfigKind.Int32, -1, int.MaxValue,
+                updateAction: ApplyCommitFrequencyUpdate);
+            // expired-object-collection-freq (seconds): <= 0 = disabled (no task), > 0 = collection interval.
+            Set(ServerConfigType.EXPIRED_OBJECT_COLLECTION_FREQ, "expired-object-collection-freq",
+                ConfigKind.Int32, 0, int.MaxValue, updateAction: ApplyExpiredObjectCollectionUpdate);
+            // expired-key-deletion-scan-freq (seconds): <= 0 = disabled (no task, on-demand EXPDELSCAN
+            // allowed), > 0 = background scan interval.
+            Set(ServerConfigType.EXPIRED_KEY_DELETION_SCAN_FREQ, "expired-key-deletion-scan-freq",
+                ConfigKind.Int32, -1, int.MaxValue, updateAction: ApplyExpiredKeyDeletionUpdate);
+
             return m;
         }
 
@@ -228,6 +257,9 @@ namespace Garnet.server
             values[(int)ServerConfigType.OBJECT_SCAN_COUNT_LIMIT] = o.ObjectScanCountLimit;
             values[(int)ServerConfigType.SG_GET] = o.EnableScatterGatherGet ? 1 : 0;
             values[(int)ServerConfigType.AOF_SIZE_LIMIT_ENFORCE_FREQUENCY] = o.AofSizeLimitEnforceFrequencySecs;
+            values[(int)ServerConfigType.AOF_COMMIT_FREQ] = o.CommitFrequencyMs;
+            values[(int)ServerConfigType.EXPIRED_OBJECT_COLLECTION_FREQ] = o.ExpiredObjectCollectionFrequencySecs;
+            values[(int)ServerConfigType.EXPIRED_KEY_DELETION_SCAN_FREQ] = o.ExpiredKeyDeletionScanFrequencySecs;
         }
 
         /// <summary>Current value of <paramref name="type"/> as a 32-bit integer, in its native unit.</summary>
@@ -340,43 +372,44 @@ namespace Garnet.server
                 return false;
             }
 
+            long parsed;
             switch (meta.Kind & ConfigKind.StorageMask)
             {
                 case ConfigKind.Int32:
                     {
-                        if (!int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed))
+                        if (!int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var i32))
                         {
                             error = $"ERR Invalid value for '{meta.Name}': expected an integer.";
                             return false;
                         }
                         // A non-positive value denotes an infinite timeout; normalize so CONFIG GET never
                         // reports a negative value that would be silently reinterpreted as infinite.
-                        if (parsed < 0 && meta.NonPositiveIsInfinite)
-                            parsed = 0;
-                        if (parsed < meta.Min || parsed > meta.Max)
+                        if (i32 < 0 && meta.NonPositiveIsInfinite)
+                            i32 = 0;
+                        if (i32 < meta.Min || i32 > meta.Max)
                         {
                             error = $"ERR Value for '{meta.Name}' is out of range ({meta.Min}..{meta.Max}).";
                             return false;
                         }
-                        Volatile.Write(ref values[(int)type], parsed);
-                        return true;
+                        parsed = i32;
+                        break;
                     }
                 case ConfigKind.Int64:
                     {
-                        if (!long.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed))
+                        if (!long.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var i64))
                         {
                             error = $"ERR Invalid value for '{meta.Name}': expected an integer.";
                             return false;
                         }
-                        if (parsed < 0 && meta.NonPositiveIsInfinite)
-                            parsed = 0;
-                        if (parsed < meta.Min || parsed > meta.Max)
+                        if (i64 < 0 && meta.NonPositiveIsInfinite)
+                            i64 = 0;
+                        if (i64 < meta.Min || i64 > meta.Max)
                         {
                             error = $"ERR Value for '{meta.Name}' is out of range ({meta.Min}..{meta.Max}).";
                             return false;
                         }
-                        Volatile.Write(ref values[(int)type], parsed);
-                        return true;
+                        parsed = i64;
+                        break;
                     }
                 case ConfigKind.Bool:
                     {
@@ -385,32 +418,85 @@ namespace Garnet.server
                             case "yes":
                             case "true":
                             case "1":
-                                Volatile.Write(ref values[(int)type], 1);
-                                return true;
+                                parsed = 1;
+                                break;
                             case "no":
                             case "false":
                             case "0":
-                                Volatile.Write(ref values[(int)type], 0);
-                                return true;
+                                parsed = 0;
+                                break;
                             default:
                                 error = $"ERR Invalid value for '{meta.Name}': expected 'yes' or 'no'.";
                                 return false;
                         }
+                        break;
                     }
                 case ConfigKind.Enum:
                     {
-                        if (!value.TryParseEnumToLong(meta.EnumType, out var parsed))
+                        if (!value.TryParseEnumToLong(meta.EnumType, out var enumValue))
                         {
                             error = $"ERR Invalid value for '{meta.Name}': '{value}'.";
                             return false;
                         }
-                        Volatile.Write(ref values[(int)type], parsed);
-                        return true;
+                        parsed = enumValue;
+                        break;
                     }
                 default:
                     error = $"ERR Option '{meta.Name}' is not runtime-adjustable.";
                     return false;
             }
+
+            // Publish the new value first so any task an update action restarts observes it, then run the
+            // action. On rejection, roll the slot back so the option is left unchanged.
+            var oldValue = Volatile.Read(ref values[(int)type]);
+            Volatile.Write(ref values[(int)type], parsed);
+
+            if (meta.UpdateAction != null && !meta.UpdateAction(this, oldValue, parsed, out error))
+            {
+                Volatile.Write(ref values[(int)type], oldValue);
+                return false;
+            }
+
+            return true;
+        }
+
+        // Enacts an aof-commit-freq change on the periodic AOF commit task. A value of 0 (per-operation
+        // auto-commit) is fixed into the AOF log at construction and cannot be toggled on a live log, so a
+        // move to 0 — or any change when the server started at 0 — is rejected. For the safe {-1, >0}
+        // transitions the commit task is restarted (or killed) to pick up the new interval.
+        static bool ApplyCommitFrequencyUpdate(RuntimeServerConfig config, long oldValue, long newValue, out string error)
+        {
+            error = null;
+            if (newValue == 0)
+            {
+                error = "ERR 'aof-commit-freq' cannot be set to 0 at runtime; per-operation auto-commit is fixed at startup.";
+                return false;
+            }
+            if (config.serverOptions.CommitFrequencyMs == 0)
+            {
+                error = "ERR 'aof-commit-freq' cannot be changed at runtime because the server started with per-operation auto-commit (0).";
+                return false;
+            }
+            config.owner?.ReconcilePrimaryTask(TaskType.CommitTask);
+            return true;
+        }
+
+        // Enacts an expired-object-collection-freq change by restarting / killing the collection task so it
+        // picks up the new interval (or stops when disabled).
+        static bool ApplyExpiredObjectCollectionUpdate(RuntimeServerConfig config, long oldValue, long newValue, out string error)
+        {
+            error = null;
+            config.owner?.ReconcilePrimaryTask(TaskType.ObjectCollectTask);
+            return true;
+        }
+
+        // Enacts an expired-key-deletion-scan-freq change by restarting / killing the scan task so it picks
+        // up the new interval (or stops, re-enabling on-demand EXPDELSCAN, when disabled).
+        static bool ApplyExpiredKeyDeletionUpdate(RuntimeServerConfig config, long oldValue, long newValue, out string error)
+        {
+            error = null;
+            config.owner?.ReconcilePrimaryTask(TaskType.ExpiredKeyDeletionTask);
+            return true;
         }
 
         /// <summary>Canonical wire name of <paramref name="type"/>.</summary>
