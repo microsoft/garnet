@@ -3427,8 +3427,6 @@ namespace Garnet.test
                     var allAdds = new List<Task>();
                     for (var i = 0; i < NumVectorSets; i++)
                     {
-                        TestContext.Progress.WriteLine(i);
-
                         var keyName = $"{nameof(LotsOfVectorSetsAsync)}_{i}";
                         var elemName = $"x{i}";
                         var vector = new byte[(i * 3) + 1];
@@ -3631,6 +3629,18 @@ namespace Garnet.test
                 ClassicAssert.IsTrue(allKeys.Contains("foo"));
                 ClassicAssert.IsTrue(allKeys.Contains(nameof(HideInternalRecordsAsync)));
             }
+        }
+
+        [Test]
+        public async Task TypeAsync()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
+            var db = redis.GetDatabase(0);
+
+            ClassicAssert.IsTrue(await db.VectorSetAddAsync("foo", VectorSetAddRequest.Member("bar", new float[] { 1, 2, 3 })).ConfigureAwait(false));
+
+            var type = await db.KeyTypeAsync("foo").ConfigureAwait(false);
+            ClassicAssert.AreEqual(RedisType.VectorSet, type);
         }
 
         [Test]

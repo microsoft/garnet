@@ -594,10 +594,18 @@ namespace Garnet.server
 
             var output = new ObjectOutput();
 
-            foreach (var key in keys)
-                RMWObjectStoreOperation(key, ref input, ref objectContext, ref output);
+            var res = GarnetStatus.OK;
 
-            return GarnetStatus.OK;
+            // Attempt to collect on all keys, but remember if we collected not-a-hash
+            foreach (var key in keys)
+            {
+                if (RMWObjectStoreOperation(key, ref input, ref objectContext, ref output) == GarnetStatus.WRONGTYPE)
+                {
+                    res = GarnetStatus.WRONGTYPE;
+                }
+            }
+
+            return res;
         }
     }
 }

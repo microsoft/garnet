@@ -6,7 +6,7 @@ Builds all Linux Dockerfiles, then verifies:
   1. Basic server startup (PING, SET/GET)
   2. Lua EVAL scripting
   3. Default device + storage tier persistence (write, BGSAVE, restart, recover) — all platforms
-  4. Native device + storage tier persistence (write, BGSAVE, restart, recover) — glibc only
+  4. Native device + storage tier persistence (write, BGSAVE, restart, recover) — glibc + musl
   5. Native library resolution (libaio, liblua54)
   6. Multi-platform builds via buildx (optional, slow)
 
@@ -55,7 +55,7 @@ IMAGES = [
     ImageDef("noble",          "Dockerfile.ubuntu",     "garnet-validate:noble"),
     ImageDef("noble-chiseled", "Dockerfile.chiseled",   "garnet-validate:noble-chiseled", supports_shell=False),
     ImageDef("azurelinux",     "Dockerfile.azurelinux", "garnet-validate:azurelinux"),
-    ImageDef("alpine",         "Dockerfile.alpine",     "garnet-validate:alpine", supports_native_device=False),
+    ImageDef("alpine",         "Dockerfile.alpine",     "garnet-validate:alpine"),
 ]
 
 BASE_PORT = 30000  # Tests allocate ports starting here

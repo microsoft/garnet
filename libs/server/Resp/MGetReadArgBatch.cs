@@ -47,10 +47,8 @@ namespace Garnet.server
         /// <inheritdoc/>
         public readonly void GetInput(int i, out StringInput input)
         {
-            input = default;
-
             // Save the index so we can order async completions correctly in the response
-            input.arg1 = i;
+            input = new(RespCommand.MGET, arg1: i);
         }
 
         /// <inheritdoc/>
@@ -117,7 +115,6 @@ namespace Garnet.server
 
                 if (!HasGoneAsync)
                 {
-
                     var bufferSize = session.parseState.Count - i;
                     var arr = ArrayPool<(Status, StringOutput)>.Shared.Rent(bufferSize);
                     runningStatus = arr.AsMemory()[..bufferSize];
