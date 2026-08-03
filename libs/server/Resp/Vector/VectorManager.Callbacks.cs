@@ -295,16 +295,14 @@ namespace Garnet.server
         internal readonly ReadCopyTo StubReadCopyTo;
 
         /// <summary>
-        /// Per-record overhead (RecordInfo + RecordDataHeader + namespace + key + record alignment) added to the
-        /// value size when computing the initial disk-read size, so the whole record lands in one IO — in particular
-        /// the FullVector, which is always served from disk. The fixed header is 16 bytes, the namespace and internal
-        /// id key are 4 bytes each; 128 covers those plus record alignment and any per-value prefix. Downstream the
-        /// requested length is rounded up to the device sector size, so this overhead is free only within that
-        /// sector-alignment slack: while value+overhead rounds up to the same sectors the full record occupies
-        /// anyway it adds no IO, but a larger bump that crossed a sector boundary would read an extra sector.
-        /// Under-sizing forces a second IO.
+        /// Per-record framing added to the estimated value size when sizing the initial disk read, so the FullVector
+        /// — the only vector record always served from disk — is fetched whole in a single IO. It covers the 16-byte
+        /// fixed header (RecordInfo + RecordDataHeader), the &lt;=4-byte namespace, the 4-byte internal-id key, record
+        /// alignment, and the small per-vector addend the stored format keeps beyond dims*bytes. Sized to just cover
+        /// that (single-IO confirmed for the 768-dim FP32 record) and no larger: the initial read is rounded up to the
+        /// device sector size, so padding past the record only risks pulling an extra sector for no benefit.
         /// </summary>
-        private const int VectorRecordReadOverheadBytes = 128;
+        private const int VectorRecordReadOverheadBytes = 64;
 
         /// <summary>
         /// Compute and stash the per-term initial disk-read sizes from the active vector set's geometry, so that
