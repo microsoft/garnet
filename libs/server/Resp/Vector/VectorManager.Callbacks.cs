@@ -46,12 +46,13 @@ namespace Garnet.server
             }
 
             /// <summary>
-            /// Per-term read-copy policy. The small per-element records (NeighborList adjacency, QuantizedVector,
-            /// internal/external id maps) are copied back into memory on disk read — to <see cref="stubReadCopyTo"/>
-            /// (the read cache when enabled, else the main-log tail) — so later hops and queries serve them from
-            /// memory. The large raw FullVector and Attributes/Metadata are served from disk (CopyTo=None): quantized
-            /// sets use the raw vector only for reranking, and for no-quant sets caching it yields no net gain once the
-            /// working set exceeds the read cache, as copying these large records in costs more than the reads it saves.
+            /// Per-term read-copy policy. Records reused across hops and queries during traversal and rerank —
+            /// NeighborList adjacency, QuantizedVector, the internal/external id maps, and the Metadata term — are
+            /// copied back into memory on a disk read (to <see cref="stubReadCopyTo"/>: the read cache when enabled,
+            /// else the main-log tail) so later reads serve them from memory, bounding disk traffic to the working
+            /// set. The raw FullVector and Attributes are served from disk (CopyTo=None): the FullVector is read once
+            /// per rerank candidate and is large, so for no-quant sets caching it yields no net gain once the working
+            /// set exceeds memory.
             /// </summary>
             public readonly ReadCopyOptions ReadCopyOptions
             {
@@ -327,7 +328,7 @@ namespace Garnet.server
             var readCopyOptions =
                 (context & (ContextStep - 1)) switch
                 {
-                    DiskANNService.NeighborList or DiskANNService.QuantizedVector or DiskANNService.InternalIdMap or DiskANNService.ExternalIdMap => new ReadCopyOptions { CopyFrom = ReadCopyFrom.AllImmutable, CopyTo = ActiveThreadSession.vectorManager.stubReadCopyTo },
+                    DiskANNService.NeighborList or DiskANNService.QuantizedVector or DiskANNService.InternalIdMap or DiskANNService.ExternalIdMap or DiskANNService.Metadata => new ReadCopyOptions { CopyFrom = ReadCopyFrom.AllImmutable, CopyTo = ActiveThreadSession.vectorManager.stubReadCopyTo },
                     _ => new ReadCopyOptions { CopyFrom = ReadCopyFrom.None, CopyTo = ReadCopyTo.None },
                 };
 
