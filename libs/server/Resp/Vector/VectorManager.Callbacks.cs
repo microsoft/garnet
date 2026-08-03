@@ -57,13 +57,13 @@ namespace Garnet.server
             }
 
             /// <summary>
-            /// Per-term read-copy policy. The per-node records touched during traversal and rerank — NeighborList
-            /// adjacency, QuantizedVector, the internal/external id maps, and the per-node Metadata block — are
+            /// Per-term read-copy policy. Records reused across hops and queries during traversal and rerank —
+            /// NeighborList adjacency, QuantizedVector, the internal/external id maps, and the Metadata term — are
             /// copied back into memory on a disk read (to <see cref="StubReadCopyTo"/>: the read cache when enabled,
-            /// else the main-log tail) so later hops and queries serve them from memory, bounding disk traffic to the
-            /// visited working set. The raw FullVector and Attributes are served from disk (CopyTo=None): the raw
-            /// vector is touched once per rerank candidate and is large, and for no-quant sets caching it yields no
-            /// net gain once the working set exceeds memory, as copying it in costs more than the reads it saves.
+            /// else the main-log tail) so later reads serve them from memory, bounding disk traffic to the working
+            /// set. The raw FullVector and Attributes are served from disk (CopyTo=None): the FullVector is read once
+            /// per rerank candidate and is large, so for no-quant sets caching it yields no net gain once the working
+            /// set exceeds memory.
             /// </summary>
             public readonly ReadCopyOptions ReadCopyOptions
             {
@@ -295,12 +295,10 @@ namespace Garnet.server
         internal readonly ReadCopyTo StubReadCopyTo;
 
         /// <summary>
-        /// Per-record framing added to the estimated value size when sizing the initial disk read, so the FullVector
-        /// — the only vector record always served from disk — is fetched whole in a single IO. It covers the 16-byte
-        /// fixed header (RecordInfo + RecordDataHeader), the &lt;=4-byte namespace, the 4-byte internal-id key, record
-        /// alignment, and the small per-vector addend the stored format keeps beyond dims*bytes. Sized to just cover
-        /// that (single-IO confirmed for the 768-dim FP32 record) and no larger: the initial read is rounded up to the
-        /// device sector size, so padding past the record only risks pulling an extra sector for no benefit.
+        /// Framing added to the estimated value size when sizing the FullVector's initial disk read (the only vector
+        /// record always served from disk), so the whole record is fetched in one IO: the 16-byte fixed header
+        /// (RecordInfo + RecordDataHeader), the up-to-4-byte namespace, the 4-byte internal-id key, record alignment,
+        /// and the small per-vector addend the stored format keeps beyond dims*bytes.
         /// </summary>
         private const int VectorRecordReadOverheadBytes = 64;
 
