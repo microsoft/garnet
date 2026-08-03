@@ -429,7 +429,7 @@ namespace Garnet.test
 
             var value = db.KeyDump("mykey");
 
-            ClassicAssert.AreEqual(null, value);
+            ClassicAssert.IsNull(value);
         }
 
         /// <summary>
@@ -3575,6 +3575,33 @@ namespace Garnet.test
             ClassicAssert.AreEqual(value.Substring(5, 3), resp);
         }
 
+        /// <summary>
+        /// Regression test for GETRANGE on a key holding an empty string throwing
+        /// DivideByZeroException when start is negative (NormalizeRange's start %= len hits
+        /// len == 0). Real Redis returns an empty string for any range on an empty value.
+        /// </summary>
+        [Test]
+        public void GetRangeEmptyValueTest()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            string key = "emptyRangeKey";
+            ClassicAssert.IsTrue(db.StringSet(key, ""));
+
+            var resp = (string)db.StringGetRange(key, -1, -1);
+            ClassicAssert.AreEqual(string.Empty, resp);
+
+            resp = (string)db.StringGetRange(key, -1, 0);
+            ClassicAssert.AreEqual(string.Empty, resp);
+
+            resp = (string)db.StringGetRange(key, 0, 0);
+            ClassicAssert.AreEqual(string.Empty, resp);
+
+            resp = (string)db.StringGetRange(key, 0, -1);
+            ClassicAssert.AreEqual(string.Empty, resp);
+        }
+
         [Test]
         public void SetRangeTest()
         {
@@ -3643,6 +3670,19 @@ namespace Garnet.test
             ClassicAssert.IsTrue(db.StringSet(key, value));
             ex = Assert.Throws<RedisServerException>(() => db.StringSetRange(key, -1, newValue));
             ClassicAssert.AreEqual(Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_OFFSETOUTOFRANGE), ex.Message);
+
+            // offset + value length beyond the max record size -> RedisServerException
+            // ("ERR string exceeds maximum allowed size (proto-max-bulk-len)"),
+            // instead of the storage layer throwing and the connection being dropped
+            ClassicAssert.IsTrue(db.KeyDelete(key));
+            ex = Assert.Throws<RedisServerException>(() => db.StringSetRange(key, 600_000_000, newValue));
+            ClassicAssert.AreEqual(Encoding.ASCII.GetString(CmdStrings.RESP_ERR_STRING_EXCEEDS_MAX_SIZE), ex.Message);
+
+            // the connection must still be usable after the rejected command above
+            ClassicAssert.IsTrue(db.StringSet(key, value));
+            resp = db.StringGet(key);
+            ClassicAssert.AreEqual(value, resp);
+            ClassicAssert.IsTrue(db.KeyDelete(key));
         }
 
         [Test]

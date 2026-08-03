@@ -631,7 +631,9 @@ namespace Garnet.server
 
             foreach (var item in keys)
             {
-                if (GET(item, out var currObject, ref objectContext) == GarnetStatus.OK)
+                var res = GET(item, out var currObject, ref objectContext);
+
+                if (res == GarnetStatus.OK)
                 {
                     if (currObject.GarnetObject is not SetObject setObject)
                     {
@@ -640,6 +642,10 @@ namespace Garnet.server
                     }
 
                     output.UnionWith(setObject.Set);
+                }
+                else if (res == GarnetStatus.WRONGTYPE)
+                {
+                    return GarnetStatus.WRONGTYPE;
                 }
             }
 

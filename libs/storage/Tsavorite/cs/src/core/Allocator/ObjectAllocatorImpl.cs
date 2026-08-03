@@ -716,7 +716,10 @@ namespace Tsavorite.core
                     WriteInlinePageAsync((nint)pagePointers[flushPage % BufferSize], (ulong)(AlignedPageSizeBytes * flushPage), (uint)AlignedPageSizeBytes, callback, asyncResult, device);
                     return;
                 }
-                Debug.Assert(!asyncResult.partial, "Partial flush should not be requested for recovery flushes");
+                // A recovery flush may be front-partial (starting mid-page at the first record past the PageHeader) but always
+                // extends to the end of the page, so the whole page is written with the PageHeader re-included.
+                Debug.Assert(asyncResult.untilAddress == GetLogicalAddressOfStartOfPage(flushPage + 1),
+                    $"Recovery flush should extend to the end of page {flushPage}");
             }
 
             Debug.Assert(asyncResult.page == flushPage, $"asyncResult.page {asyncResult.page} should equal flushPage {flushPage}");
@@ -980,13 +983,6 @@ namespace Tsavorite.core
                 // to the main log file (or snapshot file) unless we are to skip it because HeadAddress advanced.
                 if (asyncResult.flushRequestState != FlushRequestState.WriteNotIssued)
                 {
-                    if (asyncResult.partial)
-                    {
-                        // We're writing only a subset of the page, so update our count of bytes to write.
-                        var aligned_end = (int)RoundUp(asyncResult.untilAddress - alignedStartOffset, (int)device.SectorSize);
-                        numBytesToWrite = (uint)(aligned_end - alignedStartOffset);
-                    }
-
                     // Finally write the main log page as part of OnPartialFlushComplete, or directly if we had no flushBuffers.
                     // TODO: This will potentially overwrite partial sectors if this is a partial flush; a workaround would be difficult.
                     if (logWriter is not null)
@@ -1180,7 +1176,18 @@ namespace Tsavorite.core
 
             asyncResult.callback = callback;
             asyncResult.destinationPtr = destinationPtr;
-            asyncResult.maxAddressOffsetOnPage = aligned_read_length;
+
+            // Bound the object-record walk (in DeserializeObjectsOnPage) to the caller's valid-data extent when one was provided.
+            // For a partial page read the caller sets maxAddressOffsetOnPage to the scan/recovery end (untilAddress), which can be
+            // mid-page and is smaller than the sector-aligned device read length. Walking to the aligned length would process records
+            // that lie ABOVE untilAddress (the page physically continues past the requested range). Such a record can straddle the
+            // read end, so the fields GetObjectLogRecordStartPositionAndLengths reads near its tail -- the ObjectLogPosition word and
+            // the R11 value-length high bits -- fall past the bytes actually transferred and are read from the un-read buffer tail.
+            // That tail is only incidentally zero (the read buffer is cleared before the read); a different boundary alignment could
+            // bisect a field and yield arbitrary bytes. Either way the resulting position/length is bogus and corrupts the computed
+            // object-log range. Only fall back to the read length when the caller left the extent unset.
+            if (asyncResult.maxAddressOffsetOnPage == 0)
+                asyncResult.maxAddressOffsetOnPage = aligned_read_length;
 
             device.ReadAsync(alignedSourceAddress, destinationPtr, aligned_read_length, AsyncReadPageWithObjectsCallback<TContext>, asyncResult);
         }

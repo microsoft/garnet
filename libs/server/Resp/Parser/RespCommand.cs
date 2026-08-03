@@ -196,6 +196,10 @@ namespace Garnet.server
         LRANGE,
         MEMORY_USAGE,
         MGET,
+        OBJECT_ENCODING,
+        OBJECT_FREQ,
+        OBJECT_IDLETIME,
+        OBJECT_REFCOUNT,
         PEXPIRETIME,
         PFCOUNT,
         PTTL,
@@ -318,7 +322,6 @@ namespace Garnet.server
         LASTSAVE,
         BGSAVE,
         COMMITAOF,
-        PURGEBP,
         FAILOVER,
 
         // Custom commands
@@ -354,6 +357,10 @@ namespace Garnet.server
 
         MEMORY,
         // MEMORY_USAGE is a read-only command, so moved up
+
+        OBJECT,
+        OBJECT_HELP,
+        // OBJECT_ENCODING/FREQ/IDLETIME/REFCOUNT are read-only commands, so moved up
 
         CONFIG,
         CONFIG_GET,
@@ -716,6 +723,23 @@ namespace Garnet.server
         /// </summary>
         public static bool IsLegalOnVectorSet(this RespCommand cmd)
         => cmd is RespCommand.DEL or RespCommand.UNLINK or RespCommand.TYPE or RespCommand.DEBUG or RespCommand.RENAME or RespCommand.RENAMENX or RespCommand.VADD or RespCommand.VCARD or RespCommand.VDIM or RespCommand.VEMB or RespCommand.VGETATTR or RespCommand.VINFO or RespCommand.VISMEMBER or RespCommand.VLINKS or RespCommand.VRANDMEMBER or RespCommand.VREM or RespCommand.VSETATTR or RespCommand.VSIM;
+
+        /// <summary>
+        /// Returns true if <paramref name="cmd"/> is allowed while a session is in
+        /// pub/sub subscription mode (RESP2). Per the RESP protocol, only
+        /// (P|S)SUBSCRIBE, (P|S)UNSUBSCRIBE, PING, and QUIT are valid in this state.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static bool IsAllowedInSubscriptionMode(this RespCommand cmd)
+        {
+            return cmd is RespCommand.SUBSCRIBE
+                or RespCommand.UNSUBSCRIBE
+                or RespCommand.PSUBSCRIBE
+                or RespCommand.PUNSUBSCRIBE
+                or RespCommand.SSUBSCRIBE
+                or RespCommand.PING
+                or RespCommand.QUIT;
+        }
     }
 
     /// <summary>
@@ -799,7 +823,9 @@ namespace Garnet.server
             var remainingBytes = bytesRead - readHead;
 
             // SIMD fast path delegated to non-inlined helper to keep this method small enough to inline.
-            if (Vector128.IsHardwareAccelerated && remainingBytes >= 16)
+            // Gate on the leading '*': SIMD patterns are array-framed, so inline commands (e.g. PING\r\n)
+            // skip the scan and fall through to FastParseInlineCommand.
+            if (Vector128.IsHardwareAccelerated && remainingBytes >= 16 && *ptr == (byte)'*')
             {
                 var simdResult = SimdFastParse(ptr, out count);
                 if (simdResult != RespCommand.NONE)

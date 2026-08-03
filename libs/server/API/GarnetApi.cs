@@ -195,8 +195,7 @@ namespace Garnet.server
             SessionParseState parseState = default;
 
             var input = new StringInput(RespCommand.INCRBYFLOAT, ref parseState, BitConverter.DoubleToInt64Bits(val));
-            _ = Increment(key, ref input, ref output);
-            return GarnetStatus.OK;
+            return Increment(key, ref input, ref output);
         }
 
         /// <inheritdoc />
@@ -205,7 +204,13 @@ namespace Garnet.server
             Span<byte> outputBuffer = stackalloc byte[NumUtils.MaximumFormatDoubleLength + 1];
             var stringOutput = StringOutput.FromPinnedSpan(outputBuffer);
 
-            _ = IncrementByFloat(key, ref stringOutput, val);
+            var res = IncrementByFloat(key, ref stringOutput, val);
+
+            if (res == GarnetStatus.WRONGTYPE)
+            {
+                output = 0;
+                return res;
+            }
 
             if (!stringOutput.HasError)
             {
@@ -372,6 +377,21 @@ namespace Garnet.server
 
         #region VectorSet commands
 
+        /// <inheritdoc/>
+        public GarnetStatus VectorSetCardinality(PinnedSpanByte key, out long card)
+        => storageSession.VectorSetCardinality(key, out card);
+
+        /// <inheritdoc/>
+        public GarnetStatus VectorSetIsMember(PinnedSpanByte key, PinnedSpanByte element)
+        => storageSession.VectorSetIsMember(key, element);
+
+        /// <inheritdoc/>
+        public GarnetStatus VectorSetLinks(PinnedSpanByte key, PinnedSpanByte element, bool withScores, ref SpanByteAndMemory idResults, ref SpanByteAndMemory distanceResults)
+        => storageSession.VectorSetLinks(key, element, withScores, ref idResults, ref distanceResults);
+
+        /// <inheritdoc/>
+        public GarnetStatus VectorSetRandomMembers(PinnedSpanByte key, int count, ref SpanByteAndMemory idResults)
+        => storageSession.VectorSetRandomMembers(key, count, ref idResults);
         /// <inheritdoc />
         public unsafe GarnetStatus VectorSetAdd(PinnedSpanByte key, int reduceDims, VectorValueType valueType, PinnedSpanByte values, PinnedSpanByte element, VectorQuantType quantizer, int buildExplorationFactor, PinnedSpanByte attributes, int numLinks, VectorDistanceMetricType distanceMetric, out VectorManagerResult result, out ReadOnlySpan<byte> errorMsg)
         => storageSession.VectorSetAdd(key, reduceDims, valueType, values, element, quantizer, buildExplorationFactor, attributes, numLinks, distanceMetric, out result, out errorMsg);
@@ -379,6 +399,10 @@ namespace Garnet.server
         /// <inheritdoc />
         public unsafe GarnetStatus VectorSetRemove(PinnedSpanByte key, PinnedSpanByte element)
         => storageSession.VectorSetRemove(key, element);
+
+        /// <inheritdoc />
+        public GarnetStatus VectorSetSetAttribute(PinnedSpanByte key, PinnedSpanByte element, PinnedSpanByte attribute)
+        => storageSession.VectorSetSetAttribute(key, element, attribute);
 
         /// <inheritdoc />
         public unsafe GarnetStatus VectorSetValueSimilarity(PinnedSpanByte key, VectorValueType valueType, PinnedSpanByte values, int count, float delta, int searchExplorationFactor, PinnedSpanByte filter, int maxFilteringEffort, bool includeAttributes, ref SpanByteAndMemory outputIds, out VectorIdFormat outputIdFormat, out ReadOnlySpan<byte> errorMessage, ref SpanByteAndMemory outputDistances, ref SpanByteAndMemory outputAttributes, out VectorManagerResult result, ref SpanByteAndMemory filterBitmap)

@@ -43,7 +43,7 @@ namespace Garnet.server
             long endByte = (endOffset / 8);
 
             int leftBitIndex = (int)(startOffset & 7);
-            int rightBitIndex = (int)((endOffset + 1) & 7);
+            int rightBitIndex = (int)(endOffset & 7) + 1;
 
             if (startByte == endByte)
                 return BitIndexCount(value[startByte], leftBitIndex, rightBitIndex);

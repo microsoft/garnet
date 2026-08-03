@@ -1933,13 +1933,19 @@ namespace Tsavorite.core
             var copyObjects = snapshotObjectLogDevice is not null;
             for (var flushPage = flushPageStart; flushPage < (flushPageStart + numPages); flushPage++)
             {
+                var pageStartAddress = GetLogicalAddressOfStartOfPage(flushPage);
+                var flushFromAddress = Math.Max(scanFromAddress, pageStartAddress);
                 var asyncResult = new PageAsyncFlushResult<TContext>()
                 {
                     page = flushPage,
                     context = context,
                     count = 1,
-                    partial = false,
-                    fromAddress = Math.Max(scanFromAddress, GetLogicalAddressOfStartOfPage(flushPage)),
+                    // A recovery flush starts at scanFromAddress, which may be mid-page at the first record past the PageHeader.
+                    // In that case it is a front-partial flush: the write length is derived from untilAddress (the page end)
+                    // rather than a full page, and the PageHeader is re-included when the page is written. The snapshot/hybrid-log
+                    // boundary that selects which records copy their objects is carried separately via formerFlushedUntilAddress.
+                    partial = flushFromAddress > pageStartAddress,
+                    fromAddress = flushFromAddress,
                     untilAddress = GetLogicalAddressOfStartOfPage(flushPage + 1),
                     flushRequestState = FlushRequestState.Recovery,
                     recoverySnapshotObjectLogDevice = snapshotObjectLogDevice,
@@ -2106,7 +2112,10 @@ namespace Tsavorite.core
                 context = context,
                 handle = completed,
                 cts = cts,
-                readBuffers = readBuffers
+                readBuffers = readBuffers,
+                // Default to a full page; overridden below for a partial last page. This bounds the object-record walk in
+                // ObjectAllocatorImpl.DeserializeObjectsOnPage to the valid data extent, not the sector-aligned device read length.
+                maxAddressOffsetOnPage = PageSize
             };
 
             ulong offsetInFile = (ulong)(AlignedPageSizeBytes * readPage);
@@ -2116,6 +2125,12 @@ namespace Tsavorite.core
             if (adjustedUntilAddress > 0 && ((adjustedUntilAddress - (long)offsetInFile) < PageSize))
             {
                 readLength = (uint)(adjustedUntilAddress - (long)offsetInFile);
+                // Record the scan's true end (untilAddress) before rounding up to a sector boundary: the object-record walk must
+                // stop here. untilAddress can be mid-page, so the sector-aligned read pulls in records that lie ABOVE the requested
+                // range and can straddle the read end -- their ObjectLogPosition word and R11 value-length high bits then fall past
+                // the bytes actually transferred and are read from the un-read (only incidentally zeroed) buffer tail, yielding a
+                // bogus position/length. Such records must not be parsed as in-range records.
+                asyncResult.maxAddressOffsetOnPage = readLength;
                 readLength = (uint)((readLength + (sectorSize - 1)) & ~(sectorSize - 1));
             }
 
@@ -2367,7 +2382,14 @@ namespace Tsavorite.core
             try
             {
                 if (errorCode != 0)
+                {
                     logger?.LogError("AsyncFlushPageToDeviceCallback error: {errorCode}", errorCode);
+
+                    // Fault the snapshot's flush-completion so the checkpoint fails rather than committing a snapshot with
+                    // an unwritten page; the Release() below still frees buffers and its CompleteFlush becomes a no-op.
+                    ((PageAsyncFlushResult<Empty>)context).flushCompletionTracker?.SetException(
+                        new TsavoriteException($"Snapshot page flush failed with error code {errorCode}"));
+                }
 
                 var result = (PageAsyncFlushResult<Empty>)context;
                 var epochTaken = epoch.ResumeIfNotProtected();

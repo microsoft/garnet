@@ -157,8 +157,12 @@ namespace Garnet.server
                 //underflow if sign bit is zero
                 var underflow = (result & signbit) == 0 && value < 0 && incrBy < 0;
                 //if operands are both positive possibility of overflow
-                //overflow if any of the 64-bitcount most significant bits are set.
-                var overflow = (ulong)(result & ~mask) > 0 && value >= 0 && incrBy > 0;
+                //overflow if any of the 64-bitcount most significant bits are set. At
+                //bitCount == 64 there are no such bits to check (mask covers the whole
+                //word), so overflow instead shows up as the sign bit flipping negative.
+                var overflow = bitCount == 64
+                    ? result < 0 && value >= 0 && incrBy > 0
+                    : (ulong)(result & ~mask) > 0 && value >= 0 && incrBy > 0;
 
                 switch (overflowType)
                 {

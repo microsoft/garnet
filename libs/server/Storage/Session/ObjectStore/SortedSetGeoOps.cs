@@ -88,7 +88,7 @@ namespace Garnet.server
                     return GarnetStatus.OK;
                 }
 
-                return GarnetStatus.NOTFOUND;
+                return statusOp;
             }
             finally
             {

@@ -135,6 +135,14 @@ namespace Garnet.server
         {
             Debug.Assert(logRecord.HasNamespace, "Should never write a non-namespaced value with VectorSessionFunctions");
 
+            var sizeInfo = new RecordSizeInfo() { FieldInfo = GetUpsertFieldInfo(logRecord, newValue, ref input) };
+            functionsState.storeWrapper.store.Log.PopulateRecordSizeInfo(ref sizeInfo);
+
+            // Resize the value to the new payload; false means it can't grow in place, so Tsavorite reallocates via
+            // InitialWriter. Without this the copy below would overflow on a grow or leave stale bytes on a shrink.
+            if (!logRecord.TrySetContentLengths(sizeInfo.FieldInfo.ValueSize, in sizeInfo))
+                return false;
+
             var value = AlignOrPin(in logRecord, ref input, out var pin);
             try
             {

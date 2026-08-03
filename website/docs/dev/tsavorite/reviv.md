@@ -22,8 +22,8 @@ This section describes the external API and command-line arguments for Revivific
 ### `RevivificationSettings`
 This struct indicates whether revivification is to be active:
 - `EnableRevivification`: If this is true, then at least in-chain revivification is done; otherwise, record revivification is not done (but Retry reuse still is).
-- `FreeListBins`: If this array of [`RevivificationBin`](#revivificationbin) is non-null, then revivification will include a freelist of records, as defined below.
-- `SearchNextHigherBin`: By default, when looking for FreeRecords we search only the bin for the specified size. If this is set, then if there are no records in the initial bin, then next-higher bin is search as well.
+- `FreeRecordBins`: If this array of [`RevivificationBin`](#revivificationbin) is non-null and non-empty, then revivification will include a freelist of records, as defined below.
+- `NumberOfBinsToSearch`: By default, when looking for FreeRecords we search only the bin for the specified size. This is the number of additional next-higher bins to search if the initial bin has no available records.
 - `RevivifiableFraction`: It may be desirable not to use a record that is too close to the `ReadOnlyAddress`; some apps will prefer that a newly-inserted record remain in the mutable region as long as possible. `RevivifiableFraction` limits the eligible range of revivification to be within this fraction of memory immediately belowthe `TailAddress`; it has the same semantics as `LogSettings.MutablePercent`, and cannot be greater than that. For example, if `RevivifiableFraction` is .2, TailAddress is 100,000, and HeadAddress is 50,000, then the .2 x 50,000 = 10,000 records closest to the tail will be eligible for reuse. This is done on an address-space basis, not record count, so the actual number of records that can be revivified will vary for variable-length records.
 - `RestoreDeletedRecordsIfBinIsFull` Deleted records that are to be added to a RevivificationBin are elided from the hash chain. If the bin is full, this option controls whether the record is restored (if possible) to the hash chain. This preserves them as in-chain revivifiable records, at the potential cost of having the record evicted to disk while part of the hash chain, and thus having to do an I/O only to find that the record is deleted and thus potentially unnecessary. For applications that add and delete the same keys repeatedly, this option should be set true if the FreeList is used.
 - `UseFreeRecordPoolForCopyToTail` When doing explicit CopyToTail operations such as Compaction, CopyToTail when reading from the immutable in-memory region, or disk IO, this controls whether the allocation for the retrieved records may be satisfied from the FreeRecordPool. These operations may require that the records be allocated at the tail of the log, to remain in memory as long as possible.
@@ -37,67 +37,49 @@ This struct contains the definition of the free-list bins, which are lists of fr
 ### GarnetServer.exe Commandline Arguments
 GarnetServer.exe supports the following commandline arguments for Revivification:
 - `--reviv`: A shortcut to specify revivification with default power-of-2-sized bins. This default can be overridden by `--reviv-in-chain-only` or by the combination of `--reviv-bin-record-sizes` and `--reviv-bin-record-counts`.
-- `--reviv-bin-record-sizes`: For the main store, the sizes of records in each revivification bin, in order of increasing size. Supersedes the default `--reviv`; cannot be used with `--reviv-in-chain-only`.
-- `--reviv-bin-record-counts`: For the main store, the number of records in each bin:
+- `--reviv-bin-record-sizes`: The sizes of records in each revivification bin, in order of increasing size. Supersedes the default `--reviv`; cannot be used with `--reviv-in-chain-only`.
+- `--reviv-bin-record-counts`: The number of records in each bin:
     - Default (not specified): If reviv-bin-record-sizes is specified, each bin has `RevivificationBin.DefaultRecordsPerBin` records.
     - One number: If `--reviv-bin-record-sizes` is specified, then all bins have this number of records, else error.
     - Multiple comma-delimited numbers: If reviv-bin-record-sizes is specified, then it must be the same size as that array, else error. This defines the number of records per bin and supersedes the default `--reviv`; cannot be used with `--reviv-in-chain-only`.
-- `--reviv-fraction`: Fraction of mutable in-memory log space, from the highest log address down to the read-only region, that is eligible for revivification. Applies to both main and object store.
+- `--reviv-fraction`: Fraction of mutable in-memory log space, from the highest log address down to the read-only region, that is eligible for revivification.
 - `reviv-search-next-higher-bins`: Search this number of next-higher bins if the search cannot be satisfied in the best-fitting bin. Requires `--reviv` or the combination of `--reviv-bin-record-sizes` and `--reviv-bin-record-counts`.
 - `--reviv-bin-best-fit-scan-limit`: Number of records to scan for best fit after finding first fit. Requires `--reviv` or the combination of `--reviv-bin-record-sizes` and `--reviv-bin-record-counts`. Values are:
     - `RevivificationBin.UseFirstFit`: Return the first address whose record is large enough to satisfy the request.
     - `RevivificationBin.BestFitScanAll`: Scan all records in the bin for best fit, stopping early if we find an exact match.
     - Other number: Limit scan to this many records after first fit, up to the record count of the bin.
-- `--reviv-in-chain-only`: Revivify tombstoned records in tag chains only (do not use free list). Cannot be used with reviv-bin-record-sizes or reviv-bin-record-counts. Also applies to object store.
-- `--reviv-obj-bin-record-count`: Number of records in the single free record bin for the object store. The Object store has only a single bin, unlike the main store. Ignored unless the main store is using the free record list.
+- `--reviv-in-chain-only`: Revivify tombstoned records in tag chains only (do not use free list). Cannot be used with reviv-bin-record-sizes or reviv-bin-record-counts.
 
 ## Internal Implementation
 This section describes the internal design and implementation of Revivification.
 
 ### Maintaining Extra Value Length
-Because variable-length record Values can grow and shrink, we must store the actual length of the value in addition to the Value data. Fixed-length datatypes (including objects) do not need to store this, because their Value length does not change.
+Because inline (string) record Values can grow and shrink, a record can have unused space between its current Value length and the space that was allocated for it. This unused space is tracked so that `InPlaceWriter` and `InPlaceUpdater` know how much room is available to grow in place later, and so that revivification can size records taken from the FreeRecordPool. Object values do not need this, because the record only stores a fixed-size object reference (an `ObjectId`) whose length does not change.
 
-This storage of record lengths applies to both Revification and non-Revivification scenarios. `ConcurrentWriter` and `InPlaceUpdater` may change the record size, and need to know how much space they have available if they are to to be able to grow in place later:
-- In-place updates in `ConcurrentWriter` and `InPlaceUpdater` use this to set the `UpsertInfo` and `RMWInfo` properties `UsedValueLength` and `FullValueLength`. These properties are discussed below.
-- Revivification needs this to satisfy requests from the FreeRecordPool, and then also to set the `UpsertInfo` and `RMWInfo` properties `UsedValueLength` and `FullValueLength`.
+Each record carries this unused space as a *filler length* recorded in the record's `RecordDataHeader` (RDH). Specifically, the RDH's `FillerWords` field is an 8-bit count of 8-byte filler words that follow the Value (and any optional fields) at the end of the record. The record's total length is fully derived from the RDH — key length, value length, optionals, and `FillerWords` all sum to the allocated record size — so there is no separate length stored inside the Value data, and the filler bytes themselves are never read. Records that need more filler than `FillerWords` can represent are *split*: the record retains a portion of the filler and the excess becomes a separate invalid record.
 
-Storing the extra value length is done by rounding up the used value length (the current length of the value) to int boundary, and then if the allocated Value space is 4 bytes or more greater, storing the extra length at (start of Value plus rounded-up used space). Thus, the full value size is the rounded-up used value size plus the extra value size. If this extra length can be stored then the RecordInfo.Filler bit is set to indicate the extra length is present. Variable-length log allocations are 8-byte (RecordInfo size) aligned, so any extra length less than sizeof(int) can be inferred from this rounding up.
+Because the RDH is the authoritative source of record length, `InPlaceWriter`/`InPlaceUpdater` grow or shrink an inline Value by moving space between the Value and the filler: growing the Value decreases `FillerWords` by the same amount, and shrinking it increases `FillerWords`. The allocated record size is therefore unchanged.
 
 ### Ensuring Log Integrity
-Storing the extra value length must be done carefully so we maintain the invariant that unused space is zeroed. This is necessary because log scans assume any non-zero data they land on past the previous record length is a valid RecordInfo header. If the extra length is set before the Filler bit is, or if the Filler bit is cleared before the extra length is zeroed, then a log scan could momentarily see a short length, land on the nonzero extra length, and think it is a valid RecordInfo. The other direction is safe: the filler bit may be set but the extra length is zero. In this case the scan sees a zeroed RecordInfo (`RecordInfo.IsNull()`) and assumes it is uninitialized space and steps forward by the size of a RecordInfo (8 bytes).
+Adjusting a record's Value length must be done carefully so we maintain the invariant that a log scan always sees a consistent record extent. A scan walks the log by computing each record's length and stepping to the next record; if it ever observed a partially-updated record it could miscompute the length and land in the middle of record data, mistaking it for a valid `RecordInfo` header.
 
-This invariant is also followed when variable-length values are shrunk, even in the absence of the Filler bit. When a value is shrunk, the data beyond the new (shorter) size must be zeroed before the shorter size is set.
+This invariant is preserved because everything that defines a record's length lives in the single 8-byte RDH word (key length, value length, optional-field flags, and `FillerWords`). Length-affecting changes are built up in a local copy of the RDH and then published with one atomic word write, so a concurrent scanner observes either the pre-update or post-update state, never an intermediate. When an inline Value grows or shrinks, the change in value length is offset by an equal, opposite change in `FillerWords`, so the derived record length is identical before and after and the scan extent is stable throughout. Any space a value grows into is zero-initialized so no stale bytes are exposed.
 
-Combining these two, when we adjust a variable-length value length, we must:
-- Clear the extra value length.
-- Remove Filler bit.
-- Zero extra value data space past the new (shorter) size.
-- Set the new (shorter) value length.
-- Set the Filler bit.
-- Set the extra value length to the correct new value.
+The Tsavorite-provided inline value type is `SpanByte`, and the `SpanByteFunctions` variants do the right thing here.
 
-The Tsavorite-provided variable-length implementation is `SpanByte`, and `SpanByteFunctions` variants do the right thing here.
+### Conveying Record Length to Callbacks
+The `ISessionFunctions` writer and updater callbacks operate on a `LogRecord`, which exposes the record's Key and Value directly, so a callback does not need to know the internals of value storage. When a new or reused record is being written (`InitialWriter`, `InitialUpdater`, `CopyUpdater`), the callback also receives a `RecordSizeInfo` (`in RecordSizeInfo sizeInfo`) describing the record's layout — including `AllocatedInlineRecordSize` (the total allocated inline size), `MaxInlineValueSize` (the largest inline Value the record can hold), and the `IsRevivifiedRecord` flag indicating the record is being reused rather than freshly allocated. In-place callbacks (`InPlaceWriter`, `InPlaceUpdater`) read the currently allocated and used sizes from the `LogRecord`/RDH to decide whether an update fits in place.
 
-### UpdateInfo Record Length Management
-For variable-length datatypes, the `UpsertInfo`, `RMWInfo`, and `DeleteInfo` have two fields that let the relevant `IFunctions` callbacks know about the record length (without having to know the internals of value storage):
-- UsedValueLength: the amount of value space that is actually in use.
-- FullValueLength: full allocated space for the value; this is the requested Value size for the initial Insert of the record rounded up to 8-byte alignment.
+For `SpanByte`, the value space of a freshly-allocated record is initialized to a valid, zero-length `SpanByte` sized to the requested Value length, so the writer callbacks always see a valid destination Value. For a revivified record, the previous record's larger allocation is preserved (see [Disposing Revivified Records](#disposing-revivified-records)), so the writer callbacks must be prepared to shrink the destination Value to the size they actually write.
 
-For SpanByte, the `VariableLenghtBlittableAllocator.GetValue` overload with (physicalAddress, physicalAddress + allocatedSize) that calls the default SpanByte implementation of `IVariableLengthStructureSettings` actually initializes the value space to be a valid SpanByte that includes the requested Value length (up to the maximum number of elements that can fit). However, other variable-length data types may not do this.
+### Disposing Revivified Records
+The `ISessionFunctions` writer, updater, and deleter callbacks are the point at which an application disposes a Value. For object Values, `Dispose()` may be called from these callbacks; in particular, when `logRecord.Info.Invalid` (or `recordInfo.Invalid`) is true the callback is being invoked for a record that was allocated and populated but could not be appended to the log, so the application can release the object there.
 
-### DisposeForRevivification
-In general, the `IFunctions` `Dispose*` functions are intended for data that does not get written to the log (usually due to CAS failure or a failure in `SingleWriter`, `InitialUpdater`, or `CopyUpdater`). Data written to the log will be seen by `OnEvictionObserver` if one is registered. However, revivified records are taken from the log and reused; thus they must give the application an opportunity to Dispose().
+Records that are removed from the log for reuse follow a separate path. When a record is put on the FreeList, revivified in-chain, or elided, Tsavorite invokes the allocator's record-disposal trigger, `IRecordTriggers.OnDispose(ref LogRecord, DisposeReason)`, with a `DisposeReason` that identifies the event (for example `RevivificationFreeList` when the record is moved to the FreeList, `Deleted` when a record is tombstoned in place, and `Elided` when a record is removed from the hash chain without being freelisted). This gives the application the opportunity to release no-longer-needed objects as soon as possible, and lets Tsavorite adjust its heap-size accounting. For `SpanByte` there is nothing to free, so this is a no-op. Records materialized transiently from disk are disposed through the companion `OnDisposeDiskRecord` trigger instead.
 
-To handle this a new `DisposeForRevivification` `IFunctions` method has been added. When a record is moved to the FreeList, revivified from either in-chain or freelist, or is reused from Retry, it has a Key and potentially a Value. Tsavorite calls `DisposeForRevivification` twice:
-- At the time a record is put on the FreeList. In this case the `newKeySize` parameter is -1, indicating that we are not reusing it yet. The main reason for this call is to release no-longer-used objects as soon as possible. For non-object types, there is minimal cost to this; fixed-length types do nothing, and the only Garnet variable-length type is SpanByte, which also does not need to do anything at this time (there are no allocations).
-    - `DisposeForRevivification` is not called for In-Chain tombstoned records; the key must remain valid, and the Value will be disposed at eviction.
-    - `DisposeForRevivification` is not called for Retry-recycled records at the time they are added to the `OperationState`, because it is called when retrieving them and that is always done (we always retry).
-- At the time of reuse, either from the FreeList or In-Chain, or from the Retry reuse, with `newKeySize` set to the actual size of the new key if being reused from the FreeList. This is only a concern for variable-length types and for Garnet that means `SpanByte` only, which ensures that the record is always zero-initialized such that it is "valid" for scan at any point. At reuse time, Tsavorite guarantees a valid Key and Value (even if the Value is default) are in the record, and calls `DisposeForRevivification` in the following way:
-- Clears the extra value length and filler (the extra value length is retained in local variables).
-- Calls `DisposeForRevivification` with `newKeySize` > 0 if the record was retrieved from the freelist
-    - If `DisposeForRevivification` clears the Value and possibly Key, it must do so in accordance with the protocol for zeroing data after used space as described in [Maintaining Extra Value Length](#maintaining-extra-value-length). `SpanByte` does not need to clear anything as a `SpanByte` contains nothing that needs to be freed.
-    - In a potentially breaking change from earlier versions, any non-`SpanByte` variable-length implementation must either implement `DisposeForRevivification` to zero-init the space or must revise its `SingleWriter`, `InitialUpdater`, and `CopyUpdater` implementations to recognize an existing value is there and handle it similarly to `ConcurrentWriter` or `InPlaceUpdater`.
-        - For `SpanByte`, `SingleWriter` et al. will have a valid target value in the destination for non-revivified records, because `VariableLengthBlittableAllocator.GetAndInitializeValue` (called after record allocation) calls the default SpanByte implementation of `IVariableLengthStructureSettings` and actually initializes the value space to be a valid SpanByte that includes the entire requested value size. For newly-allocated (not revivified) records the value data initialized to zero; for revivified records this is not guaranteed; only the value space after the usedValueLength is guaranteed to be zeroed, so `SingleWriter` et al. must be prepared to shrink the destination value.
+Disposal-at-eviction (as opposed to reuse) is handled by a different trigger: when a page is evicted past `HeadAddress`, Tsavorite calls `IRecordTriggers.OnEvict(ref LogRecord, EvictionSource)` per non-tombstoned record, provided the store's `CallOnEvict` is true. In-chain tombstoned records keep a valid Key (needed for chain traversal) and are not put through the reuse-dispose path; their Value is disposed at delete time and their remaining resources are accounted for when the record is eventually elided or evicted.
+
+When a record is actually reused (from the FreeList, in-chain, or from a Retry), Tsavorite hands the writer/updater callbacks a valid, consistent record. Preparing a reused record clears the filler, namespace, and record-type fields while preserving the inline Key/Value length information, and sets the record to a valid state — all published with a single atomic RDH word write so a concurrent scanner never sees an intermediate state (see [Ensuring Log Integrity](#ensuring-log-integrity)). The reused record's `RecordSizeInfo.AllocatedInlineRecordSize` retains the previous (possibly larger) record length and its `IsRevivifiedRecord` flag is set, so the callbacks know they are writing into a reused allocation and may shrink the destination Value as needed.
 
 ## In-Chain Revivification
 If the FreeList is not active, all Tombstoned records are left in the hash chain; and even if the FreeList is active, a deleted record may not be elidable. A subsequent Upsert or RMW of the same key will revivify the record if it has sufficient allocated value length.
@@ -106,11 +88,11 @@ In-Chain revivification is always active if `RevivificationSettings.EnableRevivi
 - `Delete()` is done in the normal way; the Tombstone is set. If the Tombstoned record is at the tail of the tag chain (i.e. is the record in the `HashBucketEntry`) and the FreeList is enabled, then it will be moved to the FreeList. Otherwise (or if this move fails), it remains in the tag chain.
 - `Upsert()` and `RMW()` will try to revivify a Tombstoned record:
     - If the record is large enough, we Reinitialize its Value by:
-        - Clearing the extra value length and filler and calls `DisposeForRevivification` as described in [Maintaining Extra Value Length](#maintaining-extra-value-length).
+        - Clearing the filler and preparing the record for reuse as described in [Disposing Revivified Records](#disposing-revivified-records).
         - Removing the Tombstone.
 
 ## FreeList Revivification
-If `RevivificationSettings.FreeBinList` is not null, this creates the freelist according to the `RevivificationBin` elements of the array. If the data types are fixed, then there must be one element of the array; otherwise there can be many.
+If `RevivificationSettings.FreeRecordBins` is non-null and non-empty, this creates the freelist according to the `RevivificationBin` elements of the array. If the data types are fixed, then there must be one element of the array; otherwise there can be many.
 
 When the FreeList is active and a record is deleted, if it is at the tail of the hash chain, is not locked, and its PreviousAddress points below BeginAddress, then it can be CASed (Compare-And-Swapped) out of the hash chain. If this succeeds, it is added to the freelist. Similar considerations apply to freelisting the source records of RCUs done by Upsert and RMW.
 
@@ -126,7 +108,7 @@ FreeList revivification functions as follows:
 - `Upsert()` and `RMW()` will try to revivify a freelist record if they must create a new record:
     - They call `TryTakeFreeRecord` to remove a record from the freelist.
     - If successful, `TryTakeFreeRecord` initializes the record by:
-        - Clearing the extra value length and filler and calls `DisposeForRevivification` as described in [Maintaining Extra Value Length](#maintaining-extra-value-length).
+        - Clearing the filler and preparing the record for reuse as described in [Disposing Revivified Records](#disposing-revivified-records).
         - Unsealing the record; epoch management guarantees nobody is still executing who saw this record before it went into the free record pool.
 
 ### `FreeRecordPool` Design
@@ -171,7 +153,7 @@ This example takes from the
 The following segmenting strategies are used:
 - The 32-byte bin’s minimum size is 16 because it is the first bin. Because the sizes are considered in multiples of 8 or greater, it has 3 possible record sizes: 16, 24, 32. Thus we create internal segments of size 1024/3, then round this up so each segment has a record count that is a multiple of 4. Thus, each segment is 344 elements (1024/3 is 341.33...; round this up to multiple of `MinSegmentSize`), and there are 1032 total elements in the bin. These segments start at indexes 0, 344, 688.
 - The 64-byte bin’s min record size is 40 (8 greater than the previous bin’s maximum). By the foregoing, it has 4 possible record sizes: 40, 48, 56, 64. 1024 is evenly divisible by 4 to `MinSegmentSize`-aligned 256, and therefore the segments start at 0, 256, 512, 768.
-- The the size range of the larger bin has too many possible sizes to create one segment for each size, and therefore uses a different segment-calculation strategy. In this case the size range is 2k which divided by 8 is 256 possible record sizes within the bin. Dividing the bin record count by this yields 4 which is below the required `MinSegmentSize`, so instead we set the bin's segment count to `MinSegementSize` and divide the bin record count by that to get the number of segments (rounded up to integer), and then set the segment size increment to the size range divided by segment count. We therefore have 16 segments, and thus we divide the size range by 16 to get the record size ranges for the segments. The number of records is the segment size multiplied by the segment count. The segments are:
+- The size range of the larger bin has too many possible sizes to create one segment for each size, and therefore uses a different segment-calculation strategy. In this case the size range is 2k which divided by 8 is 256 possible record sizes within the bin. Dividing the bin record count by this yields 4 which is below the required `MinSegmentSize`, so instead we set the bin's segment count to `MinSegmentSize` and divide the bin record count by that to get the number of segments (rounded up to integer), and then set the segment size increment to the size range divided by segment count. We therefore have 16 segments, and thus we divide the size range by 16 to get the record size ranges for the segments. The number of records is the segment size multiplied by the segment count. The segments are:
     - Segment 0 starts at index 0 with max record size 2k+16 (thus, the segment may contain a mix of records of the following sizes: 2k+8, 2k+16)
     - Segment 1 starts at index 8 with max record size 2k + 16*2
     - Segment 2 starts at index 16 with max record size, 2k+16*3
@@ -210,7 +192,7 @@ This Task to iterate bins to set isEmpty is done by the `CheckEmptyWorker` class
         - If an is found with a valid address, exit that bin's loop
         - Otherwise, set that bin's isEmpty flag.
 
-`CheckEmptyWorker` has a Start method that is called by `FreeRecordPool` `Add` or `Take`. This Start method checks whether the `CheckEmptyWorkerWorker` has been started, and starts it if not.
+`CheckEmptyWorker` has a `Start` method that is called by `FreeRecordPool.TryAdd`. This `Start` method checks whether the worker task is already active, and launches it (via `Task.Run`) if not.
 
 Because this is a persistent Task, it has a CancellationTokenSource that is signaled by `CheckEmptyWorker.Dispose()` when we are shutting down the TsavoriteKV.
 

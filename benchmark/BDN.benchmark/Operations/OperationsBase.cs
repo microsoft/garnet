@@ -133,7 +133,7 @@ namespace BDN.benchmark.Operations
                 if (Params.useACLs)
                 {
                     aclFile = Path.GetTempFileName();
-                    File.WriteAllText(aclFile, @"user default on nopass -@all +ping +set +get +setex +incr +decr +incrby +decrby +zadd +zrem +lpush +lpop +sadd +srem +hset +hdel +publish +subscribe +@custom");
+                    File.WriteAllText(aclFile, @"user default on nopass -@all +ping +set +get +setex +incr +decr +incrby +decrby +zadd +zrem +lpush +lpop +sadd +srem +spop +hset +hdel +publish +subscribe +@custom");
                     opts.AuthSettings = new AclAuthenticationPasswordSettings(aclFile);
                 }
                 else if (Params.useAad)

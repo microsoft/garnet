@@ -214,6 +214,7 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> RESP_ERR_LUA_DISABLED => "ERR This instance has Lua scripting support disabled"u8;
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_WRONG_ARGUMENTS => "ERR wrong number of arguments for 'config|set' command"u8;
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_NOSUCHKEY => "ERR no such key"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_OBJECT_FREQ_UNSUPPORTED => "ERR OBJECT FREQ is not supported: Garnet does not track access frequency (no LFU maxmemory policy)."u8;
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_NESTED_MULTI => "ERR MULTI calls can not be nested"u8;
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_EXEC_WO_MULTI => "ERR EXEC without MULTI"u8;
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_DISCARD_WO_MULTI => "ERR DISCARD without MULTI"u8;
@@ -226,6 +227,7 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_OFFSETOUTOFRANGE => "ERR offset is out of range"u8;
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_BIT_IS_NOT_INTEGER => "ERR bit is not an integer or out of range"u8;
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_BITOFFSET_IS_NOT_INTEGER => "ERR bit offset is not an integer or out of range"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_STRING_EXCEEDS_MAX_SIZE => "ERR string exceeds maximum allowed size (proto-max-bulk-len)"u8;
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_CURSORVALUE => "ERR cursor value should be equal or greater than 0."u8;
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_INVALIDCURSOR => "ERR invalid cursor"u8;
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_MALFORMED_REGISTERCS_COMMAND => "ERR malformed REGISTERCS command."u8;
@@ -336,6 +338,7 @@ namespace Garnet.server
         public const string GenericUnknownClientType = "ERR Unknown client type '{0}'";
         public const string GenericErrDuplicateFilter = "ERR Filter '{0}' defined multiple times";
         public const string GenericPubSubCommandDisabled = "ERR {0} is disabled, enable it with --pubsub option.";
+        public const string GenericPubSubCommandNotAllowed = "ERR Can't execute '{0}': only (P|S)SUBSCRIBE / (P|S)UNSUBSCRIBE / PING / QUIT are allowed in this context";
         public const string GenericErrLonLat = "ERR invalid longitude,latitude pair {0:F6},{1:F6}";
         public const string GenericErrStoreCommand = "ERR STORE option in {0} is not compatible with WITHDIST, WITHHASH and WITHCOORD options";
         public const string GenericErrCommandDisallowedWithOption =
@@ -367,7 +370,14 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> STRING => "STRING"u8;
         public static ReadOnlySpan<byte> stringt => "string"u8;
         public static ReadOnlySpan<byte> rangeindext => "rangeindex"u8;
+        public static ReadOnlySpan<byte> vectorsett => "vectorset"u8;
         public static ReadOnlySpan<byte> none => "none"u8;
+
+        // OBJECT ENCODING result strings
+        public static ReadOnlySpan<byte> raw => "raw"u8;
+        public static ReadOnlySpan<byte> hashtable => "hashtable"u8;
+        public static ReadOnlySpan<byte> quicklist => "quicklist"u8;
+        public static ReadOnlySpan<byte> skiplist => "skiplist"u8;
 
         /// <summary>
         /// Register object types

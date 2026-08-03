@@ -278,7 +278,6 @@ namespace Garnet.server
             Add("COMMITAOF", RespCommand.COMMITAOF);
             Add("FLUSHALL", RespCommand.FLUSHALL);
             Add("FLUSHDB", RespCommand.FLUSHDB);
-            Add("PURGEBP", RespCommand.PURGEBP);
             Add("FAILOVER", RespCommand.FAILOVER);
             Add("MONITOR", RespCommand.MONITOR);
             Add("REGISTERCS", RespCommand.REGISTERCS);
@@ -312,6 +311,7 @@ namespace Garnet.server
             Add("MODULE", RespCommand.MODULE, hasSub: true);
             Add("PUBSUB", RespCommand.PUBSUB, hasSub: true);
             Add("MEMORY", RespCommand.MEMORY, hasSub: true);
+            Add("OBJECT", RespCommand.OBJECT, hasSub: true);
         }
 
         #endregion
@@ -449,6 +449,15 @@ namespace Garnet.server
         private static readonly (string Name, RespCommand Command)[] MemorySubcommands =
         [
             ("USAGE", RespCommand.MEMORY_USAGE),
+        ];
+
+        private static readonly (string Name, RespCommand Command)[] ObjectSubcommands =
+        [
+            ("ENCODING", RespCommand.OBJECT_ENCODING),
+            ("FREQ", RespCommand.OBJECT_FREQ),
+            ("HELP", RespCommand.OBJECT_HELP),
+            ("IDLETIME", RespCommand.OBJECT_IDLETIME),
+            ("REFCOUNT", RespCommand.OBJECT_REFCOUNT),
         ];
 
         private static readonly (string Name, RespCommand Command)[] BitopSubcommands =

@@ -1,0 +1,295 @@
+# Builds the canonical Tsavorite native device prebuilt binaries for every
+# supported runtime identifier (RID) and, on demand, publishes them back to the
+# branch it was dispatched on (updating an open PR in place), or opens a PR when
+# dispatched on a protected branch.
+#
+# Why this exists: the native device (libaio / io_uring on Linux, IOCP on Windows)
+# is a C++ library that must be compiled per OS/arch/libc. The C# NativeStorageDevice
+# loader resolves runtimes/<rid>/native/<lib> for the current platform, so we ship one
+# prebuilt per RID. This workflow is the single, reproducible source of those binaries.
+#
+# Typical developer flow for a PR that changes the native device AND the C# that uses it:
+#   1. Push your branch and open the PR as usual. On any change under
+#      libs/storage/Tsavorite/cc/** this workflow runs automatically in BUILD-ONLY mode
+#      and verifies the C++ still compiles on all platforms (it does NOT touch the repo).
+#   2. When you want the C# CI (ci.yml) to actually test against your new native code,
+#      dispatch this workflow on your branch with update_repo = true:
+#          gh workflow run native-build.yml --ref <your-branch> -f update_repo=true
+#      It rebuilds every RID from your branch's C++ and commits the refreshed
+#      runtimes/<rid>/native/ binaries straight onto <your-branch>, so the PR updates in
+#      place. ci.yml then runs against the new binaries (see the note on GITHUB_TOKEN below).
+#
+# Note on re-triggering ci.yml: a push made with the default GITHUB_TOKEN does not start
+# new workflow runs (GitHub's loop-prevention). So the binary commit lands on your branch
+# but ci.yml will run against it on your NEXT push (or a manual re-run). To have the binary
+# push auto-trigger ci.yml, a maintainer can add a repo secret NATIVE_BINARIES_PAT (a PAT or
+# GitHub App token with contents:write); this workflow uses it to push when present.
+#
+# Coverage:
+#   linux-x64, linux-arm64            (glibc, ubuntu:24.04 container; arm64 via QEMU)
+#   linux-musl-x64, linux-musl-arm64  (musl,  alpine:3.20 container; arm64 via QEMU)
+#   win-x64, win-arm64                (MSVC on windows-latest; arm64 cross-compiled)
+name: Build Native Device
+
+on:
+  workflow_dispatch:
+    inputs:
+      update_repo:
+        description: "Publish the rebuilt binaries to the dispatched branch (updates an open PR in place; opens a PR instead on main/dev)"
+        type: boolean
+        default: true
+  # On changes to the native sources, build + verify all RIDs (does NOT touch the repo).
+  push:
+    paths:
+      - 'libs/storage/Tsavorite/cc/**'
+      - '!libs/storage/Tsavorite/cc/README.md'
+      - '.github/workflows/native-build.yml'
+  pull_request:
+    paths:
+      - 'libs/storage/Tsavorite/cc/**'
+      - '!libs/storage/Tsavorite/cc/README.md'
+      - '.github/workflows/native-build.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  build-linux:
+    name: Build ${{ matrix.rid }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { rid: linux-x64,        image: 'ubuntu:24.04', platform: linux/amd64, libc: glibc }
+          - { rid: linux-arm64,      image: 'ubuntu:24.04', platform: linux/arm64, libc: glibc }
+          - { rid: linux-musl-x64,   image: 'alpine:3.20',  platform: linux/amd64, libc: musl }
+          - { rid: linux-musl-arm64, image: 'alpine:3.20',  platform: linux/arm64, libc: musl }
+    steps:
+      - uses: actions/checkout@v4
+
+      # Register QEMU so the arm64 containers can run on the x64 runner. No-op for amd64.
+      - name: Enable QEMU (arm64 emulation)
+        if: endsWith(matrix.platform, 'arm64')
+        run: docker run --rm --privileged tonistiigi/binfmt --install arm64
+
+      - name: Build native libraries
+        run: |
+          set -euo pipefail
+          mkdir -p "staging/${{ matrix.rid }}/native"
+          if [ "${{ matrix.libc }}" = "glibc" ]; then
+            DEPS="export DEBIAN_FRONTEND=noninteractive; apt-get update -qq && apt-get install -y -qq build-essential cmake libaio-dev liburing-dev uuid-dev patchelf binutils file"
+          else
+            DEPS="apk add --no-cache build-base cmake linux-headers libaio-dev liburing-dev util-linux-dev file"
+          fi
+          docker run --rm --platform ${{ matrix.platform }} \
+            -v "$GITHUB_WORKSPACE:/w" -w /w "${{ matrix.image }}" \
+            sh -c "$DEPS && libs/storage/Tsavorite/cc/build-native.sh /w/staging/${{ matrix.rid }}/native"
+
+      - name: Show results
+        run: |
+          ls -la "staging/${{ matrix.rid }}/native"
+          file "staging/${{ matrix.rid }}/native"/*.so
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: native-${{ matrix.rid }}
+          path: staging/${{ matrix.rid }}/native/*
+          if-no-files-found: error
+
+  build-windows:
+    name: Build ${{ matrix.rid }}
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { rid: win-x64,   arch: x64 }
+          - { rid: win-arm64, arch: ARM64 }
+    steps:
+      - uses: actions/checkout@v4
+
+      # CMakeLists builds with /Qspectre /guard:cf /sdl and links the Spectre-mitigated CRT, so a
+      # missing "Spectre-mitigated libs" component fails the link with MSB8040 (see cc/README.md,
+      # "Install the Spectre-mitigated CRT libraries"). The hosted image normally ships these, but
+      # verify explicitly and install on demand so the build does not silently depend on the image.
+      - name: Ensure MSVC Spectre-mitigated CRT libraries
+        shell: pwsh
+        run: |
+          $arch = '${{ matrix.arch }}'.ToLowerInvariant()   # x64 | arm64
+          $vsPath = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath
+          $msvc = Join-Path $vsPath 'VC\Tools\MSVC'
+          function Test-Spectre {
+            if (-not (Test-Path $msvc)) { return $false }
+            [bool](Get-ChildItem $msvc -Directory |
+              Where-Object { Test-Path (Join-Path $_.FullName "lib\spectre\$arch") } |
+              Select-Object -First 1)
+          }
+          if (Test-Spectre) {
+            Write-Host "Spectre-mitigated CRT for $arch is present."
+          } else {
+            Write-Host "Spectre-mitigated CRT for $arch not found; installing VS components..."
+            $installer = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\setup.exe"
+            $components = @('Microsoft.VisualStudio.Component.VC.Runtimes.x86.x64.Spectre')
+            if ($arch -eq 'arm64') {
+              $components += @(
+                'Microsoft.VisualStudio.Component.VC.Runtimes.ARM64.Spectre',
+                'Microsoft.VisualStudio.Component.VC.Tools.ARM64')
+            }
+            $vsArgs = @('modify','--installPath', $vsPath, '--quiet','--norestart','--nocache')
+            foreach ($c in $components) { $vsArgs += @('--add', $c) }
+            $p = Start-Process -FilePath $installer -ArgumentList $vsArgs -Wait -PassThru -NoNewWindow
+            if ($p.ExitCode -notin @(0,3010)) {
+              throw "VS installer failed (exit $($p.ExitCode)) installing: $($components -join ', ')"
+            }
+            if (-not (Test-Spectre)) { throw "Spectre-mitigated CRT for $arch still missing after install." }
+            Write-Host "Installed Spectre-mitigated CRT for $arch."
+          }
+
+      - name: Configure and build
+        shell: pwsh
+        run: |
+          cd libs/storage/Tsavorite/cc
+          # Let CMake pick the installed Visual Studio generator (the hosted image's VS major
+          # version changes over time, e.g. 2022 -> 2026); -A selects the target architecture.
+          # The Spectre-mitigated CRT that CMakeLists requires via /Qspectre is ensured by the
+          # previous step.
+          cmake -A ${{ matrix.arch }} -B build
+          cmake --build build --config Release
+
+      - name: Stage artifacts
+        shell: pwsh
+        run: |
+          $dst = "staging/${{ matrix.rid }}/native"
+          New-Item -ItemType Directory -Force -Path $dst | Out-Null
+          # The CMakeLists overrides CMAKE_RUNTIME_OUTPUT_DIRECTORY, so the exact folder under
+          # build/ varies by generator/config; locate the outputs recursively rather than assuming a path.
+          $dll = Get-ChildItem -Recurse -Path "libs/storage/Tsavorite/cc/build" -Filter native_device.dll | Select-Object -First 1
+          $pdb = Get-ChildItem -Recurse -Path "libs/storage/Tsavorite/cc/build" -Filter native_device.pdb | Select-Object -First 1
+          if (-not $dll) { throw "native_device.dll was not produced by the build" }
+          Copy-Item $dll.FullName $dst
+          if ($pdb) { Copy-Item $pdb.FullName $dst }
+          Get-ChildItem $dst
+
+      - name: Verify exports and security mitigations
+        shell: pwsh
+        run: |
+          $vsPath = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath
+          $dumpbin = (Get-ChildItem "$vsPath\VC\Tools\MSVC\*\bin\Hostx64\x64\dumpbin.exe" | Select-Object -First 1).FullName
+          $dll = "staging/${{ matrix.rid }}/native/native_device.dll"
+
+          $exports = & $dumpbin /exports $dll
+          if (-not ($exports | Select-String 'NativeDevice_CreateWithBackend')) {
+            throw "native_device.dll is missing NativeDevice_CreateWithBackend export"
+          }
+          Write-Host "Exports verified."
+
+          # Confirm the security flags in CMakeLists (/guard:cf and /GS /sdl, set alongside /Qspectre)
+          # actually took effect in the produced binary: Control Flow Guard and the stack Security
+          # Cookie both appear in the PE load config for a correctly mitigated build.
+          $cfg = & $dumpbin /loadconfig $dll
+          $cfg | Write-Host
+          if (-not ($cfg | Select-String -Quiet -Pattern 'Guard')) {
+            throw "Control Flow Guard (/guard:cf) not present in $dll — security flags did not take effect"
+          }
+          if (-not ($cfg | Select-String -Quiet -Pattern 'Security Cookie')) {
+            throw "Stack Security Cookie (/GS,/sdl) not present in $dll — security flags did not take effect"
+          }
+          Write-Host "Security mitigations verified: Control Flow Guard + Security Cookie present."
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: native-${{ matrix.rid }}
+          path: staging/${{ matrix.rid }}/native/*
+          if-no-files-found: error
+
+  # Publishes the freshly built binaries. When dispatched on a feature branch, it commits
+  # them directly onto that branch so an open PR updates in place; on a protected branch
+  # (main/dev) it opens a PR instead. Runs only for a manual dispatch with update_repo = true.
+  publish:
+    name: Publish binaries to ${{ github.ref_name }}
+    needs: [build-linux, build-windows]
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.update_repo }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    # Serialize publishes per branch so two dispatches can't race on the same push.
+    concurrency:
+      group: native-publish-${{ github.ref_name }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+          fetch-depth: 0
+          # If a maintainer configured a PAT / App token, use it so the resulting push
+          # re-triggers ci.yml; otherwise fall back to GITHUB_TOKEN (push lands but does not
+          # start new runs — ci.yml then runs on the developer's next push or a manual re-run).
+          token: ${{ secrets.NATIVE_BINARIES_PAT || github.token }}
+
+      - name: Download all native artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: staging
+          pattern: native-*
+
+      - name: Copy artifacts over checked-in prebuilts
+        run: |
+          set -euo pipefail
+          base="libs/storage/Tsavorite/cs/src/core/Device/runtimes"
+          for d in staging/native-*; do
+            rid="$(basename "$d" | sed 's/^native-//')"
+            echo "Updating runtimes/$rid/native/"
+            mkdir -p "$base/$rid/native"
+            cp -f "$d"/* "$base/$rid/native/"
+          done
+          # .so need the executable bit; Windows .dll/.pdb do not.
+          find "$base" -name '*.so' -exec chmod 755 {} +
+          git status --porcelain "$base"
+
+      - name: Commit and publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          base="libs/storage/Tsavorite/cs/src/core/Device/runtimes"
+          branch="${{ github.ref_name }}"
+
+          if [ -z "$(git status --porcelain "$base")" ]; then
+            echo "No changes to the checked-in prebuilts; nothing to do."
+            exit 0
+          fi
+
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "$base"
+          git commit -m "[Tsavorite] Update prebuilt native device binaries
+
+          Regenerated by the Build Native Device workflow (run ${{ github.run_id }}) from the native sources on '$branch'."
+
+          case "$branch" in
+            main|dev)
+              # Protected branches: never push directly; open a PR for review.
+              pr_branch="bot/update-native-binaries-${branch}"
+              git branch -M "$pr_branch"
+              git push --force-with-lease --set-upstream origin "$pr_branch"
+              if gh pr view "$pr_branch" --json number >/dev/null 2>&1; then
+                echo "PR already open for $pr_branch; branch updated."
+              else
+                gh pr create --base "$branch" --head "$pr_branch" \
+                  --title "[Tsavorite] Update prebuilt native device binaries" \
+                  --body "Automated refresh of the checked-in native prebuilts under \`$base\`, produced by the **Build Native Device** workflow (run ${{ github.run_id }})."
+              fi
+              ;;
+            *)
+              # Feature / PR branch: commit the refreshed binaries straight onto it so the open
+              # PR updates in place. Re-sync with the remote tip first in case the branch moved
+              # during the (multi-minute) build, then push. Only the runtimes/ files change here,
+              # and this workflow triggers on cc/** — so this push cannot re-trigger native-build.
+              git pull --rebase origin "$branch"
+              git push origin "HEAD:${branch}"
+              echo "Pushed refreshed native binaries onto '$branch'."
+              echo "If ci.yml did not start automatically (GITHUB_TOKEN push), push another commit or re-run ci.yml to validate against the new binaries."
+              ;;
+          esac

@@ -90,7 +90,7 @@ namespace Garnet.test.Resp.ACL
             ClassicAssert.IsTrue(RespCommandsInfo.TryGetRespCommandNames(out IReadOnlySet<string> advertisedCommands), "Couldn't get advertised RESP commands");
 
             // TODO: See if these commands could be identified programmatically
-            IEnumerable<string> withOnlySubCommands = ["ACL", "CLIENT", "CLUSTER", "CONFIG", "LATENCY", "MEMORY", "MODULE", "PUBSUB", "SCRIPT", "SLOWLOG"];
+            IEnumerable<string> withOnlySubCommands = ["ACL", "CLIENT", "CLUSTER", "CONFIG", "LATENCY", "MEMORY", "MODULE", "OBJECT", "PUBSUB", "SCRIPT", "SLOWLOG"];
             IEnumerable<string> notCoveredByACLs = allInfo.Where(static x => x.Value.Flags.HasFlag(RespCommandFlags.NoAuth)).Select(static kv => kv.Key);
 
             // Check tests against RespCommandsInfo
@@ -4813,6 +4813,82 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
+        public async Task ObjectEncodingACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "OBJECT ENCODING",
+                [DoObjectEncodingAsync]
+            ).ConfigureAwait(false);
+
+            static async Task DoObjectEncodingAsync(GarnetClient client)
+            {
+                string val = await client.ExecuteForStringResultAsync("OBJECT", ["ENCODING", "foo"]).ConfigureAwait(false);
+                ClassicAssert.IsNull(val);
+            }
+        }
+
+        [Test]
+        public async Task ObjectFreqACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "OBJECT FREQ",
+                [DoObjectFreqAsync]
+            ).ConfigureAwait(false);
+
+            static async Task DoObjectFreqAsync(GarnetClient client)
+            {
+                string val = await client.ExecuteForStringResultAsync("OBJECT", ["FREQ", "foo"]).ConfigureAwait(false);
+                ClassicAssert.IsNull(val);
+            }
+        }
+
+        [Test]
+        public async Task ObjectIdletimeACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "OBJECT IDLETIME",
+                [DoObjectIdletimeAsync]
+            ).ConfigureAwait(false);
+
+            static async Task DoObjectIdletimeAsync(GarnetClient client)
+            {
+                string val = await client.ExecuteForStringResultAsync("OBJECT", ["IDLETIME", "foo"]).ConfigureAwait(false);
+                ClassicAssert.IsNull(val);
+            }
+        }
+
+        [Test]
+        public async Task ObjectRefcountACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "OBJECT REFCOUNT",
+                [DoObjectRefcountAsync]
+            ).ConfigureAwait(false);
+
+            static async Task DoObjectRefcountAsync(GarnetClient client)
+            {
+                string val = await client.ExecuteForStringResultAsync("OBJECT", ["REFCOUNT", "foo"]).ConfigureAwait(false);
+                ClassicAssert.IsNull(val);
+            }
+        }
+
+        [Test]
+        public async Task ObjectHelpACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "OBJECT HELP",
+                [DoObjectHelpAsync]
+            ).ConfigureAwait(false);
+
+            static async Task DoObjectHelpAsync(GarnetClient client)
+            {
+                string[] val = await client.ExecuteForStringArrayResultAsync("OBJECT", ["HELP"]).ConfigureAwait(false);
+                ClassicAssert.IsNotNull(val);
+                Assert.That(val.Length, Is.GreaterThan(0));
+            }
+        }
+
+        [Test]
         public async Task MGetACLsAsync()
         {
             await CheckCommandsAsync(
@@ -4862,41 +4938,6 @@ namespace Garnet.test.Resp.ACL
 
                     throw;
                 }
-            }
-        }
-
-        [Test]
-        public async Task PurgeBPACLsAsync()
-        {
-            // Uses exceptions for control flow, as we're not setting up replicas here
-
-            await CheckCommandsAsync(
-                "PURGEBP",
-                [DoPurgeBPClusterAsync, DoPurgeBPAsync]
-            ).ConfigureAwait(false);
-
-            static async Task DoPurgeBPClusterAsync(GarnetClient client)
-            {
-                try
-                {
-                    await client.ExecuteForStringResultAsync("PURGEBP", ["MigrationManager"]).ConfigureAwait(false);
-                    Assert.Fail("Shouldn't be reachable, cluster isn't enabled");
-                }
-                catch (Exception e)
-                {
-                    if (e.Message == "ERR This instance has cluster support disabled")
-                    {
-                        return;
-                    }
-
-                    throw;
-                }
-            }
-
-            static async Task DoPurgeBPAsync(GarnetClient client)
-            {
-                string val = await client.ExecuteForStringResultAsync("PURGEBP", ["ServerListener"]).ConfigureAwait(false);
-                ClassicAssert.AreEqual("GC completed for ServerListener", val);
             }
         }
 
@@ -7798,10 +7839,8 @@ namespace Garnet.test.Resp.ACL
 
             static async Task DoVCardAsync(GarnetClient client)
             {
-                // TODO: this is a placeholder implementation
-
-                string val = await client.ExecuteForStringResultAsync("VCARD", ["foo"]).ConfigureAwait(false);
-                ClassicAssert.AreEqual("OK", val);
+                var val = await client.ExecuteForStringResultAsync("VCARD", ["foo"]).ConfigureAwait(false);
+                ClassicAssert.AreEqual("0", val);
             }
         }
 
@@ -7882,10 +7921,8 @@ namespace Garnet.test.Resp.ACL
 
             static async Task DoVIsMemberAsync(GarnetClient client)
             {
-                // TODO: this is a placeholder implementation
-
-                string val = await client.ExecuteForStringResultAsync("VISMEMBER", ["foo"]).ConfigureAwait(false);
-                ClassicAssert.AreEqual("OK", val);
+                var val = await client.ExecuteForStringResultAsync("VISMEMBER", ["foo", "bar"]).ConfigureAwait(false);
+                ClassicAssert.AreEqual("0", val);
             }
         }
 
@@ -7901,8 +7938,8 @@ namespace Garnet.test.Resp.ACL
             {
                 // TODO: this is a placeholder implementation
 
-                string val = await client.ExecuteForStringResultAsync("VLINKS", ["foo"]).ConfigureAwait(false);
-                ClassicAssert.AreEqual("OK", val);
+                var val = await client.ExecuteForStringResultAsync("VLINKS", ["foo", "bar"]).ConfigureAwait(false);
+                ClassicAssert.IsNull(val);
             }
         }
 
@@ -7918,8 +7955,8 @@ namespace Garnet.test.Resp.ACL
             {
                 // TODO: this is a placeholder implementation
 
-                string val = await client.ExecuteForStringResultAsync("VRANDMEMBER", ["foo"]).ConfigureAwait(false);
-                ClassicAssert.AreEqual("OK", val);
+                var val = await client.ExecuteForStringResultAsync("VRANDMEMBER", ["foo"]).ConfigureAwait(false);
+                ClassicAssert.IsNull(val);
             }
         }
 
@@ -7950,8 +7987,8 @@ namespace Garnet.test.Resp.ACL
             {
                 // TODO: this is a placeholder implementation
 
-                string val = await client.ExecuteForStringResultAsync("VSETATTR", ["foo"]).ConfigureAwait(false);
-                ClassicAssert.AreEqual("OK", val);
+                var val = await client.ExecuteForStringResultAsync("VSETATTR", ["foo", "bar", "fizz"]).ConfigureAwait(false);
+                ClassicAssert.AreEqual("0", val);
             }
         }
 

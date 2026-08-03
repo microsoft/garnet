@@ -33,10 +33,10 @@ namespace Garnet.server
             {
                 input.parseState = parseState.Slice(i, 1);
                 var o = StringOutput.FromPinnedPointer(output, 1);
-                storageApi.HyperLogLogAdd(key, ref input, ref o);
+                var res = storageApi.HyperLogLogAdd(key, ref input, ref o);
 
                 // Invalid HLL Type
-                if (*output == 0xFF)
+                if (res == GarnetStatus.WRONGTYPE || *output == 0xFF)
                 {
                     while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_WRONG_TYPE_HLL, ref dcurr, dend))
                         SendAndReset();
@@ -77,8 +77,8 @@ namespace Garnet.server
 
             var input = new StringInput(RespCommand.PFCOUNT, ref parseState);
 
-            storageApi.HyperLogLogLength(ref input, out var cardinality, out var error);
-            if (error)
+            var res = storageApi.HyperLogLogLength(ref input, out var cardinality, out var error);
+            if (res == GarnetStatus.WRONGTYPE || error)
             {
                 while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_WRONG_TYPE_HLL, ref dcurr, dend))
                     SendAndReset();
@@ -109,7 +109,7 @@ namespace Garnet.server
             var status = storageApi.HyperLogLogMerge(ref input, out var error);
 
             // Invalid Type
-            if (error)
+            if (status == GarnetStatus.WRONGTYPE || error)
             {
                 while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_WRONG_TYPE_HLL, ref dcurr, dend))
                     SendAndReset();
