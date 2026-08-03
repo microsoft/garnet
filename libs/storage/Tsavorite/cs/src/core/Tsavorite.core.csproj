@@ -32,21 +32,14 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ContentWithTargetPath Include="Device/runtimes/win-x64/native/native_device.dll">
+    <!-- Ship every prebuilt native device binary under Device/runtimes/<rid>/native/ (NuGet RID layout).
+         Using a recursive glob (rather than one entry per file) means the native-build CI can add a new
+         platform simply by committing its runtimes/<rid>/native/ folder; no csproj edit is required. The
+         RID folder is preserved in the output path via %(RecursiveDir) so NativeStorageDevice can resolve
+         runtimes/<rid>/native/<lib> for the current OS/arch/libc at load time. -->
+    <ContentWithTargetPath Include="Device/runtimes/**">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-      <TargetPath>runtimes/win-x64/native/native_device.dll</TargetPath>
-    </ContentWithTargetPath>
-    <ContentWithTargetPath Include="Device/runtimes/win-x64/native/native_device.pdb">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-      <TargetPath>runtimes/win-x64/native/native_device.pdb</TargetPath>
-    </ContentWithTargetPath>
-    <ContentWithTargetPath Include="Device/runtimes/linux-x64/native/libnative_device.so">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-      <TargetPath>runtimes/linux-x64/native/libnative_device.so</TargetPath>
-    </ContentWithTargetPath>
-    <ContentWithTargetPath Include="Device/runtimes/linux-x64/native/libnative_device_libaio.so">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-      <TargetPath>runtimes/linux-x64/native/libnative_device_libaio.so</TargetPath>
+      <TargetPath>runtimes/%(RecursiveDir)%(Filename)%(Extension)</TargetPath>
     </ContentWithTargetPath>
   </ItemGroup>
 

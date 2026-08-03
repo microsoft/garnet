@@ -772,5 +772,22 @@ namespace Garnet.server
 
             UpdateContextMetadata(ref vectorContext);
         }
+
+        /// <summary>
+        /// For testing purposes, inspect the state of the given context.
+        /// </summary>
+        internal void GetContextState(ulong context, out bool isInUse, out bool isCleaningUp, out bool isMigrating)
+        {
+            var (contextIndex, contextValue) = ContextMetadata.DecomposeContext(context);
+
+            lock (this)
+            {
+                ref readonly var metadata = ref contextMetadatas[contextIndex];
+
+                isInUse = metadata.IsInUse(contextIndex != 0, contextValue);
+                isCleaningUp = metadata.IsCleaningUp(contextIndex != 0, contextValue);
+                isMigrating = metadata.IsMigrating(contextIndex != 0, contextValue);
+            }
+        }
     }
 }

@@ -780,6 +780,11 @@ namespace Garnet.server
             if (status.IsPending)
                 CompletePendingForObjectStoreSession(ref status, ref output, ref objectContext);
 
+            if (status.IsWrongType)
+            {
+                return GarnetStatus.WRONGTYPE;
+            }
+
             if (status.NotFound && !status.Record.Created)
                 return GarnetStatus.NOTFOUND;
 

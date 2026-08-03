@@ -557,7 +557,7 @@ namespace Tsavorite.core
                 else if (rmwInfo.Action == RMWAction.WrongType)
                 {
                     status = OperationStatusUtils.AdvancedOpCode(OperationStatus.NOTFOUND, StatusCode.CreatedRecord | StatusCode.Expired);
-                    return OperationStatus.NOTFOUND;
+                    return OperationStatus.WRONG_TYPE;
                 }
                 else
                     return OperationStatus.SUCCESS | (forExpiration ? OperationStatus.EXPIRED : OperationStatus.SUCCESS);

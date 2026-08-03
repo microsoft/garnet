@@ -7839,10 +7839,8 @@ namespace Garnet.test.Resp.ACL
 
             static async Task DoVCardAsync(GarnetClient client)
             {
-                // TODO: this is a placeholder implementation
-
-                string val = await client.ExecuteForStringResultAsync("VCARD", ["foo"]).ConfigureAwait(false);
-                ClassicAssert.AreEqual("OK", val);
+                var val = await client.ExecuteForStringResultAsync("VCARD", ["foo"]).ConfigureAwait(false);
+                ClassicAssert.AreEqual("0", val);
             }
         }
 
@@ -7923,10 +7921,8 @@ namespace Garnet.test.Resp.ACL
 
             static async Task DoVIsMemberAsync(GarnetClient client)
             {
-                // TODO: this is a placeholder implementation
-
-                string val = await client.ExecuteForStringResultAsync("VISMEMBER", ["foo"]).ConfigureAwait(false);
-                ClassicAssert.AreEqual("OK", val);
+                var val = await client.ExecuteForStringResultAsync("VISMEMBER", ["foo", "bar"]).ConfigureAwait(false);
+                ClassicAssert.AreEqual("0", val);
             }
         }
 
@@ -7942,8 +7938,8 @@ namespace Garnet.test.Resp.ACL
             {
                 // TODO: this is a placeholder implementation
 
-                string val = await client.ExecuteForStringResultAsync("VLINKS", ["foo"]).ConfigureAwait(false);
-                ClassicAssert.AreEqual("OK", val);
+                var val = await client.ExecuteForStringResultAsync("VLINKS", ["foo", "bar"]).ConfigureAwait(false);
+                ClassicAssert.IsNull(val);
             }
         }
 
@@ -7959,8 +7955,8 @@ namespace Garnet.test.Resp.ACL
             {
                 // TODO: this is a placeholder implementation
 
-                string val = await client.ExecuteForStringResultAsync("VRANDMEMBER", ["foo"]).ConfigureAwait(false);
-                ClassicAssert.AreEqual("OK", val);
+                var val = await client.ExecuteForStringResultAsync("VRANDMEMBER", ["foo"]).ConfigureAwait(false);
+                ClassicAssert.IsNull(val);
             }
         }
 
@@ -7991,8 +7987,8 @@ namespace Garnet.test.Resp.ACL
             {
                 // TODO: this is a placeholder implementation
 
-                string val = await client.ExecuteForStringResultAsync("VSETATTR", ["foo"]).ConfigureAwait(false);
-                ClassicAssert.AreEqual("OK", val);
+                var val = await client.ExecuteForStringResultAsync("VSETATTR", ["foo", "bar", "fizz"]).ConfigureAwait(false);
+                ClassicAssert.AreEqual("0", val);
             }
         }
 

@@ -1439,10 +1439,29 @@ namespace Garnet.server
                 return AbortWithErrorMessage("ERR Vector Set (preview) commands are not enabled");
             }
 
-            // TODO: implement!
+            if (parseState.Count != 1)
+            {
+                return AbortWithWrongNumberOfArguments("VCARD");
+            }
 
-            while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
-                SendAndReset();
+            var key = parseState.GetArgSliceByRef(0);
+
+            var res = storageApi.VectorSetCardinality(key, out var card);
+
+            switch (res)
+            {
+                case GarnetStatus.WRONGTYPE:
+                    WriteError(CmdStrings.RESP_ERR_WRONG_TYPE);
+                    break;
+
+                case GarnetStatus.NOTFOUND:
+                    card = 0;
+                    goto case GarnetStatus.OK;
+
+                case GarnetStatus.OK:
+                    WriteInt64(card);
+                    break;
+            }
 
             return true;
         }
@@ -1606,10 +1625,46 @@ namespace Garnet.server
                 return AbortWithErrorMessage("ERR Vector Set (preview) commands are not enabled");
             }
 
-            // TODO: implement!
+            if (parseState.Count != 2)
+            {
+                return AbortWithWrongNumberOfArguments("VISMEMBER");
+            }
 
-            while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
-                SendAndReset();
+            var key = parseState.GetArgSliceByRef(0);
+            var element = parseState.GetArgSliceByRef(1);
+
+            var res = storageApi.VectorSetIsMember(key, element);
+
+            switch (res)
+            {
+                case GarnetStatus.OK:
+                    if (respProtocolVersion == 3)
+                    {
+                        while (!RespWriteUtils.TryWriteTrue(ref dcurr, dend))
+                            SendAndReset();
+                    }
+                    else
+                    {
+                        WriteInt32(1);
+                    }
+                    break;
+
+                case GarnetStatus.NOTFOUND:
+                    if (respProtocolVersion == 3)
+                    {
+                        while (!RespWriteUtils.TryWriteFalse(ref dcurr, dend))
+                            SendAndReset();
+                    }
+                    else
+                    {
+                        WriteInt32(0);
+                    }
+                    break;
+
+                case GarnetStatus.WRONGTYPE:
+                    WriteError(CmdStrings.RESP_ERR_WRONG_TYPE);
+                    break;
+            }
 
             return true;
         }
@@ -1617,31 +1672,135 @@ namespace Garnet.server
         private bool NetworkVLINKS<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            const int DefaultResultSetSize = 64;
+            const int DefaultIdSize = sizeof(ulong);
+
             if (!storageSession.vectorManager.IsEnabled)
             {
                 return AbortWithErrorMessage("ERR Vector Set (preview) commands are not enabled");
             }
 
-            // TODO: implement!
+            if (parseState.Count is not (2 or 3))
+            {
+                return AbortWithWrongNumberOfArguments("VLINKS");
+            }
 
-            while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
-                SendAndReset();
+            var key = parseState.GetArgSliceByRef(0);
+            var element = parseState.GetArgSliceByRef(1);
+            var withScores = false;
 
-            return true;
+            if (parseState.Count == 3)
+            {
+                if (!parseState.GetArgSliceByRef(2).ReadOnlySpan.EqualsUpperCaseSpanIgnoringCase("WITHSCORES"u8))
+                {
+                    return AbortWithErrorMessage("ERR Unexpected option");
+                }
+
+                withScores = true;
+            }
+
+            Span<byte> idSpace = stackalloc byte[DefaultResultSetSize * DefaultIdSize];
+            Span<byte> distanceSpace = stackalloc byte[DefaultResultSetSize * sizeof(float)];
+
+            var idResult = SpanByteAndMemory.FromPinnedSpan(idSpace);
+            var distanceResult = SpanByteAndMemory.FromPinnedSpan(distanceSpace);
+            try
+            {
+                var res = storageApi.VectorSetLinks(key, element, withScores, ref idResult, ref distanceResult);
+
+                switch (res)
+                {
+                    case GarnetStatus.NOTFOUND:
+                        WriteNull();
+                        break;
+
+                    case GarnetStatus.WRONGTYPE:
+                        WriteError(CmdStrings.RESP_ERR_WRONG_TYPE);
+                        break;
+
+                    case GarnetStatus.OK:
+                        {
+                            // TODO: implement!
+                            while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                                SendAndReset();
+                        }
+                        break;
+                }
+
+                return true;
+            }
+            finally
+            {
+                idResult.Dispose();
+                distanceResult.Dispose();
+            }
         }
 
         private bool NetworkVRANDMEMBER<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            const int DefaultResultSetSize = 64;
+            const int DefaultIdSize = sizeof(ulong);
+
             if (!storageSession.vectorManager.IsEnabled)
             {
                 return AbortWithErrorMessage("ERR Vector Set (preview) commands are not enabled");
             }
 
-            // TODO: implement!
+            if (parseState.Count is not (1 or 2))
+            {
+                return AbortWithWrongNumberOfArguments("VRANDMEMBER");
+            }
 
-            while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
-                SendAndReset();
+            var key = parseState.GetArgSliceByRef(0);
+            var count = 1;
+
+            if (parseState.Count == 2)
+            {
+                if (!parseState.TryGetInt(1, out count))
+                {
+                    return AbortWithErrorMessage("ERR expected integer count");
+                }
+            }
+
+            Span<byte> idSpace = stackalloc byte[DefaultResultSetSize * DefaultIdSize];
+
+            var idResult = SpanByteAndMemory.FromPinnedSpan(idSpace);
+            try
+            {
+
+                var res = storageApi.VectorSetRandomMembers(key, count, ref idResult);
+
+                switch (res)
+                {
+                    case GarnetStatus.NOTFOUND:
+                        if (parseState.Count == 2)
+                        {
+                            WriteArrayLength(0);
+                        }
+                        else
+                        {
+                            WriteNull();
+                        }
+                        break;
+                    case GarnetStatus.WRONGTYPE:
+                        WriteError(CmdStrings.RESP_ERR_WRONG_TYPE);
+                        break;
+
+                    case GarnetStatus.OK:
+                        {
+                            // TODO: implement!
+                            while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                                SendAndReset();
+                        }
+                        break;
+                }
+            }
+            finally
+            {
+                idResult.Dispose();
+            }
+
 
             return true;
         }
@@ -1685,10 +1844,45 @@ namespace Garnet.server
                 return AbortWithErrorMessage("ERR Vector Set (preview) commands are not enabled");
             }
 
-            // TODO: implement!
+            if (parseState.Count != 3)
+            {
+                return AbortWithWrongNumberOfArguments("VSETATTR");
+            }
 
-            while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
-                SendAndReset();
+            var key = parseState.GetArgSliceByRef(0);
+            var elem = parseState.GetArgSliceByRef(1);
+            var attr = parseState.GetArgSliceByRef(2);
+
+            var res = storageApi.VectorSetSetAttribute(key, elem, attr);
+
+            switch (res)
+            {
+                case GarnetStatus.NOTFOUND:
+                    if (respProtocolVersion == 3)
+                    {
+                        while (!RespWriteUtils.TryWriteFalse(ref dcurr, dend))
+                            SendAndReset();
+                    }
+                    else
+                    {
+                        WriteInt32(0);
+                    }
+                    break;
+                case GarnetStatus.WRONGTYPE:
+                    WriteError(CmdStrings.RESP_ERR_WRONG_TYPE);
+                    break;
+                case GarnetStatus.OK:
+                    if (respProtocolVersion == 3)
+                    {
+                        while (!RespWriteUtils.TryWriteTrue(ref dcurr, dend))
+                            SendAndReset();
+                    }
+                    else
+                    {
+                        WriteInt32(1);
+                    }
+                    break;
+            }
 
             return true;
         }

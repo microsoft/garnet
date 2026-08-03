@@ -95,6 +95,7 @@ namespace Garnet.server
                 case RespCommand.GETIFNOTMATCH:
                 case RespCommand.GETWITHETAG:
                     return HandleEtagReader(in srcLogRecord, ref input, ref output, ref readInfo, cmd, value);
+                case RespCommand.MGET:
                 case RespCommand.NONE:
                     CopyRespTo(value, ref output);
                     break;
