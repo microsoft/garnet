@@ -4,9 +4,9 @@
 using System;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using System.Runtime.Intrinsics.X86;
 using System.Threading;
 using Garnet.common;
-using Tsavorite.core;
 
 namespace Garnet.server
 {
@@ -78,12 +78,26 @@ namespace Garnet.server
             => Volatile.Read(ref Unsafe.AsRef(in sketch[GetSketchSlot(hash)]));
 
         /// <summary>
+        /// Issues a temporal prefetch of the sketch slot for the given hash so the post-read update
+        /// finds it resident. The replay thread writes this slot, so an uncached read of it is a
+        /// cross-core coherence miss on the post-read critical path; prefetching here overlaps that
+        /// miss with the store read.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public readonly unsafe void PrefetchKeySequenceNumber(long hash)
+        {
+            if (Sse.IsSupported)
+                Sse.Prefetch0(Unsafe.AsPointer(ref sketch[GetSketchSlot(hash)]));
+        }
+
+        /// <summary>
         /// Updates the maximum observed sequence number.
         /// </summary>
         /// <remarks>Updates are thread-safe and guaranteed to be monotonically increasing.</remarks>
         public void UpdateMaxSequenceNumber(long sequenceNumber)
         {
-            _ = Utility.MonotonicUpdate(ref sketchMax.Value, sequenceNumber, out _);
+            if (sequenceNumber > sketchMax.Value)
+                Volatile.Write(ref sketchMax.Value, sequenceNumber);
             SignalWaiters();
         }
 
@@ -93,8 +107,8 @@ namespace Garnet.server
         /// <remarks>Updates are thread-safe and guaranteed to be monotonically increasing.</remarks>
         public void UpdateKeySequenceNumber(long hash, long sequenceNumber)
         {
-            _ = Utility.MonotonicUpdate(ref sketch[GetSketchSlot(hash)], sequenceNumber, out _);
-            _ = Utility.MonotonicUpdate(ref sketchMax.Value, sequenceNumber, out _);
+            if (sequenceNumber > sketch[GetSketchSlot(hash)])
+                Volatile.Write(ref sketch[GetSketchSlot(hash)], sequenceNumber);
             SignalWaiters();
         }
 
