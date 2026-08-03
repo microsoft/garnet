@@ -45,28 +45,36 @@ Constants: `BufferSize = 4 MB` (bits=22); `MaxCopySpanLen = 128 KB`; key sentine
 
 Inline fields = **just the byte length**. The encodings below apply only to **non-inline** fields, Flush context.
 
-### 2.1 `ValueLength` (24 bits) — non-inline value
+### 2.1 `ValueLength` (24-bit field; low 12 bits used) — non-inline value
 
-Decoded by `RecordDataHeader.DecodeFlushValueExtent` (branches on `ValueIsObject`); encoded by `SetObjectLogLengthHints`.
+Object **and** overflow values share the same 12-bit out-of-line encoding, `EncodeFlushOutOfLineValue(dataLength, totalOnDiskExtent)`
+(decoded to the initial read-ahead extent by `DecodeFlushValueInitialReadExtent`; `SetObjectLogLengthHints` writes it). Only the
+low 12 bits of the physical 24-bit field are used; the `ValueLength` **property** still returns `ObjectIdSize` for a non-inline
+value, so the encoding is read via `GetValueLengthRaw()`.
 
-**Object value:**
+| bit 11 `isExactSize` | bit 10 `hasHeader` | bits `[9:0]` | Meaning |
+|---|---|---|---|
+| 1 | 0 | exact byte length `0..1023` | **Headerless** value ≤ 1023 bytes; no `ChunkHeader` precedes it. |
+| 0 | 1 | 4 KB-page count of the on-disk extent | **Headered** value > 1023 bytes; a leading `ChunkHeader` precedes it. `1023` = **sentinel**: extent ≥ 1023×4 KB (~4 MB) — read in 4 MB blocks and learn the exact length(s) from the `ChunkHeader`(s). |
 
-| `C` (bit 23) | Meaning | low bits |
-|---|---|---|
-| 1 | **Chunked object** (serialized length ≥ one buffer). Dense stream, **no** per-chunk framing; the count is the read-ahead extent and the deserializer self-terminates. | `[11:0]` full-buffer count (→16 GB); `[21:12]` final-buffer 4 KB-page count. |
-| 0 | **Headerless object** (serialized length < one buffer). | `[21:0]` **exact** serialized length (< 4 MB). |
+The page count spans the value's **whole on-disk extent** (leading `ChunkHeader` + any DMA/8-align padding + data), so a
+below-sentinel headered value's first read already covers all of its framing.
 
-**Overflow value** (length known up front, full 24-bit exact range):
+- **Object** (> 1023 data bytes) on-disk layout: `[1023-byte headerless prefix][hdr₁][chunk₁]…[hdr_N][chunk_N]`. The prefix keeps
+  small objects header-free; beyond it a **chunk == one write buffer's worth of data**, each preceded by an 8-byte `ChunkHeader`
+  (`currentLength | ContinuationFlag`). The deserializer self-terminates. See §3, §5.
+- **Overflow** (> 1023 data bytes): a single leading `ChunkHeader` carries the full length + O_DIRECT `alignmentPadding`; the data
+  follows (one chunk, no continuation).
 
-| `ValueLength` | Meaning |
-|---|---|
-| `< sentinel` (`< 2^24-1`) | exact byte length. |
-| `== sentinel` (`2^24-1`) | length ≥ the field maximum; full length carried in a leading `ChunkHeader` (symmetric with a ≥-sentinel overflow **key**). Reader reads the header and extends the read-ahead (`ReadOverflowHeaderLengthAndExtend`). |
+> The cutoff is 1023 because that is the largest exact byte length the 10-bit payload holds. Retired: the old bit-23-chunked /
+> bit-22-overflow-header / 24-bit-exact object scheme (`EncodeFlushObjectValue`) and `DecodeFlushValueExtent`.
+> `ChunkHeader.currentLength` is a 32-bit int with the top bit as `ContinuationFlag`, so a chunked value is capped at `1<<30`
+> per chunk. Size-tracker reconciles count→bytes against the real heap size after deserialize.
 
-> Bit 22 (`kFlushOverflowHeaderBit` / `EncodeFlushOverflowHeader`) is **reserved** for a future precise first-read hint for a
-> headered overflow value; it is not written or read today (the sentinel path reads one buffer up front, then extends).
-> Objects ≥ 16 GB (buffer count > 4095) throw; per-buffer continuation headers for that saturation case are not implemented.
-> Size-tracker converts count→bytes; reconcile against real heap size after deserialize.
+**Invariant note (useLivePage):** a no-copy (`useLivePage`) flush stamps this encoding into the **live** record's RDH. That is safe
+for readers (the `ValueLength` property masks the raw field to `ObjectIdSize`), but record disposal converts the field to inline
+(`LogField.ClearObjectIdAndConvertToInline`), after which the property returns the raw field — so that method sets the length
+explicitly to `ObjectIdSize` rather than trusting the stamped value.
 
 ### 2.2 `KeyLength` (10 bits) — non-inline (overflow) key
 
@@ -87,15 +95,16 @@ holds/back-patches.
 | **Object chunk** | this chunk's data length + `ContinuationFlag` iff more follows. | unused/reserved. |
 | **Overflow** | full overflow length (one chunk, no continuation). | `alignmentPadding` (O_DIRECT). |
 
-- Object: follow `currentLength` to the next chunk (may be < 4 MB, §5); stop when continuation clears; RDH count is the
-  read-ahead size (on saturation > 4 K buffers, read full buffers until continuation clears).
+- Object: read the 1023-byte headerless prefix, 8-align to the first header, then follow `currentLength` to each next chunk
+  (may be < 4 MB, §5); stop when the continuation flag clears (handle zero-length continuation chunks). A sentinel object extends
+  read-ahead per-chunk. Each header is 8-byte-aligned and **back-filled** when its buffer fills (see §5).
 - Overflow: header in the **first** buffer; read it, learn full length, allocate `OverflowByteArray`, stream the rest.
 
 ---
 
 ## 4. Has-header signaling / position-word budget
 
-Derived from the RDH — **zero** new position-word bits now: value = `ValueLength` bit 23 or 22; key = `KeyLength==1023`.
+Derived from the RDH — **zero** new position-word bits: value = `ValueLength` bit 10 (`FlushValueHasHeader`); key = `KeyLength==1023`.
 `ObjectLogFilePositionInfo.word`: bits 0–59 segment+offset (~1 EB), bit 63 downlevel flag, **bit 62 reserved** (future
 DMA-padded short key only), bits 60–61 reserved.
 
@@ -103,19 +112,27 @@ DMA-padded short key only), bits 60–61 reserved.
 
 ## 5. Packing & boundary rules
 
-- **Dense packing, no partial-buffer padding** (avoids extra writes for many small objects). Reader advances to each
-  next chunk by following the header's `currentLength` (may be < 4 MB), not by assuming buffer alignment.
-- **Headers never straddle a buffer/segment boundary**: within ~128 bytes of the end → advance the start to the next
+- **Dense packing, no partial-buffer padding** (avoids extra writes for many small objects). The reader advances to each next
+  object chunk by following the header's `currentLength` (may be < 4 MB), not by assuming buffer alignment.
+- **Object ChunkHeaders are 8-byte-aligned and appended, never slide-inserted.** `Debug.Assert(ChunkHeader.TotalSize == 8)`. The
+  writer serializes the 1023-byte headerless prefix, then pads the object-log position to the next 8-boundary and pokes a
+  placeholder header; its `currentLength` (| `ContinuationFlag`) is **back-filled when the buffer fills or the object ends**, while
+  still in the unflushed buffer. Because a buffer (4 MB) and segment (1 GB) are 8-multiples, an 8-aligned 8-byte header never
+  straddles a buffer/segment boundary. The recorded object extent is the monotonic distance from the object's start position.
+- **Overflow headers never straddle a buffer/segment**: within ~128 bytes of the end → advance the start to the next
   buffer/segment; that advanced start is the recorded `ObjectLogPosition`, so the reader lands correctly.
+- **Zero-length-chunk edge** (a header landing exactly at `buffer_end − 8`): only the first post-prefix header can hit it; the
+  writer currently **fails fast** ("not yet implemented") rather than silently misframe — a follow-up increment.
 
 ---
 
 ## 6. Writer flow
 
 1. Overflow key: `==1023` → header (full len + padding) then bytes; else headerless. Honor §5.
-2. Value: overflow → single header (`01`) or headerless (`00`); object → per-buffer header with continuation set when a
-   buffer flushes while incomplete (known immediately — **no back-patch**), clear on last; single-buffer object (<
-   `MaxCopySpanLen`) → headerless (`00`).
+2. Value: overflow → single leading header (`hasHeader`, full len + padding) or headerless (`isExactSize`, ≤ 1023); object
+   > 1023 bytes → 1023-byte headerless prefix, then an 8-aligned per-buffer `ChunkHeader` whose `currentLength |
+   ContinuationFlag` is **back-filled** when the buffer fills or the object ends (§5); object ≤ 1023 bytes → headerless
+   (`isExactSize`).
 3. Stamp non-destructively (§7): `ObjectLogPosition` (post boundary-advance) + RDH `KeyLength`/`ValueLength` per §2.
 
 ---
@@ -129,6 +146,9 @@ into the live records in place), skipping the sector-aligned `srcBuffer` copy (`
 copy). The stamping itself is **non-destructive** to in-memory readers:
 - **RDH raw `KeyLength`/`ValueLength`** — the property returns `ObjectIdSize` for non-inline regardless of raw bits, so
   `AllocatedSize`/`GetValueFieldInfo`/the `ObjectLogPosition` slot address are unchanged; the raw bits are the on-disk read hint.
+  The one exception is record **disposal**, which converts the field to inline (after which the property returns the raw bits);
+  `LogField.ClearObjectIdAndConvertToInline` therefore sets the converted length to `ObjectIdSize` rather than trusting the
+  stamped value (see §2.1).
 - **`ObjectLogPosition`** — read only by the flush/recovery disk-image paths, never by a normal in-memory read/upsert.
 - **objectId slots** — left live and untouched; meaningless on disk; the reader re-allocates.
 
@@ -171,12 +191,13 @@ byte-identical to the copy path (perf only).
 
 ## 8. Reader flow
 
-1. Decode RDH extent (§2) → size read-ahead (exact / first-buffer-hint+header / buffer+page count); multi-record scans
-   size from successive absolute-position differences. Fill the ring.
+1. Decode RDH extent (§2) → size read-ahead (exact size / page-count×4 KB / one 4 MB block for the sentinel); multi-record
+   scans size from successive absolute-position differences. Fill the ring.
 2. Overflow: parse the leading header **before allocating**; allocate exact `currentLength`; skip header (+padding);
    read exactly.
-3. Object: walk chunks — parse header, feed `currentLength` (mask continuation) to the deserializer, follow to next,
-   stop when continuation clears. Deserializer self-terminates; ≤ 4 KB final-page rounding harmless.
+3. Object: read the 1023-byte headerless prefix, 8-align to the first `ChunkHeader`, then walk chunks — parse header, feed
+   `currentLength` (mask continuation) to the deserializer, follow to the next (skip zero-length continuation chunks), stop
+   when continuation clears. Deserializer self-terminates; ≤ 4 KB final-page rounding harmless.
 4. `ReadExactly(8)` for headers (may span boundaries); deserializer never sees headers/padding/next-piece/over-read.
 
 **Read-accounting:** absolute endpoints (`componentCursor`, extendable `requiredLogicalEnd`, `issuedAlignedEnd`, hard
@@ -187,23 +208,21 @@ bound = successor position / object-log tail), not a single additive delta.
 ## 9. Recovery & positions
 
 - **Snapshot-region verbatim copy** (`ObjectAllocatorImpl` snapshot-recovery flush): each record's bytes are copied from the
-  snapshot object-log to the main object-log. A **headerless** record and a **chunked object** are sized by the RDH
-  `KeyLength+ValueLength` hints — exact for headerless, and a safe **over-copy** for a chunked object (the reader repositions
-  per record via `OnBeginRecord` and the deserializer self-terminates, so trailing bytes are ignored on read-back — validated
-  by the 40 MB `MultiListObjectTest`). A record with a **leading `ChunkHeader`** (≥-sentinel overflow key or overflow value)
-  is sized instead by the **successor object record's snapshot position minus this record's** — exactly this record's raw
-  key+value+header+padding extent, copied verbatim (`successor.pos ≥ this.pos + extent`, so it never under-copies; trailing
-  over-copy is ignored on read-back). Validated by `RecoverSnapshotHeaderedOverflowValue`.
-  - **Remaining guard:** a headered record that is the **last object record on its page** has no successor to bound it (its
-    exact extent would need a `ChunkHeader` read up to the full overflow length away, and no snapshot per-page object-log end
-    is available in the per-page recovery flush), so that narrow case still **throws** (fail-fast). Full removal needs a
-    ChunkHeader-driven copy for the last record or a page-object-log-end bound.
+  snapshot object-log to the main object-log. A **headerless** record is sized exactly by the RDH `KeyLength+ValueLength`
+  hints. A record with a **leading `ChunkHeader`** or **headered object** (`FlushValueHasHeader` for a ≥-sentinel overflow key,
+  or an overflow/object value with the has-header bit) is sized by the **successor object record's snapshot position minus
+  this record's** — exactly this record's raw key+value+header(s)+padding extent, copied verbatim (`successor.pos ≥ this.pos +
+  extent`, so it never under-copies; trailing over-copy is ignored on read-back, which re-frames from the header). Validated by
+  `RecoverSnapshotHeaderedOverflowValue` and the multi-segment `LargeObjectTest`.
+  - **Last object record on a page:** no successor to bound it, so it falls back to the (over-counting) RDH `KeyLength+ValueLength`
+    hint with `allowShortRead` — the snapshot read-ahead was sized with that same hint, there is no following record to overshoot,
+    and the trailing over-copy is re-framed away by the reader. (The prior fail-fast throw for this case has been removed.)
 - **Flag bits:** `RepointObjectLogPosition` and `SetObjectLogPositionAndLengthHints` preserve the reserved position-word flag
   bits; `RepointObjectLogPosition` additionally preserves **bit 63** (a verbatim-copied downlevel record stays downlevel).
   `SetRecoveredObjectLogRecordStartPosition` intentionally **clears bit 63** — it converts the record to v2.2.
 - **v2.1 reposition guard:** because that conversion does not insert a `ChunkHeader`, if a downlevel source would convert to
-  a headered overflow key (≥ 1023) / value (> 1023) it **throws (fail-fast)** rather than silently corrupt (see §10). No-op
-  for v2.2 sources (bit 63 never set).
+  a headered overflow key (≥ 1023) or a headered overflow/object value (> 1023) it **throws (fail-fast)** rather than silently
+  corrupt (see §10). No-op for v2.2 sources (bit 63 never set).
 - **Validate:** overflow length within limits; cumulative object ≤ `IHeapObject.MaxSerializedObjectSize`.
 
 ---
