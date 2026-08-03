@@ -1726,7 +1726,7 @@ namespace Tsavorite.core
         /// (the native accumulation buffer is thread-local). Callers issue a burst of reads then
         /// call this to submit the sub-threshold tail before waiting on completions.
         /// </summary>
-        public void FlushSubmits()
+        public override void FlushSubmits()
         {
             if (Volatile.Read(ref disposedFlag) != 0) return;
             if (!TryLease(out int shard))

@@ -563,6 +563,9 @@ namespace Tsavorite.core
             try
             {
                 device.ReadAsync((ulong)addressOfStartOfMainLogPage, (IntPtr)buffer.aligned_pointer, (uint)sectorSize, AsyncReadPageCallback, result);
+                // Flush this thread's batched submits so this single read isn't stranded in an unsubmitted
+                // per-thread batch (GARNET_SUBMIT_BATCH) before we block on it. No-op for immediate-submit devices.
+                device.TryComplete();
                 result.handle.Wait();
                 if (result.numBytesRead >= PageHeader.Size)
                 {
@@ -835,6 +838,9 @@ namespace Tsavorite.core
                     // TODO: Cache the last sector flushed in readBuffers so we can avoid this Read.
                     PageAsyncReadResult<Empty> result = new() { handle = new CountdownEvent(1) };
                     device.ReadAsync(alignedMainLogFlushPageAddress + (ulong)alignedStartOffset, (IntPtr)srcBuffer.aligned_pointer, (uint)sectorSize, AsyncReadPageCallback, result);
+                    // Flush this thread's batched submits so this read-back isn't stranded in an unsubmitted
+                    // per-thread batch (GARNET_SUBMIT_BATCH) before we block on it. No-op for immediate-submit devices.
+                    device.TryComplete();
                     result.handle.Wait();
                     result.DisposeHandle();
                 }
