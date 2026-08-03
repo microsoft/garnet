@@ -15,6 +15,7 @@ namespace Resp.benchmark
     public partial class ClusterBench : IDisposable
     {
         const int LoadDataThreads = 8;
+        const string ResultsCompleteMarker = "=== BENCHMARK RESULTS COMPLETE ===";
 
         static readonly long HISTOGRAM_LOWER_BOUND = 1;
         static readonly long HISTOGRAM_UPPER_BOUND = TimeStamp.Seconds(100);
@@ -587,6 +588,8 @@ namespace Resp.benchmark
                 Console.WriteLine($"Replica throughput:     {replicaOpsPerSec:N0} ops/sec ({replicaOpsPerSec / 1000:N1} Kops/sec) ({replicaOpType})");
             }
 
+            Console.WriteLine(ResultsCompleteMarker);
+
             // Report hit rates from INFO STATS
             ReportHitRates();
 
@@ -690,6 +693,8 @@ namespace Resp.benchmark
                 Console.WriteLine($"Primary throughput:     {primaryOpsPerSec:N0} ops/sec ({primaryOpsPerSec / 1000:N1} Kops/sec) ({primaryOpType})");
                 Console.WriteLine($"Replica throughput:     {replicaOpsPerSec:N0} ops/sec ({replicaOpsPerSec / 1000:N1} Kops/sec) ({replicaOpType})");
             }
+
+            Console.WriteLine(ResultsCompleteMarker);
 
             // Report hit rates from INFO STATS
             ReportHitRates();
