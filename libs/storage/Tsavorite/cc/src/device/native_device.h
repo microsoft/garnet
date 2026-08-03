@@ -8,7 +8,7 @@
 #include <cerrno>
 #include <chrono>
 #include <cstring>
-#include <experimental/filesystem>
+#include "filesystem_compat.h"
 #include <system_error>
 #include <thread>
 
@@ -84,7 +84,7 @@ inline uint32_t ProbeDioAlignment(const char* filename) {
     while (pow2 < sec) pow2 <<= 1;
     return pow2;
 #else
-    namespace fs = std::experimental::filesystem;
+    namespace fs = tsv_fs;
 
     // Resolve `filename` (or its nearest existing ancestor — the data file may not exist yet).
     struct stat st;
@@ -384,7 +384,7 @@ private:
     /// segment_size_ is 1<<63). Skip the check entirely.
     bool ValidateRecoveredSegments(const std::string& file) {
         if (omit_segment_id_) return true;
-        namespace fs = std::experimental::filesystem;
+        namespace fs = tsv_fs;
         std::error_code ec;
         fs::path target{ file };
         fs::path parent = target.parent_path();
@@ -502,9 +502,9 @@ public:
     /// NativeDevice_GetLastError).
     int CreateDir(const std::string& dir, bool delete_existing) override {
         std::error_code ec;
-        std::experimental::filesystem::path path{ dir };
+        tsv_fs::path path{ dir };
         if (delete_existing) {
-            std::experimental::filesystem::remove_all(path, ec);
+            tsv_fs::remove_all(path, ec);
             // remove_all returns 0 + sets ec only for real errors. "path doesn't exist" is
             // not an error and ec is left clear.
             if (ec) {
@@ -514,7 +514,7 @@ public:
                 return -1;
             }
         }
-        std::experimental::filesystem::create_directories(path, ec);
+        tsv_fs::create_directories(path, ec);
         if (ec) {
             native_device::set_last_error(
                 "CreateDir: create_directories('%s') failed: %s. Check parent path permissions and disk space.",
