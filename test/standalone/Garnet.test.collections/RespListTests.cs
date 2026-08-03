@@ -372,6 +372,28 @@ namespace Garnet.test
         }
 
         [Test]
+        public void LREMWithIntMinValueCountRemovesAllMatches()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var key = "List_Test_LREM_MinValue";
+            db.KeyDelete(key);
+            db.ListRightPush(key, ["a", "b", "a", "c", "a"]);
+
+            // |int.MinValue| does not fit in an int; before the fix Math.Abs threw
+            // OverflowException out of ProcessMessages and the session was dropped.
+            var removed = db.ListRemove(key, "a", int.MinValue);
+            ClassicAssert.AreEqual(3, removed);
+
+            var remaining = db.ListRange(key, 0, -1);
+            ClassicAssert.AreEqual(new RedisValue[] { "b", "c" }, remaining);
+
+            // The connection must still be usable.
+            ClassicAssert.AreEqual("PONG", db.Execute("PING").ToString());
+        }
+
+        [Test]
         public void MultiLPUSHAndLPOPV1()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
