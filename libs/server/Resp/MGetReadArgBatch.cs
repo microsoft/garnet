@@ -31,16 +31,15 @@ namespace Garnet.server
         public readonly ReadOnlySpan<PinnedSpanByte> Parameters
             => session.parseState.Parameters;
 
-        // Implemented explicitly (not via the IReadArgBatch defaults) so calls through the generic
-        // TBatch constraint bind directly instead of boxing this struct.
+        // Implemented explicitly (rather than relying on the IReadArgBatch defaults) so that calls
+        // through the IReadArgBatch generic constraint resolve to this struct's member instead of
+        // boxing to dispatch the default interface method.
 
         /// <inheritdoc/>
-        public readonly int InitialIORecordSize
-        => KVSettings.UseDefaultInitialIORecordSize;
+        public readonly int InitialIORecordSize => KVSettings.UseDefaultInitialIORecordSize;
 
         /// <inheritdoc/>
-        public readonly ReadCopyOptions ReadCopyOptions
-        => default;
+        public readonly ReadCopyOptions ReadCopyOptions => default;
 
         private readonly bool HasGoneAsync
         => !runningStatus.IsEmpty;
