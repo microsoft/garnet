@@ -585,6 +585,13 @@ namespace Garnet.server
                     vectorManager.HandleVectorSetRemoveReplication(activeServerSession.storageSession, preparedParameters.Key, ref stringInput);
                     return;
                 }
+
+                // VSETATTR too
+                if (stringInput.header.cmd == RespCommand.VSETATTR)
+                {
+                    vectorManager.HandleVectorSetSetAttributeReplication(activeServerSession.storageSession, preparedParameters.Key, ref stringInput);
+                    return;
+                }
             }
 
             // RangeIndex commands need actual execution on replay
