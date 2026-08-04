@@ -183,6 +183,22 @@ namespace Tsavorite.test
                 if (tracker is null) return;
                 _ = Interlocked.Increment(ref tracker.EvictCounts[(int)source]);
             }
+
+            // Explicit defaults/no-ops (rather than relying on the IRecordTriggers defaults) so calls
+            // through the TRecordTriggers generic constraint resolve here instead of boxing to dispatch the DIMs.
+            public readonly bool CallPostCopyToTail => false;
+            public readonly bool CallOnTruncate => false;
+            public readonly void OnRecovery(Guid checkpointToken) { }
+            public readonly void OnRecoverySnapshotRead(ref LogRecord logRecord) { }
+            public readonly void OnCheckpoint(CheckpointTrigger trigger, Guid checkpointToken) { }
+            public readonly void PostCopyToTail<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, long srcLogicalAddress,
+                                                                  ref LogRecord dstLogRecord, long dstLogicalAddress)
+                where TSourceLogRecord : ISourceLogRecord
+#if NET9_0_OR_GREATER
+                    , allows ref struct
+#endif
+            { }
+            public readonly void OnTruncate(long newBeginAddress) { }
         }
 
         private TsavoriteKV<LifecycleStoreFunctions, LifecycleAllocator> store;
