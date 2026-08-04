@@ -1,6 +1,17 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+// ---------------------------------------------------------------------------------------------
+// A frozen copy of LightEpoch as it stood before this PR, kept here so the litmus harness can be
+// pointed at the unfixed algorithm and the violation counts compared side by side. It is a
+// control, not a second implementation: nothing outside this playground references it, and it is
+// expected to FAIL the soak on x86-64.
+//
+// The two differences that matter, both in the slot-claim/announce path:
+//   * the slot is claimed by CAS-ing threadId, and the epoch is then announced with a plain
+//     store, so the announce sits in the store buffer with no StoreLoad fence behind it;
+//   * Release() clears localCurrentEpoch before threadId.
+// ---------------------------------------------------------------------------------------------
 using System;
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
@@ -8,16 +19,17 @@ using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading;
+using Tsavorite.core;
 
-namespace Tsavorite.core
+namespace Tsavorite.epoch.litmus
 {
     /// <summary>
     /// Epoch protection
     /// </summary>
-    public sealed unsafe class LightEpoch : IEpochAccessor
+    internal sealed unsafe class BuggyLightEpoch : IEpochAccessor, IDisposable
     {
         /// <summary>
-        /// Buffer to track information for LightEpoch instances. This is used:
+        /// Buffer to track information for BuggyLightEpoch instances. This is used:
         /// (1) in AssignInstance, to assign a unique instanceId to each LightEpoch instance, and
         /// (2) in Metadata, to track per-thread epoch table entries for each LightEpoch instance.
         /// </summary>
@@ -178,7 +190,7 @@ namespace Tsavorite.core
         /// <summary>
         /// Instantiate the epoch table
         /// </summary>
-        public LightEpoch()
+        public BuggyLightEpoch()
         {
             instanceId = SelectInstance();
 
@@ -209,11 +221,11 @@ namespace Tsavorite.core
                 if (kInvalidIndex == Interlocked.CompareExchange(ref entry, 1, kInvalidIndex))
                     return i;
             }
-            throw new InvalidOperationException($"Exceeded maximum number of active LightEpoch instances {ActiveInstanceCount()} {InstanceIndexBuffer.MaxInstances}");
+            throw new InvalidOperationException($"Exceeded maximum number of active BuggyLightEpoch instances {ActiveInstanceCount()} {InstanceIndexBuffer.MaxInstances}");
         }
 
         /// <summary>
-        /// Number of active LightEpoch instances. Used for testing and diagnostics.
+        /// Number of active BuggyLightEpoch instances. Used for testing and diagnostics.
         /// </summary>
         /// <returns></returns>
         public static int ActiveInstanceCount()
@@ -641,7 +653,7 @@ namespace Tsavorite.core
             {
                 // If the MSB (disposed flag) is set, the epoch is being disposed.
                 if ((newCount & kDisposedFlag) != 0)
-                    throw new ObjectDisposedException(nameof(LightEpoch));
+                    throw new ObjectDisposedException(nameof(BuggyLightEpoch));
 
                 while (true)
                 {
@@ -658,7 +670,7 @@ namespace Tsavorite.core
             }
             catch (OperationCanceledException)
             {
-                throw new ObjectDisposedException(nameof(LightEpoch));
+                throw new ObjectDisposedException(nameof(BuggyLightEpoch));
             }
             finally
             {
@@ -676,7 +688,7 @@ namespace Tsavorite.core
             if (Metadata.threadId == 0) // run once per thread for performance
             {
                 Metadata.threadId = Environment.CurrentManagedThreadId;
-                var code = (uint)Utility.Murmur3(Metadata.threadId);
+                var code = (uint)Murmur3.Hash(Metadata.threadId);
                 Metadata.startOffset1 = (ushort)(1 + (code % kTableSize));
                 Metadata.startOffset2 = (ushort)(1 + ((code >> 16) % kTableSize));
             }
@@ -891,5 +903,12 @@ namespace Tsavorite.core
 
             public override readonly string ToString() => $"epoch = {epoch}, action = {(action is null ? "n/a" : action.Method.ToString())}";
         }
+
+
+        /// <summary>
+        /// The epoch announced in epoch table slot <paramref name="entry"/>, or 0 if the slot is free.
+        /// Mirrors the test hook of the same name on the fixed epoch so the harness can drive both.
+        /// </summary>
+        internal long TestHookAnnouncedEpochAt(int entry) => (*(tableAligned + entry)).localCurrentEpoch;
     }
 }
