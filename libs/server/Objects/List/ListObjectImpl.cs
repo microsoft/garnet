@@ -49,7 +49,10 @@ namespace Garnet.server
                 var fromHeadToTail = count > 0;
                 var currentNode = fromHeadToTail ? list.First : list.Last;
 
-                count = Math.Abs(count);
+                // |int.MinValue| does not fit in an int, so Math.Abs would throw.
+                // The loop below is bounded by the list length, which cannot exceed
+                // int.MaxValue, so clamping removes exactly the same elements.
+                count = count == int.MinValue ? int.MaxValue : Math.Abs(count);
                 while (removedCount < count && currentNode != null)
                 {
                     var nextNode = fromHeadToTail ? currentNode.Next : currentNode.Previous;
