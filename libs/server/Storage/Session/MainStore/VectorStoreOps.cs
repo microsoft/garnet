@@ -164,7 +164,7 @@ namespace Garnet.server
         /// Implement Vector Set Add - this may also create a Vector Set if one does not already exist.
         /// </summary>
         [SkipLocalsInit]
-        public unsafe GarnetStatus VectorSetAdd(PinnedSpanByte key, int reduceDims, VectorValueType valueType, PinnedSpanByte values, PinnedSpanByte element, VectorQuantType quantizer, int buildExplorationFactor, PinnedSpanByte attributes, int numLinks, VectorDistanceMetricType distanceMetric, out VectorManagerResult result, out ReadOnlySpan<byte> errorMsg)
+        public GarnetStatus VectorSetAdd(PinnedSpanByte key, int reduceDims, VectorValueType valueType, PinnedSpanByte values, PinnedSpanByte element, VectorQuantType quantizer, int buildExplorationFactor, PinnedSpanByte attributes, int numLinks, VectorDistanceMetricType distanceMetric, out VectorManagerResult result, out ReadOnlySpan<byte> errorMsg)
         {
             var dims =
                 valueType switch
@@ -216,7 +216,7 @@ namespace Garnet.server
         /// Implement Vector Set Remove - returns not found if the element is not present, or the vector set does not exist.
         /// </summary>
         [SkipLocalsInit]
-        public unsafe GarnetStatus VectorSetRemove(PinnedSpanByte key, PinnedSpanByte element)
+        public GarnetStatus VectorSetRemove(PinnedSpanByte key, PinnedSpanByte element)
         {
             parseState.InitializeWithArgument(key);
 
@@ -255,7 +255,7 @@ namespace Garnet.server
         [SkipLocalsInit]
         public GarnetStatus VectorSetSetAttribute(PinnedSpanByte key, PinnedSpanByte element, PinnedSpanByte attribute)
         {
-            parseState.InitializeWithArgument(key);
+            parseState.InitializeWithArguments([key, element, attribute]);
 
             var input = new StringInput(RespCommand.VSETATTR, ref parseState);
             Span<byte> indexSpan = stackalloc byte[VectorManager.IndexSizeBytes];
@@ -266,7 +266,13 @@ namespace Garnet.server
                     return status;
                 }
 
-                // TODO: Implement!
+                if (vectorManager.TrySetAttribute(indexSpan, element, attribute))
+                {
+                    // On successful update, we need to manually replicate the write
+                    vectorManager.ReplicateVectorSetSetAttribute(key, element, attribute, ref input, ref stringBasicContext);
+
+                    return GarnetStatus.OK;
+                }
 
                 return GarnetStatus.NOTFOUND;
             }
@@ -276,7 +282,7 @@ namespace Garnet.server
         /// Perform a similarity search on an existing Vector Set given a vector as a bunch of floats.
         /// </summary>
         [SkipLocalsInit]
-        public unsafe GarnetStatus VectorSetValueSimilarity(PinnedSpanByte key, VectorValueType valueType, PinnedSpanByte values, int count, float delta, int searchExplorationFactor, ReadOnlySpan<byte> filter, int maxFilteringEffort, bool includeAttributes, ref SpanByteAndMemory outputIds, out VectorIdFormat outputIdFormat, out ReadOnlySpan<byte> errorMsg, ref SpanByteAndMemory outputDistances, ref SpanByteAndMemory outputAttributes, out VectorManagerResult result, ref SpanByteAndMemory filterBitmap)
+        public GarnetStatus VectorSetValueSimilarity(PinnedSpanByte key, VectorValueType valueType, PinnedSpanByte values, int count, float delta, int searchExplorationFactor, ReadOnlySpan<byte> filter, int maxFilteringEffort, bool includeAttributes, ref SpanByteAndMemory outputIds, out VectorIdFormat outputIdFormat, out ReadOnlySpan<byte> errorMsg, ref SpanByteAndMemory outputDistances, ref SpanByteAndMemory outputAttributes, out VectorManagerResult result, ref SpanByteAndMemory filterBitmap)
         {
             parseState.InitializeWithArgument(key);
 
@@ -303,7 +309,7 @@ namespace Garnet.server
         /// Perform a similarity search on an existing Vector Set given an element that is already in the Vector Set.
         /// </summary>
         [SkipLocalsInit]
-        public unsafe GarnetStatus VectorSetElementSimilarity(PinnedSpanByte key, ReadOnlySpan<byte> element, int count, float delta, int searchExplorationFactor, ReadOnlySpan<byte> filter, int maxFilteringEffort, bool includeAttributes, ref SpanByteAndMemory outputIds, out VectorIdFormat outputIdFormat, ref SpanByteAndMemory outputDistances, ref SpanByteAndMemory outputAttributes, out VectorManagerResult result, ref SpanByteAndMemory filterBitmap)
+        public GarnetStatus VectorSetElementSimilarity(PinnedSpanByte key, ReadOnlySpan<byte> element, int count, float delta, int searchExplorationFactor, ReadOnlySpan<byte> filter, int maxFilteringEffort, bool includeAttributes, ref SpanByteAndMemory outputIds, out VectorIdFormat outputIdFormat, ref SpanByteAndMemory outputDistances, ref SpanByteAndMemory outputAttributes, out VectorManagerResult result, ref SpanByteAndMemory filterBitmap)
         {
             parseState.InitializeWithArgument(key);
 
@@ -379,7 +385,7 @@ namespace Garnet.server
         }
 
         [SkipLocalsInit]
-        internal unsafe GarnetStatus VectorSetDimensions(PinnedSpanByte key, out int dimensions)
+        internal GarnetStatus VectorSetDimensions(PinnedSpanByte key, out int dimensions)
         {
             parseState.InitializeWithArgument(key);
 
@@ -406,7 +412,7 @@ namespace Garnet.server
         /// Get debugging information about the VectorSet
         /// </summary>
         [SkipLocalsInit]
-        internal unsafe GarnetStatus VectorSetInfo(PinnedSpanByte key,
+        internal GarnetStatus VectorSetInfo(PinnedSpanByte key,
             out VectorQuantType quantType,
             out VectorDistanceMetricType distanceMetricType,
             out uint vectorDimensions,
@@ -549,7 +555,7 @@ namespace Garnet.server
         /// Get the attributes associated with an element in the VectorSet
         /// </summary>
         [SkipLocalsInit]
-        internal unsafe GarnetStatus VectorSetGetAttribute(PinnedSpanByte key, PinnedSpanByte elementId, ref SpanByteAndMemory outputAttributes)
+        internal GarnetStatus VectorSetGetAttribute(PinnedSpanByte key, PinnedSpanByte elementId, ref SpanByteAndMemory outputAttributes)
         {
             parseState.InitializeWithArgument(key);
 

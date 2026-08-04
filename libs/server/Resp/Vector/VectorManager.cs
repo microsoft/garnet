@@ -53,6 +53,7 @@ namespace Garnet.server
         internal const long MigrateIndexKeyLogArg = MigrateElementKeyLogArg + 1; // AOF: YES. InitialUpdater: YES (empty dummy key).
         internal const long VADDSetFlagsArg = MigrateIndexKeyLogArg + 1; // AOF: YES. InitialUpdater: NO (record must exist).
         internal const long CreateIndexArg = VADDSetFlagsArg + 1; // New stub record creation. AOF: NO. InitialUpdater: YES.
+        internal const long VSETATTRAppendLogArg = CreateIndexArg + 1; // User VSETATTR update, replayed on replicas. AOF: Yes. InitialUpdater: NO.
 
         /// <summary>
         /// Byte stored on log records to distinguish the INDEX key as a Vector Set
@@ -601,11 +602,20 @@ namespace Garnet.server
         {
             AssertHaveStorageSession();
 
-            ReadIndex(indexValue, out var context, out _, out _, out var quantType, out _, out _, out _, out _, out var indexPtr);
+            ReadIndex(indexValue, out var context, out _, out _, out _, out _, out _, out _, out _, out var indexPtr);
 
             var del = Service.Remove(context, indexPtr, element);
 
             return del ? VectorManagerResult.OK : VectorManagerResult.MissingElement;
+        }
+
+        internal bool TrySetAttribute(ReadOnlySpan<byte> indexValue, ReadOnlySpan<byte> element, ReadOnlySpan<byte> attribute)
+        {
+            AssertHaveStorageSession();
+
+            ReadIndex(indexValue, out var context, out _, out _, out _, out _, out _, out _, out _, out var indexPtr);
+
+            return Service.SetAttribute(context, indexPtr, element, attribute);
         }
 
         /// <summary>
