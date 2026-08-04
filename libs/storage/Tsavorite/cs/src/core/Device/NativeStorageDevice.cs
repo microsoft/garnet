@@ -326,7 +326,10 @@ namespace Tsavorite.core
 
             try
             {
-                return NativeLibrary.Load(resolvedPath);
+                // Primary (Uring-capable) build. LoadWithLibaioShim also repairs a libaio SONAME
+                // mismatch transparently; a missing liburing.so.2 is the one failure it cannot repair
+                // and lets propagate, so we can fall back to the libaio-only build below.
+                return LoadWithLibaioShim(resolvedPath);
             }
             catch (DllNotFoundException ex) when (RuntimeInformation.IsOSPlatform(OSPlatform.Linux)
                                                   && LibaioFallbackLibraryPath != null
@@ -336,10 +339,14 @@ namespace Tsavorite.core
                 // the Libaio backend (the default) keeps working. Selecting IoBackend.Uring at
                 // construction time on the fallback binary throws TsavoriteException with an
                 // install-liburing2 instruction; we never silently downgrade Uring to Libaio.
+                // The fallback ALSO goes through LoadWithLibaioShim, so a host that needs BOTH the
+                // libaio SONAME shim AND the fallback (e.g. Ubuntu 24.04+: libaio.so.1t64 + no
+                // liburing2) is repaired here instead of dead-ending — regardless of whether the
+                // dynamic loader reported the libaio or the liburing miss first.
                 var fallbackPath = ResolveNativeLibraryPath(assembly, LibaioFallbackLibraryPath);
                 try
                 {
-                    return NativeLibrary.Load(fallbackPath);
+                    return LoadWithLibaioShim(fallbackPath);
                 }
                 catch (DllNotFoundException fallbackEx)
                 {
@@ -351,6 +358,23 @@ namespace Tsavorite.core
                         ex);
                 }
             }
+        }
+
+        /// <summary>
+        /// Load a native device build, transparently repairing a libaio SONAME mismatch
+        /// (libaio.so.1 vs the 64-bit-time_t libaio.so.1t64) by dropping a compatibility symlink next
+        /// to the binary and retrying once. A libaio mismatch is the one link failure we can fix in
+        /// place; anything else — notably a missing liburing.so.2 — is allowed to propagate so the
+        /// caller can fall back to the libaio-only build. Shared by BOTH the primary and the fallback
+        /// load so a host that needs the libaio shim AND the fallback (no liburing2) is repaired
+        /// regardless of which unresolved SONAME the dynamic loader reports first.
+        /// </summary>
+        static IntPtr LoadWithLibaioShim(string resolvedPath)
+        {
+            try
+            {
+                return NativeLibrary.Load(resolvedPath);
+            }
             catch (DllNotFoundException ex) when (RuntimeInformation.IsOSPlatform(OSPlatform.Linux)
                                                   && ex.Message.Contains("libaio.so.1", StringComparison.Ordinal))
             {
@@ -360,22 +384,18 @@ namespace Tsavorite.core
                 // "libaio.so.1t64", so binaries built there carry a DT_NEEDED of libaio.so.1t64.
                 // Other glibc distros (Azure Linux, RHEL, Fedora, ...) ship the historical
                 // "libaio.so.1" instead. Whichever SONAME the loader could not resolve, drop a
-                // symlink of that name -> the libaio the host actually provides, next to
-                // libnative_device.so; the native library is built with RPATH=$ORIGIN so it picks
-                // the symlink up.
+                // symlink of that name -> the libaio the host actually provides, next to the native
+                // library; it is built with RPATH=$ORIGIN so it picks the symlink up. The primary and
+                // fallback binaries live in the same directory, so a single symlink serves both.
                 var missingSoname = ex.Message.Contains("libaio.so.1t64", StringComparison.Ordinal)
                     ? "libaio.so.1t64"
                     : "libaio.so.1";
                 if (TryCreateLibaioCompatSymlink(resolvedPath, missingSoname, out var symlinkedPath))
                 {
-                    try
-                    {
-                        return NativeLibrary.Load(resolvedPath);
-                    }
-                    catch (DllNotFoundException)
-                    {
-                        // Fall through to the detailed error below.
-                    }
+                    // Retry once with the symlink in place. If this build ALSO needs a library we
+                    // cannot repair here (e.g. liburing.so.2), that DllNotFoundException propagates so
+                    // the caller can try the libaio-only fallback build.
+                    return NativeLibrary.Load(resolvedPath);
                 }
 
                 throw new DllNotFoundException(BuildLibaioDiagnostic(symlinkedPath, missingSoname, ex), ex);
@@ -765,10 +785,14 @@ namespace Tsavorite.core
         /// <summary>
         /// <see cref="ThreadLocal{T}"/> value factory: hands out the next shard round-robin and records that a
         /// new submitter thread has appeared (so <see cref="Throttle"/> can split the global budget across them).
+        /// The round-robin counter is reduced modulo <see cref="NumShards"/> as <c>uint</c> so that when the
+        /// signed <see cref="nextShardSeq"/> eventually wraps past <see cref="int.MaxValue"/> on a long-lived,
+        /// thread-churning server the index stays in <c>[0, NumShards)</c> (a signed <c>%</c> would yield a
+        /// negative index and an out-of-range shard access). <see cref="NumShards"/> need not be a power of two.
         /// </summary>
         int AssignShard()
         {
-            int idx = (Interlocked.Increment(ref nextShardSeq) - 1) % NumShards;
+            int idx = (int)((uint)(Interlocked.Increment(ref nextShardSeq) - 1) % (uint)NumShards);
             Interlocked.Increment(ref activeShards);
             return idx;
         }
@@ -828,7 +852,17 @@ namespace Tsavorite.core
         /// </summary>
         [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
         void ReturnSlot(int offset)
-            => shardFreeSlots[offset / SlotsPerShard].Enqueue(offset);
+        {
+            // Release the completed slot's captured callback delegate and context object before the slot
+            // is re-enqueued, so neither is kept rooted until the slot is next rented (otherwise up to
+            // MaxResults user contexts stay reachable indefinitely on a mostly-idle device). Every caller
+            // has already consumed the NativeResult first (the `var result = results[offset]` copy in
+            // _callback, and the local callback/context parameters on the error/disposed paths), and clearing
+            // BEFORE the enqueue means a concurrent RentSlot that dequeues this offset and writes its own
+            // NativeResult cannot be clobbered by this clear.
+            results[offset] = default;
+            shardFreeSlots[offset / SlotsPerShard].Enqueue(offset);
+        }
 
         /// <summary>Current in-flight IO count for a shard (submitted minus completed).</summary>
         [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
@@ -1115,7 +1149,13 @@ namespace Tsavorite.core
             this.ioBackendConfig = ioBackend;
             this.logger = logger;
 
-            ThrottleLimit = 120;
+            // Default aggregate in-flight throttle. Unlike the managed in-box devices (which cap at 120),
+            // the native device is built for deep NVMe queues, so it defaults to DefaultThrottleLimit (4096).
+            // The factory only overrides this when --device-throttle-limit is set (> 0); leaving it here means
+            // PerThreadLimit()/init resolve the 4096 default (their `ThrottleLimit > 0 ? ... : DefaultThrottleLimit`
+            // fallback is otherwise unreachable). No external consumer reads ThrottleLimit — Throttle() uses the
+            // sharded PerThreadLimit() path — so setting it to the intended default here is safe.
+            ThrottleLimit = DefaultThrottleLimit;
             _callbackDelegate = _callback;
 
             // In-flight accounting is sharded per submitter thread to avoid the global cache-line
@@ -1290,14 +1330,15 @@ namespace Tsavorite.core
                     {
                         _ = NativeDevice_NumIoContexts(newDevice);
                         _ = NativeDevice_QueueRunFor(newDevice, 0, 0);
+                        _ = NativeDevice_TryCompleteMine(newDevice);
                     }
                     catch (EntryPointNotFoundException ex)
                     {
                         NativeDevice_Destroy(newDevice);
                         throw new TsavoriteException(
                             "Loaded libnative_device.so/dll is missing the sharded-ABI exports " +
-                            "NativeDevice_NumIoContexts / NativeDevice_QueueRunFor. The shared library " +
-                            "predates the multi-io-context change and must be rebuilt from this branch " +
+                            "NativeDevice_NumIoContexts / NativeDevice_QueueRunFor / NativeDevice_TryCompleteMine. " +
+                            "The shared library predates the multi-io-context change and must be rebuilt from this branch " +
                             "(libs/storage/Tsavorite/cc) and the resulting binary installed to " +
                             "libs/storage/Tsavorite/cs/src/core/Device/runtimes/<rid>/native/.", ex);
                     }
@@ -1616,9 +1657,15 @@ namespace Tsavorite.core
         /// <remarks>
         /// <para>Idempotent — multiple calls are safe; only the first does work.</para>
         /// <para>
-        /// User IO callbacks fire on completion-worker threads. Dispose() cannot run on one of
-        /// those threads, because joining the caller would deadlock — we detect and throw
-        /// <see cref="InvalidOperationException"/> in that case.
+        /// User IO callbacks fire either on a completion-worker (drainer) thread or inline on a
+        /// submitter thread that reaps its own completions via <see cref="TryComplete"/> /
+        /// TryCompleteMine (the default affine inline-drain path). Dispose() must NOT be called from
+        /// within any such callback: the in-flight drain below waits for that very callback's completion
+        /// bump (issued in <c>_callback</c>'s <c>finally</c>), so a self-dispose would spin forever. The
+        /// drainer-thread case is detected and thrown as <see cref="InvalidOperationException"/>; the
+        /// inline-submitter-thread case cannot be cheaply detected on the hot completion path, so it is
+        /// the caller's contract (matching the IDevice lifecycle contract) not to dispose the device
+        /// from inside an IO completion callback — post the disposal to a separate thread instead.
         /// </para>
         /// <para>
         /// Worst-case shutdown stall is bounded by the duration of the longest in-flight user
