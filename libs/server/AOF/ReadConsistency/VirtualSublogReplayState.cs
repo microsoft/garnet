@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -49,7 +49,7 @@ namespace Garnet.server
         /// <summary>
         /// Head of the intrusive sorted linked list of waiters (ascending by target sequence number).
         /// </summary>
-        WaiterNode waiterHead;
+        ReadSessionWaiter waiterHead;
 
         public readonly long Max => sketchMax.Value;
 
@@ -154,7 +154,11 @@ namespace Garnet.server
         /// <summary>
         /// Waits until the sublog's maximum sequence number exceeds the given session maximum.
         /// </summary>
-        public void WaitForSequenceNumber(long maximumSessionSequenceNumber, TimeSpan timeout, CancellationToken ct)
+        /// <param name="maximumSessionSequenceNumber">Sequence number the caller must observe replay past.</param>
+        /// <param name="node">The calling session's reusable waiter (armed here, never allocated per wait).</param>
+        /// <param name="timeout">Maximum time to block before failing the consistent read.</param>
+        /// <param name="ct">Cancellation token for the read.</param>
+        public void WaitForSequenceNumber(long maximumSessionSequenceNumber, ReadSessionWaiter node, TimeSpan timeout, CancellationToken ct)
         {
             // Phase 1: SpinWait — fast path when replay is keeping up
             var spinner = new SpinWait();
@@ -165,9 +169,10 @@ namespace Garnet.server
                 spinner.SpinOnce(sleep1Threshold: -1);
             }
 
-            // Phase 2: Register in waiter list and block
-            using var signal = new ManualResetEventSlim(false);
-            var node = new WaiterNode(maximumSessionSequenceNumber, signal);
+            // Phase 2: Arm the session's reusable waiter and block. The node is fully unlinked from
+            // any list between waits and touched by only this session's thread, so re-arming (which
+            // clears stale list pointers and resets the wakeup event) needs no synchronization.
+            node.Reset(maximumSessionSequenceNumber);
 
             lock (@lock)
             {
@@ -179,7 +184,7 @@ namespace Garnet.server
                 // we catch it here and unlink before blocking.
                 InsertWaiter(node);
                 UpdateMinWaiterTarget();
-                // Make the enqueue visible before the recheck of  max , so a decision to block can never race ahead of the signaler's ability to see that you enqueued
+                // Make the enqueue visible before the recheck of  max , so a decision to block can never race ahead of the signaler's ability to see that you enqueued
                 Interlocked.MemoryBarrier();
                 if (maximumSessionSequenceNumber < Volatile.Read(ref sketchMax.Value))
                 {
@@ -196,7 +201,7 @@ namespace Garnet.server
 
             try
             {
-                if (!signal.Wait(timeout, ct))
+                if (!node.Signal.Wait(timeout, ct))
                 {
                     RemoveWaiter(node);
                     ExceptionUtils.ThrowException(new TimeoutException("Consistent read timed out waiting for replay to catch up."));
@@ -213,7 +218,7 @@ namespace Garnet.server
         /// Inserts a waiter node into the sorted linked list (ascending by target sequence number).
         /// Must be called under lock.
         /// </summary>
-        private void InsertWaiter(WaiterNode node)
+        private void InsertWaiter(ReadSessionWaiter node)
         {
             if (waiterHead == null || node.TargetSequenceNumber <= waiterHead.TargetSequenceNumber)
             {
@@ -239,7 +244,7 @@ namespace Garnet.server
         /// <summary>
         /// Removes a waiter node from the linked list in O(1). Used on timeout/cancellation.
         /// </summary>
-        private void RemoveWaiter(WaiterNode node)
+        private void RemoveWaiter(ReadSessionWaiter node)
         {
             lock (@lock)
             {
@@ -265,17 +270,46 @@ namespace Garnet.server
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void UpdateMinWaiterTarget()
             => Volatile.Write(ref sketchMax.MinWaiterTarget, waiterHead?.TargetSequenceNumber ?? long.MaxValue);
+    }
+
+    /// <summary>
+    /// Reusable intrusive waiter node owned by a single reader session. Bundles the sorted-list
+    /// pointers, the current wait target, and a persistent wakeup event. A session waits on at most
+    /// one sublog at a time and processes reads sequentially, so a single node is reused across every
+    /// wait — removing the per-wait allocation of a node plus <see cref="ManualResetEventSlim"/> on
+    /// the blocking path. The node is always fully unlinked from any list before a wait returns.
+    /// </summary>
+    internal sealed class ReadSessionWaiter : IDisposable
+    {
+        /// <summary>
+        /// Sequence number this waiter is currently blocked until. Set by <see cref="Reset"/> before
+        /// each wait; read under the sublog lock while the node is linked.
+        /// </summary>
+        public long TargetSequenceNumber;
 
         /// <summary>
-        /// Intrusive linked list node for a waiter. Holds prev/next pointers, the target
-        /// sequence number, and a signal to wake the waiting thread.
+        /// Persistent wakeup event, allocated once and reset before each wait rather than per wait.
         /// </summary>
-        sealed class WaiterNode(long targetSequenceNumber, ManualResetEventSlim signal)
+        public readonly ManualResetEventSlim Signal = new(false);
+
+        public ReadSessionWaiter Prev;
+        public ReadSessionWaiter Next;
+
+        /// <summary>
+        /// Prepares the node for a fresh wait: sets the target, clears stale list pointers left by a
+        /// prior unlink, and resets the wakeup event (clearing a possible lingering signal from the
+        /// previous wait). Safe without synchronization because the node is unlinked and single-owner
+        /// between waits.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void Reset(long targetSequenceNumber)
         {
-            public readonly long TargetSequenceNumber = targetSequenceNumber;
-            public readonly ManualResetEventSlim Signal = signal;
-            public WaiterNode Prev;
-            public WaiterNode Next;
+            TargetSequenceNumber = targetSequenceNumber;
+            Prev = null;
+            Next = null;
+            Signal.Reset();
         }
+
+        public void Dispose() => Signal.Dispose();
     }
 }
