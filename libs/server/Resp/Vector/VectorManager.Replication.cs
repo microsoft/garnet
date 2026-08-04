@@ -140,6 +140,31 @@ namespace Garnet.server
             }
         }
 
+        internal void ReplicateVectorSetSetAttribute(ReadOnlySpan<byte> key, ReadOnlySpan<byte> element, ReadOnlySpan<byte> attribute, ref StringInput input, ref StringBasicContext context)
+        {
+            Debug.Assert(input.header.cmd == RespCommand.VSETATTR, "Shouldn't be called with anything but VSETATTR inputs");
+
+            var inputCopy = input;
+            inputCopy.arg1 = VSETATTRAppendLogArg;
+
+            inputCopy.parseState.InitializeWithArguments(PinnedSpanByte.FromPinnedSpan(element), PinnedSpanByte.FromPinnedSpan(attribute));
+
+            ExceptionInjectionHelper.ResetAndWait(ExceptionInjectionType.VectorSet_Pause_Before_Synthetic_Replication_Rmw);
+
+            var res = context.RMW((FixedSpanByteKey)key, ref inputCopy);
+
+            if (res.IsPending)
+            {
+                CompletePending(ref res, ref context);
+            }
+
+            if (!res.IsCompletedSuccessfully)
+            {
+                logger?.LogCritical("Failed to inject replication write for VSETATTR into log, result was {res}", res);
+                throw new GarnetException("Couldn't synthesize Vector Set attribute set operation for replication, data loss will occur");
+            }
+        }
+
         /// <summary>
         /// Vector Set adds are phrased as reads (once the index is created), so they require special handling.
         /// 
@@ -507,6 +532,31 @@ namespace Garnet.server
                 if (addRes != VectorManagerResult.OK)
                 {
                     throw new GarnetException("Failed to remove from vector set index during AOF sync, this should never happen but will cause data loss if it does");
+                }
+            }
+        }
+
+        /// <summary>
+        /// Vector Set attribute sets are phrased as reads (once the index is created), so they require special handling.
+        /// 
+        /// Operations that are faked up by <see cref="ReplicateVectorSetSetAttribute"/> running on the Primary get diverted here on a Replica.
+        /// </summary>
+        internal void HandleVectorSetSetAttributeReplication(StorageSession storageSession, ReadOnlySpan<byte> key, ref StringInput input)
+        {
+            Span<byte> indexSpan = stackalloc byte[IndexSizeBytes];
+            var element = input.parseState.GetArgSliceByRef(0);
+            var attribute = input.parseState.GetArgSliceByRef(1);
+
+            var inputCopy = input;
+            inputCopy.arg1 = default;
+
+            using (ReadVectorIndex(storageSession, key, ref inputCopy, indexSpan, out var status))
+            {
+                Debug.Assert(status == GarnetStatus.OK, "Replication should only occur when a setattr is successful, so index must exist");
+
+                if (!TrySetAttribute(indexSpan, element, attribute))
+                {
+                    throw new GarnetException("Failed to set attribute on vector set during AOF sync, this should never happen but will cause data loss if it does");
                 }
             }
         }
