@@ -117,24 +117,18 @@ namespace Garnet.cluster
         /// Assemble a non-inline record from its captured pieces (inline portion + overflow key + overflow value or object value
         /// chunks) and send it: whole (type <see cref="MigrationRecordSpanType.LogRecord"/>) if it fits a send buffer, else as a
         /// sequence of <see cref="MigrationRecordSpanType.ChunkedLogRecord"/> chunks (continuation flag set until the record's
-        /// final byte). An overflow key/value is preceded by a 4-byte length prefix only when its length is at or above the RDH field
-        /// sentinel (below the sentinel the receiver reads the length from the RDH hint); an object value is streamed with no prefix
+        /// final byte). On the chunked path each overflow key/value piece is preceded by a 4-byte length prefix so the
+        /// receiver can allocate the overflow buffer up front and populate it directly; an object value is streamed with no prefix
         /// (its length is derived from the stream). The concatenated pieces form exactly the stream the receiver reassembles.
         /// </summary>
         private async ValueTask<bool> WriteOrSendAccumulatedRecordAsync(GarnetClientSession gcs, ReadOnlyMemory<byte> inline, MigrationChunkWriterAccumulator acc)
         {
             var maxChunk = NetworkBufferSettings.MaxSendBufferContentSize;
-
-            // An overflow key/value carries a 4-byte length prefix only when its length is at or above the RDH field sentinel (below the
-            // sentinel the receiver takes the length from the RDH hint in the inline portion).
-            var keyHasPrefix = acc.HasKey && DiskLogRecord.OverflowKeyHasLengthPrefix(acc.KeyLength);
-            var valueHasPrefix = acc.HasValueOverflow && DiskLogRecord.OverflowValueHasLengthPrefix(acc.ValueLength);
-            var prefixBytes = (keyHasPrefix ? sizeof(int) : 0) + (valueHasPrefix ? sizeof(int) : 0);
-            var total = inline.Length + acc.KeyLength + acc.ValueLength + prefixBytes;
+            var total = inline.Length + acc.KeyLength + acc.ValueLength;
 
             // A record whose whole serialized form fits one send buffer is sent as a single LogRecord — including an object
-            // value: its object bytes are the tail of the image, and its length is recorded in the inline RDH after assembly (below).
-            // A larger record is streamed as ChunkedLogRecord chunks.
+            // value: its object bytes are the tail of the image, so the receiver derives the object length from the record span
+            // (the RDH object length is left zero). A larger record is streamed as ChunkedLogRecord chunks.
             if (total <= maxChunk)
             {
                 // Small enough for one send buffer: assemble contiguously and send as a single whole record.
@@ -145,23 +139,11 @@ namespace Garnet.cluster
                 inline.Span.CopyTo(span);
                 if (acc.HasKey)
                 {
-                    if (keyHasPrefix)
-                    {
-                        BinaryPrimitives.WriteInt32LittleEndian(span.Slice(off), (int)acc.KeyLength);
-                        off += sizeof(int);
-                    }
                     acc.KeyMemory.Span.CopyTo(span.Slice(off));
                     off += (int)acc.KeyLength;
                 }
                 if (acc.HasValueOverflow)
-                {
-                    if (valueHasPrefix)
-                    {
-                        BinaryPrimitives.WriteInt32LittleEndian(span.Slice(off), (int)acc.ValueLength);
-                        off += sizeof(int);
-                    }
                     acc.ValueOverflowMemory.Span.CopyTo(span.Slice(off));
-                }
                 else if (acc.HasObjectValue)
                 {
                     foreach (var chunk in acc.ObjectValueChunks)
@@ -170,34 +152,24 @@ namespace Garnet.cluster
                         off += chunk.Length;
                     }
                 }
-
-                // Record the actual overflow/object lengths in the inline RDH (a single-buffer object value's length was not known when
-                // the inline portion was first serialized), so the receiver reads every out-of-line length from the RDH hint.
-                DiskLogRecord.PatchSerializedOverflowLengthHints(span, (int)acc.KeyLength, acc.ValueLength);
                 return await WriteOrSendRecordSpanAsync(gcs, MigrationRecordSpanType.LogRecord, sendAssembleBuffer.AsSpan(0, (int)total)).ConfigureAwait(false);
             }
 
-            // Large (or > 2 GB object): send the pieces in order as ChunkedLogRecord chunks, prefixing an overflow key/value with
-            // its 4-byte length only when the length is at or above the RDH field sentinel. Chunk boundaries are arbitrary send-buffer
-            // cut points; the receiver reassembles the stream and routes each component by the layout header and these prefixes.
+            // Large (or > 2 GB object): send the pieces in order as ChunkedLogRecord chunks, prefixing each overflow key/value with
+            // its 4-byte length. Chunk boundaries are arbitrary send-buffer cut points; the receiver reassembles the
+            // stream and routes each component by the layout header and these prefixes.
             sendPieces.Clear();
             sendPieces.Add(inline);
             if (acc.HasKey)
             {
-                if (DiskLogRecord.OverflowKeyHasLengthPrefix(acc.KeyLength))
-                {
-                    BinaryPrimitives.WriteInt32LittleEndian(chunkedKeyLengthPrefix, (int)acc.KeyLength);
-                    sendPieces.Add(chunkedKeyLengthPrefix);
-                }
+                BinaryPrimitives.WriteInt32LittleEndian(chunkedKeyLengthPrefix, (int)acc.KeyLength);
+                sendPieces.Add(chunkedKeyLengthPrefix);
                 sendPieces.Add(acc.KeyMemory);
             }
             if (acc.HasValueOverflow)
             {
-                if (DiskLogRecord.OverflowValueHasLengthPrefix(acc.ValueLength))
-                {
-                    BinaryPrimitives.WriteInt32LittleEndian(chunkedValueLengthPrefix, (int)acc.ValueLength);
-                    sendPieces.Add(chunkedValueLengthPrefix);
-                }
+                BinaryPrimitives.WriteInt32LittleEndian(chunkedValueLengthPrefix, (int)acc.ValueLength);
+                sendPieces.Add(chunkedValueLengthPrefix);
                 sendPieces.Add(acc.ValueOverflowMemory);
             }
             else if (acc.HasObjectValue)

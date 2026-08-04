@@ -3,7 +3,6 @@
 
 using System;
 using System.Buffers;
-using System.Runtime.InteropServices;
 using System.Threading;
 using Garnet.client;
 using Garnet.common;
@@ -225,13 +224,6 @@ namespace Garnet.cluster
             // buffer (no single-chunk reassembly).
             if (isStart && wholeRecordEmittable && isComplete && second.IsEmpty)
             {
-                // Record the object value's length in the inline RDH (it was not known when the inline portion was serialized), so the
-                // receiver reads it from the RDH like every other length. wholeRecordEmittable implies an inline key, so keyLength is 0.
-                // A whole-record drain is delivered un-wrapped from the ring origin, so the record sits at the head of the chunker's own
-                // writable buffer; patch its RDH there in place (no read-only cast) before fan-out.
-                var inlineSize = DiskLogRecord.GetChunkedRecordInlineSize(first);
-                ref var dataHeader = ref MemoryMarshal.AsRef<RecordDataHeader>(chunker.GetWritableSpan().Slice(RecordInfo.Size));
-                dataHeader.SetOverflowLengthHints(keyActualLength: 0, valueActualLength: first.Length - inlineSize);
                 _ = FanOutRecordSpan(first, MigrationRecordSpanType.LogRecord);
                 return first.Length;
             }
