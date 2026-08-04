@@ -4050,7 +4050,7 @@ namespace Garnet.test
 
             // Overwrite existing attribute
             var res5 = await db.VectorSetSetAttributesJsonAsync(Key, Element0, "{\"lazy\": \"fox\"}").ConfigureAwait(false);
-            ClassicAssert.IsTrue(res3);
+            ClassicAssert.IsTrue(res5);
             var res6 = await db.VectorSetGetAttributesJsonAsync(Key, Element0).ConfigureAwait(false);
             ClassicAssert.AreEqual("{\"lazy\": \"fox\"}", res6);
 

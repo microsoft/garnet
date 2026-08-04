@@ -361,6 +361,7 @@ namespace Garnet.server
 
                     case RespCommand.VADD:
                     case RespCommand.VREM:
+                    case RespCommand.VSETATTR:
                         if (input.arg1 is VectorManager.VADDAppendLogArg or VectorManager.VREMAppendLogArg or VectorManager.RecreateIndexArg or VectorManager.VADDSetFlagsArg or VectorManager.VSETATTRAppendLogArg)
                         {
                             // A copy-update of the index key copies the whole index value to the new record: this is

@@ -552,7 +552,7 @@ namespace Garnet.server
 
             using (ReadVectorIndex(storageSession, key, ref inputCopy, indexSpan, out var status))
             {
-                Debug.Assert(status == GarnetStatus.OK, "Replication should only occur when a remove is successful, so index must exist");
+                Debug.Assert(status == GarnetStatus.OK, "Replication should only occur when a setattr is successful, so index must exist");
 
                 if (!TrySetAttribute(indexSpan, element, attribute))
                 {
