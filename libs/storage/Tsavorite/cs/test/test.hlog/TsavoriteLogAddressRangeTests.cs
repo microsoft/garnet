@@ -18,15 +18,36 @@ namespace Tsavorite.test
     [TestFixture]
     internal class TsavoriteLogAddressRangeTests : TestBase
     {
+        private TsavoriteLog log;
+        private IDevice device;
+
+        [SetUp]
+        public void Setup()
+        {
+            // Clean up log files from previous test runs in case they weren't cleaned up
+            DeleteDirectory(MethodTestDir, wait: true);
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            log?.Dispose();
+            log = null;
+            device?.Dispose();
+            device = null;
+
+            // Deletes the test directory and verifies there are no leaked LightEpoch instances
+            TestUtils.OnTearDown();
+        }
+
         [Test]
         [Category("TsavoriteLog")]
         public void TsavoriteLogPageIsNotReadCacheBitMaskedTest()
         {
             const int pageSizeBits = 14;
 
-            _ = Directory.CreateDirectory(MethodTestDir);
-            using IDevice device = Devices.CreateLogDevice(Path.Join(MethodTestDir, "addr-range.log"), deleteOnClose: true);
-            using var log = new TsavoriteLog(new TsavoriteLogSettings
+            device = Devices.CreateLogDevice(Path.Join(MethodTestDir, "addr-range.log"), deleteOnClose: true);
+            log = new TsavoriteLog(new TsavoriteLogSettings
             {
                 LogDevice = device,
                 PageSizeBits = pageSizeBits,
@@ -53,8 +74,6 @@ namespace Tsavorite.test
             // Below bit 47, TsavoriteLog and the masked computation agree.
             ClassicAssert.AreEqual(lowPage, log.AllocatorGetPage(lowAddr));
             ClassicAssert.AreEqual(LogAddress.GetPageOfAddress(lowAddr, pageSizeBits), log.AllocatorGetPage(lowAddr));
-
-            DeleteDirectory(MethodTestDir, wait: true);
         }
     }
 }

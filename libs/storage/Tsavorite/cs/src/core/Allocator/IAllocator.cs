@@ -31,7 +31,7 @@ namespace Tsavorite.core
     }
 
     /// <summary>
-    /// Genric interface for hybrid log memory allocator struct wrapper for inlining. This contains the performance-critical methods that must be inlined;
+    /// Generic interface for hybrid log memory allocator struct wrapper for inlining. This contains the performance-critical methods that must be inlined;
     /// abstract/virtual methods may be called via <see cref="AllocatorBase{TStoreFunctions, TAllocator}"/>.
     /// </summary>
     public interface IAllocator<TStoreFunctions> : IAllocator
