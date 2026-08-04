@@ -14,7 +14,7 @@ namespace Tsavorite.core
     /// <summary>
     /// Epoch protection
     /// </summary>
-    public sealed unsafe partial class LightEpoch : IEpochAccessor, IDisposable
+    public sealed unsafe partial class LightEpoch : IEpochAccessor
     {
         /// <summary>
         /// Buffer to track information for LightEpoch instances. This is used:
