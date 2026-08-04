@@ -64,12 +64,28 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Get default device type for the current platform
+        /// Get default device type for the current platform. <see cref="DeviceType.Native"/> maps to the
+        /// OS-optimized backend: <see cref="LocalStorageDevice"/> on Windows and <see cref="NativeStorageDevice"/>
+        /// (libaio / io_uring) on Linux. Prebuilt Linux native libraries are shipped for x64 for both glibc
+        /// (<c>linux-x64</c>) and musl (<c>linux-musl-x64</c>, e.g. Alpine). Linux architectures without a shipped
+        /// prebuilt (e.g. arm64) and platforms without a Native implementation fall back to the managed
+        /// <see cref="DeviceType.RandomAccess"/> device.
         /// </summary>
         /// <returns></returns>
         public static DeviceType GetDefaultDeviceType()
         {
-            return RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? DeviceType.Native : DeviceType.RandomAccess;
+            if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+                return DeviceType.Native;
+
+            // NativeStorageDevice on Linux loads a prebuilt native library. We ship x64 builds for both glibc
+            // (runtimes/linux-x64) and musl (runtimes/linux-musl-x64, e.g. Alpine); the C# loader selects the right
+            // one via the RID. On Linux architectures without a shipped prebuilt (e.g. arm64) the library is
+            // absent/unloadable, so fall back to the managed RandomAccess device rather than failing on the first IO.
+            if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux)
+                && RuntimeInformation.ProcessArchitecture == Architecture.X64)
+                return DeviceType.Native;
+
+            return DeviceType.RandomAccess;
         }
     }
 }

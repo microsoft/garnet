@@ -880,7 +880,17 @@ namespace Garnet.server
                     // However, we do synthesize some (pointless) writes to implement replication
                     // in a similar manner to VADD.
 
-                    Debug.Assert(input.arg1 == VectorManager.VREMAppendLogArg, "VREM in place update should only happen for replication");                    // Ignore everything else
+                    Debug.Assert(input.arg1 == VectorManager.VREMAppendLogArg, "VREM in place update should only happen for replication");                      // Ignore everything else
+                    return IPUResult.Succeeded;
+                case RespCommand.VSETATTR:
+                    // Same rationale as the VADD & VREM cases above.
+                    if (logRecord.RecordType != VectorManager.RecordType)
+                    {
+                        rmwInfo.Action = RMWAction.CancelOperation;
+                        return IPUResult.Failed;
+                    }
+
+                    Debug.Assert(input.arg1 == VectorManager.VSETATTRAppendLogArg, "VSETATTR in place update should only happen for replication");              // Ignore everything else
                     return IPUResult.Succeeded;
                 default:
                     if (cmd > RespCommandExtensions.LastValidCommand)
@@ -1409,6 +1419,15 @@ namespace Garnet.server
                     // NeedCopyUpdate cancels when the record is no longer an index, so CopyUpdater is only reached for a genuine index record.
                     Debug.Assert(srcLogRecord.RecordType == VectorManager.RecordType, "CopyUpdater reached for VREM on a non-index record");
                     Debug.Assert(input.arg1 == VectorManager.VREMAppendLogArg, "Unexpected CopyUpdater call on VREM key");
+
+                    // Always copy to avoid corruption of the index record - otherwise the allocated destination will contain garbage data
+                    oldValue.CopyTo(dstLogRecord.ValueSpan);
+                    break;
+
+                case RespCommand.VSETATTR:
+                    // NeedCopyUpdate cancels when the record is no longer an index, so CopyUpdater is only reached for a genuine index record.
+                    Debug.Assert(srcLogRecord.RecordType == VectorManager.RecordType, "CopyUpdater reached for VSETATTR on a non-index record");
+                    Debug.Assert(input.arg1 == VectorManager.VSETATTRAppendLogArg, "Unexpected CopyUpdater call on VSETATTR key");
 
                     // Always copy to avoid corruption of the index record - otherwise the allocated destination will contain garbage data
                     oldValue.CopyTo(dstLogRecord.ValueSpan);

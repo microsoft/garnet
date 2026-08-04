@@ -70,6 +70,7 @@ namespace Tsavorite.core
         // Implementation of an asynchronous checkpointing scheme 
         // for main hash index of Tsavorite
         private int mainIndexCheckpointCallbackCount;
+        private int mainIndexCheckpointErrorCode;
         private TaskCompletionSource<bool> mainIndexCheckpointTcs;
         private SemaphoreSlim throttleIndexCheckpointFlushSemaphore;
 
@@ -77,6 +78,7 @@ namespace Tsavorite.core
         {
             long totalSize = state[version].size * sizeof(HashBucket);
             numBytesWritten = (ulong)totalSize;
+            mainIndexCheckpointErrorCode = 0;
             mainIndexCheckpointTcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
 
             if (throttleCheckpointFlushDelayMs >= 0)
@@ -174,10 +176,15 @@ namespace Tsavorite.core
             if (errorCode != 0)
             {
                 logger?.LogError($"{nameof(AsyncPageFlushCallback)} error: {{errorCode}}", errorCode);
+                _ = Interlocked.CompareExchange(ref mainIndexCheckpointErrorCode, (int)errorCode, 0);
             }
             if (Interlocked.Decrement(ref mainIndexCheckpointCallbackCount) == 0)
             {
-                mainIndexCheckpointTcs.TrySetResult(true);
+                var err = mainIndexCheckpointErrorCode;
+                if (err != 0)
+                    mainIndexCheckpointTcs.TrySetException(new TsavoriteException($"Main index checkpoint flush failed with error code {err}"));
+                else
+                    mainIndexCheckpointTcs.TrySetResult(true);
             }
             throttleIndexCheckpointFlushSemaphore?.Release();
         }
