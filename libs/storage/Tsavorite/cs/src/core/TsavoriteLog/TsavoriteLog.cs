@@ -65,6 +65,12 @@ namespace Tsavorite.core
         /// </summary>
         internal long AllocatorBeginAddress => allocator.BeginAddress;
 
+        /// <summary>
+        /// The allocator page that <paramref name="logicalAddress"/> maps to; used in tests to verify that TsavoriteLog uses the
+        /// full logical-address range (no read-cache-bit masking), unlike the main-store allocators.
+        /// </summary>
+        internal long AllocatorGetPage(long logicalAddress) => allocator.GetPage(logicalAddress);
+
         // Here's a soft begin address that is observed by all access at the TsavoriteLog level but not actually on the
         // allocator. This is to make sure that any potential physical deletes only happen after commit.
         long beginAddress;

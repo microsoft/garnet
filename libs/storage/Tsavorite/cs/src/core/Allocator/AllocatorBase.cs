@@ -884,7 +884,7 @@ namespace Tsavorite.core
 
         /// <summary>Get page index from <paramref name="logicalAddress"/></summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public long GetPage(long logicalAddress) => GetPageOfAddress(logicalAddress, LogPageSizeBits);
+        public long GetPage(long logicalAddress) => _wrapper.GetPageOfAddress(logicalAddress, LogPageSizeBits);
 
         /// <summary>Get page index for page</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -892,7 +892,7 @@ namespace Tsavorite.core
 
         /// <summary>Get page index for address</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public int GetPageIndexForAddress(long logicalAddress) => GetPageIndexForPage(GetPageOfAddress(logicalAddress, LogPageSizeBits));
+        public int GetPageIndexForAddress(long logicalAddress) => GetPageIndexForPage(_wrapper.GetPageOfAddress(logicalAddress, LogPageSizeBits));
 
         /// <summary>Get page size</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

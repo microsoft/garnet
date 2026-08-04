@@ -15,7 +15,7 @@ namespace Tsavorite.core
     /// <summary>
     /// Scan iterator for TsavoriteLog
     /// </summary>
-    public class TsavoriteLogScanIterator : ScanIteratorBase, IDisposable
+    public class TsavoriteLogScanIterator : ScanIteratorBase<TsavoriteLogAllocator>, IDisposable
     {
         protected readonly TsavoriteLog tsavoriteLog;
         private readonly TsavoriteLogAllocatorImpl allocator;
@@ -35,7 +35,7 @@ namespace Tsavorite.core
         internal unsafe TsavoriteLogScanIterator(TsavoriteLog tsavoriteLog, TsavoriteLogAllocatorImpl hlog, long beginAddress, long endAddress,
                 GetMemory getMemory, DiskScanBufferingMode diskScanBufferingMode, LightEpoch epoch, int headerSize, bool scanUncommitted = false, ILogger logger = null)
             : base(beginAddress == 0 ? hlog.GetFirstValidLogicalAddressOnPage(0) : beginAddress, endAddress,
-                diskScanBufferingMode, InMemoryScanBufferingMode.NoBuffering, includeClosedRecords: false, epoch, hlog.LogPageSizeBits, logger: logger)
+                diskScanBufferingMode, InMemoryScanBufferingMode.NoBuffering, includeClosedRecords: false, epoch, hlog.LogPageSizeBits, hlog._wrapper, logger: logger)
         {
             this.tsavoriteLog = tsavoriteLog;
             allocator = hlog;
