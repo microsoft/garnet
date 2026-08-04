@@ -372,6 +372,28 @@ namespace Garnet.test
         }
 
         [Test]
+        public void LREMWithIntMinValueCountRemovesAllMatches()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var key = "List_Test_LREM_MinValue";
+            db.KeyDelete(key);
+            db.ListRightPush(key, ["a", "b", "a", "c", "a"]);
+
+            // |int.MinValue| does not fit in an int; before the fix Math.Abs threw
+            // OverflowException out of ProcessMessages and the session was dropped.
+            var removed = db.ListRemove(key, "a", int.MinValue);
+            ClassicAssert.AreEqual(3, removed);
+
+            var remaining = db.ListRange(key, 0, -1);
+            ClassicAssert.AreEqual(new RedisValue[] { "b", "c" }, remaining);
+
+            // The connection must still be usable.
+            ClassicAssert.AreEqual("PONG", db.Execute("PING").ToString());
+        }
+
+        [Test]
         public void MultiLPUSHAndLPOPV1()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
@@ -1440,6 +1462,49 @@ namespace Garnet.test
 
             exception = Assert.Throws<RedisServerException>(() => db.Execute("LMPOP", "1", "one", "LEFT", "COUNT"));
             ClassicAssert.AreEqual("ERR syntax error", exception.Message);
+
+            // A non-positive COUNT used to reach the storage layer and throw a
+            // NullReferenceException out of ProcessMessages, dropping the session.
+            var key = "LMPOP_Count_Zero";
+            db.KeyDelete(key);
+            db.ListRightPush(key, ["a", "b", "c"]);
+
+            exception = Assert.Throws<RedisServerException>(
+                () => db.Execute("LMPOP", "1", key, "LEFT", "COUNT", "0"));
+            ClassicAssert.AreEqual("ERR count should be greater than 0", exception.Message);
+
+            exception = Assert.Throws<RedisServerException>(
+                () => db.Execute("LMPOP", "1", key, "LEFT", "COUNT", "-1"));
+            ClassicAssert.AreEqual("ERR count should be greater than 0", exception.Message);
+
+            // The connection must survive, and the list must be untouched.
+            ClassicAssert.AreEqual("PONG", db.Execute("PING").ToString());
+            ClassicAssert.AreEqual(3, db.ListLength(key));
+        }
+
+        [Test]
+        public void LPOPAndRPOPWithZeroCountReturnEmptyArray()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var key = "LPOP_Count_Zero";
+            db.KeyDelete(key);
+            db.ListRightPush(key, ["a", "b"]);
+
+            // An explicit count of 0 used to write no reply at all, which shifts
+            // every following reply in a pipeline.
+            var result = db.Execute("LPOP", key, "0");
+            ClassicAssert.AreEqual(ResultType.Array, result.Resp2Type);
+            ClassicAssert.AreEqual(0, ((RedisResult[])result).Length);
+
+            result = db.Execute("RPOP", key, "0");
+            ClassicAssert.AreEqual(ResultType.Array, result.Resp2Type);
+            ClassicAssert.AreEqual(0, ((RedisResult[])result).Length);
+
+            // Nothing was popped, and a following command is not mis-paired.
+            ClassicAssert.AreEqual(2, db.ListLength(key));
+            ClassicAssert.AreEqual("marker", db.Execute("ECHO", "marker").ToString());
         }
 
         // Issue 945
