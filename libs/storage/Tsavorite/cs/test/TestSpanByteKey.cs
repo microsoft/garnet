@@ -16,6 +16,8 @@ namespace Tsavorite.test
 
         public readonly bool IsPinned => arr == null;
 
+        public readonly bool IsEmpty => false;
+
         public readonly ReadOnlySpan<byte> KeyBytes => arr == null ? new(ptr, len) : arr.AsSpan();
 
         /// <inheritdoc/>

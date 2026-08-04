@@ -18,6 +18,9 @@ namespace Tsavorite.test.recovery.sumstore
         // Not always pinned, so don't act like it is.
         public readonly bool IsPinned => false;
 
+        /// <inheritdoc/>
+        public readonly bool IsEmpty => false;
+
         [UnscopedRef]
         public readonly ReadOnlySpan<byte> KeyBytes => MemoryMarshal.AsBytes<long>(new(in adId));
 
