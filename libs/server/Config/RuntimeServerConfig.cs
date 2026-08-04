@@ -93,14 +93,13 @@ namespace Garnet.server
             var m = new ConfigMeta[TableSize];
 
             void Set(ServerConfigType t, string name, ConfigKind kind, long min, long max, Type enumType = null,
-                ConfigTimeUnit timeUnit = ConfigTimeUnit.None, bool nonPositiveIsInfinite = false,
-                ConfigUpdateAction updateAction = null)
+                ConfigTimeUnit timeUnit = ConfigTimeUnit.None, ConfigUpdateAction updateAction = null)
             {
                 if ((kind & ConfigKind.Enum) != 0)
                     EnsureSupportedEnum(enumType);
                 EnsureValidKind(name, kind, timeUnit);
                 m[(int)t] = new ConfigMeta(name, kind, min, max, enumType, IsRuntime: true, ReadOnly: false,
-                    timeUnit, nonPositiveIsInfinite, UpdateAction: updateAction);
+                    timeUnit, UpdateAction: updateAction);
             }
 
             void SetReadOnly(ServerConfigType t, string name, ConfigKind kind,
@@ -161,7 +160,7 @@ namespace Garnet.server
 
             Set(ServerConfigType.CLUSTER_NODE_TIMEOUT, "cluster-node-timeout",
                 ConfigKind.Int32 | ConfigKind.Seconds | ConfigKind.TimeSpan, 0, int.MaxValue,
-                timeUnit: ConfigTimeUnit.Seconds, nonPositiveIsInfinite: true);
+                timeUnit: ConfigTimeUnit.Seconds);
             Set(ServerConfigType.REPLICA_SYNC_DELAY, "replica-sync-delay",
                 ConfigKind.Int32 | ConfigKind.Milliseconds | ConfigKind.Seconds | ConfigKind.TimeSpan, 0, int.MaxValue,
                 timeUnit: ConfigTimeUnit.Milliseconds);
@@ -175,7 +174,7 @@ namespace Garnet.server
                 timeUnit: ConfigTimeUnit.Seconds);
             Set(ServerConfigType.REPL_ATTACH_TIMEOUT, "repl-attach-timeout",
                 ConfigKind.Int32 | ConfigKind.Seconds | ConfigKind.TimeSpan, 0, int.MaxValue,
-                timeUnit: ConfigTimeUnit.Seconds, nonPositiveIsInfinite: true);
+                timeUnit: ConfigTimeUnit.Seconds);
             Set(ServerConfigType.CLUSTER_REPLICATION_REESTABLISHMENT_TIMEOUT, "cluster-replication-reestablishment-timeout",
                 ConfigKind.Int32 | ConfigKind.Seconds | ConfigKind.TimeSpan, 0, int.MaxValue,
                 timeUnit: ConfigTimeUnit.Seconds);
@@ -302,8 +301,11 @@ namespace Garnet.server
             => ConvertDuration(type, ConfigKind.Seconds, ConfigTimeUnit.Seconds);
 
         /// <summary>
-        /// Current value of <paramref name="type"/> as a <see cref="TimeSpan"/>. For options whose
-        /// non-positive value denotes no timeout, returns <see cref="Timeout.InfiniteTimeSpan"/>.
+        /// Current value of <paramref name="type"/> as a <see cref="TimeSpan"/>. A non-positive stored
+        /// value is interpreted as an infinite timeout and returns <see cref="Timeout.InfiniteTimeSpan"/>,
+        /// following the repo-wide "non-positive means infinite" convention for timeout-valued options.
+        /// Options where zero denotes "no delay" rather than "infinite" (for example replica-sync-delay)
+        /// must be read through <see cref="GetMilliseconds"/> / <see cref="GetSeconds"/>, not this method.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public TimeSpan GetTimeSpan(ServerConfigType type)
@@ -312,7 +314,7 @@ namespace Garnet.server
 
             ref readonly var meta = ref Meta[(int)type];
             var raw = Volatile.Read(ref values[(int)type]);
-            if (raw <= 0 && meta.NonPositiveIsInfinite)
+            if (raw <= 0)
                 return Timeout.InfiniteTimeSpan;
 
             return meta.TimeUnit switch
@@ -382,10 +384,6 @@ namespace Garnet.server
                             error = $"ERR Invalid value for '{meta.Name}': expected an integer.";
                             return false;
                         }
-                        // A non-positive value denotes an infinite timeout; normalize so CONFIG GET never
-                        // reports a negative value that would be silently reinterpreted as infinite.
-                        if (i32 < 0 && meta.NonPositiveIsInfinite)
-                            i32 = 0;
                         if (i32 < meta.Min || i32 > meta.Max)
                         {
                             error = $"ERR Value for '{meta.Name}' is out of range ({meta.Min}..{meta.Max}).";
@@ -401,8 +399,6 @@ namespace Garnet.server
                             error = $"ERR Invalid value for '{meta.Name}': expected an integer.";
                             return false;
                         }
-                        if (i64 < 0 && meta.NonPositiveIsInfinite)
-                            i64 = 0;
                         if (i64 < meta.Min || i64 > meta.Max)
                         {
                             error = $"ERR Value for '{meta.Name}' is out of range ({meta.Min}..{meta.Max}).";

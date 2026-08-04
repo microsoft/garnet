@@ -843,14 +843,14 @@ namespace Garnet.test
             ClassicAssert.AreEqual(5, runtimeConfig.GetSeconds(ServerConfigType.REPLICA_SYNC_DELAY));
             ClassicAssert.AreEqual(TimeSpan.FromSeconds(5), runtimeConfig.GetTimeSpan(ServerConfigType.REPLICA_SYNC_DELAY));
 
-            // cluster-node-timeout treats a non-positive value as no timeout.
+            // A zero value is surfaced as an infinite timeout (the "non-positive means infinite" convention).
             ClassicAssert.IsTrue(runtimeConfig.TrySet(ServerConfigType.CLUSTER_NODE_TIMEOUT, "0", out var error));
             ClassicAssert.IsNull(error);
             ClassicAssert.AreEqual(Timeout.InfiniteTimeSpan, runtimeConfig.GetTimeSpan(ServerConfigType.CLUSTER_NODE_TIMEOUT));
 
-            // A negative value is normalized rather than reported back as negative.
-            ClassicAssert.IsTrue(runtimeConfig.TrySet(ServerConfigType.CLUSTER_NODE_TIMEOUT, "-3", out error));
-            ClassicAssert.IsNull(error);
+            // A negative value is out of range (0 is the canonical way to request an infinite timeout).
+            ClassicAssert.IsFalse(runtimeConfig.TrySet(ServerConfigType.CLUSTER_NODE_TIMEOUT, "-3", out error));
+            ClassicAssert.AreEqual("ERR Value for 'cluster-node-timeout' is out of range (0..2147483647).", error);
             ClassicAssert.AreEqual("0", runtimeConfig.RespFormat(ServerConfigType.CLUSTER_NODE_TIMEOUT));
         }
 

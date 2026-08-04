@@ -33,7 +33,6 @@ namespace Garnet.server
     /// <param name="IsRuntime">Whether the option is served by <see cref="RuntimeServerConfig"/>.</param>
     /// <param name="ReadOnly">Whether CONFIG SET rejects the option.</param>
     /// <param name="TimeUnit">Unit the slot is stored in, for duration-valued options.</param>
-    /// <param name="NonPositiveIsInfinite">Whether a non-positive value denotes an infinite timeout.</param>
     /// <param name="ReadOnlyFormatter">
     /// For <see cref="ReadOnly"/> options, computes the CONFIG GET value directly from the live
     /// <see cref="GarnetServerOptions"/> (the read-only fall-through). Must not capture the options
@@ -53,7 +52,6 @@ namespace Garnet.server
         bool IsRuntime,
         bool ReadOnly,
         ConfigTimeUnit TimeUnit = ConfigTimeUnit.None,
-        bool NonPositiveIsInfinite = false,
         Func<GarnetServerOptions, string> ReadOnlyFormatter = null,
         ConfigUpdateAction UpdateAction = null);
 }
