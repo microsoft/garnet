@@ -103,13 +103,13 @@ namespace Tsavorite.kvbench
             HelpText = "Device backend: native, randomaccess, filestream, null, localmemory, default.")]
         public string Device { get; set; }
 
-        [Option("device-throttle", Required = false, Default = 0,
-            HelpText = "Max in-flight IOs (device queue depth). 0 = device default (120 for Native; maps to " +
+        [Option("device-throttle-limit", Required = false, Default = 0,
+            HelpText = "Aggregate max in-flight IOs (software backpressure). 0 = device default (120 for Native; maps to " +
                        "the LocalMemory SPSC ring otherwise). NOTE: the 120 default under-drives a fast NVMe — " +
                        "set >=512 to saturate the device queue and reach its IOPS ceiling. Also size --num-keys " +
                        "so the log spans enough of the device (a small LBA span engages fewer NAND channels and " +
-                       "caps IOPS below the device's large-span ceiling).")]
-        public int DeviceThrottle { get; set; }
+                       "caps IOPS below the device's large-span ceiling). Capped at io-contexts * queue-depth.")]
+        public int DeviceThrottleLimit { get; set; }
 
         [Option("device-io-backend", Required = false, Default = "default",
             HelpText = "Linux native backend: libaio, uring, default (=libaio).")]
@@ -135,6 +135,13 @@ namespace Tsavorite.kvbench
                        "range-drain a contiguous slice of the rings. 0 = 1 ring per drainer (legacy). " +
                        "Clamped up to --device-completion-threads.")]
         public int DeviceIoContexts { get; set; }
+
+        [Option("device-queue-depth", Required = false, Default = 0,
+            HelpText = "DeviceType.Native on Linux only: per-ring kernel queue depth (io_uring SQ entries / " +
+                       "libaio io_context nr_events) for each of the --device-io-contexts rings. 0 = default " +
+                       "(4096). Cap 32768 (io_uring hard limit). For libaio, io-contexts * queue-depth is drawn " +
+                       "from the global fs.aio-max-nr budget (warned/clamped if exceeded).")]
+        public int DeviceQueueDepth { get; set; }
 
         [Option("device-inline-completion", Required = false, Default = false,
             HelpText = "DeviceType.LocalMemory only: complete IOs inline on the submitting thread (no " +

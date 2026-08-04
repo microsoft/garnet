@@ -499,6 +499,14 @@ namespace Garnet
         [Option("device-throttle-limit", Required = false, HelpText = "Per-device max number of in-flight IOs (IDevice.ThrottleLimit). 0 = use the device's built-in default (120 for the in-box Tsavorite devices). Raising this lets disk-bound workloads keep the queue depth high enough to saturate fast NVMe / io_uring backends. For DeviceType=LocalMemory (which has no device-wide throttle) this instead sets the per-ring in-flight capacity, rounded up to a power of two.")]
         public int? DeviceThrottleLimit { get; set; }
 
+        [IntRangeValidation(0, 4096)]
+        [Option("device-io-contexts", Required = false, HelpText = "Linux-only, DeviceType=Native: number of independent kernel io_contexts / io_uring rings (ring COUNT), decoupled from --device-completion-threads. Critical for io_uring: set at or above submitter concurrency (roughly your connection count) so each submitter owns a ring and io_submit is contention-free; too few rings serialize submitters on a per-ring lock and cost up to ~3x. libaio is largely indifferent. 0 = device default.")]
+        public int? DeviceIoContexts { get; set; }
+
+        [IntRangeValidation(0, 32768)]
+        [Option("device-queue-depth", Required = false, HelpText = "Linux-only, DeviceType=Native: per-ring kernel submission depth (maxEvents for io_uring_queue_init / libaio io_setup). Orthogonal to --device-io-contexts (ring count) and --device-throttle-limit (aggregate in-flight). 0 = device default. Note: for libaio, io-contexts x queue-depth is drawn from the global fs.aio-max-nr budget.")]
+        public int? DeviceQueueDepth { get; set; }
+
         [Option("reviv-bin-record-sizes", Separator = ',', Required = false,
             HelpText = "#,#,...,#: For the main store, the sizes of records in each revivification bin, in order of increasing size." +
                        "           Supersedes the default --reviv; cannot be used with --reviv-in-chain-only")]
@@ -926,6 +934,8 @@ namespace Garnet
                         deviceType: deviceType,
                         ioBackend: DeviceIoBackend ?? NativeStorageDevice.IoBackend.Default,
                         numCompletionThreads: DeviceCompletionThreads ?? 4,
+                        numIoContexts: DeviceIoContexts ?? 0,
+                        queueDepth: DeviceQueueDepth ?? 0,
                         throttleLimit: DeviceThrottleLimit is > 0 ? DeviceThrottleLimit : null,
                         logger: logger),
                 CheckpointThrottleFlushDelayMs = CheckpointThrottleFlushDelayMs,
@@ -946,6 +956,8 @@ namespace Garnet
                 DeviceIoBackend = DeviceIoBackend ?? NativeStorageDevice.IoBackend.Default,
                 DeviceCompletionThreads = DeviceCompletionThreads ?? 4,
                 DeviceThrottleLimit = DeviceThrottleLimit ?? 0,
+                DeviceIoContexts = DeviceIoContexts ?? 0,
+                DeviceQueueDepth = DeviceQueueDepth ?? 0,
                 ObjectScanCountLimit = ObjectScanCountLimit,
                 RevivBinRecordSizes = revivBinRecordSizes,
                 RevivBinRecordCounts = revivBinRecordCounts,

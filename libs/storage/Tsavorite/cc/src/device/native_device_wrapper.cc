@@ -239,22 +239,6 @@ extern "C" {
 		return CABIGuard("NativeDevice_TryCompleteMine", [&]() { return device->TryCompleteMine(); }, false);
 	}
 
-	/// Submit the calling thread's accumulated read batch (opt-in batched libaio submit).
-	/// No-op when batching is disabled/empty. Returns the number of IOs submitted, or -1 on
-	/// error/null device. Must be called on the same thread that issued the reads.
-	EXPORTED_SYMBOL int NativeDevice_FlushSubmits(INativeDevice* device) {
-		if (device == nullptr) return -1;
-		return CABIGuard("NativeDevice_FlushSubmits", [&]() { return device->FlushSubmits(); }, -1);
-	}
-
-	/// Release the calling thread's LightEpoch-style ring ownership (GARNET_RING_LE_AFFINITY).
-	/// No-op when disabled or on backends without ring ownership. Must be called on the submitting
-	/// thread at its network-batch boundary.
-	EXPORTED_SYMBOL void NativeDevice_ReleaseRing(INativeDevice* device) {
-		if (device == nullptr) return;
-		CABIGuardVoid("NativeDevice_ReleaseRing", [&]() { device->ReleaseRing(); });
-	}
-
 	EXPORTED_SYMBOL uint64_t NativeDevice_GetFileSize(INativeDevice* device, uint64_t segment) {
 		return CABIGuard("NativeDevice_GetFileSize", [&]() { return device->GetFileSize(segment); }, uint64_t{ 0 });
 	}

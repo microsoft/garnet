@@ -97,16 +97,6 @@ namespace Tsavorite.core
         bool TryCompleteMine();
 
         /// <summary>
-        /// Submit (flush) any reads that the calling thread has accumulated in a deferred/batched
-        /// submit buffer, WITHOUT draining completions. This is a flush-only primitive: unlike
-        /// <see cref="TryComplete"/>/<see cref="TryCompleteMine"/> (which flush then drain), it never
-        /// re-enters the completion path, so it is safe to call from inside a completion callback that
-        /// re-issues a read (e.g. walking a disk hash chain). Must be called on the thread that issued
-        /// the reads (the accumulation buffer is thread-local). No-op on devices that submit immediately.
-        /// </summary>
-        void FlushSubmits();
-
-        /// <summary>
         /// Whether device should be throttled at this instant (i.e., caller should stop issuing new I/Os)
         /// </summary>
         /// <returns></returns>

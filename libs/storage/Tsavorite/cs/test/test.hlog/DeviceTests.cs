@@ -995,7 +995,7 @@ namespace Tsavorite.test
         //   - multiple completion threads / io_contexts (pick_context / pick_ring sharding);
         //   - multiple devices interleaved across threads (the pick_context/pick_ring owner+bounds
         //     thread-local guard, whose absence is an out-of-bounds shard index);
-        //   - ThrottleLimit -> submission-ring depth sizing, including the clamp above MaxThrottle;
+        //   - ThrottleLimit -> aggregate in-flight cap (capped at io-contexts * queue-depth);
         //   - the late P/Invoke entry points GetFileSize / RemoveSegment / Reset / TryComplete.
         //
         // io_uring cases self-skip when the loaded native library / kernel lacks a working io_uring.
@@ -1249,7 +1249,7 @@ namespace Tsavorite.test
         [Category("IDevice")]
         public unsafe void Native_ThrottleAboveMax_IsClampedAndStillWorks(NativeBackend backend)
         {
-            // A throttle far above the kernel-safe ceiling (MaxThrottle=4096) is clamped (and warned);
+            // A throttle far above the kernel capacity (io-contexts * queue-depth) is capped (and warned);
             // the device must still round-trip correctly.
             using var device = CreateNativeForTest(Path.Join(TestUtils.MethodTestDir, "test.log"), 64 * Mib, backend, throttleLimit: 100_000);
             const int size = 4 * 1024;

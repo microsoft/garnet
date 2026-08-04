@@ -181,10 +181,6 @@ namespace Tsavorite.core
         /// <summary>Log Device</summary>
         protected readonly IDevice device;
 
-        /// <summary>The underlying log <see cref="IDevice"/> (e.g. for backend-specific hooks such as
-        /// NativeStorageDevice ring-affinity release).</summary>
-        internal IDevice Device => device;
-
         /// <summary>Sector size</summary>
         protected readonly int sectorSize;
         #endregion
@@ -1811,14 +1807,6 @@ namespace Tsavorite.core
                 // Call the overridden ReadAsync for the derived allocator class
                 ReadAsync(offsetInFile, (IntPtr)pagePointers[pageIndex], readLength, AsyncReadPagesForRecoveryCallback, asyncResult, usedDevice);
             }
-
-            // Flush this thread's pending device submits before recovery blocks waiting on these reads.
-            // An opt-in batched-submit backend (GARNET_SUBMIT_BATCH) defers io_submit until its per-thread
-            // batch fills, so a sub-threshold recovery burst would otherwise never be submitted and the
-            // WaitRead/WaitReadAsync below would block forever. The batch is thread-local, so this must run
-            // on the issuing thread (the loop above is synchronous). No-op for immediate-submit devices;
-            // the device's dedicated completion threads drive completion once the reads are submitted.
-            usedDevice.TryComplete();
         }
 
         /// <summary>
@@ -2088,7 +2076,7 @@ namespace Tsavorite.core
             {
                 while (device.Throttle())
                 {
-                    _ = Constants.InlineDrainAffine ? device.TryCompleteMine() : device.TryComplete();
+                    _ = device.TryCompleteMine();
                     _ = Thread.Yield();
                     epoch.ProtectAndDrain();
                 }
@@ -2153,13 +2141,6 @@ namespace Tsavorite.core
                 offsetInFile = (ulong)(AlignedPageSizeBytes * (readPage - devicePageOffset));
 
             ReadAsync(offsetInFile, (IntPtr)frame.GetPhysicalAddress(pageIndex), readLength, callback, asyncResult, usedDevice);
-
-            // Flush this thread's pending device submits before the scan blocks on the load CountdownEvent,
-            // for the same reason as recovery: a batched-submit backend (GARNET_SUBMIT_BATCH) must not
-            // strand this read in an unsubmitted sub-threshold batch or the completion never fires. This
-            // runs on the issuing thread (which, under an epoch bump, is whichever thread drains the read
-            // action). No-op for devices that submit immediately.
-            usedDevice.TryComplete();
         }
 
         /// <summary>
@@ -2275,13 +2256,6 @@ namespace Tsavorite.core
                     ctx.DisposeRecord();
                     // Re-issue this same op (a reference), repopulating its read buffer; all fields propagate.
                     AsyncGetFromDisk(ctx.logicalAddress, prevLengthToRead, ctx);
-                    // This runs on the completion thread (or an inline drainer) which may return to a blocking
-                    // wait (background drainer's io_getevents, or a caller's WaitPending) without ever flushing.
-                    // If the device defers/batches submits (GARNET_SUBMIT_BATCH), the re-issued read would strand
-                    // in this thread's sub-threshold batch and never submit => the pending op never completes =>
-                    // deadlock (seen in the scan-cursor/collision chain-walk path). Flush-only (no drain) submits
-                    // it now without re-entering the completion path. No-op on immediate-submit devices.
-                    device.FlushSubmits();
                     return false;
                 }
             }

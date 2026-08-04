@@ -129,6 +129,36 @@ namespace Garnet.test
         }
 
         [Test]
+        public void DeviceIoContextsAndQueueDepthOptions()
+        {
+            // Defaults: with no explicit override the values come from defaults.conf (0 = device default)
+            // and flow through to GarnetServerOptions unchanged.
+            {
+                var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments([], out var options, out _, out _, out _, silentMode: true);
+                ClassicAssert.IsTrue(parseSuccessful);
+                ClassicAssert.AreEqual(0, options.DeviceIoContexts);
+                ClassicAssert.AreEqual(0, options.DeviceQueueDepth);
+
+                var serverOptions = options.GetServerOptions();
+                ClassicAssert.AreEqual(0, serverOptions.DeviceIoContexts);
+                ClassicAssert.AreEqual(0, serverOptions.DeviceQueueDepth);
+            }
+
+            // Explicit values are parsed and flow through to GarnetServerOptions.
+            {
+                var args = new[] { "--device-io-contexts", "96", "--device-queue-depth", "4096" };
+                var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out _, out _, out _, silentMode: true);
+                ClassicAssert.IsTrue(parseSuccessful);
+                ClassicAssert.AreEqual(96, options.DeviceIoContexts);
+                ClassicAssert.AreEqual(4096, options.DeviceQueueDepth);
+
+                var serverOptions = options.GetServerOptions();
+                ClassicAssert.AreEqual(96, serverOptions.DeviceIoContexts);
+                ClassicAssert.AreEqual(4096, serverOptions.DeviceQueueDepth);
+            }
+        }
+
+        [Test]
         public void ImportExportConfigLocal()
         {
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);

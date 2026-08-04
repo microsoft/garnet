@@ -33,81 +33,12 @@ constexpr int kSubmitYieldBudget = 16;
 } // anonymous namespace
 
 namespace {
-// --- Batched libaio submit (opt-in via GARNET_SUBMIT_BATCH env var) ---
-// Per-submitter-thread accumulation of prepared READ iocbs. Reads are appended here and
-// submitted in bulk via io_submit(ctx, N, ...) when the batch reaches the threshold or an
-// explicit FlushSubmits() is requested, cutting io_submit syscalls (and the per-call kernel
-// aio-context mutex acquisition) by ~N. Writes are never batched: the memory-bounded log
-// flush path needs prompt write submission. All iocbs in a thread's batch target that
-// thread's pick_context() ctx (stable per thread for a given handler), so io_submit(ctx, N)
-// is valid. Ownership: an appended iocb's per-op io_context + caller-context copy have been
-// released from their RAII guards, so the batch owns them until the bulk io_submit transfers
-// them to the kernel (success) or FlushLibaioBatch delivers an error + frees them.
-struct LibaioSubmitBatch {
-  io_context_t ctx = nullptr;
-  std::vector<struct iocb*> iocbs;
-};
-thread_local LibaioSubmitBatch t_libaio_batch;
-
-// Number of reads to accumulate before an auto-flush. 1 (default, env unset) == no batching:
-// submit immediately, byte-for-byte legacy behaviour. Read once from GARNET_SUBMIT_BATCH.
-inline size_t libaio_batch_threshold() {
-  static const size_t v = [] {
-    const char* s = ::getenv("GARNET_SUBMIT_BATCH");
-    long n = s ? ::atol(s) : 1;
-    if (n < 1) n = 1;
-    if (n > 1024) n = 1024;
-    return static_cast<size_t>(n);
-  }();
-  return v;
-}
-
 // Max completions to reap per io_getevents in the opportunistic TryComplete()/TryCompleteFor()
 // poll. Reaping >1 event per syscall amortises the io_getevents call + its kernel aio-context
 // ring-lock across many completions when several are ready (bursty / lower-QD completion), and is
-// harmless at the saturated peak (the poll simply returns fewer than the max). Always on with a
-// small default of 8 (matching IO_BATCH_EVENTS, the dedicated-drainer reap batch); tunable via
-// GARNET_TRYCOMPLETE_BATCH (clamped 1..kTryCompleteMaxEvents; set 1 for the legacy 1-event poll).
-constexpr int kTryCompleteMaxEvents = 128;
-inline int trycomplete_batch_events() {
-  static const int v = [] {
-    const char* s = ::getenv("GARNET_TRYCOMPLETE_BATCH");
-    long n = s ? ::atol(s) : 8;
-    if (n < 1) n = 1;
-    if (n > kTryCompleteMaxEvents) n = kTryCompleteMaxEvents;
-    return static_cast<int>(n);
-  }();
-  return v;
-}
-
-// Flush the calling thread's accumulated read batch: submit all queued iocbs to their ctx via
-// io_submit(ctx, N). Handles partial submits (io_submit may accept fewer than N) and transient
-// ring-full (return 0 / -EAGAIN) by yielding and retrying the remaining. A permanent per-iocb
-// error delivers IOError to that read's callback (mirroring IoCompletionCallback) and drops it.
-// Returns the count submitted to the kernel. Runs on the same thread that accumulated (the batch
-// is thread_local), so no cross-thread synchronization is needed.
-int FlushLibaioBatch() {
-  auto& b = t_libaio_batch;
-  const size_t n = b.iocbs.size();
-  if (n == 0) return 0;
-  struct iocb** base = b.iocbs.data();
-  size_t done = 0;
-  int submitted = 0;
-  while (done < n) {
-    int r = ::io_submit(b.ctx, static_cast<long>(n - done), base + done);
-    if (r > 0) { done += static_cast<size_t>(r); submitted += r; continue; }
-    if (r == 0 || r == -EAGAIN) {
-      // Ring transiently full; the throttle bounds in-flight below ring depth so this is rare.
-      ::sched_yield();
-      continue;
-    }
-    // Permanent error on base[done]: deliver IOError to its callback and free it, then skip.
-    QueueIoHandler::IoCompletionCallback(b.ctx, base[done], -EIO, 0);
-    ++done;
-  }
-  b.iocbs.clear();
-  return submitted;
-}
+// harmless at the saturated peak (the poll simply returns fewer than the max). Fixed at 8
+// (matching IO_BATCH_EVENTS, the dedicated-drainer reap batch).
+constexpr int kTryCompleteBatchEvents = 8;
 } // anonymous namespace
 
 using namespace FASTER::core;
@@ -267,11 +198,11 @@ bool QueueIoHandler::TryCompleteFor(int idx) {
   if (ctx == 0) return false;
   struct timespec timeout;
   std::memset(&timeout, 0, sizeof(timeout));
-  struct io_event events[kTryCompleteMaxEvents];
+  struct io_event events[kTryCompleteBatchEvents];
   // Reap up to a batch of ready completions in a single (non-blocking, timeout=0) io_getevents,
   // amortising the syscall + kernel aio-context ring-lock over many events. min_nr stays 1 so a
   // zeroed timeout makes this a pure poll (returns immediately with 0..max ready events).
-  int result = ::io_getevents(ctx, 1, trycomplete_batch_events(), events, &timeout);
+  int result = ::io_getevents(ctx, 1, kTryCompleteBatchEvents, events, &timeout);
   if (result <= 0) return false;
   for (int i = 0; i < result; ++i) {
     io_callback_t callback = reinterpret_cast<io_callback_t>(events[i].data);
@@ -364,12 +295,6 @@ int QueueIoHandler::Wake(int idx) {
     return 0;
 }
 
-// Flush the calling thread's accumulated read batch (see FlushLibaioBatch). Called on the
-// submitting thread from the managed layer (explicit tail flush + throttle-spin safety net).
-int QueueIoHandler::FlushSubmits() {
-    return FlushLibaioBatch();
-}
-
 Status QueueFile::Open(FileCreateDisposition create_disposition, const FileOptions& options,
                        QueueIoHandler* handler, bool* exists) {
   int flags = 0;
@@ -441,28 +366,6 @@ Status QueueFile::ScheduleOperation(FileOperationType operationType, uint8_t* bu
   // effectively contention-free at the kernel side.
   io_context_t ctx = handler_->pick_context();
 
-  // Batched submit (opt-in via GARNET_SUBMIT_BATCH>1): accumulate READ iocbs per-thread and
-  // submit them in bulk to cut io_submit syscalls (and per-call kernel aio-ctx mutex hits).
-  // Writes are never batched (log flush needs prompt submission). The iocb + its caller-context
-  // copy are handed to the thread-local batch, which owns them until the bulk io_submit
-  // transfers them to the kernel (or FlushLibaioBatch errors + frees them). The batch always
-  // targets this thread's stable ctx; a defensive flush handles any ctx change.
-  const size_t batchThreshold = libaio_batch_threshold();
-  if (batchThreshold > 1 && operationType == FileOperationType::Read) {
-    auto& b = t_libaio_batch;
-    if (!b.iocbs.empty() && b.ctx != ctx) {
-      FlushLibaioBatch();
-    }
-    b.ctx = ctx;
-    b.iocbs.push_back(iocbs[0]);
-    caller_copy_guard.release();
-    io_context.release();
-    if (b.iocbs.size() >= batchThreshold) {
-      FlushLibaioBatch();
-    }
-    return Status::Ok;
-  }
-
 
   //   1            : kernel accepted; one completion will fire.
   //   0 or -EAGAIN : transient kernel ring full; brief in-epoch yield, then unwind.
@@ -529,47 +432,6 @@ inline void DispatchUringCqe(int io_res, UringIoHandler::IoCallbackContext* cont
     lss_allocator.Free(context);
 }
 
-// ---------------------------------------------------------------------------------------------
-// io_uring batched submit (opt-in via GARNET_SUBMIT_BATCH; default 1 == submit per-op == legacy).
-// Mirrors the libaio batch (FlushLibaioBatch): a submitter thread accumulates prepared READ SQEs
-// and defers io_uring_submit until a threshold, coalescing many reads into ONE submit syscall.
-// Only a thread that solely owns its ring (UringIoHandler::try_own_ring) defers; writes always
-// submit immediately (log-flush latency). Every deferred SQE already carries its io_context as
-// user_data, so once ANY later submit on the ring flushes it, exactly one completion is
-// dispatched. The managed completion/throttle path (NativeStorageDevice.TryComplete/
-// TryCompleteMine/FlushSubmits -> NativeDevice_FlushSubmits -> UringIoHandler::FlushSubmits)
-// flushes this thread's batch before it waits on in-flight completions, so a sub-threshold batch
-// can never stall the AllocatorBase.AsyncGetFromDisk throttle (no lost-flush deadlock).
-// ---------------------------------------------------------------------------------------------
-
-// UringIoHandler::uring_thread_id() (defined inline in the header) is the single source of the
-// stable per-thread id used to CAS ring ownership, so pick_ring_index_le() and the submit path's
-// try_own_ring() below agree on the owner.
-
-// Batch size threshold read once from GARNET_SUBMIT_BATCH (shared with the libaio backend).
-// 1 (default/unset) disables batching -> byte-for-byte legacy per-op submit.
-inline size_t uring_batch_threshold() {
-    static const size_t threshold = [] {
-        const char* s = ::getenv("GARNET_SUBMIT_BATCH");
-        long n = (s != nullptr) ? ::atol(s) : 1;
-        if (n < 1) n = 1;
-        if (n > 1024) n = 1024;
-        return static_cast<size_t>(n);
-    }();
-    return threshold;
-}
-
-// Per-thread deferred-submit state. A thread holds deferred SQEs on AT MOST one ring at a time
-// (switching rings/handlers flushes the prior batch first), so a single slot suffices.
-struct UringSubmitBatch {
-    const UringIoHandler* handler = nullptr;  // handler whose ring holds the deferred SQEs
-    struct io_uring* ring = nullptr;          // ring the SQEs were prepared on
-    SpinLock* sq_lock = nullptr;              // that ring's SQ lock
-    int ring_idx = -1;                        // that ring's index (for drain-assist)
-    int pending = 0;                          // count of deferred, not-yet-submitted SQEs
-};
-thread_local UringSubmitBatch t_uring_batch;
-
 } // anonymous namespace
 
 bool UringIoHandler::TryComplete() {
@@ -613,7 +475,7 @@ bool UringIoHandler::TryCompleteFor(int idx) {
 // Non-blocking batch drain of ONE ring (the caller's affine ring), reaping up to kCqeBatch
 // completions in a single cq_lock section with dispatch moved outside the lock. This is the
 // io_uring analogue of libaio's batched TryCompleteMine (io_getevents up to
-// trycomplete_batch_events): the inline submitter-thread completion path (Tsavorite
+// kTryCompleteBatchEvents): the inline submitter-thread completion path (Tsavorite
 // CompletePending / AsyncGetFromDisk throttle-wait) reaps its own ring a batch at a time
 // instead of one io_uring_peek_cqe per call, cutting per-completion cq_lock + peek overhead ~Nx.
 // Mirrors QueueRunFor's phase-2 (snapshot-before-advance, dispatch-after-release) but is a single
@@ -652,31 +514,6 @@ bool UringIoHandler::TryCompleteMineBatch(int idx) {
     DispatchUringCqe(snapshot[i].io_res, snapshot[i].context);
   }
   return true;
-}
-
-// Opt-out gate for the TryCompleteMine batch-reap (default ON). GARNET_URING_BATCH_REAP=0 falls
-// back to the legacy single-CQE reap (TryCompleteFor) so the batch-reap's throughput impact can be
-// measured without a revert-build. Read once.
-bool UringIoHandler::batch_reap_enabled() {
-  static const bool v = [] {
-    const char* s = ::getenv("GARNET_URING_BATCH_REAP");
-    long n = s ? ::atol(s) : 1;
-    return n != 0;
-  }();
-  return v;
-}
-
-bool UringIoHandler::le_affinity_enabled() {
-  static const bool v = [] {
-    const char* s = ::getenv("GARNET_RING_LE_AFFINITY");
-    long n = s ? ::atol(s) : 0;
-    if (n != 0) {
-      ::fprintf(stderr, "[ring-le-affinity] enabled: LightEpoch-style per-thread ring affinity "
-                        "(warm preferred ring + probe-replace + batch-boundary release)\n");
-    }
-    return n != 0;
-  }();
-  return v;
 }
 
 int UringIoHandler::QueueRun(int timeout_secs) {
@@ -782,40 +619,6 @@ int UringIoHandler::Wake(int idx) {
     return res >= 1 ? 0 : -1;
 }
 
-// Flush this thread's deferred io_uring READ batch for THIS handler, if any. Invoked by the
-// managed completion/throttle path before it waits on in-flight completions, guaranteeing a
-// sub-threshold batch is always submitted (no lost-flush stall). Returns the number of SQEs the
-// final submit reported flushing (0 if nothing was pending or a peer already flushed them).
-int UringIoHandler::FlushSubmits() {
-    UringSubmitBatch& b = t_uring_batch;
-    if (b.pending <= 0 || b.handler != this) return 0;
-
-    int flushed = 0;
-    int retries = 0;
-    b.sq_lock->Acquire();
-    while (true) {
-        int res = io_uring_submit(b.ring);
-        if (res >= 1) { flushed = res; break; }     // our deferred SQEs reached the kernel
-        if (res == 0) break;                         // nothing to flush (a peer already did)
-        if (res == -EAGAIN || res == -EBUSY) {
-            // CQ ring full: help drain THIS ring's completions to free space, then retry so the
-            // deferred reads are never stranded behind a full CQ (would deadlock the throttle).
-            b.sq_lock->Release();
-            TryCompleteFor(b.ring_idx);
-            if (retries++ >= kSubmitYieldBudget) ::sched_yield();
-            b.sq_lock->Acquire();
-            continue;
-        }
-        break;                                       // permanent error: SQEs keep their user_data
-                                                     // and flush on the next submit/Wake.
-    }
-    b.sq_lock->Release();
-    // In all cases the deferred SQEs are now either in the kernel or still queued in the ring with
-    // valid user_data (flushed by the next submit); either way this thread no longer owes a flush.
-    b.pending = 0;
-    return flushed;
-}
-
 Status UringFile::Open(FileCreateDisposition create_disposition, const FileOptions& options,
                        UringIoHandler* handler, bool* exists) {
   int flags = 0;
@@ -869,8 +672,7 @@ Status UringFile::ScheduleOperation(FileOperationType operationType, uint8_t* bu
   // pick_ring distributes submissions across rings via atomic round-robin (single ring under N=1).
   struct io_uring* ring = nullptr;
   SpinLock* sq_lock = nullptr;
-  int ring_idx = -1;
-  handler_->pick_ring(ring, sq_lock, ring_idx);
+  handler_->pick_ring(ring, sq_lock);
 
   // Acquire an SQE. io_uring_get_sqe returns nullptr when the SQ ring is full; brief in-lock-free
   // yield budget, then unwind — same rationale and contract as the libaio path
@@ -885,20 +687,9 @@ Status UringFile::ScheduleOperation(FileOperationType operationType, uint8_t* bu
     sq_lock->Acquire();
     sqe = io_uring_get_sqe(ring);
     if (sqe != nullptr) break;
-    // SQ ring is full. If this thread has deferred (batched) SQEs sitting in THIS ring, submit
-    // them now to let the kernel consume the SQ and free a slot for the retry. This also upholds
-    // the invariant that we never unwind to a wait (Status::Pending) with un-submitted SQEs.
-    {
-      UringSubmitBatch& fb = t_uring_batch;
-      if (fb.pending > 0 && fb.handler == handler_ && fb.ring == ring) {
-        if (io_uring_submit(ring) >= 1) fb.pending = 0;  // still holding sq_lock
-      }
-    }
     sq_lock->Release();
     if (retries >= kSubmitYieldBudget) {
-      // Flush any residual deferred SQEs (FlushSubmits is a no-op if none) so nothing is left
-      // un-submitted across the out-of-epoch wait, then unwind to SubmitWithEpoch.
-      handler_->FlushSubmits();
+      // Sustained-full SQ ring: unwind to SubmitWithEpoch to wait without holding the epoch.
       return Status::Pending;
     }
     ::sched_yield();
@@ -912,48 +703,6 @@ Status UringFile::ScheduleOperation(FileOperationType operationType, uint8_t* bu
     io_uring_prep_writev(sqe, fd_, &io_context->vec_, 1, offset);
   }
   io_uring_sqe_set_data(sqe, io_context.get());
-
-  // ---- Batched submit fast path (opt-in; default threshold 1 == disabled == legacy) ----
-  // If batching is enabled, this is a READ, and this thread solely owns this ring, DEFER
-  // io_uring_submit: leave the prepared SQE (already carrying its io_context as user_data) in the
-  // SQ and return Ok without a submit syscall, coalescing many reads into one later submit. Writes
-  // always submit immediately below. `batched_owner` tells the tail to clear the batch counter
-  // once the accumulated SQEs are actually flushed.
-  bool batched_owner = false;
-  {
-    const size_t batch_threshold = uring_batch_threshold();
-    if (batch_threshold > 1 && is_read) {
-      UringSubmitBatch& b = t_uring_batch;
-      // A thread holds deferred SQEs on at most one ring; if it is switching to a different
-      // handler/ring, flush the prior batch first so those reads are never stranded (the managed
-      // FlushSubmits for that handler would no longer see them once we repurpose this slot).
-      if (b.pending > 0 && (b.handler != handler_ || b.ring != ring)) {
-        b.sq_lock->Acquire();
-        io_uring_submit(b.ring);
-        b.sq_lock->Release();
-        b.pending = 0;
-      }
-      if (handler_->try_own_ring(ring_idx, UringIoHandler::uring_thread_id())) {
-        batched_owner = true;
-        b.handler = handler_;
-        b.ring = ring;
-        b.sq_lock = sq_lock;
-        b.ring_idx = ring_idx;
-        ++b.pending;
-        if (static_cast<size_t>(b.pending) < batch_threshold) {
-          // Under threshold: hand io_context ownership to the queued SQE and return without a
-          // submit syscall. The SQE flushes when the batch fills, on the next op, or when the
-          // managed layer calls FlushSubmits before waiting.
-          sq_lock->Release();
-          caller_copy_guard.release();
-          io_context.release();
-          return Status::Ok;
-        }
-        // Threshold reached: fall through to submit the whole accumulated batch now.
-      }
-      // Not the ring owner (shared ring): fall through to immediate per-op submit.
-    }
-  }
 
   // Submit. io_uring_submit() flushes ALL SQEs pending in this ring's SQ ring (everything between
   // the kernel-consumed head and our just-prepared SQE at the tail) and returns the COUNT flushed
@@ -996,16 +745,11 @@ Status UringFile::ScheduleOperation(FileOperationType operationType, uint8_t* bu
   sq_lock->Release();
   if (res < 1) {
     // RAII frees io_context/caller_context_copy on return. Unwind -> SubmitWithEpoch retries the
-    // whole op outside the epoch; a permanent error surfaces to the caller. Any prior deferred
-    // SQEs remain live in the ring (valid user_data) and flush on the retry's/next submit, so
-    // clear our batch counter to avoid re-counting them.
-    if (batched_owner) t_uring_batch.pending = 0;
+    // whole op outside the epoch; a permanent error surfaces to the caller.
     return unwind ? Status::Pending : Status::IOError;
   }
 
-  // res >= 1: ownership transferred to the kernel. A batched submit flushed the whole accumulated
-  // run (io_uring_submit drains every queued SQE), so the batch is now empty.
-  if (batched_owner) t_uring_batch.pending = 0;
+  // res >= 1: ownership transferred to the kernel.
   caller_copy_guard.release();
   io_context.release();
   return Status::Ok;

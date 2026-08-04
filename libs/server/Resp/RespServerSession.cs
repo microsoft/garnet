@@ -70,24 +70,6 @@ namespace Garnet.server
         internal readonly ScratchBufferBuilder scratchBufferBuilder;
         internal readonly ScratchBufferAllocator scratchBufferAllocator;
 
-        // LightEpoch-style native ring affinity (GARNET_RING_LE_AFFINITY). When enabled, the main
-        // store's log device hands each submitter thread a warm preferred io_uring ring and expects
-        // the thread to release it at its network-batch boundary so a churned-away ThreadPool thread
-        // never leaves a stale ring owner. Resolved lazily (the device may not be a NativeStorageDevice).
-        NativeStorageDevice ringAffinityDevice;
-        bool ringAffinityResolved;
-
-        NativeStorageDevice GetRingAffinityDevice()
-        {
-            if (!ringAffinityResolved)
-            {
-                ringAffinityResolved = true;
-                if (storeWrapper?.store?.Log?.Device is NativeStorageDevice nsd && nsd.SessionRingAffinityEnabled)
-                    ringAffinityDevice = nsd;
-            }
-            return ringAffinityDevice;
-        }
-
         internal SessionParseState parseState;
         internal SessionParseState customCommandParseState;
 
@@ -595,15 +577,6 @@ namespace Garnet.server
                 clusterSession?.ReleaseCurrentEpoch();
                 scratchBufferBuilder.Reset();
                 scratchBufferAllocator.Reset();
-
-                // LightEpoch-style ring-affinity boundary (GARNET_RING_LE_AFFINITY): if this thread
-                // submitted any disk read during the batch, flush its buffered submits and release its
-                // io_uring ring so it can be reclaimed. This is the reliable "suspend" point after which
-                // the thread will not submit again until its next network batch, so releasing here
-                // prevents dead-tid ring poisoning when the .NET ThreadPool churns submitter threads.
-                // For a pure in-memory batch (no disk reads) this is a single thread-static check with
-                // no P/Invoke. No-op when the flag is off.
-                GetRingAffinityDevice()?.EndBatchReleaseRing();
             }
 
             if (txnSkip)

@@ -333,17 +333,6 @@ class ThreadPoolIoHandler {
       return false;
   }
 
-  /// No submit batching on the Windows IOCP path (each ScheduleOperation submits immediately),
-  /// so there is nothing to flush. Present to satisfy NativeDeviceImpl<H>::FlushSubmits.
-  inline static constexpr int FlushSubmits() {
-      return 0;
-  }
-
-  /// io_uring ring ownership is Linux-only, so there is no leased ring to release on Windows.
-  /// No-op present to satisfy NativeDeviceImpl<H>::ReleaseRing.
-  inline static void release_my_ring() {
-  }
-
  private:
   /// The parent threadpool.
   WindowsPtpThreadPool threadpool_;
