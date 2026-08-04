@@ -29,6 +29,15 @@ namespace Garnet.server
         sealed class SublogReplayStateMax
         {
             [FieldOffset(64)] public long Value;
+
+            /// <summary>
+            /// Smallest target sequence number among queued waiters (the head of the sorted waiter
+            /// list), or <see cref="long.MaxValue"/> when the list is empty. Mirrored beside
+            /// <see cref="Value"/> so the per-record signal pass can skip the waiter lock with a
+            /// single lock-free compare: while max &lt;= this value no waiter can be satisfied.
+            /// Refreshed under <see cref="VirtualSublogReplayState.@lock"/> at every list mutation.
+            /// </summary>
+            [FieldOffset(72)] public long MinWaiterTarget;
         }
         readonly SublogReplayStateMax sketchMax = new();
 
@@ -56,6 +65,7 @@ namespace Garnet.server
                 throw new InvalidOperationException($"Size ({SketchSlotSize}) must be a power of 2");
             Array.Clear(sketch);
             sketchMax.Value = 0;
+            sketchMax.MinWaiterTarget = long.MaxValue;
             waiterHead = null;
         }
 
@@ -121,6 +131,11 @@ namespace Garnet.server
             if (waiterHead == null)
                 return;
 
+            // Make the  max  publish visible before the read of  minT , so a decision to skip can never race ahead of the waiter's ability to see the new  max 
+            Interlocked.MemoryBarrier();
+            if (Volatile.Read(ref sketchMax.Value) <= Volatile.Read(ref sketchMax.MinWaiterTarget))
+                return;
+
             lock (@lock)
             {
                 var currentMax = Volatile.Read(ref sketchMax.Value);
@@ -132,6 +147,7 @@ namespace Garnet.server
                     node.Next = null;
                     node.Signal.Set();
                 }
+                UpdateMinWaiterTarget();
             }
         }
 
@@ -155,10 +171,16 @@ namespace Garnet.server
 
             lock (@lock)
             {
+                if (maximumSessionSequenceNumber < Volatile.Read(ref sketchMax.Value))
+                    return;
+
                 // Insert first, then re-check: if an updater raced with us
                 // (SignalWaiters saw waiterHead == null before we inserted),
                 // we catch it here and unlink before blocking.
                 InsertWaiter(node);
+                UpdateMinWaiterTarget();
+                // Make the enqueue visible before the recheck of  max , so a decision to block can never race ahead of the signaler's ability to see that you enqueued
+                Interlocked.MemoryBarrier();
                 if (maximumSessionSequenceNumber < Volatile.Read(ref sketchMax.Value))
                 {
                     // Unlink directly — we already hold the lock
@@ -167,6 +189,7 @@ namespace Garnet.server
                     else if (waiterHead == node)
                         waiterHead = node.Next;
                     _ = (node.Next?.Prev = node.Prev);
+                    UpdateMinWaiterTarget();
                     return;
                 }
             }
@@ -229,8 +252,19 @@ namespace Garnet.server
 
                 node.Prev = null;
                 node.Next = null;
+                UpdateMinWaiterTarget();
             }
         }
+
+        /// <summary>
+        /// Refreshes <see cref="SublogReplayStateMax.MinWaiterTarget"/> to the current head's target
+        /// (or <see cref="long.MaxValue"/> when the list is empty). Must be called under
+        /// <see cref="@lock"/>; every mutation of <see cref="waiterHead"/> is followed by this so the
+        /// lock-free skip in <see cref="SignalWaiters"/> observes an accurate smallest target.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private void UpdateMinWaiterTarget()
+            => Volatile.Write(ref sketchMax.MinWaiterTarget, waiterHead?.TargetSequenceNumber ?? long.MaxValue);
 
         /// <summary>
         /// Intrusive linked list node for a waiter. Holds prev/next pointers, the target
