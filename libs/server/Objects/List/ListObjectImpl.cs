@@ -259,6 +259,13 @@ namespace Garnet.server
                 writer.WriteNull();
                 count = 0;
             }
+            else if (count <= 0)
+            {
+                // LPOP/RPOP with an explicit count of 0 replies with an empty array.
+                // Without this neither branch writes anything and the command produces
+                // no reply at all, which shifts every following reply in a pipeline.
+                writer.WriteEmptyArray();
+            }
             else if (count > 1)
             {
                 writer.WriteArrayLength(count);
