@@ -13,7 +13,7 @@ reader that sees poison in a page it was protecting is a use-after-free.
 ## Running it
 
 ```
-dotnet run --project playground/LightEpochLitmus -- --seconds 600 --json result.json
+dotnet run -f net10.0 --project playground/LightEpochLitmus -- --seconds 600 --json result.json
 ```
 
 The control runs first and the harness refuses to continue unless the detector
@@ -35,8 +35,8 @@ docker run --rm garnet-lightepoch-litmus --seconds 3600 --iterations 8 --json -
 the same session:
 
 ```
-dotnet run -c Release --project playground/LightEpochLitmus -- --buggy --seconds 30
-dotnet run -c Release --project playground/LightEpochLitmus -- --seconds 30
+dotnet run -f net10.0 -c Release --project playground/LightEpochLitmus -- --buggy --seconds 30
+dotnet run -f net10.0 -c Release --project playground/LightEpochLitmus -- --seconds 30
 ```
 
 The first is expected to exit `1` with violations, the second `0`.

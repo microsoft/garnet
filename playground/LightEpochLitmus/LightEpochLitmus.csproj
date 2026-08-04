@@ -3,7 +3,6 @@
   <!-- See README.md. -->
 
   <PropertyGroup>
-    <TargetFrameworks>net10.0</TargetFrameworks>
     <OutputType>Exe</OutputType>
     <RootNamespace>Tsavorite.epoch.litmus</RootNamespace>
     <SignAssembly>true</SignAssembly>
