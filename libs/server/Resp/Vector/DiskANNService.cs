@@ -16,7 +16,7 @@ namespace Garnet.server
         internal const byte NeighborList = 1;
         internal const byte QuantizedVector = 2;
         internal const byte Attributes = 3;
-        private const byte Metadata = 4;
+        internal const byte Metadata = 4;
         internal const byte InternalIdMap = 5;
         internal const byte ExternalIdMap = 6;
 
