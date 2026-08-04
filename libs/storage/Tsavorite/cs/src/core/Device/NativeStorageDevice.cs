@@ -66,14 +66,21 @@ namespace Tsavorite.core
         /// Sized above the peak concurrent submitter-thread count so distinct threads almost never share a shard
         /// (sharing is still correct — the counters are interlocked — just slightly more contended).
         /// An internal implementation detail, not a user knob: the shard count has a single correct regime
-        /// (comfortably above peak concurrent submitters, with churn headroom), so it is a fixed constant.
-        /// The value 128 is right-sized from a performance sweep (device.bench and RESP GET over NumShards
-        /// 512→16 × threads 32→128): throughput is flat down to NumShards ≈ the peak concurrent submitter count
-        /// (~35–70 on the measured hardware), with a knee only at NumShards ≈ threads/4 — where ≥4 max-in-flight
-        /// submitters share one <see cref="SlotsPerShard"/>-slot free-list and RentSlot begins to spin. 128 gives
-        /// ~2× headroom over the peak submitter count for ~1 MB of fixed managed memory.
+        /// (comfortably above peak concurrent submitters, with churn headroom).
+        /// A performance sweep (device.bench and RESP GET over NumShards 512→16 × threads 32→128) showed
+        /// throughput is flat while NumShards ≥ the peak concurrent submitter count, with a knee only at
+        /// NumShards ≈ threads/4 — where ≥4 max-in-flight submitters share one <see cref="SlotsPerShard"/>-slot
+        /// free-list and RentSlot begins to spin. That peak submitter count is in turn bounded by the number of
+        /// logical processors available to the process (threads cannot execute the submit path more concurrently
+        /// than there are CPUs; the ThreadPool only transiently overshoots under connections ≫ cores), so the
+        /// count is derived from <see cref="Environment.ProcessorCount"/> rather than fitted to one machine —
+        /// 2× the processor count gives headroom for that transient overshoot. The floor of 128 is the value
+        /// validated on the sweep hardware (never regress below it on smaller boxes, ~1 MB of fixed managed
+        /// memory); the cap of 1024 bounds the fixed table to ~8 MB on very large machines.
+        /// <see cref="Environment.ProcessorCount"/> honors process CPU affinity and cgroup limits, so a pinned or
+        /// containerized server sizes to the cores it can actually run on.
         /// </summary>
-        const int NumShards = 128;
+        static readonly int NumShards = Math.Clamp(2 * Environment.ProcessorCount, 128, 1024);
 
         /// <summary>
         /// Number of completion-tracking slots per shard (power of two), i.e. the depth of each shard's
@@ -111,7 +118,7 @@ namespace Tsavorite.core
         /// Size of the in-flight completion-tracking pool (the <see cref="results"/> array): one entry per slot
         /// across all shards. Pure managed memory (no kernel cost). Derived from <see cref="NumShards"/>.
         /// </summary>
-        const int MaxResults = NumShards * SlotsPerShard;
+        static readonly int MaxResults = NumShards * SlotsPerShard;
 
         /// <summary>
         /// Sentinel returned by an int-valued native entry point (currently NativeDevice_QueueRunFor)
