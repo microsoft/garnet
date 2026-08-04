@@ -194,7 +194,6 @@ To add a new Garnet server setting:
 - Central package version management via `Directory.Packages.props`
 - XML doc comments (`/// <summary>`) are strongly recommended on public methods, with `<param>` tags for each parameter; analyzer rules for missing docs are currently configured as suggestions (see `.editorconfig`)
 - Comment format: `// Comment starting with a capital letter` (one space after `//`)
-- Keep comments tight, factual, and to the point: describe what the code does and why, in the present tense. Don't narrate history, reference issues/PRs, or describe problems, bugs, or prior approaches.
 
 ### Performance Conventions
 
@@ -209,7 +208,7 @@ To add a new Garnet server setting:
 
 Tsavorite uses **epoch-based memory reclamation** (`LightEpoch`) so writers can publish new values and reclaim old memory only after every reader has moved past it. Any change to the allocator, recovery, scan iterators, transient locking, or callbacks fired from the drain list must respect the rules below.
 
-**Key files**: `libs/storage/Tsavorite/cs/src/epoch/LightEpoch.cs`, `libs/storage/Tsavorite/cs/src/core/Allocator/AllocatorBase.cs`, `libs/storage/Tsavorite/cs/src/core/ClientSession/ClientSession.cs`.
+**Key files**: `libs/storage/Tsavorite/cs/src/core/Epochs/LightEpoch.cs`, `libs/storage/Tsavorite/cs/src/core/Allocator/AllocatorBase.cs`, `libs/storage/Tsavorite/cs/src/core/ClientSession/ClientSession.cs`.
 
 #### Epoch protection model (`LightEpoch`)
 

@@ -688,7 +688,7 @@ namespace Tsavorite.epoch.litmus
             if (Metadata.threadId == 0) // run once per thread for performance
             {
                 Metadata.threadId = Environment.CurrentManagedThreadId;
-                var code = (uint)Murmur3.Hash(Metadata.threadId);
+                var code = (uint)Utility.Murmur3(Metadata.threadId);
                 Metadata.startOffset1 = (ushort)(1 + (code % kTableSize));
                 Metadata.startOffset2 = (ushort)(1 + ((code >> 16) % kTableSize));
             }

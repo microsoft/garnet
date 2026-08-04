@@ -4,7 +4,7 @@ FROM mcr.microsoft.com/dotnet/sdk:${DOTNET_TAG} AS build
 WORKDIR /src
 
 COPY Directory.Build.props Directory.Packages.props Version.props Garnet.snk ./
-COPY libs/storage/Tsavorite/cs/src/epoch/ libs/storage/Tsavorite/cs/src/epoch/
+COPY libs/storage/Tsavorite/cs/src/core/ libs/storage/Tsavorite/cs/src/core/
 COPY playground/LightEpochLitmus/ playground/LightEpochLitmus/
 
 RUN dotnet publish playground/LightEpochLitmus/LightEpochLitmus.csproj -f net10.0 -c Release -o /app
