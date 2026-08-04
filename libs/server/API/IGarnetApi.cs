@@ -1340,6 +1340,11 @@ namespace Garnet.server
         /// Remove a member from a vector set, if it is present and the key exists.
         /// </summary>
         GarnetStatus VectorSetRemove(PinnedSpanByte key, PinnedSpanByte element);
+
+        /// <summary>
+        /// Update attribute for element in a Vector Set.
+        /// </summary>
+        GarnetStatus VectorSetSetAttribute(PinnedSpanByte key, PinnedSpanByte element, PinnedSpanByte attribute);
         #endregion
     }
 
@@ -2119,6 +2124,38 @@ namespace Garnet.server
         #endregion
 
         #region Vector Sets
+
+        /// <summary>
+        /// Count the number of vectors in a Vector Set.
+        /// </summary>
+        GarnetStatus VectorSetCardinality(PinnedSpanByte key, out long card);
+
+        /// <summary>
+        /// Returns <see cref="GarnetStatus.OK"/> if the given element exists in the given Vector Set.
+        /// 
+        /// Returns <see cref="GarnetStatus.NOTFOUND"/> if the given element is not in the Vector Set, or the Vector Set does not exist.
+        /// 
+        /// Returns <see cref="GarnetStatus.WRONGTYPE"/> if the given key exists, but is not a Vector set.
+        /// </summary>
+        GarnetStatus VectorSetIsMember(PinnedSpanByte key, PinnedSpanByte element);
+
+        /// <summary>
+        /// For a given element, find all neighbors and (optionally) the distance to those neighbors.
+        /// 
+        /// On success, <paramref name="idResults"/> has length prefixed element names, and <paramref name="distanceResults"/> (if <paramref name="withScores"/> is true) has a float for each of those elements.
+        /// </summary>
+        GarnetStatus VectorSetLinks(PinnedSpanByte key, PinnedSpanByte element, bool withScores, ref SpanByteAndMemory idResults, ref SpanByteAndMemory distanceResults);
+
+        /// <summary>
+        /// Fetch random elements from the given Vector Set.
+        /// 
+        /// If <paramref name="count"/> is &lt; 0 we allow duplicates, if <paramref name="count"/> &gt; 0 we remove duplicates.
+        /// 
+        /// It is OK to fetch fewer than the requested number of elements.
+        /// 
+        /// On success, <paramref name="idResults"/> has length prefixed element names.
+        /// </summary>
+        GarnetStatus VectorSetRandomMembers(PinnedSpanByte key, int count, ref SpanByteAndMemory idResults);
 
         /// <summary>
         /// Perform a similarity search given a vector and these parameters.

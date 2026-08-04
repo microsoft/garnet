@@ -31,16 +31,15 @@ namespace Garnet.server
         public readonly ReadOnlySpan<PinnedSpanByte> Parameters
             => session.parseState.Parameters;
 
-        // Implemented explicitly (not via the IReadArgBatch defaults) so calls through the generic
-        // TBatch constraint bind directly instead of boxing this struct.
+        // Implemented explicitly (rather than relying on the IReadArgBatch defaults) so that calls
+        // through the IReadArgBatch generic constraint resolve to this struct's member instead of
+        // boxing to dispatch the default interface method.
 
         /// <inheritdoc/>
-        public readonly int InitialIORecordSize
-        => KVSettings.UseDefaultInitialIORecordSize;
+        public readonly int InitialIORecordSize => KVSettings.UseDefaultInitialIORecordSize;
 
         /// <inheritdoc/>
-        public readonly ReadCopyOptions ReadCopyOptions
-        => default;
+        public readonly ReadCopyOptions ReadCopyOptions => default;
 
         private readonly bool HasGoneAsync
         => !runningStatus.IsEmpty;
@@ -48,10 +47,8 @@ namespace Garnet.server
         /// <inheritdoc/>
         public readonly void GetInput(int i, out StringInput input)
         {
-            input = default;
-
             // Save the index so we can order async completions correctly in the response
-            input.arg1 = i;
+            input = new(RespCommand.MGET, arg1: i);
         }
 
         /// <inheritdoc/>
@@ -118,7 +115,6 @@ namespace Garnet.server
 
                 if (!HasGoneAsync)
                 {
-
                     var bufferSize = session.parseState.Count - i;
                     var arr = ArrayPool<(Status, StringOutput)>.Shared.Rent(bufferSize);
                     runningStatus = arr.AsMemory()[..bufferSize];

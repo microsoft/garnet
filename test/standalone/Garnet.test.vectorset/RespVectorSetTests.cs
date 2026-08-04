@@ -1504,7 +1504,15 @@ namespace Garnet.test
                                 }
                                 break;
                             case RespCommand.VISMEMBER:
-                                // TODO: Implement once VISMEMBER is implemented
+                                try
+                                {
+                                    var res = db.VectorSetContains(key, "wololo");
+                                    ClassicAssert.IsFalse(res);
+                                }
+                                catch (RedisServerException e)
+                                {
+                                    exc = e;
+                                }
                                 continue;
                             case RespCommand.VLINKS:
                                 // TODO: Implement once VLINKS is implemented
@@ -1524,7 +1532,15 @@ namespace Garnet.test
                                 }
                                 break;
                             case RespCommand.VSETATTR:
-                                // TODO: Implement once VSETATTR is implemented
+                                try
+                                {
+                                    var res = db.VectorSetSetAttributesJson(key, new byte[] { 0, 0, 0, 6 }, "{\"foo\":\"bar\"}");
+                                    ClassicAssert.IsFalse(res);
+                                }
+                                catch (RedisServerException e)
+                                {
+                                    exc = e;
+                                }
                                 continue;
                             case RespCommand.VSIM:
                                 try
@@ -3427,8 +3443,6 @@ namespace Garnet.test
                     var allAdds = new List<Task>();
                     for (var i = 0; i < NumVectorSets; i++)
                     {
-                        TestContext.Progress.WriteLine(i);
-
                         var keyName = $"{nameof(LotsOfVectorSetsAsync)}_{i}";
                         var elemName = $"x{i}";
                         var vector = new byte[(i * 3) + 1];
@@ -3634,6 +3648,18 @@ namespace Garnet.test
         }
 
         [Test]
+        public async Task TypeAsync()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
+            var db = redis.GetDatabase(0);
+
+            ClassicAssert.IsTrue(await db.VectorSetAddAsync("foo", VectorSetAddRequest.Member("bar", new float[] { 1, 2, 3 })).ConfigureAwait(false));
+
+            var type = await db.KeyTypeAsync("foo").ConfigureAwait(false);
+            ClassicAssert.AreEqual(RedisType.VectorSet, type);
+        }
+
+        [Test]
         public async Task SyntheticReplicationRaceWithConcurrentDelMustNotResurrectKey([Values("VADD", "VREM")] string operation)
         {
             TestUtils.IgnoreIfExceptionInjectionDisabled();
@@ -3744,6 +3770,7 @@ namespace Garnet.test
             (nameof(VectorManager.MigrateIndexKeyLogArg), VectorManager.MigrateIndexKeyLogArg),
             (nameof(VectorManager.VADDSetFlagsArg), VectorManager.VADDSetFlagsArg),
             (nameof(VectorManager.CreateIndexArg), VectorManager.CreateIndexArg),
+            (nameof(VectorManager.VSETATTRAppendLogArg), VectorManager.VSETATTRAppendLogArg),
             ("DefaultZero", 0L),
             ("ArbitraryUnknown", unchecked((long)0x5EED_BEEF_5EED_BEEFL)),
         ];
@@ -3992,6 +4019,46 @@ namespace Garnet.test
             WriteAndVerify(new string('h', 100));              // grow,   100B
             WriteAndVerify("i");                                // shrink,   1B
             WriteAndVerify(new string('j', 63));               // grow,    63B
+        }
+
+        [Test]
+        public async Task VSETATTRAsync()
+        {
+            const string Key = nameof(VSETATTRAsync);
+            const string Element0 = nameof(Element0);
+            const string Element1 = nameof(Element1);
+
+            await using var redis = await ConnectionMultiplexer.ConnectAsync(TestUtils.GetConfig());
+            var db = redis.GetDatabase();
+
+            // Vector Set doesn't exist
+            var res0 = await db.VectorSetSetAttributesJsonAsync(Key, Element0, "{\"foo\":\"bar\"}").ConfigureAwait(false);
+            ClassicAssert.IsFalse(res0);
+
+            // Vector Set exists, element doesn't
+            var res1 = await db.VectorSetAddAsync(Key, VectorSetAddRequest.Member(Element0, new float[] { 1, 2, 3 })).ConfigureAwait(false);
+            ClassicAssert.IsTrue(res1);
+
+            var res2 = await db.VectorSetSetAttributesJsonAsync(Key, Element1, "{\"fizz\":\"buzz\"}").ConfigureAwait(false);
+            ClassicAssert.IsFalse(res2);
+
+            // Vector Set exists, element has no attribute
+            var res3 = await db.VectorSetSetAttributesJsonAsync(Key, Element0, "{\"hello\": \"world\"}").ConfigureAwait(false);
+            ClassicAssert.IsTrue(res3);
+            var res4 = await db.VectorSetGetAttributesJsonAsync(Key, Element0).ConfigureAwait(false);
+            ClassicAssert.AreEqual("{\"hello\": \"world\"}", res4);
+
+            // Overwrite existing attribute
+            var res5 = await db.VectorSetSetAttributesJsonAsync(Key, Element0, "{\"lazy\": \"fox\"}").ConfigureAwait(false);
+            ClassicAssert.IsTrue(res5);
+            var res6 = await db.VectorSetGetAttributesJsonAsync(Key, Element0).ConfigureAwait(false);
+            ClassicAssert.AreEqual("{\"lazy\": \"fox\"}", res6);
+
+            // Remove existing attribute
+            var res7 = await db.VectorSetSetAttributesJsonAsync(Key, Element0, "").ConfigureAwait(false);
+            ClassicAssert.IsTrue(res7);
+            var res8 = await db.VectorSetGetAttributesJsonAsync(Key, Element0).ConfigureAwait(false);
+            ClassicAssert.IsNull(res8);
         }
 
         /// <summary>

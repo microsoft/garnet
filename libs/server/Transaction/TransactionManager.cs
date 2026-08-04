@@ -25,6 +25,27 @@ namespace Garnet.server
     /// </summary>
     public sealed unsafe partial class TransactionManager
     {
+        /// <summary>
+        /// Disposable to allow <see cref="PromoteToTransaction"/> to be handled with a using block.
+        /// </summary>
+        public readonly struct TransactionGuard : IDisposable
+        {
+            internal static readonly TransactionGuard Null = new();
+
+            private readonly TransactionManager txnManager;
+
+            internal TransactionGuard(TransactionManager txnManager)
+            {
+                this.txnManager = txnManager;
+            }
+
+            /// <inheritdoc/>
+            public void Dispose()
+            {
+                txnManager?.Commit(true);
+            }
+        }
+
         internal bool AofEnabled => appendOnlyFile != null;
 
         /// <summary>
@@ -567,6 +588,27 @@ namespace Garnet.server
                 // Calculate sublog access vector for participating replay tasks
                 participantCount += virtualSublogAccessVector[physicalSublogIdx].SetBit(replayIdx) ? 1 : 0;
             }
+        }
+
+        /// <summary>
+        /// Helper to DRY-up the common pattern of promoting to a transaction when two (or more) subcommands need to be made atomic.
+        /// 
+        /// Returns a disposable that, when <see cref="IDisposable.Dispose"/> is called will commit the transaction if it promoted.
+        /// </summary>
+        internal TransactionGuard PromoteToTransaction(TransactionStoreTypes storeTypes, PinnedSpanByte key, LockType lockType)
+        {
+            // We're already in a transaction
+            if (state == TxnState.Running)
+            {
+                return TransactionGuard.Null;
+            }
+
+            AddTransactionStoreTypes(storeTypes);
+            SaveKeyEntryToLock(key, lockType);
+
+            _ = Run(true);
+
+            return new(this);
         }
     }
 }

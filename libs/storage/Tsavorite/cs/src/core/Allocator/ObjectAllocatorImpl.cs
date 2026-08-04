@@ -716,7 +716,10 @@ namespace Tsavorite.core
                     WriteInlinePageAsync((nint)pagePointers[flushPage % BufferSize], (ulong)(AlignedPageSizeBytes * flushPage), (uint)AlignedPageSizeBytes, callback, asyncResult, device);
                     return;
                 }
-                Debug.Assert(!asyncResult.partial, "Partial flush should not be requested for recovery flushes");
+                // A recovery flush may be front-partial (starting mid-page at the first record past the PageHeader) but always
+                // extends to the end of the page, so the whole page is written with the PageHeader re-included.
+                Debug.Assert(asyncResult.untilAddress == GetLogicalAddressOfStartOfPage(flushPage + 1),
+                    $"Recovery flush should extend to the end of page {flushPage}");
             }
 
             Debug.Assert(asyncResult.page == flushPage, $"asyncResult.page {asyncResult.page} should equal flushPage {flushPage}");
@@ -1050,13 +1053,6 @@ namespace Tsavorite.core
                 // to the main log file (or snapshot file) unless we are to skip it because HeadAddress advanced.
                 if (asyncResult.flushRequestState != FlushRequestState.WriteNotIssued)
                 {
-                    if (asyncResult.partial)
-                    {
-                        // We're writing only a subset of the page, so update our count of bytes to write.
-                        var aligned_end = (int)RoundUp(asyncResult.untilAddress - alignedStartOffset, (int)device.SectorSize);
-                        numBytesToWrite = (uint)(aligned_end - alignedStartOffset);
-                    }
-
                     // Finally write the main log page as part of OnPartialFlushComplete, or directly if we had no flushBuffers.
                     // TODO: This will potentially overwrite partial sectors if this is a partial flush; a workaround would be difficult.
                     if (logWriter is not null)

@@ -91,7 +91,7 @@ namespace Garnet.server
             {
                 rmwInfo.Action = RMWAction.WrongType;
                 output.OutputFlags |= ObjectOutputFlags.WrongType;
-                return true;
+                return false;
             }
 
             if (InPlaceUpdaterWorker(ref logRecord, ref input, ref output, ref rmwInfo))
@@ -136,7 +136,7 @@ namespace Garnet.server
             if (IncorrectObjectType(ref input, garnetValueObject, ref output.SpanByteAndMemory))
             {
                 output.OutputFlags |= ObjectOutputFlags.WrongType;
-                return true;
+                return false;
             }
 
             var customObjectCommand = GetCustomObjectCommand(ref input, input.header.type);
@@ -170,6 +170,13 @@ namespace Garnet.server
                 rmwInfo.Action = RMWAction.ExpireAndResume;
                 return false;
             }
+
+            if (!srcLogRecord.DataHeader.ValueIsObject)
+            {
+                rmwInfo.Action = RMWAction.WrongType;
+                return false;
+            }
+
             // Defer the actual copying of data to PostCopyUpdater, so we know the record has been successfully CASed into the hash chain before we potentially
             // create large allocations (e.g. if srcLogRecord is from disk, we would have to allocate the overflow byte[]). Because we are doing an update we have
             // and XLock, so nobody will see the unset data even after the CAS. Tsavorite will handle cloning the ValueObject and caching serialized data as needed,

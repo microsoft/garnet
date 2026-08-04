@@ -233,6 +233,12 @@ namespace Tsavorite.core
         public readonly bool IsSet => logRecord.IsSet;
 
         /// <inheritdoc/>
+        // Implemented directly (rather than relying on the ISourceLogRecord default) so that calls
+        // through the ISourceLogRecord generic constraint resolve here instead of boxing to dispatch
+        // the default interface method.
+        public readonly long PhysicalAddress => logRecord.PhysicalAddress;
+
+        /// <inheritdoc/>
         public ref RecordInfo InfoRef => ref logRecord.InfoRef;
         /// <inheritdoc/>
         public readonly RecordInfo Info => logRecord.Info;
@@ -287,6 +293,11 @@ namespace Tsavorite.core
         #region IKey
         /// <inheritdoc/>
         public readonly bool IsPinned => IsPinnedKey;
+
+        /// <inheritdoc/>
+        // Implemented directly (rather than relying on the IKey default) so that calls through the
+        // IKey generic constraint resolve here instead of boxing to dispatch the default interface method.
+        public readonly bool IsEmpty => false;
 
         /// <inheritdoc/>
         public readonly ReadOnlySpan<byte> KeyBytes => Key;

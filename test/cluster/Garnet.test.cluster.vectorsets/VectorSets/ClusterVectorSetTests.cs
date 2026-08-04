@@ -1827,7 +1827,24 @@ namespace Garnet.test.cluster
                                     {
                                         try
                                         {
-                                            var addRes = (int)readWriteDB.Execute("VADD", [new RedisKey(key), "XB8", data, elem, "XPREQ8", "SETATTR", attr]);
+                                            var vaddRes = readWriteDB.Execute("VADD", [new RedisKey(key), "XB8", data, elem, "XPREQ8", "SETATTR", attr]);
+
+                                            // During slot migration the raw command can transiently come back as a
+                                            // nil/null result (e.g., routing resolves to a node mid-migration) rather
+                                            // than raising a redirect exception. Casting nil to int throws a
+                                            // NullReferenceException, so treat it as one more retryable transient
+                                            // alongside MOVED/timeout/connection below rather than failing the test.
+                                            if (vaddRes is null || vaddRes.IsNull)
+                                            {
+                                                if (writeCancel.IsCancellationRequested)
+                                                {
+                                                    return;
+                                                }
+
+                                                continue;
+                                            }
+
+                                            var addRes = (int)vaddRes;
                                             ClassicAssert.AreEqual(1, addRes);
                                             break;
                                         }
@@ -1925,9 +1942,10 @@ namespace Garnet.test.cluster
                                         continue;
                                     }
 
-                                    if (emb.Length == 0)
+                                    if (emb is null || emb.Length == 0)
                                     {
                                         // Migration might make this temporarily unavailable due to connection state
+                                        // (a nil VEMB result casts to a null array), so retry.
                                         //
                                         // Because we check for presence of all data at the end of test, we can safely ignore this for now
                                         continue;
@@ -2292,6 +2310,37 @@ namespace Garnet.test.cluster
 
             ClassicAssert.AreEqual("string", primaryType, "Synthetic VADD must not change the raced String key away from String on the primary");
             ClassicAssert.AreEqual(primaryType, replicaType, "Replica diverged from primary after replaying a synthetic VADD against a String key");
+        }
+
+        [Test]
+        public async Task VSETATTRReplicatesAsync()
+        {
+            const int PrimaryIndex = 0;
+            const int SecondaryIndex = 1;
+            const string Key = nameof(VSETATTRReplicatesAsync);
+            const string Element = Key + "_Element";
+
+            _ = await SimpleSetupClusterAsync(DefaultShards, primaryCount: 1, replicaCount: 1, useTLS: false).ConfigureAwait(false);
+
+            var primary = (IPEndPoint)context.endpoints[PrimaryIndex];
+            var secondary = (IPEndPoint)context.endpoints[SecondaryIndex];
+
+            ClassicAssert.AreEqual("master", context.clusterTestUtils.RoleCommand(primary).Value);
+            ClassicAssert.AreEqual("slave", context.clusterTestUtils.RoleCommand(secondary).Value);
+
+            await using var connection = await ConnectionMultiplexer.ConnectAsync(context.clusterTestUtils.GetRedisConfig(context.endpoints)).ConfigureAwait(false);
+            var primaryServer = connection.GetServer(primary);
+            var secondaryServer = connection.GetServer(secondary);
+
+            var addRes = (int)await primaryServer.ExecuteAsync("VADD", [Key, "VALUES", "3", "1", "2", "3", Element]).ConfigureAwait(false);
+            ClassicAssert.AreEqual(1, addRes);
+            var setRes = (int)await primaryServer.ExecuteAsync("VSETATTR", [Key, Element, "{\"foo\":\"bar\"}"]).ConfigureAwait(false);
+            ClassicAssert.AreEqual(1, setRes);
+
+            context.clusterTestUtils.WaitForReplicaAofSync(PrimaryIndex, SecondaryIndex);
+
+            var getRes = (string)await secondaryServer.ExecuteAsync("VGETATTR", [Key, Element]).ConfigureAwait(false);
+            ClassicAssert.AreEqual("{\"foo\":\"bar\"}", getRes);
         }
 
         private async Task<(List<ShardInfo> Shards, List<ushort> Slots)> SimpleSetupClusterAsync(int shardCount, int primaryCount, int replicaCount, bool onDemandCheckpoint = false, bool useTLS = true)
