@@ -487,18 +487,19 @@ namespace Tsavorite.core
             }
 
             objectHeadered = true;
+            ObjectLogWriterDiagnostics.LastFirstObjectHeaderRoom = writeBuffer.RemainingCapacity;   // test instrumentation
             PokeObjectChunkPlaceholder();
         }
 
-        /// <summary>Poke an empty placeholder <see cref="ChunkHeader"/> (to be back-filled) at the current 8-aligned buffer position. Fails fast on
-        /// the rare zero-length-chunk case (a header landing exactly at buffer_end-8), which only the first post-prefix header can hit.</summary>
+        /// <summary>Poke an empty placeholder <see cref="ChunkHeader"/> (to be back-filled) at the current 8-aligned buffer position. When exactly
+        /// <see cref="ChunkHeader.TotalSize"/> bytes remain to the buffer end (a header landing at buffer_end-8, which only the first post-prefix
+        /// header can hit), the header fills the buffer with no data room: the next <see cref="CopyObjectDataBytes"/> sees a full buffer and
+        /// <see cref="AdvanceObjectBuffer"/> back-fills this header as a zero-length continuation chunk, resuming the data in the next buffer.</summary>
         void PokeObjectChunkPlaceholder()
         {
             Debug.Assert((flushBuffers.GetNextRecordStartPosition().Offset & 7) == 0, "ChunkHeader must be written on an 8-byte-aligned object-log position");
             var room = writeBuffer.RemainingCapacity;
-            if (room == ChunkHeader.TotalSize)
-                throw new TsavoriteException("Object chunk framing: a ChunkHeader landed at buffer_end-8 (zero-length-chunk case) which is not yet implemented; see website/docs/dev/objectlog-serialization.md.");
-            Debug.Assert(room > ChunkHeader.TotalSize, $"no room for a ChunkHeader plus data (RemainingCapacity {room})");
+            Debug.Assert(room >= ChunkHeader.TotalSize, $"no room for a ChunkHeader (RemainingCapacity {room})");
 
             ChunkHeader placeholder = default;
             currentChunkHeaderBufferPos = writeBuffer.currentPosition;
@@ -512,6 +513,8 @@ namespace Tsavorite.core
         {
             var chunkDataLen = writeBuffer.currentPosition - (currentChunkHeaderBufferPos + ChunkHeader.TotalSize);
             Debug.Assert(chunkDataLen >= 0, $"chunk data length {chunkDataLen} must be non-negative");
+            if (chunkDataLen == 0)
+                ++ObjectLogWriterDiagnostics.ZeroLengthChunkCount;   // test instrumentation (boundary-filler zero-length chunk)
             var currentLength = (uint)chunkDataLen;
             if (hasContinuation)
                 currentLength |= unchecked((uint)ChunkedRecordConstants.ContinuationFlag);
@@ -532,6 +535,25 @@ namespace Tsavorite.core
                 valueObjectSerializer?.EndSerialize();
                 localMemoryStream.Dispose();
             }
+        }
+    }
+
+    /// <summary>Test-only instrumentation for the object chunk-framing writer, exercised by the zero-length-chunk boundary test. Non-generic so a
+    /// test can observe it independent of the store-functions type. Not used by production logic. NUnit runs these fixtures sequentially, so the
+    /// static fields are set/read around a single flush without contention.</summary>
+    internal static class ObjectLogWriterDiagnostics
+    {
+        /// <summary>The write-buffer bytes remaining when the first post-prefix object <see cref="ChunkHeader"/> was placed for the most recent
+        /// serialized object; <see cref="ChunkHeader.TotalSize"/> indicates the zero-length-first-chunk boundary. -1 if no object was headered.</summary>
+        internal static int LastFirstObjectHeaderRoom = -1;
+
+        /// <summary>Count of zero-length object chunks written (a boundary filler emitted when a <see cref="ChunkHeader"/> lands at buffer_end-8).</summary>
+        internal static long ZeroLengthChunkCount;
+
+        internal static void Reset()
+        {
+            LastFirstObjectHeaderRoom = -1;
+            ZeroLengthChunkCount = 0;
         }
     }
 }

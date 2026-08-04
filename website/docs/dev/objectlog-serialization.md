@@ -121,8 +121,11 @@ DMA-padded short key only), bits 60–61 reserved.
   straddles a buffer/segment boundary. The recorded object extent is the monotonic distance from the object's start position.
 - **Overflow headers never straddle a buffer/segment**: within ~128 bytes of the end → advance the start to the next
   buffer/segment; that advanced start is the recorded `ObjectLogPosition`, so the reader lands correctly.
-- **Zero-length-chunk edge** (a header landing exactly at `buffer_end − 8`): only the first post-prefix header can hit it; the
-  writer currently **fails fast** ("not yet implemented") rather than silently misframe — a follow-up increment.
+- **Zero-length-chunk edge** (a header landing exactly at `buffer_end − 8`): only the first post-prefix header can hit it (a
+  fresh buffer always leaves ≥ one sector for a header plus data). The 8-byte header fills the buffer with no data room, so it is
+  **back-filled as a zero-length continuation chunk** (`currentLength = 0 | ContinuationFlag`) and the object data resumes in the
+  next buffer. The reader (§6) skips zero-length continuation chunks. Deterministically exercised by
+  `ObjectChunkZeroLengthFirstChunkTest`, which packs dense overflow fillers so the object starts at `buffer_end − (1023 + 8)`.
 
 ---
 
