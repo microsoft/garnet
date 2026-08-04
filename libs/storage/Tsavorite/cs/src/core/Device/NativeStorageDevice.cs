@@ -63,10 +63,17 @@ namespace Tsavorite.core
         /// increment/decrement) then lands on that shard's own cache lines. This removes the cache-line
         /// ping-pong that a single global pending counter plus a shared free-slot queue create when dozens of
         /// submitter and completion threads touch them on every IO — the dominant cost profiled at high IOPS.
-        /// Sized well above the expected submitter-thread count so distinct threads almost never share a shard
+        /// Sized above the peak concurrent submitter-thread count so distinct threads almost never share a shard
         /// (sharing is still correct — the counters are interlocked — just slightly more contended).
+        /// An internal implementation detail, not a user knob: the shard count has a single correct regime
+        /// (comfortably above peak concurrent submitters, with churn headroom), so it is a fixed constant.
+        /// The value 128 is right-sized from a performance sweep (device.bench and RESP GET over NumShards
+        /// 512→16 × threads 32→128): throughput is flat down to NumShards ≈ the peak concurrent submitter count
+        /// (~35–70 on the measured hardware), with a knee only at NumShards ≈ threads/4 — where ≥4 max-in-flight
+        /// submitters share one <see cref="SlotsPerShard"/>-slot free-list and RentSlot begins to spin. 128 gives
+        /// ~2× headroom over the peak submitter count for ~1 MB of fixed managed memory.
         /// </summary>
-        const int NumShards = 512;
+        const int NumShards = 128;
 
         /// <summary>
         /// Number of completion-tracking slots per shard (power of two), i.e. the depth of each shard's
@@ -102,7 +109,7 @@ namespace Tsavorite.core
 
         /// <summary>
         /// Size of the in-flight completion-tracking pool (the <see cref="results"/> array): one entry per slot
-        /// across all shards. Pure managed memory (no kernel cost).
+        /// across all shards. Pure managed memory (no kernel cost). Derived from <see cref="NumShards"/>.
         /// </summary>
         const int MaxResults = NumShards * SlotsPerShard;
 
@@ -1106,7 +1113,7 @@ namespace Tsavorite.core
 
             // In-flight accounting is sharded per submitter thread to avoid the global cache-line
             // contention profiled at high IOPS. The counter arrays are allocated up front (small,
-            // ~128 KB total) because Throttle() may run before the first IO creates the native device.
+            // ~32 KB total) because Throttle() may run before the first IO creates the native device.
             shardSubmitted = new long[NumShards * ShardStride];
             shardCompleted = new long[NumShards * ShardStride];
             shardIndex = new ThreadLocal<int>(AssignShard);
