@@ -1,8 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <AssemblyName>Garnet.LightEpoch.test</AssemblyName>
-    <RootNamespace>Tsavorite.test.epoch</RootNamespace>
     <SignAssembly>true</SignAssembly>
     <AssemblyOriginatorKeyFile>../../../../../../Garnet.snk</AssemblyOriginatorKeyFile>
     <DelaySign>false</DelaySign>

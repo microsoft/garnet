@@ -5,7 +5,7 @@ namespace Tsavorite.core
 {
     /// <summary>
     /// Read-only views of <see cref="LightEpoch"/>'s internal state, used only by the unit tests in
-    /// Garnet.LightEpoch.test.
+    /// Tsavorite.test.epoch.
     /// </summary>
     public sealed unsafe partial class LightEpoch
     {
