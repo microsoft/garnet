@@ -429,10 +429,6 @@ namespace Tsavorite.core
                 device.ReadAsync(offset + numBytesRead, pointers[i], length, AsyncPageReadCallback, result);
                 numBytesRead += (i == numCompleteLevels) ? lastLevelSize : alignedPageSize;
             }
-            // Flush this thread's batched submits before RecoverAsync blocks on recoveryCountdown; a
-            // sub-threshold overflow-bucket burst must not be stranded in an unsubmitted per-thread batch
-            // (GARNET_SUBMIT_BATCH). Runs on the issuing thread; no-op for immediate-submit devices.
-            device.TryComplete();
         }
 
         private unsafe void AsyncPageReadCallback(uint errorCode, uint numBytes, object context, Exception ioException)

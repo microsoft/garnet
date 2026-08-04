@@ -60,12 +60,6 @@ namespace Tsavorite.core
         public long BeginAddress => allocatorBase.BeginAddress;
 
         /// <summary>
-        /// The underlying log <see cref="IDevice"/> (used for backend-specific hooks such as
-        /// NativeStorageDevice LightEpoch-style ring-affinity release at the batch boundary).
-        /// </summary>
-        public IDevice Device => allocatorBase.Device;
-
-        /// <summary>
         /// <see cref="ObjectIdMap"/> for serializing/deserializing <see cref="DiskLogRecord"/>.
         /// </summary>
         public ObjectIdMap TransientObjectIdMap => allocatorBase.transientObjectIdMap;

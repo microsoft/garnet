@@ -34,8 +34,9 @@ namespace Tsavorite.core
         /// <param name="localMemorySegmentSize">For DeviceType.LocalMemory: segment size in bytes (must divide <paramref name="capacity"/>). Default 1 GB. Ignored otherwise.</param>
         /// <param name="localMemoryRingCapacity">For DeviceType.LocalMemory: per-submitter ring capacity (power of two), which is the device's in-flight bound (the producer blocks when its ring is full). 0 = default. This is how an in-flight throttle is applied to LocalMemory: its per-ring SPSC backpressure caps in-flight with no device-wide counter. Ignored otherwise.</param>
         /// <param name="logger">Optional logger for device diagnostics.</param>
+        /// <param name="queueDepth">For DeviceType.Native on Linux: per-ring kernel submission depth D (maxEvents for io_uring_queue_init / libaio io_setup). Orthogonal to <paramref name="numIoContexts"/> (ring count) and the aggregate throttle. 0 (default) = the device default depth. Ignored otherwise.</param>
         /// <returns>Device instance</returns>
-        public static IDevice CreateLogDevice(string logPath = null, DeviceType deviceType = DeviceType.Default, bool preallocateFile = false, bool deleteOnClose = false, long capacity = CAPACITY_UNSPECIFIED, bool recoverDevice = false, bool useIoCompletionPort = false, bool disableFileBuffering = true, bool readOnly = false, NativeStorageDevice.IoBackend ioBackend = NativeStorageDevice.IoBackend.Default, int numCompletionThreads = 1, long localMemorySegmentSize = 1L << 30, int localMemoryRingCapacity = 0, ILogger logger = null, int numIoContexts = 0)
+        public static IDevice CreateLogDevice(string logPath = null, DeviceType deviceType = DeviceType.Default, bool preallocateFile = false, bool deleteOnClose = false, long capacity = CAPACITY_UNSPECIFIED, bool recoverDevice = false, bool useIoCompletionPort = false, bool disableFileBuffering = true, bool readOnly = false, NativeStorageDevice.IoBackend ioBackend = NativeStorageDevice.IoBackend.Default, int numCompletionThreads = 1, long localMemorySegmentSize = 1L << 30, int localMemoryRingCapacity = 0, ILogger logger = null, int numIoContexts = 0, int queueDepth = 0)
         {
             if (deviceType == DeviceType.Default)
             {
@@ -49,7 +50,7 @@ namespace Tsavorite.core
 
             return deviceType switch
             {
-                DeviceType.Native when RuntimeInformation.IsOSPlatform(OSPlatform.Linux) => new NativeStorageDevice(logPath, deleteOnClose, disableFileBuffering, capacity, numCompletionThreads: numCompletionThreads, ioBackend: ioBackend, logger: logger, numIoContexts: numIoContexts),
+                DeviceType.Native when RuntimeInformation.IsOSPlatform(OSPlatform.Linux) => new NativeStorageDevice(logPath, deleteOnClose, disableFileBuffering, capacity, numCompletionThreads: numCompletionThreads, ioBackend: ioBackend, logger: logger, numIoContexts: numIoContexts, queueDepth: queueDepth),
                 DeviceType.Native when RuntimeInformation.IsOSPlatform(OSPlatform.Windows) => new LocalStorageDevice(logPath, preallocateFile, deleteOnClose, disableFileBuffering, capacity, recoverDevice, useIoCompletionPort, readOnly: readOnly, logger: logger),
                 DeviceType.RandomAccess => new RandomAccessLocalStorageDevice(logPath, preallocateFile, deleteOnClose, disableFileBuffering, capacity, recoverDevice, readOnly: readOnly, logger: logger),
                 DeviceType.FileStream => new ManagedLocalStorageDevice(logPath, preallocateFile, deleteOnClose, disableFileBuffering, capacity, recoverDevice, readOnly: readOnly, logger: logger),

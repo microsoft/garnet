@@ -462,6 +462,23 @@ namespace Garnet.server
         public int DeviceThrottleLimit = 0;
 
         /// <summary>
+        /// For DeviceType.Native on Linux: number of independent kernel io_contexts / io_uring rings
+        /// (the ring COUNT), decoupled from the completion drainers. This is the critical io_uring
+        /// lever: set it at or above submitter concurrency so each submitter owns a ring and io_submit
+        /// is contention-free (few rings + many submitters serialize on the per-ring lock). libaio is
+        /// largely indifferent (its kernel io_context mutex is cheap). 0 means "use the device default".
+        /// </summary>
+        public int DeviceIoContexts = 0;
+
+        /// <summary>
+        /// For DeviceType.Native on Linux: per-ring kernel submission depth D (maxEvents passed to
+        /// io_uring_queue_init / libaio io_setup). Orthogonal to <see cref="DeviceIoContexts"/> (ring
+        /// count) and <see cref="DeviceThrottleLimit"/> (aggregate in-flight). 0 means "use the device
+        /// default". Note libaio draws io-contexts * queue-depth from the global fs.aio-max-nr budget.
+        /// </summary>
+        public int DeviceQueueDepth = 0;
+
+        /// <summary>
         /// Limit of items to return in one iteration of *SCAN command
         /// </summary>
         public int ObjectScanCountLimit = 1000;
@@ -771,10 +788,12 @@ namespace Garnet.server
                 deviceType: DeviceType,
                 ioBackend: DeviceIoBackend,
                 numCompletionThreads: DeviceCompletionThreads,
+                numIoContexts: DeviceIoContexts,
+                queueDepth: DeviceQueueDepth,
                 throttleLimit: DeviceThrottleLimit > 0 ? DeviceThrottleLimit : null,
                 logger: logger);
             if (DeviceType == DeviceType.Native && OperatingSystem.IsLinux())
-                logger?.LogInformation("Using device type {deviceType} (io-backend={ioBackend}, completion-threads={ct}, throttle-limit={tl})", DeviceType, DeviceIoBackend, DeviceCompletionThreads, DeviceThrottleLimit > 0 ? DeviceThrottleLimit.ToString() : "device-default");
+                logger?.LogInformation("Using device type {deviceType} (io-backend={ioBackend}, completion-threads={ct}, io-contexts={ioc}, queue-depth={qd}, throttle-limit={tl})", DeviceType, DeviceIoBackend, DeviceCompletionThreads, DeviceIoContexts > 0 ? DeviceIoContexts.ToString() : "device-default", DeviceQueueDepth > 0 ? DeviceQueueDepth.ToString() : "device-default", DeviceThrottleLimit > 0 ? DeviceThrottleLimit.ToString() : "device-default");
             else
                 logger?.LogInformation("Using device type {deviceType} (throttle-limit={tl})", DeviceType, DeviceThrottleLimit > 0 ? DeviceThrottleLimit.ToString() : "device-default");
 

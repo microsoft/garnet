@@ -67,6 +67,8 @@ namespace Device.benchmark
             Console.WriteLine($"Segment Size: {opts.SegmentSize}");
             Console.WriteLine($"Throttle Limit: {opts.ThrottleLimit}");
             Console.WriteLine($"Completion Threads: {opts.CompletionThreads}");
+            Console.WriteLine($"IO Contexts: {opts.IoContexts}");
+            Console.WriteLine($"Queue Depth: {opts.QueueDepth}");
             Console.WriteLine($"Runtime: {opts.Runtime}");
             Console.WriteLine($"BatchSize: {string.Join(",", opts.BatchSize.ToList())}");
             Console.WriteLine($"NumThreads: {string.Join(",", opts.NumThreads.ToList())}");
@@ -242,7 +244,8 @@ namespace Device.benchmark
                     numCompletionThreads: opts.CompletionThreads > 0 ? opts.CompletionThreads : 1,
                     ioBackend: ParseBackend(opts.IoBackend),
                     logger: null,
-                    numIoContexts: opts.IoContexts),
+                    numIoContexts: opts.IoContexts,
+                    queueDepth: opts.QueueDepth),
                 DeviceType.FileStream => new ManagedLocalStorageDevice(fileName, true, false, true, -1, false, false, false),
                 DeviceType.RandomAccess => new RandomAccessLocalStorageDevice(fileName, true, true, true, -1, false, false, false),
                 _ => throw new ArgumentOutOfRangeException()

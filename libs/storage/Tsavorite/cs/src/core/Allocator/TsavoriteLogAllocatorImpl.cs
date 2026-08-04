@@ -240,12 +240,6 @@ namespace Tsavorite.core
                 offsetInFile = (ulong)(AlignedPageSizeBytes * (readPage - devicePageOffset));
 
             usedDevice.ReadAsync(offsetInFile, (IntPtr)frame.pointers[pageIndex], readLength, callback, asyncResult);
-
-            // Flush this thread's batched submits before the caller blocks on the returned CountdownEvent;
-            // a batched-submit backend (GARNET_SUBMIT_BATCH) must not strand this scan/replay read in an
-            // unsubmitted sub-threshold batch or the completion never fires. Runs on the issuing thread;
-            // no-op for immediate-submit devices.
-            usedDevice.TryComplete();
         }
     }
 }

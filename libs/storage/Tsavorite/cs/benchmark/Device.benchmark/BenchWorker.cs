@@ -134,10 +134,9 @@ namespace Device.benchmark
             }
             finally
             {
-                // Drain until every buffer this worker owns has returned. TryComplete() also
-                // flushes this thread's deferred read batch (opt-in GARNET_SUBMIT_BATCH), so a
-                // sub-threshold tail submitted during the last iterations is guaranteed to reach
-                // the kernel and complete here rather than stranding the shutdown wait.
+                // Drain until every buffer this worker owns has returned, polling completions so
+                // any reads submitted during the last iterations complete here rather than
+                // stranding the shutdown wait.
                 while (_benchmarkPool.Count < batchSize)
                 {
                     device.TryComplete();

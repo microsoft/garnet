@@ -187,14 +187,6 @@ public:
     /// waiting on the QueueRunFor timeout (which is otherwise a per-context shutdown stall).
     /// Returns 0 on success, -1 on failure (out-of-range ctx_idx, unable to submit, etc).
     virtual int Wake(int ctx_idx) = 0;
-    /// Submit the calling thread's accumulated submit batch (opt-in batched libaio submit).
-    /// No-op when batching is disabled/empty or on backends that submit per-op. Runs on the
-    /// calling (submitter) thread. Returns the number of IOs submitted to the kernel.
-    virtual int FlushSubmits() = 0;
-    /// Release the calling thread's LightEpoch-style ring ownership (GARNET_RING_LE_AFFINITY).
-    /// Called at the network-batch boundary so a churned-away submitter thread never leaves a
-    /// stale ring owner. No-op when LE affinity is disabled or on backends without ring ownership.
-    virtual void ReleaseRing() = 0;
     /// Number of submission/completion shards. >= 1.
     virtual int num_io_contexts() const = 0;
 };
@@ -574,14 +566,6 @@ public:
 
     int Wake(int ctx_idx) override {
         return handler_.Wake(ctx_idx);
-    }
-
-    int FlushSubmits() override {
-        return handler_.FlushSubmits();
-    }
-
-    void ReleaseRing() override {
-        handler_.release_my_ring();
     }
 
     int num_io_contexts() const override {

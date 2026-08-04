@@ -24,23 +24,38 @@ namespace Tsavorite.core
     public unsafe class NativeStorageDevice : StorageDeviceBase
     {
         /// <summary>
-        /// Hard ceiling on the effective in-flight throttle (max concurrent I/Os the device will drive),
-        /// and the upper bound the native submission ring is sized to. A configured
-        /// <see cref="StorageDeviceBase.ThrottleLimit"/> above this is clamped (and logged).
+        /// Default per-ring native submission depth D (io_uring SQ entries / libaio io_setup maxevents)
+        /// used when <c>--device-queue-depth</c> is not set. This is the per-ring kernel queue capacity,
+        /// one of the two physical device dimensions (ring COUNT = io-contexts, ring DEPTH = this).
         ///
-        /// This is a kernel-aware ceiling, not an arbitrary number:
-        /// <list type="bullet">
-        /// <item><b>libaio</b>: each io_context's <c>io_setup(maxevents)</c> draws from the system-wide
-        /// <c>fs.aio-max-nr</c> budget (default 65536, shared across every io_context in every process); one
-        /// device at this depth already takes ~1/16 of it, and deeper rings risk <c>io_setup</c> EAGAIN failures
-        /// elsewhere.</item>
-        /// <item><b>io_uring</b>: <c>IORING_MAX_ENTRIES</c> caps a ring at 32768 entries.</item>
-        /// </list>
-        /// 4096 is already 8-32x a single NVMe's useful queue depth, so it is not a practical limit. If an exotic
-        /// configuration ever needs more, raise this constant deliberately and re-validate against the kernel
-        /// limits above — do not allow an unbounded throttle that would silently degrade into the submit-ring spin.
+        /// 4096 is a headroom CEILING, not pre-allocated work: a ring never holds more than
+        /// <c>throttle / io-contexts</c> in-flight, and the default throttle (4096) divided across any ring
+        /// count is &lt;= 4096, so no ring goes full at the default config for any io-contexts value. Deeper
+        /// rings than the workload uses cost only bounded pinned ring memory (~D*100B/ring for io_uring),
+        /// never extra IO.
         /// </summary>
-        const int MaxThrottle = 1 << 12;
+        const int DefaultQueueDepth = 1 << 12;      // 4096
+
+        /// <summary>
+        /// Hard cap on per-ring queue depth: io_uring's <c>IORING_MAX_ENTRIES</c> (32768). libaio additionally
+        /// draws <c>io-contexts * queue-depth</c> from the global <c>fs.aio-max-nr</c> budget (distro default
+        /// 65536), guarded separately at device creation.
+        /// </summary>
+        const int MaxQueueDepth = 1 << 15;          // 32768
+
+        /// <summary>
+        /// Default aggregate in-flight read throttle T (software backpressure) used when
+        /// <c>--device-throttle-limit</c> is not set. This is the maximum number of disk-read IOs the
+        /// allocator keeps in flight before it applies backpressure (<see cref="Throttle"/>); its only
+        /// physical footprint is the pinned POH read buffers of the in-flight reads (~T * 4KB). It sizes
+        /// NOTHING in the kernel — that is <see cref="DefaultQueueDepth"/>'s job.
+        ///
+        /// 4096 saturates an 8-drive NVMe RAID-0 at the achievable peak (measured neutral vs 65536 there)
+        /// while keeping pinned read-buffer memory bounded (~16MB). High-connection deployments may raise
+        /// <c>--device-throttle-limit</c> up to the kernel capacity <c>io-contexts * queue-depth</c> for a
+        /// measured +5-7% at very high connection counts.
+        /// </summary>
+        const int DefaultThrottleLimit = 1 << 12;   // 4096
 
         /// <summary>
         /// Number of per-submitter-thread shards for in-flight tracking. Each submitter thread is assigned one
@@ -90,13 +105,6 @@ namespace Tsavorite.core
         /// across all shards. Pure managed memory (no kernel cost).
         /// </summary>
         const int MaxResults = NumShards * SlotsPerShard;
-
-        /// <summary>
-        /// Default per-context native submission-ring depth (libaio io_setup maxevents / io_uring
-        /// SQ entries) when the throttle limit does not call for a deeper ring. Matches the native
-        /// backend floor (file_linux.h QueueIoHandler/UringIoHandler kMaxEvents).
-        /// </summary>
-        const int DefaultNativeRingDepth = 128;
 
         /// <summary>
         /// Sentinel returned by an int-valued native entry point (currently NativeDevice_QueueRunFor)
@@ -174,12 +182,15 @@ namespace Tsavorite.core
         long nextReconcileTicks;
 
         /// <summary>
-        /// Effective in-flight throttle used by <see cref="Throttle"/>, i.e. <c>min(ThrottleLimit, MaxThrottle)</c>
-        /// captured once when the native device is created (the same point the ring depth is fixed), so the hot
-        /// throttle-spin loop does not re-clamp on every call. Defaults to <see cref="MaxThrottle"/>; only consulted
-        /// once reads are in flight, by which point the native device — and this value — have been established.
+        /// Effective aggregate in-flight throttle T used by <see cref="Throttle"/>, captured once when the
+        /// native device is created (the same point ring count N and depth D are fixed): the configured
+        /// <see cref="StorageDeviceBase.ThrottleLimit"/> (or <see cref="DefaultThrottleLimit"/> when unset),
+        /// capped at the kernel capacity <c>N * D</c> so aggregate in-flight can never exceed the rings. The
+        /// hot throttle-spin loop reads this field directly rather than recomputing. Defaults to
+        /// <see cref="DefaultThrottleLimit"/>; only consulted once reads are in flight, by which point the
+        /// native device — and this value — have been established.
         /// </summary>
-        int effectiveThrottleLimit = MaxThrottle;
+        int effectiveThrottleLimit = DefaultThrottleLimit;
 
         /// <summary>
         /// Configuration captured at construction time; the underlying native device is created
@@ -193,19 +204,8 @@ namespace Tsavorite.core
         readonly bool disableFileBuffering;
         readonly int numCompletionThreadsConfig;
         readonly int numIoContextsConfig;
+        readonly int numQueueDepthConfig;
         readonly IoBackend ioBackendConfig;
-        readonly bool sessionRingAffinityEnabled;
-
-        /// <summary>
-        /// LightEpoch-style ring affinity only: set on the submitting thread when it issues a disk
-        /// read (the point at which the native side picks/owns an io_uring ring), and consumed+cleared
-        /// at the caller's network-batch boundary via <see cref="EndBatchReleaseRing"/>. A batch that
-        /// performs zero disk reads (pure in-memory hits) never enters <see cref="ReadAsync"/>, so this
-        /// stays false and the batch boundary does no ring work at all — the release cost is paid only
-        /// when a ring was actually acquired.
-        /// </summary>
-        [ThreadStatic]
-        static bool t_ringSubmitPending;
 
         /// <summary>
         /// Runtime segment size in bytes that the native shim was asked to use. Populated by
@@ -673,12 +673,6 @@ namespace Tsavorite.core
         [DllImport(NativeLibraryName, EntryPoint = "NativeDevice_TryCompleteMine", CallingConvention = CallingConvention.Cdecl)]
         static extern bool NativeDevice_TryCompleteMine(IntPtr device);
 
-        [DllImport(NativeLibraryName, EntryPoint = "NativeDevice_FlushSubmits", CallingConvention = CallingConvention.Cdecl)]
-        static extern int NativeDevice_FlushSubmits(IntPtr device);
-
-        [DllImport(NativeLibraryName, EntryPoint = "NativeDevice_ReleaseRing", CallingConvention = CallingConvention.Cdecl)]
-        static extern void NativeDevice_ReleaseRing(IntPtr device);
-
         [DllImport(NativeLibraryName, EntryPoint = "NativeDevice_QueueRun", CallingConvention = CallingConvention.Cdecl)]
         static extern int NativeDevice_QueueRun(IntPtr device, int timeout_secs);
 
@@ -846,7 +840,7 @@ namespace Tsavorite.core
         int PerThreadLimit()
         {
             int global = Volatile.Read(ref nativeDevice) == IntPtr.Zero
-                ? Math.Min(ThrottleLimit, MaxThrottle)
+                ? (ThrottleLimit > 0 ? ThrottleLimit : DefaultThrottleLimit)
                 : effectiveThrottleLimit;
             int active = Volatile.Read(ref activeShards);
             if (active < 1) active = 1;
@@ -943,11 +937,11 @@ namespace Tsavorite.core
         /// <remarks>
         /// In-flight is tracked per submitter thread (shard) to avoid the cache-line contention a single global
         /// counter creates at high IOPS. Each thread throttles on its own shard's in-flight count against a
-        /// per-thread budget (<see cref="PerThreadLimit"/>) derived from the configured, clamped
-        /// <see cref="StorageDeviceBase.ThrottleLimit"/> split across the active submitter threads — so the
-        /// device-wide in-flight cap still equals the configured throttle, while this hot check only reads the
-        /// calling thread's own cache lines. A configured throttle above <see cref="MaxThrottle"/> cannot be
-        /// honored (the kernel submission ring is capped there — see <see cref="MaxThrottle"/>), so it is clamped.
+        /// per-thread budget (<see cref="PerThreadLimit"/>) derived from the effective aggregate throttle
+        /// (<see cref="StorageDeviceBase.ThrottleLimit"/>, or <see cref="DefaultThrottleLimit"/> when unset,
+        /// capped at the kernel capacity io-contexts * queue-depth) split across the active submitter threads —
+        /// so the device-wide in-flight cap still equals the effective throttle, while this hot check only reads
+        /// the calling thread's own cache lines.
         /// <para>
         /// Before the native device is lazily created (cold start), <see cref="PerThreadLimit"/> gates on the live
         /// clamped limit rather than the seeded <see cref="effectiveThrottleLimit"/>, so a startup burst of
@@ -961,45 +955,52 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Computes the per-context native kernel submission-ring depth from <see cref="StorageDeviceBase.ThrottleLimit"/>.
-        /// The rings (one per io_context) must, in aggregate, hold the in-flight burst <see cref="Throttle"/> permits:
-        /// if a ring is smaller than the load it sees, io_submit / io_uring_get_sqe spin in their ring-full backoff while
-        /// holding a native epoch slot, and under enough concurrent submitters that starves the native epoch-slot table
-        /// (the libaio hang this addresses). Submitters spread across the contexts by thread affinity, so each context
-        /// handles ~<c>ThrottleLimit / numIoContexts</c> in steady state; the per-context depth is sized to that share
-        /// (rounded up to a power of two) rather than the full throttle, so the total kernel capacity
-        /// (<c>numIoContexts × depth</c>) stays bounded — libaio's io_setup draws from the shared <c>fs.aio-max-nr</c>
-        /// budget, so applying the full throttle to every context could exhaust it with many completion threads. The
-        /// <see cref="DefaultNativeRingDepth"/> floor adds headroom against uneven distribution (a brief ring-full is a
-        /// non-fatal unwind-and-retry, not a hang); the cap is the kernel-safe maximum (see <see cref="MaxThrottle"/>).
-        /// For the default single context this is <c>max(DefaultNativeRingDepth, NextPowerOf2(ThrottleLimit))</c>, clamped to
-        /// <see cref="MaxThrottle"/>. Read at native-device creation time (first IO), by which point the factory has applied
-        /// the configured throttle. Ignored by the Windows (IOCP) backend.
+        /// Resolves the per-ring native submission depth D (maxEvents passed to io_uring_queue_init /
+        /// libaio io_setup). Returns <c>--device-queue-depth</c> when set (clamped to
+        /// <see cref="MaxQueueDepth"/>), else <see cref="DefaultQueueDepth"/>. This is the ring DEPTH knob —
+        /// orthogonal to the ring COUNT (io-contexts) and the aggregate in-flight throttle. Read at
+        /// native-device creation (first IO). Ignored by the Windows (IOCP) backend.
         /// </summary>
-        int ComputeNativeRingDepth()
+        int ResolveQueueDepth()
         {
-            int throttle = ThrottleLimit;
-            if (throttle <= 0)
-                return DefaultNativeRingDepth;
-            if (throttle > MaxThrottle)
+            int d = numQueueDepthConfig > 0 ? numQueueDepthConfig : DefaultQueueDepth;
+            if (d > MaxQueueDepth)
             {
-                // Don't silently ignore the configured throttle: surface that it exceeds the device's
-                // maximum supported in-flight depth and is being clamped. The ceiling is the kernel-safe
-                // submission-ring depth (io_uring max SQ entries / shared libaio fs.aio-max-nr budget), and
-                // already exceeds practical NVMe queue depths, so raising it is rarely useful.
                 logger?.LogWarning(
-                    "NativeStorageDevice: ThrottleLimit ({throttle}) exceeds the device's maximum in-flight I/O depth ({max}); effective in-flight is capped at that maximum.",
-                    throttle, MaxThrottle);
-                throttle = MaxThrottle;
+                    "NativeStorageDevice: queue-depth ({depth}) exceeds the io_uring maximum ({max}); clamping.",
+                    d, MaxQueueDepth);
+                d = MaxQueueDepth;
             }
-            int contexts = numIoContextsConfig < 1 ? 1 : numIoContextsConfig;
-            int perContext = (throttle + contexts - 1) / contexts;   // ceil(throttle / contexts)
-            int depth = (int)Utility.NextPowerOf2(perContext);
-            if (depth < DefaultNativeRingDepth)
-                depth = DefaultNativeRingDepth;
-            if (depth > MaxThrottle)
-                depth = MaxThrottle;
-            return depth;
+            return d;
+        }
+
+        /// <summary>
+        /// Best-effort libaio guard: <c>io_setup</c> draws <c>io-contexts * queue-depth</c> events from the
+        /// global <c>fs.aio-max-nr</c> budget (distro default 65536, shared across every process). If the
+        /// requested total exceeds that budget, warn up front so the operator sees an actionable message
+        /// rather than a cryptic <c>io_setup</c> EAGAIN at device creation. io_uring uses per-ring mmap memory
+        /// only (no global budget), so this applies to libaio just. Never throws (best-effort /proc read).
+        /// </summary>
+        void WarnIfLibaioAioBudgetExceeded(int numContexts, int queueDepth)
+        {
+            if (ioBackendConfig != IoBackend.Libaio && ioBackendConfig != IoBackend.Default)
+                return;
+            long requested = (long)numContexts * queueDepth;
+            long budget;
+            try
+            {
+                budget = long.Parse(System.IO.File.ReadAllText("/proc/sys/fs/aio-max-nr").Trim());
+            }
+            catch
+            {
+                return; // best-effort only
+            }
+            if (requested > budget)
+            {
+                logger?.LogWarning(
+                    "NativeStorageDevice: libaio io-contexts*queue-depth ({req} = {n}*{d}) exceeds the system fs.aio-max-nr budget ({budget}); io_setup may fail. Lower --device-io-contexts or --device-queue-depth, or raise fs.aio-max-nr.",
+                    requested, numContexts, queueDepth, budget);
+            }
         }
 
         /// <summary>
@@ -1044,7 +1045,8 @@ namespace Tsavorite.core
                                       int numCompletionThreads = 1,
                                       IoBackend ioBackend = IoBackend.Default,
                                       ILogger logger = null,
-                                      int numIoContexts = 0)
+                                      int numIoContexts = 0,
+                                      int queueDepth = 0)
                 : base(filename, EnsureParentDirectoryAndProbeSectorSize(filename), capacity)
         {
             Debug.Assert(numCompletionThreads >= 1);
@@ -1060,16 +1062,25 @@ namespace Tsavorite.core
             this.deleteOnClose = deleteOnClose;
             this.disableFileBuffering = disableFileBuffering;
             this.numCompletionThreadsConfig = numCompletionThreads < 1 ? 1 : numCompletionThreads;
-            // Decouple the number of native io_contexts (rings) from the number of drainer threads.
+            // The number of io_contexts (rings) is decoupled from the number of drainer threads.
             // Each submitter maps to its own ring via the native pick_context thread-affinity, so
             // giving the device more rings than concurrent submitters makes io_submit contention-free
             // (no shared per-context aio ring/completion lock across unrelated submitters) and spreads
             // completion posting across more rings. A small pool of numCompletionThreads drainers then
-            // range-drains contiguous slices of the rings. numIoContexts <= 0 preserves the legacy 1:1
-            // ring-to-drainer binding; any explicit value is clamped up to numCompletionThreads so every
-            // drainer owns at least one ring. For throughput scaling, set numIoContexts >= expected
-            // submitter concurrency and keep numCompletionThreads at a small value (e.g. 8).
-            int requestedIoContexts = numIoContexts <= 0 ? this.numCompletionThreadsConfig : numIoContexts;
+            // range-drains contiguous slices of the rings. Any explicit value is clamped up to
+            // numCompletionThreads so every drainer owns at least one ring.
+            //
+            // Smart default when the caller leaves numIoContexts unset (<= 0): io_uring is ring-STARVED
+            // when rings < submitter concurrency — many submitters serialize on the per-ring submit lock
+            // (~3x slower), the single biggest io_uring foot-gun. So default io_uring to a hardware-aware
+            // ring count that covers typical submitter concurrency (2x cores, capped at 64 to bound ring
+            // memory at ~400 KB/ring). libaio is ring-count-neutral (its kernel io_context mutex is cheap)
+            // and its io-contexts x queue-depth draws from the global fs.aio-max-nr budget, so it keeps the
+            // conservative rings = drainers default.
+            int defaultIoContexts = ioBackend == IoBackend.Uring
+                ? Math.Max(this.numCompletionThreadsConfig, Math.Min(2 * Environment.ProcessorCount, 64))
+                : this.numCompletionThreadsConfig;
+            int requestedIoContexts = numIoContexts <= 0 ? defaultIoContexts : numIoContexts;
             if (requestedIoContexts < this.numCompletionThreadsConfig)
                 requestedIoContexts = this.numCompletionThreadsConfig;
             // Optional override to decouple the io_uring ring count from the completion-thread
@@ -1084,9 +1095,10 @@ namespace Tsavorite.core
                 Console.Error.WriteLine($"[io-contexts] GARNET_DEVICE_IO_CONTEXTS override: rings={requestedIoContexts} drainers={this.numCompletionThreadsConfig}");
             }
             this.numIoContextsConfig = requestedIoContexts;
+            // Per-ring kernel submission depth D (maxEvents). 0 => DefaultQueueDepth at creation.
+            // Orthogonal to ring count (numIoContexts) and aggregate throttle; see ResolveQueueDepth.
+            this.numQueueDepthConfig = queueDepth > 0 ? queueDepth : 0;
             this.ioBackendConfig = ioBackend;
-            this.sessionRingAffinityEnabled = (Environment.GetEnvironmentVariable("GARNET_RING_LE_AFFINITY") is string leEnv)
-                && leEnv != "0" && leEnv.Length > 0;
             this.logger = logger;
 
             ThrottleLimit = 120;
@@ -1188,12 +1200,27 @@ namespace Tsavorite.core
 
                 nativeSegmentSizeBytes = sizeForNative;
 
-                // Capture the effective in-flight throttle once, here, where the ring depth is also fixed —
-                // ThrottleLimit has been applied by the factory before the first IO. Throttle() then reads this
-                // field directly instead of re-clamping on every spin-loop iteration.
-                effectiveThrottleLimit = Math.Min(ThrottleLimit, MaxThrottle);
+                // Capture the effective aggregate in-flight throttle T once, here, where ring count N and
+                // depth D are also fixed — ThrottleLimit has been applied by the factory before the first IO.
+                // Clean split (one duty each): N = io-contexts (ring count), D = queue-depth (per-ring kernel
+                // depth), T = throttle-limit (aggregate software backpressure). T is capped at the kernel
+                // capacity N*D so aggregate in-flight can never exceed the rings (the correctness invariant
+                // that prevents the ring-full submit spin). Throttle() reads effectiveThrottleLimit directly.
+                int ringCount = numIoContextsConfig < 1 ? 1 : numIoContextsConfig;
+                int ringDepth = ResolveQueueDepth();
+                WarnIfLibaioAioBudgetExceeded(ringCount, ringDepth);
+                long kernelCapacity = (long)ringCount * ringDepth;
+                int requestedThrottle = ThrottleLimit > 0 ? ThrottleLimit : DefaultThrottleLimit;
+                if (requestedThrottle > kernelCapacity)
+                {
+                    logger?.LogWarning(
+                        "NativeStorageDevice: throttle-limit ({throttle}) exceeds kernel capacity io-contexts*queue-depth ({n}*{d}={cap}); capping aggregate in-flight at that capacity.",
+                        requestedThrottle, ringCount, ringDepth, kernelCapacity);
+                    requestedThrottle = (int)kernelCapacity;
+                }
+                effectiveThrottleLimit = requestedThrottle;
 
-                var newDevice = NativeDevice_CreateWithBackend(filename, false, disableFileBuffering, deleteOnClose, (int)ioBackendConfig, sizeForNative, OmitSegmentIdFromFileName, numIoContextsConfig, ComputeNativeRingDepth());
+                var newDevice = NativeDevice_CreateWithBackend(filename, false, disableFileBuffering, deleteOnClose, (int)ioBackendConfig, sizeForNative, OmitSegmentIdFromFileName, numIoContextsConfig, ringDepth);
                 if (newDevice == IntPtr.Zero)
                 {
                     var nativeMessage = GetNativeLastError();
@@ -1397,12 +1424,6 @@ namespace Tsavorite.core
             try
             {
                 int _result = NativeDevice_ReadAsync(nativeDevice, ((ulong)segmentId << segmentSizeBits) | sourceAddress, destinationAddress, readLength, _callbackDelegate, (IntPtr)offset);
-
-                // Ring was picked/owned inside the native submit above; mark this thread so its
-                // network-batch boundary releases it (LightEpoch-style reclaim). Set even on a failed
-                // submit — a ring may still have been acquired before the error.
-                if (sessionRingAffinityEnabled)
-                    t_ringSubmitPending = true;
 
                 if (_result != 0)
                     throw new IOException($"Error reading from log file (status {_result}){FormatNativeError()}", _result);
@@ -1678,12 +1699,6 @@ namespace Tsavorite.core
                 var dev = Volatile.Read(ref nativeDevice);
                 if (dev == IntPtr.Zero)
                     return false;
-                // Flush this thread's accumulated read batch (opt-in batched submit) before
-                // draining. This is the throttle-spin safety net: a submitter that spins on
-                // Throttle()/TryComplete (AllocatorBase.AsyncGetFromDisk) always submits its
-                // own pending reads here, so an under-threshold batch can never stall behind a
-                // throttle wait. No-op when batching is disabled/empty.
-                _ = NativeDevice_FlushSubmits(dev);
                 return NativeDevice_TryComplete(dev);
             }
             finally
@@ -1710,82 +1725,7 @@ namespace Tsavorite.core
                 var dev = Volatile.Read(ref nativeDevice);
                 if (dev == IntPtr.Zero)
                     return false;
-                _ = NativeDevice_FlushSubmits(dev);
                 return NativeDevice_TryCompleteMine(dev);
-            }
-            finally
-            {
-                ReleaseLease(shard);
-            }
-        }
-
-        /// <summary>
-        /// Submit the calling thread's accumulated read batch (opt-in batched libaio submit,
-        /// enabled via the GARNET_SUBMIT_BATCH env var on the native side). No-op when batching
-        /// is disabled or the batch is empty. Must be called on the thread that issued the reads
-        /// (the native accumulation buffer is thread-local). Callers issue a burst of reads then
-        /// call this to submit the sub-threshold tail before waiting on completions.
-        /// </summary>
-        public override void FlushSubmits()
-        {
-            if (Volatile.Read(ref disposedFlag) != 0) return;
-            if (!TryLease(out int shard))
-                return;
-            try
-            {
-                var dev = Volatile.Read(ref nativeDevice);
-                if (dev != IntPtr.Zero)
-                    _ = NativeDevice_FlushSubmits(dev);
-            }
-            finally
-            {
-                ReleaseLease(shard);
-            }
-        }
-
-        /// <summary>
-        /// Whether LightEpoch-style ring affinity (GARNET_RING_LE_AFFINITY=1) is enabled. When on,
-        /// callers should call <see cref="EndBatchReleaseRing"/> at their network-batch boundary so a
-        /// churned-away thread never leaves a stale ring owner.
-        /// Read once at construction; the native side reads the same env var independently.
-        /// </summary>
-        public bool SessionRingAffinityEnabled => sessionRingAffinityEnabled;
-
-        /// <summary>
-        /// LightEpoch-style network-batch boundary hook. Releases the calling thread's io_uring ring
-        /// ownership so it can be reclaimed by a future thread — but ONLY if this thread actually
-        /// submitted a disk read during the batch (tracked by <see cref="t_ringSubmitPending"/>). A
-        /// batch of pure in-memory hits never called <see cref="ReadAsync"/>, so this returns after a
-        /// single thread-static read with no P/Invoke and no ring work. Inert when LE affinity is off.
-        /// Must run on the same thread that issued the reads (ring/submit state is thread-local).
-        /// </summary>
-        public void EndBatchReleaseRing()
-        {
-            if (!sessionRingAffinityEnabled) return;
-            if (!t_ringSubmitPending) return;
-            t_ringSubmitPending = false;
-            // Flush any submit still buffered by GARNET_SUBMIT_BATCH, then hand the ring back.
-            FlushSubmits();
-            ReleaseRing();
-        }
-
-        /// <summary>
-        /// Release the calling thread's LightEpoch-style ring ownership so it can be reclaimed.
-        /// No-op when LE affinity is disabled or the backend has no ring ownership. Must run on the
-        /// thread that issued the reads (the preferred-ring state is thread-local on the native side).
-        /// Prefer <see cref="EndBatchReleaseRing"/> from hot paths — it skips the P/Invoke entirely
-        /// for batches that did no disk I/O.
-        /// </summary>
-        public void ReleaseRing()
-        {
-            if (Volatile.Read(ref disposedFlag) != 0) return;
-            if (!TryLease(out int shard))
-                return;
-            try
-            {
-                var dev = Volatile.Read(ref nativeDevice);
-                if (dev != IntPtr.Zero)
-                    NativeDevice_ReleaseRing(dev);
             }
             finally
             {

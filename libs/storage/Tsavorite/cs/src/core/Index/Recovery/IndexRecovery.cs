@@ -102,12 +102,6 @@ namespace Tsavorite.core
                 device.ReadAsync(numBytesRead, chunkStartBucket, chunkSize, AsyncPageReadCallback, result);
                 numBytesRead += chunkSize;
             }
-            // Flush this thread's batched submits before the caller blocks on recoveryCountdown. An opt-in
-            // batched-submit backend (GARNET_SUBMIT_BATCH) defers io_submit until its per-thread batch fills,
-            // so this sub-threshold index-read burst would otherwise never be submitted and recovery would
-            // deadlock. The batch is thread-local, so this must run on the issuing thread. No-op for
-            // immediate-submit devices; their dedicated completion threads drive completion.
-            device.TryComplete();
             Debug.Assert(numBytesRead == num_bytes);
         }
 
