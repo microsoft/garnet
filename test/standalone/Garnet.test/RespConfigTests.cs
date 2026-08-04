@@ -764,12 +764,8 @@ namespace Garnet.test
             ClassicAssert.AreEqual("42", Get(db, "replica-sync-delay"));
 
             // Integer option accepting the -1 sentinel.
-            ClassicAssert.AreEqual("OK", db.Execute("CONFIG", "SET", "replica-offset-max-lag", "-1").ToString());
-            ClassicAssert.AreEqual("-1", Get(db, "replica-offset-max-lag"));
-
-            // Long option.
-            ClassicAssert.AreEqual("OK", db.Execute("CONFIG", "SET", "aof-replay-max-drift", "123456789").ToString());
-            ClassicAssert.AreEqual("123456789", Get(db, "aof-replay-max-drift"));
+            ClassicAssert.AreEqual("OK", db.Execute("CONFIG", "SET", "aof-replay-max-lag-bytes", "-1").ToString());
+            ClassicAssert.AreEqual("-1", Get(db, "aof-replay-max-lag-bytes"));
 
             // Boolean option (yes/no).
             ClassicAssert.AreEqual("OK", db.Execute("CONFIG", "SET", "sg-get", "no").ToString());

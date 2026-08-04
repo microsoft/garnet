@@ -266,7 +266,7 @@ namespace Garnet.server
                     // About to wait. If the replay-side drift is large enough to be worth bounding, install a barrier round
                     BoundReplayDrift();
 
-                    vsrs[virtualSublogIdx].WaitForSequenceNumber(mssn, timeout, ct);
+                    vsrs[virtualSublogIdx].WaitForSequenceNumber(mssn, replicaReadSessionContext.waiter, timeout, ct);
                     // Refresh after wait
                     replicaReadSessionContext.cachedSublogMax[virtualSublogIdx] = vsrs[virtualSublogIdx].Max;
                 }

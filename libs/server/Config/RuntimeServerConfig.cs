@@ -168,7 +168,6 @@ namespace Garnet.server
             Set(ServerConfigType.AOF_TAIL_WITNESS_FREQ, "aof-tail-witness-freq",
                 ConfigKind.Int32 | ConfigKind.Milliseconds | ConfigKind.Seconds | ConfigKind.TimeSpan, 0, int.MaxValue,
                 timeUnit: ConfigTimeUnit.Milliseconds);
-            Set(ServerConfigType.AOF_REPLAY_MAX_DRIFT, "aof-replay-max-drift", ConfigKind.Int64, -1, long.MaxValue);
             Set(ServerConfigType.REPL_DISKLESS_SYNC_DELAY, "repl-diskless-sync-delay",
                 ConfigKind.Int32 | ConfigKind.Seconds | ConfigKind.TimeSpan, 0, int.MaxValue,
                 timeUnit: ConfigTimeUnit.Seconds);
