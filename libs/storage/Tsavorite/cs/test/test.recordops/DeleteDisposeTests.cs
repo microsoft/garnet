@@ -28,6 +28,25 @@ namespace Tsavorite.test
             public readonly bool CallOnDiskRead => false;
             public readonly void OnDispose(ref LogRecord logRecord, DisposeReason reason) => tracker?.RecordDispose(reason);
             public readonly void OnDisposeDiskRecord(ref DiskLogRecord logRecord, DisposeReason reason) { }
+
+            // Explicit defaults/no-ops (rather than relying on the IRecordTriggers defaults) so calls
+            // through the TRecordTriggers generic constraint resolve here instead of boxing to dispatch the DIMs.
+            public readonly bool CallPostCopyToTail => false;
+            public readonly bool CallOnTruncate => false;
+            public readonly void OnFlush(ref LogRecord logRecord, long logicalAddress) { }
+            public readonly void OnEvict(ref LogRecord logRecord, EvictionSource source) { }
+            public readonly void OnDiskRead(ref LogRecord logRecord) { }
+            public readonly void OnRecovery(System.Guid checkpointToken) { }
+            public readonly void OnRecoverySnapshotRead(ref LogRecord logRecord) { }
+            public readonly void OnCheckpoint(CheckpointTrigger trigger, System.Guid checkpointToken) { }
+            public readonly void PostCopyToTail<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, long srcLogicalAddress,
+                                                                  ref LogRecord dstLogRecord, long dstLogicalAddress)
+                where TSourceLogRecord : ISourceLogRecord
+#if NET9_0_OR_GREATER
+                    , allows ref struct
+#endif
+            { }
+            public readonly void OnTruncate(long newBeginAddress) { }
         }
 
         internal class DisposeTracker
@@ -254,6 +273,25 @@ namespace Tsavorite.test
                 => tracker?.RecordDispose(reason);
 
             public readonly void OnDisposeDiskRecord(ref DiskLogRecord logRecord, DisposeReason reason) { }
+
+            // Explicit defaults/no-ops (rather than relying on the IRecordTriggers defaults) so calls
+            // through the TRecordTriggers generic constraint resolve here instead of boxing to dispatch the DIMs.
+            public readonly bool CallPostCopyToTail => false;
+            public readonly bool CallOnTruncate => false;
+            public readonly void OnFlush(ref LogRecord logRecord, long logicalAddress) { }
+            public readonly void OnEvict(ref LogRecord logRecord, EvictionSource source) { }
+            public readonly void OnDiskRead(ref LogRecord logRecord) { }
+            public readonly void OnRecovery(System.Guid checkpointToken) { }
+            public readonly void OnRecoverySnapshotRead(ref LogRecord logRecord) { }
+            public readonly void OnCheckpoint(CheckpointTrigger trigger, System.Guid checkpointToken) { }
+            public readonly void PostCopyToTail<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, long srcLogicalAddress,
+                                                                  ref LogRecord dstLogRecord, long dstLogicalAddress)
+                where TSourceLogRecord : ISourceLogRecord
+#if NET9_0_OR_GREATER
+                    , allows ref struct
+#endif
+            { }
+            public readonly void OnTruncate(long newBeginAddress) { }
         }
 
         internal class ObjDisposeTracker

@@ -44,6 +44,9 @@ namespace Tsavorite.benchmark
         public readonly bool IsPinned => false;
 
         /// <inheritdoc/>
+        public readonly bool IsEmpty => false;
+
+        /// <inheritdoc/>
         public unsafe ReadOnlySpan<byte> KeyBytes
         {
             [MethodImpl(MethodImplOptions.AggressiveInlining)]

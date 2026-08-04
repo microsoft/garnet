@@ -201,6 +201,53 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void OnDisposeDiskRecord(ref DiskLogRecord logRecord, DisposeReason reason) { }
+
+        // The remaining triggers are implemented as explicit no-ops (rather than relying on the
+        // IRecordTriggers defaults) so that calls through the TRecordTriggers generic constraint in
+        // StoreFunctions resolve to these members instead of boxing to dispatch the default interface
+        // methods (e.g. the unguarded OnDispose on every record delete/dispose).
+
+        /// <inheritdoc/>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void OnDispose(ref LogRecord logRecord, DisposeReason reason) { }
+
+        /// <inheritdoc/>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void OnFlush(ref LogRecord logRecord, long logicalAddress) { }
+
+        /// <inheritdoc/>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void OnEvict(ref LogRecord logRecord, EvictionSource source) { }
+
+        /// <inheritdoc/>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void OnDiskRead(ref LogRecord logRecord) { }
+
+        /// <inheritdoc/>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void OnRecovery(Guid checkpointToken) { }
+
+        /// <inheritdoc/>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void OnRecoverySnapshotRead(ref LogRecord logRecord) { }
+
+        /// <inheritdoc/>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void OnCheckpoint(CheckpointTrigger trigger, Guid checkpointToken) { }
+
+        /// <inheritdoc/>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void PostCopyToTail<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, long srcLogicalAddress,
+                                                     ref LogRecord dstLogRecord, long dstLogicalAddress)
+            where TSourceLogRecord : ISourceLogRecord
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
+        { }
+
+        /// <inheritdoc/>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void OnTruncate(long newBeginAddress) { }
     }
 
     /// <summary>
@@ -229,5 +276,52 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void OnDisposeDiskRecord(ref DiskLogRecord logRecord, DisposeReason reason) { }
+
+        // The remaining triggers are implemented as explicit no-ops (rather than relying on the
+        // IRecordTriggers defaults) so that calls through the TRecordTriggers generic constraint in
+        // StoreFunctions resolve to these members instead of boxing to dispatch the default interface
+        // methods (e.g. the unguarded OnDispose on every record delete/dispose).
+
+        /// <inheritdoc/>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void OnDispose(ref LogRecord logRecord, DisposeReason reason) { }
+
+        /// <inheritdoc/>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void OnFlush(ref LogRecord logRecord, long logicalAddress) { }
+
+        /// <inheritdoc/>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void OnEvict(ref LogRecord logRecord, EvictionSource source) { }
+
+        /// <inheritdoc/>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void OnDiskRead(ref LogRecord logRecord) { }
+
+        /// <inheritdoc/>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void OnRecovery(Guid checkpointToken) { }
+
+        /// <inheritdoc/>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void OnRecoverySnapshotRead(ref LogRecord logRecord) { }
+
+        /// <inheritdoc/>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void OnCheckpoint(CheckpointTrigger trigger, Guid checkpointToken) { }
+
+        /// <inheritdoc/>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void PostCopyToTail<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, long srcLogicalAddress,
+                                                     ref LogRecord dstLogRecord, long dstLogicalAddress)
+            where TSourceLogRecord : ISourceLogRecord
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
+        { }
+
+        /// <inheritdoc/>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void OnTruncate(long newBeginAddress) { }
     }
 }
