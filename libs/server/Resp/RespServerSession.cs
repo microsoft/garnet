@@ -121,9 +121,6 @@ namespace Garnet.server
         // True if multiple logical databases are enabled on this session
         readonly bool allowMultiDb;
 
-        // Cached scatter-gather GET flag (read once per session; checked on every GET dispatch)
-        readonly bool enableScatterGatherGet;
-
         // Track whether consistent read session is active
         internal bool IsConsistentReadSessionActive = false;
 
@@ -238,8 +235,9 @@ namespace Garnet.server
 
         // Track start time (in ticks) of last command for slow log purposes
         long slowLogStartTime;
-        // Threshold for slow log in ticks (0 means disabled)
-        readonly long slowLogThreshold;
+        // Threshold for slow log in ticks (0 means disabled). Refreshed from the runtime config at the
+        // start of each message batch so CONFIG SET slowlog-log-slower-than affects live sessions.
+        long slowLogThreshold;
 
         /// <summary>
         /// Create a new RESP server session
@@ -287,7 +285,6 @@ namespace Garnet.server
                 sessionScriptCache = new(storeWrapper, _authenticator, storeWrapper.luaTimeoutManager, logger);
 
             allowMultiDb = storeWrapper.serverOptions.AllowMultiDb;
-            enableScatterGatherGet = storeWrapper.serverOptions.EnableScatterGatherGet;
 
             // Create the default DB session (for DB 0) & add it to the session map
             activeDbId = 0;
@@ -317,8 +314,6 @@ namespace Garnet.server
             readHead = 0;
             toDispose = false;
             SessionAsking = 0;
-            if (storeWrapper.serverOptions.SlowLogThreshold > 0)
-                slowLogThreshold = (long)(storeWrapper.serverOptions.SlowLogThreshold * OutputScalingFactor.TimeStampToMicroseconds);
 
             // Reserve minimum 4 bytes to send pending sequence number as output
             if (this.networkSender != null)
@@ -484,6 +479,10 @@ namespace Garnet.server
             try
             {
                 LatencyMetrics?.Start(LatencyMetricsType.NET_RS_LAT);
+                // Refresh the slow log threshold from the runtime config so CONFIG SET slowlog-log-slower-than
+                // takes effect on already-connected sessions at the next batch.
+                var slowLogThresholdConfig = storeWrapper.runtimeConfig.GetInt(ServerConfigType.SLOWLOG_LOG_SLOWER_THAN);
+                slowLogThreshold = slowLogThresholdConfig > 0 ? (long)(slowLogThresholdConfig * OutputScalingFactor.TimeStampToMicroseconds) : 0;
                 if (slowLogThreshold > 0)
                 {
                     slowLogStartTime = LatencyMetrics != null ? LatencyMetrics.Get(LatencyMetricsType.NET_RS_LAT) : Stopwatch.GetTimestamp();

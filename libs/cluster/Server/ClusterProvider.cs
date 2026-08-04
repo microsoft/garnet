@@ -251,7 +251,7 @@ namespace Garnet.cluster
                     replicationInfo.Add(new("replica_announced", "1"));
                     replicationInfo.Add(new("master_sync_last_io_seconds_ago", replicationManager.LastPrimarySyncSeconds.ToString()));
                     replicationInfo.Add(new("replication_offset_lag", replicationOffsetLag.ToString()));
-                    replicationInfo.Add(new("replication_offset_max_lag", storeWrapper.serverOptions.ReplicationOffsetMaxLag.ToString()));
+                    replicationInfo.Add(new("replication_offset_max_lag", storeWrapper.runtimeConfig.GetInt(ServerConfigType.REPLICATION_OFFSET_MAX_LAG).ToString()));
                 }
                 else
                 {
