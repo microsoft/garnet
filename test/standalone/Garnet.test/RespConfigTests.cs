@@ -867,9 +867,9 @@ namespace Garnet.test
             // The server starts with the slow log disabled.
             ClassicAssert.AreEqual("0", ((RedisResult[])db.Execute("CONFIG", "GET", "slowlog-log-slower-than"))[1].ToString());
 
-            // Enable it with a threshold low enough that every command qualifies.
-            ClassicAssert.AreEqual("OK", db.Execute("CONFIG", "SET", "slowlog-log-slower-than", "100").ToString());
-            ClassicAssert.AreEqual("100", ((RedisResult[])db.Execute("CONFIG", "GET", "slowlog-log-slower-than"))[1].ToString());
+            // Enable it with a threshold low enough that every command qualifies, regardless of host speed.
+            ClassicAssert.AreEqual("OK", db.Execute("CONFIG", "SET", "slowlog-log-slower-than", "1").ToString());
+            ClassicAssert.AreEqual("1", ((RedisResult[])db.Execute("CONFIG", "GET", "slowlog-log-slower-than"))[1].ToString());
 
             for (var i = 0; i < 5; i++)
                 _ = db.StringSet($"slowlog-key-{i}", "value");
