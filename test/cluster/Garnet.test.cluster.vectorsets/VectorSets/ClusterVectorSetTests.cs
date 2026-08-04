@@ -2312,6 +2312,37 @@ namespace Garnet.test.cluster
             ClassicAssert.AreEqual(primaryType, replicaType, "Replica diverged from primary after replaying a synthetic VADD against a String key");
         }
 
+        [Test]
+        public async Task VSETATTRReplicatesAsync()
+        {
+            const int PrimaryIndex = 0;
+            const int SecondaryIndex = 1;
+            const string Key = nameof(VSETATTRReplicatesAsync);
+            const string Element = Key + "_Element";
+
+            _ = await SimpleSetupClusterAsync(DefaultShards, primaryCount: 1, replicaCount: 1, useTLS: false).ConfigureAwait(false);
+
+            var primary = (IPEndPoint)context.endpoints[PrimaryIndex];
+            var secondary = (IPEndPoint)context.endpoints[SecondaryIndex];
+
+            ClassicAssert.AreEqual("master", context.clusterTestUtils.RoleCommand(primary).Value);
+            ClassicAssert.AreEqual("slave", context.clusterTestUtils.RoleCommand(secondary).Value);
+
+            await using var connection = await ConnectionMultiplexer.ConnectAsync(context.clusterTestUtils.GetRedisConfig(context.endpoints)).ConfigureAwait(false);
+            var primaryServer = connection.GetServer(primary);
+            var secondaryServer = connection.GetServer(secondary);
+
+            var addRes = (int)await primaryServer.ExecuteAsync("VADD", [Key, "VALUES", "3", "1", "2", "3", Element]).ConfigureAwait(false);
+            ClassicAssert.AreEqual(1, addRes);
+            var setRes = (int)await primaryServer.ExecuteAsync("VSETATTR", [Key, Element, "{\"foo\":\"bar\"}"]).ConfigureAwait(false);
+            ClassicAssert.AreEqual(1, setRes);
+
+            context.clusterTestUtils.WaitForReplicaAofSync(PrimaryIndex, SecondaryIndex);
+
+            var getRes = (string)await secondaryServer.ExecuteAsync("VGETATTR", [Key, Element]).ConfigureAwait(false);
+            ClassicAssert.AreEqual("{\"foo\":\"bar\"}", getRes);
+        }
+
         private async Task<(List<ShardInfo> Shards, List<ushort> Slots)> SimpleSetupClusterAsync(int shardCount, int primaryCount, int replicaCount, bool onDemandCheckpoint = false, bool useTLS = true)
         {
             context.CreateInstances(shardCount, useTLS: useTLS, enableAOF: true, AofMemorySize: DefaultAOFMemorySize, OnDemandCheckpoint: onDemandCheckpoint, sublogCount: sublogCount, threadPoolMinIOCompletionThreads: 512);

@@ -16,7 +16,7 @@ namespace Garnet.server
         internal const byte NeighborList = 1;
         internal const byte QuantizedVector = 2;
         internal const byte Attributes = 3;
-        private const byte Metadata = 4;
+        internal const byte Metadata = 4;
         internal const byte InternalIdMap = 5;
         internal const byte ExternalIdMap = 6;
 
@@ -317,6 +317,17 @@ namespace Garnet.server
             var external_id_len = externalId.Length;
 
             return NativeDiskANNMethods.check_external_id_valid(context, index, (nint)external_id_data, (nuint)external_id_len) == 1;
+        }
+
+        public bool SetAttribute(ulong context, nint index, ReadOnlySpan<byte> externalId, ReadOnlySpan<byte> attribute)
+        {
+            var external_id_data = Unsafe.AsPointer(ref MemoryMarshal.GetReference(externalId));
+            var external_id_len = externalId.Length;
+
+            var attribute_data = Unsafe.AsPointer(ref MemoryMarshal.GetReference(attribute));
+            var attribute_len = attribute.Length;
+
+            return NativeDiskANNMethods.set_attribute(context, index, (nint)external_id_data, (nuint)external_id_len, (nint)attribute_data, (nuint)attribute_len) == 1;
         }
     }
 
