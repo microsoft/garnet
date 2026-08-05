@@ -28,6 +28,8 @@ namespace Tsavorite.kvbench
 
         public readonly bool IsPinned => false;
 
+        public readonly bool IsEmpty => false;
+
         public unsafe ReadOnlySpan<byte> KeyBytes
         {
             [MethodImpl(MethodImplOptions.AggressiveInlining)]

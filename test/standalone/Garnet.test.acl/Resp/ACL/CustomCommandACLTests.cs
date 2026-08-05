@@ -484,7 +484,7 @@ namespace Garnet.test.Resp.ACL
                 await alice.ExecuteForStringResultAsync("SETWPIFPGT", ["k", "v", "\0\0\0\0\0\0\0\0"]).ConfigureAwait(false);
             });
             ClassicAssert.IsNotNull(denied, "SETWPIFPGT should have been denied by -setwpifpgt");
-            StringAssert.Contains("NOAUTH", denied.Message.ToUpperInvariant());
+            StringAssert.Contains("NOPERM", denied.Message.ToUpperInvariant());
 
             // MYDICTGET is still permitted (only SETWPIFPGT was denied).
             var mydict = await alice.ExecuteForStringResultAsync("MYDICTGET", ["foo", "bar"]).ConfigureAwait(false);
@@ -558,7 +558,7 @@ namespace Garnet.test.Resp.ACL
                 await alice.ExecuteForStringResultAsync("NOOPTXN").ConfigureAwait(false);
             });
             ClassicAssert.IsNotNull(denied, "NOOPTXN should have been denied by -NOOPTXN");
-            StringAssert.Contains("NOAUTH", denied.Message.ToUpperInvariant());
+            StringAssert.Contains("NOPERM", denied.Message.ToUpperInvariant());
         }
 
         [Test]
@@ -586,7 +586,7 @@ namespace Garnet.test.Resp.ACL
                 await alice.ExecuteForStringResultAsync("NOOPPROC").ConfigureAwait(false);
             });
             ClassicAssert.IsNotNull(denied, "NOOPPROC should have been denied by -NOOPPROC");
-            StringAssert.Contains("NOAUTH", denied.Message.ToUpperInvariant());
+            StringAssert.Contains("NOPERM", denied.Message.ToUpperInvariant());
         }
 
         [Test]

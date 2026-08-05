@@ -8,6 +8,7 @@ set (NATIVE_DEVICE_HEADERS
   device/file.h
   device/file_common.h
   device/file_system_disk.h
+  device/filesystem_compat.h
   device/gc_state.h
   device/guid.h
   device/light_epoch.h

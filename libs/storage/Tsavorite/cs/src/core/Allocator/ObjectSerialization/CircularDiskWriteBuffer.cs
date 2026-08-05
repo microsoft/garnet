@@ -242,7 +242,7 @@ namespace Tsavorite.core
             // active even if we have been disposed, so adjust and check the global count, and if *that* is zero, check the disposed state (being disposed ensures that no
             // further partial flush ranges will be sent).
             _ = Interlocked.Decrement(ref numInFlightWrites);
-            if (writeCallbackContext.Release() == 0 && numInFlightWrites == 0 && disposed)
+            if (writeCallbackContext.Release(errorCode) == 0 && numInFlightWrites == 0 && disposed)
                 ClearBuffers();
         }
 

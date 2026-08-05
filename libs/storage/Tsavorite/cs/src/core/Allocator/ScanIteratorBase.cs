@@ -14,7 +14,8 @@ namespace Tsavorite.core
     /// <summary>
     /// Scan iterator for hybrid log
     /// </summary>
-    public abstract class ScanIteratorBase
+    public abstract class ScanIteratorBase<TAllocatorWrapper>
+        where TAllocatorWrapper : IAllocator
     {
         /// <summary>Frame size (1 or 2)</summary>
         protected readonly int frameSize;
@@ -59,6 +60,12 @@ namespace Tsavorite.core
         /// <summary>Number of bits in the size of the log page</summary>
         private readonly int logPageSizeBits;
 
+        /// <summary>The allocator struct wrapper used to map a logical address to its page via the allocator-specific address
+        /// interpretation. Stored as the concrete <typeparamref name="TAllocatorWrapper"/> rather than the <see cref="IAllocator"/>
+        /// interface so the call is inlined instead of a virtual interface dispatch. Main-store allocators mask off the
+        /// read-cache bit; TsavoriteLog uses the full range.</summary>
+        private readonly TAllocatorWrapper allocator;
+
         /// <summary>Whether to include closed records in the scan</summary>
         protected readonly bool includeClosedRecords;
 
@@ -96,7 +103,7 @@ namespace Tsavorite.core
         /// Constructor
         /// </summary>
         public unsafe ScanIteratorBase(long beginAddress, long endAddress, DiskScanBufferingMode diskScanBufferingMode, InMemoryScanBufferingMode memScanBufferingMode,
-                bool includeClosedRecords, LightEpoch epoch, int logPageSizeBits, bool initForReads = true, ILogger logger = null)
+                bool includeClosedRecords, LightEpoch epoch, int logPageSizeBits, TAllocatorWrapper allocator, bool initForReads = true, ILogger logger = null)
         {
             this.logger = logger;
             this.memScanBufferingMode = memScanBufferingMode;
@@ -108,6 +115,7 @@ namespace Tsavorite.core
             this.beginAddress = beginAddress;
             this.endAddress = endAddress;
             this.logPageSizeBits = logPageSizeBits;
+            this.allocator = allocator;
 
             this.includeClosedRecords = includeClosedRecords;
             currentAddress = -1;
@@ -214,7 +222,7 @@ namespace Tsavorite.core
                         {
                             try
                             {
-                                AsyncReadPageFromDeviceToFrame(readBuffer, readPage: frameIndex + GetPageOfAddress(currentIterationAddress, logPageSizeBits), untilAddress: endIterationAddress,
+                                AsyncReadPageFromDeviceToFrame(readBuffer, readPage: frameIndex + allocator.GetPageOfAddress(currentIterationAddress, logPageSizeBits), untilAddress: endIterationAddress,
                                     context: Empty.Default, out loadCompletionEvents[nextFrame], devicePageOffset: 0, device: null, objectLogDevice: null, loadCTSs[nextFrame]);
                             }
                             catch
@@ -319,7 +327,7 @@ namespace Tsavorite.core
                 // The exception may have been an OperationCanceledException.
                 loadedPages[currentFrame] = -1;
                 loadCTSs[currentFrame] = new CancellationTokenSource();
-                _ = Utility.MonotonicUpdate(ref nextAddress, GetLogicalAddressOfStartOfPage(1 + GetPageOfAddress(currentAddress, logPageSizeBits), logPageSizeBits), out _);
+                _ = Utility.MonotonicUpdate(ref nextAddress, GetLogicalAddressOfStartOfPage(1 + allocator.GetPageOfAddress(currentAddress, logPageSizeBits), logPageSizeBits), out _);
 
                 // Callers may be looking for an OCE so throw that if it's what we got.
                 if (e is OperationCanceledException)
