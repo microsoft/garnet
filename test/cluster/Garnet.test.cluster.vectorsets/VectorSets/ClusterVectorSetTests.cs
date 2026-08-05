@@ -2343,6 +2343,113 @@ namespace Garnet.test.cluster
             ClassicAssert.AreEqual("{\"foo\":\"bar\"}", getRes);
         }
 
+        [Test]
+        public async Task ConcurrentVADDUpdatesAsync()
+        {
+            const int PrimaryIndex = 0;
+            const int SecondaryIndex = 1;
+            const string Key = nameof(ConcurrentVADDUpdatesAsync);
+            const string Element = Key + "_Element";
+
+            const int ConnectionCount = 4;
+            const int Pauses = 10;
+
+            const int WriteCount = 100;
+
+            _ = await SimpleSetupClusterAsync(DefaultShards, primaryCount: 1, replicaCount: 1, useTLS: false).ConfigureAwait(false);
+
+            var primary = (IPEndPoint)context.endpoints[PrimaryIndex];
+            var secondary = (IPEndPoint)context.endpoints[SecondaryIndex];
+
+            ClassicAssert.AreEqual("master", context.clusterTestUtils.RoleCommand(primary).Value);
+            ClassicAssert.AreEqual("slave", context.clusterTestUtils.RoleCommand(secondary).Value);
+
+            var cons = new ConnectionMultiplexer[ConnectionCount];
+            try
+            {
+                for (var i = 0; i < cons.Length; i++)
+                {
+                    cons[i] = await ConnectionMultiplexer.ConnectAsync(context.clusterTestUtils.GetRedisConfig(context.endpoints)).ConfigureAwait(false);
+                }
+
+                var initialRes = await cons[0].GetDatabase().VectorSetAddAsync(Key, VectorSetAddRequest.Member(Element, new float[] { 0, 0, 0 }, "{\"invalid\": \"data\"}")).ConfigureAwait(false);
+                ClassicAssert.IsTrue(initialRes);
+
+                for (var pause = 0; pause < Pauses; pause++)
+                {
+                    var writeTasks = new Task[cons.Length];
+
+                    using var startGate = new SemaphoreSlim(0, writeTasks.Length);
+
+                    for (var i = 0; i < writeTasks.Length; i++)
+                    {
+                        var con = cons[i];
+                        writeTasks[i] =
+                            Task.Run(
+                                async () =>
+                                {
+                                    var db = con.GetDatabase();
+
+                                    var buff = new float[3];
+
+                                    await startGate.WaitAsync().ConfigureAwait(false);
+
+                                    for (var j = 0; j < WriteCount; j++)
+                                    {
+                                        var rawVal = Random.Shared.Next(1_000);
+
+                                        buff[0] = rawVal;
+                                        for (var k = 1; k < buff.Length; k++)
+                                        {
+                                            buff[k] = buff[k - 1] + 1;
+                                        }
+
+                                        var json = $"{{\"data\": {rawVal} }}";
+
+                                        var updateRes = await db.VectorSetAddAsync(Key, VectorSetAddRequest.Member(Element, buff, json)).ConfigureAwait(false);
+                                        //ClassicAssert.IsFalse(updateRes);
+                                    }
+                                }
+                            );
+                    }
+
+                    _ = startGate.Release(writeTasks.Length);
+
+                    await Task.WhenAll(writeTasks).ConfigureAwait(false);
+
+                    context.clusterTestUtils.WaitForReplicaAofSync(PrimaryIndex, SecondaryIndex);
+
+                    var onPrimaryData = (double[])await cons[0].GetServer(primary).ExecuteAsync("VEMB", [Key, Element]).ConfigureAwait(false);
+                    var onPrimaryAttr = (string)await cons[0].GetServer(primary).ExecuteAsync("VGETATTR", [Key, Element]).ConfigureAwait(false);
+
+                    var onSecondaryData = (double[])await cons[0].GetServer(secondary).ExecuteAsync("VEMB", [Key, Element]).ConfigureAwait(false);
+                    var onSecondaryAttr = (string)await cons[0].GetServer(secondary).ExecuteAsync("VGETATTR", [Key, Element]).ConfigureAwait(false);
+
+                    // Valid
+                    ClassicAssert.AreEqual(3, onPrimaryData.Length);
+                    for (var k = 1; k < onPrimaryData.Length; k++)
+                    {
+                        ClassicAssert.AreEqual((int)(onPrimaryData[k - 1] + 1), (int)onPrimaryData[k]);
+                    }
+                    ClassicAssert.AreEqual($"{{\"data\": {(int)onPrimaryData[0]} }}", onPrimaryAttr);
+
+                    // Matching
+                    ClassicAssert.True(onPrimaryData.SequenceEqual(onSecondaryData));
+                    ClassicAssert.AreEqual(onPrimaryAttr, onSecondaryAttr);
+                }
+            }
+            finally
+            {
+                foreach (var con in cons)
+                {
+                    if (con != null)
+                    {
+                        await con.DisposeAsync().ConfigureAwait(false);
+                    }
+                }
+            }
+        }
+
         private async Task<(List<ShardInfo> Shards, List<ushort> Slots)> SimpleSetupClusterAsync(int shardCount, int primaryCount, int replicaCount, bool onDemandCheckpoint = false, bool useTLS = true)
         {
             context.CreateInstances(shardCount, useTLS: useTLS, enableAOF: true, AofMemorySize: DefaultAOFMemorySize, OnDemandCheckpoint: onDemandCheckpoint, sublogCount: sublogCount, threadPoolMinIOCompletionThreads: 512);
