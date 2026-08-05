@@ -129,24 +129,21 @@ namespace Tsavorite.core
         /// increment/decrement) then lands on that shard's own cache lines. This removes the cache-line
         /// ping-pong that a single global pending counter plus a shared free-slot queue create when dozens of
         /// submitter and completion threads touch them on every IO — the dominant cost profiled at high IOPS.
-        /// Sized above the peak concurrent submitter-thread count so distinct threads almost never share a shard
-        /// (sharing is still correct — the counters are interlocked — just slightly more contended).
-        /// An internal implementation detail, not a user knob: the shard count has a single correct regime
-        /// (comfortably above peak concurrent submitters, with churn headroom).
-        /// A performance sweep (device.bench and RESP GET over NumShards 512→16 × threads 32→128) showed
-        /// throughput is flat while NumShards ≥ the peak concurrent submitter count, with a knee only at
-        /// NumShards ≈ threads/4 — where ≥4 max-in-flight submitters share one <see cref="SlotsPerShard"/>-slot
-        /// free-list and RentSlot begins to spin. That peak submitter count is in turn bounded by the number of
-        /// logical processors available to the process (threads cannot execute the submit path more concurrently
-        /// than there are CPUs; the ThreadPool only transiently overshoots under connections ≫ cores), so the
-        /// count is derived from <see cref="Environment.ProcessorCount"/> rather than fitted to one machine —
-        /// 2× the processor count gives headroom for that transient overshoot. The floor of 128 is the value
-        /// validated on the sweep hardware (never regress below it on smaller boxes, ~1 MB of fixed managed
-        /// memory); the cap of 1024 bounds the fixed table to ~8 MB on very large machines.
-        /// <see cref="Environment.ProcessorCount"/> honors process CPU affinity and cgroup limits, so a pinned or
-        /// containerized server sizes to the cores it can actually run on.
+        /// <para>
+        /// Sized at <c>2 × ProcessorCount</c> capped at 32. A device.bench + RESP sweep (NumShards 448→16 ×
+        /// threads 32→64, both backends) showed throughput is flat from 448 shards all the way down to ~32 and
+        /// only dips below ~16. The reason a small fixed count suffices is that <see cref="Throttle"/> gates each
+        /// shard's TOTAL in-flight at <see cref="PerThreadLimit"/> (≈ throttle ÷ active shards, capped at
+        /// <see cref="MaxPerThreadInFlight"/>), so a shard's free-list occupancy never approaches
+        /// <see cref="SlotsPerShard"/> no matter how many submitter threads share it — a small shard count
+        /// neither starves the free-list nor re-introduces counter contention. 32 is therefore ample headroom
+        /// over the peak concurrent submitter count on this class of server; <c>2 × ProcessorCount</c> scales the
+        /// count DOWN on small boxes (fewer concurrent submitters, so the fixed per-shard tables would otherwise
+        /// be wasted) while the cap of 32 bounds it on large machines. <see cref="Environment.ProcessorCount"/>
+        /// honors process CPU affinity and cgroup limits. An internal implementation detail, not a user knob.
+        /// </para>
         /// </summary>
-        static readonly int NumShards = Math.Clamp(2 * Environment.ProcessorCount, 128, 1024);
+        static readonly int NumShards = Math.Min(2 * Environment.ProcessorCount, 32);
 
         /// <summary>
         /// Number of completion-tracking slots per shard (power of two), i.e. the depth of each shard's
@@ -168,17 +165,10 @@ namespace Tsavorite.core
 
         /// <summary>
         /// Stride (in <see cref="long"/>s, i.e. 128 bytes) between adjacent shard counters in
-        /// <see cref="shardSubmitted"/> / <see cref="shardCompleted"/> so each shard's counter sits on its own
-        /// cache line (and the line is not shared with an adjacent shard via the hardware prefetcher).
+        /// <see cref="shardInFlight"/> so each shard's counter sits on its own cache line (and the line is not
+        /// shared with an adjacent shard via the hardware prefetcher).
         /// </summary>
         const int ShardStride = 16;
-
-        /// <summary>
-        /// Interval (milliseconds) between <see cref="activeShards"/> reconciliations — see
-        /// <see cref="MaybeReconcileActiveShards"/>. Chosen small enough to track submitter-thread churn promptly
-        /// yet large enough that the periodic shard scan is negligible (a few hundred scans/second at most).
-        /// </summary>
-        const long ReconcileIntervalMs = 200;
 
         /// <summary>
         /// Size of the in-flight completion-tracking pool (the <see cref="results"/> array): one entry per slot
@@ -205,20 +195,14 @@ namespace Tsavorite.core
         NativeResult[] results;
 
         /// <summary>
-        /// Per-shard monotonic count of submitted IOs, sharded by submitter thread and spaced by
-        /// <see cref="ShardStride"/> so each shard's counter owns a cache line. Written by the shard's submitter
-        /// thread(s). In-flight for a shard is <c>shardSubmitted - shardCompleted</c>; this drives
-        /// <see cref="Throttle"/> and <see cref="Dispose()"/>'s drain-wait. Completion-slot assignment is
-        /// handled separately by the per-shard free-lists (<see cref="shardFreeSlots"/>).
+        /// Per-shard signed in-flight IO count, sharded by submitter thread and spaced by <see cref="ShardStride"/>
+        /// so each shard's counter owns a cache line. A submit (or lease) bumps it +1 via <see cref="SubmitToShard"/>;
+        /// the matching completion, submit error/abort unwind, or lease-release drops it −1 via
+        /// <see cref="CompleteShard"/>. It drives <see cref="Throttle"/> and <see cref="Dispose()"/>'s drain-wait,
+        /// and its exact 0↔1 transitions maintain the live <see cref="activeShards"/> occupancy count.
+        /// Completion-slot assignment is handled separately by the per-shard free-lists (<see cref="shardFreeSlots"/>).
         /// </summary>
-        long[] shardSubmitted;
-
-        /// <summary>
-        /// Per-shard count of completed (or failed/aborted) IOs, spaced by <see cref="ShardStride"/>. Bumped by
-        /// whichever thread runs the completion (drainer or a <see cref="TryComplete"/> caller) or the submit
-        /// error/abort path. Interlocked because more than one completer can touch a shard.
-        /// </summary>
-        long[] shardCompleted;
+        long[] shardInFlight;
 
         /// <summary>
         /// Per-shard free-list of completion-tracking slot offsets into <see cref="results"/>. Each shard owns
@@ -234,7 +218,7 @@ namespace Tsavorite.core
 
         /// <summary>
         /// Per-device, per-thread shard assignment. The value factory (<see cref="AssignShard"/>) hands out the
-        /// next shard round-robin and bumps <see cref="activeShards"/> the first time a thread touches this device.
+        /// next shard round-robin the first time a thread touches this device.
         /// </summary>
         ThreadLocal<int> shardIndex;
 
@@ -242,24 +226,18 @@ namespace Tsavorite.core
         int nextShardSeq;
 
         /// <summary>
-        /// Estimate of the number of CONCURRENTLY-active submitter threads, used by <see cref="PerThreadLimit"/>
-        /// to split the global <see cref="StorageDeviceBase.ThrottleLimit"/> into a per-thread in-flight budget
-        /// so the device-wide cap is preserved without a global in-flight counter. <see cref="AssignShard"/>
-        /// increments it the first time a thread submits (immediate, conservative — new threads instantly get a
-        /// fair share), and <see cref="MaybeReconcileActiveShards"/> periodically reconciles it DOWN to actual
-        /// shard occupancy so it does not ratchet up as the .NET ThreadPool retires and re-injects submitter
-        /// threads. Without that reconcile, a long-lived device under ThreadPool churn would see this grow
-        /// unbounded (every fresh thread bumps it, thread exit never decrements it), collapsing the per-thread
-        /// budget and progressively starving the device queue depth — a slow, restart-only-recoverable decline.
+        /// Live count of shards currently carrying in-flight IO (≈ the number of concurrently-active submitter
+        /// threads), used by <see cref="PerThreadLimit"/> to split the global
+        /// <see cref="StorageDeviceBase.ThrottleLimit"/> into a per-thread in-flight budget so the device-wide
+        /// cap is preserved without a global in-flight counter. Maintained EXACTLY by <see cref="SubmitToShard"/>
+        /// / <see cref="CompleteShard"/>, which bump it when a shard's in-flight transitions 0→1 (occupied) and
+        /// drop it when the shard returns 1→0 (idle) — the transition is detected atomically from the interlocked
+        /// counter's own return value, so it tracks true occupancy at all times and cannot ratchet up as the .NET
+        /// ThreadPool retires and re-injects submitter threads. Because <see cref="Throttle"/> gates each shard's
+        /// whole in-flight, dividing the budget by occupied-shard count (rather than by distinct threads) makes the
+        /// aggregate device cap equal the configured throttle regardless of how many threads share a shard.
         /// </summary>
         int activeShards;
-
-        /// <summary>
-        /// <see cref="Environment.TickCount64"/> at/after which the next <see cref="activeShards"/> reconciliation
-        /// is due. A plain (non-atomic) read gates the reconcile on the hot completion path; concurrent completers
-        /// racing to reconcile is harmless (the scan is idempotent). See <see cref="MaybeReconcileActiveShards"/>.
-        /// </summary>
-        long nextReconcileTicks;
 
         /// <summary>
         /// Effective aggregate in-flight throttle T used by <see cref="Throttle"/>, captured once when the
@@ -849,60 +827,41 @@ namespace Tsavorite.core
         int GetShard() => shardIndex.Value;
 
         /// <summary>
-        /// <see cref="ThreadLocal{T}"/> value factory: hands out the next shard round-robin and records that a
-        /// new submitter thread has appeared (so <see cref="Throttle"/> can split the global budget across them).
-        /// The round-robin counter is reduced modulo <see cref="NumShards"/> as <c>uint</c> so that when the
-        /// signed <see cref="nextShardSeq"/> eventually wraps past <see cref="int.MaxValue"/> on a long-lived,
+        /// <see cref="ThreadLocal{T}"/> value factory: hands out the next shard round-robin. The round-robin
+        /// counter is reduced modulo <see cref="NumShards"/> as <c>uint</c> so that when the signed
+        /// <see cref="nextShardSeq"/> eventually wraps past <see cref="int.MaxValue"/> on a long-lived,
         /// thread-churning server the index stays in <c>[0, NumShards)</c> (a signed <c>%</c> would yield a
         /// negative index and an out-of-range shard access). <see cref="NumShards"/> need not be a power of two.
         /// </summary>
         int AssignShard()
+            => (int)((uint)(Interlocked.Increment(ref nextShardSeq) - 1) % (uint)NumShards);
+
+        /// <summary>
+        /// Records a submit (or lease) on <paramref name="shard"/>: bumps the shard's in-flight counter and, when
+        /// it transitions 0→1 (the shard becomes occupied), bumps <see cref="activeShards"/>. The 0→1 test reads
+        /// the interlocked increment's own return value, so exactly one caller observes the transition even under
+        /// concurrent submit/complete on the same shard — keeping <see cref="activeShards"/> an exact, always-current
+        /// live-occupancy count (no background reconciliation, no birth-only ratchet under ThreadPool churn).
+        /// </summary>
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
+        void SubmitToShard(int shard)
         {
-            int idx = (int)((uint)(Interlocked.Increment(ref nextShardSeq) - 1) % (uint)NumShards);
-            Interlocked.Increment(ref activeShards);
-            return idx;
+            if (Interlocked.Increment(ref shardInFlight[shard * ShardStride]) == 1L)
+                Interlocked.Increment(ref activeShards);
         }
 
         /// <summary>
-        /// Periodically reconciles <see cref="activeShards"/> DOWN to the number of shards currently carrying
-        /// in-flight IO (≈ the number of concurrently-active submitter threads). <see cref="AssignShard"/> only
-        /// ever increments <see cref="activeShards"/> — a .NET ThreadPool worker that submits once and is later
-        /// retired never decrements it — so without this the divisor ratchets up as the pool churns threads,
-        /// shrinking <see cref="PerThreadLimit"/> and starving the device queue over the process's lifetime
-        /// (a slow decline only a restart recovers). Reconciling from live occupancy makes the divisor track
-        /// actual concurrency: births are counted immediately (in <see cref="AssignShard"/>), deaths are reclaimed
-        /// here. Time-gated by a cheap non-atomic <see cref="Environment.TickCount64"/> check so it is effectively
-        /// free on the hot completion path (a full scan runs at most every <see cref="ReconcileIntervalMs"/> ms).
-        /// Concurrent completers racing here is harmless: the scan is idempotent and the write is a plain store.
-        /// <para>
-        /// KNOWN BOUNDED TRANSIENT (intentional tradeoff): a submitter thread that already has a shard assigned
-        /// (its <see cref="ThreadLocal{T}"/> value) does NOT re-run <see cref="AssignShard"/> when it re-activates,
-        /// so if this reconciliation has just cratered <see cref="activeShards"/> after an idle gap and a burst of
-        /// such reused threads then floods in, they briefly see a stale-low divisor and each provisions up to
-        /// <see cref="MaxPerThreadInFlight"/> in-flight — a transient over-subscription bounded at
-        /// <c>liveThreads × MaxPerThreadInFlight</c> (≈ 2× the throttle) for at most one <see cref="ReconcileIntervalMs"/>
-        /// window, after which the next scan (their now-occupied shards) restores the correct divisor. This is
-        /// non-corrupting (it only mis-sizes a perf knob) and is absorbed by the native ring's EAGAIN/unwind+retry.
-        /// We deliberately do NOT track exact 0→1 / 1→0 shard-occupancy transitions to keep <see cref="activeShards"/>
-        /// perfectly current: in-flight is <c>shardSubmitted − shardCompleted</c> across two independently-updated
-        /// counters, so detecting those transitions atomically would require reading both after each increment (a
-        /// cross-counter race) or a per-shard lock on the hottest submit/complete paths — a correctness hazard and
-        /// a throughput cost that outweigh eliminating a brief, self-correcting, bounded over-subscription.
-        /// </para>
+        /// Records a completion (or lease-release / submit-error unwind) on <paramref name="shard"/>: drops the
+        /// shard's in-flight counter and, when it returns to 0 (the shard becomes idle), drops
+        /// <see cref="activeShards"/>. Balances <see cref="SubmitToShard"/>; see it for why the transition is exact.
+        /// Every completion is preceded by its submit, so a shard's in-flight is never negative and
+        /// <see cref="activeShards"/> is never over-decremented.
         /// </summary>
-        void MaybeReconcileActiveShards()
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
+        void CompleteShard(int shard)
         {
-            long now = Environment.TickCount64;
-            if (now < Volatile.Read(ref nextReconcileTicks))
-                return;
-            Volatile.Write(ref nextReconcileTicks, now + ReconcileIntervalMs);
-            int occupied = 0;
-            for (int s = 0; s < NumShards; s++)
-            {
-                if (Volatile.Read(ref shardSubmitted[s * ShardStride]) - Volatile.Read(ref shardCompleted[s * ShardStride]) > 0)
-                    occupied++;
-            }
-            Volatile.Write(ref activeShards, occupied < 1 ? 1 : occupied);
+            if (Interlocked.Decrement(ref shardInFlight[shard * ShardStride]) == 0L)
+                Interlocked.Decrement(ref activeShards);
         }
 
         /// <summary>
@@ -945,24 +904,25 @@ namespace Tsavorite.core
             shardFreeSlots[offset / SlotsPerShard].Enqueue(offset);
         }
 
-        /// <summary>Current in-flight IO count for a shard (submitted minus completed).</summary>
+        /// <summary>Current in-flight IO count for a shard.</summary>
         [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
         long InFlightInShard(int shard)
-            => Volatile.Read(ref shardSubmitted[shard * ShardStride]) - Volatile.Read(ref shardCompleted[shard * ShardStride]);
+            => Volatile.Read(ref shardInFlight[shard * ShardStride]);
 
         /// <summary>Sum of in-flight IOs across all shards. Cold path only (Dispose drain, instrumentation).</summary>
         long TotalInFlight()
         {
             long total = 0;
             for (int s = 0; s < NumShards; s++)
-                total += Volatile.Read(ref shardSubmitted[s * ShardStride]) - Volatile.Read(ref shardCompleted[s * ShardStride]);
+                total += Volatile.Read(ref shardInFlight[s * ShardStride]);
             return total;
         }
 
         /// <summary>
-        /// Per-thread in-flight budget = global throttle split across the distinct submitter threads seen so far,
-        /// clamped to <see cref="MaxPerThreadInFlight"/>. Splitting this way keeps the device-wide cap equal to
-        /// the configured <see cref="StorageDeviceBase.ThrottleLimit"/> (total ≈ perThread × activeShards) while
+        /// Per-thread in-flight budget = global throttle split across the currently-occupied shards
+        /// (≈ live concurrent submitters, tracked exactly by <see cref="activeShards"/>), clamped to
+        /// <see cref="MaxPerThreadInFlight"/>. Splitting this way keeps the device-wide cap equal to the
+        /// configured <see cref="StorageDeviceBase.ThrottleLimit"/> (total ≈ perThread × activeShards) while
         /// the hot <see cref="Throttle"/> check only reads the calling thread's own shard counters.
         /// </summary>
         [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
@@ -983,19 +943,19 @@ namespace Tsavorite.core
         /// Leases the native handle for a non-IO native call (TryComplete / Reset / RemoveSegment / GetFileSize)
         /// so a concurrent <see cref="Dispose"/> cannot free it mid-call. Returns false (without leasing) once
         /// disposal has begun. On success the caller MUST call <see cref="ReleaseLease"/> in a finally. The lease
-        /// reuses the shard in-flight counters, so Dispose's drain-wait covers leased native calls automatically.
+        /// reuses the shard in-flight counter, so Dispose's drain-wait covers leased native calls automatically.
         /// </summary>
         bool TryLease(out int shard)
         {
             shard = GetShard();
             if (Volatile.Read(ref disposedFlag) != 0)
                 return false;
-            Interlocked.Increment(ref shardSubmitted[shard * ShardStride]);
+            SubmitToShard(shard);
             // Re-check after publishing the lease: if Dispose set the flag concurrently, its drain-wait either
             // already observed this lease (and is waiting) or will not — either way we must not touch the handle.
             if (Volatile.Read(ref disposedFlag) != 0)
             {
-                Interlocked.Increment(ref shardCompleted[shard * ShardStride]);
+                CompleteShard(shard);
                 return false;
             }
             return true;
@@ -1004,12 +964,11 @@ namespace Tsavorite.core
         /// <summary>Releases a lease taken by <see cref="TryLease"/>.</summary>
         [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
         void ReleaseLease(int shard)
-            => Interlocked.Increment(ref shardCompleted[shard * ShardStride]);
+            => CompleteShard(shard);
 
         void _callback(IntPtr context, int errorCode, ulong numBytes)
         {
             if (s_instrument) Interlocked.Increment(ref completeCount);
-            MaybeReconcileActiveShards();
             int offset = (int)context;
             var result = results[offset];
             // CRITICAL: this method is invoked via a function pointer from native code (libaio /
@@ -1029,11 +988,10 @@ namespace Tsavorite.core
             // Errors that need surfacing should go through the result.callback's own error
             // channel (numBytes=0 + errorCode), not via a throw.
             //
-            // try/finally also ensures that on a throwing user callback the shard's completed
-            // counter is still bumped. Dispose() spins until in-flight (submitted-completed)
-            // reaches 0, so bumping here (after the callback returns) guarantees Dispose waits
-            // for all in-flight user callbacks to finish before destroying the native device
-            // underneath them.
+            // try/finally also ensures that on a throwing user callback the shard's in-flight
+            // counter is still dropped. Dispose() spins until in-flight reaches 0, so dropping
+            // here (after the callback returns) guarantees Dispose waits for all in-flight user
+            // callbacks to finish before destroying the native device underneath them.
             try
             {
                 result.callback((uint)errorCode, (uint)numBytes, result.context);
@@ -1044,7 +1002,9 @@ namespace Tsavorite.core
             }
             finally
             {
-                Interlocked.Increment(ref shardCompleted[(offset / SlotsPerShard) * ShardStride]);
+                // The owning shard is encoded in the slot offset (offset / SlotsPerShard), not GetShard(): this
+                // completion may run on a drainer thread whose own shard differs from the submitter's.
+                CompleteShard(offset / SlotsPerShard);
                 ReturnSlot(offset);
             }
         }
@@ -1289,10 +1249,9 @@ namespace Tsavorite.core
             _callbackDelegate = _callback;
 
             // In-flight accounting is sharded per submitter thread to avoid the global cache-line
-            // contention profiled at high IOPS. The counter arrays are allocated up front (small,
-            // ~32 KB total) because Throttle() may run before the first IO creates the native device.
-            shardSubmitted = new long[NumShards * ShardStride];
-            shardCompleted = new long[NumShards * ShardStride];
+            // contention profiled at high IOPS. The counter array is allocated up front (small,
+            // a few KB) because Throttle() may run before the first IO creates the native device.
+            shardInFlight = new long[NumShards * ShardStride];
             shardIndex = new ThreadLocal<int>(AssignShard);
 
             // Per-shard free-list of completion slots, each pre-populated with its shard's contiguous block of
@@ -1596,18 +1555,18 @@ namespace Tsavorite.core
             // Sharded, contention-free slot + in-flight accounting. The slot is rented from this submitter's
             // shard free-list and returned only when the IO completes (in _callback or an error path below), so
             // a slow IO's slot is never reused while it is still in flight — the correctness the counter-ring it
-            // replaced could not provide under out-of-order completions. The shardSubmitted bump is the in-flight
+            // replaced could not provide under out-of-order completions. The SubmitToShard bump is the in-flight
             // "lease" the Dekker-style Dispose fence and Throttle() observe. See RentSlot / shardFreeSlots.
             int shard = GetShard();
             int offset = RentSlot(shard);
-            Interlocked.Increment(ref shardSubmitted[shard * ShardStride]);
+            SubmitToShard(shard);
             // Fence against a concurrent Dispose that began after the EnsureNativeDeviceCreated check above:
             // if disposal is now visible, balance the submit bump and route the error callback rather than
             // touching a handle Dispose may be about to free. (Dekker-style: Dispose sets the flag then drains
             // in-flight, so either it observes this bump and waits, or we observe the flag here and back out.)
             if (Volatile.Read(ref disposedFlag) != 0)
             {
-                Interlocked.Increment(ref shardCompleted[shard * ShardStride]);
+                CompleteShard(shard);
                 ReturnSlot(offset);
                 callback(uint.MaxValue, 0, context);
                 return;
@@ -1632,7 +1591,7 @@ namespace Tsavorite.core
                 }
                 finally
                 {
-                    Interlocked.Increment(ref shardCompleted[shard * ShardStride]);
+                    CompleteShard(shard);
                     ReturnSlot(offset);
                 }
             }
@@ -1645,7 +1604,7 @@ namespace Tsavorite.core
                 }
                 finally
                 {
-                    Interlocked.Increment(ref shardCompleted[shard * ShardStride]);
+                    CompleteShard(shard);
                     ReturnSlot(offset);
                 }
             }
@@ -1672,10 +1631,10 @@ namespace Tsavorite.core
             // Sharded slot + in-flight accounting; see ReadAsync for the full rationale.
             int shard = GetShard();
             int offset = RentSlot(shard);
-            Interlocked.Increment(ref shardSubmitted[shard * ShardStride]);
+            SubmitToShard(shard);
             if (Volatile.Read(ref disposedFlag) != 0)
             {
-                Interlocked.Increment(ref shardCompleted[shard * ShardStride]);
+                CompleteShard(shard);
                 ReturnSlot(offset);
                 callback(uint.MaxValue, 0, context);
                 return;
@@ -1720,7 +1679,7 @@ namespace Tsavorite.core
                 }
                 finally
                 {
-                    Interlocked.Increment(ref shardCompleted[shard * ShardStride]);
+                    CompleteShard(shard);
                     ReturnSlot(offset);
                 }
             }
@@ -1733,7 +1692,7 @@ namespace Tsavorite.core
                 }
                 finally
                 {
-                    Interlocked.Increment(ref shardCompleted[shard * ShardStride]);
+                    CompleteShard(shard);
                     ReturnSlot(offset);
                 }
             }
@@ -1843,12 +1802,12 @@ namespace Tsavorite.core
             if (Interlocked.Exchange(ref disposedFlag, 1) != 0)
                 return;
 
-            // Drain in-flight ops: wait until every shard's submitted count is matched by its completed
-            // count. disposedFlag was published above (full barrier); submit/lease paths bump their shard
-            // (full barrier) then re-check the flag, so — Dekker-style — either they observe disposal and
-            // back out without touching the handle, or this drain observes their bump and waits. The
-            // shardCompleted bump for an accepted IO runs in _callback's `finally` after the user callback,
-            // so once in-flight reaches 0 all completions (and their user callbacks) have finished.
+            // Drain in-flight ops: wait until every shard's in-flight count returns to zero. disposedFlag was
+            // published above (full barrier); submit/lease paths bump their shard (full barrier) then re-check
+            // the flag, so — Dekker-style — either they observe disposal and back out without touching the
+            // handle, or this drain observes their bump and waits. The in-flight decrement for an accepted IO
+            // runs in _callback's `finally` after the user callback, so once in-flight reaches 0 all completions
+            // (and their user callbacks) have finished.
             while (TotalInFlight() != 0)
                 Thread.Yield();
 
