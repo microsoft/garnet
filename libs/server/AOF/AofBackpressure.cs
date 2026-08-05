@@ -10,10 +10,11 @@ using Microsoft.Extensions.Logging;
 namespace Garnet.server
 {
     /// <summary>
-    /// Primary-side replication backpressure for the AOF, constructed only when AofSyncMaxLagBytes
-    /// is set (a null gate means disabled; call sites gate with ?.). Without it, an in-memory AOF
-    /// (null device with fast-aof-truncate) recycles pages past unshipped records and silently
-    /// drops them for a lagging replica.
+    /// Primary-side replication backpressure for the AOF. Always constructed; an internal
+    /// <see cref="enabled"/> flag (driven by AofSyncMaxLagBytes, adjustable at runtime via CONFIG
+    /// SET aof-sync-max-lag-bytes) gates the append path so a disabled gate returns immediately from
+    /// <see cref="Wait"/>. Without it, an in-memory AOF (null device with fast-aof-truncate) recycles
+    /// pages past unshipped records and silently drops them for a lagging replica.
     ///
     /// The gate is fail-safe by construction. For each physical sublog the shipping side publishes
     /// a watermark: the minimum shipped address across all attached replicas (long.MaxValue when
@@ -53,7 +54,13 @@ namespace Garnet.server
         /// sublog does no work and a busy one batches many chunks per publish. This only affects
         /// watermark freshness (hence throughput), never safety.
         /// </summary>
-        public long PublishDeltaBytes { get; }
+        public long PublishDeltaBytes { get; private set; }
+
+        /// <summary>
+        /// Whether the gate is currently active. Read on the append hot path as a plain field; a
+        /// runtime enable/disable propagates by cache coherence (see <see cref="SetBudget"/>).
+        /// </summary>
+        public bool Enabled => enabled;
 
         // One padded watermark per physical sublog: the min shipped address across attached
         // replicas, written by the shipping side, read by appenders. Padded to a cache line so a
@@ -64,7 +71,14 @@ namespace Garnet.server
             [FieldOffset(0)] public long Value;
         }
 
-        readonly long perSublogBudget;
+        // Per-sublog lag budget and the active flag. Mutable plain fields (no volatile / readonly):
+        // a runtime CONFIG SET updates them through SetBudget and appenders observe the change by
+        // cache coherence. This is safe because the gate is best-effort and fail-safe — a briefly
+        // stale value only over- or under-throttles, never permits a wrap — and an aligned long/bool
+        // read is atomic on 64-bit, so no fence is taken on the append hot path.
+        long perSublogBudget;
+        bool enabled;
+        readonly int sublogCount;
         readonly PaddedLong[] shippedWatermark;
 
         volatile bool disposed;
@@ -78,15 +92,43 @@ namespace Garnet.server
         public AofBackpressure(GarnetServerOptions serverOptions, ILogger logger = null)
         {
             this.logger = logger;
-            var sublogCount = serverOptions.AofPhysicalSublogCount;
-            perSublogBudget = Math.Max(1, serverOptions.AofSyncMaxLagBytes / sublogCount);
-            PublishDeltaBytes = Math.Max(1, perSublogBudget / 8);
+            sublogCount = serverOptions.AofPhysicalSublogCount;
             shippedWatermark = new PaddedLong[sublogCount];
             // No replica attached yet: a max watermark makes the computed lag non-positive, so
             // nothing stalls until the shipping side publishes real shipped addresses on attach.
             for (var i = 0; i < sublogCount; i++)
                 shippedWatermark[i].Value = long.MaxValue;
-            logger?.LogInformation("AofBackpressure enabled: per-sublog budget {perSublogBudget} bytes across {sublogCount} sublogs (AofSyncMaxLagBytes {total} total), publish delta {PublishDeltaBytes} bytes", perSublogBudget, sublogCount, serverOptions.AofSyncMaxLagBytes, PublishDeltaBytes);
+            SetBudget(serverOptions.AofSyncMaxLagBytes);
+        }
+
+        /// <summary>
+        /// Apply a new whole-log lag budget (bytes), evenly divided per sublog. A value &lt;= 0
+        /// disables the gate — appenders then return immediately from <see cref="Wait"/> and any
+        /// currently parked appender is released on its next poll. Called from the constructor and
+        /// from a runtime CONFIG SET (via StoreWrapper). Uses plain-field writes: the budget is
+        /// written before the enable flag so an appender that observes <see cref="enabled"/> also
+        /// sees the matching budget, and any transient staleness only over/under-throttles (safe).
+        /// </summary>
+        /// <param name="aofSyncMaxLagBytes">New whole-log budget in bytes; &lt;= 0 disables the gate.</param>
+        internal void SetBudget(long aofSyncMaxLagBytes)
+        {
+            if (aofSyncMaxLagBytes > 0)
+            {
+                perSublogBudget = Math.Max(1, aofSyncMaxLagBytes / sublogCount);
+                PublishDeltaBytes = Math.Max(1, perSublogBudget / 8);
+                enabled = true;
+                logger?.LogInformation("AofBackpressure enabled: per-sublog budget {perSublogBudget} bytes across {sublogCount} sublogs (AofSyncMaxLagBytes {total} total), publish delta {PublishDeltaBytes} bytes", perSublogBudget, sublogCount, aofSyncMaxLagBytes, PublishDeltaBytes);
+            }
+            else
+            {
+                // Neutralize the budget before clearing the flag: an appender that still observes a
+                // stale enabled==true then sees an effectively infinite budget and does not stall,
+                // so disabling never briefly parks an appender.
+                perSublogBudget = long.MaxValue;
+                PublishDeltaBytes = 1;
+                enabled = false;
+                logger?.LogInformation("AofBackpressure disabled (AofSyncMaxLagBytes {total})", aofSyncMaxLagBytes);
+            }
         }
 
         /// <summary>
@@ -98,6 +140,8 @@ namespace Garnet.server
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void Wait(int sublogIdx, long tailAddress)
         {
+            if (!enabled)
+                return;
             if (tailAddress - Volatile.Read(ref shippedWatermark[sublogIdx].Value) <= perSublogBudget)
                 return;
             WaitSlow(sublogIdx, tailAddress);

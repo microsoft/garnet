@@ -767,6 +767,13 @@ namespace Garnet.test
             ClassicAssert.AreEqual("OK", db.Execute("CONFIG", "SET", "aof-replay-max-lag-bytes", "-1").ToString());
             ClassicAssert.AreEqual("-1", Get(db, "aof-replay-max-lag-bytes"));
 
+            // 64-bit (long) option: value exceeds int.MaxValue and round-trips, and the -1 sentinel disables.
+            var largeLag = ((long)int.MaxValue + 1).ToString();
+            ClassicAssert.AreEqual("OK", db.Execute("CONFIG", "SET", "aof-sync-max-lag-bytes", largeLag).ToString());
+            ClassicAssert.AreEqual(largeLag, Get(db, "aof-sync-max-lag-bytes"));
+            ClassicAssert.AreEqual("OK", db.Execute("CONFIG", "SET", "aof-sync-max-lag-bytes", "-1").ToString());
+            ClassicAssert.AreEqual("-1", Get(db, "aof-sync-max-lag-bytes"));
+
             // Boolean option (yes/no).
             ClassicAssert.AreEqual("OK", db.Execute("CONFIG", "SET", "sg-get", "no").ToString());
             ClassicAssert.AreEqual("no", Get(db, "sg-get"));

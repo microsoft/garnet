@@ -78,8 +78,10 @@ namespace Garnet.server
             if (serverOptions.AofPhysicalSublogCount > 1)
                 seqNumGen = new SequenceNumberGenerator(0);
             this.logger = logger;
-            // Must be before Log is constructed, which caches it for the append paths.
-            backpressure = serverOptions.AofSyncMaxLagBytes > 0 ? new AofBackpressure(serverOptions, logger) : null;
+            // Must be before Log is constructed, which caches it for the append paths. Always
+            // constructed (even when AofSyncMaxLagBytes <= 0) so a runtime CONFIG SET can enable the
+            // gate live; the disabled state is carried by an internal flag that short-circuits Wait.
+            backpressure = new AofBackpressure(serverOptions, logger);
             Log = new(this, serverOptions, logSettings, logger);
         }
 

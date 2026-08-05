@@ -165,6 +165,11 @@ namespace Garnet.server
                 ConfigKind.Int32 | ConfigKind.Milliseconds | ConfigKind.Seconds | ConfigKind.TimeSpan, 0, int.MaxValue,
                 timeUnit: ConfigTimeUnit.Milliseconds);
             Set(ServerConfigType.AOF_REPLAY_MAX_LAG_BYTES, "aof-replay-max-lag-bytes", ConfigKind.Int32, -1, int.MaxValue);
+            // Primary-side replication backpressure budget (whole-log bytes). The always-constructed
+            // AofBackpressure of every database reads plain fields, so ApplyAofSyncMaxLagUpdate pushes a
+            // CONFIG SET straight into the live gate — no restart, no lifecycle task.
+            Set(ServerConfigType.AOF_SYNC_MAX_LAG_BYTES, "aof-sync-max-lag-bytes", ConfigKind.Int64, -1, long.MaxValue,
+                updateAction: ApplyAofSyncMaxLagUpdate);
             Set(ServerConfigType.AOF_TAIL_WITNESS_FREQ, "aof-tail-witness-freq",
                 ConfigKind.Int32 | ConfigKind.Milliseconds | ConfigKind.Seconds | ConfigKind.TimeSpan, 0, int.MaxValue,
                 timeUnit: ConfigTimeUnit.Milliseconds);
@@ -244,6 +249,7 @@ namespace Garnet.server
             values[(int)ServerConfigType.REPLICA_SYNC_DELAY] = o.ReplicaSyncDelayMs;
             values[(int)ServerConfigType.AOF_REPLAY_MAX_LAG_BYTES] = o.AofReplayMaxLagBytes;
             values[(int)ServerConfigType.AOF_TAIL_WITNESS_FREQ] = o.AofTailWitnessFreqMs;
+            values[(int)ServerConfigType.AOF_SYNC_MAX_LAG_BYTES] = o.AofSyncMaxLagBytes;
             values[(int)ServerConfigType.REPL_DISKLESS_SYNC_DELAY] = o.ReplicaDisklessSyncDelay;
             values[(int)ServerConfigType.REPL_ATTACH_TIMEOUT] = SecondsFromTimeSpan(o.ReplicaAttachTimeout);
             values[(int)ServerConfigType.CLUSTER_REPLICATION_REESTABLISHMENT_TIMEOUT] = o.ClusterReplicationReestablishmentTimeout;
@@ -472,6 +478,17 @@ namespace Garnet.server
                 return false;
             }
             config.owner?.ReconcilePrimaryTask(TaskType.CommitTask);
+            return true;
+        }
+
+        // Enacts an aof-sync-max-lag-bytes change by pushing the new whole-log budget into the
+        // always-constructed primary-side AofBackpressure of every database. The gate reads plain
+        // fields, so retuning the budget — or enabling from a disabled start — takes effect without a
+        // restart and with no lifecycle task involved.
+        static bool ApplyAofSyncMaxLagUpdate(RuntimeServerConfig config, long oldValue, long newValue, out string error)
+        {
+            error = null;
+            config.owner?.ApplyAofSyncMaxLagBytes(newValue);
             return true;
         }
 

@@ -41,8 +41,7 @@ namespace Garnet.cluster
             // batches many chunks per publish. With backpressure disabled the publish block is
             // skipped entirely.
             readonly AofSyncDriverStore aofSyncDriverStore;
-            readonly bool backpressureEnabled;
-            readonly long publishDeltaBytes;
+            readonly AofBackpressure backpressure;
             long lastPublishedShippedAddress;
 
             // Monotonic high-water of the address this task has shipped/scanned past, published to
@@ -123,10 +122,11 @@ namespace Garnet.cluster
                     pulseTailScratch = new long[clusterProvider.serverOptions.AofPhysicalSublogCount];
                     Array.Fill(pulseTailSnapshot, -1L);
                 }
-                backpressureEnabled = appendOnlyFile?.backpressure != null;
-                if (backpressureEnabled)
+                backpressure = appendOnlyFile?.backpressure;
+                if (backpressure != null)
                 {
-                    publishDeltaBytes = appendOnlyFile.backpressure.PublishDeltaBytes;
+                    // Seed the shipped-watermark bookkeeping unconditionally when a gate exists, so the
+                    // baseline is correct if the gate is enabled at runtime after this task started.
                     lastPublishedShippedAddress = startAddress;
                     shippedWatermarkAddress = startAddress;
                     lastThrottleShipped = startAddress;
@@ -228,7 +228,7 @@ namespace Garnet.cluster
                 // the idle publish the watermark ratchets one-way and a caught-up shipper never
                 // republishes, deadlocking appenders parked in the gate. A stale watermark is safe
                 // because appenders self-check conservatively.
-                if (backpressureEnabled)
+                if (backpressure != null && backpressure.Enabled)
                 {
                     var iterNext = iter?.NextAddress ?? previousAddress;
                     var shipped = previousAddress > iterNext ? previousAddress : iterNext;
@@ -237,7 +237,7 @@ namespace Garnet.cluster
 
                     var pending = shippedWatermarkAddress - lastPublishedShippedAddress;
                     var idle = shippedWatermarkAddress == lastThrottleShipped;
-                    if (pending > 0 && (pending >= publishDeltaBytes || idle))
+                    if (pending > 0 && (pending >= backpressure.PublishDeltaBytes || idle))
                     {
                         lastPublishedShippedAddress = shippedWatermarkAddress;
                         aofSyncDriverStore.PublishShippedAddress(physicalSublogIdx);
