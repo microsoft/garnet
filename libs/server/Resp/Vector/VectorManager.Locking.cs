@@ -96,6 +96,27 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Acquire an exclusive lock based on an _element_ and a Vector Set key.
+        /// 
+        /// Should only be called after a <see cref="VectorSetLock"/> has been acquired for the Vector Set.
+        /// </summary>
+        private ref int GetElementSubLock(ReadOnlySpan<byte> key, ReadOnlySpan<byte> element)
+        {
+            var vectorSetArrayIndex = (int)(SpanByteComparer.StaticGetHashCode64(key) & vectorSetElementSelectMask);
+            var vectorSetArray = vectorSetElementUpdateLocks[vectorSetArrayIndex];
+
+            var vectorSetElementIndex = (int)(SpanByteComparer.StaticGetHashCode64(element) & vectorSetConcurrentUpdateSelectMask);
+            ref var vectorSetElementLock = ref vectorSetArray[vectorSetElementIndex];
+
+            while (Volatile.Read(ref vectorSetElementLock) != 0 || Interlocked.CompareExchange(ref vectorSetElementLock, int.MinValue, 0) != 0)
+            {
+                _ = Thread.Yield();
+            }
+
+            return ref vectorSetElementLock;
+        }
+
+        /// <summary>
         /// Equivalent of <see cref="ReadVectorIndex"/> but with a lock for updating a given element.
         /// 
         /// Used to guarantee sequencing on updates to element data.
@@ -110,19 +131,7 @@ namespace Garnet.server
                 return indexLock;
             }
 
-            // TODO: Dry this up
-            var vectorSetArrayIndex = (int)(SpanByteComparer.StaticGetHashCode64(key) & vectorSetElementSelectMask);
-            var vectorSetArray = vectorSetElementUpdateLocks[vectorSetArrayIndex];
-
-            var vectorSetElementIndex = (int)(SpanByteComparer.StaticGetHashCode64(element) & vectorSetConcurrentUpdateSelectMask);
-            ref var vectorSetElementLock = ref vectorSetArray[vectorSetElementIndex];
-
-            while (Volatile.Read(ref vectorSetElementLock) != 0 || Interlocked.CompareExchange(ref vectorSetElementLock, int.MinValue, 0) != 0)
-            {
-                _ = Thread.Yield();
-            }
-
-            return indexLock.WithElementLock(ref vectorSetElementLock);
+            return indexLock.WithElementLock(ref GetElementSubLock(key, element));
         }
 
         /// <summary>
@@ -336,19 +345,7 @@ namespace Garnet.server
                 return indexLock;
             }
 
-            // TODO: Dry this up
-            var vectorSetArrayIndex = (int)(SpanByteComparer.StaticGetHashCode64(key) & vectorSetElementSelectMask);
-            var vectorSetArray = vectorSetElementUpdateLocks[vectorSetArrayIndex];
-
-            var vectorSetElementIndex = (int)(SpanByteComparer.StaticGetHashCode64(element) & vectorSetConcurrentUpdateSelectMask);
-            ref var vectorSetElementLock = ref vectorSetArray[vectorSetElementIndex];
-
-            while (Volatile.Read(ref vectorSetElementLock) != 0 || Interlocked.CompareExchange(ref vectorSetElementLock, int.MinValue, 0) != 0)
-            {
-                _ = Thread.Yield();
-            }
-
-            return indexLock.WithElementLock(ref vectorSetElementLock);
+            return indexLock.WithElementLock(ref GetElementSubLock(key, element));
         }
 
         /// <summary>

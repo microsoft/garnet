@@ -2377,8 +2377,6 @@ namespace Garnet.test.cluster
 
                 for (var pause = 0; pause < Pauses; pause++)
                 {
-                    TestContext.Progress.WriteLine("---------");
-
                     var writeTasks = new Task[cons.Length];
 
                     using var startGate = new SemaphoreSlim(0, writeTasks.Length);
@@ -2439,6 +2437,229 @@ namespace Garnet.test.cluster
                     // Matching
                     ClassicAssert.True(onPrimaryData.SequenceEqual(onSecondaryData));
                     ClassicAssert.AreEqual(onPrimaryAttr, onSecondaryAttr);
+                }
+            }
+            finally
+            {
+                foreach (var con in cons)
+                {
+                    if (con != null)
+                    {
+                        await con.DisposeAsync().ConfigureAwait(false);
+                    }
+                }
+            }
+        }
+
+        [Test]
+        public async Task ConcurrentVSETATTRUpdatesAsync()
+        {
+            const int PrimaryIndex = 0;
+            const int SecondaryIndex = 1;
+            const string Key = nameof(ConcurrentVSETATTRUpdatesAsync);
+            const string Element = Key + "_Element";
+
+            const int ConnectionCount = 4;
+            const int Pauses = 10;
+
+            const int WriteCount = 100;
+
+            _ = await SimpleSetupClusterAsync(DefaultShards, primaryCount: 1, replicaCount: 1, useTLS: false).ConfigureAwait(false);
+
+            var primary = (IPEndPoint)context.endpoints[PrimaryIndex];
+            var secondary = (IPEndPoint)context.endpoints[SecondaryIndex];
+
+            ClassicAssert.AreEqual("master", context.clusterTestUtils.RoleCommand(primary).Value);
+            ClassicAssert.AreEqual("slave", context.clusterTestUtils.RoleCommand(secondary).Value);
+
+            var cons = new ConnectionMultiplexer[ConnectionCount];
+            try
+            {
+                for (var i = 0; i < cons.Length; i++)
+                {
+                    cons[i] = await ConnectionMultiplexer.ConnectAsync(context.clusterTestUtils.GetRedisConfig(context.endpoints)).ConfigureAwait(false);
+                }
+
+                var initialRes = await cons[0].GetDatabase().VectorSetAddAsync(Key, VectorSetAddRequest.Member(Element, new float[] { 1, 2, 3 }, "{\"invalid\": \"data\"}")).ConfigureAwait(false);
+                ClassicAssert.IsTrue(initialRes);
+
+                for (var pause = 0; pause < Pauses; pause++)
+                {
+                    var writeTasks = new Task[cons.Length];
+
+                    using var startGate = new SemaphoreSlim(0, writeTasks.Length);
+
+                    for (var i = 0; i < writeTasks.Length; i++)
+                    {
+                        var writeIx = i;
+                        var con = cons[writeIx];
+                        writeTasks[writeIx] =
+                            Task.Run(
+                                async () =>
+                                {
+                                    var db = con.GetDatabase();
+
+                                    await startGate.WaitAsync().ConfigureAwait(false);
+
+                                    for (var j = 0; j < WriteCount; j++)
+                                    {
+                                        var val = Random.Shared.Next(1_000);
+
+                                        var json = $"{{\"data\": {val} }}";
+
+                                        var setRes = await db.VectorSetSetAttributesJsonAsync(Key, Element, json).ConfigureAwait(false);
+                                        ClassicAssert.IsTrue(setRes);
+                                    }
+                                }
+                            );
+                    }
+
+                    _ = startGate.Release(writeTasks.Length);
+
+                    await Task.WhenAll(writeTasks).ConfigureAwait(false);
+
+                    await Task.Delay(1_000).ConfigureAwait(false);
+
+                    var onPrimaryAttr = (string)await cons[0].GetServer(primary).ExecuteAsync("VGETATTR", [Key, Element]).ConfigureAwait(false);
+                    var onSecondaryAttr = (string)await cons[0].GetServer(secondary).ExecuteAsync("VGETATTR", [Key, Element]).ConfigureAwait(false);
+
+                    // Matching
+                    ClassicAssert.AreEqual(onPrimaryAttr, onSecondaryAttr);
+                }
+            }
+            finally
+            {
+                foreach (var con in cons)
+                {
+                    if (con != null)
+                    {
+                        await con.DisposeAsync().ConfigureAwait(false);
+                    }
+                }
+            }
+        }
+
+        [Test]
+        public async Task ConcurrentVREMUpdatesAsync()
+        {
+            const int PrimaryIndex = 0;
+            const int SecondaryIndex = 1;
+            const string Key = nameof(ConcurrentVREMUpdatesAsync);
+            const string ElementPrefix = Key + "_Element";
+
+            const int ConnectionCount = 4;
+            const int Pauses = 10;
+
+            const int WriteCount = 100;
+            const int ElementCount = 20;
+
+            _ = await SimpleSetupClusterAsync(DefaultShards, primaryCount: 1, replicaCount: 1, useTLS: false).ConfigureAwait(false);
+
+            var primary = (IPEndPoint)context.endpoints[PrimaryIndex];
+            var secondary = (IPEndPoint)context.endpoints[SecondaryIndex];
+
+            ClassicAssert.AreEqual("master", context.clusterTestUtils.RoleCommand(primary).Value);
+            ClassicAssert.AreEqual("slave", context.clusterTestUtils.RoleCommand(secondary).Value);
+
+            var allElements = new List<string>();
+            for (var i = 0; i < ElementCount; i++)
+            {
+                allElements.Add(ElementPrefix + "_" + i);
+            }
+
+            var cons = new ConnectionMultiplexer[ConnectionCount];
+            try
+            {
+                for (var i = 0; i < cons.Length; i++)
+                {
+                    cons[i] = await ConnectionMultiplexer.ConnectAsync(context.clusterTestUtils.GetRedisConfig(context.endpoints)).ConfigureAwait(false);
+                }
+
+                foreach (var element in allElements)
+                {
+                    var initialRes = await cons[0].GetDatabase().VectorSetAddAsync(Key, VectorSetAddRequest.Member(element, new float[] { 1, 2, 3 }, "{\"invalid\": \"data\"}")).ConfigureAwait(false);
+                    ClassicAssert.IsTrue(initialRes);
+                }
+
+                for (var pause = 0; pause < Pauses; pause++)
+                {
+                    var writeTasks = new Task[cons.Length];
+
+                    using var startGate = new SemaphoreSlim(0, writeTasks.Length);
+
+                    for (var i = 0; i < writeTasks.Length; i++)
+                    {
+                        var writeIx = i;
+                        var con = cons[writeIx];
+                        writeTasks[writeIx] =
+                            Task.Run(
+                                async () =>
+                                {
+                                    var db = con.GetDatabase();
+
+                                    await startGate.WaitAsync().ConfigureAwait(false);
+
+                                    for (var j = 0; j < WriteCount; j++)
+                                    {
+                                        var element = allElements[Random.Shared.Next(allElements.Count)];
+
+                                        if (Random.Shared.Next(2) == 0)
+                                        {
+                                            var rawVal = Random.Shared.Next(1_000);
+
+                                            var json = $"{{\"data\": {rawVal} }}";
+                                            var buff = new float[] { rawVal, rawVal + 1, rawVal + 2 };
+
+                                            // Because of (intentional) racing we can't know the expected response here
+                                            _ = await db.VectorSetAddAsync(Key, VectorSetAddRequest.Member(element, buff, json)).ConfigureAwait(false);
+                                        }
+                                        else
+                                        {
+                                            // Because of (intentional) racing we can't know the expected response here
+                                            _ = await db.VectorSetRemoveAsync(Key, element).ConfigureAwait(false);
+                                        }
+                                    }
+                                }
+                            );
+                    }
+
+                    _ = startGate.Release(writeTasks.Length);
+
+                    await Task.WhenAll(writeTasks).ConfigureAwait(false);
+
+                    await Task.Delay(1_000).ConfigureAwait(false);
+
+                    // Check that state is consistent between primary and secondary
+                    foreach (var element in allElements)
+                    {
+                        var onPrimary = (bool)await cons[0].GetServer(primary).ExecuteAsync("VISMEMBER", [Key, element]).ConfigureAwait(false);
+
+                        if (onPrimary)
+                        {
+                            var onPrimaryData = (double[])await cons[0].GetServer(primary).ExecuteAsync("VEMB", [Key, element]).ConfigureAwait(false);
+                            var onPrimaryAttr = (string)await cons[0].GetServer(primary).ExecuteAsync("VGETATTR", [Key, element]).ConfigureAwait(false);
+
+                            var onSecondaryData = (double[])await cons[0].GetServer(secondary).ExecuteAsync("VEMB", [Key, element]).ConfigureAwait(false);
+                            var onSecondaryAttr = (string)await cons[0].GetServer(secondary).ExecuteAsync("VGETATTR", [Key, element]).ConfigureAwait(false);
+
+                            // Valid
+                            ClassicAssert.AreEqual(3, onPrimaryData.Length);
+                            for (var k = 1; k < onPrimaryData.Length; k++)
+                            {
+                                ClassicAssert.AreEqual((int)(onPrimaryData[k - 1] + 1), (int)onPrimaryData[k]);
+                            }
+                            ClassicAssert.AreEqual($"{{\"data\": {(int)onPrimaryData[0]} }}", onPrimaryAttr);
+
+                            // Matching
+                            ClassicAssert.True(onPrimaryData.SequenceEqual(onSecondaryData));
+                            ClassicAssert.AreEqual(onPrimaryAttr, onSecondaryAttr);
+                        }
+                        else
+                        {
+                            var onSecondary = (bool)await cons[0].GetServer(secondary).ExecuteAsync("VISMEMBER", [Key, element]).ConfigureAwait(false);
+                            ClassicAssert.IsFalse(onSecondary);
+                        }
+                    }
                 }
             }
             finally
