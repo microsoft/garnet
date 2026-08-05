@@ -303,11 +303,12 @@ namespace Tsavorite.core
             DebugAssertEpochAcquired(entry);
 
             // Refresh the announced epoch to CurrentEpoch
-            EntryAt(entry).localCurrentEpoch = Volatile.Read(ref CurrentEpoch);
+            var epoch = Volatile.Read(ref CurrentEpoch);
+            Volatile.Write(ref EntryAt(entry).localCurrentEpoch, epoch);
 
             // Max epoch across all threads may have advanced, so check for pending drain actions to process
             if (drainCount > 0)
-                Drain((*(tableAligned + entry)).localCurrentEpoch);
+                Drain(epoch);
 
             if (waiterCount > 0)
             {
@@ -440,7 +441,7 @@ namespace Tsavorite.core
 
             for (var index = 1; index <= kTableSize; index++)
             {
-                var entry_epoch = (*(tableAligned + index)).localCurrentEpoch;
+                var entry_epoch = Volatile.Read(ref EntryAt(index).localCurrentEpoch);
                 if (0 != entry_epoch)
                 {
                     if (entry_epoch < oldestOngoingCall)
