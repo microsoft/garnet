@@ -5,6 +5,7 @@ using System;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using System.Threading;
 using Garnet.common;
 using Tsavorite.core;
 
@@ -26,11 +27,29 @@ namespace Garnet.server
         {
             private readonly ref readonly ReadOptimizedLock lockableCtx;
             private readonly ReadOptimizedLock.LockToken lockToken;
+            private readonly ref int elementLock;
 
-            internal VectorSetLock(ref readonly ReadOptimizedLock lockableCtx, ReadOptimizedLock.LockToken lockToken)
+            internal VectorSetLock(ref readonly ReadOptimizedLock lockableCtx, ReadOptimizedLock.LockToken lockToken) : this(in lockableCtx, lockToken, ref Unsafe.NullRef<int>())
+            {
+            }
+
+            private VectorSetLock(ref readonly ReadOptimizedLock lockableCtx, ReadOptimizedLock.LockToken lockToken, ref int elementLock)
             {
                 this.lockToken = lockToken;
                 this.lockableCtx = ref lockableCtx;
+                this.elementLock = ref elementLock;
+            }
+
+            /// <summary>
+            /// Add an acquired exclusive update lock on an element to this <see cref="VectorSetLock"/>.
+            /// </summary>
+            internal VectorSetLock WithElementLock(ref int elementLock)
+            {
+                Debug.Assert(!Unsafe.IsNullRef(ref elementLock), "Element lock must be non-null");
+                Debug.Assert(elementLock == int.MinValue, "Element lock must already be acquired");
+                Debug.Assert(Unsafe.IsNullRef(ref this.elementLock), "Cannot associate with second element lock");
+
+                return new(in lockableCtx, lockToken, ref elementLock);
             }
 
             /// <inheritdoc/>
@@ -49,10 +68,20 @@ namespace Garnet.server
                 }
 
                 lockableCtx.ReleaseLock(lockToken);
+
+                if (!Unsafe.IsNullRef(ref elementLock))
+                {
+                    var oldVal = Interlocked.Exchange(ref elementLock, 0);
+                    Debug.Assert(oldVal == int.MinValue, "Unlock failed");
+                }
             }
         }
 
         private readonly ReadOptimizedLock vectorSetLocks;
+
+        private readonly int vectorSetElementSelectMask;
+        private readonly int vectorSetConcurrentUpdateSelectMask;
+        private readonly int[][] vectorSetElementUpdateLocks;
 
         /// <summary>
         /// Returns true for indexes that were created via a previous instance of <see cref="VectorManager"/>.
@@ -67,11 +96,43 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Equivalent of <see cref="ReadVectorIndex"/> but with a lock for updating a given element.
+        /// 
+        /// Used to guarantee sequencing on updates to element data.
+        /// 
+        /// Operations that do not _update_ element specific data should use <see cref="ReadVectorIndex"/>.
+        /// </summary>
+        internal VectorSetLock ReadVectorIndexWithElement(StorageSession storageSession, ReadOnlySpan<byte> key, ReadOnlySpan<byte> element, ref StringInput input, scoped Span<byte> indexSpan, out GarnetStatus status)
+        {
+            var indexLock = ReadVectorIndex(storageSession, key, ref input, indexSpan, out status);
+            if (status != GarnetStatus.OK)
+            {
+                return indexLock;
+            }
+
+            // TODO: Dry this up
+            var vectorSetArrayIndex = (int)(SpanByteComparer.StaticGetHashCode64(key) & vectorSetElementSelectMask);
+            var vectorSetArray = vectorSetElementUpdateLocks[vectorSetArrayIndex];
+
+            var vectorSetElementIndex = (int)(SpanByteComparer.StaticGetHashCode64(element) & vectorSetConcurrentUpdateSelectMask);
+            ref var vectorSetElementLock = ref vectorSetArray[vectorSetElementIndex];
+
+            while (Volatile.Read(ref vectorSetElementLock) != 0 || Interlocked.CompareExchange(ref vectorSetElementLock, int.MinValue, 0) != 0)
+            {
+                _ = Thread.Yield();
+            }
+
+            return indexLock.WithElementLock(ref vectorSetElementLock);
+        }
+
+        /// <summary>
         /// Utility method that will read an vector set index out but not create one.
         /// 
         /// It will however RECREATE one if needed.
         /// 
         /// Returns a disposable that prevents the index from being deleted while undisposed.
+        /// 
+        /// If locking operation will update an element, use <see cref="ReadVectorIndexWithElement"/> instead.
         /// </summary>
         internal VectorSetLock ReadVectorIndex(StorageSession storageSession, ReadOnlySpan<byte> key, ref StringInput input, scoped Span<byte> indexSpan, out GarnetStatus status)
         {
@@ -258,6 +319,36 @@ namespace Garnet.server
 
                 throw;
             }
+        }
+
+        /// <summary>
+        /// Equivalent of <see cref="ReadOrCreateVectorIndex"/> but with a lock for updating a given element.
+        /// 
+        /// Used to guarantee sequencing on updates to element data.
+        /// 
+        /// Operations that do not _update_ element specific data should use <see cref="ReadOrCreateVectorIndex"/>.
+        /// </summary>
+        internal VectorSetLock ReadOrCreateVectorIndexWithElement(StorageSession storageSession, ReadOnlySpan<byte> key, ReadOnlySpan<byte> element, ref StringInput input, scoped Span<byte> indexSpan, out GarnetStatus status)
+        {
+            var indexLock = ReadOrCreateVectorIndex(storageSession, key, ref input, indexSpan, out status);
+            if (status != GarnetStatus.OK)
+            {
+                return indexLock;
+            }
+
+            // TODO: Dry this up
+            var vectorSetArrayIndex = (int)(SpanByteComparer.StaticGetHashCode64(key) & vectorSetElementSelectMask);
+            var vectorSetArray = vectorSetElementUpdateLocks[vectorSetArrayIndex];
+
+            var vectorSetElementIndex = (int)(SpanByteComparer.StaticGetHashCode64(element) & vectorSetConcurrentUpdateSelectMask);
+            ref var vectorSetElementLock = ref vectorSetArray[vectorSetElementIndex];
+
+            while (Volatile.Read(ref vectorSetElementLock) != 0 || Interlocked.CompareExchange(ref vectorSetElementLock, int.MinValue, 0) != 0)
+            {
+                _ = Thread.Yield();
+            }
+
+            return indexLock.WithElementLock(ref vectorSetElementLock);
         }
 
         /// <summary>

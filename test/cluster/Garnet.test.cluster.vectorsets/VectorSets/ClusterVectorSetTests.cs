@@ -2377,14 +2377,17 @@ namespace Garnet.test.cluster
 
                 for (var pause = 0; pause < Pauses; pause++)
                 {
+                    TestContext.Progress.WriteLine("---------");
+
                     var writeTasks = new Task[cons.Length];
 
                     using var startGate = new SemaphoreSlim(0, writeTasks.Length);
 
                     for (var i = 0; i < writeTasks.Length; i++)
                     {
-                        var con = cons[i];
-                        writeTasks[i] =
+                        var writeIx = i;
+                        var con = cons[writeIx];
+                        writeTasks[writeIx] =
                             Task.Run(
                                 async () =>
                                 {
@@ -2417,7 +2420,7 @@ namespace Garnet.test.cluster
 
                     await Task.WhenAll(writeTasks).ConfigureAwait(false);
 
-                    context.clusterTestUtils.WaitForReplicaAofSync(PrimaryIndex, SecondaryIndex);
+                    await Task.Delay(1_000).ConfigureAwait(false);
 
                     var onPrimaryData = (double[])await cons[0].GetServer(primary).ExecuteAsync("VEMB", [Key, Element]).ConfigureAwait(false);
                     var onPrimaryAttr = (string)await cons[0].GetServer(primary).ExecuteAsync("VGETATTR", [Key, Element]).ConfigureAwait(false);
