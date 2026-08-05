@@ -303,12 +303,11 @@ namespace Tsavorite.core
             DebugAssertEpochAcquired(entry);
 
             // Refresh the announced epoch to CurrentEpoch
-            var epoch = Volatile.Read(ref CurrentEpoch);
-            EntryAt(entry).localCurrentEpoch = epoch;
+            EntryAt(entry).localCurrentEpoch = Volatile.Read(ref CurrentEpoch);
 
             // Max epoch across all threads may have advanced, so check for pending drain actions to process
             if (drainCount > 0)
-                Drain(epoch);
+                Drain(EntryAt(entry).localCurrentEpoch);
 
             if (waiterCount > 0)
             {
