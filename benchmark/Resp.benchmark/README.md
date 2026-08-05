@@ -94,11 +94,12 @@ numactl --cpunodebind=1 --membind=1 dotnet $RB -s --op GET --dbsize 100000000 \
   network + completion threads, so more client threads keep helping.
 - **NUMA pinning matters most here** (stateful server): pinning the server to node 0
   and the client to node 1 lifts t=32 from 4.84 → 6.17 M and t=64 from 6.38 → 7.21 M.
-- `Libaio` is fastest on Linux. For **`Uring`** the server has no `--device-io-contexts`
-  flag — it creates **one ring per completion thread** — so raise
-  `--device-completion-threads 32` to give uring enough rings (see
-  [Device README](../../libs/storage/Tsavorite/cs/benchmark/Device.benchmark/README.md#nvme-storage-bound));
-  even so it trails libaio here. `Default` → RandomAccess (slower).
+- **`Libaio`** is the Linux default and needs no ring tuning. **`Uring`** now auto-sizes
+  its ring count to `min(2 × cores, 64)` — decoupled from `--device-completion-threads` —
+  so it is competitive with libaio out of the box; use **`--device-io-contexts N`** to set
+  the ring count explicitly (at or above your connection count) for very high concurrency
+  (see [Device Tuning](https://microsoft.github.io/garnet/docs/dev/device-tuning) and the
+  [Device README](../../libs/storage/Tsavorite/cs/benchmark/Device.benchmark/README.md#nvme-storage-bound)).
 - `--device-throttle-limit 4096` suits this array; lower to 512/128 on a single/SATA disk.
 
 ### 3. Memory-device-bound — reads hit the in-RAM device
@@ -114,6 +115,54 @@ LocalMemory runs). Replace the device flags in (2) with:
 ```
 
 Reference (10 M × 100 B, t=16): **~2.7 M ops/sec** at `-b 1024`, **~3.7 M** at `-b 256`.
+
+## Sample results — 8× NVMe SSD RAID-0
+
+Full **scenario 2** GET throughput matrix on **out-of-box device defaults** — only `--storage-tier`
+and `--device-io-backend` are set; `--device-completion-threads`, `--device-throttle-limit`, and
+`--device-io-contexts` are left at their server defaults, so this is what an operator gets with zero
+device tuning. Median of 3 passes per cell.
+
+**Host** — 2× Intel Xeon Platinum 8480CL (56 cores × 2 threads/socket, 224 logical CPUs, 2 NUMA nodes),
+~2 TB DDR5; **8× Kioxia KCM6DRUL3T84** 3.84 TB PCIe-Gen4 NVMe in Linux `md` RAID-0 (`/dev/md1`, 512 KB
+chunks, ext4, ≈28 TB); Ubuntu 24.04.4 LTS, kernel 6.8.0-136, .NET 10.0.302; `fs.aio-max-nr` = 4194304.
+`fio` 4 KB random-read ceiling on this array: **8.24 M IOPS** (32 jobs × QD64, io_uring).
+
+**Workload** — 100 M × 128 B records (`--keylength 16 --valuelength 96`) tiered onto the array
+(`--memory 16m --page 4m --segment 1g --index 8g`); 100% random GET; client `-b 1024`; 12 s per cell.
+
+| backend | NUMA | t=8 | t=32 | t=48 | t=64 |
+|---|---|---|---|---|---|
+| Libaio | srv node-0 / cli node-1 | 1.78 M | 5.77 M | 7.08 M | **7.36 M** |
+| Libaio | no pin | 1.65 M | 5.47 M | 6.17 M | 5.80 M |
+| Uring | srv node-0 / cli node-1 | 1.84 M | 6.33 M | **7.41 M** | 7.18 M |
+| Uring | no pin | 1.52 M | 4.87 M | 6.23 M | 7.12 M |
+
+- **Peak ≈ 7.4 M ops/sec** (uring, pinned, t=48) — **~90% of the `fio` 8.24 M ceiling** for the same
+  4 KB-class random reads, driven end-to-end through the RESP protocol and the Tsavorite pending-read
+  path (not raw device IO).
+- **Defaults reach the tuned peak.** Uring's smart ring-count default (`min(2 × cores, 64)` rings,
+  decoupled from the 4 completion threads) closes the ring-starvation foot-gun with no flags; libaio
+  needs no ring tuning. Hand-tuning (`--device-completion-threads 8 --device-throttle-limit 4096`,
+  uring `--device-io-contexts 96`) moves each cell < 5%.
+- **NUMA pinning is the largest single factor** on this dual-socket box (stateful server): e.g. uring
+  t=48 rises 6.23 → 7.41 M when the server is pinned to node 0 and the client to node 1. On a
+  single-socket host the pin / no-pin rows converge.
+- Both backends land within a few percent at every pinned cell — the device layer is backend-agnostic
+  once each backend has its required ring config (see
+  [Device Tuning](https://microsoft.github.io/garnet/docs/dev/device-tuning)).
+
+Reproduce with the checked-in generator (needs Release builds of `GarnetServer` + `Resp.benchmark`,
+`numactl`, and an NVMe / O_DIRECT mount):
+
+```bash
+DATA=/mnt/nvme/garnet benchmark/Resp.benchmark/scripts/nvme-raid0-matrix.sh
+```
+
+It sweeps both backends × pin/no-pin × threads, takes the median of `PASSES` (default 3) per cell, and
+prints the Markdown table above. Override `DATA`, `THREADS`, `PASSES`, `RUNTIME`, or set
+`CT` / `THROTTLE` / `URING_IOCTX` to reproduce the hand-tuned configuration instead of the defaults.
+Generator: [`scripts/nvme-raid0-matrix.sh`](scripts/nvme-raid0-matrix.sh).
 
 ## Offline variations
 
