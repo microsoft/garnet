@@ -28,13 +28,56 @@ namespace Tsavorite.core
         /// used when <c>--device-queue-depth</c> is not set. This is the per-ring kernel queue capacity,
         /// one of the two physical device dimensions (ring COUNT = io-contexts, ring DEPTH = this).
         ///
-        /// 4096 is a headroom CEILING, not pre-allocated work: a ring never holds more than
-        /// <c>throttle / io-contexts</c> in-flight, and the default throttle (4096) divided across any ring
-        /// count is &lt;= 4096, so no ring goes full at the default config for any io-contexts value. Deeper
-        /// rings than the workload uses cost only bounded pinned ring memory (~D*100B/ring for io_uring),
-        /// never extra IO.
+        /// For io_uring this 4096 is a headroom CEILING, not pre-allocated work: the SQ is per-ring mmap
+        /// memory with no global budget, a ring never holds more than <c>throttle / io-contexts</c> in-flight,
+        /// and deeper rings than the workload uses cost only bounded pinned ring memory (~D*100B/ring), never
+        /// extra IO. For libaio it is NOT free: <c>io_setup</c> permanently reserves <c>io-contexts * D</c>
+        /// events from the global <c>fs.aio-max-nr</c> budget at creation whether used or not, so reserving the
+        /// full 4096/ring wastes budget and, with many coexisting devices (e.g. cluster nodes), exhausts a
+        /// stock 65536 budget (io_setup EAGAIN). Therefore, when queue-depth is left at the default, the libaio
+        /// io_setup reservation is sized DOWN to the throttle share, capped per-ring (<see cref="ResolveLibaioReservationDepth"/>),
+        /// rather than this ceiling. For multi-ring serving devices the full aggregate throttle is preserved
+        /// (io-contexts * reservation &gt;= throttle) so there is no IOPS cost; only low-ring-count auxiliary
+        /// devices (which do not serve deep queues) have their reservation — and effective throttle — reduced.
+        /// An explicit <c>--device-queue-depth</c> is honored verbatim.
         /// </summary>
         const int DefaultQueueDepth = 1 << 12;      // 4096
+
+        /// <summary>
+        /// Per-ring headroom multiple applied when sizing the default libaio <c>io_setup</c> reservation to the
+        /// throttle share (<see cref="ResolveLibaioReservationDepth"/>): each ring is sized to
+        /// <c>headroom * ceil(throttle / io-contexts)</c> so an uneven submitter-&gt;ring distribution rarely
+        /// drives a ring to exactly-full (which would trigger a non-fatal io_submit EAGAIN unwind/retry). 2x
+        /// eliminates the ~2% ring-full IOPS dip seen at 1x. Combined with <see cref="LibaioReservationCap"/>
+        /// (which bounds the per-ring depth) the per-device global-budget reservation is
+        /// <c>min(2 * throttle, io-contexts * cap)</c>, so multi-ring serving devices keep full depth headroom
+        /// while low-ring-count devices stay small.
+        /// </summary>
+        const int LibaioReservationHeadroom = 2;
+
+        /// <summary>
+        /// Ceiling on the per-ring default libaio <c>io_setup</c> reservation depth
+        /// (<see cref="ResolveLibaioReservationDepth"/>). A single libaio io_context (ring) is drained by one
+        /// completion thread and submitted through one kernel aio ring lock, so making a SINGLE ring hold the
+        /// full 4096-deep throttle is both inefficient (one drainer cannot keep a 4096-deep ring saturated —
+        /// the drainer sweep showed a lone drainer collapses) and wasteful of the global <c>fs.aio-max-nr</c>
+        /// budget: deep in-flight should come from MORE rings (higher <c>--device-completion-threads</c>), not
+        /// one mega-deep ring. Capping the per-ring reservation here keeps low-ring-count devices — auxiliary
+        /// logs that do not serve deep random-read queues (AOF append, checkpoint bulk IO, per-node cluster
+        /// replication logs), which default to a single ring — small, so many of them coexist in a stock 65536
+        /// budget (e.g. a multi-node cluster process opening ~15 such devices reserves ~15*<see cref="LibaioReservationCap"/>
+        /// instead of 15*4096, which exhausts the budget). Multi-ring serving devices are unaffected: at
+        /// <c>io-contexts &gt;= 4</c> the 2x throttle share (<c>2 * 4096 / io-contexts</c>) is already &lt;= this
+        /// cap, so their per-ring depth and full aggregate throttle are preserved. Only applies to the DEFAULT
+        /// reservation; an explicit <c>--device-queue-depth</c> is honored verbatim (bypasses this path).
+        /// </summary>
+        const int LibaioReservationCap = 1 << 11;   // 2048
+
+        /// <summary>
+        /// Floor for the default libaio <c>io_setup</c> reservation depth (<see cref="ResolveLibaioReservationDepth"/>),
+        /// giving headroom when the throttle share is tiny (high io-contexts). Matches the native default ring depth.
+        /// </summary>
+        const int LibaioReservationFloor = 1 << 7;  // 128
 
         /// <summary>
         /// Hard cap on per-ring queue depth: io_uring's <c>IORING_MAX_ENTRIES</c> (32768). libaio additionally
@@ -1023,6 +1066,31 @@ namespace Tsavorite.core
         }
 
         /// <summary>
+        /// Per-ring libaio <c>io_setup</c> reservation depth when <c>--device-queue-depth</c> is left at the
+        /// default. Unlike io_uring (per-ring mmap, no global budget), libaio permanently reserves
+        /// <c>io-contexts * depth</c> events from the shared <c>fs.aio-max-nr</c> budget at creation, so the
+        /// <see cref="DefaultQueueDepth"/> ceiling (4096) over-reserves: a libaio ring never holds more than the
+        /// aggregate throttle spread across the rings. We size the reservation to that share —
+        /// <c>NextPow2(headroom * ceil(throttle / io-contexts))</c>, floored at <see cref="LibaioReservationFloor"/>,
+        /// capped at <see cref="LibaioReservationCap"/> (a single ring should not hold the full deep queue — see
+        /// that constant) and at the <paramref name="ceilingDepth"/> (the resolved queue-depth) — so the per-device
+        /// reservation is <c>io-contexts * result = min(headroom * throttle, io-contexts * cap)</c>. Multi-ring
+        /// serving devices (io-contexts &gt;= 4) keep <c>io-contexts * result &gt;= throttle</c> by construction (the
+        /// throttle share is &lt;= the cap), so the full aggregate throttle stays usable (effectiveThrottleLimit is
+        /// NOT reduced =&gt; no IOPS cost); low-ring-count auxiliary devices drop to <c>~= io-contexts * cap</c>,
+        /// letting many coexist in a stock 65536 budget.
+        /// </summary>
+        int ResolveLibaioReservationDepth(int ringCount, int throttle, int ceilingDepth)
+        {
+            long share = ((long)throttle + ringCount - 1) / ringCount;   // ceil(throttle / ringCount)
+            long depth = Utility.NextPowerOf2(share * LibaioReservationHeadroom);
+            if (depth < LibaioReservationFloor) depth = LibaioReservationFloor;
+            if (depth > LibaioReservationCap) depth = LibaioReservationCap;
+            if (depth > ceilingDepth) depth = ceilingDepth;
+            return (int)depth;
+        }
+
+        /// <summary>
         /// Best-effort libaio guard: <c>io_setup</c> draws <c>io-contexts * queue-depth</c> events from the
         /// global <c>fs.aio-max-nr</c> budget (distro default 65536, shared across every process). If the
         /// requested total exceeds that budget, warn up front so the operator sees an actionable message
@@ -1261,10 +1329,20 @@ namespace Tsavorite.core
                 // capacity N*D so aggregate in-flight can never exceed the rings (the correctness invariant
                 // that prevents the ring-full submit spin). Throttle() reads effectiveThrottleLimit directly.
                 int ringCount = numIoContextsConfig < 1 ? 1 : numIoContextsConfig;
+                int requestedThrottle = ThrottleLimit > 0 ? ThrottleLimit : DefaultThrottleLimit;
                 int ringDepth = ResolveQueueDepth();
+
+                // libaio io_setup PERMANENTLY reserves ringCount*ringDepth events from the GLOBAL fs.aio-max-nr
+                // budget at creation, used or not; the DefaultQueueDepth ceiling (right for io_uring's per-ring
+                // mmap SQ) over-reserves for libaio and, with many coexisting devices (e.g. cluster nodes),
+                // exhausts a stock 65536 budget => io_setup EAGAIN. When queue-depth is left at the default,
+                // size the libaio reservation to the throttle share (ringCount*reservation >= throttle) so the
+                // full aggregate throttle is preserved at no IOPS cost while the per-device reservation drops.
+                if ((ioBackendConfig == IoBackend.Libaio || ioBackendConfig == IoBackend.Default) && numQueueDepthConfig <= 0)
+                    ringDepth = ResolveLibaioReservationDepth(ringCount, requestedThrottle, ringDepth);
+
                 WarnIfLibaioAioBudgetExceeded(ringCount, ringDepth);
                 long kernelCapacity = (long)ringCount * ringDepth;
-                int requestedThrottle = ThrottleLimit > 0 ? ThrottleLimit : DefaultThrottleLimit;
                 if (requestedThrottle > kernelCapacity)
                 {
                     logger?.LogWarning(
