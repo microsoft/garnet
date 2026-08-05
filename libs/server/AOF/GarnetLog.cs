@@ -282,26 +282,6 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Gets the safe tail address (largest address below which every byte has been fully written)
-        /// for a specific sublog. Diagnostic helper for the backpressure stall log.
-        /// </summary>
-        /// <param name="sublogIdx">Index of the physical sublog.</param>
-        /// <returns>The safe tail address of the specified sublog.</returns>
-        internal long GetSafeTailAddress(int sublogIdx)
-        {
-            if (singleLog != null)
-            {
-                Debug.Assert(sublogIdx == 0);
-                return singleLog.log.SafeTailAddress;
-            }
-            else
-            {
-                Debug.Assert(sublogIdx < shardedLog.Length);
-                return shardedLog.sublog[sublogIdx].SafeTailAddress;
-            }
-        }
-
-        /// <summary>
         /// Gets the begin address for a specific sublog without copying the entire AofAddress struct.
         /// </summary>
         /// <param name="sublogIdx">Index of the physical sublog.</param>

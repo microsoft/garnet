@@ -22,7 +22,7 @@ namespace Garnet.server
         /// <summary>
         /// Maximum number of sublogs supported
         /// </summary>
-        public const int MaxSublogCount = 64;
+        public const int MaxSublogCount = 4;
 
         /// <summary>
         /// AofAddress length
