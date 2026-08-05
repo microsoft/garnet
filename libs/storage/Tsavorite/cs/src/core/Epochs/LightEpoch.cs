@@ -292,7 +292,7 @@ namespace Tsavorite.core
 
         /// <summary>
         /// Refresh the epoch this already-protected thread announces; a holder that never refreshes stalls
-        /// reclamation process-wide. Relinquishes protection for the epoch previously announced.
+        /// reclamation process-wide. Drops protection for the old epoch.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void ProtectAndDrain()
