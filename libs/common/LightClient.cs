@@ -42,6 +42,13 @@ namespace Garnet.common
         readonly LimitedFixedBufferPool networkPool;
         readonly ILogger logger;
 
+        long totalBytesReceived;
+
+        /// <summary>
+        /// Total bytes received from responses
+        /// </summary>
+        public long TotalBytesReceived => Interlocked.Read(ref totalBytesReceived);
+
         /// <summary>
         /// Create client instance to connect to specfied destination
         /// </summary>
@@ -308,6 +315,7 @@ namespace Garnet.common
         /// <inheritdoc />
         public unsafe int TryConsumeMessages(byte* reqBuffer, int bytesRead)
         {
+            Interlocked.Add(ref totalBytesReceived, bytesRead);
             (int readHead, int count) = onResponseDelegateUnsafe(reqBuffer, bytesRead, opType);
             Interlocked.Add(ref numPendingRequests, -count);
             return readHead;

@@ -20,23 +20,32 @@ namespace Resp.benchmark
         [Option('s', "skipload", Required = false, Default = false, HelpText = "Skip loading phase")]
         public bool SkipLoad { get; set; }
 
+        [Option("workload-seed", Required = false, Default = -1, HelpText = "Seed for cluster-bench workload key generation/selection. -1 (default) auto-generates a unique per-process random seed (via Guid) so multiple benchmark instances running the same command in parallel scramble their in-range key selection independently, avoiding cross-instance lockstep on identical keys (which maximizes server-side contention). The seed only reshuffles selection within the loaded [0, DbSize) key domain, so preload/GET semantics are preserved. Set an explicit value for reproducible key selection across instances.")]
+        public int WorkloadSeed { get; set; }
+
+        [Option("offline-buffers", Required = false, Default = 128, HelpText = "Number of pre-generated request-buffer permutations per shard in cluster-bench offline mode. More permutations reduce the chance that concurrent workers select the same buffer (and thus hammer the same keys) at the same instant. Higher values increase client memory usage (~batchSize x (keyLen+valueLen+overhead) bytes per buffer, per shard).")]
+        public int OfflineBufferPermutations { get; set; }
+
         [Option("dbsize", Required = false, Default = 1 << 10, HelpText = "DB size")]
         public int DbSize { get; set; }
 
         [Option("totalops", Required = false, Default = 1 << 25, HelpText = "Total ops")]
         public int TotalOps { get; set; }
 
-        [Option("op", Required = false, Default = OpType.GET, HelpText = "Operation type (GET, MGET, INCR, PING, ZADDREM, PFADD, ZADDCARD)")]
+        [Option("op", Required = false, Default = OpType.GET, HelpText = "Operation type (GET, SET, MGET, MSET, INCR, PING, ZADDREM, PFADD, ZADDCARD)")]
         public OpType Op { get; set; }
 
-        [Option("keylength", Required = false, Default = 1, HelpText = "Key length (bytes) - padded, 0 indicates pad to max DB size")]
+        [Option("keylength", Required = false, Default = 8, HelpText = "Key length (bytes) - padded, 0 indicates pad to max DB size")]
         public int KeyLength { get; set; }
 
         [Option("valuelength", Required = false, Default = 8, HelpText = "Value length (bytes) - 0 indicates use key as value")]
         public int ValueLength { get; set; }
 
-        [Option('b', "batchsize", Separator = ',', Required = false, Default = new[] { 4096 }, HelpText = "Batch size, number of requests (comma separated)")]
+        [Option('b', "batchsize", Separator = ',', Required = false, Default = new[] { 4096 }, HelpText = "Batch size / pipeline depth (for GET/SET: number of commands, for MGET/MSET: number of keys per command)")]
         public IEnumerable<int> BatchSize { get; set; }
+
+        [Option("pipeline", Separator = ',', Required = false, Hidden = true, HelpText = "Alias for --batchsize")]
+        public IEnumerable<int> Pipeline { set { if (value != null && value.Any()) BatchSize = value; } get => BatchSize; }
 
         [Option("runtime", Required = false, Default = 15, HelpText = "Run time (seconds)")]
         public int RunTime { get; set; }
@@ -59,8 +68,11 @@ namespace Resp.benchmark
         [Option("client", Required = false, Default = ClientType.LightClient, HelpText = "Choose ClientType to run benchmark (LightClient, SERedis, GarnetClientSession)")]
         public ClientType Client { get; set; }
 
-        [Option("pool", Required = false, Default = false, HelpText = "Pool client instances. Supports SERedis, GarnetClient and GarnetClientSession (online bench only).")]
+        [Option("pool", Required = false, Default = false, HelpText = "Pool client instances. For cluster-bench: enables worker pool architecture (scalable for large clusters). For online bench: pools SERedis, GarnetClient and GarnetClientSession instances.")]
         public bool Pool { get; set; }
+
+        [Option("broadcast", Required = false, Default = false, HelpText = "Enable broadcast mode in worker pool (--pool). Sends a request to every shard in parallel, then completes all pending responses.")]
+        public bool Broadcast { get; set; }
 
         [Option("tls", Required = false, Default = false, HelpText = "Enable TLS.")]
         public bool EnableTLS { get; set; }
@@ -112,6 +124,12 @@ namespace Resp.benchmark
 
         [Option("file-logger", Required = false, Default = null, HelpText = "Enable file logger and write to the specified path.")]
         public string FileLogger { get; set; }
+
+        [Option("cluster-bench", Required = false, Default = false, HelpText = "Enable cluster benchmark mode. Distributes workload across discovered cluster shards.")]
+        public bool ClusterBench { get; set; }
+
+        [Option("replica-ops-percent", Required = false, Default = 0, HelpText = "Percentage of operations routed to replicas (0-100). For write ops (SET, MSET), generates corresponding reads (GET, MGET) for the same keys and routes them to replicas. Actual: X% writes to primary, (100-X)% reads split between replica/primary based on this percentage.")]
+        public int ReplicaOpsPercent { get; set; }
 
         [Option("aof-bench", Required = false, Default = false, HelpText = "Run AOF bench at replica.")]
         public bool AofBench { get; set; }

@@ -42,7 +42,7 @@ Always measure on a **Release** build. `dotnet $RB --help` lists all flags.
 | `--runtime` | `15` | Seconds per cell. `0` = load only (no run). |
 | `-s` | `false` | Skip load — run against a pre-loaded server. |
 | `--itp` | `1` | Online: in-flight ops per thread. |
-| `--zipf` | `false` | Skew keys (θ=0.99) instead of uniform. |
+| `--zipf` | `false` | Skew keys (θ=0.99) instead of uniform, including within each `--cluster-bench` shard. |
 
 ## The three scenarios
 
@@ -101,6 +101,7 @@ dotnet $RB --op MGET --dbsize 16777216 --valuelength 8 -t 16 -b 512         # MG
 dotnet $RB --op GET  --dbsize 1000000  -v 100 -t 16 -b 1024 --client InProc # server CPU only, no TCP
 dotnet $RB --op GET  --dbsize 1000000  -v 100 -t 16 -b 256  --client SERedis # apples-to-apples vs Redis
 dotnet $RB --op GET  --dbsize 16777216 -v 100 -t 16 -b 1024 --zipf          # skewed keys (θ=0.99)
+dotnet $RB --cluster-bench --op GET --dbsize 16777216 -t 16 -b 1024 --zipf  # skewed keys within each shard
 ```
 
 ## Online (latency)
