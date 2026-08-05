@@ -38,7 +38,9 @@ namespace Garnet.server
         /// <summary>
         /// Primary-side replication backpressure gate. The cluster layer publishes each physical
         /// sublog's min shipped address into it; the append paths in <see cref="GarnetLog"/> stall
-        /// on it. Null unless AofSyncMaxLagBytes is set.
+        /// on it. Always constructed; when AofSyncMaxLagBytes &lt;= 0 the gate is disabled via an
+        /// internal flag (<see cref="AofBackpressure.Enabled"/>) so <see cref="AofBackpressure.Wait"/>
+        /// returns immediately, and a runtime CONFIG SET can enable/retune it without a restart.
         /// </summary>
         public readonly AofBackpressure backpressure;
 

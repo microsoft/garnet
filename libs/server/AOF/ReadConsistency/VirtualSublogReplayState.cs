@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Runtime.Intrinsics.X86;
@@ -106,8 +107,7 @@ namespace Garnet.server
         /// <remarks>Updates are thread-safe and guaranteed to be monotonically increasing.</remarks>
         public void UpdateMaxSequenceNumber(long sequenceNumber)
         {
-            if (sequenceNumber > sketchMax.Value)
-                Volatile.Write(ref sketchMax.Value, sequenceNumber);
+            _ = Tsavorite.core.Utility.MonotonicUpdate(ref sketchMax.Value, sequenceNumber, out _);
             SignalWaiters();
         }
 
@@ -117,8 +117,7 @@ namespace Garnet.server
         /// <remarks>Updates are thread-safe and guaranteed to be monotonically increasing.</remarks>
         public void UpdateKeySequenceNumber(long hash, long sequenceNumber)
         {
-            if (sequenceNumber > sketch[GetSketchSlot(hash)])
-                Volatile.Write(ref sketch[GetSketchSlot(hash)], sequenceNumber);
+            _ = Tsavorite.core.Utility.MonotonicUpdate(ref sketch[GetSketchSlot(hash)], sequenceNumber, out _);
             SignalWaiters();
         }
 
@@ -128,10 +127,7 @@ namespace Garnet.server
         /// </summary>
         private void SignalWaiters()
         {
-            if (waiterHead == null)
-                return;
-
-            // Make the  max  publish visible before the read of  minT , so a decision to skip can never race ahead of the waiter's ability to see the new  max 
+            // Make the max publish visible before the read of minT, so a decision to skip can never race ahead of the waiter's ability to see the new  max
             Interlocked.MemoryBarrier();
             if (Volatile.Read(ref sketchMax.Value) <= Volatile.Read(ref sketchMax.MinWaiterTarget))
                 return;
