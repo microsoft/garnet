@@ -3168,7 +3168,7 @@ namespace Garnet.server
                 {
                     if (!respServerSession.CheckACLPermissions(RespCommand.SET))
                     {
-                        return LuaWrappedError(1, constStrs.ErrNoAuth);
+                        return LuaWrappedError(1, constStrs.ErrNoPerm);
                     }
 
                     ReadOnlySpan<byte> keySpan;
@@ -3220,7 +3220,7 @@ namespace Garnet.server
                 {
                     if (!respServerSession.CheckACLPermissions(RespCommand.GET))
                     {
-                        return LuaWrappedError(1, constStrs.ErrNoAuth);
+                        return LuaWrappedError(1, constStrs.ErrNoPerm);
                     }
 
                     ReadOnlySpan<byte> keySpan;
