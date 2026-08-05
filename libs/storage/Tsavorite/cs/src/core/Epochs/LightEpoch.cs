@@ -291,12 +291,8 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Refresh this thread's announced epoch and run the drain actions that thereby become safe. The
-        /// thread must already hold a slot; this is a refresh, not an entry.
-        /// <para><see cref="SafeToReclaimEpoch"/> is the minimum announced epoch across occupied slots, so a
-        /// holder that never refreshes stalls reclamation and every pending drain action process-wide.</para>
-        /// <para>Refreshing relinquishes protection for the previously announced epoch, so callers must hold
-        /// no references acquired under it.</para>
+        /// Refresh the epoch this already-protected thread announces; a holder that never refreshes stalls
+        /// reclamation process-wide. Relinquishes protection for the epoch previously announced.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void ProtectAndDrain()
