@@ -1855,7 +1855,7 @@ return retArray";
             using var denySetRedis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(authUsername: "denyset"));
             var denySetDb = denySetRedis.GetDatabase();
 
-            var excSet = ClassicAssert.Throws<RedisServerException>(() => denySetDb.ScriptEvaluate("return redis.call('SET', 'foo', 'bar')"));
+            var excSet = ClassicAssert.Throws<RedisServerException>(() => denySetDb.ScriptEvaluate("return redis.call('SET', 'foo', 'baz')"));
             ClassicAssert.IsTrue(excSet.Message.Contains("NOPERM"), $"Expected NOPERM for denied SET, got: {excSet.Message}");
 
             var allowSetRes = (string[])denySetDb.ScriptEvaluate("return redis.call('GET', 'foo')");
