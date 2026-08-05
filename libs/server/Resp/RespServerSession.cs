@@ -694,8 +694,16 @@ namespace Garnet.server
                     {
                         if (noScriptPassed)
                         {
-                            while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_NOAUTH, ref dcurr, dend))
-                                SendAndReset();
+                            if (_authenticator.IsAuthenticated)
+                            {
+                                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_NOPERM, ref dcurr, dend))
+                                    SendAndReset();
+                            }
+                            else
+                            {
+                                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_NOAUTH, ref dcurr, dend))
+                                    SendAndReset();
+                            }
                         }
                         else
                         {
