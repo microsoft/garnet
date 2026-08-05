@@ -23,6 +23,7 @@ namespace Resp.benchmark
         readonly int threadIndex;
         readonly SlotKeyGenerator keyGen;
         readonly Random rng;
+        readonly ZipfGenerator zipfGenerator;
 
         // Online workload distribution: per-iteration op is drawn from --op-workload weighted by
         // the cumulative form of --op-percent. Null when no valid distribution is configured
@@ -76,6 +77,9 @@ namespace Resp.benchmark
             // (distinct GUID seed) never select buffers in lockstep.
             this.rng = new Random(CombineSeed(opts.WorkloadSeed, threadIndex));
             this.keyGen = new SlotKeyGenerator(shard, opts.KeyLength);
+            this.zipfGenerator = opts.Zipf
+                ? CreateZipfGenerator(CombineSeed(opts.WorkloadSeed, threadIndex), opts.DbSize)
+                : null;
             this.histogram = new LongHistogram(HISTOGRAM_LOWER_BOUND, HISTOGRAM_UPPER_BOUND, 2);
 
             // Build the online op-selection distribution (single-key ops only; validated up-front in DisabledFeatures).
@@ -107,6 +111,18 @@ namespace Resp.benchmark
         /// <see cref="System.Random"/> produces for adjacent (base+index) seeds.
         /// </summary>
         public static int CombineSeed(int baseSeed, int component) => unchecked((baseSeed * 486187739) + component);
+
+        private static ZipfGenerator CreateZipfGenerator(int seed, int dbSize)
+        {
+            var unsignedSeed = unchecked((uint)seed);
+            return new ZipfGenerator(new RandomGenerator(unsignedSeed == 0 ? 1 : unsignedSeed), dbSize);
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private int NextKeyIndex(int dbSize) => zipfGenerator?.Next() ?? rng.Next(dbSize);
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private string GenerateKey(int dbSize) => keyGen.GenerateKey(rng, NextKeyIndex(dbSize));
 
         /// <summary>
         /// Builds the cumulative form of the op-percent distribution (e.g. [60,30,10] -> [60,90,100]),
@@ -262,7 +278,7 @@ namespace Resp.benchmark
         /// For multi-key ops (MGET, MSET): keyCount=N, generates N keys inline.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void AppendCommand(StringBuilder sb, OpType op, int keyCount, Random rng, int dbSize)
+        private void AppendCommand(StringBuilder sb, OpType op, int keyCount, Random rng, int dbSize, ZipfGenerator zipf = null)
         {
             // Write RESP array header
             switch (op)
@@ -294,7 +310,8 @@ namespace Resp.benchmark
             var hasValue = op is OpType.SET or OpType.MSET;
             for (var i = 0; i < keyCount; i++)
             {
-                var key = keyGen.GenerateKey(rng, rng.Next(dbSize));
+                var keyIndex = zipf?.Next() ?? rng.Next(dbSize);
+                var key = keyGen.GenerateKey(rng, keyIndex);
                 sb.Append($"${key.Length}\r\n{key}\r\n");
                 if (hasValue)
                 {

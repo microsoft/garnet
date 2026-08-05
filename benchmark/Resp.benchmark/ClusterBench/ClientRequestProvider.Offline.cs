@@ -169,18 +169,20 @@ namespace Resp.benchmark
             // permutation and parallel instances (distinct GUID) generate different keys. Reads
             // reseed identically (below) so they still target the write keys. Draws stay within
             // [0, DbSize), so preload/GET semantics are preserved.
-            var deterministicRng = new Random(CombineSeed(CombineSeed(opts.WorkloadSeed, shard.Port), bufferIndex));
+            var seed = CombineSeed(CombineSeed(opts.WorkloadSeed, shard.Port), bufferIndex);
+            var deterministicRng = new Random(seed);
+            var zipf = opts.Zipf ? CreateZipfGenerator(seed, dbSize) : null;
 
             if (isMCommand)
             {
                 // MGET/MSET: one command with batchSize keys
-                AppendCommand(sb, opts.Op, batchSize, deterministicRng, dbSize);
+                AppendCommand(sb, opts.Op, batchSize, deterministicRng, dbSize, zipf);
             }
             else
             {
                 // Single-key ops: batchSize commands, each with 1 key
                 for (var i = 0; i < batchSize; i++)
-                    AppendCommand(sb, opts.Op, 1, deterministicRng, dbSize);
+                    AppendCommand(sb, opts.Op, 1, deterministicRng, dbSize, zipf);
             }
 
             return Encoding.ASCII.GetBytes(sb.ToString());
@@ -217,18 +219,20 @@ namespace Resp.benchmark
 
             // Reseed with the SAME per-shard GUID-derived seed as the write builder so reads
             // target the same keys as the shared write buffers (within this instance).
-            var deterministicRng = new Random(CombineSeed(CombineSeed(opts.WorkloadSeed, shard.Port), bufferIndex));
+            var seed = CombineSeed(CombineSeed(opts.WorkloadSeed, shard.Port), bufferIndex);
+            var deterministicRng = new Random(seed);
+            var zipf = opts.Zipf ? CreateZipfGenerator(seed, dbSize) : null;
 
             if (isMCommand)
             {
                 // MGET: one command with batchSize keys
-                AppendCommand(sb, readOp, batchSize, deterministicRng, dbSize);
+                AppendCommand(sb, readOp, batchSize, deterministicRng, dbSize, zipf);
             }
             else
             {
                 // Single-key reads: batchSize commands, each with 1 key
                 for (var i = 0; i < batchSize; i++)
-                    AppendCommand(sb, readOp, 1, deterministicRng, dbSize);
+                    AppendCommand(sb, readOp, 1, deterministicRng, dbSize, zipf);
             }
 
             return Encoding.ASCII.GetBytes(sb.ToString());
@@ -548,14 +552,14 @@ namespace Resp.benchmark
                         {
                             args.Add("MGET");
                             for (int i = 0; i < batchSize; i++)
-                                args.Add(keyGen.GenerateKey(rng, rng.Next(dbSizePerShard)));
+                                args.Add(GenerateKey(dbSizePerShard));
                         }
                         else if (currentOp == OpType.MSET)
                         {
                             args.Add("MSET");
                             for (int i = 0; i < batchSize; i++)
                             {
-                                args.Add(keyGen.GenerateKey(rng, rng.Next(dbSizePerShard)));
+                                args.Add(GenerateKey(dbSizePerShard));
                                 args.Add(GenerateValue());
                             }
                         }
@@ -565,7 +569,7 @@ namespace Resp.benchmark
                     {
                         for (int i = 0; i < batchSize; i++)
                         {
-                            var key = keyGen.GenerateKey(rng, rng.Next(dbSizePerShard));
+                            var key = GenerateKey(dbSizePerShard);
                             if (currentOp == OpType.GET)
                                 client.Execute("GET", key);
                             else if (currentOp == OpType.SET)
@@ -680,7 +684,7 @@ namespace Resp.benchmark
                         {
                             var keys = new string[batchSize];
                             for (int i = 0; i < batchSize; i++)
-                                keys[i] = keyGen.GenerateKey(rng, rng.Next(dbSizePerShard));
+                                keys[i] = GenerateKey(dbSizePerShard);
                             client.StringGetAsync(keys).GetAwaiter().GetResult();
                         }
                         else if (currentOp == OpType.MSET)
@@ -688,7 +692,7 @@ namespace Resp.benchmark
                             var args = new List<string>();
                             for (int i = 0; i < batchSize; i++)
                             {
-                                args.Add(keyGen.GenerateKey(rng, rng.Next(dbSizePerShard)));
+                                args.Add(GenerateKey(dbSizePerShard));
                                 args.Add(GenerateValue());
                             }
                             client.ExecuteForStringResultAsync("MSET", args.ToArray()).GetAwaiter().GetResult();
@@ -699,7 +703,7 @@ namespace Resp.benchmark
                         var tasks = new Task[batchSize];
                         for (int i = 0; i < batchSize; i++)
                         {
-                            var key = keyGen.GenerateKey(rng, rng.Next(dbSizePerShard));
+                            var key = GenerateKey(dbSizePerShard);
                             if (currentOp == OpType.GET)
                                 tasks[i] = client.StringGetAsMemoryAsync(key);
                             else if (currentOp == OpType.SET)
@@ -807,7 +811,7 @@ namespace Resp.benchmark
                         {
                             var keys = new RedisKey[batchSize];
                             for (int i = 0; i < batchSize; i++)
-                                keys[i] = keyGen.GenerateKey(rng, rng.Next(dbSizePerShard));
+                                keys[i] = GenerateKey(dbSizePerShard);
                             db.StringGet(keys);
                         }
                         else if (currentOp == OpType.MSET)
@@ -815,7 +819,7 @@ namespace Resp.benchmark
                             var pairs = new KeyValuePair<RedisKey, RedisValue>[batchSize];
                             for (int i = 0; i < batchSize; i++)
                             {
-                                var key = keyGen.GenerateKey(rng, rng.Next(dbSizePerShard));
+                                var key = GenerateKey(dbSizePerShard);
                                 var value = GenerateValue();
                                 pairs[i] = new KeyValuePair<RedisKey, RedisValue>(key, value);
                             }
@@ -826,7 +830,7 @@ namespace Resp.benchmark
                     {
                         for (int i = 0; i < batchSize; i++)
                         {
-                            var key = keyGen.GenerateKey(rng, rng.Next(dbSizePerShard));
+                            var key = GenerateKey(dbSizePerShard);
                             if (currentOp == OpType.GET)
                                 db.StringGet(key);
                             else if (currentOp == OpType.SET)

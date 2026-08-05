@@ -92,7 +92,7 @@ namespace Resp.benchmark
                     for (var p = 0; p < itp; p++)
                     {
                         var op = SelectOpType();
-                        var key = keyGen.GenerateKey(rng, rng.Next(dbSizePerShard));
+                        var key = GenerateKey(dbSizePerShard);
                         var request = FormatRequest(op, key);
 
                         var useReplica = ShouldUseReplica(op);
@@ -174,7 +174,7 @@ namespace Resp.benchmark
                     var op = SelectOpType();
                     var useReplica = ShouldUseReplica(op);
                     var client = (useReplica && replicaClient != null) ? replicaClient : primaryClient;
-                    var key = keyGen.GenerateKey(rng, rng.Next(dbSizePerShard));
+                    var key = GenerateKey(dbSizePerShard);
 
                     switch (op)
                     {
@@ -264,7 +264,7 @@ namespace Resp.benchmark
                         var op = SelectOpType();
                         var useReplica = ShouldUseReplica(op);
                         var client = (useReplica && replicaClient != null) ? replicaClient : primaryClient;
-                        var key = keyGen.GenerateKey(rng, rng.Next(dbSizePerShard));
+                        var key = GenerateKey(dbSizePerShard);
 
                         switch (op)
                         {
@@ -347,7 +347,7 @@ namespace Resp.benchmark
                     var op = SelectOpType();
                     var useReplica = ShouldUseReplica(op);
                     var client = (useReplica && replicaClient != null) ? replicaClient : primaryClient;
-                    var key = keyGen.GenerateKey(rng, rng.Next(dbSizePerShard));
+                    var key = GenerateKey(dbSizePerShard);
 
                     Task task = op switch
                     {
@@ -424,7 +424,7 @@ namespace Resp.benchmark
                         var op = SelectOpType();
                         var useReplica = ShouldUseReplica(op);
                         var client = (useReplica && replicaClient != null) ? replicaClient : primaryClient;
-                        var key = keyGen.GenerateKey(rng, rng.Next(dbSizePerShard));
+                        var key = GenerateKey(dbSizePerShard);
 
                         tasks[p] = op switch
                         {
