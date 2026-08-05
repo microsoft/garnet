@@ -273,8 +273,7 @@ namespace Garnet.server
 
             lock (this)
             {
-                // A runtime full sync (diskless) may reach here without the recovery hooks ever
-                // allocating these — treat a missing set as empty rather than faulting.
+                // Nulled at the end of this method, so a second recovery finds them missing
                 recoveredMetadata ??= new();
                 recoveredIndexes ??= new();
 
@@ -378,8 +377,7 @@ namespace Garnet.server
         /// <summary>
         /// Called during recovery for each Vector Set index key.
         /// </summary>
-        public void RecoveredVectorSetIndexKey<TSourceLogRecord>(ref TSourceLogRecord record)
-            where TSourceLogRecord : ISourceLogRecord
+        public void RecoveredVectorSetIndexKey<TSourceLogRecord>(ref TSourceLogRecord record) where TSourceLogRecord : ISourceLogRecord
         {
             if (record.ValueSpan.Length != IndexSize)
             {
@@ -398,8 +396,7 @@ namespace Garnet.server
         /// <summary>
         /// Called during recovery for each ContextMetadata record.
         /// </summary>
-        public void RecoveredContextMetadata<TSourceLogRecord>(ref TSourceLogRecord record)
-            where TSourceLogRecord : ISourceLogRecord
+        public void RecoveredContextMetadata<TSourceLogRecord>(ref TSourceLogRecord record) where TSourceLogRecord : ISourceLogRecord
         {
             if (record.ValueSpan.Length != ContextMetadata.Size || record.Key.Length != sizeof(int))
             {
@@ -428,14 +425,10 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Route a record streamed in during a diskless full sync into the recovery bookkeeping so that
-        /// <see cref="ResumePostRecovery"/> can rebuild the in-memory context reservation. Diskless sync
-        /// SETs records straight into the store, bypassing the metadata RMW path that maintains the
-        /// reservation bitmap, so without this a fresh Vector Set created after the sync can be handed a
-        /// context that a streamed set already owns.
+        /// Route a record streamed in during a diskless full sync into recovery bookkeeping, so
+        /// <see cref="ResumePostRecovery"/> can rebuild the context reservation.
         /// </summary>
-        public void RecoverStreamedRecord<TSourceLogRecord>(ref TSourceLogRecord record)
-            where TSourceLogRecord : ISourceLogRecord
+        public void RecoverStreamedRecord<TSourceLogRecord>(ref TSourceLogRecord record) where TSourceLogRecord : ISourceLogRecord
         {
             if (!IsEnabled || record.Info.Tombstone)
             {

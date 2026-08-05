@@ -238,11 +238,9 @@ namespace Garnet.cluster
                 // Before advertising updated replication offset, wait for Vector Set ops to finish
                 storeWrapper.DefaultDatabase.VectorManager?.WaitForVectorOperationsToComplete();
 
-                // A diskless full sync streams the Vector Set index and ContextMetadata records straight
-                // into the store, bypassing the metadata RMW path that maintains the in-memory context
-                // reservation. Rebuild it from the streamed records (fed via RecoverStreamedRecord during
-                // CLUSTER SYNC) so a fresh set created after promotion can't be handed a context a
-                // streamed set already owns.
+                // Rebuild the context reservation from the streamed records. Only valid after a full
+                // sync: a partial sync streams no records, so ResumePostRecovery would see an empty
+                // recovered set and mark every live context for cleanup.
                 if (primarySyncMetadata.fullSync)
                 {
                     var vectorManager = storeWrapper.DefaultDatabase.VectorManager;

@@ -567,16 +567,11 @@ namespace Garnet.cluster
 
                         diskLogRecord = DiskLogRecord.Deserialize(recordSpan, storeWrapper.GarnetObjectSerializer, transientObjectIdMap, storeWrapper.storeFunctions);
 
-                        // Diskless sync streams records verbatim, so the index record still carries the
-                        // primary's native DiskANN handle. OnDiskRead only fires for records faulted in
-                        // from disk, so nothing else clears it on this path.
+                        // Streamed records still carry the primary's native DiskANN handle
                         if (diskLogRecord.RecordType == VectorManager.RecordType)
                             VectorManager.ClearIndexPointer(diskLogRecord.ValueSpan);
 
-                        // Diskless sync SETs records verbatim, bypassing the metadata RMW path that
-                        // maintains the in-memory context reservation. Feed the streamed index and
-                        // ContextMetadata records into recovery bookkeeping so the reservation is
-                        // rebuilt once the stream completes (see TryReplicaDisklessRecovery).
+                        // Streamed records bypass the RMW path that maintains the context reservation
                         vectorManager?.RecoverStreamedRecord(ref diskLogRecord);
 
                         _ = basicGarnetApi.SET(in diskLogRecord);
