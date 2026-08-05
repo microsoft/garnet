@@ -159,7 +159,7 @@ namespace Garnet.test
                 return 1;
             }
 
-            unsafe byte InlineFilterCallback(ulong context, uint internalId)
+            byte InlineFilterCallback(ulong context, uint internalId)
             {
                 return 1;
             }
@@ -233,6 +233,10 @@ namespace Garnet.test
 
             var res2 = db.Execute("VADD", ["foo", "VALUES", "4", "2.0", "2.0", "2.0", "2.0", new byte[] { 2, 0, 0, 0 }, "NOQUANT", "EF", "128", "M", "32"]);
             ClassicAssert.AreEqual(1, (int)res2);
+
+            // Updates return 0
+            var res3 = db.Execute("VADD", ["foo", "VALUES", "4", "3.0", "3.0", "3.0", "3.0", new byte[] { 1, 0, 0, 0 }, "NOQUANT", "EF", "128", "M", "32"]);
+            //ClassicAssert.AreEqual(0, (int)res3);
         }
 
         [Test]
