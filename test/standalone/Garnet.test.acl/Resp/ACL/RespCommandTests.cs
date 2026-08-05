@@ -7684,7 +7684,7 @@ namespace Garnet.test.Resp.ACL
                 }
                 catch (Exception ex)
                 {
-                    if (ex.Message == Encoding.ASCII.GetString(CmdStrings.RESP_ERR_NOAUTH))
+                    if (ex.Message == Encoding.ASCII.GetString(CmdStrings.RESP_ERR_NOPERM))
                         throw;
 
                     ClassicAssert.AreEqual(Encoding.ASCII.GetString(CmdStrings.RESP_ERR_SWAPDB_UNSUPPORTED), ex.Message);
@@ -8219,7 +8219,7 @@ namespace Garnet.test.Resp.ACL
             {
                 foreach (Func<GarnetClient, Task> cmd in commands)
                 {
-                    ClassicAssert.True(await CheckAuthFailureAsync(() => cmd(currentUserClient)).ConfigureAwait(false), message);
+                    ClassicAssert.True(await CheckPermissionFailureAsync(() => cmd(currentUserClient)).ConfigureAwait(false), message);
                 }
 
                 if (!skipAclCheckCmd)
@@ -8272,12 +8272,12 @@ namespace Garnet.test.Resp.ACL
                 ClassicAssert.AreEqual(expectedResult, canRun, $"redis.acl_check_cmd(...) return unexpected result for '{withBar}'");
             }
 
-            // Check that all commands fail with NOAUTH
+            // Check that all commands fail with NOPERM
             static async Task AssertAllDeniedAsync(GarnetClient defaultUserClient, string currentUserName, GarnetClient currentUserClient, Func<GarnetClient, Task>[] commands, string message, bool skipPing, string[] commandAndSubCommand, bool skipAclCheckCmd)
             {
                 foreach (Func<GarnetClient, Task> cmd in commands)
                 {
-                    ClassicAssert.False(await CheckAuthFailureAsync(() => cmd(currentUserClient)).ConfigureAwait(false), message);
+                    ClassicAssert.False(await CheckPermissionFailureAsync(() => cmd(currentUserClient)).ConfigureAwait(false), message);
                 }
 
                 if (!skipAclCheckCmd)
@@ -8370,12 +8370,12 @@ namespace Garnet.test.Resp.ACL
         }
 
         /// <summary>
-        /// Returns true if no AUTH failure.
-        /// Returns false AUTH failure.
+        /// Returns true if no permission failure.
+        /// Returns false on a permission failure.
         /// 
         /// Throws if anything else.
         /// </summary>
-        private static async Task<bool> CheckAuthFailureAsync(Func<Task> act)
+        private static async Task<bool> CheckPermissionFailureAsync(Func<Task> act)
         {
             try
             {
@@ -8384,7 +8384,7 @@ namespace Garnet.test.Resp.ACL
             }
             catch (Exception e)
             {
-                if (e.Message != "NOAUTH Authentication required.")
+                if (e.Message != "NOPERM this user has no permissions to run the command")
                 {
                     throw;
                 }

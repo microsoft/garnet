@@ -118,7 +118,8 @@ namespace Garnet.test
                 aclFile,
                 [
                     "user default on nopass +@all",
-                    "user deny on nopass +@all -get -acl -cluster|myid"
+                    "user deny on nopass +@all -get -acl -cluster|myid",
+                    "user denyset on nopass +@all -set"
                 ]
             );
 
@@ -1842,13 +1843,24 @@ return retArray";
 
             // Not a lot of sub commands a non-admin can run, so use CLUSTER|MYID and check the exception
             var allowSubExc = ClassicAssert.Throws<RedisServerException>(() => allowDb.ScriptEvaluate("return redis.call('CLUSTER', 'MYID')"));
-            ClassicAssert.False(allowSubExc.Message.Contains("NOAUTH"));
+            ClassicAssert.False(allowSubExc.Message.Contains("NOPERM"));
 
             var exc = ClassicAssert.Throws<RedisServerException>(() => denyDb.ScriptEvaluate("return redis.call('GET', 'foo')"));
-            ClassicAssert.IsTrue(exc.Message.Contains("NOAUTH"));
+            ClassicAssert.IsTrue(exc.Message.Contains("NOPERM"));
 
             var excSub = ClassicAssert.Throws<RedisServerException>(() => denyDb.ScriptEvaluate("return redis.call('CLUSTER', 'MYID')"));
-            ClassicAssert.IsTrue(excSub.Message.Contains("NOAUTH"));
+            ClassicAssert.IsTrue(excSub.Message.Contains("NOPERM"));
+
+            // SET is dispatched through a separate fast path in LuaRunner, so cover it explicitly
+            using var denySetRedis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(authUsername: "denyset"));
+            var denySetDb = denySetRedis.GetDatabase();
+
+            var excSet = ClassicAssert.Throws<RedisServerException>(() => denySetDb.ScriptEvaluate("return redis.call('SET', 'foo', 'bar')"));
+            ClassicAssert.IsTrue(excSet.Message.Contains("NOPERM"), $"Expected NOPERM for denied SET, got: {excSet.Message}");
+
+            var allowSetRes = (string[])denySetDb.ScriptEvaluate("return redis.call('GET', 'foo')");
+            ClassicAssert.AreEqual(1, allowSetRes.Length);
+            ClassicAssert.AreEqual("bar", allowSetRes[0]);
         }
 
         [Test]
