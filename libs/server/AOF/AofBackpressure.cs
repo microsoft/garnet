@@ -41,14 +41,6 @@ namespace Garnet.server
         public const int PollIntervalMs = 1;
 
         /// <summary>
-        /// A stalled appender begins emitting the diagnostic stall log after being parked this long,
-        /// then re-emits at most once per this interval, so a persistent stall dumps the gating
-        /// addresses without flooding the log on transient backpressure.
-        /// </summary>
-        const long StallLogInitialMs = 1000;
-        const long StallLogIntervalMs = 1000;
-
-        /// <summary>
         /// Byte-progress interval for refreshing the shipped watermark: the shipping side
         /// republishes only after shipping this many bytes since its last publish, so a caught-up
         /// sublog does no work and a busy one batches many chunks per publish. This only affects
@@ -149,8 +141,6 @@ namespace Garnet.server
 
         void WaitSlow(int sublogIdx, long capturedTail)
         {
-            var parkedSince = Environment.TickCount64;
-            var lastLog = 0L;
             while (!disposed)
             {
                 // Gate on the live tail, not the value captured at entry. The AOF sublog tail can
@@ -164,23 +154,6 @@ namespace Garnet.server
                 var watermark = Volatile.Read(ref shippedWatermark[sublogIdx].Value);
                 if (liveTail - watermark <= perSublogBudget)
                     break;
-
-                // Diagnostic: a thread that stays parked periodically dumps the addresses that gate
-                // it, so a repro can distinguish a stale watermark from a retreated tail. capturedTail
-                // is the value observed at entry; currentTail/safeTail are read live. Diagnostic-only.
-                if (logger != null)
-                {
-                    var now = Environment.TickCount64;
-                    if (now - parkedSince >= StallLogInitialMs && now - lastLog >= StallLogIntervalMs)
-                    {
-                        lastLog = now;
-                        var safeTail = log?.GetSafeTailAddress(sublogIdx) ?? -1;
-                        logger.LogWarning(
-                            "AofBackpressure stall [sublog {sublogIdx}] parkedMs={parkedMs}: capturedTail={capturedTail}, currentTail={currentTail}, safeTail={safeTail}, shippedWatermark={watermark}, capturedLag={capturedLag}, currentLag={currentLag}, budget={budget}",
-                            sublogIdx, now - parkedSince, capturedTail, liveTail, safeTail, watermark,
-                            capturedTail - watermark, liveTail - watermark, perSublogBudget);
-                    }
-                }
                 Thread.Sleep(PollIntervalMs);
             }
         }
