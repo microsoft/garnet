@@ -53,6 +53,7 @@ namespace Garnet.server
         internal const long MigrateIndexKeyLogArg = MigrateElementKeyLogArg + 1; // AOF: YES. InitialUpdater: YES (empty dummy key).
         internal const long VADDSetFlagsArg = MigrateIndexKeyLogArg + 1; // AOF: YES. InitialUpdater: NO (record must exist).
         internal const long CreateIndexArg = VADDSetFlagsArg + 1; // New stub record creation. AOF: NO. InitialUpdater: YES.
+        internal const long VSETATTRAppendLogArg = CreateIndexArg + 1; // User VSETATTR update, replayed on replicas. AOF: Yes. InitialUpdater: NO.
 
         /// <summary>
         /// Byte stored on log records to distinguish the INDEX key as a Vector Set
@@ -204,18 +205,15 @@ namespace Garnet.server
             vectorSetLocks = new(vectorSetReplayCount);
 
             this.getTempSession = getTempSession;
-            cleanupTaskChannel = Channel.CreateUnbounded<object>(new() { SingleWriter = false, SingleReader = true, AllowSynchronousContinuations = false });
-            requestCleanupTaskChannel = Channel.CreateUnbounded<(ulong Context, TaskCompletionSource Completion)>(new() { SingleWriter = false, SingleReader = true, AllowSynchronousContinuations = false });
-            requestDropTaskChannel = Channel.CreateUnbounded<object>(new() { SingleWriter = false, SingleReader = true, AllowSynchronousContinuations = false });
+            cleanupTaskChannel = new();
+            requestCleanupTaskChannel = new();
+            requestDropTaskChannel = new();
 
             cleanupTask = RunCleanupTaskAsync();
             requestCleanupTask = RunRequestCleanupTaskAsync();
             requestDropTask = RunRequestDropTaskAsync();
 
-            requestedDrops = new(ByteArrayComparer.Instance);
-#if NET9_0_OR_GREATER
-            requestedDropsLookup = requestedDrops.GetAlternateLookup<ReadOnlySpan<byte>>();
-#endif
+            requestedDrops = new();
 
             potentiallyDeleted = [];
 
@@ -367,7 +365,7 @@ namespace Garnet.server
             }
 
             // Resume any cleanups we didn't complete before recovery
-            _ = cleanupTaskChannel.Writer.TryWrite(null);
+            _ = cleanupTaskChannel.TryPublish();
         }
 
         /// <summary>
@@ -422,23 +420,17 @@ namespace Garnet.server
             replicationBlockEvent.Dispose();
 
             // Wait for any _drops_ in progress to finish
-            requestDropTaskChannel.Writer.Complete();
-            AsyncUtils.BlockingWait(requestDropTaskChannel.Reader.Completion);
-            AsyncUtils.BlockingWait(requestDropTask);
+            requestDropTaskChannel.CompleteAndWaitForConsumerTask(requestDropTask);
 
             // Wait for any _marking_ of cleanup state to finish. PauseCleanupAsync callers MUST
             // have called ResumeCleanup before reaching here, otherwise the cleanup task
             // is permanently blocked on cleanupGate.WaitAsync() and Dispose will hang.
-            requestCleanupTaskChannel.Writer.Complete();
-            AsyncUtils.BlockingWait(requestCleanupTaskChannel.Reader.Completion);
-            AsyncUtils.BlockingWait(requestCleanupTask);
+            requestCleanupTaskChannel.CompleteAndWaitForConsumerTask(requestCleanupTask);
 
             // Wait for any in progress cleanup to finish. PauseCleanupAsync callers MUST
             // have called ResumeCleanup before reaching here, otherwise the cleanup task
             // is permanently blocked on cleanupGate.WaitAsync() and Dispose will hang.
-            cleanupTaskChannel.Writer.Complete();
-            AsyncUtils.BlockingWait(cleanupTaskChannel.Reader.Completion);
-            AsyncUtils.BlockingWait(cleanupTask);
+            cleanupTaskChannel.CompleteAndWaitForConsumerTask(cleanupTask);
 
             // Cleanup task has fully drained, so nothing else can take this gate.
             cleanupGate.Dispose();
@@ -601,11 +593,20 @@ namespace Garnet.server
         {
             AssertHaveStorageSession();
 
-            ReadIndex(indexValue, out var context, out _, out _, out var quantType, out _, out _, out _, out _, out var indexPtr);
+            ReadIndex(indexValue, out var context, out _, out _, out _, out _, out _, out _, out _, out var indexPtr);
 
             var del = Service.Remove(context, indexPtr, element);
 
             return del ? VectorManagerResult.OK : VectorManagerResult.MissingElement;
+        }
+
+        internal bool TrySetAttribute(ReadOnlySpan<byte> indexValue, ReadOnlySpan<byte> element, ReadOnlySpan<byte> attribute)
+        {
+            AssertHaveStorageSession();
+
+            ReadIndex(indexValue, out var context, out _, out _, out _, out _, out _, out _, out _, out var indexPtr);
+
+            return Service.SetAttribute(context, indexPtr, element, attribute);
         }
 
         /// <summary>
@@ -633,7 +634,7 @@ namespace Garnet.server
 
             var tcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 
-            if (!requestCleanupTaskChannel.Writer.TryWrite((context, tcs)))
+            if (!requestCleanupTaskChannel.TryPublish((context, tcs)))
             {
                 throw new GarnetException("Could not submit request for Vector Set cleanup, aborting delete");
             }
@@ -681,7 +682,7 @@ namespace Garnet.server
                     throw new GarnetException($"Drop triggered multiple times for same index: {SpanByte.ToShortString(key)}");
                 }
 
-                _ = requestDropTaskChannel.Writer.TryWrite(null);
+                _ = requestDropTaskChannel.TryPublish();
             }
         }
 

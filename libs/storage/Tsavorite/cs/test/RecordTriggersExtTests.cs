@@ -79,6 +79,16 @@ namespace Tsavorite.test
             {
                 events?.PostCopyToTailEvents.Add((srcLogicalAddress, dstLogicalAddress));
             }
+
+            // Explicit no-ops (rather than relying on the IRecordTriggers defaults) so calls through the
+            // TRecordTriggers generic constraint resolve here instead of boxing to dispatch the DIMs.
+            public readonly void OnDispose(ref LogRecord logRecord, DisposeReason reason) { }
+            public readonly void OnDisposeDiskRecord(ref DiskLogRecord logRecord, DisposeReason reason) { }
+            public readonly void OnEvict(ref LogRecord logRecord, EvictionSource source) { }
+            public readonly void OnDiskRead(ref LogRecord logRecord) { }
+            public readonly void OnRecovery(System.Guid checkpointToken) { }
+            public readonly void OnRecoverySnapshotRead(ref LogRecord logRecord) { }
+            public readonly void OnCheckpoint(CheckpointTrigger trigger, System.Guid checkpointToken) { }
         }
 
         private TsavoriteKV<ExtStoreFunctions, ExtAllocator> store;

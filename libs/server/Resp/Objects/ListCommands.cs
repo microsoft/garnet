@@ -225,7 +225,7 @@ namespace Garnet.server
                     return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR);
 
                 // Read count
-                if (!parseState.TryGetInt(currTokenId, out popCount))
+                if (!parseState.TryGetInt(currTokenId, out popCount) || popCount < 1)
                 {
                     var err = string.Format(CmdStrings.GenericErrShouldBeGreaterThanZero, "count");
                     return AbortWithErrorMessage(Encoding.ASCII.GetBytes(err));

@@ -79,6 +79,12 @@ namespace Garnet.server
         public readonly GarnetServerOptions serverOptions;
 
         /// <summary>
+        /// Runtime-adjustable configuration values (seeded from <see cref="serverOptions"/> at startup,
+        /// updated through CONFIG SET). Reachable across the server and cluster layers.
+        /// </summary>
+        public readonly RuntimeServerConfig runtimeConfig;
+
+        /// <summary>
         /// Subscribe broker
         /// </summary>
         public readonly SubscribeBroker subscribeBroker;
@@ -200,13 +206,19 @@ namespace Garnet.server
             DatabaseCreatorDelegate createDatabaseDelegate = null,
             IDatabaseManager databaseManager = null,
             IClusterFactory clusterFactory = null,
-            ILoggerFactory loggerFactory = null)
+            ILoggerFactory loggerFactory = null,
+            RuntimeServerConfig runtimeConfig = null)
         {
             this.version = version;
             this.redisProtocolVersion = redisProtocolVersion;
             this.servers = servers;
             this.startupTimestamp = Stopwatch.GetTimestamp();
             this.serverOptions = serverOptions;
+            // Share the runtime config table across cloned wrappers (e.g. the AOF copy ctor) so that a
+            // CONFIG SET is observed consistently; otherwise seed a fresh table from the startup options.
+            // A freshly created table is bound to this wrapper as its owner so update actions can enact
+            // task lifecycle changes; a clone reuses the shared table (and its original owner).
+            this.runtimeConfig = runtimeConfig ?? new RuntimeServerConfig(serverOptions, this);
             this.subscribeBroker = subscribeBroker;
             this.customCommandManager = customCommandManager;
             this.loggerFactory = loggerFactory;
@@ -226,8 +238,9 @@ namespace Garnet.server
 
             logger?.LogTrace("StoreWrapper logging frequency: {loggingFrequency} seconds.", this.loggingFrequency);
 
-            if (serverOptions.SlowLogThreshold > 0)
-                this.slowLogContainer = new SlowLogContainer(serverOptions.SlowLogMaxEntries);
+            // The slow log threshold is runtime-adjustable, so the container is always allocated: a session
+            // may start recording after a CONFIG SET even when the startup threshold disabled the slow log.
+            this.slowLogContainer = new SlowLogContainer(serverOptions.SlowLogMaxEntries);
 
             if (!serverOptions.DisableObjects)
                 this.itemBroker = new CollectionItemBroker();
@@ -307,7 +320,8 @@ namespace Garnet.server
             storeWrapper.accessControlList,
             databaseManager: storeWrapper.databaseManager.Clone(recordToAof),
             clusterFactory: null,
-            loggerFactory: storeWrapper.loggerFactory)
+            loggerFactory: storeWrapper.loggerFactory,
+            runtimeConfig: storeWrapper.runtimeConfig)
         {
         }
 
@@ -628,7 +642,7 @@ namespace Garnet.server
             {
                 while (true)
                 {
-                    await Task.Delay(TimeSpan.FromSeconds(serverOptions.AofSizeLimitEnforceFrequencySecs), token).ConfigureAwait(false);
+                    await Task.Delay(TimeSpan.FromSeconds(runtimeConfig.GetInt(ServerConfigType.AOF_SIZE_LIMIT_ENFORCE_FREQUENCY)), token).ConfigureAwait(false);
                     if (token.IsCancellationRequested) break;
 
                     await databaseManager.TaskCheckpointBasedOnAofSizeLimitAsync(aofSizeLimit, token, logger).ConfigureAwait(false);
@@ -682,7 +696,7 @@ namespace Garnet.server
 
                     await databaseManager.DoCompactionAsync(token, logger).ConfigureAwait(false);
 
-                    if (!serverOptions.CompactionForceDelete)
+                    if (!runtimeConfig.GetBool(ServerConfigType.COMPACTION_FORCE_DELETE))
                         logger?.LogInformation("NOTE: Take a checkpoint (SAVE/BGSAVE) in order to actually delete the older data segments (files) from disk");
                     else
                         logger?.LogInformation("NOTE: Compaction will delete files, make sure checkpoint/recovery is not being used");
@@ -920,35 +934,92 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Serializes background primary-task lifecycle changes (start / kill / restart) so concurrent
+        /// CONFIG SET calls and failover transitions cannot race on the same task.
+        /// </summary>
+        readonly object taskLifecycleLock = new();
+
+        /// <summary>
         /// Start background maintenance tasks that should only run when this node is a primary
         /// </summary>
         /// <returns></returns>
         public void StartPrimaryTasks()
         {
-            if (serverOptions.AofSizeLimit.Length > 0)
+            lock (taskLifecycleLock)
             {
-                var aofSizeLimitBytes = 1L << serverOptions.AofSizeLimitSizeBits();
-                taskManager.RegisterAndRun(TaskType.AofSizeLimitTask, (token) => AutoCheckpointBasedOnAofSizeLimitAsync(aofSizeLimitBytes, token, logger));
-            }
+                if (serverOptions.AofSizeLimit.Length > 0)
+                {
+                    var aofSizeLimitBytes = 1L << serverOptions.AofSizeLimitSizeBits();
+                    taskManager.RegisterAndRun(TaskType.AofSizeLimitTask, (token) => AutoCheckpointBasedOnAofSizeLimitAsync(aofSizeLimitBytes, token, logger));
+                }
 
-            if (serverOptions.CommitFrequencyMs > 0 && serverOptions.EnableAOF)
-            {
-                taskManager.RegisterAndRun(TaskType.CommitTask, (token) => CommitTaskAsync(serverOptions.CommitFrequencyMs, token, logger));
-            }
+                TryStartCommitTask();
 
-            if (serverOptions.CompactionFrequencySecs > 0 && serverOptions.CompactionType != LogCompactionType.None)
-            {
-                taskManager.RegisterAndRun(TaskType.CompactionTask, (token) => CompactionTaskAsync(serverOptions.CompactionFrequencySecs, token));
-            }
+                if (serverOptions.CompactionFrequencySecs > 0 && serverOptions.CompactionType != LogCompactionType.None)
+                {
+                    taskManager.RegisterAndRun(TaskType.CompactionTask, (token) => CompactionTaskAsync(serverOptions.CompactionFrequencySecs, token));
+                }
 
-            if (serverOptions.ExpiredObjectCollectionFrequencySecs > 0)
-            {
-                taskManager.RegisterAndRun(TaskType.ObjectCollectTask, (token) => ObjectCollectTaskAsync(serverOptions.ExpiredObjectCollectionFrequencySecs, token));
+                TryStartObjectCollectTask();
+                TryStartExpiredKeyDeletionTask();
             }
+        }
 
-            if (serverOptions.ExpiredKeyDeletionScanFrequencySecs > 0)
+        // Start the periodic AOF commit task if enabled by the current runtime config. Reads the interval
+        // from runtimeConfig so both startup and a post-failover restart honor a runtime CONFIG SET.
+        void TryStartCommitTask()
+        {
+            var commitFrequencyMs = runtimeConfig.GetInt(ServerConfigType.AOF_COMMIT_FREQ);
+            if (commitFrequencyMs > 0 && serverOptions.EnableAOF)
+                taskManager.RegisterAndRun(TaskType.CommitTask, (token) => CommitTaskAsync(commitFrequencyMs, token, logger));
+        }
+
+        // Start the background object-collection task if enabled by the current runtime config.
+        void TryStartObjectCollectTask()
+        {
+            var frequencySecs = runtimeConfig.GetInt(ServerConfigType.EXPIRED_OBJECT_COLLECTION_FREQ);
+            if (frequencySecs > 0)
+                taskManager.RegisterAndRun(TaskType.ObjectCollectTask, (token) => ObjectCollectTaskAsync(frequencySecs, token));
+        }
+
+        // Start the background expired-key-deletion scan task if enabled by the current runtime config.
+        void TryStartExpiredKeyDeletionTask()
+        {
+            var frequencySecs = runtimeConfig.GetInt(ServerConfigType.EXPIRED_KEY_DELETION_SCAN_FREQ);
+            if (frequencySecs > 0)
+                taskManager.RegisterAndRun(TaskType.ExpiredKeyDeletionTask, (token) => ExpiredKeyDeletionScanTaskAsync(frequencySecs, token));
+        }
+
+        /// <summary>
+        /// Reconcile a background primary task with the current runtime configuration after a CONFIG SET:
+        /// stop the running instance (so a killed or retuned task does not keep its old interval) and, when
+        /// this node is not a replica, restart it if the new value re-enables it. Runs synchronously on the
+        /// CONFIG SET thread under <see cref="taskLifecycleLock"/> so concurrent updates are serialized.
+        /// Primary tasks are intentionally not started on a replica; a later failover starts them from the
+        /// (now updated) runtime configuration through <see cref="StartPrimaryTasks"/>.
+        /// </summary>
+        /// <param name="taskType">Primary task to reconcile.</param>
+        internal void ReconcilePrimaryTask(TaskType taskType)
+        {
+            lock (taskLifecycleLock)
             {
-                taskManager.RegisterAndRun(TaskType.ExpiredKeyDeletionTask, (token) => ExpiredKeyDeletionScanTaskAsync(serverOptions.ExpiredKeyDeletionScanFrequencySecs, token));
+                AsyncUtils.BlockingWait(taskManager.CancelAsync(taskType));
+
+                if (clusterProvider?.IsReplica() ?? false)
+                    return;
+
+                switch (taskType)
+                {
+                    case TaskType.CommitTask:
+                        TryStartCommitTask();
+                        break;
+                    case TaskType.ObjectCollectTask:
+                        TryStartObjectCollectTask();
+                        break;
+                    case TaskType.ExpiredKeyDeletionTask:
+                        TryStartExpiredKeyDeletionTask();
+                        break;
+                }
             }
         }
 

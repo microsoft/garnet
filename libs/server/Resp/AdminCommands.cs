@@ -1007,7 +1007,7 @@ namespace Garnet.server
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.EXPDELSCAN));
             }
 
-            if (storeWrapper.serverOptions.ExpiredKeyDeletionScanFrequencySecs > 0)
+            if (storeWrapper.runtimeConfig.GetInt(ServerConfigType.EXPIRED_KEY_DELETION_SCAN_FREQ) > 0)
             {
                 return AbortWithErrorMessage(CmdStrings.RESP_ERR_EXPDELSCAN_INVALID);
             }
