@@ -307,7 +307,7 @@ namespace Tsavorite.core
 
             // Max epoch across all threads may have advanced, so check for pending drain actions to process
             if (drainCount > 0)
-                Drain(EntryAt(entry).localCurrentEpoch);
+                Drain((*(tableAligned + entry)).localCurrentEpoch);
 
             if (waiterCount > 0)
             {
