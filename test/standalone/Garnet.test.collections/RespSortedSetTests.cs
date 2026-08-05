@@ -2008,12 +2008,6 @@ namespace Garnet.test
             ClassicAssert.AreEqual(1, (long)results[0]);
             ClassicAssert.AreEqual(1, (long)results[1]);
 
-            result = db.Execute("ZPEXPIRE", "mysortedset", "1500", "MEMBERS", "2", "member3", "member4");
-            results = (RedisResult[])result;
-            ClassicAssert.AreEqual(2, results.Length);
-            ClassicAssert.AreEqual(1, (long)results[0]);
-            ClassicAssert.AreEqual(1, (long)results[1]);
-
             var orginalMemory = (long)db.Execute("MEMORY", "USAGE", "mysortedset");
 
             await Task.Delay(600).ConfigureAwait(false);
@@ -2026,9 +2020,18 @@ namespace Garnet.test
 
             newMemory = (long)db.Execute("MEMORY", "USAGE", "mysortedset");
             ClassicAssert.Less(newMemory, orginalMemory);
-            orginalMemory = newMemory;
 
-            await Task.Delay(1100).ConfigureAwait(false);
+            // The second pair expires only once the first pair has been collected, so a stall in the phase
+            // above cannot consume the expiration window this phase depends on.
+            result = db.Execute("ZPEXPIRE", "mysortedset", "500", "MEMBERS", "2", "member3", "member4");
+            results = (RedisResult[])result;
+            ClassicAssert.AreEqual(2, results.Length);
+            ClassicAssert.AreEqual(1, (long)results[0]);
+            ClassicAssert.AreEqual(1, (long)results[1]);
+
+            orginalMemory = (long)db.Execute("MEMORY", "USAGE", "mysortedset");
+
+            await Task.Delay(600).ConfigureAwait(false);
 
             newMemory = (long)db.Execute("MEMORY", "USAGE", "mysortedset");
             ClassicAssert.AreEqual(newMemory, orginalMemory);
@@ -2045,7 +2048,12 @@ namespace Garnet.test
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
-            db.SortedSetAdd("mysortedset", [new SortedSetEntry("member1", 1), new SortedSetEntry("member2", 2), new SortedSetEntry("member3", 3), new SortedSetEntry("member4", 4), new SortedSetEntry("member5", 5), new SortedSetEntry("member6", 6)]);
+            db.SortedSetAdd("mysortedset", [new SortedSetEntry("member1", 1), new SortedSetEntry("member2", 2), new SortedSetEntry("member3", 3), new SortedSetEntry("member4", 4), new SortedSetEntry("member5", 5), new SortedSetEntry("member6", 6), new SortedSetEntry("member7", 7)]);
+
+            // Members whose expiration is read back use a deadline no scheduling delay can consume, while the
+            // members observed expiring keep a short expiration. Mixing both roles in one member makes the
+            // TTL assertions depend on how long the commands in between happen to take.
+            var readDeadline = DateTimeOffset.UtcNow.AddMinutes(5);
 
             var result = db.Execute("ZEXPIRE", "mysortedset", "3", "MEMBERS", "3", "member1", "member5", "nonexistmember");
             var results = (RedisResult[])result;
@@ -2072,29 +2080,31 @@ namespace Garnet.test
             ClassicAssert.AreEqual(1, (long)results[0]);
             ClassicAssert.AreEqual(-2, (long)results[1]);
 
-            var ttl = (RedisResult[])db.Execute("ZTTL", "mysortedset", "MEMBERS", "2", "member1", "nonexistmember");
-            ClassicAssert.AreEqual(2, ttl.Length);
-            ClassicAssert.LessOrEqual((long)ttl[0], 3);
-            ClassicAssert.Greater((long)ttl[0], 1);
+            result = db.Execute("ZPEXPIREAT", "mysortedset", readDeadline.ToUnixTimeMilliseconds().ToString(), "MEMBERS", "2", "member7", "nonexistmember");
+            results = (RedisResult[])result;
+            ClassicAssert.AreEqual(2, results.Length);
+            ClassicAssert.AreEqual(1, (long)results[0]);
             ClassicAssert.AreEqual(-2, (long)results[1]);
 
-            ttl = (RedisResult[])db.Execute("ZPTTL", "mysortedset", "MEMBERS", "2", "member1", "nonexistmember");
+            var ttl = (RedisResult[])db.Execute("ZTTL", "mysortedset", "MEMBERS", "2", "member7", "nonexistmember");
             ClassicAssert.AreEqual(2, ttl.Length);
-            ClassicAssert.LessOrEqual((long)ttl[0], 3000);
-            ClassicAssert.Greater((long)ttl[0], 1000);
-            ClassicAssert.AreEqual(-2, (long)results[1]);
+            TestUtils.AssertTtlSeconds(readDeadline, (long)ttl[0]);
+            ClassicAssert.AreEqual(-2, (long)ttl[1]);
 
-            ttl = (RedisResult[])db.Execute("ZEXPIRETIME", "mysortedset", "MEMBERS", "2", "member1", "nonexistmember");
+            ttl = (RedisResult[])db.Execute("ZPTTL", "mysortedset", "MEMBERS", "2", "member7", "nonexistmember");
             ClassicAssert.AreEqual(2, ttl.Length);
-            ClassicAssert.LessOrEqual((long)ttl[0], DateTimeOffset.UtcNow.AddSeconds(3).ToUnixTimeSeconds());
-            ClassicAssert.Greater((long)ttl[0], DateTimeOffset.UtcNow.AddSeconds(1).ToUnixTimeSeconds());
-            ClassicAssert.AreEqual(-2, (long)results[1]);
+            TestUtils.AssertTtlMilliseconds(readDeadline, (long)ttl[0]);
+            ClassicAssert.AreEqual(-2, (long)ttl[1]);
 
-            ttl = (RedisResult[])db.Execute("ZPEXPIRETIME", "mysortedset", "MEMBERS", "2", "member1", "nonexistmember");
+            ttl = (RedisResult[])db.Execute("ZEXPIRETIME", "mysortedset", "MEMBERS", "2", "member7", "nonexistmember");
             ClassicAssert.AreEqual(2, ttl.Length);
-            ClassicAssert.LessOrEqual((long)ttl[0], DateTimeOffset.UtcNow.AddSeconds(3).ToUnixTimeMilliseconds());
-            ClassicAssert.Greater((long)ttl[0], DateTimeOffset.UtcNow.AddSeconds(1).ToUnixTimeMilliseconds());
-            ClassicAssert.AreEqual(-2, (long)results[1]);
+            Assert.That((long)ttl[0], Is.EqualTo(readDeadline.ToUnixTimeSeconds()).Within(1));
+            ClassicAssert.AreEqual(-2, (long)ttl[1]);
+
+            ttl = (RedisResult[])db.Execute("ZPEXPIRETIME", "mysortedset", "MEMBERS", "2", "member7", "nonexistmember");
+            ClassicAssert.AreEqual(2, ttl.Length);
+            ClassicAssert.AreEqual(readDeadline.ToUnixTimeMilliseconds(), (long)ttl[0]);
+            ClassicAssert.AreEqual(-2, (long)ttl[1]);
 
             results = (RedisResult[])db.Execute("ZPERSIST", "mysortedset", "MEMBERS", "3", "member5", "member6", "nonexistmember");
             ClassicAssert.AreEqual(3, results.Length);
@@ -2102,24 +2112,28 @@ namespace Garnet.test
             ClassicAssert.AreEqual(-1, (long)results[1]); // -1 if the member exists but has no associated expiration set.
             ClassicAssert.AreEqual(-2, (long)results[2]);
 
-            await Task.Delay(3500).ConfigureAwait(false);
+            await TestUtils.WaitUntilAsync(() => db.SortedSetRangeByRankWithScores("mysortedset").Length == 3,
+                message: "Members with a short expiration were never removed from the sorted set");
 
             var items = db.SortedSetRangeByRankWithScores("mysortedset");
-            ClassicAssert.AreEqual(2, items.Length);
+            ClassicAssert.AreEqual(3, items.Length);
             ClassicAssert.AreEqual("member5", items[0].Element.ToString());
             ClassicAssert.AreEqual(5, items[0].Score);
             ClassicAssert.AreEqual("member6", items[1].Element.ToString());
             ClassicAssert.AreEqual(6, items[1].Score);
+            ClassicAssert.AreEqual("member7", items[2].Element.ToString());
+            ClassicAssert.AreEqual(7, items[2].Score);
 
             result = db.Execute("ZEXPIRE", "mysortedset", "0", "MEMBERS", "1", "member5");
             results = (RedisResult[])result;
             ClassicAssert.AreEqual(1, results.Length);
             ClassicAssert.AreEqual(2, (long)results[0]);
 
-            result = db.Execute("ZEXPIREAT", "mysortedset", DateTimeOffset.UtcNow.AddSeconds(-1).ToUnixTimeSeconds().ToString(), "MEMBERS", "1", "member6");
+            result = db.Execute("ZEXPIREAT", "mysortedset", DateTimeOffset.UtcNow.AddSeconds(-1).ToUnixTimeSeconds().ToString(), "MEMBERS", "2", "member6", "member7");
             results = (RedisResult[])result;
-            ClassicAssert.AreEqual(1, results.Length);
+            ClassicAssert.AreEqual(2, results.Length);
             ClassicAssert.AreEqual(2, (long)results[0]);
+            ClassicAssert.AreEqual(2, (long)results[1]);
 
             items = db.SortedSetRangeByRankWithScores("mysortedset");
             ClassicAssert.AreEqual(0, items.Length);
@@ -2327,6 +2341,10 @@ namespace Garnet.test
 
             var expireTime = DateTimeOffset.UtcNow + TimeSpan.FromMinutes(1);
 
+            // Expirations that are read back are set as absolute deadlines far enough out that neither the
+            // sleeps below nor the server restart can consume them.
+            var val2_2ExpireTime = DateTimeOffset.UtcNow + TimeSpan.FromMinutes(1);
+
             using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
             {
                 var db = redis.GetDatabase(0);
@@ -2347,7 +2365,7 @@ namespace Garnet.test
                 db.SortedSetAdd(key2, values2_2);
 
                 // Add longer expiry to entry in 2nd sorted set
-                db.Execute("ZPEXPIRE", key2, 15000, "MEMBERS", 1, "val2_2");
+                db.Execute("ZPEXPIREAT", key2, val2_2ExpireTime.ToUnixTimeMilliseconds(), "MEMBERS", 1, "val2_2");
                 Thread.Sleep(2000);
 
                 // Verify 1st sorted set contains all added entries
@@ -2370,8 +2388,7 @@ namespace Garnet.test
                 ClassicAssert.IsNotNull(recoveredValuesTtl);
                 ClassicAssert.AreEqual(4, recoveredValuesTtl!.Length);
                 ClassicAssert.AreEqual(-2, (long)recoveredValuesTtl[0]);
-                ClassicAssert.LessOrEqual((long)recoveredValuesTtl[1], 13);
-                ClassicAssert.Greater((long)recoveredValuesTtl[1], 0);
+                TestUtils.AssertTtlSeconds(val2_2ExpireTime, (long)recoveredValuesTtl[1]);
                 ClassicAssert.AreEqual(-1, (long)recoveredValuesTtl[2]);
                 ClassicAssert.AreEqual(-1, (long)recoveredValuesTtl[3]);
             }
@@ -2406,8 +2423,7 @@ namespace Garnet.test
                 ClassicAssert.IsNotNull(recoveredValuesTtl);
                 ClassicAssert.AreEqual(4, recoveredValuesTtl!.Length);
                 ClassicAssert.AreEqual(-2, (long)recoveredValuesTtl[0]);
-                ClassicAssert.Less((long)recoveredValuesTtl[1], 13000);
-                ClassicAssert.Greater((long)recoveredValuesTtl[1], 0);
+                TestUtils.AssertTtlMilliseconds(val2_2ExpireTime, (long)recoveredValuesTtl[1]);
                 ClassicAssert.AreEqual(-1, (long)recoveredValuesTtl[2]);
                 ClassicAssert.AreEqual(-1, (long)recoveredValuesTtl[3]);
             }

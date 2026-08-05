@@ -535,10 +535,8 @@ namespace Garnet.test
             db.HashFieldExpire("user:user1", ["Field"], TimeSpan.FromMilliseconds(100));
             db.HashSet(new RedisKey("user:user1"), new RedisValue("Field"), new RedisValue("Hello"), When.NotExists);
 
-            await Task.Delay(200).ConfigureAwait(false);
-
-            string result = db.HashGet("user:user1", "Field");
-            ClassicAssert.IsNull(result); // SetNX should not reset the expiration
+            await TestUtils.WaitUntilAsync(() => (string)db.HashGet("user:user1", "Field") is null,
+                message: "SetNX should not reset the expiration");
         }
 
         [Test]
@@ -635,17 +633,30 @@ namespace Garnet.test
             var db = redis.GetDatabase(0);
 
             var hashKey = new RedisKey("user:user1");
-            HashEntry[] hashEntries = [new HashEntry("Title", "Tsavorite")];
+            HashEntry[] hashEntries = [new HashEntry("Title", "Tsavorite"), new HashEntry("Author", "Microsoft")];
             db.HashSet(hashKey, hashEntries);
-            db.HashFieldExpire("user:user1", ["Title"], TimeSpan.FromMilliseconds(100));
-            var field = db.HashRandomFields(hashKey, 10).Select(x => (string)x).ToArray();
-            ClassicAssert.AreEqual(field.Length, 1);
-            ClassicAssert.AreEqual("Title", field[0]);
 
-            await Task.Delay(200).ConfigureAwait(false);
+            // Fields are asserted as present either before any short expiration is set or against a deadline no
+            // scheduling delay can consume, and their removal is polled for rather than assumed after a fixed delay.
+            var titleExpireTime = DateTimeOffset.UtcNow + TimeSpan.FromMinutes(5);
+            db.Execute("HPEXPIREAT", hashKey, titleExpireTime.ToUnixTimeMilliseconds(), "FIELDS", 1, "Title");
 
-            field = db.HashRandomFields(hashKey, 10).Select(x => (string)x).ToArray();
-            ClassicAssert.AreEqual(field.Length, 0);
+            var fields = db.HashRandomFields(hashKey, 10).Select(x => (string)x).ToArray();
+            CollectionAssert.AreEquivalent(new[] { "Title", "Author" }, fields);
+
+            db.HashFieldExpire(hashKey, ["Author"], TimeSpan.FromMilliseconds(100));
+
+            await TestUtils.WaitUntilAsync(() => db.HashRandomFields(hashKey, 10).Length == 1,
+                message: "Expired field was still returned by HRANDFIELD");
+
+            fields = db.HashRandomFields(hashKey, 10).Select(x => (string)x).ToArray();
+            ClassicAssert.AreEqual(1, fields.Length);
+            ClassicAssert.AreEqual("Title", fields[0]);
+
+            db.Execute("HPEXPIREAT", hashKey, DateTimeOffset.UtcNow.AddSeconds(-1).ToUnixTimeMilliseconds(), "FIELDS", 1, "Title");
+
+            fields = db.HashRandomFields(hashKey, 10).Select(x => (string)x).ToArray();
+            ClassicAssert.AreEqual(0, fields.Length);
         }
 
         [Test]
@@ -1114,17 +1125,8 @@ namespace Garnet.test
             string[] smallExpireKeys = ["user:user0", "user:user1"];
             string[] largeExpireKeys = ["user:user2", "user:user3"];
 
-            foreach (var key in smallExpireKeys)
-            {
+            foreach (var key in smallExpireKeys.Union(largeExpireKeys))
                 db.HashSet(key, [new HashEntry("Field1", "StringValue"), new HashEntry("Field2", "1")]);
-                db.Execute("HEXPIRE", key, "2", "FIELDS", "1", "Field1");
-            }
-
-            foreach (var key in largeExpireKeys)
-            {
-                db.HashSet(key, [new HashEntry("Field1", "StringValue"), new HashEntry("Field2", "1")]);
-                db.Execute("HEXPIRE", key, "4", "FIELDS", "1", "Field1");
-            }
 
             // Create LTM (larger than memory) DB by inserting 1000 keys
             for (int i = 4; i < 1000; i++)
@@ -1137,26 +1139,30 @@ namespace Garnet.test
             // Ensure data has spilled to disk
             ClassicAssert.Greater(info.HeadAddress, info.BeginAddress);
 
-            await Task.Delay(2000).ConfigureAwait(false);
+            // Expirations are applied after the bulk insert so that the time it takes is not charged against them.
+            foreach (var key in smallExpireKeys)
+                db.Execute("HEXPIRE", key, "2", "FIELDS", "1", "Field1");
 
-            var result = db.HashExists(smallExpireKeys[0], "Field1");
-            ClassicAssert.IsFalse(result);
-            result = db.HashExists(smallExpireKeys[1], "Field1");
-            ClassicAssert.IsFalse(result);
-            result = db.HashExists(largeExpireKeys[0], "Field1");
+            var largeExpireTime = DateTimeOffset.UtcNow + TimeSpan.FromSeconds(30);
+            foreach (var key in largeExpireKeys)
+                db.Execute("HEXPIREAT", key, largeExpireTime.ToUnixTimeSeconds(), "FIELDS", "1", "Field1");
+
+            await TestUtils.WaitUntilAsync(() => !db.HashExists(smallExpireKeys[0], "Field1") && !db.HashExists(smallExpireKeys[1], "Field1"),
+                message: "Fields with a short expiration were never removed from the hash");
+
+            var result = db.HashExists(largeExpireKeys[0], "Field1");
             ClassicAssert.IsTrue(result);
             result = db.HashExists(largeExpireKeys[1], "Field1");
             ClassicAssert.IsTrue(result);
             var ttl = db.HashFieldGetTimeToLive(largeExpireKeys[0], ["Field1"]);
             ClassicAssert.AreEqual(ttl.Length, 1);
-            ClassicAssert.Greater(ttl[0], 0);
-            ClassicAssert.LessOrEqual(ttl[0], 2000);
+            TestUtils.AssertTtlMilliseconds(largeExpireTime, ttl[0]);
             ttl = db.HashFieldGetTimeToLive(largeExpireKeys[1], ["Field1"]);
             ClassicAssert.AreEqual(ttl.Length, 1);
-            ClassicAssert.Greater(ttl[0], 0);
-            ClassicAssert.LessOrEqual(ttl[0], 2000);
+            TestUtils.AssertTtlMilliseconds(largeExpireTime, ttl[0]);
 
-            await Task.Delay(2000).ConfigureAwait(false);
+            foreach (var key in largeExpireKeys)
+                db.Execute("HEXPIREAT", key, DateTimeOffset.UtcNow.AddSeconds(-1).ToUnixTimeSeconds(), "FIELDS", "1", "Field1");
 
             result = db.HashExists(largeExpireKeys[0], "Field1");
             ClassicAssert.IsFalse(result);
@@ -1185,6 +1191,10 @@ namespace Garnet.test
 
             var expireTime = DateTimeOffset.UtcNow + TimeSpan.FromMinutes(1);
 
+            // Expirations that are read back are set as absolute deadlines far enough out that neither the
+            // sleeps below nor the server restart can consume them.
+            var key2_2ExpireTime = DateTimeOffset.UtcNow + TimeSpan.FromMinutes(1);
+
             using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
             {
                 var db = redis.GetDatabase(0);
@@ -1205,7 +1215,7 @@ namespace Garnet.test
                 db.HashSet(key2, values2_2);
 
                 // Add longer expiry to entry in 2nd hash set
-                db.Execute("HPEXPIRE", key2, 15000, "FIELDS", 1, "key2_2");
+                db.Execute("HPEXPIREAT", key2, key2_2ExpireTime.ToUnixTimeMilliseconds(), "FIELDS", 1, "key2_2");
                 Thread.Sleep(2000);
 
                 // Verify 1st hash set contains all added entries
@@ -1228,8 +1238,7 @@ namespace Garnet.test
                 ClassicAssert.IsNotNull(recoveredValuesTtl);
                 ClassicAssert.AreEqual(4, recoveredValuesTtl!.Length);
                 ClassicAssert.AreEqual(-2, (long)recoveredValuesTtl[0]);
-                ClassicAssert.LessOrEqual((long)recoveredValuesTtl[1], 13);
-                ClassicAssert.Greater((long)recoveredValuesTtl[1], 0);
+                TestUtils.AssertTtlSeconds(key2_2ExpireTime, (long)recoveredValuesTtl[1]);
                 ClassicAssert.AreEqual(-1, (long)recoveredValuesTtl[2]);
                 ClassicAssert.AreEqual(-1, (long)recoveredValuesTtl[3]);
             }
@@ -1264,8 +1273,7 @@ namespace Garnet.test
                 ClassicAssert.IsNotNull(recoveredValuesTtl);
                 ClassicAssert.AreEqual(4, recoveredValuesTtl!.Length);
                 ClassicAssert.AreEqual(-2, (long)recoveredValuesTtl[0]);
-                ClassicAssert.Less((long)recoveredValuesTtl[1], 13000);
-                ClassicAssert.Greater((long)recoveredValuesTtl[1], 0);
+                TestUtils.AssertTtlMilliseconds(key2_2ExpireTime, (long)recoveredValuesTtl[1]);
                 ClassicAssert.AreEqual(-1, (long)recoveredValuesTtl[2]);
                 ClassicAssert.AreEqual(-1, (long)recoveredValuesTtl[3]);
             }

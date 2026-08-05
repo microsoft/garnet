@@ -280,6 +280,55 @@ namespace Garnet.test
         }
 
         /// <summary>
+        /// Polls <paramref name="condition"/> until it returns true, failing the test if <paramref name="timeout"/> elapses first.
+        /// Prefer this over a fixed delay whenever a test waits for an expiration or a background task to take effect,
+        /// so that a slow or contended machine makes the test slower rather than failing it.
+        /// </summary>
+        /// <param name="condition">Condition to poll.</param>
+        /// <param name="timeout">Maximum time to wait. Defaults to 30 seconds.</param>
+        /// <param name="message">Message reported when the condition is never satisfied.</param>
+        public static async Task WaitUntilAsync(Func<bool> condition, TimeSpan timeout = default, string message = null)
+        {
+            var deadline = DateTimeOffset.UtcNow + (timeout == default ? TimeSpan.FromSeconds(30) : timeout);
+            while (!condition())
+            {
+                if (DateTimeOffset.UtcNow >= deadline)
+                    Assert.Fail(message ?? $"Timed out after {timeout} waiting for condition");
+
+                await Task.Delay(50).ConfigureAwait(false);
+            }
+        }
+
+        /// <summary>
+        /// Asserts that a TTL in seconds reported by the server matches the time remaining until <paramref name="deadline"/>,
+        /// recomputed at assertion time. Set expirations with an absolute deadline (E.g. HEXPIREAT/ZEXPIREAT) and assert with this
+        /// helper, so that time spent between setting the expiration and reading it back cannot make the assertion fail.
+        /// </summary>
+        /// <param name="deadline">Absolute instant the expiration was set to.</param>
+        /// <param name="actualSeconds">TTL in seconds reported by the server.</param>
+        /// <param name="toleranceSeconds">Allowed deviation, covering the server's rounding to whole seconds.</param>
+        public static void AssertTtlSeconds(DateTimeOffset deadline, long actualSeconds, long toleranceSeconds = 2)
+        {
+            var remainingSeconds = (deadline - DateTimeOffset.UtcNow).TotalSeconds;
+            Assert.That(remainingSeconds, Is.GreaterThan(0), "Deadline already elapsed, widen the expiration horizon used by the test");
+            Assert.That(actualSeconds, Is.EqualTo(remainingSeconds).Within(toleranceSeconds));
+        }
+
+        /// <summary>
+        /// Asserts that a TTL in milliseconds reported by the server matches the time remaining until <paramref name="deadline"/>,
+        /// recomputed at assertion time. See <see cref="AssertTtlSeconds"/>.
+        /// </summary>
+        /// <param name="deadline">Absolute instant the expiration was set to.</param>
+        /// <param name="actualMilliseconds">TTL in milliseconds reported by the server.</param>
+        /// <param name="toleranceMilliseconds">Allowed deviation.</param>
+        public static void AssertTtlMilliseconds(DateTimeOffset deadline, long actualMilliseconds, long toleranceMilliseconds = 2000)
+        {
+            var remainingMilliseconds = (deadline - DateTimeOffset.UtcNow).TotalMilliseconds;
+            Assert.That(remainingMilliseconds, Is.GreaterThan(0), "Deadline already elapsed, widen the expiration horizon used by the test");
+            Assert.That(actualMilliseconds, Is.EqualTo(remainingMilliseconds).Within(toleranceMilliseconds));
+        }
+
+        /// <summary>
         /// Create GarnetServer
         /// </summary>
         public static GarnetServer CreateGarnetServer(
