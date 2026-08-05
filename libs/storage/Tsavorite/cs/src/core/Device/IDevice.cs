@@ -97,9 +97,14 @@ namespace Tsavorite.core
         /// context/ring, rather than scanning all of them. Used by the inline submitter-thread
         /// completion path to avoid redundant per-context work when many threads drain concurrently.
         /// Devices that do not shard completions may simply fall back to <see cref="TryComplete"/>.
+        /// <para>
+        /// Provided as a default interface method delegating to <see cref="TryComplete"/> so that
+        /// existing external <see cref="IDevice"/> implementations continue to compile and behave
+        /// correctly without change; sharded devices (e.g. NativeStorageDevice) override it.
+        /// </para>
         /// </summary>
         /// <returns></returns>
-        bool TryCompleteMine();
+        bool TryCompleteMine() => TryComplete();
 
         /// <summary>
         /// Whether device should be throttled at this instant (i.e., caller should stop issuing new I/Os)

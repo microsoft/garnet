@@ -874,6 +874,21 @@ namespace Tsavorite.core
         /// here. Time-gated by a cheap non-atomic <see cref="Environment.TickCount64"/> check so it is effectively
         /// free on the hot completion path (a full scan runs at most every <see cref="ReconcileIntervalMs"/> ms).
         /// Concurrent completers racing here is harmless: the scan is idempotent and the write is a plain store.
+        /// <para>
+        /// KNOWN BOUNDED TRANSIENT (intentional tradeoff): a submitter thread that already has a shard assigned
+        /// (its <see cref="ThreadLocal{T}"/> value) does NOT re-run <see cref="AssignShard"/> when it re-activates,
+        /// so if this reconciliation has just cratered <see cref="activeShards"/> after an idle gap and a burst of
+        /// such reused threads then floods in, they briefly see a stale-low divisor and each provisions up to
+        /// <see cref="MaxPerThreadInFlight"/> in-flight — a transient over-subscription bounded at
+        /// <c>liveThreads × MaxPerThreadInFlight</c> (≈ 2× the throttle) for at most one <see cref="ReconcileIntervalMs"/>
+        /// window, after which the next scan (their now-occupied shards) restores the correct divisor. This is
+        /// non-corrupting (it only mis-sizes a perf knob) and is absorbed by the native ring's EAGAIN/unwind+retry.
+        /// We deliberately do NOT track exact 0→1 / 1→0 shard-occupancy transitions to keep <see cref="activeShards"/>
+        /// perfectly current: in-flight is <c>shardSubmitted − shardCompleted</c> across two independently-updated
+        /// counters, so detecting those transitions atomically would require reading both after each increment (a
+        /// cross-counter race) or a per-shard lock on the hottest submit/complete paths — a correctness hazard and
+        /// a throughput cost that outweigh eliminating a brief, self-correcting, bounded over-subscription.
+        /// </para>
         /// </summary>
         void MaybeReconcileActiveShards()
         {

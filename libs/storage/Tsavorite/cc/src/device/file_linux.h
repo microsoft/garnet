@@ -174,10 +174,13 @@ class QueueIoHandler {
   typedef QueueFile async_file_t;
 
  private:
-  /// Default per-context libaio ring depth. Used when the caller does not specify one.
-  /// The effective depth is sized up from the device throttle limit (see the 3-arg ctor and
-  /// NativeStorageDevice.ComputeNativeRingDepth) so that io_submit never sees a perpetually
-  /// full ring under a throttle > kMaxEvents; never sized below this floor.
+  /// Default per-context libaio ring depth. Used when the caller does not specify one (a
+  /// non-positive <c>max_events</c>). When the caller passes an explicit positive depth (the 3-arg
+  /// ctor) it is honored verbatim — including values BELOW this default — so the managed
+  /// per-device fs.aio-max-nr reservation accounting stays authoritative (see that ctor).
+  /// The effective depth is otherwise sized up from the device throttle limit (see the 3-arg ctor
+  /// and NativeStorageDevice.ResolveQueueDepth) so that io_submit never sees a perpetually
+  /// full ring under a throttle > kMaxEvents.
   constexpr static int kMaxEvents = 128;
 
  public:
@@ -197,12 +200,18 @@ class QueueIoHandler {
     : init_errno_{ 0 } {
     Init(num_contexts < 1 ? 1 : num_contexts);
   }
-  /// As above, plus an explicit per-context ring depth. `max_events` is clamped up to the
-  /// kMaxEvents floor; callers pass NextPowerOf2(throttle_limit) so the kernel ring can hold
-  /// the full in-flight burst the device throttle permits, eliminating the io_submit
-  /// EAGAIN/ring-full backoff spin (which would otherwise pin epoch slots).
+  /// As above, plus an explicit per-context ring depth. A positive `max_events` is honored
+  /// VERBATIM (only a non-positive value falls back to the kMaxEvents default): callers pass
+  /// NextPowerOf2(throttle_limit) so the kernel ring can hold the full in-flight burst the device
+  /// throttle permits, eliminating the io_submit EAGAIN/ring-full backoff spin (which would
+  /// otherwise pin epoch slots). The managed layer (NativeStorageDevice.ResolveLibaioReservationDepth)
+  /// may deliberately pass a depth BELOW kMaxEvents to fit many coexisting single-ring devices
+  /// within the global fs.aio-max-nr budget; flooring it back up to kMaxEvents here would silently
+  /// reserve more events than the managed budget math accounted for (io_setup draws from the shared
+  /// budget), so fewer devices than promised would fit and later io_setup calls would fail with
+  /// EAGAIN. Honoring the explicit value keeps the managed reservation accounting authoritative.
   QueueIoHandler(size_t /*max_threads*/, int num_contexts, int max_events)
-    : max_events_{ max_events < kMaxEvents ? kMaxEvents : max_events }
+    : max_events_{ max_events > 0 ? max_events : kMaxEvents }
     , init_errno_{ 0 } {
     Init(num_contexts < 1 ? 1 : num_contexts);
   }
