@@ -531,6 +531,10 @@ namespace Garnet
         [Option("device-queue-depth", Required = false, HelpText = "Linux-only, DeviceType=Native: per-ring kernel submission depth (maxEvents for io_uring_queue_init / libaio io_setup). Orthogonal to --device-io-contexts (ring count) and --device-throttle-limit (aggregate in-flight). 0 = device default. Note: for libaio, io-contexts x queue-depth is drawn from the global fs.aio-max-nr budget.")]
         public int? DeviceQueueDepth { get; set; }
 
+        [IntRangeValidation(1, 4096)]
+        [Option("device-aio-max-devices", Required = false, HelpText = "Linux-only, DeviceType=Native (libaio): target number of Native devices to fit within the machine-global fs.aio-max-nr libaio budget (default 32). libaio io_setup permanently reserves io-contexts x queue-depth events from that global budget per device, so the default per-device reservation is capped at fs.aio-max-nr / this, guaranteeing at least this many devices can always be created regardless of --device-completion-threads / --device-throttle-limit. Raise fs.aio-max-nr, or lower this, to give each serving device a deeper reservation. Ignored for io_uring (no global budget) and non-Linux.")]
+        public int? DeviceAioMaxDevices { get; set; }
+
         [Option("reviv-bin-record-sizes", Separator = ',', Required = false,
             HelpText = "#,#,...,#: For the main store, the sizes of records in each revivification bin, in order of increasing size." +
                        "           Supersedes the default --reviv; cannot be used with --reviv-in-chain-only")]
@@ -988,6 +992,7 @@ namespace Garnet
                 DeviceThrottleLimit = DeviceThrottleLimit ?? 0,
                 DeviceIoContexts = DeviceIoContexts ?? 0,
                 DeviceQueueDepth = DeviceQueueDepth ?? 0,
+                DeviceAioMaxDevices = DeviceAioMaxDevices ?? 32,
                 ObjectScanCountLimit = ObjectScanCountLimit,
                 RevivBinRecordSizes = revivBinRecordSizes,
                 RevivBinRecordCounts = revivBinRecordCounts,
