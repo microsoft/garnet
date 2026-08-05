@@ -15,7 +15,7 @@ namespace Resp.benchmark
         static int bitfieldOpCount = 3;
 
         readonly byte[][] buffers;
-        readonly List<List<string>> flatRequestBuffer;
+        readonly List<string[]> flatRequestBuffer;
         readonly int[] lens;
         readonly OpType opType;
         readonly bool randomGen, randomServe;
@@ -67,7 +67,7 @@ namespace Resp.benchmark
             }
             buffers = new byte[NumBuffs][];
 
-            flatRequestBuffer = flatBufferClient ? new List<List<string>>() : null;
+            flatRequestBuffer = flatBufferClient ? new List<string[]>() : null;
             lens = new int[NumBuffs];
             BatchCount = BatchSize;
             this.opType = opType;
@@ -122,7 +122,7 @@ namespace Resp.benchmark
             return buffers[offset];
         }
 
-        public List<string> GetRequestArgs()
+        public string[] GetRequestArgs()
         {
             int offset;
             if (randomServe)
@@ -150,9 +150,7 @@ namespace Resp.benchmark
                     case OpType.GET:
                     case OpType.SET:
                     case OpType.MSET:
-                        var buffer = buffers[i];
-                        flatRequestBuffer.Add(new List<string>());
-                        ProcessArgs(i, buffer);
+                        ProcessArgs(buffers[i]);
                         break;
                     default:
                         Console.WriteLine($"op {opType} not supported with SERedis! Skipping conversion to SERedis input!");
@@ -161,19 +159,21 @@ namespace Resp.benchmark
             }
         }
 
-        private void ProcessArgs(int i, byte[] buffer)
+        private void ProcessArgs(byte[] buffer)
         {
             fixed (byte* buf = buffer)
             {
                 byte* ptr = buf;
                 RespReadUtils.TryReadUnsignedArrayLength(out int count, ref ptr, buf + buffer.Length);
-                RespReadUtils.TryReadStringWithLengthHeader(out var cmd, ref ptr, buf + buffer.Length);
 
-                for (int j = 0; j < count - 1; j++)
-                {
-                    RespReadUtils.TryReadStringWithLengthHeader(out var arg, ref ptr, buf + buffer.Length);
-                    flatRequestBuffer[i].Add(arg);
-                }
+                // Keep the command token (e.g. "MSET") as element 0 so the cached array is a complete,
+                // ready-to-send argument list. Serve-side clients pass it straight to Execute with no
+                // per-request allocation, copy, or command prepend; consumers that only want the payload
+                // (e.g. SERedis key/value pairs) start reading at index 1.
+                var args = new string[count];
+                for (int j = 0; j < count; j++)
+                    RespReadUtils.TryReadStringWithLengthHeader(out args[j], ref ptr, buf + buffer.Length);
+                flatRequestBuffer.Add(args);
             }
         }
 
