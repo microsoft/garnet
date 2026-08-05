@@ -80,6 +80,29 @@ namespace Tsavorite.core
         const int LibaioReservationFloor = 1 << 7;  // 128
 
         /// <summary>
+        /// Default for <see cref="AioMaxDevices"/>: the number of libaio Native device instances a single machine
+        /// is provisioned to coexist within the global <c>fs.aio-max-nr</c> budget.
+        /// </summary>
+        const int DefaultAioMaxDevices = 1 << 5;    // 32
+
+        /// <summary>
+        /// Target number of libaio Native device instances a single process/machine is provisioned to coexist
+        /// within the global <c>fs.aio-max-nr</c> budget. The default per-device <c>io_setup</c> reservation
+        /// (<c>io-contexts * queue-depth</c>) is hard-capped at <c>fs.aio-max-nr / this</c>
+        /// (<see cref="ResolveLibaioReservationDepth"/>), so at least this many devices can always be created
+        /// regardless of <c>--device-completion-threads</c> / <c>--device-throttle-limit</c>. This is a
+        /// PROCESS-WIDE setting (not per-device) because <c>fs.aio-max-nr</c> is a machine-global budget shared by
+        /// every device in every process; set it once at startup (e.g. from <c>--device-aio-max-devices</c>)
+        /// before any device is created. Because it is global, devices created through the raw
+        /// <see cref="Devices.CreateLogDevice"/> path (cluster auxiliary logs, AOF) honor it too, without plumbing
+        /// it through each call site. 32 keeps a stock 65536 budget at 2048 events/device (matching
+        /// <see cref="LibaioReservationCap"/>); a machine that raises <c>fs.aio-max-nr</c> proportionally raises
+        /// the per-device ceiling, so serving devices on a well-provisioned host are never starved. libaio only —
+        /// io_uring has no global budget (per-ring mmap), so this never applies to it.
+        /// </summary>
+        public static int AioMaxDevices = DefaultAioMaxDevices;
+
+        /// <summary>
         /// Hard cap on per-ring queue depth: io_uring's <c>IORING_MAX_ENTRIES</c> (32768). libaio additionally
         /// draws <c>io-contexts * queue-depth</c> from the global <c>fs.aio-max-nr</c> budget (distro default
         /// 65536), guarded separately at device creation.
@@ -1078,7 +1101,11 @@ namespace Tsavorite.core
         /// serving devices (io-contexts &gt;= 4) keep <c>io-contexts * result &gt;= throttle</c> by construction (the
         /// throttle share is &lt;= the cap), so the full aggregate throttle stays usable (effectiveThrottleLimit is
         /// NOT reduced =&gt; no IOPS cost); low-ring-count auxiliary devices drop to <c>~= io-contexts * cap</c>,
-        /// letting many coexist in a stock 65536 budget.
+        /// letting many coexist in a stock 65536 budget. Finally the WHOLE-device reservation is hard-capped at
+        /// <c>fs.aio-max-nr / AioMaxDevices</c> (default <see cref="DefaultAioMaxDevices"/>) so at least that many
+        /// devices always fit the kernel budget regardless of io-contexts / throttle; on a stock 65536 budget this
+        /// bounds each device to 2048 events, while a host that sizes fs.aio-max-nr for its workload keeps serving
+        /// devices at full depth (e.g. 4194304 / 32 = 131072 per device, which never binds).
         /// </summary>
         int ResolveLibaioReservationDepth(int ringCount, int throttle, int ceilingDepth)
         {
@@ -1087,7 +1114,35 @@ namespace Tsavorite.core
             if (depth < LibaioReservationFloor) depth = LibaioReservationFloor;
             if (depth > LibaioReservationCap) depth = LibaioReservationCap;
             if (depth > ceilingDepth) depth = ceilingDepth;
+
+            // Hard per-device AIO budget: guarantee at least AioMaxDevices libaio devices fit the global
+            // fs.aio-max-nr budget by bounding this device's WHOLE reservation (ringCount * depth), independent
+            // of ring count or throttle. Halve the depth (staying a power of two) until it fits; this wins over
+            // the soft floor above. The caller then caps effectiveThrottleLimit at ringCount * depth, so
+            // aggregate in-flight tracks the (possibly reduced) reservation.
+            int maxDevices = AioMaxDevices < 1 ? DefaultAioMaxDevices : AioMaxDevices;
+            long perDeviceBudget = GetAioMaxNr() / maxDevices;
+            while (depth > 1 && (long)ringCount * depth > perDeviceBudget)
+                depth >>= 1;
+
             return (int)depth;
+        }
+
+        /// <summary>
+        /// Best-effort read of the global libaio event budget <c>fs.aio-max-nr</c> (distro default 65536, shared
+        /// across every process on the machine). Returns the stock 65536 default if the /proc entry is unreadable
+        /// (e.g. non-Linux). Never throws. Read at device creation (rare), so not cached.
+        /// </summary>
+        static long GetAioMaxNr()
+        {
+            try
+            {
+                return long.Parse(System.IO.File.ReadAllText("/proc/sys/fs/aio-max-nr").Trim());
+            }
+            catch
+            {
+                return 1 << 16; // stock default fallback (best-effort)
+            }
         }
 
         /// <summary>
@@ -1102,15 +1157,7 @@ namespace Tsavorite.core
             if (ioBackendConfig != IoBackend.Libaio && ioBackendConfig != IoBackend.Default)
                 return;
             long requested = (long)numContexts * queueDepth;
-            long budget;
-            try
-            {
-                budget = long.Parse(System.IO.File.ReadAllText("/proc/sys/fs/aio-max-nr").Trim());
-            }
-            catch
-            {
-                return; // best-effort only
-            }
+            long budget = GetAioMaxNr();
             if (requested > budget)
             {
                 logger?.LogWarning(

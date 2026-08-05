@@ -428,6 +428,20 @@ namespace Garnet.server
         public int DeviceQueueDepth = 0;
 
         /// <summary>
+        /// For DeviceType.Native on Linux (libaio): target number of Native device instances the process is
+        /// provisioned to coexist within the machine-global <c>fs.aio-max-nr</c> libaio event budget. libaio
+        /// <c>io_setup</c> permanently reserves io-contexts * queue-depth events from that global budget at
+        /// device creation, so a default reservation ceiling of <c>fs.aio-max-nr / this</c> is applied
+        /// per-device, guaranteeing at least this many devices can always be created regardless of
+        /// <see cref="DeviceCompletionThreads"/> / <see cref="DeviceThrottleLimit"/>. Because the budget is
+        /// machine-global, this is a process-wide setting (applied to
+        /// <see cref="NativeStorageDevice.AioMaxDevices"/> in <see cref="Initialize"/>) that also covers
+        /// devices created outside the serving factory (cluster auxiliary logs, AOF). Default 32; ignored for
+        /// io_uring (no global budget) and non-Linux.
+        /// </summary>
+        public int DeviceAioMaxDevices = 32;
+
+        /// <summary>
         /// Limit of items to return in one iteration of *SCAN command
         /// </summary>
         public int ObjectScanCountLimit = 1000;
@@ -646,6 +660,11 @@ namespace Garnet.server
         /// <param name="loggerFactory"></param>
         public void Initialize(ILoggerFactory loggerFactory = null)
         {
+            // fs.aio-max-nr is a machine-global libaio event budget shared by every device in the process, so
+            // the per-device io_setup reservation ceiling is a process-wide policy rather than per-device config.
+            // Apply it once here (Initialize runs before any serving / cluster-auxiliary / AOF device is created).
+            if (DeviceAioMaxDevices > 0)
+                NativeStorageDevice.AioMaxDevices = DeviceAioMaxDevices;
         }
 
         /// <summary>

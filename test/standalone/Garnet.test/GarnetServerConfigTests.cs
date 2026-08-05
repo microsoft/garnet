@@ -159,6 +159,47 @@ namespace Garnet.test
         }
 
         [Test]
+        public void DeviceAioMaxDevicesOption()
+        {
+            var savedAioMaxDevices = NativeStorageDevice.AioMaxDevices;
+            try
+            {
+                // Default: with no explicit override the value comes from defaults.conf (32) and flows
+                // through to GarnetServerOptions unchanged; Initialize applies it to the process-global static.
+                {
+                    var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments([], out var options, out _, out _, out _, silentMode: true);
+                    ClassicAssert.IsTrue(parseSuccessful);
+                    ClassicAssert.AreEqual(32, options.DeviceAioMaxDevices);
+
+                    var serverOptions = options.GetServerOptions();
+                    ClassicAssert.AreEqual(32, serverOptions.DeviceAioMaxDevices);
+
+                    NativeStorageDevice.AioMaxDevices = 7; // perturb to prove Initialize reapplies
+                    serverOptions.Initialize();
+                    ClassicAssert.AreEqual(32, NativeStorageDevice.AioMaxDevices);
+                }
+
+                // Explicit value is parsed, flows through to GarnetServerOptions, and Initialize applies it.
+                {
+                    var args = new[] { "--device-aio-max-devices", "64" };
+                    var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out _, out _, out _, silentMode: true);
+                    ClassicAssert.IsTrue(parseSuccessful);
+                    ClassicAssert.AreEqual(64, options.DeviceAioMaxDevices);
+
+                    var serverOptions = options.GetServerOptions();
+                    ClassicAssert.AreEqual(64, serverOptions.DeviceAioMaxDevices);
+
+                    serverOptions.Initialize();
+                    ClassicAssert.AreEqual(64, NativeStorageDevice.AioMaxDevices);
+                }
+            }
+            finally
+            {
+                NativeStorageDevice.AioMaxDevices = savedAioMaxDevices;
+            }
+        }
+
+        [Test]
         public void ImportExportConfigLocal()
         {
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
