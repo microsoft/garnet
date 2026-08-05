@@ -1514,7 +1514,7 @@ namespace Tsavorite.core
             }
             catch (Exception ex)
             {
-                logger?.LogCritical(ex, "OnPagesClosedWorker failed, page closing will not resume. ClosedUntilAddress={closedUntilAddress} OngoingCloseUntilAddress={ongoingCloseUntilAddress}", ClosedUntilAddress, OngoingCloseUntilAddress);
+                logger?.LogCritical(ex, "OnPagesClosedWorker failed, page closing will not resume. ClosedUntilAddress={ClosedUntilAddress} OngoingCloseUntilAddress={OngoingCloseUntilAddress}", ClosedUntilAddress, OngoingCloseUntilAddress);
                 throw;
             }
         }
