@@ -239,12 +239,13 @@ namespace Garnet.cluster
                 storeWrapper.DefaultDatabase.VectorManager?.WaitForVectorOperationsToComplete();
 
                 // Rebuild the context reservation from the streamed records. Only valid after a full
-                // sync: a partial sync streams no records, so ResumePostRecovery would see an empty
+                // sync: a partial sync replays AOF instead of streaming raw Tsavorite records, so
+                // RecoverStreamedRecord never fires and ResumePostRecovery would see an empty
                 // recovered set and mark every live context for cleanup.
                 if (primarySyncMetadata.fullSync)
                 {
                     var vectorManager = storeWrapper.DefaultDatabase.VectorManager;
-                    if (vectorManager is { IsEnabled: true })
+                    if (vectorManager != null)
                     {
                         vectorManager.Initialize();
                         vectorManager.ResumePostRecovery();
