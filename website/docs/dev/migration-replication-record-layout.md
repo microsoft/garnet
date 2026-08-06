@@ -81,16 +81,12 @@ This doc covers `LogRecord` (1) and `ChunkedLogRecord` (5). Vector-set and Range
 ### 3.1 Serialized `DiskLogRecord` layout
 
 The whole record is one contiguous image: an **inline portion** followed by any **overflow key**, then any **overflow
-value** or **object value** (`DiskLogRecord.Serialize` / `Deserialize`). The overflow key/value lengths are carried in the
-inline portion's **objectId slots** — the 4-byte slot at the key/value position is meaningless on the wire (the receiver
-assigns its own objectIds), so it holds the component's full `int` length instead (see `LogRecord.SetWireOutOfLineLengths`).
-The RDH `KeyLength`/`ValueLength` raw fields are **left exactly as the source record had them** (`ObjectIdSize`) — the wire
-format never writes them, reserving them for the future hybrid-value inline length. `Deserialize` reads the slots to size
-and locate the overflow bytes, and computes the overflow offset as `RoundUp(ActualSize)`. An **object value** is the tail
-of the image; its exact length also rides in the value objectId slot (continuation flag clear when it fits an `int`, else
-first-chunk length with the flag set), but is derived on read as `recordSpan.Length - objectValueStart`, so a small object
-deserializes directly from the buffer. A record is sent whole only when it fits one send buffer; a larger record (including
-a large object) takes the chunked path ([§4](#4-chunked-record-chunkedlogrecord-tag-5)).
+value** or **object value** (`DiskLogRecord.Serialize` / `Deserialize`). Each overflow key/value is preceded by its full
+length as a **4-byte little-endian prefix** so `Deserialize` can locate it (the same contiguous layout the chunked form
+uses). An **object value** is the tail of the image (**no length prefix**) and its length is derived on read as
+`recordSpan.Length - objectValueStart`, so a small object deserializes directly from the buffer. The inline portion's RDH
+`KeyLength`/`ValueLength` raw fields are left exactly as the source record had them and are never rewritten on the wire. A record is sent whole only when it fits one send buffer; a larger record (including a large object) takes the
+chunked path ([§4](#4-chunked-record-chunkedlogrecord-tag-5)).
 
 ```
 +=====================================================================+
@@ -102,14 +98,15 @@ a large object) takes the chunked path ([§4](#4-chunked-record-chunkedlogrecord
 | inline Value   | optionals: ETag (8 B if present), Expiration       |
 | (0..N B)*      | (8 B if present), ObjectLogPosition, ...           |
 +----------------+----------------------------------------------------+
-| OVERFLOW KEY data   (present only if the key is Overflow)           |
+| int keyLen (4 B) + OVERFLOW KEY data    (only if the key is Overflow)|
 +---------------------------------------------------------------------+
-| OVERFLOW VALUE data (if Overflow) -- or -- OBJECT VALUE bytes       |
+| int valueLen (4 B) + OVERFLOW VALUE data (only if value is Overflow) |
+|   -- or -- OBJECT VALUE bytes (no length prefix, only if Object)     |
 +=====================================================================+
 
-* For an overflow key/value or object value, the inline objectId slot carries the component's length on the wire
-  (the receiver overwrites it with a real objectId on read); the actual bytes live in the overflow-key /
-  overflow-value / object tail. The RDH KeyLength/ValueLength raw fields are never rewritten on the wire.
+* For an overflow key/value or object value, the inline slot holds a 4-byte objectId placeholder
+  (restored on read); the actual bytes live in the overflow-key / overflow-value / object tail. An
+  overflow key/value is preceded by its 4-byte little-endian length; an object value has no prefix.
 ```
 
 `FixedHeaderSize = RecordInfo.Size (8) + RecordDataHeader.Size (8) = 16`. The inline size is
@@ -129,8 +126,8 @@ bit(s)   field
  4       HasETag
  5       (reserved)
  6..13   FillerWords          (count of 8-byte filler words after alignment padding)
- 14..23  KeyLength            (raw inline key length; = objectId size for an overflow key — never rewritten on the wire)
- 24..47  ValueLength          (raw inline value length; = objectId size for overflow/object — never rewritten on the wire)
+ 14..23  KeyLength            (raw inline key length; = objectId size for an overflow key; never rewritten on the wire)
+ 24..47  ValueLength          (raw inline value length; = objectId size for overflow/object; never rewritten on the wire)
  48..55  RecordType           (byte, caller-interpreted)
  56..63  Namespace            (byte; encodes whether extra namespace bytes precede the key data)
 ```
@@ -163,29 +160,27 @@ record may span multiple send buffers / commands. The **concatenation of all chu
 stream:
 
 ```
-+=====================+==============+==================================================+
-| INLINE PORTION      | overflow key | overflow value -- or -- object value (streamed)  |
-| (RDH, §3.2)         | (keyLen B)   | (valueLen B)              (no length prefix)      |
-+=====================+==============+==================================================+
-   always present        only if key is Overflow      only if value is Overflow / Object
++=====================+===========+==============+=============+================+==================================+
+| INLINE PORTION      | int keyLen| overflow key | int valueLen| overflow value | -- or -- object value (streamed) |
+| (RDH, §3.2)         | (4 B)     | (keyLen B)   | (4 B)       | (valueLen B)   |    (no length prefix)            |
++=====================+===========+==============+=============+================+==================================+
+   always present        only if key is Overflow      only if value is Overflow    only if value is Object
 ```
 
 - The inline portion is the same [§3.1](#31-serialized-disklogrecord-layout) inline bytes (RDH indicator bits tell the
-  receiver which out-of-line components follow, and the objectId slots carry the overflow key/value lengths — see §3.1).
-- There are **no per-component length prefixes**: each overflow key/value length rides in the inline portion's objectId
-  slot, so the receiver reads the slot to allocate the overflow buffer up front and populate it directly. Overflow
-  key/value are `byte[]`-bounded (≤ 2 GB), so an `int` slot suffices.
+  receiver which out-of-line components follow).
+- Each overflow key/value is preceded by its **full length as a 4-byte little-endian prefix**, so the receiver can
+  allocate the overflow buffer up front and populate it directly. Overflow key/value are `byte[]`-bounded (≤ 512 MB), so
+  an `int` prefix suffices.
 - An **object value** has **no length prefix** — it is streamed and its length is derived on receive (it may exceed
-  2 GB, the max length of one `byte[]`); its first-chunk length (with the continuation flag) also rides in the value
-  objectId slot for forward compatibility.
+  2 GB, the max length of one `byte[]`).
 
 ### 4.1 Object value length
 
-An object value's serialized length is not known when the inline portion is emitted, so its value objectId slot is first
-written with the streaming sentinel (`ContinuationFlag`) and patched once the object is serialized: the sender writes the
-exact length when it fits an `int` (continuation clear) or the first-chunk length with the continuation flag set. The
-receiver derives the total length as the **sum of the accumulated object-value chunk lengths**
-(`ChunkedRecordReassembler.objectValueLength`); the slot value is forward-compatible metadata (not required to reassemble).
+An object value's serialized length is not known when the inline portion is emitted, so no length is written for it (on
+the wire or in the RDH). The receiver derives it as the **sum of the accumulated object-value chunk lengths**
+(`ChunkedRecordReassembler.objectValueLength`) and streams those chunks to the object deserializer; no length is written
+back into the record's RDH.
 
 ### 4.2 Reassembly and &gt;2 GB support
 
@@ -195,8 +190,8 @@ from `DiskLogRecord.GetChunkedRecordInlineSize`; the component kinds are read on
 
 - **Inline portion:** accumulated contiguously into `ChunkedRecordReassembler.inlineBuffer`; once the fixed header
   (`FixedHeaderSize` = 16 B) is present, the layout gives the inline size and which components follow.
-- **Overflow key / value:** the length is read from the inline portion's objectId slot, a single `OverflowByteArray` is
-  allocated up front, and each incoming chunk is copied **straight into it** (no intermediate list) — populating
+- **Overflow key / value:** the 4-byte length prefix is read, a single `OverflowByteArray` is allocated up front, and
+  each incoming chunk is copied **straight into it** (no intermediate list) — populating
   `ChunkedRecordReassembler.keyOverflow` / `valueOverflow`.
 - **Object value:** accumulated as a chunk list (`ChunkedRecordReassembler.objectValueChunks`, `List<byte[]>`) and
   exposed as a `ReadOnlySequence<byte>` for streaming deserialize — so it may exceed 2 GB.
@@ -206,9 +201,9 @@ On completion:
 
 - **Fully-inline record** → `DiskLogRecord.Deserialize(inlineBuffer)`.
 - **Any out-of-line component** → deserialize the object value (if any) from its sequence, then
-  `DiskLogRecord.CompleteDeserializeChunkedRecord(header, keyOverflow, valueOverflow, valueObject)`, which **assigns** the
-  pre-populated overflow key/value directly (no re-allocation or copy). The RDH length fields are left untouched — the
-  out-of-line lengths rode in the wire objectId slots, which the receiver already consumed.
+  `DiskLogRecord.CompleteDeserializeChunkedRecord(header, keyOverflow, valueOverflow, valueObject)`,
+  which **assigns** the pre-populated overflow key/value directly (no re-allocation or copy). The RDH length fields are
+  left untouched (the out-of-line lengths rode in the 4-byte wire prefixes, which the receiver already consumed).
 
 ## 5. Send and receive flows
 
@@ -219,19 +214,18 @@ conditionally as commands; **replication** streams the whole store through a sna
 ### 5.1 Migration
 
 The source retrieves each key being migrated and captures its pieces **in-epoch** (`HandleMigrate` → a
-`MigrationChunkWriterAccumulator`): the inline portion is copied into `output.SpanByteAndMemory` and its overflow key/value
-lengths written into the objectId slots (`SerializeInlinePortion` → `SetWireOutOfLineLengths`), while the overflow key (a
-**shallow reference** — store keys are immutable), the overflow value (a **deep copy** — the store value may be mutated
-once the epoch is released), or an object value (serialized into a **chunk list**, so it may exceed 2 GB) go into the
-accumulator. Out of epoch the caller patches the inline portion's value objectId slot with the object length (if any) and
-assembles `[inline][overflow key][overflow value | object chunks]`, sending it under a `CLUSTER MIGRATE` command — whole
-(`LogRecord`) if the record fits a send buffer, else as `ChunkedLogRecord` chunks. The receiver reads the overflow lengths
-from the objectId slots and derives the object length from the record span (whole records) or the accumulated chunks
-(chunked), so a small object is sent whole and deserialized directly from the buffer, while a large object chunks. This
-in-epoch capture / out-of-epoch send is required because migration sends **asynchronously** and the store epoch must never
-be held across an `await` (unlike replication, which sends synchronously via `BlockingWait` and can stream a record to the
-network in-epoch). The target applies each record only if its slot is importing and the key may be written (`replace` set,
-or the key is absent).
+`MigrationChunkWriterAccumulator`): the inline portion is copied into `output.SpanByteAndMemory`, while the
+overflow key (a **shallow reference** — store keys are immutable), the overflow value (a **deep copy** — the store value
+may be mutated once the epoch is released), or an object value (serialized into a **chunk list**, so it may exceed 2 GB)
+go into the accumulator. Out of epoch the caller assembles `[inline][int keyLen][overflow key][int valueLen][overflow value | object chunks]`
+(each overflow key/value preceded by its 4-byte length) and
+sends it under a `CLUSTER MIGRATE` command — whole (`LogRecord`) if the record fits a send buffer, else as
+`ChunkedLogRecord` chunks. An object value carries no length prefix; the receiver derives it from the record span (whole
+records) or the accumulated chunks (chunked), so a small object is sent whole and deserialized directly from the buffer,
+while a large object chunks. This in-epoch capture / out-of-epoch send is required
+because migration sends **asynchronously** and the store epoch must never be held across an `await` (unlike replication,
+which sends synchronously via `BlockingWait` and can stream a record to the network in-epoch). The target applies each
+record only if its slot is importing and the key may be written (`replace` set, or the key is absent).
 
 ```mermaid
 flowchart TB
@@ -327,7 +321,7 @@ Migration and replication differ on write; they share the receive path. The reco
     - `BasicGarnetApi.Read_UnifiedStore(key)` → `HandleMigrate(srcLogRecord)`
       - *`UnifiedStore/ReadMethods.cs`; capture the record's pieces in-epoch (a migrating key is not locked, so its value may change concurrently)*
       - `DiskLogRecord.SerializeInlinePortionForMigration()`
-        - *inline portion → `output.SpanByteAndMemory`; copy + write the overflow key/value lengths into the objectId slots (RDH lengths left untouched)*
+        - *inline portion → `output.SpanByteAndMemory`; copy only; overflow key/value lengths are added as 4-byte prefixes by the sender out of epoch*
       - `acc.SetKeyOverflow(KeyOverflow)`
         - *overflow key → shallow ref (store keys are immutable); populates `MigrationChunkWriterAccumulator.keyOverflow`*
       - `acc.SetValueOverflowDeepCopy(ValueOverflow)`
@@ -337,9 +331,9 @@ Migration and replication differ on write; they share the receive path. The reco
     - `WriteOrSendAccumulatedRecordAsync(inline, acc)`
       - *out of epoch: assemble the captured pieces and send*
       - `gcs.TryWriteRecordSpan(record, LogRecord)`
-        - *fits one buffer → whole record (type 1); assemble `[inline][overflow key][overflow value | object bytes]` contiguously (no length prefixes; overflow/object lengths carried in the inline objectId slots, an object length also derived on read from the record span)*
+        - *fits one buffer → whole record (type 1); assemble `[inline][int keyLen][overflow key][int valueLen][overflow value | object bytes]` contiguously (each overflow key/value preceded by its 4-byte length; an object value is the tail, length derived on read from the record span)*
       - `gcs.TryWriteChunkedRecordSpan(chunk, moreFollow)`
-        - *too large for one buffer → chunks (type 5): stream `[inline][overflow key][overflow value | object chunks]` (overflow lengths in the inline objectId slots, no per-component prefixes), continuation until the last byte → **send buffer** → `CLUSTER MIGRATE`*
+        - *too large for one buffer → chunks (type 5): stream `[inline][int keyLen][overflow key][int valueLen][overflow value | object chunks]`, continuation until the last byte → **send buffer** → `CLUSTER MIGRATE`*
 
 **Replication write** — stream a store snapshot to the replica(s) (in-epoch, synchronous send):
 
@@ -349,7 +343,7 @@ Migration and replication differ on write; they share the receive path. The reco
     - *inline record → whole (type 1), fanned to all replicas in lockstep*
   - `DiskLogRecord.Serialize(srcLogRecord, serializer, chunker)` → `SnapshotIteratorManager.Consume(...)`
     - *`DiskLogRecord.cs`; non-inline → stream through the chunker (epoch held; replication flushes synchronously via `BlockingWait`, so it may stream in-epoch)*
-    - *writes the inline portion (overflow key/value lengths in its objectId slots), then the **overflow key** and **overflow value** — or streams the **object value** — into the chunk stream (no per-component length prefixes); the carrier is the streamed netbuffer chunk (no accumulator)*
+    - *writes the inline portion, then (each preceded by its 4-byte length) the **overflow key** and **overflow value** — or streams the **object value** (no prefix) — into the chunk stream; the carrier is the streamed netbuffer chunk (no accumulator)*
     - `Consume`: `first` drain is `isComplete` and prefix-free object → `FanOutRecordSpan(LogRecord)`
       - *small object (inline key + object value) that fit one drain → whole record (type 1), deserialized directly on the replica*
     - `Consume`: otherwise → `FanOutChunk(chunk, moreFollow)`
@@ -360,12 +354,12 @@ Migration and replication differ on write; they share the receive path. The reco
 - `NetworkClusterMigrate()` / `NetworkClusterSync()`
   - *`RespClusterMigrateCommands.cs` / `RespClusterReplicationCommands.cs`; per record in the payload*
   - `type == LogRecord` → `DiskLogRecord.Deserialize(recordSpan)`
-    - *whole record: inline + any overflow key/value (lengths from the inline objectId slots) or a small object value (length derived from the record span), restored/deserialized directly from the contiguous span*
+    - *whole record: inline + any overflow key/value (each preceded by its 4-byte length) or a small object value (length derived from the record span), restored/deserialized directly from the contiguous span*
   - `type == ChunkedLogRecord` → `ChunkedRecordReassembler.Append(chunk, moreFollow)`
     - *route bytes by component (may span commands): inline → `inlineBuffer`; overflow key/value → a single `OverflowByteArray` (`keyOverflow`/`valueOverflow`) populated directly from the chunks; object value → `objectValueChunks` (`List<byte[]>`)*
     - `CompleteChunkedRecordReassembly(headerPtr)`
       - *component kinds read from the record header in `inlineBuffer`; a fully-inline record → `DiskLogRecord.Deserialize(inlineBuffer)`*
       - `GarnetObjectSerializer.Deserialize(ObjectValueSequence())` → `DiskLogRecord.CompleteDeserializeChunkedRecord(header, keyOverflow, valueOverflow, valueObject)`
-        - *assign the pre-populated overflow key/value directly + the deserialized (over-2 GB-capable) object value; the RDH lengths are left untouched (the wire objectId-slot lengths were already consumed)*
+        - *assign the pre-populated overflow key/value directly + the deserialized (over-2 GB-capable) object value; the RDH lengths are left untouched (the 4-byte wire prefixes were already consumed)*
   - `basicGarnetApi.SET(diskLogRecord)`
     - *→ **store** (migrate: only if the slot is importing and `replace`-or-absent; replication: unconditional)*

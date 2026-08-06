@@ -87,11 +87,6 @@ namespace Tsavorite.core.Allocator.ObjectSerialization
         /// <summary>Flush the ring's remaining bytes as the final chunk(s) (<c>isComplete: true</c>), completing a manual write.</summary>
         public void EndSerialize() => FlushFinal();
 
-        /// <summary>The chunk ring buffer as a writable span. On a whole-record drain — the value fit the ring, so it is delivered in one
-        /// un-wrapped piece from the ring origin (tail == 0) — the record occupies the buffer start, so a consumer can patch that record's
-        /// in-place header here before forwarding it, without casting away readonly from the drained (read-only) span.</summary>
-        public Span<byte> GetWritableSpan() => buffer;
-
         /// <summary>
         /// Serialize the value object, draining the ring to the consumer as it fills, then perform a final drain with
         /// <c>isComplete: true</c> (which also carries the key/input tail on the generic subclass). <paramref name="context"/>
