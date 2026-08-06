@@ -494,13 +494,6 @@ namespace Garnet.server
         public int DeviceUringSqPollIdleMs = 0;
 
         /// <summary>
-        /// io_uring SQPOLL poll-thread CPU pin list (comma-separated CPU ids). Only meaningful when
-        /// <see cref="DeviceUringSqPoll"/> is true; when non-empty ring i pins its kernel poll thread to
-        /// cpus[i % count] via IORING_SETUP_SQ_AFF. Null/empty leaves the poll threads unpinned.
-        /// </summary>
-        public string DeviceUringSqPollCpus = null;
-
-        /// <summary>
         /// For DeviceType.Native on Linux (libaio): target number of Native device instances the process is
         /// provisioned to coexist within the machine-global <c>fs.aio-max-nr</c> libaio event budget. libaio
         /// <c>io_setup</c> permanently reserves io-contexts * queue-depth events from that global budget at
@@ -833,11 +826,10 @@ namespace Garnet.server
                 queueDepth: DeviceQueueDepth,
                 uringSqPoll: DeviceUringSqPoll,
                 uringSqPollIdleMs: DeviceUringSqPollIdleMs,
-                uringSqPollCpus: DeviceUringSqPollCpus,
                 throttleLimit: DeviceThrottleLimit > 0 ? DeviceThrottleLimit : null,
                 logger: logger);
             if (DeviceType == DeviceType.Native && OperatingSystem.IsLinux())
-                logger?.LogInformation("Using device type {deviceType} (io-backend={ioBackend}, completion-threads={ct}, io-contexts={ioc}, queue-depth={qd}, throttle-limit={tl}, uring-sqpoll={sqpoll}, uring-sqpoll-cpus={sqcpus})", DeviceType, DeviceIoBackend, DeviceCompletionThreads, DeviceIoContexts > 0 ? DeviceIoContexts.ToString() : "device-default", DeviceQueueDepth > 0 ? DeviceQueueDepth.ToString() : "device-default", DeviceThrottleLimit > 0 ? DeviceThrottleLimit.ToString() : "device-default", DeviceIoBackend == NativeStorageDevice.IoBackend.Uring && DeviceUringSqPoll ? "on" : "off", DeviceIoBackend == NativeStorageDevice.IoBackend.Uring && DeviceUringSqPoll && !string.IsNullOrEmpty(DeviceUringSqPollCpus) ? DeviceUringSqPollCpus : "none");
+                logger?.LogInformation("Using device type {deviceType} (io-backend={ioBackend}, completion-threads={ct}, io-contexts={ioc}, queue-depth={qd}, throttle-limit={tl}, uring-sqpoll={sqpoll})", DeviceType, DeviceIoBackend, DeviceCompletionThreads, DeviceIoContexts > 0 ? DeviceIoContexts.ToString() : "device-default", DeviceQueueDepth > 0 ? DeviceQueueDepth.ToString() : "device-default", DeviceThrottleLimit > 0 ? DeviceThrottleLimit.ToString() : "device-default", DeviceIoBackend == NativeStorageDevice.IoBackend.Uring && DeviceUringSqPoll ? "on" : "off");
             else
                 logger?.LogInformation("Using device type {deviceType} (throttle-limit={tl})", DeviceType, DeviceThrottleLimit > 0 ? DeviceThrottleLimit.ToString() : "device-default");
 

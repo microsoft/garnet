@@ -247,8 +247,7 @@ namespace Device.benchmark
                     numIoContexts: opts.IoContexts,
                     queueDepth: opts.QueueDepth,
                     uringSqPoll: opts.DeviceUringSqPoll,
-                    uringSqPollIdleMs: opts.DeviceUringSqPollIdleMs,
-                    uringSqPollCpus: opts.DeviceUringSqPollCpus),
+                    uringSqPollIdleMs: opts.DeviceUringSqPollIdleMs),
                 DeviceType.FileStream => new ManagedLocalStorageDevice(fileName, true, false, true, -1, false, false, false),
                 DeviceType.RandomAccess => new RandomAccessLocalStorageDevice(fileName, true, true, true, -1, false, false, false),
                 _ => throw new ArgumentOutOfRangeException()
