@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System.Net;
@@ -116,21 +116,46 @@ namespace Resp.benchmark
 
             if (opts.Online)
             {
-                if (opts.Op != OpType.GET)
-                {
-                    Console.WriteLine($"OpType not supported for online benchmark (defaults to get/set)");
-                    return true;
-                }
-            }
-
-            if (opts.Online)
-            {
+                // Online mode issues one command per operation; in-flight parallelism is controlled by --itp.
+                // Force batch size to a single entry of 1 (batching/pipelining via --batchsize is an offline concept).
                 var batches = opts.BatchSize.ToList();
                 if (batches.Count != 1 || batches[0] != 1)
                 {
                     Console.WriteLine("Batch size parameter should be one entry of size 1, for the online benchmark, setting to [ 1 ]. Use --itp to control batch size instead.");
                     opts.BatchSize = [1];
                 }
+
+                if (opts.Op != OpType.GET)
+                {
+                    Console.WriteLine($"OpType not supported for online benchmark (defaults to get/set)");
+                    return true;
+                }
+
+                if (opts.ClusterBench)
+                {
+                    // Cluster-bench online is driven by the --op-workload / --op-percent distribution (not --op).
+                    var workload = opts.OpWorkload?.ToArray() ?? [];
+                    var percent = opts.OpPercent?.ToArray() ?? [];
+                    if (workload.Length == 0 || workload.Length != percent.Length)
+                    {
+                        Console.WriteLine("Online cluster-bench requires --op-workload and --op-percent to be non-empty and of equal length.");
+                        return true;
+                    }
+                    if (percent.Sum() != 100)
+                    {
+                        Console.WriteLine($"--op-percent must sum to 100 (got {percent.Sum()}).");
+                        return true;
+                    }
+                    foreach (var wop in workload)
+                    {
+                        if (wop is OpType.MGET or OpType.MSET)
+                        {
+                            Console.WriteLine($"{wop} is not supported in online cluster-bench (single-key ops only). Remove it from --op-workload.");
+                            return true;
+                        }
+                    }
+                }
+
                 if (opts.DbSize < opts.SortedSetCardinality)
                 {
                     Console.WriteLine("DB size cannot be smaller than SortedSet cardinality");
@@ -169,6 +194,16 @@ namespace Resp.benchmark
                 Console.WriteLine("Certificate file name is not required for non-TLS");
                 return true;
             }
+
+            if (opts.ClusterBench)
+            {
+                if (opts.Client == ClientType.InProc)
+                {
+                    Console.WriteLine("--client InProc is not supported with --cluster-bench");
+                    return true;
+                }
+            }
+
             return false;
         }
 
@@ -195,7 +230,8 @@ namespace Resp.benchmark
             if (opts.Client == ClientType.SERedis)
                 redis = ConnectionMultiplexer.Connect(BenchUtils.GetConfig(opts.Address, opts.Port, useTLS: opts.EnableTLS, tlsHost: opts.TlsHost));
 
-            PrintBenchMarkSummary(opts);
+            if (!opts.ClusterBench)
+                PrintBenchMarkSummary(opts);
 
             if (opts.Op == OpType.PFADD || opts.Op == OpType.PFCOUNT || opts.Op == OpType.PFMERGE)
                 RunHLLBenchmark(opts);
@@ -228,14 +264,14 @@ namespace Resp.benchmark
         static void RunBasicCommandsBenchmark(Options opts)
         {
             int[] threadBench = [.. opts.NumThreads];
-            int keyLen = opts.KeyLength;
-            int valueLen = opts.ValueLength;
+            var keyLen = opts.KeyLength;
+            var valueLen = opts.ValueLength;
 
-            if (opts.Op == OpType.PUBLISH || opts.Op == OpType.SPUBLISH || opts.Op == OpType.ZADD || opts.Op == OpType.ZREM || opts.Op == OpType.ZADDREM || opts.Op == OpType.PING || opts.Op == OpType.GEOADD || opts.Op == OpType.GEOADDREM || opts.Op == OpType.SETEX || opts.Op == OpType.ZCARD || opts.Op == OpType.ZADDCARD)
+            if (opts.Op is OpType.PUBLISH or OpType.SPUBLISH or OpType.ZADD or OpType.ZREM or OpType.ZADDREM or OpType.PING or OpType.GEOADD or OpType.GEOADDREM or OpType.SETEX or OpType.ZCARD or OpType.ZADDCARD)
                 opts.SkipLoad = true;
 
             //if we have scripts ops we need to load them in memory
-            if (opts.Op == OpType.SCRIPTGET || opts.Op == OpType.SCRIPTSET || opts.Op == OpType.SCRIPTRETKEY)
+            if (opts.Op is OpType.SCRIPTGET or OpType.SCRIPTSET or OpType.SCRIPTRETKEY)
             {
                 unsafe
                 {
@@ -247,7 +283,17 @@ namespace Resp.benchmark
                 }
             }
 
-            if (opts.Online)
+            if (opts.ClusterBench)
+            {
+                using var clusterBench = new ClusterBench(opts, loggerFactory);
+                clusterBench.DiscoverTopology();
+                if (!opts.SkipLoad)
+                    clusterBench.LoadData();
+                if (opts.RunTime != 0)
+                    clusterBench.Run();
+                return;
+            }
+            else if (opts.Online)
             {
                 if (opts.SkipLoad)
                     throw new Exception("Skipload not supported with --online");
@@ -310,8 +356,8 @@ namespace Resp.benchmark
             var bench = new RespPerfBench(opts, 0, redis);
             int[] threadBench = [.. opts.NumThreads];
 
-            int loadThreads = 8;
-            int loadBatchSize = opts.DbSize / loadThreads;
+            var loadThreads = 8;
+            var loadBatchSize = opts.DbSize / loadThreads;
             loadBatchSize = opts.DbSize < 4096 ? loadBatchSize : 4096;
 
             if (opts.SkipLoad && opts.Op != OpType.PFADD)
@@ -321,7 +367,7 @@ namespace Resp.benchmark
                 bench.LoadHLLData(loadDbThreads: loadThreads, BatchSize: loadBatchSize);
 
             //PFCOUNT, PFMERGE
-            foreach (int BatchSize in opts.BatchSize)
+            foreach (var BatchSize in opts.BatchSize)
                 bench.Run(opts.Op, opts.TotalOps, threadBench, keyLen: opts.KeyLength, valueLen: opts.ValueLength, BatchSize: BatchSize);
         }
     }

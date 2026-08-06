@@ -63,11 +63,10 @@ namespace Garnet.server
         public StateMachineDriver stateMachineDriver;
         readonly ILogger logger;
         private readonly CollectionItemBroker itemBroker;
+        internal readonly RuntimeServerConfig runtimeConfig;
 
         public int SessionID => stringBasicContext.Session.ID;
         public int ObjectStoreSessionID => objectBasicContext.Session.ID;
-
-        public readonly int ObjectScanCountLimit;
 
         /// <summary>
         /// Flag indicating if this is storage session that uses consistent read context
@@ -101,6 +100,7 @@ namespace Garnet.server
             this.scratchBufferAllocator = scratchBufferAllocator;
             this.logger = logger;
             this.itemBroker = storeWrapper.itemBroker;
+            this.runtimeConfig = storeWrapper.runtimeConfig;
             this.IsConsistentReadSession = readSessionState != null;
             this.readSessionState = readSessionState;
             parseState.Initialize();
@@ -144,8 +144,6 @@ namespace Garnet.server
 
             vectorBasicContext = vectorSession.BasicContext;
             vectorTransactionalContext = vectorSession.TransactionalContext;
-
-            ObjectScanCountLimit = storeWrapper.serverOptions.ObjectScanCountLimit;
         }
 
         public void UpdateRespProtocolVersion(byte respProtocolVersion)

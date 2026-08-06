@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using Garnet.server;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
+using StackExchange.Redis;
 
 namespace Garnet.test.Resp.ACL
 {
@@ -164,6 +165,67 @@ namespace Garnet.test.Resp.ACL
                     ClassicAssert.AreEqual(infoIsNoAuth, cmdIsNoAuth, $"Mismatch for command {cmd}");
                 }
             }
+        }
+
+        /// <summary>
+        /// An authenticated user denied a command must be told NOPERM.
+        /// </summary>
+        [Test]
+        public async Task DeniedCommandReturnsNoPermAsync()
+        {
+            await CreateLimitedUserAsync("+@all", "-type").ConfigureAwait(false);
+
+            using var redis = ConnectionMultiplexer.Connect(GetLimitedUserConfig());
+            var db = redis.GetDatabase(0);
+
+            var exc = Assert.Throws<RedisServerException>(() => db.Execute("TYPE", "some-key"));
+            ClassicAssert.IsTrue(exc.Message.StartsWith("NOPERM"), $"Expected NOPERM for an ACL-denied command, got: {exc.Message}");
+        }
+
+        /// <summary>
+        /// A permitted command must still work for the same user.
+        /// </summary>
+        [Test]
+        public async Task PermittedCommandStillWorksAsync()
+        {
+            await CreateLimitedUserAsync("+@all", "-type").ConfigureAwait(false);
+
+            using var redis = ConnectionMultiplexer.Connect(GetLimitedUserConfig());
+            var db = redis.GetDatabase(0);
+
+            ClassicAssert.IsTrue(db.StringSet("some-key", "some-value"));
+            ClassicAssert.AreEqual("some-value", (string)db.StringGet("some-key"));
+        }
+
+        /// <summary>
+        /// A denied CLIENT SETINFO must return NOPERM without breaking connection setup.
+        /// </summary>
+        [Test]
+        public async Task ClientSetInfoDeniedReturnsNoPermAsync()
+        {
+            await CreateLimitedUserAsync("+@all", "-client|setinfo").ConfigureAwait(false);
+
+            using var redis = ConnectionMultiplexer.Connect(GetLimitedUserConfig());
+            var db = redis.GetDatabase(0);
+
+            ClassicAssert.IsTrue(db.StringSet("some-key", "some-value"));
+            ClassicAssert.AreEqual("some-value", (string)db.StringGet("some-key"));
+
+            var exc = Assert.Throws<RedisServerException>(() => db.Execute("CLIENT", "SETINFO", "LIB-NAME", "foo"));
+            ClassicAssert.IsTrue(exc.Message.StartsWith("NOPERM"), $"Expected NOPERM for denied CLIENT SETINFO, got: {exc.Message}");
+        }
+
+        private static ConfigurationOptions GetLimitedUserConfig()
+            => TestUtils.GetConfig(disablePubSub: true, authUsername: TestUserA, authPassword: DummyPassword);
+
+        private static async Task CreateLimitedUserAsync(params string[] permissions)
+        {
+            using var c = TestUtils.GetGarnetClientSession();
+            c.Connect();
+
+            string[] args = ["ACL", "SETUSER", TestUserA, "on", $">{DummyPassword}", "~*", .. permissions];
+            var resp = await c.ExecuteAsync(args).ConfigureAwait(false);
+            ClassicAssert.AreEqual("OK", resp);
         }
     }
 }
