@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System.Linq;
+using Garnet.common;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 
@@ -304,5 +305,44 @@ namespace Garnet.test.cluster
             ClassicAssert.AreNotEqual(nint.Zero, handleAfterMigration, $"node {Primary1} should have built its own index for '{key}'");
             ClassicAssert.AreNotEqual(handleBeforeMigration, handleAfterMigration, $"node {Primary1} adopted node {Primary0}'s DiskANN handle for '{key}' across the migration");
         }
+
+#if DEBUG
+        /// <summary>
+        /// A diskless full sync that dies after records were streamed but before ATTACH_SYNC never reaches
+        /// ResumePostRecovery, so the recovery bookkeeping it accumulated is still pending. The retry
+        /// re-streams the same ContextMetadata records, so unless the intervening flush discards that
+        /// bookkeeping RecoveredContextMetadata rejects the duplicate index and every later attempt fails too.
+        /// </summary>
+        [Test]
+        public void VectorSetDisklessFullSyncRecoversAfterAbortedAttempt()
+        {
+            const string Key = "{vsretry}aborted";
+            const int Elements = 200;
+
+            SetupDisklessCluster(2);
+
+            PopulateVectorSet(PrimaryIndex, Key, Elements, seed: 2026_08_06_00);
+
+            try
+            {
+                ExceptionInjectionHelper.EnableException(ExceptionInjectionType.Replication_Diskless_Sync_Reset_Cts);
+                var failed = context.clusterTestUtils.ClusterReplicate(replicaNodeIndex: ReplicaIndex, primaryNodeIndex: PrimaryIndex, failEx: false, logger: context.logger);
+                ClassicAssert.AreEqual($"Exception injection triggered {ExceptionInjectionType.Replication_Diskless_Sync_Reset_Cts}", failed);
+            }
+            finally
+            {
+                ExceptionInjectionHelper.DisableException(ExceptionInjectionType.Replication_Diskless_Sync_Reset_Cts);
+            }
+
+            var resp = context.clusterTestUtils.ClusterReplicate(replicaNodeIndex: ReplicaIndex, primaryNodeIndex: PrimaryIndex, logger: context.logger);
+            ClassicAssert.AreEqual("OK", resp, "the retried diskless full sync must not inherit recovery state from the aborted attempt");
+
+            context.clusterTestUtils.WaitForReplicasConnected(PrimaryIndex, 1, logger: context.logger);
+
+            context.clusterTestUtils.ReadOnly(ReplicaIndex);
+            WaitUntilServes(ReplicaIndex, Key);
+            AssertFullyReplicated(PrimaryIndex, ReplicaIndex, Key);
+        }
+#endif
     }
 }

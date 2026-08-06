@@ -410,7 +410,7 @@ namespace Garnet.server
         /// <summary>
         /// Used to prevent new contexts from being issued during a FLUSHDB / FLUSHALL, as well as any new Vector Set operations from starting.
         /// 
-        /// Also updates and clears cached <see cref="ContextMetadata"/> upon disposal.
+        /// Also clears cached <see cref="ContextMetadata"/> and pending recovery state upon disposal.
         /// </summary>
         internal readonly struct FlushGuard : IDisposable
         {
@@ -439,6 +439,13 @@ namespace Garnet.server
 
                 // Clear out all context data
                 manager.contextMetadatas = new ContextMetadata[1];
+
+                // The flushed records are gone, so anything a previous ingest observed about them is stale.
+                // An aborted diskless full sync never reaches ResumePostRecovery, so without this the retry
+                // re-streams the same ContextMetadata records and RecoveredContextMetadata throws on the
+                // duplicate index, wedging every subsequent attempt.
+                manager.recoveredIndexes.Clear();
+                manager.recoveredMetadata.Clear();
 
                 // Allow Vector Set operations again
                 manager.vectorSetLocks.ReleaseLock(lockToken);
