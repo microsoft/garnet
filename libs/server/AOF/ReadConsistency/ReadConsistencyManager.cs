@@ -60,7 +60,7 @@ namespace Garnet.server
         /// <summary>
         /// Cooperative barrier used to bound inter-virtual-sublog replay drift. The reader activates it
         /// on demand when it observes a large drift while about to wait; replay threads align on it via
-        /// per-record CheckAndWait calls. One participant per virtual sublog (one replay thread each).
+        /// per-record SignalArrivalAndWait calls. One participant per virtual sublog (one replay thread each).
         /// </summary>
         public readonly ReplayAlignBarrier replayBarrier = new(serverOptions.AofVirtualSublogCount, serverOptions.AofReplayBarrierSpinUs, serverOptions.ReplicaSyncTimeout);
 
@@ -183,7 +183,7 @@ namespace Garnet.server
         public void AdvanceVirtualSublogTime(int virtualSublogIdx, long sequenceNumber)
         {
             vsrs[virtualSublogIdx].UpdateMaxSequenceNumber(sequenceNumber);
-            replayBarrier.CheckAndArrive(virtualSublogIdx, vsrs[virtualSublogIdx].Max);
+            replayBarrier.SignalArrival(virtualSublogIdx, vsrs[virtualSublogIdx].Max);
         }
 
         /// <summary>
@@ -205,7 +205,7 @@ namespace Garnet.server
             // Eagerly publish this sublog's max frontier BEFORE parking and writing the key sketch entry.
             //
             // Why: Guarantees deterministic barrier arrival during replay. If a sublog crosses the target on its 
-            // final record and goes idle, CheckAndWait sees the updated max immediately rather than waiting for 
+            // final record and goes idle, SignalArrivalAndWait sees the updated max immediately rather than waiting for 
             // a delayed time pulse, preventing replay deadlocks.
             //
             // Safety: Safe for readers because the frontier only opens prepare gates; session clocks are drawn 
@@ -232,7 +232,7 @@ namespace Garnet.server
             // Pause this replay thread when it has run ahead of an active round's target, bounding
             // drift from the lagging sublogs. Fast path is a single Volatile.Read + compare when no
             // round is active.
-            replayBarrier.CheckAndWait(virtualSublogIdx, vsrs[virtualSublogIdx].Max);
+            replayBarrier.SignalArrivalAndWait(virtualSublogIdx, vsrs[virtualSublogIdx].Max);
 
             // Publish the key's sketch entry AFTER the park (deferred-KRT order): while parked, a
             // reader touching this key still sees its previous value and advances its session
@@ -330,7 +330,7 @@ namespace Garnet.server
                 if (frontier > maxFrontier) maxFrontier = frontier;
             }
             if (maxFrontier - minFrontier <= replayDriftThreshold) return;
-            replayBarrier.TryActivate(maxFrontier);
+            replayBarrier.TryOpenRound(maxFrontier);
         }
 
         /// <summary>

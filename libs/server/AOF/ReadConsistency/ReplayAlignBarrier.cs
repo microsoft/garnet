@@ -24,14 +24,14 @@ namespace Garnet.server
     /// late, or abandoned on timeout never affects correctness.
     ///
     /// Arrivals are identified by virtual sublog and deduplicated within each round. Replayed records
-    /// use blocking <see cref="CheckAndWait"/>, while progress signals for an idle sublog can use
-    /// non-blocking <see cref="CheckAndArrive"/>. A participant that is about to stop calls
+    /// use blocking <see cref="SignalArrivalAndWait"/>, while progress signals for an idle sublog can use
+    /// non-blocking <see cref="SignalArrival"/>. A participant that is about to stop calls
     /// <see cref="Disable"/>, which releases the active round and rejects new rounds until
     /// <see cref="Enable"/>, so peers are never stranded waiting for an arrival that cannot come.
     ///
     /// Fast path (no round active): a single Volatile.Read of a class field plus a long compare.
     /// </summary>
-    public sealed class ReplayAlignBarrier
+    public sealed class ReplayAlignBarrier : IDisposable
     {
         // Number of Thread.SpinWait iterations between release-flag checks while spinning.
         const int SpinWaitIterations = 16;
@@ -41,7 +41,7 @@ namespace Garnet.server
             public long target;  // target frontier sequence number
             public int remaining;
             // Authoritative per-round release signal: set by the last arrival / Disable. Spinners poll
-            // it directly; sleepers loop-gate on it after each wait on the shared releaseEvent below.
+            // it directly; a parked sleeper is woken by its own participant event being set on release.
             public volatile bool released;
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -57,9 +57,14 @@ namespace Garnet.server
         readonly Round[] lastArrivedRound;
 
         /// <summary>
-        /// Single reusable kernel wakeup shared across all rounds, so no per-round wait handle is allocated.
+        /// One reusable wakeup per participant (indexed by virtual sublog), allocated once for the
+        /// barrier's lifetime -- no per-round allocation and a fixed, bounded set of wait handles.
+        /// Each event has a single waiter: the thread that owns that virtual sublog's replay. Only
+        /// that owner resets its event (immediately before parking); a releaser only ever sets events
+        /// (never resets), so a set can never be lost to a concurrent reset the way a single shared,
+        /// re-armed event can. <see cref="Round.released"/> remains the authoritative signal.
         /// </summary>
-        readonly ManualResetEventSlim releaseEvent = new(false);
+        readonly ManualResetEventSlim[] participantEvents;
 
         /// <summary>
         /// Controls how long a participant thread spin waits before falling back to kernel wait.
@@ -77,6 +82,9 @@ namespace Garnet.server
         {
             this.participantCount = participantCount;
             lastArrivedRound = new Round[participantCount];
+            participantEvents = new ManualResetEventSlim[participantCount];
+            for (var i = 0; i < participantCount; i++)
+                participantEvents[i] = new ManualResetEventSlim(false);
             this.aofReplayBarrierSpinUs = aofReplayBarrierSpinUs < 0
                 ? -1
                 : (long)(aofReplayBarrierSpinUs * (Stopwatch.Frequency / 1_000_000.0));
@@ -97,14 +105,14 @@ namespace Garnet.server
         /// every participant to arrive. No-op if a round is already in progress (including the
         /// never-completing round installed by <see cref="Disable"/>).
         /// </summary>
-        public void TryActivate(long target)
+        public void TryOpenRound(long target)
         {
             // Best effort read
             if (Volatile.Read(ref currentRound) != null) return;
             var round = new Round { target = target, remaining = participantCount };
-            // Single round activation winner reset/release event
-            if (Interlocked.CompareExchange(ref currentRound, round, null) == null)
-                releaseEvent.Reset();
+            // No event to arm here: each participant resets its own event right before parking, so the
+            // installer never touches a wait handle -- which is what makes a lost wakeup impossible.
+            _ = Interlocked.CompareExchange(ref currentRound, round, null);
         }
 
         /// <summary>
@@ -115,13 +123,13 @@ namespace Garnet.server
         /// <param name="virtualSublogIdx">The arriving virtual sublog.</param>
         /// <param name="frontier">The virtual sublog's current frontier.</param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void CheckAndWait(int virtualSublogIdx, long frontier)
+        public void SignalArrivalAndWait(int virtualSublogIdx, long frontier)
         {
             var r = Volatile.Read(ref currentRound);
             if (r == null || frontier < r.target) return;
             if (lastArrivedRound[virtualSublogIdx] == r) return;
             lastArrivedRound[virtualSublogIdx] = r;
-            Arrive(r);
+            WaitForAllArrivals(r, virtualSublogIdx);
         }
 
         /// <summary>
@@ -129,7 +137,7 @@ namespace Garnet.server
         /// </summary>
         /// <param name="virtualSublogIdx">The arriving virtual sublog.</param>
         /// <param name="frontier">The virtual sublog's current frontier.</param>
-        public void CheckAndArrive(int virtualSublogIdx, long frontier)
+        public void SignalArrival(int virtualSublogIdx, long frontier)
         {
             var r = Volatile.Read(ref currentRound);
             if (r == null || frontier < r.target) return;
@@ -140,7 +148,7 @@ namespace Garnet.server
             ReleaseRound(r);
         }
 
-        void Arrive(Round r)
+        void WaitForAllArrivals(Round r, int virtualSublogIdx)
         {
             if (Interlocked.Decrement(ref r.remaining) <= 0)
             {
@@ -165,10 +173,19 @@ namespace Garnet.server
                 }
             }
 
-            // Kernel wait bounded by ReplicaSyncTimeout: waitTimeout == Timeout.InfiniteTimeSpan blocks
-            // until released; a finite timeout returning false means a peer failed to arrive, so we stop
-            // looping and proceed unaligned -- safe because the barrier is a performance aid only.
-            while (!r.released && releaseEvent.Wait(replicaSyncTimeout)) { }
+            // Kernel wait on this participant's own event. We are the sole waiter and the sole resetter
+            // of this event, so reset it here (clearing any set left by a prior round) and then re-check
+            // released. A releaser sets released BEFORE setting the event, and we reset the event BEFORE
+            // reading released, so if our reset cleared a set then that set -- and thus released == true --
+            // preceded it and is observed here; otherwise a release either already set released (observed
+            // here) or sets the event after our reset and wakes the Wait below. The set is never lost.
+            // The wait is bounded by ReplicaSyncTimeout (Timeout.InfiniteTimeSpan blocks until released);
+            // a finite timeout just proceeds unaligned, safe because the barrier is a performance aid only.
+            var ev = participantEvents[virtualSublogIdx];
+            ev.Reset();
+            if (r.released)
+                return;
+            _ = ev.Wait(replicaSyncTimeout);
         }
 
         /// <summary>
@@ -178,14 +195,22 @@ namespace Garnet.server
         private void ReleaseRound(Round r)
         {
             r.released = true;
-            releaseEvent.Set();
+            SignalAll();
             _ = Interlocked.CompareExchange(ref currentRound, null, r);
+        }
+
+        // Wake every parked participant. Setting an event with no current waiter is harmless: the owner
+        // resets its event before it next parks, so a stale set from a prior round or Disable is cleared.
+        void SignalAll()
+        {
+            for (var i = 0; i < participantEvents.Length; i++)
+                participantEvents[i].Set();
         }
 
         /// <summary>
         /// Releases the active round and rejects new ones until <see cref="Enable"/>, by occupying
         /// the round slot with a round that can never complete: its target is long.MaxValue, which
-        /// no frontier reaches, so no thread arrives at it, and <see cref="TryActivate"/> always
+        /// no frontier reaches, so no thread arrives at it, and <see cref="TryOpenRound"/> always
         /// finds a round in progress. Called by a participant that is about to stop arriving on the
         /// per-record replay path -- a replay worker exiting at end of run, workers pausing at a
         /// phase boundary (e.g. a benchmark warmup), or the owning
@@ -200,7 +225,7 @@ namespace Garnet.server
             var inert = new Round { target = long.MaxValue, remaining = int.MaxValue, released = true };
             var r = Interlocked.Exchange(ref currentRound, inert);
             r?.Release();
-            releaseEvent.Set();
+            SignalAll();
         }
 
         /// <summary>
@@ -213,7 +238,18 @@ namespace Garnet.server
         {
             var r = Interlocked.Exchange(ref currentRound, null);
             r?.Release();
-            releaseEvent.Set();
+            SignalAll();
+        }
+
+        /// <summary>
+        /// Disposes the per-participant wait handles. The caller must ensure no replay thread is still
+        /// parked in the barrier (e.g. after <see cref="Disable"/> and the owning manager has been
+        /// replaced); disposing while a participant is inside Wait would surface an ObjectDisposedException.
+        /// </summary>
+        public void Dispose()
+        {
+            for (var i = 0; i < participantEvents.Length; i++)
+                participantEvents[i].Dispose();
         }
     }
 }
