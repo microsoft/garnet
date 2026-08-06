@@ -104,7 +104,7 @@ namespace Garnet.server
         /// How often cross-sublog drift is re-checked during replay, as a multiple of
         /// AofReplayDriftThreshold. 0 leaves readers about to wait as the only round source.
         /// </summary>
-        public int AofReplayDriftCheckFreq = 0;
+        public int AofReplayDriftCheckFreq = 1;
 
         /// <summary>
         /// How long a replay thread spins at the replay-align barrier before sleeping:
