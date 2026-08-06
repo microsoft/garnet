@@ -237,7 +237,7 @@ namespace Garnet.server
             vectorSetElementSelectMask = (int)BitOperations.RoundUpToPowerOf2((uint)Environment.ProcessorCount) - 1;
             vectorSetConcurrentUpdateSelectMask = (int)BitOperations.RoundUpToPowerOf2((uint)Environment.ProcessorCount * 2) - 1;
 
-            vectorSetElementUpdateLocks = new int[vectorSetElementSelectMask+1][];
+            vectorSetElementUpdateLocks = new int[vectorSetElementSelectMask + 1][];
             for (var i = 0; i < vectorSetElementUpdateLocks.Length; i++)
             {
                 vectorSetElementUpdateLocks[i] = new int[vectorSetConcurrentUpdateSelectMask + 1];
