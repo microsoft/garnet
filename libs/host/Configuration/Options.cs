@@ -531,6 +531,13 @@ namespace Garnet
         [Option("device-queue-depth", Required = false, HelpText = "Linux-only, DeviceType=Native: per-ring kernel submission depth (maxEvents for io_uring_queue_init / libaio io_setup). Orthogonal to --device-io-contexts (ring count) and --device-throttle-limit (aggregate in-flight). 0 = device default. Note: for libaio, io-contexts x queue-depth is drawn from the global fs.aio-max-nr budget.")]
         public int? DeviceQueueDepth { get; set; }
 
+        [Option("device-uring-sqpoll", Required = false, HelpText = "Linux-only, DeviceType=Native + --device-io-backend uring: enable io_uring SQPOLL (IORING_SETUP_SQPOLL) so a kernel thread polls the submission queue and submissions are syscall-free. All rings share one poll thread (ring 0 spawns it; the rest attach via IORING_SETUP_ATTACH_WQ). Ignored for libaio. Off by default (opt-in). NOTE: not recommended for high-IOPS multi-ring serving - the single shared poll thread serializes submission and was measured ~15-23x SLOWER than per-submit syscalls on an 8xNVMe RAID-0; useful only for low-core / syscall-bound / low-concurrency workloads.")]
+        public bool? DeviceUringSqPoll { get; set; }
+
+        [IntRangeValidation(0, 600000)]
+        [Option("device-uring-sqpoll-idle-ms", Required = false, HelpText = "io_uring SQPOLL poll-thread idle window in milliseconds (sq_thread_idle): how long the kernel poll thread spins after the last submit before parking. 0 = native default (10s). Only meaningful with --device-uring-sqpoll.")]
+        public int? DeviceUringSqPollIdleMs { get; set; }
+
         [IntRangeValidation(1, 4096)]
         [Option("device-aio-max-devices", Required = false, HelpText = "Linux-only, DeviceType=Native (libaio): target number of Native devices to fit within the machine-global fs.aio-max-nr libaio budget (default 32). libaio io_setup permanently reserves io-contexts x queue-depth events from that global budget per device, so the default per-device reservation is capped at fs.aio-max-nr / this, guaranteeing at least this many devices can always be created regardless of --device-completion-threads / --device-throttle-limit. Raise fs.aio-max-nr, or lower this, to give each serving device a deeper reservation. Ignored for io_uring (no global budget) and non-Linux.")]
         public int? DeviceAioMaxDevices { get; set; }
@@ -969,6 +976,8 @@ namespace Garnet
                         numCompletionThreads: DeviceCompletionThreads ?? 4,
                         numIoContexts: DeviceIoContexts ?? 0,
                         queueDepth: DeviceQueueDepth ?? 0,
+                        uringSqPoll: DeviceUringSqPoll ?? false,
+                        uringSqPollIdleMs: DeviceUringSqPollIdleMs ?? 0,
                         throttleLimit: DeviceThrottleLimit is > 0 ? DeviceThrottleLimit : null,
                         logger: logger),
                 CheckpointThrottleFlushDelayMs = CheckpointThrottleFlushDelayMs,
@@ -992,6 +1001,8 @@ namespace Garnet
                 DeviceThrottleLimit = DeviceThrottleLimit ?? 0,
                 DeviceIoContexts = DeviceIoContexts ?? 0,
                 DeviceQueueDepth = DeviceQueueDepth ?? 0,
+                DeviceUringSqPoll = DeviceUringSqPoll ?? false,
+                DeviceUringSqPollIdleMs = DeviceUringSqPollIdleMs ?? 0,
                 DeviceAioMaxDevices = DeviceAioMaxDevices ?? 32,
                 ObjectScanCountLimit = ObjectScanCountLimit,
                 RevivBinRecordSizes = revivBinRecordSizes,

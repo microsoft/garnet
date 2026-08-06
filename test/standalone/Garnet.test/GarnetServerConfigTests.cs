@@ -305,6 +305,36 @@ namespace Garnet.test
         }
 
         [Test]
+        public void DeviceUringSqPollOptions()
+        {
+            // Defaults: opt-in SQPOLL is off and the idle window is the native default (0) from defaults.conf,
+            // flowing through to GarnetServerOptions unchanged.
+            {
+                var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments([], out var options, out _, out _, out _, silentMode: true);
+                ClassicAssert.IsTrue(parseSuccessful);
+                ClassicAssert.AreEqual(false, options.DeviceUringSqPoll);
+                ClassicAssert.AreEqual(0, options.DeviceUringSqPollIdleMs);
+
+                var serverOptions = options.GetServerOptions();
+                ClassicAssert.IsFalse(serverOptions.DeviceUringSqPoll);
+                ClassicAssert.AreEqual(0, serverOptions.DeviceUringSqPollIdleMs);
+            }
+
+            // Explicit values are parsed and flow through to GarnetServerOptions.
+            {
+                var args = new[] { "--device-uring-sqpoll", "true", "--device-uring-sqpoll-idle-ms", "2000" };
+                var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out _, out _, out _, silentMode: true);
+                ClassicAssert.IsTrue(parseSuccessful);
+                ClassicAssert.AreEqual(true, options.DeviceUringSqPoll);
+                ClassicAssert.AreEqual(2000, options.DeviceUringSqPollIdleMs);
+
+                var serverOptions = options.GetServerOptions();
+                ClassicAssert.IsTrue(serverOptions.DeviceUringSqPoll);
+                ClassicAssert.AreEqual(2000, serverOptions.DeviceUringSqPollIdleMs);
+            }
+        }
+
+        [Test]
         public void ImportExportConfigLocal()
         {
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);

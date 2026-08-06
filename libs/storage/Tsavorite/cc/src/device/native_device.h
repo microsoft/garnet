@@ -309,14 +309,18 @@ public:
         bool enablePrivileges = false,
         bool unbuffered = true,
         bool delete_on_close = false,
-        int max_events = 0)
+        int max_events = 0,
+        bool uring_sqpoll = false,
+        int uring_sqpoll_idle_ms = 0)
         : epoch_ { }
         // max_events is the per-context kernel submission-ring depth (libaio io_setup /
         // io_uring SQ entries). The managed wrapper sizes it up from the device throttle limit
         // (NextPowerOf2) so the ring can hold the full in-flight burst the throttle permits;
         // this keeps io_submit / io_uring_get_sqe off their EAGAIN/ring-full backoff spins,
         // which would otherwise pin epoch slots. <= 0 means "use the handler's default depth".
-        , handler_{ 16 /*max threads*/, num_io_contexts < 1 ? 1 : num_io_contexts, max_events }
+        // uring_sqpoll / uring_sqpoll_idle_ms are io_uring-only (IORING_SETUP_SQPOLL + the poll
+        // thread's idle window); the libaio / ThreadPool handlers accept and ignore them.
+        , handler_{ 16 /*max threads*/, num_io_contexts < 1 ? 1 : num_io_contexts, max_events, uring_sqpoll, uring_sqpoll_idle_ms }
         , default_file_options_{ unbuffered, delete_on_close }
         // FileSystemSegmentedFile validates segment_size internally (must be a positive power
         // of two) and throws std::invalid_argument otherwise. The C ABI wrapper wraps `new

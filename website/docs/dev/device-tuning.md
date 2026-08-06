@@ -119,6 +119,37 @@ guaranteeing at least this many devices can be created regardless of the other k
 `fs.aio-max-nr` (e.g. `sysctl -w fs.aio-max-nr=1048576`) or lower this value to give each
 serving device a deeper reservation. Ignored for io_uring (no global budget) and non-Linux.
 
+### `--device-uring-sqpoll` (io_uring submission polling)
+
+io_uring only. Enables `IORING_SETUP_SQPOLL` so a **kernel thread** polls the submission
+queue and user-side submissions become syscall-free (no `io_uring_enter` per submit). Ring 0
+spawns the poll thread; every other ring attaches to it via `IORING_SETUP_ATTACH_WQ`, so the
+whole device shares **one** poll thread. `--device-uring-sqpoll-idle-ms` sets `sq_thread_idle`
+(how long that thread spins after the last submit before parking; `0` = 10s native default).
+**Off by default (opt-in).** Ignored for libaio / on Windows.
+
+:::warning Not recommended for high-IOPS multi-ring serving
+Because all rings share **one** kernel poll thread, submission becomes single-threaded and
+that thread is a hard ceiling. On the 8×NVMe RAID-0 target (uring, 512B random reads) enabling
+SQPOLL **regressed throughput ~15–23×** at every configuration measured — the single
+`iou-sqp` poll thread saturates one core at ~0.5M submits/s while the many submitter threads
+spin waiting for in-flight to drain:
+
+| layer / config                         | SQPOLL off | SQPOLL on |
+|----------------------------------------|-----------:|----------:|
+| Device.bench (t=32, io-contexts=32)    |     8.27M  |    0.52M  |
+| Device.bench (t=64, io-contexts=32)    |     7.19M  |    0.42M  |
+| Device.bench canonical (t=32, 1 ring)  |     —      |    0.59M  |
+| KV.bench scen 2 (t=48, io-contexts=96) |     7.73M  |    0.46M  |
+
+The reason is structural: this workload is **not** submit-syscall-bound (regular per-submit
+`io_uring_enter` already reaches fio parity ~8.2M, and the serving path is managed-CPU-bound),
+so replacing many parallel submit syscalls with one serialized kernel poll thread only removes
+parallelism. SQPOLL is retained as an opt-in knob for the scenarios where it *can* help —
+low-core-count hosts where syscall overhead dominates, or low-concurrency / latency-sensitive
+single-ring workloads — but leave it **off** for throughput-oriented multi-core deployments.
+:::
+
 ## Derived parameters
 
 The device computes several internal parameters at creation (first IO) from the knobs above

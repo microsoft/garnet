@@ -271,6 +271,17 @@ namespace Tsavorite.core
         readonly int numIoContextsConfig;
         readonly int numQueueDepthConfig;
         readonly IoBackend ioBackendConfig;
+        /// <summary>
+        /// io_uring SQPOLL opt-in (IORING_SETUP_SQPOLL). When true and the backend is io_uring, the
+        /// native rings are created with a kernel submission-poll thread so submissions are syscall-free
+        /// (submit-side offload only; completion draining is unchanged). Ignored for libaio. Off by default.
+        /// </summary>
+        readonly bool uringSqPollConfig;
+        /// <summary>
+        /// SQPOLL poll-thread idle window in milliseconds (sq_thread_idle). Only meaningful when
+        /// <see cref="uringSqPollConfig"/> is true; 0 lets the native layer pick its default.
+        /// </summary>
+        readonly int uringSqPollIdleMsConfig;
 
         /// <summary>
         /// Runtime segment size in bytes that the native shim was asked to use. Populated by
@@ -726,7 +737,7 @@ namespace Tsavorite.core
         }
 
         [DllImport(NativeLibraryName, EntryPoint = "NativeDevice_CreateWithBackend", CallingConvention = CallingConvention.Cdecl)]
-        static extern IntPtr NativeDevice_CreateWithBackend(string file, bool enablePrivileges, bool unbuffered, bool delete_on_close, int backend, ulong segmentSizeBytes, bool omitSegmentIdFromFilename, int numIoContexts, int maxEvents);
+        static extern IntPtr NativeDevice_CreateWithBackend(string file, bool enablePrivileges, bool unbuffered, bool delete_on_close, int backend, ulong segmentSizeBytes, bool omitSegmentIdFromFilename, int numIoContexts, int maxEvents, int uringSqPoll, int uringSqPollIdleMs);
 
         [DllImport(NativeLibraryName, EntryPoint = "NativeDevice_GetSegmentSize", CallingConvention = CallingConvention.Cdecl)]
         static extern ulong NativeDevice_GetSegmentSize(IntPtr device);
@@ -1180,6 +1191,10 @@ namespace Tsavorite.core
         /// treated as 1.</param>
         /// <param name="ioBackend">IO backend to use (default platform backend, or explicit libaio / io_uring on Linux).</param>
         /// <param name="logger"></param>
+        /// <param name="numIoContexts">Number of independent kernel io_contexts (libaio) / io_uring rings, decoupled from the drainer count. 0 = device default.</param>
+        /// <param name="queueDepth">Per-ring kernel submission depth (maxEvents). 0 = device default.</param>
+        /// <param name="uringSqPoll">io_uring only: enable IORING_SETUP_SQPOLL so a kernel thread polls the submission queue and submissions are syscall-free. Multiple rings share one poll thread. Ignored for libaio / on Windows. Off by default.</param>
+        /// <param name="uringSqPollIdleMs">io_uring SQPOLL poll-thread idle window in milliseconds (sq_thread_idle). Only used when <paramref name="uringSqPoll"/> is true; 0 = native default.</param>
         public NativeStorageDevice(string filename,
                                       bool deleteOnClose = false,
                                       bool disableFileBuffering = true,
@@ -1188,7 +1203,9 @@ namespace Tsavorite.core
                                       IoBackend ioBackend = IoBackend.Default,
                                       ILogger logger = null,
                                       int numIoContexts = 0,
-                                      int queueDepth = 0)
+                                      int queueDepth = 0,
+                                      bool uringSqPoll = false,
+                                      int uringSqPollIdleMs = 0)
                 : base(filename, EnsureParentDirectoryAndProbeSectorSize(filename), capacity)
         {
             Debug.Assert(numCompletionThreads >= 1);
@@ -1241,6 +1258,8 @@ namespace Tsavorite.core
             // Orthogonal to ring count (numIoContexts) and aggregate throttle; see ResolveQueueDepth.
             this.numQueueDepthConfig = queueDepth > 0 ? queueDepth : 0;
             this.ioBackendConfig = ioBackend;
+            this.uringSqPollConfig = uringSqPoll;
+            this.uringSqPollIdleMsConfig = uringSqPollIdleMs > 0 ? uringSqPollIdleMs : 0;
             this.logger = logger;
 
             // Default aggregate in-flight throttle. Unlike the managed in-box devices (which cap at 120),
@@ -1377,7 +1396,10 @@ namespace Tsavorite.core
                 }
                 effectiveThrottleLimit = requestedThrottle;
 
-                var newDevice = NativeDevice_CreateWithBackend(filename, false, disableFileBuffering, deleteOnClose, (int)ioBackendConfig, sizeForNative, OmitSegmentIdFromFileName, numIoContextsConfig, ringDepth);
+                // SQPOLL is an io_uring-only submit-side optimization; never pass it to libaio (the native
+                // libaio/default handlers accept and ignore it, but keep the managed intent explicit).
+                int uringSqPollArg = (uringSqPollConfig && ioBackendConfig == IoBackend.Uring) ? 1 : 0;
+                var newDevice = NativeDevice_CreateWithBackend(filename, false, disableFileBuffering, deleteOnClose, (int)ioBackendConfig, sizeForNative, OmitSegmentIdFromFileName, numIoContextsConfig, ringDepth, uringSqPollArg, uringSqPollIdleMsConfig);
                 if (newDevice == IntPtr.Zero)
                 {
                     var nativeMessage = GetNativeLastError();
@@ -1449,6 +1471,10 @@ namespace Tsavorite.core
                     int actualIoContexts = NativeDevice_NumIoContexts(newDevice);
                     if (actualIoContexts < 1) actualIoContexts = 1;
                     numRingsActual = actualIoContexts;
+                    if (uringSqPollConfig && ioBackendConfig == IoBackend.Uring)
+                        logger?.LogInformation(
+                            "NativeStorageDevice: io_uring SQPOLL enabled (rings={rings} share one kernel submission-poll thread, sq_thread_idle={idle}). Submissions are syscall-free while the poll thread is awake.",
+                            actualIoContexts, uringSqPollIdleMsConfig > 0 ? $"{uringSqPollIdleMsConfig}ms" : "native-default");
                     // Partition the io_contexts (rings) across a small pool of drainer threads. When
                     // actualIoContexts == numCompletionThreadsConfig this reduces to the legacy 1:1
                     // ring-to-drainer binding; when there are more rings than drainers (to de-contend

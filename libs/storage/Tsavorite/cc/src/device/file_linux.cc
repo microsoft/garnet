@@ -712,8 +712,10 @@ Status UringFile::ScheduleOperation(FileOperationType operationType, uint8_t* bu
   }
   io_uring_sqe_set_data(sqe, io_context.get());
 
-  // Submit. io_uring_submit() flushes SQEs pending in this ring's SQ ring (everything between the
-  // kernel-consumed head and our just-prepared SQE at the tail) and returns the COUNT consumed —
+  // Submit. NOTE: the invariant described here holds for the NON-SQPOLL path only; the SQPOLL branch
+  // below has different semantics (see its inline comment). io_uring_submit() flushes SQEs pending in
+  // this ring's SQ ring (everything between the kernel-consumed head and our just-prepared SQE at the
+  // tail) and returns the COUNT consumed —
   // but that count is NOT an authoritative "our SQE reached the kernel" signal: io_uring_submit()
   // may PARTIALLY consume (return a positive count < pending) under kernel backpressure, so res >= 1
   // can be true while OUR tail SQE is still pending. The authoritative signal is an EMPTY SQ:
@@ -736,24 +738,51 @@ Status UringFile::ScheduleOperation(FileOperationType operationType, uint8_t* bu
   // against the io_context we are about to free; the next successful submit flushes that no-op
   // harmlessly. This rewrite is safe precisely because sq_ready > 0 proves our SQE was never consumed.
   int res = 0;
-  int submit_retries = 0;
-  while (true) {
-    res = io_uring_submit(ring);
-    if (io_uring_sq_ready(ring) == 0) break;                 // success: our SQE (and any stale nop) flushed
-    if (res < 0 && res != -EAGAIN && res != -EBUSY) break;   // permanent submit error; our SQE still pending
-    if (submit_retries >= kSubmitYieldBudget) break;         // sustained transient; unwind (our SQE still pending)
-    ::sched_yield();
-    ++submit_retries;
-  }
-  bool submitted = io_uring_sq_ready(ring) == 0;
-  bool permanent = !submitted && res < 0 && res != -EAGAIN && res != -EBUSY;
-  if (!submitted) {
-    // Our SQE was never consumed (sq_ready > 0 and we held sq_lock throughout). Rewrite it to a
-    // no-op (the drain loop skips null user_data) so a later submit cannot reference the io_context
-    // we free on return. Safe to mutate `sqe`: we still hold sq_lock and the kernel only observes it
-    // on the next io_uring_submit.
-    io_uring_prep_nop(sqe);
-    io_uring_sqe_set_data(sqe, nullptr);
+  bool submitted;
+  bool permanent = false;
+  if (handler_->sqpoll()) {
+    // SQPOLL: a kernel thread polls the SQ and consumes SQEs ASYNCHRONOUSLY, so the two assumptions
+    // the non-SQPOLL path relies on both break:
+    //   (1) io_uring_sq_ready() is not a synchronous "consumed" signal — it can read > 0 right after
+    //       submit simply because the poll thread has not advanced the kernel head yet; and
+    //   (2) the SQE must NEVER be rewritten after submit — the poll thread may read our readv/writev
+    //       the instant io_uring_submit()'s flush advances the SQ tail, so the no-op rewrite trick
+    //       would race the kernel and, if we then freed io_context, cause a use-after-free.
+    // io_uring_submit()'s internal flush UNCONDITIONALLY publishes our SQE (advances ktail to the
+    // tail) before any syscall; the syscall it may issue only (re)wakes a parked poll thread. Hence
+    // once we call submit our SQE is owned by the kernel regardless of the return value — we retry
+    // only to redeliver the wakeup on a transient -EAGAIN/-EBUSY, and always treat the op as
+    // submitted. SQ-full backpressure is already handled above by io_uring_get_sqe returning nullptr.
+    int submit_retries = 0;
+    while (true) {
+      res = io_uring_submit(ring);
+      if (res >= 0) break;                                   // awake: pending count; parked: wakeup delivered
+      if (res != -EAGAIN && res != -EBUSY) break;            // hard enter error; SQE already published
+      if (submit_retries >= kSubmitYieldBudget) break;       // transient wakeup; SQE already published
+      ::sched_yield();
+      ++submit_retries;
+    }
+    submitted = true;
+  } else {
+    int submit_retries = 0;
+    while (true) {
+      res = io_uring_submit(ring);
+      if (io_uring_sq_ready(ring) == 0) break;                 // success: our SQE (and any stale nop) flushed
+      if (res < 0 && res != -EAGAIN && res != -EBUSY) break;   // permanent submit error; our SQE still pending
+      if (submit_retries >= kSubmitYieldBudget) break;         // sustained transient; unwind (our SQE still pending)
+      ::sched_yield();
+      ++submit_retries;
+    }
+    submitted = io_uring_sq_ready(ring) == 0;
+    permanent = !submitted && res < 0 && res != -EAGAIN && res != -EBUSY;
+    if (!submitted) {
+      // Our SQE was never consumed (sq_ready > 0 and we held sq_lock throughout). Rewrite it to a
+      // no-op (the drain loop skips null user_data) so a later submit cannot reference the io_context
+      // we free on return. Safe to mutate `sqe`: we still hold sq_lock and the kernel only observes it
+      // on the next io_uring_submit.
+      io_uring_prep_nop(sqe);
+      io_uring_sqe_set_data(sqe, nullptr);
+    }
   }
   sq_lock->Release();
   if (!submitted) {

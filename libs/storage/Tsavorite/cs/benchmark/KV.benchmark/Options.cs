@@ -147,6 +147,19 @@ namespace Tsavorite.kvbench
                        "from the global fs.aio-max-nr budget (warned/clamped if exceeded).")]
         public int DeviceQueueDepth { get; set; }
 
+        [Option("device-uring-sqpoll", Required = false, Default = false,
+            HelpText = "DeviceType.Native + --device-io-backend uring only: enable io_uring SQPOLL " +
+                       "(IORING_SETUP_SQPOLL) so a kernel thread polls the submission queue and submissions " +
+                       "are syscall-free. All rings share one poll thread (ring 0 spawns it; the rest attach " +
+                       "via IORING_SETUP_ATTACH_WQ). Ignored for libaio. Off by default (opt-in).")]
+        public bool DeviceUringSqPoll { get; set; }
+
+        [Option("device-uring-sqpoll-idle-ms", Required = false, Default = 0,
+            HelpText = "io_uring SQPOLL poll-thread idle window in milliseconds (sq_thread_idle): how long the " +
+                       "kernel poll thread spins after the last submit before parking. 0 = native default (10s). " +
+                       "Only meaningful with --device-uring-sqpoll.")]
+        public int DeviceUringSqPollIdleMs { get; set; }
+
         [Option("device-inline-completion", Required = false, Default = false,
             HelpText = "DeviceType.LocalMemory only: complete IOs inline on the submitting thread (no " +
                        "completion threads or rings; copy + callback run synchronously). Isolates the " +
