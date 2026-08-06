@@ -255,9 +255,10 @@ class ThreadPoolIoHandler {
     : threadpool_{ max_threads } {
   }
 
-  /// 5-arg overload accepted for cross-platform symmetry with UringIoHandler. Windows has no
-  /// io_uring submission-poll thread, so the SQPOLL parameters are silently ignored.
-  ThreadPoolIoHandler(size_t max_threads, int /*num_contexts*/, int /*max_events*/, bool /*sqpoll*/, int /*sq_thread_idle_ms*/)
+  /// 6-arg overload accepted for cross-platform symmetry with UringIoHandler. Windows has no
+  /// io_uring submission-poll thread, so the SQPOLL parameters (including `sqpoll_cpus`) are ignored.
+  ThreadPoolIoHandler(size_t max_threads, int /*num_contexts*/, int /*max_events*/, bool /*sqpoll*/, int /*sq_thread_idle_ms*/,
+                      const char* /*sqpoll_cpus*/)
     : threadpool_{ max_threads } {
   }
 

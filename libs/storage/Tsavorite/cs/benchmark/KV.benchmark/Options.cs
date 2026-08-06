@@ -146,8 +146,8 @@ namespace Tsavorite.kvbench
         [Option("device-uring-sqpoll", Required = false, Default = false,
             HelpText = "DeviceType.Native + --device-io-backend uring only: enable io_uring SQPOLL " +
                        "(IORING_SETUP_SQPOLL) so a kernel thread polls the submission queue and submissions " +
-                       "are syscall-free. All rings share one poll thread (ring 0 spawns it; the rest attach " +
-                       "via IORING_SETUP_ATTACH_WQ). Ignored for libaio. Off by default (opt-in).")]
+                       "are syscall-free. Each ring gets its own poll thread (no IORING_SETUP_ATTACH_WQ) so " +
+                       "submission stays parallel across rings. Ignored for libaio. Off by default (opt-in).")]
         public bool DeviceUringSqPoll { get; set; }
 
         [Option("device-uring-sqpoll-idle-ms", Required = false, Default = 0,
@@ -155,6 +155,12 @@ namespace Tsavorite.kvbench
                        "kernel poll thread spins after the last submit before parking. 0 = native default (10s). " +
                        "Only meaningful with --device-uring-sqpoll.")]
         public int DeviceUringSqPollIdleMs { get; set; }
+
+        [Option("device-uring-sqpoll-cpus", Required = false, Default = null,
+            HelpText = "io_uring SQPOLL poll-thread CPU pin list (comma-separated CPU ids, e.g. 0,1,2,3): ring i " +
+                       "pins its poll thread to cpus[i % count] via IORING_SETUP_SQ_AFF; empty leaves them " +
+                       "unpinned. Only meaningful with --device-uring-sqpoll.")]
+        public string DeviceUringSqPollCpus { get; set; }
 
         [Option("device-inline-completion", Required = false, Default = false,
             HelpText = "DeviceType.LocalMemory only: complete IOs inline on the submitting thread (no " +

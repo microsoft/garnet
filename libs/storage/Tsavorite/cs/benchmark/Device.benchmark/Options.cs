@@ -36,11 +36,14 @@ namespace Device.benchmark
         [Option("device-io-backend", Required = false, Default = "default", HelpText = "Linux Native IO backend: default, libaio, uring. Ignored on other devices/OSes. Unknown values are rejected at startup.")]
         public string IoBackend { get; set; }
 
-        [Option("device-uring-sqpoll", Required = false, Default = false, HelpText = "io_uring only: enable IORING_SETUP_SQPOLL so a kernel thread polls the submission queue and submissions are syscall-free. All rings share one poll thread. Ignored for libaio / on Windows.")]
+        [Option("device-uring-sqpoll", Required = false, Default = false, HelpText = "io_uring only: enable IORING_SETUP_SQPOLL so a kernel thread polls the submission queue and submissions are syscall-free. Each ring gets its own poll thread. Ignored for libaio / on Windows.")]
         public bool DeviceUringSqPoll { get; set; }
 
         [Option("device-uring-sqpoll-idle-ms", Required = false, Default = 0, HelpText = "io_uring SQPOLL poll-thread idle window in milliseconds (sq_thread_idle). 0 = native default (10000). Only meaningful with --device-uring-sqpoll.")]
         public int DeviceUringSqPollIdleMs { get; set; }
+
+        [Option("device-uring-sqpoll-cpus", Required = false, Default = null, HelpText = "io_uring SQPOLL poll-thread CPU pin list (comma-separated CPU ids, e.g. 0,1,2,3). Ring i pins its poll thread to cpus[i % count] via IORING_SETUP_SQ_AFF; empty leaves them unpinned. Only meaningful with --device-uring-sqpoll.")]
+        public string DeviceUringSqPollCpus { get; set; }
 
         [Option("segment-size", Required = false, Default = 1L << 30, HelpText = "Segment size (bytes)")]
         public long SegmentSize { get; set; }
