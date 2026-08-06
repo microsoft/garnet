@@ -234,14 +234,8 @@ namespace Garnet.server
             Array.Fill(quantizationTasks, Task.CompletedTask);
 
             // Exclusive locks for potential updates to Vector Set data
-            vectorSetElementSelectMask = (int)BitOperations.RoundUpToPowerOf2((uint)Environment.ProcessorCount) - 1;
-            vectorSetConcurrentUpdateSelectMask = (int)BitOperations.RoundUpToPowerOf2((uint)Environment.ProcessorCount * 2) - 1;
-
-            vectorSetElementUpdateLocks = new int[vectorSetElementSelectMask + 1][];
-            for (var i = 0; i < vectorSetElementUpdateLocks.Length; i++)
-            {
-                vectorSetElementUpdateLocks[i] = new int[vectorSetConcurrentUpdateSelectMask + 1];
-            }
+            vectorSetElementSelectMask = (int)BitOperations.RoundUpToPowerOf2((uint)Environment.ProcessorCount * 2) - 1;
+            vectorSetElementUpdateLocks = new int[vectorSetElementSelectMask + 1];
 
             logger?.LogInformation("Created VectorManager");
         }

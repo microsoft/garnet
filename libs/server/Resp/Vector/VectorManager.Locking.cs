@@ -80,8 +80,7 @@ namespace Garnet.server
         private readonly ReadOptimizedLock vectorSetLocks;
 
         private readonly int vectorSetElementSelectMask;
-        private readonly int vectorSetConcurrentUpdateSelectMask;
-        private readonly int[][] vectorSetElementUpdateLocks;
+        private readonly int[] vectorSetElementUpdateLocks;
 
         /// <summary>
         /// Returns true for indexes that were created via a previous instance of <see cref="VectorManager"/>.
@@ -102,11 +101,10 @@ namespace Garnet.server
         /// </summary>
         private ref int GetElementSubLock(ReadOnlySpan<byte> key, ReadOnlySpan<byte> element)
         {
-            var vectorSetArrayIndex = (int)(SpanByteComparer.StaticGetHashCode64(key) & vectorSetElementSelectMask);
-            var vectorSetArray = vectorSetElementUpdateLocks[vectorSetArrayIndex];
+            var hash = SpanByteComparer.StaticGetHashCode64(key) ^ SpanByteComparer.StaticGetHashCode64(element);
 
-            var vectorSetElementIndex = (int)(SpanByteComparer.StaticGetHashCode64(element) & vectorSetConcurrentUpdateSelectMask);
-            ref var vectorSetElementLock = ref vectorSetArray[vectorSetElementIndex];
+            var vectorSetElementIndex = (int)(hash & vectorSetElementSelectMask);
+            ref var vectorSetElementLock = ref vectorSetElementUpdateLocks[vectorSetElementIndex];
 
             while (Volatile.Read(ref vectorSetElementLock) != 0 || Interlocked.CompareExchange(ref vectorSetElementLock, int.MinValue, 0) != 0)
             {
