@@ -848,6 +848,11 @@ namespace Garnet.server
 
             // Prepare input
             var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.ZRANDMEMBER };
+
+            // We reserve 2 bits of metadata (1 for "include count", 1 for "with scores") in
+            // ObjectInput.arg1, so cap count to what will fit in the remaining signed 30 bits.
+            paramCount = Math.Min(paramCount, int.MaxValue >> 2);
+
             var inputArg = (((paramCount << 1) | (includedCount ? 1 : 0)) << 1) | (includeWithScores ? 1 : 0);
             var input = new ObjectInput(header, inputArg, seed);
 
