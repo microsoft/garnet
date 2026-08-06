@@ -35,7 +35,6 @@ namespace Garnet.test.cluster
 
         /// <summary>Baseline: asynchronously replayed VADDs must land with identical embeddings.</summary>
         [Test]
-        [Category("REPLICATION")]
         public void VectorSetReplicatedUnderAsyncReplay()
         {
             const string Key = "{vsdisk}async";
@@ -56,7 +55,6 @@ namespace Garnet.test.cluster
         /// the streamed index and applies later VADDs.
         /// </summary>
         [Test]
-        [Category("REPLICATION")]
         public void VectorSetReplicatedUnderAsyncReplayAfterFullSync()
         {
             const string Key = "{vsdisk}asyncfullsync";
@@ -86,7 +84,6 @@ namespace Garnet.test.cluster
         /// Multiple replay tasks apply VADDs for different keys concurrently; each key must keep exactly its own elements.
         /// </summary>
         [Test]
-        [Category("REPLICATION")]
         public void VectorSetReplicatedUnderParallelAsyncReplay()
         {
             const string FirstKey = "{vsdisk}asyncpar1";

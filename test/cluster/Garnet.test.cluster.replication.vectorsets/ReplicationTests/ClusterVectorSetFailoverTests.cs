@@ -31,7 +31,6 @@ namespace Garnet.test.cluster
 
         /// <summary>After promotion, the new primary must keep every element and the demoted node must agree.</summary>
         [Test]
-        [Category("REPLICATION")]
         public void VectorSetSurvivesFailover()
         {
             const string Key = "{vsdisk}failoverbasic";
@@ -59,7 +58,6 @@ namespace Garnet.test.cluster
         /// back to the demoted original writer.
         /// </summary>
         [Test]
-        [Category("REPLICATION")]
         public void PromotedReplicaServesVectorSetToDemotedPrimary()
         {
             const string Key = "{vsdisk}failoverwrite";
@@ -91,7 +89,6 @@ namespace Garnet.test.cluster
         /// Repeated failovers re-point the replication stream several times, surfacing state that only resets in one direction.
         /// </summary>
         [Test]
-        [Category("REPLICATION")]
         public void VectorSetSurvivesRepeatedFailovers()
         {
             const string Key = "{vsdisk}failoverloop";

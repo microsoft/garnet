@@ -50,7 +50,6 @@ namespace Garnet.test.cluster
         /// foreign IndexPtr dereferences that used to surface at NativeDiskANNMethods.card.
         /// </summary>
         [Test]
-        [Category("REPLICATION")]
         public void VectorSetReadableOnReplicaAfterDisklessFullSync()
         {
             const string Key = "{vsdisk}solo";
@@ -77,7 +76,6 @@ namespace Garnet.test.cluster
         /// Different sizes plus element checks expose cross-set substitution.
         /// </summary>
         [Test]
-        [Category("REPLICATION")]
         public void VectorSetsStayPartitionedAcrossDisklessFullSync()
         {
             // Same hash slot, so both keys live on the single primary in this topology.
@@ -112,7 +110,6 @@ namespace Garnet.test.cluster
         /// so this should pass even if full-sync cases fail.
         /// </summary>
         [Test]
-        [Category("REPLICATION")]
         public void VectorSetReadableOnReplicaWithoutFullSync()
         {
             const string Key = "{vsdisk}control";
@@ -135,7 +132,6 @@ namespace Garnet.test.cluster
         /// Each must rebuild its own index, not share per-primary state.
         /// </summary>
         [Test]
-        [Category("REPLICATION")]
         public void VectorSetReplicatedToEveryReplicaByDisklessFullSync()
         {
             const string Key = "{vsdisk}fanout";
@@ -174,7 +170,6 @@ namespace Garnet.test.cluster
         /// The record crosses both directions and both nodes must own their indexes.
         /// </summary>
         [Test]
-        [Category("REPLICATION")]
         public void VectorSetSurvivesFailoverAfterDisklessFullSync()
         {
             const string Key = "{vsdisk}failover";
@@ -210,7 +205,6 @@ namespace Garnet.test.cluster
         /// collide with it. Promoting the receiver makes it writable so the fresh create runs there.
         /// </summary>
         [Test]
-        [Category("REPLICATION")]
         public void FreshVectorSetDoesNotReuseStreamedContextAfterDisklessFullSync()
         {
             const string StreamedKey = "{vsctx}streamed";
@@ -248,7 +242,6 @@ namespace Garnet.test.cluster
         /// All four nodes must agree and no two may share a handle.
         /// </summary>
         [Test]
-        [Category("REPLICATION")]
         public void VectorSetMigratedBetweenPrimariesWithDisklessSync()
         {
             const int Primary0 = 0;
