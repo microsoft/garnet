@@ -843,6 +843,23 @@ namespace Garnet.test.cluster
             }
         }
 
+        /// <summary>Opens a connection and forms a single-primary cluster over every created node.</summary>
+        public void FormClusterAllNodes(int nodeCount, int primaryIndex = 0)
+        {
+            CreateConnection();
+            clusterTestUtils.FormCluster(primaryIndex, nodeCount, logger);
+        }
+
+        /// <summary>Promotes replicaIndex, waits for the demoted node to sync, and asserts the roles swapped.</summary>
+        public void FailoverTo(int replicaIndex, int oldPrimaryIndex)
+        {
+            ClusterFailoverSpinWait(replicaIndex, logger);
+            clusterTestUtils.WaitForReplicaAofSync(replicaIndex, oldPrimaryIndex, logger: logger);
+
+            clusterTestUtils.AssertRole(replicaIndex, "master", logger);
+            clusterTestUtils.AssertRole(oldPrimaryIndex, "slave", logger);
+        }
+
         public async Task AttachAndWaitForSyncAsync(int primaryIndex, int replicaStartIndex, int replicaCount, bool disableObjects)
         {
             var primaryId = clusterTestUtils.GetNodeIdFromNode(primaryIndex, logger);

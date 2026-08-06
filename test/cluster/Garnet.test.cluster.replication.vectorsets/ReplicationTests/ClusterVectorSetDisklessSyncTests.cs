@@ -29,7 +29,7 @@ namespace Garnet.test.cluster
                 replicaDisklessSyncFullSyncAofThreshold: "1k",
                 timeout: timeout);
 
-            FormClusterAllNodes(nodeCount);
+            context.FormClusterAllNodes(nodeCount);
         }
 
         /// <summary>
@@ -41,7 +41,7 @@ namespace Garnet.test.cluster
         private void ForceDisklessFullSync(int replicaIndex = ReplicaIndex)
         {
             context.clusterTestUtils.ResetReplica(replicaIndex, PrimaryIndex, context.logger);
-            PushPrimaryAhead(PrimaryIndex);
+            context.clusterTestUtils.PushPrimaryAhead(PrimaryIndex);
             context.clusterTestUtils.Attach(replicaIndex, PrimaryIndex, logger: context.logger);
         }
 
@@ -62,12 +62,12 @@ namespace Garnet.test.cluster
             PopulateVectorSet(PrimaryIndex, Key, Elements, seed: 2026_07_29_00);
             context.clusterTestUtils.WaitForReplicaAofSync(PrimaryIndex, ReplicaIndex, logger: context.logger);
 
-            MakeReadable(ReplicaIndex);
+            context.clusterTestUtils.ReadOnly(ReplicaIndex);
             AssertFullyReplicated(PrimaryIndex, ReplicaIndex, Key);
 
             ForceDisklessFullSync();
 
-            MakeReadable(ReplicaIndex);
+            context.clusterTestUtils.ReadOnly(ReplicaIndex);
             AssertFullyReplicated(PrimaryIndex, ReplicaIndex, Key);
         }
 
@@ -96,7 +96,7 @@ namespace Garnet.test.cluster
 
             ForceDisklessFullSync();
 
-            MakeReadable(ReplicaIndex);
+            context.clusterTestUtils.ReadOnly(ReplicaIndex);
             AssertFullyReplicated(PrimaryIndex, ReplicaIndex, SmallKey);
             AssertFullyReplicated(PrimaryIndex, ReplicaIndex, LargeKey);
 
@@ -121,7 +121,7 @@ namespace Garnet.test.cluster
             PopulateVectorSet(PrimaryIndex, Key, Elements, seed: 2026_07_29_04);
             context.clusterTestUtils.WaitForReplicaAofSync(PrimaryIndex, ReplicaIndex, logger: context.logger);
 
-            MakeReadable(ReplicaIndex);
+            context.clusterTestUtils.ReadOnly(ReplicaIndex);
 
             // Without full sync, VADD replay builds a local index and isolates full sync as the cause.
             AssertFullyReplicated(PrimaryIndex, ReplicaIndex, Key);
@@ -151,7 +151,7 @@ namespace Garnet.test.cluster
 
             for (var replica = 1; replica <= ReplicaCount; replica++)
             {
-                MakeReadable(replica);
+                context.clusterTestUtils.ReadOnly(replica);
                 AssertFullyReplicated(PrimaryIndex, replica, Key);
             }
 
@@ -182,19 +182,19 @@ namespace Garnet.test.cluster
             // The replica has its own replication id, so the attach takes a full sync.
             context.clusterTestUtils.Attach(ReplicaIndex, PrimaryIndex, logger: context.logger);
 
-            MakeReadable(ReplicaIndex);
+            context.clusterTestUtils.ReadOnly(ReplicaIndex);
             AssertFullyReplicated(PrimaryIndex, ReplicaIndex, Key);
 
-            FailoverTo(ReplicaIndex, PrimaryIndex);
+            context.FailoverTo(ReplicaIndex, PrimaryIndex);
 
-            MakeReadable(PrimaryIndex);
+            context.clusterTestUtils.ReadOnly(PrimaryIndex);
             AssertFullyReplicated(ReplicaIndex, PrimaryIndex, Key);
 
             // Inherited sets must still accept writes and replicate them back.
             PopulateVectorSet(ReplicaIndex, Key, count: 50, seed: 2026_07_29_08);
             context.clusterTestUtils.WaitForReplicaAofSync(ReplicaIndex, PrimaryIndex, logger: context.logger);
 
-            MakeReadable(PrimaryIndex);
+            context.clusterTestUtils.ReadOnly(PrimaryIndex);
             AssertFullyReplicated(ReplicaIndex, PrimaryIndex, Key);
         }
 
@@ -219,12 +219,12 @@ namespace Garnet.test.cluster
             // the streamed set's index record (and its context) verbatim.
             context.clusterTestUtils.Attach(ReplicaIndex, PrimaryIndex, logger: context.logger);
 
-            MakeReadable(ReplicaIndex);
+            context.clusterTestUtils.ReadOnly(ReplicaIndex);
             AssertFullyReplicated(PrimaryIndex, ReplicaIndex, StreamedKey);
 
             // Promote the receiver so the fresh create allocates a context on the very node that
             // took the diskless full sync.
-            FailoverTo(ReplicaIndex, PrimaryIndex);
+            context.FailoverTo(ReplicaIndex, PrimaryIndex);
 
             var streamedContext = ReadPersistedContext(ReplicaIndex, StreamedKey);
 

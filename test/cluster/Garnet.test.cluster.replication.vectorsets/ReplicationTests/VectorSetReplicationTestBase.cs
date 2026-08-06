@@ -26,11 +26,6 @@ namespace Garnet.test.cluster
         /// <summary>Length in bytes of an XB8 vector.</summary>
         protected const int VectorDimensions = 64;
 
-        /// <summary>
-        /// Enough padding keys to force a re-attach down the full-sync path instead of incremental replay.
-        /// </summary>
-        protected const int FullSyncForcingKeys = 256;
-
         protected ClusterTestContext context;
 
         protected readonly int timeout = (int)TimeSpan.FromSeconds(15).TotalSeconds;
@@ -59,39 +54,6 @@ namespace Garnet.test.cluster
 
         #region cluster formation
 
-        /// <summary>Moves the primary far enough ahead that a re-attach cannot be incremental.</summary>
-        protected void PushPrimaryAhead(int primaryIndex)
-        {
-            var primary = context.clusterTestUtils.GetEndPoint(primaryIndex);
-            for (var i = 0; i < FullSyncForcingKeys; i++)
-            {
-                _ = context.clusterTestUtils.Execute(primary, "SET", [$"{{padding}}key{i}", new string('x', 64)], skipLogging: true);
-            }
-        }
-
-        /// <summary>Opens a connection and forms a single-primary cluster over every created node.</summary>
-        protected void FormClusterAllNodes(int nodeCount, int primaryIndex = 0)
-        {
-            context.CreateConnection();
-            context.clusterTestUtils.FormCluster(primaryIndex, nodeCount, context.logger);
-        }
-
-        /// <summary>Promotes replicaIndex, waits for the demoted node to sync, and asserts the roles swapped.</summary>
-        protected void FailoverTo(int replicaIndex, int oldPrimaryIndex)
-        {
-            context.ClusterFailoverSpinWait(replicaIndex, context.logger);
-            context.clusterTestUtils.WaitForReplicaAofSync(replicaIndex, oldPrimaryIndex, logger: context.logger);
-
-            context.clusterTestUtils.AssertRole(replicaIndex, "master", context.logger);
-            context.clusterTestUtils.AssertRole(oldPrimaryIndex, "slave", context.logger);
-        }
-
-        protected void MakeReadable(int nodeIndex)
-        {
-            var ok = (string)context.clusterTestUtils.Execute(context.clusterTestUtils.GetEndPoint(nodeIndex), "READONLY", [], logger: context.logger);
-            ClassicAssert.AreEqual("OK", ok);
-        }
-
         /// <summary>
         /// Waits until nodeIndex serves key instead of returning MOVED after a slot migration.
         /// </summary>
@@ -101,7 +63,7 @@ namespace Garnet.test.cluster
 
             for (var attempt = 0; attempt < 200; attempt++)
             {
-                MakeReadable(nodeIndex);
+                context.clusterTestUtils.ReadOnly(nodeIndex, context.logger);
                 WaitForVectorReplay(nodeIndex);
 
                 var reply = context.clusterTestUtils.Execute(endpoint, "VINFO", [key], skipLogging: true);

@@ -2223,6 +2223,22 @@ namespace Garnet.test.cluster
             }
         }
 
+        /// <summary>Enables replica reads on a node.</summary>
+        public void ReadOnly(int nodeIndex, ILogger logger = null)
+            => ClassicAssert.AreEqual("OK", (string)Execute(GetEndPoint(nodeIndex), "READONLY", [], logger: logger));
+
+        /// <summary>
+        /// Writes filler keys so a re-attaching replica falls behind the primary's AOF window and cannot sync incrementally.
+        /// </summary>
+        public void PushPrimaryAhead(int primaryIndex, int keyCount = 256, int valueLength = 64)
+        {
+            var primary = GetEndPoint(primaryIndex);
+            for (var i = 0; i < keyCount; i++)
+            {
+                _ = Execute(primary, "SET", [$"{{padding}}key{i}", new string('x', valueLength)], skipLogging: true);
+            }
+        }
+
         /// <summary>Attaches a replica to a primary and waits until it is in sync.</summary>
         public void Attach(int replicaIndex, int primaryIndex, bool waitForRecovery = false, ILogger logger = null)
         {

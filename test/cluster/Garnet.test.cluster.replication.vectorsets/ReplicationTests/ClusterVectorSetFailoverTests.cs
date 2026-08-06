@@ -26,7 +26,7 @@ namespace Garnet.test.cluster
                 OnDemandCheckpoint: true,
                 timeout: timeout);
 
-            FormClusterAllNodes(nodeCount);
+            context.FormClusterAllNodes(nodeCount);
         }
 
         /// <summary>After promotion, the new primary must keep every element and the demoted node must agree.</summary>
@@ -42,14 +42,14 @@ namespace Garnet.test.cluster
             PopulateVectorSet(PrimaryIndex, Key, Elements, seed: 2026_07_29_21);
             context.clusterTestUtils.WaitForReplicaAofSync(PrimaryIndex, ReplicaIndex, logger: context.logger);
 
-            MakeReadable(ReplicaIndex);
+            context.clusterTestUtils.ReadOnly(ReplicaIndex);
             AssertFullyReplicated(PrimaryIndex, ReplicaIndex, Key);
 
-            FailoverTo(ReplicaIndex, PrimaryIndex);
+            context.FailoverTo(ReplicaIndex, PrimaryIndex);
 
             ClassicAssert.AreEqual(Elements, VectorSetSize(ReplicaIndex, Key), "the promoted node lost elements across the failover");
 
-            MakeReadable(PrimaryIndex);
+            context.clusterTestUtils.ReadOnly(PrimaryIndex);
             AssertFullyReplicated(ReplicaIndex, PrimaryIndex, Key);
         }
 
@@ -70,10 +70,10 @@ namespace Garnet.test.cluster
             PopulateVectorSet(PrimaryIndex, Key, InitialElements, seed: 2026_07_29_22);
             context.clusterTestUtils.WaitForReplicaAofSync(PrimaryIndex, ReplicaIndex, logger: context.logger);
 
-            MakeReadable(ReplicaIndex);
+            context.clusterTestUtils.ReadOnly(ReplicaIndex);
             AssertFullyReplicated(PrimaryIndex, ReplicaIndex, Key);
 
-            FailoverTo(ReplicaIndex, PrimaryIndex);
+            context.FailoverTo(ReplicaIndex, PrimaryIndex);
 
             // ReplicaIndex is now primary; write through it.
             PopulateVectorSet(ReplicaIndex, Key, AddedElements, seed: 2026_07_29_23);
@@ -81,7 +81,7 @@ namespace Garnet.test.cluster
 
             ClassicAssert.AreEqual(InitialElements + AddedElements, VectorSetSize(ReplicaIndex, Key));
 
-            MakeReadable(PrimaryIndex);
+            context.clusterTestUtils.ReadOnly(PrimaryIndex);
             AssertFullyReplicated(ReplicaIndex, PrimaryIndex, Key);
         }
 
@@ -107,13 +107,13 @@ namespace Garnet.test.cluster
 
             for (var round = 0; round < Rounds; round++)
             {
-                FailoverTo(replica, primary);
+                context.FailoverTo(replica, primary);
                 (primary, replica) = (replica, primary);
 
                 PopulateVectorSet(primary, Key, PerRoundElements, seed: 2026_07_29_25 + round);
                 context.clusterTestUtils.WaitForReplicaAofSync(primary, replica, logger: context.logger);
 
-                MakeReadable(replica);
+                context.clusterTestUtils.ReadOnly(replica);
                 AssertFullyReplicated(primary, replica, Key);
             }
 

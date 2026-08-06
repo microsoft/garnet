@@ -30,7 +30,7 @@ namespace Garnet.test.cluster
                 vectorSetReplayTaskCount: vectorSetReplayTaskCount,
                 timeout: timeout);
 
-            FormClusterAllNodes(nodeCount);
+            context.FormClusterAllNodes(nodeCount);
         }
 
         /// <summary>Baseline: asynchronously replayed VADDs must land with identical embeddings.</summary>
@@ -46,7 +46,7 @@ namespace Garnet.test.cluster
             PopulateVectorSet(PrimaryIndex, Key, Elements, seed: 2026_07_29_26);
             context.clusterTestUtils.WaitForReplicaAofSync(PrimaryIndex, ReplicaIndex, logger: context.logger);
 
-            MakeReadable(ReplicaIndex);
+            context.clusterTestUtils.ReadOnly(ReplicaIndex);
             AssertFullyReplicated(PrimaryIndex, ReplicaIndex, Key);
         }
 
@@ -69,14 +69,14 @@ namespace Garnet.test.cluster
             // The replica has its own replication id, so the attach takes a full sync.
             context.clusterTestUtils.Attach(ReplicaIndex, PrimaryIndex, logger: context.logger);
 
-            MakeReadable(ReplicaIndex);
+            context.clusterTestUtils.ReadOnly(ReplicaIndex);
             AssertFullyReplicated(PrimaryIndex, ReplicaIndex, Key);
 
             // Writes after sync exercise async replay against the rebuilt index.
             PopulateVectorSet(PrimaryIndex, Key, AfterSyncElements, seed: 2026_07_29_28);
             context.clusterTestUtils.WaitForReplicaAofSync(PrimaryIndex, ReplicaIndex, logger: context.logger);
 
-            MakeReadable(ReplicaIndex);
+            context.clusterTestUtils.ReadOnly(ReplicaIndex);
             AssertFullyReplicated(PrimaryIndex, ReplicaIndex, Key);
         }
 
@@ -107,7 +107,7 @@ namespace Garnet.test.cluster
 
             context.clusterTestUtils.WaitForReplicaAofSync(PrimaryIndex, ReplicaIndex, logger: context.logger);
 
-            MakeReadable(ReplicaIndex);
+            context.clusterTestUtils.ReadOnly(ReplicaIndex);
             AssertFullyReplicated(PrimaryIndex, ReplicaIndex, FirstKey);
             AssertFullyReplicated(PrimaryIndex, ReplicaIndex, SecondKey);
             AssertFullyReplicated(PrimaryIndex, ReplicaIndex, ThirdKey);
