@@ -202,34 +202,30 @@ namespace Garnet.test
         [Test]
         public void DeviceUringSqPollOptions()
         {
-            // Defaults: opt-in SQPOLL is off, the idle window is the native default (0) and the CPU pin
-            // list is unset (null) per defaults.conf, flowing through to GarnetServerOptions unchanged.
+            // Defaults: opt-in SQPOLL is off and the idle window is the native default (0) per
+            // defaults.conf, flowing through to GarnetServerOptions unchanged.
             {
                 var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments([], out var options, out _, out _, out _, silentMode: true);
                 ClassicAssert.IsTrue(parseSuccessful);
                 ClassicAssert.AreEqual(false, options.DeviceUringSqPoll);
                 ClassicAssert.AreEqual(0, options.DeviceUringSqPollIdleMs);
-                ClassicAssert.IsNull(options.DeviceUringSqPollCpus);
 
                 var serverOptions = options.GetServerOptions();
                 ClassicAssert.IsFalse(serverOptions.DeviceUringSqPoll);
                 ClassicAssert.AreEqual(0, serverOptions.DeviceUringSqPollIdleMs);
-                ClassicAssert.IsNull(serverOptions.DeviceUringSqPollCpus);
             }
 
             // Explicit values are parsed and flow through to GarnetServerOptions.
             {
-                var args = new[] { "--device-uring-sqpoll", "true", "--device-uring-sqpoll-idle-ms", "2000", "--device-uring-sqpoll-cpus", "0,1,2,3" };
+                var args = new[] { "--device-uring-sqpoll", "true", "--device-uring-sqpoll-idle-ms", "2000" };
                 var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out _, out _, out _, silentMode: true);
                 ClassicAssert.IsTrue(parseSuccessful);
                 ClassicAssert.AreEqual(true, options.DeviceUringSqPoll);
                 ClassicAssert.AreEqual(2000, options.DeviceUringSqPollIdleMs);
-                ClassicAssert.AreEqual("0,1,2,3", options.DeviceUringSqPollCpus);
 
                 var serverOptions = options.GetServerOptions();
                 ClassicAssert.IsTrue(serverOptions.DeviceUringSqPoll);
                 ClassicAssert.AreEqual(2000, serverOptions.DeviceUringSqPollIdleMs);
-                ClassicAssert.AreEqual("0,1,2,3", serverOptions.DeviceUringSqPollCpus);
             }
         }
 

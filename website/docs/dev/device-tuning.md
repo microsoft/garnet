@@ -129,30 +129,21 @@ submission and was a hard ceiling; that is fixed. `--device-uring-sqpoll-idle-ms
 `sq_thread_idle` (how long a poll thread spins after the last submit before parking; `0` = 10s
 native default). **Off by default (opt-in).** Ignored for libaio / on Windows.
 
-`--device-uring-sqpoll-cpus` optionally pins the poll threads: a comma-separated CPU-id list
-(e.g. `0,1,2,3`) where ring `i` binds its poll thread to `cpus[i % count]` via
-`IORING_SETUP_SQ_AFF`; empty (the default) leaves them unpinned so the kernel places them
-freely.
-
 With one poll thread per ring, SQPOLL **matches or slightly beats** the default per-submit
 path on the 8×NVMe RAID-0 target (uring, 512B random reads), peaking at fio parity:
 
-| config (io-contexts / threads) | SQPOLL off | SQPOLL on (float) | SQPOLL on (pinned) |
-|--------------------------------|-----------:|------------------:|-------------------:|
-| 8 / 16                         |     3.10M  |          **3.44M**|             3.30M  |
-| 16 / 32                        |     5.18M  |          **5.83M**|             4.69M  |
-| 32 / 32 (peak)                 |     8.12M  |          **8.39M**|             8.01M  |
-| 32 / 64                        |     6.98M  |          **7.18M**|             6.73M  |
+| config (io-contexts / threads) | SQPOLL off | SQPOLL on |
+|--------------------------------|-----------:|----------:|
+| 8 / 16                         |     3.10M  |  **3.44M**|
+| 16 / 32                        |     5.18M  |  **5.83M**|
+| 32 / 32 (peak)                 |     8.12M  |  **8.39M**|
+| 32 / 64                        |     6.98M  |  **7.18M**|
 
-:::tip Leave the poll threads unpinned (float)
-Across every measured configuration, letting the kernel place the poll threads (no
-`--device-uring-sqpoll-cpus`) beat static pinning — with node 0's 56 cores mostly idle the
-scheduler spreads the poll threads better than a fixed map, and pinning them onto the
-submitter / RESP cores costs throughput. At the peak config, float held ~8.4M while pinning to
-HT siblings reached 8.33M and pinning to the submitter range dropped to 7.89M. Use
-`--device-uring-sqpoll-cpus` only when you specifically need to isolate the poll threads (e.g.
-a co-tenant workload). Note the poll threads are busy-polling kernel threads and consume CPU,
-so give them cores to run on; on core-starved hosts SQPOLL can still lose to the default path.
+:::tip Let the kernel place the poll threads
+The poll threads are left unpinned so the scheduler can spread them across node 0's mostly-idle
+cores — this beat every static pinning map we tried (pinning onto the submitter / RESP cores
+cost throughput). The poll threads are busy-polling kernel threads and consume CPU, so give
+them cores to run on; on core-starved hosts SQPOLL can still lose to the default path.
 :::
 
 ## Derived parameters

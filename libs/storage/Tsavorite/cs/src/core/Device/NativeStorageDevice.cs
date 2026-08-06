@@ -282,12 +282,6 @@ namespace Tsavorite.core
         /// <see cref="uringSqPollConfig"/> is true; 0 lets the native layer pick its default.
         /// </summary>
         readonly int uringSqPollIdleMsConfig;
-        /// <summary>
-        /// SQPOLL poll-thread CPU pin list (comma-separated CPU ids). Only meaningful when
-        /// <see cref="uringSqPollConfig"/> is true; when non-empty ring i pins its kernel poll thread to
-        /// cpus[i % count] via IORING_SETUP_SQ_AFF. Null/empty leaves the poll threads unpinned.
-        /// </summary>
-        readonly string uringSqPollCpusConfig;
 
         /// <summary>
         /// Runtime segment size in bytes that the native shim was asked to use. Populated by
@@ -743,7 +737,7 @@ namespace Tsavorite.core
         }
 
         [DllImport(NativeLibraryName, EntryPoint = "NativeDevice_CreateWithBackend", CallingConvention = CallingConvention.Cdecl)]
-        static extern IntPtr NativeDevice_CreateWithBackend(string file, bool enablePrivileges, bool unbuffered, bool delete_on_close, int backend, ulong segmentSizeBytes, bool omitSegmentIdFromFilename, int numIoContexts, int maxEvents, int uringSqPoll, int uringSqPollIdleMs, string uringSqPollCpus);
+        static extern IntPtr NativeDevice_CreateWithBackend(string file, bool enablePrivileges, bool unbuffered, bool delete_on_close, int backend, ulong segmentSizeBytes, bool omitSegmentIdFromFilename, int numIoContexts, int maxEvents, int uringSqPoll, int uringSqPollIdleMs);
 
         [DllImport(NativeLibraryName, EntryPoint = "NativeDevice_GetSegmentSize", CallingConvention = CallingConvention.Cdecl)]
         static extern ulong NativeDevice_GetSegmentSize(IntPtr device);
@@ -1201,7 +1195,6 @@ namespace Tsavorite.core
         /// <param name="queueDepth">Per-ring kernel submission depth (maxEvents). 0 = device default.</param>
         /// <param name="uringSqPoll">io_uring only: enable IORING_SETUP_SQPOLL so a kernel thread polls the submission queue and submissions are syscall-free. Each ring gets its own poll thread. Ignored for libaio / on Windows. Off by default.</param>
         /// <param name="uringSqPollIdleMs">io_uring SQPOLL poll-thread idle window in milliseconds (sq_thread_idle). Only used when <paramref name="uringSqPoll"/> is true; 0 = native default.</param>
-        /// <param name="uringSqPollCpus">io_uring SQPOLL poll-thread CPU pin list (comma-separated CPU ids). Only used when <paramref name="uringSqPoll"/> is true; when non-empty ring i pins its poll thread to cpus[i % count] via IORING_SETUP_SQ_AFF. Null/empty leaves them unpinned.</param>
         public NativeStorageDevice(string filename,
                                       bool deleteOnClose = false,
                                       bool disableFileBuffering = true,
@@ -1212,8 +1205,7 @@ namespace Tsavorite.core
                                       int numIoContexts = 0,
                                       int queueDepth = 0,
                                       bool uringSqPoll = false,
-                                      int uringSqPollIdleMs = 0,
-                                      string uringSqPollCpus = null)
+                                      int uringSqPollIdleMs = 0)
                 : base(filename, EnsureParentDirectoryAndProbeSectorSize(filename), capacity)
         {
             Debug.Assert(numCompletionThreads >= 1);
@@ -1268,7 +1260,6 @@ namespace Tsavorite.core
             this.ioBackendConfig = ioBackend;
             this.uringSqPollConfig = uringSqPoll;
             this.uringSqPollIdleMsConfig = uringSqPollIdleMs > 0 ? uringSqPollIdleMs : 0;
-            this.uringSqPollCpusConfig = string.IsNullOrWhiteSpace(uringSqPollCpus) ? null : uringSqPollCpus;
             this.logger = logger;
 
             // Default aggregate in-flight throttle. Unlike the managed in-box devices (which cap at 120),
@@ -1408,10 +1399,7 @@ namespace Tsavorite.core
                 // SQPOLL is an io_uring-only submit-side optimization; never pass it to libaio (the native
                 // libaio/default handlers accept and ignore it, but keep the managed intent explicit).
                 int uringSqPollArg = (uringSqPollConfig && ioBackendConfig == IoBackend.Uring) ? 1 : 0;
-                // SQPOLL CPU pin list is io_uring-only; pass null for libaio so the native side leaves poll
-                // threads unpinned (it is ignored there anyway).
-                string uringSqPollCpusArg = uringSqPollArg != 0 ? uringSqPollCpusConfig : null;
-                var newDevice = NativeDevice_CreateWithBackend(filename, false, disableFileBuffering, deleteOnClose, (int)ioBackendConfig, sizeForNative, OmitSegmentIdFromFileName, numIoContextsConfig, ringDepth, uringSqPollArg, uringSqPollIdleMsConfig, uringSqPollCpusArg);
+                var newDevice = NativeDevice_CreateWithBackend(filename, false, disableFileBuffering, deleteOnClose, (int)ioBackendConfig, sizeForNative, OmitSegmentIdFromFileName, numIoContextsConfig, ringDepth, uringSqPollArg, uringSqPollIdleMsConfig);
                 if (newDevice == IntPtr.Zero)
                 {
                     var nativeMessage = GetNativeLastError();
@@ -1485,9 +1473,8 @@ namespace Tsavorite.core
                     numRingsActual = actualIoContexts;
                     if (uringSqPollConfig && ioBackendConfig == IoBackend.Uring)
                         logger?.LogInformation(
-                            "NativeStorageDevice: io_uring SQPOLL enabled (rings={rings}, one kernel submission-poll thread per ring, sq_thread_idle={idle}, cpu-pin={cpus}). Submissions are syscall-free while the poll thread is awake.",
-                            actualIoContexts, uringSqPollIdleMsConfig > 0 ? $"{uringSqPollIdleMsConfig}ms" : "native-default",
-                            string.IsNullOrEmpty(uringSqPollCpusConfig) ? "none" : uringSqPollCpusConfig);
+                            "NativeStorageDevice: io_uring SQPOLL enabled (rings={rings}, one kernel submission-poll thread per ring, sq_thread_idle={idle}). Submissions are syscall-free while the poll thread is awake.",
+                            actualIoContexts, uringSqPollIdleMsConfig > 0 ? $"{uringSqPollIdleMsConfig}ms" : "native-default");
                     // Partition the io_contexts (rings) across a small pool of drainer threads. When
                     // actualIoContexts == numCompletionThreadsConfig this reduces to the legacy 1:1
                     // ring-to-drainer binding; when there are more rings than drainers (to de-contend

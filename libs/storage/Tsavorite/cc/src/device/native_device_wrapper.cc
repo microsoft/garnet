@@ -40,10 +40,10 @@ inline INativeDevice* FinalizeOrSurfaceError(DeviceT* device) {
 template <typename DeviceT>
 inline INativeDevice* TryConstructDevice(const char* file, uint64_t segment_size, bool omit_segment_id, int num_io_contexts,
                                          bool enablePrivileges, bool unbuffered, bool delete_on_close, int max_events,
-                                         bool uring_sqpoll, int uring_sqpoll_idle_ms, const char* uring_sqpoll_cpus) {
+                                         bool uring_sqpoll, int uring_sqpoll_idle_ms) {
     try {
         return FinalizeOrSurfaceError(
-            new DeviceT(std::string(file), segment_size, omit_segment_id, num_io_contexts, enablePrivileges, unbuffered, delete_on_close, max_events, uring_sqpoll, uring_sqpoll_idle_ms, uring_sqpoll_cpus));
+            new DeviceT(std::string(file), segment_size, omit_segment_id, num_io_contexts, enablePrivileges, unbuffered, delete_on_close, max_events, uring_sqpoll, uring_sqpoll_idle_ms));
     } catch (const std::invalid_argument& e) {
         native_device::set_last_error("Invalid argument: %s", e.what());
         return nullptr;
@@ -153,11 +153,8 @@ extern "C" {
 	/// IORING_SETUP_SQPOLL so a kernel thread polls the SQ and submissions need no io_uring_enter
 	/// syscall. Each ring gets its OWN poll thread (no IORING_SETUP_ATTACH_WQ) so submission stays
 	/// parallel across rings. `uring_sqpoll_idle_ms` is that poll thread's idle-before-park window
-	/// in milliseconds (<= 0 => native default). `uring_sqpoll_cpus` is an optional comma-separated
-	/// CPU-id list; when non-empty ring i pins its poll thread to cpus[i % count] via
-	/// IORING_SETUP_SQ_AFF, otherwise the kernel places them freely. All are ignored by the libaio
-	/// and Windows backends.
-	EXPORTED_SYMBOL INativeDevice* NativeDevice_CreateWithBackend(const char* file, bool enablePrivileges, bool unbuffered, bool delete_on_close, int32_t backend, uint64_t segment_size_bytes, bool omit_segment_id, int32_t num_io_contexts, int32_t max_events, int32_t uring_sqpoll, int32_t uring_sqpoll_idle_ms, const char* uring_sqpoll_cpus) {
+	/// in milliseconds (<= 0 => native default). Both are ignored by the libaio and Windows backends.
+	EXPORTED_SYMBOL INativeDevice* NativeDevice_CreateWithBackend(const char* file, bool enablePrivileges, bool unbuffered, bool delete_on_close, int32_t backend, uint64_t segment_size_bytes, bool omit_segment_id, int32_t num_io_contexts, int32_t max_events, int32_t uring_sqpoll, int32_t uring_sqpoll_idle_ms) {
 		native_device::clear_last_error();
 		if (file == nullptr) {
 			native_device::set_last_error("NativeDevice_CreateWithBackend: 'file' argument is null.");
@@ -167,13 +164,13 @@ extern "C" {
 		const bool sqpoll = uring_sqpoll != 0;
 		switch (backend) {
 			case NativeDeviceBackend_Default:
-				return TryConstructDevice<NativeDeviceDefault>(file, segment_size_bytes, omit_segment_id, num_io_contexts, enablePrivileges, unbuffered, delete_on_close, max_events, sqpoll, uring_sqpoll_idle_ms, uring_sqpoll_cpus);
+				return TryConstructDevice<NativeDeviceDefault>(file, segment_size_bytes, omit_segment_id, num_io_contexts, enablePrivileges, unbuffered, delete_on_close, max_events, sqpoll, uring_sqpoll_idle_ms);
 #if !defined(_WIN32) && !defined(_WIN64)
 			case NativeDeviceBackend_Libaio:
-				return TryConstructDevice<NativeDeviceLibaio>(file, segment_size_bytes, omit_segment_id, num_io_contexts, enablePrivileges, unbuffered, delete_on_close, max_events, sqpoll, uring_sqpoll_idle_ms, uring_sqpoll_cpus);
+				return TryConstructDevice<NativeDeviceLibaio>(file, segment_size_bytes, omit_segment_id, num_io_contexts, enablePrivileges, unbuffered, delete_on_close, max_events, sqpoll, uring_sqpoll_idle_ms);
 #ifdef FASTER_URING
 			case NativeDeviceBackend_Uring:
-				return TryConstructDevice<NativeDeviceUring>(file, segment_size_bytes, omit_segment_id, num_io_contexts, enablePrivileges, unbuffered, delete_on_close, max_events, sqpoll, uring_sqpoll_idle_ms, uring_sqpoll_cpus);
+				return TryConstructDevice<NativeDeviceUring>(file, segment_size_bytes, omit_segment_id, num_io_contexts, enablePrivileges, unbuffered, delete_on_close, max_events, sqpoll, uring_sqpoll_idle_ms);
 #endif
 #endif
 			default:

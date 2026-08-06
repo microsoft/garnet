@@ -6,7 +6,6 @@
 #include <atomic>
 #include <cstdint>
 #include <cstdio>
-#include <cstdlib>
 #include <memory>
 #include <string>
 #include <vector>
@@ -217,11 +216,10 @@ class QueueIoHandler {
     Init(num_contexts < 1 ? 1 : num_contexts);
   }
 
-  /// 6-arg overload accepted for cross-backend symmetry with UringIoHandler. libaio has no
-  /// submission-poll thread, so the io_uring SQPOLL parameters (`sqpoll`, `sq_thread_idle_ms`,
-  /// `sqpoll_cpus`) are silently ignored.
-  QueueIoHandler(size_t /*max_threads*/, int num_contexts, int max_events, bool /*sqpoll*/, int /*sq_thread_idle_ms*/,
-                 const char* /*sqpoll_cpus*/)
+  /// 5-arg overload accepted for cross-backend symmetry with UringIoHandler. libaio has no
+  /// submission-poll thread, so the io_uring SQPOLL parameters (`sqpoll`, `sq_thread_idle_ms`)
+  /// are silently ignored.
+  QueueIoHandler(size_t /*max_threads*/, int num_contexts, int max_events, bool /*sqpoll*/, int /*sq_thread_idle_ms*/)
     : max_events_{ max_events > 0 ? max_events : kMaxEvents }
     , init_errno_{ 0 } {
     Init(num_contexts < 1 ? 1 : num_contexts);
@@ -508,25 +506,6 @@ class UringIoHandler {
     return p;
   }
 
-  /// Parse a comma-separated CPU-id list (e.g. "28,29,30,31") into a vector. Blanks and non-numeric
-  /// tokens are skipped; negative ids are dropped. An empty/null string yields an empty vector,
-  /// which disables SQPOLL CPU affinity (the kernel places each poll thread freely).
-  static std::vector<int> ParseCpuList(const char* csv) {
-    std::vector<int> cpus;
-    if (csv == nullptr) return cpus;
-    const char* p = csv;
-    while (*p != '\0') {
-      while (*p == ' ' || *p == ',' || *p == '\t') ++p;
-      if (*p == '\0') break;
-      char* end = nullptr;
-      long v = std::strtol(p, &end, 10);
-      if (end == p) { ++p; continue; }
-      if (v >= 0) cpus.push_back(static_cast<int>(v));
-      p = end;
-    }
-    return cpus;
-  }
-
  public:
   UringIoHandler()
     : init_errno_{ 0 } {
@@ -559,16 +538,12 @@ class UringIoHandler {
   /// syscall on the hot path (submit-side offload only; completion draining is unchanged). Each ring
   /// gets its OWN kernel poll thread (no IORING_SETUP_ATTACH_WQ) so submission stays parallel across
   /// rings — sharing a single poll thread across rings serialises submission and is a hard throughput
-  /// ceiling. `sqpoll_cpus` optionally pins those poll threads: if non-empty (comma-separated CPU ids)
-  /// ring i binds its poll thread to cpus[i % count] via IORING_SETUP_SQ_AFF + sq_thread_cpu; if empty
-  /// the kernel is free to place each poll thread (no affinity). `sq_thread_idle_ms` sets the poll
-  /// thread's idle-before-park window (<= 0 => kDefaultSqThreadIdleMs).
-  UringIoHandler(size_t /*max_threads*/, int num_rings, int max_events, bool sqpoll, int sq_thread_idle_ms,
-                 const char* sqpoll_cpus)
+  /// ceiling. `sq_thread_idle_ms` sets the poll thread's idle-before-park window
+  /// (<= 0 => kDefaultSqThreadIdleMs).
+  UringIoHandler(size_t /*max_threads*/, int num_rings, int max_events, bool sqpoll, int sq_thread_idle_ms)
     : max_events_{ RoundUpPow2(max_events < kMaxEvents ? kMaxEvents : max_events) }
     , sqpoll_{ sqpoll }
     , sq_thread_idle_ms_{ sq_thread_idle_ms > 0 ? sq_thread_idle_ms : kDefaultSqThreadIdleMs }
-    , sqpoll_cpus_{ ParseCpuList(sqpoll_cpus) }
     , init_errno_{ 0 } {
     Init(num_rings < 1 ? 1 : num_rings);
   }
@@ -581,7 +556,6 @@ class UringIoHandler {
     , max_events_{ other.max_events_ }
     , sqpoll_{ other.sqpoll_ }
     , sq_thread_idle_ms_{ other.sq_thread_idle_ms_ }
-    , sqpoll_cpus_{ std::move(other.sqpoll_cpus_) }
     , init_errno_{ other.init_errno_ } {
     other.rings_.clear();
     other.sq_locks_.clear();
@@ -717,17 +691,11 @@ private:
       if (sqpoll_) {
         // IORING_SETUP_SQPOLL: a kernel thread polls this ring's SQ, so submissions are syscall-free
         // while it is awake. sq_thread_idle is in milliseconds. Each ring gets its OWN poll thread
-        // (no IORING_SETUP_ATTACH_WQ) so submission stays parallel across rings. If a CPU list was
-        // supplied, pin this ring's poll thread to cpus[i % count] via IORING_SETUP_SQ_AFF so the
-        // busy-polling kernel threads land on dedicated cores instead of floating onto the submitter
-        // / RESP cores; with no list the kernel places them freely.
+        // (no IORING_SETUP_ATTACH_WQ) so submission stays parallel across rings; the kernel is free to
+        // place each poll thread.
         struct io_uring_params params = {};
         params.flags = IORING_SETUP_SQPOLL;
         params.sq_thread_idle = static_cast<unsigned>(sq_thread_idle_ms_);
-        if (!sqpoll_cpus_.empty()) {
-          params.flags |= IORING_SETUP_SQ_AFF;
-          params.sq_thread_cpu = static_cast<unsigned>(sqpoll_cpus_[i % sqpoll_cpus_.size()]);
-        }
         ret = io_uring_queue_init_params(max_events_, raw_ring, &params);
       } else {
         ret = io_uring_queue_init(max_events_, raw_ring, 0);
@@ -771,9 +739,6 @@ private:
   /// SQPOLL sq_thread_idle window in milliseconds (poll-thread spin-before-park). Only consulted when
   /// sqpoll_ is true; the ctor floors a non-positive request at kDefaultSqThreadIdleMs.
   int sq_thread_idle_ms_ = kDefaultSqThreadIdleMs;
-  /// SQPOLL poll-thread CPU pin list. When sqpoll_ is true and this is non-empty, ring i pins its
-  /// kernel poll thread to sqpoll_cpus_[i % size] via IORING_SETUP_SQ_AFF; empty => no affinity.
-  std::vector<int> sqpoll_cpus_;
   /// If non-zero, the positive errno from a failed io_uring_queue_init() in the constructor.
   int init_errno_;
 };

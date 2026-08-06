@@ -156,12 +156,6 @@ namespace Tsavorite.kvbench
                        "Only meaningful with --device-uring-sqpoll.")]
         public int DeviceUringSqPollIdleMs { get; set; }
 
-        [Option("device-uring-sqpoll-cpus", Required = false, Default = null,
-            HelpText = "io_uring SQPOLL poll-thread CPU pin list (comma-separated CPU ids, e.g. 0,1,2,3): ring i " +
-                       "pins its poll thread to cpus[i % count] via IORING_SETUP_SQ_AFF; empty leaves them " +
-                       "unpinned. Only meaningful with --device-uring-sqpoll.")]
-        public string DeviceUringSqPollCpus { get; set; }
-
         [Option("device-inline-completion", Required = false, Default = false,
             HelpText = "DeviceType.LocalMemory only: complete IOs inline on the submitting thread (no " +
                        "completion threads or rings; copy + callback run synchronously). Isolates the " +
