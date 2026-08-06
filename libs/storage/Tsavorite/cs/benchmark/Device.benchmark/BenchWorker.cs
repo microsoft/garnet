@@ -120,7 +120,7 @@ namespace Device.benchmark
                         // because the per-thread throttle caps in-flight well below batchSize.
                         // Draining on the fast path (after every submit) is an anti-pattern: the
                         // single-event TryComplete serializes all submitters on context 0's kernel
-                        // ring mutex (profiled at ~26% CPU in osq_lock), so keep it off the hot path.
+                        // ring mutex (a hot-path contention point in osq_lock), so keep it off the hot path.
                         device.TryComplete();
                         Thread.Yield();
                     }

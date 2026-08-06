@@ -136,7 +136,7 @@ namespace Tsavorite.kvbench
                        "per-thread affinity, so setting this >= submitter concurrency makes io_submit " +
                        "contention-free (no shared per-context aio ring/completion lock across unrelated " +
                        "submitters) and spreads completion posting across more rings; the drainers each " +
-                       "range-drain a contiguous slice of the rings. 0 = 1 ring per drainer (legacy). " +
+                       "range-drain a contiguous slice of the rings. 0 = 1 ring per drainer (default). " +
                        "Clamped up to --device-completion-threads.")]
         public int DeviceIoContexts { get; set; }
 
