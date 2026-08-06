@@ -184,17 +184,14 @@ namespace Garnet.server
         /// <param name="sequenceNumber"></param>
         public void UpdateVirtualSublogKeySequenceNumber(int virtualSublogIdx, long keyHash, long sequenceNumber)
         {
-            // Publish this sublog's frontier (max) eagerly -- BEFORE parking and before the key
-            // sketch entry. This makes barrier arrival deterministic from replay alone: a replay
-            // thread that crosses an active round's target on THIS record arrives on this record via
-            // the CheckAndWait below (which now sees the just-published max), instead of only on a
-            // subsequent record or an idle-sublog time pulse. Without the eager publish, a lagging
-            // sublog that crosses the target on its final pending record and then goes idle never
-            // registers its arrival through CheckAndWait, so the round can only complete if a pulse
-            // happens to advance it -- and if that pulse is delayed, every arrived participant spins
-            // forever (AofReplayBarrierSpinUs < 0) and replay deadlocks. Publishing the max early is
-            // safe for readers: a far-ahead frontier only makes a reader's prepare gate pass more
-            // easily; it never feeds a session clock (which is drawn from the key sketch entry).
+            // Eagerly publish this sublog's max frontier BEFORE parking and writing the key sketch entry.
+            //
+            // Why: Guarantees deterministic barrier arrival during replay. If a sublog crosses the target on its 
+            // final record and goes idle, CheckAndWait sees the updated max immediately rather than waiting for 
+            // a delayed time pulse, preventing replay deadlocks.
+            //
+            // Safety: Safe for readers because the frontier only opens prepare gates; session clocks are drawn 
+            // exclusively from the key sketch entry.
             vsrs[virtualSublogIdx].UpdateMaxSequenceNumber(sequenceNumber);
 
             // Pause this replay thread when it has run ahead of an active round's target, bounding
