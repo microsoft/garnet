@@ -256,7 +256,13 @@ namespace Garnet.server
         /// <summary>
         /// Restart or update any pending work that was discovered as part of recovery.
         /// </summary>
-        public void ResumePostRecovery()
+        /// <param name="requireEmptyContexts">
+        /// When true, fail rather than rebuild if any context is still reserved. Callers that replace the whole
+        /// store (a diskless full sync, which flushes first) rely on this: the rebuild below replaces
+        /// <c>contextMetadatas</c> wholesale, so a surviving reservation would be dropped without its DiskANN
+        /// index ever being cleaned up.
+        /// </param>
+        public void ResumePostRecovery(bool requireEmptyContexts = false)
         {
             if (!IsEnabled) return;
 
@@ -273,6 +279,18 @@ namespace Garnet.server
 
             lock (this)
             {
+                if (requireEmptyContexts)
+                {
+                    for (var i = 0; i < contextMetadatas.Length; i++)
+                    {
+                        if (!contextMetadatas[i].IsEmpty)
+                        {
+                            logger?.LogCritical("Vector Set context reservation was not empty at index {index} when rebuilding after a full store replacement; expected the preceding flush to have cleared it", i);
+                            throw new GarnetException($"Vector Set context reservation was not empty at index {i} when rebuilding after a full store replacement");
+                        }
+                    }
+                }
+
                 // Any ContextMetadatas we found need to be restored
                 if (!recoveredMetadata.IsEmpty)
                 {
@@ -288,7 +306,6 @@ namespace Garnet.server
                     }
                 }
 
-                // Cleared rather than nulled, so a later recovery can repopulate them
                 recoveredMetadata.Clear();
 
                 // If we come up and contexts are marked for migration, that means the migration FAILED
