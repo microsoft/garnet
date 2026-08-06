@@ -1,10 +1,10 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
-using System.Threading;
 using System.Threading.Tasks;
 using Garnet.common;
+using Garnet.server;
 using Microsoft.Extensions.Logging;
 
 namespace Garnet.cluster
@@ -13,10 +13,15 @@ namespace Garnet.cluster
     {
         FailoverSession currentFailoverSession = null;
         readonly ClusterProvider clusterProvider;
-        readonly TimeSpan clusterTimeout;
         readonly ILogger logger;
         private SingleWriterMultiReaderLock failoverTaskLock;
         public volatile FailoverStatus lastFailoverStatus = FailoverStatus.NO_FAILOVER;
+
+        /// <summary>
+        /// Cluster node timeout, read live so that a CONFIG SET is observed by subsequent failover sessions.
+        /// </summary>
+        TimeSpan clusterTimeout
+            => clusterProvider.storeWrapper.runtimeConfig.GetTimeSpan(ServerConfigType.CLUSTER_NODE_TIMEOUT);
 
         /// <summary>
         /// Shared epoch instance for failover GarnetClient connections
@@ -26,7 +31,6 @@ namespace Garnet.cluster
         public FailoverManager(ClusterProvider clusterProvider, ILogger logger = null)
         {
             this.clusterProvider = clusterProvider;
-            clusterTimeout = clusterProvider.serverOptions.ClusterTimeout <= 0 ? Timeout.InfiniteTimeSpan : TimeSpan.FromSeconds(clusterProvider.serverOptions.ClusterTimeout);
             this.logger = logger;
             this.epoch = new client.LightEpoch();
         }

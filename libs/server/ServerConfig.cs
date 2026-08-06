@@ -1,9 +1,8 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using Garnet.common;
@@ -13,28 +12,19 @@ namespace Garnet.server
 {
     static class ServerConfig
     {
-        public static readonly HashSet<ServerConfigType> DefaultConfigType = [.. Enum.GetValues<ServerConfigType>().
-            Where(e => e switch
-            {
-                ServerConfigType.NONE => false,
-                ServerConfigType.ALL => false,
-                _ => true
-            })];
-
-        public static unsafe ServerConfigType GetConfig(Span<byte> parameter)
+        public static ServerConfigType GetConfig(Span<byte> parameter)
         {
             AsciiUtils.ToUpperInPlace(parameter);
-            return parameter switch
-            {
-                _ when parameter.SequenceEqual("TIMEOUT"u8) => ServerConfigType.TIMEOUT,
-                _ when parameter.SequenceEqual("SAVE"u8) => ServerConfigType.SAVE,
-                _ when parameter.SequenceEqual("APPENDONLY"u8) => ServerConfigType.APPENDONLY,
-                _ when parameter.SequenceEqual("SLAVE-READ-ONLY"u8) => ServerConfigType.SLAVE_READ_ONLY,
-                _ when parameter.SequenceEqual("DATABASES"u8) => ServerConfigType.DATABASES,
-                _ when parameter.SequenceEqual("CLUSTER-NODE-TIMEOUT"u8) => ServerConfigType.CLUSTER_NODE_TIMEOUT,
-                _ when parameter.SequenceEqual("*"u8) => ServerConfigType.ALL,
-                _ => ServerConfigType.NONE,
-            };
+            if (parameter.SequenceEqual("*"u8))
+                return ServerConfigType.ALL;
+
+            // slave-read-only is a per-session value (READWRITE/READONLY) and is resolved by the CONFIG GET
+            // handler which has the session in scope; it is not part of the runtime config table.
+            if (parameter.SequenceEqual("SLAVE-READ-ONLY"u8))
+                return ServerConfigType.SLAVE_READ_ONLY;
+
+            // Every other CONFIG parameter (settable and read-only) is resolved through the runtime config table.
+            return RuntimeServerConfig.TryGetType(parameter, out var configType) ? configType : ServerConfigType.NONE;
         }
     }
 
@@ -47,8 +37,10 @@ namespace Garnet.server
                 return AbortWithWrongNumberOfArguments($"{nameof(RespCommand.CONFIG)}|{nameof(CmdStrings.GET)}");
             }
 
-            // Extract requested parameters
-            HashSet<ServerConfigType> parameters = [];
+            // Extract requested parameters. All CONFIG parameters (settable and read-only) are served
+            // through the runtime config table. A HashSet de-duplicates repeated parameters (which are
+            // invalid in a RESP3 map response) while its insertion order preserves the request order.
+            HashSet<ServerConfigType> parameters = null;
             var returnAll = false;
             for (var i = 0; i < parseState.Count; i++)
             {
@@ -58,42 +50,44 @@ namespace Garnet.server
                 if (returnAll) continue;
                 if (serverConfigType == ServerConfigType.ALL)
                 {
-                    parameters = ServerConfig.DefaultConfigType;
+                    parameters = [.. RuntimeServerConfig.RuntimeTypes];
+                    // slave-read-only is session-scoped and not part of the table, so include it explicitly.
+                    parameters.Add(ServerConfigType.SLAVE_READ_ONLY);
                     returnAll = true;
                     continue;
                 }
 
-                if (serverConfigType != ServerConfigType.NONE)
-                    _ = parameters.Add(serverConfigType);
+                if (serverConfigType == ServerConfigType.NONE)
+                    continue;
+
+                (parameters ??= []).Add(serverConfigType);
             }
 
             // Generate response for matching parameters
-            if (parameters.Count > 0)
+            var totalCount = parameters?.Count ?? 0;
+            if (totalCount > 0)
             {
-                WriteMapLength(parameters.Count);
+                WriteMapLength(totalCount);
 
-                foreach (var parameter in parameters)
+                foreach (var configType in parameters)
                 {
-                    var parameterValue = parameter switch
+                    string name, value;
+                    if (configType == ServerConfigType.SLAVE_READ_ONLY)
                     {
-                        ServerConfigType.TIMEOUT => "$7\r\ntimeout\r\n$1\r\n0\r\n"u8,
-                        ServerConfigType.SAVE => "$4\r\nsave\r\n$0\r\n\r\n"u8,
-                        ServerConfigType.APPENDONLY => storeWrapper.serverOptions.EnableAOF ? "$10\r\nappendonly\r\n$3\r\nyes\r\n"u8 : "$10\r\nappendonly\r\n$2\r\nno\r\n"u8,
-                        ServerConfigType.SLAVE_READ_ONLY => clusterSession == null || clusterSession.ReadWriteSession ? "$15\r\nslave-read-only\r\n$2\r\nno\r\n"u8 : "$15\r\nslave-read-only\r\n$3\r\nyes\r\n"u8,
-                        ServerConfigType.DATABASES => GetDatabases(),
-                        ServerConfigType.CLUSTER_NODE_TIMEOUT => Encoding.ASCII.GetBytes($"$20\r\ncluster-node-timeout\r\n${storeWrapper.serverOptions.ClusterTimeout.ToString().Length}\r\n{storeWrapper.serverOptions.ClusterTimeout}\r\n"),
-                        ServerConfigType.NONE => throw new NotImplementedException(),
-                        ServerConfigType.ALL => throw new NotImplementedException(),
-                        _ => throw new NotImplementedException()
-                    };
-
-                    ReadOnlySpan<byte> GetDatabases()
+                        // Per-session value: a session is read-only only when it is on a replica and has not
+                        // opted into writes via READWRITE (see https://redis.io/docs/latest/commands/readwrite/).
+                        name = "slave-read-only";
+                        value = clusterSession == null || clusterSession.ReadWriteSession ? "no" : "yes";
+                    }
+                    else
                     {
-                        var databases = storeWrapper.serverOptions.MaxDatabases.ToString();
-                        return Encoding.ASCII.GetBytes($"$9\r\ndatabases\r\n${databases.Length}\r\n{databases}\r\n");
+                        name = RuntimeServerConfig.Name(configType);
+                        value = storeWrapper.runtimeConfig.RespFormat(configType);
                     }
 
-                    while (!RespWriteUtils.TryWriteDirect(parameterValue, ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteAsciiBulkString(name, ref dcurr, dend))
+                        SendAndReset();
+                    while (!RespWriteUtils.TryWriteAsciiBulkString(value, ref dcurr, dend))
                         SendAndReset();
                 }
             }
@@ -130,6 +124,7 @@ namespace Garnet.server
             string mainLogMemorySize = null;
             string readCacheMemorySize = null;
             string index = null;
+            List<(ServerConfigType type, string value)> dynamicSets = null;
 
             var unknownOption = false;
             var unknownKey = "";
@@ -153,6 +148,8 @@ namespace Garnet.server
                     clusterUsername = Encoding.ASCII.GetString(value);
                 else if (key.EqualsLowerCaseSpanIgnoringCase(CmdStrings.ClusterPassword, allowNonAlphabeticChars: true))
                     clusterPassword = Encoding.ASCII.GetString(value);
+                else if (RuntimeServerConfig.TryGetType(key, out var runtimeType))
+                    (dynamicSets ??= []).Add((runtimeType, Encoding.ASCII.GetString(value)));
                 else if (!unknownOption)
                 {
                     unknownOption = true;
@@ -195,6 +192,15 @@ namespace Garnet.server
                 {
                     // Must block, we're on the network thread
                     AsyncUtils.BlockingWait(HandleIndexSizeChangeAsync(index, sbErrorMsg));
+                }
+
+                if (dynamicSets != null)
+                {
+                    foreach (var (type, value) in dynamicSets)
+                    {
+                        if (!storeWrapper.runtimeConfig.TrySet(type, value, out var error))
+                            AppendError(sbErrorMsg, error);
+                    }
                 }
             }
 

@@ -1,27 +1,45 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System.Collections.Concurrent;
+
 namespace Resp.benchmark
 {
     public class ZipfGenerator
     {
+        public const double DefaultTheta = 0.99;
+
+        static readonly ConcurrentDictionary<(int Size, double Theta), Lazy<ZipfConstants>> ConstantsCache = new();
+
         // Based on "Quickly Generating Billion-Record Synthetic Databases", Jim Gray et al., SIGMOD 1994.
         readonly RandomGenerator rng;
         private readonly int size;
-        readonly double theta;
         readonly double zetaN, alpha, cutoff2, eta;
 
-        public ZipfGenerator(RandomGenerator rng, int size, double theta = 0.99)
+        public ZipfGenerator(RandomGenerator rng, int size, double theta = DefaultTheta)
         {
             this.rng = rng;
             this.size = size;
-            this.theta = theta;
 
-            zetaN = Zeta(size, this.theta);
-            alpha = 1.0 / (1.0 - this.theta);
-            cutoff2 = Math.Pow(0.5, this.theta);
-            var zeta2 = Zeta(2, this.theta);
-            eta = (1.0 - Math.Pow(2.0 / size, 1.0 - this.theta)) / (1.0 - zeta2 / zetaN);
+            var constants = ConstantsCache.GetOrAdd(
+                (size, theta),
+                static key => new Lazy<ZipfConstants>(
+                    () => CreateConstants(key.Size, key.Theta),
+                    LazyThreadSafetyMode.ExecutionAndPublication)).Value;
+            zetaN = constants.ZetaN;
+            alpha = constants.Alpha;
+            cutoff2 = constants.Cutoff2;
+            eta = constants.Eta;
+        }
+
+        private static ZipfConstants CreateConstants(int size, double theta)
+        {
+            var zetaN = Zeta(size, theta);
+            var alpha = 1.0 / (1.0 - theta);
+            var cutoff2 = Math.Pow(0.5, theta);
+            var zeta2 = Zeta(2, theta);
+            var eta = (1.0 - Math.Pow(2.0 / size, 1.0 - theta)) / (1.0 - zeta2 / zetaN);
+            return new ZipfConstants(zetaN, alpha, cutoff2, eta);
         }
 
         private static double Zeta(int count, double theta)
@@ -42,5 +60,7 @@ namespace Resp.benchmark
                 return 1;
             return (int)(size * Math.Pow(eta * u - eta + 1, alpha));
         }
+
+        private readonly record struct ZipfConstants(double ZetaN, double Alpha, double Cutoff2, double Eta);
     }
 }
