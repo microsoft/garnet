@@ -47,7 +47,7 @@ class Thread {
   /// on every device IO and CAS+store the calling thread's own id_used_ slot; without padding
   /// the 1-byte atomics pack ~64 per line, so nearby thread indices (next_index_++ hands out
   /// 0,1,2,... so the first N threads land in one line) false-share it and every submit/complete
-  /// ping-pongs the line across cores (profiled at ~13% CPU at multi-million IOPS). 128-byte
+  /// ping-pongs the line across cores, a significant cost at multi-million IOPS. 128-byte
   /// alignment also defeats the adjacent-line spatial prefetcher and mirrors the managed
   /// NativeStorageDevice shard spacing.
   struct alignas(128) PaddedAtomicFlag {

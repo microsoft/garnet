@@ -286,11 +286,10 @@ namespace Tsavorite.core
         /// returns the buffer (page-flush completion on a drainer, off-thread RESP read completion). This keeps
         /// the free-list bounded by peak concurrent in-flight rather than leaking on cross-thread returns.
         /// <para>
-        /// Sized at <c>2 × ProcessorCount</c> capped at 32. A KV.benchmark scenario-2 sweep (100% random
-        /// reads from disk, 8×NVMe RAID-0) showed a single unstriped pool caps at ~45% of peak (cache-line
-        /// ping-pong on one <see cref="ConcurrentQueue{T}"/>); throughput saturates by 32 stripes and 32
-        /// matches 128 within run-to-run noise across client-thread counts 32/64/96 on both libaio and
-        /// io_uring. The knee is thread-count-insensitive: total free-list traffic is bounded by the device
+        /// Sized at <c>2 × ProcessorCount</c> capped at 32. A single unstriped pool becomes a cache-line
+        /// ping-pong bottleneck on its one <see cref="ConcurrentQueue{T}"/> and caps throughput well below
+        /// peak; throughput saturates by 32 stripes, and larger stripe counts do not improve it on either
+        /// libaio or io_uring. The knee is thread-count-insensitive: total free-list traffic is bounded by the device
         /// in-flight throttle, not the thread count, so more submitters just lowers per-thread in-flight
         /// rather than raising per-stripe contention. <c>2 × ProcessorCount</c> scales with the machine's
         /// core-ceilinged submitter count while the cap of 32 bounds it where throughput plateaus; matches

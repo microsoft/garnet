@@ -27,7 +27,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 TFM="${TFM:-net10.0}"
 GS="${GS:-$ROOT/main/GarnetServer/bin/Release/$TFM/GarnetServer.dll}"
 RB="${RB:-$ROOT/benchmark/Resp.benchmark/bin/Release/$TFM/Resp.benchmark.dll}"
-DATA="${DATA:-/raid/badrishc/garnet-nvme-matrix}" # tiered-log dir on an NVMe mount
+DATA="${DATA:-/raid/garnet-nvme-matrix}"          # tiered-log dir on an NVMe mount
 PORT="${PORT:-6379}"
 DBSIZE="${DBSIZE:-100000000}"                      # 100 M keys
 KEYLEN="${KEYLEN:-16}"; VALLEN="${VALLEN:-96}"     # 128 B records

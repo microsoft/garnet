@@ -48,7 +48,7 @@ namespace Tsavorite.core
         /// throttle share (<see cref="ResolveLibaioReservationDepth"/>): each ring is sized to
         /// <c>headroom * ceil(throttle / io-contexts)</c> so an uneven submitter-&gt;ring distribution rarely
         /// drives a ring to exactly-full (which would trigger a non-fatal io_submit EAGAIN unwind/retry). 2x
-        /// eliminates the ~2% ring-full IOPS dip seen at 1x. Combined with <see cref="LibaioReservationCap"/>
+        /// keeps a ring clear of exactly-full even under an uneven submitter-to-ring distribution. Combined with <see cref="LibaioReservationCap"/>
         /// (which bounds the per-ring depth) the per-device global-budget reservation is
         /// <c>min(2 * throttle, io-contexts * cap)</c>, so multi-ring serving devices keep full depth headroom
         /// while low-ring-count devices stay small.
@@ -59,8 +59,8 @@ namespace Tsavorite.core
         /// Ceiling on the per-ring default libaio <c>io_setup</c> reservation depth
         /// (<see cref="ResolveLibaioReservationDepth"/>). A single libaio io_context (ring) is drained by one
         /// completion thread and submitted through one kernel aio ring lock, so making a SINGLE ring hold the
-        /// full 4096-deep throttle is both inefficient (one drainer cannot keep a 4096-deep ring saturated —
-        /// the drainer sweep showed a lone drainer collapses) and wasteful of the global <c>fs.aio-max-nr</c>
+        /// full 4096-deep throttle is both inefficient (one drainer cannot keep a 4096-deep ring saturated)
+        /// and wasteful of the global <c>fs.aio-max-nr</c>
         /// budget: deep in-flight should come from MORE rings (higher <c>--device-completion-threads</c>), not
         /// one mega-deep ring. Capping the per-ring reservation here keeps low-ring-count devices — auxiliary
         /// logs that do not serve deep random-read queues (AOF append, checkpoint bulk IO, per-node cluster
@@ -116,10 +116,10 @@ namespace Tsavorite.core
         /// physical footprint is the pinned POH read buffers of the in-flight reads (~T * 4KB). It sizes
         /// NOTHING in the kernel — that is <see cref="DefaultQueueDepth"/>'s job.
         ///
-        /// 4096 saturates an 8-drive NVMe RAID-0 at the achievable peak (measured neutral vs 65536 there)
+        /// 4096 saturates an 8-drive NVMe RAID-0 at the achievable peak (larger values do not raise it)
         /// while keeping pinned read-buffer memory bounded (~16MB). High-connection deployments may raise
-        /// <c>--device-throttle-limit</c> up to the kernel capacity <c>io-contexts * queue-depth</c> for a
-        /// measured +5-7% at very high connection counts.
+        /// <c>--device-throttle-limit</c> up to the kernel capacity <c>io-contexts * queue-depth</c> for
+        /// additional throughput at very high connection counts.
         /// </summary>
         const int DefaultThrottleLimit = 1 << 12;   // 4096
 
@@ -128,11 +128,10 @@ namespace Tsavorite.core
         /// shard (round-robin) on its first IO, and every per-IO bookkeeping write (slot assignment, in-flight
         /// increment/decrement) then lands on that shard's own cache lines. This removes the cache-line
         /// ping-pong that a single global pending counter plus a shared free-slot queue create when dozens of
-        /// submitter and completion threads touch them on every IO — the dominant cost profiled at high IOPS.
+        /// submitter and completion threads touch them on every IO — the dominant cost at high IOPS.
         /// <para>
-        /// Sized at <c>2 × ProcessorCount</c> capped at 32. A device.bench + RESP sweep (NumShards 448→16 ×
-        /// threads 32→64, both backends) showed throughput is flat from 448 shards all the way down to ~32 and
-        /// only dips below ~16. The reason a small fixed count suffices is that <see cref="Throttle"/> gates each
+        /// Sized at <c>2 × ProcessorCount</c> capped at 32. Throughput is flat from several hundred shards down
+        /// to ~32 and only dips below ~16. The reason a small fixed count suffices is that <see cref="Throttle"/> gates each
         /// shard's TOTAL in-flight at <see cref="PerThreadLimit"/> (≈ throttle ÷ active shards, capped at
         /// <see cref="MaxPerThreadInFlight"/>), so a shard's free-list occupancy never approaches
         /// <see cref="SlotsPerShard"/> no matter how many submitter threads share it — a small shard count
@@ -219,7 +218,7 @@ namespace Tsavorite.core
         /// device's out-of-order completions — a monotonic counter-ring cannot, because a single slow IO can stay
         /// in flight while newer submits wrap the ring back onto its slot and overwrite the still-pending
         /// <see cref="NativeResult"/>, delivering a stale/duplicate context on the late completion. Sharding the
-        /// list (rather than one global queue) keeps this off the contended cache lines profiled at high IOPS.
+        /// list (rather than one global queue) keeps this off the contended cache lines at high IOPS.
         /// </summary>
         ConcurrentQueue<int>[] shardFreeSlots;
 
@@ -1272,7 +1271,7 @@ namespace Tsavorite.core
             _callbackDelegate = _callback;
 
             // In-flight accounting is sharded per submitter thread to avoid the global cache-line
-            // contention profiled at high IOPS. The counter array is allocated up front (small,
+            // contention at high IOPS. The counter array is allocated up front (small,
             // a few KB) because Throttle() may run before the first IO creates the native device.
             shardInFlight = new ShardCounter[NumShards];
             shardIndex = new ThreadLocal<int>(AssignShard);
@@ -1476,7 +1475,7 @@ namespace Tsavorite.core
                             "NativeStorageDevice: io_uring SQPOLL enabled (rings={rings}, one kernel submission-poll thread per ring, sq_thread_idle={idle}). Submissions are syscall-free while the poll thread is awake.",
                             actualIoContexts, uringSqPollIdleMsConfig > 0 ? $"{uringSqPollIdleMsConfig}ms" : "native-default");
                     // Partition the io_contexts (rings) across a small pool of drainer threads. When
-                    // actualIoContexts == numCompletionThreadsConfig this reduces to the legacy 1:1
+                    // actualIoContexts == numCompletionThreadsConfig this reduces to a 1:1
                     // ring-to-drainer binding; when there are more rings than drainers (to de-contend
                     // io_submit), each drainer range-drains a contiguous slice so every ring is still
                     // reaped promptly. Rings are split as evenly as possible; the first `remainder`
@@ -2068,7 +2067,7 @@ namespace Tsavorite.core
         /// <summary>
         /// Drain loop for one completion thread. The thread owns the contiguous range of ring
         /// shards <c>[startCtx, startCtx + ctxCount)</c>. For a single ring it blocks in
-        /// <c>NativeDevice_QueueRunFor</c> with a long timeout (legacy fast path). For a range it
+        /// <c>NativeDevice_QueueRunFor</c> with a long timeout (single-ring fast path). For a range it
         /// polls every ring non-blocking (timeout 0) and, only when the whole pass is idle, blocks
         /// on the first ring with the timeout so it sleeps instead of busy-spinning. Dispose() wakes
         /// blocked workers via <c>NativeDevice_WakeCompletionWorker</c> rather than relying on the
@@ -2093,7 +2092,7 @@ namespace Tsavorite.core
 
                     if (ctxCount <= 1)
                     {
-                        // Single ring: block directly on it with the timeout (legacy fast path).
+                        // Single ring: block directly on it with the timeout (single-ring fast path).
                         int rc = NativeDevice_QueueRunFor(nativeDevice, startCtx, CompletionWorkerTimeoutSecs);
                         if (rc == NativeCABIExceptionSentinel)
                         {
