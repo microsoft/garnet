@@ -266,8 +266,20 @@ namespace Garnet.cluster
 
                 if (!anyTailMoved)
                 {
-                    lastAdvanceTimePulse = now;
-                    return;
+                    // No tail moved anywhere. Normally there is nothing to witness, so stay silent.
+                    // The exception is an active backpressure stall: appends are frozen (hence the
+                    // still tails) while a replica may be parked at a replay-align round waiting for
+                    // an idle sublog to arrive. Keep emitting a heartbeat pulse so that idle sublog
+                    // arrives, the round completes, replay drains, and the stall lifts -- otherwise
+                    // the frozen tail and the parked round deadlock until ReplicaSyncTimeout. The
+                    // stall check is a global OR across sublogs (matching the all-sublog tail scan):
+                    // an idle sublog that is not itself stalled must still pulse to release a
+                    // cross-sublog barrier stalled behind a different sublog.
+                    if (!(backpressure?.AnyStalled() ?? false))
+                    {
+                        lastAdvanceTimePulse = now;
+                        return;
+                    }
                 }
 
                 var sequenceNumber = appendOnlyFile.GetLargerThanMaximumSequenceNumber();
