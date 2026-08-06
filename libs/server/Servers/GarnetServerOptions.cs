@@ -1153,5 +1153,17 @@ namespace Garnet.server
         /// </summary>
         public int AofVirtualSublogCount
             => AofPhysicalSublogCount * AofReplayTaskCount;
+
+        /// <summary>
+        /// Replay side periodic drift detection check and bounding enabled
+        /// </summary>
+        public bool ProactiveReplayDriftCheckEnabled
+            => AofReplayDriftCheckFreq > 0 && AofReplayDriftThreshold >= 0 && AofVirtualSublogCount > 1;
+
+        /// <summary>
+        /// Reader side drift check and bounding enabled
+        /// </summary>
+        public bool ReactiveReplayDriftCheckEnabled
+            => AofReplayDriftThreshold >= 0 && AofVirtualSublogCount > 1;
     }
 }
