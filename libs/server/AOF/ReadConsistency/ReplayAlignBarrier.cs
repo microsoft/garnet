@@ -36,14 +36,27 @@ namespace Garnet.server
         {
             public long target;  // target frontier sequence number
             public int remaining;
-            public volatile bool released;  // set by the last arrival / Disable; spinners poll this
-            public readonly ManualResetEventSlim release = new(false);
+            // Authoritative per-round release signal: set by the last arrival / Disable. Spinners poll
+            // it directly; sleepers loop-gate on it after each wait on the shared releaseEvent below.
+            public volatile bool released;
+
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            public void Release()
+            {
+                released = true;
+            }
         }
 
         readonly int participantCount;
 
         // Written by the thread that owns each virtual sublog's replay.
         readonly Round[] lastArrivedRound;
+
+        // Single reusable kernel wakeup shared across all rounds, so no per-round wait handle is
+        // allocated. It is only a wakeup hint: a waiter re-checks its own round's released flag after
+        // every wait, so a Reset by a newly installed round never strands a straggler of a prior round
+        // (that round's released flag is already set and never cleared).
+        readonly ManualResetEventSlim releaseEvent = new(false);
 
         // How long an arrived thread spins before falling back to a kernel wait:
         //   < 0 => spin forever (never sleep); 0 => never spin (pure kernel wait); > 0 => spin up to
@@ -66,7 +79,7 @@ namespace Garnet.server
         /// True while a round is in progress. A disabled barrier reports active: <see cref="Disable"/>
         /// occupies the slot with a round that never completes.
         /// </summary>
-        public bool IsActive => Volatile.Read(ref currentRound) != null;
+        public bool InProgress => Volatile.Read(ref currentRound) != null;
 
         /// <summary>
         /// Called when a large cross-sublog drift is observed (by a reader about to wait, or by a
@@ -76,9 +89,12 @@ namespace Garnet.server
         /// </summary>
         public void TryActivate(long target)
         {
+            // Best effort read
             if (Volatile.Read(ref currentRound) != null) return;
             var round = new Round { target = target, remaining = participantCount };
-            _ = Interlocked.CompareExchange(ref currentRound, round, null);
+            // Single round activation winner reset/release event
+            if (Interlocked.CompareExchange(ref currentRound, round, null) == null)
+                releaseEvent.Reset();
         }
 
         /// <summary>
@@ -134,7 +150,8 @@ namespace Garnet.server
                         Thread.SpinWait(SpinWaitIterations);
                     }
                 }
-                r.release.Wait();
+                while (!r.released)
+                    releaseEvent.Wait();
             }
             else
             {
@@ -142,12 +159,15 @@ namespace Garnet.server
             }
         }
 
-        // Last arrival: tear the round down only if it is still current, then release spinners and sleepers.
+        // Last arrival: release spinners and sleepers, then tear the round down only if it is still
+        // current. Set the shared event BEFORE clearing the slot so a newly installed round (which can
+        // only appear once the slot is null) always Resets the event strictly after this Set -- never
+        // leaving a stale Set that a fresh round's waiters would spin on.
         void ReleaseRound(Round r)
         {
-            _ = Interlocked.CompareExchange(ref currentRound, null, r);
             r.released = true;
-            r.release.Set();
+            releaseEvent.Set();
+            _ = Interlocked.CompareExchange(ref currentRound, null, r);
         }
 
         /// <summary>
@@ -166,13 +186,9 @@ namespace Garnet.server
             // did arrive at the unreachable target, it would return immediately instead of parking,
             // and the last-arrival teardown could never clear the slot.
             var inert = new Round { target = long.MaxValue, remaining = int.MaxValue, released = true };
-            inert.release.Set();
             var r = Interlocked.Exchange(ref currentRound, inert);
-            if (r != null)
-            {
-                r.released = true;
-                r.release.Set();
-            }
+            r?.Release();
+            releaseEvent.Set();
         }
 
         /// <summary>
@@ -184,11 +200,8 @@ namespace Garnet.server
         public void Enable()
         {
             var r = Interlocked.Exchange(ref currentRound, null);
-            if (r != null)
-            {
-                r.released = true;
-                r.release.Set();
-            }
+            r?.Release();
+            releaseEvent.Set();
         }
     }
 }
