@@ -221,7 +221,7 @@ namespace Garnet
         public int AofReplayDriftThreshold { get; set; }
 
         [IntRangeValidation(0, int.MaxValue, isRequired: false)]
-        [Option("aof-replay-drift-check-freq", Required = false, HelpText = "How often cross-sublog drift is re-checked during replay, as a multiple of aof-replay-drift-threshold. 0 = readers about to wait are the only round source.")]
+        [Option("aof-replay-drift-check-freq", Required = false, HelpText = "How often the cross-sublog drift is re-checked during replay, as a multiple of aof-replay-drift-threshold: one scan per (this value x threshold) sequence-number window system-wide, rotated across replay threads (window index mod virtual sublog count), firing a replay-align round when the drift exceeds the threshold. 0 = readers about to wait are the only round source.")]
         public int AofReplayDriftCheckFreq { get; set; }
 
         [IntRangeValidation(-1, int.MaxValue, isRequired: false)]
