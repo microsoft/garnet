@@ -77,8 +77,9 @@ namespace Garnet.server
 
         readonly ILogger logger;
 
-        // Back-reference to the owning log, set after construction, so the stall diagnostic can read
-        // the live tail / safe-tail for a parked sublog. Diagnostic-only; never used for gating.
+        // Back-reference to the owning log, set after construction, so the stall diagnostic and the
+        // read-only AnyStalled predicate can read the live tail for a sublog. Never used by the
+        // append gating path itself (Wait receives the tail from its caller).
         GarnetLog log;
 
         public AofBackpressure(GarnetServerOptions serverOptions, ILogger logger = null)
@@ -137,25 +138,43 @@ namespace Garnet.server
             if (tailAddress - Volatile.Read(ref shippedWatermark[sublogIdx].Value) <= perSublogBudget)
                 return;
             WaitSlow(sublogIdx, tailAddress);
+
+            void WaitSlow(int sublogIdx, long capturedTail)
+            {
+                while (!disposed)
+                {
+                    // Gate on the live tail, not the value captured at entry. The AOF sublog tail can
+                    // settle below the entry snapshot (in-flight reservations that never finalize, or a
+                    // truncate/reset under fast-aof-truncate + null device), which would leave a frozen
+                    // capturedTail permanently above the reachable watermark and park the appender
+                    // forever. The correct backpressure measure is the current unshipped backlog,
+                    // liveTail - watermark; re-reading it each iteration self-heals against tail retreat
+                    // and lets the gate release the instant the shipper catches up.
+                    var liveTail = log?.GetTailAddress(sublogIdx) ?? capturedTail;
+                    var watermark = Volatile.Read(ref shippedWatermark[sublogIdx].Value);
+                    if (liveTail - watermark <= perSublogBudget)
+                        break;
+                    Thread.Sleep(PollIntervalMs);
+                }
+            }
         }
 
-        void WaitSlow(int sublogIdx, long capturedTail)
+        /// <summary>
+        /// True if the gate is enabled and at least one sublog's current lag (live tail minus its
+        /// published min-shipped watermark) exceeds the per-sublog budget.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public bool AnyStalled()
         {
-            while (!disposed)
+            if (!enabled)
+                return false;
+            for (var i = 0; i < sublogCount; i++)
             {
-                // Gate on the live tail, not the value captured at entry. The AOF sublog tail can
-                // settle below the entry snapshot (in-flight reservations that never finalize, or a
-                // truncate/reset under fast-aof-truncate + null device), which would leave a frozen
-                // capturedTail permanently above the reachable watermark and park the appender
-                // forever. The correct backpressure measure is the current unshipped backlog,
-                // liveTail - watermark; re-reading it each iteration self-heals against tail retreat
-                // and lets the gate release the instant the shipper catches up.
-                var liveTail = log?.GetTailAddress(sublogIdx) ?? capturedTail;
-                var watermark = Volatile.Read(ref shippedWatermark[sublogIdx].Value);
-                if (liveTail - watermark <= perSublogBudget)
-                    break;
-                Thread.Sleep(PollIntervalMs);
+                var tail = log?.GetTailAddress(i) ?? 0;
+                if (tail - Volatile.Read(ref shippedWatermark[i].Value) > perSublogBudget)
+                    return true;
             }
+            return false;
         }
 
         /// <summary>
