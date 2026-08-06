@@ -10,7 +10,6 @@ using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
-using Garnet.shared;
 using Microsoft.Extensions.Logging;
 
 namespace Tsavorite.core
@@ -337,14 +336,6 @@ namespace Tsavorite.core
         {
             return ((ulong)x < 4294967295ul);
         }
-
-        /// <summary>
-        /// A 32-bit murmur3 implementation.
-        /// </summary>
-        /// <param name="h"></param>
-        /// <returns></returns>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static int Murmur3(int h) => HashUtility.Murmur3(h);
 
         /// <summary>
         /// Updates the variable to newValue only if the current value is smaller than the new value.
