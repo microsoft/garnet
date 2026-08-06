@@ -241,7 +241,7 @@ has a single correct regime — but knowing them explains the tuning envelope.
 | `NumShards` | `Clamp(2 × ProcessorCount, 128, 1024)` | per-submitter-thread shard count for in-flight de-contention. Core-derived (the knee tracks peak concurrent submitters, ceilinged by core count); floor 128 (validated), 2× ThreadPool overshoot margin, cap 1024 (~8 MB memory bound). |
 | `SlotsPerShard` | `256` | completion-slot free-list size per shard. |
 | `MaxPerThreadInFlight` | `128` (`SlotsPerShard / 2`) | per-thread in-flight clamp; half of `SlotsPerShard` so a shard's free-list keeps 2× headroom and never empties under the throttle. |
-| `ShardStride` | `16` | cache-line padding stride between per-shard counters (prevents false sharing). |
+| `ShardCounter` | `128 B` | cache-line-pair-padded per-shard in-flight counter struct (each shard's counter owns its own line, preventing false sharing). |
 | `ReconcileIntervalMs` | `200` | how often `activeShards` is reconciled down to live occupancy. |
 | `MaxResults` | `NumShards × 256` | size of the completion-context slot table (pure managed memory). |
 

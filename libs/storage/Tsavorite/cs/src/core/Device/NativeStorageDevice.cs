@@ -164,13 +164,6 @@ namespace Tsavorite.core
         const int MaxPerThreadInFlight = SlotsPerShard / 2;
 
         /// <summary>
-        /// Stride (in <see cref="long"/>s, i.e. 128 bytes) between adjacent shard counters in
-        /// <see cref="shardInFlight"/> so each shard's counter sits on its own cache line (and the line is not
-        /// shared with an adjacent shard via the hardware prefetcher).
-        /// </summary>
-        const int ShardStride = 16;
-
-        /// <summary>
         /// Size of the in-flight completion-tracking pool (the <see cref="results"/> array): one entry per slot
         /// across all shards. Pure managed memory (no kernel cost). Derived from <see cref="NumShards"/>.
         /// </summary>
@@ -195,14 +188,28 @@ namespace Tsavorite.core
         NativeResult[] results;
 
         /// <summary>
-        /// Per-shard signed in-flight IO count, sharded by submitter thread and spaced by <see cref="ShardStride"/>
-        /// so each shard's counter owns a cache line. A submit (or lease) bumps it +1 via <see cref="SubmitToShard"/>;
+        /// Per-shard signed in-flight IO count, sharded by submitter thread; each element (<see cref="ShardCounter"/>)
+        /// is padded to its own cache-line pair so counters never false-share. A submit (or lease) bumps it +1 via <see cref="SubmitToShard"/>;
         /// the matching completion, submit error/abort unwind, or lease-release drops it −1 via
         /// <see cref="CompleteShard"/>. It drives <see cref="Throttle"/> and <see cref="Dispose()"/>'s drain-wait,
         /// and its exact 0↔1 transitions maintain the live <see cref="activeShards"/> occupancy count.
         /// Completion-slot assignment is handled separately by the per-shard free-lists (<see cref="shardFreeSlots"/>).
         /// </summary>
-        long[] shardInFlight;
+        ShardCounter[] shardInFlight;
+
+        /// <summary>
+        /// One shard's in-flight IO counter, padded to a full cache-line pair (128 bytes) so adjacent shards'
+        /// counters never share a cache line — nor an adjacent-line hardware-prefetch pair. Replaces manual stride
+        /// indexing into a flat <see cref="long"/>[] with a typed, self-describing element (cf. SpscRingState).
+        /// </summary>
+        [StructLayout(LayoutKind.Explicit, Size = 2 * CacheLineBytes)]
+        struct ShardCounter
+        {
+            const int CacheLineBytes = 64;
+
+            /// <summary>Signed in-flight IO count for the shard; mutated via Interlocked, read via Volatile.</summary>
+            [FieldOffset(0)] public long InFlight;
+        }
 
         /// <summary>
         /// Per-shard free-list of completion-tracking slot offsets into <see cref="results"/>. Each shard owns
@@ -846,7 +853,7 @@ namespace Tsavorite.core
         [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
         void SubmitToShard(int shard)
         {
-            if (Interlocked.Increment(ref shardInFlight[shard * ShardStride]) == 1L)
+            if (Interlocked.Increment(ref shardInFlight[shard].InFlight) == 1L)
                 Interlocked.Increment(ref activeShards);
         }
 
@@ -860,7 +867,7 @@ namespace Tsavorite.core
         [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
         void CompleteShard(int shard)
         {
-            if (Interlocked.Decrement(ref shardInFlight[shard * ShardStride]) == 0L)
+            if (Interlocked.Decrement(ref shardInFlight[shard].InFlight) == 0L)
                 Interlocked.Decrement(ref activeShards);
         }
 
@@ -907,14 +914,14 @@ namespace Tsavorite.core
         /// <summary>Current in-flight IO count for a shard.</summary>
         [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
         long InFlightInShard(int shard)
-            => Volatile.Read(ref shardInFlight[shard * ShardStride]);
+            => Volatile.Read(ref shardInFlight[shard].InFlight);
 
         /// <summary>Sum of in-flight IOs across all shards. Cold path only (Dispose drain, instrumentation).</summary>
         long TotalInFlight()
         {
             long total = 0;
             for (int s = 0; s < NumShards; s++)
-                total += Volatile.Read(ref shardInFlight[s * ShardStride]);
+                total += Volatile.Read(ref shardInFlight[s].InFlight);
             return total;
         }
 
@@ -1251,7 +1258,7 @@ namespace Tsavorite.core
             // In-flight accounting is sharded per submitter thread to avoid the global cache-line
             // contention profiled at high IOPS. The counter array is allocated up front (small,
             // a few KB) because Throttle() may run before the first IO creates the native device.
-            shardInFlight = new long[NumShards * ShardStride];
+            shardInFlight = new ShardCounter[NumShards];
             shardIndex = new ThreadLocal<int>(AssignShard);
 
             // Per-shard free-list of completion slots, each pre-populated with its shard's contiguous block of
