@@ -277,7 +277,7 @@ namespace Tsavorite.core
         private const int levels = 32;
 
         /// <summary>
-        /// Number of per-level free-list stripes (power of two). Each (level, stripe) pair has its own
+        /// Number of per-level free-list stripes. Each (level, stripe) pair has its own
         /// <see cref="ConcurrentQueue{T}"/>, so concurrent renters/returners on different threads touch
         /// different cache lines instead of contending on a single per-level queue. A thread is assigned a
         /// stable stripe on first use (<see cref="CurrentStripe"/>) and rents from it; the buffer records its
@@ -285,9 +285,20 @@ namespace Tsavorite.core
         /// to that origin, so rent and return always land on the same stripe even when a different thread
         /// returns the buffer (page-flush completion on a drainer, off-thread RESP read completion). This keeps
         /// the free-list bounded by peak concurrent in-flight rather than leaking on cross-thread returns.
-        /// Sized well above typical NUMA-node thread counts to keep collisions rare.
+        /// <para>
+        /// Sized at <c>2 × ProcessorCount</c> capped at 32. A KV.benchmark scenario-2 sweep (100% random
+        /// reads from disk, 8×NVMe RAID-0) showed a single unstriped pool caps at ~45% of peak (cache-line
+        /// ping-pong on one <see cref="ConcurrentQueue{T}"/>); throughput saturates by 32 stripes and 32
+        /// matches 128 within run-to-run noise across client-thread counts 32/64/96 on both libaio and
+        /// io_uring. The knee is thread-count-insensitive: total free-list traffic is bounded by the device
+        /// in-flight throttle, not the thread count, so more submitters just lowers per-thread in-flight
+        /// rather than raising per-stripe contention. <c>2 × ProcessorCount</c> scales with the machine's
+        /// core-ceilinged submitter count while the cap of 32 bounds it where throughput plateaus; matches
+        /// the device shard cap (<c>NativeStorageDevice.NumShards</c>). Need not be a power of two — free-list
+        /// indexing uses a multiply and stripe assignment (<see cref="CurrentStripe"/>) uses a modulo.
+        /// </para>
         /// </summary>
-        private const int stripes = 128;
+        private static readonly int stripes = Math.Min(2 * Environment.ProcessorCount, 32);
 
         private readonly int recordSize;
         private readonly int sectorSize;
@@ -328,7 +339,7 @@ namespace Tsavorite.core
             int s = t_stripePlusOne;
             if (s == 0)
             {
-                s = (Interlocked.Increment(ref stripeAssignCounter) & (stripes - 1)) + 1;
+                s = (int)((uint)Interlocked.Increment(ref stripeAssignCounter) % (uint)stripes) + 1;
                 t_stripePlusOne = s;
             }
             return s - 1;

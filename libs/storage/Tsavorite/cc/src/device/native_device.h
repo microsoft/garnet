@@ -173,9 +173,9 @@ public:
                                             FASTER::core::AsyncIOCallback callback, void* context) = 0;
 
     virtual int CreateDir(const std::string& dir, bool delete_existing) = 0;
-    virtual bool TryComplete() = 0;
-    /// Drain only the calling thread's affine context/ring (see QueueIoHandler::TryCompleteMine).
-    virtual bool TryCompleteMine() = 0;
+    /// Drain pending async IO completions. When mineOnly is true, drain only the calling thread's
+    /// affine context/ring (the inline submitter-thread path); when false, walk all contexts.
+    virtual bool TryComplete(bool mineOnly) = 0;
     virtual uint64_t GetFileSize(uint64_t segment) = 0;
     virtual void RemoveSegment(uint64_t segment) = 0;
     virtual int QueueRun(int timeout_secs) = 0;
@@ -531,12 +531,8 @@ public:
         return handler_;
     }
 
-    bool TryComplete() override {
-        return handler_.TryComplete();
-    }
-
-    bool TryCompleteMine() override {
-        return handler_.TryCompleteMine();
+    bool TryComplete(bool mineOnly) override {
+        return handler_.TryComplete(mineOnly);
     }
 
     uint64_t GetFileSize(uint64_t segment) override {

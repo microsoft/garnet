@@ -180,11 +180,14 @@ void QueueIoHandler::IoCompletionCallback(io_context_t ctx, struct iocb* iocb, l
   callback_context->callback(callback_context->caller_context, return_status, bytes_transferred);
 }
 
-bool QueueIoHandler::TryComplete() {
-  // Compat scanner: walk all shards. Matches UringIoHandler::TryComplete() so
-  // callers that don't know about sharding (e.g., AllocatorBase's throttle-wait
-  // loop calling device.TryComplete() opportunistically) still observe
-  // completions on shards >0.
+bool QueueIoHandler::TryComplete(bool mineOnly) {
+  // mineOnly: drain just the calling thread's affine context (the inline submitter-thread path;
+  // one io_getevents instead of one per context). Otherwise walk all shards — the safe superset
+  // for callers awaiting a completion that may land on another thread's context (e.g. the
+  // allocator flush-wait). Coverage holds either way: every context has a dedicated drainer.
+  if (mineOnly) {
+    return TryCompleteFor(pick_context_index());
+  }
   bool any = false;
   for (int i = 0; i < static_cast<int>(io_objects_.size()); ++i) {
     if (TryCompleteFor(i)) any = true;
@@ -434,8 +437,14 @@ inline void DispatchUringCqe(int io_res, UringIoHandler::IoCallbackContext* cont
 
 } // anonymous namespace
 
-bool UringIoHandler::TryComplete() {
-  // Drain one CQE from any ring (compat: scans all rings).
+bool UringIoHandler::TryComplete(bool mineOnly) {
+  // mineOnly: batch-drain just the calling thread's affine ring (the inline submitter-thread path).
+  // Otherwise scan all rings — the safe superset for callers awaiting a completion that may land on
+  // another thread's ring (e.g. the allocator flush-wait). Coverage holds either way: every ring
+  // has a dedicated drainer.
+  if (mineOnly) {
+    return TryCompleteBatchFor(pick_ring_index());
+  }
   bool any = false;
   for (int i = 0; i < num_contexts(); ++i) {
     if (TryCompleteFor(i)) any = true;
@@ -474,13 +483,12 @@ bool UringIoHandler::TryCompleteFor(int idx) {
 
 // Non-blocking batch drain of ONE ring (the caller's affine ring), reaping up to kCqeBatch
 // completions in a single cq_lock section with dispatch moved outside the lock. This is the
-// io_uring analogue of libaio's batched TryCompleteMine (io_getevents up to
-// kTryCompleteBatchEvents): the inline submitter-thread completion path (Tsavorite
-// CompletePending / AsyncGetFromDisk throttle-wait) reaps its own ring a batch at a time
-// instead of one io_uring_peek_cqe per call, cutting per-completion cq_lock + peek overhead ~Nx.
+// io_uring analogue of libaio's batched per-context drain: the inline submitter-thread completion
+// path (Tsavorite CompletePending / AsyncGetFromDisk throttle-wait) reaps its own ring a batch at a
+// time instead of one io_uring_peek_cqe per call, cutting per-completion cq_lock + peek overhead ~Nx.
 // Mirrors QueueRunFor's phase-2 (snapshot-before-advance, dispatch-after-release) but is a single
 // non-blocking pass (no wait, no drain-until-empty loop) so it stays a bounded poll.
-bool UringIoHandler::TryCompleteMineBatch(int idx) {
+bool UringIoHandler::TryCompleteBatchFor(int idx) {
   if (idx < 0 || idx >= static_cast<int>(rings_.size())) return false;
   struct io_uring* ring = rings_[idx];
   if (ring == nullptr) return false;
@@ -717,7 +725,7 @@ Status UringFile::ScheduleOperation(FileOperationType operationType, uint8_t* bu
   // as "nothing submitted", rewrite our SQE to a no-op, and free an io_context whose IO is already
   // in flight in the kernel -> use-after-free when the drainer dispatches the completion. Holding
   // sq_lock guarantees no peer touches our SQE, so sq_ready == 0 is an unambiguous success. The
-  // completion drainers use a SEPARATE cq_lock (QueueRunFor / TryCompleteMineBatch), so holding
+  // completion drainers use a SEPARATE cq_lock (QueueRunFor / TryCompleteBatchFor), so holding
   // sq_lock here never blocks CQ draining; a transient CQ-full -EAGAIN/-EBUSY clears as the drainers
   // free CQ space while we yield.
   //

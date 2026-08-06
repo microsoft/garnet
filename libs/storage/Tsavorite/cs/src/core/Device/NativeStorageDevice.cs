@@ -753,10 +753,7 @@ namespace Tsavorite.core
         static extern int NativeDevice_CreateDir(IntPtr device, string dir, int deleteExisting);
 
         [DllImport(NativeLibraryName, EntryPoint = "NativeDevice_TryComplete", CallingConvention = CallingConvention.Cdecl)]
-        static extern bool NativeDevice_TryComplete(IntPtr device);
-
-        [DllImport(NativeLibraryName, EntryPoint = "NativeDevice_TryCompleteMine", CallingConvention = CallingConvention.Cdecl)]
-        static extern bool NativeDevice_TryCompleteMine(IntPtr device);
+        static extern bool NativeDevice_TryComplete(IntPtr device, int mineOnly);
 
         [DllImport(NativeLibraryName, EntryPoint = "NativeDevice_QueueRun", CallingConvention = CallingConvention.Cdecl)]
         static extern int NativeDevice_QueueRun(IntPtr device, int timeout_secs);
@@ -1436,14 +1433,13 @@ namespace Tsavorite.core
                     {
                         _ = NativeDevice_NumIoContexts(newDevice);
                         _ = NativeDevice_QueueRunFor(newDevice, 0, 0);
-                        _ = NativeDevice_TryCompleteMine(newDevice);
                     }
                     catch (EntryPointNotFoundException ex)
                     {
                         NativeDevice_Destroy(newDevice);
                         throw new TsavoriteException(
                             "Loaded libnative_device.so/dll is missing the sharded-ABI exports " +
-                            "NativeDevice_NumIoContexts / NativeDevice_QueueRunFor / NativeDevice_TryCompleteMine. " +
+                            "NativeDevice_NumIoContexts / NativeDevice_QueueRunFor. " +
                             "The shared library predates the multi-io-context change and must be rebuilt from this branch " +
                             "(libs/storage/Tsavorite/cc) and the resulting binary installed to " +
                             "libs/storage/Tsavorite/cs/src/core/Device/runtimes/<rid>/native/.", ex);
@@ -1764,8 +1760,8 @@ namespace Tsavorite.core
         /// <para>Idempotent — multiple calls are safe; only the first does work.</para>
         /// <para>
         /// User IO callbacks fire either on a completion-worker (drainer) thread or inline on a
-        /// submitter thread that reaps its own completions via <see cref="TryComplete"/> /
-        /// TryCompleteMine (the default affine inline-drain path). Dispose() must NOT be called from
+        /// submitter thread that reaps its own completions via <see cref="TryComplete"/> with
+        /// <c>mineOnly: true</c> (the affine inline-drain path). Dispose() must NOT be called from
         /// within any such callback: the in-flight drain below waits for that very callback's completion
         /// bump (issued in <c>_callback</c>'s <c>finally</c>), so a self-dispose would spin forever. The
         /// drainer-thread case is detected and thrown as <see cref="InvalidOperationException"/>; the
@@ -1853,8 +1849,20 @@ namespace Tsavorite.core
             }
         }
 
-        /// <inheritdoc/>
-        public override bool TryComplete()
+        /// <summary>
+        /// Drain native IO completions, invoking their callbacks. When <paramref name="mineOnly"/> is
+        /// <see langword="true"/>, poll only the calling thread's affine context/ring (the one its
+        /// submits land on) instead of walking every context: this issues one io_getevents per poll
+        /// rather than one per context, cutting completion-drain syscalls (and cross-context aio
+        /// ring-lock contention) by roughly the context count. It backs the inline submitter-thread
+        /// completion path (Tsavorite CompletePending / AsyncGetFromDisk throttle-wait), the primary
+        /// reaper at high IOPS. When <see langword="false"/>, walk every context — the safe superset
+        /// used when awaiting a completion that may land on another thread's ring (the allocator
+        /// flush-wait). Every context stays covered either way because each has sharing submitters
+        /// and/or a dedicated completion (drainer) thread.
+        /// </summary>
+        /// <param name="mineOnly">True to drain only the caller's affine ring; false to walk all rings.</param>
+        public override bool TryComplete(bool mineOnly = false)
         {
             // Lease the native handle so a concurrent Dispose() can't free it mid-call. TryLease
             // rejects the post-dispose case and closes the race where Dispose frees the handle
@@ -1866,33 +1874,7 @@ namespace Tsavorite.core
                 var dev = Volatile.Read(ref nativeDevice);
                 if (dev == IntPtr.Zero)
                     return false;
-                return NativeDevice_TryComplete(dev);
-            }
-            finally
-            {
-                ReleaseLease(shard);
-            }
-        }
-
-        /// <summary>
-        /// Drain only the calling thread's affine native context/ring (the one its submits land on),
-        /// instead of walking every context like <see cref="TryComplete"/>. The inline submitter-thread
-        /// completion path (Tsavorite CompletePending / AsyncGetFromDisk throttle-wait) is the primary
-        /// reaper at high IOPS; polling just this thread's own context issues one io_getevents per poll
-        /// rather than one per context, cutting completion-drain syscalls (and the cross-context aio
-        /// ring-lock contention) by roughly the context count. All contexts stay covered because each
-        /// has sharing submitters and/or a dedicated completion (drainer) thread.
-        /// </summary>
-        public override bool TryCompleteMine()
-        {
-            if (!TryLease(out int shard))
-                return false;
-            try
-            {
-                var dev = Volatile.Read(ref nativeDevice);
-                if (dev == IntPtr.Zero)
-                    return false;
-                return NativeDevice_TryCompleteMine(dev);
+                return NativeDevice_TryComplete(dev, mineOnly ? 1 : 0);
             }
             finally
             {
