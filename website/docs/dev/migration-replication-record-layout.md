@@ -304,6 +304,86 @@ sequenceDiagram
     T->>T: SET record into store
 ```
 
+### 5.4 Allocation and copy accounting (reviewer reference)
+
+This subsection enumerates every buffer allocation and byte copy on the record paths and justifies each, for a
+review focused on minimizing allocations and copies. Three constraints drive the accounting:
+
+1. **Migration serializes in-epoch but sends out of epoch** (it sends asynchronously, and the store epoch must never be
+   held across an `await`). Bytes that must outlive the epoch are copied into detached memory before the send; a
+   migrating key is not locked, so its value may change concurrently.
+2. **Replication sends synchronously in-epoch** (it flushes via `BlockingWait` and never awaits), so it can stream a
+   record straight from the record's native log memory into the send buffer, with no per-record heap copy.
+3. **An overflow key/value has a known length** and lands in a single owned buffer, while **an object value has an
+   unknown, possibly larger-than-2 GB length** and is held as a list of chunks (`List<byte[]>`), never one array.
+
+**Inline portion - when it is copied.** The inline portion (RecordInfo + RDH + inline key/value + optionals, padded to
+`RoundUp(ActualSize)`) is copied only under these conditions:
+
+- **Migration, always** (`DirectCopyInlinePortionOfRecord` into `output.SpanByteAndMemory`, in-epoch). Required because
+  the record's native log memory is only valid in-epoch and the send happens after the epoch is released. The copy also
+  resets the filler length so the receiver can locate the overflow components at `RoundUp(ActualSize)`. The output buffer
+  is reused across keys (heap-backed through `MemoryPool` only when it must outlive the network buffer, e.g. an object
+  value).
+- **Replication whole-inline fast path** (`DirectCopyInlinePortionOfRecord` into the reused `serializationOutput`).
+  Copied once, then fanned to each replica's send buffer. Required to reset the filler and to stage one stable image that
+  is copied to all N replica buffers without re-reading the (possibly-evicted) record per replica.
+- **Replication chunked path - not separately copied.** `SerializeChunked` emits the inline portion directly from the
+  record's native memory (`chunker.WriteBytes` over `physicalAddress`); the only staging is the chunker ring, allocated
+  once and reused across all records. A stale filler is harmless because the receiver locates the overflow at
+  `RoundUp(ActualSize)`, which is filler-independent. **This is the per-record scratch copy the current design removes** -
+  the record was previously copied into a rented `ArrayPool` buffer solely to reset the filler.
+
+In short, the inline portion is copied once when the bytes must outlive the producing epoch (migration) or be fanned
+identically to multiple replicas (replication fast path); it is streamed with no extra allocation when a single
+synchronous consumer drains it in-epoch (replication chunked path, through the reused ring).
+
+**Chunk accumulation - where and why.** Chunks are accumulated as a `List<byte[]>` in exactly two places, both only for
+an **object value**:
+
+- **Migration send** (`MigrationChunkWriterAccumulator.objectValueChunks`). The object is serialized in-epoch through a
+  reused 4 MB ring; each drain is copied into an owned chunk. Required because (a) the live object may change once the
+  epoch is released, so it must be snapshotted in-epoch, and (b) a serialized object may exceed 2 GB, which a single
+  `byte[]` cannot hold. The ring is allocated once per migration (reused across keys); only the per-object chunk arrays
+  are per-record. An **overflow value** on this path is instead a single deep-copy array (`SetValueOverflowDeepCopy`),
+  and an **overflow key** is a shallow reference to the store's immutable array (no copy).
+- **Receive** (`ChunkedRecordReassembler.objectValueChunks`). Each arriving object chunk is copied once from the
+  transient network buffer into an owned array, because the object length is not known up front (no single array can be
+  pre-sized) and may exceed 2 GB. The chunks are wrapped as a `ReadOnlySequence<byte>` (no further copy) and streamed to
+  the object deserializer.
+
+Everything else avoids accumulation. On **receive**, an overflow key/value is a single up-front `OverflowByteArray`
+(sized from its 4-byte length prefix) that chunk bytes are copied **directly** into (`FillOverflow`), never staged in an
+intermediate buffer; `CompleteDeserializeChunkedRecord` then assigns it to the record with no re-copy. **Replication send
+never accumulates** - it streams synchronously in-epoch through the shared reused ring, so an object value is never
+materialized whole on the sender.
+
+**Copies at a glance.**
+
+| Path | Component | Per-record allocation | Copies of the bytes | Why not direct |
+|------|-----------|-----------------------|---------------------|----------------|
+| Migration send | inline portion | reused output buffer | 1 to detach (+1 more if assembled whole, below) | native memory invalid after epoch release |
+| Migration send | overflow key | none | 0 (shallow ref) | store keys are immutable and stable across epoch release |
+| Migration send | overflow value | 1 (`ToArray`) | 1 to detach | store value may be mutated after epoch release |
+| Migration send | object value | per-object chunks (ring reused per migration) | 1 per drain to detach | must snapshot in-epoch; may exceed 2 GB |
+| Migration send | whole-record assembly | reused assemble buffer (grows to high-water) | 1 (pieces into one span) | `TryWriteRecordSpan` needs one contiguous entry |
+| Migration send | backpressure retry only | 1 (`span.ToArray`) | 1 | the reused span may not survive the flush `await` |
+| Replication send | inline record | reused `serializationOutput` | 1, then 1 per replica | reset filler; fan one stable image to N replicas |
+| Replication send | chunked (inline/overflow/object) | none (ring reused) | 1 into ring, then 1 per replica | streaming send; no whole-record materialization |
+| Receive | inline portion | reused `inlineBuffer` (grows to high-water) | 1 (chunks into one span) | header/inline may split across chunks; must be contiguous to read the layout |
+| Receive | overflow key/value | 1 `OverflowByteArray` each | 1 (chunk into final buffer) | store-owned; the network receive buffer is transient/reused |
+| Receive | object value | per-object chunks | 1 per chunk | length unknown up front; may exceed 2 GB; then wrapped as `ReadOnlySequence` (no copy) |
+
+Every copy that remains after the table above is the unavoidable transfer into or out of the transient network
+send/receive buffer.
+
+**One extra copy, called out.** On the migration path only, a **non-inline record that fits one send buffer** is
+assembled into one contiguous `LogRecord` entry, so its already-detached pieces (inline portion, overflow value or object
+chunks) are copied once more into `sendAssembleBuffer` before the send. This is the price of emitting a single type-1
+entry from non-contiguous captured pieces; the alternative (chunking a buffer-sized record) would trade this copy for a
+multi-chunk reassembly on the receiver. The extra copy is bounded by the send-buffer size and does not apply to a
+fully-inline record (sent straight from `output.SpanByteAndMemory`) or to the replication paths.
+
 ---
 
 ## 6. Call sequence (code paths)
