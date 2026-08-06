@@ -1,6 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Threading;
@@ -15,9 +16,12 @@ namespace Garnet.server
     /// arrives at the barrier and waits there (spinning, then sleeping, per the constructor's spin
     /// budget); when every participant has arrived, the last one releases them all together. The
     /// threads thus align at the target before any leader pulls further ahead, which bounds the drift.
+    /// An arrived thread that has waited longer than the constructor's timeout (ReplicaSyncTimeout)
+    /// abandons the round and proceeds unaligned, so a peer that never arrives (e.g. a stalled or dead
+    /// sublog) cannot strand it indefinitely.
     /// The firing side only installs the round; it never tears it down. The barrier is a performance
-    /// aid only -- prefix consistency is enforced by the reader's wait, so a round completing early or
-    /// late never affects correctness.
+    /// aid only -- prefix consistency is enforced by the reader's wait, so a round completing early,
+    /// late, or abandoned on timeout never affects correctness.
     ///
     /// Arrivals are identified by virtual sublog and deduplicated within each round. Replayed records
     /// use blocking <see cref="CheckAndWait"/>, while progress signals for an idle sublog can use
@@ -52,27 +56,33 @@ namespace Garnet.server
         // Written by the thread that owns each virtual sublog's replay.
         readonly Round[] lastArrivedRound;
 
-        // Single reusable kernel wakeup shared across all rounds, so no per-round wait handle is
-        // allocated. It is only a wakeup hint: a waiter re-checks its own round's released flag after
-        // every wait, so a Reset by a newly installed round never strands a straggler of a prior round
-        // (that round's released flag is already set and never cleared).
+        /// <summary>
+        /// Single reusable kernel wakeup shared across all rounds, so no per-round wait handle is allocated.
+        /// </summary>
         readonly ManualResetEventSlim releaseEvent = new(false);
 
-        // How long an arrived thread spins before falling back to a kernel wait:
-        //   < 0 => spin forever (never sleep); 0 => never spin (pure kernel wait); > 0 => spin up to
-        // this many Stopwatch ticks, then sleep for the remainder. Spinning avoids the park/wake cost
-        // when rounds are short and frequent, at the cost of burning a core while parked.
-        readonly long spinTicks;
+        /// <summary>
+        /// Controls how long a participant thread spin waits before falling back to kernel wait.
+        /// </summary>
+        readonly long aofReplayBarrierSpinUs;
+
+        /// <summary>
+        /// Blocking wait timeout for participant arrival.
+        /// </summary>
+        readonly TimeSpan replicaSyncTimeout;
 
         Round currentRound;
 
-        public ReplayAlignBarrier(int participantCount, int spinMicroseconds)
+        public ReplayAlignBarrier(int participantCount, int aofReplayBarrierSpinUs, TimeSpan replicaSyncTimeout)
         {
             this.participantCount = participantCount;
             lastArrivedRound = new Round[participantCount];
-            this.spinTicks = spinMicroseconds < 0
+            this.aofReplayBarrierSpinUs = aofReplayBarrierSpinUs < 0
                 ? -1
-                : (long)(spinMicroseconds * (Stopwatch.Frequency / 1_000_000.0));
+                : (long)(aofReplayBarrierSpinUs * (Stopwatch.Frequency / 1_000_000.0));
+            // ReplicaSyncTimeout is Timeout.InfiniteTimeSpan when disabled, which
+            // ManualResetEventSlim.Wait treats as wait-forever.
+            this.replicaSyncTimeout = replicaSyncTimeout;
         }
 
         /// <summary>
@@ -132,38 +142,40 @@ namespace Garnet.server
 
         void Arrive(Round r)
         {
-            if (Interlocked.Decrement(ref r.remaining) > 0)
-            {
-                if (spinTicks < 0)  // Spin forever (never sleep).
-                {
-                    while (!r.released)
-                        Thread.SpinWait(SpinWaitIterations);
-                    return;
-                }
-                if (spinTicks > 0)
-                {
-                    var deadline = Stopwatch.GetTimestamp() + spinTicks;
-                    while (Stopwatch.GetTimestamp() < deadline)
-                    {
-                        if (r.released)
-                            return;
-                        Thread.SpinWait(SpinWaitIterations);
-                    }
-                }
-                while (!r.released)
-                    releaseEvent.Wait();
-            }
-            else
+            if (Interlocked.Decrement(ref r.remaining) <= 0)
             {
                 ReleaseRound(r);
+                return;
             }
+
+            if (aofReplayBarrierSpinUs < 0)  // Spin forever (never sleep).
+            {
+                while (!r.released)
+                    Thread.SpinWait(SpinWaitIterations);
+                return;
+            }
+            else if (aofReplayBarrierSpinUs > 0)
+            {
+                var spinDeadline = Stopwatch.GetTimestamp() + aofReplayBarrierSpinUs;
+                while (Stopwatch.GetTimestamp() < spinDeadline)
+                {
+                    if (r.released)
+                        return;
+                    Thread.SpinWait(SpinWaitIterations);
+                }
+            }
+
+            // Kernel wait bounded by ReplicaSyncTimeout: waitTimeout == Timeout.InfiniteTimeSpan blocks
+            // until released; a finite timeout returning false means a peer failed to arrive, so we stop
+            // looping and proceed unaligned -- safe because the barrier is a performance aid only.
+            while (!r.released && releaseEvent.Wait(replicaSyncTimeout)) { }
         }
 
-        // Last arrival: release spinners and sleepers, then tear the round down only if it is still
-        // current. Set the shared event BEFORE clearing the slot so a newly installed round (which can
-        // only appear once the slot is null) always Resets the event strictly after this Set -- never
-        // leaving a stale Set that a fresh round's waiters would spin on.
-        void ReleaseRound(Round r)
+        /// <summary>
+        /// Release spinners and sleepers, then tear the round down only if it is still current.
+        /// </summary>
+        /// <param name="r"></param>
+        private void ReleaseRound(Round r)
         {
             r.released = true;
             releaseEvent.Set();
