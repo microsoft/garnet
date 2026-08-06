@@ -244,7 +244,7 @@ namespace Garnet.cluster
                 if (primarySyncMetadata.fullSync)
                 {
                     var vectorManager = storeWrapper.DefaultDatabase.VectorManager;
-                    if (vectorManager != null)
+                    if (vectorManager is { IsEnabled: true })
                     {
                         vectorManager.Initialize();
                         vectorManager.ResumePostRecovery();

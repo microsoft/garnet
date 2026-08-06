@@ -231,10 +231,7 @@ namespace Garnet.test.cluster
             PopulateVectorSet(ReplicaIndex, FreshKey, count: 50, seed: 2026_07_29_11);
             var freshContext = ReadPersistedContext(ReplicaIndex, FreshKey);
 
-            ClassicAssert.AreNotEqual(
-                streamedContext,
-                freshContext,
-                $"a fresh Vector Set '{FreshKey}' was handed the streamed set '{StreamedKey}' context ({streamedContext}); the diskless full-sync receiver never reserved the streamed context, so the allocator reissued it");
+            ClassicAssert.AreNotEqual(streamedContext, freshContext, $"a fresh Vector Set '{FreshKey}' was handed the streamed set '{StreamedKey}' context ({streamedContext}); the diskless full-sync receiver never reserved the streamed context, so the allocator reissued it");
         }
 
         /// <summary>

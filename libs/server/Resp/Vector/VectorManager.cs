@@ -382,7 +382,6 @@ namespace Garnet.server
             }
 
             ReadIndex(record.ValueSpan, out var context, out _, out _, out _, out _, out _, out _, out _, out _);
-
             recoveredIndexes[context] = 0;
         }
 
@@ -396,6 +395,7 @@ namespace Garnet.server
                 return;
             }
 
+            // UpdateContextMetadata keys each record by its contextMetadatas index, written as a 4 byte little-endian int
             var index = BinaryPrimitives.ReadInt32LittleEndian(record.Key);
             var metadata = MemoryMarshal.Cast<byte, ContextMetadata>(record.ValueSpan)[0];
 
@@ -418,30 +418,35 @@ namespace Garnet.server
         /// checkpoint snapshot during recovery, or streamed in by a diskless full sync - so
         /// <see cref="ResumePostRecovery"/> can rebuild the context reservation.
         /// </summary>
-        public void RecoverIngestedRecord<TSourceLogRecord>(ref TSourceLogRecord record) where TSourceLogRecord : ISourceLogRecord
+        public void RecoverIngestedRecordIfApplicable<TSourceLogRecord>(ref TSourceLogRecord record) where TSourceLogRecord : ISourceLogRecord
         {
             if (record.Info.Tombstone)
             {
                 return;
             }
 
-            // The handle belongs to whichever process wrote the record, so clear it even where Vector Sets are disabled
-            if (record.RecordType == RecordType)
+            // ContextMetadata records are identified by their namespace, index records by their record type
+            var ns = record.Namespace;
+            if (ns.Length == 1 && ns[0] == MetadataNamespace)
             {
-                ClearIndexPointer(record.ValueSpan);
+                if (IsEnabled)
+                {
+                    RecoveredContextMetadata(ref record);
+                }
+
+                return;
             }
 
-            if (!IsEnabled)
+            if (record.RecordType != RecordType)
             {
                 return;
             }
 
-            var ns = record.Namespace;
-            if (ns.Length == 1 && ns[0] == MetadataNamespace)
-            {
-                RecoveredContextMetadata(ref record);
-            }
-            else if (record.RecordType == RecordType)
+            // The handle belongs to whichever process wrote the record, so clear it even where Vector Sets
+            // are disabled - otherwise enabling them later would follow a pointer into a dead address space
+            ClearIndexPointer(record.ValueSpan);
+
+            if (IsEnabled)
             {
                 RecoveredVectorSetIndexKey(ref record);
             }
@@ -742,7 +747,7 @@ namespace Garnet.server
         /// 
         /// Next time the record is touched, we'll recreate the index.
         /// </summary>
-        public static void ClearIndexPointer(Span<byte> value)
+        internal static void ClearIndexPointer(Span<byte> value)
         {
             if (value.Length != IndexSize)
             {

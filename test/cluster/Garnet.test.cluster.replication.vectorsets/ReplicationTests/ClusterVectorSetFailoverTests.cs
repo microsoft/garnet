@@ -117,10 +117,7 @@ namespace Garnet.test.cluster
                 AssertFullyReplicated(primary, replica, Key);
             }
 
-            ClassicAssert.AreEqual(
-                InitialElements + (PerRoundElements * Rounds),
-                VectorSetSize(primary, Key),
-                "elements were lost across repeated failovers");
+            ClassicAssert.AreEqual(InitialElements + (PerRoundElements * Rounds), VectorSetSize(primary, Key), "elements were lost across repeated failovers");
         }
     }
 }

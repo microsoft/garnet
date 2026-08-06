@@ -55,25 +55,12 @@ namespace Garnet.test.cluster
         #region cluster formation
 
         /// <summary>
-        /// Waits until nodeIndex serves key instead of returning MOVED after a slot migration.
+        /// Waits until nodeIndex serves key and has drained any Vector Set replay queued behind it.
         /// </summary>
         protected void WaitUntilServes(int nodeIndex, string key)
         {
-            var endpoint = context.clusterTestUtils.GetEndPoint(nodeIndex);
-
-            for (var attempt = 0; attempt < 200; attempt++)
-            {
-                context.clusterTestUtils.ReadOnly(nodeIndex, context.logger);
-                WaitForVectorReplay(nodeIndex);
-
-                var reply = context.clusterTestUtils.Execute(endpoint, "VINFO", [key], skipLogging: true);
-                if (reply.Resp2Type == ResultType.Array)
-                    return;
-
-                ClusterTestUtils.BackOff(cancellationToken: context.cts.Token);
-            }
-
-            Assert.Fail($"node {nodeIndex} never began serving '{key}'");
+            context.clusterTestUtils.WaitUntilServes(nodeIndex, key, context.logger);
+            WaitForVectorReplay(nodeIndex);
         }
 
         #endregion
@@ -184,10 +171,7 @@ namespace Garnet.test.cluster
             ClassicAssert.AreEqual(expected.Count, sourceSize, $"node {sourceIndex} lost elements of '{key}'");
             ClassicAssert.AreEqual(sourceSize, targetSize, $"node {targetIndex} disagrees with node {sourceIndex} on the cardinality of '{key}'");
 
-            ClassicAssert.AreEqual(
-                VectorSetDimensions(sourceIndex, key),
-                VectorSetDimensions(targetIndex, key),
-                $"node {targetIndex} disagrees with node {sourceIndex} on the dimensionality of '{key}'");
+            ClassicAssert.AreEqual(VectorSetDimensions(sourceIndex, key), VectorSetDimensions(targetIndex, key), $"node {targetIndex} disagrees with node {sourceIndex} on the dimensionality of '{key}'");
 
             var missing = new List<int>();
             var mismatched = new List<int>();
@@ -208,13 +192,8 @@ namespace Garnet.test.cluster
                     mismatched.Add(i);
             }
 
-            ClassicAssert.IsEmpty(
-                missing,
-                $"{missing.Count} of {expected.Count} elements VADDed into '{key}' on node {sourceIndex} are missing on node {targetIndex} (first few: {string.Join(", ", missing.Take(10))})");
-
-            ClassicAssert.IsEmpty(
-                mismatched,
-                $"{mismatched.Count} of {expected.Count} elements of '{key}' have a different embedding on node {targetIndex} than on node {sourceIndex} (first few: {string.Join(", ", mismatched.Take(10))})");
+            ClassicAssert.IsEmpty(missing, $"{missing.Count} of {expected.Count} elements VADDed into '{key}' on node {sourceIndex} are missing on node {targetIndex} (first few: {string.Join(", ", missing.Take(10))})");
+            ClassicAssert.IsEmpty(mismatched, $"{mismatched.Count} of {expected.Count} elements of '{key}' have a different embedding on node {targetIndex} than on node {sourceIndex} (first few: {string.Join(", ", mismatched.Take(10))})");
 
             AssertSearchesAgree(sourceIndex, targetIndex, key);
         }
@@ -240,9 +219,7 @@ namespace Garnet.test.cluster
                 var hits = Search(targetIndex, key, query, count);
 
                 ClassicAssert.Greater(hits.Length, 0, $"VSIM on node {targetIndex} returned nothing for an element of '{key}' that it holds");
-                ClassicAssert.IsTrue(
-                    hits[0].AsSpan().SequenceEqual(element),
-                    $"VSIM on node {targetIndex} for the exact embedding of element [{string.Join(",", element)}] of '{key}' returned [{string.Join(",", hits[0])}] as its nearest neighbour, so the index is not navigable to its own elements");
+                ClassicAssert.IsTrue(hits[0].AsSpan().SequenceEqual(element), $"VSIM on node {targetIndex} for the exact embedding of element [{string.Join(",", element)}] of '{key}' returned [{string.Join(",", hits[0])}] as its nearest neighbour, so the index is not navigable to its own elements");
             }
 
             // Random-query tails may differ, but hits must be real members and broadly agree.
@@ -255,23 +232,15 @@ namespace Garnet.test.cluster
                 var targetHits = Search(targetIndex, key, query, count);
 
                 ClassicAssert.Greater(sourceHits.Length, 0, $"VSIM on node {sourceIndex} returned nothing for '{key}'");
-                ClassicAssert.AreEqual(
-                    sourceHits.Length,
-                    targetHits.Length,
-                    $"VSIM for query {q} on '{key}' returned {sourceHits.Length} hits on node {sourceIndex} but {targetHits.Length} on node {targetIndex}");
+                ClassicAssert.AreEqual(sourceHits.Length, targetHits.Length, $"VSIM for query {q} on '{key}' returned {sourceHits.Length} hits on node {sourceIndex} but {targetHits.Length} on node {targetIndex}");
 
                 var foreign = targetHits.Where(hit => !membership.Contains(Convert.ToHexString(hit))).ToList();
-                ClassicAssert.IsEmpty(
-                    foreign,
-                    $"VSIM for query {q} on '{key}' returned {foreign.Count} neighbours on node {targetIndex} that were never VADDed into that set (first: [{string.Join(",", foreign.FirstOrDefault() ?? [])}])");
+                ClassicAssert.IsEmpty(foreign, $"VSIM for query {q} on '{key}' returned {foreign.Count} neighbours on node {targetIndex} that were never VADDed into that set (first: [{string.Join(",", foreign.FirstOrDefault() ?? [])}])");
 
                 var sourceSet = new HashSet<string>(sourceHits.Select(Convert.ToHexString));
                 var overlap = targetHits.Count(hit => sourceSet.Contains(Convert.ToHexString(hit)));
 
-                ClassicAssert.GreaterOrEqual(
-                    overlap * 2,
-                    sourceHits.Length,
-                    $"VSIM for query {q} on '{key}' agreed on only {overlap} of {sourceHits.Length} neighbours between node {sourceIndex} and node {targetIndex}; the two indexes are not searching the same vectors");
+                ClassicAssert.GreaterOrEqual(overlap * 2, sourceHits.Length, $"VSIM for query {q} on '{key}' agreed on only {overlap} of {sourceHits.Length} neighbours between node {sourceIndex} and node {targetIndex}; the two indexes are not searching the same vectors");
             }
         }
 
@@ -339,10 +308,7 @@ namespace Garnet.test.cluster
             if (nodePtr == nint.Zero || otherPtr == nint.Zero)
                 return;
 
-            ClassicAssert.AreNotEqual(
-                otherPtr,
-                nodePtr,
-                $"node {nodeIndex} holds node {otherNodeIndex}'s DiskANN handle for '{key}' (0x{otherPtr:x}); it is pointing into another node's heap and will fault once the two are separate processes");
+            ClassicAssert.AreNotEqual(otherPtr, nodePtr, $"node {nodeIndex} holds node {otherNodeIndex}'s DiskANN handle for '{key}' (0x{otherPtr:x}); it is pointing into another node's heap and will fault once the two are separate processes");
         }
 
         /// <summary>
@@ -359,10 +325,7 @@ namespace Garnet.test.cluster
             ClassicAssert.AreNotEqual(nint.Zero, sourcePtr, $"node {sourceIndex} should have a live index for '{key}' after being read");
             ClassicAssert.AreNotEqual(nint.Zero, targetPtr, $"node {targetIndex} should have built its own index for '{key}' after being read");
 
-            ClassicAssert.AreNotEqual(
-                sourcePtr,
-                targetPtr,
-                $"node {targetIndex} holds node {sourceIndex}'s DiskANN handle for '{key}' (0x{sourcePtr:x}); it is pointing into another node's heap and will fault once the two are separate processes");
+            ClassicAssert.AreNotEqual(sourcePtr, targetPtr, $"node {targetIndex} holds node {sourceIndex}'s DiskANN handle for '{key}' (0x{sourcePtr:x}); it is pointing into another node's heap and will fault once the two are separate processes");
         }
 
         [UnsafeAccessor(UnsafeAccessorKind.Field, Name = "storeWrapper")]
