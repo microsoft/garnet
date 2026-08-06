@@ -16,6 +16,7 @@ using Garnet.common;
 using Garnet.networking;
 using Garnet.server;
 using Garnet.server.Auth.Settings;
+using Garnet.shared;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 

@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-namespace Tsavorite.core
+namespace Garnet.shared
 {
     /// <summary>
     /// API to pulse epochs

@@ -10,6 +10,7 @@ using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
+using Garnet.shared;
 using Microsoft.Extensions.Logging;
 
 namespace Tsavorite.core
@@ -343,16 +344,7 @@ namespace Tsavorite.core
         /// <param name="h"></param>
         /// <returns></returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static int Murmur3(int h)
-        {
-            uint a = (uint)h;
-            a ^= a >> 16;
-            a *= 0x85ebca6b;
-            a ^= a >> 13;
-            a *= 0xc2b2ae35;
-            a ^= a >> 16;
-            return (int)a;
-        }
+        public static int Murmur3(int h) => HashUtility.Murmur3(h);
 
         /// <summary>
         /// Updates the variable to newValue only if the current value is smaller than the new value.

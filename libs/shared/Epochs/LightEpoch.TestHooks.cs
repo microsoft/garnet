@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-namespace Tsavorite.core
+namespace Garnet.shared
 {
     /// <summary>
     /// Read-only views of <see cref="LightEpoch"/>'s internal state, used only by the unit tests in

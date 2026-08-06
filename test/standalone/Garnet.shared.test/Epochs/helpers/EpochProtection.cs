@@ -2,9 +2,8 @@
 // Licensed under the MIT license.
 
 using System;
-using Tsavorite.core;
 
-namespace Tsavorite.test.epoch
+namespace Garnet.shared.test.epoch
 {
     /// <summary>
     /// Scopes a protected region to a <c>using</c> block, so that a failing assertion still suspends.

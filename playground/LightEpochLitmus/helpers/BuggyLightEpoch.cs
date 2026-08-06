@@ -19,6 +19,7 @@ using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading;
+using Garnet.shared;
 using Tsavorite.core;
 
 namespace Tsavorite.epoch.litmus

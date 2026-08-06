@@ -6,7 +6,7 @@ using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading;
-using Tsavorite.core;
+using Garnet.shared;
 
 namespace Tsavorite.test
 {

@@ -3,9 +3,8 @@
 
 using System;
 using NUnit.Framework;
-using Tsavorite.core;
 
-namespace Tsavorite.test.epoch
+namespace Garnet.shared.test.epoch
 {
     /// <summary>
     /// The protection lifecycle: what <see cref="LightEpoch.Resume"/>, <see cref="LightEpoch.Suspend"/>
