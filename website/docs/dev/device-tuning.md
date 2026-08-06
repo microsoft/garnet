@@ -122,32 +122,37 @@ serving device a deeper reservation. Ignored for io_uring (no global budget) and
 ### `--device-uring-sqpoll` (io_uring submission polling)
 
 io_uring only. Enables `IORING_SETUP_SQPOLL` so a **kernel thread** polls the submission
-queue and user-side submissions become syscall-free (no `io_uring_enter` per submit). Ring 0
-spawns the poll thread; every other ring attaches to it via `IORING_SETUP_ATTACH_WQ`, so the
-whole device shares **one** poll thread. `--device-uring-sqpoll-idle-ms` sets `sq_thread_idle`
-(how long that thread spins after the last submit before parking; `0` = 10s native default).
-**Off by default (opt-in).** Ignored for libaio / on Windows.
+queue and user-side submissions become syscall-free (no `io_uring_enter` per submit). Each
+ring gets its **own** poll thread (no `IORING_SETUP_ATTACH_WQ`) so submission stays parallel
+across rings — an earlier prototype that shared one poll thread across all rings serialized
+submission and was a hard ceiling; that is fixed. `--device-uring-sqpoll-idle-ms` sets
+`sq_thread_idle` (how long a poll thread spins after the last submit before parking; `0` = 10s
+native default). **Off by default (opt-in).** Ignored for libaio / on Windows.
 
-:::warning Not recommended for high-IOPS multi-ring serving
-Because all rings share **one** kernel poll thread, submission becomes single-threaded and
-that thread is a hard ceiling. On the 8×NVMe RAID-0 target (uring, 512B random reads) enabling
-SQPOLL **regressed throughput ~15–23×** at every configuration measured — the single
-`iou-sqp` poll thread saturates one core at ~0.5M submits/s while the many submitter threads
-spin waiting for in-flight to drain:
+`--device-uring-sqpoll-cpus` optionally pins the poll threads: a comma-separated CPU-id list
+(e.g. `0,1,2,3`) where ring `i` binds its poll thread to `cpus[i % count]` via
+`IORING_SETUP_SQ_AFF`; empty (the default) leaves them unpinned so the kernel places them
+freely.
 
-| layer / config                         | SQPOLL off | SQPOLL on |
-|----------------------------------------|-----------:|----------:|
-| Device.bench (t=32, io-contexts=32)    |     8.27M  |    0.52M  |
-| Device.bench (t=64, io-contexts=32)    |     7.19M  |    0.42M  |
-| Device.bench canonical (t=32, 1 ring)  |     —      |    0.59M  |
-| KV.bench scen 2 (t=48, io-contexts=96) |     7.73M  |    0.46M  |
+With one poll thread per ring, SQPOLL **matches or slightly beats** the default per-submit
+path on the 8×NVMe RAID-0 target (uring, 512B random reads), peaking at fio parity:
 
-The reason is structural: this workload is **not** submit-syscall-bound (regular per-submit
-`io_uring_enter` already reaches fio parity ~8.2M, and the serving path is managed-CPU-bound),
-so replacing many parallel submit syscalls with one serialized kernel poll thread only removes
-parallelism. SQPOLL is retained as an opt-in knob for the scenarios where it *can* help —
-low-core-count hosts where syscall overhead dominates, or low-concurrency / latency-sensitive
-single-ring workloads — but leave it **off** for throughput-oriented multi-core deployments.
+| config (io-contexts / threads) | SQPOLL off | SQPOLL on (float) | SQPOLL on (pinned) |
+|--------------------------------|-----------:|------------------:|-------------------:|
+| 8 / 16                         |     3.10M  |          **3.44M**|             3.30M  |
+| 16 / 32                        |     5.18M  |          **5.83M**|             4.69M  |
+| 32 / 32 (peak)                 |     8.12M  |          **8.39M**|             8.01M  |
+| 32 / 64                        |     6.98M  |          **7.18M**|             6.73M  |
+
+:::tip Leave the poll threads unpinned (float)
+Across every measured configuration, letting the kernel place the poll threads (no
+`--device-uring-sqpoll-cpus`) beat static pinning — with node 0's 56 cores mostly idle the
+scheduler spreads the poll threads better than a fixed map, and pinning them onto the
+submitter / RESP cores costs throughput. At the peak config, float held ~8.4M while pinning to
+HT siblings reached 8.33M and pinning to the submitter range dropped to 7.89M. Use
+`--device-uring-sqpoll-cpus` only when you specifically need to isolate the poll threads (e.g.
+a co-tenant workload). Note the poll threads are busy-polling kernel threads and consume CPU,
+so give them cores to run on; on core-starved hosts SQPOLL can still lose to the default path.
 :::
 
 ## Derived parameters

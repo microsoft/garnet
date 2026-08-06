@@ -145,7 +145,8 @@ namespace Tsavorite.kvbench
                     numIoContexts: opts.DeviceIoContexts,
                     queueDepth: opts.DeviceQueueDepth,
                     uringSqPoll: opts.DeviceUringSqPoll,
-                    uringSqPollIdleMs: opts.DeviceUringSqPollIdleMs);
+                    uringSqPollIdleMs: opts.DeviceUringSqPollIdleMs,
+                    uringSqPollCpus: opts.DeviceUringSqPollCpus);
             }
             else if (devType == DeviceType.Null)
             {
