@@ -25,15 +25,23 @@ namespace Garnet.server
         /// <summary>
         /// Explicit definition to minimize cache invalidation
         /// </summary>
-        [StructLayout(LayoutKind.Explicit, Size = 128)]
+        [StructLayout(LayoutKind.Explicit, Size = 192)]
         sealed class SublogReplayMetadata
         {
-            [FieldOffset(64)] public long Value;
+            /// <summary>
+            /// Lower bound of window used to trigger drift check for this sublog.
+            /// </summary>
+            [FieldOffset(64)] public long NextDriftCheckWindowLowerBoundSequenceNumber;
+
+            /// <summary>
+            /// Sublog max frontier value
+            /// </summary>
+            [FieldOffset(128)] public long Frontier;
 
             /// <summary>
             /// Smallest target sequence number among queued waiters (the head of the sorted waiter list).
             /// </summary>
-            [FieldOffset(72)] public long MinSequenceNumberTarget;
+            [FieldOffset(136)] public long MinSequenceNumberTarget;
         }
         readonly SublogReplayMetadata sublogReplayMetadata = new();
 
@@ -47,21 +55,39 @@ namespace Garnet.server
         /// </summary>
         ReadSessionWaiter waiterHead;
 
-        public readonly long Max => sublogReplayMetadata.Value;
+        public readonly long Max => sublogReplayMetadata.Frontier;
 
         /// <summary>
         /// Reference to the max value for Volatile.Read access from external callers.
         /// </summary>
-        public ref long MaxRef => ref sublogReplayMetadata.Value;
+        public ref long MaxRef => ref sublogReplayMetadata.Frontier;
 
-        public VirtualSublogReplayState()
+        /// <summary>
+        /// Sequence number at or beyond which the owning replay thread runs its next replay-driven
+        /// cross-sublog drift scan; long.MaxValue when the replay-driven check is disabled.
+        /// Owner-private: accessed only by this sublog's replay thread.
+        /// </summary>
+        public long NextDriftCheckWindowLowerBoundSequenceNumber
+        {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            readonly get => sublogReplayMetadata.NextDriftCheckWindowLowerBoundSequenceNumber;
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            set => sublogReplayMetadata.NextDriftCheckWindowLowerBoundSequenceNumber = value;
+        }
+
+        /// <param name="nextDriftCheckSeed">
+        /// Initial value for <see cref="NextDriftCheckWindowLowerBoundSequenceNumber"/>: the left edge of this sublog's
+        /// first owned drift-check window, or long.MaxValue to disable the replay-driven scan.
+        /// </param>
+        public VirtualSublogReplayState(long nextDriftCheckSeed)
         {
             var size = SketchSlotSize;
             if ((size & (size - 1)) != 0)
                 throw new InvalidOperationException($"Size ({SketchSlotSize}) must be a power of 2");
             Array.Clear(sketch);
-            sublogReplayMetadata.Value = 0;
+            sublogReplayMetadata.Frontier = 0;
             sublogReplayMetadata.MinSequenceNumberTarget = long.MaxValue;
+            sublogReplayMetadata.NextDriftCheckWindowLowerBoundSequenceNumber = nextDriftCheckSeed;
             waiterHead = null;
         }
 
@@ -74,7 +100,7 @@ namespace Garnet.server
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly long GetFrontierSequenceNumber(long hash)
             => Math.Max(Volatile.Read(ref Unsafe.AsRef(in sketch[GetSketchSlot(hash)])),
-                        Volatile.Read(ref Unsafe.AsRef(in sublogReplayMetadata.Value)));
+                        Volatile.Read(ref Unsafe.AsRef(in sublogReplayMetadata.Frontier)));
 
         /// <summary>
         /// Gets the sequence number associated with the specified hash key.
@@ -102,7 +128,7 @@ namespace Garnet.server
         /// <remarks>Updates are thread-safe and guaranteed to be monotonically increasing.</remarks>
         public void UpdateMaxSequenceNumber(long sequenceNumber)
         {
-            _ = Tsavorite.core.Utility.MonotonicUpdate(ref sublogReplayMetadata.Value, sequenceNumber, out _);
+            _ = Tsavorite.core.Utility.MonotonicUpdate(ref sublogReplayMetadata.Frontier, sequenceNumber, out _);
             SignalWaiters();
         }
 
@@ -124,12 +150,12 @@ namespace Garnet.server
         {
             // Make the max publish visible before the read of minT, so a decision to skip can never race ahead of the waiter's ability to see the new  max
             Interlocked.MemoryBarrier();
-            if (Volatile.Read(ref sublogReplayMetadata.Value) <= Volatile.Read(ref sublogReplayMetadata.MinSequenceNumberTarget))
+            if (Volatile.Read(ref sublogReplayMetadata.Frontier) <= Volatile.Read(ref sublogReplayMetadata.MinSequenceNumberTarget))
                 return;
 
             lock (@lock)
             {
-                var currentMax = Volatile.Read(ref sublogReplayMetadata.Value);
+                var currentMax = Volatile.Read(ref sublogReplayMetadata.Frontier);
                 while (waiterHead != null && waiterHead.TargetSequenceNumber < currentMax)
                 {
                     var node = waiterHead;
@@ -155,7 +181,7 @@ namespace Garnet.server
             var spinner = new SpinWait();
             for (var i = 0; i < MaxSpinCount; i++)
             {
-                if (maximumSessionSequenceNumber < Volatile.Read(ref sublogReplayMetadata.Value))
+                if (maximumSessionSequenceNumber < Volatile.Read(ref sublogReplayMetadata.Frontier))
                     return;
                 spinner.SpinOnce(sleep1Threshold: -1);
             }
@@ -167,7 +193,7 @@ namespace Garnet.server
 
             lock (@lock)
             {
-                if (maximumSessionSequenceNumber < Volatile.Read(ref sublogReplayMetadata.Value))
+                if (maximumSessionSequenceNumber < Volatile.Read(ref sublogReplayMetadata.Frontier))
                     return;
 
                 // Insert first, then re-check: if an updater raced with us
@@ -177,7 +203,7 @@ namespace Garnet.server
                 UpdateMinWaiterTarget();
                 // Make the enqueue visible before the recheck of  max , so a decision to block can never race ahead of the signaler's ability to see that you enqueued
                 Interlocked.MemoryBarrier();
-                if (maximumSessionSequenceNumber < Volatile.Read(ref sublogReplayMetadata.Value))
+                if (maximumSessionSequenceNumber < Volatile.Read(ref sublogReplayMetadata.Frontier))
                 {
                     // Unlink directly — we already hold the lock
                     if (node.Prev != null)

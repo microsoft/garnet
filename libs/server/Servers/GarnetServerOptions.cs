@@ -101,8 +101,13 @@ namespace Garnet.server
         public int AofReplayDriftThreshold = -1;
 
         /// <summary>
-        /// How often cross-sublog drift is re-checked during replay, as a multiple of
-        /// AofReplayDriftThreshold. 0 leaves readers about to wait as the only round source.
+        /// How often the cross-sublog drift is re-checked during replay, as a multiple of
+        /// AofReplayDriftThreshold: the sequence-number timeline is divided into windows of
+        /// (this value x threshold), and each window's drift scan runs on exactly one replay
+        /// thread (window index mod virtual sublog count, a rotating schedule needing no
+        /// cross-thread coordination), firing a replay-align round when the drift exceeds the
+        /// threshold. 0 disables the proactive check, leaving readers about to wait as the only
+        /// round source.
         /// </summary>
         public int AofReplayDriftCheckFreq = 1;
 

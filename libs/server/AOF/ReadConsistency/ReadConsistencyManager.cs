@@ -24,7 +24,14 @@ namespace Garnet.server
         public long CurrentVersion { get; private set; } = currentVersion;
         readonly GarnetServerOptions serverOptions = serverOptions;
 
-        readonly VirtualSublogReplayState[] vsrs = [.. Enumerable.Range(0, serverOptions.AofVirtualSublogCount).Select(_ => new VirtualSublogReplayState())];
+        readonly VirtualSublogReplayState[] vsrs = [.. Enumerable.Range(0, serverOptions.AofVirtualSublogCount)
+            .Select(virtualSublogIdx => new VirtualSublogReplayState(
+                // Rotate drift-check responsibility across sublogs: seed each to the left edge of its
+                // first owned window (idx x window length). long.MaxValue disables the proactive scan
+                // when the feature is off (freq 0, threshold < 0, or a single sublog).
+                serverOptions.AofReplayDriftCheckFreq > 0 && serverOptions.AofReplayDriftThreshold >= 0 && serverOptions.AofVirtualSublogCount > 1
+                    ? virtualSublogIdx * Math.Max(1, (long)serverOptions.AofReplayDriftCheckFreq * serverOptions.AofReplayDriftThreshold)
+                    : long.MaxValue))];
 
         /// <summary>
         /// Maximum allowed drift (in sequence-number units) between leading and trailing sublog
@@ -38,6 +45,17 @@ namespace Garnet.server
         /// (threshold -1) or there is a single virtual sublog (no cross-sublog drift to bound).
         /// </summary>
         readonly bool driftBoundingEnabled = serverOptions.AofReplayDriftThreshold >= 0 && serverOptions.AofVirtualSublogCount > 1;
+
+        /// <summary>
+        /// Interval, in sequence-number units, between two consecutive drift scans by the same
+        /// virtual sublog: window length (max(1, AofReplayDriftCheckFreq x AofReplayDriftThreshold))
+        /// x virtual sublog count. The shared timeline is divided into windows, each scanned by
+        /// exactly one replay thread (window index mod sublog count), so system-wide scan spacing is
+        /// one window while each sublog scans once per this interval. Math.Max keeps it positive when
+        /// the threshold is 0.
+        /// </summary>
+        readonly long replayDriftInterval =
+            Math.Max(1, (long)serverOptions.AofReplayDriftCheckFreq * serverOptions.AofReplayDriftThreshold) * serverOptions.AofVirtualSublogCount;
 
         /// <summary>
         /// Cooperative barrier used to bound inter-virtual-sublog replay drift. The reader activates it
@@ -193,6 +211,23 @@ namespace Garnet.server
             // Safety: Safe for readers because the frontier only opens prepare gates; session clocks are drawn 
             // exclusively from the key sketch entry.
             vsrs[virtualSublogIdx].UpdateMaxSequenceNumber(sequenceNumber);
+
+            // Replay-driven drift bounding: when this sublog's replay crosses into a timeline window
+            // it owns (see replayDriftCheckInterval), proactively scan for cross-sublog drift and arm
+            // a barrier round if it exceeds the threshold -- so laggards are reined in before a reader
+            // ever has to wait. NextDriftCheckSequenceNumber is long.MaxValue when the feature is off,
+            // making this a single predictable-false compare on the hot path.
+            if (sequenceNumber >= vsrs[virtualSublogIdx].NextDriftCheckWindowLowerBoundSequenceNumber)
+            {
+                // Advance to this sublog's next owned boundary. A single whole-interval step keeps the
+                // boundary on windows this sublog owns; if replay jumped several windows ahead (e.g.
+                // parked at a barrier round), skip to the first owned boundary past the record.
+                var next = vsrs[virtualSublogIdx].NextDriftCheckWindowLowerBoundSequenceNumber + replayDriftInterval;
+                if (next <= sequenceNumber)
+                    next += ((sequenceNumber - next) / replayDriftInterval + 1) * replayDriftInterval;
+                vsrs[virtualSublogIdx].NextDriftCheckWindowLowerBoundSequenceNumber = next;
+                BoundReplayDrift();
+            }
 
             // Pause this replay thread when it has run ahead of an active round's target, bounding
             // drift from the lagging sublogs. Fast path is a single Volatile.Read + compare when no
