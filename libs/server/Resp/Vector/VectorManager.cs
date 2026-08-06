@@ -273,10 +273,6 @@ namespace Garnet.server
 
             lock (this)
             {
-                // Nulled at the end of this method, so a second recovery finds them missing
-                recoveredMetadata ??= new();
-                recoveredIndexes ??= new();
-
                 // Any ContextMetadatas we found need to be restored
                 if (!recoveredMetadata.IsEmpty)
                 {
@@ -292,7 +288,8 @@ namespace Garnet.server
                     }
                 }
 
-                recoveredMetadata = null;
+                // Cleared rather than nulled, so a later recovery can repopulate them
+                recoveredMetadata.Clear();
 
                 // If we come up and contexts are marked for migration, that means the migration FAILED
                 // and we'd like those contexts back ASAP
@@ -362,7 +359,7 @@ namespace Garnet.server
                     }
                 }
 
-                recoveredIndexes = null;
+                recoveredIndexes.Clear();
             }
 
             if (needsUpdated)
@@ -386,11 +383,7 @@ namespace Garnet.server
 
             ReadIndex(record.ValueSpan, out var context, out _, out _, out _, out _, out _, out _, out _, out _);
 
-            lock (this)
-            {
-                recoveredIndexes ??= new();
-                recoveredIndexes[context] = 0;
-            }
+            recoveredIndexes[context] = 0;
         }
 
         /// <summary>
@@ -414,23 +407,31 @@ namespace Garnet.server
                 return;
             }
 
-            lock (this)
+            if (!recoveredMetadata.TryAdd(index, metadata))
             {
-                recoveredMetadata ??= new();
-                if (!recoveredMetadata.TryAdd(index, metadata))
-                {
-                    throw new GarnetException($"Recovered multiple instances of the same ContextMetadata: {index}");
-                }
+                throw new GarnetException($"Recovered multiple instances of the same ContextMetadata: {index}");
             }
         }
 
         /// <summary>
-        /// Route a record streamed in during a diskless full sync into recovery bookkeeping, so
+        /// Sanitizes and routes a record that entered the store as raw bytes - either read from a
+        /// checkpoint snapshot during recovery, or streamed in by a diskless full sync - so
         /// <see cref="ResumePostRecovery"/> can rebuild the context reservation.
         /// </summary>
-        public void RecoverStreamedRecord<TSourceLogRecord>(ref TSourceLogRecord record) where TSourceLogRecord : ISourceLogRecord
+        public void RecoverIngestedRecord<TSourceLogRecord>(ref TSourceLogRecord record) where TSourceLogRecord : ISourceLogRecord
         {
-            if (!IsEnabled || record.Info.Tombstone)
+            if (record.Info.Tombstone)
+            {
+                return;
+            }
+
+            // The handle belongs to whichever process wrote the record, so clear it even where Vector Sets are disabled
+            if (record.RecordType == RecordType)
+            {
+                ClearIndexPointer(record.ValueSpan);
+            }
+
+            if (!IsEnabled)
             {
                 return;
             }
