@@ -287,7 +287,7 @@ namespace Garnet.server
         {
             if (!driftBoundingEnabled) return;
             // A round already in progress is bounding the drift; skip the scan.
-            if (replayBarrier.IsActive) return;
+            if (replayBarrier.InProgress) return;
 
             var virtualSublogCount = serverOptions.AofVirtualSublogCount;
             long minFrontier = long.MaxValue, maxFrontier = long.MinValue;
