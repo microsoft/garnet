@@ -244,12 +244,7 @@ namespace Garnet.cluster
                 // recovered set and mark every live context for cleanup.
                 if (primarySyncMetadata.fullSync)
                 {
-                    var vectorManager = storeWrapper.DefaultDatabase.VectorManager;
-                    if (vectorManager != null)
-                    {
-                        vectorManager.Initialize();
-                        vectorManager.ResumePostRecovery();
-                    }
+                    storeWrapper.DefaultDatabase.VectorManager?.ResumePostRecovery();
                 }
 
                 this.replicationOffset = _replicationOffset;
