@@ -44,7 +44,7 @@ namespace Garnet.server
         /// on demand when it observes a large drift while about to wait; replay threads align on it via
         /// per-record CheckAndWait calls. One participant per virtual sublog (one replay thread each).
         /// </summary>
-        public readonly ReplayAlignBarrier replayBarrier = new(serverOptions.AofVirtualSublogCount, serverOptions.AofReplayBarrierSpinUs);
+        public readonly ReplayAlignBarrier replayBarrier = new(serverOptions.AofVirtualSublogCount, serverOptions.AofReplayBarrierSpinUs, serverOptions.ReplicaSyncTimeout);
 
         /// <summary>
         /// Get sequence number for provided key.
