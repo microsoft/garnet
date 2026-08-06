@@ -143,7 +143,9 @@ namespace Tsavorite.kvbench
                     numCompletionThreads: numCt,
                     ioBackend: opts.ResolvedIoBackend,
                     numIoContexts: opts.DeviceIoContexts,
-                    queueDepth: opts.DeviceQueueDepth);
+                    queueDepth: opts.DeviceQueueDepth,
+                    uringSqPoll: opts.DeviceUringSqPoll,
+                    uringSqPollIdleMs: opts.DeviceUringSqPollIdleMs);
             }
             else if (devType == DeviceType.Null)
             {

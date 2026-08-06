@@ -216,6 +216,15 @@ class QueueIoHandler {
     Init(num_contexts < 1 ? 1 : num_contexts);
   }
 
+  /// 5-arg overload accepted for cross-backend symmetry with UringIoHandler. libaio has no
+  /// submission-poll thread, so the io_uring SQPOLL parameters (`sqpoll`, `sq_thread_idle_ms`)
+  /// are silently ignored.
+  QueueIoHandler(size_t /*max_threads*/, int num_contexts, int max_events, bool /*sqpoll*/, int /*sq_thread_idle_ms*/)
+    : max_events_{ max_events > 0 ? max_events : kMaxEvents }
+    , init_errno_{ 0 } {
+    Init(num_contexts < 1 ? 1 : num_contexts);
+  }
+
   /// Move constructor
   QueueIoHandler(QueueIoHandler&& other)
     : io_objects_{ std::move(other.io_objects_) }
@@ -482,6 +491,13 @@ class UringIoHandler {
   /// rounded up (RoundUpPow2) before use.
   constexpr static int kMaxEvents = 128;
 
+  /// Default IORING_SETUP_SQPOLL sq_thread_idle (milliseconds): how long the kernel submission-poll
+  /// thread keeps spinning after the last submission before parking. Used when SQPOLL is enabled and
+  /// the caller passes a non-positive idle value. A generous default keeps the poll thread hot across
+  /// brief gaps (e.g. benchmark warmup->run transitions) so submissions stay syscall-free; once parked,
+  /// liburing's io_uring_submit re-wakes it with a single IORING_ENTER_SQ_WAKEUP syscall.
+  constexpr static int kDefaultSqThreadIdleMs = 10000;
+
   /// Smallest power of two >= v (v already assumed > 0). Used to satisfy io_uring_queue_init's
   /// power-of-two entries requirement when a throttle-derived depth is passed in.
   static int RoundUpPow2(int v) {
@@ -517,12 +533,29 @@ class UringIoHandler {
     Init(num_rings < 1 ? 1 : num_rings);
   }
 
+  /// As the 3-arg ctor, plus io_uring SQPOLL configuration. When `sqpoll` is true every ring is created
+  /// with IORING_SETUP_SQPOLL so a kernel thread polls the SQ and submissions need no io_uring_enter
+  /// syscall on the hot path (submit-side offload only; completion draining is unchanged). With multiple
+  /// rings, only ring 0 spawns a poll thread; rings 1..N-1 add IORING_SETUP_ATTACH_WQ (wq_fd = ring 0)
+  /// to SHARE that single poll thread rather than each spawning its own busy-polling kernel thread —
+  /// otherwise a high ring count (the io_uring default is ~2*cores) would burn one core per ring.
+  /// `sq_thread_idle_ms` sets the poll thread's idle-before-park window (<= 0 => kDefaultSqThreadIdleMs).
+  UringIoHandler(size_t /*max_threads*/, int num_rings, int max_events, bool sqpoll, int sq_thread_idle_ms)
+    : max_events_{ RoundUpPow2(max_events < kMaxEvents ? kMaxEvents : max_events) }
+    , sqpoll_{ sqpoll }
+    , sq_thread_idle_ms_{ sq_thread_idle_ms > 0 ? sq_thread_idle_ms : kDefaultSqThreadIdleMs }
+    , init_errno_{ 0 } {
+    Init(num_rings < 1 ? 1 : num_rings);
+  }
+
   /// Move constructor
   UringIoHandler(UringIoHandler&& other)
     : rings_{ std::move(other.rings_) }
     , sq_locks_{ std::move(other.sq_locks_) }
     , cq_locks_{ std::move(other.cq_locks_) }
     , max_events_{ other.max_events_ }
+    , sqpoll_{ other.sqpoll_ }
+    , sq_thread_idle_ms_{ other.sq_thread_idle_ms_ }
     , init_errno_{ other.init_errno_ } {
     other.rings_.clear();
     other.sq_locks_.clear();
@@ -554,6 +587,11 @@ class UringIoHandler {
 
   /// Number of io_uring shards. >= 1 once initialized.
   int num_contexts() const { return static_cast<int>(rings_.size()); }
+
+  /// True iff these rings were created with IORING_SETUP_SQPOLL (opt-in submit-side offload). Under
+  /// SQPOLL a kernel thread consumes SQEs asynchronously, so the submit path must not treat
+  /// io_uring_sq_ready() as a synchronous "consumed" signal nor mutate an SQE after flushing it.
+  bool sqpoll() const { return sqpoll_; }
 
   /// Pick a (ring, sq_lock) pair for the next submission via per-thread affinity.
   /// Each calling thread is assigned a ring on first call (round-robin against other
@@ -649,7 +687,23 @@ private:
 
     for (int i = 0; i < num_rings; ++i) {
       auto raw_ring = new struct io_uring();
-      int ret = io_uring_queue_init(max_events_, raw_ring, 0);
+      int ret;
+      if (sqpoll_) {
+        // IORING_SETUP_SQPOLL: a kernel thread polls this ring's SQ, so submissions are syscall-free
+        // while it is awake. sq_thread_idle is in milliseconds. Rings after the first attach to ring 0's
+        // poll thread (IORING_SETUP_ATTACH_WQ + wq_fd) so there is exactly one poll kernel thread for the
+        // whole device instead of one per ring.
+        struct io_uring_params params = {};
+        params.flags = IORING_SETUP_SQPOLL;
+        params.sq_thread_idle = static_cast<unsigned>(sq_thread_idle_ms_);
+        if (i > 0) {
+          params.flags |= IORING_SETUP_ATTACH_WQ;
+          params.wq_fd = static_cast<unsigned>(rings[0]->ring_fd);
+        }
+        ret = io_uring_queue_init_params(max_events_, raw_ring, &params);
+      } else {
+        ret = io_uring_queue_init(max_events_, raw_ring, 0);
+      }
       if (ret != 0) {
         init_errno_ = -ret;
         delete raw_ring;
@@ -683,6 +737,12 @@ private:
   /// Per-ring io_uring SQ depth passed to io_uring_queue_init(). Power of two, defaulted to
   /// (and floored at) kMaxEvents; sized up from the device throttle limit by the 3-arg ctor.
   int max_events_ = kMaxEvents;
+  /// True iff IORING_SETUP_SQPOLL was requested: rings are created with a kernel SQ-poll thread so
+  /// submissions are syscall-free. Off by default (opt-in via the managed --device-uring-sqpoll knob).
+  bool sqpoll_ = false;
+  /// SQPOLL sq_thread_idle window in milliseconds (poll-thread spin-before-park). Only consulted when
+  /// sqpoll_ is true; the 5-arg ctor floors a non-positive request at kDefaultSqThreadIdleMs.
+  int sq_thread_idle_ms_ = kDefaultSqThreadIdleMs;
   /// If non-zero, the positive errno from a failed io_uring_queue_init() in the constructor.
   int init_errno_;
 };
