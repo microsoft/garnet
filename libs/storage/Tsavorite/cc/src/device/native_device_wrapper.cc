@@ -229,14 +229,10 @@ extern "C" {
 			[&]() { return device->CreateDir(std::string(dir), delete_existing != 0); }, -1);
 	}
 
-	EXPORTED_SYMBOL bool NativeDevice_TryComplete(INativeDevice* device) {
-		return CABIGuard("NativeDevice_TryComplete", [&]() { return device->TryComplete(); }, false);
-	}
-
-	/// Drain only the calling thread's affine context/ring (see INativeDevice::TryCompleteMine).
-	/// Used by the inline submitter-thread completion path to avoid walking every context.
-	EXPORTED_SYMBOL bool NativeDevice_TryCompleteMine(INativeDevice* device) {
-		return CABIGuard("NativeDevice_TryCompleteMine", [&]() { return device->TryCompleteMine(); }, false);
+	/// Drain pending async IO completions. mineOnly != 0 drains only the calling thread's affine
+	/// context/ring (the inline submitter-thread path); mineOnly == 0 walks every context.
+	EXPORTED_SYMBOL bool NativeDevice_TryComplete(INativeDevice* device, int mineOnly) {
+		return CABIGuard("NativeDevice_TryComplete", [&]() { return device->TryComplete(mineOnly != 0); }, false);
 	}
 
 	EXPORTED_SYMBOL uint64_t NativeDevice_GetFileSize(INativeDevice* device, uint64_t segment) {

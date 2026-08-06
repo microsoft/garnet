@@ -80,7 +80,7 @@ namespace Tsavorite.core
                                                                                              CompletedOutputIterator<TInput, TOutput, TContext> completedOutputs)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
-            _ = hlogBase.TryCompleteMine();
+            _ = hlogBase.TryComplete(mineOnly: true);
 
             if (sessionFunctions.Ctx.readyResponses.Count == 0)
                 return;

@@ -301,7 +301,7 @@ class ThreadPoolIoHandler {
     core::AsyncIOCallback callback;
   };
 
-  inline static constexpr bool TryComplete() {
+  inline static constexpr bool TryComplete(bool /*mineOnly*/ = false) {
     return false;
   }
 
@@ -328,10 +328,7 @@ class ThreadPoolIoHandler {
   }
 
   /// The Windows IOCP path completes on threadpool threads (IoCompletionCallback), so there is
-  /// no caller-affine ring to inline-drain; mirror TryComplete() and report nothing was reaped.
-  inline static constexpr bool TryCompleteMine() {
-      return false;
-  }
+  /// no caller-affine ring to inline-drain; the mineOnly path of TryComplete() reports nothing.
 
  private:
   /// The parent threadpool.
