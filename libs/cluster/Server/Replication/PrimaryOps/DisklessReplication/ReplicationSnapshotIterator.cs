@@ -224,6 +224,12 @@ namespace Garnet.cluster
             // buffer (no single-chunk reassembly).
             if (isStart && wholeRecordEmittable && isComplete && second.IsEmpty)
             {
+                // 'first' is the whole-record [inline][object] layout, contiguous from the ring origin (tail == 0), so the ring's
+                // writable span aliases it. The object value streamed with the sentinel in its value objectId slot; patch the exact
+                // object length into that slot before emitting so the wire record carries it.
+                var inlineSize = DiskLogRecord.GetChunkedRecordInlineSize(first);
+                var objectLength = first.Length - inlineSize;
+                DiskLogRecord.SetWireValueObjectLength(chunker.GetWritableSpan().Slice(0, first.Length), objectLength, objectLength);
                 _ = FanOutRecordSpan(first, MigrationRecordSpanType.LogRecord);
                 return first.Length;
             }

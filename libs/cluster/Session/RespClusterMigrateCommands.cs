@@ -46,7 +46,7 @@ namespace Garnet.cluster
                 valueObject = (IHeapObject)storeWrapper.GarnetObjectSerializer.Deserialize(reassembler.ObjectValueSequence());
 
             return DiskLogRecord.CompleteDeserializeChunkedRecord(headerSpan, reassembler.KeyOverflow, reassembler.ValueOverflow,
-                valueObject, reassembler.KeyLength, reassembler.ValueLength, transientObjectIdMap);
+                valueObject, transientObjectIdMap);
         }
 
         /// <summary>

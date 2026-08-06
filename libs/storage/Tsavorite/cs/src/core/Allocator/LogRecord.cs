@@ -1730,29 +1730,69 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Set the RDH <see cref="RecordDataHeader.KeyLength"/> / <see cref="RecordDataHeader.ValueLength"/> raw fields of a
-        /// deserialized non-inline chunked record to the sentinel-encoded actual overflow key / overflow-value-or-object length:
-        /// the actual length if it is below the field's maximum, else the field's maximum value used as a sentinel meaning
-        /// "length &gt;= sentinel; the authoritative length is carried out of band". The objectId slot (at keyAddress/valueAddress)
-        /// is left untouched — it holds the real ObjectId. This prepares the record for the flush path, which reads these RDH
-        /// fields rather than the R11 objectId-slot high bits. The <see cref="RecordDataHeader.KeyLength"/>/<see cref="RecordDataHeader.ValueLength"/>
-        /// property getters still return <see cref="ObjectIdMap.ObjectIdSize"/> for non-inline components, so the in-memory invariants hold.
+        /// Migration/replication WIRE format: read the out-of-line overflow key/value lengths from the store's
+        /// <see cref="ObjectIdMap"/> and write them into the 4-byte objectId slots (at keyAddress/valueAddress) of this record
+        /// image. The objectId slot is meaningless on the wire (the receiver assigns its own objectIds), so it carries the
+        /// out-of-line length instead of the RDH <see cref="RecordDataHeader.KeyLength"/>/<see cref="RecordDataHeader.ValueLength"/>
+        /// fields, which are left exactly as the source record had them (<see cref="ObjectIdMap.ObjectIdSize"/> — the future
+        /// hybrid-value inline length). The ObjectLogPosition word is also left untouched: the receiver derives the overflow
+        /// offset as <c>RoundUp(ActualSize)</c>. An object value's slot is set to the streaming sentinel
+        /// (<see cref="ChunkedRecordConstants.ContinuationFlag"/>) here — its serialized length is not yet known — and patched to
+        /// the exact length by the caller once known (see <see cref="SetWireValueObjectLength"/>).
         /// </summary>
-        /// <param name="keyActualLength">The actual overflow key length (ignored unless the key is overflow).</param>
-        /// <param name="valueActualLength">The actual overflow value or serialized object length (ignored if the value is inline).</param>
-        internal readonly void SetChunkedFlushOverflowLengths(int keyActualLength, long valueActualLength)
+        /// <remarks>Must run while holding the store epoch: the overflow lengths are read from the store's <see cref="ObjectIdMap"/>.</remarks>
+        internal readonly void SetWireOutOfLineLengths()
         {
-            var localDataHeader = DataHeader;
-            if (localDataHeader.KeyIsOverflow)
-                localDataHeader.KeyLength = keyActualLength >= (int)RecordDataHeader.kKeyLengthLowBitsMask
-                    ? (int)RecordDataHeader.kKeyLengthLowBitsMask
-                    : keyActualLength;
-            if (localDataHeader.ValueIsOverflow || localDataHeader.ValueIsObject)
-                localDataHeader.ValueLength = valueActualLength >= (long)RecordDataHeader.kValueLengthLowBitsMask
-                    ? (int)RecordDataHeader.kValueLengthLowBitsMask
-                    : (int)valueActualLength;
-            SetDataHeader(localDataHeader);
+            Debug.Assert(!DataHeader.RecordIsInline, "SetWireOutOfLineLengths is only for a non-inline record");
+            var dataHeader = DataHeader;
+            if (dataHeader.KeyIsOverflow)
+            {
+                var (_, keyAddress) = dataHeader.GetKeyFieldInfo(physicalAddress);
+                *(int*)keyAddress = objectIdMap.GetOverflowByteArray(*(int*)keyAddress).Length;
+            }
+            if (dataHeader.ValueIsOverflow)
+            {
+                var (_, valueAddress) = dataHeader.GetValueFieldInfo(physicalAddress);
+                *(int*)valueAddress = objectIdMap.GetOverflowByteArray(*(int*)valueAddress).Length;
+            }
+            else if (dataHeader.ValueIsObject)
+            {
+                // The serialized object length is not known here (the object is serialized separately); write the streaming
+                // sentinel. The caller patches the exact length via SetWireValueObjectLength once the object is serialized.
+                var (_, valueAddress) = dataHeader.GetValueFieldInfo(physicalAddress);
+                *(int*)valueAddress = ChunkedRecordConstants.ContinuationFlag;
+            }
         }
+
+        /// <summary>Read the wire overflow KEY length from the key objectId slot (valid only when the key is overflow).</summary>
+        internal readonly int GetWireOverflowKeyLength()
+        {
+            var (_, keyAddress) = DataHeader.GetKeyFieldInfo(physicalAddress);
+            return *(int*)keyAddress;
+        }
+
+        /// <summary>Read the wire overflow VALUE length from the value objectId slot (valid only when the value is overflow).</summary>
+        internal readonly int GetWireOverflowValueLength()
+        {
+            var (_, valueAddress) = DataHeader.GetValueFieldInfo(physicalAddress);
+            return *(int*)valueAddress;
+        }
+
+        /// <summary>Patch the value objectId slot of this wire record image with the serialized object VALUE length (see
+        /// <see cref="EncodeWireValueObjectSlot"/>). Called once the object length is known.</summary>
+        internal readonly void SetWireValueObjectLength(long totalObjectLength, long firstChunkLength)
+        {
+            var (_, valueAddress) = DataHeader.GetValueFieldInfo(physicalAddress);
+            *(int*)valueAddress = EncodeWireValueObjectSlot(totalObjectLength, firstChunkLength);
+        }
+
+        /// <summary>Encode an object VALUE length into the value objectId slot: the exact serialized length when it fits the slot's
+        /// 31 bits (continuation clear, used directly by the receiver), else the first-chunk length with
+        /// <see cref="ChunkedRecordConstants.ContinuationFlag"/> set (the receiver derives the total from the record stream).</summary>
+        internal static int EncodeWireValueObjectSlot(long totalObjectLength, long firstChunkLength)
+            => totalObjectLength <= int.MaxValue
+                ? (int)totalObjectLength
+                : ((int)firstChunkLength | ChunkedRecordConstants.ContinuationFlag);
 
         internal readonly void OnDeserializationError(bool keyWasSet)
         {

@@ -3,7 +3,6 @@
 
 using System;
 using System.Buffers;
-using System.Buffers.Binary;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
@@ -17,16 +16,16 @@ namespace Garnet.cluster
     /// incoming byte stream by component so each out-of-line component lands directly in its final buffer (no intermediate copy).
     /// A record too large for one send buffer is sent as a sequence of chunks (each framed <c>[int chunkLength | continuation]
     /// [chunk bytes]</c>); the payloads concatenate into the serialized record stream:
-    /// <c>[inline portion][int keyLen][overflow key][int valueLen][overflow value | object bytes]</c> — each overflow key/value is
-    /// preceded by its 4-byte length; an object value is streamed with no prefix. One instance is held per connection
-    /// because a record's chunks may span multiple commands.
+    /// <c>[inline portion][overflow key][overflow value | object bytes]</c> — no per-component length prefixes: each overflow
+    /// key/value length rides in the inline portion's objectId slot (see <c>LogRecord.SetWireOutOfLineLengths</c>), and an
+    /// object value streams with no prefix. One instance is held per connection because a record's chunks may span multiple commands.
     /// </summary>
     /// <remarks>
     /// As chunk bytes arrive they are routed by a small state machine keyed off the record's data header (read directly from the
     /// accumulated inline buffer once the fixed header is present): the inline portion is accumulated contiguously; each overflow
-    /// key/value is allocated up front (from its 4-byte length prefix) as a single <see cref="OverflowByteArray"/> and populated
-    /// directly from the network chunks; an object value (whose length is not known up front, and which may exceed 2 GB, the max
-    /// length of a single <c>byte[]</c>) is accumulated as a chunk list and later streamed to the deserializer via a
+    /// key/value is allocated up front (from the length in its objectId slot) as a single <see cref="OverflowByteArray"/> and
+    /// populated directly from the network chunks; an object value (whose length is not known up front, and which may exceed 2 GB,
+    /// the max length of a single <c>byte[]</c>) is accumulated as a chunk list and later streamed to the deserializer via a
     /// <see cref="ReadOnlySequence{T}"/>. The completed pieces are assembled by
     /// <see cref="DiskLogRecord.CompleteDeserializeChunkedRecord"/> (out-of-line components) or <see cref="DiskLogRecord.Deserialize"/>
     /// (a fully-inline record).
@@ -38,9 +37,6 @@ namespace Garnet.cluster
         {
             // Accumulating the inline portion (first the fixed header to learn the layout, then the rest of the inline bytes).
             Inline,
-            // Reading a 4-byte overflow key/value length prefix (may be split across chunks).
-            KeyLengthPrefix,
-            ValueLengthPrefix,
             // Copying overflow key/value bytes directly into the pre-allocated OverflowByteArray.
             KeyData,
             ValueData,
@@ -70,10 +66,6 @@ namespace Garnet.cluster
         // Object value: accumulated as chunks (length not known up front; may exceed 2 GB).
         readonly List<byte[]> objectValueChunks = [];
         long objectValueLength;
-
-        // Staging for a 4-byte length prefix that may arrive split across chunks.
-        readonly byte[] prefixBuffer = new byte[sizeof(int)];
-        int prefixFilled;
 
         /// <summary>
         /// Route one chunk's payload into the current component. Returns true when the record is complete
@@ -107,31 +99,16 @@ namespace Garnet.cluster
                     case Phase.Inline:
                         FillInline(ref data);
                         break;
-                    case Phase.KeyLengthPrefix:
-                        // Wait for the full 4-byte length before allocating; TryReadLengthPrefix buffers a split prefix.
-                        if (!TryReadLengthPrefix(ref data, out keyLength))
-                            return;
-                        keyOverflow = OverflowByteArray.AllocateData(keyLength);
-                        keyFilled = 0;
-                        phase = Phase.KeyData;
-                        break;
                     case Phase.KeyData:
                         if (FillOverflow(ref data, keyOverflow, keyLength, ref keyFilled))
                             phase = AfterKey();
-                        break;
-                    case Phase.ValueLengthPrefix:
-                        if (!TryReadLengthPrefix(ref data, out valueLength))
-                            return;
-                        valueOverflow = OverflowByteArray.AllocateData(valueLength);
-                        valueFilled = 0;
-                        phase = Phase.ValueData;
                         break;
                     case Phase.ValueData:
                         if (FillOverflow(ref data, valueOverflow, valueLength, ref valueFilled))
                             phase = Phase.Complete;
                         break;
                     case Phase.ObjectData:
-                        // All remaining bytes are object-value bytes; accumulate and track the total for the RDH length update.
+                        // All remaining bytes are object-value bytes; accumulate and track the total object length.
                         objectValueChunks.Add(data.ToArray());
                         objectValueLength += data.Length;
                         data = default;
@@ -174,26 +151,33 @@ namespace Garnet.cluster
         }
 
         // Transition after the inline portion is complete, based on which out-of-line components follow (read from RecordHeader).
+        // Each overflow length is read from the inline portion's objectId slot (see LogRecord.SetWireOutOfLineLengths).
         Phase AfterInline()
         {
             var header = RecordHeader;
             if (header.RecordIsInline)
                 return Phase.Complete;
             if (header.KeyIsOverflow)
-                return Phase.KeyLengthPrefix;
-            if (header.ValueIsOverflow)
-                return Phase.ValueLengthPrefix;
-            if (header.ValueIsObject)
-                return Phase.ObjectData;
-            return Phase.Complete; // Non-inline with inline key and inline value (nothing out of line); should not occur.
+            {
+                keyLength = DiskLogRecord.GetWireOverflowKeyLength(inlineBuffer.AsSpan(0, inlineSize));
+                keyOverflow = OverflowByteArray.AllocateData(keyLength);
+                keyFilled = 0;
+                return Phase.KeyData;
+            }
+            return AfterKey();
         }
 
-        // Transition after the overflow key is complete, based on what value (if any) follows.
+        // Transition after the overflow key (or a non-overflow key) is complete, based on what value (if any) follows.
         Phase AfterKey()
         {
             var header = RecordHeader;
             if (header.ValueIsOverflow)
-                return Phase.ValueLengthPrefix;
+            {
+                valueLength = DiskLogRecord.GetWireOverflowValueLength(inlineBuffer.AsSpan(0, inlineSize));
+                valueOverflow = OverflowByteArray.AllocateData(valueLength);
+                valueFilled = 0;
+                return Phase.ValueData;
+            }
             if (header.ValueIsObject)
                 return Phase.ObjectData;
             return Phase.Complete; // Inline value (part of the inline portion).
@@ -207,32 +191,6 @@ namespace Garnet.cluster
             filled += take;
             data = data.Slice(take);
             return filled == fullLength;
-        }
-
-        // Read a 4-byte little-endian length prefix, buffering across chunks when it arrives split.
-        bool TryReadLengthPrefix(ref ReadOnlySpan<byte> data, out int value)
-        {
-            // Fast path: the whole prefix is present in this chunk (the common case) — read it directly, no staging.
-            if (prefixFilled == 0 && data.Length >= sizeof(int))
-            {
-                value = BinaryPrimitives.ReadInt32LittleEndian(data);
-                data = data.Slice(sizeof(int));
-                return true;
-            }
-
-            // Slow path: the prefix is split across chunks — stage bytes into prefixBuffer until all 4 have arrived.
-            var take = Math.Min(sizeof(int) - prefixFilled, data.Length);
-            data.Slice(0, take).CopyTo(prefixBuffer.AsSpan(prefixFilled));
-            prefixFilled += take;
-            data = data.Slice(take);
-            if (prefixFilled < sizeof(int))
-            {
-                value = 0;
-                return false;
-            }
-            value = BinaryPrimitives.ReadInt32LittleEndian(prefixBuffer);
-            prefixFilled = 0;
-            return true;
         }
 
         void EnsureInlineCapacity(int size)
@@ -259,9 +217,9 @@ namespace Garnet.cluster
         /// <summary>The pre-populated overflow value (valid only when the record header marks the value overflow).</summary>
         public OverflowByteArray ValueOverflow => valueOverflow;
 
-        /// <summary>Actual overflow key length (0 if the key is inline); used for the RDH length update on completion.</summary>
+        /// <summary>Actual overflow key length (0 if the key is inline).</summary>
         public int KeyLength => keyLength;
-        /// <summary>Actual overflow value or serialized object length (0 if the value is inline); used for the RDH length update.</summary>
+        /// <summary>Actual overflow value or accumulated object length (0 if the value is inline).</summary>
         public long ValueLength => RecordHeader.ValueIsObject ? objectValueLength : valueLength;
 
         /// <summary>Wrap the streamed object-value chunks as a <see cref="ReadOnlySequence{T}"/> (no data copy).</summary>
@@ -279,7 +237,6 @@ namespace Garnet.cluster
             valueLength = valueFilled = 0;
             objectValueChunks.Clear();
             objectValueLength = 0;
-            prefixFilled = 0;
         }
     }
 }
