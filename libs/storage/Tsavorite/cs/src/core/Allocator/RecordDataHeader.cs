@@ -451,11 +451,35 @@ namespace Tsavorite.core
                 // Overflow value uses the v2.2 encoding: headerless exact size when <= the cutoff (511), else a leading ChunkHeader + a
                 // 4 KB-page-count (or sentinel) read hint. The on-disk extent = data (headerless) else ChunkHeader.TotalSize + DMA alignment padding + data;
                 // the padding is 0 on the buffered write path and the O_DIRECT padding the writer applied on the DMA path.
-                var extent = valueActualLength <= kOutOfLineExactSizeCutoff
-                    ? valueActualLength
-                    : ChunkHeader.TotalSize + valueAlignmentPadding + valueActualLength;
-                ValueLength = (int)EncodeFlushOutOfLineValue(valueActualLength, extent);
+                ValueLength = (int)EncodeFlushOutOfLineValue(valueActualLength, OverflowValueOnDiskExtent(valueActualLength, valueAlignmentPadding));
             }
+        }
+
+        /// <summary>The total on-disk extent of an out-of-line overflow VALUE: the data length when it fits headerless (&lt;= the cutoff),
+        /// else a leading <see cref="ChunkHeader"/> + any O_DIRECT alignment padding + the data. Used for both the RDH page-count hint and
+        /// the objectId size hint so the two encodings agree.</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal static long OverflowValueOnDiskExtent(long valueDataLength, int valueAlignmentPadding)
+            => valueDataLength <= kOutOfLineExactSizeCutoff ? valueDataLength : ChunkHeader.TotalSize + valueAlignmentPadding + valueDataLength;
+
+        /// <summary>Compute the objectId-slot read-size hint (see <see cref="ObjectIdMap.StampSizeHint"/>) for an out-of-line component,
+        /// mirroring the exact-vs-headered decision of <see cref="EncodeFlushOutOfLineValue"/>: the EXACT byte length (<paramref name="isExact"/>
+        /// true, no leading ChunkHeader) when <paramref name="dataLength"/> fits headerless (&lt;= the cutoff), else the on-disk extent's
+        /// 4 KB-page count (isExact false, leading ChunkHeader present) clamped to <see cref="ObjectIdMap.MaxObjectIdSizeHint"/> as the sentinel.
+        /// The objectId hint's 9-bit sentinel (511) is smaller than the RDH page-count field's (1023), so a large value saturates to the
+        /// "read in 4 MB blocks and follow the ChunkHeader(s)" sentinel sooner; both are safe read-ahead sizes.</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal static int ComputeObjectIdSizeHint(long dataLength, long totalOnDiskExtent, out bool isExact)
+        {
+            Debug.Assert(dataLength >= 0, $"dataLength {dataLength} must be non-negative");
+            if (dataLength <= kOutOfLineExactSizeCutoff)
+            {
+                isExact = true;
+                return (int)dataLength;                                                   // headerless, exact byte size (<= 511)
+            }
+            isExact = false;
+            var pageCount = (int)((totalOnDiskExtent + kFlushPageSize - 1) / kFlushPageSize);
+            return pageCount >= ObjectIdMap.MaxObjectIdSizeHint ? ObjectIdMap.MaxObjectIdSizeHint : pageCount;
         }
 
         // ── Flush (v2.2) out-of-line VALUE length encoding (low 12 bits of the ValueLength field) ─────────────────────

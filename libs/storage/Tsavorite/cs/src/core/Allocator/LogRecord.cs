@@ -1516,8 +1516,11 @@ namespace Tsavorite.core
         /// <remarks>
         /// The RDH KeyLength/ValueLength fields receive the actual out-of-line length, which the caller guarantees is below the field
         /// sentinel and thus exact. These are read-size hints only; the authoritative out-of-line length comes from the object-log stream
-        /// framing. The objectId slots at keyAddress/valueAddress are left untouched (so this is safe on the live main-log record), and the
-        /// ObjectLogPosition word is written with the ReuseObjectIdForSize flag cleared, marking the record as hint-format for the reader.
+        /// framing. The VALUE's objectId slot high bits are ALSO stamped with the value's read-size hint and the position word's
+        /// ValueIsExactSize flag is set for a headerless value (dual-write: the reader still consumes the RDH hint for now); the slot's low
+        /// index bits are preserved, so in-memory readers (which mask via <see cref="ObjectIdMap.GetIndex"/>) are unaffected on the live
+        /// main-log record. The KEY's objectId slot is left untouched (keys still use the RDH hint), and the ObjectLogPosition word is
+        /// written with the ReuseObjectIdForSize flag cleared, marking the record as hint-format for the reader.
         /// </remarks>
         internal readonly void SetObjectLogPositionAndLengthHints(in ObjectLogFilePositionInfo objectLogFilePosition, ulong valueObjectLength, int valueAlignmentPadding = 0, long valueObjectExtent = 0)
         {
@@ -1536,8 +1539,8 @@ namespace Tsavorite.core
             *objectLogPositionPtr = objectLogFilePosition.word;
 
             // Read the out-of-line lengths (from the objectIdMap for overflow; the passed value for an object) and write them as RDH
-            // hints. For an overflow value the writer's O_DIRECT alignment padding is included in the page-count read hint. The objectId
-            // slots are left untouched, so this is safe on the live record.
+            // hints. For an overflow value the writer's O_DIRECT alignment padding is included in the page-count read hint. The KEY
+            // objectId slot is left untouched (keys still use the RDH hint), so this stays safe on the live record for the key.
             var keyLen = 0;
             if (dataHeader.KeyIsOverflow)
             {
@@ -1547,8 +1550,29 @@ namespace Tsavorite.core
             var valLen = dataHeader.ValueIsOverflow ? (long)objectIdMap.GetOverflowByteArray(*(int*)valueAddress).Length : (long)valueObjectLength;
             dataHeader.SetObjectLogLengthHints(keyLen, valLen, valueAlignmentPadding, valueObjectExtent);
 
+            // Dual-write: also stamp the value's read-size hint into its objectId slot + position-word flag. The on-disk extent for an
+            // object is the writer's reported extent; for an overflow value it is the header + alignment padding + data (0 padding when
+            // headerless). GetIndex-before-stamp keeps this idempotent if the record is re-flushed.
+            if (!dataHeader.ValueIsInline)
+            {
+                var valueExtent = dataHeader.ValueIsObject ? valueObjectExtent : RecordDataHeader.OverflowValueOnDiskExtent(valLen, valueAlignmentPadding);
+                StampValueSizeHint(valLen, valueExtent, (int*)valueAddress, objectLogPositionPtr);
+            }
+
             // Atomic publish via SetDataHeader.
             SetDataHeader(dataHeader);
+        }
+
+        /// <summary>Stamp the out-of-line VALUE's read-size hint into the top bits of its objectId slot (preserving the index in the low
+        /// bits) and set the position word's ValueIsExactSize flag for a headerless value. The position word is assumed already written with
+        /// its flags clear, so nothing is done for the headered (flag-clear) case.</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private readonly void StampValueSizeHint(long valueDataLength, long valueOnDiskExtent, int* valueIdPtr, ulong* objectLogPositionPtr)
+        {
+            var sizeHint = RecordDataHeader.ComputeObjectIdSizeHint(valueDataLength, valueOnDiskExtent, out var isExact);
+            *valueIdPtr = ObjectIdMap.StampSizeHint(ObjectIdMap.GetIndex(*valueIdPtr), sizeHint);
+            if (isExact)
+                ObjectLogFilePositionInfo.SetValueIsExactSize(objectLogPositionPtr);
         }
 
         /// <summary>
@@ -1559,8 +1583,10 @@ namespace Tsavorite.core
         /// <remarks>
         /// Used by the snapshot-recovery flush, which copies a record's object bytes from the snapshot object-log to the main object-log
         /// verbatim and must repoint the disk-image record to the main position. The record's objects are NOT deserialized at this point,
-        /// so unlike the setters this does not read lengths from objectIdMap; the copied lengths and encoding are unchanged, so the existing
-        /// ReuseObjectIdForSize flag is preserved (a downlevel record copied verbatim stays downlevel; a hint-format record stays hint-format).
+        /// so unlike the setters this does not read lengths from objectIdMap; the copied lengths and encoding are unchanged, so ALL existing
+        /// position-word flag bits are preserved (ReuseObjectIdForSize, Key/ValueIsExactSize, reserved) — only the segment+offset is taken from
+        /// the new position. A downlevel record copied verbatim stays downlevel; a hint-format record keeps its size-hint flags to match its
+        /// verbatim-copied objectId-slot stamp.
         /// <para>Only safe to call on the disk-image copy of the record.</para>
         /// </remarks>
         internal readonly void RepointObjectLogPosition(in ObjectLogFilePositionInfo objectLogFilePosition)
@@ -1573,8 +1599,8 @@ namespace Tsavorite.core
 
             var (valueLength, valueAddress) = DataHeader.GetValueFieldInfo(physicalAddress);
             var objectLogPositionPtr = (ulong*)GetObjectLogPositionAddress(valueAddress + valueLength);
-            var existingFlag = *objectLogPositionPtr & ObjectLogFilePositionInfo.kReuseObjectIdForSizeMask;
-            *objectLogPositionPtr = objectLogFilePosition.word | existingFlag;
+            *objectLogPositionPtr = (objectLogFilePosition.word & ObjectLogFilePositionInfo.SegmentAndOffsetMask)
+                                  | (*objectLogPositionPtr & ~ObjectLogFilePositionInfo.SegmentAndOffsetMask);
         }
 
         /// <summary>
@@ -1673,11 +1699,19 @@ namespace Tsavorite.core
                     "Recovering a downlevel (v2.1) checkpoint record whose large overflow key/value or object requires a v2.2 leading ChunkHeader is not yet supported by the recovery reposition path (the v2.1 object log has no header, and header insertion during recovery is not implemented).");
             }
 
-            // Write the position with the flag cleared and the exact lengths as RDH hints (capped at the sentinel), objectId slots untouched.
-            // For an object value, valLen is the stored on-disk EXTENT (prefix + headers + padding + data), used for both the has-header
-            // decision (extent > cutoff) and the page-count hint.
+            // Write the position with the flag cleared and the exact lengths as RDH hints (capped at the sentinel). For an object value,
+            // valLen is the stored on-disk EXTENT (prefix + headers + padding + data), used for both the has-header decision (extent > cutoff)
+            // and the page-count hint. The KEY objectId slot is left untouched (keys still use the RDH hint in this step).
             *objectLogPositionPtr = pagePositionInfo.word;
             dataHeader.SetObjectLogLengthHints((int)keyLen, (long)valLen, valueObjectExtent: dataHeader.ValueIsObject ? (long)valLen : 0);
+
+            // Dual-write: also stamp the value's read-size hint into its objectId slot + position-word flag, mirroring the RDH inputs above
+            // (for an object valLen is already the on-disk extent, so it is both the length and the extent; for overflow, derive the extent).
+            if (!dataHeader.ValueIsInline)
+            {
+                var valueExtent = dataHeader.ValueIsObject ? (long)valLen : RecordDataHeader.OverflowValueOnDiskExtent((long)valLen, 0);
+                StampValueSizeHint((long)valLen, valueExtent, (int*)valueAddress, objectLogPositionPtr);
+            }
 
             // Atomic publish via SetDataHeader.
             SetDataHeader(dataHeader);

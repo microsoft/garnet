@@ -74,7 +74,7 @@ namespace Tsavorite.test.Objects
 
         [Test]
         [Category("Smoke")]
-        public void FlushExactSizeValueRoundTrips([Values(0, 1, 128, 1022, 1023)] int exactLength)
+        public void FlushExactSizeValueRoundTrips([Values(0, 1, 128, 510, 511)] int exactLength)
         {
             var encoded = RecordDataHeader.EncodeFlushOutOfLineValue(exactLength, totalOnDiskExtent: exactLength);
             Assert.That(encoded, Is.LessThanOrEqualTo((uint)RecordDataHeader.kValueLengthLowBitsMask), "must fit the ValueLength field");
@@ -117,12 +117,14 @@ namespace Tsavorite.test.Objects
         [Category("Smoke")]
         public void FlushValueCutoffBoundary()
         {
-            // 1023 bytes -> exact/headerless; 1024 bytes -> headered page-count.
-            var atCutoff = RecordDataHeader.EncodeFlushOutOfLineValue(1023, 1023);
+            // The exact-size cutoff is kOutOfLineExactSizeCutoff (511): 511 bytes -> exact/headerless; 512 bytes -> headered page-count.
+            // (The 10-bit exact-size field could hold up to 1023, but the writer caps exact at 511 because the exact length is being
+            // relocated into the objectId slot's 9 top bits, whose max is 511.)
+            var atCutoff = RecordDataHeader.EncodeFlushOutOfLineValue(RecordDataHeader.kOutOfLineExactSizeCutoff, RecordDataHeader.kOutOfLineExactSizeCutoff);
             Assert.That(RecordDataHeader.FlushValueIsExactSize(atCutoff), Is.True);
-            Assert.That(RecordDataHeader.FlushValueExactByteSize(atCutoff), Is.EqualTo(1023));
+            Assert.That(RecordDataHeader.FlushValueExactByteSize(atCutoff), Is.EqualTo(RecordDataHeader.kOutOfLineExactSizeCutoff));
 
-            var aboveCutoff = RecordDataHeader.EncodeFlushOutOfLineValue(1024, ChunkHeader.TotalSize + 1024);
+            var aboveCutoff = RecordDataHeader.EncodeFlushOutOfLineValue(RecordDataHeader.kOutOfLineExactSizeCutoff + 1, ChunkHeader.TotalSize + RecordDataHeader.kOutOfLineExactSizeCutoff + 1);
             Assert.That(RecordDataHeader.FlushValueIsExactSize(aboveCutoff), Is.False);
             Assert.That(RecordDataHeader.FlushValueHasHeader(aboveCutoff), Is.True);
             Assert.That(RecordDataHeader.FlushValuePageCount(aboveCutoff), Is.EqualTo(1));

@@ -948,8 +948,10 @@ namespace Tsavorite.core
 
                                     // WriteRecordObjects can do disk IO and must not hold the epoch. The setter below writes the length hints and
                                     // ObjectLogPosition into the record image being flushed: the srcBuffer copy on the copy path, or the live main-log
-                                    // record on the no-copy path (useLivePage; non-destructive to in-memory readers). Records are always written in the
-                                    // current hint-based format (never the downlevel encoding).
+                                    // record on the no-copy path (useLivePage). It also stamps the value's read-size hint into the top bits of its
+                                    // objectId slot; on the live-page path this mutates the live slot's high bits, but in-memory readers mask via
+                                    // ObjectIdMap.GetIndex so it stays non-destructive to them. Records are always written in the current hint-based
+                                    // format (never the downlevel encoding).
                                     var valueObjectLength = logWriter.WriteRecordObjects(in keyOverflow, in valueOverflow, in valueObject);
                                     logRecord.SetObjectLogPositionAndLengthHints(recordStartPosition, valueObjectLength, logWriter.lastValueAlignmentPadding, (long)logWriter.lastObjectExtent);
                                 }
