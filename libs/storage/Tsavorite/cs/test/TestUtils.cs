@@ -197,7 +197,44 @@ namespace Tsavorite.test
 
         // Tsavorite paths are too long; as a workaround (possibly temporary) remove the class name (many long test method names repeat much of the class name).
         //internal static string MethodTestDir => Path.Combine(TestContext.CurrentContext.TestDirectory, $"{ConvertedClassName()}_{TestContext.CurrentContext.Test.MethodName}");
-        internal static string MethodTestDir => Path.Combine(TestContext.CurrentContext.TestDirectory, $"Tsavorite.test/{TestContext.CurrentContext.Test.MethodName}");
+        internal static string MethodTestDir => EnsureExtendedLengthPathIfNeeded(Path.Combine(TestContext.CurrentContext.TestDirectory, $"Tsavorite.test/{TestContext.CurrentContext.Test.MethodName}"));
+
+        /// <summary>
+        /// On Windows, rewrites <paramref name="path"/> as a Win32 extended-length path (prefixed with
+        /// <c>\\?\</c>, or <c>\\?\UNC\</c> for a network share) when its fully-qualified length is close
+        /// enough to the 260-char <see cref="Native32.WIN32_MAX_PATH"/> limit that the files tests create
+        /// beneath it could exceed it. Extended-length paths are exempt from that limit and are honored by
+        /// the device layer (which passes them straight to CreateFileW) as well as the BCL file APIs.
+        /// </summary>
+        /// <remarks>
+        /// The path is fully qualified via <see cref="Path.GetFullPath(string)"/> first so that relative
+        /// segments and forward slashes are normalized to backslashes, as required by extended-length paths
+        /// (Windows does not normalize them). Returns the input unchanged on non-Windows platforms, when it
+        /// is already extended-length, or when it is short enough that no child path can overflow — this
+        /// keeps the common short-path case (normal checkouts and CI) on ordinary paths.
+        /// </remarks>
+        internal static string EnsureExtendedLengthPathIfNeeded(string path)
+        {
+            if (string.IsNullOrEmpty(path) || !OperatingSystem.IsWindows() || Native32.IsExtendedLengthPath(path))
+                return path;
+
+            var fullPath = Path.GetFullPath(path);
+
+            // The device layer rejects non-extended paths longer than WIN32_MAX_PATH - 11 (the 11 reserves
+            // room for a ".<segmentId>" suffix). Tests create files well below this directory; the deepest
+            // are checkpoint files such as "\<iter>\checkpoints\cpr-checkpoints\<guid>\snapshot.obj.dat"
+            // (~85 chars). Once this directory's fully-qualified length is within that reserve of MAX_PATH,
+            // switch to an extended-length path so those children stay valid.
+            const int reservedForChildPaths = 100;
+            if (fullPath.Length <= Native32.WIN32_MAX_PATH - reservedForChildPaths)
+                return path;
+
+            // UNC paths (\\server\share\...) use the \\?\UNC\server\share\... form.
+            if (fullPath.StartsWith(@"\\", StringComparison.Ordinal))
+                return Native32.ExtendedLengthPathPrefix + "UNC" + fullPath[1..];
+
+            return Native32.ExtendedLengthPathPrefix + fullPath;
+        }
 
         internal static string AzureTestContainer
         {
