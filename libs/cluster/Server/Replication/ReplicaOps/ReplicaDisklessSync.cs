@@ -240,13 +240,13 @@ namespace Garnet.cluster
 
                 // Rebuild the context reservation from the streamed records. Only valid after a full
                 // sync: a partial sync replays AOF instead of streaming raw Tsavorite records, so
-                // RecoverStreamedRecord never fires and ResumePostRecovery would see an empty
+                // RecoverStreamedRecord never fires and ApplyRecoveredState would see an empty
                 // recovered set and mark every live context for cleanup.
                 //
                 // A full sync flushes the replica before streaming, so the reservation must be empty here.
                 if (primarySyncMetadata.fullSync)
                 {
-                    storeWrapper.DefaultDatabase.VectorManager?.ResumePostRecovery(requireEmptyContexts: true);
+                    storeWrapper.DefaultDatabase.VectorManager?.ApplyRecoveredState(requireEmptyContexts: true);
                 }
 
                 this.replicationOffset = _replicationOffset;

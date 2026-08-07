@@ -1,8 +1,10 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System.Collections.Generic;
 using System.Linq;
 using Garnet.common;
+using Garnet.server;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 
@@ -309,7 +311,7 @@ namespace Garnet.test.cluster
 #if DEBUG
         /// <summary>
         /// A diskless full sync that dies after records were streamed but before ATTACH_SYNC never reaches
-        /// ResumePostRecovery, so the recovery bookkeeping it accumulated is still pending. The retry
+        /// ApplyRecoveredState, so the recovery bookkeeping it accumulated is still pending. The retry
         /// re-streams the same ContextMetadata records, so unless the intervening flush discards that
         /// bookkeeping RecoveredContextMetadata rejects the duplicate index and every later attempt fails too.
         /// </summary>
@@ -342,6 +344,90 @@ namespace Garnet.test.cluster
             context.clusterTestUtils.ReadOnly(ReplicaIndex);
             WaitUntilServes(ReplicaIndex, Key);
             AssertFullyReplicated(PrimaryIndex, ReplicaIndex, Key);
+        }
+
+        /// <summary>
+        /// An aborted diskless full sync leaves raw namespaced records on the replica: ContextMetadata in
+        /// <see cref="VectorManager.MetadataNamespace"/> and element data under the streamed set's own
+        /// namespaces. Those arrive as raw bytes, so nothing reserves their contexts in the replica's
+        /// allocator, and the attempt dies before ApplyRecoveredState can mark the unreferenced ones for
+        /// cleanup. The only thing that can discard them is the CLUSTER FLUSHALL the primary issues at the
+        /// start of the next full sync.
+        ///
+        /// Deleting the set on the primary between the two attempts makes the leak observable: after the
+        /// retry the replica must hold nothing at all for the doomed context, because it is no longer part
+        /// of the synced state and no cleanup pass on the replica will ever target it.
+        /// </summary>
+        [Test]
+        public void AbortedDisklessFullSyncLeavesNoOrphanNamespacedRecords()
+        {
+            const string DoomedKey = "{vsorphan}doomed";
+            const string KeptKey = "{vsorphan}kept";
+            const int DoomedElements = 200;
+            const int KeptElements = 100;
+
+            SetupDisklessCluster(2);
+
+            PopulateVectorSet(PrimaryIndex, DoomedKey, DoomedElements, seed: 2026_08_06_20);
+            PopulateVectorSet(PrimaryIndex, KeptKey, KeptElements, seed: 2026_08_06_21);
+
+            var doomedContext = ReadPersistedContext(PrimaryIndex, DoomedKey);
+            var keptContext = ReadPersistedContext(PrimaryIndex, KeptKey);
+            ClassicAssert.AreNotEqual(doomedContext, keptContext, "the two Vector Sets must not share a context or the test cannot distinguish their records");
+
+            try
+            {
+                ExceptionInjectionHelper.EnableException(ExceptionInjectionType.Replication_Diskless_Sync_Reset_Cts);
+                var failed = context.clusterTestUtils.ClusterReplicate(replicaNodeIndex: ReplicaIndex, primaryNodeIndex: PrimaryIndex, failEx: false, logger: context.logger);
+                ClassicAssert.AreEqual($"Exception injection triggered {ExceptionInjectionType.Replication_Diskless_Sync_Reset_Cts}", failed);
+            }
+            finally
+            {
+                ExceptionInjectionHelper.DisableException(ExceptionInjectionType.Replication_Diskless_Sync_Reset_Cts);
+            }
+
+            // The injection fires a full second into streaming, well after CLUSTER FLUSHALL and after these
+            // small sets have been sent, so the replica is holding streamed records that no retry needs.
+            var strandedOnReplica = RecordsHeldForContext(ReplicaIndex, doomedContext);
+            ClassicAssert.Greater(strandedOnReplica, 0, $"the aborted attempt streamed nothing for context {doomedContext}, so this test would not exercise the flush that has to discard it");
+
+            // Drop the set on the primary, so after the retry the doomed context is not part of the
+            // replicated state and anything the replica still holds for it is unreachable garbage.
+            _ = context.clusterTestUtils.Execute(context.clusterTestUtils.GetEndPoint(PrimaryIndex), "DEL", [DoomedKey], logger: context.logger);
+            WaitForContextDrained(PrimaryIndex, doomedContext, "the primary never finished cleaning up the deleted Vector Set, so the test cannot tell orphaned replica records from replicated ones");
+
+            var resp = context.clusterTestUtils.ClusterReplicate(replicaNodeIndex: ReplicaIndex, primaryNodeIndex: PrimaryIndex, logger: context.logger);
+            ClassicAssert.AreEqual("OK", resp, "the retried diskless full sync must not inherit recovery state from the aborted attempt");
+
+            context.clusterTestUtils.WaitForReplicasConnected(PrimaryIndex, 1, logger: context.logger);
+            context.clusterTestUtils.ReadOnly(ReplicaIndex);
+            WaitUntilServes(ReplicaIndex, KeptKey);
+            AssertFullyReplicated(PrimaryIndex, ReplicaIndex, KeptKey);
+
+            // Guards the checks below: if the census saw nothing at all they would pass vacuously.
+            var keptRecords = RecordsHeldForContext(ReplicaIndex, keptContext);
+            ClassicAssert.Greater(keptRecords, 0, $"the census found no records for the surviving set's context {keptContext} on node {ReplicaIndex}, so it is not observing replicated Vector Set data and the orphan checks below prove nothing");
+
+            // Element data in the doomed set's namespaces must be gone, not merely unreferenced.
+            var orphanedRecords = RecordsHeldForContext(ReplicaIndex, doomedContext);
+            ClassicAssert.AreEqual(0, orphanedRecords, $"node {ReplicaIndex} still holds {orphanedRecords} namespaced records under the deleted set's context {doomedContext} (it held {strandedOnReplica} right after the aborted attempt); the full sync that followed did not discard what the aborted attempt streamed, and no cleanup pass will ever target that context because nothing on the replica marked it as needing cleanup");
+
+            // ContextMetadata records must describe the synced state and nothing else.
+            var primaryCensus = CensusNamespacedRecords(PrimaryIndex);
+            var replicaCensus = CensusNamespacedRecords(ReplicaIndex);
+
+            var orphanNamespaces = replicaCensus.Keys.Where(ns => !primaryCensus.ContainsKey(ns)).OrderBy(static ns => ns).ToList();
+            ClassicAssert.IsEmpty(orphanNamespaces, $"node {ReplicaIndex} holds records under namespaces node {PrimaryIndex} does not have at all: [{string.Join(", ", orphanNamespaces)}]");
+
+            ClassicAssert.AreEqual(
+                primaryCensus.GetValueOrDefault(VectorManager.MetadataNamespace),
+                replicaCensus.GetValueOrDefault(VectorManager.MetadataNamespace),
+                $"node {ReplicaIndex} disagrees with node {PrimaryIndex} on the number of live ContextMetadata records, so the aborted attempt's metadata survived the flush");
+
+            foreach (var (ns, expected) in primaryCensus.Where(static kv => kv.Key != VectorManager.MetadataNamespace))
+            {
+                ClassicAssert.AreEqual(expected, replicaCensus.GetValueOrDefault(ns), $"node {ReplicaIndex} holds {replicaCensus.GetValueOrDefault(ns)} records in namespace {ns} but node {PrimaryIndex} holds {expected}");
+            }
         }
 #endif
     }

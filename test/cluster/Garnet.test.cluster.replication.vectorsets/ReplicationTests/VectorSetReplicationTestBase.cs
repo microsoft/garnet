@@ -8,6 +8,7 @@ using System.Globalization;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Text;
+using System.Threading;
 using Garnet.server;
 using Microsoft.Extensions.Logging;
 using NUnit.Framework;
@@ -294,6 +295,85 @@ namespace Garnet.test.cluster
             ClassicAssert.AreEqual(VectorManager.IndexSize, output.SpanByteAndMemory.Length, $"value under '{key}' is not a Vector Set index record");
 
             VectorManager.ReadIndex(output.SpanByteAndMemory.Span, out ctx, out _, out _, out _, out _, out _, out _, out _, out indexPtr);
+        }
+
+        /// <summary>
+        /// Counts live records by namespace. Vector Set data is only reachable through namespaces:
+        /// ContextMetadata lives in <see cref="VectorManager.MetadataNamespace"/> and element data in
+        /// the owning set's own namespaces, so a record whose namespace no live index claims is
+        /// unreachable by any command and will never be collected - the cleanup task only visits
+        /// contexts that ContextMetadata marks as needing cleanup.
+        /// </summary>
+        private sealed class NamespaceCensus : IScanIteratorFunctions
+        {
+            public readonly Dictionary<ulong, int> RecordsByNamespace = [];
+
+            public void OnException(Exception exception, long numberOfRecords) { }
+            public bool OnStart(long beginAddress, long endAddress) => true;
+            public void OnStop(bool completed, long numberOfRecords) { }
+
+            /// <inheritdoc/>
+            public bool Reader<TSourceLogRecord>(in TSourceLogRecord logRecord, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
+                where TSourceLogRecord : ISourceLogRecord
+            {
+                cursorRecordResult = CursorRecordResult.Accept;
+
+                if (!logRecord.HasNamespace)
+                    return true;
+
+                var namespaceBytes = logRecord.NamespaceBytes;
+                if (namespaceBytes.Length is not (sizeof(byte) or sizeof(uint)))
+                    return true;
+
+                var ns = VectorManager.ExtractContextFromNamespaces(namespaceBytes);
+                RecordsByNamespace[ns] = RecordsByNamespace.TryGetValue(ns, out var seen) ? seen + 1 : 1;
+
+                return true;
+            }
+        }
+
+        /// <summary>
+        /// Live namespaced records on a node, keyed by namespace. Uses the same snapshot iterator the
+        /// Vector Set cleanup task uses, so it observes exactly the records cleanup would be able to see.
+        /// </summary>
+        protected Dictionary<ulong, int> CensusNamespacedRecords(int nodeIndex)
+        {
+            var storeWrapper = GetStoreWrapper(context.nodes[nodeIndex]);
+            var db = storeWrapper.DefaultDatabase;
+
+            db.VectorManager?.WaitForVectorOperationsToComplete();
+
+            using var storageSession = new StorageSession(storeWrapper, new ScratchBufferBuilder(), new ScratchBufferAllocator(), null, null, db.Id, readSessionState: null, db.VectorManager, null);
+
+            NamespaceCensus census = new();
+            _ = storageSession.stringBasicContext.Session.IterateLookupSnapshot(ref census);
+
+            return census.RecordsByNamespace;
+        }
+
+        /// <summary>
+        /// Records held by a node under any namespace belonging to <paramref name="context"/>. A Vector Set
+        /// owns <see cref="VectorManager.ContextStep"/> consecutive namespaces, so records are matched by
+        /// masking down to the base context exactly as PostDropCleanupFunctions does.
+        /// </summary>
+        protected int RecordsHeldForContext(int nodeIndex, ulong context)
+            => CensusNamespacedRecords(nodeIndex).Where(kv => (kv.Key & ~(VectorManager.ContextStep - 1)) == context).Sum(static kv => kv.Value);
+
+        /// <summary>
+        /// Spins until a node holds no records for a context, e.g. after a DEL whose data removal is
+        /// completed asynchronously by the background cleanup task.
+        /// </summary>
+        protected void WaitForContextDrained(int nodeIndex, ulong context, string because)
+        {
+            for (var attempt = 0; attempt < 200; attempt++)
+            {
+                if (RecordsHeldForContext(nodeIndex, context) == 0)
+                    return;
+
+                Thread.Sleep(100);
+            }
+
+            Assert.Fail($"node {nodeIndex} still holds records for context {context} after 20s; {because}");
         }
 
         /// <summary>

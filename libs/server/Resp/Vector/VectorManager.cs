@@ -254,7 +254,9 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Restart or update any pending work that was discovered as part of recovery.
+        /// Apply the bookkeeping accumulated during recovery: rebuild the context reservation from the
+        /// recovered <see cref="ContextMetadata"/> records, restore any abandoned migrations, mark
+        /// contexts that are reserved but were not recovered for cleanup, and requeue pending cleanups.
         /// </summary>
         /// <param name="requireEmptyContexts">
         /// When true, fail rather than rebuild if any context is still reserved. Callers that replace the whole
@@ -262,7 +264,7 @@ namespace Garnet.server
         /// <c>contextMetadatas</c> wholesale, so a surviving reservation would be dropped without its DiskANN
         /// index ever being cleaned up.
         /// </param>
-        public void ResumePostRecovery(bool requireEmptyContexts = false)
+        public void ApplyRecoveredState(bool requireEmptyContexts = false)
         {
             if (!IsEnabled) return;
 
@@ -418,7 +420,7 @@ namespace Garnet.server
 
             // During recovery, we can trim off empty ContextMetadata
             //
-            // ResumePostRecovery will fill in any gaps this causes
+            // ApplyRecoveredState will fill in any gaps this causes
             if (metadata.IsEmpty)
             {
                 return;
@@ -433,7 +435,7 @@ namespace Garnet.server
         /// <summary>
         /// Sanitizes and routes a record that entered the store as raw bytes - either read from a
         /// checkpoint snapshot during recovery, or streamed in by a diskless full sync - so
-        /// <see cref="ResumePostRecovery"/> can rebuild the context reservation.
+        /// <see cref="ApplyRecoveredState"/> can rebuild the context reservation.
         /// </summary>
         public void RecoverIngestedRecordIfApplicable<TSourceLogRecord>(ref TSourceLogRecord record) where TSourceLogRecord : ISourceLogRecord
         {
