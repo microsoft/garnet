@@ -147,25 +147,27 @@ namespace Tsavorite.core
 
                 if (logRecord.DataHeader.ValueIsOverflow)
                 {
-                    // Overflow value v2.2 encoding: a value with the has-header bit set carries its exact length (and any DMA alignment
-                    // padding) in a leading ChunkHeader; a headerless (isExactSize) value has its exact length in the RDH ValueLength field.
-                    var encodedValue = (uint)logRecord.DataHeader.GetValueLengthRaw();
-                    var actualValueLength = RecordDataHeader.FlushValueHasHeader(encodedValue)
-                        ? ReadOverflowHeaderAndExtend((long)valueLength)
-                        : RecordDataHeader.FlushValueExactByteSize(encodedValue);
+                    // Overflow value v2.2 encoding: a headered value (ValueIsExactSize clear) carries its exact length (and any DMA alignment
+                    // padding) in a leading ChunkHeader; a headerless (ValueIsExactSize set) value has its exact length in its objectId size hint.
+                    var actualValueLength = logRecord.ValueIsExactSize
+                        ? logRecord.ValueObjectIdSizeHint
+                        : ReadOverflowHeaderAndExtend((long)valueLength);
                     logRecord.ValueOverflow = new OverflowByteArray(actualValueLength, startOffset: 0, endOffset: 0, zeroInit: false);
                     _ = Read(logRecord.ValueOverflow.Span);
                 }
                 else if (logRecord.DataHeader.ValueIsObject)
                 {
-                    // A headered object (data length > cutoff) is [prefix][hdr][chunk]…; the reader strips headers/padding and follows the
-                    // continuation chain in ReadObjectData. A headerless object (isExactSize) is a plain dense stream. The deserializer
-                    // self-terminates in both cases.
-                    var encodedValue = (uint)logRecord.DataHeader.GetValueLengthRaw();
-                    if (RecordDataHeader.FlushValueHasHeader(encodedValue))
+                    // A headered object (data length > cutoff, ValueIsExactSize clear) is [prefix][hdr][chunk]…; the reader strips headers/padding
+                    // and follows the continuation chain in ReadObjectData. A headerless object (ValueIsExactSize set) is a plain dense stream. The
+                    // deserializer self-terminates in both cases.
+                    if (!logRecord.ValueIsExactSize)
                     {
                         objectChunked = true;
-                        objectSentinel = RecordDataHeader.FlushValuePageCountIsSentinel(encodedValue);
+                        // The proactive per-chunk read-ahead extension (AdvanceToNextObjectChunk) is only correct when the object's on-disk
+                        // extent exceeds the initial read-ahead block, so key it to the RDH page-count sentinel (~4 MB) rather than the coarser
+                        // objectId size-hint sentinel (~2 MB). The RDH ValueLength hint is still written for this; retiring it needs an
+                        // extent-vs-read-ahead signal (see objectSizeBoundary 2/3 MB window).
+                        objectSentinel = RecordDataHeader.FlushValuePageCountIsSentinel((uint)logRecord.DataHeader.GetValueLengthRaw());
                         objectPrefixRemaining = ObjectLogWriter<TStoreFunctions>.ObjectHeaderlessPrefixLen;
                         objectChunkRemaining = 0;
                         objectFirstHeaderRead = false;

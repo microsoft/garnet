@@ -1575,6 +1575,31 @@ namespace Tsavorite.core
                 ObjectLogFilePositionInfo.SetValueIsExactSize(objectLogPositionPtr);
         }
 
+        /// <summary>For a non-inline value on a hint-format record, true if the value is stored headerless with its exact byte length carried
+        /// in its objectId size hint (the ValueIsExactSize position flag is set); false if it is headered/chunked with a leading ChunkHeader
+        /// that carries the length. Reads the position-word flag written at flush time.</summary>
+        internal readonly bool ValueIsExactSize
+        {
+            get
+            {
+                Debug.Assert(!DataHeader.ValueIsInline, "ValueIsExactSize is only meaningful for a non-inline value");
+                return ObjectLogFilePositionInfo.GetValueIsExactSize((ulong*)GetObjectLogPositionAddress(GetOptionalStartAddress()));
+            }
+        }
+
+        /// <summary>The out-of-line value's objectId size hint (top <see cref="ObjectIdMap.ObjectIdSizeHintBits"/> bits of its objectId slot):
+        /// the exact byte length when <see cref="ValueIsExactSize"/> is set, else a 4 KB-page count whose max value
+        /// (<see cref="ObjectIdMap.MaxObjectIdSizeHint"/>) is the "read in large blocks and follow the ChunkHeader(s)" sentinel.</summary>
+        internal readonly int ValueObjectIdSizeHint
+        {
+            get
+            {
+                Debug.Assert(!DataHeader.ValueIsInline, "ValueObjectIdSizeHint is only meaningful for a non-inline value");
+                var (_, valueAddress) = DataHeader.GetValueFieldInfo(physicalAddress);
+                return ObjectIdMap.GetSizeHint(*(int*)valueAddress);
+            }
+        }
+
         /// <summary>
         /// Repoints this record's object-log position word to <paramref name="objectLogFilePosition"/> without touching the
         /// key/value length hints (in the RDH fields) or the <see cref="ObjectIdMap"/>, preserving the record's existing format flag.
