@@ -31,8 +31,8 @@ namespace Garnet.server
             => storageSession.SortedSetAdd(key, ref input, ref output, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus SortedSetRangeStore(PinnedSpanByte dstKey, PinnedSpanByte srcKey, ref ObjectInput input, out int result)
-            => storageSession.SortedSetRangeStore(dstKey, srcKey, ref input, out result, ref objectContext);
+        public GarnetStatus SortedSetRangeStore(PinnedSpanByte dstKey, PinnedSpanByte srcKey, ref ObjectInput input, out int result, out PinnedSpanByte error)
+            => storageSession.SortedSetRangeStore(dstKey, srcKey, ref input, out result, out error, ref objectContext);
 
         /// <inheritdoc />
         public GarnetStatus SortedSetRemove(PinnedSpanByte key, PinnedSpanByte member, out int zremCount)

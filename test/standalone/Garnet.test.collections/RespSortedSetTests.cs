@@ -829,6 +829,50 @@ namespace Garnet.test
         }
 
         [Test]
+        public void ZRangeStoreInvalidParamsReturnErrorAndKeepSessionAlive()
+        {
+            using var lightClientRequest = TestUtils.CreateRequest();
+
+            lightClientRequest.SendCommands("ZADD zrs 1 a 2 b 3 c", "PING");
+            // A pre-existing destination must survive a rejected ZRANGESTORE.
+            lightClientRequest.SendCommands("ZADD zrsdst 9 keep", "PING");
+
+            // Index mode with LIMIT. On unpatched main SortedSetRange writes the
+            // "-ERR syntax error, LIMIT ..." into the range output buffer, which the
+            // store path then parses as an array length, aborting the RESP session
+            // with a protocol error (a missing reply here would hang this request).
+            var response = lightClientRequest.SendCommands("ZRANGESTORE zrsdst zrs 0 -1 LIMIT 0 2", "PING");
+            var expectedResponse = "-ERR syntax error, LIMIT is only supported in combination with either BYSCORE or BYLEX\r\n+PONG\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            // Non-float min/max in BYSCORE mode reaches the same faulty path on main.
+            response = lightClientRequest.SendCommands("ZRANGESTORE zrsdst zrs notafloat 5 BYSCORE", "PING");
+            expectedResponse = "-ERR min or max is not a float\r\n+PONG\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            // The destination is left untouched by the rejected commands.
+            response = lightClientRequest.SendCommands("ZRANGE zrsdst 0 -1", "PING", 2, 1);
+            expectedResponse = "*1\r\n$4\r\nkeep\r\n+PONG\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            // A well-formed ZRANGESTORE still overwrites the destination.
+            response = lightClientRequest.SendCommands("ZRANGESTORE zrsdst zrs 0 -1", "PING");
+            expectedResponse = ":3\r\n+PONG\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            response = lightClientRequest.SendCommands("ZRANGE zrsdst 0 -1", "PING", 4, 1);
+            expectedResponse = "*3\r\n$1\r\na\r\n$1\r\nb\r\n$1\r\nc\r\n+PONG\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            // A rejected ZRANGESTORE pipelined with another scratch-allocating command
+            // in the same network batch must not corrupt the shared scratch buffer: the
+            // error payload has to coexist with the following ZRANGE's own allocation.
+            response = lightClientRequest.SendCommands("ZRANGESTORE zrsdst zrs 0 -1 LIMIT 0 2", "ZRANGE zrs (1 3 BYSCORE LIMIT 0 2", 1, 3);
+            expectedResponse = "-ERR syntax error, LIMIT is only supported in combination with either BYSCORE or BYLEX\r\n*2\r\n$1\r\nb\r\n$1\r\nc\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+        }
+
+        [Test]
         public void CandDoZIncrby()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());

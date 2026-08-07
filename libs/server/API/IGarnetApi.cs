@@ -398,8 +398,9 @@ namespace Garnet.server
         /// <param name="srcKey">The sub-key for the sorted set.</param>
         /// <param name="input">The input object containing the elements to store.</param>
         /// <param name="result">The result of the store operation.</param>
+        /// <param name="error">When the range parameters are invalid, receives the RESP error payload (without the leading '-' or trailing CRLF); otherwise empty.</param>
         /// <returns>A <see cref="GarnetStatus"/> indicating the status of the operation.</returns>
-        GarnetStatus SortedSetRangeStore(PinnedSpanByte dstKey, PinnedSpanByte srcKey, ref ObjectInput input, out int result);
+        GarnetStatus SortedSetRangeStore(PinnedSpanByte dstKey, PinnedSpanByte srcKey, ref ObjectInput input, out int result, out PinnedSpanByte error);
 
         /// <summary>
         /// Removes the specified member from the sorted set stored at key.
