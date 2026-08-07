@@ -14,6 +14,8 @@ namespace Tsavorite.test.recovery
 {
     using LargeObjAllocator = ObjectAllocator<StoreFunctions<TestObjectKey.Comparer, DefaultRecordTriggers>>;
     using LargeObjStoreFunctions = StoreFunctions<TestObjectKey.Comparer, DefaultRecordTriggers>;
+    using SbKeyAllocator = ObjectAllocator<StoreFunctions<SpanByteComparer, DefaultRecordTriggers>>;
+    using SbKeyStoreFunctions = StoreFunctions<SpanByteComparer, DefaultRecordTriggers>;
 
     /// <summary>
     /// Sweeps out-of-line VALUE sizes across every object-log serialization boundary (sub-sector exact-size cutoff, sector,
@@ -374,5 +376,109 @@ namespace Tsavorite.test.recovery
         public Task RecoverOverflowValueSpanningObjectLogSegmentBoundary(
             [Values(CheckpointType.Snapshot, CheckpointType.FoldOver)] CheckpointType checkpointType)
             => RunOverflowValueRecovery(checkpointType, 5 * 1024 * 1024, numRecords: 6, SplitObjectLogSegmentSize);
+
+        // ----- Overflow KEY recovery: the checkpoint/recover counterpart of ObjectSizeBoundaryDiskIOTests.ReadOverflowKeyFromDiskAcrossSizeBoundaries. -----
+
+        const int OverflowKeyInlineCutoff = 16;                 // keys longer than this go out of line
+        const int OverflowKeyCompanionValueSize = 50;           // small headerless overflow value paired with each overflow key
+
+        // Overflow-key store: SpanByte keys forced out of line (MaxInlineKeySize small), paired with a small overflow value.
+        static TsavoriteKV<SbKeyStoreFunctions, SbKeyAllocator> CreateOverflowKeyStore(IDevice log, IDevice objlog, string checkpointDir, long memorySize)
+            => new(new()
+            {
+                IndexSize = 1L << 20,
+                LogDevice = log,
+                ObjectLogDevice = objlog,
+                MutableFraction = 0.9,
+                PageSize = MinKvLogPageSize,
+                LogMemorySize = memorySize,
+                SegmentSize = 1L << 20,
+                ObjectLogSegmentSize = NoSplitObjectLogSegmentSize,
+                MaxInlineKeySize = OverflowKeyInlineCutoff,
+                MaxInlineValueSize = 0,
+                CheckpointDir = checkpointDir,
+            }, StoreFunctions.Create(new SpanByteComparer(), () => new TestObjectValue.Serializer(), DefaultRecordTriggers.Instance),
+               (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions));
+
+        // Deterministic key of the given size: first 4 bytes carry the record index (uniqueness + regeneration), the rest is a fill.
+        static byte[] MakeKey(int recordIndex, int size)
+        {
+            var k = new byte[size];
+            for (var i = 0; i < size; i++)
+                k[i] = (byte)((recordIndex * 7) + i + 1);
+            _ = BitConverter.TryWriteBytes(k, recordIndex);
+            return k;
+        }
+
+        // Write numRecords overflow-key records, checkpoint, recover into a fresh store, and read every record back by its overflow key.
+        // A mis-decoded key length/position after recovery fails the on-disk key comparison and the lookup would not find the record.
+        // When recoveryTargetSize > 0, the recovery store is put under LogSizeTracker memory pressure (small-memory recovery).
+        async Task RunOverflowKeyRecovery(CheckpointType checkpointType, int keySize, int numRecords, long recoveryTargetSize = 0)
+        {
+            var checkpointDir = Path.Combine(MethodTestDir, "checkpoints");
+            IDevice log = Devices.CreateLogDevice(Path.Combine(MethodTestDir, "ovfkey.log"), deleteOnClose: false);
+            IDevice objlog = Devices.CreateLogDevice(Path.Combine(MethodTestDir, "ovfkey.obj.log"), deleteOnClose: false);
+            try
+            {
+                Guid token;
+                using (var store1 = CreateOverflowKeyStore(log, objlog, checkpointDir, 1L << 20))
+                {
+                    using (var session = store1.NewSession<TestSpanByteKey, TestLargeObjectInput, TestLargeObjectOutput, Empty, TestLargeObjectFunctions>(new TestLargeObjectFunctions()))
+                    {
+                        var bContext = session.BasicContext;
+                        for (var rec = 0; rec < numRecords; rec++)
+                            _ = bContext.Upsert(TestSpanByteKey.FromArray(MakeKey(rec, keySize)), MakePayload(rec, OverflowKeyCompanionValueSize).AsSpan(), Empty.Default);
+                    }
+                    var (success, checkpointToken) = await store1.TakeFullCheckpointAsync(checkpointType).ConfigureAwait(false);
+                    ClassicAssert.IsTrue(success, "checkpoint failed");
+                    token = checkpointToken;
+                }
+
+                using (var store2 = CreateOverflowKeyStore(log, objlog, checkpointDir, 1L << 20))
+                {
+                    if (recoveryTargetSize > 0)
+                    {
+                        var tracker = new LogSizeTracker<SbKeyStoreFunctions, SbKeyAllocator>(store2.Log, recoveryTargetSize, recoveryTargetSize / 8, recoveryTargetSize / 16, logger: null);
+                        store2.Log.SetLogSizeTracker(tracker);
+                    }
+                    _ = await store2.RecoverAsync(default, token).ConfigureAwait(false);
+                    using var session = store2.NewSession<TestSpanByteKey, TestLargeObjectInput, TestLargeObjectOutput, Empty, TestLargeObjectFunctions>(new TestLargeObjectFunctions());
+                    var bContext = session.BasicContext;
+                    for (var rec = 0; rec < numRecords; rec++)
+                    {
+                        TestLargeObjectInput input = new() { wantValueStyle = TestValueStyle.Overflow, expectedSpanLength = OverflowKeyCompanionValueSize };
+                        TestLargeObjectOutput output = new();
+                        var status = bContext.Read(TestSpanByteKey.FromArray(MakeKey(rec, keySize)), ref input, ref output, Empty.Default);
+                        if (status.IsPending)
+                        {
+                            ClassicAssert.IsTrue(bContext.CompletePendingWithOutputs(out var completed, wait: true));
+                            (status, output) = GetSinglePendingResult(completed);
+                        }
+                        ClassicAssert.IsTrue(status.Found, $"record {rec} (keySize {keySize}, {checkpointType}) not found — overflow key failed to round-trip");
+                        VerifyPayload(rec, OverflowKeyCompanionValueSize, output.valueArray);
+                    }
+                }
+            }
+            finally
+            {
+                log.Dispose();
+                objlog.Dispose();
+            }
+        }
+
+        // KNOWN GAP: recovering a record whose KEY is out of line (overflow) NREs during the recovery index-build pass.
+        // RecoverFromPage (Recovery.cs) hashes every record's key via storeFunctions.GetKeyHashCode64(logRecord), which for an
+        // overflow key dereferences objectIdMap.GetOverflowByteArray(objectId) (LogRecord.Key). During that pass the objectIdMap is
+        // not yet populated (overflow keys/objects are materialized in the later object-load pass), so the lookup returns null and
+        // .ReadOnlySpan throws NullReferenceException. This is size-independent (fails even at 17 bytes) and happens for both
+        // Snapshot and FoldOver. Inline-key recovery is unaffected (LogRecord.Key reads straight from the page image). Keys are
+        // still RDH-based; out-of-line-key recovery lands with the hybrid-value/overflow-key work. Ignored until then; the harness
+        // below (CreateOverflowKeyStore/RunOverflowKeyRecovery) is ready to validate it once overflow keys are hashable at recovery.
+        [Test]
+        [Category("TsavoriteKV"), Category("CheckpointRestore")]
+        [Ignore("Known gap: recovering an out-of-line (overflow) KEY NREs in RecoverFromPage -> GetKeyHashCode64 -> LogRecord.Key (objectIdMap not populated during the index-build pass). Size- and checkpoint-type-independent. Keys are still RDH-based; tracked with the overflow-key work.")]
+        public Task RecoverOverflowKey(
+            [Values(CheckpointType.Snapshot, CheckpointType.FoldOver)] CheckpointType checkpointType)
+            => RunOverflowKeyRecovery(checkpointType, keySize: 512, numRecords: RecordCountForSize(512));
     }
 }
