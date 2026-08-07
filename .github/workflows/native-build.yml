@@ -97,13 +97,13 @@ jobs:
           so="staging/${{ matrix.rid }}/native/libnative_device.so"
           # The C# NativeStorageDevice loader hard-probes these at device creation: ImportResolver
           # binds the P/Invokes and the startup ABI probe calls NumIoContexts / QueueRunFor /
-          # TryCompleteMine (the affine inline-drain path is on by default). CreateWithBackendSqPoll
-          # is the actual create export the managed wrapper binds; a binary missing any of these
-          # throws at server startup on this RID, so fail the build here instead of shipping it.
+          # TryCompleteMine (the affine inline-drain path is on by default). CreateWithBackend is the
+          # create export the managed wrapper binds; a binary missing any of these throws at server
+          # startup on this RID, so fail the build here instead of shipping it.
           # Host nm reads the ELF dynamic symbol table for every RID (x64/arm64, glibc/musl) alike.
           command -v nm >/dev/null || { sudo apt-get update -qq && sudo apt-get install -y -qq binutils; }
           rc=0
-          for sym in NativeDevice_CreateWithBackend NativeDevice_CreateWithBackendSqPoll NativeDevice_NumIoContexts NativeDevice_QueueRunFor NativeDevice_TryCompleteMine; do
+          for sym in NativeDevice_CreateWithBackend NativeDevice_NumIoContexts NativeDevice_QueueRunFor NativeDevice_TryCompleteMine; do
             if nm -D --defined-only "$so" | grep -qw "$sym"; then echo "  OK      $sym"; else echo "  MISSING $sym"; rc=1; fi
           done
           [ $rc -eq 0 ] || { echo "::error::$so is missing a required NativeDevice_* export the C# loader probes at startup"; exit 1; }
@@ -198,10 +198,10 @@ jobs:
           $exports = & $dumpbin /exports $dll
           # The C# NativeStorageDevice loader hard-probes these at device creation: ImportResolver
           # binds the P/Invokes and the startup ABI probe calls NumIoContexts / QueueRunFor /
-          # TryCompleteMine (the affine inline-drain path is on by default). CreateWithBackendSqPoll
-          # is the actual create export the managed wrapper binds; a binary missing any of these
-          # throws at server startup on this RID, so fail the build here instead of shipping it.
-          $required = @('NativeDevice_CreateWithBackend','NativeDevice_CreateWithBackendSqPoll','NativeDevice_NumIoContexts','NativeDevice_QueueRunFor','NativeDevice_TryCompleteMine')
+          # TryCompleteMine (the affine inline-drain path is on by default). CreateWithBackend is the
+          # create export the managed wrapper binds; a binary missing any of these throws at server
+          # startup on this RID, so fail the build here instead of shipping it.
+          $required = @('NativeDevice_CreateWithBackend','NativeDevice_NumIoContexts','NativeDevice_QueueRunFor','NativeDevice_TryCompleteMine')
           foreach ($sym in $required) {
             if (-not ($exports | Select-String -SimpleMatch $sym)) {
               throw "native_device.dll is missing required export $sym"
