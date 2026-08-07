@@ -254,15 +254,11 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Apply the bookkeeping accumulated during recovery: rebuild the context reservation from the
-        /// recovered <see cref="ContextMetadata"/> records, restore any abandoned migrations, mark
-        /// contexts that are reserved but were not recovered for cleanup, and requeue pending cleanups.
+        /// Apply the bookkeeping accumulated during recovery.
         /// </summary>
         /// <param name="requireEmptyContexts">
-        /// When true, fail rather than rebuild if any context is still reserved. Callers that replace the whole
-        /// store (a diskless full sync, which flushes first) rely on this: the rebuild below replaces
-        /// <c>contextMetadatas</c> wholesale, so a surviving reservation would be dropped without its DiskANN
-        /// index ever being cleaned up.
+        /// When true, fail rather than rebuild if any context is still reserved. The rebuild replaces
+        /// <c>contextMetadatas</c> wholesale, so a survivor would be dropped without its index cleaned up.
         /// </param>
         public void ApplyRecoveredState(bool requireEmptyContexts = false)
         {
