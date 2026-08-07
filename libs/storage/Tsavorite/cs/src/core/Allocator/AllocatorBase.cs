@@ -37,6 +37,11 @@ namespace Tsavorite.core
         internal virtual long CalculatePageObjectSizes(long page, long startAddress, long untilAddress) => 0;
         /// <summary>Load objects for records on an already-loaded page for recovery pass 2.</summary>
         internal virtual void LoadObjectsForRecoveryPass2(long page, long fromAddress, long untilAddress, IDevice objectLogDevice) { }
+        /// <summary>Compute the hash code of a record's overflow key during recovery Pass 1 (index build) by reading the key bytes from
+        /// the object log, since the objectIdMap is not yet populated so <see cref="LogRecord.Key"/> cannot resolve it. Only implemented
+        /// by the object allocator; other allocators never have overflow keys, so this is never called for them.</summary>
+        internal virtual long ComputeRecoveryOverflowKeyHash(in LogRecord logRecord, IDevice objectLogDevice)
+            => throw new TsavoriteException("Overflow keys are only supported by the object allocator");
     }
 
     /// <summary>

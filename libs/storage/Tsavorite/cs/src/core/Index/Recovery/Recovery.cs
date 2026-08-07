@@ -892,7 +892,7 @@ namespace Tsavorite.core
             if (untilAddress < endLogicalAddressOfPage)
                 pageUntilAddressOffset = hlogBase.GetOffsetOnPage(untilAddress);
 
-            if (RecoverFromPage(recoverFromAddress, pageFromAddressOffset, pageUntilAddressOffset, startLogicalAddressOfPage, startPhysicalAddressOfPage, options))
+            if (RecoverFromPage(recoverFromAddress, pageFromAddressOffset, pageUntilAddressOffset, startLogicalAddressOfPage, startPhysicalAddressOfPage, options, objectLogRecoveryDevice: null))
             {
                 // The current page was modified due to undoFutureVersion; caller will flush it to storage and issue a read request if necessary.
                 recoveryStatus.readStatus[pageIndex] = ReadStatus.Pending;
@@ -1208,7 +1208,7 @@ namespace Tsavorite.core
                 if (endLogicalAddressOfPage > untilAddress)
                     pageUntilAddressOffset = hlogBase.GetOffsetOnPage(untilAddress);
 
-                _ = RecoverFromPage(recoverFromAddress, pageFromAddressOffset, pageUntilAddressOffset, startLogicalAddressOfPage, startPhysicalAddressOfPage, options);
+                _ = RecoverFromPage(recoverFromAddress, pageFromAddressOffset, pageUntilAddressOffset, startLogicalAddressOfPage, startPhysicalAddressOfPage, options, recoveryStatus.objectLogRecoveryDevice);
             }
 
             recoveryStatus.flushStatus[pageIndex] = FlushStatus.Done;
@@ -1275,9 +1275,12 @@ namespace Tsavorite.core
         /// <param name="pageStartLogicalAddress">The logical address of the start of the page</param>
         /// <param name="pageStartPhysicalAddress">The physical address of the start of the page</param>
         /// <param name="options">Recovery options</param>
+        /// <param name="objectLogRecoveryDevice">The object-log device to read overflow keys from during index build: <c>null</c> for the
+        /// main object log (FoldOver/hybrid-log pages), or the snapshot object-log device for snapshot pages. Only used when a record has an
+        /// overflow key (whose bytes are not yet in the transient objectIdMap during Pass 1).</param>
         /// <returns>True if we touched the page (and thus it needs to be flushed), else false</returns>
         private unsafe bool RecoverFromPage(long recoverFromAddress, long pageFromAddressOffset, long pageUntilAddressOffset,
-                                     long pageStartLogicalAddress, long pageStartPhysicalAddress, in RecoveryOptions options)
+                                     long pageStartLogicalAddress, long pageStartPhysicalAddress, in RecoveryOptions options, IDevice objectLogRecoveryDevice)
         {
             Debug.Assert(pageFromAddressOffset >= hlogBase.pageHeaderSize, $"fromLogicalAddressInPage {pageFromAddressOffset} must be >= hlogBase.pageHeaderSize {hlogBase.pageHeaderSize} (which may be 0)");
             Debug.Assert(pageUntilAddressOffset <= hlogBase.GetPageSize(), $"pageSize {pageUntilAddressOffset} must be <= PageSize {hlogBase.GetPageSize()}");
@@ -1297,7 +1300,13 @@ namespace Tsavorite.core
 
                 if (!info.Invalid)
                 {
-                    HashEntryInfo hei = new(storeFunctions.GetKeyHashCode64(logRecord));
+                    // During Pass 1 the transient objectIdMap is not yet populated, so an overflow key cannot be resolved via LogRecord.Key
+                    // (that would NRE on a null objectIdMap). Read its bytes on demand from the object log to compute the hash; inline keys
+                    // hash directly from the record image.
+                    var keyHashCode = logRecord.DataHeader.KeyIsInline
+                        ? storeFunctions.GetKeyHashCode64(logRecord)
+                        : hlogBase.ComputeRecoveryOverflowKeyHash(in logRecord, objectLogRecoveryDevice);
+                    HashEntryInfo hei = new(keyHashCode);
                     FindOrCreateTag(ref hei, hlogBase.BeginAddress);
 
                     if ((pageStartLogicalAddress + recordOffset) < options.fuzzyRegionStartAddress || !info.IsInNewVersion || !options.undoNextVersion)

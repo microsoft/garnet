@@ -598,6 +598,29 @@ namespace Tsavorite.core
             objectLogTail = tail;
         }
 
+        /// <inheritdoc/>
+        internal override long ComputeRecoveryOverflowKeyHash(in LogRecord logRecord, IDevice objectLogDevice)
+        {
+            // The transient objectIdMap is not populated during recovery Pass 1 (index build), so LogRecord.Key cannot resolve an overflow
+            // key. Read just this record's overflow key bytes from the object log — the main object log for FoldOver/hybrid-log pages, or the
+            // snapshot object log (passed as objectLogDevice) for snapshot pages — and hash them. Overflow keys are rare and Recovery is a rare
+            // startup operation, so the extra per-record IO is acceptable. objectLogTail.SegmentSizeBits is the static object-log segment size
+            // (set at construction from config), valid for decoding both the main and snapshot object-log positions.
+            var startPosition = new ObjectLogFilePositionInfo(logRecord.GetObjectLogRecordStartPositionAndLengths(out var keyLength, out _), objectLogTail.SegmentSizeBits);
+            using var readBuffers = CreateCircularReadBuffers(objectLogDevice, logger);
+            readBuffers.nextFileReadPosition = startPosition;
+            var logReader = new ObjectLogReader<TStoreFunctions>(readBuffers, storeFunctions);
+            logReader.OnBeginReadRecords(startPosition, (ulong)keyLength);
+            try
+            {
+                return logReader.ReadOverflowKeyHashCodeForRecovery(in logRecord, objectLogTail.SegmentSizeBits);
+            }
+            finally
+            {
+                logReader.OnEndReadRecords();
+            }
+        }
+
         /// <summary>Object log segment size</summary>
         public override long GetObjectLogSegmentSize() => ObjectLogSegmentSize;
 

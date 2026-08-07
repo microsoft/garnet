@@ -465,17 +465,12 @@ namespace Tsavorite.test.recovery
             }
         }
 
-        // KNOWN GAP: recovering a record whose KEY is out of line (overflow) NREs during the recovery index-build pass.
-        // RecoverFromPage (Recovery.cs) hashes every record's key via storeFunctions.GetKeyHashCode64(logRecord), which for an
-        // overflow key dereferences objectIdMap.GetOverflowByteArray(objectId) (LogRecord.Key). During that pass the objectIdMap is
-        // not yet populated (overflow keys/objects are materialized in the later object-load pass), so the lookup returns null and
-        // .ReadOnlySpan throws NullReferenceException. This is size-independent (fails even at 17 bytes) and happens for both
-        // Snapshot and FoldOver. Inline-key recovery is unaffected (LogRecord.Key reads straight from the page image). Keys are
-        // still RDH-based; out-of-line-key recovery lands with the hybrid-value/overflow-key work. Ignored until then; the harness
-        // below (CreateOverflowKeyStore/RunOverflowKeyRecovery) is ready to validate it once overflow keys are hashable at recovery.
+        // Recovering a record whose KEY is out of line (overflow). During the recovery index-build pass, RecoverFromPage (Recovery.cs)
+        // hashes every record's key. An overflow key's bytes live in the object log and are not in the transient objectIdMap during that
+        // pass, so the hash is computed by reading the key bytes on demand from the object log (ComputeRecoveryOverflowKeyHash) — the main
+        // object log for FoldOver/hybrid-log pages, the snapshot object log for snapshot pages. Inline-key recovery is unaffected.
         [Test]
         [Category("TsavoriteKV"), Category("CheckpointRestore")]
-        [Ignore("Known gap: recovering an out-of-line (overflow) KEY NREs in RecoverFromPage -> GetKeyHashCode64 -> LogRecord.Key (objectIdMap not populated during the index-build pass). Size- and checkpoint-type-independent. Keys are still RDH-based; tracked with the overflow-key work.")]
         public Task RecoverOverflowKey(
             [Values(CheckpointType.Snapshot, CheckpointType.FoldOver)] CheckpointType checkpointType)
             => RunOverflowKeyRecovery(checkpointType, keySize: 512, numRecords: RecordCountForSize(512));

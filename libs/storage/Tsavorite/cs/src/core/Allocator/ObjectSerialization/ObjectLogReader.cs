@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Buffers;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Threading;
@@ -185,6 +186,47 @@ namespace Tsavorite.core
             {
                 logRecord.OnDeserializationError(keyWasSet);
                 throw;
+            }
+        }
+
+        /// <summary>Recovery Pass 1 (index build) helper: read ONLY this record's overflow key from the object log and return its hash code,
+        /// without reading the value or touching the transient <see cref="ObjectIdMap"/> (which is not populated until Pass 2, so
+        /// <see cref="LogRecord.Key"/> cannot resolve an overflow key during Pass 1). Mirrors the overflow-key branch of
+        /// <see cref="ReadRecordObjects{TKey}(ref LogRecord, TKey, int)"/>: the key bytes are read into a temporary pinned buffer and hashed via
+        /// the store's comparer (which hashes key bytes only). The caller must have set up the read-ahead via <see cref="OnBeginReadRecords"/> at
+        /// the record's object-log start position, and the record must have an overflow key.</summary>
+        internal long ReadOverflowKeyHashCodeForRecovery(in LogRecord logRecord, int segmentSizeBits)
+        {
+            Debug.Assert(logRecord.DataHeader.KeyIsOverflow, "Record must have an overflow key");
+            if (readBuffers is null)
+                throw new TsavoriteException("ReadBuffers are required to ReadOverflowKeyHashCodeForRecovery");
+
+            var positionWord = logRecord.GetObjectLogRecordStartPositionAndLengths(out var keyLength, out _);
+            var recordStartPosition = new ObjectLogFilePositionInfo(positionWord, segmentSizeBits);
+            if (!readBuffers.OnBeginRecord(recordStartPosition))
+                throw new TsavoriteException("ReadOverflowKeyHashCodeForRecovery found no data available in ReadBuffers");
+
+            // Reset per-record object-stream tracking; capture the low 3 bits of the record's object-log start offset for the first-header 8-align.
+            recordStreamConsumed = 0;
+            objectRecordStartOffsetLow3 = (int)(recordStartPosition.Offset & 7);
+
+            // For a key at/above the RDH KeyLength sentinel (1023), its full length precedes the key bytes in a leading ChunkHeader; otherwise
+            // the sentinel-capped hint is the exact length. The value is intentionally not read here.
+            var actualKeyLength = logRecord.DataHeader.KeyLengthIsSentinel ? ReadOverflowHeaderAndExtend(keyLength) : keyLength;
+
+            var rented = ArrayPool<byte>.Shared.Rent(actualKeyLength);
+            try
+            {
+                _ = Read(new Span<byte>(rented, 0, actualKeyLength));
+                fixed (byte* keyPtr = rented)
+                {
+                    var key = ConditionallyHoistedKey.CreatePinned(keyPtr, actualKeyLength);
+                    return storeFunctions.GetKeyHashCode64(key);
+                }
+            }
+            finally
+            {
+                ArrayPool<byte>.Shared.Return(rented);
             }
         }
 
