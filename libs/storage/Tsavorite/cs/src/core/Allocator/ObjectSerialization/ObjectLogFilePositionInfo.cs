@@ -31,8 +31,23 @@ namespace Tsavorite.core
         internal const int kReuseObjectIdForSizeBit = 63;
         internal const ulong kReuseObjectIdForSizeMask = 1UL << kReuseObjectIdForSizeBit;
 
-        /// <summary>Mask for the 3 reserved flag bits 60-62 (future use).</summary>
-        internal const ulong kReservedFlagsMask = 0x7UL << 60;
+        /// <summary>Bit position of the <c>KeyIsExactSize</c> flag in <see cref="word"/>.
+        /// When set, the out-of-line KEY's exact byte length (&lt;= <see cref="ObjectIdMap.MaxObjectIdExactSize"/>) is stored in the top
+        /// <see cref="ObjectIdMap.ObjectIdExactSizeBits"/> bits of the objectId slot at keyAddress (no leading ChunkHeader precedes the key
+        /// bytes). When clear, the key is headered/chunked and its length comes from the object-log stream framing. See
+        /// website/docs/dev/objectlog-serialization.md.</summary>
+        internal const int kKeyIsExactSizeBit = 61;
+        internal const ulong kKeyIsExactSizeMask = 1UL << kKeyIsExactSizeBit;
+
+        /// <summary>Bit position of the <c>ValueIsExactSize</c> flag in <see cref="word"/>.
+        /// When set, the out-of-line VALUE's exact byte length (&lt;= <see cref="ObjectIdMap.MaxObjectIdExactSize"/>) is stored in the top
+        /// <see cref="ObjectIdMap.ObjectIdExactSizeBits"/> bits of the objectId slot at valueAddress (no leading ChunkHeader precedes the
+        /// value bytes). When clear, the value is headered/chunked and its length comes from the object-log stream framing.</summary>
+        internal const int kValueIsExactSizeBit = 60;
+        internal const ulong kValueIsExactSizeMask = 1UL << kValueIsExactSizeBit;
+
+        /// <summary>Mask for the reserved flag bit 62 (future use).</summary>
+        internal const ulong kReservedFlagsMask = 0x1UL << 62;
 
         /// <summary>Object log segment size bits</summary>
         internal int SegmentSizeBits;
@@ -83,6 +98,22 @@ namespace Tsavorite.core
         /// <summary>Read the <c>ReuseObjectIdForSize</c> flag bit on the position word pointed to by <paramref name="wordPtr"/>.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static unsafe bool GetReuseObjectIdForSize(ulong* wordPtr) => (*wordPtr & kReuseObjectIdForSizeMask) != 0;
+
+        /// <summary>Set the <c>KeyIsExactSize</c> flag bit on the position word pointed to by <paramref name="wordPtr"/>.</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static unsafe void SetKeyIsExactSize(ulong* wordPtr) => *wordPtr |= kKeyIsExactSizeMask;
+
+        /// <summary>Read the <c>KeyIsExactSize</c> flag bit on the position word pointed to by <paramref name="wordPtr"/>.</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static unsafe bool GetKeyIsExactSize(ulong* wordPtr) => (*wordPtr & kKeyIsExactSizeMask) != 0;
+
+        /// <summary>Set the <c>ValueIsExactSize</c> flag bit on the position word pointed to by <paramref name="wordPtr"/>.</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static unsafe void SetValueIsExactSize(ulong* wordPtr) => *wordPtr |= kValueIsExactSizeMask;
+
+        /// <summary>Read the <c>ValueIsExactSize</c> flag bit on the position word pointed to by <paramref name="wordPtr"/>.</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static unsafe bool GetValueIsExactSize(ulong* wordPtr) => (*wordPtr & kValueIsExactSizeMask) != 0;
 
         /// <summary>The offset within the current <see cref="SegmentId"/>.</summary>
         public ulong Offset
