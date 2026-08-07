@@ -23,6 +23,9 @@ namespace Garnet.common
     {
         readonly ILogger logger;
         readonly Socket socket;
+        readonly string remoteEndpointName;
+        readonly string localEndpointName;
+        readonly bool isLocalConnection;
         int closeRequested;
 
         /// <summary>
@@ -33,32 +36,30 @@ namespace Garnet.common
         {
             this.logger = logger;
             this.socket = socket;
+            var remoteEndpoint = socket.RemoteEndPoint;
+            this.remoteEndpointName = remoteEndpoint?.ToString() ?? string.Empty;
+            this.localEndpointName = socket.LocalEndPoint?.ToString() ?? string.Empty;
+            this.isLocalConnection = remoteEndpoint is IPEndPoint ip
+                ? IPAddress.IsLoopback(ip.Address)
+                : remoteEndpoint is UnixDomainSocketEndPoint;
             this.closeRequested = 0;
 
             AllocateNetworkReceiveBuffer();
         }
 
         /// <inheritdoc />
-        public override string RemoteEndpointName => socket.RemoteEndPoint.ToString();
+        public override string RemoteEndpointName => remoteEndpointName;
 
         /// <inheritdoc />
-        public override string LocalEndpointName => socket.LocalEndPoint.ToString();
+        public override string LocalEndpointName => localEndpointName;
 
         /// <inheritdoc />
-        public override bool IsLocalConnection()
-        {
-            if (socket.RemoteEndPoint is IPEndPoint ip)
-            {
-                return IPAddress.IsLoopback(ip.Address);
-            }
+        public override bool IsLocalConnection() => isLocalConnection;
 
-            if (socket.RemoteEndPoint is UnixDomainSocketEndPoint)
-            {
-                return true;
-            }
-
-            return false;
-        }
+        /// <summary>
+        /// Whether closing has been requested or the connection has already closed.
+        /// </summary>
+        public bool IsClosingOrClosed => Volatile.Read(ref closeRequested) != 0;
 
         /// <inheritdoc />
         public override void Start(SslServerAuthenticationOptions tlsOptions = null, string remoteEndpointName = null, CancellationToken token = default)
@@ -98,7 +99,7 @@ namespace Garnet.common
         public override bool TryClose()
         {
             // Only one caller gets to invoke Close, as we'd expect subsequent ones to fail and throw
-            if (Interlocked.CompareExchange(ref closeRequested, 0, 1) != 0)
+            if (Interlocked.CompareExchange(ref closeRequested, 1, 0) != 0)
             {
                 return false;
             }
@@ -151,6 +152,8 @@ namespace Garnet.common
         /// <inheritdoc />
         public override void Dispose()
         {
+            Interlocked.Exchange(ref closeRequested, 1);
+
             try
             {
                 if (socket.Connected)
