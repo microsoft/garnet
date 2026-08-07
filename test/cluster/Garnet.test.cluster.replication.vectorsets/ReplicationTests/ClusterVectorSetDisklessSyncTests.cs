@@ -10,11 +10,6 @@ using NUnit.Framework.Legacy;
 
 namespace Garnet.test.cluster
 {
-    /// <summary>
-    /// Diskless full-sync coverage for populated Vector Sets. The iterator streams IndexPtr,
-    /// so the receiver must sanitize and rebuild before the TLA+ quiet-read counterexample.
-    /// Executable form of the model in tla/VectorIndexLifetime.tla.
-    /// </summary>
     [TestFixture]
     [NonParallelizable]
     public class ClusterVectorSetDisklessSyncTests : VectorSetReplicationTestBase
@@ -25,6 +20,7 @@ namespace Garnet.test.cluster
         /// <summary>Creates a diskless-sync cluster with a low threshold so re-attach takes full sync.</summary>
         private void SetupDisklessCluster(int nodeCount)
         {
+            // Once the replica's AOF gap exceeds this, the primary stops replaying and full syncs instead
             context.CreateInstances(
                 nodeCount,
                 enableAOF: true,
@@ -35,12 +31,7 @@ namespace Garnet.test.cluster
             context.FormClusterAllNodes(nodeCount);
         }
 
-        /// <summary>
-        /// Forces the model's reset/snapshot path: detach, move past incremental replay, then re-attach.
-        /// Full sync is guaranteed by two independent triggers in ReplicaSyncSession.NeedToFullSync:
-        /// the soft reset gives the node a fresh replication id, and the padding writes push the AOF
-        /// gap past the 1k threshold configured in SetupDisklessCluster.
-        /// </summary>
+        /// <summary>Detach, move past incremental replay, then re-attach so the sync must be a full one.</summary>
         private void ForceDisklessFullSync(int replicaIndex = ReplicaIndex)
         {
             context.clusterTestUtils.ResetReplica(replicaIndex, PrimaryIndex, context.logger);
@@ -308,7 +299,6 @@ namespace Garnet.test.cluster
             ClassicAssert.AreNotEqual(handleBeforeMigration, handleAfterMigration, $"node {Primary1} adopted node {Primary0}'s DiskANN handle for '{key}' across the migration");
         }
 
-#if DEBUG
         /// <summary>
         /// A diskless full sync that dies after records were streamed but before ATTACH_SYNC never reaches
         /// ReconcileRecoveredState, so the recovery bookkeeping it accumulated is still pending. The retry
@@ -318,6 +308,8 @@ namespace Garnet.test.cluster
         [Test]
         public void VectorSetDisklessFullSyncRecoversAfterAbortedAttempt()
         {
+            TestUtils.IgnoreIfExceptionInjectionDisabled();
+
             const string Key = "{vsretry}aborted";
             const int Elements = 200;
 
@@ -361,6 +353,8 @@ namespace Garnet.test.cluster
         [Test]
         public void AbortedDisklessFullSyncLeavesNoOrphanNamespacedRecords()
         {
+            TestUtils.IgnoreIfExceptionInjectionDisabled();
+
             const string DoomedKey = "{vsorphan}doomed";
             const string KeptKey = "{vsorphan}kept";
             const int DoomedElements = 200;
@@ -429,6 +423,5 @@ namespace Garnet.test.cluster
                 ClassicAssert.AreEqual(expected, replicaCensus.GetValueOrDefault(ns), $"node {ReplicaIndex} holds {replicaCensus.GetValueOrDefault(ns)} records in namespace {ns} but node {PrimaryIndex} holds {expected}");
             }
         }
-#endif
     }
 }

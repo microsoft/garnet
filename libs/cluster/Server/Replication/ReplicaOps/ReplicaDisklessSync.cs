@@ -238,11 +238,10 @@ namespace Garnet.cluster
                 // Before advertising updated replication offset, wait for Vector Set ops to finish
                 storeWrapper.DefaultDatabase.VectorManager?.WaitForVectorOperationsToComplete();
 
-                // Full sync only: a partial sync replays AOF instead of streaming raw records, so nothing
-                // is recovered and every live context would be marked for cleanup. A full sync flushes
-                // first, so the reservation must be empty here.
+                // Full sync only: a partial sync replays AOF instead of streaming raw records.
                 if (primarySyncMetadata.fullSync)
                 {
+                    // In full sync, a flush is done right before, so no active contexts should exist
                     storeWrapper.DefaultDatabase.VectorManager?.ReconcileRecoveredState(requireEmptyContexts: true);
                 }
 

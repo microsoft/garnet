@@ -19,8 +19,7 @@ using Tsavorite.core;
 namespace Garnet.test.cluster
 {
     /// <summary>
-    /// Shared harness for Vector Set replication tests. Asserts both index ownership
-    /// and element-level equality, since either can hold while the other is broken.
+    /// Shared harness for Vector Set replication tests.
     /// </summary>
     public abstract class VectorSetReplicationTestBase : TestBase
     {
@@ -30,7 +29,6 @@ namespace Garnet.test.cluster
         protected ClusterTestContext context;
 
         protected readonly int timeout = (int)TimeSpan.FromSeconds(15).TotalSeconds;
-        protected readonly int testTimeout = (int)TimeSpan.FromSeconds(60).TotalSeconds;
 
         /// <summary>Elements written through PopulateVectorSet, used for source-vs-target checks.</summary>
         private readonly Dictionary<string, List<byte[]>> writtenElements = [];
@@ -44,7 +42,7 @@ namespace Garnet.test.cluster
             writtenElements.Clear();
 
             context = new ClusterTestContext();
-            context.Setup(new Dictionary<string, LogLevel> { [TestContext.CurrentContext.Test.MethodName] = MonitorLogLevel }, testTimeoutSeconds: testTimeout);
+            context.Setup(new Dictionary<string, LogLevel> { [TestContext.CurrentContext.Test.MethodName] = MonitorLogLevel });
         }
 
         [TearDown]
@@ -70,7 +68,7 @@ namespace Garnet.test.cluster
 
         /// <summary>
         /// Adds deterministic XB8 elements and records them so targets can be compared with the
-        /// actual writes. XPREQ8 round-trips exactly through VEMB.
+        /// actual writes.
         /// </summary>
         protected void PopulateVectorSet(int nodeIndex, string key, int count, int seed)
         {
@@ -99,18 +97,16 @@ namespace Garnet.test.cluster
 
         protected IReadOnlyList<byte[]> ElementsWrittenTo(string key) => writtenElements.TryGetValue(key, out var e) ? e : [];
 
-        /// <summary>Reads VINFO size, the path that reaches NativeDiskANNMethods.card.</summary>
+        /// <summary>Reads VINFO size.</summary>
         protected long VectorSetSize(int nodeIndex, string key)
         {
             var reply = context.clusterTestUtils.Execute(context.clusterTestUtils.GetEndPoint(nodeIndex), "VINFO", [key], logger: context.logger);
 
             // Execute returns failures as bulk strings, so non-array replies mean the read failed.
-            if (reply.Resp2Type != ResultType.Array)
-                Assert.Fail($"VINFO on '{key}' at node {nodeIndex} did not return an array, got {reply.Resp2Type}: {reply}");
+            ClassicAssert.AreEqual(ResultType.Array, reply.Resp2Type, $"VINFO on '{key}' at node {nodeIndex} did not return an array: {reply}");
 
             var fields = (RedisValue[])reply;
-            if (fields is null)
-                Assert.Fail($"VINFO on '{key}' at node {nodeIndex} returned a nil array, so that node does not hold the Vector Set at all");
+            ClassicAssert.IsNotNull(fields, $"VINFO on '{key}' at node {nodeIndex} returned a nil array, so that node does not hold the Vector Set at all");
 
             for (var i = 0; i + 1 < fields.Length; i += 2)
             {
@@ -125,8 +121,7 @@ namespace Garnet.test.cluster
         protected long VectorSetDimensions(int nodeIndex, string key)
         {
             var reply = context.clusterTestUtils.Execute(context.clusterTestUtils.GetEndPoint(nodeIndex), "VDIM", [key], logger: context.logger);
-            if (reply.Resp2Type != ResultType.Integer)
-                Assert.Fail($"VDIM on '{key}' at node {nodeIndex} did not return an integer, got {reply.Resp2Type}: {reply}");
+            ClassicAssert.AreEqual(ResultType.Integer, reply.Resp2Type, $"VDIM on '{key}' at node {nodeIndex} did not return an integer: {reply}");
 
             return (long)reply;
         }
@@ -135,8 +130,7 @@ namespace Garnet.test.cluster
         protected string[] ElementEmbedding(int nodeIndex, string key, byte[] element)
         {
             var reply = context.clusterTestUtils.Execute(context.clusterTestUtils.GetEndPoint(nodeIndex), "VEMB", [key, element], skipLogging: true);
-            if (reply.Resp2Type != ResultType.Array)
-                Assert.Fail($"VEMB on '{key}' at node {nodeIndex} did not return an array, got {reply.Resp2Type}: {reply}");
+            ClassicAssert.AreEqual(ResultType.Array, reply.Resp2Type, $"VEMB on '{key}' at node {nodeIndex} did not return an array: {reply}");
 
             return (string[])reply;
         }
@@ -144,8 +138,7 @@ namespace Garnet.test.cluster
         protected byte[][] Search(int nodeIndex, string key, byte[] query, int count)
         {
             var reply = context.clusterTestUtils.Execute(context.clusterTestUtils.GetEndPoint(nodeIndex), "VSIM", [key, "XB8", query, "COUNT", count.ToString()], skipLogging: true);
-            if (reply.Resp2Type != ResultType.Array)
-                Assert.Fail($"VSIM on '{key}' at node {nodeIndex} did not return an array, got {reply.Resp2Type}: {reply}");
+            ClassicAssert.AreEqual(ResultType.Array, reply.Resp2Type, $"VSIM on '{key}' at node {nodeIndex} did not return an array: {reply}");
 
             return (byte[][])reply;
         }
