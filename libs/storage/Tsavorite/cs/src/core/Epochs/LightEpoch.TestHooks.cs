@@ -20,18 +20,18 @@ namespace Tsavorite.core
         internal long TestHookThisThreadAnnouncedEpoch()
         {
             var entry = Metadata.Entries.GetRef(instanceId);
-            return entry == kInvalidIndex ? 0 : EntryAt(entry).localCurrentEpoch;
+            return entry == kInvalidIndex ? 0 : (*(tableAligned + entry)).localCurrentEpoch;
         }
 
         /// <summary>
         /// The epoch announced in epoch table slot <paramref name="entry"/>, or 0 if the slot is free.
         /// </summary>
-        internal long TestHookAnnouncedEpochAt(int entry) => EntryAt(entry).localCurrentEpoch;
+        internal long TestHookAnnouncedEpochAt(int entry) => (*(tableAligned + entry)).localCurrentEpoch;
 
         /// <summary>
         /// The thread id recorded in epoch table slot <paramref name="entry"/>, or 0 if the slot is free.
         /// </summary>
-        internal int TestHookThreadIdAt(int entry) => EntryAt(entry).threadId;
+        internal int TestHookThreadIdAt(int entry) => (*(tableAligned + entry)).threadId;
 
         /// <summary>
         /// Capacity of the drain list.
