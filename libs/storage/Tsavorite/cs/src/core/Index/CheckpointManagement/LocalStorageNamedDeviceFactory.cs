@@ -40,14 +40,14 @@ namespace Tsavorite.core
         /// <param name="deviceType">Device type to use</param>
         /// <param name="ioBackend">For DeviceType.Native on Linux: which IO backend (libaio or io_uring) to use. Ignored otherwise.</param>
         /// <param name="numCompletionThreads">For DeviceType.Native on Linux: number of IO completion drain threads (default 1). Ignored otherwise.</param>
+        /// <param name="readOnly">Whether files are opened as readonly</param>
+        /// <param name="baseName">Base name</param>
+        /// <param name="logger">Logger</param>
         /// <param name="numIoContexts">For DeviceType.Native on Linux: number of independent kernel io_contexts / io_uring rings (ring count), decoupled from the drainers. 0 (default) = device default. Ignored otherwise.</param>
         /// <param name="queueDepth">For DeviceType.Native on Linux: per-ring kernel submission depth D (maxEvents). 0 (default) = device default. Ignored otherwise.</param>
         /// <param name="uringSqPoll">For DeviceType.Native on Linux with the io_uring backend: enable IORING_SETUP_SQPOLL (syscall-free submits; each ring gets its own kernel poll thread). Ignored for libaio / on Windows. Off by default.</param>
         /// <param name="uringSqPollIdleMs">io_uring SQPOLL poll-thread idle window in milliseconds. Only used when <paramref name="uringSqPoll"/> is true; 0 = native default.</param>
-        /// <param name="readOnly">Whether files are opened as readonly</param>
-        /// <param name="baseName">Base name</param>
-        /// <param name="logger">Logger</param>
-        public LocalStorageNamedDeviceFactory(bool preallocateFile = false, bool deleteOnClose = false, bool disableFileBuffering = true, int? throttleLimit = null, DeviceType deviceType = DeviceType.Default, NativeStorageDevice.IoBackend ioBackend = NativeStorageDevice.IoBackend.Default, int numCompletionThreads = 1, int numIoContexts = 0, int queueDepth = 0, bool uringSqPoll = false, int uringSqPollIdleMs = 0, bool readOnly = false, string baseName = null, ILogger logger = null)
+        public LocalStorageNamedDeviceFactory(bool preallocateFile = false, bool deleteOnClose = false, bool disableFileBuffering = true, int? throttleLimit = null, DeviceType deviceType = DeviceType.Default, NativeStorageDevice.IoBackend ioBackend = NativeStorageDevice.IoBackend.Default, int numCompletionThreads = 1, bool readOnly = false, string baseName = null, ILogger logger = null, int numIoContexts = 0, int queueDepth = 0, bool uringSqPoll = false, int uringSqPollIdleMs = 0)
         {
             this.preallocateFile = preallocateFile;
             this.deleteOnClose = deleteOnClose;

@@ -389,7 +389,7 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc/>
-        public override bool TryComplete(bool mineOnly = false)
+        public override bool TryComplete()
         {
             if (!useIoCompletionPort) return true;
 

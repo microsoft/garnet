@@ -395,10 +395,13 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc/>
-        public virtual bool TryComplete(bool mineOnly = false)
+        public virtual bool TryComplete()
         {
             return true;
         }
+
+        /// <inheritdoc/>
+        public virtual bool TryCompleteMine() => TryComplete();
 
         /// <inheritdoc/>
         public virtual long GetFileSize(int segment)

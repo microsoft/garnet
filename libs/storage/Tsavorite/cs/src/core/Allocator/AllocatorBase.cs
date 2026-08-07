@@ -495,12 +495,10 @@ namespace Tsavorite.core
         /// <summary>Remove disk segment</summary>
         protected virtual void RemoveSegment(int segment) => device.RemoveSegment(segment);
 
-        /// <summary>
-        /// Drain device IO completions. When <paramref name="mineOnly"/> is true, drain only the
-        /// calling thread's affine completion context; otherwise drain across all contexts
-        /// (see <see cref="IDevice.TryComplete(bool)"/>).
-        /// </summary>
-        internal virtual bool TryComplete(bool mineOnly = false) => device.TryComplete(mineOnly);
+        internal virtual bool TryComplete() => device.TryComplete();
+
+        /// <summary>Drain only the calling thread's affine device completion context (see <see cref="IDevice.TryCompleteMine"/>).</summary>
+        internal virtual bool TryCompleteMine() => device.TryCompleteMine();
 
         /// <summary>Dispose allocator</summary>
         public virtual void Dispose()
@@ -1465,9 +1463,6 @@ namespace Tsavorite.core
             while ((logicalAddress = TryAllocate(numSlots)) < 0)
             {
                 // -1: RETRY_NOW
-                // Walk all rings (mineOnly: false): the flush completion we await is submitted from
-                // an epoch-drain action on an indeterminate thread, so it can land on any ring, not
-                // just this one's own. (Read paths await their own ring and pass mineOnly: true.)
                 _ = TryComplete();
                 epoch.ProtectAndDrain();
                 if (++spins < Constants.kFlushSpinCount)
@@ -2352,7 +2347,7 @@ namespace Tsavorite.core
             {
                 while (device.Throttle())
                 {
-                    _ = device.TryComplete(mineOnly: true);
+                    _ = device.TryCompleteMine();
                     _ = Thread.Yield();
                     epoch.ProtectAndDrain();
                 }

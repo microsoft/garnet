@@ -154,7 +154,14 @@ extern "C" {
 	/// syscall. Each ring gets its OWN poll thread (no IORING_SETUP_ATTACH_WQ) so submission stays
 	/// parallel across rings. `uring_sqpoll_idle_ms` is that poll thread's idle-before-park window
 	/// in milliseconds (<= 0 => native default). Both are ignored by the libaio and Windows backends.
-	EXPORTED_SYMBOL INativeDevice* NativeDevice_CreateWithBackend(const char* file, bool enablePrivileges, bool unbuffered, bool delete_on_close, int32_t backend, uint64_t segment_size_bytes, bool omit_segment_id, int32_t num_io_contexts, int32_t max_events, int32_t uring_sqpoll, int32_t uring_sqpoll_idle_ms) {
+	///
+	/// Two exports share this body: the ABI-stable NativeDevice_CreateWithBackend (no SQPOLL
+	/// parameters) and the extended NativeDevice_CreateWithBackendSqPoll (with them). Splitting the
+	/// two arities into distinct symbols means a managed wrapper links against the export whose
+	/// parameter count matches its declaration, so a wrapper/library version skew fails fast at load
+	/// time with a missing-symbol error instead of silently reading uninitialised stack for the extra
+	/// SQPOLL parameters.
+	EXPORTED_SYMBOL INativeDevice* NativeDevice_CreateWithBackendSqPoll(const char* file, bool enablePrivileges, bool unbuffered, bool delete_on_close, int32_t backend, uint64_t segment_size_bytes, bool omit_segment_id, int32_t num_io_contexts, int32_t max_events, int32_t uring_sqpoll, int32_t uring_sqpoll_idle_ms) {
 		native_device::clear_last_error();
 		if (file == nullptr) {
 			native_device::set_last_error("NativeDevice_CreateWithBackend: 'file' argument is null.");
@@ -177,6 +184,14 @@ extern "C" {
 				native_device::set_last_error("NativeDevice_CreateWithBackend: unknown or unavailable backend id %d.", backend);
 				return nullptr;
 		}
+	}
+
+	/// ABI-stable creator preserved at the original (pre-SQPOLL) parameter count. Forwards to
+	/// NativeDevice_CreateWithBackendSqPoll with SQPOLL disabled so a managed wrapper built before
+	/// the SQPOLL parameters existed keeps linking against a matching-arity export. See the doc
+	/// comment above for the shared parameter semantics.
+	EXPORTED_SYMBOL INativeDevice* NativeDevice_CreateWithBackend(const char* file, bool enablePrivileges, bool unbuffered, bool delete_on_close, int32_t backend, uint64_t segment_size_bytes, bool omit_segment_id, int32_t num_io_contexts, int32_t max_events) {
+		return NativeDevice_CreateWithBackendSqPoll(file, enablePrivileges, unbuffered, delete_on_close, backend, segment_size_bytes, omit_segment_id, num_io_contexts, max_events, /* uring_sqpoll */ 0, /* uring_sqpoll_idle_ms */ 0);
 	}
 
 	/// Reports which backends the loaded native library was built with.
@@ -237,10 +252,14 @@ extern "C" {
 			[&]() { return device->CreateDir(std::string(dir), delete_existing != 0); }, -1);
 	}
 
-	/// Drain pending async IO completions. mineOnly != 0 drains only the calling thread's affine
-	/// context/ring (the inline submitter-thread path); mineOnly == 0 walks every context.
-	EXPORTED_SYMBOL bool NativeDevice_TryComplete(INativeDevice* device, int mineOnly) {
-		return CABIGuard("NativeDevice_TryComplete", [&]() { return device->TryComplete(mineOnly != 0); }, false);
+	EXPORTED_SYMBOL bool NativeDevice_TryComplete(INativeDevice* device) {
+		return CABIGuard("NativeDevice_TryComplete", [&]() { return device->TryComplete(); }, false);
+	}
+
+	/// Drain only the calling thread's affine context/ring (see INativeDevice::TryCompleteMine).
+	/// Used by the inline submitter-thread completion path to avoid walking every context.
+	EXPORTED_SYMBOL bool NativeDevice_TryCompleteMine(INativeDevice* device) {
+		return CABIGuard("NativeDevice_TryCompleteMine", [&]() { return device->TryCompleteMine(); }, false);
 	}
 
 	EXPORTED_SYMBOL uint64_t NativeDevice_GetFileSize(INativeDevice* device, uint64_t segment) {

@@ -108,11 +108,12 @@ namespace Tsavorite.kvbench
         public string Device { get; set; }
 
         [Option("device-throttle-limit", Required = false, Default = 0,
-            HelpText = "Aggregate max in-flight IOs (software backpressure). 0 = device default (120 for Native; maps to " +
-                       "the LocalMemory SPSC ring otherwise). NOTE: the 120 default under-drives a fast NVMe — " +
-                       "set >=512 to saturate the device queue and reach its IOPS ceiling. Also size --num-keys " +
-                       "so the log spans enough of the device (a small LBA span engages fewer NAND channels and " +
-                       "caps IOPS below the device's large-span ceiling). Capped at io-contexts * queue-depth.")]
+            HelpText = "Aggregate max in-flight IOs (software backpressure). 0 = device default (4096 for Native; 120 for " +
+                       "the managed in-box devices; maps to the LocalMemory SPSC ring otherwise). The Native 4096 default " +
+                       "already saturates a fast NVMe queue; the managed 120 default under-drives one, so raise it (>=512) " +
+                       "to reach the IOPS ceiling on those devices. Also size --num-keys so the log spans enough of the " +
+                       "device (a small LBA span engages fewer NAND channels and caps IOPS below the device's large-span " +
+                       "ceiling). Capped at io-contexts * queue-depth.")]
         public int DeviceThrottleLimit { get; set; }
 
         [Option("device-io-backend", Required = false, Default = "default",
@@ -136,15 +137,16 @@ namespace Tsavorite.kvbench
                        "per-thread affinity, so setting this >= submitter concurrency makes io_submit " +
                        "contention-free (no shared per-context aio ring/completion lock across unrelated " +
                        "submitters) and spreads completion posting across more rings; the drainers each " +
-                       "range-drain a contiguous slice of the rings. 0 = 1 ring per drainer (default). " +
-                       "Clamped up to --device-completion-threads.")]
+                       "range-drain a contiguous slice of the rings. 0 (default) is backend-specific: io_uring " +
+                       "uses a hardware-aware ring count (min(2*ProcessorCount, 64), floored at the drainer count), " +
+                       "while libaio uses one ring per drainer. Clamped up to --device-completion-threads.")]
         public int DeviceIoContexts { get; set; }
 
         [Option("device-queue-depth", Required = false, Default = 0,
             HelpText = "DeviceType.Native on Linux only: per-ring kernel queue depth (io_uring SQ entries / " +
                        "libaio io_context nr_events) for each of the --device-io-contexts rings. 0 = default " +
                        "(4096). Cap 32768 (io_uring hard limit). For libaio, io-contexts * queue-depth is drawn " +
-                       "from the global fs.aio-max-nr budget (warned/clamped if exceeded).")]
+                       "from the global fs.aio-max-nr budget (warned if exceeded; io_setup then fails if the budget is exhausted).")]
         public int DeviceQueueDepth { get; set; }
 
         [Option("device-uring-sqpoll", Required = false, Default = false,

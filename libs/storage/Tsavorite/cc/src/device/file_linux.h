@@ -271,8 +271,7 @@ class QueueIoHandler {
   /// if A had more shards than B).
   /// </para>
   /// Index (into io_objects_) of the calling thread's affine context. Shared by pick_context()
-  /// (submit) and TryComplete(mineOnly=true) (drain) so a thread reaps from the same context it
-  /// submits to.
+  /// (submit) and TryCompleteMine() (drain) so a thread reaps from the same context it submits to.
   int pick_context_index() {
     if (io_objects_.size() == 1) {
       return 0;
@@ -289,6 +288,16 @@ class QueueIoHandler {
 
   io_context_t pick_context() {
     return io_objects_[pick_context_index()];
+  }
+
+  /// Drain ONLY the calling thread's affine context (the one pick_context() submits to). The inline
+  /// submitter-thread completion path (Tsavorite's CompletePending / AsyncGetFromDisk throttle-wait)
+  /// is the primary reaper at high IOPS; having each run thread poll just its own context issues one
+  /// io_getevents per poll instead of walking every context (Nx fewer syscalls and no cross-context
+  /// aio ring-lock contention). Coverage is preserved because each context has sharing submitters
+  /// and/or a dedicated drainer (QueueRunFor). Reaps a batch per call (kTryCompleteBatchEvents).
+  bool TryCompleteMine() {
+    return TryCompleteFor(pick_context_index());
   }
 
   /// Invoked whenever a Linux AIO completes.
@@ -327,9 +336,8 @@ class QueueIoHandler {
     return io_objects_.empty() ? 0 : io_objects_[0];
   }
 
-  /// Drain completions. When mineOnly is true, batch-drain only the calling thread's affine context
-  /// (via pick_context_index()); when false, walk all contexts. Defined in file_linux.cc.
-  bool TryComplete(bool mineOnly = false);
+  /// Drain one completion from context 0; sharded callers should use TryCompleteFor(idx).
+  bool TryComplete();
   /// Drain one completion from context `idx`. Returns false if idx out of range or no events.
   bool TryCompleteFor(int idx);
 
@@ -626,6 +634,15 @@ class UringIoHandler {
     lock_out = sq_locks_[idx];
   }
 
+  /// Drain ONLY the calling thread's affine ring (mirrors QueueIoHandler::TryCompleteMine).
+  /// Reaps a batch per call (up to kCqeBatch) in one cq_lock section with dispatch outside the
+  /// lock, so the inline submitter-thread completion path (Tsavorite CompletePending /
+  /// AsyncGetFromDisk throttle-wait) drains its own ring the same batch-at-a-time way the
+  /// dedicated drainer's QueueRunFor does, rather than one io_uring_peek_cqe per completion.
+  bool TryCompleteMine() {
+    return TryCompleteMineBatch(pick_ring_index());
+  }
+
   struct IoCallbackContext {
     IoCallbackContext(bool is_read, int fd, uint8_t* buffer, size_t length, size_t offset, core::IAsyncContext* context_, core::AsyncIOCallback callback_)
       : is_read_(is_read)
@@ -648,14 +665,13 @@ class UringIoHandler {
     core::AsyncIOCallback callback;
   };
 
-  /// Drain completions. When mineOnly is true, batch-drain only the calling thread's affine ring
-  /// (via pick_ring_index()); when false, walk all rings. Defined in file_linux.cc.
-  bool TryComplete(bool mineOnly = false);
+  /// Drain one completion from ring 0; sharded callers should use TryCompleteFor(idx).
+  bool TryComplete();
   /// Drain one completion from ring `idx`.
   bool TryCompleteFor(int idx);
   /// Non-blocking batch drain of ring `idx` (the caller's affine ring): reaps up to kCqeBatch
-  /// completions in a single cq_lock section. Backs the mineOnly path of TryComplete().
-  bool TryCompleteBatchFor(int idx);
+  /// completions in a single cq_lock section. Backs TryCompleteMine().
+  bool TryCompleteMineBatch(int idx);
   /// Drain completions across all rings (back-compat for callers that do not know about sharding).
   int QueueRun(int timeout_secs);
   /// Drain completions on ring `idx` only.
