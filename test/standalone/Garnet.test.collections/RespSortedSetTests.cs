@@ -4430,6 +4430,26 @@ namespace Garnet.test
             expectedResponse = $"-{Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER)}\r\n";
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
+            // start > stop is an empty range, not a negative count
+            response = lightClientRequest.SendCommandChunks("ZREMRANGEBYRANK board 2 0", bytesSent);
+            expectedResponse = ":0\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            // Negative indexes that fall before the first element remove nothing
+            response = lightClientRequest.SendCommandChunks("ZREMRANGEBYRANK board -100 -50", bytesSent);
+            expectedResponse = ":0\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            response = lightClientRequest.SendCommandChunks("ZCARD board", bytesSent);
+            expectedResponse = ":3\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            // A start past the end of the set must still write exactly one reply,
+            // otherwise the trailing PING is answered out of sync
+            response = lightClientRequest.SendCommands("ZREMRANGEBYRANK board 3 5", "PING");
+            expectedResponse = ":0\r\n+PONG\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
             response = lightClientRequest.SendCommandChunks("ZREMRANGEBYRANK board 0 1", bytesSent);
             expectedResponse = ":2\r\n";
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
