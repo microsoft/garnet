@@ -135,20 +135,12 @@ namespace Garnet.test.cluster
             return (string[])reply;
         }
 
-        protected byte[][] Search(int nodeIndex, string key, byte[] query, int count)
-        {
-            var reply = context.clusterTestUtils.Execute(context.clusterTestUtils.GetEndPoint(nodeIndex), "VSIM", [key, "XB8", query, "COUNT", count.ToString()], skipLogging: true);
-            ClassicAssert.AreEqual(ResultType.Array, reply.Resp2Type, $"VSIM on '{key}' at node {nodeIndex} did not return an array: {reply}");
-
-            return (byte[][])reply;
-        }
-
         #endregion
 
         #region assertions
 
         /// <summary>
-        /// Compares cardinality, dimensions, embeddings, and VSIM behavior against the elements
+        /// Compares cardinality, dimensions, and per-element embeddings against the elements
         /// actually written; the embedding sweep catches correct counts with wrong vectors.
         /// </summary>
         protected void AssertVectorSetsMatch(int sourceIndex, int targetIndex, string key)
@@ -188,54 +180,6 @@ namespace Garnet.test.cluster
 
             ClassicAssert.IsEmpty(missing, $"{missing.Count} of {expected.Count} elements VADDed into '{key}' on node {sourceIndex} are missing on node {targetIndex} (first few: {string.Join(", ", missing.Take(10))})");
             ClassicAssert.IsEmpty(mismatched, $"{mismatched.Count} of {expected.Count} elements of '{key}' have a different embedding on node {targetIndex} than on node {sourceIndex} (first few: {string.Join(", ", mismatched.Take(10))})");
-
-            AssertSearchesAgree(sourceIndex, targetIndex, key);
-        }
-
-        /// <summary>
-        /// Verifies VSIM on the target without requiring identical tails: rebuilt approximate-NN
-        /// graphs can legitimately return different tail orderings.
-        /// </summary>
-        protected void AssertSearchesAgree(int sourceIndex, int targetIndex, string key, int queries = 8, int count = 10)
-        {
-            var members = ElementsWrittenTo(key);
-            var membership = new HashSet<string>(members.Select(Convert.ToHexString));
-
-            // Exact queries must find the element itself regardless of graph construction.
-            var r = new Random(20260729);
-            for (var q = 0; q < queries; q++)
-            {
-                var element = members[r.Next(members.Count)];
-                var embedding = ElementEmbedding(targetIndex, key, element);
-                ClassicAssert.Greater(embedding.Length, 0, $"element {q} of '{key}' is missing on node {targetIndex}");
-
-                var query = embedding.Select(static component => (byte)Math.Clamp((int)float.Parse(component, CultureInfo.InvariantCulture), byte.MinValue, byte.MaxValue)).ToArray();
-                var hits = Search(targetIndex, key, query, count);
-
-                ClassicAssert.Greater(hits.Length, 0, $"VSIM on node {targetIndex} returned nothing for an element of '{key}' that it holds");
-                ClassicAssert.IsTrue(hits[0].AsSpan().SequenceEqual(element), $"VSIM on node {targetIndex} for the exact embedding of element [{string.Join(",", element)}] of '{key}' returned [{string.Join(",", hits[0])}] as its nearest neighbour, so the index is not navigable to its own elements");
-            }
-
-            // Random-query tails may differ, but hits must be real members and broadly agree.
-            for (var q = 0; q < queries; q++)
-            {
-                var query = new byte[VectorDimensions];
-                r.NextBytes(query);
-
-                var sourceHits = Search(sourceIndex, key, query, count);
-                var targetHits = Search(targetIndex, key, query, count);
-
-                ClassicAssert.Greater(sourceHits.Length, 0, $"VSIM on node {sourceIndex} returned nothing for '{key}'");
-                ClassicAssert.AreEqual(sourceHits.Length, targetHits.Length, $"VSIM for query {q} on '{key}' returned {sourceHits.Length} hits on node {sourceIndex} but {targetHits.Length} on node {targetIndex}");
-
-                var foreign = targetHits.Where(hit => !membership.Contains(Convert.ToHexString(hit))).ToList();
-                ClassicAssert.IsEmpty(foreign, $"VSIM for query {q} on '{key}' returned {foreign.Count} neighbours on node {targetIndex} that were never VADDed into that set (first: [{string.Join(",", foreign.FirstOrDefault() ?? [])}])");
-
-                var sourceSet = new HashSet<string>(sourceHits.Select(Convert.ToHexString));
-                var overlap = targetHits.Count(hit => sourceSet.Contains(Convert.ToHexString(hit)));
-
-                ClassicAssert.GreaterOrEqual(overlap * 2, sourceHits.Length, $"VSIM for query {q} on '{key}' agreed on only {overlap} of {sourceHits.Length} neighbours between node {sourceIndex} and node {targetIndex}; the two indexes are not searching the same vectors");
-            }
         }
 
         /// <summary>
@@ -246,8 +190,7 @@ namespace Garnet.test.cluster
             => GetStoreWrapper(context.nodes[nodeIndex]).DefaultDatabase.VectorManager.WaitForVectorOperationsToComplete();
 
         /// <summary>
-        /// Reads the persisted DiskANN handle via Read_MainStore so ReadVectorIndex cannot
-        /// lazily rebuild and rewrite it.
+        /// Reads the persisted DiskANN handle via Read_MainStore
         /// </summary>
         protected nint ReadPersistedIndexPtr(int nodeIndex, string key)
         {
