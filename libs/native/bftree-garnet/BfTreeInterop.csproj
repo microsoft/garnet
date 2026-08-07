@@ -31,6 +31,7 @@
   <Target Name="BuildRustCdylib" BeforeTargets="Build" Condition="'$(IsCrossTargetingBuild)' == 'true' or '$(TargetFrameworks)' == ''">
     <Exec Command="cargo --version"
           IgnoreExitCode="true"
+          IgnoreStandardErrorWarningFormat="true"
           StandardOutputImportance="low"
           StandardErrorImportance="low">
       <Output TaskParameter="ExitCode" PropertyName="CargoProbeExitCode" />
