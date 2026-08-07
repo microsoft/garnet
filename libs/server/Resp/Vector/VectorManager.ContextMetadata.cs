@@ -440,10 +440,9 @@ namespace Garnet.server
                 // Clear out all context data
                 manager.contextMetadatas = new ContextMetadata[1];
 
-                // The flushed records are gone, so anything a previous ingest observed about them is stale.
-                // An aborted diskless full sync never reaches ApplyRecoveredState, so without this the retry
-                // re-streams the same ContextMetadata records and RecoveredContextMetadata throws on the
-                // duplicate index, wedging every subsequent attempt.
+                // The flushed records are gone, so recovery state describing them is stale. An aborted
+                // diskless full sync never reaches ApplyRecoveredState, so leaving it would make the
+                // retry throw on a duplicate index.
                 manager.recoveredIndexes.Clear();
                 manager.recoveredMetadata.Clear();
 
