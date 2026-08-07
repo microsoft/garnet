@@ -115,7 +115,12 @@ namespace Garnet.server
                                                 break;
 
                                             case QuantizationStep.BackfillQuantizedVectors:
-                                                self.Service.BackfillQuantizedVectors(context, indexPtr, state.StepIndex, self.quantizationTasks.Length);
+                                                if (!self.Service.BackfillQuantizedVectors(context, indexPtr, state.StepIndex, self.quantizationTasks.Length))
+                                                {
+                                                    self.logger?.LogError("Quantization backfill {step}/{total} failed for context {context}", state.StepIndex, self.quantizationTasks.Length, context);
+
+                                                    // TODO: What sort of retry makes sense here?
+                                                }
 
                                                 _ = Interlocked.Increment(ref self.quantizationBackfillsProcessed);
                                                 break;

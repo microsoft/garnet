@@ -5,6 +5,7 @@ using System;
 using System.Buffers;
 using System.Buffers.Binary;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Runtime.InteropServices;
@@ -184,7 +185,7 @@ namespace Garnet.server
             // Destination for copying the small graph "stub" records back into memory on disk read (see
             // VectorReadBatch.ReadCopyOptions): the read cache when it is enabled (keeps the writable main log
             // clean), otherwise the main-log tail (still memory-resident, but occupies writable log space).
-            StubReadCopyTo = serverOptions.EnableReadCache ? ReadCopyTo.ReadCache : ReadCopyTo.MainLog;
+            stubReadCopyTo = serverOptions.EnableReadCache ? ReadCopyTo.ReadCache : ReadCopyTo.MainLog;
 
             // Include DB and id so we correlate to what's actually stored in the log
             logger = loggerFactory?.CreateLogger($"{nameof(VectorManager)}:{dbId}");
@@ -511,9 +512,6 @@ namespace Garnet.server
 
             ReadIndex(indexValue, out var context, out var dimensions, out var reduceDims, out var quantType, out _, out var numLinks, out var distanceMetric, out _, out var indexPtr);
 
-            // Size FullVector / NeighborList disk reads to this set's geometry (dimensions, M) for single-IO fetches.
-            SetActiveReadGeometry(dimensions, numLinks, quantType, reduceDims);
-
             if (providedReduceDims != 0 && providedReduceDims != reduceDims)
             {
                 errorMsg = "ERR Provided REDUCE does not match Vector Set definition"u8;
@@ -743,9 +741,6 @@ namespace Garnet.server
 
             ReadIndex(indexValue, out var context, out var dimensions, out var reduceDims, out var quantType, out _, out var numLinks, out _, out _, out var indexPtr);
 
-            // Size FullVector / NeighborList disk reads to this set's geometry (dimensions, M) for single-IO fetches.
-            SetActiveReadGeometry(dimensions, numLinks, quantType, reduceDims);
-
             var effectiveEF = Math.Max(searchExplorationFactor, count);
 
             EnsureDistanceBufferSize(ref outputDistances, count);
@@ -845,10 +840,26 @@ namespace Garnet.server
                             outputDistances,
                             out continuation
                         );
+
+                        if (found >= 0)
+                        {
+                            while (continuation != 0)
+                            {
+                                var additionalResults = ContinueSearch(context, indexPtr, continuation, found, ref outputIds, ref outputDistances, out continuation);
+
+                                if (additionalResults < 0)
+                                {
+                                    found = additionalResults;
+                                    break;
+                                }
+
+                                found += additionalResults;
+                            }
+                        }
                     }
                     finally
                     {
-                        ActiveThreadSession.scratchBufferBuilder.RewindScratchBuffer(bufferSlice);
+                        _ = ActiveThreadSession.scratchBufferBuilder.RewindScratchBuffer(bufferSlice);
 
                         unsafe
                         {
@@ -872,6 +883,22 @@ namespace Garnet.server
                             outputDistances,
                             out continuation
                         );
+
+                    if (found >= 0)
+                    {
+                        while (continuation != 0)
+                        {
+                            var additionalResults = ContinueSearch(context, indexPtr, continuation, found, ref outputIds, ref outputDistances, out continuation);
+
+                            if (additionalResults < 0)
+                            {
+                                found = additionalResults;
+                                break;
+                            }
+
+                            found += additionalResults;
+                        }
+                    }
                 }
             }
 
@@ -894,12 +921,6 @@ namespace Garnet.server
                 EnsureFilterBitmapSize(ref filterBitmap, found);
 
                 _ = ApplyPostFilter(filter, found, outputAttributes.ReadOnlySpan, filterBitmap.Span, ActiveThreadSession.scratchBufferBuilder);
-            }
-
-            if (continuation != 0)
-            {
-                // TODO: paged results!
-                throw new NotImplementedException();
             }
 
             outputDistances.Length = sizeof(float) * found;
@@ -933,9 +954,6 @@ namespace Garnet.server
             AssertHaveStorageSession();
 
             ReadIndex(indexValue, out var context, out var dimensions, out var reduceDims, out var quantType, out _, out var numLinks, out _, out _, out var indexPtr);
-
-            // Size FullVector / NeighborList disk reads to this set's geometry (dimensions, M) for single-IO fetches.
-            SetActiveReadGeometry(dimensions, numLinks, quantType, reduceDims);
 
             var effectiveEF = Math.Max(searchExplorationFactor, count);
 
@@ -1017,6 +1035,22 @@ namespace Garnet.server
                         out continuation
                     );
 
+                    if (found >= 0)
+                    {
+                        while (continuation != 0)
+                        {
+                            var additionalResults = ContinueSearch(context, indexPtr, continuation, found, ref outputIds, ref outputDistances, out continuation);
+
+                            if (additionalResults < 0)
+                            {
+                                found = additionalResults;
+                                break;
+                            }
+
+                            found += additionalResults;
+                        }
+                    }
+
                 }
                 finally
                 {
@@ -1042,7 +1076,23 @@ namespace Garnet.server
                     outputIds,
                     outputDistances,
                     out continuation
-                    );
+                );
+
+                if (found >= 0)
+                {
+                    while (continuation != 0)
+                    {
+                        var additionalResults = ContinueSearch(context, indexPtr, continuation, found, ref outputIds, ref outputDistances, out continuation);
+
+                        if (additionalResults < 0)
+                        {
+                            found = additionalResults;
+                            break;
+                        }
+
+                        found += additionalResults;
+                    }
+                }
             }
 
             if (found < 0)
@@ -1065,18 +1115,61 @@ namespace Garnet.server
                 _ = ApplyPostFilter(filter, found, outputAttributes.ReadOnlySpan, filterBitmap.Span, ActiveThreadSession.scratchBufferBuilder);
             }
 
-            if (continuation != 0)
-            {
-                // TODO: paged results!
-                throw new NotImplementedException();
-            }
-
             outputDistances.Length = sizeof(float) * found;
 
             // Default assumption is length prefixed
             outputIdFormat = VectorIdFormat.I32LengthPrefixed;
 
             return VectorManagerResult.OK;
+        }
+
+        /// <summary>
+        /// Continue a search that previously produced partial results.
+        /// 
+        /// All search_xxx methods continue in the same way, so this method is held in common.
+        /// 
+        /// Returns number of new results fetched, and sets <paramref name="continuation"/> to a non-0 value if additional calls are necessary.
+        /// </summary>
+        internal int ContinueSearch(ulong context, nint indexPtr, nint oldContinuation, int foundSoFar, ref SpanByteAndMemory outputIds, ref SpanByteAndMemory outputDistances, out nint continuation)
+        {
+            Debug.Assert(oldContinuation != 0, "Expected non-zero continuation");
+
+            // Only ids can grow, so double them each time
+            var newIdSpace = MemoryPool<byte>.Shared.Rent(outputIds.Span.Length * 2);
+            outputIds.ReadOnlySpan.CopyTo(newIdSpace.Memory.Span);
+
+            // TODO: Could remember this offset?  It's a relatively rare occurrence so maybe not worth optimizing
+            var writeIdsInto = newIdSpace.Memory.Span;
+            for (var i = 0; i < foundSoFar; i++)
+            {
+                var skip = BinaryPrimitives.ReadInt32LittleEndian(writeIdsInto);
+                writeIdsInto = writeIdsInto[(sizeof(int) + skip)..];
+            }
+
+            var writeDistancesInto = outputDistances.Span[(sizeof(float) * foundSoFar)..];
+            Debug.Assert(!writeDistancesInto.IsEmpty, "Expected space for remaining distances");
+
+            int count;
+            unsafe
+            {
+                // Guarantee these are pinned
+                fixed (byte* idPtr = writeIdsInto)
+                fixed (byte* distancePtr = writeDistancesInto)
+                {
+                    count = Service.ContinueSearch(context, indexPtr, oldContinuation, writeIdsInto, writeDistancesInto, out continuation);
+                }
+            }
+
+            // Error case, terminate 
+            if (count < 0)
+            {
+                Debug.Assert(continuation == 0, "Expected no additional continuations on error result");
+                return count;
+            }
+
+            // Update ids on success
+            outputIds = new(newIdSpace, newIdSpace.Memory.Length);
+            return count;
         }
 
         /// <summary>
@@ -1091,7 +1184,7 @@ namespace Garnet.server
         {
             AssertHaveStorageSession();
             ReadIndex(indexValue, out var context, out _, out _, out _, out _, out _, out _, out _, out _);
-            var found = ReadSizeUnknown(context | DiskANNService.Attributes, forceAlignment: true, element, ref outputAttributes);
+            var found = ReadSizeUnknown(context | DiskANNService.Attributes, element, ref outputAttributes);
             return found ? VectorManagerResult.OK : VectorManagerResult.MissingElement;
         }
 
@@ -1151,7 +1244,7 @@ namespace Garnet.server
                         attributeMem.Length = attributeMem.SpanByte.Length;
                     }
 
-                    var found = ReadSizeUnknown(context | DiskANNService.Attributes, forceAlignment: true, id, ref attributeMem);
+                    var found = ReadSizeUnknown(context | DiskANNService.Attributes, id, ref attributeMem);
 
                     // Copy attribute into output buffer, length prefixed, resizing as necessary
                     var neededSpace = 4 + (found ? attributeMem.Length : 0);
@@ -1218,7 +1311,7 @@ namespace Garnet.server
             var internalIdBytes = SpanByteAndMemory.FromPinnedSpan(internalId);
             try
             {
-                if (!ReadSizeUnknown(context | DiskANNService.InternalIdMap, forceAlignment: true, element, ref internalIdBytes))
+                if (!ReadSizeUnknown(context | DiskANNService.InternalIdMap, element, ref internalIdBytes))
                 {
                     return false;
                 }
@@ -1234,7 +1327,7 @@ namespace Garnet.server
             var asBytes = SpanByteAndMemory.FromPinnedSpan(asBytesSpan);
             try
             {
-                if (!ReadSizeUnknown(context | DiskANNService.FullVector, forceAlignment: true, internalId, ref asBytes))
+                if (!ReadSizeUnknown(context | DiskANNService.FullVector, internalId, ref asBytes))
                 {
                     return false;
                 }
@@ -1298,7 +1391,7 @@ namespace Garnet.server
             var internalIdBytes = SpanByteAndMemory.FromPinnedSpan(internalId);
             try
             {
-                if (!ReadSizeUnknown(context | DiskANNService.InternalIdMap, forceAlignment: true, element, ref internalIdBytes))
+                if (!ReadSizeUnknown(context | DiskANNService.InternalIdMap, element, ref internalIdBytes))
                 {
                     norm = double.NaN;
                     range = null;
@@ -1326,7 +1419,7 @@ namespace Garnet.server
             // Get the RAW view - we're leaking DiskANN internal details here but that's _kind of_ the point
             while (true)
             {
-                if (ReadSizeUnknown(readContext, forceAlignment: true, internalId, ref quantizedValues))
+                if (ReadSizeUnknown(readContext, internalId, ref quantizedValues))
                 {
                     break;
                 }
@@ -1359,7 +1452,7 @@ namespace Garnet.server
 
             Span<byte> internalId = stackalloc byte[sizeof(int)];
             var internalIdBytes = SpanByteAndMemory.FromPinnedSpan(internalId);
-            var foundInternalId = ReadSizeUnknown(context | DiskANNService.InternalIdMap, forceAlignment: true, element, ref internalIdBytes);
+            var foundInternalId = ReadSizeUnknown(context | DiskANNService.InternalIdMap, element, ref internalIdBytes);
             if (foundInternalId)
             {
                 Debug.Assert(internalIdBytes.IsSpanByte, "Shouldn't have allocated for this op");
@@ -1367,6 +1460,226 @@ namespace Garnet.server
             }
 
             return false;
+        }
+
+        /// <summary>
+        /// Get up to <paramref name="count"/> random elements from a vector set.
+        /// </summary>
+        internal VectorManagerResult RandomMembers(ReadOnlySpan<byte> indexSpan, int count, bool allowDuplicates, ref SpanByteAndMemory ids, out int finalCount)
+        {
+            // Limit the number of times we'll try to get new random members
+            const int MaximumAttempts = 5;
+
+            ReadIndex(indexSpan, out var context, out _, out _, out _, out _, out _, out _, out _, out var indexPtr);
+
+            GCHandle? idsPin = null;
+
+            var remainingCount = count;
+            var remainingIds = ids.Span;
+            var attempts = 0;
+
+            try
+            {
+                while (true)
+                {
+                    // Guarantee we'll read negative values while processing results
+                    remainingIds.Fill(255);
+
+                    if (!ids.IsSpanByte)
+                    {
+                        var getRes = MemoryMarshal.TryGetArray<byte>(ids.Memory.Memory, out var arrSeg);
+                        Debug.Assert(getRes, "Should always be able to get array to pin");
+
+                        idsPin = GCHandle.Alloc(arrSeg.Array, GCHandleType.Pinned);
+                    }
+                    else
+                    {
+                        idsPin = null;
+                    }
+
+                    if (!Service.RandomMembers(context, indexPtr, remainingCount, remainingIds))
+                    {
+                        logger?.LogError("RandomMembers failed for context {context}", context);
+                        finalCount = 0;
+                        return VectorManagerResult.BadParams;
+                    }
+
+                    // Handle Redis-isms by deduplicating if and stopping if needed
+                    ProcessResults(ids.Span, allowDuplicates, out var actualCount, out var validIdsLength);
+
+                    attempts++;
+
+                    if (actualCount == count)
+                    {
+                        // Got all the results we need, stop
+
+                        finalCount = actualCount;
+                        ids.Length = validIdsLength;
+                        break;
+                    }
+
+                    var newRemainingCount = count - actualCount;
+
+                    if (newRemainingCount == remainingCount || attempts == MaximumAttempts)
+                    {
+                        // No progress was made, give up and return what we have
+
+                        finalCount = actualCount;
+                        ids.Length = validIdsLength;
+                        break;
+                    }
+
+                    remainingCount = newRemainingCount;
+
+                    // Grow size of output buffer to hold more results
+                    if (remainingIds.Length < (remainingCount * MinimumSpacePerId))
+                    {
+                        idsPin?.Free();
+                        idsPin = null;
+
+                        var newIds = MemoryPool<byte>.Shared.Rent(ids.Length * 2);
+                        ids.Span.CopyTo(newIds.Memory.Span);
+
+                        ids = new(newIds, newIds.Memory.Length);
+
+                        remainingIds = ids.Span;
+                        for (var i = 0; i < (count - remainingCount); i++)
+                        {
+                            var idLen = BinaryPrimitives.ReadInt16LittleEndian(remainingIds);
+                            if (idLen < 0)
+                            {
+                                break;
+                            }
+
+                            remainingIds = remainingIds[(sizeof(int) + idLen)..];
+                        }
+                    }
+                }
+
+                return VectorManagerResult.OK;
+            }
+            finally
+            {
+                idsPin?.Free();
+            }
+
+            // Scan over ids and count them - deduplicating if required
+            static void ProcessResults(Span<byte> candidates, bool allowDuplicates, out int actualCount, out int validCandidateLength)
+            {
+                if (allowDuplicates)
+                {
+                    var remaining = candidates;
+
+                    var count = 0;
+                    while (!remaining.IsEmpty)
+                    {
+                        var idLen = BinaryPrimitives.ReadInt32LittleEndian(remaining);
+                        if (idLen < 0)
+                        {
+                            break;
+                        }
+
+                        count++;
+                        remaining = remaining[(sizeof(int) + idLen)..];
+                    }
+
+                    actualCount = count;
+                    validCandidateLength = candidates.Length - remaining.Length;
+                }
+                else
+                {
+                    var dupeTracker = new HashSet<byte[]>(ByteArrayComparer.Instance);
+#if NET9_0_OR_GREATER
+                    var dupeTrackerLookup = dupeTracker.GetAlternateLookup<ReadOnlySpan<byte>>();
+#endif
+
+                    var remaining = candidates;
+
+                    var count = 0;
+                    while (!remaining.IsEmpty)
+                    {
+                        var idLen = BinaryPrimitives.ReadInt32LittleEndian(remaining);
+                        if (idLen < 0)
+                        {
+                            break;
+                        }
+
+                        var id = remaining.Slice(sizeof(int), idLen);
+                        byte[] idArr = null;
+                        var isDupe =
+#if NET9_0_OR_GREATER
+                                dupeTrackerLookup.Contains(id)
+#else
+                                dupeTracker.Contains(idArr ??= id.ToArray())
+#endif
+                                ;
+
+                        var afterId = remaining[(sizeof(int) + idLen)..];
+
+                        if (isDupe)
+                        {
+                            afterId.CopyTo(remaining);
+                            afterId[^(sizeof(int) + idLen)..].Fill(255);
+                        }
+                        else
+                        {
+                            idArr ??= id.ToArray();
+                            dupeTracker.Add(idArr);
+
+                            remaining = afterId;
+
+                            count++;
+                        }
+                    }
+
+                    actualCount = count;
+                    validCandidateLength = candidates.Length - remaining.Length;
+                }
+            }
+        }
+
+        /// <summary>
+        /// Get the neighbors of a <paramref name="element"/> in a Vector Set, along with distances to each neighbor.
+        /// </summary>
+        internal VectorManagerResult GetNeighbors(ReadOnlySpan<byte> indexSpan, ReadOnlySpan<byte> element, ref SpanByteAndMemory outputIds, ref SpanByteAndMemory outputDistances)
+        {
+            ReadIndex(indexSpan, out var context, out _, out _, out _, out _, out _, out _, out _, out var indexPtr);
+
+            var found = Service.SearchNeighbors(context, indexPtr, element, outputIds, outputDistances, out var continuation);
+
+            if (found < 0)
+            {
+                Debug.Assert(continuation == 0, "Shouldn't have more results after failure");
+
+                logger?.LogError("GetNeighbors failed with {res} for context {context}", found, context);
+
+                return VectorManagerResult.BadParams;
+            }
+
+            while (continuation != 0)
+            {
+                var additionalResults = ContinueSearch(context, indexPtr, continuation, found, ref outputIds, ref outputDistances, out continuation);
+
+                if (additionalResults < 0)
+                {
+                    Debug.Assert(continuation == 0, "Shouldn't have more results after failure");
+
+                    logger?.LogError("GetNeighbors failed in ContinueSearch with {additionalResults} for context {context}", additionalResults, context);
+
+                    found = additionalResults;
+                    break;
+                }
+
+                found += additionalResults;
+            }
+
+            if (found < 0)
+            {
+                return VectorManagerResult.BadParams;
+            }
+
+            outputDistances.Length = sizeof(float) * found;
+            return VectorManagerResult.OK;
         }
 
         [Conditional("DEBUG")]
