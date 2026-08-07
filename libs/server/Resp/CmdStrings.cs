@@ -199,6 +199,7 @@ namespace Garnet.server
         /// Simple error response strings, i.e. these are of the form "-errorString\r\n"
         /// </summary>
         public static ReadOnlySpan<byte> RESP_ERR_NOAUTH => "NOAUTH Authentication required."u8;
+        public static ReadOnlySpan<byte> RESP_ERR_NOPERM => "NOPERM this user has no permissions to run the command"u8;
         public static ReadOnlySpan<byte> RESP_ERR_WRONG_TYPE => "WRONGTYPE Operation against a key holding the wrong kind of value."u8;
         public static ReadOnlySpan<byte> RESP_ERR_WRONG_TYPE_HLL => "WRONGTYPE Key is not a valid HyperLogLog string value."u8;
         public static ReadOnlySpan<byte> RESP_ERR_EXEC_ABORT => "EXECABORT Transaction discarded because of previous errors."u8;

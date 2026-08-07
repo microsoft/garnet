@@ -8,6 +8,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Garnet.client;
 using Garnet.common;
+using Garnet.server;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 
@@ -199,7 +200,7 @@ namespace Garnet.cluster
 
                     await iter.BulkConsumeAllAsync(
                         this,
-                        clusterProvider.serverOptions.ReplicaSyncDelayMs,
+                        clusterProvider.storeWrapper.runtimeConfig.GetInt(ServerConfigType.REPLICA_SYNC_DELAY),
                         maxChunkSize: 1 << 20,
                         cts.Token).ConfigureAwait(false);
                 }

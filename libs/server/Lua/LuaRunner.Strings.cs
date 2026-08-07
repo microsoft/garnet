@@ -25,8 +25,8 @@ namespace Garnet.server
             internal int NoSessionAvailable { get; }
             /// <see cref="CmdStrings.LUA_ERR_Please_specify_at_least_one_argument_for_this_redis_lib_call"/>
             internal int PleaseSpecifyRedisCall { get; }
-            /// <see cref="CmdStrings.RESP_ERR_NOAUTH"/>
-            internal int ErrNoAuth { get; }
+            /// <see cref="CmdStrings.RESP_ERR_NOPERM"/>
+            internal int ErrNoPerm { get; }
             /// <see cref="CmdStrings.LUA_ERR_Unknown_Redis_command_called_from_script"/>
             internal int ErrUnknown { get; }
             /// <see cref="CmdStrings.LUA_ERR_Lua_redis_lib_command_arguments_must_be_strings_or_integers"/>
@@ -180,7 +180,7 @@ namespace Garnet.server
                 Err = ConstantStringToRegistry(ref state, CmdStrings.LUA_err);
                 NoSessionAvailable = ConstantStringToRegistry(ref state, CmdStrings.LUA_No_session_available);
                 PleaseSpecifyRedisCall = ConstantStringToRegistry(ref state, CmdStrings.LUA_ERR_Please_specify_at_least_one_argument_for_this_redis_lib_call);
-                ErrNoAuth = ConstantStringToRegistry(ref state, CmdStrings.RESP_ERR_NOAUTH);
+                ErrNoPerm = ConstantStringToRegistry(ref state, CmdStrings.RESP_ERR_NOPERM);
                 ErrUnknown = ConstantStringToRegistry(ref state, CmdStrings.LUA_ERR_Unknown_Redis_command_called_from_script);
                 ErrBadArg = ConstantStringToRegistry(ref state, CmdStrings.LUA_ERR_Lua_redis_lib_command_arguments_must_be_strings_or_integers);
                 ErrWrongNumberOfArgs = ConstantStringToRegistry(ref state, CmdStrings.LUA_ERR_wrong_number_of_arguments);

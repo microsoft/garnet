@@ -21,6 +21,7 @@ namespace Garnet.cluster
     {
         internal readonly int physicalSublogIdx;
         readonly GarnetServerOptions serverOptions;
+        readonly RuntimeServerConfig runtimeConfig;
         readonly GarnetAppendOnlyFile appendOnlyFile;
         readonly ReplicationManager replicationManager;
         readonly CancellationTokenSource cts;
@@ -62,6 +63,7 @@ namespace Garnet.cluster
             this.physicalSublogIdx = physicalSublogIdx;
             this.respSessionNetworkSender = respSessionNetworkSender;
             serverOptions = clusterProvider.serverOptions;
+            runtimeConfig = clusterProvider.storeWrapper.runtimeConfig;
             appendOnlyFile = clusterProvider.storeWrapper.appendOnlyFile;
             replicationManager = clusterProvider.replicationManager;
             replayIterator = null;
@@ -215,7 +217,7 @@ namespace Garnet.cluster
             if (serverOptions.AofPhysicalSublogCount <= 1)
                 return;
 
-            var w = serverOptions.AofReplayMaxDrift;
+            var w = runtimeConfig.GetLong(ServerConfigType.AOF_REPLAY_MAX_DRIFT);
             if (w <= 0)
                 return;
 
@@ -289,7 +291,7 @@ namespace Garnet.cluster
 
                     await replayIterator.BulkConsumeAllAsync(
                         this,
-                        serverOptions.ReplicaSyncDelayMs,
+                        runtimeConfig.GetInt(ServerConfigType.REPLICA_SYNC_DELAY),
                         maxChunkSize: 1 << 20,
                         cts.Token).ConfigureAwait(false);
                 }
@@ -308,8 +310,8 @@ namespace Garnet.cluster
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void ThrottlePrimary()
         {
-            while (serverOptions.ReplicationOffsetMaxLag != -1 && replayIterator != null &&
-                appendOnlyFile.Log.GetTailAddress(physicalSublogIdx) - replicationManager.GetReplicationOffset(physicalSublogIdx) > serverOptions.ReplicationOffsetMaxLag)
+            while (runtimeConfig.GetInt(ServerConfigType.REPLICATION_OFFSET_MAX_LAG) is var maxLag && maxLag != -1 && replayIterator != null &&
+                appendOnlyFile.Log.GetTailAddress(physicalSublogIdx) - replicationManager.GetReplicationOffset(physicalSublogIdx) > maxLag)
             {
                 cts.Token.ThrowIfCancellationRequested();
                 Thread.Yield();

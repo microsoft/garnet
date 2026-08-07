@@ -1579,6 +1579,19 @@ namespace Tsavorite.core
 
         private void OnPagesClosedWorker()
         {
+            try
+            {
+                OnPagesClosedWorkerCore();
+            }
+            catch (Exception ex)
+            {
+                logger?.LogCritical(ex, "OnPagesClosedWorker failed, page closing will not resume. ClosedUntilAddress={ClosedUntilAddress} OngoingCloseUntilAddress={OngoingCloseUntilAddress}", ClosedUntilAddress, OngoingCloseUntilAddress);
+                throw;
+            }
+        }
+
+        private void OnPagesClosedWorkerCore()
+        {
             while (true)
             {
                 var closeStartAddress = ClosedUntilAddress;

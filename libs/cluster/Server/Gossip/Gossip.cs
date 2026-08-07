@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -17,7 +17,12 @@ namespace Garnet.cluster
     {
         const int maxRandomNodesToPoll = 3;
         public readonly TimeSpan gossipDelay;
-        public readonly TimeSpan clusterTimeout;
+
+        /// <summary>
+        /// Cluster node timeout, read live so that a CONFIG SET is observed by in-flight gossip.
+        /// </summary>
+        public TimeSpan clusterTimeout
+            => clusterProvider.storeWrapper.runtimeConfig.GetTimeSpan(ServerConfigType.CLUSTER_NODE_TIMEOUT);
         private volatile int numActiveTasks = 0;
         private readonly common.ReaderWriterLock activeMergeLock;
         public readonly GarnetClusterConnectionStore clusterConnectionStore;
