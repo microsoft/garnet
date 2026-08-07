@@ -733,14 +733,10 @@ namespace Tsavorite.core
             Uring = 2,
         }
 
-        // Targets the extended (SQPOLL-carrying) native export. The native library also keeps the
-        // original arity-9 NativeDevice_CreateWithBackend export for ABI compatibility, but the
-        // managed wrapper always declares the full parameter list, so it must bind to the matching
-        // arity-11 symbol. Binding to the extended symbol also means a stale native library that
-        // predates SQPOLL (and therefore exports only the arity-9 symbol) fails fast at the create
-        // call with EntryPointNotFound instead of a silent parameter-count mismatch.
-        [DllImport(NativeLibraryName, EntryPoint = "NativeDevice_CreateWithBackendSqPoll", CallingConvention = CallingConvention.Cdecl)]
-        static extern IntPtr NativeDevice_CreateWithBackendSqPoll(string file, bool enablePrivileges, bool unbuffered, bool delete_on_close, int backend, ulong segmentSizeBytes, bool omitSegmentIdFromFilename, int numIoContexts, int maxEvents, int uringSqPoll, int uringSqPollIdleMs);
+        // The native creator takes the full parameter list including the io_uring SQPOLL knobs;
+        // libaio and Windows ignore the SQPOLL arguments.
+        [DllImport(NativeLibraryName, EntryPoint = "NativeDevice_CreateWithBackend", CallingConvention = CallingConvention.Cdecl)]
+        static extern IntPtr NativeDevice_CreateWithBackend(string file, bool enablePrivileges, bool unbuffered, bool delete_on_close, int backend, ulong segmentSizeBytes, bool omitSegmentIdFromFilename, int numIoContexts, int maxEvents, int uringSqPoll, int uringSqPollIdleMs);
 
         [DllImport(NativeLibraryName, EntryPoint = "NativeDevice_GetSegmentSize", CallingConvention = CallingConvention.Cdecl)]
         static extern ulong NativeDevice_GetSegmentSize(IntPtr device);
@@ -1413,19 +1409,7 @@ namespace Tsavorite.core
                 // SQPOLL is an io_uring-only submit-side optimization; never pass it to libaio (the native
                 // libaio/default handlers accept and ignore it, but keep the managed intent explicit).
                 int uringSqPollArg = (uringSqPollConfig && ioBackendConfig == IoBackend.Uring) ? 1 : 0;
-                IntPtr newDevice;
-                try
-                {
-                    newDevice = NativeDevice_CreateWithBackendSqPoll(filename, false, disableFileBuffering, deleteOnClose, (int)ioBackendConfig, sizeForNative, OmitSegmentIdFromFileName, numIoContextsConfig, ringDepth, uringSqPollArg, uringSqPollIdleMsConfig);
-                }
-                catch (EntryPointNotFoundException ex)
-                {
-                    throw new TsavoriteException(
-                        "Loaded libnative_device.so/dll is missing the NativeDevice_CreateWithBackendSqPoll export. " +
-                        "The shared library predates the io_uring SQPOLL change and must be rebuilt from this branch " +
-                        "(libs/storage/Tsavorite/cc) and the resulting binary installed to " +
-                        "libs/storage/Tsavorite/cs/src/core/Device/runtimes/<rid>/native/.", ex);
-                }
+                IntPtr newDevice = NativeDevice_CreateWithBackend(filename, false, disableFileBuffering, deleteOnClose, (int)ioBackendConfig, sizeForNative, OmitSegmentIdFromFileName, numIoContextsConfig, ringDepth, uringSqPollArg, uringSqPollIdleMsConfig);
                 if (newDevice == IntPtr.Zero)
                 {
                     var nativeMessage = GetNativeLastError();
