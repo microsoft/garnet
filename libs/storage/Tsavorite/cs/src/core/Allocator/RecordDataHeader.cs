@@ -579,6 +579,23 @@ namespace Tsavorite.core
             return (ulong)(uint)pageCount * kFlushPageSize;
         }
 
+        /// <summary>The objectId-slot analog of <see cref="DecodeFlushValueInitialReadExtent"/>: the initial read-ahead extent (bytes) for
+        /// an out-of-line value derived from its objectId size hint (see <see cref="ObjectIdMap.GetSizeHint"/>) and the record's
+        /// <see cref="ObjectLogFilePositionInfo.kValueIsExactSizeMask"/> flag. Exact flag set -&gt; that many bytes (headerless); else the
+        /// 4 KB-page count * 4 KB, or one 4 MB read buffer when the hint is at the <see cref="ObjectIdMap.MaxObjectIdSizeHint"/> sentinel
+        /// (the reader learns the true length from the ChunkHeader(s) and extends). The objectId sentinel (511) saturates sooner than the
+        /// RDH page-count sentinel (1023), so a ~2-4 MB value fetches one 4 MB block up-front instead of an exact page count -- a bounded,
+        /// harmless over-read (the whole value fits in the one block, and the reader re-frames from the header).</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal static ulong DecodeObjectIdValueInitialReadExtent(int sizeHint, bool isExactSize)
+        {
+            if (isExactSize)
+                return (ulong)(uint)sizeHint;                                             // exact bytes (0..511), headerless
+            if (sizeHint >= ObjectIdMap.MaxObjectIdSizeHint)
+                return (ulong)IStreamBuffer.BufferSize;                                   // sentinel -> 4 MB block
+            return (ulong)(uint)sizeHint * kFlushPageSize;                                // page count * 4 KB
+        }
+
         internal readonly int ExtendedNamespaceLength
         {
             [MethodImpl(MethodImplOptions.AggressiveInlining)]

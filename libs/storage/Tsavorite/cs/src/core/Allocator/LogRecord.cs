@@ -1605,8 +1605,9 @@ namespace Tsavorite.core
 
         /// <summary>
         /// Returns the object-log start position for this record and the key/value read-size length hints. For hint-format records
-        /// (ReuseObjectIdForSize clear) the hints are the raw RDH KeyLength/ValueLength fields; for legacy records (flag set) the decode
-        /// is delegated to <see cref="GetObjectLogRecordStartPositionAndLengths_v21"/>.
+        /// (ReuseObjectIdForSize clear) the key hint is the raw RDH KeyLength field, and the value hint is derived from the value's objectId
+        /// slot size hint + the ValueIsExactSize position flag (W3: the RDH ValueLength field is still written but no longer read here). For
+        /// legacy records (flag set) the decode is delegated to <see cref="GetObjectLogRecordStartPositionAndLengths_v21"/>.
         /// </summary>
         /// <param name="keyLength">Outputs the key length hint (exact for an overflow key below the field sentinel).</param>
         /// <param name="valueObjectLength">Outputs the value length hint (exact for an overflow/object value below the field sentinel).</param>
@@ -1619,14 +1620,20 @@ namespace Tsavorite.core
             var dataHeader = DataHeader;
             keyLength = dataHeader.KeyIsOverflow ? dataHeader.GetKeyLengthRaw() : 0;   // KeyIsInline: keyLength is ignored
 
+            // Read the position word once: its low bits are the segment+offset (returned), its flag bits carry ValueIsExactSize.
+            var word = *(ulong*)GetObjectLogPositionAddress(GetOptionalStartAddress());
+
             if (!dataHeader.ValueIsInline)
             {
-                var rawValueLength = (uint)dataHeader.GetValueLengthRaw();
-                // Both object and overflow values use the v2.2 12-bit out-of-line encoding: this returns the initial read-ahead extent
-                // (exact size, page-count * 4 KB, or one 4 MB block for the sentinel; the reader follows/extends the framing from there).
-                valueObjectLength = RecordDataHeader.DecodeFlushValueInitialReadExtent(rawValueLength);
+                // W3: the value's initial read-ahead extent comes from the objectId slot's size hint plus the ValueIsExactSize position flag
+                // (the RDH ValueLength hint is still written for now but no longer read here). Exact -> that many bytes headerless; else the
+                // 4 KB-page count * 4 KB, or one 4 MB block for the saturated sentinel (the reader extends via the ChunkHeader framing).
+                var (_, valueAddress) = dataHeader.GetValueFieldInfo(physicalAddress);
+                var sizeHint = ObjectIdMap.GetSizeHint(*(int*)valueAddress);
+                var valueIsExact = (word & ObjectLogFilePositionInfo.kValueIsExactSizeMask) != 0;
+                valueObjectLength = RecordDataHeader.DecodeObjectIdValueInitialReadExtent(sizeHint, valueIsExact);
             }
-            else // ValueIsInline is true; valueLength will be ignored
+            else // ValueIsInline is true; valueObjectLength will be ignored
             {
                 valueObjectLength = 0;
                 if (dataHeader.RecordIsInline) // If the record is fully inline, we should not be called here
@@ -1636,8 +1643,7 @@ namespace Tsavorite.core
                 }
             }
 
-            // Read the position word; mask off flag bits to return just segment+offset.
-            var word = *(ulong*)GetObjectLogPositionAddress(GetOptionalStartAddress());
+            // Mask off flag bits to return just segment+offset.
             return word & ObjectLogFilePositionInfo.SegmentAndOffsetMask;
         }
 

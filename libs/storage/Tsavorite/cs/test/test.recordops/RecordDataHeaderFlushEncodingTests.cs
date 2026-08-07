@@ -144,5 +144,53 @@ namespace Tsavorite.test.Objects
             Assert.That(RecordDataHeader.FlushValueExactByteSize(exact), Is.EqualTo(100));
             Assert.That(RecordDataHeader.FlushValuePageCount(headered), Is.EqualTo(100));
         }
+
+        // ── objectId size-hint -> initial read-ahead extent (W3 reader source) ──
+
+        [Test]
+        [Category("Smoke")]
+        public void DecodeObjectIdExactSizeReturnsExactBytes([Values(0, 1, 128, 510, 511)] int sizeHint)
+        {
+            // isExactSize set -> the hint IS the exact byte length (headerless); the read reads exactly that many bytes.
+            Assert.That(RecordDataHeader.DecodeObjectIdValueInitialReadExtent(sizeHint, isExactSize: true), Is.EqualTo((ulong)sizeHint));
+        }
+
+        [Test]
+        [Category("Smoke")]
+        public void DecodeObjectIdPageCountBelowSentinelReturnsPagesTimes4K([Values(1, 2, 64, 128, 510)] int pageCount)
+        {
+            // isExactSize clear, below the sentinel -> page count * 4 KB (covers the header + padding + data for a below-sentinel value).
+            Assert.That(RecordDataHeader.DecodeObjectIdValueInitialReadExtent(pageCount, isExactSize: false),
+                Is.EqualTo((ulong)(uint)pageCount * RecordDataHeader.kFlushPageSize));
+        }
+
+        [Test]
+        [Category("Smoke")]
+        public void DecodeObjectIdSentinelReturnsOneReadBuffer()
+        {
+            // isExactSize clear, hint at the sentinel (MaxObjectIdSizeHint = 511) -> one IStreamBuffer.BufferSize (4 MB) block; the reader
+            // learns the true length from the ChunkHeader(s) and extends. This saturates at ~2 MB extent, sooner than the RDH sentinel (~4 MB).
+            Assert.That(RecordDataHeader.DecodeObjectIdValueInitialReadExtent(ObjectIdMap.MaxObjectIdSizeHint, isExactSize: false),
+                Is.EqualTo((ulong)IStreamBuffer.BufferSize));
+        }
+
+        [Test]
+        [Category("Smoke")]
+        public void DecodeObjectIdAndRdhAgreeBelowTheObjectIdSentinel()
+        {
+            // For exact sizes and for page counts below the objectId sentinel (511), the objectId-slot decoder and the RDH decoder produce
+            // the same initial read-ahead extent (they only diverge in [objectId sentinel, RDH sentinel), i.e. ~2-4 MB, by design).
+            for (var exact = 0; exact <= RecordDataHeader.kOutOfLineExactSizeCutoff; exact += 73)
+            {
+                var rdh = RecordDataHeader.DecodeFlushValueInitialReadExtent(RecordDataHeader.EncodeFlushOutOfLineValue(exact, exact));
+                Assert.That(RecordDataHeader.DecodeObjectIdValueInitialReadExtent(exact, isExactSize: true), Is.EqualTo(rdh), $"exact {exact}");
+            }
+            for (var pages = 1; pages < ObjectIdMap.MaxObjectIdSizeHint; pages += 37)
+            {
+                var extent = (long)pages * RecordDataHeader.kFlushPageSize;
+                var rdh = RecordDataHeader.DecodeFlushValueInitialReadExtent(RecordDataHeader.EncodeFlushOutOfLineValue(extent, extent));
+                Assert.That(RecordDataHeader.DecodeObjectIdValueInitialReadExtent(pages, isExactSize: false), Is.EqualTo(rdh), $"pages {pages}");
+            }
+        }
     }
 }
