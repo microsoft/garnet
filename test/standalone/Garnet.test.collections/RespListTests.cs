@@ -678,6 +678,42 @@ namespace Garnet.test
             ClassicAssert.AreEqual(2, result.Length);
             ClassicAssert.IsTrue(result[0].ToString().Equals("f"));
             ClassicAssert.IsTrue(result[1].ToString().Equals("g"));
+
+            // A stop that is still negative after adding the list length addresses nothing,
+            // so the reply must be an empty array and not the head of the list
+            var key3 = "mylist3";
+            _ = db.ListRightPush(key3, "a");
+            _ = db.ListRightPush(key3, "b");
+            _ = db.ListRightPush(key3, "c");
+
+            result = db.ListRange(key3, 0, -3);
+            ClassicAssert.AreEqual(1, result.Length);
+            ClassicAssert.IsTrue(result[0].ToString().Equals("a"));
+
+            result = db.ListRange(key3, 0, -4);
+            ClassicAssert.AreEqual(0, result.Length);
+
+            result = db.ListRange(key3, 0, -5);
+            ClassicAssert.AreEqual(0, result.Length);
+
+            result = db.ListRange(key3, -5, -4);
+            ClassicAssert.AreEqual(0, result.Length);
+
+            result = db.ListRange(key3, 1, -10);
+            ClassicAssert.AreEqual(0, result.Length);
+
+            var key5 = "mylist5";
+            _ = db.ListRightPush(key5, "a");
+            _ = db.ListRightPush(key5, "b");
+            _ = db.ListRightPush(key5, "c");
+            _ = db.ListRightPush(key5, "d");
+            _ = db.ListRightPush(key5, "e");
+
+            result = db.ListRange(key5, 0, -6);
+            ClassicAssert.AreEqual(0, result.Length);
+
+            result = db.ListRange(key5, 0, -7);
+            ClassicAssert.AreEqual(0, result.Length);
         }
 
         [Test]
