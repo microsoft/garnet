@@ -238,12 +238,9 @@ namespace Garnet.cluster
                 // Before advertising updated replication offset, wait for Vector Set ops to finish
                 storeWrapper.DefaultDatabase.VectorManager?.WaitForVectorOperationsToComplete();
 
-                // Rebuild the context reservation from the streamed records. Only valid after a full
-                // sync: a partial sync replays AOF instead of streaming raw Tsavorite records, so
-                // RecoverStreamedRecord never fires and ApplyRecoveredState would see an empty
-                // recovered set and mark every live context for cleanup.
-                //
-                // A full sync flushes the replica before streaming, so the reservation must be empty here.
+                // Full sync only: a partial sync replays AOF instead of streaming raw records, so nothing
+                // is recovered and every live context would be marked for cleanup. A full sync flushes
+                // first, so the reservation must be empty here.
                 if (primarySyncMetadata.fullSync)
                 {
                     storeWrapper.DefaultDatabase.VectorManager?.ApplyRecoveredState(requireEmptyContexts: true);
