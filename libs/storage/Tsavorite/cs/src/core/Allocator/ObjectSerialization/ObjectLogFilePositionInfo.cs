@@ -32,16 +32,16 @@ namespace Tsavorite.core
         internal const ulong kReuseObjectIdForSizeMask = 1UL << kReuseObjectIdForSizeBit;
 
         /// <summary>Bit position of the <c>KeyIsExactSize</c> flag in <see cref="word"/>.
-        /// When set, the out-of-line KEY's exact byte length (&lt;= <see cref="ObjectIdMap.MaxObjectIdExactSize"/>) is stored in the top
-        /// <see cref="ObjectIdMap.ObjectIdExactSizeBits"/> bits of the objectId slot at keyAddress (no leading ChunkHeader precedes the key
+        /// When set, the out-of-line KEY's exact byte length (&lt;= <see cref="ObjectIdMap.MaxObjectIdSizeHint"/>) is stored in the top
+        /// <see cref="ObjectIdMap.ObjectIdSizeHintBits"/> bits of the objectId slot at keyAddress (no leading ChunkHeader precedes the key
         /// bytes). When clear, the key is headered/chunked and its length comes from the object-log stream framing. See
         /// website/docs/dev/objectlog-serialization.md.</summary>
         internal const int kKeyIsExactSizeBit = 61;
         internal const ulong kKeyIsExactSizeMask = 1UL << kKeyIsExactSizeBit;
 
         /// <summary>Bit position of the <c>ValueIsExactSize</c> flag in <see cref="word"/>.
-        /// When set, the out-of-line VALUE's exact byte length (&lt;= <see cref="ObjectIdMap.MaxObjectIdExactSize"/>) is stored in the top
-        /// <see cref="ObjectIdMap.ObjectIdExactSizeBits"/> bits of the objectId slot at valueAddress (no leading ChunkHeader precedes the
+        /// When set, the out-of-line VALUE's exact byte length (&lt;= <see cref="ObjectIdMap.MaxObjectIdSizeHint"/>) is stored in the top
+        /// <see cref="ObjectIdMap.ObjectIdSizeHintBits"/> bits of the objectId slot at valueAddress (no leading ChunkHeader precedes the
         /// value bytes). When clear, the value is headered/chunked and its length comes from the object-log stream framing.</summary>
         internal const int kValueIsExactSizeBit = 60;
         internal const ulong kValueIsExactSizeMask = 1UL << kValueIsExactSizeBit;

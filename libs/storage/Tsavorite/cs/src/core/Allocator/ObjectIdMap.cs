@@ -22,11 +22,14 @@ namespace Tsavorite.core
         // ── objectId slot bit layout ─────────────────────────────────────────────────────────────────────────────────
         // The 32-bit objectId slot at keyAddress/valueAddress holds the ObjectIdMap index in its low bits. A 128 MB page with
         // a 32-byte minimum record holds at most 2^22 records, so the index needs at most 22 bits; the top 9 bits are
-        // reclaimable to carry an out-of-line component's EXACT byte length (<= 511) on the flushed/on-disk record, gated by
-        // the per-component ObjectLogFilePositionInfo.Key/ValueIsExactSize flag. This lets small overflow/object values record
-        // their length without a leading ChunkHeader and without consuming an RDH length field (reserved for hybrid values).
-        // The stamp is applied to the disk image (and, on the no-copy live-page flush, to the live slot), so all in-memory
-        // reads of the slot as an index MUST go through GetIndex to mask off any stamped size bits.
+        // reclaimable to carry an out-of-line component's read-size HINT on the flushed/on-disk record. The hint's meaning is
+        // selected by the per-component ObjectLogFilePositionInfo.Key/ValueIsExactSize flag:
+        //   flag SET   -> the 9 bits are the EXACT byte length (0..511) of the out-of-line component; NO leading ChunkHeader.
+        //   flag CLEAR -> the 9 bits are a 4 KB-page COUNT (0..MaxObjectIdSizeHint; the max value is the sentinel meaning
+        //                 "read in large blocks and follow the ChunkHeader(s)"); a leading ChunkHeader carries the exact length.
+        // Either way the hint lets IO for Read/RMW and recovery size the initial object-log read without an RDH length field
+        // (those are reserved for hybrid values). The stamp is applied to the disk image (and, on the no-copy live-page flush,
+        // to the live slot), so all in-memory reads of the slot as an index MUST go through GetIndex to mask off the hint bits.
 
         /// <summary>Number of low bits of the objectId slot used for the ObjectIdMap index (23 bits &gt;&gt; the 22 bits a max-size page needs).</summary>
         internal const int ObjectIdIndexBits = 23;
@@ -34,39 +37,41 @@ namespace Tsavorite.core
         /// <summary>Mask selecting the ObjectIdMap index bits of an objectId slot value.</summary>
         internal const int ObjectIdIndexMask = (1 << ObjectIdIndexBits) - 1;      // 0x7FFFFF
 
-        /// <summary>Bit position of the out-of-line exact-length hint stamped into the top of an objectId slot.</summary>
-        internal const int ObjectIdExactSizeShift = ObjectIdIndexBits;            // 23
+        /// <summary>Bit position of the out-of-line read-size hint stamped into the top of an objectId slot.</summary>
+        internal const int ObjectIdSizeHintShift = ObjectIdIndexBits;             // 23
 
-        /// <summary>Number of high bits of an objectId slot used for the out-of-line exact-length hint.</summary>
-        internal const int ObjectIdExactSizeBits = (sizeof(int) * 8) - ObjectIdIndexBits;  // 9
+        /// <summary>Number of high bits of an objectId slot used for the out-of-line read-size hint.</summary>
+        internal const int ObjectIdSizeHintBits = (sizeof(int) * 8) - ObjectIdIndexBits;  // 9
 
-        /// <summary>Mask (right-aligned) of the out-of-line exact-length hint stored in the top of an objectId slot.</summary>
-        internal const int ObjectIdExactSizeMask = (1 << ObjectIdExactSizeBits) - 1;  // 0x1FF
+        /// <summary>Mask (right-aligned) of the out-of-line read-size hint stored in the top of an objectId slot.</summary>
+        internal const int ObjectIdSizeHintMask = (1 << ObjectIdSizeHintBits) - 1;  // 0x1FF
 
-        /// <summary>Largest out-of-line byte length encodable as an exact size in the top bits of an objectId slot (9 bits).
-        /// One below the 512-byte sector size, so an exact-size value never needs a leading ChunkHeader for its length.</summary>
-        internal const int MaxObjectIdExactSize = ObjectIdExactSizeMask;          // 511
+        /// <summary>Largest value the 9-bit objectId read-size hint can hold. When the record's exact-size flag is SET this is the
+        /// largest out-of-line byte length encodable as an exact size (one below the 512-byte sector size, so an exact-size value
+        /// never needs a leading ChunkHeader); when the flag is CLEAR this same value is the page-count sentinel.</summary>
+        internal const int MaxObjectIdSizeHint = ObjectIdSizeHintMask;            // 511
 
-        /// <summary>Extract the ObjectIdMap index from a (possibly exact-size-stamped) objectId slot value; passes <see cref="InvalidObjectId"/> through unchanged.</summary>
+        /// <summary>Extract the ObjectIdMap index from a (possibly size-hint-stamped) objectId slot value; passes <see cref="InvalidObjectId"/> through unchanged.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static int GetIndex(int slot) => slot == InvalidObjectId ? InvalidObjectId : (slot & ObjectIdIndexMask);
 
-        /// <summary>Extract the out-of-line exact-length hint from the top bits of an objectId slot. Only meaningful when the record's
-        /// <see cref="ObjectLogFilePositionInfo.kKeyIsExactSizeMask"/> / <see cref="ObjectLogFilePositionInfo.kValueIsExactSizeMask"/> flag is set.</summary>
+        /// <summary>Extract the out-of-line read-size hint from the top bits of an objectId slot. Its meaning depends on the record's
+        /// <see cref="ObjectLogFilePositionInfo.kKeyIsExactSizeMask"/> / <see cref="ObjectLogFilePositionInfo.kValueIsExactSizeMask"/> flag:
+        /// flag set -&gt; exact byte length; flag clear -&gt; 4 KB-page count (max = sentinel).</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static int GetExactSize(int slot) => (slot >> ObjectIdExactSizeShift) & ObjectIdExactSizeMask;
+        internal static int GetSizeHint(int slot) => (slot >> ObjectIdSizeHintShift) & ObjectIdSizeHintMask;
 
-        /// <summary>Stamp an out-of-line exact-length hint (0..<see cref="MaxObjectIdExactSize"/>) into the top bits of an objectId slot,
+        /// <summary>Stamp an out-of-line read-size hint (0..<see cref="MaxObjectIdSizeHint"/>) into the top bits of an objectId slot,
         /// preserving the ObjectIdMap index in the low bits. The result is never <see cref="InvalidObjectId"/> for an in-range index
-        /// (a max-size page's index never reaches the all-ones low-bit pattern that a size stamp would complete to -1).</summary>
+        /// (a max-size page's index never reaches the all-ones low-bit pattern that a size hint would complete to -1).</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static int StampExactSize(int slot, int exactSize)
+        internal static int StampSizeHint(int slot, int sizeHint)
         {
-            Debug.Assert(slot != InvalidObjectId, "Cannot stamp an exact size onto an invalid objectId slot");
-            Debug.Assert((uint)exactSize <= ObjectIdExactSizeMask, $"exactSize {exactSize} exceeds {ObjectIdExactSizeBits}-bit max {ObjectIdExactSizeMask}");
+            Debug.Assert(slot != InvalidObjectId, "Cannot stamp a size hint onto an invalid objectId slot");
+            Debug.Assert((uint)sizeHint <= ObjectIdSizeHintMask, $"sizeHint {sizeHint} exceeds {ObjectIdSizeHintBits}-bit max {ObjectIdSizeHintMask}");
             Debug.Assert((slot & ~ObjectIdIndexMask) == 0, $"objectId slot {slot} has bits set above the {ObjectIdIndexBits}-bit index range");
-            var stamped = (slot & ObjectIdIndexMask) | (exactSize << ObjectIdExactSizeShift);
-            Debug.Assert(stamped != InvalidObjectId, $"stamped objectId slot collides with InvalidObjectId (index {slot & ObjectIdIndexMask}, exactSize {exactSize})");
+            var stamped = (slot & ObjectIdIndexMask) | (sizeHint << ObjectIdSizeHintShift);
+            Debug.Assert(stamped != InvalidObjectId, $"stamped objectId slot collides with InvalidObjectId (index {slot & ObjectIdIndexMask}, sizeHint {sizeHint})");
             return stamped;
         }
 

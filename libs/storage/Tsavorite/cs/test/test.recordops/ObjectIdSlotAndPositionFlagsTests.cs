@@ -7,9 +7,9 @@ using Tsavorite.core;
 namespace Tsavorite.test.Objects
 {
     /// <summary>
-    /// Unit tests for the object-log out-of-line EXACT-SIZE primitives: the <see cref="ObjectLogFilePositionInfo"/> position-word
-    /// Key/ValueIsExactSize flag bits, and the <see cref="ObjectIdMap"/> objectId-slot index/exact-size bit layout. An out-of-line
-    /// component whose byte length is &lt;= <see cref="ObjectIdMap.MaxObjectIdExactSize"/> stores its exact length in the top bits of
+    /// Unit tests for the object-log out-of-line size-hint primitives: the <see cref="ObjectLogFilePositionInfo"/> position-word
+    /// Key/ValueIsExactSize flag bits, and the <see cref="ObjectIdMap"/> objectId-slot index/size-hint bit layout. An out-of-line
+    /// component whose byte length is &lt;= <see cref="ObjectIdMap.MaxObjectIdSizeHint"/> stores its exact length in the top bits of
     /// its objectId slot (no leading ChunkHeader), flagged in the record's position word. See
     /// website/docs/dev/objectlog-serialization.md.
     /// </summary>
@@ -22,23 +22,23 @@ namespace Tsavorite.test.Objects
         [Category("Smoke")]
         public void SlotLayoutConstantsAreConsistent()
         {
-            Assert.That(ObjectIdMap.ObjectIdExactSizeShift, Is.EqualTo(ObjectIdMap.ObjectIdIndexBits));
-            Assert.That(ObjectIdMap.ObjectIdIndexBits + ObjectIdMap.ObjectIdExactSizeBits, Is.EqualTo(sizeof(int) * 8));
+            Assert.That(ObjectIdMap.ObjectIdSizeHintShift, Is.EqualTo(ObjectIdMap.ObjectIdIndexBits));
+            Assert.That(ObjectIdMap.ObjectIdIndexBits + ObjectIdMap.ObjectIdSizeHintBits, Is.EqualTo(sizeof(int) * 8));
             Assert.That(ObjectIdMap.ObjectIdIndexMask, Is.EqualTo((1 << ObjectIdMap.ObjectIdIndexBits) - 1));
-            Assert.That(ObjectIdMap.MaxObjectIdExactSize, Is.EqualTo(511));
-            // Index and exact-size fields are disjoint and cover all 32 bits.
-            Assert.That(ObjectIdMap.ObjectIdIndexMask & (ObjectIdMap.ObjectIdExactSizeMask << ObjectIdMap.ObjectIdExactSizeShift), Is.EqualTo(0));
+            Assert.That(ObjectIdMap.MaxObjectIdSizeHint, Is.EqualTo(511));
+            // Index and size-hint fields are disjoint and cover all 32 bits.
+            Assert.That(ObjectIdMap.ObjectIdIndexMask & (ObjectIdMap.ObjectIdSizeHintMask << ObjectIdMap.ObjectIdSizeHintShift), Is.EqualTo(0));
         }
 
         [Test]
         [Category("Smoke")]
-        public void StampExactSizeRoundTrips(
+        public void StampSizeHintRoundTrips(
             [Values(0, 1, 1000, 0x3FFFFF, 0x7FFFFE)] int index,
-            [Values(0, 1, 255, 256, 510, 511)] int exactSize)
+            [Values(0, 1, 255, 256, 510, 511)] int sizeHint)
         {
-            var stamped = ObjectIdMap.StampExactSize(index, exactSize);
+            var stamped = ObjectIdMap.StampSizeHint(index, sizeHint);
             Assert.That(ObjectIdMap.GetIndex(stamped), Is.EqualTo(index), "index must survive the stamp");
-            Assert.That(ObjectIdMap.GetExactSize(stamped), Is.EqualTo(exactSize), "exact size must survive the stamp");
+            Assert.That(ObjectIdMap.GetSizeHint(stamped), Is.EqualTo(sizeHint), "size hint must survive the stamp");
             Assert.That(stamped, Is.Not.EqualTo(ObjectIdMap.InvalidObjectId), "a stamped in-range slot never collides with InvalidObjectId");
         }
 
@@ -53,21 +53,21 @@ namespace Tsavorite.test.Objects
         [Category("Smoke")]
         public void GetIndexOnUnstampedSlotIsIdentity([Values(0, 1, 42, 0x3FFFFF, 0x7FFFFF)] int index)
         {
-            // An objectId slot that has not been exact-size-stamped (top bits clear) reads back its own index.
+            // An objectId slot that has not been size-hint-stamped (top bits clear) reads back its own index.
             Assert.That(ObjectIdMap.GetIndex(index), Is.EqualTo(index));
-            Assert.That(ObjectIdMap.GetExactSize(index), Is.EqualTo(0));
+            Assert.That(ObjectIdMap.GetSizeHint(index), Is.EqualTo(0));
         }
 
         [Test]
         [Category("Smoke")]
-        public void StampExactSizeIsNonDestructiveToIndexAtBoundary()
+        public void StampSizeHintIsNonDestructiveToIndexAtBoundary()
         {
-            // Max exact size on a mid-range index sets high bits but keeps the index recoverable and stays != -1.
+            // Max size hint on a mid-range index sets high bits but keeps the index recoverable and stays != -1.
             const int index = 0x123456;
-            var stamped = ObjectIdMap.StampExactSize(index, ObjectIdMap.MaxObjectIdExactSize);
+            var stamped = ObjectIdMap.StampSizeHint(index, ObjectIdMap.MaxObjectIdSizeHint);
             Assert.That(stamped, Is.LessThan(0), "top-bit stamp makes the slot read as a negative int");
             Assert.That(ObjectIdMap.GetIndex(stamped), Is.EqualTo(index));
-            Assert.That(ObjectIdMap.GetExactSize(stamped), Is.EqualTo(ObjectIdMap.MaxObjectIdExactSize));
+            Assert.That(ObjectIdMap.GetSizeHint(stamped), Is.EqualTo(ObjectIdMap.MaxObjectIdSizeHint));
         }
 
         // ── ObjectLogFilePositionInfo exact-size flag bits ───────────────────────────────────────────────
