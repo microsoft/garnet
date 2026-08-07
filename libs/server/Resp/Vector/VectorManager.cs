@@ -440,7 +440,9 @@ namespace Garnet.server
                 return;
             }
 
-            // ContextMetadata records are identified by their namespace, index records by their record type
+            // ContextMetadata records are identified by their namespace, index records by their record type.
+            // A record without a namespace reports a single 0 byte rather than an empty span, so this has to be
+            // a positive test for MetadataNamespace - treating "non-empty" as "namespaced" would skip index records.
             var ns = record.Namespace;
             if (ns.Length == 1 && ns[0] == MetadataNamespace)
             {
