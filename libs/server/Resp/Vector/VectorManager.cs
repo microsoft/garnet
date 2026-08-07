@@ -410,7 +410,6 @@ namespace Garnet.server
                 return;
             }
 
-            // UpdateContextMetadata keys each record by its contextMetadatas index, written as a 4 byte little-endian int
             var index = BinaryPrimitives.ReadInt32LittleEndian(record.Key);
             var metadata = MemoryMarshal.Cast<byte, ContextMetadata>(record.ValueSpan)[0];
 
@@ -429,13 +428,13 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Sanitizes and routes a record that entered the store as raw bytes - either read from a
-        /// checkpoint snapshot during recovery, or streamed in by a diskless full sync - so
-        /// <see cref="ApplyRecoveredState"/> can rebuild the context reservation.
+        /// Sanitizes and routes a record that entered the store as raw bytes, either from a checkpoint
+        /// snapshot or a diskless full sync. Later, <see cref="ApplyRecoveredState"/> should be called to
+        /// rebuild the context reservation.
         /// </summary>
         public void RecoverIngestedRecordIfApplicable<TSourceLogRecord>(ref TSourceLogRecord record) where TSourceLogRecord : ISourceLogRecord
         {
-            if (record.Info.Tombstone)
+            if (record.Info.Tombstone || !IsEnabled)
             {
                 return;
             }
@@ -444,11 +443,7 @@ namespace Garnet.server
             var ns = record.Namespace;
             if (ns.Length == 1 && ns[0] == MetadataNamespace)
             {
-                if (IsEnabled)
-                {
-                    RecoveredContextMetadata(ref record);
-                }
-
+                RecoveredContextMetadata(ref record);
                 return;
             }
 
@@ -457,14 +452,10 @@ namespace Garnet.server
                 return;
             }
 
-            // The handle belongs to whichever process wrote the record, so clear it even where Vector Sets
-            // are disabled - otherwise enabling them later would follow a pointer into a dead address space
+            // The handle belongs to whichever process wrote the record
             ClearIndexPointer(record.ValueSpan);
 
-            if (IsEnabled)
-            {
-                RecoveredVectorSetIndexKey(ref record);
-            }
+            RecoveredVectorSetIndexKey(ref record);
         }
 
         /// <inheritdoc/>
