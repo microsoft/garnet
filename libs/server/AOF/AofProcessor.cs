@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -216,6 +216,7 @@ namespace Garnet.server
                     participantCount = (short)storeWrapper.serverOptions.AofReplayTaskCount;
                     break;
                 default:
+                    // Note: AOF chunked headers should not be encountered here; they were introduced after *LogTransactionHeader.
                     throw new GarnetException($"Unsupported header type: {headerType}");
             }
         }
@@ -241,6 +242,15 @@ namespace Garnet.server
 
             var replayContext = aofReplayCoordinator.GetReplayContext(virtualSublogIdx);
             isCheckpointStart = false;
+
+            // Chunked record: accumulate this chunk. Once the logical record is complete, dispatch the accumulator directly
+            // (no contiguous record image is materialized).
+            if (header.IsChunked)
+            {
+                if (replayContext.chunkedReader.ReadChunk(ptr, length, out var acc))
+                    ProcessAofRecordInternal(virtualSublogIdx, acc, asReplica, logAddressSequenceNumber);
+                return;
+            }
 
             // StoreRMW can queue VADDs onto different threads
             // but everything else needs to WAIT for those to complete
@@ -425,6 +435,30 @@ namespace Garnet.server
                 return ReplayOp(virtualSublogIdx, header, replayContext, singleLogPreprocessKey, stringContext, objectContext, unifiedContext, entryPtr, length, asReplica, logAddressSequenceNumber);
         }
 
+        /// <summary>
+        /// Shared preamble for both <c>ReplayOp</c> overloads: wait for pending vector operations (unless this is a StoreRMW),
+        /// honor the skip/skip-buffer decision (<paramref name="skip"/>), and expose the object-output buffer. Returns true to
+        /// proceed with dispatch (<paramref name="bufferPtr"/>/<paramref name="bufferLength"/> set); false if the op was skipped
+        /// or buffered and the caller should stop.
+        /// </summary>
+        private bool BeginReplayOp(AofReplayContext replayContext, AofEntryType opType, bool skip, out byte* bufferPtr, out int bufferLength)
+        {
+            // StoreRMW can queue VADDs onto different threads; everything else must wait for those to complete first for consistency.
+            if (opType != AofEntryType.StoreRMW)
+                activeVectorManager.WaitForVectorOperationsToComplete();
+
+            if (skip)
+            {
+                bufferPtr = null;
+                bufferLength = 0;
+                return false;
+            }
+
+            bufferPtr = (byte*)Unsafe.AsPointer(ref replayContext.objectOutputBuffer[0]);
+            bufferLength = replayContext.objectOutputBuffer.Length;
+            return true;
+        }
+
         private bool ReplayOp<TPreprocessKey, TStringContext, TObjectContext, TUnifiedContext>(
                 int virtualSublogIdx,
                 AofHeader header,
@@ -445,17 +479,10 @@ namespace Garnet.server
             // StoreRMW can queue VADDs onto different threads
             // but everything else needs to WAIT for those to complete
             // otherwise we might loose consistency
-            if (header.opType != AofEntryType.StoreRMW)
-            {
-                activeVectorManager.WaitForVectorOperationsToComplete();
-            }
-
             // Skips (1) entries with versions that were part of prior checkpoint; and (2) future entries in fuzzy region
-            if (SkipRecord(virtualSublogIdx, replayContext.inFuzzyRegion, entryPtr, length, asReplica))
+            if (!BeginReplayOp(replayContext, header.opType, ShouldSkipRecord(virtualSublogIdx, replayContext.inFuzzyRegion, entryPtr, length, asReplica), out var bufferPtr, out var bufferLength))
                 return false;
 
-            var bufferPtr = (byte*)Unsafe.AsPointer(ref replayContext.objectOutputBuffer[0]);
-            var bufferLength = replayContext.objectOutputBuffer.Length;
             preprocessKey.PrepareKey(virtualSublogIdx, entryPtr, logAddressSequenceNumber, out var preparedParameters);
 
             // Entries written before AOF header version 4 used the legacy RespCommand numbering
@@ -736,12 +763,12 @@ namespace Garnet.server
         /// <param name="asReplica"></param>
         /// <returns></returns>
         /// <exception cref="GarnetException"></exception>
-        bool SkipRecord(int sublogIdx, bool inFuzzyRegion, byte* entryPtr, int length, bool asReplica)
+        bool ShouldSkipRecord(int sublogIdx, bool inFuzzyRegion, byte* entryPtr, int length, bool asReplica)
         {
             var header = *(AofHeader*)entryPtr;
-            return (asReplica && inFuzzyRegion) ? // Buffer logic only for AOF version > 1
-                BufferNewVersionRecord(sublogIdx, header, entryPtr, length) :
-                IsOldVersionRecord(header);
+            return (asReplica && inFuzzyRegion) // Buffer logic only for AOF version > 1
+                ? BufferNewVersionRecord(sublogIdx, header, entryPtr, length)
+                : IsOldVersionRecord(header);
 
             bool BufferNewVersionRecord(int sublogIdx, AofHeader header, byte* entryPtr, int length)
             {
@@ -786,6 +813,13 @@ namespace Garnet.server
                     var basicCurr = AofHeader.SkipHeader(ptr);
                     var basicKey = PinnedSpanByte.FromLengthPrefixedPinnedPointer(basicCurr).ReadOnlySpan;
                     return replayTaskIdx == storeWrapper.appendOnlyFile.Log.GetReplayTaskIdx(basicKey);
+                case AofHeaderType.BasicChunkHeader:
+                    logAddressSequenceNumber = entryAddress;
+                    if (!header.opType.HasKey())
+                        return true;
+                    // A chunk record cannot expose its key (it is spread across chunks), so route by the stamped key hash so all
+                    // of the record's chunks land on the same task (the one that owns the reconstructed key).
+                    return replayTaskIdx == storeWrapper.appendOnlyFile.Log.GetReplayTaskIdx((*(AofBasicChunkHeader*)ptr).chunkHeader.keyHash);
                 // Multi-physical-log: ShardedHeader entries with embedded sequence number
                 case AofHeaderType.ShardedHeader:
                     var shardedHeader = *(AofShardedHeader*)ptr;
@@ -796,6 +830,11 @@ namespace Garnet.server
                     var curr = AofHeader.SkipHeader(ptr);
                     var key = PinnedSpanByte.FromLengthPrefixedPinnedPointer(curr).ReadOnlySpan;
                     return replayTaskIdx == storeWrapper.appendOnlyFile.Log.GetReplayTaskIdx(key);
+                case AofHeaderType.ShardedChunkHeader:
+                    logAddressSequenceNumber = (*(AofShardedHeader*)ptr).sequenceNumber;
+                    if (!header.opType.HasKey())
+                        return replayTaskIdx == 0;
+                    return replayTaskIdx == storeWrapper.appendOnlyFile.Log.GetReplayTaskIdx((*(AofShardedChunkHeader*)ptr).chunkHeader.keyHash);
                 // Single-physical-log + multi-replay: transaction header without sequence number
                 case AofHeaderType.SingleLogTransactionHeader:
                     var singleLogTxnHeader = *(AofSingleLogTransactionHeader*)ptr;
@@ -808,38 +847,6 @@ namespace Garnet.server
                     logAddressSequenceNumber = txnHeader.shardedHeader.sequenceNumber;
                     var bitVector = BitVector.CopyFrom(new Span<byte>(txnHeader.replayTaskAccessVector, AofShardedLogTransactionHeader.ReplayTaskAccessVectorBytes));
                     return bitVector.IsSet(replayTaskIdx);
-                default:
-                    throw new GarnetException($"Replay header type {replayHeaderType} not supported!");
-            }
-        }
-
-        /// <summary>
-        /// Calculates the index of the replay task associated with the specified AOF header pointer.
-        /// </summary>
-        /// <param name="ptr">A pointer to a byte array representing the AOF header.</param>
-        /// <returns>The zero-based index of the replay task to which the entry should be assigned. Returns -1 if the header type
-        /// does not contain a key for task assignment.</returns>
-        /// <exception cref="GarnetException">Thrown when the AOF header type referenced by <paramref name="ptr"/> is not supported.</exception>
-        public int GetReplayTaskIdx(byte* ptr)
-        {
-            var header = *(AofHeader*)ptr;
-            var replayHeaderType = header.HeaderType;
-            switch (replayHeaderType)
-            {
-                // Single-physical-log + multi-replay: BasicHeader entries
-                case AofHeaderType.BasicHeader:
-                    var basicCurr = AofHeader.SkipHeader(ptr);
-                    var basicKey = PinnedSpanByte.FromLengthPrefixedPinnedPointer(basicCurr).ReadOnlySpan;
-                    return storeWrapper.appendOnlyFile.Log.GetReplayTaskIdx(basicKey);
-                // Multi-physical-log: ShardedHeader entries
-                case AofHeaderType.ShardedHeader:
-                    var curr = AofHeader.SkipHeader(ptr);
-                    var key = PinnedSpanByte.FromLengthPrefixedPinnedPointer(curr).ReadOnlySpan;
-                    return storeWrapper.appendOnlyFile.Log.GetReplayTaskIdx(key);
-                // Transaction headers (both types) don't have a single key for task assignment
-                case AofHeaderType.ShardedLogTransactionHeader:
-                case AofHeaderType.SingleLogTransactionHeader:
-                    return -1;
                 default:
                     throw new GarnetException($"Replay header type {replayHeaderType} not supported!");
             }
@@ -866,11 +873,13 @@ namespace Garnet.server
             {
                 // Single-physical-log + multi-replay: use entry address
                 case AofHeaderType.BasicHeader:
+                case AofHeaderType.BasicChunkHeader:
                 case AofHeaderType.SingleLogTransactionHeader:
                     sequenceNumber = logAddressSequenceNumber;
                     return logAddressSequenceNumber > untilSequenceNumber;
                 // Multi-physical-log: use embedded sequence number
                 case AofHeaderType.ShardedHeader:
+                case AofHeaderType.ShardedChunkHeader:
                     var shardedHeader = *(AofShardedHeader*)ptr;
                     sequenceNumber = shardedHeader.sequenceNumber;
                     return shardedHeader.sequenceNumber > untilSequenceNumber;

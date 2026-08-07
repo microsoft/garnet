@@ -570,6 +570,37 @@ namespace Garnet.cluster
                         diskLogRecord.Dispose();
                         diskLogRecord = default; // prevent double-trigger in catch
                     }
+                    else if (kind == MigrationRecordSpanType.ChunkedLogRecord)
+                    {
+                        // A record too large for one send buffer arrives as chunks (possibly across commands):
+                        // [int chunkLength | continuation][chunk bytes]. GetSerializedRecordSpan cannot read these because the
+                        // continuation flag makes the length read as negative.
+                        if (payloadPtr + sizeof(int) > payloadEndPtr)
+                            return false;
+                        var rawChunkLength = *(int*)payloadPtr;
+                        payloadPtr += sizeof(int);
+                        var moreChunksFollow = (rawChunkLength & ChunkedRecordConstants.ContinuationFlag) != 0;
+                        var chunkLength = rawChunkLength & ~ChunkedRecordConstants.ContinuationFlag;
+                        if (chunkLength < 0 || payloadPtr + chunkLength > payloadEndPtr)
+                            return false;
+                        var chunkSpan = new ReadOnlySpan<byte>(payloadPtr, chunkLength);
+                        payloadPtr += chunkLength;
+
+                        chunkedRecordReassembler ??= new();
+                        if (chunkedRecordReassembler.Append(chunkSpan, moreChunksFollow))
+                        {
+                            // The reassembler owns the inline buffer; pin it while the record it backs is used.
+                            fixed (byte* headerPtr = chunkedRecordReassembler.InlineBuffer)
+                            {
+                                diskLogRecord = CompleteChunkedRecordReassembly(headerPtr, storeWrapper, transientObjectIdMap);
+                                _ = basicGarnetApi.SET(in diskLogRecord);
+                                storeWrapper.storeFunctions.OnDisposeDiskRecord(ref diskLogRecord, DisposeReason.DeserializedFromDisk);
+                                diskLogRecord.Dispose();
+                                diskLogRecord = default; // prevent double-trigger in catch
+                            }
+                            chunkedRecordReassembler.Reset();
+                        }
+                    }
                     else
                     {
                         throw new InvalidOperationException($"Unexpected {nameof(MigrationRecordSpanType)}: {kind}");

@@ -110,7 +110,7 @@ namespace Garnet.cluster
                 else
                 {
                     // Initialize iterator and run background task once
-                    replicaReplayDriverStore.GetReplayDriver(physicalSublogIdx).InitialiazeBackgroundReplayTask(previousAddress);
+                    replicaReplayDriverStore.GetReplayDriver(physicalSublogIdx).InitializeBackgroundReplayTask(previousAddress);
 
                     // Throttle to give the opportunity to the background replay task to catch up
                     replicaReplayDriverStore.GetReplayDriver(physicalSublogIdx).ThrottlePrimary();

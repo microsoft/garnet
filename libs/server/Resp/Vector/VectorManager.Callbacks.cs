@@ -474,7 +474,7 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Get a <see cref="SpanByte"/> which covers (keyData, keyLength), but has a namespace component based on <paramref name="context"/>.
+        /// Get a <see cref="SpanByte"/> which covers (keyData, keyLength), but has a namespace currentComponent based on <paramref name="context"/>.
         /// 
         /// Attempts to do this in place.
         /// </summary>

@@ -587,10 +587,20 @@ namespace Garnet.server
             }
         }
 
+        /// <summary>
+        /// Enqueue an upsert-style record (key + value + input). If the combined data is "large" (see
+        /// <see cref="TsavoriteLog.MinPartialAllocSize"/>) it is written as chunk records; otherwise it uses the single-record fast path.
+        /// </summary>
         internal void Enqueue<TInput, TEpochAccessor>(AofEntryType opType, long version, int sessionId, ReadOnlySpan<byte> key, ReadOnlySpan<byte> value, ref TInput input, TEpochAccessor epochAccessor, out long logicalAddress)
             where TInput : IStoreInput
             where TEpochAccessor : IEpochAccessor
         {
+            if (IsChunkable(key, value, input.SerializedLength))
+            {
+                EnqueueSpanChunked(opType, version, sessionId, key, value, opType.HasChunkValue(), ref input, opType.HasChunkInput(), epochAccessor, out logicalAddress);
+                return;
+            }
+
             // Single physical log (covers both single-log and single-physical-log + multi-replay)
             // Uses BasicHeader — log addresses provide ordering for multi-replay consistency
             if (usingSinglePhysicalLog)
@@ -640,10 +650,79 @@ namespace Garnet.server
             }
         }
 
+        // Chunk when the combined currentComponent data would exceed the minimum partial-allocation size. Chunking applies to ALL op
+        // shapes so that a large key (or key+value/input) is split across page-sized chunk records; the exact components written
+        // are determined by the op type (HasChunkValue/HasChunkInput), matching the layout the replay parsers expect.
+        static bool IsChunkable(ReadOnlySpan<byte> key, ReadOnlySpan<byte> value, int inputSerializedLength)
+            => (long)key.TotalSize() + value.TotalSize() + inputSerializedLength > TsavoriteLog.MinPartialAllocSize;
+
+        // Write a large record as chunk records. writeValue/writeInput select the components (key is always written). The full
+        // currentComponent lengths are stamped into the chunk header up front so the reader can pre-allocate one buffer per currentComponent.
+        void EnqueueSpanChunked<TInput>(AofEntryType opType, long version, int sessionId, ReadOnlySpan<byte> key, ReadOnlySpan<byte> value, bool writeValue, ref TInput input, bool writeInput, IEpochAccessor epochAccessor, out long logicalAddress)
+            where TInput : IStoreInput
+        {
+            var chunkHeader = new AofChunkHeader
+            {
+                overflowKeyLength = (uint)key.Length,
+                overflowValueLength = writeValue ? (uint)value.Length : 0,
+                inputLength = writeInput ? (uint)input.SerializedLength : 0,
+            };
+
+            if (usingSinglePhysicalLog)
+            {
+                // Stamp the key hash so parallel replay can route all of this record's chunks to the same task (they cannot
+                // expose the key directly since it is spread across the chunk data).
+                chunkHeader.keyHash = HASH(key);
+                var header = new AofBasicChunkHeader
+                {
+                    basicHeader = new AofHeader
+                    {
+                        HeaderType = AofHeaderType.BasicChunkHeader,
+                        opType = opType,
+                        storeVersion = version,
+                        sessionID = sessionId
+                    },
+                    chunkHeader = chunkHeader
+                };
+                singleLog.log.EnqueueChunkedSpan(header, AofBasicChunkHeader.ObjectIdOffset, (FixedSpanByteKey)key, value, writeValue, ref input, writeInput, epochAccessor, out logicalAddress);
+            }
+            else
+            {
+                chunkHeader.keyHash = HASH(key);
+                var physicalSublogIdx = GetPhysicalSublogIdx(chunkHeader.keyHash);
+                var header = new AofShardedChunkHeader
+                {
+                    shardedHeader = new AofShardedHeader
+                    {
+                        basicHeader = new AofHeader
+                        {
+                            HeaderType = AofHeaderType.ShardedChunkHeader,
+                            opType = opType,
+                            storeVersion = version,
+                            sessionID = sessionId
+                        },
+                        sequenceNumber = appendOnlyFile.seqNumGen.GetSequenceNumber()
+                    },
+                    chunkHeader = chunkHeader
+                };
+                shardedLog.sublog[physicalSublogIdx].EnqueueChunkedSpan(header, AofShardedChunkHeader.ObjectIdOffset, (FixedSpanByteKey)key, value, writeValue, ref input, writeInput, epochAccessor, out logicalAddress);
+
+                if (serverOptions.AofAutoCommit)
+                    Commit();
+            }
+        }
+
         internal void Enqueue<TInput, TEpochAccessor>(AofEntryType opType, long version, int sessionId, ReadOnlySpan<byte> key, ref TInput input, TEpochAccessor epochAccessor, out long logicalAddress)
             where TInput : IStoreInput
             where TEpochAccessor : IEpochAccessor
         {
+            // RMW shape (key + input, no value). Chunk when large so a big key/input is split across page-sized records.
+            if (IsChunkable(key, default, input.SerializedLength))
+            {
+                EnqueueSpanChunked(opType, version, sessionId, key, default, opType.HasChunkValue(), ref input, opType.HasChunkInput(), epochAccessor, out logicalAddress);
+                return;
+            }
+
             // Single physical log (covers both single-log and single-physical-log + multi-replay)
             if (usingSinglePhysicalLog)
             {
@@ -693,6 +772,15 @@ namespace Garnet.server
         internal void Enqueue<TEpochAccessor>(AofEntryType opType, long version, int sessionId, ReadOnlySpan<byte> key, ReadOnlySpan<byte> value, TEpochAccessor epochAccessor, out long logicalAddress)
             where TEpochAccessor : IEpochAccessor
         {
+            // Delete shape (key only; value is unused on replay). Chunk when the key is large so it is split across page-sized
+            // records. This overload has no input; a dummy input is passed and never written (HasChunkInput is false for deletes).
+            if (IsChunkable(key, value, 0))
+            {
+                var dummyInput = default(StringInput);
+                EnqueueSpanChunked(opType, version, sessionId, key, value, opType.HasChunkValue(), ref dummyInput, opType.HasChunkInput(), epochAccessor, out logicalAddress);
+                return;
+            }
+
             // Single physical log (covers both single-log and single-physical-log + multi-replay)
             if (usingSinglePhysicalLog)
             {
@@ -737,6 +825,92 @@ namespace Garnet.server
                 if (serverOptions.AofAutoCommit)
                     Commit();
             }
+        }
+
+        /// <summary>
+        /// Enqueue an object-store upsert whose (possibly large) value object is streamed into chunk records via the AOF's
+        /// chunked serializer. The key is carried into the serializer via a <see cref="ConditionallyHoistedKey"/> (no copy for a
+        /// pinned key; hoisted for a non-pinned one).
+        /// </summary>
+        internal unsafe void EnqueueObjectChunked<TKey, TInput>(AofEntryType opType, long version, int sessionId, TKey key, IHeapObject value,
+                ref TInput input, IObjectSerializer<IHeapObject> objectSerializer, IEpochAccessor epochAccessor, out long logicalAddress)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
+            where TInput : IStoreInput
+        {
+            // Carry the key into the (struct-field-based) chunked serializer via ConditionallyHoistedKey. A pinned key (the common
+            // case — object-store upserts pass FixedSpanByteKey) is referenced by pointer with zero allocation; a non-pinned key
+            // (e.g. an overflow key from a migration/replication SET(in DiskLogRecord), whose IsPinned is false) is safely hoisted
+            // into the log allocator's buffer pool — a heap key cannot be referenced by raw pointer across the write, so a copy is
+            // required there. Disposed after the (synchronous) write.
+            var keyHash = HASH(key.KeyBytes);
+            // The object value is streamed (its length is not known up front), so overflowValueLength is left 0 and the reader
+            // accumulates the value; the key length is known, and object upserts carry no replayed input (inputLength 0).
+            var chunkHeader = new AofChunkHeader
+            {
+                overflowKeyLength = (uint)key.KeyBytes.Length,
+                overflowValueLength = 0,
+                inputLength = 0,
+                keyHash = keyHash,
+            };
+
+            // Single physical log (covers both single-log and single-physical-log + multi-replay)
+            if (usingSinglePhysicalLog)
+            {
+                var log = singleLog.log;
+                var header = new AofBasicChunkHeader
+                {
+                    basicHeader = new AofHeader
+                    {
+                        HeaderType = AofHeaderType.BasicChunkHeader,
+                        opType = opType,
+                        storeVersion = version,
+                        sessionID = sessionId
+                    },
+                    chunkHeader = chunkHeader
+                };
+                var chKey = ConditionallyHoistedKey.Create(key, log.BufferPool);
+                log.EnqueueChunkedObject(header, AofBasicChunkHeader.ObjectIdOffset, in chKey, ref input, objectSerializer, value, ChunkBufferSize(log, value), writeInput: opType.HasChunkInput(), epochAccessor, out logicalAddress);
+                chKey.Dispose();
+            }
+            // Multi physical sublogs and multi-replay support
+            else
+            {
+                var physicalSublogIdx = GetPhysicalSublogIdx(keyHash);
+                var log = shardedLog.sublog[physicalSublogIdx];
+                var header = new AofShardedChunkHeader
+                {
+                    shardedHeader = new AofShardedHeader
+                    {
+                        basicHeader = new AofHeader
+                        {
+                            HeaderType = AofHeaderType.ShardedChunkHeader,
+                            opType = opType,
+                            storeVersion = version,
+                            sessionID = sessionId
+                        },
+                        sequenceNumber = appendOnlyFile.seqNumGen.GetSequenceNumber()
+                    },
+                    chunkHeader = chunkHeader
+                };
+                var chKey = ConditionallyHoistedKey.Create(key, log.BufferPool);
+                log.EnqueueChunkedObject(header, AofShardedChunkHeader.ObjectIdOffset, in chKey, ref input, objectSerializer, value, ChunkBufferSize(log, value), writeInput: opType.HasChunkInput(), epochAccessor, out logicalAddress);
+                chKey.Dispose();
+
+                if (serverOptions.AofAutoCommit)
+                    Commit();
+            }
+        }
+
+        // Buffer size for streaming an object into chunks: min(object heap size, half a log page), floored at 1 byte.
+        static int ChunkBufferSize(TsavoriteLog log, IHeapObject value)
+        {
+            var half = (1L << log.UnsafeGetLogPageSizeBits()) / 2;
+            var heap = value.HeapMemorySize;
+            var size = (heap > 0 && heap < half) ? heap : half;
+            return size < 1 ? 1 : (int)size;
         }
 
         internal unsafe void EnqueueStoredProc(AofEntryType opType, byte procedureId, long txnVersion, int sessionId, ref CustomProcedureInput procInput, CustomTransactionProcedure proc)
@@ -891,6 +1065,14 @@ namespace Garnet.server
         internal void Enqueue<TInput>(AofEntryType opType, long version, int sessionId, ReadOnlySpan<byte> key, ref TInput input, out long logicalAddress)
             where TInput : IStoreInput
         {
+            // RMW shape (key + input, no value). Chunk when large so a big key/input is split across page-sized records.
+            if (IsChunkable(key, default, input.SerializedLength))
+            {
+                // No caller store epoch on this path (e.g. replication replay), so nothing to suspend during a flush wait.
+                EnqueueSpanChunked(opType, version, sessionId, key, default, opType.HasChunkValue(), ref input, opType.HasChunkInput(), epochAccessor: null, out logicalAddress);
+                return;
+            }
+
             // Single physical log (covers both single-log and single-physical-log + multi-replay)
             if (usingSinglePhysicalLog)
             {
