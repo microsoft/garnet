@@ -1064,7 +1064,7 @@ namespace Garnet.server
             {
                 var dbId = activeDbIdsMapSnapshot[i];
                 databasesMapSnapshot[dbId].VectorManager.Initialize();
-                databasesMapSnapshot[dbId].VectorManager.ApplyRecoveredState();
+                databasesMapSnapshot[dbId].VectorManager.ReconcileRecoveredState();
             }
         }
 

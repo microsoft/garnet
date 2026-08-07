@@ -401,7 +401,7 @@ namespace Garnet.server
             // Guarantee initialize has happened before we attempt to recover
             defaultDatabase.VectorManager.Initialize();
 
-            defaultDatabase.VectorManager.ApplyRecoveredState();
+            defaultDatabase.VectorManager.ReconcileRecoveredState();
         }
 
         public override void Dispose()

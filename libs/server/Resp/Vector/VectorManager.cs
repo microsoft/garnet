@@ -260,7 +260,7 @@ namespace Garnet.server
         /// When true, fail rather than rebuild if any context is still reserved. The rebuild replaces
         /// <c>contextMetadatas</c> wholesale, so a survivor would be dropped without its index cleaned up.
         /// </param>
-        public void ApplyRecoveredState(bool requireEmptyContexts = false)
+        public void ReconcileRecoveredState(bool requireEmptyContexts = false)
         {
             if (!IsEnabled) return;
 
@@ -415,7 +415,7 @@ namespace Garnet.server
 
             // During recovery, we can trim off empty ContextMetadata
             //
-            // ApplyRecoveredState will fill in any gaps this causes
+            // ReconcileRecoveredState will fill in any gaps this causes
             if (metadata.IsEmpty)
             {
                 return;
@@ -429,7 +429,7 @@ namespace Garnet.server
 
         /// <summary>
         /// Sanitizes and routes a record that entered the store as raw bytes, either from a checkpoint
-        /// snapshot or a diskless full sync. Later, <see cref="ApplyRecoveredState"/> should be called to
+        /// snapshot or a diskless full sync. Later, <see cref="ReconcileRecoveredState"/> should be called to
         /// rebuild the context reservation.
         /// </summary>
         public void RecoverIngestedRecordIfApplicable<TSourceLogRecord>(ref TSourceLogRecord record) where TSourceLogRecord : ISourceLogRecord

@@ -243,7 +243,7 @@ namespace Garnet.cluster
                 // first, so the reservation must be empty here.
                 if (primarySyncMetadata.fullSync)
                 {
-                    storeWrapper.DefaultDatabase.VectorManager?.ApplyRecoveredState(requireEmptyContexts: true);
+                    storeWrapper.DefaultDatabase.VectorManager?.ReconcileRecoveredState(requireEmptyContexts: true);
                 }
 
                 this.replicationOffset = _replicationOffset;

@@ -311,7 +311,7 @@ namespace Garnet.test.cluster
 #if DEBUG
         /// <summary>
         /// A diskless full sync that dies after records were streamed but before ATTACH_SYNC never reaches
-        /// ApplyRecoveredState, so the recovery bookkeeping it accumulated is still pending. The retry
+        /// ReconcileRecoveredState, so the recovery bookkeeping it accumulated is still pending. The retry
         /// re-streams the same ContextMetadata records, so unless the intervening flush discards that
         /// bookkeeping RecoveredContextMetadata rejects the duplicate index and every later attempt fails too.
         /// </summary>
@@ -350,7 +350,7 @@ namespace Garnet.test.cluster
         /// An aborted diskless full sync leaves raw namespaced records on the replica: ContextMetadata in
         /// <see cref="VectorManager.MetadataNamespace"/> and element data under the streamed set's own
         /// namespaces. Those arrive as raw bytes, so nothing reserves their contexts in the replica's
-        /// allocator, and the attempt dies before ApplyRecoveredState can mark the unreferenced ones for
+        /// allocator, and the attempt dies before ReconcileRecoveredState can mark the unreferenced ones for
         /// cleanup. The only thing that can discard them is the CLUSTER FLUSHALL the primary issues at the
         /// start of the next full sync.
         ///
