@@ -1506,17 +1506,26 @@ namespace Tsavorite.core
         /// </summary>
         /// <param name="objectLogFilePosition">The starting position of the serialized key and value data in the object log.</param>
         /// <param name="valueObjectLength">The serialized length of the value object if it is an object and not inline or overflow. Overflow
-        ///     fields have their length known from the <see cref="OverflowByteArray.Length"/> property.</param>
+        ///     fields have their length taken from the passed-in <paramref name="keyOverflow"/>/<paramref name="valueOverflow"/>.</param>
+        /// <param name="keyOverflow">The overflow key already captured by the caller (used when <see cref="RecordDataHeader.KeyIsOverflow"/>).
+        ///     Its <see cref="OverflowByteArray.Length"/> is the authoritative on-disk key length.</param>
+        /// <param name="valueOverflow">The overflow value already captured by the caller (used when <see cref="RecordDataHeader.ValueIsOverflow"/>).
+        ///     Its <see cref="OverflowByteArray.Length"/> is the authoritative on-disk value length.</param>
         /// <remarks>
         /// <para>R11 encoding: for overflow keys, low 12 bits of actual length go into the RDH KeyLength field and the next 32 bits
         /// overwrite the int* at keyAddress (which previously held the objectId) — total 44 bits → 16 TB max key. For overflow values
         /// or object values, low 22 bits go into the RDH ValueLength field and the next 32 bits overwrite the int* at valueAddress —
         /// total 54 bits → 16 PB max. The ObjectLogPosition word has the <see cref="ObjectLogFilePositionInfo.kReuseObjectIdForSizeBit"/>
         /// flag set so the reader knows the encoding to expect.</para>
+        /// <para>The overflow lengths come from the caller's already-captured <paramref name="keyOverflow"/>/<paramref name="valueOverflow"/>
+        /// (the same instances whose bytes were written to the object log), not from a fresh <see cref="ObjectIdMap"/> lookup. That keeps
+        /// the on-disk length consistent with the written data and avoids re-reading a map slot that a concurrent Upsert/RMW/Delete may have
+        /// freed between the object write and here.</para>
         /// <para>IMPORTANT: Overwrites the int* slots that held the in-memory objectIds, so this is only safe to call in the disk-image
         /// copy of the log record (srcBuffer), not in the live main-log record.</para>
         /// </remarks>
-        internal readonly void SetObjectLogRecordStartPositionAndLength(in ObjectLogFilePositionInfo objectLogFilePosition, ulong valueObjectLength)
+        internal readonly void SetObjectLogRecordStartPositionAndLength(in ObjectLogFilePositionInfo objectLogFilePosition, ulong valueObjectLength,
+                in OverflowByteArray keyOverflow, in OverflowByteArray valueOverflow)
         {
             if (DataHeader.RecordIsInline)   // ValueIsInline is true; if the record is fully inline, we should not be called here
             {
@@ -1536,8 +1545,7 @@ namespace Tsavorite.core
             if (dataHeader.KeyIsOverflow)
             {
                 var (_, keyAddress) = dataHeader.GetKeyFieldInfo(physicalAddress);
-                var overflow = objectIdMap.GetOverflowByteArray(*(int*)keyAddress);
-                var actualKeyLength = (ulong)overflow.Length;
+                var actualKeyLength = (ulong)keyOverflow.Length;
                 dataHeader.KeyLength = (int)(actualKeyLength & RecordDataHeader.kKeyLengthLowBitsMask);
                 *(int*)keyAddress = (int)(actualKeyLength >> RecordDataHeader.kKeyLengthBits);
             }
@@ -1545,8 +1553,7 @@ namespace Tsavorite.core
             // Overflow value or Object value: low 22 bits → RDH ValueLength; next 32 bits → int* slot at valueAddress.
             if (dataHeader.ValueIsOverflow)
             {
-                var overflow = objectIdMap.GetOverflowByteArray(*(int*)valueAddress);
-                var actualValueLength = (ulong)overflow.Length;
+                var actualValueLength = (ulong)valueOverflow.Length;
                 dataHeader.ValueLength = (int)(actualValueLength & RecordDataHeader.kValueLengthLowBitsMask);
                 *(int*)valueAddress = (int)(actualValueLength >> RecordDataHeader.kValueLengthBits);
             }

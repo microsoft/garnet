@@ -153,5 +153,146 @@ namespace Garnet.test
             Assert.That(Interlocked.Read(ref done), Is.GreaterThan(1000),
                 "Workers did not perform enough inserts to exercise the object-log spill path.");
         }
+
+        long updateDone;
+        volatile string serverDied;
+
+        /// <summary>
+        /// Regression guard for the object-log flush overflow crash reported in
+        /// https://gist.github.com/badrishc/1da9f5175490b3cbd74b93c89f03cb6e. With a tiny main log and a 16 KB page
+        /// (<c>--memory 1m --page 16k --index 16m --storage-tier</c>), each ~8 KB DiskANN node record spills to the
+        /// object log as an overflow value. Concurrent VADD from several connections turns pages (which shifts the
+        /// read-only address and flushes them) while other inserts update neighbor nodes, eliding the prior
+        /// read-only-but-not-yet-flushed record versions and freeing the overflow byte[] behind them. The page
+        /// flush captured that overflow and then re-derived its on-disk length from the now-freed <c>objectIdMap</c>
+        /// slot, dereferencing a null <c>OverflowByteArray</c> (<c>get_Length</c>) and taking down the flush
+        /// thread — the server aborted after a few thousand inserts. The fix takes the length from the
+        /// epoch-captured overflow and skips any record whose heap was concurrently freed, so the flush can never
+        /// dereference a freed slot. This exact configuration must now run to completion with the server alive.
+        /// </summary>
+        [Test]
+        public void ConcurrentVaddSpilledToObjectLogDoesNotCrashFlush()
+        {
+            // Match the gist's deterministic crash configuration: tiny memory + 16k page forces the ~8 KB vector
+            // records into the object log (overflow); storage tier is enabled because MethodTestDir is the log dir.
+            using var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir,
+                memorySize: "1m", pageSize: "16k", indexSize: "16m", enableVectorSetPreview: true);
+            server.Start();
+
+            const int threads = 8, dim = 32;
+            // Duration-bounded so the test can never hang: without the fix the flush thread crashes within the first
+            // second (the gist aborts after ~2.8k inserts), so a short window still clears the crash region with wide
+            // margin while keeping the run fast. The stall monitor separately fails a silent hang.
+            const int runSeconds = 12;
+            const int stallLimitMs = 8000;
+
+            var cfg = TestUtils.GetConfig(allowAdmin: true);
+            cfg.SyncTimeout = 60000;
+
+            var stop = new CancellationTokenSource();
+            var deadline = DateTime.UtcNow.AddSeconds(runSeconds);
+
+            // Each worker plus the monitor get their OWN connection so the server processes the VADDs on independent
+            // RespServerSessions truly concurrently. A single shared ConnectionMultiplexer multiplexes every command
+            // onto one TCP connection, so the server would serialize them on one session and the concurrent
+            // flush-vs-elide race that triggers the crash could never occur (the gist's repro.py uses 8 connections).
+            var muxes = new ConnectionMultiplexer[threads + 1];
+            for (var i = 0; i < muxes.Length; i++) muxes[i] = ConnectionMultiplexer.Connect(cfg);
+            try
+            {
+                var workers = new Task[threads];
+                for (var t = 0; t < threads; t++)
+                {
+                    var tid = t;
+                    workers[tid] = Task.Run(() =>
+                    {
+                        var db = muxes[tid].GetDatabase(0);
+                        var r = new Random(tid);
+                        var id = new byte[4];
+                        var k = 0;
+                        while (!stop.IsCancellationRequested && DateTime.UtcNow < deadline)
+                        {
+                            // Growing IDs (like the gist's load) keep turning pages so the object log flushes continuously,
+                            // while the neighbor updates each insert performs elide prior read-only record versions.
+                            BinaryPrimitives.WriteInt32LittleEndian(id, tid * 10_000_000 + k++);
+                            try
+                            {
+                                db.Execute("VADD", ["hk", "FP32", Vec(r, dim), (byte[])id.Clone(), "BIN", "EF", "64", "M", "16", "XDISTANCE_METRIC", "COSINE"]);
+                                Interlocked.Increment(ref updateDone);
+                            }
+                            catch (RedisConnectionException e)
+                            {
+                                // The flush-thread NRE takes the server down; surfaced here as a dropped connection.
+                                serverDied ??= $"VADD saw a dropped connection (server flush thread crashed): {e.Message}";
+                                stop.Cancel();
+                                return;
+                            }
+                            catch (RedisException)
+                            {
+                                // Transient server-side errors (e.g. timeouts under disk pressure) are not a crash; keep going.
+                            }
+                        }
+                    });
+                }
+
+                // Liveness/stall monitor on an independent connection: a healthy server answers PING throughout. If the
+                // flush thread died, the connection drops and PING throws; if the store deadlocks, progress stalls.
+                var monitor = Task.Run(() =>
+                {
+                    var mdb = muxes[threads].GetDatabase(0);
+                    long last = 0;
+                    var stalledMs = 0;
+                    while (!stop.IsCancellationRequested && DateTime.UtcNow < deadline)
+                    {
+                        try
+                        {
+                            _ = mdb.Execute("PING");
+                        }
+                        catch (RedisConnectionException e)
+                        {
+                            serverDied ??= $"PING saw a dropped connection (server flush thread crashed): {e.Message}";
+                            stop.Cancel();
+                            return;
+                        }
+                        catch (RedisException)
+                        {
+                            // Ignore transient timeouts.
+                        }
+                        var cur = Interlocked.Read(ref updateDone);
+                        stalledMs = cur == last ? stalledMs + 500 : 0;
+                        last = cur;
+                        if (stalledMs >= stallLimitMs)
+                        {
+                            serverDied ??= $"Concurrent VADD made no progress for {stalledMs} ms at {cur} inserts " +
+                                "(deadlock in the object-log read/flush path).";
+                            stop.Cancel();
+                            return;
+                        }
+                        Thread.Sleep(500);
+                    }
+                });
+
+                Task.WaitAll(workers);
+                stop.Cancel();
+                monitor.Wait();
+            }
+            finally
+            {
+                foreach (var m in muxes) m?.Dispose();
+            }
+
+            Assert.That(serverDied, Is.Null, serverDied);
+            Assert.That(Interlocked.Read(ref updateDone), Is.GreaterThan(500),
+                "Workers did not perform enough inserts to exercise the object-log flush/elide race.");
+
+            // Final integrity check on a fresh connection: a live, consistent server answers PING and serves a
+            // similarity query over the spilled set without error.
+            using var verify = ConnectionMultiplexer.Connect(cfg);
+            var vdb = verify.GetDatabase(0);
+            Assert.That((string)vdb.Execute("PING"), Is.EqualTo("PONG"), "Server did not respond to PING after the insert load.");
+            var probe = new Random(12345);
+            Assert.DoesNotThrow(() => vdb.Execute("VSIM", ["hk", "FP32", Vec(probe, dim), "COUNT", "10", "EF", "64"]),
+                "VSIM over the spilled set failed after concurrent inserts, indicating flush/store corruption.");
+        }
     }
 }

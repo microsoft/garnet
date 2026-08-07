@@ -449,20 +449,21 @@ namespace Tsavorite.core
                 return inlineRecordSize;
 
             // Serialize Key then Value, just like the Object log file. And this will be easy to modify for future chunking of multi-networkBuffer Keys and Values.
+            OverflowByteArray keyOverflow = default, valueOverflow = default;
             var outputOffset = (ulong)inlineRecordSize;
             if (logRecord.DataHeader.KeyIsOverflow)
             {
-                var overflow = logRecord.KeyOverflow;
-                overflow.ReadOnlySpan.CopyTo(output.Span.Slice(inlineRecordSize));
-                outputOffset += (ulong)overflow.Length;
+                keyOverflow = logRecord.KeyOverflow;
+                keyOverflow.ReadOnlySpan.CopyTo(output.Span.Slice(inlineRecordSize));
+                outputOffset += (ulong)keyOverflow.Length;
             }
 
             var valueObjectLength = 0UL;
             if (logRecord.DataHeader.ValueIsOverflow)
             {
-                var overflow = logRecord.ValueOverflow;
-                overflow.ReadOnlySpan.CopyTo(output.Span.Slice((int)outputOffset));
-                valueObjectLength = (ulong)overflow.Length;
+                valueOverflow = logRecord.ValueOverflow;
+                valueOverflow.ReadOnlySpan.CopyTo(output.Span.Slice((int)outputOffset));
+                valueObjectLength = (ulong)valueOverflow.Length;
             }
             else
             {
@@ -483,14 +484,14 @@ namespace Tsavorite.core
             if (output.IsSpanByte)
             {
                 var serializedLogRecord = new LogRecord((long)output.SpanByte.ToPointer());
-                serializedLogRecord.SetObjectLogRecordStartPositionAndLength(fakeFilePos, valueObjectLength);
+                serializedLogRecord.SetObjectLogRecordStartPositionAndLength(fakeFilePos, valueObjectLength, in keyOverflow, in valueOverflow);
             }
             else
             {
                 fixed (byte* ptr = output.MemorySpan.Slice(0, inlineRecordSize))
                 {
                     var serializedLogRecord = new LogRecord((long)ptr, logRecord.objectIdMap);
-                    serializedLogRecord.SetObjectLogRecordStartPositionAndLength(fakeFilePos, valueObjectLength);
+                    serializedLogRecord.SetObjectLogRecordStartPositionAndLength(fakeFilePos, valueObjectLength, in keyOverflow, in valueOverflow);
                     serializedLogRecord = new LogRecord((long)ptr);     // Reset to clear objectIdMap because it may be the one in the main log and we pass in a transient one when deserializing
                 }
             }
