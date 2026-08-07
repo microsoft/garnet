@@ -432,7 +432,7 @@ namespace Garnet.server
         /// snapshot or a diskless full sync. Later, <see cref="ReconcileRecoveredState"/> should be called to
         /// rebuild the context reservation.
         /// </summary>
-        public void RecoverIngestedRecordIfApplicable<TSourceLogRecord>(ref TSourceLogRecord record) where TSourceLogRecord : ISourceLogRecord
+        public void SanitizeAndTrackIngestedRecordIfApplicable<TSourceLogRecord>(ref TSourceLogRecord record) where TSourceLogRecord : ISourceLogRecord
         {
             if (record.Info.Tombstone || !IsEnabled)
             {

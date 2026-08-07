@@ -155,7 +155,7 @@ namespace Garnet.server
 
                 if (vectorManager is not null && !logRecord.Info.Tombstone)
                 {
-                    vectorManager.RecoverIngestedRecordIfApplicable(ref logRecord);
+                    vectorManager.SanitizeAndTrackIngestedRecordIfApplicable(ref logRecord);
                 }
             }
         }

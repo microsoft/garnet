@@ -568,7 +568,7 @@ namespace Garnet.cluster
                         diskLogRecord = DiskLogRecord.Deserialize(recordSpan, storeWrapper.GarnetObjectSerializer, transientObjectIdMap, storeWrapper.storeFunctions);
 
                         // Streamed records carry the primary's native handle and bypass the RMW path that maintains the context reservation
-                        vectorManager?.RecoverIngestedRecordIfApplicable(ref diskLogRecord);
+                        vectorManager?.SanitizeAndTrackIngestedRecordIfApplicable(ref diskLogRecord);
 
                         _ = basicGarnetApi.SET(in diskLogRecord);
                         storeWrapper.storeFunctions.OnDisposeDiskRecord(ref diskLogRecord, DisposeReason.DeserializedFromDisk);

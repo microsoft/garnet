@@ -843,11 +843,11 @@ namespace Garnet.test.cluster
             }
         }
 
-        /// <summary>Opens a connection and forms a single-primary cluster over every created node.</summary>
-        public void FormClusterAllNodes(int nodeCount, int primaryIndex = 0)
+        /// <summary>Opens a connection, assigns all slots to primaryIndex, and introduces every other created node.</summary>
+        public void MeetAndAssignSlotsAllNodes(int nodeCount, int primaryIndex = 0)
         {
             CreateConnection();
-            clusterTestUtils.FormCluster(primaryIndex, nodeCount, logger);
+            clusterTestUtils.MeetAndAssignSlots(primaryIndex, nodeCount, logger);
         }
 
         /// <summary>Promotes replicaIndex, waits for the demoted node to sync, and asserts the roles swapped.</summary>

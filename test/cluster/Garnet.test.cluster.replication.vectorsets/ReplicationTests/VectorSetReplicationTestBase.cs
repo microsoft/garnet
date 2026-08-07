@@ -149,8 +149,7 @@ namespace Garnet.test.cluster
             var expected = ElementsWrittenTo(key);
             ClassicAssert.Greater(expected.Count, 0, $"no elements were recorded for '{key}'; the test is asserting nothing");
 
-            WaitForVectorReplay(sourceIndex);
-            WaitForVectorReplay(targetIndex);
+            WaitForReplication(sourceIndex, targetIndex);
 
             var sourceSize = VectorSetSize(sourceIndex, key);
             var targetSize = VectorSetSize(targetIndex, key);
@@ -184,11 +183,22 @@ namespace Garnet.test.cluster
         }
 
         /// <summary>
-        /// AOF offsets are insufficient: replicas queue VADDs onto VectorManager's replay
+        /// AOF offsets are insufficient on their own: replicas queue VADDs onto VectorManager's replay
         /// channel, so offset sync can run ahead of index state.
         /// </summary>
-        protected void WaitForVectorReplay(int nodeIndex)
+        private void WaitForVectorReplay(int nodeIndex)
             => GetStoreWrapper(context.nodes[nodeIndex]).DefaultDatabase.VectorManager.WaitForVectorOperationsToComplete();
+
+        /// <summary>
+        /// Waits until targetIndex has caught up with sourceIndex, both in AOF offset and in Vector Set
+        /// replay, so callers cannot observe one without the other.
+        /// </summary>
+        protected void WaitForReplication(int sourceIndex, int targetIndex)
+        {
+            context.clusterTestUtils.WaitForReplicaAofSync(sourceIndex, targetIndex, logger: context.logger);
+            WaitForVectorReplay(sourceIndex);
+            WaitForVectorReplay(targetIndex);
+        }
 
         /// <summary>
         /// Reads the persisted DiskANN handle via Read_MainStore

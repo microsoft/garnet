@@ -28,7 +28,7 @@ namespace Garnet.test.cluster
                 replicaDisklessSyncFullSyncAofThreshold: "1k",
                 timeout: timeout);
 
-            context.FormClusterAllNodes(nodeCount);
+            context.MeetAndAssignSlotsAllNodes(nodeCount);
         }
 
         /// <summary>Detach, move past incremental replay, then re-attach so the sync must be a full one.</summary>
