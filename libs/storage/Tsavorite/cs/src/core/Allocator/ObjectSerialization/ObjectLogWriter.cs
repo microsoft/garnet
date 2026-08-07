@@ -43,7 +43,7 @@ namespace Tsavorite.core
         // while still in the unflushed buffer. Headers are APPENDED (position advances monotonically), never inserted-with-slide.
         // WriteObjectData runs its OWN explicit buffer loop (it does NOT reuse WriteRawBuffered, whose local segmentRemainingLen
         // would be corrupted by header pokes -- the prior multi-segment bug); header pokes/back-fills poke the buffer memory directly.
-        internal const int ObjectHeaderlessPrefixLen = RecordDataHeader.kOutOfLineExactSizeCutoff;   // 1023
+        internal const int ObjectHeaderlessPrefixLen = RecordDataHeader.kOutOfLineExactSizeCutoff;   // 511
 
         /// <summary>True once the current value object has crossed the headerless prefix and is emitting ChunkHeaders.</summary>
         bool objectHeadered;
@@ -140,9 +140,9 @@ namespace Tsavorite.core
             // Now do value overflow or object, if either is present.
             if (!valueOverflow.IsEmpty)
             {
-                // Overflow value uses the v2.2 encoding: a value > kOutOfLineExactSizeCutoff (1023) carries its full length (and any DMA
+                // Overflow value uses the v2.2 encoding: a value > kOutOfLineExactSizeCutoff (511) carries its full length (and any DMA
                 // alignment padding) in a leading ChunkHeader, and the RDH ValueLength encodes a 4 KB-page/sentinel read hint (which must
-                // include the padding) plus the has-header bit; a value <= 1023 is headerless (exact length in the RDH). The value's
+                // include the padding) plus the has-header bit; a value <= 511 is headerless (exact length in the RDH). The value's
                 // alignment padding is threaded back so the RDH page-count read hint spans the header + padding + data.
                 lastValueAlignmentPadding = WriteOverflowComponent(valueOverflow, hasHeader: valueOverflow.Length > RecordDataHeader.kOutOfLineExactSizeCutoff);
             }

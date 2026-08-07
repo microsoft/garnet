@@ -448,8 +448,8 @@ namespace Tsavorite.core
             }
             else if (ValueIsOverflow)
             {
-                // Overflow value uses the v2.2 encoding: headerless exact size when <= 1023, else a leading ChunkHeader + a 4 KB-page-count
-                // (or sentinel) read hint. The on-disk extent = data (headerless) else ChunkHeader.TotalSize + DMA alignment padding + data;
+                // Overflow value uses the v2.2 encoding: headerless exact size when <= the cutoff (511), else a leading ChunkHeader + a
+                // 4 KB-page-count (or sentinel) read hint. The on-disk extent = data (headerless) else ChunkHeader.TotalSize + DMA alignment padding + data;
                 // the padding is 0 on the buffered write path and the O_DIRECT padding the writer applied on the DMA path.
                 var extent = valueActualLength <= kOutOfLineExactSizeCutoff
                     ? valueActualLength
@@ -471,10 +471,11 @@ namespace Tsavorite.core
         //                                 exact length(s) from the ChunkHeader(s) -- overflow: full length; object: per-chunk
         //                                 length + ContinuationFlag.
         //   bit 10 (hasHeader)         -> a leading ChunkHeader precedes the value bytes. Always set when isExactSize is clear.
-        // A value <= kOutOfLineExactSizeCutoff (1023) bytes is encoded headerless (isExactSize); a longer value is encoded as
-        // a page count (+ header). The cutoff is 1023 because that is the largest exact byte length the 10-bit payload holds;
-        // above it only a page count fits, so the exact length must move into the ChunkHeader. This keeps small objects/overflow
-        // values free of a header's space cost while giving a precise (no 4 MB over-read) initial read size for larger values.
+        // A value <= kOutOfLineExactSizeCutoff (511) bytes is encoded headerless (isExactSize); a longer value is encoded as
+        // a page count (+ header). The cutoff is 511, not the 1023 the 10-bit payload could hold, because the exact-length hint is
+        // being relocated into the objectId slot's 9 top bits (max 511); capping here keeps the on-disk stream framing aligned with
+        // that 9-bit limit. Above the cutoff only a page count fits, so the exact length moves into the ChunkHeader. This keeps small
+        // objects/overflow values free of a header's space cost while giving a precise (no 4 MB over-read) initial read size for larger values.
         // KeyLength keeps its own 10-bit sentinel (KeyLengthIsSentinel); keys are never chunked and, being <= 1023 at the
         // sentinel (<< MaxCopySpanLen), always carry a ChunkHeader when DMA-padded, so no separate has-header bit is needed.
         internal const int kOutOfLinePayloadBits = 10;                                    // bits 0-9
@@ -486,8 +487,10 @@ namespace Tsavorite.core
         internal const uint kFlushValueIsExactSizeMask = 1u << kFlushValueIsExactSizeBit;
 
         /// <summary>Largest out-of-line value length (bytes) encoded headerless (isExactSize); a longer value gets a ChunkHeader
-        /// and a 4 KB-page-count encoding. 1023 = the largest value the 10-bit exact-size payload can hold.</summary>
-        internal const int kOutOfLineExactSizeCutoff = (int)kOutOfLinePayloadMask;        // 1023
+        /// and a 4 KB-page-count encoding. Bounded by <see cref="ObjectIdMap.MaxObjectIdExactSize"/> (511): the exact-length hint is
+        /// being relocated from this 10-bit RDH payload into the objectId slot's 9 top bits, so a value that must be headerless is
+        /// capped at what those 9 bits can hold. (The RDH payload physically holds 0..1023, but only 0..511 is used for exact sizes.)</summary>
+        internal const int kOutOfLineExactSizeCutoff = ObjectIdMap.MaxObjectIdExactSize;  // 511
 
         /// <summary>Size (bytes) of the 4 KB page unit used by the page-count encoding.</summary>
         internal const int kFlushPageSize = 1 << 12;                                      // 4 KB
