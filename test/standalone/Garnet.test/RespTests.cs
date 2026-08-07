@@ -5195,6 +5195,47 @@ namespace Garnet.test
         }
 
         [Test]
+        [TestCase("BLMPOP 10 1 keyA LEFT", Description = "BLMPOP replies to CLIENT UNBLOCK ERROR with the error only")]
+        [TestCase("BLPOP keyA 10", Description = "BLPOP replies to CLIENT UNBLOCK ERROR with the error only")]
+        [TestCase("BLMOVE keyA keyB LEFT LEFT 10", Description = "BLMOVE replies to CLIENT UNBLOCK ERROR with the error only")]
+        [TestCase("BZMPOP 10 1 keyA MIN", Description = "BZMPOP replies to CLIENT UNBLOCK ERROR with the error only")]
+        public async Task ClientUnblockWithErrorWritesSingleReplyTest(string blockingCommand)
+        {
+            var expectedError = "-UNBLOCKED client unblocked via CLIENT UNBLOCK\r\n";
+            var expectedPong = "+PONG\r\n";
+
+            using var mainConnection = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
+            var mainDB = mainConnection.GetDatabase(0);
+
+            // Start blocking client
+            using var blockingClient = TestUtils.CreateRequest();
+            var clientIdResponse = Encoding.ASCII.GetString(blockingClient.SendCommand("CLIENT ID"));
+            var clientId = clientIdResponse.Substring(1, clientIdResponse.IndexOf("\r\n") - 1);
+
+            string blockingResponse = null;
+            var blockingTask = taskFactory.StartNew(() =>
+            {
+                var response = blockingClient.SendCommand(blockingCommand);
+                blockingResponse = Encoding.ASCII.GetString(response, 0, expectedError.Length);
+            });
+
+            // Wait for client to enter blocking state
+            await Task.Delay(1000).ConfigureAwait(false);
+
+            // Unblock from main connection
+            var unblockResult = (int)mainDB.Execute("CLIENT", "UNBLOCK", clientId, "ERROR");
+            ClassicAssert.AreEqual(1, unblockResult);
+            blockingTask.Wait();
+
+            ClassicAssert.AreEqual(expectedError, blockingResponse);
+
+            // The error is the only reply the blocking command may write - a second reply (a null)
+            // would shift every subsequent reply on this connection by one
+            var pingResponse = Encoding.ASCII.GetString(blockingClient.SendCommand("PING"), 0, expectedPong.Length);
+            ClassicAssert.AreEqual(expectedPong, pingResponse, $"Expected PING to be answered with +PONG after unblocking {blockingCommand}");
+        }
+
+        [Test]
         [TestCase(0, Description = "Guarantied concurrent unblock test")]
         [TestCase(3, Description = "Random chance unblock sucess/failed case")]
         [TestCase(20, Description = "Probable unblock failed case")]

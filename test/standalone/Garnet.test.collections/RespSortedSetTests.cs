@@ -5192,6 +5192,41 @@ namespace Garnet.test
         }
 
         [Test]
+        public void CanDoZInterStoreWithBadNumKeysLC()
+        {
+            using var lightClientRequest = TestUtils.CreateRequest();
+
+            // A negative numkeys, or one that exceeds the number of keys actually sent, used to
+            // reach Parameters.Slice(2, nKeys) and throw out of the command handler, which tore
+            // down the connection without writing any reply. A zero numkeys did not throw, but
+            // reported a syntax error rather than the at-least-one-key error its ZUNIONSTORE
+            // sibling reports.
+            var expectedResponse = $"-{string.Format(CmdStrings.GenericErrAtLeastOneKey, nameof(RespCommand.ZINTERSTORE))}\r\n+PONG\r\n";
+
+            var response = lightClientRequest.SendCommands("ZINTERSTORE dest -1 zset1", "PING");
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            response = lightClientRequest.SendCommands("ZINTERSTORE dest 0 zset1", "PING");
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            expectedResponse = $"-{Encoding.ASCII.GetString(CmdStrings.RESP_SYNTAX_ERROR)}\r\n+PONG\r\n";
+
+            response = lightClientRequest.SendCommands("ZINTERSTORE dest 2 zset1", "PING");
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            response = lightClientRequest.SendCommands("ZINTERSTORE dest 3 zset1 zset2", "PING");
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            // A numkeys near int.MaxValue overflowed the argument-count check when it was written as
+            // 'parseState.Count < nKeys + 2', so it slipped past and still reached the slice.
+            response = lightClientRequest.SendCommands("ZINTERSTORE dest 2147483647 zset1", "PING");
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            response = lightClientRequest.SendCommands("ZINTERSTORE dest 2147483646 zset1", "PING");
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+        }
+
+        [Test]
         public void ZInterResultOrder()
         {
             using var lightClientRequest = TestUtils.CreateRequest();
