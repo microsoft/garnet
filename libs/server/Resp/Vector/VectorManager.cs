@@ -446,6 +446,7 @@ namespace Garnet.server
                 var ns = record.NamespaceBytes;
                 if (IsEnabled && ns.Length == 1 && ns[0] == MetadataNamespace)
                 {
+                    // Context metadata load needs to be saved off
                     RecoveredContextMetadata(ref record);
                 }
             }
