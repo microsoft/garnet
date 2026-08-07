@@ -241,7 +241,7 @@ namespace Garnet.cluster
                 // Full sync only: a partial sync replays AOF instead of streaming raw records.
                 if (primarySyncMetadata.fullSync)
                 {
-                    // In full sync, a flush is done right before, so no active contexts should exist
+                    // In full sync, a flush is done right before, so no reserved contexts should exist
                     storeWrapper.DefaultDatabase.VectorManager.ReconcileRecoveredState(requireNoReservedContexts: true);
                 }
 
