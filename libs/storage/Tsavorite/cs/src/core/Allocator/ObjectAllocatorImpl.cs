@@ -619,7 +619,10 @@ namespace Tsavorite.core
             // the current TailAddress is, but for normal flush operations we do set it to page alignment to eliminate concerns about rewriting partial sectors.
             GetFlushPageRange(fromAddress, untilAddress, out var startPage, out var numPages);
 
-            // Create the buffers we will use for all ranges of the flush. This calls our callback and disposes itself when the last write of a range completes.
+            // Create the buffers we will use for all ranges of the flush. Each page that has out-of-line data rents pooled object-log write
+            // buffers from this instance; pages that are entirely inline skip it (see WriteAsync). ObjectAllocator flushes are page-aligned and
+            // never use the PendingFlush chaining path, so once this loop has issued every page's write, no further writes will reference these
+            // buffers and it is safe to Dispose below.
             var flushBuffers = CreateCircularFlushBuffers(objectLogDevice: null, logger);
 
             // Write each page (or partial page) in the range.
@@ -638,6 +641,10 @@ namespace Tsavorite.core
                     WriteAsync(flushPage, AsyncFlushPageCallback, asyncResult);
                 }
             }
+
+            // All page writes for the range have been issued. Dispose the shared flush buffers so their pooled object-log write buffers are
+            // returned to the pool; Dispose defers the actual return (ClearBuffers) until any still-in-flight device writes complete.
+            flushBuffers?.Dispose();
         }
 
         protected override void WriteAsync<TContext>(long flushPage, DeviceIOCompletionCallback callback, PageAsyncFlushResult<TContext> asyncResult)
@@ -708,8 +715,16 @@ namespace Tsavorite.core
             if (isFirstRecordOnPage)
                 ((PageHeader*)logPagePointer)->SetLowestObjectLogPosition(objectLogTail);
 
-            // Short circuit if we are not using flushBuffers and not in recovery (e.g. using ObjectAllocator for string-only purposes).
-            if (asyncResult.flushBuffers is null)
+            // A ReadOnly flush of a page whose records are entirely inline (no Overflow keys/values and no Object values, i.e. the page's
+            // objectIdMap is empty) has nothing to serialize to the object log, so take the cheaper WriteInlinePageAsync path and skip renting
+            // an object-log write buffer. This is restricted to ReadOnly flushes: a Recovery flush does not populate objectIdMap (it reuses
+            // the on-disk lengths/positions), and a Snapshot flush may still need to invalidate v+1 records in the disk-image copy.
+            var objectIdMap = objectPages[flushPage % BufferSize].objectIdMap;
+            var pageHasNoObjectsToFlush = asyncResult.flushRequestState == FlushRequestState.ReadOnly && objectIdMap.Count == 0;
+
+            // Short circuit if we are not using flushBuffers and not in recovery (e.g. using ObjectAllocator for string-only purposes), or if a
+            // ReadOnly flush of this page has no out-of-line data to write to the object log.
+            if (asyncResult.flushBuffers is null || pageHasNoObjectsToFlush)
             {
                 if (asyncResult.flushRequestState != FlushRequestState.Recovery)
                 {
@@ -792,8 +807,6 @@ namespace Tsavorite.core
                 // not change record sizes, so the logicalAddress space is unchanged. Also, we will not advance HeadAddress until this flush is complete
                 // and has updated FlushedUntilAddress, so we don't have to worry about the page being yanked out from underneath us (and Objects
                 // won't be disposed before we're done). TODO: Loop on successive subsets of the page's records to make this initial copy buffer smaller.
-                var objectIdMap = objectPages[flushPage % BufferSize].objectIdMap;
-
                 srcBuffer = bufferPool.Get(alignedBufferSize);
                 asyncResult.freeBuffer1 = srcBuffer;
 
