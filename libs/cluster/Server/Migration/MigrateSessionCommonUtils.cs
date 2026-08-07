@@ -74,9 +74,8 @@ namespace Garnet.cluster
         readonly List<ReadOnlyMemory<byte>> sendPieces = [];
         byte[] sendAssembleBuffer = [];
 
-        // Reusable 4-byte length prefixes written before each overflow key/value piece on the chunked send path: the
-        // receiver reads the full length from the stream to allocate the overflow buffer up front. One record is fully sent before
-        // the next begins, so these can be reused per record.
+        // Reusable 4-byte length prefixes for the overflow key/value on the chunked send path (safe to reuse: one record is fully
+        // sent before the next begins).
         readonly byte[] chunkedKeyLengthPrefix = new byte[sizeof(int)];
         readonly byte[] chunkedValueLengthPrefix = new byte[sizeof(int)];
 
@@ -117,18 +116,20 @@ namespace Garnet.cluster
         /// Assemble a non-inline record from its captured pieces (inline portion + overflow key + overflow value or object value
         /// chunks) and send it: whole (type <see cref="MigrationRecordSpanType.LogRecord"/>) if it fits a send buffer, else as a
         /// sequence of <see cref="MigrationRecordSpanType.ChunkedLogRecord"/> chunks (continuation flag set until the record's
-        /// final byte). On the chunked path each overflow key/value piece is preceded by a 4-byte length prefix so the
-        /// receiver can allocate the overflow buffer up front and populate it directly; an object value is streamed with no prefix
-        /// (its length is derived from the stream). The concatenated pieces form exactly the stream the receiver reassembles.
+        /// final byte). Each overflow key/value is preceded by its 4-byte little-endian length; an object value is streamed with no
+        /// prefix (its length is derived by the receiver). The concatenated pieces form exactly the stream the receiver reassembles.
         /// </summary>
         private async ValueTask<bool> WriteOrSendAccumulatedRecordAsync(GarnetClientSession gcs, ReadOnlyMemory<byte> inline, MigrationChunkWriterAccumulator acc)
         {
             var maxChunk = NetworkBufferSettings.MaxSendBufferContentSize;
-            var total = inline.Length + acc.KeyLength + acc.ValueLength;
+            // Each overflow key/value carries a 4-byte length prefix; an object value is the tail with no prefix.
+            var keyPrefixLen = acc.HasKey ? sizeof(int) : 0;
+            var valuePrefixLen = acc.HasValueOverflow ? sizeof(int) : 0;
+            var total = inline.Length + keyPrefixLen + acc.KeyLength + valuePrefixLen + acc.ValueLength;
 
-            // A record whose whole serialized form fits one send buffer is sent as a single LogRecord — including an object
-            // value: its object bytes are the tail of the image, so the receiver derives the object length from the record span
-            // (the RDH object length is left zero). A larger record is streamed as ChunkedLogRecord chunks.
+            // A record whose whole serialized form fits one send buffer is sent as a single LogRecord, including an object value:
+            // its object bytes are the tail of the image, so the receiver derives the object length from the record span. A larger
+            // record is streamed as ChunkedLogRecord chunks.
             if (total <= maxChunk)
             {
                 // Small enough for one send buffer: assemble contiguously and send as a single whole record.
@@ -139,11 +140,17 @@ namespace Garnet.cluster
                 inline.Span.CopyTo(span);
                 if (acc.HasKey)
                 {
+                    BinaryPrimitives.WriteInt32LittleEndian(span.Slice(off), (int)acc.KeyLength);
+                    off += sizeof(int);
                     acc.KeyMemory.Span.CopyTo(span.Slice(off));
                     off += (int)acc.KeyLength;
                 }
                 if (acc.HasValueOverflow)
+                {
+                    BinaryPrimitives.WriteInt32LittleEndian(span.Slice(off), (int)acc.ValueLength);
+                    off += sizeof(int);
                     acc.ValueOverflowMemory.Span.CopyTo(span.Slice(off));
+                }
                 else if (acc.HasObjectValue)
                 {
                     foreach (var chunk in acc.ObjectValueChunks)
@@ -155,9 +162,9 @@ namespace Garnet.cluster
                 return await WriteOrSendRecordSpanAsync(gcs, MigrationRecordSpanType.LogRecord, sendAssembleBuffer.AsSpan(0, (int)total)).ConfigureAwait(false);
             }
 
-            // Large (or > 2 GB object): send the pieces in order as ChunkedLogRecord chunks, prefixing each overflow key/value with
-            // its 4-byte length. Chunk boundaries are arbitrary send-buffer cut points; the receiver reassembles the
-            // stream and routes each component by the layout header and these prefixes.
+            // Large (or > 2 GB object): send the pieces in order as ChunkedLogRecord chunks. Chunk boundaries are arbitrary
+            // send-buffer cut points; the receiver reassembles the stream and routes each component by the layout header and the
+            // 4-byte length prefixes that precede each overflow key/value.
             sendPieces.Clear();
             sendPieces.Add(inline);
             if (acc.HasKey)
@@ -179,7 +186,7 @@ namespace Garnet.cluster
                     sendPieces.Add(chunk);
             }
 
-            // Recompute the total including the length-prefix bytes so the continuation flag clears exactly on the record's last byte.
+            // Recompute the total across the pieces so the continuation flag clears exactly on the record's last byte.
             long chunkedTotal = 0;
             foreach (var piece in sendPieces)
                 chunkedTotal += piece.Length;

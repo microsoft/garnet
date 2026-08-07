@@ -1726,24 +1726,6 @@ namespace Tsavorite.core
 #endif
         }
 
-        /// <summary>
-        /// Set the RDH <see cref="RecordDataHeader.KeyLength"/> / <see cref="RecordDataHeader.ValueLength"/> raw fields of a
-        /// deserialized non-inline chunked record to the sentinel-encoded actual overflow key / overflow-value-or-object length:
-        /// the actual length if it is below the field's maximum, else the field's maximum value used as a sentinel meaning
-        /// "length &gt;= sentinel; the authoritative length is carried out of band". The objectId slot (at keyAddress/valueAddress)
-        /// is left untouched — it holds the real ObjectId. This prepares the record for the flush path, which reads these RDH
-        /// fields rather than the R11 objectId-slot high bits. The <see cref="RecordDataHeader.KeyLength"/>/<see cref="RecordDataHeader.ValueLength"/>
-        /// property getters still return <see cref="ObjectIdMap.ObjectIdSize"/> for non-inline components, so the in-memory invariants hold.
-        /// </summary>
-        /// <param name="keyActualLength">The actual overflow key length (ignored unless the key is overflow).</param>
-        /// <param name="valueActualLength">The actual overflow value or serialized object length (ignored if the value is inline).</param>
-        internal readonly void SetChunkedFlushOverflowLengths(int keyActualLength, long valueActualLength)
-        {
-            var localDataHeader = DataHeader;
-            localDataHeader.SetOverflowLengthHints(keyActualLength, valueActualLength);
-            SetDataHeader(localDataHeader);
-        }
-
         internal readonly void OnDeserializationError(bool keyWasSet)
         {
             // If the key was set, clear it. Then set things as inline so we don't try to release objects on Dispose().
