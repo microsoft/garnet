@@ -26,7 +26,7 @@ namespace Tsavorite.test.recovery
     ///
     /// The size sweep uses a large object-log segment so no single value spans a segment boundary; a separate pair of tests
     /// (<see cref="RecoverObjectValueSpanningObjectLogSegmentBoundary"/> and
-    /// <see cref="RecoverOverflowValueSpanningObjectLogSegmentBoundary"/>) exercises the segment-crossing case explicitly.
+    /// <see cref="RecoverOvfValueSpanningObjLogSegment"/>) exercises the segment-crossing case explicitly.
     /// </summary>
     [TestFixture]
     public class ObjectSizeBoundaryRecoveryTests : TestBase
@@ -365,15 +365,14 @@ namespace Tsavorite.test.recovery
             [Values(CheckpointType.Snapshot, CheckpointType.FoldOver)] CheckpointType checkpointType)
             => RunObjectValueRecovery(checkpointType, 5 * 1024 * 1024, numRecords: 6, SplitObjectLogSegmentSize);
 
-        // Same segment-crossing scenario for OVERFLOW values. KNOWN GAP: recovering an overflow value whose object-log data spans
-        // an object-log segment boundary mis-reads the value's leading ChunkHeader (the overflow "under-counted hint then
-        // ReadOverflowHeaderAndExtend" path does not correctly account for the segment-tail padding / AdvanceToNextSegment), so
-        // the decoded length is garbage and OverflowByteArray allocation overflows during recovery Pass2. Objects are unaffected
-        // (they use precise chunk extents). Ignored until the overflow cross-segment length calculation is fixed.
+        // Same segment-crossing scenario for OVERFLOW values. Fixed: WriteOverflowDma now DMAs the whole sector-aligned interior,
+        // iterating across object-log segment boundaries (one device write per segment) so only a sub-sector end fragment is buffered;
+        // the old code DMA'd only the first segment then handed the segment-crossing remainder to the buffered path, corrupting the
+        // object-log layout at the boundary and mis-decoding a later record's ChunkHeader during recovery Pass2. (Short method name to
+        // stay under the Windows MAX_PATH limit for the deep Snapshot checkpoint device path.)
         [Test]
         [Category("TsavoriteKV"), Category("CheckpointRestore")]
-        [Ignore("Known gap: recovering an overflow value that spans an object-log segment boundary mis-decodes the value ChunkHeader (OverflowByteArray length overflow in recovery Pass2). Tracked separately; objects are unaffected.")]
-        public Task RecoverOverflowValueSpanningObjectLogSegmentBoundary(
+        public Task RecoverOvfValueSpanningObjLogSegment(
             [Values(CheckpointType.Snapshot, CheckpointType.FoldOver)] CheckpointType checkpointType)
             => RunOverflowValueRecovery(checkpointType, 5 * 1024 * 1024, numRecords: 6, SplitObjectLogSegmentSize);
 

@@ -246,9 +246,10 @@ namespace Tsavorite.core
         /// <summary>Write a large overflow (key or value) mostly by direct O_DIRECT DMA from its pinned byte[], avoiding a copy through the
         /// write buffer. Layout on disk: [ChunkHeader][alignmentPadding][data]. The ChunkHeader + alignment padding + a small source-alignment
         /// initial fragment are copied through the buffer so the DMA disk offset lands on a sector boundary while the DMA source (the pinned
-        /// byte[] data) is also sector-aligned; the sector-aligned interior is DMA'd straight from the byte[]; a small end fragment (and any
-        /// remainder past a 1 GB segment boundary) is copied through the buffer. Returns the alignment padding (bytes after the header before
-        /// the data). See website/docs/dev/objectlog-serialization.md.</summary>
+        /// byte[] data) is also sector-aligned; the sector-aligned interior is DMA'd straight from the byte[], iterating across 1 GB object-log
+        /// segment boundaries (one <see cref="CircularDiskWriteBuffer.FlushToDevice"/> per segment, since a single device write cannot cross a
+        /// segment); only a final sub-sector end fragment is copied through the buffer (and it never crosses a segment). Returns the alignment
+        /// padding (bytes after the header before the data). See website/docs/dev/objectlog-serialization.md.</summary>
         int WriteOverflowDma(in OverflowByteArray overflow)
         {
             var sectorSize = (int)device.SectorSize;
@@ -256,7 +257,8 @@ namespace Tsavorite.core
             var dataSpan = overflow.ReadOnlySpan;
 
             var gcHandle = overflow.Pin();
-            var gcHandleIssued = false;
+            RefCountedPinnedGCHandle refCountedGCHandle = null;   // used when the interior spans >1 segment (multiple writes from the same byte[])
+            var singleWriteOwnsHandle = false;                    // set when a single DMA write owns the plain handle
             try
             {
                 var dataPtr = (byte*)gcHandle.AddrOfPinnedObject() + overflow.StartOffset;
@@ -275,27 +277,54 @@ namespace Tsavorite.core
                     flushBuffers.FlushCurrentBuffer();
                 Debug.Assert(IsAligned(flushBuffers.filePosition.Offset, sectorSize), $"DMA filePosition.Offset ({flushBuffers.filePosition.Offset}) must be sector-aligned");
 
-                // DMA the sector-aligned interior that fits in the current 1 GB segment. Any remainder past the segment boundary (rare) plus
-                // the end fragment is copied through the buffer, which handles the segment crossing.
+                // DMA the whole sector-aligned interior straight from the pinned byte[]. filePosition.Offset and RemainingSizeInSegment are both
+                // sector-aligned, so each per-segment chunk is sector-aligned; only the sub-sector end fragment is left for the buffered path.
                 var interior = length - sourceFragment;
-                var segmentFit = (int)Math.Min((long)interior, (long)flushBuffers.filePosition.RemainingSizeInSegment);
-                var dmaLength = RoundDown(segmentFit, sectorSize);
-                if (dmaLength > 0)
+                var dmaTotal = RoundDown(interior, sectorSize);
+                if (dmaTotal > 0)
                 {
-                    var writeCallback = flushBuffers.CreateDiskWriteCallbackContext(gcHandle);
-                    gcHandleIssued = true;   // ownership transferred: the callback frees the handle on completion
-                    flushBuffers.FlushToDevice(dataPtr + sourceFragment, dmaLength, writeCallback);
+                    // If the interior does not fit in the current segment we issue multiple writes from the same byte[], so refcount the pin so
+                    // it is freed only after the last write completes. A single write uses the plain handle (no heap allocation).
+                    var spansSegment = (ulong)dmaTotal > flushBuffers.filePosition.RemainingSizeInSegment;
+                    if (spansSegment)
+                        refCountedGCHandle = new RefCountedPinnedGCHandle(gcHandle, initialCount: 1);
+
+                    var dmaOffset = sourceFragment;
+                    var dmaRemaining = dmaTotal;
+                    while (dmaRemaining > 0)
+                    {
+                        // Capture the segment remainder BEFORE the write: FlushToDevice does filePosition.Offset += chunk, and the Offset
+                        // setter masks to the segment size, so a chunk that exactly fills the segment wraps Offset to 0 (leaving SegmentId
+                        // stale). We must detect the fill from this pre-write remainder, not from RemainingSizeInSegment afterward.
+                        var remainingInSegment = flushBuffers.filePosition.RemainingSizeInSegment;
+                        var chunk = (int)Math.Min((long)dmaRemaining, (long)remainingInSegment);
+                        var writeCallback = spansSegment
+                            ? flushBuffers.CreateDiskWriteCallbackContext(refCountedGCHandle)
+                            : flushBuffers.CreateDiskWriteCallbackContext(gcHandle);
+                        if (!spansSegment)
+                            singleWriteOwnsHandle = true;   // ownership transferred: the callback frees the handle on completion
+                        flushBuffers.FlushToDevice(dataPtr + dmaOffset, chunk, writeCallback);
+                        dmaOffset += chunk;
+                        dmaRemaining -= chunk;
+
+                        // If that chunk exactly filled the segment, advance to the next one (SegmentId++, Offset=0), matching the buffered
+                        // path, which also advances on the boundary even when it was the final chunk, so any end fragment lands next segment.
+                        if ((ulong)chunk == remainingInSegment)
+                            flushBuffers.filePosition.AdvanceToNextSegment();
+                    }
                 }
 
-                var written = sourceFragment + dmaLength;
+                var written = sourceFragment + dmaTotal;
                 if (written < length)
-                    Write(dataSpan.Slice(written));   // end fragment + any cross-segment remainder (managed copy; safe regardless of the pin)
+                    Write(dataSpan.Slice(written));   // sub-sector end fragment (never crosses a segment; managed copy, safe regardless of the pin)
                 return headerPadding;
             }
             finally
             {
-                // If no DMA was issued, we still own the handle; otherwise the write callback owns and frees it.
-                if (!gcHandleIssued)
+                // Drop the initial refcount (freed when the last DMA write completes); or free the plain handle if no DMA write took ownership.
+                if (refCountedGCHandle is not null)
+                    refCountedGCHandle.Release();
+                else if (!singleWriteOwnsHandle)
                     gcHandle.Free();
             }
         }
