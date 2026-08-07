@@ -129,6 +129,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void Free(int objectId)
         {
+            objectId = GetIndex(objectId);
             if (objectId != InvalidObjectId)
             {
                 objectArray.Set(objectId, default);
@@ -138,19 +139,19 @@ namespace Tsavorite.core
 
         /// <summary>Returns the slot's object as an IHeapObject.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal IHeapObject GetHeapObject(int objectId) => Unsafe.As<IHeapObject>(objectArray.Get(objectId));
+        internal IHeapObject GetHeapObject(int objectId) => Unsafe.As<IHeapObject>(objectArray.Get(GetIndex(objectId)));
 
         /// <summary>Returns the slot's object as an <see cref="OverflowByteArray"/>.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal OverflowByteArray GetOverflowByteArray(int objectId) => new(Unsafe.As<byte[]>(objectArray.Get(objectId)));
+        internal OverflowByteArray GetOverflowByteArray(int objectId) => new(Unsafe.As<byte[]>(objectArray.Get(GetIndex(objectId))));
 
         /// <summary>Sets the slot's object.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void Set(int objectId, IHeapObject element) => objectArray.Set(objectId, element);
+        internal void Set(int objectId, IHeapObject element) => objectArray.Set(GetIndex(objectId), element);
 
         /// <summary>Sets the slot's object.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void Set(int objectId, OverflowByteArray element) => objectArray.Set(objectId, element.Array);
+        internal void Set(int objectId, OverflowByteArray element) => objectArray.Set(GetIndex(objectId), element.Array);
 
         /// <summary>Clear the array.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
