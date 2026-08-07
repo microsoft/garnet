@@ -355,9 +355,10 @@ namespace Tsavorite.core
 
             chunker.BeginSerialize(context);
 
-            // Emit the inline portion directly from the record's native memory (no scratch copy). These bytes are the aligned
-            // component image; a stale filler length in the RDH is harmless because the receiver locates the overflow components
-            // at RoundUp(ActualSize), which is filler-independent.
+            // Emit the inline portion directly from the record's native memory. These bytes are the aligned component image; the
+            // receiver locates the overflow components at RoundUp(ActualSize), derived from the RDH component lengths and so
+            // filler-independent. The RDH filler word is emitted as-is: the receiver applies the record with a semantic Upsert
+            // that sizes the destination from the key/value field info and never reads the wire filler.
             chunker.WriteBytes(new ReadOnlySpan<byte>((byte*)logRecord.physicalAddress, alignedInlineRecordSize));
 
             if (!dataHeader.RecordIsInline)
@@ -401,7 +402,7 @@ namespace Tsavorite.core
 
         /// <summary>
         /// Serialize only the <b>inline portion</b> of a record into <paramref name="output"/> (growing its heap memory as needed),
-        /// compacted to <c>RoundUp(ActualSize)</c> (filler reset). The overflow key/value/object bytes themselves are NOT written
+        /// compacted to <c>RoundUp(ActualSize)</c>. The overflow key/value/object bytes themselves are NOT written
         /// here: the migration caller captures them separately (see <c>Garnet.server.MigrationChunkWriterAccumulator</c>) and
         /// assembles and sends the whole record out of epoch, prefixing each overflow key/value with its 4-byte length (an object
         /// value is the tail, sent with no prefix; the receiver derives its length).
@@ -422,9 +423,9 @@ namespace Tsavorite.core
         {
             var alignedInlineRecordSize = RoundUp(logRecord.ActualSize, Constants.kRecordAlignment);
 
-            // Copy the inline portion directly (DirectCopy resets the filler to the rounding amount; the receiver locates the
-            // overflow key/value at RoundUp(ActualSize), so the inline portion must stay compacted). The overflow key/value bytes
-            // are captured separately by the migration accumulator and assembled with their 4-byte length prefixes by the sender.
+            // Copy the inline portion directly; the receiver locates the overflow key/value at RoundUp(ActualSize), so the emitted
+            // image stays compacted to that size. The overflow key/value bytes are captured separately by the migration
+            // accumulator and assembled with their 4-byte length prefixes by the sender.
             DirectCopyInlinePortionOfRecord(in logRecord, alignedInlineRecordSize, estimatedTotalSize: alignedInlineRecordSize,
                 maxHeapAllocationSize: alignedInlineRecordSize, memoryPool, ref output);
 
@@ -451,7 +452,10 @@ namespace Tsavorite.core
                 output.EnsureHeapMemorySize(allocationSizeToUse, memoryPool);
             }
 
-            // We must reset the LogRecord's filler size, because we truncated the record down to the (rounded-up) ActualSize if it had been shrunken.
+            // Rewrite the filler word to the rounding remainder so the copied image is a self-consistent LogRecord of length
+            // RoundUp(ActualSize) (a shrunk source record can carry a larger explicit filler). This is needed by the in-memory
+            // RENAME consumer, which builds a live LogRecord over this buffer; wire receivers ignore the filler and size the
+            // destination from the key/value field info.
             var newFillerLength = alignedInlineRecordSize - logRecord.ActualSize;
             if (output.IsSpanByte)
             {

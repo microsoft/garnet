@@ -194,7 +194,7 @@ namespace Garnet.server
             // value may be concurrently updated). We cannot stream to the network here: migration sends asynchronously and the
             // store epoch must never be held across an await (unlike replication, which sends synchronously via BlockingWait and
             // so CAN stream to the network in-epoch). So capture now and let the caller assemble and send out of epoch:
-            //   - inline portion  -> SpanByteAndMemory (compacted + RDH-encoded so the receiver locates the overflow/object pieces),
+            //   - inline portion  -> SpanByteAndMemory (compacted to RoundUp(ActualSize) so the receiver locates the overflow/object pieces),
             //   - overflow key     -> accumulator (shallow ref; store keys are immutable so the backing array is stable),
             //   - overflow value   -> accumulator (deep copy; the store value may be mutated once we release the epoch),
             //   - object value     -> accumulator (serialized into a chunk list; may exceed 2 GB).
