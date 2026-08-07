@@ -440,32 +440,25 @@ namespace Garnet.server
                 return;
             }
 
-            // ContextMetadata records are identified by their namespace, index records by their record type.
-            // A record without a namespace reports a single 0 byte rather than an empty span, so this has to be
-            // a positive test for MetadataNamespace - treating "non-empty" as "namespaced" would skip index records.
-            var ns = record.Namespace;
-            if (ns.Length == 1 && ns[0] == MetadataNamespace)
+            // ContextMetadata records are identified by their namespace, index records by their record type
+            if (record.HasNamespace)
             {
-                if (IsEnabled)
+                var ns = record.NamespaceBytes;
+                if (IsEnabled && ns.Length == 1 && ns[0] == MetadataNamespace)
                 {
                     RecoveredContextMetadata(ref record);
                 }
-
-                return;
             }
-
-            if (record.RecordType != RecordType)
+            else if (record.RecordType == RecordType)
             {
-                return;
-            }
+                // The handle belongs to whichever process wrote the record, so clear it even where Vector Sets
+                // are disabled - otherwise enabling them later would follow a pointer into a dead address space
+                ClearIndexPointer(record.ValueSpan);
 
-            // The handle belongs to whichever process wrote the record, so clear it even where Vector Sets
-            // are disabled - otherwise enabling them later would follow a pointer into a dead address space
-            ClearIndexPointer(record.ValueSpan);
-
-            if (IsEnabled)
-            {
-                RecoveredVectorSetIndexKey(ref record);
+                if (IsEnabled)
+                {
+                    RecoveredVectorSetIndexKey(ref record);
+                }
             }
         }
 
