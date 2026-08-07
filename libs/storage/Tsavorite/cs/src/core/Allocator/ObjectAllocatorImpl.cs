@@ -1024,10 +1024,24 @@ namespace Tsavorite.core
                                     }
                                     else
                                     {
-                                        // In recovery we just need to update the disk-image LogRecord with the object lengths and file position, and then
-                                        // advance the recoveryOngoingPageHeader position. This advancement will also take care of segment breaks if needed.
-                                        var objectLengths = logRecord.SetRecoveredObjectLogRecordStartPosition(recoveryOngoingPageHeader);
-                                        recoveryOngoingPageHeader.Advance(objectLengths);
+                                        if (logRecord.HasReuseObjectIdForSize)
+                                        {
+                                            // Downlevel (v2.1) hybrid-log-region record: up-convert its split length/position encoding into the
+                                            // current v2.2 hint format (or fail fast for a large overflow/object that would need a not-yet-supported
+                                            // leading ChunkHeader insertion), advancing the running page position. This preserves the pre-existing
+                                            // (guarded) v2.1 recovery behavior; a v2.2 source never sets the ReuseObjectIdForSize flag.
+                                            var objectLengths = logRecord.SetRecoveredObjectLogRecordStartPosition(recoveryOngoingPageHeader);
+                                            recoveryOngoingPageHeader.Advance(objectLengths);
+                                        }
+                                        // else: v2.2 hybrid-log-region record. Its object bytes are already durable in the main object-log and its
+                                        // copied disk-image record (object-log position + RDH length hints) is already correct; the only recovery
+                                        // mutation for this page -- SetInvalid on undone v+1 records -- was applied to the live page by RecoverFromPage
+                                        // and is captured by the srcBuffer copy. So persist the record VERBATIM. Calling
+                                        // SetRecoveredObjectLogRecordStartPosition here would misread the (un-deserialized, Pass1) position slot as a
+                                        // deserialized length and stamp a garbage position + length hint into the disk image -- masked in the
+                                        // recovering run (which reads the live page) but corrupting any later recovery that reads the page from disk.
+                                        // recoveryOngoingPageHeader is consumed only by that setter and a page is single-version, so an all-v2.2 page
+                                        // needs no advance here.
                                     }
                                 }
 
