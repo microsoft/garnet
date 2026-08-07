@@ -130,19 +130,17 @@ namespace Tsavorite.core
         /// ping-pong that a single global pending counter plus a shared free-slot queue create when dozens of
         /// submitter and completion threads touch them on every IO — the dominant cost at high IOPS.
         /// <para>
-        /// Sized at <c>2 × ProcessorCount</c> capped at 32. Throughput is flat from several hundred shards down
-        /// to ~32 and only dips below ~16. The reason a small fixed count suffices is that <see cref="Throttle"/> gates each
-        /// shard's TOTAL in-flight at <see cref="PerThreadLimit"/> (≈ throttle ÷ active shards, capped at
-        /// <see cref="MaxPerThreadInFlight"/>), so a shard's free-list occupancy never approaches
-        /// <see cref="SlotsPerShard"/> no matter how many submitter threads share it — a small shard count
-        /// neither starves the free-list nor re-introduces counter contention. 32 is therefore ample headroom
-        /// over the peak concurrent submitter count on this class of server; <c>2 × ProcessorCount</c> scales the
-        /// count DOWN on small boxes (fewer concurrent submitters, so the fixed per-shard tables would otherwise
-        /// be wasted) while the cap of 32 bounds it on large machines. <see cref="Environment.ProcessorCount"/>
-        /// honors process CPU affinity and cgroup limits. An internal implementation detail, not a user knob.
+        /// A small fixed count suffices because <see cref="Throttle"/> gates each shard's TOTAL in-flight at
+        /// <see cref="PerThreadLimit"/> (≈ throttle ÷ active shards, capped at <see cref="MaxPerThreadInFlight"/>),
+        /// so a shard's free-list occupancy never approaches <see cref="SlotsPerShard"/> no matter how many
+        /// submitter threads share it — a small shard count neither starves the free-list nor re-introduces
+        /// counter contention. Sized via <see cref="ConcurrencySharding.NumShardCount"/> (shares the
+        /// <see cref="ConcurrencySharding.Compute"/> formula with the buffer pool's stripe count so the sizing
+        /// logic cannot diverge, but carries its own cap since its floor is the peak concurrent submitter
+        /// count); see that type for the sizing rationale.
         /// </para>
         /// </summary>
-        static readonly int NumShards = Math.Min(2 * Environment.ProcessorCount, 32);
+        static readonly int NumShards = ConcurrencySharding.NumShardCount;
 
         /// <summary>
         /// Number of completion-tracking slots per shard (power of two), i.e. the depth of each shard's

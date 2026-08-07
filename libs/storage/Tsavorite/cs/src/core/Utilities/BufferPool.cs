@@ -286,18 +286,19 @@ namespace Tsavorite.core
         /// returns the buffer (page-flush completion on a drainer, off-thread RESP read completion). This keeps
         /// the free-list bounded by peak concurrent in-flight rather than leaking on cross-thread returns.
         /// <para>
-        /// Sized at <c>2 × ProcessorCount</c> capped at 32. A single unstriped pool becomes a cache-line
-        /// ping-pong bottleneck on its one <see cref="ConcurrentQueue{T}"/> and caps throughput well below
-        /// peak; throughput saturates by 32 stripes, and larger stripe counts do not improve it on either
-        /// libaio or io_uring. The knee is thread-count-insensitive: total free-list traffic is bounded by the device
-        /// in-flight throttle, not the thread count, so more submitters just lowers per-thread in-flight
-        /// rather than raising per-stripe contention. <c>2 × ProcessorCount</c> scales with the machine's
-        /// core-ceilinged submitter count while the cap of 32 bounds it where throughput plateaus; matches
-        /// the device shard cap (<c>NativeStorageDevice.NumShards</c>). Need not be a power of two — free-list
-        /// indexing uses a multiply and stripe assignment (<see cref="CurrentStripe"/>) uses a modulo.
+        /// A single unstriped pool becomes a cache-line ping-pong bottleneck on its one
+        /// <see cref="ConcurrentQueue{T}"/> and caps throughput well below peak. The knee is
+        /// thread-count-insensitive: total free-list traffic is bounded by the device in-flight throttle, not
+        /// the thread count, so more submitters just lowers per-thread in-flight rather than raising per-stripe
+        /// contention. Sized via <see cref="ConcurrencySharding.StripeCount"/> (shares the
+        /// <see cref="ConcurrencySharding.Compute"/> formula with the device shard count
+        /// <c>NativeStorageDevice.NumShards</c> so the sizing logic cannot diverge, but carries its own cap
+        /// since it is thread-count-insensitive and can be smaller); see that type for the sizing rationale.
+        /// Need not be a power of two — free-list indexing uses a multiply and stripe assignment
+        /// (<see cref="CurrentStripe"/>) uses a modulo.
         /// </para>
         /// </summary>
-        private static readonly int stripes = Math.Min(2 * Environment.ProcessorCount, 32);
+        private static readonly int stripes = ConcurrencySharding.StripeCount;
 
         private readonly int recordSize;
         private readonly int sectorSize;
