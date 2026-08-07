@@ -1516,6 +1516,23 @@ namespace Garnet.test
             // The connection must survive, and the list must be untouched.
             ClassicAssert.AreEqual("PONG", db.Execute("PING").ToString());
             ClassicAssert.AreEqual(3, db.ListLength(key));
+
+            // A negative numkeys used to reach 'new PinnedSpanByte[numKeys]' and throw out of the
+            // command handler, which tore down the connection without writing any reply. A zero
+            // numkeys did not throw, but answered a null array where Redis replies with an error.
+            using var lightClientRequest = TestUtils.CreateRequest();
+            var expectedResponse = $"-{string.Format(CmdStrings.GenericErrShouldBeGreaterThanZero, "numkeys")}\r\n+PONG\r\n";
+
+            var response = lightClientRequest.SendCommands("LMPOP -1 a b", "PING");
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            response = lightClientRequest.SendCommands("LMPOP 0 LEFT COUNT 5", "PING");
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            expectedResponse = $"-{string.Format(CmdStrings.GenericParamShouldBeGreaterThanZero, "numkeys")}\r\n+PONG\r\n";
+
+            response = lightClientRequest.SendCommands("BLMPOP 0 -1 a b", "PING");
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
 
         [Test]
