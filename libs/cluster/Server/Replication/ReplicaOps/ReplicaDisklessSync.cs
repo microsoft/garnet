@@ -242,7 +242,7 @@ namespace Garnet.cluster
                 if (primarySyncMetadata.fullSync)
                 {
                     // In full sync, a flush is done right before, so no active contexts should exist
-                    storeWrapper.DefaultDatabase.VectorManager?.ReconcileRecoveredState(requireEmptyContexts: true);
+                    storeWrapper.DefaultDatabase.VectorManager?.ReconcileRecoveredState(requireNoReservedContexts: true);
                 }
 
                 this.replicationOffset = _replicationOffset;

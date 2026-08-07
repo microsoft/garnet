@@ -256,11 +256,11 @@ namespace Garnet.server
         /// <summary>
         /// Apply the bookkeeping accumulated during recovery.
         /// </summary>
-        /// <param name="requireEmptyContexts">
+        /// <param name="requireNoReservedContexts">
         /// When true, fail rather than rebuild if any context is still reserved. The rebuild replaces
         /// <c>contextMetadatas</c> wholesale, so a survivor would be dropped without its index cleaned up.
         /// </param>
-        public void ReconcileRecoveredState(bool requireEmptyContexts = false)
+        public void ReconcileRecoveredState(bool requireNoReservedContexts = false)
         {
             if (!IsEnabled) return;
 
@@ -277,7 +277,7 @@ namespace Garnet.server
 
             lock (this)
             {
-                if (requireEmptyContexts)
+                if (requireNoReservedContexts)
                 {
                     for (var i = 0; i < contextMetadatas.Length; i++)
                     {
