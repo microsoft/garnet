@@ -9,6 +9,7 @@ using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Text;
 using System.Threading;
+using Garnet.common;
 using Garnet.server;
 using Microsoft.Extensions.Logging;
 using NUnit.Framework;
@@ -198,10 +199,7 @@ namespace Garnet.test.cluster
             return indexPtr;
         }
 
-        /// <summary>
-        /// Reads the persisted context id for a Vector Set. Two distinct sets must never share a
-        /// context; a collision means the allocator handed out a context that another set owns.
-        /// </summary>
+        /// <summary>Reads the persisted context id for a Vector Set.</summary>
         protected ulong ReadPersistedContext(int nodeIndex, string key)
         {
             ReadPersistedIndexFields(nodeIndex, key, out var ctx, out _);
@@ -215,7 +213,7 @@ namespace Garnet.test.cluster
 
             using var storageSession = new StorageSession(storeWrapper, new ScratchBufferBuilder(), new ScratchBufferAllocator(), null, null, db.Id, readSessionState: null, db.VectorManager, null);
 
-            var keyBytes = GC.AllocateArray<byte>(Encoding.ASCII.GetByteCount(key), pinned: true);
+            Span<byte> keyBytes = stackalloc byte[Encoding.ASCII.GetByteCount(key)];
             _ = Encoding.ASCII.GetBytes(key, keyBytes);
 
             StringInput input = new(RespCommand.VINFO);
@@ -225,8 +223,20 @@ namespace Garnet.test.cluster
             Span<byte> indexSpan = stackalloc byte[VectorManager.IndexSize];
             StringOutput output = new(SpanByteAndMemory.FromPinnedSpan(indexSpan));
 
-            var status = storageSession.Read_MainStore(keyBytes, ref input, ref output, ref storageSession.stringBasicContext);
-            ClassicAssert.AreEqual(GarnetStatus.OK, status, $"could not read the index record for '{key}' on node {nodeIndex}");
+            // Read without copying, so inspecting the record does not move it to the tail of the log.
+            ReadOptions readOptions = new() { CopyOptions = ReadCopyOptions.None };
+            var status = storageSession.stringBasicContext.Read((FixedSpanByteKey)keyBytes, ref input, ref output, ref readOptions);
+
+            if (status.IsPending)
+            {
+                storageSession.stringBasicContext.CompletePendingWithOutputs(out var completedOutputs, wait: true);
+                ClassicAssert.IsTrue(completedOutputs.Next(), $"pending read of '{key}' on node {nodeIndex} produced no output");
+                status = completedOutputs.Current.Status;
+                output = completedOutputs.Current.Output;
+                completedOutputs.Dispose();
+            }
+
+            ClassicAssert.IsTrue(status.Found, $"could not read the index record for '{key}' on node {nodeIndex}");
             ClassicAssert.IsTrue(output.SpanByteAndMemory.IsSpanByte, $"index record for '{key}' did not come back inline");
             ClassicAssert.AreEqual(VectorManager.IndexSize, output.SpanByteAndMemory.Length, $"value under '{key}' is not a Vector Set index record");
 
@@ -234,11 +244,8 @@ namespace Garnet.test.cluster
         }
 
         /// <summary>
-        /// Counts live records by namespace. Vector Set data is only reachable through namespaces:
-        /// ContextMetadata lives in <see cref="VectorManager.MetadataNamespace"/> and element data in
-        /// the owning set's own namespaces, so a record whose namespace no live index claims is
-        /// unreachable by any command and will never be collected - the cleanup task only visits
-        /// contexts that ContextMetadata marks as needing cleanup.
+        /// Counts live records by namespace, using the same snapshot iterator as the Vector Set
+        /// cleanup task.
         /// </summary>
         private sealed class NamespaceCensus : IScanIteratorFunctions
         {
