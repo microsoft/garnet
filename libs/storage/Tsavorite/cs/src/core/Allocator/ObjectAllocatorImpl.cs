@@ -876,6 +876,7 @@ namespace Tsavorite.core
 
                                     OverflowByteArray keyOverflow = default, valueOverflow = default;
                                     IHeapObject valueObject = default;
+                                    var liveRecordIsInvalid = false;
                                     try
                                     {
                                         if (pulseEpoch)
@@ -910,6 +911,14 @@ namespace Tsavorite.core
                                             valueOverflow = logRecord.ValueOverflow;
                                         else if (logRecord.DataHeader.ValueIsObject)
                                             valueObject = logRecord.ValueObject;
+
+                                        // Re-read the LIVE record's RecordInfo. The srcBuffer snapshot copied at the top of WriteAsync froze this record's
+                                        // pre-elision Valid state, but a concurrent Upsert/RMW that supersedes this read-only record elides it: the record is
+                                        // first CAS'd out of the tag chain, then SealAndInvalidate'd (Valid bit cleared), then OnDispose(Elided) frees its heap.
+                                        // Capturing the overflow/object above pins the byte[]/object while it is still reachable; reading the live RecordInfo
+                                        // AFTER the capture makes "the captured heap was concurrently freed" observable as Invalid on the live record (on x64,
+                                        // a freed slot implies SealAndInvalidate happened-before, so the live word reads Invalid).
+                                        liveRecordIsInvalid = new LogRecord(logPagePointer + (physicalAddress - (long)recordsBasePtr)).Info.Invalid;
                                     }
                                     finally
                                     {
@@ -920,10 +929,30 @@ namespace Tsavorite.core
                                     // WriteRecordObjects can do disk IO and must not hold the epoch. SetObjectLogRecordStartPositionAndLength
                                     // writes the on-disk-encoded lengths and ObjectLogPosition into the disk-image record (srcBuffer copy).
                                     // The main-log allocator page is left untouched by these calls.
+
+                                    // If the live record was elided out of the tag chain, its RecordInfo is now Invalid (SealAndInvalidate runs before its
+                                    // heap is freed). Persist the disk-image copy as Invalid to match: recovery skips it and the superseding record (already
+                                    // CAS'd into the chain) wins. Because elision removes the record from the chain BEFORE invalidating it, a record invalidated
+                                    // here is not concurrently reachable, so this upholds the "no Invalid record in a tag chain" invariant. A record that is
+                                    // still Valid (e.g. a Deleted-but-not-elided Tombstone that must remain in the chain so reads/recovery do not fall through
+                                    // to an older version) is never invalidated here, and its captured heap is intact.
+                                    if (liveRecordIsInvalid)
+                                    {
+                                        logRecord.InfoRef.SetInvalid();
+                                        goto NextRecord;
+                                    }
+
+                                    // A still-Valid record's captured heap must be intact: elision frees the heap only after SealAndInvalidate, so a freed
+                                    // capture always coincides with an Invalid live record handled above.
+                                    Debug.Assert(!((logRecord.DataHeader.KeyIsOverflow && keyOverflow.IsEmpty)
+                                            || (logRecord.DataHeader.ValueIsOverflow && valueOverflow.IsEmpty)
+                                            || (logRecord.DataHeader.ValueIsObject && valueObject is null)),
+                                        "A Valid record had its overflow/object heap freed during object-log flush; expected the live record to be Invalid (elided).");
+
                                     logRecord.SetReuseObjectIdForSize();
 
                                     var valueObjectLength = logWriter.WriteRecordObjects(in keyOverflow, in valueOverflow, in valueObject);
-                                    logRecord.SetObjectLogRecordStartPositionAndLength(recordStartPosition, valueObjectLength);
+                                    logRecord.SetObjectLogRecordStartPositionAndLength(recordStartPosition, valueObjectLength, in keyOverflow, in valueOverflow);
                                 }
                                 else
                                 {
