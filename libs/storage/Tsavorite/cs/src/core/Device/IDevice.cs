@@ -82,21 +82,24 @@ namespace Tsavorite.core
         void Initialize(long segmentSize, LightEpoch epoch = null, bool omitSegmentIdFromFilename = false);
 
         /// <summary>
-        /// Try to drain pending async IO completions, invoking their callbacks.
+        /// Try complete async IO completions
         /// </summary>
-        /// <param name="mineOnly">
-        /// When <see langword="true"/>, drain only the calling thread's affine completion
-        /// context/ring rather than scanning all of them. Sharded devices (e.g. NativeStorageDevice)
-        /// use this on the inline submitter-thread completion path to avoid redundant per-context
-        /// work when many threads drain concurrently; every context still stays covered because each
-        /// has sharing submitters and/or a dedicated completion (drainer) thread. When
-        /// <see langword="false"/> (the default), drain across all contexts/rings — the safe superset
-        /// required when awaiting a completion that may land on another thread's ring (e.g. the
-        /// allocator flush-wait). Devices that do not shard completions ignore this flag and drain
-        /// their single completion queue either way.
-        /// </param>
-        /// <returns>Implementation-defined progress hint; current callers ignore the result.</returns>
-        bool TryComplete(bool mineOnly = false);
+        /// <returns></returns>
+        bool TryComplete();
+
+        /// <summary>
+        /// Try to complete async IO completions for only the calling thread's affine completion
+        /// context/ring, rather than scanning all of them. Used by the inline submitter-thread
+        /// completion path to avoid redundant per-context work when many threads drain concurrently.
+        /// Devices that do not shard completions may simply fall back to <see cref="TryComplete"/>.
+        /// <para>
+        /// Provided as a default interface method delegating to <see cref="TryComplete"/> so that
+        /// existing external <see cref="IDevice"/> implementations continue to compile and behave
+        /// correctly without change; sharded devices (e.g. NativeStorageDevice) override it.
+        /// </para>
+        /// </summary>
+        /// <returns></returns>
+        bool TryCompleteMine() => TryComplete();
 
         /// <summary>
         /// Whether device should be throttled at this instant (i.e., caller should stop issuing new I/Os)

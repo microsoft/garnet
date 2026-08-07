@@ -237,16 +237,18 @@ never wraps to a negative index), and throttles on its own shard:
 
 ```
 global     = effectiveThrottle
-active     = activeShards                              // reconciled to live concurrent submitters
+active     = activeShards                              // occupied shards (exact live count)
 perThread  = clamp(global / active, 1, 128)            // 128 = MaxPerThreadInFlight
 Throttle() = (this shard's in-flight) > perThread
 ```
 
-`activeShards` counts distinct concurrent submitter threads. Because .NET ThreadPool threads
-churn, it is reconciled *down* to occupied shards periodically (`MaybeReconcileActiveShards`,
-time-gated at `ReconcileIntervalMs = 200 ms`) rather than only incremented — otherwise the
-divisor would ratchet up over time and starve per-thread in-flight (a real slow-burn
-throughput-decline bug that this reconciliation fixes).
+`activeShards` is the number of currently *occupied* shards (shards with at least one in-flight
+IO). It is maintained **exactly** by `SubmitToShard` / `CompleteShard`, which increment it on a
+shard's `0→1` in-flight transition and decrement it on the `1→0` transition — so the divisor
+always reflects the live set of concurrently-submitting shards, with no global in-flight counter
+and no periodic reconciliation. Once more submitter threads than `NumShards` are active they
+collide on the fixed shard set, so this counts occupied shards rather than distinct threads; the
+shard count is sized so that stays a close proxy for concurrent submitter count.
 
 ## Internal constants
 
@@ -265,11 +267,10 @@ has a single correct regime — but knowing them explains the tuning envelope.
 | `LibaioReservationCap` | `2048` (1&lt;&lt;11) | **cap** on a single libaio ring's reservation. |
 | `DefaultAioMaxDevices` | `32` (1&lt;&lt;5) | default value of `AioMaxDevices` (the `--device-aio-max-devices` divisor). |
 | `AioMaxDevices` | `32` | **process-wide** `public static int`. `fs.aio-max-nr` is machine-global, so "how many devices to fit within it" is a process policy, not per-device config — a static means devices created off the raw factory (cluster aux logs) honor the budget without plumbing. |
-| `NumShards` | `Clamp(2 × ProcessorCount, 128, 1024)` | per-submitter-thread shard count for in-flight de-contention. Core-derived (the knee tracks peak concurrent submitters, ceilinged by core count); floor 128 (validated), 2× ThreadPool overshoot margin, cap 1024 (~8 MB memory bound). |
+| `NumShards` | `Math.Min(2 × ProcessorCount, 32)` | per-submitter-thread shard count for in-flight de-contention. Two shards per core, capped at 32; the knee tracks peak concurrent submitters and is throttle-bounded past that. |
 | `SlotsPerShard` | `256` | completion-slot free-list size per shard. |
 | `MaxPerThreadInFlight` | `128` (`SlotsPerShard / 2`) | per-thread in-flight clamp; half of `SlotsPerShard` so a shard's free-list keeps 2× headroom and never empties under the throttle. |
 | `ShardCounter` | `128 B` | cache-line-pair-padded per-shard in-flight counter struct (each shard's counter owns its own line, preventing false sharing). |
-| `ReconcileIntervalMs` | `200` | how often `activeShards` is reconciled down to live occupancy. |
 | `MaxResults` | `NumShards × 256` | size of the completion-context slot table (pure managed memory). |
 
 ## Floor, cap, ceiling, headroom — what each means and why {#floor-cap-ceiling-headroom}
@@ -327,8 +328,9 @@ Start from the defaults — on x64 Linux they already reach the hand-tuned peak 
   `N ≥ 16`).
 * **libaio.** Leave `--device-io-contexts` at the default (ring-count-neutral). If you run
   **many** Native devices in one process (cluster with many shards/AOF/checkpoint logs) and hit
-  `io_setup` `EAGAIN`, either raise `fs.aio-max-nr` (`sysctl -w fs.aio-max-nr=1048576`) or lower
-  `--device-aio-max-devices` to shrink each device's reservation. The reservation guard logs an
+  `io_setup` `EAGAIN`, either raise `fs.aio-max-nr` (`sysctl -w fs.aio-max-nr=1048576`) or raise
+  `--device-aio-max-devices` so each device reserves a smaller slice of the budget
+  (`perDeviceBudget = fs.aio-max-nr / device-aio-max-devices`). The reservation guard logs an
   actionable warning when `N × D` exceeds `fs.aio-max-nr`.
 * **Memory-constrained host.** Lower `--device-queue-depth` (e.g. `1024`) to cut io_uring ring
   memory ~4× (uring ring memory ≈ `N × D × ~100 B`), and/or lower `--device-throttle-limit` to

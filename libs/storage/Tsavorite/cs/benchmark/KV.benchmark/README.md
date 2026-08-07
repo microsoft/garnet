@@ -44,8 +44,10 @@ numactl --cpunodebind=0 --membind=0 dotnet $KV -t 32 -n 100000000 \
 
 A small `--log-memory 16m` keeps ~0.125% of the dataset in RAM, so every read is a
 random NVMe fetch through the pending-read path. On a fast array set
-`--device-throttle-limit 4096` and `--device-completion-threads 8` (the default throttle
-120 leaves the device idle). Reference host: **8×NVMe RAID-0** (`/raid`, `fio` 4K
+`--device-completion-threads 8` (the default is 1). The Native throttle already
+defaults to 4096, sized for a fast NVMe queue; the managed devices
+(`randomaccess`/`filestream`) default to 120 and need `--device-throttle-limit 512`
+to spin up. Reference host: **8×NVMe RAID-0** (`/raid`, `fio` 4K
 ceiling ≈ **8.24 M IOPS**); KV peaks at **~6.7 M** (≈ 81% of `fio`) — the remaining
 gap is Tsavorite managed per-op CPU (hash lookup, pending context, completion
 dispatch), not the device, which reaches `fio` parity in
@@ -109,8 +111,10 @@ datasets touch few NAND dies and understate IOPS.
   `--device-io-backend`), `filestream` (slowest).
 - **`--log-memory`** — in-memory log window. Auto-sized to fit the dataset (reads
   stay in memory). Set small (`16m`) to force disk/device spill. Units: `512m`,`16g`.
-- **`--device-throttle-limit`** — max in-flight IOs. Default 120 leaves the device idle;
-  use **4096** on a fast multi-drive array (512 on a single NVMe) to reach peak IOPS.
+- **`--device-throttle-limit`** — max in-flight IOs. Native defaults to 4096 (sized for a
+  fast array); the managed devices (`randomaccess`/`filestream`) default to 120, which
+  leaves a fast device idle — raise to **512** on a single NVMe or **4096** on a
+  multi-drive array to reach peak IOPS.
 - **`--device-completion-threads`** — native/localmemory drainer count (**8** on a
   fast array; localmemory: one SPSC ring per thread).
 - **`--device-io-contexts`** — kernel io_contexts / io_uring rings (native, decoupled

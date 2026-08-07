@@ -733,8 +733,14 @@ namespace Tsavorite.core
             Uring = 2,
         }
 
-        [DllImport(NativeLibraryName, EntryPoint = "NativeDevice_CreateWithBackend", CallingConvention = CallingConvention.Cdecl)]
-        static extern IntPtr NativeDevice_CreateWithBackend(string file, bool enablePrivileges, bool unbuffered, bool delete_on_close, int backend, ulong segmentSizeBytes, bool omitSegmentIdFromFilename, int numIoContexts, int maxEvents, int uringSqPoll, int uringSqPollIdleMs);
+        // Targets the extended (SQPOLL-carrying) native export. The native library also keeps the
+        // original arity-9 NativeDevice_CreateWithBackend export for ABI compatibility, but the
+        // managed wrapper always declares the full parameter list, so it must bind to the matching
+        // arity-11 symbol. Binding to the extended symbol also means a stale native library that
+        // predates SQPOLL (and therefore exports only the arity-9 symbol) fails fast at the create
+        // call with EntryPointNotFound instead of a silent parameter-count mismatch.
+        [DllImport(NativeLibraryName, EntryPoint = "NativeDevice_CreateWithBackendSqPoll", CallingConvention = CallingConvention.Cdecl)]
+        static extern IntPtr NativeDevice_CreateWithBackendSqPoll(string file, bool enablePrivileges, bool unbuffered, bool delete_on_close, int backend, ulong segmentSizeBytes, bool omitSegmentIdFromFilename, int numIoContexts, int maxEvents, int uringSqPoll, int uringSqPollIdleMs);
 
         [DllImport(NativeLibraryName, EntryPoint = "NativeDevice_GetSegmentSize", CallingConvention = CallingConvention.Cdecl)]
         static extern ulong NativeDevice_GetSegmentSize(IntPtr device);
@@ -761,7 +767,10 @@ namespace Tsavorite.core
         static extern int NativeDevice_CreateDir(IntPtr device, string dir, int deleteExisting);
 
         [DllImport(NativeLibraryName, EntryPoint = "NativeDevice_TryComplete", CallingConvention = CallingConvention.Cdecl)]
-        static extern bool NativeDevice_TryComplete(IntPtr device, int mineOnly);
+        static extern bool NativeDevice_TryComplete(IntPtr device);
+
+        [DllImport(NativeLibraryName, EntryPoint = "NativeDevice_TryCompleteMine", CallingConvention = CallingConvention.Cdecl)]
+        static extern bool NativeDevice_TryCompleteMine(IntPtr device);
 
         [DllImport(NativeLibraryName, EntryPoint = "NativeDevice_QueueRun", CallingConvention = CallingConvention.Cdecl)]
         static extern int NativeDevice_QueueRun(IntPtr device, int timeout_secs);
@@ -933,9 +942,14 @@ namespace Tsavorite.core
         /// <summary>
         /// Per-thread in-flight budget = global throttle split across the currently-occupied shards
         /// (≈ live concurrent submitters, tracked exactly by <see cref="activeShards"/>), clamped to
-        /// <see cref="MaxPerThreadInFlight"/>. Splitting this way keeps the device-wide cap equal to the
-        /// configured <see cref="StorageDeviceBase.ThrottleLimit"/> (total ≈ perThread × activeShards) while
-        /// the hot <see cref="Throttle"/> check only reads the calling thread's own shard counters.
+        /// <see cref="MaxPerThreadInFlight"/>. Each shard admits against this budget independently, so the
+        /// device-wide in-flight count closely tracks the configured <see cref="StorageDeviceBase.ThrottleLimit"/>
+        /// but is not an exact global cap: at the admission boundary every occupied shard may hold one extra IO,
+        /// so the aggregate can overshoot by up to ≈ <see cref="activeShards"/>. This is intentional — the throttle
+        /// is a coarse backpressure/memory bound, and exact kernel-queue-capacity safety is enforced downstream by
+        /// the native ring-full retry (a submit that finds the SQ/io_context ring full unwinds to Pending and waits
+        /// for a completion before retrying), not by the precision of this split. Keeping the check per-shard lets
+        /// the hot <see cref="Throttle"/> path read only the calling thread's own cache lines.
         /// </summary>
         [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
         int PerThreadLimit()
@@ -1041,8 +1055,11 @@ namespace Tsavorite.core
         /// per-thread budget (<see cref="PerThreadLimit"/>) derived from the effective aggregate throttle
         /// (<see cref="StorageDeviceBase.ThrottleLimit"/>, or <see cref="DefaultThrottleLimit"/> when unset,
         /// capped at the kernel capacity io-contexts * queue-depth) split across the active submitter threads —
-        /// so the device-wide in-flight cap still equals the effective throttle, while this hot check only reads
-        /// the calling thread's own cache lines.
+        /// so the device-wide in-flight count closely tracks the effective throttle (within ≈ one IO per occupied
+        /// shard at the boundary; see <see cref="PerThreadLimit"/>), while this hot check only reads the calling
+        /// thread's own cache lines. The throttle is coarse admission backpressure, not a hard kernel-capacity gate:
+        /// the native ring-full retry (submit unwinds to Pending and waits for a completion when the ring is full)
+        /// is what guarantees the SQ/io_context ring never overflows regardless of this split's precision.
         /// <para>
         /// Before the native device is lazily created (cold start), <see cref="PerThreadLimit"/> gates on the live
         /// clamped limit rather than the seeded <see cref="effectiveThrottleLimit"/>, so a startup burst of
@@ -1396,7 +1413,19 @@ namespace Tsavorite.core
                 // SQPOLL is an io_uring-only submit-side optimization; never pass it to libaio (the native
                 // libaio/default handlers accept and ignore it, but keep the managed intent explicit).
                 int uringSqPollArg = (uringSqPollConfig && ioBackendConfig == IoBackend.Uring) ? 1 : 0;
-                var newDevice = NativeDevice_CreateWithBackend(filename, false, disableFileBuffering, deleteOnClose, (int)ioBackendConfig, sizeForNative, OmitSegmentIdFromFileName, numIoContextsConfig, ringDepth, uringSqPollArg, uringSqPollIdleMsConfig);
+                IntPtr newDevice;
+                try
+                {
+                    newDevice = NativeDevice_CreateWithBackendSqPoll(filename, false, disableFileBuffering, deleteOnClose, (int)ioBackendConfig, sizeForNative, OmitSegmentIdFromFileName, numIoContextsConfig, ringDepth, uringSqPollArg, uringSqPollIdleMsConfig);
+                }
+                catch (EntryPointNotFoundException ex)
+                {
+                    throw new TsavoriteException(
+                        "Loaded libnative_device.so/dll is missing the NativeDevice_CreateWithBackendSqPoll export. " +
+                        "The shared library predates the io_uring SQPOLL change and must be rebuilt from this branch " +
+                        "(libs/storage/Tsavorite/cc) and the resulting binary installed to " +
+                        "libs/storage/Tsavorite/cs/src/core/Device/runtimes/<rid>/native/.", ex);
+                }
                 if (newDevice == IntPtr.Zero)
                 {
                     var nativeMessage = GetNativeLastError();
@@ -1452,13 +1481,14 @@ namespace Tsavorite.core
                     {
                         _ = NativeDevice_NumIoContexts(newDevice);
                         _ = NativeDevice_QueueRunFor(newDevice, 0, 0);
+                        _ = NativeDevice_TryCompleteMine(newDevice);
                     }
                     catch (EntryPointNotFoundException ex)
                     {
                         NativeDevice_Destroy(newDevice);
                         throw new TsavoriteException(
                             "Loaded libnative_device.so/dll is missing the sharded-ABI exports " +
-                            "NativeDevice_NumIoContexts / NativeDevice_QueueRunFor. " +
+                            "NativeDevice_NumIoContexts / NativeDevice_QueueRunFor / NativeDevice_TryCompleteMine. " +
                             "The shared library predates the multi-io-context change and must be rebuilt from this branch " +
                             "(libs/storage/Tsavorite/cc) and the resulting binary installed to " +
                             "libs/storage/Tsavorite/cs/src/core/Device/runtimes/<rid>/native/.", ex);
@@ -1783,8 +1813,8 @@ namespace Tsavorite.core
         /// <para>Idempotent — multiple calls are safe; only the first does work.</para>
         /// <para>
         /// User IO callbacks fire either on a completion-worker (drainer) thread or inline on a
-        /// submitter thread that reaps its own completions via <see cref="TryComplete"/> with
-        /// <c>mineOnly: true</c> (the affine inline-drain path). Dispose() must NOT be called from
+        /// submitter thread that reaps its own completions via <see cref="TryComplete"/> /
+        /// TryCompleteMine (the default affine inline-drain path). Dispose() must NOT be called from
         /// within any such callback: the in-flight drain below waits for that very callback's completion
         /// bump (issued in <c>_callback</c>'s <c>finally</c>), so a self-dispose would spin forever. The
         /// drainer-thread case is detected and thrown as <see cref="InvalidOperationException"/>; the
@@ -1872,20 +1902,8 @@ namespace Tsavorite.core
             }
         }
 
-        /// <summary>
-        /// Drain native IO completions, invoking their callbacks. When <paramref name="mineOnly"/> is
-        /// <see langword="true"/>, poll only the calling thread's affine context/ring (the one its
-        /// submits land on) instead of walking every context: this issues one io_getevents per poll
-        /// rather than one per context, cutting completion-drain syscalls (and cross-context aio
-        /// ring-lock contention) by roughly the context count. It backs the inline submitter-thread
-        /// completion path (Tsavorite CompletePending / AsyncGetFromDisk throttle-wait), the primary
-        /// reaper at high IOPS. When <see langword="false"/>, walk every context — the safe superset
-        /// used when awaiting a completion that may land on another thread's ring (the allocator
-        /// flush-wait). Every context stays covered either way because each has sharing submitters
-        /// and/or a dedicated completion (drainer) thread.
-        /// </summary>
-        /// <param name="mineOnly">True to drain only the caller's affine ring; false to walk all rings.</param>
-        public override bool TryComplete(bool mineOnly = false)
+        /// <inheritdoc/>
+        public override bool TryComplete()
         {
             // Lease the native handle so a concurrent Dispose() can't free it mid-call. TryLease
             // rejects the post-dispose case and closes the race where Dispose frees the handle
@@ -1897,7 +1915,33 @@ namespace Tsavorite.core
                 var dev = Volatile.Read(ref nativeDevice);
                 if (dev == IntPtr.Zero)
                     return false;
-                return NativeDevice_TryComplete(dev, mineOnly ? 1 : 0);
+                return NativeDevice_TryComplete(dev);
+            }
+            finally
+            {
+                ReleaseLease(shard);
+            }
+        }
+
+        /// <summary>
+        /// Drain only the calling thread's affine native context/ring (the one its submits land on),
+        /// instead of walking every context like <see cref="TryComplete"/>. The inline submitter-thread
+        /// completion path (Tsavorite CompletePending / AsyncGetFromDisk throttle-wait) is the primary
+        /// reaper at high IOPS; polling just this thread's own context issues one io_getevents per poll
+        /// rather than one per context, cutting completion-drain syscalls (and the cross-context aio
+        /// ring-lock contention) by roughly the context count. All contexts stay covered because each
+        /// has sharing submitters and/or a dedicated completion (drainer) thread.
+        /// </summary>
+        public override bool TryCompleteMine()
+        {
+            if (!TryLease(out int shard))
+                return false;
+            try
+            {
+                var dev = Volatile.Read(ref nativeDevice);
+                if (dev == IntPtr.Zero)
+                    return false;
+                return NativeDevice_TryCompleteMine(dev);
             }
             finally
             {

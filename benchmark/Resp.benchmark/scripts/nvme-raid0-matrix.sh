@@ -99,14 +99,14 @@ run_config() {
 
   # load the 100 M dataset (writes tier to the device; no run phase)
   # shellcheck disable=SC2086
-  $cli_pin dotnet "$RB" --op MSET --dbsize "$DBSIZE" --keylength "$KEYLEN" --valuelength "$VALLEN" \
+  $cli_pin dotnet "$RB" --port "$PORT" --op MSET --dbsize "$DBSIZE" --keylength "$KEYLEN" --valuelength "$VALLEN" \
     --client LightClient --load-threads 32 -b 4096 --runtime 0 >/tmp/nvme-matrix-load.log 2>&1
 
   for t in $THREADS; do
     local vals=()
     for _ in $(seq 1 "$PASSES"); do
       # shellcheck disable=SC2086
-      local out; out="$($cli_pin dotnet "$RB" -s --op GET --dbsize "$DBSIZE" \
+      local out; out="$($cli_pin dotnet "$RB" -s --port "$PORT" --op GET --dbsize "$DBSIZE" \
         --keylength "$KEYLEN" --valuelength "$VALLEN" --client LightClient \
         -t "$t" -b "$REQB" --runtime "$RUNTIME" 2>/dev/null)"
       # Throughput line: "[Throughput]: 1,843,118.13 ops/sec" (comma-separated)
