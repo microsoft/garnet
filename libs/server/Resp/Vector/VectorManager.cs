@@ -254,9 +254,14 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Restart or update any pending work that was discovered as part of recovery.
+        /// Apply the bookkeeping accumulated during recovery.
         /// </summary>
-        public void ResumePostRecovery()
+        /// <param name="requireNoReservedContexts">
+        /// When true, throw instead of rebuilding if any context is currently reserved. The rebuild
+        /// reassigns <c>contextMetadatas</c> from the recovered records, so a context still reserved
+        /// at that point is forgotten without being marked for cleanup, leaking its records and index.
+        /// </param>
+        public void ReconcileRecoveredState(bool requireNoReservedContexts = false)
         {
             if (!IsEnabled) return;
 
@@ -273,6 +278,18 @@ namespace Garnet.server
 
             lock (this)
             {
+                if (requireNoReservedContexts)
+                {
+                    for (var i = 0; i < contextMetadatas.Length; i++)
+                    {
+                        if (!contextMetadatas[i].IsEmpty)
+                        {
+                            logger?.LogCritical("Vector Set context reservation was not empty at index {index} when rebuilding after a full store replacement; expected the preceding flush to have cleared it", i);
+                            throw new GarnetException($"Vector Set context reservation was not empty at index {i} when rebuilding after a full store replacement");
+                        }
+                    }
+                }
+
                 // Any ContextMetadatas we found need to be restored
                 if (!recoveredMetadata.IsEmpty)
                 {
@@ -288,7 +305,7 @@ namespace Garnet.server
                     }
                 }
 
-                recoveredMetadata = null;
+                recoveredMetadata.Clear();
 
                 // If we come up and contexts are marked for migration, that means the migration FAILED
                 // and we'd like those contexts back ASAP
@@ -358,7 +375,7 @@ namespace Garnet.server
                     }
                 }
 
-                recoveredIndexes = null;
+                recoveredIndexes.Clear();
             }
 
             if (needsUpdated)
@@ -373,7 +390,7 @@ namespace Garnet.server
         /// <summary>
         /// Called during recovery for each Vector Set index key.
         /// </summary>
-        public void RecoveredVectorSetIndexKey(ref LogRecord record)
+        public void RecoveredVectorSetIndexKey<TSourceLogRecord>(ref TSourceLogRecord record) where TSourceLogRecord : ISourceLogRecord
         {
             if (record.ValueSpan.Length != IndexSize)
             {
@@ -387,19 +404,19 @@ namespace Garnet.server
         /// <summary>
         /// Called during recovery for each ContextMetadata record.
         /// </summary>
-        public void RecoveredContextMetadata(ref LogRecord record)
+        public void RecoveredContextMetadata<TSourceLogRecord>(ref TSourceLogRecord record) where TSourceLogRecord : ISourceLogRecord
         {
-            if (record.ValueSpan.Length != ContextMetadata.Size || record.KeyBytes.Length != sizeof(int))
+            if (record.ValueSpan.Length != ContextMetadata.Size || record.Key.Length != sizeof(int))
             {
                 return;
             }
 
-            var index = BinaryPrimitives.ReadInt32LittleEndian(record.KeyBytes);
+            var index = BinaryPrimitives.ReadInt32LittleEndian(record.Key);
             var metadata = MemoryMarshal.Cast<byte, ContextMetadata>(record.ValueSpan)[0];
 
             // During recovery, we can trim off empty ContextMetadata
             //
-            // ResumePostRecovery will fill in any gaps this causes
+            // ReconcileRecoveredState will fill in any gaps this causes
             if (metadata.IsEmpty)
             {
                 return;
@@ -408,6 +425,45 @@ namespace Garnet.server
             if (!recoveredMetadata.TryAdd(index, metadata))
             {
                 throw new GarnetException($"Recovered multiple instances of the same ContextMetadata: {index}");
+            }
+        }
+
+        /// <summary>
+        /// Sanitizes and routes a record that entered the store as raw bytes, either from a checkpoint
+        /// snapshot or a diskless full sync. Later, <see cref="ReconcileRecoveredState"/> should be called to
+        /// rebuild the context reservation.
+        /// </summary>
+        public void SanitizeAndTrackIngestedRecordIfApplicable<TSourceLogRecord>(ref TSourceLogRecord record) where TSourceLogRecord : ISourceLogRecord
+        {
+            if (record.Info.Tombstone)
+            {
+                return;
+            }
+
+            // ContextMetadata records are identified by their namespace, index records by their record type
+            var ns = record.Namespace;
+            if (ns.Length == 1 && ns[0] == MetadataNamespace)
+            {
+                if (IsEnabled)
+                {
+                    RecoveredContextMetadata(ref record);
+                }
+
+                return;
+            }
+
+            if (record.RecordType != RecordType)
+            {
+                return;
+            }
+
+            // The handle belongs to whichever process wrote the record, so clear it even where Vector Sets
+            // are disabled - otherwise enabling them later would follow a pointer into a dead address space
+            ClearIndexPointer(record.ValueSpan);
+
+            if (IsEnabled)
+            {
+                RecoveredVectorSetIndexKey(ref record);
             }
         }
 
