@@ -96,7 +96,7 @@ namespace Garnet.test.cluster
             }
         }
 
-        protected IReadOnlyList<byte[]> ElementsWrittenTo(string key) => writtenElements.TryGetValue(key, out var e) ? e : [];
+        private IReadOnlyList<byte[]> ElementsWrittenTo(string key) => writtenElements.TryGetValue(key, out var e) ? e : [];
 
         /// <summary>Reads VINFO size.</summary>
         protected long VectorSetSize(int nodeIndex, string key)
@@ -119,7 +119,7 @@ namespace Garnet.test.cluster
             return -1;
         }
 
-        protected long VectorSetDimensions(int nodeIndex, string key)
+        private long VectorSetDimensions(int nodeIndex, string key)
         {
             var reply = context.clusterTestUtils.Execute(context.clusterTestUtils.GetEndPoint(nodeIndex), "VDIM", [key], logger: context.logger);
             ClassicAssert.AreEqual(ResultType.Integer, reply.Resp2Type, $"VDIM on '{key}' at node {nodeIndex} did not return an integer: {reply}");
@@ -128,7 +128,7 @@ namespace Garnet.test.cluster
         }
 
         /// <summary>Returns the stored embedding for an element, or an empty array when absent.</summary>
-        protected string[] ElementEmbedding(int nodeIndex, string key, byte[] element)
+        private string[] ElementEmbedding(int nodeIndex, string key, byte[] element)
         {
             var reply = context.clusterTestUtils.Execute(context.clusterTestUtils.GetEndPoint(nodeIndex), "VEMB", [key, element], skipLogging: true);
             ClassicAssert.AreEqual(ResultType.Array, reply.Resp2Type, $"VEMB on '{key}' at node {nodeIndex} did not return an array: {reply}");
@@ -144,7 +144,7 @@ namespace Garnet.test.cluster
         /// Compares cardinality, dimensions, and per-element embeddings against the elements
         /// actually written; the embedding sweep catches correct counts with wrong vectors.
         /// </summary>
-        protected void AssertVectorSetsMatch(int sourceIndex, int targetIndex, string key)
+        private void AssertVectorSetsMatch(int sourceIndex, int targetIndex, string key)
         {
             var expected = ElementsWrittenTo(key);
             ClassicAssert.Greater(expected.Count, 0, $"no elements were recorded for '{key}'; the test is asserting nothing");

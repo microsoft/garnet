@@ -434,7 +434,7 @@ namespace Garnet.server
         /// </summary>
         public void SanitizeAndTrackIngestedRecordIfApplicable<TSourceLogRecord>(ref TSourceLogRecord record) where TSourceLogRecord : ISourceLogRecord
         {
-            if (record.Info.Tombstone || !IsEnabled)
+            if (record.Info.Tombstone)
             {
                 return;
             }
@@ -443,7 +443,11 @@ namespace Garnet.server
             var ns = record.Namespace;
             if (ns.Length == 1 && ns[0] == MetadataNamespace)
             {
-                RecoveredContextMetadata(ref record);
+                if (IsEnabled)
+                {
+                    RecoveredContextMetadata(ref record);
+                }
+
                 return;
             }
 
@@ -452,10 +456,14 @@ namespace Garnet.server
                 return;
             }
 
-            // The handle belongs to whichever process wrote the record
+            // The handle belongs to whichever process wrote the record, so clear it even where Vector Sets
+            // are disabled - otherwise enabling them later would follow a pointer into a dead address space
             ClearIndexPointer(record.ValueSpan);
 
-            RecoveredVectorSetIndexKey(ref record);
+            if (IsEnabled)
+            {
+                RecoveredVectorSetIndexKey(ref record);
+            }
         }
 
         /// <inheritdoc/>
