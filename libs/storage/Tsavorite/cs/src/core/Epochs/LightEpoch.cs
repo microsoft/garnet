@@ -299,12 +299,11 @@ namespace Tsavorite.core
         {
             ref var entry = ref Metadata.Entries.GetRef(instanceId);
 
-            Debug.Assert(entry > 0, "Trying to refresh unacquired epoch");
-            DebugAssertEpochAcquired(entry);
+            DebugAssertEpochAcquired(entry, "Trying to refresh unacquired epoch");
 
             // Refresh the announced epoch to CurrentEpoch
             var epoch = Volatile.Read(ref CurrentEpoch);
-            Volatile.Write(ref EntryAt(entry).localCurrentEpoch, epoch);
+            Volatile.Write(ref (*(tableAligned + entry)).localCurrentEpoch, epoch);
 
             // Max epoch across all threads may have advanced, so check for pending drain actions to process
             if (drainCount > 0)
@@ -441,7 +440,7 @@ namespace Tsavorite.core
 
             for (var index = 1; index <= kTableSize; index++)
             {
-                var entry_epoch = Volatile.Read(ref EntryAt(index).localCurrentEpoch);
+                var entry_epoch = Volatile.Read(ref (*(tableAligned + index)).localCurrentEpoch);
                 if (0 != entry_epoch)
                 {
                     if (entry_epoch < oldestOngoingCall)
@@ -515,7 +514,7 @@ namespace Tsavorite.core
         void Acquire()
         {
             ref var entry = ref Metadata.Entries.GetRef(instanceId);
-            Debug.Assert(entry == kInvalidIndex,
+            DebugAssertEntryNotReserved(entry,
                 "Trying to acquire protected epoch. Make sure you do not re-enter Tsavorite from callbacks or IDevice implementations. If using tasks, use TaskCreationOptions.RunContinuationsAsynchronously.");
 
             // Reserve an entry in the epoch table for this thread and set localCurrentEpoch
@@ -547,7 +546,7 @@ namespace Tsavorite.core
             // of the two. A release store guarantees that the threadId clear cannot be reordered after
             // it. Were the order to flip, another thread could claim the slot and write its own threadId
             // in the gap, and this thread's clear would then land on top and wipe it.
-            Volatile.Write(ref EntryAt(entry).localCurrentEpoch, 0);
+            Volatile.Write(ref (*(tableAligned + entry)).localCurrentEpoch, 0);
 
             entry = kInvalidIndex;
             if (waiterCount > 0)
@@ -608,15 +607,15 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         bool TryClaimEntry(int entry)
         {
-            if (EntryAt(entry).localCurrentEpoch != 0)
+            if ((*(tableAligned + entry)).localCurrentEpoch != 0)
                 return false;
 
             var epoch = Volatile.Read(ref CurrentEpoch);
-            if (Interlocked.CompareExchange(ref EntryAt(entry).localCurrentEpoch, epoch, 0) != 0)
+            if (Interlocked.CompareExchange(ref (*(tableAligned + entry)).localCurrentEpoch, epoch, 0) != 0)
                 return false;
 
             // The slot is now exclusively ours, so threadId needs no interlocked write.
-            EntryAt(entry).threadId = Metadata.threadId;
+            (*(tableAligned + entry)).threadId = Metadata.threadId;
             return true;
         }
 
