@@ -123,3 +123,4 @@ namespace Tsavorite.test.recovery
             TestContext.Out.WriteLine($"native log-page frees during concurrent snapshots: {freed:N0}");
         }
     }
+}

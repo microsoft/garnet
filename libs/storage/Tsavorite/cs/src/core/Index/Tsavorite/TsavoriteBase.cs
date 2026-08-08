@@ -33,15 +33,15 @@ namespace Tsavorite.core
 
         // Per-version direct-VM backing block for the hash index when the HashIndex native surface is enabled
         // ("full" mode). Kept separate from <see cref="state"/> (which is set to default on grow-completion) so
-        // the pointer to free survives. A block for a version is freed deterministically only when that version
-        // is re-initialized by a grow (grow reuses the two versions alternately, so the block being replaced is a
-        // two-generations-old DEAD table with no reader and no in-flight checkpoint). The two LIVE tables are not
-        // munmap'd at <see cref="Free"/> — a checkpoint's async device write may still reference them and the
-        // device is disposed after this store — so they are handed to <see cref="nativeTableRegistry"/> and freed
-        // at finalization, matching the managed table lifetime.
+        // the pointer to free survives. Blocks are NEVER munmap'd deterministically: both the superseded block on
+        // a grow (a canceled index checkpoint can leave an async device write outstanding on it — see
+        // InitializeMainIndex) and the two LIVE tables at <see cref="Free"/> (a checkpoint write may reference them
+        // and the device is disposed after this store) are handed to <see cref="nativeTableRegistry"/> and freed at
+        // finalization, matching the managed table lifetime. Grows are few (log2 of the growth factor), so only a
+        // handful of superseded tables are ever retained.
         readonly DirectVmBlock[] tableBlocks = new DirectVmBlock[2];
 
-        // Owns the LIVE direct-VM hash-index tables past Dispose, freeing them at finalization (see tableBlocks).
+        // Owns superseded/live direct-VM hash-index tables, freeing them at finalization (see tableBlocks).
         NativePageBlockRegistry nativeTableRegistry;
 
         // Captured once at construction: whether the main hash-index table uses the direct-VM backend. Used
@@ -148,10 +148,14 @@ namespace Tsavorite.core
             if (useNativeHashIndex)
             {
                 // Direct-VM (mmap/VirtualAlloc): demand-zero, first-touch-placed pages, matching GC.AllocateArray.
-                // Free any prior block for this version (grow reuses the two versions alternately).
+                // A prior block may still occupy this version slot (grow reuses the two versions alternately). Do
+                // NOT munmap it here: a canceled index checkpoint can leave an async device write outstanding on it
+                // (StateMachineDriver releases the state machine on cancellation without draining the index-write
+                // TCS), so hand it to the finalization-owned registry — matching the managed table lifetime. Grows
+                // are few (log2 of the growth factor), so at most a handful of superseded tables are retained.
                 if (!tableBlocks[version].IsEmpty)
                 {
-                    DirectVirtualMemory.Free(tableBlocks[version]);
+                    (nativeTableRegistry ??= new NativePageBlockRegistry()).Register(tableBlocks[version]);
                     tableBlocks[version] = default;
                 }
                 var block = DirectVirtualMemory.Allocate(size_bytes, sector_size);
