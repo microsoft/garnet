@@ -2228,14 +2228,26 @@ namespace Tsavorite.core
 
                         // Intended destination is flushPage
                         // Count this native page write as outstanding snapshot IO BEFORE issuing, so an eviction that
-                        // races the issue parks the page instead of unmapping it; the callback releases this unit
-                        // (WriteNotIssued below releases it instead, since no callback will fire).
+                        // races the issue parks the page instead of unmapping it. The unit is released by the write's
+                        // completion callback iff the write is actually issued; otherwise (WriteNotIssued, or the
+                        // issue throwing before a callback is registered) it is released in the finally below.
                         BeginNativeSnapshotFlush();
-                        WriteAsyncToDeviceForSnapshot(startPage, flushPage, (int)flushSize, AsyncFlushPageForSnapshotCallback, asyncResult, logDevice, objectLogDevice, fuzzyStartLogicalAddress);
+                        var writeIssued = false;
+                        try
+                        {
+                            WriteAsyncToDeviceForSnapshot(startPage, flushPage, (int)flushSize, AsyncFlushPageForSnapshotCallback, asyncResult, logDevice, objectLogDevice, fuzzyStartLogicalAddress);
+                            writeIssued = asyncResult.flushRequestState != FlushRequestState.WriteNotIssued;
+                        }
+                        finally
+                        {
+                            // WriteNotIssued or the issue threw -> no callback will fire, so release the unit here.
+                            if (!writeIssued)
+                                EndNativeSnapshotFlush();
+                        }
 
                         // If we did not issue a flush write (due to HeadAddress moving past flushPage), then WriteAsync set isForSnapshot false and we release the asyncResult here;
                         // otherwise, we wait for the completion of the flush (and the callback will release the asyncResult).
-                        if (asyncResult.flushRequestState != FlushRequestState.WriteNotIssued)
+                        if (writeIssued)
                         {
                             if (throttleCheckpointFlushDelayMs >= 0)
                             {
@@ -2245,7 +2257,6 @@ namespace Tsavorite.core
                         }
                         else
                         {
-                            EndNativeSnapshotFlush();   // no write issued -> no callback; release the unit taken above
                             _ = asyncResult.Release();
                             // Release() called CompleteFlush() which released the throttle semaphore.
                             // Drain it so the next real page's WaitOneFlush is not satisfied by this no-op.
@@ -2591,67 +2602,73 @@ namespace Tsavorite.core
         {
             try
             {
-                if (errorCode != 0)
-                {
-                    logger?.LogError("AsyncFlushPageToDeviceCallback error: {errorCode}", errorCode);
-
-                    // Fault the snapshot's flush-completion so the checkpoint fails rather than committing a snapshot with
-                    // an unwritten page; the Release() below still frees buffers and its CompleteFlush becomes a no-op.
-                    ((PageAsyncFlushResult<Empty>)context).flushCompletionTracker?.SetException(
-                        new TsavoriteException($"Snapshot page flush failed with error code {errorCode}"));
-                }
-
-                var result = (PageAsyncFlushResult<Empty>)context;
-                var epochTaken = epoch.ResumeIfNotProtected();
-
                 try
                 {
-                    var startAddress = GetLogicalAddressOfStartOfPage(result.page);
-                    var endAddress = startAddress + PageSize;
-
-                    // First make sure we're not trying to process a logical address that's in a page header.
-                    startAddress += PageHeader.Size;
-
-                    if (result.fromAddress > startAddress)
-                        startAddress = result.fromAddress;
-                    if (result.untilAddress < endAddress)
-                        endAddress = result.untilAddress;
-
-                    var _readOnlyAddress = SafeReadOnlyAddress;
-                    if (_readOnlyAddress > startAddress)
-                        startAddress = _readOnlyAddress;
-                    if (_readOnlyAddress > endAddress)
-                        endAddress = _readOnlyAddress;
-
-                    var flushWidth = (int)(endAddress - startAddress);
-
-                    if (flushWidth > 0)
+                    if (errorCode != 0)
                     {
-                        var physicalAddress = GetPhysicalAddress(startAddress);
-                        var endPhysicalAddress = physicalAddress + flushWidth;
+                        logger?.LogError("AsyncFlushPageToDeviceCallback error: {errorCode}", errorCode);
 
-                        while (physicalAddress < endPhysicalAddress)
+                        // Fault the snapshot's flush-completion so the checkpoint fails rather than committing a snapshot with
+                        // an unwritten page; the Release() below still frees buffers and its CompleteFlush becomes a no-op.
+                        ((PageAsyncFlushResult<Empty>)context).flushCompletionTracker?.SetException(
+                            new TsavoriteException($"Snapshot page flush failed with error code {errorCode}"));
+                    }
+
+                    var result = (PageAsyncFlushResult<Empty>)context;
+                    var epochTaken = epoch.ResumeIfNotProtected();
+
+                    try
+                    {
+                        var startAddress = GetLogicalAddressOfStartOfPage(result.page);
+                        var endAddress = startAddress + PageSize;
+
+                        // First make sure we're not trying to process a logical address that's in a page header.
+                        startAddress += PageHeader.Size;
+
+                        if (result.fromAddress > startAddress)
+                            startAddress = result.fromAddress;
+                        if (result.untilAddress < endAddress)
+                            endAddress = result.untilAddress;
+
+                        var _readOnlyAddress = SafeReadOnlyAddress;
+                        if (_readOnlyAddress > startAddress)
+                            startAddress = _readOnlyAddress;
+                        if (_readOnlyAddress > endAddress)
+                            endAddress = _readOnlyAddress;
+
+                        var flushWidth = (int)(endAddress - startAddress);
+
+                        if (flushWidth > 0)
                         {
-                            var logRecord = _wrapper.CreateLogRecord(startAddress);
-                            var alignedRecordSize = logRecord.AllocatedSize;
-                            physicalAddress += alignedRecordSize;
-                            startAddress += alignedRecordSize;
+                            var physicalAddress = GetPhysicalAddress(startAddress);
+                            var endPhysicalAddress = physicalAddress + flushWidth;
+
+                            while (physicalAddress < endPhysicalAddress)
+                            {
+                                var logRecord = _wrapper.CreateLogRecord(startAddress);
+                                var alignedRecordSize = logRecord.AllocatedSize;
+                                physicalAddress += alignedRecordSize;
+                                startAddress += alignedRecordSize;
+                            }
                         }
                     }
+                    finally
+                    {
+                        if (epochTaken)
+                            epoch.Suspend();
+                        _ = result.Release();
+                    }
                 }
-                finally
-                {
-                    if (epochTaken)
-                        epoch.Suspend();
-                    _ = result.Release();
-
-                    // Release this issued page write's unit of outstanding snapshot IO (runs on both the success and
-                    // error paths, since this callback fires for every issued write). When the last outstanding unit
-                    // is released, any pages parked while snapshot writes were in flight are freed.
-                    EndNativeSnapshotFlush();
-                }
+                catch when (disposed) { }
             }
-            catch when (disposed) { }
+            finally
+            {
+                // Release this issued page write's unit of outstanding snapshot IO. In an OUTERMOST finally so it
+                // runs on every path (success, error, disposed, or a cleanup exception in the inner finally), since
+                // this callback fires exactly once per issued write. When the last unit is released, pages parked
+                // while snapshot writes were in flight are freed.
+                EndNativeSnapshotFlush();
+            }
         }
 
         internal string PrettyPrintLogicalAddress(long logicalAddress) => $"{logicalAddress}:{GetPage(logicalAddress)}.{GetOffsetOnPage(logicalAddress)}";

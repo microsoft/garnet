@@ -236,6 +236,32 @@ namespace Tsavorite.core
             PageAsyncFlushResult<TContext> asyncResult, IDevice device, IDevice objectLogDevice, long fuzzyStartLogicalAddress)
         {
             VerifyCompatibleSectorSize(device);
+            if (useNativeLogPages)
+            {
+                // Direct-VM backend: an evicted page's slot pointer is cleared (its block may be parked for free), so
+                // do not issue a snapshot write from a stale/zero pointer. Under epoch protection (which pins the page
+                // against eviction while held), skip a page the eviction boundary has already fully passed — recovery
+                // reads such pages from the main log (its recovery start is never below HeadAddress). If the page is
+                // still live, the pointer read here is valid; should the page be evicted after we release the epoch
+                // while the async write is in flight, FreeNativeLogPage parks (does not unmap) its block.
+                var epochTaken = epoch.ResumeIfNotProtected();
+                try
+                {
+                    if (HeadAddress >= GetLogicalAddressOfStartOfPage(flushPage + 1))
+                    {
+                        asyncResult.flushRequestState = FlushRequestState.WriteNotIssued;
+                        return;
+                    }
+                    WriteInlinePageAsync((IntPtr)pagePointers[flushPage % BufferSize], (ulong)(AlignedPageSizeBytes * (flushPage - startPage)),
+                                (uint)AlignedPageSizeBytes, callback, asyncResult, device);
+                }
+                finally
+                {
+                    if (epochTaken)
+                        epoch.Suspend();
+                }
+                return;
+            }
             WriteInlinePageAsync((IntPtr)pagePointers[flushPage % BufferSize], (ulong)(AlignedPageSizeBytes * (flushPage - startPage)),
                         (uint)AlignedPageSizeBytes, callback, asyncResult, device);
         }

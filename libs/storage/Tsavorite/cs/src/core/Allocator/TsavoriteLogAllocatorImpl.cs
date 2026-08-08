@@ -116,6 +116,32 @@ namespace Tsavorite.core
             VerifyCompatibleSectorSize(device);
             var alignedPageSize = (pageSize + (sectorSize - 1)) & ~(sectorSize - 1);
 
+            if (useNativeLogPages)
+            {
+                // See SpanByteAllocatorImpl.WriteAsyncToDeviceForSnapshot: under the direct-VM backend, skip a page
+                // the eviction boundary has already fully passed (its slot pointer is cleared) rather than write from
+                // a stale/zero pointer; epoch protection pins a live page for the pointer read, and parking keeps an
+                // in-flight write's block mapped.
+                var epochTaken = epoch.ResumeIfNotProtected();
+                try
+                {
+                    if (HeadAddress >= GetLogicalAddressOfStartOfPage(flushPage + 1))
+                    {
+                        asyncResult.flushRequestState = FlushRequestState.WriteNotIssued;
+                        return;
+                    }
+                    WriteInlinePageAsync((IntPtr)pagePointers[flushPage % BufferSize],
+                                (ulong)(AlignedPageSizeBytes * (flushPage - startPage)),
+                                (uint)alignedPageSize, callback, asyncResult, device);
+                }
+                finally
+                {
+                    if (epochTaken)
+                        epoch.Suspend();
+                }
+                return;
+            }
+
             WriteInlinePageAsync((IntPtr)pagePointers[flushPage % BufferSize],
                         (ulong)(AlignedPageSizeBytes * (flushPage - startPage)),
                         (uint)alignedPageSize, callback, asyncResult,
