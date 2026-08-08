@@ -848,6 +848,18 @@ namespace Garnet.server
 
             // Prepare input
             var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.ZRANDMEMBER };
+
+            // The line below packs the count above two metadata bits, so a count above
+            // int.MaxValue >> 2 overflows Int32 and unpacks to an unrelated value: ZRANDMEMBER key
+            // 1073741824 wrote no reply at all. Cap it at the largest representable count;
+            // SortedSetObjectImpl already saturates any positive count to the set size, so no
+            // reachable reply changes. The cap is one-sided on purpose: a count below int.MinValue >> 2
+            // overflows to a small non-negative value, which is left as-is here, whereas clamping up to
+            // int.MinValue >> 2 would instead route it through Math.Abs into a ~2GB index allocation.
+            // (A count that unpacks to 0 still writes no reply - a pre-existing desync this cap does not
+            // address; aligning negative counts with Redis, which streams them in batches, is separate.)
+            paramCount = Math.Min(paramCount, int.MaxValue >> 2);
+
             var inputArg = (((paramCount << 1) | (includedCount ? 1 : 0)) << 1) | (includeWithScores ? 1 : 0);
             var input = new ObjectInput(header, inputArg, seed);
 

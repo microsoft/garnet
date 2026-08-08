@@ -246,6 +246,17 @@ namespace Garnet.server
                 }
             }
 
+            // The line below packs the count above two metadata bits, so a count above
+            // int.MaxValue >> 2 overflows Int32 and unpacks to an unrelated value: HRANDFIELD key
+            // 1073741824 replied with an empty array instead of the whole hash. Cap it at the largest
+            // representable count; HashObjectImpl already saturates any positive count to the hash
+            // size, so no reachable reply changes. The cap is one-sided on purpose: a count below
+            // int.MinValue >> 2 overflows to a small non-negative value and HRANDFIELD already replies
+            // with an empty array for it, whereas clamping up to int.MinValue >> 2 would instead route
+            // it through Math.Abs into a ~2GB index allocation. Aligning negative counts with Redis,
+            // which streams them in batches, is a separate change.
+            paramCount = Math.Min(paramCount, int.MaxValue >> 2);
+
             var countWithMetadata = (((paramCount << 1) | (includedCount ? 1 : 0)) << 1) | (withValues ? 1 : 0);
 
             // Create a random seed
