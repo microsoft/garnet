@@ -60,8 +60,17 @@ namespace Tsavorite.test.recovery
             }, StoreFunctions.Create(LongKeyComparer.Instance, SpanByteRecordTriggers.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions));
 
+            // Attach a LogSizeTracker so that page eviction goes through ReturnPage -> FreeNativeLogPage (FreePage
+            // only calls ReturnPage when a tracker is set). Combined with the tiny in-memory log this makes native
+            // log pages be UNMAPPED on eviction concurrently with the snapshot writes below — the exact interleaving
+            // under test.
+            var tracker = new LogSizeTracker<LongStoreFunctions, LongAllocator>(store.Log, 1L << 16, 1L << 13, 1L << 12, logger: null);
+            store.Log.SetLogSizeTracker(tracker);
+            tracker.Start(CancellationToken.None);
+
             using var cts = new CancellationTokenSource();
             Exception writerError = null;
+            var freesBefore = Interlocked.Read(ref AllocatorBase<LongStoreFunctions, LongAllocator>.NativeLogPageFreeCount);
 
             // Background writers: continuous upserts drive the tail forward, forcing pages read-only -> flushed ->
             // evicted (ReturnPage -> FreeNativeLogPage) concurrently with the snapshot writes below.
@@ -106,6 +115,11 @@ namespace Tsavorite.test.recovery
             cts.Cancel();
             Task.WaitAll(writers);
             ClassicAssert.IsNull(writerError, $"writer failed: {writerError}");
+
+            // Prove the test actually exercised the native eviction-unmap path (FreeNativeLogPage) concurrently with
+            // the snapshots — otherwise a "no crash" result would be vacuous (pages never unmapped).
+            var freed = Interlocked.Read(ref AllocatorBase<LongStoreFunctions, LongAllocator>.NativeLogPageFreeCount) - freesBefore;
+            ClassicAssert.Greater(freed, 0, "expected native log pages to be freed on eviction during the snapshots");
+            TestContext.Out.WriteLine($"native log-page frees during concurrent snapshots: {freed:N0}");
         }
     }
-}

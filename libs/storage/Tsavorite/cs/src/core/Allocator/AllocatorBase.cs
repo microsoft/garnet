@@ -836,9 +836,14 @@ namespace Tsavorite.core
         {
             if (pageBlocks is null)
                 return;
+            _ = Interlocked.Increment(ref NativeLogPageFreeCount);
             DirectVirtualMemory.Free(pageBlocks[index]);
             pageBlocks[index] = default;
         }
+
+        /// <summary>Diagnostic counter of direct-VM log-page frees on eviction (see <see cref="FreeNativeLogPage"/>);
+        /// used by tests to assert the native eviction-unmap path is actually exercised.</summary>
+        internal static long NativeLogPageFreeCount;
 
         /// <summary>Initialize allocator</summary>
         [MethodImpl(MethodImplOptions.NoInlining)]
