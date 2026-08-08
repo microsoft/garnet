@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System.Net;
@@ -27,7 +27,7 @@ namespace Resp.benchmark
                 CommitFrequencyMs = options.CommitFrequencyMs,
                 AofPhysicalSublogCount = options.AofPhysicalSublogCount,
                 AofReplayTaskCount = options.AofReplayTaskCount,
-                ReplicationOffsetMaxLag = 0,
+                AofReplayMaxLagBytes = 0,
                 CheckpointDir = OperatingSystem.IsLinux() ? "/tmp" : null,
             };
             return serverOptions;
