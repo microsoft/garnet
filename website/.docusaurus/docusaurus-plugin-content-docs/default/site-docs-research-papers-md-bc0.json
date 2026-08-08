@@ -1,0 +1,24 @@
+{
+  "id": "research/papers",
+  "title": "Research Papers",
+  "description": "Key-Value Stores",
+  "source": "@site/docs/research/papers.md",
+  "sourceDirName": "research",
+  "slug": "/research/papers",
+  "permalink": "/garnet/docs/research/papers",
+  "draft": false,
+  "unlisted": false,
+  "editUrl": "https://github.com/microsoft/garnet/tree/main/website/docs/research/papers.md",
+  "tags": [],
+  "version": "current",
+  "frontMatter": {
+    "id": "papers",
+    "sidebar_label": "Papers",
+    "title": "Research Papers"
+  },
+  "sidebar": "garnetDocSidebar",
+  "previous": {
+    "title": "FAQ",
+    "permalink": "/garnet/docs/azure/faq"
+  }
+}

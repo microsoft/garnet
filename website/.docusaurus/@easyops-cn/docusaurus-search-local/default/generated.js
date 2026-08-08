@@ -1,0 +1,13 @@
+export const removeDefaultStemmer = false;
+export const Mark = null;
+export const searchResultContextMaxLength = 50;
+export const explicitSearchResultPath = false;
+export const searchBarShortcut = true;
+export const searchBarShortcutHint = true;
+export const searchBarShortcutKeymap = "mod+k";
+export const searchBarPosition = "right";
+export const docsPluginIdForPreferredVersion = undefined;
+export const indexDocs = true;
+export const searchContextByPaths = null;
+export const hideSearchBarWithNoSearchContext = false;
+export const useAllContextsWithNoSearchContext = false;

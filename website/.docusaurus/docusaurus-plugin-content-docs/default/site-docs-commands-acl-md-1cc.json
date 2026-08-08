@@ -1,0 +1,29 @@
+{
+  "id": "commands/acl-commands",
+  "title": "ACL",
+  "description": "ACL CAT",
+  "source": "@site/docs/commands/acl.md",
+  "sourceDirName": "commands",
+  "slug": "/commands/acl",
+  "permalink": "/garnet/docs/commands/acl",
+  "draft": false,
+  "unlisted": false,
+  "editUrl": "https://github.com/microsoft/garnet/tree/main/website/docs/commands/acl.md",
+  "tags": [],
+  "version": "current",
+  "frontMatter": {
+    "id": "acl-commands",
+    "sidebar_label": "ACL",
+    "title": "ACL",
+    "slug": "acl"
+  },
+  "sidebar": "garnetDocSidebar",
+  "previous": {
+    "title": "Cluster Commands",
+    "permalink": "/garnet/docs/commands/cluster"
+  },
+  "next": {
+    "title": "Scripting and functions",
+    "permalink": "/garnet/docs/commands/scripting"
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "id": "welcome/about-us",
+  "title": "About Us",
+  "description": "Check out our blog post here for more details on our history and evolution.",
+  "source": "@site/docs/welcome/about-us.md",
+  "sourceDirName": "welcome",
+  "slug": "/welcome/about-us",
+  "permalink": "/garnet/docs/welcome/about-us",
+  "draft": false,
+  "unlisted": false,
+  "editUrl": "https://github.com/microsoft/garnet/tree/main/website/docs/welcome/about-us.md",
+  "tags": [],
+  "version": "current",
+  "frontMatter": {
+    "id": "about-us",
+    "sidebar_label": "About Us",
+    "title": "About Us"
+  },
+  "sidebar": "garnetDocSidebar",
+  "previous": {
+    "title": "FAQ",
+    "permalink": "/garnet/docs/welcome/faq"
+  },
+  "next": {
+    "title": "Build",
+    "permalink": "/garnet/docs/getting-started"
+  }
+}

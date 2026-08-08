@@ -1,0 +1,28 @@
+{
+  "id": "getting-started/compaction",
+  "title": "Log Compaction",
+  "description": "When Garnet is configured to run with storage using EnableStorageTier or --storage-tier, data that does not fit in memory will spill to disk storage.",
+  "source": "@site/docs/getting-started/compaction.md",
+  "sourceDirName": "getting-started",
+  "slug": "/getting-started/compaction",
+  "permalink": "/garnet/docs/getting-started/compaction",
+  "draft": false,
+  "unlisted": false,
+  "editUrl": "https://github.com/microsoft/garnet/tree/main/website/docs/getting-started/compaction.md",
+  "tags": [],
+  "version": "current",
+  "frontMatter": {
+    "id": "compaction",
+    "sidebar_label": "Compaction",
+    "title": "Log Compaction"
+  },
+  "sidebar": "garnetDocSidebar",
+  "previous": {
+    "title": "Security",
+    "permalink": "/garnet/docs/security"
+  },
+  "next": {
+    "title": "Overview",
+    "permalink": "/garnet/docs/benchmarking/overview"
+  }
+}

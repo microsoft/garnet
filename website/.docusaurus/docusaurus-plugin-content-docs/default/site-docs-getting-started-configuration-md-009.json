@@ -1,0 +1,28 @@
+{
+  "id": "getting-started/configuration",
+  "title": "Garnet Configuration",
+  "description": "How to Configure Garnet",
+  "source": "@site/docs/getting-started/configuration.md",
+  "sourceDirName": "getting-started",
+  "slug": "/getting-started/configuration",
+  "permalink": "/garnet/docs/getting-started/configuration",
+  "draft": false,
+  "unlisted": false,
+  "editUrl": "https://github.com/microsoft/garnet/tree/main/website/docs/getting-started/configuration.md",
+  "tags": [],
+  "version": "current",
+  "frontMatter": {
+    "id": "configuration",
+    "sidebar_label": "Configuration",
+    "title": "Garnet Configuration"
+  },
+  "sidebar": "garnetDocSidebar",
+  "previous": {
+    "title": "Build",
+    "permalink": "/garnet/docs/getting-started"
+  },
+  "next": {
+    "title": "Memory",
+    "permalink": "/garnet/docs/getting-started/memory"
+  }
+}
