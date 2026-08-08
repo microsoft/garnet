@@ -5,6 +5,7 @@ using System;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using Garnet.shared;
 using Tsavorite.core;
 
 #pragma warning disable CS1591 // Missing XML comment for publicly visible type or member

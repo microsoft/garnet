@@ -3,7 +3,7 @@
 
 using System.Diagnostics;
 
-namespace Tsavorite.core
+namespace Garnet.shared
 {
     public sealed unsafe partial class LightEpoch
     {

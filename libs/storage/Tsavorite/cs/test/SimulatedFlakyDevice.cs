@@ -4,6 +4,7 @@
 using System;
 using System.Collections.Generic;
 using System.Threading;
+using Garnet.shared;
 using Tsavorite.core;
 
 namespace Tsavorite.test

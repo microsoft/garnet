@@ -3,7 +3,7 @@
 
 using System;
 using System.Runtime.CompilerServices;
-using Tsavorite.core;
+using Garnet.shared;
 
 namespace Tsavorite.epoch.litmus
 {

@@ -19,7 +19,7 @@ using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading;
-using Tsavorite.core;
+using Garnet.shared;
 
 namespace Tsavorite.epoch.litmus
 {
@@ -688,7 +688,7 @@ namespace Tsavorite.epoch.litmus
             if (Metadata.threadId == 0) // run once per thread for performance
             {
                 Metadata.threadId = Environment.CurrentManagedThreadId;
-                var code = (uint)Utility.Murmur3(Metadata.threadId);
+                var code = (uint)HashUtility.Murmur3(Metadata.threadId);
                 Metadata.startOffset1 = (ushort)(1 + (code % kTableSize));
                 Metadata.startOffset2 = (ushort)(1 + ((code >> 16) % kTableSize));
             }

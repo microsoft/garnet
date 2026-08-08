@@ -3,9 +3,8 @@
 
 using System;
 using System.Threading;
-using Tsavorite.core;
 
-namespace Tsavorite.test.epoch
+namespace Garnet.shared.test.epoch
 {
     /// <summary>
     /// A thread that enters a protected region and stays there until released. Several tests need

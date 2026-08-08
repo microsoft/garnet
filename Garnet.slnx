@@ -29,6 +29,7 @@
     <Project Path="libs/native/bftree-garnet/BfTreeInterop.csproj" />
     <Project Path="libs/resources/Garnet.resources.csproj" />
     <Project Path="libs/server/Garnet.server.csproj" />
+    <Project Path="libs/shared/Garnet.shared.csproj" />
   </Folder>
   <Folder Name="/libs/Tsavorite/">
     <Project Path="libs/storage/Tsavorite/cs/src/core/Tsavorite.core.csproj" />
@@ -77,9 +78,9 @@
     <File Path="Version.props" />
   </Folder>
   <Folder Name="/test/">
-    <Project Path="libs/storage/Tsavorite/cs/test/test.epoch/Tsavorite.test.epoch.csproj" />
     <Project Path="test/Garnet.fuzz/Garnet.fuzz.csproj" />
     <Project Path="test/standalone/BfTreeInterop.test/BfTreeInterop.test.csproj" />
+    <Project Path="test/standalone/Garnet.shared.test/Garnet.shared.test.csproj" />
     <Project Path="test/standalone/Garnet.test/Garnet.test.csproj" />
     <Project Path="test/standalone/Garnet.test.acl/Garnet.test.acl.csproj" />
     <Project Path="test/standalone/Garnet.test.collections/Garnet.test.collections.csproj" />

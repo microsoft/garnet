@@ -4,9 +4,8 @@
 using System.Collections.Generic;
 using System.Threading;
 using NUnit.Framework;
-using Tsavorite.core;
 
-namespace Tsavorite.test.epoch
+namespace Garnet.shared.test.epoch
 {
     /// <summary>
     /// Base for every fixture here: the running-test tracking from <see cref="Garnet.test.TestBase"/>,

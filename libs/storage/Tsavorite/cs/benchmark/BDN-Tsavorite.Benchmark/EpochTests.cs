@@ -2,7 +2,7 @@
 // Licensed under the MIT license.
 
 using BenchmarkDotNet.Attributes;
-using Tsavorite.core;
+using Garnet.shared;
 
 namespace BenchmarkDotNetTests
 {

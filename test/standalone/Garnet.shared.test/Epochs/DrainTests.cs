@@ -6,9 +6,8 @@ using System.Collections.Concurrent;
 using System.Linq;
 using System.Threading;
 using NUnit.Framework;
-using Tsavorite.core;
 
-namespace Tsavorite.test.epoch
+namespace Garnet.shared.test.epoch
 {
     /// <summary>
     /// The drain list: deferred actions that must run once the epoch they were registered against

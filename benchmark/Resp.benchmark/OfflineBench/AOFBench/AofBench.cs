@@ -5,6 +5,7 @@ using System.Diagnostics;
 using System.Net;
 using System.Text;
 using Garnet.server;
+using Garnet.shared;
 using Tsavorite.core;
 
 namespace Resp.benchmark

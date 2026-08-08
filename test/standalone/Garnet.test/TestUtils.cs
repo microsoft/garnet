@@ -1342,15 +1342,15 @@ using System.Threading.Tasks;
             var failTestOnLeak = !suppressFailure && TestContext.CurrentContext.Result.Outcome.Status == TestStatus.Passed;
 
             DeleteDirectory(MethodTestDir, wait: waitForDelete);
-            var count = Tsavorite.core.LightEpoch.ActiveInstanceCount();
+            var count = Garnet.shared.LightEpoch.ActiveInstanceCount();
             var failMsg = "";
 
             if (count != 0)
             {
                 // Reset all instances to avoid impacting other tests
-                Tsavorite.core.LightEpoch.ResetAllInstances();
-                logger?.LogError("Tsavorite.core.LightEpoch instances still active: {count}", count);
-                failMsg += $"Tsavorite.core.LightEpoch instances still active: {count}";
+                Garnet.shared.LightEpoch.ResetAllInstances();
+                logger?.LogError("Garnet.shared.LightEpoch instances still active: {count}", count);
+                failMsg += $"Garnet.shared.LightEpoch instances still active: {count}";
             }
 
             var count2 = client.LightEpoch.ActiveInstanceCount();

@@ -6,6 +6,7 @@
     <Project Path="benchmark/YCSB.benchmark/YCSB.benchmark.csproj" />
   </Folder>
   <Folder Name="/src/core/">
+    <Project Path="../../../shared/Garnet.shared.csproj" />
     <Project Path="src/core/Tsavorite.core.csproj" />
   </Folder>
   <Folder Name="/src/devices/">
