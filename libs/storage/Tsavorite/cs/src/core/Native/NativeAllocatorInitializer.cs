@@ -46,11 +46,16 @@ namespace Tsavorite.core
                 }
             }
 
-            // Direct-VM surfaces (log pages, hash index, frames) are gated by the 'full' mode and wired in a
-            // later phase; acknowledge the request so operators are not surprised that only the pool is active.
-            var directVmRequested = requested & (NativeAllocatorSurfaces.LogPages | NativeAllocatorSurfaces.HashIndex | NativeAllocatorSurfaces.Frames);
-            if (directVmRequested != 0)
-                logger?.LogWarning("Native allocator direct-VM surfaces ({surfaces}) are not yet wired; only 'buffer-pool' is currently active.", directVmRequested);
+            // Direct-VM singletons (always available; no shipped binary needed). Wired incrementally.
+            if ((requested & NativeAllocatorSurfaces.HashIndex) != 0)
+            {
+                enabled |= NativeAllocatorSurfaces.HashIndex;
+                logger?.LogInformation("Native allocator enabled for the hash index (direct virtual memory).");
+            }
+
+            var notYetWired = requested & (NativeAllocatorSurfaces.LogPages | NativeAllocatorSurfaces.Frames);
+            if (notYetWired != 0)
+                logger?.LogWarning("Native allocator direct-VM surfaces ({surfaces}) are not yet wired; those surfaces stay managed.", notYetWired);
 
             EnabledSurfaces = enabled;
             return enabled;

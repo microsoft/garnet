@@ -148,26 +148,35 @@ namespace Tsavorite.test
         }
 
         [Test]
-        public void NativeReadDestSkipsZeroing()
+        public void DirectVmAllocateIsZeroedAlignedWritable()
         {
-            RequireMimalloc();
-            SectorAlignedBufferPool.NativeAllocator = new MimallocPooledAllocator();
-            var pool = new SectorAlignedBufferPool(1, SectorSize);
-
-            // clearOnReturn:false (device-read destination) maps to mi_malloc (no forced zero). We cannot
-            // reliably assert non-zero contents, but the buffer must be aligned, sized, and writable.
-            var page = pool.Get(1000, clearOnReturn: false);
+            var block = DirectVirtualMemory.Allocate(1 << 20, 4096);   // 1 MB, 4 KB aligned
             try
             {
-                ClassicAssert.AreEqual(0, ((long)page.aligned_pointer) % SectorSize);
-                ClassicAssert.GreaterOrEqual(page.AlignedTotalCapacity, 1000);
-                new Span<byte>(page.aligned_pointer, 1000).Fill(0xAB);
-                ClassicAssert.AreEqual(0xAB, page.aligned_pointer[999]);
+                ClassicAssert.IsFalse(block.IsEmpty);
+                ClassicAssert.AreEqual(0, ((long)block.AlignedPtr) % 4096, "must be aligned");
+                var span = new Span<byte>((void*)block.AlignedPtr, 1 << 20);
+                foreach (var b in span)
+                    ClassicAssert.AreEqual(0, b, "fresh OS mapping must be demand-zero");
+                span.Fill(0xCD);
+                ClassicAssert.AreEqual(0xCD, span[(1 << 20) - 1], "must be writable end-to-end");
             }
             finally
             {
-                page.Return();
+                DirectVirtualMemory.Free(block);
             }
+        }
+
+        [Test]
+        public void DirectVmTrackerReflectsAllocation()
+        {
+            var before = NativeMemoryTracker.Bytes;
+            var block = DirectVirtualMemory.Allocate(8L << 20, 512);   // 8 MB
+            var afterAlloc = NativeMemoryTracker.Bytes;
+            ClassicAssert.GreaterOrEqual(afterAlloc - before, 8L << 20, "tracker should reflect the direct-VM reservation");
+            DirectVirtualMemory.Free(block);
+            var afterFree = NativeMemoryTracker.Bytes;
+            ClassicAssert.Less(afterFree - before, 8L << 20, "tracker should drop after free");
         }
     }
 }

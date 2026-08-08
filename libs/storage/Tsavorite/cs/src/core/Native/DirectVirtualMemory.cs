@@ -1,0 +1,114 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
+
+using System;
+using System.Runtime.InteropServices;
+
+namespace Tsavorite.core
+{
+    /// <summary>
+    /// A direct OS virtual-memory reservation: the region to free (<see cref="BasePtr"/>), the aligned usable
+    /// pointer (<see cref="AlignedPtr"/>), and the reserved byte length. Default value is the empty block.
+    /// </summary>
+    internal readonly struct DirectVmBlock
+    {
+        public readonly nint BasePtr;
+        public readonly nint AlignedPtr;
+        public readonly long ReservedLength;
+
+        public DirectVmBlock(nint basePtr, nint alignedPtr, long reservedLength)
+        {
+            BasePtr = basePtr;
+            AlignedPtr = alignedPtr;
+            ReservedLength = reservedLength;
+        }
+
+        public bool IsEmpty => BasePtr == 0;
+    }
+
+    /// <summary>
+    /// Direct OS virtual-memory allocator for large, long-lived, NUMA-sensitive singletons (hash index, log
+    /// pages, recovery frames) in the native-allocator "full" mode. Uses <c>mmap(MAP_ANONYMOUS)</c> on Linux
+    /// and <c>VirtualAlloc(MEM_RESERVE|MEM_COMMIT)</c> on Windows: both return <b>demand-zero</b> pages whose
+    /// physical mapping happens on <b>first access</b> (NUMA first-touch), matching today's
+    /// <see cref="System.GC.AllocateArray{T}(int, bool)"/> behavior — the accepted requirement for these
+    /// surfaces. mimalloc is deliberately not used here: for a handful of multi-GB mappings its segment/arena
+    /// reuse can hand back dirty memory and it offers no benefit over a plain OS mapping.
+    /// </summary>
+    internal static unsafe class DirectVirtualMemory
+    {
+        [DllImport("libc", SetLastError = true)]
+        static extern nint mmap(nint addr, nuint length, int prot, int flags, int fd, nint offset);
+
+        [DllImport("libc", SetLastError = true)]
+        static extern int munmap(nint addr, nuint length);
+
+        [DllImport("kernel32", SetLastError = true)]
+        static extern nint VirtualAlloc(nint lpAddress, nuint dwSize, uint flAllocationType, uint flProtect);
+
+        [DllImport("kernel32", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        static extern bool VirtualFree(nint lpAddress, nuint dwSize, uint dwFreeType);
+
+        const int PROT_READ_WRITE = 0x1 | 0x2;          // PROT_READ | PROT_WRITE
+        const int MAP_PRIVATE_ANONYMOUS = 0x02 | 0x20;  // MAP_PRIVATE | MAP_ANONYMOUS (Linux)
+        static readonly nint MAP_FAILED = -1;
+
+        const uint MEM_RESERVE_COMMIT = 0x1000 | 0x2000; // MEM_COMMIT | MEM_RESERVE
+        const uint MEM_RELEASE = 0x8000;
+        const uint PAGE_READWRITE = 0x04;
+
+        static readonly long PageSize = Environment.SystemPageSize;
+
+        /// <summary>
+        /// Reserve+commit a demand-zero region of at least <paramref name="size"/> bytes whose usable pointer is
+        /// aligned to <paramref name="alignment"/> (a nonzero power of two). Physical pages are mapped on first
+        /// touch. Throws <see cref="OutOfMemoryException"/> on failure.
+        /// </summary>
+        public static DirectVmBlock Allocate(long size, int alignment)
+        {
+            if (size <= 0)
+                throw new ArgumentOutOfRangeException(nameof(size));
+            if (alignment <= 0 || (alignment & (alignment - 1)) != 0)
+                throw new ArgumentException("alignment must be a power of two", nameof(alignment));
+
+            // Over-reserve by the alignment so the returned base (page-aligned) can be rounded up to alignment.
+            var reserve = RoundUpToPage(size + alignment);
+
+            nint basePtr;
+            if (OperatingSystem.IsWindows())
+            {
+                basePtr = VirtualAlloc(0, (nuint)reserve, MEM_RESERVE_COMMIT, PAGE_READWRITE);
+                if (basePtr == 0)
+                    throw new OutOfMemoryException($"VirtualAlloc of {reserve} bytes failed (error {Marshal.GetLastWin32Error()})");
+            }
+            else
+            {
+                basePtr = mmap(0, (nuint)reserve, PROT_READ_WRITE, MAP_PRIVATE_ANONYMOUS, -1, 0);
+                if (basePtr == MAP_FAILED || basePtr == 0)
+                    throw new OutOfMemoryException($"mmap of {reserve} bytes failed (errno {Marshal.GetLastWin32Error()})");
+            }
+
+            var aligned = (nint)(((long)basePtr + (alignment - 1)) & ~((long)alignment - 1));
+            NativeMemoryTracker.Add(reserve);
+            return new DirectVmBlock(basePtr, aligned, reserve);
+        }
+
+        /// <summary>Release a region returned by <see cref="Allocate"/>. No-op for the empty block.</summary>
+        public static void Free(in DirectVmBlock block)
+        {
+            if (block.BasePtr == 0)
+                return;
+            NativeMemoryTracker.Subtract(block.ReservedLength);
+            if (OperatingSystem.IsWindows())
+                _ = VirtualFree(block.BasePtr, 0, MEM_RELEASE);
+            else
+                _ = munmap(block.BasePtr, (nuint)block.ReservedLength);
+        }
+
+        /// <summary>Zero <paramref name="length"/> bytes at <paramref name="ptr"/>.</summary>
+        public static void Clear(nint ptr, long length) => NativeMemory.Clear((void*)ptr, (nuint)length);
+
+        static long RoundUpToPage(long n) => (n + PageSize - 1) & ~(PageSize - 1);
+    }
+}

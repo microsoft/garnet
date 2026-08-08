@@ -31,6 +31,11 @@ namespace Tsavorite.core
         // An array of size two, that contains the old and new versions of the hash-table
         internal InternalHashTable[] state = new InternalHashTable[2];
 
+        // Per-version direct-VM backing block for the hash index when the HashIndex native surface is enabled
+        // ("full" mode). Kept separate from <see cref="state"/> (which is set to default on grow-completion) so
+        // the pointer to free survives; freed on re-init of that version (grow reuse) and in <see cref="Free"/>.
+        readonly DirectVmBlock[] tableBlocks = new DirectVmBlock[2];
+
         // Array used to denote if a specific chunk is merged or not
         internal long[] splitStatus;
 
@@ -73,6 +78,12 @@ namespace Tsavorite.core
                 epoch.Dispose();
             overflowBucketsAllocator.Dispose();
             overflowBucketsAllocatorResize?.Dispose();
+
+            // Release any direct-VM hash-index tables (no-op for the managed backend, where the blocks are empty).
+            DirectVirtualMemory.Free(tableBlocks[0]);
+            tableBlocks[0] = default;
+            DirectVirtualMemory.Free(tableBlocks[1]);
+            tableBlocks[1] = default;
         }
 
         /// <summary>
@@ -112,10 +123,27 @@ namespace Tsavorite.core
 
             logger?.LogTrace("KV Initialize size:{size}, sizeBytes:{sizeBytes} sectorSize:{sectorSize} alignedSizeBytes:{alignedSizeBytes}", size, size_bytes, sector_size, aligned_size_bytes);
 
-            // Over-allocate and align the table to the cacheline
-            state[version].tableRaw = GC.AllocateArray<HashBucket>((int)(aligned_size_bytes / Constants.kCacheLineBytes), true);
-            var sectorAlignedPointer = ((long)Unsafe.AsPointer(ref state[version].tableRaw[0]) + (sector_size - 1)) & ~(sector_size - 1);
-            state[version].tableAligned = (HashBucket*)sectorAlignedPointer;
+            if ((NativeAllocatorInitializer.EnabledSurfaces & NativeAllocatorSurfaces.HashIndex) != 0)
+            {
+                // Direct-VM (mmap/VirtualAlloc): demand-zero, first-touch-placed pages, matching GC.AllocateArray.
+                // Free any prior block for this version (grow reuses the two versions alternately).
+                if (!tableBlocks[version].IsEmpty)
+                {
+                    DirectVirtualMemory.Free(tableBlocks[version]);
+                    tableBlocks[version] = default;
+                }
+                var block = DirectVirtualMemory.Allocate(size_bytes, sector_size);
+                tableBlocks[version] = block;
+                state[version].tableRaw = null;
+                state[version].tableAligned = (HashBucket*)block.AlignedPtr;
+            }
+            else
+            {
+                // Over-allocate and align the table to the cacheline
+                state[version].tableRaw = GC.AllocateArray<HashBucket>((int)(aligned_size_bytes / Constants.kCacheLineBytes), true);
+                var sectorAlignedPointer = ((long)Unsafe.AsPointer(ref state[version].tableRaw[0]) + (sector_size - 1)) & ~(sector_size - 1);
+                state[version].tableAligned = (HashBucket*)sectorAlignedPointer;
+            }
 
             // Successful (re-)allocation so update the state sizes.
             state[version].size = size;
