@@ -132,6 +132,12 @@ namespace Tsavorite.kvbench
                        "Overrides --device-completion-threads.")]
         public bool DeviceInlineCompletion { get; set; }
 
+        [Option("native-buffer-pool", Required = false, Default = false,
+            HelpText = "Back the SectorAlignedBufferPool IO/flush buffers with the native (mimalloc) allocator " +
+                       "instead of the managed pinned-array pool. Enables the 'buffer-pool' native-allocator mode " +
+                       "for managed-vs-native A/B comparison.")]
+        public bool NativeBufferPool { get; set; }
+
         [Option("data-path", Required = false, Default = null,
             HelpText = "Directory where hlog files live. Default OS temp.")]
         public string DataPath { get; set; }

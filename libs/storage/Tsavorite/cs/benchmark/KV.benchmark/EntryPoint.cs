@@ -5,6 +5,7 @@ using System;
 using System.Collections.Generic;
 using System.Threading;
 using CommandLine;
+using Tsavorite.core;
 
 namespace Tsavorite.kvbench
 {
@@ -29,6 +30,15 @@ namespace Tsavorite.kvbench
             {
                 Console.Error.WriteLine($"ERROR: {err}");
                 return 64;
+            }
+
+            // Install the native (mimalloc) buffer-pool allocator before any store/device/pool is created.
+            if (opts.NativeBufferPool)
+            {
+                var enabled = NativeAllocatorInitializer.Initialize(NativeAllocatorSurfaces.BufferPool);
+                Console.WriteLine(enabled.HasFlag(NativeAllocatorSurfaces.BufferPool)
+                    ? "[native-allocator] SectorAlignedBufferPool -> mimalloc (ENABLED)"
+                    : "[native-allocator] requested buffer-pool but mimalloc UNAVAILABLE; using managed pool");
             }
 
             int oldMinW = 0, oldMinIO = 0;

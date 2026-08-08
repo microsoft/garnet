@@ -45,6 +45,16 @@ namespace Device.benchmark
             if (result.Tag == ParserResultType.NotParsed) return;
             var opts = result.MapResult(o => o, xs => new Options());
 
+            // Install the native (mimalloc) buffer-pool allocator before DeviceUtils' SectorAlignedBufferPool
+            // is first used (its static field is constructed lazily, but the native hook is read at Get() time).
+            if (opts.NativeBufferPool)
+            {
+                var enabled = NativeAllocatorInitializer.Initialize(NativeAllocatorSurfaces.BufferPool);
+                Console.WriteLine(enabled.HasFlag(NativeAllocatorSurfaces.BufferPool)
+                    ? "[native-allocator] SectorAlignedBufferPool -> mimalloc (ENABLED)"
+                    : "[native-allocator] requested buffer-pool but mimalloc UNAVAILABLE; using managed pool");
+            }
+
             PrintBenchMarkSummary(opts);
             SetupDeviceBenchmark(opts);
         }

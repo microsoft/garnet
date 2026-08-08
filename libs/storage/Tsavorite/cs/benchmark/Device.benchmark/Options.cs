@@ -30,6 +30,9 @@ namespace Device.benchmark
         [Option("io-backend", Required = false, Default = "default", HelpText = "Linux Native IO backend: default, libaio, uring. Ignored on other devices/OSes. Unknown values are rejected at startup.")]
         public string IoBackend { get; set; }
 
+        [Option("native-buffer-pool", Required = false, Default = false, HelpText = "Back the SectorAlignedBufferPool IO buffers (used by DeviceUtils) with the native (mimalloc) allocator instead of the managed pinned-array pool. Enables the 'buffer-pool' native-allocator mode for managed-vs-native A/B comparison.")]
+        public bool NativeBufferPool { get; set; }
+
         [Option("segment-size", Required = false, Default = 1L << 30, HelpText = "Segment size (bytes)")]
         public long SegmentSize { get; set; }
 
