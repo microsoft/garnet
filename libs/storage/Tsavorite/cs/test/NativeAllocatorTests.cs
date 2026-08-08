@@ -67,17 +67,26 @@ namespace Tsavorite.test
         }
 
         [Test]
-        public void NativeTrackerRoundTrips()
+        public void NativeTrackerReflectsMimallocCommit()
         {
             RequireMimalloc();
             SectorAlignedBufferPool.NativeAllocator = new MimallocPooledAllocator();
             var pool = new SectorAlignedBufferPool(1, SectorSize);
 
-            var before = NativeMemoryTracker.Bytes;
-            var page = pool.Get(4096);
-            ClassicAssert.Greater(NativeMemoryTracker.Bytes, before, "tracker should reflect the native allocation");
-            page.Return();
-            ClassicAssert.AreEqual(before, NativeMemoryTracker.Bytes, "tracker should return to baseline after free");
+            // Native usage is read on demand from mimalloc's committed stats (not per-op), so hold several
+            // large buffers so mimalloc must have committed memory, then assert the tracker reflects it.
+            var pages = new System.Collections.Generic.List<SectorAlignedMemory>();
+            for (var i = 0; i < 64; i++)
+                pages.Add(pool.Get(64 * 1024));
+            try
+            {
+                ClassicAssert.Greater(NativeMemoryTracker.Bytes, 0, "tracker should reflect mimalloc committed bytes");
+            }
+            finally
+            {
+                foreach (var p in pages)
+                    p.Return();
+            }
         }
 
         [Test]
@@ -87,17 +96,32 @@ namespace Tsavorite.test
             SectorAlignedBufferPool.NativeAllocator = new MimallocPooledAllocator();
             var pool = new SectorAlignedBufferPool(1, SectorSize);
 
-            var before = NativeMemoryTracker.Bytes;
             var page = pool.Get(2048);
             page.aligned_pointer[0] = 0x42;
 
             // Rent on this thread, free on another: exercises mimalloc's cross-thread free path (the scenario
-            // PR #2018 hand-rolled with origin-stripe return tracking).
-            var t = new Thread(() => page.Return());
+            // PR #2018 hand-rolled with origin-stripe return tracking). Must not throw or corrupt state.
+            Exception captured = null;
+            var t = new Thread(() =>
+            {
+                try { page.Return(); }
+                catch (Exception e) { captured = e; }
+            });
             t.Start();
             t.Join();
 
-            ClassicAssert.AreEqual(before, NativeMemoryTracker.Bytes);
+            ClassicAssert.IsNull(captured, "cross-thread Return must not throw");
+
+            // Pool remains usable after a cross-thread free.
+            var page2 = pool.Get(2048);
+            try
+            {
+                ClassicAssert.AreEqual(0, ((long)page2.aligned_pointer) % SectorSize);
+            }
+            finally
+            {
+                page2.Return();
+            }
         }
 
         [Test]

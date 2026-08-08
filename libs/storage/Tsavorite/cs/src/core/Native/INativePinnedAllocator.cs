@@ -29,10 +29,10 @@ namespace Tsavorite.core
     }
 
     /// <summary>
-    /// <see cref="INativePinnedAllocator"/> backed by mimalloc. Accounting uses the requested size (the pool
-    /// knows it) rather than <c>mi_usable_size</c>, avoiding an extra native call per op, and updates the
-    /// striped <see cref="NativeMemoryTracker"/> (telemetry only — see that type for why we do not use
-    /// <see cref="System.GC.AddMemoryPressure(long)"/>).
+    /// <see cref="INativePinnedAllocator"/> backed by mimalloc. The hot rent/return path does <b>no</b> per-op
+    /// accounting: native usage is read on demand from mimalloc's own stats (see <see cref="NativeMemoryTracker"/>
+    /// / <c>mi_process_info</c>). The <c>size</c> argument on <see cref="Free"/> is unused here (mimalloc frees
+    /// by pointer) but is part of the interface for the direct-VM backend, which needs the length to unmap.
     /// </summary>
     internal sealed unsafe class MimallocPooledAllocator : INativePinnedAllocator
     {
@@ -41,16 +41,13 @@ namespace Tsavorite.core
             var ptr = zeroed ? Mimalloc.ZallocAligned(size, alignment) : Mimalloc.MallocAligned(size, alignment);
             if (ptr == 0)
                 throw new OutOfMemoryException($"mimalloc aligned allocation of {size} bytes (alignment {alignment}) failed");
-            NativeMemoryTracker.Add((long)size);
             return ptr;
         }
 
         public void Free(nint ptr, nuint size)
         {
-            if (ptr == 0)
-                return;
-            NativeMemoryTracker.Subtract((long)size);
-            Mimalloc.Free(ptr);
+            if (ptr != 0)
+                Mimalloc.Free(ptr);
         }
     }
 }

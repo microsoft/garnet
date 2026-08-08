@@ -27,10 +27,13 @@ namespace Tsavorite.core
         static delegate* unmanaged[Cdecl]<nint, nuint> p_usable_size;
         static delegate* unmanaged[Cdecl]<int, void> p_collect;
 
-        // SuppressGCTransition variants of the hot alloc/free path. mi_*alloc/mi_free do not block, call back
-        // into the runtime, or throw, so skipping the cooperative->preemptive GC transition (~10-20ns/call)
-        // is safe and roughly halves the per-op P/Invoke cost on the buffer-pool hot path. The only tradeoff
-        // is the rare slow path (mimalloc obtaining/returning OS memory) briefly delaying a GC suspension.
+        // mi_process_info(elapsed_msecs, user_msecs, system_msecs, current_rss, peak_rss, current_commit,
+        // peak_commit, page_faults) — used for on-demand telemetry (current_commit = bytes mimalloc holds
+        // committed from the OS), so the hot alloc/free path does no per-op accounting.
+        static delegate* unmanaged[Cdecl]<nuint*, nuint*, nuint*, nuint*, nuint*, nuint*, nuint*, nuint*, void> p_process_info;
+
+        // SuppressGCTransition variants — used ONLY by profiling. Measured benefit on .NET 10 is ~0ns: the
+        // function-pointer GC transition is already sub-nanosecond, so production uses the normal variants.
         static delegate* unmanaged[Cdecl, SuppressGCTransition]<nuint, nuint, nint> p_malloc_aligned_fast;
         static delegate* unmanaged[Cdecl, SuppressGCTransition]<nuint, nuint, nint> p_zalloc_aligned_fast;
         static delegate* unmanaged[Cdecl, SuppressGCTransition]<nint, void> p_free_fast;
@@ -75,6 +78,10 @@ namespace Tsavorite.core
                         p_free_fast = (delegate* unmanaged[Cdecl, SuppressGCTransition]<nint, void>)eFree;
                         p_malloc = (delegate* unmanaged[Cdecl]<nuint, nint>)eMalloc;
                         p_malloc_fast = (delegate* unmanaged[Cdecl, SuppressGCTransition]<nuint, nint>)eMalloc;
+
+                        // mi_process_info is optional (older mimalloc may lack it); telemetry degrades to 0 if absent.
+                        if (NativeLibrary.TryGetExport(handle, "mi_process_info", out var eProcessInfo))
+                            p_process_info = (delegate* unmanaged[Cdecl]<nuint*, nuint*, nuint*, nuint*, nuint*, nuint*, nuint*, nuint*, void>)eProcessInfo;
                         available = true;
                     }
                     else
@@ -128,6 +135,20 @@ namespace Tsavorite.core
         {
             if (available)
                 p_collect(force ? 1 : 0);
+        }
+
+        /// <summary>
+        /// Bytes mimalloc currently holds committed from the OS (mi_process_info current_commit), queried on
+        /// demand. Returns 0 if mimalloc or the export is unavailable. This lets the hot alloc/free path do no
+        /// per-op accounting while still exposing accurate native usage for telemetry.
+        /// </summary>
+        internal static long CommittedBytes()
+        {
+            if (!available || p_process_info == null)
+                return 0;
+            nuint elapsed = 0, user = 0, sys = 0, currentRss = 0, peakRss = 0, currentCommit = 0, peakCommit = 0, faults = 0;
+            p_process_info(&elapsed, &user, &sys, &currentRss, &peakRss, &currentCommit, &peakCommit, &faults);
+            return (long)currentCommit;
         }
 
         static bool TryLoad(out nint handle)

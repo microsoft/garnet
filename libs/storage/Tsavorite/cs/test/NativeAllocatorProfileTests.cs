@@ -107,7 +107,7 @@ namespace Tsavorite.test
 
             Report("managed, SHARED pool", th => { SectorAlignedBufferPool.NativeAllocator = null; return RunShared(th); });
             Report("managed, PER-THREAD pools", th => { SectorAlignedBufferPool.NativeAllocator = null; return RunPerThread(th); });
-            Report("mimalloc, tracked (current)", th => { SectorAlignedBufferPool.NativeAllocator = new MimallocPooledAllocator(); return RunShared(th); });
+            Report("mimalloc (prod, on-demand stats)", th => { SectorAlignedBufferPool.NativeAllocator = new MimallocPooledAllocator(); return RunShared(th); });
             Report("mimalloc, UNTRACKED", th => { SectorAlignedBufferPool.NativeAllocator = new UntrackedMimallocAllocator(); return RunShared(th); });
             SectorAlignedBufferPool.NativeAllocator = null;
         }
@@ -174,7 +174,7 @@ namespace Tsavorite.test
             TestContext.Progress.WriteLine($"{"raw mi_malloc_ALIGNED + free (normal)",-40} | {rawAligned,8:F1}");
             TestContext.Progress.WriteLine($"{"raw mi_malloc_ALIGNED + free (SuppressGC)",-40} | {rawAlignedFast,8:F1}");
             TestContext.Progress.WriteLine($"{"pool, mimalloc UNTRACKED (aligned,normal)",-40} | {poolUntrackedNs,8:F1}");
-            TestContext.Progress.WriteLine($"{"pool, mimalloc tracked (current)",-40} | {poolTrackedNs,8:F1}");
+            TestContext.Progress.WriteLine($"{"pool, mimalloc (prod, on-demand stats)",-40} | {poolTrackedNs,8:F1}");
             TestContext.Progress.WriteLine("");
             TestContext.Progress.WriteLine($"GC-transition cost (2 calls/op): normal-vs-fast plain   = {rawMalloc - rawMallocFast,6:F1} ns/op");
             TestContext.Progress.WriteLine($"GC-transition cost (2 calls/op): normal-vs-fast aligned = {rawAligned - rawAlignedFast,6:F1} ns/op");
