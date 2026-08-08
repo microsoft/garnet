@@ -9,6 +9,7 @@ using System.Diagnostics;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Threading;
 using System.Threading.Channels;
 using System.Threading.Tasks;
 using Garnet.common;
@@ -225,8 +226,8 @@ namespace Garnet.server
             if (serverOptions.VectorSetQuantizationTaskCount < 0 || serverOptions.VectorSetQuantizationTaskCount > Environment.ProcessorCount)
                 throw new GarnetException($"VectorSetQuantizationTaskCount should be in range [0,{Environment.ProcessorCount}]!");
             var vectorSetQuantizationTaskCount = serverOptions.VectorSetQuantizationTaskCount == 0 ? Environment.ProcessorCount : serverOptions.VectorSetQuantizationTaskCount;
-            quantizationTasks = new Task[vectorSetQuantizationTaskCount];
-            Array.Fill(quantizationTasks, Task.CompletedTask);
+            quantizationTaskCount = vectorSetQuantizationTaskCount;
+            quantizationThreads = new Thread[vectorSetQuantizationTaskCount];
 
             logger?.LogInformation("Created VectorManager");
         }
@@ -435,10 +436,13 @@ namespace Garnet.server
             // Cleanup task has fully drained, so nothing else can take this gate.
             cleanupGate.Dispose();
 
-            // drain quantization task
+            // drain quantization work and stop the dedicated worker threads
             _ = quantizationChannel.Writer.TryComplete();
             while (quantizationChannel.Reader.TryRead(out _)) { }
-            AsyncUtils.BlockingWait(Task.WhenAll(quantizationTasks));
+            foreach (var thread in quantizationThreads)
+            {
+                thread?.Join();
+            }
         }
 
         private static void CompletePending(ref Status status, ref VectorOutput output, ref VectorBasicContext ctx)

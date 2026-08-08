@@ -920,10 +920,25 @@ namespace Tsavorite.core
                                     // WriteRecordObjects can do disk IO and must not hold the epoch. SetObjectLogRecordStartPositionAndLength
                                     // writes the on-disk-encoded lengths and ObjectLogPosition into the disk-image record (srcBuffer copy).
                                     // The main-log allocator page is left untouched by these calls.
+
+                                    // A concurrent Upsert/RMW/Delete may have elided or tombstoned this read-only record and freed its object
+                                    // slot(s) after the page's inline image was copied above (when the record was still Valid). The captured
+                                    // overflow/object is then empty even though the disk-image header still marks the field as heap. The
+                                    // superseding record was already CAS'd into the tag chain before the old record's heap was freed, so it is
+                                    // safe to mark the disk-image copy Invalid and skip writing its objects: recovery skips the invalid record
+                                    // and the superseding record wins. This also avoids dereferencing the freed slot below.
+                                    if ((logRecord.DataHeader.KeyIsOverflow && keyOverflow.IsEmpty)
+                                            || (logRecord.DataHeader.ValueIsOverflow && valueOverflow.IsEmpty)
+                                            || (logRecord.DataHeader.ValueIsObject && valueObject is null))
+                                    {
+                                        logRecord.InfoRef.SetInvalid();
+                                        goto NextRecord;
+                                    }
+
                                     logRecord.SetReuseObjectIdForSize();
 
                                     var valueObjectLength = logWriter.WriteRecordObjects(in keyOverflow, in valueOverflow, in valueObject);
-                                    logRecord.SetObjectLogRecordStartPositionAndLength(recordStartPosition, valueObjectLength);
+                                    logRecord.SetObjectLogRecordStartPositionAndLength(recordStartPosition, valueObjectLength, in keyOverflow, in valueOverflow);
                                 }
                                 else
                                 {
