@@ -154,7 +154,73 @@ namespace Tsavorite.test.spanbyte
             store.Dispose();
             log.Dispose();
 
-            ClassicAssert.Less(NativeMemoryTracker.Bytes - before, 1L << 20, "index + log-page native memory should be freed on Dispose");
+            // Note: direct-VM log-page/frame blocks are freed at finalization (to match the managed page lifetime
+            // and avoid unmapping a page with an in-flight device IO), so we do not assert prompt free-on-Dispose
+            // here — that timing is GC-dependent. Correctness (all records read back through native pages) and the
+            // "index + log are direct-VM backed" check above are the meaningful invariants.
+        }
+
+        /// <summary>
+        /// Stress: sustained heavy eviction churn through native log pages. Samples <see cref="NativeMemoryTracker.Bytes"/>
+        /// over many write passes to confirm the direct-VM log-page footprint STABILIZES (bounded by the circular
+        /// buffer + overflow pool) rather than growing unbounded as pages are recycled/dropped. Explicit (slow).
+        /// </summary>
+        [Test]
+        [Explicit]
+        [Category(TsavoriteKVTestCategory)]
+        public void NativeFullModeLogPageMemoryStaysBounded()
+        {
+            _ = NativeAllocatorInitializer.Initialize(NativeAllocatorSurfaces.HashIndex | NativeAllocatorSurfaces.LogPages);
+
+            var log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "hlog.log"), deleteOnClose: true);
+            var store = new TsavoriteKV<SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>>(
+                new()
+                {
+                    IndexSize = 1L << 22,
+                    LogDevice = log,
+                    LogMemorySize = 1L << 20,   // 1 MB in-memory log -> constant eviction
+                    PageSize = 1L << 13          // 8 KB pages
+                }, StoreFunctions.Create(SpanByteComparer.Instance, SpanByteRecordTriggers.Instance)
+                    , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions));
+
+            var session = store.NewSession<TestSpanByteKey, PinnedSpanByte, int[], Empty, VLVectorFunctions>(new VLVectorFunctions());
+            var bContext = session.BasicContext;
+
+            Span<int> keySpan = stackalloc int[1];
+            Span<int> valueSpan = stackalloc int[4];
+
+            long afterWarmup = 0;
+            long peak = 0;
+            const int passes = 40;
+            const int perPass = 50_000;   // ~6 MB/pass through a 1 MB log -> heavy recycle + occasional pool drop
+            for (var pass = 0; pass < passes; pass++)
+            {
+                for (var i = 0; i < perPass; i++)
+                {
+                    keySpan[0] = i;
+                    for (var j = 0; j < 4; j++)
+                        valueSpan[j] = pass;
+                    _ = bContext.Upsert(TestSpanByteKey.FromPinnedSpan(MemoryMarshal.Cast<int, byte>(keySpan)),
+                        MemoryMarshal.Cast<int, byte>(valueSpan), Empty.Default);
+                }
+
+                var now = NativeMemoryTracker.Bytes;
+                if (pass == 4)
+                    afterWarmup = now;   // baseline after the circular buffer + pool are warm
+                if (pass >= 4 && now > peak)
+                    peak = now;
+                TestContext.Out.WriteLine($"pass {pass}: native bytes = {now:N0}");
+            }
+
+            // After warmup the log-page footprint must be bounded: the circular buffer is fixed-size and the overflow
+            // pool is small, so the peak must not climb materially above the warm baseline (allow 2 MB slack for the
+            // pool + index). A leak from dropped-but-not-freed pages would make this grow ~linearly with passes.
+            ClassicAssert.Less(peak - afterWarmup, 2L << 20,
+                $"native log-page memory grew unbounded: warm={afterWarmup:N0} peak={peak:N0}");
+
+            session.Dispose();
+            store.Dispose();
+            log.Dispose();
         }
     }
 }

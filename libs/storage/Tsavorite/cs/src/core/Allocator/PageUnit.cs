@@ -10,9 +10,6 @@ namespace Tsavorite.core
         /// <summary>The byte array of this circular buffer page (null when the page is direct-VM backed)</summary>
         public byte[] array;
 
-        /// <summary>The direct-VM backing block of this circular buffer page (empty when managed-backed)</summary>
-        public DirectVmBlock block;
-
         /// <summary>The pinned pointer to this circular buffer page</summary>
         public long pointer;
 

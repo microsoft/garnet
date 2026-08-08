@@ -20,7 +20,7 @@ namespace Tsavorite.core
         public TsavoriteLogAllocatorImpl(AllocatorSettings settings)
             : base(settings, new TsavoriteLogStoreFunctions(), @this => new TsavoriteLogAllocator(@this), settings.logger)
         {
-            freePagePool = new OverflowPool<PageUnit<Empty>>(4, static p => DirectVirtualMemory.Free(p.block));
+            freePagePool = new OverflowPool<PageUnit<Empty>>(4, static p => { });
         }
 
         /// <inheritdoc />
@@ -44,7 +44,6 @@ namespace Tsavorite.core
             if (freePagePool.TryGet(out var item))
             {
                 pageArrays[index] = item.array;
-                pageBlocks[index] = item.block;
                 pagePointers[index] = item.pointer;
             }
             else
@@ -63,12 +62,10 @@ namespace Tsavorite.core
                 _ = freePagePool.TryAdd(new()
                 {
                     array = pageArrays[index],
-                    block = pageBlocks[index],
                     pointer = pagePointers[index],
                     value = Empty.Default
                 });
                 pageArrays[index] = default;
-                pageBlocks[index] = default;
                 pagePointers[index] = default;
                 _ = Interlocked.Decrement(ref AllocatedPageCount);
             }

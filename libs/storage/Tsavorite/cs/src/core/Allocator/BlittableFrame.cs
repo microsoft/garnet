@@ -17,9 +17,9 @@ namespace Tsavorite.core
         public readonly byte[][] frame;
         public readonly long[] pointers;
 
-        // Per-frame direct-VM backing block when the Frames native surface is enabled ("full" mode); the
-        // parallel entry in <see cref="frame"/> is null. Empty (default) for the managed backend.
-        readonly DirectVmBlock[] blocks;
+        // Owns the lifetime of direct-VM frame blocks (Frames "full" mode); frees them at finalization (not
+        // Dispose) so an in-flight device read into a frame is never unmapped underneath it. Null for managed.
+        NativePageBlockRegistry nativeRegistry;
 
         public BlittableFrame(int frameSize, int pageSize, int sectorSize)
         {
@@ -29,7 +29,6 @@ namespace Tsavorite.core
 
             frame = new byte[frameSize][];
             pointers = new long[frameSize];
-            blocks = new DirectVmBlock[frameSize];
         }
 
         public unsafe void Allocate(int index)
@@ -39,7 +38,7 @@ namespace Tsavorite.core
             if ((NativeAllocatorInitializer.EnabledSurfaces & NativeAllocatorSurfaces.Frames) != 0)
             {
                 var block = DirectVirtualMemory.Allocate(adjustedSize, sectorSize);
-                blocks[index] = block;
+                (nativeRegistry ??= new NativePageBlockRegistry()).Register(block);
                 pointers[index] = block.AlignedPtr;
                 frame[index] = null;
                 return;
@@ -74,16 +73,9 @@ namespace Tsavorite.core
 
         public void Dispose()
         {
-            if (blocks is null)
-                return;
-            for (var i = 0; i < blocks.Length; i++)
-            {
-                if (!blocks[i].IsEmpty)
-                {
-                    DirectVirtualMemory.Free(blocks[i]);
-                    blocks[i] = default;
-                }
-            }
+            // Direct-VM frame blocks are freed by nativeRegistry at finalization (not here): an in-flight device
+            // read may still reference a frame, and the device outlives this Dispose. This matches the managed
+            // frame lifetime (GC-reclaimed after the owner and its device are gone).
         }
     }
 }

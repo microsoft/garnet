@@ -82,7 +82,7 @@ namespace Tsavorite.core
 
             ObjectLogSegmentSize = 1L << settings.LogSettings.ObjectLogSegmentSizeBits;
 
-            freePagePool = new OverflowPool<PageUnit<ObjectPage>>(4, static p => DirectVirtualMemory.Free(p.block));
+            freePagePool = new OverflowPool<PageUnit<ObjectPage>>(4, static p => { });
             pageHeaderSize = PageHeader.Size;
 
             if (settings.LogSettings.NumberOfFlushBuffers < LogSettings.kMinFlushBuffers || settings.LogSettings.NumberOfFlushBuffers > LogSettings.kMaxFlushBuffers || !IsPowerOfTwo(settings.LogSettings.NumberOfFlushBuffers))
@@ -132,7 +132,6 @@ namespace Tsavorite.core
             if (freePagePool.TryGet(out var item))
             {
                 pageArrays[index] = item.array;
-                pageBlocks[index] = item.block;
                 pagePointers[index] = item.pointer;
                 objectPages[index] = item.value;
             }
@@ -153,7 +152,6 @@ namespace Tsavorite.core
                 var enqueued = freePagePool.TryAdd(new()
                 {
                     array = pageArrays[index],
-                    block = pageBlocks[index],
                     pointer = pagePointers[index],
                     value = objectPages[index]
                 });
@@ -164,7 +162,6 @@ namespace Tsavorite.core
                 else
                     objectPages[index].Clear();
                 pageArrays[index] = default;
-                pageBlocks[index] = default;
                 pagePointers[index] = default;
                 _ = Interlocked.Decrement(ref AllocatedPageCount);
             }

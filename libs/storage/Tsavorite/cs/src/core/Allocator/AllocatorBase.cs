@@ -105,9 +105,9 @@ namespace Tsavorite.core
         /// <summary>Array of pages kept to ensure the pinned pages are not garbage collected.</summary>
         protected readonly byte[][] pageArrays;
 
-        /// <summary>Per-page direct-VM backing block when the LogPages native surface is enabled ("full" mode);
-        /// the parallel entry in <see cref="pageArrays"/> is null. Empty (default) for the managed backend.</summary>
-        internal readonly DirectVmBlock[] pageBlocks;
+        /// <summary>Owns the lifetime of direct-VM log-page blocks (LogPages "full" mode); frees them at
+        /// finalization to match the managed page lifetime. Null / unused for the managed backend.</summary>
+        NativePageBlockRegistry nativePageRegistry;
 
         #endregion
 
@@ -484,20 +484,9 @@ namespace Tsavorite.core
             onReadOnlyObserver?.OnCompleted();
             onEvictionObserver?.OnCompleted();
 
-            // Release any direct-VM log-page blocks still allocated (no-op for the managed backend, where the
-            // blocks are empty). Pooled/returned blocks are freed by the derived allocator's freePagePool
-            // disposer before this base call; only currently-allocated pages remain here.
-            if (pageBlocks is not null)
-            {
-                for (var i = 0; i < pageBlocks.Length; i++)
-                {
-                    if (!pageBlocks[i].IsEmpty)
-                    {
-                        DirectVirtualMemory.Free(pageBlocks[i]);
-                        pageBlocks[i] = default;
-                    }
-                }
-            }
+            // Direct-VM log-page blocks are NOT freed here: an in-flight device flush/read may still reference a
+            // page, and the device is disposed by the owner AFTER this allocator. nativePageRegistry frees them at
+            // finalization (after the store and device are unreachable), matching the managed page lifetime.
         }
 
         #endregion abstract and virtual methods
@@ -676,7 +665,6 @@ namespace Tsavorite.core
             if (BufferSize > 0)
             {
                 pageArrays = new byte[BufferSize][];
-                pageBlocks = new DirectVmBlock[BufferSize];
                 pagePointersArray = GC.AllocateArray<long>(BufferSize, pinned: true);
                 pagePointers = (long*)Unsafe.AsPointer(ref pagePointersArray[0]);
             }
@@ -785,8 +773,10 @@ namespace Tsavorite.core
             if ((NativeAllocatorInitializer.EnabledSurfaces & NativeAllocatorSurfaces.LogPages) != 0)
             {
                 // Direct-VM (mmap/VirtualAlloc): demand-zero, first-touch-placed pages matching GC.AllocateArray.
+                // The block's lifetime is owned by nativePageRegistry (freed at finalization, not Dispose) so an
+                // in-flight device flush/read is never unmapped underneath it.
                 var block = DirectVirtualMemory.Allocate(adjustedSize, sectorSize);
-                pageBlocks[index] = block;
+                (nativePageRegistry ??= new NativePageBlockRegistry()).Register(block);
                 pagePointersArray[index] = block.AlignedPtr;
                 pageArrays[index] = null;
                 return;
