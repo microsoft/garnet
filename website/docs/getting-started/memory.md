@@ -115,3 +115,15 @@ Native memory lives **outside** the managed GC heap, so:
 
 Native memory is not reported to the GC via `GC.AddMemoryPressure` (which would only trigger unproductive Gen2
 collections that cannot reclaim it); use the hard-limit + telemetry approach above instead.
+
+### Platform support
+
+The mimalloc-backed `buffer-pool` (and `full`, which includes it) requires the prebuilt mimalloc native library,
+shipped per-RID under `runtimes/<rid>/native/` (`libmimalloc.so`, `mimalloc.dll`, …). Prebuilt binaries are
+currently shipped for **linux-x64** and **win-x64**; on a platform without one, `buffer-pool`/`full` fail fast at
+startup (see above) — build the binary for that RID with `libs/storage/Tsavorite/cs/src/core/Native/build-mimalloc.sh`
+and commit it under `runtimes/<rid>/native/`. The direct-VM surfaces in `full` (hash index, log pages, frames)
+use `mmap`/`VirtualAlloc` and need no shipped binary, so they work on any platform. Transparent huge pages for
+those regions are a Linux optimization (`madvise(MADV_HUGEPAGE)`); on Windows they use regular pages (large-page
+support there needs the privileged `SeLockMemoryPrivilege`), so `full` is functionally identical on Windows,
+just without the huge-page throughput bonus.

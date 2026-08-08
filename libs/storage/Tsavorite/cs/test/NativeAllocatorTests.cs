@@ -178,5 +178,127 @@ namespace Tsavorite.test
             var afterFree = NativeMemoryTracker.Bytes;
             ClassicAssert.Less(afterFree - before, 8L << 20, "tracker should drop after free");
         }
+
+        // The mimalloc exports the P/Invoke bindings resolve (Mimalloc.GetExport). A shipped prebuilt that omits
+        // any of these would fail at load on that platform, so the packaging test below asserts they are present.
+        static readonly string[] RequiredMimallocExports =
+        [
+            "mi_malloc", "mi_malloc_aligned", "mi_zalloc_aligned", "mi_free", "mi_usable_size", "mi_collect", "mi_process_info"
+        ];
+
+        /// <summary>
+        /// Packaging regression guard for the prebuilt mimalloc binaries shipped per-RID under
+        /// <c>runtimes/&lt;rid&gt;/native/</c>. Runs on any host (it parses the PE/ELF export table, it does not
+        /// load or execute the binary), so CI on Linux still validates the Windows <c>mimalloc.dll</c>: the file
+        /// must be present in the build output and export every symbol the P/Invoke layer binds. Catches a missing
+        /// binary (the csproj glob broke), a truncated copy, or a rebuild that dropped exports.
+        /// </summary>
+        [Test]
+        [TestCase("win-x64", "mimalloc.dll")]
+        [TestCase("linux-x64", "libmimalloc.so")]
+        public void ShippedMimallocBinaryExportsRequiredSymbols(string rid, string fileName)
+        {
+            var path = System.IO.Path.Combine(AppContext.BaseDirectory, "runtimes", rid, "native", fileName);
+            ClassicAssert.IsTrue(System.IO.File.Exists(path),
+                $"prebuilt mimalloc for {rid} not found at '{path}' — the Native/runtimes/**/native packaging glob must ship it to consumers");
+
+            var bytes = System.IO.File.ReadAllBytes(path);
+            var exports = fileName.EndsWith(".dll", StringComparison.OrdinalIgnoreCase)
+                ? PeExports.Read(bytes)
+                : ElfDynamicSymbols.Read(bytes);
+
+            foreach (var sym in RequiredMimallocExports)
+                ClassicAssert.Contains(sym, exports, $"{rid}/{fileName} must export '{sym}' (bound by Mimalloc.GetExport)");
+        }
+    }
+
+    /// <summary>Minimal PE (PE32/PE32+) export-directory reader — names only. Enough to validate a shipped DLL's
+    /// export table from any host without loading it. Not a general PE parser.</summary>
+    static class PeExports
+    {
+        public static System.Collections.Generic.List<string> Read(byte[] b)
+        {
+            uint peOff = BitConverter.ToUInt32(b, 0x3C);                       // e_lfanew
+            if (BitConverter.ToUInt32(b, (int)peOff) != 0x00004550)           // "PE\0\0"
+                throw new InvalidOperationException("not a PE image");
+            int coff = (int)peOff + 4;
+            ushort numSections = BitConverter.ToUInt16(b, coff + 2);
+            ushort optSize = BitConverter.ToUInt16(b, coff + 16);
+            int opt = coff + 20;
+            ushort magic = BitConverter.ToUInt16(b, opt);                     // 0x10b PE32, 0x20b PE32+
+            // Export directory is data directory entry 0; its RVA sits at a fixed offset into the optional header.
+            int dirOff = opt + (magic == 0x20b ? 112 : 96);
+            uint exportRva = BitConverter.ToUInt32(b, dirOff);
+            if (exportRva == 0)
+                throw new InvalidOperationException("no export directory");
+
+            int sectionTable = opt + optSize;
+            int RvaToOff(uint rva)
+            {
+                for (int i = 0; i < numSections; i++)
+                {
+                    int s = sectionTable + i * 40;
+                    uint va = BitConverter.ToUInt32(b, s + 12), rawSize = BitConverter.ToUInt32(b, s + 16), raw = BitConverter.ToUInt32(b, s + 20);
+                    if (rva >= va && rva < va + rawSize)
+                        return (int)(raw + (rva - va));
+                }
+                throw new InvalidOperationException("RVA not in any section");
+            }
+
+            int ed = RvaToOff(exportRva);
+            uint nNames = BitConverter.ToUInt32(b, ed + 24);
+            uint namesRva = BitConverter.ToUInt32(b, ed + 32);
+            int names = RvaToOff(namesRva);
+            var result = new System.Collections.Generic.List<string>((int)nNames);
+            for (uint i = 0; i < nNames; i++)
+            {
+                uint nameRva = BitConverter.ToUInt32(b, names + (int)i * 4);
+                int p = RvaToOff(nameRva);
+                int end = p; while (b[end] != 0) end++;
+                result.Add(System.Text.Encoding.ASCII.GetString(b, p, end - p));
+            }
+            return result;
+        }
+    }
+
+    /// <summary>Minimal ELF (.dynsym) exported-symbol reader — names of defined dynamic symbols. Enough to
+    /// validate a shipped .so's exports from any host without loading it. Not a general ELF parser.</summary>
+    static class ElfDynamicSymbols
+    {
+        public static System.Collections.Generic.List<string> Read(byte[] b)
+        {
+            if (b[0] != 0x7F || b[1] != (byte)'E' || b[2] != (byte)'L' || b[3] != (byte)'F')
+                throw new InvalidOperationException("not an ELF image");
+            // 64-bit little-endian assumed (linux-x64).
+            ulong shoff = BitConverter.ToUInt64(b, 0x28);
+            ushort shentsize = BitConverter.ToUInt16(b, 0x3A), shnum = BitConverter.ToUInt16(b, 0x3C);
+            int dynsym = -1;
+            for (int i = 0; i < shnum; i++)
+            {
+                int sh = (int)shoff + i * shentsize;
+                if (BitConverter.ToUInt32(b, sh + 4) == 11)      // SHT_DYNSYM
+                {
+                    dynsym = sh;
+                    break;
+                }
+            }
+            if (dynsym < 0) throw new InvalidOperationException("no .dynsym");
+            uint link = BitConverter.ToUInt32(b, dynsym + 40);   // sh_link -> string table section index
+            int strSh = (int)shoff + (int)link * shentsize;
+            ulong strOff = BitConverter.ToUInt64(b, strSh + 24);
+            ulong symOff = BitConverter.ToUInt64(b, dynsym + 24), symSize = BitConverter.ToUInt64(b, dynsym + 32), entsize = BitConverter.ToUInt64(b, dynsym + 56);
+            var result = new System.Collections.Generic.List<string>();
+            for (ulong o = 0; o + entsize <= symSize; o += entsize)
+            {
+                int e = (int)(symOff + o);
+                uint nameIdx = BitConverter.ToUInt32(b, e);
+                ushort shndx = BitConverter.ToUInt16(b, e + 6);
+                if (nameIdx == 0 || shndx == 0) continue;         // unnamed or undefined (imported)
+                int p = (int)strOff + (int)nameIdx;
+                int end = p; while (b[end] != 0) end++;
+                result.Add(System.Text.Encoding.ASCII.GetString(b, p, end - p));
+            }
+            return result;
+        }
     }
 }
