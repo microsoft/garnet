@@ -111,6 +111,26 @@ namespace Garnet.test
         }
 
         [Test]
+        public void NativeAllocatorOptionParsing()
+        {
+            // Default is "off".
+            var ok = ServerSettingsManager.TryParseCommandLineArguments(Array.Empty<string>(), out var options, out _, out _, out _, silentMode: true);
+            ClassicAssert.IsTrue(ok);
+            ClassicAssert.AreEqual("off", options.NativeAllocator);
+
+            // buffer-pool is accepted and maps to the BufferPool surface.
+            ok = ServerSettingsManager.TryParseCommandLineArguments(["--native-allocator", "buffer-pool"], out options, out _, out _, out _, silentMode: true);
+            ClassicAssert.IsTrue(ok);
+            ClassicAssert.AreEqual("buffer-pool", options.NativeAllocator);
+            ClassicAssert.AreEqual(NativeAllocatorSurfaces.BufferPool, options.GetServerOptions().NativeAllocatorSurfaces);
+
+            // full maps to all direct-VM surfaces + buffer pool.
+            ok = ServerSettingsManager.TryParseCommandLineArguments(["--native-allocator", "full"], out options, out _, out _, out _, silentMode: true);
+            ClassicAssert.IsTrue(ok);
+            ClassicAssert.AreEqual(NativeAllocatorSurfaces.Full, options.GetServerOptions().NativeAllocatorSurfaces);
+        }
+
+        [Test]
         public void LoadModuleCsInvalidSpecIsRejected()
         {
             // A malformed quoted module specification must be rejected by validation rather than silently ignored.
