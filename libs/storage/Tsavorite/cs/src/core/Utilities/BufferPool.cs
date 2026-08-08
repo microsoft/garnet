@@ -186,7 +186,10 @@ namespace Tsavorite.core
         {
             if (nativePtr != 0)
             {
-                SectorAlignedBufferPool.NativeAllocator?.Free(nativePtr, (nuint)allocatedLength);
+                // Free through the owning pool's captured allocator (stable for the pool's lifetime) rather than
+                // the mutable static, so a buffer allocated as native always frees natively even if the process
+                // default was later cleared. Fall back to the static only if the pool reference is somehow unset.
+                (pool?.nativeAllocator ?? SectorAlignedBufferPool.NativeAllocator)?.Free(nativePtr, (nuint)allocatedLength);
                 nativePtr = 0;
                 aligned_pointer = null;
                 allocatedLength = 0;
@@ -308,6 +311,9 @@ namespace Tsavorite.core
         /// </summary>
         internal static INativePinnedAllocator NativeAllocator;
 
+        /// <summary>Per-pool captured native allocator (see the constructor). Immutable for the pool's lifetime.</summary>
+        internal readonly INativePinnedAllocator nativeAllocator;
+
         /// <summary>Thread-local free list of recycled wrapper objects for the native path (see <see cref="SectorAlignedMemory.wrapperNext"/>).</summary>
         [ThreadStatic]
         private static SectorAlignedMemory t_wrapperFreeList;
@@ -330,6 +336,12 @@ namespace Tsavorite.core
             queue = new ConcurrentQueue<SectorAlignedMemory>[levels];
             this.recordSize = recordSize;
             this.sectorSize = sectorSize;
+
+            // Capture the native allocator once at construction. The static is the process-wide template set by
+            // NativeAllocatorInitializer before any pool is built; capturing it per-pool makes each pool's backend
+            // immutable for its lifetime, so a later Initialize(off) that clears the static cannot strand/leak this
+            // pool's outstanding native buffers (they still free through the captured allocator).
+            nativeAllocator = NativeAllocator;
         }
 
         public void EnsureSize(ref SectorAlignedMemory page, int size)
@@ -457,7 +469,7 @@ namespace Tsavorite.core
             int required_bytes = numRecords * recordSize;
             int requiredSize = RoundUp(required_bytes, sectorSize);
             int index = Position(requiredSize / sectorSize);
-            var nativeAlloc = NativeAllocator;
+            var nativeAlloc = nativeAllocator;
             if (nativeAlloc is not null)
                 return GetNative(nativeAlloc, required_bytes, index, clearOnReturn);
             if (queue[index] == null)
@@ -550,7 +562,7 @@ namespace Tsavorite.core
             page.aligned_pointer = null;
             page.allocatedLength = 0;
             page.clearOnReturn = true;
-            NativeAllocator?.Free(ptr, (nuint)len);
+            nativeAllocator?.Free(ptr, (nuint)len);
             ReturnWrapper(page);
         }
 

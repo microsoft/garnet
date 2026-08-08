@@ -149,18 +149,28 @@ namespace Tsavorite.core
             Debug.Assert(index < BufferSize);
             if (pagePointers[index] != default)
             {
-                var enqueued = freePagePool.TryAdd(new()
+                if (useNativeLogPages)
                 {
-                    array = pageArrays[index],
-                    pointer = pagePointers[index],
-                    value = objectPages[index]
-                });
-
-                // We only need to clear the page if it's enqueued; otherwise we don't reuse the page, so can save the time
-                if (enqueued)
-                    ClearPage(index, 0);
-                else
+                    // Native inline pages are not pooled: release this page's managed object roots and free the
+                    // direct-VM block now (the page is evicted/flush-complete, so no device IO references it).
                     objectPages[index].Clear();
+                    FreeNativeLogPage(index);
+                }
+                else
+                {
+                    var enqueued = freePagePool.TryAdd(new()
+                    {
+                        array = pageArrays[index],
+                        pointer = pagePointers[index],
+                        value = objectPages[index]
+                    });
+
+                    // We only need to clear the page if it's enqueued; otherwise we don't reuse the page, so can save the time
+                    if (enqueued)
+                        ClearPage(index, 0);
+                    else
+                        objectPages[index].Clear();
+                }
                 pageArrays[index] = default;
                 pagePointers[index] = default;
                 _ = Interlocked.Decrement(ref AllocatedPageCount);

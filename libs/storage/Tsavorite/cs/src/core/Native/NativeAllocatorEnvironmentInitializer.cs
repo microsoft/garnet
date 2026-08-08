@@ -37,10 +37,11 @@ namespace Tsavorite.core
             if (surfaces != NativeAllocatorSurfaces.None)
             {
                 // No logger is available this early; emit a one-line stderr notice so an env-var-forced mode (used
-                // by tests/benchmarks) is not completely silent. The host path logs full GC-budget guidance.
-                Console.Error.WriteLine($"[Garnet] GARNET_NATIVE_ALLOCATOR={mode} -> native allocator surfaces: {surfaces}. " +
+                // by tests/benchmarks) is not completely silent. Report the RESOLVED surfaces (a requested backend
+                // may fall back to managed if unavailable). The host path logs full GC-budget guidance.
+                var enabled = NativeAllocatorInitializer.Initialize(surfaces);
+                Console.Error.WriteLine($"[Garnet] GARNET_NATIVE_ALLOCATOR={mode} -> native allocator surfaces enabled: {enabled}. " +
                     "This memory is outside the managed GC heap; size GCHeapHardLimit and set DOTNET_GCDynamicAdaptationMode=0 accordingly.");
-                _ = NativeAllocatorInitializer.Initialize(surfaces);
             }
         }
     }

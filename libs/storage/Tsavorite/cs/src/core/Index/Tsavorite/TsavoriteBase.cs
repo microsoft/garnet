@@ -44,6 +44,12 @@ namespace Tsavorite.core
         // Owns the LIVE direct-VM hash-index tables past Dispose, freeing them at finalization (see tableBlocks).
         NativePageBlockRegistry nativeTableRegistry;
 
+        // Captured once at construction: whether the main hash-index table uses the direct-VM backend. Used
+        // instead of re-reading the process-global NativeAllocatorInitializer.EnabledSurfaces in InitializeMainIndex
+        // (called at construction and on grow) so the index never switches backend mid-life if the global flag is
+        // flipped after this store is built.
+        readonly bool useNativeHashIndex = (NativeAllocatorInitializer.EnabledSurfaces & NativeAllocatorSurfaces.HashIndex) != 0;
+
         // Array used to denote if a specific chunk is merged or not
         internal long[] splitStatus;
 
@@ -139,7 +145,7 @@ namespace Tsavorite.core
 
             logger?.LogTrace("KV Initialize size:{size}, sizeBytes:{sizeBytes} sectorSize:{sectorSize} alignedSizeBytes:{alignedSizeBytes}", size, size_bytes, sector_size, aligned_size_bytes);
 
-            if ((NativeAllocatorInitializer.EnabledSurfaces & NativeAllocatorSurfaces.HashIndex) != 0)
+            if (useNativeHashIndex)
             {
                 // Direct-VM (mmap/VirtualAlloc): demand-zero, first-touch-placed pages, matching GC.AllocateArray.
                 // Free any prior block for this version (grow reuses the two versions alternately).

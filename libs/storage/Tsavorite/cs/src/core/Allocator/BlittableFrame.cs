@@ -85,13 +85,17 @@ namespace Tsavorite.core
         {
             // Free native frame blocks deterministically: the owning scan iterator has already drained all
             // outstanding device reads (ScanIteratorBase.Dispose runs before this), so no IO references a slot.
-            // No-op for the managed backend (blocks is null; the pinned arrays are GC-reclaimed).
+            // Also clear pointers[] so that a post-Dispose reuse (ScanIteratorBase.Reset calls Dispose then keeps
+            // the same frame) re-allocates via IsAllocated==false instead of dereferencing a freed block.
+            // No-op for the managed backend (blocks is null; the pinned arrays are GC-reclaimed and a reused frame
+            // legitimately keeps its still-live arrays).
             if (blocks is null)
                 return;
             for (var i = 0; i < blocks.Length; i++)
             {
                 DirectVirtualMemory.Free(blocks[i]);
                 blocks[i] = default;
+                pointers[i] = 0;
             }
         }
     }

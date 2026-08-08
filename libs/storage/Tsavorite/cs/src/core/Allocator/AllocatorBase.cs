@@ -105,8 +105,22 @@ namespace Tsavorite.core
         /// <summary>Array of pages kept to ensure the pinned pages are not garbage collected.</summary>
         protected readonly byte[][] pageArrays;
 
-        /// <summary>Owns the lifetime of direct-VM log-page blocks (LogPages "full" mode); frees them at
-        /// finalization to match the managed page lifetime. Null / unused for the managed backend.</summary>
+        /// <summary>Per-page direct-VM backing block when direct-VM log pages are in use (<see cref="useNativeLogPages"/>);
+        /// the parallel <see cref="pageArrays"/> entry is null. Empty (default) for the managed backend. A page's
+        /// block is freed deterministically in <c>ReturnPage</c> when the page is evicted (post-flush, epoch-drained
+        /// via OnPagesClosed — no in-flight IO), which bounds the footprint. Any still-installed blocks at Dispose
+        /// (which may have an in-flight flush/read) are handed to <see cref="nativePageRegistry"/> instead.</summary>
+        readonly DirectVmBlock[] pageBlocks;
+
+        /// <summary>Captured once at construction: whether this allocator's circular-buffer pages use the direct-VM
+        /// backend. Read on the (possibly concurrent) page-alloc/return hot paths instead of the process-global
+        /// <see cref="NativeAllocatorInitializer.EnabledSurfaces"/> so an allocator never switches backend mid-life
+        /// (and never dereferences a null registry if the global flag is flipped after construction).</summary>
+        protected readonly bool useNativeLogPages;
+
+        /// <summary>Owns the lifetime of the direct-VM log-page blocks that are still installed at Dispose, freeing
+        /// them at finalization to match the managed page lifetime (an in-flight device flush/read may still
+        /// reference them, and the device is disposed after this allocator). Null / unused for the managed backend.</summary>
         NativePageBlockRegistry nativePageRegistry;
 
         #endregion
@@ -484,9 +498,22 @@ namespace Tsavorite.core
             onReadOnlyObserver?.OnCompleted();
             onEvictionObserver?.OnCompleted();
 
-            // Direct-VM log-page blocks are NOT freed here: an in-flight device flush/read may still reference a
-            // page, and the device is disposed by the owner AFTER this allocator. nativePageRegistry frees them at
-            // finalization (after the store and device are unreachable), matching the managed page lifetime.
+            // Direct-VM log-page blocks that are STILL INSTALLED at Dispose are not freed here: an in-flight device
+            // flush/read may still reference such a page, and the device is disposed by the owner AFTER this
+            // allocator. Hand them to nativePageRegistry, which frees them at finalization (after the store and
+            // device are unreachable), matching the managed page lifetime. Pages that were already evicted were
+            // freed deterministically in ReturnPage (post-flush), so only the live tail pages reach here.
+            if (pageBlocks is not null)
+            {
+                for (var i = 0; i < pageBlocks.Length; i++)
+                {
+                    if (!pageBlocks[i].IsEmpty)
+                    {
+                        nativePageRegistry.Register(pageBlocks[i]);
+                        pageBlocks[i] = default;
+                    }
+                }
+            }
         }
 
         #endregion abstract and virtual methods
@@ -668,11 +695,15 @@ namespace Tsavorite.core
                 pagePointersArray = GC.AllocateArray<long>(BufferSize, pinned: true);
                 pagePointers = (long*)Unsafe.AsPointer(ref pagePointersArray[0]);
 
-                // Create the finalization-owned registry once, up front, when direct-VM log pages are in use.
-                // Page allocation can race across threads, so the registry must not be lazily created on the hot
-                // path (a racing ??= could publish two registries and finalize one that still owns live blocks).
-                if ((NativeAllocatorInitializer.EnabledSurfaces & NativeAllocatorSurfaces.LogPages) != 0)
+                // Capture the backend decision once, up front (see useNativeLogPages). Create the per-page block
+                // array and the finalization-owned registry only when direct-VM log pages are in use. Doing this in
+                // the constructor (not lazily on the hot path) avoids a racing ??= publishing two registries.
+                useNativeLogPages = (NativeAllocatorInitializer.EnabledSurfaces & NativeAllocatorSurfaces.LogPages) != 0;
+                if (useNativeLogPages)
+                {
+                    pageBlocks = new DirectVmBlock[BufferSize];
                     nativePageRegistry = new NativePageBlockRegistry();
+                }
             }
         }
 
@@ -776,14 +807,15 @@ namespace Tsavorite.core
         protected void AllocatePinnedPageArray(int index)
         {
             var adjustedSize = PageSize + 2 * sectorSize;
-            if ((NativeAllocatorInitializer.EnabledSurfaces & NativeAllocatorSurfaces.LogPages) != 0)
+            if (useNativeLogPages)
             {
                 // Direct-VM (mmap/VirtualAlloc): demand-zero, first-touch-placed pages matching GC.AllocateArray.
-                // The block's lifetime is owned by nativePageRegistry (freed at finalization, not Dispose) so an
-                // in-flight device flush/read is never unmapped underneath it. The registry is created once in the
-                // constructor (see above) so this hot, possibly-concurrent path never races to publish it.
+                // Track the block per-slot so ReturnPage can free it deterministically on eviction (post-flush,
+                // epoch-drained, so no in-flight IO). Any block still installed at Dispose is handed to
+                // nativePageRegistry there (it may have an in-flight flush/read). useNativeLogPages is captured at
+                // construction, so this possibly-concurrent path never re-reads the process-global flag.
                 var block = DirectVirtualMemory.Allocate(adjustedSize, sectorSize);
-                nativePageRegistry.Register(block);
+                pageBlocks[index] = block;
                 pagePointersArray[index] = block.AlignedPtr;
                 pageArrays[index] = null;
                 return;
@@ -792,6 +824,20 @@ namespace Tsavorite.core
             var p = (long)Unsafe.AsPointer(ref tmp[0]);
             pagePointersArray[index] = (p + (sectorSize - 1)) & ~((long)sectorSize - 1);
             pageArrays[index] = tmp;
+        }
+
+        /// <summary>
+        /// Free the direct-VM block backing circular-buffer page <paramref name="index"/>, if any. Called from the
+        /// derived allocators' <c>ReturnPage</c> when a page is evicted: at that point the page has been closed by
+        /// OnPagesClosed (post-flush, after the epoch drain), so no device IO references it and immediate
+        /// <c>munmap</c>/<c>VirtualFree</c> is safe. No-op for the managed backend.
+        /// </summary>
+        protected void FreeNativeLogPage(int index)
+        {
+            if (pageBlocks is null)
+                return;
+            DirectVirtualMemory.Free(pageBlocks[index]);
+            pageBlocks[index] = default;
         }
 
         /// <summary>Initialize allocator</summary>
