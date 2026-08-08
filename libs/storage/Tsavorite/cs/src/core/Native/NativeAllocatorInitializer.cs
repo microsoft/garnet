@@ -66,6 +66,13 @@ namespace Tsavorite.core
             }
 
             EnabledSurfaces = enabled;
+
+            if (enabled != NativeAllocatorSurfaces.None)
+                logger?.LogInformation("Native allocator active ({enabled}). This memory is OUTSIDE the managed GC heap: " +
+                    "size GCHeapHardLimit/GCHeapHardLimitPercent to leave headroom for it; set DOTNET_GCDynamicAdaptationMode=0 " +
+                    "(DATAS is blind to native memory and may grow the heap into container OOM); monitor 'native_allocator_bytes' in INFO memory.",
+                    enabled);
+
             return enabled;
         }
 
