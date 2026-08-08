@@ -48,14 +48,6 @@ namespace Tsavorite.test.recovery
             1, 100, 511, 512, 513, 1023, 1024, 4095, 4096, 65535, 65536, 262144, 2 * 1024 * 1024, 3 * 1024 * 1024, 5 * 1024 * 1024
         ];
 
-        // Size set for the small-memory (eviction-during-recovery) sweeps: BoundarySizes without the trailing 5 MB entry.
-        // KNOWN GAP: recovering an out-of-line value larger than one object-log read-ahead buffer (IStreamBuffer.BufferSize = 4 MB)
-        // that is ALSO the last object record on its page, via the snapshot-recovery verbatim-copy eviction path, truncates the
-        // copy -- the last-record fallback (no successor to bound the exact extent) sizes the copy from the length hint and reads a
-        // single 4 MB buffer, so an object/overflow value spanning multiple buffers is cut off at ~4 MB and mis-decodes on read-back.
-        // The 5 MB point is exercised (and ignored) explicitly by RecoverLargeObjLowMemEvicts / RecoverLargeOvfLowMemEvicts below.
-        static readonly int[] BoundarySizesLowMem = BoundarySizes[..^1];
-
         // Large object-log segment: the size sweep never crosses a segment boundary (isolating pure size-boundary behavior).
         const long NoSplitObjectLogSegmentSize = 1L << 30;      // 1 GB
 
@@ -261,11 +253,14 @@ namespace Tsavorite.test.recovery
         // (FindHeadAddressCutoffOnPage) and snapshot-page flush (FlushSnapshotPageForRecovery) to run and the evicted records'
         // objects to be read back from the copied main object-log -- exercising the object-log length decode and verbatim-copy
         // sizing for every headerless/headered/chunked/sentinel boundary under memory pressure, not just tiny fixed-size objects.
+        // Includes the 5 MB multi-buffer point: the last object record on a page (no successor to bound its extent) is copied by
+        // following its ChunkHeader framing to the exact on-disk extent, so a value spanning multiple 4 MB read-ahead buffers is
+        // copied whole rather than truncated.
         [Test]
         [Category("TsavoriteKV"), Category("CheckpointRestore")]
         public Task RecoverObjectValueLowMemBoundaries(
             [Values(CheckpointType.Snapshot, CheckpointType.FoldOver)] CheckpointType checkpointType,
-            [ValueSource(nameof(BoundarySizesLowMem))] int valueSize)
+            [ValueSource(nameof(BoundarySizes))] int valueSize)
             => RunObjectValueRecovery(checkpointType, valueSize, RecordCountForSize(valueSize), NoSplitObjectLogSegmentSize, RecoveryEvictTargetSize);
 
         // Small-memory recovery counterpart for OVERFLOW (raw byte[]) values across the same size sweep.
@@ -273,26 +268,8 @@ namespace Tsavorite.test.recovery
         [Category("TsavoriteKV"), Category("CheckpointRestore")]
         public Task RecoverOverflowValueLowMemBoundaries(
             [Values(CheckpointType.Snapshot, CheckpointType.FoldOver)] CheckpointType checkpointType,
-            [ValueSource(nameof(BoundarySizesLowMem))] int valueSize)
+            [ValueSource(nameof(BoundarySizes))] int valueSize)
             => RunOverflowValueRecovery(checkpointType, valueSize, RecordCountForSize(valueSize), NoSplitObjectLogSegmentSize, RecoveryEvictTargetSize);
-
-        // Explicit >4 MB (multi-buffer) point of the small-memory object sweep. KNOWN GAP (see BoundarySizesLowMem): under
-        // Snapshot recovery eviction, the last object record on a page is copied verbatim into the main object-log sized from its
-        // length hint with a single-buffer read; a 5 MB object spans multiple 4 MB read-ahead buffers, so the copy is truncated
-        // and the object mis-decodes on read-back. FoldOver is unaffected (it loads objects from the main object-log directly,
-        // with no verbatim snapshot copy). Ignored until the last-record multi-buffer copy follows chunk headers to the true end.
-        [Test]
-        [Category("TsavoriteKV"), Category("CheckpointRestore")]
-        [Ignore("Known gap: small-memory Snapshot recovery of an out-of-line value > one 4 MB read-ahead buffer that is the last object record on its page truncates the verbatim copy. Tracked separately; sub-4 MB and FoldOver are covered by the green sweeps.")]
-        public Task RecoverLargeObjLowMemEvicts()
-            => RunObjectValueRecovery(CheckpointType.Snapshot, 5 * 1024 * 1024, RecordCountForSize(5 * 1024 * 1024), NoSplitObjectLogSegmentSize, RecoveryEvictTargetSize);
-
-        // Same >4 MB multi-buffer gap for OVERFLOW values under small-memory Snapshot recovery.
-        [Test]
-        [Category("TsavoriteKV"), Category("CheckpointRestore")]
-        [Ignore("Known gap: small-memory Snapshot recovery of an out-of-line value > one 4 MB read-ahead buffer that is the last object record on its page truncates the verbatim copy. Tracked separately; sub-4 MB and FoldOver are covered by the green sweeps.")]
-        public Task RecoverLargeOvfLowMemEvicts()
-            => RunOverflowValueRecovery(CheckpointType.Snapshot, 5 * 1024 * 1024, RecordCountForSize(5 * 1024 * 1024), NoSplitObjectLogSegmentSize, RecoveryEvictTargetSize);
 
         // Anchor test that GUARANTEES head-advancing eviction during recovery of chunked objects (the sweep above validates
         // correctness under pressure but does not assert that eviction fired). 512 x 64 KB chunked object values give ~32 MB of

@@ -199,15 +199,14 @@ namespace Tsavorite.core
         /// <summary>
         /// Copies <paramref name="totalLength"/> bytes of a record's serialized object data verbatim from the snapshot object-log (via
         /// <paramref name="reader"/>) into this (main) object-log, then signals record completion. Used by the snapshot-region recovery
-        /// flush, which copies a record's object bytes without deserialize/reserialize. The <paramref name="reader"/> must already be
-        /// positioned at the record (via <see cref="CircularDiskReadBuffer.OnBeginRecord"/>).
+        /// flush for a record whose exact on-disk extent is known (a successor object record bounded it, or its size hints equal it). The
+        /// <paramref name="reader"/> must already be positioned at the record (via <see cref="CircularDiskReadBuffer.OnBeginRecord"/>). A record
+        /// that is the last on its page with a sentinel-sized value is copied instead by <see cref="CopyRecoveredObjectBytesFollowingFraming"/>.
         /// </summary>
         /// <param name="reader">The reader over the snapshot object-log, positioned at the record to copy.</param>
-        /// <param name="totalLength">The total number of object-log bytes for the record (key plus value).</param>
-        /// <param name="allowShortRead">When true (the last object record on a page, sized by an over-counting RDH hint), stop at end-of-data
-        ///   instead of throwing; the trailing over-copy is re-framed away by the reader on read-back, so a short copy is harmless.</param>
-        /// <returns>The number of object-log bytes actually copied (equal to <paramref name="totalLength"/> unless a short read stopped it).</returns>
-        public ulong CopyRecoveredObjectBytes(ObjectLogReader<TStoreFunctions> reader, ulong totalLength, bool allowShortRead = false)
+        /// <param name="totalLength">The exact total number of object-log bytes for the record (key plus value).</param>
+        /// <returns>The number of object-log bytes copied (equal to <paramref name="totalLength"/>).</returns>
+        public ulong CopyRecoveredObjectBytes(ObjectLogReader<TStoreFunctions> reader, ulong totalLength)
         {
             var copied = 0UL;
             if (totalLength > 0)
@@ -222,11 +221,7 @@ namespace Tsavorite.core
                         var requestLength = (int)Math.Min(remaining, (ulong)chunkSpan.Length);
                         var bytesRead = reader.Read(chunkSpan.Slice(0, requestLength));
                         if (bytesRead == 0)
-                        {
-                            if (allowShortRead)
-                                break;
                             throw new TsavoriteException("Unexpected end of snapshot object-log data while copying objects during recovery");
-                        }
                         Write(chunkSpan.Slice(0, bytesRead));
                         remaining -= (ulong)bytesRead;
                         copied += (ulong)bytesRead;
@@ -239,6 +234,30 @@ namespace Tsavorite.core
             }
 
             // Signal completion, as WriteRecordObjects does.
+            flushBuffers.OnRecordComplete();
+            return copied;
+        }
+
+        /// <summary>
+        /// Snapshot-recovery verbatim copy for a record that is the last object record on its page (no successor bounds its extent) and whose
+        /// size hint under-counts a sentinel-sized value: drive <paramref name="reader"/>'s framing walk -- following the ChunkHeader chain to
+        /// the object's exact on-disk extent and self-extending the snapshot read-ahead -- which tees every consumed byte into this (main)
+        /// object-log, then signal record completion. Unlike <see cref="CopyRecoveredObjectBytes"/> (bounded by a caller-supplied length), this
+        /// copies exactly the record's on-disk extent, so it neither truncates a multi-buffer value nor over-copies into the next record.
+        /// </summary>
+        /// <param name="reader">The reader over the snapshot object-log; this method positions it at <paramref name="snapshotPositionWord"/>.</param>
+        /// <param name="logRecord">The record whose object bytes are copied (read for its framing flags and length hints).</param>
+        /// <param name="snapshotPositionWord">The record's snapshot object-log start position word (segment+offset; flag bits ignored).</param>
+        /// <param name="keyLength">The record's key length hint (exact for a below-sentinel overflow key; the sentinel-capped hint otherwise).</param>
+        /// <param name="valueLength">The record's value initial-read-extent hint.</param>
+        /// <param name="segmentSizeBits">The object-log segment size in bits, for decoding the position word.</param>
+        /// <returns>The exact number of object-log bytes copied (key plus value).</returns>
+        public ulong CopyRecoveredObjectBytesFollowingFraming(ObjectLogReader<TStoreFunctions> reader, in LogRecord logRecord, ulong snapshotPositionWord,
+            int keyLength, ulong valueLength, int segmentSizeBits)
+        {
+            var copied = reader.CopyRecordObjectsFollowingFraming(in logRecord, snapshotPositionWord, keyLength, valueLength, segmentSizeBits, sink: this);
+
+            // Signal completion, as WriteRecordObjects and CopyRecoveredObjectBytes do.
             flushBuffers.OnRecordComplete();
             return copied;
         }

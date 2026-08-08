@@ -16,11 +16,7 @@ namespace Tsavorite.core
         [FieldOffset(0)]
         internal uint currentLength;
 
-        /// <summary>For Objects, the length of the following chunk; 0 if we have no further chunks. Unioned with <see cref="alignmentPadding"/>.</summary>
-        [FieldOffset(sizeof(uint))]
-        internal uint nextLength;
-
-        /// <summary>For Overflow, the padding for alignment if it is a DMA. Unioned with <see cref="nextLength"/>.</summary>
+        /// <summary>For Overflow, the padding for alignment if it is a DMA.</summary>
         [FieldOffset(sizeof(uint))]
         internal uint alignmentPadding;
     }

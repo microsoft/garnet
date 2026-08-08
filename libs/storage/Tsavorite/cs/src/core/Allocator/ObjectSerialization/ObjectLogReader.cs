@@ -53,6 +53,18 @@ namespace Tsavorite.core
         bool objectFirstHeaderRead;
         /// <summary>Low 3 bits of the record's object-log start offset, for the first-header 8-align.</summary>
         int objectRecordStartOffsetLow3;
+        /// <summary>Continuation flag of the most recently entered data-bearing chunk. Only the writer's serialize-completion back-fills a
+        /// non-continuing header, so a data chunk with this clear is provably the object's final chunk. Consulted only in copy-to-end mode.</summary>
+        bool objectCurrentChunkContinues;
+        /// <summary>When set (a recovery verbatim copy via <see cref="CopyRecordObjectsFollowingFraming"/>, which has no deserializer to
+        /// self-terminate on), <see cref="ReadObjectData"/> ends the object after consuming a final (non-continuing) data chunk rather than
+        /// reading another header. Clear on the normal deserialize path, which is driven to completion by the serializer's requested lengths.</summary>
+        bool objectFollowToEnd;
+
+        /// <summary>When set (a recovery verbatim copy via <see cref="CopyRecordObjectsFollowingFraming"/>), every raw byte consumed from the
+        /// read-ahead ring is also written to this sink, so a framing walk that discards the deserialized data still produces a byte-exact
+        /// copy of the record's object-log extent into the main object-log. Null during normal reads.</summary>
+        ObjectLogWriter<TStoreFunctions> verbatimCopySink;
 
         /// <summary>The total capacity of the buffer.</summary>
         public bool IsForWrite => false;
@@ -230,6 +242,96 @@ namespace Tsavorite.core
             }
         }
 
+        /// <summary>Recovery snapshot-copy helper for a record whose objects are the last on a page (no successor record bounds the extent) and
+        /// whose objectId size hint under-counts a sentinel-sized value: walk this record's object-log framing (overflow key, then overflow or
+        /// object value), following the ChunkHeader chain to its exact on-disk extent and self-extending the read-ahead as chunks are consumed,
+        /// WITHOUT materializing the objects. Every raw byte consumed is tee'd to <paramref name="sink"/> (see <see cref="verbatimCopySink"/>) so
+        /// the record's object bytes are copied byte-exact into the main object-log. This positions the read-ahead ring at
+        /// <paramref name="snapshotPositionWord"/> itself. Returns the exact object-log bytes consumed (key + value).</summary>
+        internal ulong CopyRecordObjectsFollowingFraming(in LogRecord logRecord, ulong snapshotPositionWord, int keyLength, ulong valueLength, int segmentSizeBits,
+            ObjectLogWriter<TStoreFunctions> sink)
+        {
+            Debug.Assert(logRecord.DataHeader.RecordHasObjects, "Record must have objects");
+            if (readBuffers is null)
+                throw new TsavoriteException("ReadBuffers are required to CopyRecordObjectsFollowingFraming");
+
+            var recordStartPosition = new ObjectLogFilePositionInfo(snapshotPositionWord, segmentSizeBits);
+            if (!readBuffers.OnBeginRecord(recordStartPosition))
+                throw new TsavoriteException("CopyRecordObjectsFollowingFraming found no data available in ReadBuffers");
+            recordStreamConsumed = 0;
+            objectRecordStartOffsetLow3 = (int)(recordStartPosition.Offset & 7);
+
+            var dataHeader = logRecord.DataHeader;
+            var rented = ArrayPool<byte>.Shared.Rent(IStreamBuffer.BufferSize);
+            verbatimCopySink = sink;
+            try
+            {
+                var discard = new Span<byte>(rented, 0, IStreamBuffer.BufferSize);
+
+                if (dataHeader.KeyIsOverflow)
+                {
+                    var actualKeyLength = dataHeader.KeyLengthIsSentinel ? ReadOverflowHeaderAndExtend(keyLength) : keyLength;
+                    DrainRawStream((ulong)actualKeyLength, discard);
+                }
+
+                if (dataHeader.ValueIsOverflow)
+                {
+                    var actualValueLength = logRecord.ValueIsExactSize ? logRecord.ValueObjectIdSizeHint : ReadOverflowHeaderAndExtend((long)valueLength);
+                    DrainRawStream((ulong)actualValueLength, discard);
+                }
+                else if (dataHeader.ValueIsObject)
+                {
+                    if (logRecord.ValueIsExactSize)
+                    {
+                        DrainRawStream((ulong)logRecord.ValueObjectIdSizeHint, discard);
+                    }
+                    else
+                    {
+                        objectChunked = true;
+                        objectFollowToEnd = true;
+                        objectCurrentChunkContinues = true;   // "not yet at the final chunk"; overwritten as each data chunk's header is read
+                        objectSentinel = RecordDataHeader.FlushValuePageCountIsSentinel((uint)dataHeader.GetValueLengthRaw());
+                        objectPrefixRemaining = ObjectLogWriter<TStoreFunctions>.ObjectHeaderlessPrefixLen;
+                        objectChunkRemaining = 0;
+                        objectFirstHeaderRead = false;
+                        try
+                        {
+                            // ReadObjectData strips headers/padding and follows the continuation chain; in copy-to-end mode it self-terminates
+                            // after the final (non-continuing) data chunk. Drive it with a full discard buffer until it returns short.
+                            while (ReadObjectData(discard, default) == discard.Length)
+                            { }
+                        }
+                        finally
+                        {
+                            objectChunked = false;
+                            objectSentinel = false;
+                            objectFollowToEnd = false;
+                        }
+                    }
+                }
+            }
+            finally
+            {
+                verbatimCopySink = null;
+                ArrayPool<byte>.Shared.Return(rented);
+            }
+            return recordStreamConsumed;
+        }
+
+        /// <summary>Consume exactly <paramref name="count"/> raw object-log bytes (tee'd verbatim to <see cref="verbatimCopySink"/> during a
+        /// recovery copy), reading through <paramref name="discard"/> in buffer-sized slices; the data itself is not retained.</summary>
+        void DrainRawStream(ulong count, Span<byte> discard)
+        {
+            while (count > 0)
+            {
+                var want = (int)Math.Min(count, (ulong)discard.Length);
+                var n = ReadRawStream(discard.Slice(0, want));
+                if (n == 0)
+                    throw new TsavoriteException("Unexpected end of snapshot object-log data while copying record objects during recovery");
+                count -= (ulong)n;
+            }
+        }
+
         /// <summary>For an overflow key/value with a leading 8-byte <see cref="ChunkHeader"/> (key at/above its 1023 sentinel; value with the
         /// v2.2 has-header bit set), read that header, extend the read-ahead to cover the full on-disk extent (header + any DMA alignment
         /// padding + data) beyond what the initial read already accounted for, skip the alignment padding, and return the exact data length.</summary>
@@ -316,7 +418,9 @@ namespace Tsavorite.core
 
                 if (copyLength > 0)
                 {
-                    buffer.AvailableSpan.Slice(0, copyLength).CopyTo(destinationSpanAppend);
+                    var consumed = buffer.AvailableSpan.Slice(0, copyLength);
+                    consumed.CopyTo(destinationSpanAppend);
+                    verbatimCopySink?.Write(consumed);
                     buffer.currentPosition += copyLength;
                     recordStreamConsumed += (uint)copyLength;
                     if (inDeserialize)
@@ -355,6 +459,11 @@ namespace Tsavorite.core
                 }
                 if (objectChunkRemaining == 0)
                 {
+                    // Copy-to-end mode has no deserializer to stop it: once the final (non-continuing) data chunk is fully consumed, the object
+                    // is complete -- ending here avoids reading the next record's bytes as a spurious header. The exact-buffer-boundary case,
+                    // where the last data chunk continues into a trailing zero-length terminal chunk, still stops via AdvanceToNextObjectChunk.
+                    if (objectFollowToEnd && objectFirstHeaderRead && !objectCurrentChunkContinues)
+                        break;
                     if (!AdvanceToNextObjectChunk())
                         break;
                     continue;
@@ -398,6 +507,8 @@ namespace Tsavorite.core
                 var continues = (raw & unchecked((uint)ChunkedRecordConstants.ContinuationFlag)) != 0;
                 if (objectChunkRemaining > 0)
                 {
+                    // Remember this chunk's continuation flag so copy-to-end mode can stop after the final (non-continuing) data chunk.
+                    objectCurrentChunkContinues = continues;
                     // Keep the read-ahead ring ahead of consumption for a sentinel object (its initial read-ahead is only one 4 MB block):
                     // proactively request this chunk's data plus the next chunk's header, mirroring the overflow ReadOverflowHeaderAndExtend pattern.
                     if (objectSentinel)

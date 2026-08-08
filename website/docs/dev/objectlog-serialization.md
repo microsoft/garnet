@@ -217,9 +217,14 @@ bound = successor position / object-log tail), not a single additive delta.
   this record's** — exactly this record's raw key+value+header(s)+padding extent, copied verbatim (`successor.pos ≥ this.pos +
   extent`, so it never under-copies; trailing over-copy is ignored on read-back, which re-frames from the header). Validated by
   `RecoverSnapshotHeaderedOverflowValue` and the multi-segment `LargeObjectTest`.
-  - **Last object record on a page:** no successor to bound it, so it falls back to the (over-counting) RDH `KeyLength+ValueLength`
-    hint with `allowShortRead` — the snapshot read-ahead was sized with that same hint, there is no following record to overshoot,
-    and the trailing over-copy is re-framed away by the reader. (The prior fail-fast throw for this case has been removed.)
+  - **Last object record on a page:** no successor to bound it, and its size hint under-counts a sentinel-sized value, so the copy
+    **follows the record's `ChunkHeader` framing to the exact on-disk extent** (`CopyRecoveredObjectBytesFollowingFraming` →
+    `ObjectLogReader.CopyRecordObjectsFollowingFraming`): the framing walk decodes each chunk header, self-extends the snapshot
+    read-ahead as chunks are consumed, and tees every raw byte into the main object-log — so a value spanning multiple 4 MB
+    read-ahead buffers is copied whole rather than truncated. In copy-to-end mode `ReadObjectData` self-terminates after the final
+    (non-continuing) data chunk (a data chunk with the continuation flag clear is only ever back-filled at serialize completion, so
+    it is provably the last), rather than relying on the deserializer as the normal read path does. Validated by the 5 MB point of
+    `RecoverObjectValueLowMemBoundaries` / `RecoverOverflowValueLowMemBoundaries`.
 - **Flag bits:** `RepointObjectLogPosition` and `SetObjectLogPositionAndLengthHints` preserve the reserved position-word flag
   bits; `RepointObjectLogPosition` additionally preserves **bit 63** (a verbatim-copied downlevel record stays downlevel).
   `SetRecoveredObjectLogRecordStartPosition` intentionally **clears bit 63** — it converts the record to v2.2.

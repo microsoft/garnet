@@ -1018,15 +1018,11 @@ namespace Tsavorite.core
                                                 }
                                             }
 
-                                            // The last object record on the page has no successor to bound its exact extent. Fall back to the
-                                            // (over-counting) RDH key+value hints -- the snapshot read-ahead was sized WITH those hints, and being
-                                            // the last record there is no following record to overshoot; the trailing over-copy is re-framed away by
-                                            // the reader on read-back. allowShortRead below stops the copy cleanly at end-of-data.
+                                            // The last object record on the page has no successor to bound its exact extent, and its size hint
+                                            // under-counts a sentinel-sized value. Mark it so the copy follows the record's ChunkHeader framing to
+                                            // the exact on-disk extent (self-extending the read-ahead) instead of a hint-sized copy that truncates.
                                             if (copyObjectLength == 0)
-                                            {
-                                                copyObjectLength = (ulong)copyKeyLength + copyValueLength;
                                                 copyIsLastRecord = true;
-                                            }
                                         }
                                         else
                                         {
@@ -1039,14 +1035,28 @@ namespace Tsavorite.core
                                             copyKeyLength, copyValueLength, asyncResult.recoverySnapshotObjectLogDevice, out snapshotObjectReadBuffers);
 
                                         var mainRecordPosition = logWriter.GetNextRecordStartPosition();
-
-                                        // Position/await the snapshot read buffers at this record (skips sector padding and waits for the read-ahead IO),
-                                        // then stream the record's bytes verbatim into the main object-log.
-                                        if (!snapshotObjectReadBuffers.OnBeginRecord(new ObjectLogFilePositionInfo(snapshotPositionWord, objectLogTail.SegmentSizeBits)))
-                                            throw new TsavoriteException("No snapshot object-log data available while copying objects during recovery");
                                         logRecord.RepointObjectLogPosition(mainRecordPosition);
-                                        var copiedLength = logWriter.CopyRecoveredObjectBytes(snapshotObjectReader, copyObjectLength, allowShortRead: copyIsLastRecord);
-                                        recoveryOngoingPageHeader.Advance(copyIsLastRecord ? copiedLength : copyObjectLength);
+
+                                        ulong copiedLength;
+                                        if (copyIsLastRecord)
+                                        {
+                                            // No successor bounds this last-on-page record, and its size hint under-counts a sentinel-sized value.
+                                            // Follow the record's ChunkHeader framing (self-extending the snapshot read-ahead) to copy exactly its
+                                            // on-disk extent into the main object-log -- neither truncating a multi-buffer value nor over-copying into
+                                            // the next record. This positions the snapshot read buffers at the record itself.
+                                            copiedLength = logWriter.CopyRecoveredObjectBytesFollowingFraming(snapshotObjectReader, in logRecord, snapshotPositionWord,
+                                                copyKeyLength, copyValueLength, objectLogTail.SegmentSizeBits);
+                                        }
+                                        else
+                                        {
+                                            // Position/await the snapshot read buffers at this record (skips sector padding and waits for the read-ahead IO),
+                                            // then stream the record's bytes verbatim into the main object-log. The extent is exact here (a successor
+                                            // record bounded it, or the hints equal it), so a short read means truncation and must throw.
+                                            if (!snapshotObjectReadBuffers.OnBeginRecord(new ObjectLogFilePositionInfo(snapshotPositionWord, objectLogTail.SegmentSizeBits)))
+                                                throw new TsavoriteException("No snapshot object-log data available while copying objects during recovery");
+                                            copiedLength = logWriter.CopyRecoveredObjectBytes(snapshotObjectReader, copyObjectLength);
+                                        }
+                                        recoveryOngoingPageHeader.Advance(copiedLength);
                                     }
                                     else
                                     {
