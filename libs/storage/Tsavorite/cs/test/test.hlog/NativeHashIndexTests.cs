@@ -92,8 +92,10 @@ namespace Tsavorite.test.spanbyte
             store.Dispose();
             log.Dispose();
 
-            // After Dispose, the direct-VM index must be released (tracked native bytes back to baseline).
-            ClassicAssert.Less(NativeMemoryTracker.Bytes - before, 1L << 22, "index native memory should be freed on Dispose");
+            // Note: the live direct-VM index table is handed to a finalization-owned registry at Dispose (so an
+            // in-flight index-checkpoint device write is never unmapped underneath it), matching the managed table
+            // lifetime. Its free is therefore GC-timed, not prompt-on-Dispose, so we do not assert release here —
+            // the round-trip correctness above and the "index is direct-VM backed" growth check are the invariants.
         }
 
         [Test]
@@ -221,6 +223,144 @@ namespace Tsavorite.test.spanbyte
             session.Dispose();
             store.Dispose();
             log.Dispose();
+        }
+
+        /// <summary>
+        /// Stress for GPT review finding #4: repeated <c>FlushAndEvict</c> frees many pages at once (more than the
+        /// small overflow pool holds), so excess pages are dropped from the pool. This confirms those dropped
+        /// direct-VM pages are freed (not retained until finalization), i.e. the native log-page footprint does not
+        /// climb across many flush/regrow cycles. Explicit (slow).
+        /// </summary>
+        [Test]
+        [Explicit]
+        [Category(TsavoriteKVTestCategory)]
+        public void NativeFullModeFlushEvictCyclesStayBounded()
+        {
+            _ = NativeAllocatorInitializer.Initialize(NativeAllocatorSurfaces.HashIndex | NativeAllocatorSurfaces.LogPages);
+
+            var log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "hlog.log"), deleteOnClose: true);
+            var store = new TsavoriteKV<SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>>(
+                new()
+                {
+                    IndexSize = 1L << 20,
+                    LogDevice = log,
+                    LogMemorySize = 1L << 21,   // 2 MB in-memory log -> ~256 pages fill it
+                    PageSize = 1L << 13          // 8 KB pages
+                }, StoreFunctions.Create(SpanByteComparer.Instance, SpanByteRecordTriggers.Instance)
+                    , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions));
+
+            var session = store.NewSession<TestSpanByteKey, PinnedSpanByte, int[], Empty, VLVectorFunctions>(new VLVectorFunctions());
+            var bContext = session.BasicContext;
+
+            Span<int> keySpan = stackalloc int[1];
+            Span<int> valueSpan = stackalloc int[4];
+
+            long afterWarmup = 0;
+            long peak = 0;
+            const int cycles = 30;
+            const int perCycle = 20_000;   // ~2.5 MB > log -> fills the in-memory log, then evict all of it at once
+            for (var c = 0; c < cycles; c++)
+            {
+                for (var i = 0; i < perCycle; i++)
+                {
+                    keySpan[0] = i;
+                    for (var j = 0; j < 4; j++)
+                        valueSpan[j] = c;
+                    _ = bContext.Upsert(TestSpanByteKey.FromPinnedSpan(MemoryMarshal.Cast<int, byte>(keySpan)),
+                        MemoryMarshal.Cast<int, byte>(valueSpan), Empty.Default);
+                }
+                store.Log.FlushAndEvict(wait: true);   // bulk-close ~all pages -> overflow pool overflows -> drops
+
+                var now = NativeMemoryTracker.Bytes;
+                if (c == 2)
+                    afterWarmup = now;
+                if (c >= 2 && now > peak)
+                    peak = now;
+                TestContext.Out.WriteLine($"cycle {c}: native bytes = {now:N0}");
+            }
+
+            // A dropped-page leak would grow the footprint by ~(pages-per-flush) each cycle (many MB over 30 cycles).
+            // Bounded reuse keeps it near the warm baseline (allow 3 MB slack for index + pool + transient pages).
+            ClassicAssert.Less(peak - afterWarmup, 3L << 20,
+                $"native log-page memory grew across FlushAndEvict cycles: warm={afterWarmup:N0} peak={peak:N0}");
+
+            session.Dispose();
+            store.Dispose();
+            log.Dispose();
+        }
+
+        /// <summary>
+        /// Regression for the native scan/recovery frame path: a long disk scan must REUSE its fixed set of
+        /// direct-VM frame slots, not allocate a fresh mapping per page scanned. Scans records far exceeding the
+        /// in-memory log (so most are read back from disk through frames) and asserts the peak native footprint
+        /// stays bounded (frame slots + index). Frames free deterministically once the iterator drains its IO.
+        /// Explicit (slow).
+        /// </summary>
+        [Test]
+        [Explicit]
+        [Category(TsavoriteKVTestCategory)]
+        public void NativeFullModeScanFrameMemoryStaysBounded()
+        {
+            _ = NativeAllocatorInitializer.Initialize(NativeAllocatorSurfaces.HashIndex | NativeAllocatorSurfaces.LogPages | NativeAllocatorSurfaces.Frames);
+
+            var log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "hlog.log"), deleteOnClose: true);
+            var store = new TsavoriteKV<SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>>(
+                new()
+                {
+                    IndexSize = 1L << 20,
+                    LogDevice = log,
+                    LogMemorySize = 1L << 20,   // 1 MB in-memory log
+                    PageSize = 1L << 13          // 8 KB pages
+                }, StoreFunctions.Create(SpanByteComparer.Instance, SpanByteRecordTriggers.Instance)
+                    , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions));
+
+            var session = store.NewSession<TestSpanByteKey, PinnedSpanByte, int[], Empty, VLVectorFunctions>(new VLVectorFunctions());
+            var bContext = session.BasicContext;
+
+            Span<int> keySpan = stackalloc int[1];
+            Span<int> valueSpan = stackalloc int[4];
+
+            const int n = 100_000;   // ~12 MB of records >> 1 MB log -> most pages flushed to disk
+            for (var i = 0; i < n; i++)
+            {
+                keySpan[0] = i;
+                for (var j = 0; j < 4; j++)
+                    valueSpan[j] = i;
+                _ = bContext.Upsert(TestSpanByteKey.FromPinnedSpan(MemoryMarshal.Cast<int, byte>(keySpan)),
+                    MemoryMarshal.Cast<int, byte>(valueSpan), Empty.Default);
+            }
+            store.Log.FlushAndEvict(wait: true);
+
+            var beforeScan = NativeMemoryTracker.Bytes;
+            long peak = beforeScan;
+            using (var iter = store.Log.Scan(store.Log.BeginAddress, store.Log.TailAddress))
+            {
+                var count = 0;
+                while (iter.GetNext())
+                {
+                    if ((++count & 0x3FF) == 0)
+                    {
+                        var now = NativeMemoryTracker.Bytes;
+                        if (now > peak)
+                            peak = now;
+                    }
+                }
+                ClassicAssert.AreEqual(n, count, "scan must see every record");
+            }
+
+            // Frames reuse a fixed set of slots, so scanning ~100k records (12 MB from disk) must not grow native
+            // memory by more than a few frame pages. A per-page re-allocation leak would make peak >> beforeScan.
+            ClassicAssert.Less(peak - beforeScan, 4L << 20,
+                $"native scan-frame memory grew unbounded: beforeScan={beforeScan:N0} peak={peak:N0}");
+
+            session.Dispose();
+            store.Dispose();
+            log.Dispose();
+
+            // Note: log pages and the index defer their free to finalization, so a post-dispose baseline check is
+            // GC-timing dependent (and unreliable in Debug where locals stay rooted); the scan-peak bound above is
+            // the meaningful regression guard for the frame-reuse fix. NativeFullModeLogPageMemoryStaysBounded
+            // separately proves the log-page footprint is bounded.
         }
     }
 }

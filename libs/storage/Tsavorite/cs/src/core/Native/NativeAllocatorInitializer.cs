@@ -42,8 +42,16 @@ namespace Tsavorite.core
                 }
                 else
                 {
+                    SectorAlignedBufferPool.NativeAllocator = null;
                     logger?.LogWarning("Native allocator 'buffer-pool' requested but mimalloc is unavailable; falling back to the managed buffer pool.");
                 }
+            }
+            else
+            {
+                // Not requested: ensure the pool is on the managed path even if a prior Initialize installed it,
+                // so this call is fully idempotent (an explicit 'off' / None uninstalls rather than silently keeping
+                // a previously-installed native pool).
+                SectorAlignedBufferPool.NativeAllocator = null;
             }
 
             // Direct-VM singletons (always available; no shipped binary needed). Wired incrementally.

@@ -200,8 +200,9 @@ namespace Garnet
             logger?.LogInformation("Environment .NET {netVersion}; {osPlatform}; {processArch}", Environment.Version, Environment.OSVersion.Platform, RuntimeInformation.ProcessArchitecture);
 
             // Resolve and install native (off-managed-heap) allocators before any store or buffer pool is created.
-            if (opts.NativeAllocatorSurfaces != NativeAllocatorSurfaces.None)
-                NativeAllocatorInitializer.Initialize(opts.NativeAllocatorSurfaces, loggerFactory?.CreateLogger("NativeAllocator"));
+            // Always call Initialize (even for None) so the resolved CLI/config scope is authoritative and any
+            // process-wide leftover (e.g. from the GARNET_NATIVE_ALLOCATOR env var) is reset to the managed path.
+            NativeAllocatorInitializer.Initialize(opts.NativeAllocatorSurfaces, loggerFactory?.CreateLogger("NativeAllocator"));
 
             // Flush initialization logs from memory logger
             FlushMemoryLogger(this.initLogger, "ArgParser", this.loggerFactory);

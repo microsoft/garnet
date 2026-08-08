@@ -51,7 +51,10 @@ namespace Tsavorite.core
         static extern bool VirtualFree(nint lpAddress, nuint dwSize, uint dwFreeType);
 
         const int PROT_READ_WRITE = 0x1 | 0x2;          // PROT_READ | PROT_WRITE
-        const int MAP_PRIVATE_ANONYMOUS = 0x02 | 0x20;  // MAP_PRIVATE | MAP_ANONYMOUS (Linux)
+        const int MAP_PRIVATE = 0x02;                   // MAP_PRIVATE (all Unix)
+        // MAP_ANONYMOUS differs by OS: 0x20 on Linux, 0x1000 on macOS/BSD. Passing the Linux value on macOS with
+        // fd=-1 fails with EBADF, so select it at runtime to keep direct-VM working on osx-x64/osx-arm64.
+        static readonly int MAP_PRIVATE_ANONYMOUS = MAP_PRIVATE | (OperatingSystem.IsMacOS() ? 0x1000 : 0x20);
         static readonly nint MAP_FAILED = -1;
 
         const uint MEM_RESERVE_COMMIT = 0x1000 | 0x2000; // MEM_COMMIT | MEM_RESERVE

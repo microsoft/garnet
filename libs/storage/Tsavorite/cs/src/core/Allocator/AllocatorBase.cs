@@ -667,6 +667,12 @@ namespace Tsavorite.core
                 pageArrays = new byte[BufferSize][];
                 pagePointersArray = GC.AllocateArray<long>(BufferSize, pinned: true);
                 pagePointers = (long*)Unsafe.AsPointer(ref pagePointersArray[0]);
+
+                // Create the finalization-owned registry once, up front, when direct-VM log pages are in use.
+                // Page allocation can race across threads, so the registry must not be lazily created on the hot
+                // path (a racing ??= could publish two registries and finalize one that still owns live blocks).
+                if ((NativeAllocatorInitializer.EnabledSurfaces & NativeAllocatorSurfaces.LogPages) != 0)
+                    nativePageRegistry = new NativePageBlockRegistry();
             }
         }
 
@@ -774,9 +780,10 @@ namespace Tsavorite.core
             {
                 // Direct-VM (mmap/VirtualAlloc): demand-zero, first-touch-placed pages matching GC.AllocateArray.
                 // The block's lifetime is owned by nativePageRegistry (freed at finalization, not Dispose) so an
-                // in-flight device flush/read is never unmapped underneath it.
+                // in-flight device flush/read is never unmapped underneath it. The registry is created once in the
+                // constructor (see above) so this hot, possibly-concurrent path never races to publish it.
                 var block = DirectVirtualMemory.Allocate(adjustedSize, sectorSize);
-                (nativePageRegistry ??= new NativePageBlockRegistry()).Register(block);
+                nativePageRegistry.Register(block);
                 pagePointersArray[index] = block.AlignedPtr;
                 pageArrays[index] = null;
                 return;
@@ -2158,7 +2165,7 @@ namespace Tsavorite.core
             completed = new CountdownEvent(1);
 
             int pageIndex = (int)(readPage % frame.frameSize);
-            if (frame.frame[pageIndex] == null)
+            if (!frame.IsAllocated(pageIndex))
                 frame.Allocate(pageIndex);
             else
                 frame.Clear(pageIndex);

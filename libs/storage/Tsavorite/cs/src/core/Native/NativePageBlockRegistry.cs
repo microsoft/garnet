@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System.Collections.Concurrent;
+using System.Collections.Generic;
 
 namespace Tsavorite.core
 {
@@ -21,19 +21,26 @@ namespace Tsavorite.core
     /// </summary>
     internal sealed class NativePageBlockRegistry
     {
-        readonly ConcurrentBag<DirectVmBlock> blocks = new();
+        // Registrations are infrequent and lightly contended (page allocation). A plain lock-guarded list keeps
+        // both Register and the finalizer sweep allocation-free — important because the finalizer runs on the GC
+        // finalizer thread during shutdown, where allocating (e.g. a ConcurrentBag enumerator snapshot) is best
+        // avoided. When the finalizer runs the registry is already unreachable, so no concurrent Register can race.
+        readonly List<DirectVmBlock> blocks = new();
+        readonly object gate = new();
 
         /// <summary>Record a block so it is freed when this registry is finalized.</summary>
         internal void Register(in DirectVmBlock block)
         {
-            if (!block.IsEmpty)
+            if (block.IsEmpty)
+                return;
+            lock (gate)
                 blocks.Add(block);
         }
 
         ~NativePageBlockRegistry()
         {
-            foreach (var block in blocks)
-                DirectVirtualMemory.Free(block);
+            for (var i = 0; i < blocks.Count; i++)
+                DirectVirtualMemory.Free(blocks[i]);
         }
     }
 }

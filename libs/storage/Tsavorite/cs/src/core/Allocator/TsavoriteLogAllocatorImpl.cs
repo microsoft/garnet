@@ -174,7 +174,7 @@ namespace Tsavorite.core
             completed = new CountdownEvent(1);
 
             int pageIndex = (int)(readPage % frame.frameSize);
-            if (frame.frame[pageIndex] == null)
+            if (!frame.IsAllocated(pageIndex))
                 frame.Allocate(pageIndex);
             else
                 frame.Clear(pageIndex);

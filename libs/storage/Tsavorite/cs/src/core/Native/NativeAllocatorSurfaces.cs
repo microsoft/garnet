@@ -27,7 +27,10 @@ namespace Tsavorite.core
         /// <summary>Main-log / object-log inline pages and <see cref="TsavoriteLog"/> pages use the direct-VM backend.</summary>
         LogPages = 2,
 
-        /// <summary>Hash index table and blittable overflow buckets use the direct-VM backend.</summary>
+        /// <summary>
+        /// The main hash-index table (<c>state[].tableAligned</c>) uses the direct-VM backend. The overflow-bucket
+        /// pages (<c>MallocFixedPageSize&lt;HashBucket&gt;</c>) remain on the managed pinned heap in v1.
+        /// </summary>
         HashIndex = 4,
 
         /// <summary>Recovery / flush frames (<c>BlittableFrame</c>) use the direct-VM backend.</summary>

@@ -33,8 +33,16 @@ namespace Tsavorite.core
 
         // Per-version direct-VM backing block for the hash index when the HashIndex native surface is enabled
         // ("full" mode). Kept separate from <see cref="state"/> (which is set to default on grow-completion) so
-        // the pointer to free survives; freed on re-init of that version (grow reuse) and in <see cref="Free"/>.
+        // the pointer to free survives. A block for a version is freed deterministically only when that version
+        // is re-initialized by a grow (grow reuses the two versions alternately, so the block being replaced is a
+        // two-generations-old DEAD table with no reader and no in-flight checkpoint). The two LIVE tables are not
+        // munmap'd at <see cref="Free"/> — a checkpoint's async device write may still reference them and the
+        // device is disposed after this store — so they are handed to <see cref="nativeTableRegistry"/> and freed
+        // at finalization, matching the managed table lifetime.
         readonly DirectVmBlock[] tableBlocks = new DirectVmBlock[2];
+
+        // Owns the LIVE direct-VM hash-index tables past Dispose, freeing them at finalization (see tableBlocks).
+        NativePageBlockRegistry nativeTableRegistry;
 
         // Array used to denote if a specific chunk is merged or not
         internal long[] splitStatus;
@@ -79,11 +87,19 @@ namespace Tsavorite.core
             overflowBucketsAllocator.Dispose();
             overflowBucketsAllocatorResize?.Dispose();
 
-            // Release any direct-VM hash-index tables (no-op for the managed backend, where the blocks are empty).
-            DirectVirtualMemory.Free(tableBlocks[0]);
-            tableBlocks[0] = default;
-            DirectVirtualMemory.Free(tableBlocks[1]);
-            tableBlocks[1] = default;
+            // Hand the LIVE direct-VM index tables to the finalization-owned registry rather than munmap'ing here:
+            // an index checkpoint's async device write may still reference a table (the device holds a raw pointer
+            // and is disposed by the owner AFTER this store). This matches the managed backend, where the table
+            // array stays mapped until the GC reclaims the store (and therefore the device) — no-op when managed
+            // (blocks are empty, Register skips them).
+            if (!tableBlocks[0].IsEmpty || !tableBlocks[1].IsEmpty)
+            {
+                var registry = nativeTableRegistry ??= new NativePageBlockRegistry();
+                registry.Register(tableBlocks[0]);
+                registry.Register(tableBlocks[1]);
+                tableBlocks[0] = default;
+                tableBlocks[1] = default;
+            }
         }
 
         /// <summary>
