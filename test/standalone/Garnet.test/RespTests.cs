@@ -601,6 +601,59 @@ namespace Garnet.test
         }
 
         [Test]
+        public void StringCommandsWrongArityReturnErrorAndKeepSessionAlive()
+        {
+            using var lightClientRequest = TestUtils.CreateRequest();
+
+            // Each malformed command is followed by PING. On unpatched main these
+            // reach a handler that only Debug.Assert()s the argument count (or reads
+            // the missing argument past the parse state), aborting the process in a
+            // Debug build and reading out of bounds in Release, instead of replying
+            // with an error. The trailing PONG proves the session stayed alive.
+            void ExpectError(string cmd, string expectedError)
+            {
+                var response = lightClientRequest.SendCommands(cmd, "PING");
+                TestUtils.AssertEqualUpToExpectedLength($"{expectedError}\r\n+PONG\r\n", response);
+            }
+
+            ExpectError("SET k", "-ERR wrong number of arguments for 'SET' command");
+            ExpectError("SET", "-ERR wrong number of arguments for 'SET' command");
+            ExpectError("SET k v EX", "-ERR syntax error");
+            ExpectError("SET k v PX", "-ERR syntax error");
+            ExpectError("GETSET k", "-ERR wrong number of arguments for 'GETSET' command");
+            ExpectError("GETSET k v extra", "-ERR wrong number of arguments for 'GETSET' command");
+            ExpectError("SETEX k", "-ERR wrong number of arguments for 'SETEX' command");
+            ExpectError("SETEX k 10", "-ERR wrong number of arguments for 'SETEX' command");
+            ExpectError("PSETEX k 10", "-ERR wrong number of arguments for 'PSETEX' command");
+            ExpectError("SETRANGE k", "-ERR wrong number of arguments for 'SETRANGE' command");
+            ExpectError("SETRANGE k 0", "-ERR wrong number of arguments for 'SETRANGE' command");
+            ExpectError("APPEND k", "-ERR wrong number of arguments for 'APPEND' command");
+            ExpectError("GETRANGE k", "-ERR wrong number of arguments for 'GETRANGE' command");
+            ExpectError("GETRANGE k 0", "-ERR wrong number of arguments for 'GETRANGE' command");
+            ExpectError("SUBSTR k 0", "-ERR wrong number of arguments for 'GETRANGE' command");
+
+            // Well-formed forms are unchanged.
+            void ExpectOk(string cmd)
+            {
+                var response = lightClientRequest.SendCommands(cmd, "PING");
+                TestUtils.AssertEqualUpToExpectedLength("+OK\r\n+PONG\r\n", response);
+            }
+
+            ExpectOk("SET a 1");
+            ExpectOk("SETEX b 100 v");
+            ExpectOk("PSETEX c 5000 v");
+
+            var response = lightClientRequest.SendCommands("SETRANGE a 1 XY", "PING");
+            TestUtils.AssertEqualUpToExpectedLength(":3\r\n+PONG\r\n", response);
+            response = lightClientRequest.SendCommands("APPEND a Z", "PING");
+            TestUtils.AssertEqualUpToExpectedLength(":4\r\n+PONG\r\n", response);
+            response = lightClientRequest.SendCommands("GETSET a fresh", "PING");
+            TestUtils.AssertEqualUpToExpectedLength("$4\r\n1XYZ\r\n+PONG\r\n", response);
+            response = lightClientRequest.SendCommands("GETRANGE a 0 2", "PING");
+            TestUtils.AssertEqualUpToExpectedLength("$3\r\nfre\r\n+PONG\r\n", response);
+        }
+
+        [Test]
         public void LargeSetGet()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
