@@ -17,6 +17,10 @@ namespace Tsavorite.core
         public readonly byte[][] frame;
         public readonly long[] pointers;
 
+        // Per-frame direct-VM backing block when the Frames native surface is enabled ("full" mode); the
+        // parallel entry in <see cref="frame"/> is null. Empty (default) for the managed backend.
+        readonly DirectVmBlock[] blocks;
+
         public BlittableFrame(int frameSize, int pageSize, int sectorSize)
         {
             this.frameSize = frameSize;
@@ -25,11 +29,21 @@ namespace Tsavorite.core
 
             frame = new byte[frameSize][];
             pointers = new long[frameSize];
+            blocks = new DirectVmBlock[frameSize];
         }
 
         public unsafe void Allocate(int index)
         {
             var adjustedSize = pageSize + 2 * sectorSize;
+
+            if ((NativeAllocatorInitializer.EnabledSurfaces & NativeAllocatorSurfaces.Frames) != 0)
+            {
+                var block = DirectVirtualMemory.Allocate(adjustedSize, sectorSize);
+                blocks[index] = block;
+                pointers[index] = block.AlignedPtr;
+                frame[index] = null;
+                return;
+            }
 
             var tmp = GC.AllocateArray<byte>(adjustedSize, pinned: true);
             var p = (long)Unsafe.AsPointer(ref tmp[0]);
@@ -39,7 +53,10 @@ namespace Tsavorite.core
 
         public void Clear(int pageIndex)
         {
-            Array.Clear(frame[pageIndex], 0, frame[pageIndex].Length);
+            if (frame[pageIndex] is not null)
+                Array.Clear(frame[pageIndex], 0, frame[pageIndex].Length);
+            else
+                DirectVirtualMemory.Clear((nint)pointers[pageIndex], pageSize + 2 * sectorSize);
         }
 
         public long GetPhysicalAddress(long frameNumber, long offset = 0)
@@ -57,6 +74,16 @@ namespace Tsavorite.core
 
         public void Dispose()
         {
+            if (blocks is null)
+                return;
+            for (var i = 0; i < blocks.Length; i++)
+            {
+                if (!blocks[i].IsEmpty)
+                {
+                    DirectVirtualMemory.Free(blocks[i]);
+                    blocks[i] = default;
+                }
+            }
         }
     }
 }

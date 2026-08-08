@@ -59,9 +59,11 @@ namespace Tsavorite.core
                 logger?.LogInformation("Native allocator enabled for log pages (direct virtual memory).");
             }
 
-            var notYetWired = requested & NativeAllocatorSurfaces.Frames;
-            if (notYetWired != 0)
-                logger?.LogWarning("Native allocator direct-VM surfaces ({surfaces}) are not yet wired; those surfaces stay managed.", notYetWired);
+            if ((requested & NativeAllocatorSurfaces.Frames) != 0)
+            {
+                enabled |= NativeAllocatorSurfaces.Frames;
+                logger?.LogInformation("Native allocator enabled for recovery/scan frames (direct virtual memory).");
+            }
 
             EnabledSurfaces = enabled;
             return enabled;
