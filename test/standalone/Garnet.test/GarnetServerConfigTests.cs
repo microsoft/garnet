@@ -114,7 +114,7 @@ namespace Garnet.test
         public void NativeAllocatorOptionParsing()
         {
             // Default is "off".
-            var ok = ServerSettingsManager.TryParseCommandLineArguments(Array.Empty<string>(), out var options, out _, out _, out _, silentMode: true);
+            var ok = ServerSettingsManager.TryParseCommandLineArguments([], out var options, out _, out _, out _, silentMode: true);
             ClassicAssert.IsTrue(ok);
             ClassicAssert.AreEqual("off", options.NativeAllocator);
 
