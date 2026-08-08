@@ -27,6 +27,18 @@ namespace Tsavorite.core
         static delegate* unmanaged[Cdecl]<nint, nuint> p_usable_size;
         static delegate* unmanaged[Cdecl]<int, void> p_collect;
 
+        // SuppressGCTransition variants of the hot alloc/free path. mi_*alloc/mi_free do not block, call back
+        // into the runtime, or throw, so skipping the cooperative->preemptive GC transition (~10-20ns/call)
+        // is safe and roughly halves the per-op P/Invoke cost on the buffer-pool hot path. The only tradeoff
+        // is the rare slow path (mimalloc obtaining/returning OS memory) briefly delaying a GC suspension.
+        static delegate* unmanaged[Cdecl, SuppressGCTransition]<nuint, nuint, nint> p_malloc_aligned_fast;
+        static delegate* unmanaged[Cdecl, SuppressGCTransition]<nuint, nuint, nint> p_zalloc_aligned_fast;
+        static delegate* unmanaged[Cdecl, SuppressGCTransition]<nint, void> p_free_fast;
+
+        // Plain (unaligned) malloc, normal + fast — used only by profiling to isolate the alignment slow path.
+        static delegate* unmanaged[Cdecl]<nuint, nint> p_malloc;
+        static delegate* unmanaged[Cdecl, SuppressGCTransition]<nuint, nint> p_malloc_fast;
+
         /// <summary>True if the mimalloc library loaded and all required exports resolved.</summary>
         internal static bool Available => available;
 
@@ -47,11 +59,22 @@ namespace Tsavorite.core
                 {
                     if (TryLoad(out var handle))
                     {
-                        p_malloc_aligned = (delegate* unmanaged[Cdecl]<nuint, nuint, nint>)NativeLibrary.GetExport(handle, "mi_malloc_aligned");
-                        p_zalloc_aligned = (delegate* unmanaged[Cdecl]<nuint, nuint, nint>)NativeLibrary.GetExport(handle, "mi_zalloc_aligned");
-                        p_free = (delegate* unmanaged[Cdecl]<nint, void>)NativeLibrary.GetExport(handle, "mi_free");
+                        var eMallocAligned = NativeLibrary.GetExport(handle, "mi_malloc_aligned");
+                        var eZallocAligned = NativeLibrary.GetExport(handle, "mi_zalloc_aligned");
+                        var eFree = NativeLibrary.GetExport(handle, "mi_free");
+                        var eMalloc = NativeLibrary.GetExport(handle, "mi_malloc");
+
+                        p_malloc_aligned = (delegate* unmanaged[Cdecl]<nuint, nuint, nint>)eMallocAligned;
+                        p_zalloc_aligned = (delegate* unmanaged[Cdecl]<nuint, nuint, nint>)eZallocAligned;
+                        p_free = (delegate* unmanaged[Cdecl]<nint, void>)eFree;
                         p_usable_size = (delegate* unmanaged[Cdecl]<nint, nuint>)NativeLibrary.GetExport(handle, "mi_usable_size");
                         p_collect = (delegate* unmanaged[Cdecl]<int, void>)NativeLibrary.GetExport(handle, "mi_collect");
+
+                        p_malloc_aligned_fast = (delegate* unmanaged[Cdecl, SuppressGCTransition]<nuint, nuint, nint>)eMallocAligned;
+                        p_zalloc_aligned_fast = (delegate* unmanaged[Cdecl, SuppressGCTransition]<nuint, nuint, nint>)eZallocAligned;
+                        p_free_fast = (delegate* unmanaged[Cdecl, SuppressGCTransition]<nint, void>)eFree;
+                        p_malloc = (delegate* unmanaged[Cdecl]<nuint, nint>)eMalloc;
+                        p_malloc_fast = (delegate* unmanaged[Cdecl, SuppressGCTransition]<nuint, nint>)eMalloc;
                         available = true;
                     }
                     else
@@ -77,6 +100,25 @@ namespace Tsavorite.core
 
         [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
         internal static void Free(nint ptr) => p_free(ptr);
+
+        // ---- SuppressGCTransition fast variants (hot path) ----
+
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
+        internal static nint MallocAlignedFast(nuint size, nuint alignment) => p_malloc_aligned_fast(size, alignment);
+
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
+        internal static nint ZallocAlignedFast(nuint size, nuint alignment) => p_zalloc_aligned_fast(size, alignment);
+
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
+        internal static void FreeFast(nint ptr) => p_free_fast(ptr);
+
+        // ---- Plain (unaligned) malloc, profiling only ----
+
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
+        internal static nint Malloc(nuint size) => p_malloc(size);
+
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
+        internal static nint MallocFast(nuint size) => p_malloc_fast(size);
 
         [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
         internal static nuint UsableSize(nint ptr) => p_usable_size(ptr);
