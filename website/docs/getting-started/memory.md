@@ -89,12 +89,17 @@ Modes (`--native-allocator <mode>`):
 * `buffer-pool` — the sector-aligned IO/flush buffer pool (`SectorAlignedBufferPool`) is backed by
   [mimalloc](https://github.com/microsoft/mimalloc). Its thread-local heaps eliminate the shared free-list
   contention that caps this pool under concurrent flush/read on fast devices. This is the primary throughput
-  win and the safe first increment (a single, localized surface). If the mimalloc native library is unavailable
-  for the platform/RID, this surface transparently falls back to the managed pool with a warning.
+  win and the safe first increment (a single, localized surface). This mode **requires** the mimalloc native
+  library: if it cannot be loaded for the platform/RID, **startup fails** rather than silently degrading to the
+  managed pool (so a missing native binary surfaces as a loud config error, not a quiet slowdown). Use `off` to
+  run fully managed.
 * `full` — additionally routes the hash index, hybrid-log pages, and recovery frames to a direct OS
   virtual-memory allocator (`mmap`/`VirtualAlloc`). These give demand-zero, first-touch-placed pages that match
   the managed allocator's behavior, but off the GC heap — so a large index/log no longer inflates the managed
-  heap. (Network buffers remain managed in this release.)
+  heap. On Linux these regions are 2&#160;MB-aligned and hinted for transparent huge pages, which lowers dTLB
+  misses on random index/log access (measured ~8% higher in-memory throughput vs the managed heap). `full`
+  includes `buffer-pool`, so it likewise requires mimalloc and fails fast if it is unavailable. (Network buffers
+  remain managed in this release.)
 
 ### Sizing and the GC when native memory is enabled
 

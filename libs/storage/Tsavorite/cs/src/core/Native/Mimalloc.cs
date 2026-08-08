@@ -86,13 +86,13 @@ namespace Tsavorite.core
                     }
                     else
                     {
-                        logger?.LogWarning("mimalloc native library could not be loaded for RID '{rid}'; native allocator surfaces backed by mimalloc will fall back to managed.", GetRuntimeIdentifier());
+                        logger?.LogWarning("mimalloc native library could not be loaded for RID '{rid}'.", GetRuntimeIdentifier());
                     }
                 }
                 catch (Exception ex)
                 {
                     available = false;
-                    logger?.LogWarning(ex, "Failed to bind mimalloc exports; native allocator surfaces backed by mimalloc will fall back to managed.");
+                    logger?.LogWarning(ex, "Failed to bind mimalloc exports.");
                 }
                 initialized = true;
             }
@@ -172,7 +172,7 @@ namespace Tsavorite.core
             return NativeLibrary.TryLoad(fileName, typeof(Mimalloc).Assembly, DllImportSearchPath.SafeDirectories, out handle);
         }
 
-        static string GetRuntimeIdentifier()
+        internal static string GetRuntimeIdentifier()
         {
             var arch = RuntimeInformation.ProcessArchitecture switch
             {

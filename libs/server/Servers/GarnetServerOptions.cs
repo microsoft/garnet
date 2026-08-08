@@ -24,8 +24,9 @@ namespace Garnet.server
         /// <summary>
         /// Which memory surfaces use a native (off-managed-heap) allocator. Resolved from the
         /// <c>--native-allocator</c> mode (off | buffer-pool | full) and installed at startup via
-        /// <see cref="NativeAllocatorInitializer"/>. If a surface's native backend is unavailable, it falls
-        /// back to managed with a warning.
+        /// <see cref="NativeAllocatorInitializer"/>. The mimalloc-backed buffer-pool surface is a hard
+        /// requirement when selected: if mimalloc cannot be loaded for the platform, startup fails rather than
+        /// silently falling back to the managed pool. The direct-VM surfaces are always available.
         /// </summary>
         public NativeAllocatorSurfaces NativeAllocatorSurfaces = NativeAllocatorSurfaces.None;
 

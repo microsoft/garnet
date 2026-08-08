@@ -87,7 +87,7 @@ namespace Garnet
         [Option("index-max-size", Required = false, HelpText = "Max size of hash index in bytes (rounds down to power of 2)")]
         public string IndexMaxMemorySize { get; set; }
 
-        [Option("native-allocator", Required = false, HelpText = "Route large/pooled memory through a native (off-managed-heap) allocator. Values: off (default), buffer-pool (SectorAlignedBufferPool IO buffers via mimalloc), full (also routes log pages / hash index / frames to a direct-VM allocator). If the native backend is unavailable for the platform, the affected surface falls back to managed with a warning.")]
+        [Option("native-allocator", Required = false, HelpText = "Route large/pooled memory through a native (off-managed-heap) allocator. Values: off (default), buffer-pool (SectorAlignedBufferPool IO buffers via mimalloc), full (also routes log pages / hash index / frames to a direct-VM allocator). buffer-pool and full require the mimalloc native library; if it cannot be loaded for the platform, startup fails (rather than silently using the managed pool). Set off to run fully managed.")]
         public string NativeAllocator { get; set; }
 
         [PercentageValidation(false)]
