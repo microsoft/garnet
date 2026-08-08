@@ -19,7 +19,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\core\Tsavorite.core.csproj" />
-    <ProjectReference Include="..\..\..\..\..\..\test\standalone\Garnet.test\Garnet.test.csproj" />
+    <ProjectReference Include="..\Tsavorite.test.csproj" />
   </ItemGroup>
 
 </Project>
