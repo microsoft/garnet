@@ -118,6 +118,17 @@ namespace Tsavorite.core
         /// (and never dereferences a null registry if the global flag is flipped after construction).</summary>
         protected readonly bool useNativeLogPages;
 
+        /// <summary>Depth of in-progress snapshot-checkpoint flushes issuing device writes directly from native page
+        /// pointers. While &gt; 0, <see cref="FreeNativeLogPage"/> must NOT munmap an evicted page (a snapshot write
+        /// may still reference it, and snapshot IO is not gated by <see cref="FlushedUntilAddress"/>); such pages
+        /// are parked in <see cref="deferredNativeFrees"/> and freed when the snapshot completes.</summary>
+        int nativeSnapshotFlushDepth;
+
+        /// <summary>Direct-VM page blocks evicted while a snapshot flush was in progress; freed once the snapshot's
+        /// device writes have all completed. Guarded by <see cref="nativeFreeGate"/>. Null for the managed backend.</summary>
+        System.Collections.Generic.List<DirectVmBlock> deferredNativeFrees;
+        readonly object nativeFreeGate = new();
+
         /// <summary>Owns the lifetime of the direct-VM log-page blocks that are still installed at Dispose, freeing
         /// them at finalization to match the managed page lifetime (an in-flight device flush/read may still
         /// reference them, and the device is disposed after this allocator). Null / unused for the managed backend.</summary>
@@ -513,6 +524,15 @@ namespace Tsavorite.core
                         pageBlocks[i] = default;
                     }
                 }
+
+                // Any pages parked by an in-flight snapshot flush that has not completed also go to the registry
+                // (freed at finalization), so a snapshot write still referencing them is never unmapped early.
+                lock (nativeFreeGate)
+                {
+                    foreach (var block in deferredNativeFrees)
+                        nativePageRegistry.Register(block);
+                    deferredNativeFrees.Clear();
+                }
             }
         }
 
@@ -703,6 +723,7 @@ namespace Tsavorite.core
                 {
                     pageBlocks = new DirectVmBlock[BufferSize];
                     nativePageRegistry = new NativePageBlockRegistry();
+                    deferredNativeFrees = new();
                 }
             }
         }
@@ -829,21 +850,73 @@ namespace Tsavorite.core
         /// <summary>
         /// Free the direct-VM block backing circular-buffer page <paramref name="index"/>, if any. Called from the
         /// derived allocators' <c>ReturnPage</c> when a page is evicted: at that point the page has been closed by
-        /// OnPagesClosed (post-flush, after the epoch drain), so no device IO references it and immediate
-        /// <c>munmap</c>/<c>VirtualFree</c> is safe. No-op for the managed backend.
+        /// OnPagesClosed (post main-log flush, after the epoch drain), so no MAIN-log IO references it. However a
+        /// snapshot-checkpoint write (which reads the page pointer directly and is NOT gated by FlushedUntilAddress)
+        /// may still be in flight, so if a snapshot flush is in progress we park the block and free it when the
+        /// snapshot's writes complete (<see cref="EndNativeSnapshotFlush"/>). No-op for the managed backend.
         /// </summary>
         protected void FreeNativeLogPage(int index)
         {
             if (pageBlocks is null)
                 return;
             _ = Interlocked.Increment(ref NativeLogPageFreeCount);
-            DirectVirtualMemory.Free(pageBlocks[index]);
+            var block = pageBlocks[index];
             pageBlocks[index] = default;
+
+            // Fast path: no snapshot flush active -> munmap immediately (main-log flush already completed).
+            if (Volatile.Read(ref nativeSnapshotFlushDepth) > 0)
+            {
+                lock (nativeFreeGate)
+                {
+                    if (nativeSnapshotFlushDepth > 0)
+                    {
+                        _ = Interlocked.Increment(ref NativeLogPageDeferredCount);
+                        deferredNativeFrees.Add(block);
+                        return;
+                    }
+                }
+            }
+            DirectVirtualMemory.Free(block);
+        }
+
+        /// <summary>Mark the start of a snapshot-checkpoint flush that issues device writes from native page
+        /// pointers, so evicted pages are parked instead of unmapped for the duration. Paired with
+        /// <see cref="EndNativeSnapshotFlush"/>. No-op for the managed backend.</summary>
+        void BeginNativeSnapshotFlush()
+        {
+            if (!useNativeLogPages)
+                return;
+            lock (nativeFreeGate)
+                nativeSnapshotFlushDepth++;
+        }
+
+        /// <summary>Mark the end of a snapshot-checkpoint flush (all its device writes have completed). When the
+        /// last active flush ends, free any pages that were evicted while it was in progress.</summary>
+        void EndNativeSnapshotFlush()
+        {
+            if (!useNativeLogPages)
+                return;
+            DirectVmBlock[] toFree = null;
+            lock (nativeFreeGate)
+            {
+                if (--nativeSnapshotFlushDepth == 0 && deferredNativeFrees.Count > 0)
+                {
+                    toFree = deferredNativeFrees.ToArray();
+                    deferredNativeFrees.Clear();
+                }
+            }
+            if (toFree is not null)
+                foreach (var block in toFree)
+                    DirectVirtualMemory.Free(block);
         }
 
         /// <summary>Diagnostic counter of direct-VM log-page frees on eviction (see <see cref="FreeNativeLogPage"/>);
         /// used by tests to assert the native eviction-unmap path is actually exercised.</summary>
         internal static long NativeLogPageFreeCount;
+
+        /// <summary>Diagnostic counter of direct-VM log-page frees that were deferred because a snapshot flush was in
+        /// progress; used by tests to assert the snapshot-deferral path is actually exercised.</summary>
+        internal static long NativeLogPageDeferredCount;
 
         /// <summary>Initialize allocator</summary>
         [MethodImpl(MethodImplOptions.NoInlining)]
@@ -2095,6 +2168,13 @@ namespace Tsavorite.core
 
             var completionTcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
             completedTask = completionTcs.Task;
+
+            // Park (do not munmap) any native page evicted while this snapshot's writes are in flight; free them once
+            // all its device writes have completed. Snapshot IO reads page pointers directly and is not gated by
+            // FlushedUntilAddress, so a page could otherwise be unmapped under an in-flight snapshot write.
+            BeginNativeSnapshotFlush();
+            _ = completionTcs.Task.ContinueWith(static (_, state) => ((AllocatorBase<TStoreFunctions, TAllocator>)state).EndNativeSnapshotFlush(),
+                this, CancellationToken.None, TaskContinuationOptions.None, TaskScheduler.Default);
 
             // If throttled, convert rest of the method into a truly async task run because issuing IO can take up synchronous time
             if (throttleCheckpointFlushDelayMs >= 0)

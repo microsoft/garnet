@@ -71,6 +71,7 @@ namespace Tsavorite.test.recovery
             using var cts = new CancellationTokenSource();
             Exception writerError = null;
             var freesBefore = Interlocked.Read(ref AllocatorBase<LongStoreFunctions, LongAllocator>.NativeLogPageFreeCount);
+            var deferredBefore = Interlocked.Read(ref AllocatorBase<LongStoreFunctions, LongAllocator>.NativeLogPageDeferredCount);
 
             // Background writers: continuous upserts drive the tail forward, forcing pages read-only -> flushed ->
             // evicted (ReturnPage -> FreeNativeLogPage) concurrently with the snapshot writes below.
@@ -119,8 +120,12 @@ namespace Tsavorite.test.recovery
             // Prove the test actually exercised the native eviction-unmap path (FreeNativeLogPage) concurrently with
             // the snapshots — otherwise a "no crash" result would be vacuous (pages never unmapped).
             var freed = Interlocked.Read(ref AllocatorBase<LongStoreFunctions, LongAllocator>.NativeLogPageFreeCount) - freesBefore;
+            var deferred = Interlocked.Read(ref AllocatorBase<LongStoreFunctions, LongAllocator>.NativeLogPageDeferredCount) - deferredBefore;
             ClassicAssert.Greater(freed, 0, "expected native log pages to be freed on eviction during the snapshots");
-            TestContext.Out.WriteLine($"native log-page frees during concurrent snapshots: {freed:N0}");
+            // And prove the snapshot-deferral path (park-during-snapshot, free-on-completion) was actually hit — this
+            // is the interleaving under test: pages evicted while a snapshot write was in flight.
+            ClassicAssert.Greater(deferred, 0, "expected some evicted pages to be deferred during in-flight snapshots");
+            TestContext.Out.WriteLine($"native log-page frees: {freed:N0}; of which deferred during snapshots: {deferred:N0}");
         }
     }
 }
