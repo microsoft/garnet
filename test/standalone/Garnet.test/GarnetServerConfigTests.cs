@@ -129,6 +129,107 @@ namespace Garnet.test
         }
 
         [Test]
+        public void DeviceIoContextsAndQueueDepthOptions()
+        {
+            // Defaults: with no explicit override the values come from defaults.conf (0 = device default)
+            // and flow through to GarnetServerOptions unchanged.
+            {
+                var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments([], out var options, out _, out _, out _, silentMode: true);
+                ClassicAssert.IsTrue(parseSuccessful);
+                ClassicAssert.AreEqual(0, options.DeviceIoContexts);
+                ClassicAssert.AreEqual(0, options.DeviceQueueDepth);
+
+                var serverOptions = options.GetServerOptions();
+                ClassicAssert.AreEqual(0, serverOptions.DeviceIoContexts);
+                ClassicAssert.AreEqual(0, serverOptions.DeviceQueueDepth);
+            }
+
+            // Explicit values are parsed and flow through to GarnetServerOptions.
+            {
+                var args = new[] { "--device-io-contexts", "96", "--device-queue-depth", "4096" };
+                var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out _, out _, out _, silentMode: true);
+                ClassicAssert.IsTrue(parseSuccessful);
+                ClassicAssert.AreEqual(96, options.DeviceIoContexts);
+                ClassicAssert.AreEqual(4096, options.DeviceQueueDepth);
+
+                var serverOptions = options.GetServerOptions();
+                ClassicAssert.AreEqual(96, serverOptions.DeviceIoContexts);
+                ClassicAssert.AreEqual(4096, serverOptions.DeviceQueueDepth);
+            }
+        }
+
+        [Test]
+        public void DeviceAioMaxDevicesOption()
+        {
+            var savedAioMaxDevices = NativeStorageDevice.AioMaxDevices;
+            try
+            {
+                // Default: with no explicit override the value comes from defaults.conf (32) and flows
+                // through to GarnetServerOptions unchanged; Initialize applies it to the process-global static.
+                {
+                    var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments([], out var options, out _, out _, out _, silentMode: true);
+                    ClassicAssert.IsTrue(parseSuccessful);
+                    ClassicAssert.AreEqual(32, options.DeviceAioMaxDevices);
+
+                    var serverOptions = options.GetServerOptions();
+                    ClassicAssert.AreEqual(32, serverOptions.DeviceAioMaxDevices);
+
+                    NativeStorageDevice.AioMaxDevices = 7; // perturb to prove Initialize reapplies
+                    serverOptions.Initialize();
+                    ClassicAssert.AreEqual(32, NativeStorageDevice.AioMaxDevices);
+                }
+
+                // Explicit value is parsed, flows through to GarnetServerOptions, and Initialize applies it.
+                {
+                    var args = new[] { "--device-aio-max-devices", "64" };
+                    var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out _, out _, out _, silentMode: true);
+                    ClassicAssert.IsTrue(parseSuccessful);
+                    ClassicAssert.AreEqual(64, options.DeviceAioMaxDevices);
+
+                    var serverOptions = options.GetServerOptions();
+                    ClassicAssert.AreEqual(64, serverOptions.DeviceAioMaxDevices);
+
+                    serverOptions.Initialize();
+                    ClassicAssert.AreEqual(64, NativeStorageDevice.AioMaxDevices);
+                }
+            }
+            finally
+            {
+                NativeStorageDevice.AioMaxDevices = savedAioMaxDevices;
+            }
+        }
+
+        [Test]
+        public void DeviceUringSqPollOptions()
+        {
+            // Defaults: opt-in SQPOLL is off and the idle window is the native default (0) per
+            // defaults.conf, flowing through to GarnetServerOptions unchanged.
+            {
+                var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments([], out var options, out _, out _, out _, silentMode: true);
+                ClassicAssert.IsTrue(parseSuccessful);
+                ClassicAssert.AreEqual(false, options.DeviceUringSqPoll);
+                ClassicAssert.AreEqual(0, options.DeviceUringSqPollIdleMs);
+
+                var serverOptions = options.GetServerOptions();
+                ClassicAssert.IsFalse(serverOptions.DeviceUringSqPoll);
+                ClassicAssert.AreEqual(0, serverOptions.DeviceUringSqPollIdleMs);
+            }
+
+            // Explicit values are parsed and flow through to GarnetServerOptions.
+            {
+                var args = new[] { "--device-uring-sqpoll", "true", "--device-uring-sqpoll-idle-ms", "2000" };
+                var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out _, out _, out _, silentMode: true);
+                ClassicAssert.IsTrue(parseSuccessful);
+                ClassicAssert.AreEqual(true, options.DeviceUringSqPoll);
+                ClassicAssert.AreEqual(2000, options.DeviceUringSqPollIdleMs);
+
+                var serverOptions = options.GetServerOptions();
+                ClassicAssert.IsTrue(serverOptions.DeviceUringSqPoll);
+                ClassicAssert.AreEqual(2000, serverOptions.DeviceUringSqPollIdleMs);
+            }
+        }
+
+        [Test]
         public void ImportExportConfigLocal()
         {
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);

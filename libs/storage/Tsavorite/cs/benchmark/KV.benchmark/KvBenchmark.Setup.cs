@@ -104,22 +104,22 @@ namespace Tsavorite.kvbench
                     $"[localmemory] capacity={capacity / (1024L * 1024 * 1024)}GB segments={needSegments} segSize={segSize / (1024L * 1024)}MB parallelism(=device-completion-threads)={parallelism}{(opts.DeviceInlineCompletion ? " (inline completion)" : "")}");
 
                 // LocalMemoryDevice has no Throttle() override; its per-ring SPSC backpressure (the producer
-                // blocks when its ring is full) IS the in-flight bound. So map --device-throttle onto the ring
+                // blocks when its ring is full) IS the in-flight bound. So map --device-throttle-limit onto the ring
                 // capacity (rounded up to a power of two) — this actually caps in-flight, with no contended
                 // device-wide numPending counter. 0 = device default ring.
                 int localMemRing = 0;
-                if (opts.DeviceThrottle > 0)
+                if (opts.DeviceThrottleLimit > 0)
                 {
-                    // Round up to a power of two, overflow-safe. --device-throttle is user-supplied, so a
+                    // Round up to a power of two, overflow-safe. --device-throttle-limit is user-supplied, so a
                     // naive `while (r < throttle) r <<= 1` would overflow to a negative r and spin forever
                     // for values > 2^30; cap at the largest power-of-two int instead.
                     const int MaxRing = 1 << 30;
-                    if (opts.DeviceThrottle >= MaxRing)
+                    if (opts.DeviceThrottleLimit >= MaxRing)
                         localMemRing = MaxRing;
                     else
                     {
                         localMemRing = 1;
-                        while (localMemRing < opts.DeviceThrottle)
+                        while (localMemRing < opts.DeviceThrottleLimit)
                             localMemRing <<= 1;
                     }
                 }
@@ -131,7 +131,7 @@ namespace Tsavorite.kvbench
                     numCompletionThreads: parallelism,
                     localMemorySegmentSize: segSize,
                     localMemoryRingCapacity: localMemRing);
-                if (opts.DeviceThrottle > 0) dev.ThrottleLimit = opts.DeviceThrottle;   // reflect intent in reporting (LocalMemory enforces it via the ring)
+                if (opts.DeviceThrottleLimit > 0) dev.ThrottleLimit = opts.DeviceThrottleLimit;   // reflect intent in reporting (LocalMemory enforces it via the ring)
                 return dev;
             }
 
@@ -141,7 +141,11 @@ namespace Tsavorite.kvbench
                     deleteOnClose: true,
                     disableFileBuffering: true,
                     numCompletionThreads: numCt,
-                    ioBackend: opts.ResolvedIoBackend);
+                    ioBackend: opts.ResolvedIoBackend,
+                    numIoContexts: opts.DeviceIoContexts,
+                    queueDepth: opts.DeviceQueueDepth,
+                    uringSqPoll: opts.DeviceUringSqPoll,
+                    uringSqPollIdleMs: opts.DeviceUringSqPollIdleMs);
             }
             else if (devType == DeviceType.Null)
             {
@@ -157,8 +161,8 @@ namespace Tsavorite.kvbench
                     disableFileBuffering: true);
             }
 
-            if (opts.DeviceThrottle > 0)
-                dev.ThrottleLimit = opts.DeviceThrottle;
+            if (opts.DeviceThrottleLimit > 0)
+                dev.ThrottleLimit = opts.DeviceThrottleLimit;
             return dev;
         }
     }

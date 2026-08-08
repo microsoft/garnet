@@ -99,6 +99,18 @@ namespace Tsavorite.core
         /// </summary>
         internal bool isDirty;
 
+        /// <summary>
+        /// Pool-internal: the free-list stripe this buffer was rented from, recorded at
+        /// <see cref="SectorAlignedBufferPool.Get(int,bool)"/> time so the matching
+        /// <see cref="SectorAlignedBufferPool.Return(SectorAlignedMemory)"/> enqueues it back
+        /// to its ORIGIN stripe regardless of which thread returns it. Without this, a buffer
+        /// rented on one thread and returned on another (e.g. a page flush issued by a session
+        /// thread and completed on a device drainer, or a RESP disk read completed off the
+        /// issuing thread) would strand on the returner's stripe while the renter's stripe
+        /// keeps allocating fresh buffers — an unbounded pinned-object-heap (POH) leak.
+        /// </summary>
+        internal int stripe;
+
         private int level;
         internal int Level => level
 #if CHECK_FREE
@@ -263,9 +275,44 @@ namespace Tsavorite.core
         public static bool UnpinOnReturn;
 
         private const int levels = 32;
+
+        /// <summary>
+        /// Number of per-level free-list stripes. Each (level, stripe) pair has its own
+        /// <see cref="ConcurrentQueue{T}"/>, so concurrent renters/returners on different threads touch
+        /// different cache lines instead of contending on a single per-level queue. A thread is assigned a
+        /// stable stripe on first use (<see cref="CurrentStripe"/>) and rents from it; the buffer records its
+        /// origin stripe (<see cref="SectorAlignedMemory.stripe"/>) and <see cref="Return"/> enqueues it back
+        /// to that origin, so rent and return always land on the same stripe even when a different thread
+        /// returns the buffer (page-flush completion on a drainer, off-thread RESP read completion). This keeps
+        /// the free-list bounded by peak concurrent in-flight rather than leaking on cross-thread returns.
+        /// <para>
+        /// A single unstriped pool becomes a cache-line ping-pong bottleneck on its one
+        /// <see cref="ConcurrentQueue{T}"/> and caps throughput well below peak. The knee is
+        /// thread-count-insensitive: total free-list traffic is bounded by the device in-flight throttle, not
+        /// the thread count, so more submitters just lowers per-thread in-flight rather than raising per-stripe
+        /// contention. Sized via <see cref="ConcurrencySharding.StripeCount"/> (shares the
+        /// <see cref="ConcurrencySharding.Compute"/> formula with the device shard count
+        /// <c>NativeStorageDevice.NumShards</c> so the sizing logic cannot diverge, but carries its own cap
+        /// since it is thread-count-insensitive and can be smaller); see that type for the sizing rationale.
+        /// Need not be a power of two — free-list indexing uses a multiply and stripe assignment
+        /// (<see cref="CurrentStripe"/>) uses a modulo.
+        /// </para>
+        /// </summary>
+        private static readonly int stripes = ConcurrencySharding.StripeCount;
+
         private readonly int recordSize;
         private readonly int sectorSize;
+
+        /// <summary>Per-(level, stripe) free-lists, flattened as <c>queue[level * stripes + stripe]</c>. Slots are allocated lazily.</summary>
         private readonly ConcurrentQueue<SectorAlignedMemory>[] queue;
+
+        /// <summary>Stable per-thread stripe, biased by one so the default (0) means "unassigned". Shared across pool instances so a thread uses one stripe everywhere.</summary>
+        [ThreadStatic]
+        private static int t_stripePlusOne;
+
+        /// <summary>Round-robin stripe dispenser; the first <see cref="stripes"/> distinct threads get distinct stripes.</summary>
+        private static int stripeAssignCounter = -1;
+
 #if CHECK_FOR_LEAKS
         static int totalGets, totalReturns;
 #endif
@@ -277,9 +324,38 @@ namespace Tsavorite.core
         /// <param name="sectorSize">Sector size, e.g. from log device</param>
         public SectorAlignedBufferPool(int recordSize, int sectorSize)
         {
-            queue = new ConcurrentQueue<SectorAlignedMemory>[levels];
+            queue = new ConcurrentQueue<SectorAlignedMemory>[levels * stripes];
             this.recordSize = recordSize;
             this.sectorSize = sectorSize;
+        }
+
+        /// <summary>
+        /// The calling thread's stable free-list stripe, assigned on first use via a shared round-robin counter.
+        /// Kept constant for a thread's lifetime so its rents and returns land in the same per-level queue.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private static int CurrentStripe()
+        {
+            int s = t_stripePlusOne;
+            if (s == 0)
+            {
+                s = (int)((uint)Interlocked.Increment(ref stripeAssignCounter) % (uint)stripes) + 1;
+                t_stripePlusOne = s;
+            }
+            return s - 1;
+        }
+
+        /// <summary>Returns the free-list at <paramref name="slot"/>, allocating it on first use.</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private ConcurrentQueue<SectorAlignedMemory> GetOrCreateQueue(int slot)
+        {
+            var q = queue[slot];
+            if (q is null)
+            {
+                var localPool = new ConcurrentQueue<SectorAlignedMemory>();
+                q = Interlocked.CompareExchange(ref queue[slot], localPool, null) ?? localPool;
+            }
+            return q;
         }
 
         public void EnsureSize(ref SectorAlignedMemory page, int size)
@@ -321,7 +397,7 @@ namespace Tsavorite.core
             page.Free = true;
 #endif // CHECK_FREE
 
-            Debug.Assert(queue[page.Level] != null);
+            Debug.Assert((uint)page.Level < levels);
             page.available_bytes = 0;
             page.required_bytes = 0;
             page.valid_offset = 0;
@@ -348,7 +424,7 @@ namespace Tsavorite.core
                     page.handle.Free();
                     page.handle = default;
                 }
-                queue[page.Level].Enqueue(page);
+                GetOrCreateQueue(page.Level * stripes + page.stripe).Enqueue(page);
             }
             else
             {
@@ -401,13 +477,10 @@ namespace Tsavorite.core
             int required_bytes = numRecords * recordSize;
             int requiredSize = RoundUp(required_bytes, sectorSize);
             int index = Position(requiredSize / sectorSize);
-            if (queue[index] == null)
-            {
-                var localPool = new ConcurrentQueue<SectorAlignedMemory>();
-                Interlocked.CompareExchange(ref queue[index], localPool, null);
-            }
+            int st = CurrentStripe();
+            var q = GetOrCreateQueue(index * stripes + st);
 
-            if (!Disabled && queue[index].TryDequeue(out SectorAlignedMemory page))
+            if (!Disabled && q.TryDequeue(out SectorAlignedMemory page))
             {
 #if CHECK_FREE
                 page.Free = false;
@@ -429,6 +502,7 @@ namespace Tsavorite.core
                 }
                 page.required_bytes = required_bytes;
                 page.clearOnReturn = clearOnReturn;
+                page.stripe = st;
                 return page;
             }
 
@@ -446,6 +520,7 @@ namespace Tsavorite.core
             // Freshly-allocated buffer from GC.AllocateArray is zero-init; isDirty stays false.
             page.clearOnReturn = clearOnReturn;
             page.pool = this;
+            page.stripe = st;
             return page;
         }
 
@@ -458,7 +533,7 @@ namespace Tsavorite.core
 #if CHECK_FOR_LEAKS
             Debug.Assert(totalGets == totalReturns);
 #endif
-            for (int i = 0; i < levels; i++)
+            for (int i = 0; i < queue.Length; i++)
             {
                 if (queue[i] == null) continue;
                 while (queue[i].TryDequeue(out SectorAlignedMemory result))
@@ -471,7 +546,7 @@ namespace Tsavorite.core
         /// </summary>
         public void Print()
         {
-            for (int i = 0; i < levels; i++)
+            for (int i = 0; i < queue.Length; i++)
             {
                 if (queue[i] == null) continue;
                 foreach (var item in queue[i])

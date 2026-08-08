@@ -32,6 +32,15 @@ namespace {
 constexpr int kSubmitYieldBudget = 16;
 } // anonymous namespace
 
+namespace {
+// Max completions to reap per io_getevents in the opportunistic TryComplete()/TryCompleteFor()
+// poll. Reaping >1 event per syscall amortises the io_getevents call + its kernel aio-context
+// ring-lock across many completions when several are ready (bursty / lower-QD completion), and is
+// harmless at the saturated peak (the poll simply returns fewer than the max). Fixed at 8
+// (matching IO_BATCH_EVENTS, the dedicated-drainer reap batch).
+constexpr int kTryCompleteBatchEvents = 8;
+} // anonymous namespace
+
 using namespace FASTER::core;
 
 #ifdef _DEBUG
@@ -189,15 +198,17 @@ bool QueueIoHandler::TryCompleteFor(int idx) {
   if (ctx == 0) return false;
   struct timespec timeout;
   std::memset(&timeout, 0, sizeof(timeout));
-  struct io_event events[1];
-  int result = ::io_getevents(ctx, 1, 1, events, &timeout);
-  if(result == 1) {
-    io_callback_t callback = reinterpret_cast<io_callback_t>(events[0].data);
-    callback(ctx, events[0].obj, events[0].res, events[0].res2);
-    return true;
-  } else {
-    return false;
+  struct io_event events[kTryCompleteBatchEvents];
+  // Reap up to a batch of ready completions in a single (non-blocking, timeout=0) io_getevents,
+  // amortising the syscall + kernel aio-context ring-lock over many events. min_nr stays 1 so a
+  // zeroed timeout makes this a pure poll (returns immediately with 0..max ready events).
+  int result = ::io_getevents(ctx, 1, kTryCompleteBatchEvents, events, &timeout);
+  if (result <= 0) return false;
+  for (int i = 0; i < result; ++i) {
+    io_callback_t callback = reinterpret_cast<io_callback_t>(events[i].data);
+    callback(ctx, events[i].obj, events[i].res, events[i].res2);
   }
+  return true;
 }
 
 #define IO_BATCH_EVENTS	8		/* number of events to batch up */
@@ -355,7 +366,7 @@ Status QueueFile::ScheduleOperation(FileOperationType operationType, uint8_t* bu
   // effectively contention-free at the kernel side.
   io_context_t ctx = handler_->pick_context();
 
-  // Exactly one iocb is prepared. io_submit return values for N_prepared == 1:
+
   //   1            : kernel accepted; one completion will fire.
   //   0 or -EAGAIN : transient kernel ring full; brief in-epoch yield, then unwind.
   //                  The iocb is not queued; we still own it.
@@ -459,6 +470,50 @@ bool UringIoHandler::TryCompleteFor(int idx) {
   }
   cq_lock->Release();
   return false;
+}
+
+// Non-blocking batch drain of ONE ring (the caller's affine ring), reaping up to kCqeBatch
+// completions in a single cq_lock section with dispatch moved outside the lock. This is the
+// io_uring analogue of libaio's batched TryCompleteMine (io_getevents up to
+// kTryCompleteBatchEvents): the inline submitter-thread completion path (Tsavorite
+// CompletePending / AsyncGetFromDisk throttle-wait) reaps its own ring a batch at a time
+// instead of one io_uring_peek_cqe per call, cutting per-completion cq_lock + peek overhead ~Nx.
+// Mirrors QueueRunFor's phase-2 (snapshot-before-advance, dispatch-after-release) but is a single
+// non-blocking pass (no wait, no drain-until-empty loop) so it stays a bounded poll.
+bool UringIoHandler::TryCompleteMineBatch(int idx) {
+  if (idx < 0 || idx >= static_cast<int>(rings_.size())) return false;
+  struct io_uring* ring = rings_[idx];
+  if (ring == nullptr) return false;
+  SpinLock* cq_lock = cq_locks_[idx];
+
+  constexpr unsigned kCqeBatch = 64;
+  struct io_uring_cqe* cqes[kCqeBatch];
+  struct DrainSlot {
+    int io_res;
+    UringIoHandler::IoCallbackContext* context;
+  } snapshot[kCqeBatch];
+
+  cq_lock->Acquire();
+  unsigned n = io_uring_peek_batch_cqe(ring, cqes, kCqeBatch);
+  if (n == 0) {
+    cq_lock->Release();
+    return false;
+  }
+  for (unsigned i = 0; i < n; ++i) {
+    snapshot[i].io_res = cqes[i]->res;
+    snapshot[i].context = reinterpret_cast<UringIoHandler::IoCallbackContext*>(
+        io_uring_cqe_get_data(cqes[i]));
+  }
+  io_uring_cq_advance(ring, n);
+  cq_lock->Release();
+
+  // Dispatch outside the lock. null user_data marks wake-up / rewritten-after-failed-submit SQEs
+  // (no caller context); skip them, exactly as TryCompleteFor / QueueRunFor do.
+  for (unsigned i = 0; i < n; ++i) {
+    if (snapshot[i].context == nullptr) continue;
+    DispatchUringCqe(snapshot[i].io_res, snapshot[i].context);
+  }
+  return true;
 }
 
 int UringIoHandler::QueueRun(int timeout_secs) {
@@ -634,7 +689,7 @@ Status UringFile::ScheduleOperation(FileOperationType operationType, uint8_t* bu
     if (sqe != nullptr) break;
     sq_lock->Release();
     if (retries >= kSubmitYieldBudget) {
-      // Unwind to NativeDeviceImpl::SubmitWithEpoch to wait without holding the epoch.
+      // Sustained-full SQ ring: unwind to SubmitWithEpoch to wait without holding the epoch.
       return Status::Pending;
     }
     ::sched_yield();
@@ -649,52 +704,86 @@ Status UringFile::ScheduleOperation(FileOperationType operationType, uint8_t* bu
   }
   io_uring_sqe_set_data(sqe, io_context.get());
 
-  // Submit. io_uring_submit() flushes ALL SQEs pending in this ring's SQ ring (everything between
-  // the kernel-consumed head and our just-prepared SQE at the tail) and returns the COUNT flushed
-  // — not "1 for this op". So any res >= 1 means OUR SQE (the last prepared) reached the kernel;
-  // there may also be a stale no-op SQE in front of it (left by a prior failed-submit/unwind or by
-  // Wake()), which the kernel completes harmlessly (null user_data, skipped by the drainer).
-  // Treating res >= 1 as success is REQUIRED for correctness: a res == 2 (stale nop + our op) taken
-  // as failure would rewrite/free an io_context whose op is already in flight -> use-after-free on
-  // completion.
+  // Submit. NOTE: the invariant described here holds for the NON-SQPOLL path only; the SQPOLL branch
+  // below has different semantics (see its inline comment). io_uring_submit() flushes SQEs pending in
+  // this ring's SQ ring (everything between the kernel-consumed head and our just-prepared SQE at the
+  // tail) and returns the COUNT consumed —
+  // but that count is NOT an authoritative "our SQE reached the kernel" signal: io_uring_submit()
+  // may PARTIALLY consume (return a positive count < pending) under kernel backpressure, so res >= 1
+  // can be true while OUR tail SQE is still pending. The authoritative signal is an EMPTY SQ:
+  // io_uring_sq_ready(ring) == 0 means every SQE up to and including ours was consumed.
   //
-  // On transient -EAGAIN/-EBUSY (CQ ring full / kernel busy) we yield a bounded in-epoch budget,
-  // then UNWIND (Status::Pending) exactly like the get_sqe / libaio paths so we never spin on
-  // submit while holding the epoch and thread-id slot. Both the unwind path and a permanent submit
-  // error rewrite our prepared-but-unsubmitted SQE to a no-op with null user_data (so a later
-  // submit cannot dispatch a completion against the io_context we are about to free); the next
-  // successful submit flushes that no-op harmlessly. No-ops are bounded by the SQ ring depth and
-  // self-heal as soon as any submit succeeds.
-  int res;
-  int submit_retries = 0;
-  bool unwind = false;
-  while (true) {
-    res = io_uring_submit(ring);
-    if (res >= 1) break;                            // our SQE (the last prepared) was flushed
-    if (res != -EAGAIN && res != -EBUSY) break;     // permanent error
-    if (submit_retries >= kSubmitYieldBudget) { unwind = true; break; }
-    sq_lock->Release();
-    ::sched_yield();
-    ++submit_retries;
-    sq_lock->Acquire();
-  }
-  if (res < 1) {
-    // Permanent submit error, or we are unwinding after a sustained transient. The SQE is prepared
-    // in the SQ ring pointing at io_context; rewrite it to a no-op (the QueueRunFor drain loop
-    // skips nullptr user_data without dispatching) so a later submit cannot reference the io_context
-    // we free here. Safe to mutate `sqe`: we still hold sq_lock and the kernel only observes it on
-    // the next io_uring_submit.
-    io_uring_prep_nop(sqe);
-    io_uring_sqe_set_data(sqe, nullptr);
+  // CRITICAL: we hold sq_lock across the ENTIRE submit-retry burst and do NOT release it while
+  // yielding. If we dropped the lock, a peer submitter sharing this ring could flush our
+  // prepared-but-unsubmitted SQE; our own retry would then observe an empty SQ / res 0, misread it
+  // as "nothing submitted", rewrite our SQE to a no-op, and free an io_context whose IO is already
+  // in flight in the kernel -> use-after-free when the drainer dispatches the completion. Holding
+  // sq_lock guarantees no peer touches our SQE, so sq_ready == 0 is an unambiguous success. The
+  // completion drainers use a SEPARATE cq_lock (QueueRunFor / TryCompleteMineBatch), so holding
+  // sq_lock here never blocks CQ draining; a transient CQ-full -EAGAIN/-EBUSY clears as the drainers
+  // free CQ space while we yield.
+  //
+  // On sustained transient (-EAGAIN/-EBUSY past the yield budget) we UNWIND (Status::Pending) exactly
+  // like the get_sqe / libaio paths so we never spin on submit while holding the epoch and thread-id
+  // slot. Both the unwind path and a permanent submit error rewrite our still-pending SQE to a no-op
+  // with null user_data (skipped by the drainer) so a later submit cannot dispatch a completion
+  // against the io_context we are about to free; the next successful submit flushes that no-op
+  // harmlessly. This rewrite is safe precisely because sq_ready > 0 proves our SQE was never consumed.
+  int res = 0;
+  bool submitted;
+  bool permanent = false;
+  if (handler_->sqpoll()) {
+    // SQPOLL: a kernel thread polls the SQ and consumes SQEs ASYNCHRONOUSLY, so the two assumptions
+    // the non-SQPOLL path relies on both break:
+    //   (1) io_uring_sq_ready() is not a synchronous "consumed" signal — it can read > 0 right after
+    //       submit simply because the poll thread has not advanced the kernel head yet; and
+    //   (2) the SQE must NEVER be rewritten after submit — the poll thread may read our readv/writev
+    //       the instant io_uring_submit()'s flush advances the SQ tail, so the no-op rewrite trick
+    //       would race the kernel and, if we then freed io_context, cause a use-after-free.
+    // io_uring_submit()'s internal flush UNCONDITIONALLY publishes our SQE (advances ktail to the
+    // tail) before any syscall; the syscall it may issue only (re)wakes a parked poll thread. Hence
+    // once we call submit our SQE is owned by the kernel regardless of the return value — we retry
+    // only to redeliver the wakeup on a transient -EAGAIN/-EBUSY, and always treat the op as
+    // submitted. SQ-full backpressure is already handled above by io_uring_get_sqe returning nullptr.
+    int submit_retries = 0;
+    while (true) {
+      res = io_uring_submit(ring);
+      if (res >= 0) break;                                   // awake: pending count; parked: wakeup delivered
+      if (res != -EAGAIN && res != -EBUSY) break;            // hard enter error; SQE already published
+      if (submit_retries >= kSubmitYieldBudget) break;       // transient wakeup; SQE already published
+      ::sched_yield();
+      ++submit_retries;
+    }
+    submitted = true;
+  } else {
+    int submit_retries = 0;
+    while (true) {
+      res = io_uring_submit(ring);
+      if (io_uring_sq_ready(ring) == 0) break;                 // success: our SQE (and any stale nop) flushed
+      if (res < 0 && res != -EAGAIN && res != -EBUSY) break;   // permanent submit error; our SQE still pending
+      if (submit_retries >= kSubmitYieldBudget) break;         // sustained transient; unwind (our SQE still pending)
+      ::sched_yield();
+      ++submit_retries;
+    }
+    submitted = io_uring_sq_ready(ring) == 0;
+    permanent = !submitted && res < 0 && res != -EAGAIN && res != -EBUSY;
+    if (!submitted) {
+      // Our SQE was never consumed (sq_ready > 0 and we held sq_lock throughout). Rewrite it to a
+      // no-op (the drain loop skips null user_data) so a later submit cannot reference the io_context
+      // we free on return. Safe to mutate `sqe`: we still hold sq_lock and the kernel only observes it
+      // on the next io_uring_submit.
+      io_uring_prep_nop(sqe);
+      io_uring_sqe_set_data(sqe, nullptr);
+    }
   }
   sq_lock->Release();
-  if (res < 1) {
-    // RAII frees io_context/caller_context_copy on return. Unwind -> SubmitWithEpoch retries the
-    // whole op outside the epoch; a permanent error surfaces to the caller.
-    return unwind ? Status::Pending : Status::IOError;
+  if (!submitted) {
+    // RAII frees io_context/caller_context_copy on return. Sustained transient -> SubmitWithEpoch
+    // retries the whole op outside the epoch (Pending); a permanent error surfaces to the caller.
+    return permanent ? Status::IOError : Status::Pending;
   }
 
-  // res >= 1: ownership transferred to the kernel.
+  // Our SQE reached the kernel: ownership transferred.
   caller_copy_guard.release();
   io_context.release();
   return Status::Ok;

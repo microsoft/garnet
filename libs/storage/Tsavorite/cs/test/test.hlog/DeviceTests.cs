@@ -995,7 +995,7 @@ namespace Tsavorite.test
         //   - multiple completion threads / io_contexts (pick_context / pick_ring sharding);
         //   - multiple devices interleaved across threads (the pick_context/pick_ring owner+bounds
         //     thread-local guard, whose absence is an out-of-bounds shard index);
-        //   - ThrottleLimit -> submission-ring depth sizing, including the clamp above MaxThrottle;
+        //   - ThrottleLimit -> aggregate in-flight cap (capped at io-contexts * queue-depth);
         //   - the late P/Invoke entry points GetFileSize / RemoveSegment / Reset / TryComplete.
         //
         // io_uring cases self-skip when the loaded native library / kernel lacks a working io_uring.
@@ -1037,10 +1037,15 @@ namespace Tsavorite.test
 
         /// <summary>
         /// Build + Initialize a Native device on the requested backend, completion-thread count and
-        /// throttle limit. Self-skips on non-Linux, or when io_uring is requested but unavailable.
+        /// throttle limit. <paramref name="numIoContexts"/> (kernel io_context / io_uring ring count,
+        /// decoupled from the drainer count), <paramref name="queueDepth"/> (per-ring submission depth)
+        /// and <paramref name="uringSqPoll"/> (io_uring SQPOLL) exercise the corresponding ctor knobs;
+        /// each 0/false selects the device default. Self-skips on non-Linux, or when io_uring is
+        /// requested but unavailable.
         /// </summary>
         static NativeStorageDevice CreateNativeForTest(string path, long segmentSize, NativeBackend backend,
-                                                       int completionThreads = 1, int throttleLimit = 0, bool omitSegmentId = false)
+                                                       int completionThreads = 1, int throttleLimit = 0, bool omitSegmentId = false,
+                                                       int numIoContexts = 0, int queueDepth = 0, bool uringSqPoll = false)
         {
             if (!OperatingSystem.IsLinux())
                 Assert.Ignore("NativeStorageDevice is Linux-only.");
@@ -1053,7 +1058,8 @@ namespace Tsavorite.test
                 NativeBackend.Uring => NativeStorageDevice.IoBackend.Uring,
                 _ => NativeStorageDevice.IoBackend.Default,
             };
-            var d = new NativeStorageDevice(path, deleteOnClose: true, numCompletionThreads: completionThreads, ioBackend: io);
+            var d = new NativeStorageDevice(path, deleteOnClose: true, numCompletionThreads: completionThreads, ioBackend: io,
+                                            numIoContexts: numIoContexts, queueDepth: queueDepth, uringSqPoll: uringSqPoll);
             if (throttleLimit > 0)
                 d.ThrottleLimit = throttleLimit;
             d.Initialize(segmentSize, omitSegmentIdFromFilename: omitSegmentId && segmentSize == -1L);
@@ -1249,7 +1255,7 @@ namespace Tsavorite.test
         [Category("IDevice")]
         public unsafe void Native_ThrottleAboveMax_IsClampedAndStillWorks(NativeBackend backend)
         {
-            // A throttle far above the kernel-safe ceiling (MaxThrottle=4096) is clamped (and warned);
+            // A throttle far above the kernel capacity (io-contexts * queue-depth) is capped (and warned);
             // the device must still round-trip correctly.
             using var device = CreateNativeForTest(Path.Join(TestUtils.MethodTestDir, "test.log"), 64 * Mib, backend, throttleLimit: 100_000);
             const int size = 4 * 1024;
@@ -1328,6 +1334,112 @@ namespace Tsavorite.test
                 AssertBufferContents(rptrs[i], size, off => (byte)((blk * 13 + off) & 0xFF), $"{backend} block {blk}");
             }
             GC.KeepAlive(wbuf); GC.KeepAlive(rroots);
+        }
+
+        // ----- io_context / ring-count / queue-depth / SQPOLL ctor knobs --------------------------
+
+        [Test]
+        [TestCase(NativeBackend.Libaio)]
+        [TestCase(NativeBackend.Uring)]
+        [Category("IDevice")]
+        public unsafe void Native_ExplicitIoContexts_DefaultDepth_MultiRing(NativeBackend backend)
+        {
+            // Decouple ring count from drainer count: 8 io_contexts served by 2 drainers, default
+            // (auto-derived) queue depth. For libaio + default queueDepth this also exercises the
+            // ResolveLibaioReservationDepth branch (the reservation is sized from the throttle share
+            // rather than the io_uring per-ring ceiling). Fire more concurrent reads than rings so the
+            // submit path fans out across all 8 rings.
+            const int N = 128, size = 4 * 1024;
+            using var device = CreateNativeForTest(Path.Join(TestUtils.MethodTestDir, "test.log"), 256 * Mib, backend,
+                                                   completionThreads: 2, throttleLimit: 1024, numIoContexts: 8);
+
+            var (wbuf, wptr) = AllocateAlignedBuffer(N * size, j => (byte)(((j / size) * 5 + (j % size)) & 0xFF));
+            device.WriteAsync(wptr, 0, 0, (uint)(N * size), IOCallback, null);
+            semaphore.Wait();
+
+            var rbufs = new byte[N][];
+            var rptrs = new IntPtr[N];
+            for (int i = 0; i < N; i++)
+            {
+                var (rb, rp) = AllocateAlignedBuffer(size, _ => 0);
+                rbufs[i] = rb; rptrs[i] = rp;
+                device.ReadAsync(0, (ulong)(i * size), rp, (uint)size, IOCallback, null);
+            }
+            for (int i = 0; i < N; i++) semaphore.Wait();
+
+            for (int i = 0; i < N; i++)
+            {
+                int blk = i;
+                AssertBufferContents(rptrs[i], size, off => (byte)((blk * 5 + off) & 0xFF), $"{backend} block {blk}");
+            }
+            GC.KeepAlive(wbuf); GC.KeepAlive(rbufs);
+        }
+
+        [Test]
+        [TestCase(NativeBackend.Libaio)]
+        [TestCase(NativeBackend.Uring)]
+        [Category("IDevice")]
+        public unsafe void Native_ExplicitQueueDepth_RoundTrips(NativeBackend backend)
+        {
+            // Explicit shallow per-ring queue depth (64) across 4 rings, and fire more concurrent reads
+            // (256) than the aggregate ring capacity so the native ring-full backpressure (submit unwinds
+            // to Pending and retries after a completion) is exercised and every read still completes.
+            const int N = 256, size = 4 * 1024;
+            using var device = CreateNativeForTest(Path.Join(TestUtils.MethodTestDir, "test.log"), 256 * Mib, backend,
+                                                   completionThreads: 2, throttleLimit: 256, numIoContexts: 4, queueDepth: 64);
+
+            var (wbuf, wptr) = AllocateAlignedBuffer(N * size, j => (byte)(((j / size) * 3 + (j % size)) & 0xFF));
+            device.WriteAsync(wptr, 0, 0, (uint)(N * size), IOCallback, null);
+            semaphore.Wait();
+
+            var rbufs = new byte[N][];
+            var rptrs = new IntPtr[N];
+            for (int i = 0; i < N; i++)
+            {
+                var (rb, rp) = AllocateAlignedBuffer(size, _ => 0);
+                rbufs[i] = rb; rptrs[i] = rp;
+                device.ReadAsync(0, (ulong)(i * size), rp, (uint)size, IOCallback, null);
+            }
+            for (int i = 0; i < N; i++) semaphore.Wait();
+
+            for (int i = 0; i < N; i++)
+            {
+                int blk = i;
+                AssertBufferContents(rptrs[i], size, off => (byte)((blk * 3 + off) & 0xFF), $"{backend} block {blk}");
+            }
+            GC.KeepAlive(wbuf); GC.KeepAlive(rbufs);
+        }
+
+        [Test]
+        [Category("IDevice")]
+        public unsafe void Native_Uring_SqPoll_RoundTrips()
+        {
+            // io_uring SQPOLL is Uring-only (libaio/Windows ignore it). Each ring gets its own kernel
+            // poll thread; verify a small multi-ring round-trip through the SQPOLL submit branch.
+            const int N = 32, size = 4 * 1024;
+            using var device = CreateNativeForTest(Path.Join(TestUtils.MethodTestDir, "test.log"), 128 * Mib, NativeBackend.Uring,
+                                                   completionThreads: 2, throttleLimit: 512, numIoContexts: 4, uringSqPoll: true);
+
+            var (wbuf, wptr) = AllocateAlignedBuffer(N * size, j => (byte)(((j / size) * 9 + (j % size)) & 0xFF));
+            device.WriteAsync(wptr, 0, 0, (uint)(N * size), IOCallback, null);
+            semaphore.Wait();
+
+            var rbufs = new byte[N][];
+            var rptrs = new IntPtr[N];
+            for (int i = 0; i < N; i++)
+            {
+                var (rb, rp) = AllocateAlignedBuffer(size, _ => 0);
+                rbufs[i] = rb; rptrs[i] = rp;
+                device.ReadAsync(0, (ulong)(i * size), rp, (uint)size, IOCallback, null);
+            }
+            for (int i = 0; i < N; i++) semaphore.Wait();
+
+            for (int i = 0; i < N; i++)
+            {
+                int blk = i;
+                AssertBufferContents(rptrs[i], size, off => (byte)((blk * 9 + off) & 0xFF), $"Uring-SQPOLL block {blk}");
+            }
+            GC.KeepAlive(wbuf); GC.KeepAlive(rbufs);
         }
 
         // ----- late P/Invoke entry points (GetFileSize / Reset / TryComplete / RemoveSegment) -----

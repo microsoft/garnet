@@ -23,6 +23,10 @@ namespace Tsavorite.core
         readonly DeviceType deviceType;
         readonly NativeStorageDevice.IoBackend ioBackend;
         readonly int numCompletionThreads;
+        readonly int numIoContexts;
+        readonly int queueDepth;
+        readonly bool uringSqPoll;
+        readonly int uringSqPollIdleMs;
         readonly bool readOnly;
         readonly ILogger logger;
 
@@ -39,7 +43,11 @@ namespace Tsavorite.core
         /// <param name="readOnly">Whether files are opened as readonly</param>
         /// <param name="baseName">Base name</param>
         /// <param name="logger">Logger</param>
-        public LocalStorageNamedDeviceFactory(bool preallocateFile = false, bool deleteOnClose = false, bool disableFileBuffering = true, int? throttleLimit = null, DeviceType deviceType = DeviceType.Default, NativeStorageDevice.IoBackend ioBackend = NativeStorageDevice.IoBackend.Default, int numCompletionThreads = 1, bool readOnly = false, string baseName = null, ILogger logger = null)
+        /// <param name="numIoContexts">For DeviceType.Native on Linux: number of independent kernel io_contexts / io_uring rings (ring count), decoupled from the drainers. 0 (default) = device default. Ignored otherwise.</param>
+        /// <param name="queueDepth">For DeviceType.Native on Linux: per-ring kernel submission depth D (maxEvents). 0 (default) = device default. Ignored otherwise.</param>
+        /// <param name="uringSqPoll">For DeviceType.Native on Linux with the io_uring backend: enable IORING_SETUP_SQPOLL (syscall-free submits; each ring gets its own kernel poll thread). Ignored for libaio / on Windows. Off by default.</param>
+        /// <param name="uringSqPollIdleMs">io_uring SQPOLL poll-thread idle window in milliseconds. Only used when <paramref name="uringSqPoll"/> is true; 0 = native default.</param>
+        public LocalStorageNamedDeviceFactory(bool preallocateFile = false, bool deleteOnClose = false, bool disableFileBuffering = true, int? throttleLimit = null, DeviceType deviceType = DeviceType.Default, NativeStorageDevice.IoBackend ioBackend = NativeStorageDevice.IoBackend.Default, int numCompletionThreads = 1, bool readOnly = false, string baseName = null, ILogger logger = null, int numIoContexts = 0, int queueDepth = 0, bool uringSqPoll = false, int uringSqPollIdleMs = 0)
         {
             this.preallocateFile = preallocateFile;
             this.deleteOnClose = deleteOnClose;
@@ -48,6 +56,10 @@ namespace Tsavorite.core
             this.deviceType = deviceType;
             this.ioBackend = ioBackend;
             this.numCompletionThreads = numCompletionThreads;
+            this.numIoContexts = numIoContexts;
+            this.queueDepth = queueDepth;
+            this.uringSqPoll = uringSqPoll;
+            this.uringSqPollIdleMs = uringSqPollIdleMs;
             this.readOnly = readOnly;
             this.baseName = baseName;
             this.logger = logger;
@@ -76,6 +88,10 @@ namespace Tsavorite.core
                 readOnly: readOnly,
                 ioBackend: ioBackend,
                 numCompletionThreads: numCompletionThreads,
+                numIoContexts: numIoContexts,
+                queueDepth: queueDepth,
+                uringSqPoll: uringSqPoll,
+                uringSqPollIdleMs: uringSqPollIdleMs,
                 localMemoryRingCapacity: localMemoryRingCapacity,
                 logger: logger);
             if (throttleLimit.HasValue)

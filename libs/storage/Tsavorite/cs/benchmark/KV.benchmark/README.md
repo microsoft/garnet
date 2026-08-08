@@ -43,25 +43,43 @@ numactl --cpunodebind=0 --membind=0 dotnet $KV -t 32 -n 100000000 \
 ### 2. NVMe storage-bound — reads hit real disk
 
 A small `--log-memory 16m` keeps ~0.125% of the dataset in RAM, so every read is a
-4 KB random NVMe fetch through the pending-read path. `--device-throttle 512` is
-required for peak IOPS (default 120 leaves the device idle).
+random NVMe fetch through the pending-read path. On a fast array set
+`--device-completion-threads 8` (the default is 1). The Native throttle already
+defaults to 4096, sized for a fast NVMe queue; the managed devices
+(`randomaccess`/`filestream`) default to 120 and need `--device-throttle-limit 512`
+to spin up. Reference host: **8×NVMe RAID-0** (`/raid`, `fio` 4K
+ceiling ≈ **8.24 M IOPS**); KV peaks at **~6.7 M** (≈ 81% of `fio`) — the remaining
+gap is Tsavorite managed per-op CPU (hash lookup, pending context, completion
+dispatch), not the device, which reaches `fio` parity in
+[Device.benchmark](../Device.benchmark/README.md#nvme-storage-bound).
 
 ```bash
+# libaio:
 numactl --cpunodebind=0 --membind=0 dotnet $KV -n 100000000 -v 100 \
-  --device native --device-io-backend libaio --device-throttle 512 \
-  --log-memory 16m --page-size 4m --segment-size 1g \
-  --rumd 100,0,0,0 --load-threads 8 --run-threads-sweep 1,2,4,8,16,32 \
-  --runsec 15 --warmup-sec 5 --data-path /mnt/nvme/kv
+  --device native --device-io-backend libaio --device-throttle-limit 4096 \
+  --device-completion-threads 8 --log-memory 16m --page-size 4m --segment-size 1g \
+  --rumd 100,0,0,0 --load-threads 8 --run-threads-sweep 8,32,64 \
+  --runsec 12 --warmup-sec 4 --data-path /raid/kv
+
+# uring: add --device-io-contexts 32 (one ring per submitter; see Device README).
 ```
 
-Swap `--device-io-backend libaio` → `uring`, or `--device native` → `randomaccess`
-(BCL async, slower) / `filestream` (slowest) to compare backends. Compare to the
-device's `fio` ceiling (`--rw=randread --bs=4k --direct=1 --ioengine=libaio
---iodepth=64 --numjobs=8`).
+| backend | pin | t=8 | t=32 | t=64 |
+|---|---|---|---|---|
+| libaio | node-0 | 2.39 M | **6.67 M** | 5.27 M |
+| libaio | none | 1.94 M | 6.58 M | 5.17 M |
+| uring (`--device-io-contexts 32`) | node-0 | 2.29 M | 6.54 M | 4.94 M |
+| uring (`--device-io-contexts 32`) | none | 1.74 M | 6.02 M | 4.97 M |
+
+Peak is at **t=32** (falls off by t=64 as submit+drain threads oversubscribe node-0's
+cores). libaio edges uring slightly; NUMA pinning helps a little (~1–2%). Swap
+`--device native` → `randomaccess` (BCL async, slower) / `filestream` (slowest) to
+compare backends. Compare to the device's `fio` ceiling (`--rw=randread --bs=4k
+--direct=1 --ioengine=libaio --iodepth=64 --numjobs=8`).
 
 > Confirm it's truly device-bound: on a big-RAM host the 12.8 GB dataset fits in the
 > page cache, but the device opens with `O_DIRECT`, so reads bypass it. During the run
-> `iostat -x 1` should show `nvme r/s ≈ ops/sec` and `aqu-sz ≈ --device-throttle`; on a
+> `iostat -x 1` should show `nvme r/s ≈ ops/sec` and `aqu-sz ≈ --device-throttle-limit`; on a
 > shared box use per-process `/proc/<pid>/io` `read_bytes` (excludes other tenants).
 
 ### 3. Memory-device-bound — reads hit the in-RAM device
@@ -93,13 +111,19 @@ datasets touch few NAND dies and understate IOPS.
   `--device-io-backend`), `filestream` (slowest).
 - **`--log-memory`** — in-memory log window. Auto-sized to fit the dataset (reads
   stay in memory). Set small (`16m`) to force disk/device spill. Units: `512m`,`16g`.
-- **`--device-throttle`** — max in-flight IOs. Default 120 leaves the device idle;
-  **use 512** to reach peak IOPS on fast NVMe.
-- **`--device-completion-threads`** — native/localmemory drainer count (localmemory:
-  one SPSC ring per thread).
+- **`--device-throttle-limit`** — max in-flight IOs. Native defaults to 4096 (sized for a
+  fast array); the managed devices (`randomaccess`/`filestream`) default to 120, which
+  leaves a fast device idle — raise to **512** on a single NVMe or **4096** on a
+  multi-drive array to reach peak IOPS.
+- **`--device-completion-threads`** — native/localmemory drainer count (**8** on a
+  fast array; localmemory: one SPSC ring per thread).
+- **`--device-io-contexts`** — kernel io_contexts / io_uring rings (native, decoupled
+  from drainers). Leave default for libaio; for **uring set >= run threads** (e.g.
+  `32`) so each submitter gets its own ring, else uring caps well below libaio (see
+  [Device README](../Device.benchmark/README.md#nvme-storage-bound)).
 - **`-b` / `--batch-size`** — run-phase batch depth (ops issued per chunk before an
   opportunistic non-blocking drain). Default 1024. In-flight is bounded by
-  `--device-throttle`, not by this, so it is largely throughput-neutral.
+  `--device-throttle-limit`, not by this, so it is largely throughput-neutral.
 - **`-n` keys / `-v` value-size / `--rumd` mix / `-t` threads / `-d` distribution.**
 
 ## Output
