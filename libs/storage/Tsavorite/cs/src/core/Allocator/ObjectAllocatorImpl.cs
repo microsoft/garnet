@@ -625,26 +625,31 @@ namespace Tsavorite.core
             // buffers and it is safe to Dispose below.
             var flushBuffers = CreateCircularFlushBuffers(objectLogDevice: null, logger);
 
-            // Write each page (or partial page) in the range.
-            for (var flushPage = startPage; flushPage < (startPage + numPages); flushPage++)
+            try
             {
-                // The result from PrepareFlushAsyncResult indicates whether we are to perform an actual flush--but asyncResult will be set anyway.
-                if (PrepareFlushAsyncResult(fromAddress, untilAddress, noFlush, flushPage, out var asyncResult))
+                // Write each page (or partial page) in the range.
+                for (var flushPage = startPage; flushPage < (startPage + numPages); flushPage++)
                 {
-                    asyncResult.flushBuffers = flushBuffers;
+                    // The result from PrepareFlushAsyncResult indicates whether we are to perform an actual flush--but asyncResult will be set anyway.
+                    if (PrepareFlushAsyncResult(fromAddress, untilAddress, noFlush, flushPage, out var asyncResult))
+                    {
+                        asyncResult.flushBuffers = flushBuffers;
 
-                    // TsavoriteKV using ObjectAllocator always moves ReadOnlyAddress in page alignment, so if we have a partial first page, it can be written
-                    // in the same loop as full pages, because there are no adjacent fragments. Write the entire page up to asyncResult.untilAddress.
-                    Debug.Assert(PendingFlush[GetPageIndexForAddress(asyncResult.fromAddress)].list.Count == 0,
-                        $"Expected PendingFlush count {PendingFlush[GetPageIndexForAddress(asyncResult.fromAddress)].list.Count} to be 0 for ObjectAllocator");
+                        // TsavoriteKV using ObjectAllocator always moves ReadOnlyAddress in page alignment, so if we have a partial first page, it can be written
+                        // in the same loop as full pages, because there are no adjacent fragments. Write the entire page up to asyncResult.untilAddress.
+                        Debug.Assert(PendingFlush[GetPageIndexForAddress(asyncResult.fromAddress)].list.Count == 0,
+                            $"Expected PendingFlush count {PendingFlush[GetPageIndexForAddress(asyncResult.fromAddress)].list.Count} to be 0 for ObjectAllocator");
 
-                    WriteAsync(flushPage, AsyncFlushPageCallback, asyncResult);
+                        WriteAsync(flushPage, AsyncFlushPageCallback, asyncResult);
+                    }
                 }
             }
-
-            // All page writes for the range have been issued. Dispose the shared flush buffers so their pooled object-log write buffers are
-            // returned to the pool; Dispose defers the actual return (ClearBuffers) until any still-in-flight device writes complete.
-            flushBuffers?.Dispose();
+            finally
+            {
+                // Dispose the shared flush buffers so their pooled object-log write buffers are returned to the pool, even if a page write throws;
+                // Dispose defers the actual return (ClearBuffers) until any still-in-flight device writes complete.
+                flushBuffers?.Dispose();
+            }
         }
 
         protected override void WriteAsync<TContext>(long flushPage, DeviceIOCompletionCallback callback, PageAsyncFlushResult<TContext> asyncResult)

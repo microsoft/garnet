@@ -1970,14 +1970,19 @@ namespace Tsavorite.core
                     flushBuffers = flushBuffers
                 };
 
-                // For the snapshot region (records at/above formerFlushedUntilAddress) we copy object bytes from the snapshot object-log to the main
-                // object-log using flushBuffers; otherwise (hybrid-log region) we reuse the stored lengths/positions without writing object bytes.
-                WriteAsync(flushPage, callback, asyncResult);
-
-                // WriteAsync issues all of this page's object-log and main-log device writes synchronously before returning, and the recovery
-                // completion callback (AsyncFlushPageCallbackForRecovery) never reuses flushBuffers, so dispose it here. Dispose defers the actual
-                // return-to-pool (ClearBuffers) until any still-in-flight writes complete.
-                flushBuffers?.Dispose();
+                try
+                {
+                    // For the snapshot region (records at/above formerFlushedUntilAddress) we copy object bytes from the snapshot object-log to the main
+                    // object-log using flushBuffers; otherwise (hybrid-log region) we reuse the stored lengths/positions without writing object bytes.
+                    WriteAsync(flushPage, callback, asyncResult);
+                }
+                finally
+                {
+                    // WriteAsync issues all of this page's object-log and main-log device writes synchronously before returning, and the recovery completion
+                    // callback (AsyncFlushPageCallbackForRecovery) never reuses flushBuffers, so dispose it here, even if WriteAsync throws. Dispose defers the
+                    // actual return-to-pool (ClearBuffers) until any still-in-flight writes complete.
+                    flushBuffers?.Dispose();
+                }
             }
         }
 
