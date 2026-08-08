@@ -207,11 +207,13 @@ namespace Tsavorite.test
         /// the device layer (which passes them straight to CreateFileW) as well as the BCL file APIs.
         /// </summary>
         /// <remarks>
-        /// The path is fully qualified via <see cref="Path.GetFullPath(string)"/> first so that relative
-        /// segments and forward slashes are normalized to backslashes, as required by extended-length paths
-        /// (Windows does not normalize them). Returns the input unchanged on non-Windows platforms, when it
-        /// is already extended-length, or when it is short enough that no child path can overflow — this
-        /// keeps the common short-path case (normal checkouts and CI) on ordinary paths.
+        /// Only a path that actually needs rewriting is canonicalized: when it is close enough to the limit,
+        /// it is fully qualified via <see cref="Path.GetFullPath(string)"/> so that relative segments and
+        /// forward slashes are normalized to backslashes (as required by extended-length paths, which Windows
+        /// does not normalize) before the <c>\\?\</c> prefix is applied. The input is returned unchanged — and
+        /// is therefore not canonicalized — on non-Windows platforms, when it is already extended-length, or
+        /// when it is short enough that no child path can overflow; this keeps the common short-path case
+        /// (normal checkouts and CI) on ordinary paths.
         /// </remarks>
         internal static string EnsureExtendedLengthPathIfNeeded(string path)
         {
