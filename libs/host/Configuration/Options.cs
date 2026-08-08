@@ -87,11 +87,8 @@ namespace Garnet
         [Option("index-max-size", Required = false, HelpText = "Max size of hash index in bytes (rounds down to power of 2)")]
         public string IndexMaxMemorySize { get; set; }
 
-        [Option("native-allocator", Required = false, HelpText = "Route large/pooled memory through a native (off-managed-heap) allocator. Values: off (default), buffer-pool (SectorAlignedBufferPool IO buffers via mimalloc), full (also routes log pages / hash index / frames to a direct-VM allocator).")]
+        [Option("native-allocator", Required = false, HelpText = "Route large/pooled memory through a native (off-managed-heap) allocator. Values: off (default), buffer-pool (SectorAlignedBufferPool IO buffers via mimalloc), full (also routes log pages / hash index / frames to a direct-VM allocator). If the native backend is unavailable for the platform, the affected surface falls back to managed with a warning.")]
         public string NativeAllocator { get; set; }
-
-        [Option("native-allocator-require", Required = false, HelpText = "If true, fail startup when a requested native-allocator surface's backend is unavailable (e.g. no mimalloc prebuilt for the platform) instead of falling back to the managed allocator.")]
-        public bool? NativeAllocatorRequire { get; set; }
 
         [PercentageValidation(false)]
         [Option("mutable-percent", Required = false, HelpText = "Percentage of log memory that is kept mutable")]
@@ -895,7 +892,6 @@ namespace Garnet
                 IndexMemorySize = IndexMemorySize,
                 IndexMaxMemorySize = IndexMaxMemorySize,
                 NativeAllocatorSurfaces = ParseNativeAllocatorMode(NativeAllocator, logger),
-                NativeAllocatorRequire = NativeAllocatorRequire.GetValueOrDefault(),
                 MutablePercent = MutablePercent,
                 EnableReadCache = EnableReadCache.GetValueOrDefault(),
                 ReadCacheMemorySize = ReadCacheMemorySize,

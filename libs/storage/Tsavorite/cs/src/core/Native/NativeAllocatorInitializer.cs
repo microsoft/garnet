@@ -21,14 +21,14 @@ namespace Tsavorite.core
         public static NativeAllocatorSurfaces EnabledSurfaces { get; private set; }
 
         /// <summary>
-        /// Resolve and install native allocators for the requested <paramref name="requested"/> scope.
+        /// Resolve and install native allocators for the requested <paramref name="requested"/> scope. When a
+        /// requested surface's backend is unavailable (e.g. no mimalloc prebuilt for the platform/RID), that
+        /// surface falls back to the managed allocator and a warning is logged; other surfaces proceed.
         /// </summary>
         /// <param name="requested">Requested surfaces (from the <c>--native-allocator</c> mode).</param>
-        /// <param name="require">When true, throw if a requested surface's backend is unavailable instead of
-        /// falling back to managed for that surface.</param>
         /// <param name="logger">Optional logger for availability/fallback diagnostics.</param>
         /// <returns>The surfaces actually enabled.</returns>
-        public static NativeAllocatorSurfaces Initialize(NativeAllocatorSurfaces requested, bool require, ILogger logger = null)
+        public static NativeAllocatorSurfaces Initialize(NativeAllocatorSurfaces requested, ILogger logger = null)
         {
             var enabled = NativeAllocatorSurfaces.None;
 
@@ -39,10 +39,6 @@ namespace Tsavorite.core
                     SectorAlignedBufferPool.NativeAllocator = new MimallocPooledAllocator();
                     enabled |= NativeAllocatorSurfaces.BufferPool;
                     logger?.LogInformation("Native allocator enabled for SectorAlignedBufferPool (mimalloc).");
-                }
-                else if (require)
-                {
-                    throw new TsavoriteException("Native allocator 'buffer-pool' was required but mimalloc is unavailable for this platform/RID.");
                 }
                 else
                 {
