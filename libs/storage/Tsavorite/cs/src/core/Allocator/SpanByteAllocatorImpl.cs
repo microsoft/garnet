@@ -17,7 +17,7 @@ namespace Tsavorite.core
         public SpanByteAllocatorImpl(AllocatorSettings settings, TStoreFunctions storeFunctions, Func<object, SpanByteAllocator<TStoreFunctions>> wrapperCreator)
             : base(settings, storeFunctions, wrapperCreator, settings.logger)
         {
-            freePagePool = new OverflowPool<PageUnit<Empty>>(4, p => { });
+            freePagePool = new OverflowPool<PageUnit<Empty>>(4, static p => DirectVirtualMemory.Free(p.block));
             pageHeaderSize = PageHeader.Size;
         }
 
@@ -41,6 +41,7 @@ namespace Tsavorite.core
             if (freePagePool.TryGet(out var item))
             {
                 pageArrays[index] = item.array;
+                pageBlocks[index] = item.block;
                 pagePointers[index] = item.pointer;
             }
             else
@@ -59,10 +60,12 @@ namespace Tsavorite.core
                 _ = freePagePool.TryAdd(new()
                 {
                     array = pageArrays[index],
+                    block = pageBlocks[index],
                     pointer = pagePointers[index],
                     value = Empty.Default
                 });
                 pageArrays[index] = default;
+                pageBlocks[index] = default;
                 pagePointers[index] = default;
                 _ = Interlocked.Decrement(ref AllocatedPageCount);
             }

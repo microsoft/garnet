@@ -105,6 +105,10 @@ namespace Tsavorite.core
         /// <summary>Array of pages kept to ensure the pinned pages are not garbage collected.</summary>
         protected readonly byte[][] pageArrays;
 
+        /// <summary>Per-page direct-VM backing block when the LogPages native surface is enabled ("full" mode);
+        /// the parallel entry in <see cref="pageArrays"/> is null. Empty (default) for the managed backend.</summary>
+        internal readonly DirectVmBlock[] pageBlocks;
+
         #endregion
 
         #region Public addresses
@@ -479,6 +483,21 @@ namespace Tsavorite.core
 
             onReadOnlyObserver?.OnCompleted();
             onEvictionObserver?.OnCompleted();
+
+            // Release any direct-VM log-page blocks still allocated (no-op for the managed backend, where the
+            // blocks are empty). Pooled/returned blocks are freed by the derived allocator's freePagePool
+            // disposer before this base call; only currently-allocated pages remain here.
+            if (pageBlocks is not null)
+            {
+                for (var i = 0; i < pageBlocks.Length; i++)
+                {
+                    if (!pageBlocks[i].IsEmpty)
+                    {
+                        DirectVirtualMemory.Free(pageBlocks[i]);
+                        pageBlocks[i] = default;
+                    }
+                }
+            }
         }
 
         #endregion abstract and virtual methods
@@ -657,6 +676,7 @@ namespace Tsavorite.core
             if (BufferSize > 0)
             {
                 pageArrays = new byte[BufferSize][];
+                pageBlocks = new DirectVmBlock[BufferSize];
                 pagePointersArray = GC.AllocateArray<long>(BufferSize, pinned: true);
                 pagePointers = (long*)Unsafe.AsPointer(ref pagePointersArray[0]);
             }
@@ -673,17 +693,28 @@ namespace Tsavorite.core
             var offset = GetOffsetOnPage(logicalAddress);
             return *(pagePointers + pageIndex) + offset;
         }
-        internal bool IsAllocated(int pageIndex) => pageArrays[pageIndex] is not null;
+        internal bool IsAllocated(int pageIndex) => pagePointers[pageIndex] != 0;
 
         internal virtual void ClearPage(long page, int offset = 0)
         {
-            var pageArray = pageArrays[page % BufferSize];
-
-            // If the offset is 0, we can clear everything in the array including the cache-alignment padding.
-            // Otherwise, we have to adjust the offset for the initial cache alignment.
-            if (offset != 0)
-                offset += (int)(pagePointers[page % BufferSize] - (long)Unsafe.AsPointer(ref pageArray[0]));
-            Array.Clear(pageArray, offset, pageArray.Length - offset);
+            var idx = page % BufferSize;
+            var pageArray = pageArrays[idx];
+            if (pageArray is not null)
+            {
+                // If the offset is 0, we can clear everything in the array including the cache-alignment padding.
+                // Otherwise, we have to adjust the offset for the initial cache alignment.
+                if (offset != 0)
+                    offset += (int)(pagePointers[idx] - (long)Unsafe.AsPointer(ref pageArray[0]));
+                Array.Clear(pageArray, offset, pageArray.Length - offset);
+            }
+            else
+            {
+                // Native-backed page (LogPages full mode): pagePointers[idx] is the aligned page start and the
+                // caller's offset is page-relative, so clear directly from there.
+                var len = AlignedPageSizeBytes - offset;
+                if (len > 0)
+                    DirectVirtualMemory.Clear((nint)(pagePointers[idx] + offset), len);
+            }
         }
 
         [MethodImpl(MethodImplOptions.NoInlining)]
@@ -751,6 +782,15 @@ namespace Tsavorite.core
         protected void AllocatePinnedPageArray(int index)
         {
             var adjustedSize = PageSize + 2 * sectorSize;
+            if ((NativeAllocatorInitializer.EnabledSurfaces & NativeAllocatorSurfaces.LogPages) != 0)
+            {
+                // Direct-VM (mmap/VirtualAlloc): demand-zero, first-touch-placed pages matching GC.AllocateArray.
+                var block = DirectVirtualMemory.Allocate(adjustedSize, sectorSize);
+                pageBlocks[index] = block;
+                pagePointersArray[index] = block.AlignedPtr;
+                pageArrays[index] = null;
+                return;
+            }
             var tmp = GC.AllocateArray<byte>(adjustedSize, true);
             var p = (long)Unsafe.AsPointer(ref tmp[0]);
             pagePointersArray[index] = (p + (sectorSize - 1)) & ~((long)sectorSize - 1);
