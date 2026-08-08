@@ -118,11 +118,14 @@ namespace Tsavorite.core
         /// (and never dereferences a null registry if the global flag is flipped after construction).</summary>
         protected readonly bool useNativeLogPages;
 
-        /// <summary>Depth of in-progress snapshot-checkpoint flushes issuing device writes directly from native page
-        /// pointers. While &gt; 0, <see cref="FreeNativeLogPage"/> must NOT munmap an evicted page (a snapshot write
-        /// may still reference it, and snapshot IO is not gated by <see cref="FlushedUntilAddress"/>); such pages
-        /// are parked in <see cref="deferredNativeFrees"/> and freed when the snapshot completes.</summary>
-        int nativeSnapshotFlushDepth;
+        /// <summary>Count of outstanding snapshot-checkpoint IO that reads native page pointers directly: a producer
+        /// sentinel held for the duration of each flush's issuance, plus one per issued page write (released by its
+        /// completion callback — success OR error). While &gt; 0, <see cref="FreeNativeLogPage"/> must NOT munmap an
+        /// evicted page (a snapshot write may still reference it, and snapshot IO is not gated by
+        /// <see cref="FlushedUntilAddress"/>); such pages are parked in <see cref="deferredNativeFrees"/> and freed
+        /// only when this reaches 0 (every issued write has called back), so an early error-fault of the flush's
+        /// completion task cannot free a page still referenced by another in-flight write.</summary>
+        long nativeSnapshotIoOutstanding;
 
         /// <summary>Direct-VM page blocks evicted while a snapshot flush was in progress; freed once the snapshot's
         /// device writes have all completed. Guarded by <see cref="nativeFreeGate"/>. Null for the managed backend.</summary>
@@ -863,12 +866,12 @@ namespace Tsavorite.core
             var block = pageBlocks[index];
             pageBlocks[index] = default;
 
-            // Fast path: no snapshot flush active -> munmap immediately (main-log flush already completed).
-            if (Volatile.Read(ref nativeSnapshotFlushDepth) > 0)
+            // Fast path: no snapshot IO outstanding -> munmap immediately (main-log flush already completed).
+            if (Volatile.Read(ref nativeSnapshotIoOutstanding) > 0)
             {
                 lock (nativeFreeGate)
                 {
-                    if (nativeSnapshotFlushDepth > 0)
+                    if (Volatile.Read(ref nativeSnapshotIoOutstanding) > 0)
                     {
                         _ = Interlocked.Increment(ref NativeLogPageDeferredCount);
                         deferredNativeFrees.Add(block);
@@ -880,26 +883,26 @@ namespace Tsavorite.core
         }
 
         /// <summary>Mark the start of a snapshot-checkpoint flush that issues device writes from native page
-        /// pointers, so evicted pages are parked instead of unmapped for the duration. Paired with
-        /// <see cref="EndNativeSnapshotFlush"/>. No-op for the managed backend.</summary>
+        /// pointers (a producer sentinel held until issuance completes), so evicted pages are parked instead of
+        /// unmapped for the duration. No-op for the managed backend.</summary>
         void BeginNativeSnapshotFlush()
         {
-            if (!useNativeLogPages)
-                return;
-            lock (nativeFreeGate)
-                nativeSnapshotFlushDepth++;
+            if (useNativeLogPages)
+                _ = Interlocked.Increment(ref nativeSnapshotIoOutstanding);
         }
 
-        /// <summary>Mark the end of a snapshot-checkpoint flush (all its device writes have completed). When the
-        /// last active flush ends, free any pages that were evicted while it was in progress.</summary>
+        /// <summary>Release one unit of outstanding snapshot IO (the producer sentinel when issuance ends, or one
+        /// issued page write when its completion callback fires — including the error path). When the last unit is
+        /// released, free any pages that were evicted while snapshot writes were in flight.</summary>
         void EndNativeSnapshotFlush()
         {
-            if (!useNativeLogPages)
+            if (!useNativeLogPages || Interlocked.Decrement(ref nativeSnapshotIoOutstanding) != 0)
                 return;
             DirectVmBlock[] toFree = null;
             lock (nativeFreeGate)
             {
-                if (--nativeSnapshotFlushDepth == 0 && deferredNativeFrees.Count > 0)
+                // Re-check under the lock: another flush may have started (incremented) before we took it.
+                if (Volatile.Read(ref nativeSnapshotIoOutstanding) == 0 && deferredNativeFrees.Count > 0)
                 {
                     toFree = deferredNativeFrees.ToArray();
                     deferredNativeFrees.Clear();
@@ -2169,12 +2172,12 @@ namespace Tsavorite.core
             var completionTcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
             completedTask = completionTcs.Task;
 
-            // Park (do not munmap) any native page evicted while this snapshot's writes are in flight; free them once
-            // all its device writes have completed. Snapshot IO reads page pointers directly and is not gated by
-            // FlushedUntilAddress, so a page could otherwise be unmapped under an in-flight snapshot write.
+            // Park (do not munmap) any native page evicted while this snapshot's writes are in flight; free them only
+            // once EVERY issued write has called back (see nativeSnapshotIoOutstanding). Snapshot IO reads page
+            // pointers directly and is not gated by FlushedUntilAddress, so a page could otherwise be unmapped under
+            // an in-flight snapshot write. BeginNativeSnapshotFlush holds a producer sentinel for the issuance; the
+            // FlushRunner releases it when issuance ends, and each issued write's callback releases its own unit.
             BeginNativeSnapshotFlush();
-            _ = completionTcs.Task.ContinueWith(static (_, state) => ((AllocatorBase<TStoreFunctions, TAllocator>)state).EndNativeSnapshotFlush(),
-                this, CancellationToken.None, TaskContinuationOptions.None, TaskScheduler.Default);
 
             // If throttled, convert rest of the method into a truly async task run because issuing IO can take up synchronous time
             if (throttleCheckpointFlushDelayMs >= 0)
@@ -2224,6 +2227,10 @@ namespace Tsavorite.core
                         };
 
                         // Intended destination is flushPage
+                        // Count this native page write as outstanding snapshot IO BEFORE issuing, so an eviction that
+                        // races the issue parks the page instead of unmapping it; the callback releases this unit
+                        // (WriteNotIssued below releases it instead, since no callback will fire).
+                        BeginNativeSnapshotFlush();
                         WriteAsyncToDeviceForSnapshot(startPage, flushPage, (int)flushSize, AsyncFlushPageForSnapshotCallback, asyncResult, logDevice, objectLogDevice, fuzzyStartLogicalAddress);
 
                         // If we did not issue a flush write (due to HeadAddress moving past flushPage), then WriteAsync set isForSnapshot false and we release the asyncResult here;
@@ -2238,6 +2245,7 @@ namespace Tsavorite.core
                         }
                         else
                         {
+                            EndNativeSnapshotFlush();   // no write issued -> no callback; release the unit taken above
                             _ = asyncResult.Release();
                             // Release() called CompleteFlush() which released the throttle semaphore.
                             // Drain it so the next real page's WaitOneFlush is not satisfied by this no-op.
@@ -2249,6 +2257,13 @@ namespace Tsavorite.core
                 {
                     logger?.LogError(ex, "{method} failed while flushing snapshot pages from {startPage} to {endPage}", nameof(AsyncFlushPagesForSnapshot), startPage, endPage);
                     flushCompletionTracker.SetException(ex);
+                }
+                finally
+                {
+                    // Release the issuance producer sentinel taken by the outer BeginNativeSnapshotFlush. Any writes
+                    // still in flight keep nativeSnapshotIoOutstanding > 0 until their callbacks fire; the last one
+                    // drains the deferred frees — independent of completionTcs faulting early on the error path.
+                    EndNativeSnapshotFlush();
                 }
             }
         }
@@ -2629,6 +2644,11 @@ namespace Tsavorite.core
                     if (epochTaken)
                         epoch.Suspend();
                     _ = result.Release();
+
+                    // Release this issued page write's unit of outstanding snapshot IO (runs on both the success and
+                    // error paths, since this callback fires for every issued write). When the last outstanding unit
+                    // is released, any pages parked while snapshot writes were in flight are freed.
+                    EndNativeSnapshotFlush();
                 }
             }
             catch when (disposed) { }
