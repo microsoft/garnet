@@ -234,7 +234,7 @@ namespace Resp.benchmark
                 CommitFrequencyMs = -1,
                 FastAofTruncate = true,
                 EnableCluster = true,
-                ReplicationOffsetMaxLag = 0,
+                AofReplayMaxLagBytes = 0,
                 AofPhysicalSublogCount = options.AofPhysicalSublogCount
             };
             aofServerOptions.GetAofSettings(0, out var logSettings);
