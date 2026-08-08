@@ -2252,7 +2252,7 @@ namespace Garnet.test.cluster
         /// <summary>
         /// Writes filler keys so a re-attaching replica falls behind the primary's AOF window and cannot sync incrementally.
         /// </summary>
-        public void PushPrimaryAhead(int primaryIndex, int keyCount = 256, int valueLength = 64)
+        public void AdvancePrimaryPastReplicaAofWindow(int primaryIndex, int keyCount = 256, int valueLength = 64)
         {
             var primary = GetEndPoint(primaryIndex);
             for (var i = 0; i < keyCount; i++)
@@ -2262,7 +2262,7 @@ namespace Garnet.test.cluster
         }
 
         /// <summary>Attaches a replica to a primary and waits until it is in sync.</summary>
-        public void Attach(int replicaIndex, int primaryIndex, bool waitForRecovery = false, ILogger logger = null)
+        public void AttachReplicaToPrimary(int replicaIndex, int primaryIndex, bool waitForRecovery = false, ILogger logger = null)
         {
             _ = ClusterReplicate(replicaNodeIndex: replicaIndex, primaryNodeIndex: primaryIndex, logger: logger);
 
