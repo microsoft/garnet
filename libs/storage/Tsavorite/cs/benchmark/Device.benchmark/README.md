@@ -53,10 +53,11 @@ numactl --membind=0 --cpunodebind=0 dotnet $DB \
   --file-size 12801015808 --sector-size 512 --segment-size 1073741824 \
   --batch-size 4096 --device-throttle-limit 4096 --runtime 8
 
-# uring — needs one ring per submitter: set --device-io-contexts >= --threads:
+# uring — the smart default sizes rings to min(2×cores, 64) (>= submitters here),
+# so it reaches the ceiling out of the box; only set --device-io-contexts for >64 submitters:
 numactl --membind=0 --cpunodebind=0 dotnet $DB \
   --file-name /raid/devbench.dat --device-type Native --device-io-backend uring \
-  --device-completion-threads 8 --device-io-contexts 32 --threads 32 \
+  --device-completion-threads 8 --threads 32 \
   --file-size 12801015808 --sector-size 512 --segment-size 1073741824 \
   --batch-size 4096 --device-throttle-limit 4096 --runtime 8
 ```
@@ -65,13 +66,16 @@ numactl --membind=0 --cpunodebind=0 dotnet $DB \
 |---|---|---|---|
 | Native libaio | ct=8 (8 io_contexts) | 32 | **8.23 M** |
 | Native libaio | ct=8 | 64 | 7.7 M |
-| Native uring | ct=8, `--device-io-contexts 8` | 32 | 2.9 M (per-ring SpinLock cap) |
-| Native uring | ct=8, `--device-io-contexts 32` | 32 | **8.00 M** |
+| Native uring | ct=8, default rings (smart → 64) | 32 | **8.45 M** |
+| Native uring | ct=8, `--device-io-contexts 8` (under-provisioned) | 32 | 2.9 M (per-ring SpinLock cap) |
+| Native uring | ct=8, `--device-io-contexts 32` | 32 | 8.00 M |
 
-Both backends hit the `fio` ceiling, but **libaio needs only ~8 kernel io_contexts**
-(its io_context mutex is cheap) whereas **io_uring needs one ring per submitter**
-(`--device-io-contexts 32`) to escape the managed per-ring `SpinLock` — with the default
-8 rings it caps at ~2.9 M. NUMA pinning is ~neutral at the raw device layer (node-0
+Both backends hit the `fio` ceiling. **libaio needs only ~8 kernel io_contexts**
+(its io_context mutex is cheap), whereas **io_uring needs one ring per submitter** to
+escape the managed per-ring `SpinLock`. io_uring's ring count is **smart-defaulted** to
+`min(2 × cores, 64)` (floored at the drainer count), so with 32 submitters it uses 64
+rings and reaches the ceiling **out of the box** (8.45 M); explicitly under-provisioning
+rings below the submitter count (`--device-io-contexts 8`) exposes the SpinLock cap (~2.9 M). NUMA pinning is ~neutral at the raw device layer (node-0
 pin vs no pin within ±2%); it matters far more up the stack (KV/RESP). Peak is at
 `--threads 32` (32 submit + 8 drain ≈ node-0's physical cores); `--threads 64`
 oversubscribes and falls to ~7.5 M.
@@ -113,9 +117,11 @@ Peaks near the physical core count, then falls off. Use a large `--device-thrott
   `--threads`.
 - **`--device-io-contexts`** — kernel io_contexts / io_uring rings, decoupled from drainers.
   **libaio**: leave at default (= ct rings) — its io_context mutex is cheap, more
-  rings are a no-op. **io_uring**: set **>= submitter `--threads`** (e.g.
-  `--device-io-contexts 32` for 32 threads) so each submitter gets its own ring and escapes
-  the managed per-ring `SpinLock`; otherwise uring caps at ~a third of libaio.
+  rings are a no-op. **io_uring**: the **smart default** already sizes rings to
+  `min(2 × cores, 64)`, enough for ≤ 64 submitters, so leave it unset in the common
+  case; set it explicitly (**>= submitter `--threads`**) only when submitters exceed 64
+  or to pin an exact count. Rings **below** the submitter count share a per-ring
+  `SpinLock` and cap uring at ~a third of libaio.
 - **`--threads`** — 32 is the NVMe-array sweet spot (submit + drain ≈ node-0 cores);
   >32 oversubscribes and falls off. LocalMemory peaks near core count.
 - **`numactl --membind=0 --cpunodebind=0`** — near-neutral at the raw device layer,

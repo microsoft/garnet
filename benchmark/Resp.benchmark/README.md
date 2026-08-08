@@ -85,8 +85,10 @@ numactl --cpunodebind=1 --membind=1 dotnet $RB -s --op GET --dbsize 100000000 \
 |---|---|---|---|---|
 | Libaio | srv node-0 / cli node-1 | 1.95 M | 6.17 M | **7.21 M** |
 | Libaio | no pin | 1.66 M | 4.84 M | 6.38 M |
-| Uring (`--device-completion-threads 32`) | srv node-0 / cli node-1 | 1.93 M | 5.45 M | 6.08 M |
-| Uring (`--device-completion-threads 32`) | no pin | 1.73 M | 4.74 M | 5.41 M |
+
+> `Libaio` (the Linux default) is shown here for a quick look. For the full
+> backend × pin matrix — including `Uring` on out-of-box defaults, which reaches the
+> same peak — see [Sample results](#sample-results--8-nvme-ssd-raid-0) below.
 
 - `--index 8g` for 100 M keys (default 128 m → 3–4× slowdown from hash chains).
 - Peak is at **t=64**: unlike the raw device (peaks at t=32), the RESP server's

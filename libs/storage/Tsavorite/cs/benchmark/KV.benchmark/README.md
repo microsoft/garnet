@@ -61,7 +61,8 @@ numactl --cpunodebind=0 --membind=0 dotnet $KV -n 100000000 -v 100 \
   --rumd 100,0,0,0 --load-threads 8 --run-threads-sweep 8,32,64 \
   --runsec 12 --warmup-sec 4 --data-path /raid/kv
 
-# uring: add --device-io-contexts 32 (one ring per submitter; see Device README).
+# uring: no extra flag needed — the smart default sizes rings to min(2×cores, 64),
+# covering these run-thread counts (see Device README).
 ```
 
 | backend | pin | t=8 | t=32 | t=64 |
@@ -118,8 +119,10 @@ datasets touch few NAND dies and understate IOPS.
 - **`--device-completion-threads`** — native/localmemory drainer count (**8** on a
   fast array; localmemory: one SPSC ring per thread).
 - **`--device-io-contexts`** — kernel io_contexts / io_uring rings (native, decoupled
-  from drainers). Leave default for libaio; for **uring set >= run threads** (e.g.
-  `32`) so each submitter gets its own ring, else uring caps well below libaio (see
+  from drainers). Leave default for libaio. For **uring** the smart default sizes rings
+  to `min(2 × cores, 64)`, enough for ≤ 64 submitters, so leave it unset in the common
+  case; set it **>= run threads** only beyond 64 (or to pin an exact count) — rings below
+  the submitter count cap uring well below libaio (see
   [Device README](../Device.benchmark/README.md#nvme-storage-bound)).
 - **`-b` / `--batch-size`** — run-phase batch depth (ops issued per chunk before an
   opportunistic non-blocking drain). Default 1024. In-flight is bounded by
