@@ -220,7 +220,14 @@ namespace Garnet.server
             var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.ZRANGE };
             var input = new ObjectInput(header, ref parseState, startIdx: 2, arg1: respProtocolVersion, arg2: (int)SortedSetRangeOpts.Store);
 
-            var status = storageApi.SortedSetRangeStore(dstKey, srcKey, ref input, out int result);
+            var status = storageApi.SortedSetRangeStore(dstKey, srcKey, ref input, out int result, out var error);
+
+            if (error.Length > 0)
+            {
+                while (!RespWriteUtils.TryWriteError(error.ReadOnlySpan, ref dcurr, dend))
+                    SendAndReset();
+                return true;
+            }
 
             switch (status)
             {

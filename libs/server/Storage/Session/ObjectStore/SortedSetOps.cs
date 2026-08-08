@@ -710,13 +710,14 @@ namespace Garnet.server
         /// <param name="result">The result of the operation, indicating the number of elements stored.</param>
         /// <param name="objectContext">The context of the object store.</param>
         /// <returns>Returns a GarnetStatus indicating the success or failure of the operation.</returns>
-        public unsafe GarnetStatus SortedSetRangeStore<TObjectContext>(PinnedSpanByte dstKey, PinnedSpanByte srcKey, ref ObjectInput input, out int result, ref TObjectContext objectContext)
+        public unsafe GarnetStatus SortedSetRangeStore<TObjectContext>(PinnedSpanByte dstKey, PinnedSpanByte srcKey, ref ObjectInput input, out int result, out PinnedSpanByte error, ref TObjectContext objectContext)
             where TObjectContext : ITsavoriteContext<FixedSpanByteKey, ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
         {
             if (txnManager.ObjectTransactionalContext.Session is null)
                 ThrowObjectStoreUninitializedException();
 
             result = 0;
+            error = default;
 
             if (dstKey.Length == 0 || srcKey.Length == 0)
                 return GarnetStatus.OK;
@@ -762,6 +763,23 @@ namespace Garnet.server
                     var rangeOutPtr = (byte*)rangeOutputHandler.Pointer;
                     ref var currOutPtr = ref rangeOutPtr;
                     var endOutPtr = rangeOutPtr + rangeOutputMem.Length;
+
+                    // SortedSetRange signals a parameter error (LIMIT in index mode, or a
+                    // non-float min/max) by writing a RESP error into this output buffer
+                    // instead of an array. Surface it to the caller — as GEOSEARCHSTORE
+                    // already does in SortedSetGeoOps — rather than parsing the '-' error
+                    // prefix as an array length, which aborts the RESP session with a
+                    // protocol error, or clobbering the destination key.
+                    if (RespReadUtils.TryReadErrorAsSpan(out var rangeError, ref currOutPtr, endOutPtr))
+                    {
+                        // Copy the payload so it outlives the disposed range output. Use the
+                        // allocator, not scratchBufferBuilder: this slice is intentionally never
+                        // rewound (it must survive until the RESP handler writes it), and the
+                        // builder's single-outstanding-slice invariant would otherwise trip once
+                        // another command in the same network batch allocates from it.
+                        error = scratchBufferAllocator.CreateArgSlice(rangeError);
+                        return GarnetStatus.OK;
+                    }
 
                     var destinationKey = dstKey.ReadOnlySpan;
                     ssUnifiedTransactionalContext.Delete((FixedSpanByteKey)destinationKey);
