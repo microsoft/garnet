@@ -75,3 +75,38 @@ Read cache helps bring in records from disk to memory in a separate read cache r
 Use the `--readcache` option to enable the read cache. The following configuration options control its memory utilization:
 * `--readcache-page` controls the size of each read cache page.
 * `--readcache-memory` controls the total read cache memory, covering both inline bytes and referenced heap memory.
+## Native (off-heap) allocator
+
+By default, Garnet's large, long-lived buffers — the hash index, hybrid-log pages, IO/flush buffers, and
+recovery frames — are allocated as pinned arrays on the managed .NET heap (the Pinned Object Heap). The optional
+`--native-allocator` setting moves these allocations *off* the managed heap, into native memory, which reduces
+GC pause times (the collector has far less to scan/compact) and removes POH fragmentation. It is **off by
+default** and opt-in.
+
+Modes (`--native-allocator <mode>`):
+
+* `off` (default) — all allocations use the managed heap. Behavior-identical to prior releases.
+* `buffer-pool` — the sector-aligned IO/flush buffer pool (`SectorAlignedBufferPool`) is backed by
+  [mimalloc](https://github.com/microsoft/mimalloc). Its thread-local heaps eliminate the shared free-list
+  contention that caps this pool under concurrent flush/read on fast devices. This is the primary throughput
+  win and the safe first increment (a single, localized surface). If the mimalloc native library is unavailable
+  for the platform/RID, this surface transparently falls back to the managed pool with a warning.
+* `full` — additionally routes the hash index, hybrid-log pages, and recovery frames to a direct OS
+  virtual-memory allocator (`mmap`/`VirtualAlloc`). These give demand-zero, first-touch-placed pages that match
+  the managed allocator's behavior, but off the GC heap — so a large index/log no longer inflates the managed
+  heap. (Network buffers remain managed in this release.)
+
+### Sizing and the GC when native memory is enabled
+
+Native memory lives **outside** the managed GC heap, so:
+
+* Size `GCHeapHardLimit`/`GCHeapHardLimitPercent` to leave headroom for the native pools; the GC's own limit
+  does not account for native memory.
+* Set `DOTNET_GCDynamicAdaptationMode=0` — DATAS (default in .NET 9+) resizes the managed heap by throughput and
+  is blind to native memory, so it can grow the heap into a container OOM.
+* Monitor `native_allocator_bytes` in `INFO memory` alongside `gc_heap_bytes`. For example, with a large index in
+  `full` mode you will see the index bytes move from `gc_heap_bytes` into `native_allocator_bytes`, with the
+  managed heap becoming dramatically smaller.
+
+Native memory is not reported to the GC via `GC.AddMemoryPressure` (which would only trigger unproductive Gen2
+collections that cannot reclaim it); use the hard-limit + telemetry approach above instead.
