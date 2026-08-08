@@ -186,7 +186,7 @@ namespace Tsavorite.core
         {
             if (nativePtr != 0)
             {
-                SectorAlignedBufferPool.NativeAllocator?.Free(nativePtr);
+                SectorAlignedBufferPool.NativeAllocator?.Free(nativePtr, (nuint)allocatedLength);
                 nativePtr = 0;
                 aligned_pointer = null;
                 allocatedLength = 0;
@@ -545,11 +545,12 @@ namespace Tsavorite.core
             page.required_bytes = 0;
             page.valid_offset = 0;
             var ptr = page.nativePtr;
+            var len = page.allocatedLength;
             page.nativePtr = 0;
             page.aligned_pointer = null;
             page.allocatedLength = 0;
             page.clearOnReturn = true;
-            NativeAllocator?.Free(ptr);
+            NativeAllocator?.Free(ptr, (nuint)len);
             ReturnWrapper(page);
         }
 

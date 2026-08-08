@@ -20,13 +20,18 @@ namespace Tsavorite.core
         /// </summary>
         nint Allocate(nuint size, nuint alignment, bool zeroed);
 
-        /// <summary>Free a pointer previously returned by <see cref="Allocate"/>. No-op for zero.</summary>
-        void Free(nint ptr);
+        /// <summary>
+        /// Free a pointer previously returned by <see cref="Allocate"/>. <paramref name="size"/> is the size
+        /// originally requested (the caller — the pool — already knows it), so the allocator need not query the
+        /// native usable size on the hot path. No-op for zero.
+        /// </summary>
+        void Free(nint ptr, nuint size);
     }
 
     /// <summary>
-    /// <see cref="INativePinnedAllocator"/> backed by mimalloc. Every allocation/free updates
-    /// <see cref="NativeMemoryTracker"/> (telemetry only — see that type for why we do not use
+    /// <see cref="INativePinnedAllocator"/> backed by mimalloc. Accounting uses the requested size (the pool
+    /// knows it) rather than <c>mi_usable_size</c>, avoiding an extra native call per op, and updates the
+    /// striped <see cref="NativeMemoryTracker"/> (telemetry only — see that type for why we do not use
     /// <see cref="System.GC.AddMemoryPressure(long)"/>).
     /// </summary>
     internal sealed unsafe class MimallocPooledAllocator : INativePinnedAllocator
@@ -36,15 +41,15 @@ namespace Tsavorite.core
             var ptr = zeroed ? Mimalloc.ZallocAligned(size, alignment) : Mimalloc.MallocAligned(size, alignment);
             if (ptr == 0)
                 throw new OutOfMemoryException($"mimalloc aligned allocation of {size} bytes (alignment {alignment}) failed");
-            NativeMemoryTracker.Add((long)Mimalloc.UsableSize(ptr));
+            NativeMemoryTracker.Add((long)size);
             return ptr;
         }
 
-        public void Free(nint ptr)
+        public void Free(nint ptr, nuint size)
         {
             if (ptr == 0)
                 return;
-            NativeMemoryTracker.Subtract((long)Mimalloc.UsableSize(ptr));
+            NativeMemoryTracker.Subtract((long)size);
             Mimalloc.Free(ptr);
         }
     }
