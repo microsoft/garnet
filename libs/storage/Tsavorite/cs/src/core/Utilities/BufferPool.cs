@@ -99,6 +99,22 @@ namespace Tsavorite.core
         /// </summary>
         internal bool isDirty;
 
+        /// <summary>
+        /// Native backing pointer when this buffer is allocated through a native allocator (mimalloc);
+        /// 0 when managed-backed. When set, <see cref="buffer"/> is null and <see cref="aligned_pointer"/>
+        /// points into the native block.
+        /// </summary>
+        internal nint nativePtr;
+
+        /// <summary>Total native allocation length in bytes when <see cref="nativePtr"/> is set.</summary>
+        internal int allocatedLength;
+
+        /// <summary>
+        /// Thread-local wrapper free-list link. On the native path the large backing buffer is owned/recycled
+        /// by the native allocator, but the small wrapper object is recycled here to avoid Gen0 churn.
+        /// </summary>
+        internal SectorAlignedMemory wrapperNext;
+
         private int level;
         internal int Level => level
 #if CHECK_FREE
@@ -168,10 +184,30 @@ namespace Tsavorite.core
         /// </summary>
         public void Dispose()
         {
+            if (nativePtr != 0)
+            {
+                SectorAlignedBufferPool.NativeAllocator?.Free(nativePtr);
+                nativePtr = 0;
+                aligned_pointer = null;
+                allocatedLength = 0;
+            }
             buffer = null;
 #if CHECK_FREE
             this.Free = true;
 #endif
+        }
+
+        /// <summary>
+        /// Reset a recycled wrapper for a fresh native rental. Preserves the CHECK_FREE bit packed into
+        /// <see cref="level"/> (managed by the pool's rent/return path).
+        /// </summary>
+        internal void Reset(int newLevel, SectorAlignedBufferPool newPool)
+        {
+            level = (level & kFreeBitMask) | (newLevel & ~kFreeBitMask);
+            pool = newPool;
+            valid_offset = 0;
+            available_bytes = 0;
+            isDirty = false;
         }
 
         /// <summary>
@@ -186,7 +222,7 @@ namespace Tsavorite.core
         /// <summary>
         /// Get the total aligned memory capacity of the buffer
         /// </summary>
-        public int AlignedTotalCapacity => buffer.Length - aligned_offset;
+        public int AlignedTotalCapacity => (buffer is null ? allocatedLength : buffer.Length) - aligned_offset;
 
         /// <summary>
         /// Get the total valid memory capacity of the buffer
@@ -262,6 +298,20 @@ namespace Tsavorite.core
         /// </summary>
         public static bool UnpinOnReturn;
 
+        /// <summary>
+        /// Optional native backing allocator for pooled IO buffers. When non-null (set once at startup for the
+        /// <c>buffer-pool</c> / <c>full</c> native-allocator modes), <see cref="Get(int,bool)"/> and
+        /// <see cref="Return(SectorAlignedMemory)"/> bypass the managed per-level free-list recycling and
+        /// allocate/free directly through this allocator (mimalloc), whose thread-local heaps + cross-thread
+        /// free lists own recycling. Set on program entry and not modified once Tsavorite is instantiated,
+        /// mirroring <see cref="Disabled"/> / <see cref="UnpinOnReturn"/>.
+        /// </summary>
+        internal static INativePinnedAllocator NativeAllocator;
+
+        /// <summary>Thread-local free list of recycled wrapper objects for the native path (see <see cref="SectorAlignedMemory.wrapperNext"/>).</summary>
+        [ThreadStatic]
+        private static SectorAlignedMemory t_wrapperFreeList;
+
         private const int levels = 32;
         private readonly int recordSize;
         private readonly int sectorSize;
@@ -316,6 +366,12 @@ namespace Tsavorite.core
 #if CHECK_FOR_LEAKS
             Interlocked.Increment(ref totalReturns);
 #endif
+
+            if (page.nativePtr != 0)
+            {
+                ReturnNative(page);
+                return;
+            }
 
 #if CHECK_FREE
             page.Free = true;
@@ -401,6 +457,9 @@ namespace Tsavorite.core
             int required_bytes = numRecords * recordSize;
             int requiredSize = RoundUp(required_bytes, sectorSize);
             int index = Position(requiredSize / sectorSize);
+            var nativeAlloc = NativeAllocator;
+            if (nativeAlloc is not null)
+                return GetNative(nativeAlloc, required_bytes, index, clearOnReturn);
             if (queue[index] == null)
             {
                 var localPool = new ConcurrentQueue<SectorAlignedMemory>();
@@ -447,6 +506,74 @@ namespace Tsavorite.core
             page.clearOnReturn = clearOnReturn;
             page.pool = this;
             return page;
+        }
+
+        /// <summary>
+        /// Native (mimalloc) rental path. Bypasses the managed per-level free lists: mimalloc's thread-local
+        /// heaps + cross-thread free lists own recycling (subsuming the manual sharding + origin-return
+        /// bookkeeping). The read-path no-memset optimization is preserved by mapping <paramref name="clearOnReturn"/>
+        /// onto the allocation call — <c>false</c> renters (device-read destinations that fully overwrite) get a
+        /// non-zeroed <c>mi_malloc</c>, <c>true</c> renters (write-staging needing a zero tail) get a zeroed
+        /// <c>mi_zalloc</c> — so no per-Return dirty tracking is needed. mimalloc guarantees the requested
+        /// sector alignment, so no over-allocation slack or offset is required.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private unsafe SectorAlignedMemory GetNative(INativePinnedAllocator nativeAlloc, int required_bytes, int index, bool clearOnReturn)
+        {
+            int allocSize = sectorSize * (1 << index);
+            nint ptr = nativeAlloc.Allocate((nuint)allocSize, (nuint)sectorSize, zeroed: clearOnReturn);
+
+            var page = RentWrapper();
+            page.Reset(index, this);
+            page.nativePtr = ptr;
+            page.allocatedLength = allocSize;
+            page.aligned_pointer = (byte*)ptr;   // mimalloc guarantees sectorSize alignment
+            page.aligned_offset = 0;
+            page.required_bytes = required_bytes;
+            page.clearOnReturn = clearOnReturn;
+            return page;
+        }
+
+        /// <summary>Native (mimalloc) return path: free the backing block and recycle the wrapper.</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private unsafe void ReturnNative(SectorAlignedMemory page)
+        {
+#if CHECK_FREE
+            page.Free = true;
+#endif
+            page.available_bytes = 0;
+            page.required_bytes = 0;
+            page.valid_offset = 0;
+            var ptr = page.nativePtr;
+            page.nativePtr = 0;
+            page.aligned_pointer = null;
+            page.allocatedLength = 0;
+            page.clearOnReturn = true;
+            NativeAllocator?.Free(ptr);
+            ReturnWrapper(page);
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private static SectorAlignedMemory RentWrapper()
+        {
+            var w = t_wrapperFreeList;
+            if (w is not null)
+            {
+                t_wrapperFreeList = w.wrapperNext;
+                w.wrapperNext = null;
+#if CHECK_FREE
+                w.Free = false;
+#endif
+                return w;
+            }
+            return new SectorAlignedMemory();
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private static void ReturnWrapper(SectorAlignedMemory page)
+        {
+            page.wrapperNext = t_wrapperFreeList;
+            t_wrapperFreeList = page;
         }
 
         /// <summary>

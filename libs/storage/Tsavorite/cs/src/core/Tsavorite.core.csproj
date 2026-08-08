@@ -41,6 +41,14 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <TargetPath>runtimes/%(RecursiveDir)%(Filename)%(Extension)</TargetPath>
     </ContentWithTargetPath>
+
+    <!-- Ship prebuilt mimalloc per-RID under Native/runtimes/<rid>/native/, mirroring the native-device
+         layout above. The MimallocPooledAllocator loads it on demand via NativeLibrary.Load from
+         runtimes/<rid>/native/ when the native allocator is enabled; absence falls back to managed. -->
+    <ContentWithTargetPath Include="Native/runtimes/**">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <TargetPath>runtimes/%(RecursiveDir)%(Filename)%(Extension)</TargetPath>
+    </ContentWithTargetPath>
   </ItemGroup>
 
   <ItemGroup>

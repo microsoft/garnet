@@ -199,6 +199,10 @@ namespace Garnet
                 string.Join(',', opts.EndPoints.Select(endpoint => endpoint.ToString())));
             logger?.LogInformation("Environment .NET {netVersion}; {osPlatform}; {processArch}", Environment.Version, Environment.OSVersion.Platform, RuntimeInformation.ProcessArchitecture);
 
+            // Resolve and install native (off-managed-heap) allocators before any store or buffer pool is created.
+            if (opts.NativeAllocatorSurfaces != NativeAllocatorSurfaces.None)
+                NativeAllocatorInitializer.Initialize(opts.NativeAllocatorSurfaces, opts.NativeAllocatorRequire, loggerFactory?.CreateLogger("NativeAllocator"));
+
             // Flush initialization logs from memory logger
             FlushMemoryLogger(this.initLogger, "ArgParser", this.loggerFactory);
 

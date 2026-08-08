@@ -22,6 +22,19 @@ namespace Garnet.server
         public bool DisableObjects = false;
 
         /// <summary>
+        /// Which memory surfaces use a native (off-managed-heap) allocator. Resolved from the
+        /// <c>--native-allocator</c> mode (off | buffer-pool | full) and installed at startup via
+        /// <see cref="NativeAllocatorInitializer"/>.
+        /// </summary>
+        public NativeAllocatorSurfaces NativeAllocatorSurfaces = NativeAllocatorSurfaces.None;
+
+        /// <summary>
+        /// If true, fail startup when a requested native-allocator surface's backend is unavailable
+        /// (e.g. no mimalloc prebuilt for the platform/RID) instead of falling back to managed.
+        /// </summary>
+        public bool NativeAllocatorRequire = false;
+
+        /// <summary>
         /// Enable cluster.
         /// </summary>
         public bool EnableCluster = false;

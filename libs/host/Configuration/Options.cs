@@ -87,6 +87,12 @@ namespace Garnet
         [Option("index-max-size", Required = false, HelpText = "Max size of hash index in bytes (rounds down to power of 2)")]
         public string IndexMaxMemorySize { get; set; }
 
+        [Option("native-allocator", Required = false, HelpText = "Route large/pooled memory through a native (off-managed-heap) allocator. Values: off (default), buffer-pool (SectorAlignedBufferPool IO buffers via mimalloc), full (also routes log pages / hash index / frames to a direct-VM allocator).")]
+        public string NativeAllocator { get; set; }
+
+        [Option("native-allocator-require", Required = false, HelpText = "If true, fail startup when a requested native-allocator surface's backend is unavailable (e.g. no mimalloc prebuilt for the platform) instead of falling back to the managed allocator.")]
+        public bool? NativeAllocatorRequire { get; set; }
+
         [PercentageValidation(false)]
         [Option("mutable-percent", Required = false, HelpText = "Percentage of log memory that is kept mutable")]
         public int MutablePercent { get; set; }
@@ -737,6 +743,29 @@ namespace Garnet
             return isValid;
         }
 
+        static NativeAllocatorSurfaces ParseNativeAllocatorMode(string mode, ILogger logger)
+        {
+            if (string.IsNullOrWhiteSpace(mode))
+                return NativeAllocatorSurfaces.None;
+            switch (mode.Trim().ToLowerInvariant())
+            {
+                case "off":
+                case "none":
+                case "managed":
+                    return NativeAllocatorSurfaces.None;
+                case "buffer-pool":
+                case "bufferpool":
+                case "pool":
+                    return NativeAllocatorSurfaces.BufferPool;
+                case "full":
+                case "all":
+                    return NativeAllocatorSurfaces.Full;
+                default:
+                    logger?.LogWarning("Unknown --native-allocator value '{mode}'; defaulting to 'off'.", mode);
+                    return NativeAllocatorSurfaces.None;
+            }
+        }
+
         public GarnetServerOptions GetServerOptions(ILogger logger = null)
         {
             var enableStorageTier = EnableStorageTier.GetValueOrDefault();
@@ -865,6 +894,8 @@ namespace Garnet
                 ObjectLogSegmentSize = ObjectLogSegmentSize,
                 IndexMemorySize = IndexMemorySize,
                 IndexMaxMemorySize = IndexMaxMemorySize,
+                NativeAllocatorSurfaces = ParseNativeAllocatorMode(NativeAllocator, logger),
+                NativeAllocatorRequire = NativeAllocatorRequire.GetValueOrDefault(),
                 MutablePercent = MutablePercent,
                 EnableReadCache = EnableReadCache.GetValueOrDefault(),
                 ReadCacheMemorySize = ReadCacheMemorySize,
