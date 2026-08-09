@@ -43,8 +43,10 @@
     </ContentWithTargetPath>
 
     <!-- Ship prebuilt mimalloc per-RID under Native/runtimes/<rid>/native/, mirroring the native-device
-         layout above. The MimallocPooledAllocator loads it on demand via NativeLibrary.Load from
-         runtimes/<rid>/native/ when the native allocator is enabled; absence falls back to managed. -->
+         layout above (so the Microsoft.Garnet package and the garnet-server tool carry it the same way).
+         The MimallocPooledAllocator loads it on demand via NativeLibrary.Load from runtimes/<rid>/native/
+         when the native-allocator mode is buffer-pool/full; if the current RID's binary is missing, startup
+         fails fast (see NativeAllocatorInitializer) rather than silently using the managed pool. -->
     <ContentWithTargetPath Include="Native/runtimes/**">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <TargetPath>runtimes/%(RecursiveDir)%(Filename)%(Extension)</TargetPath>
