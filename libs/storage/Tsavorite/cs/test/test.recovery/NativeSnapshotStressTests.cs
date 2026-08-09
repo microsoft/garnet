@@ -72,6 +72,7 @@ namespace Tsavorite.test.recovery
             Exception writerError = null;
             var freesBefore = Interlocked.Read(ref AllocatorBase<LongStoreFunctions, LongAllocator>.NativeLogPageFreeCount);
             var deferredBefore = Interlocked.Read(ref AllocatorBase<LongStoreFunctions, LongAllocator>.NativeLogPageDeferredCount);
+            var reusedBefore = Interlocked.Read(ref AllocatorBase<LongStoreFunctions, LongAllocator>.NativeLogPageReuseCount);
 
             // Background writers: continuous upserts drive the tail forward, forcing pages read-only -> flushed ->
             // evicted (ReturnPage -> FreeNativeLogPage) concurrently with the snapshot writes below.
@@ -121,11 +122,15 @@ namespace Tsavorite.test.recovery
             // the snapshots — otherwise a "no crash" result would be vacuous (pages never unmapped).
             var freed = Interlocked.Read(ref AllocatorBase<LongStoreFunctions, LongAllocator>.NativeLogPageFreeCount) - freesBefore;
             var deferred = Interlocked.Read(ref AllocatorBase<LongStoreFunctions, LongAllocator>.NativeLogPageDeferredCount) - deferredBefore;
+            var reused = Interlocked.Read(ref AllocatorBase<LongStoreFunctions, LongAllocator>.NativeLogPageReuseCount) - reusedBefore;
             ClassicAssert.Greater(freed, 0, "expected native log pages to be freed on eviction during the snapshots");
             // And prove the snapshot-deferral path (park-during-snapshot, free-on-completion) was actually hit — this
             // is the interleaving under test: pages evicted while a snapshot write was in flight.
             ClassicAssert.Greater(deferred, 0, "expected some evicted pages to be deferred during in-flight snapshots");
-            TestContext.Out.WriteLine($"native log-page frees: {freed:N0}; of which deferred during snapshots: {deferred:N0}");
+            // And prove the recycle pool is exercised: evicted blocks are pooled and handed back to later allocations
+            // instead of munmap+mmap (the free-head/alloc-tail churn win).
+            ClassicAssert.Greater(reused, 0, "expected some native log-page allocations to reuse a pooled block");
+            TestContext.Out.WriteLine($"native log-page frees: {freed:N0}; deferred during snapshots: {deferred:N0}; reused from pool: {reused:N0}");
         }
     }
 }

@@ -132,6 +132,18 @@ namespace Tsavorite.core
         System.Collections.Generic.List<DirectVmBlock> deferredNativeFrees;
         readonly object nativeFreeGate = new();
 
+        /// <summary>Bounded pool of evicted direct-VM page blocks kept for reuse by <see cref="AllocatePinnedPageArray"/>,
+        /// so the common free-head/alloc-tail churn reuses a still-mapped (THP-backed) block instead of
+        /// munmap+mmap+re-fault (measured ~2.9x cheaper per page cycle). Mirrors the managed freePagePool. A block
+        /// enters the pool only when no snapshot IO references it (the fast path in <see cref="FreeNativeLogPage"/>, or
+        /// on snapshot completion in <see cref="EndNativeSnapshotFlush"/>), so a reused block is never one a snapshot
+        /// write is still reading; it was zeroed by ClearPage before being freed, so no re-zero is needed on reuse.
+        /// Overflow beyond the cap is munmap'd by the disposer. Null for the managed backend.</summary>
+        OverflowPool<DirectVmBlock> nativeFreePagePool;
+
+        /// <summary>Capacity of <see cref="nativeFreePagePool"/> (matches the managed freePagePool's OverflowPool size).</summary>
+        const int NativeFreePagePoolSize = 4;
+
         /// <summary>Owns the lifetime of the direct-VM log-page blocks that are still installed at Dispose, freeing
         /// them at finalization to match the managed page lifetime (an in-flight device flush/read may still
         /// reference them, and the device is disposed after this allocator). Null / unused for the managed backend.</summary>
@@ -536,6 +548,11 @@ namespace Tsavorite.core
                         nativePageRegistry.Register(block);
                     deferredNativeFrees.Clear();
                 }
+
+                // Pooled blocks are evicted and IO-free (they only enter the pool once no snapshot references them and
+                // after the main-log flush), so they can be unmapped now rather than deferred to finalization; the
+                // pool's disposer munmaps each. Teardown is quiescent, so no concurrent AllocatePage/ReturnPage races.
+                nativeFreePagePool.Dispose();
             }
         }
 
@@ -727,6 +744,7 @@ namespace Tsavorite.core
                     pageBlocks = new DirectVmBlock[BufferSize];
                     nativePageRegistry = new NativePageBlockRegistry();
                     deferredNativeFrees = new();
+                    nativeFreePagePool = new OverflowPool<DirectVmBlock>(NativeFreePagePoolSize, static block => DirectVirtualMemory.Free(block));
                 }
             }
         }
@@ -834,11 +852,17 @@ namespace Tsavorite.core
             if (useNativeLogPages)
             {
                 // Direct-VM (mmap/VirtualAlloc): demand-zero, first-touch-placed pages matching GC.AllocateArray.
-                // Track the block per-slot so ReturnPage can free it deterministically on eviction (post-flush,
-                // epoch-drained, so no in-flight IO). Any block still installed at Dispose is handed to
-                // nativePageRegistry there (it may have an in-flight flush/read). useNativeLogPages is captured at
-                // construction, so this possibly-concurrent path never re-reads the process-global flag.
-                var block = DirectVirtualMemory.Allocate(adjustedSize, sectorSize);
+                // Reuse a still-mapped block from the recycle pool when available (the common free-head/alloc-tail
+                // case), avoiding munmap+mmap+re-fault; the block was zeroed by ClearPage before it was pooled, so no
+                // re-zero is needed. Otherwise allocate fresh. Track the block per-slot so ReturnPage can pool/free it
+                // deterministically on eviction (post-flush, epoch-drained, so no in-flight IO). Any block still
+                // installed at Dispose is handed to nativePageRegistry there (it may have an in-flight flush/read).
+                // useNativeLogPages is captured at construction, so this possibly-concurrent path never re-reads the
+                // process-global flag.
+                if (!nativeFreePagePool.TryGet(out var block))
+                    block = DirectVirtualMemory.Allocate(adjustedSize, sectorSize);
+                else
+                    _ = Interlocked.Increment(ref NativeLogPageReuseCount);
                 pageBlocks[index] = block;
                 pagePointersArray[index] = block.AlignedPtr;
                 pageArrays[index] = null;
@@ -866,7 +890,9 @@ namespace Tsavorite.core
             var block = pageBlocks[index];
             pageBlocks[index] = default;
 
-            // Fast path: no snapshot IO outstanding -> munmap immediately (main-log flush already completed).
+            // Fast path: no snapshot IO outstanding -> recycle into the pool (reused by a future AllocatePinnedPageArray,
+            // avoiding munmap+mmap+re-fault; the block is IO-free here since the page was closed post main-log flush).
+            // Overflow beyond the pool cap is munmap'd by the pool's disposer.
             if (Volatile.Read(ref nativeSnapshotIoOutstanding) > 0)
             {
                 lock (nativeFreeGate)
@@ -879,7 +905,7 @@ namespace Tsavorite.core
                     }
                 }
             }
-            DirectVirtualMemory.Free(block);
+            _ = nativeFreePagePool.TryAdd(block);
         }
 
         /// <summary>Mark the start of a snapshot-checkpoint flush that issues device writes from native page
@@ -908,9 +934,11 @@ namespace Tsavorite.core
                     deferredNativeFrees.Clear();
                 }
             }
+            // Snapshot writes have all completed, so these evicted pages are now IO-free: recycle them into the pool
+            // for reuse (overflow beyond the cap is munmap'd by the pool's disposer) rather than unmapping outright.
             if (toFree is not null)
                 foreach (var block in toFree)
-                    DirectVirtualMemory.Free(block);
+                    _ = nativeFreePagePool.TryAdd(block);
         }
 
         /// <summary>Diagnostic counter of direct-VM log-page frees on eviction (see <see cref="FreeNativeLogPage"/>);
@@ -920,6 +948,10 @@ namespace Tsavorite.core
         /// <summary>Diagnostic counter of direct-VM log-page frees that were deferred because a snapshot flush was in
         /// progress; used by tests to assert the snapshot-deferral path is actually exercised.</summary>
         internal static long NativeLogPageDeferredCount;
+
+        /// <summary>Diagnostic counter of direct-VM log-page allocations satisfied by reusing a pooled block instead of
+        /// a fresh mmap (see <see cref="nativeFreePagePool"/>); used by tests to assert the recycle path is exercised.</summary>
+        internal static long NativeLogPageReuseCount;
 
         /// <summary>Initialize allocator</summary>
         [MethodImpl(MethodImplOptions.NoInlining)]
