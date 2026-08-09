@@ -70,46 +70,46 @@ namespace Garnet.cluster
                         var nextAddress = replayBatchContext.NextAddress;
                         var isProtected = replayBatchContext.IsProtected;
                         var ptr = record;
+                        var pulseSequenceNumber = replayDriver.StagedPulseSequenceNumber;
 
-                        while (ptr < record + recordLength)
+                        if (pulseSequenceNumber > 0)
                         {
-                            cts.Token.ThrowIfCancellationRequested();
-                            var entryLength = appendOnlyFile.HeaderSize;
-                            var payloadLength = replaySublog.UnsafeGetLength(ptr);
-                            if (payloadLength > 0)
-                            {
-                                var entryPtr = ptr + entryLength;
-                                var logAddressSequenceNumber = currentAddress + (ptr - record);
-                                if (replicationManager.AofProcessor.CanReplay(entryPtr, replayTaskIdx, logAddressSequenceNumber, out _))
-                                {
-                                    replicationManager.AofProcessor.ProcessAofRecordInternal(virtualSublogIdx, entryPtr, payloadLength, true, out var isCheckpointStart, logAddressSequenceNumber);
-                                    // Encountered checkpoint start marker, log the ReplicationCheckpointStartOffset so we know the correct AOF truncation
-                                    // point when we take a checkpoint at the checkpoint end marker
-                                    if (isCheckpointStart)
-                                    {
-                                        replicationManager.ReplicationCheckpointStartOffset[physicalSublogIdx] = replicationManager.GetSublogReplicationOffset(physicalSublogIdx);
-                                    }
-                                }
-                                entryLength += TsavoriteLog.UnsafeAlign(payloadLength);
-                            }
-                            else if (payloadLength < 0)
-                            {
-                                // Only a single thread should commit metadata
-                                if (replayTaskIdx == 0)
-                                {
-                                    TsavoriteLogRecoveryInfo info = new();
-                                    info.Initialize(new ReadOnlySpan<byte>(ptr + entryLength, -payloadLength));
-                                    replaySublog.UnsafeCommitMetadataOnly(info, isProtected);
-                                }
-                                entryLength += TsavoriteLog.UnsafeAlign(-payloadLength);
-                            }
-                            ptr += entryLength;
+                            appendOnlyFile.readConsistencyManager.AdvanceVirtualSublogTime(virtualSublogIdx, pulseSequenceNumber);
                         }
+                        else
+                        {
+                            while (ptr < record + recordLength)
+                            {
+                                cts.Token.ThrowIfCancellationRequested();
+                                var entryLength = appendOnlyFile.HeaderSize;
+                                var payloadLength = replaySublog.UnsafeGetLength(ptr);
+                                if (payloadLength > 0)
+                                {
+                                    var entryPtr = ptr + entryLength;
+                                    var logAddressSequenceNumber = currentAddress + (ptr - record);
+                                    if (replicationManager.AofProcessor.CanReplay(entryPtr, replayTaskIdx, logAddressSequenceNumber, out _))
+                                    {
+                                        replicationManager.AofProcessor.ProcessAofRecordInternal(virtualSublogIdx, entryPtr, payloadLength, true, out var isCheckpointStart, logAddressSequenceNumber);
+                                        if (isCheckpointStart)
+                                            replicationManager.ReplicationCheckpointStartOffset[physicalSublogIdx] = replicationManager.GetSublogReplicationOffset(physicalSublogIdx);
+                                    }
+                                    entryLength += TsavoriteLog.UnsafeAlign(payloadLength);
+                                }
+                                else if (payloadLength < 0)
+                                {
+                                    if (replayTaskIdx == 0)
+                                    {
+                                        TsavoriteLogRecoveryInfo info = new();
+                                        info.Initialize(new ReadOnlySpan<byte>(ptr + entryLength, -payloadLength));
+                                        replaySublog.UnsafeCommitMetadataOnly(info, isProtected);
+                                    }
+                                    entryLength += TsavoriteLog.UnsafeAlign(-payloadLength);
+                                }
+                                ptr += entryLength;
+                            }
 
-                        // Advance frontier to nextAddress (past all entries in this page).
-                        // This ensures the read consistency protocol (which waits for frontier > sessionSeq)
-                        // can proceed once all writes in the page are complete.
-                        appendOnlyFile.readConsistencyManager.UpdateVirtualSublogMaxSequenceNumber(virtualSublogIdx, nextAddress);
+                            appendOnlyFile.readConsistencyManager.UpdateVirtualSublogMaxSequenceNumber(virtualSublogIdx, nextAddress);
+                        }
                     }
                 }
                 catch (OperationCanceledException) when (cts.Token.IsCancellationRequested)

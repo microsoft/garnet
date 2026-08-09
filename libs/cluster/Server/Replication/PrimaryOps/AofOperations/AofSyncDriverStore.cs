@@ -207,6 +207,80 @@ namespace Garnet.cluster
         }
 
         /// <summary>
+        /// Publish one physical sublog's minimum shipped address across all attached replicas into
+        /// the AOF backpressure gate (long.MaxValue when none is attached, which releases it). A
+        /// sync task calls this for its own sublog as it ships, so only the watermark of the sublog
+        /// that made progress is recomputed and written. Appenders self-check their own tail against
+        /// the watermark, so this is a freshness hint, never a correctness action: a stale value
+        /// makes appenders stall sooner, not later. Must not be called while holding the store lock.
+        /// </summary>
+        /// <param name="physicalSublogIdx"></param>
+        internal void PublishShippedAddress(int physicalSublogIdx)
+        {
+            var appendOnlyFile = clusterProvider.storeWrapper.appendOnlyFile;
+            var backpressure = appendOnlyFile?.backpressure;
+            if (backpressure == null)
+                return;
+
+            var minShipped = long.MaxValue;
+            _lock.ReadLock();
+            try
+            {
+                if (!_disposed && numDrivers > 0)
+                {
+                    for (var i = 0; i < numDrivers; i++)
+                        minShipped = Math.Min(minShipped, syncDrivers[i].GetShippedWatermarkAddress(physicalSublogIdx));
+                }
+            }
+            finally
+            {
+                _lock.ReadUnlock();
+            }
+
+            backpressure.PublishShippedAddress(physicalSublogIdx, minShipped);
+        }
+
+        /// <summary>
+        /// Publish every physical sublog's minimum shipped address across all attached replicas into
+        /// the AOF backpressure gate (long.MaxValue per sublog when none is attached, or during
+        /// dispose, which releases the gate). The store calls this whenever the driver set changes,
+        /// since attaching or detaching a replica can change every sublog's minimum at once. Must
+        /// not be called while holding the store lock.
+        /// </summary>
+        internal void PublishShippedAddresses()
+        {
+            var appendOnlyFile = clusterProvider.storeWrapper.appendOnlyFile;
+            var backpressure = appendOnlyFile?.backpressure;
+            if (backpressure == null)
+                return;
+
+            var sublogCount = clusterProvider.serverOptions.AofPhysicalSublogCount;
+            _lock.ReadLock();
+            try
+            {
+                if (_disposed || numDrivers == 0)
+                {
+                    for (var physicalSublogIdx = 0; physicalSublogIdx < sublogCount; physicalSublogIdx++)
+                        backpressure.PublishShippedAddress(physicalSublogIdx, long.MaxValue);
+                }
+                else
+                {
+                    for (var physicalSublogIdx = 0; physicalSublogIdx < sublogCount; physicalSublogIdx++)
+                    {
+                        var minShipped = long.MaxValue;
+                        for (var i = 0; i < numDrivers; i++)
+                            minShipped = Math.Min(minShipped, syncDrivers[i].GetShippedWatermarkAddress(physicalSublogIdx));
+                        backpressure.PublishShippedAddress(physicalSublogIdx, minShipped);
+                    }
+                }
+            }
+            finally
+            {
+                _lock.ReadUnlock();
+            }
+        }
+
+        /// <summary>
         /// Dispose the AofSyncDriverStore
         /// </summary>
         public void Dispose()
@@ -234,6 +308,10 @@ namespace Garnet.cluster
             }
             numDrivers = 0;
             Array.Clear(syncDrivers);
+
+            // With no drivers attached, PublishShippedAddresses writes a max watermark per sublog,
+            // making every appender's computed lag non-positive so none stalls on the gate.
+            PublishShippedAddresses();
         }
 
         /// <summary>
@@ -332,6 +410,9 @@ namespace Garnet.cluster
                     aofSyncDriver = null;
                 }
             }
+
+            if (success)
+                PublishShippedAddresses();
 
             return success;
         }
@@ -442,6 +523,9 @@ namespace Garnet.cluster
                 }
             }
 
+            if (success)
+                PublishShippedAddresses();
+
             return true;
         }
 
@@ -491,6 +575,10 @@ namespace Garnet.cluster
             {
                 _lock.WriteUnlock();
             }
+
+            if (success)
+                PublishShippedAddresses();
+
             return success;
         }
 
@@ -562,6 +650,10 @@ namespace Garnet.cluster
             {
                 _lock.WriteUnlock();
             }
+
+            // No drivers remain, so PublishShippedAddresses writes a max watermark per sublog and
+            // no appender stays stalled on the gate.
+            PublishShippedAddresses();
         }
 
         [Conditional("DEBUG")]

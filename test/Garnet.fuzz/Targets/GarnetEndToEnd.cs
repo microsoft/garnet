@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System.Net;
@@ -386,7 +386,7 @@ namespace Garnet.fuzz.Targets
                 ClusterUsername = "cluster-user",
                 ClusterPassword = "cluster-pass",
                 EnableLua = true,
-                ReplicationOffsetMaxLag = -1,
+                AofReplayMaxLagBytes = -1,
                 LuaOptions = new LuaOptions(LuaMemoryManagementMode.Native, "10m", TimeSpan.FromSeconds(2), LuaLoggingMode.Enable, []),
                 UnixSocketPath = null,
                 ReplicaDisklessSync = true,
