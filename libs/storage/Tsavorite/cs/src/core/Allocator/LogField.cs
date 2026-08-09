@@ -169,10 +169,7 @@ namespace Tsavorite.core
             }
 
             // Convert the field to inline. The physical inline slot is the freed ObjectId slot (ObjectIdSize bytes), so set the RDH
-            // length to ObjectIdSize explicitly rather than trusting the current field. The in-memory invariant is that an out-of-line
-            // field's RDH length is already ObjectIdSize, but a record whose length hints were stamped in place by an object-log flush
-            // (useLivePage) holds the flush encoding here; leaving that stale value would make the now-inline field's ValueLength/KeyLength
-            // (and hence GetRecordLength) wrong, corrupting record-length/scan/filler calculations.
+            // length to ObjectIdSize explicitly rather than trusting the current field.
             if (isKey)
             {
                 dataHeader.SetKeyIsInline();

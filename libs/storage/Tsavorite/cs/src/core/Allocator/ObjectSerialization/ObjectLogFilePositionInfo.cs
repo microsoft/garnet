@@ -26,7 +26,7 @@ namespace Tsavorite.core
         /// <summary>Bit position of the <c>ReuseObjectIdForSize</c> flag in <see cref="word"/>.
         /// When set, the on-disk overflow/object length uses the legacy split encoding: (RDH KeyLength/ValueLength field low bits) +
         /// (objectId slot at keyAddress/valueAddress high 32 bits), with no length framing in the object-log stream. When clear, the record
-        /// uses the hint-based format (RDH field holds a read-size hint; the authoritative length comes from the object-log stream framing).
+        /// uses the objectId-hint format (the authoritative length comes from the object-log stream framing).
         /// The flag is the per-record discriminator selecting the legacy read/decode path.</summary>
         internal const int kReuseObjectIdForSizeBit = 63;
         internal const ulong kReuseObjectIdForSizeMask = 1UL << kReuseObjectIdForSizeBit;
@@ -180,7 +180,7 @@ namespace Tsavorite.core
                 throw new InvalidDataException($"Advancing position by {size:N} bytes exceeds maximum object log segment.");
 
             SegmentId = (int)nextSegmentId;
-            Offset += size & (SegmentSize - 1);
+            Offset = size & (SegmentSize - 1);
         }
 
         public void AdvanceToNextSegment()
@@ -196,8 +196,10 @@ namespace Tsavorite.core
 
         public static ulong operator -(ObjectLogFilePositionInfo left, ObjectLogFilePositionInfo right)
         {
-            Debug.Assert(left.SegmentSizeBits == right.SegmentSizeBits, "Segment size bits must match to compute distance");
-            Debug.Assert((left.word & SegmentAndOffsetMask) >= (right.word & SegmentAndOffsetMask), "comparison position must be greater");
+            if (left.SegmentSizeBits != right.SegmentSizeBits)
+                throw new InvalidDataException("Object-log positions must have the same segment size to compute distance.");
+            if (left.CurrentAddress < right.CurrentAddress)
+                throw new InvalidDataException("Object-log positions must be ordered and belong to the same address space to compute distance.");
             var segmentDiff = (ulong)(left.SegmentId - right.SegmentId);
             if (segmentDiff == 0)
                 return left.Offset - right.Offset;

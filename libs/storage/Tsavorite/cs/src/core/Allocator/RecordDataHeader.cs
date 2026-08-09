@@ -35,13 +35,10 @@ namespace Tsavorite.core
     ///     <item>Bits 56–63: Namespace byte (with encoding indicating if there are many extra namespace bytes; if so, they precede
     ///         the Key data bytes). (Byte-aligned at byte 7.)</item>
     /// </list>
-    /// <para>Disk-write paths (<see cref="LogRecord.SetObjectLogPositionAndLengthHints"/>) write the low <see cref="kKeyLengthBits"/> /
-    /// <see cref="kValueLengthBits"/> bits of the on-disk overflow/object length into the RDH KeyLength/ValueLength field as a read-size
-    /// hint (the authoritative length comes from the object-log stream framing); a length at or above the field maximum is capped at that
-    /// maximum sentinel. The property getters still return <see cref="ObjectIdMap.ObjectIdSize"/> for non-inline keys/values regardless of
-    /// the raw hint, so the runtime "non-inline → property returns ObjectIdSize" invariant holds. (Databases written before this format use
-    /// the legacy split encoding, read via <see cref="LogRecord.GetObjectLogRecordStartPositionAndLengths_v21"/>: RDH low bits plus the
-    /// next 32 bits in the objectId slot at keyAddress/valueAddress.)</para>
+    /// <para>For current records these fields always describe the physical inline slots and therefore contain
+    /// <see cref="ObjectIdMap.ObjectIdSize"/> for out-of-line keys/values. Databases written before this format use the legacy split
+    /// encoding, read via <see cref="LogRecord.GetObjectLogRecordStartPositionAndLengths_v21"/>: RDH low bits plus the next 32 bits in
+    /// the objectId slot at keyAddress/valueAddress.</para>
     /// <para>RecordLength is no longer stored; it is derived from the header alone:
     /// <c>alignedSum = RoundUp(Constants.FixedHeaderSize + ExtendedNamespaceLength + KeyLength + ValueLength + OptionalSize, kRecordAlignment)</c>;
     /// <c>recordLength = alignedSum + (FillerWords &lt;&lt; 3)</c>. Because everything that defines record length is in this 8-byte
@@ -247,10 +244,7 @@ namespace Tsavorite.core
         /// <para>For inline keys, returns the raw <see cref="kKeyLengthBits"/>-bit value. For overflow keys, returns <see cref="ObjectIdMap.ObjectIdSize"/>
         /// (the OverflowByteArray already carries the length, so mirroring the raw value in the header would be additional work with no consumer
         /// in the in-memory path).</para>
-        /// <para>The setter always writes the raw <see cref="kKeyLengthBits"/>-bit value. The disk-write path uses it to temporarily store the LOW <see cref="kKeyLengthBits"/> bits of
-        /// the on-disk overflow key length (the next 32 bits live in the objectId slot at keyAddress); after read-back,
-        /// <see cref="LogRecord.OnObjectReadComplete"/> restores ObjectIdSize so the runtime invariant holds.</para>
-        /// <para>For disk-serialization paths that need to READ the raw stored value (not the effective length), use <see cref="GetKeyLengthRaw"/>.</para></summary>
+        /// <para>The setter always writes the raw <see cref="kKeyLengthBits"/>-bit physical slot length.</para></summary>
         internal int KeyLength
         {
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -263,8 +257,8 @@ namespace Tsavorite.core
             }
         }
 
-        /// <summary>Read the raw value stored in the KeyLength field, without the inline check. Used by disk-serialization paths
-        /// where the field may hold the low <see cref="kKeyLengthBits"/> bits of the on-disk overflow length (not the effective <see cref="KeyLength"/>).</summary>
+        /// <summary>Read the raw physical slot length without the inline check. Legacy v2.1 recovery also uses this as the low
+        /// <see cref="kKeyLengthBits"/> bits of the historical split object-log length encoding.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal readonly int GetKeyLengthRaw() => (int)((word >> kKeyLengthShift) & kKeyLengthLowBitsMask);
 
@@ -272,10 +266,7 @@ namespace Tsavorite.core
         /// <para>For inline values, returns the raw <see cref="kValueLengthBits"/>-bit value. For overflow or object values, returns <see cref="ObjectIdMap.ObjectIdSize"/>
         /// (the OverflowByteArray / IHeapObject already carries the length, so mirroring the raw value in the header would be additional work with no
         /// consumer in the in-memory path).</para>
-        /// <para>The setter always writes the raw <see cref="kValueLengthBits"/>-bit value. The disk-write path uses it to temporarily store the LOW <see cref="kValueLengthBits"/> bits of
-        /// the on-disk overflow/object value length (the next 32 bits live in the objectId slot at valueAddress); after read-back,
-        /// <see cref="LogRecord.OnObjectReadComplete"/> restores ObjectIdSize so the runtime invariant holds.</para>
-        /// <para>For disk-serialization paths that need to READ the raw stored value (not the effective length), use <see cref="GetValueLengthRaw"/>.</para></summary>
+        /// <para>The setter always writes the raw <see cref="kValueLengthBits"/>-bit physical slot length.</para></summary>
         internal int ValueLength
         {
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -288,186 +279,28 @@ namespace Tsavorite.core
             }
         }
 
-        /// <summary>Read the raw value stored in the ValueLength field, without the inline check. Used by disk-serialization paths
-        /// where the field may hold the low <see cref="kValueLengthBits"/> bits of the on-disk overflow/object length (not the effective <see cref="ValueLength"/>).</summary>
+        /// <summary>Read the raw physical slot length without the inline check. Legacy v2.1 recovery also uses this as the low
+        /// <see cref="kValueLengthBits"/> bits of the historical split object-log length encoding.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal readonly int GetValueLengthRaw() => (int)((word >> kValueLengthShift) & kValueLengthLowBitsMask);
 
-        /// <summary>True if the raw KeyLength field holds the sentinel (its maximum value): the actual overflow key length is at or above
-        /// the field maximum, so it is carried out of band (a stream length prefix on the network, or a chunk header on disk).</summary>
-        public readonly bool KeyLengthIsSentinel => GetKeyLengthRaw() == (int)kKeyLengthLowBitsMask;
+        /// <summary>Largest out-of-line component encoded headerless with an exact objectId-slot size hint.</summary>
+        internal const int kOutOfLineExactSizeCutoff = ObjectIdMap.MaxObjectIdSizeHint;
 
-        /// <summary>True if the raw ValueLength field holds the sentinel (its maximum value): the actual overflow/object value length is at
-        /// or above the field maximum, so it is carried out of band (a stream length prefix on the network, or a chunk header on disk).</summary>
-        public readonly bool ValueLengthIsSentinel => GetValueLengthRaw() == (int)kValueLengthLowBitsMask;
+        /// <summary>Size of the page unit used by objectId-slot non-exact size hints.</summary>
+        internal const int kFlushPageSize = 1 << 12;
 
-        /// <summary>The raw KeyLength field value (the read-size hint; the exact overflow key length when below the sentinel). The
-        /// <see cref="KeyLength"/> property returns ObjectIdSize for an overflow key, so use this to read the encoded hint.</summary>
-        public readonly int KeyLengthHint => GetKeyLengthRaw();
-
-        /// <summary>The raw ValueLength field value (the read-size hint; the exact overflow/object value length when below the sentinel).
-        /// The <see cref="ValueLength"/> property returns ObjectIdSize for a non-inline value, so use this to read the encoded hint.</summary>
-        public readonly int ValueLengthHint => GetValueLengthRaw();
-
-        /// <summary>Sets the KeyLength/ValueLength fields to the out-of-line read-size hints: the exact length when below the field sentinel,
-        /// else the sentinel (the field maximum). Inline fields and absent components are left unchanged.</summary>
-        /// <param name="keyActualLength">Actual overflow key length (applied only when the key is overflow).</param>
-        /// <param name="valueActualLength">Actual overflow value or serialized object length (applied only when the value is out of line).</param>
-        public void SetOverflowLengthHints(int keyActualLength, long valueActualLength)
-        {
-            if (KeyIsOverflow)
-                KeyLength = keyActualLength >= (int)kKeyLengthLowBitsMask ? (int)kKeyLengthLowBitsMask : keyActualLength;
-            if (ValueIsOverflow || ValueIsObject)
-                ValueLength = valueActualLength >= (long)kValueLengthLowBitsMask ? (int)kValueLengthLowBitsMask : (int)valueActualLength;
-        }
-
-        // ── Flush (v2.2) non-inline ValueLength encoding ─────────────────────────────────────────────────────────
-        // For a non-inline value, the FLUSH object-log format encodes the read extent into the 24-bit ValueLength field
-        // (the ValueLength property still returns ObjectIdSize; read the encoding via GetValueLengthRaw()):
-        //   Object value, bit 23 set   -> Chunked object: bits 0-11 = full-buffer count, bits 12-21 = final-buffer 4KB-page count
-        //                                 (the read-ahead extent; the object stream is dense with no per-chunk framing and the
-        //                                 deserializer self-terminates). Used when the serialized length is >= one buffer.
-        //   Object value, bit 23 clear -> Headerless object: bits 0-22 = exact serialized length (< one buffer).
-        //   Overflow value < sentinel  -> Exact byte length in the full 24-bit field.
-        //   Overflow value == sentinel -> Length is at/above the field maximum; the full length precedes the bytes in a leading
-        //                                 ChunkHeader (symmetric with a >= sentinel overflow KEY, whose KeyLength field is likewise the
-        //                                 sentinel). The reader reads the header and extends the read-ahead (ReadOverflowHeaderLengthAndExtend).
-        // Decode via DecodeFlushValueExtent (branches on ValueIsObject). Reader (ObjectLogReader) selects overflow-vs-object from the RDH.
-        // Bit 22 (kFlushOverflowHeaderBit) and EncodeFlushOverflowHeader are RESERVED for a future precise first-read-hint for a headered
-        // overflow value (currently the sentinel path reads one buffer up front, then extends); they are not used or read today.
-        // The network (migration/replication) path uses SetOverflowLengthHints (sentinel-capped) instead; see
-        // website/docs/dev/objectlog-serialization.md.
-        internal const int kFlushChunkedObjectBit = 23;
-        internal const uint kFlushChunkedObjectMask = 1u << kFlushChunkedObjectBit;
-        internal const int kFlushOverflowHeaderBit = 22;
-        internal const uint kFlushOverflowHeaderMask = 1u << kFlushOverflowHeaderBit;
-
-        internal const int kFlushBufferCountBits = 12;                                   // bits 0-11
-        internal const uint kFlushBufferCountMask = (1u << kFlushBufferCountBits) - 1;
-        internal const int kFlushFinalPageShift = kFlushBufferCountBits;                 // bits 12-21
-        internal const int kFlushFinalPageBits = 10;
-        internal const uint kFlushFinalPageMask = (1u << kFlushFinalPageBits) - 1;
-        internal const int kFlushReadHintBits = 22;                                      // bits 0-21
-        internal const uint kFlushReadHintMask = (1u << kFlushReadHintBits) - 1;
-
-        internal const int kFlushMaxBufferCount = (int)kFlushBufferCountMask;            // 4095 buffers (16 GB @ 4 MB)
-        internal const int kFlushMaxFinalPages = (int)kFlushFinalPageMask;              // 1023 pages (4 MB @ 4 KB)
-        internal const int kFlushMaxReadHint = (int)kFlushReadHintMask;                 // 4194303 bytes (< 4 MB)
-
-        /// <summary>Encode a chunked (multi-buffer) object value's read extent into the 24-bit ValueLength field: full-buffer count +
-        /// final-buffer 4 KB-page count.</summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static uint EncodeFlushChunkedObject(int bufferCount, int finalBufferPages)
-        {
-            Debug.Assert((uint)bufferCount <= kFlushBufferCountMask, $"bufferCount {bufferCount} exceeds {kFlushBufferCountBits}-bit max");
-            Debug.Assert((uint)finalBufferPages <= kFlushFinalPageMask, $"finalBufferPages {finalBufferPages} exceeds {kFlushFinalPageBits}-bit max");
-            return kFlushChunkedObjectMask | ((uint)finalBufferPages << kFlushFinalPageShift) | (uint)bufferCount;
-        }
-
-        /// <summary>Encode an overflow value that has a single leading header: bits 0-21 hold the first-buffer read hint (at most one buffer).</summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static uint EncodeFlushOverflowHeader(int firstReadHint)
-        {
-            Debug.Assert((uint)firstReadHint <= kFlushReadHintMask, $"firstReadHint {firstReadHint} exceeds {kFlushReadHintBits}-bit max");
-            return kFlushOverflowHeaderMask | (uint)firstReadHint;
-        }
-
-        /// <summary>Encode a headerless small value: bits 0-21 hold the exact byte length (must be less than one buffer).</summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static uint EncodeFlushHeaderless(int exactLength)
-        {
-            Debug.Assert((uint)exactLength <= kFlushReadHintMask, $"exactLength {exactLength} exceeds {kFlushReadHintBits}-bit max");
-            return (uint)exactLength;
-        }
-
-        /// <summary>True if the flush ValueLength encoding is a chunked (multi-buffer) object.</summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static bool FlushValueIsChunkedObject(uint encoded) => (encoded & kFlushChunkedObjectMask) != 0;
-        /// <summary>Full-buffer count of a chunked object (valid only when <see cref="FlushValueIsChunkedObject"/>).</summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static int FlushChunkedBufferCount(uint encoded) => (int)(encoded & kFlushBufferCountMask);
-        /// <summary>Final-buffer 4 KB-page count of a chunked object (valid only when <see cref="FlushValueIsChunkedObject"/>).</summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static int FlushChunkedFinalPages(uint encoded) => (int)((encoded >> kFlushFinalPageShift) & kFlushFinalPageMask);
-        /// <summary>True if a non-chunked value has a single leading overflow header (valid only when not <see cref="FlushValueIsChunkedObject"/>).</summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static bool FlushValueHasOverflowHeader(uint encoded) => (encoded & kFlushOverflowHeaderMask) != 0;
-        /// <summary>The first-buffer read hint (overflow-with-header) or the exact length (headerless): bits 0-21.</summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static int FlushValueReadHintOrExact(uint encoded) => (int)(encoded & kFlushReadHintMask);
-
-        /// <summary>Size (bytes) of a chunked object's final-buffer page unit; the final-buffer page count in the chunked encoding is measured in these.</summary>
-        internal const int kFlushFinalPageSize = 1 << 12;                                // 4 KB
-
-        /// <summary>Encode a non-inline object value's serialized length into the 24-bit ValueLength field for the FLUSH format: the exact
-        /// length when it fits headerless (&lt; one buffer), else the chunked (multi-buffer) full-buffer + final-4KB-page extent.</summary>
-        internal static uint EncodeFlushObjectValue(long serializedLength)
-        {
-            if (serializedLength <= kFlushMaxReadHint)
-                return EncodeFlushHeaderless((int)serializedLength);
-
-            // Chunked: round the extent up to a 4 KB page and split into full-BufferSize buffers plus a final-buffer page count. The reader
-            // sizes its read-ahead from this (>= serializedLength, over by < 4 KB); the deserializer self-terminates at the exact length.
-            var extent = RoundUp(serializedLength, kFlushFinalPageSize);
-            var fullBuffers = (int)(extent / IStreamBuffer.BufferSize);
-            var finalPages = (int)((extent - (long)fullBuffers * IStreamBuffer.BufferSize) / kFlushFinalPageSize);
-            if (fullBuffers > kFlushMaxBufferCount)
-                throw new TsavoriteException($"Serialized object length {serializedLength} exceeds the {(long)kFlushMaxBufferCount * IStreamBuffer.BufferSize}-byte chunked-object encoding limit");
-            return EncodeFlushChunkedObject(fullBuffers, finalPages);
-        }
-
-        /// <summary>Decode a FLUSH ValueLength encoding to the read-ahead byte extent: the chunked object full-buffer + final-page extent for
-        /// a chunked object, else the raw field — the exact length for a headerless value, or the sentinel for an overflow value with a
-        /// leading header (whose true length the reader learns from that header and then extends by).</summary>
-        internal static ulong DecodeFlushValueExtent(uint encoded, bool valueIsObject)
-        {
-            if (valueIsObject && FlushValueIsChunkedObject(encoded))
-                return (ulong)FlushChunkedBufferCount(encoded) * (ulong)IStreamBuffer.BufferSize
-                     + (ulong)FlushChunkedFinalPages(encoded) * kFlushFinalPageSize;
-            return encoded;
-        }
-
-        /// <summary>FLUSH-format variant of <see cref="SetOverflowLengthHints"/>: sets the KeyLength field to the sentinel-capped overflow
-        /// key length, and the ValueLength field to the v2.2 12-bit out-of-line encoding (headerless exact size, or a leading-ChunkHeader +
-        /// 4 KB-page-count/sentinel read hint) for an out-of-line value -- for BOTH overflow and object values.</summary>
-        /// <param name="keyActualLength">Actual overflow key length (applied only when the key is overflow).</param>
-        /// <param name="valueActualLength">Actual overflow value or serialized object DATA length (applied only when the value is out of line).</param>
-        /// <param name="valueAlignmentPadding">Overflow O_DIRECT alignment padding (overflow value only); included in the overflow extent.</param>
-        /// <param name="valueObjectExtent">The object value's total on-disk extent (prefix + 8-align padding + ChunkHeaders + data); required
-        ///   for an object value (its page-count hint). For a headerless object (data length &lt;= cutoff) it equals the data length.</param>
-        public void SetObjectLogLengthHints(int keyActualLength, long valueActualLength, int valueAlignmentPadding = 0, long valueObjectExtent = 0)
-        {
-            if (KeyIsOverflow)
-                KeyLength = keyActualLength >= (int)kKeyLengthLowBitsMask ? (int)kKeyLengthLowBitsMask : keyActualLength;
-            if (ValueIsObject)
-            {
-                // Object value uses the same v2.2 12-bit encoding as overflow: headerless exact size when the DATA length <= cutoff, else a
-                // page-count (from the on-disk extent) with the has-header bit set. The writer supplies the extent (prefix + padding + per-chunk
-                // ChunkHeaders + data). A headerless object's extent equals its data length.
-                ValueLength = (int)EncodeFlushOutOfLineValue(valueActualLength, valueObjectExtent);
-            }
-            else if (ValueIsOverflow)
-            {
-                // Overflow value uses the v2.2 encoding: headerless exact size when <= the cutoff (511), else a leading ChunkHeader + a
-                // 4 KB-page-count (or sentinel) read hint. The on-disk extent = data (headerless) else ChunkHeader.TotalSize + DMA alignment padding + data;
-                // the padding is 0 on the buffered write path and the O_DIRECT padding the writer applied on the DMA path.
-                ValueLength = (int)EncodeFlushOutOfLineValue(valueActualLength, OverflowValueOnDiskExtent(valueActualLength, valueAlignmentPadding));
-            }
-        }
-
-        /// <summary>The total on-disk extent of an out-of-line overflow VALUE: the data length when it fits headerless (&lt;= the cutoff),
-        /// else a leading <see cref="ChunkHeader"/> + any O_DIRECT alignment padding + the data. Used for both the RDH page-count hint and
-        /// the objectId size hint so the two encodings agree.</summary>
+        /// <summary>The total on-disk extent of an out-of-line overflow value: the data length when it fits headerless,
+        /// else a leading <see cref="ChunkHeader"/> + any direct-IO alignment padding + the data.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static long OverflowValueOnDiskExtent(long valueDataLength, int valueAlignmentPadding)
             => valueDataLength <= kOutOfLineExactSizeCutoff ? valueDataLength : ChunkHeader.TotalSize + valueAlignmentPadding + valueDataLength;
 
         /// <summary>Compute the objectId-slot read-size hint (see <see cref="ObjectIdMap.StampSizeHint"/>) for an out-of-line component,
-        /// mirroring the exact-vs-headered decision of <see cref="EncodeFlushOutOfLineValue"/>: the EXACT byte length (<paramref name="isExact"/>
-        /// true, no leading ChunkHeader) when <paramref name="dataLength"/> fits headerless (&lt;= the cutoff), else the on-disk extent's
+        /// using the exact byte length (<paramref name="isExact"/> true, no leading ChunkHeader) when <paramref name="dataLength"/>
+        /// fits headerless, else the on-disk extent's
         /// 4 KB-page count (isExact false, leading ChunkHeader present) clamped to <see cref="ObjectIdMap.MaxObjectIdSizeHint"/> as the sentinel.
-        /// The objectId hint's 9-bit sentinel (511) is smaller than the RDH page-count field's (1023), so a large value saturates to the
-        /// "read in 4 MB blocks and follow the ChunkHeader(s)" sentinel sooner; both are safe read-ahead sizes.</summary>
+        /// The sentinel means "read a 4 MB discovery window and follow the ChunkHeader chain."</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static int ComputeObjectIdSizeHint(long dataLength, long totalOnDiskExtent, out bool isExact)
         {
@@ -482,110 +315,11 @@ namespace Tsavorite.core
             return pageCount >= ObjectIdMap.MaxObjectIdSizeHint ? ObjectIdMap.MaxObjectIdSizeHint : pageCount;
         }
 
-        // ── Flush (v2.2) out-of-line VALUE length encoding (low 12 bits of the ValueLength field) ─────────────────────
-        // Supersedes the bit-23-chunked / bit-22-overflow-header / 24-bit-exact scheme above (which is being retired as
-        // the writer/reader are rewired). Only the low 12 bits of the (physically 24-bit) ValueLength field are used for
-        // an out-of-line (overflow or object) value; the ValueLength property still returns ObjectIdSize, so the encoding
-        // is read via GetValueLengthRaw():
-        //   bit 11 (isExactSize) set   -> bits 0-9 are the EXACT byte length (0..1023); NO ChunkHeader precedes the value.
-        //   bit 11 clear               -> bits 0-9 are the count of 4 KB pages spanned by the value's total on-disk extent
-        //                                 (leading ChunkHeader + any DMA alignment padding + data); a ChunkHeader precedes
-        //                                 the value (bit 10 set). kOutOfLinePageSentinel (1023) is the sentinel: the extent
-        //                                 is at/above 1023*4 KB (~4 MB), so the reader fetches in 4 MB blocks and learns the
-        //                                 exact length(s) from the ChunkHeader(s) -- overflow: full length; object: per-chunk
-        //                                 length + ContinuationFlag.
-        //   bit 10 (hasHeader)         -> a leading ChunkHeader precedes the value bytes. Always set when isExactSize is clear.
-        // A value <= kOutOfLineExactSizeCutoff (511) bytes is encoded headerless (isExactSize); a longer value is encoded as
-        // a page count (+ header). The cutoff is 511, not the 1023 the 10-bit payload could hold, because the exact-length hint is
-        // being relocated into the objectId slot's 9 top bits (max 511); capping here keeps the on-disk stream framing aligned with
-        // that 9-bit limit. Above the cutoff only a page count fits, so the exact length moves into the ChunkHeader. This keeps small
-        // objects/overflow values free of a header's space cost while giving a precise (no 4 MB over-read) initial read size for larger values.
-        // KeyLength keeps its own 10-bit sentinel (KeyLengthIsSentinel); keys are never chunked and, being <= 1023 at the
-        // sentinel (<< MaxCopySpanLen), always carry a ChunkHeader when DMA-padded, so no separate has-header bit is needed.
-        internal const int kOutOfLinePayloadBits = 10;                                    // bits 0-9
-        internal const uint kOutOfLinePayloadMask = (1u << kOutOfLinePayloadBits) - 1;    // 1023
-        internal const int kOutOfLinePageSentinel = (int)kOutOfLinePayloadMask;           // 1023 pages -> read in 4 MB blocks
-        internal const int kFlushValueHasHeaderBit = 10;
-        internal const uint kFlushValueHasHeaderMask = 1u << kFlushValueHasHeaderBit;
-        internal const int kFlushValueIsExactSizeBit = 11;
-        internal const uint kFlushValueIsExactSizeMask = 1u << kFlushValueIsExactSizeBit;
-
-        /// <summary>Largest out-of-line value length (bytes) encoded headerless (isExactSize); a longer value gets a ChunkHeader
-        /// and a 4 KB-page-count encoding. Bounded by <see cref="ObjectIdMap.MaxObjectIdSizeHint"/> (511): the exact-length hint is
-        /// being relocated from this 10-bit RDH payload into the objectId slot's 9 top bits, so a value that must be headerless is
-        /// capped at what those 9 bits can hold. (The RDH payload physically holds 0..1023, but only 0..511 is used for exact sizes.)</summary>
-        internal const int kOutOfLineExactSizeCutoff = ObjectIdMap.MaxObjectIdSizeHint;  // 511
-
-        /// <summary>Size (bytes) of the 4 KB page unit used by the page-count encoding.</summary>
-        internal const int kFlushPageSize = 1 << 12;                                      // 4 KB
-
-        /// <summary>Largest exactly-representable page count (one below the sentinel); its read-ahead extent is
-        /// 1022*4 KB = 4 MB - 8 KB, just under one 4 MB read buffer -- which is why 1023 is reserved as the sentinel.</summary>
-        internal const int kFlushMaxExactPageCount = kOutOfLinePageSentinel - 1;          // 1022
-
-        /// <summary>Encode an out-of-line (overflow or object) value's on-disk extent into the low 12 bits of the ValueLength
-        /// field. A value at/below <see cref="kOutOfLineExactSizeCutoff"/> is encoded as its exact byte length (headerless);
-        /// a longer value is encoded as the count of 4 KB pages its total on-disk extent spans, with the has-header bit set
-        /// (the exact length is carried in a leading <see cref="ChunkHeader"/>). A page count at/above the sentinel is clamped
-        /// to the sentinel, telling the reader to fetch in 4 MB blocks.</summary>
-        /// <param name="dataLength">The value's data length in bytes (overflow byte count or serialized object length).</param>
-        /// <param name="totalOnDiskExtent">The value's total on-disk extent in bytes: leading ChunkHeader + any alignment
-        ///   padding + data. Ignored for the headerless (exact) case.</param>
-        internal static uint EncodeFlushOutOfLineValue(long dataLength, long totalOnDiskExtent)
-        {
-            Debug.Assert(dataLength >= 0, $"dataLength {dataLength} must be non-negative");
-            if (dataLength <= kOutOfLineExactSizeCutoff)
-                return kFlushValueIsExactSizeMask | (uint)dataLength;                     // headerless, exact byte size
-            var pageCount = (int)((totalOnDiskExtent + kFlushPageSize - 1) / kFlushPageSize);
-            if (pageCount >= kOutOfLinePageSentinel)
-                pageCount = kOutOfLinePageSentinel;
-            Debug.Assert(pageCount > 0, $"page count {pageCount} must be positive for a headered value (dataLength {dataLength}, extent {totalOnDiskExtent})");
-            return kFlushValueHasHeaderMask | (uint)pageCount;                            // page count + header
-        }
-
-        /// <summary>True if the out-of-line value is encoded as an exact byte length (headerless).</summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static bool FlushValueIsExactSize(uint encoded) => (encoded & kFlushValueIsExactSizeMask) != 0;
-
-        /// <summary>True if a leading <see cref="ChunkHeader"/> precedes the out-of-line value bytes.</summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static bool FlushValueHasHeader(uint encoded) => (encoded & kFlushValueHasHeaderMask) != 0;
-
-        /// <summary>The exact byte length of a headerless value (valid only when <see cref="FlushValueIsExactSize"/>).</summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static int FlushValueExactByteSize(uint encoded) => (int)(encoded & kOutOfLinePayloadMask);
-
-        /// <summary>The 4 KB-page count of a headered value (valid only when not <see cref="FlushValueIsExactSize"/>).</summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static int FlushValuePageCount(uint encoded) => (int)(encoded & kOutOfLinePayloadMask);
-
-        /// <summary>True if a headered value's page count is the sentinel (extent at/above 1023*4 KB): the reader fetches in
-        /// 4 MB blocks and learns the exact length(s) from the ChunkHeader(s).</summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static bool FlushValuePageCountIsSentinel(uint encoded) => (int)(encoded & kOutOfLinePayloadMask) == kOutOfLinePageSentinel;
-
-        /// <summary>The initial read-ahead extent (bytes) for an out-of-line value: the exact byte size for a headerless value,
-        /// the page count * 4 KB for a headered value below the sentinel, or one 4 MB read buffer for a sentinel page count.
-        /// The header/padding are included in a headered value's page count, so this covers the whole framing for a
-        /// below-sentinel value; a sentinel value's true length comes from its ChunkHeader(s) and the reader extends.</summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static ulong DecodeFlushValueInitialReadExtent(uint encoded)
-        {
-            if (FlushValueIsExactSize(encoded))
-                return (ulong)(uint)FlushValueExactByteSize(encoded);
-            var pageCount = FlushValuePageCount(encoded);
-            if (pageCount == kOutOfLinePageSentinel)
-                return (ulong)IStreamBuffer.BufferSize;                                   // 4 MB block
-            return (ulong)(uint)pageCount * kFlushPageSize;
-        }
-
-        /// <summary>The objectId-slot analog of <see cref="DecodeFlushValueInitialReadExtent"/>: the initial read-ahead extent (bytes) for
+        /// <summary>The initial read-ahead extent (bytes) for
         /// an out-of-line value derived from its objectId size hint (see <see cref="ObjectIdMap.GetSizeHint"/>) and the record's
         /// <see cref="ObjectLogFilePositionInfo.kValueIsExactSizeMask"/> flag. Exact flag set -&gt; that many bytes (headerless); else the
         /// 4 KB-page count * 4 KB, or one 4 MB read buffer when the hint is at the <see cref="ObjectIdMap.MaxObjectIdSizeHint"/> sentinel
-        /// (the reader learns the true length from the ChunkHeader(s) and extends). The objectId sentinel (511) saturates sooner than the
-        /// RDH page-count sentinel (1023), so a ~2-4 MB value fetches one 4 MB block up-front instead of an exact page count -- a bounded,
-        /// harmless over-read (the whole value fits in the one block, and the reader re-frames from the header).</summary>
+        /// (the reader learns the true length from the ChunkHeader(s) and extends).</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static ulong DecodeObjectIdValueInitialReadExtent(int sizeHint, bool isExactSize)
         {

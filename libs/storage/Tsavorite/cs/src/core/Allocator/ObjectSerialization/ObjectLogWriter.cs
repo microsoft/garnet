@@ -51,12 +51,16 @@ namespace Tsavorite.core
         /// <summary>Buffer offset of the current object chunk's placeholder <see cref="ChunkHeader"/> to back-fill; -1 if none is pending.</summary>
         int currentChunkHeaderBufferPos;
 
-        /// <summary>Object-log position captured at the start of the current value-object serialization; the on-disk extent is the monotonic
-        /// distance from here to the end, used to set the RDH read-ahead page-count hint.</summary>
+        /// <summary>Object-log position captured at the start of the current value-object serialization.</summary>
         ObjectLogFilePositionInfo objectStartPosition;
 
+        /// <summary>The on-disk extent through the end of the first framed chunk of the most recently serialized value object:
+        /// headerless prefix + 8-align padding + first ChunkHeader + first chunk data. For a headerless object this is its exact data
+        /// length. Used to stamp the objectId initial-read hint. Zero when there was no object value.</summary>
+        internal ulong lastObjectFirstChunkExtent;
+
         /// <summary>The total on-disk extent (prefix + 8-align padding + ChunkHeaders + data) of the most recently serialized value object;
-        /// read by <see cref="LogRecord.SetObjectLogPositionAndLengthHints"/> for the RDH page-count hint. 0 if the record has no object value.</summary>
+        /// zero when there was no object value.</summary>
         internal ulong lastObjectExtent;
 
         /// <summary>The maximum number of key or value bytes to copy into the buffer rather than enqueue a DirectWrite.</summary>
@@ -122,37 +126,36 @@ namespace Tsavorite.core
         /// Write Overflow and Object Keys and values in a <see cref="LogRecord"/> to the device.
         /// </summary>
         /// <remarks>This only writes Overflow and Object Keys and Values; inline portions of the record are written separately by the caller.
-        /// <para>No length prefix is written to the object stream. The on-disk length is a read-size hint in the disk-image record's RDH
-        /// KeyLength/ValueLength field (see <see cref="LogRecord.SetObjectLogPositionAndLengthHints"/>). Databases written before this format
-        /// use the legacy split RDH + objectId-slot encoding, read via <see cref="LogRecord.GetObjectLogRecordStartPositionAndLengths_v21"/>.</para></remarks>
+        /// <para>Initial-read hints are stamped into the objectId slots; RDH lengths remain exact inline/physical-slot lengths. Databases
+        /// written before this format use the legacy split RDH + objectId-slot encoding, read via
+        /// <see cref="LogRecord.GetObjectLogRecordStartPositionAndLengths_v21"/>.</para></remarks>
         /// <returns>The number of bytes written for the value object, if any.</returns>
         public ulong WriteRecordObjects(in OverflowByteArray keyOverflow, in OverflowByteArray valueOverflow, in IHeapObject valueObject)
         {
+            lastKeyAlignmentPadding = 0;
             lastValueAlignmentPadding = 0;
+            lastObjectFirstChunkExtent = 0;
             lastObjectExtent = 0;
 
-            // If the key is overflow, start with that. A key at/above the RDH KeyLength sentinel (1023) carries its full length in a leading
-            // ChunkHeader; below the sentinel the RDH holds the exact length (no header). The key's DMA alignment padding is recovered by the
-            // reader from the ChunkHeader (it is not encoded in the RDH sentinel), so it is not threaded back here.
+            // If the key is overflow, start with that. A key above the objectId exact-size limit carries its full length in a leading
+            // ChunkHeader; otherwise it is headerless and the objectId hint carries its exact length.
             if (!keyOverflow.IsEmpty)
-                _ = WriteOverflowComponent(keyOverflow, hasHeader: keyOverflow.Length >= (int)RecordDataHeader.kKeyLengthLowBitsMask);
+                lastKeyAlignmentPadding = WriteOverflowComponent(keyOverflow, hasHeader: keyOverflow.Length > ObjectIdMap.MaxObjectIdSizeHint);
 
             // Now do value overflow or object, if either is present.
             if (!valueOverflow.IsEmpty)
             {
-                // Overflow value uses the v2.2 encoding: a value > kOutOfLineExactSizeCutoff (511) carries its full length (and any DMA
-                // alignment padding) in a leading ChunkHeader, and the RDH ValueLength encodes a 4 KB-page/sentinel read hint (which must
-                // include the padding) plus the has-header bit; a value <= 511 is headerless (exact length in the RDH). The value's
-                // alignment padding is threaded back so the RDH page-count read hint spans the header + padding + data.
+                // A value above the objectId exact-size limit carries its full length and DMA alignment padding in a leading ChunkHeader;
+                // otherwise it is headerless and the objectId hint carries its exact length.
                 lastValueAlignmentPadding = WriteOverflowComponent(valueOverflow, hasHeader: valueOverflow.Length > RecordDataHeader.kOutOfLineExactSizeCutoff);
             }
             else if (valueObject is not null)
             {
                 DoSerialize(valueObject);
 
-                // The on-disk extent (prefix + 8-align padding + ChunkHeaders + data) is the monotonic distance from the object's start
-                // position, used for the RDH page-count read-ahead hint. Positive because object headers are appended (never slide-inserted).
                 lastObjectExtent = flushBuffers.GetNextRecordStartPosition() - objectStartPosition;
+                if (lastObjectFirstChunkExtent == 0)
+                    lastObjectFirstChunkExtent = lastObjectExtent;
             }
 
             // Signal completion.
@@ -160,10 +163,20 @@ namespace Tsavorite.core
             return valueObjectBytesWritten;
         }
 
-        /// <summary>The O_DIRECT alignment padding (bytes between the ChunkHeader and the sector-aligned data start) applied to the most
-        /// recently written overflow VALUE; 0 for a buffered or headerless value. Read by <see cref="LogRecord.SetObjectLogPositionAndLengthHints"/>
-        /// so the RDH page-count read hint spans header + padding + data. Reset at the start of each <see cref="WriteRecordObjects"/>.</summary>
+        /// <summary>The O_DIRECT alignment padding applied to the most recently written overflow key.</summary>
+        internal int lastKeyAlignmentPadding;
+
+        /// <summary>The O_DIRECT alignment padding applied to the most recently written overflow value.</summary>
         internal int lastValueAlignmentPadding;
+
+        /// <summary>Pad between records so the next record starts at the same modulo-8 offset as <paramref name="sourcePosition"/>.
+        /// Snapshot recovery uses this before a verbatim copy because the first object ChunkHeader is located by absolute 8-alignment.</summary>
+        internal void AlignNextRecordStartLike(in ObjectLogFilePositionInfo sourcePosition)
+        {
+            var destination = flushBuffers.GetNextRecordStartPosition();
+            var padding = (int)((sourcePosition.Offset - destination.Offset) & 7);
+            WritePadding(padding);
+        }
 
         /// <summary>Write one overflow component (key or value): its leading <see cref="ChunkHeader"/> (when <paramref name="hasHeader"/>) and
         /// its bytes. Large components (> <see cref="MaxCopySpanLen"/>) are written mostly by direct O_DIRECT DMA from the pinned byte[] (see
@@ -567,6 +580,8 @@ namespace Tsavorite.core
             if (hasContinuation)
                 currentLength |= unchecked((uint)ChunkedRecordConstants.ContinuationFlag);
             *(uint*)(writeBuffer.memory.GetValidPointer() + currentChunkHeaderBufferPos) = currentLength;   // currentLength is at ChunkHeader FieldOffset(0)
+            if (lastObjectFirstChunkExtent == 0)
+                lastObjectFirstChunkExtent = flushBuffers.GetNextRecordStartPosition() - objectStartPosition;
             currentChunkHeaderBufferPos = -1;
         }
 

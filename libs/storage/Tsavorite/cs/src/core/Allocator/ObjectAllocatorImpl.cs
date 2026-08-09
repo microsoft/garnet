@@ -610,7 +610,10 @@ namespace Tsavorite.core
             using var readBuffers = CreateCircularReadBuffers(objectLogDevice, logger);
             readBuffers.nextFileReadPosition = startPosition;
             var logReader = new ObjectLogReader<TStoreFunctions>(readBuffers, storeFunctions);
-            logReader.OnBeginReadRecords(startPosition, (ulong)keyLength);
+            var hardReadEnd = readBuffers.UsesDevice(this.objectLogDevice)
+                ? objectLogTail
+                : new ObjectLogFilePositionInfo(ObjectLogFilePositionInfo.NotSet, objectLogTail.SegmentSizeBits);
+            logReader.OnBeginReadRecords(startPosition, (ulong)keyLength, hardReadEnd);
             try
             {
                 return logReader.ReadOverflowKeyHashCodeForRecovery(in logRecord, objectLogTail.SegmentSizeBits);
@@ -969,14 +972,12 @@ namespace Tsavorite.core
                                             epoch.Suspend();
                                     }
 
-                                    // WriteRecordObjects can do disk IO and must not hold the epoch. The setter below writes the length hints and
-                                    // ObjectLogPosition into the record image being flushed: the srcBuffer copy on the copy path, or the live main-log
-                                    // record on the no-copy path (useLivePage). It also stamps the value's read-size hint into the top bits of its
-                                    // objectId slot; on the live-page path this mutates the live slot's high bits, but in-memory readers mask via
-                                    // ObjectIdMap.GetIndex so it stays non-destructive to them. Records are always written in the current hint-based
-                                    // format (never the downlevel encoding).
+                                    // WriteRecordObjects can do disk IO and must not hold the epoch. The setter writes ObjectLogPosition and stamps
+                                    // key/value read-size hints into the objectId slots in the record image being flushed. In-memory readers mask
+                                    // via ObjectIdMap.GetIndex, so stamping a live page is non-destructive. RDH lengths remain exact.
                                     var valueObjectLength = logWriter.WriteRecordObjects(in keyOverflow, in valueOverflow, in valueObject);
-                                    logRecord.SetObjectLogPositionAndLengthHints(recordStartPosition, valueObjectLength, logWriter.lastValueAlignmentPadding, (long)logWriter.lastObjectExtent);
+                                    logRecord.SetObjectLogPositionAndSizeHints(recordStartPosition, valueObjectLength,
+                                        logWriter.lastKeyAlignmentPadding, logWriter.lastValueAlignmentPadding, (long)logWriter.lastObjectFirstChunkExtent);
                                 }
                                 else
                                 {
@@ -992,17 +993,18 @@ namespace Tsavorite.core
                                         // Size the verbatim copy by the record's exact raw on-disk extent. For a headerless record, a
                                         // below-sentinel headered overflow value (its page-count hint rounds the header+data up to 4 KB, so it
                                         // OVER-counts safely), and a chunked object value (its size hint over-reads by < one block harmlessly),
-                                        // the key hint (RDH) and value hint (objectId size hint) equal or safely exceed the extent, so use them.
-                                        // But a record whose overflow key is at its 1023 sentinel, or whose overflow/object value is headered at the
-                                        // page-count sentinel (extent >= the sentinel block, so the block-sized hint may UNDER-count the true length),
+                                        // the key/value objectId size hints equal or safely exceed the extent, so use them.
+                                        // But a record whose overflow key/value or object value is at the page-count sentinel
+                                        // (extent >= the sentinel block, so the block-sized hint may UNDER-count the true length),
                                         // carries a leading ChunkHeader whose length the hint omits: a hint-sized copy would truncate. Size such a
                                         // record by the successor object record's snapshot position minus this record's -- exactly this record's full
                                         // key+value+header(s)+alignment/straddle padding verbatim (any trailing over-copy is ignored by the reader,
                                         // which re-frames from the header).
                                         ulong copyObjectLength;
                                         var copyIsLastRecord = false;
-                                        if (logRecord.DataHeader.KeyLengthIsSentinel
-                                                || ((logRecord.DataHeader.ValueIsOverflow || logRecord.DataHeader.ValueIsObject) && !logRecord.ValueIsExactSize))
+                                        if (!logRecord.HasReuseObjectIdForSize
+                                                && ((logRecord.DataHeader.KeyIsOverflow && !logRecord.KeyIsExactSize)
+                                                    || ((logRecord.DataHeader.ValueIsOverflow || logRecord.DataHeader.ValueIsObject) && !logRecord.ValueIsExactSize)))
                                         {
                                             var thisPosition = new ObjectLogFilePositionInfo(snapshotPositionWord, objectLogTail.SegmentSizeBits);
                                             copyObjectLength = 0;
@@ -1034,6 +1036,8 @@ namespace Tsavorite.core
                                         snapshotObjectReader ??= CreateSnapshotObjectReader(physicalAddress + logRecordSize, endPhysicalAddress, snapshotPositionWord,
                                             copyKeyLength, copyValueLength, asyncResult.recoverySnapshotObjectLogDevice, out snapshotObjectReadBuffers);
 
+                                        var snapshotPosition = new ObjectLogFilePositionInfo(snapshotPositionWord, objectLogTail.SegmentSizeBits);
+                                        logWriter.AlignNextRecordStartLike(snapshotPosition);
                                         var mainRecordPosition = logWriter.GetNextRecordStartPosition();
                                         logRecord.RepointObjectLogPosition(mainRecordPosition);
 
@@ -1070,7 +1074,7 @@ namespace Tsavorite.core
                                             recoveryOngoingPageHeader.Advance(objectLengths);
                                         }
                                         // else: v2.2 hybrid-log-region record. Its object bytes are already durable in the main object-log and its
-                                        // copied disk-image record (object-log position + RDH length hints) is already correct; the only recovery
+                                        // copied disk-image record (object-log position + objectId size hints) is already correct; the only recovery
                                         // mutation for this page -- SetInvalid on undone v+1 records -- was applied to the live page by RecoverFromPage
                                         // and is captured by the srcBuffer copy. So persist the record VERBATIM. Calling
                                         // SetRecoveredObjectLogRecordStartPosition here would misread the (un-deserialized, Pass1) position slot as a
@@ -1151,7 +1155,9 @@ namespace Tsavorite.core
 
             readBuffers = CreateCircularReadBuffers(snapshotObjectLogDevice, logger);
             var reader = new ObjectLogReader<TStoreFunctions>(readBuffers, storeFunctions);
-            reader.OnBeginReadRecords(startPosition, endPosition - startPosition);
+            // The main object-log tail is in a different address space and cannot bound snapshot reads.
+            var unboundedSnapshotEnd = new ObjectLogFilePositionInfo(ObjectLogFilePositionInfo.NotSet, objectLogTail.SegmentSizeBits);
+            reader.OnBeginReadRecords(startPosition, endPosition - startPosition, unboundedSnapshotEnd);
             return reader;
         }
 
@@ -1270,7 +1276,10 @@ namespace Tsavorite.core
             using var readBuffers = CreateCircularReadBuffers(objectLogDevice, logger);
 
             var logReader = new ObjectLogReader<TStoreFunctions>(readBuffers, storeFunctions);
-            logReader.OnBeginReadRecords(startPosition, totalBytesToRead);
+            var hardReadEnd = readBuffers.UsesDevice(objectLogDevice)
+                ? objectLogTail
+                : new ObjectLogFilePositionInfo(ObjectLogFilePositionInfo.NotSet, objectLogTail.SegmentSizeBits);
+            logReader.OnBeginReadRecords(startPosition, totalBytesToRead, hardReadEnd);
             if (logReader.ReadRecordObjects(ref diskLogRecord.logRecord, ctx.requestKey, startPosition.SegmentSizeBits))
             {
                 // Success. The deserialized heap object's Dispose() will be invoked when the DiskLogRecord
@@ -1380,7 +1389,10 @@ namespace Tsavorite.core
             readBuffers.nextFileReadPosition = startPosition;
             recordAddress = pageStartPhysicalAddress + PageHeader.Size;
             var logReader = new ObjectLogReader<TStoreFunctions>(readBuffers, storeFunctions);
-            logReader.OnBeginReadRecords(startPosition, totalBytesToRead);
+            var hardReadEnd = readBuffers.UsesDevice(objectLogDevice)
+                ? objectLogTail
+                : new ObjectLogFilePositionInfo(ObjectLogFilePositionInfo.NotSet, objectLogTail.SegmentSizeBits);
+            logReader.OnBeginReadRecords(startPosition, totalBytesToRead, hardReadEnd);
 
             try
             {
@@ -1424,10 +1436,10 @@ namespace Tsavorite.core
             var recordAddress = Math.Max(startAddress, GetFirstValidLogicalAddressOnPage(page));
             var endAddress = Math.Min(untilAddress, GetLogicalAddressOfStartOfPage(page + 1));
 
-            // These are disk-image records (recovery, before object deserialization), so their ObjectLogPosition and RDH hints hold the
-            // on-disk values (the objectId slots hold stale ids, so the legacy decode would read garbage here). Estimate the page's
+            // These are disk-image records (recovery, before object deserialization), so their ObjectLogPosition and objectId size hints
+            // hold the on-disk values. Estimate the page's
             // object-log bytes as the span from the first object record's start position to the last object record's start position plus
-            // that last record's RDH length hints. This is a best guess (the eviction/budget logic tolerates an over-estimate).
+            // that last record's size hints. This is a best guess (the eviction/budget logic tolerates an over-estimate).
             ObjectLogFilePositionInfo startPosition = new(), endPosition = new();
             var endKeyLength = 0;
             ulong endValueLength = 0;

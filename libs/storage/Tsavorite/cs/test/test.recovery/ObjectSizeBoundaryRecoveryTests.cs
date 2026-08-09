@@ -39,13 +39,15 @@ namespace Tsavorite.test.recovery
         //   65535, 65536          : 64 KB boundary
         //   262144                : 256 KB (single buffer, well past the copy-span cutoff)
         //   2 MB, 3 MB            : objectId size-hint sentinel window -- extent >= 511*4 KB (~2 MB) saturates the 9-bit objectId page
-        //                           count to its sentinel (one 4 MB read + header-follow) while the RDH page count (sentinel 1023, ~4 MB)
-        //                           stays exact; the 4 MB initial read OVERSHOOTS these sub-4 MB values, incl. the last record near the
+        //                           count to its sentinel (one 4 MB read + header-follow)
+        //                           the 4 MB initial read OVERSHOOTS these sub-4 MB values, incl. the last record near the
         //                           object-log tail (short read past written data). 3 MB * 6 records writes ~18 MB in a 1 GB segment.
         //   5 MB                  : multi-buffer chunked object / large overflow, at/above BOTH sentinels (leading ChunkHeader + extend)
         static readonly int[] BoundarySizes =
         [
-            1, 100, 511, 512, 513, 1023, 1024, 4095, 4096, 65535, 65536, 262144, 2 * 1024 * 1024, 3 * 1024 * 1024, 5 * 1024 * 1024
+            1, 100, 510, 511, 512, 513, 1023, 1024, 4095, 4096, 65535, 65536,
+            131071, 131072, 131073, 262144, 2 * 1024 * 1024, 3 * 1024 * 1024,
+            (4 * 1024 * 1024) - 1, 4 * 1024 * 1024, (4 * 1024 * 1024) + 1, 5 * 1024 * 1024
         ];
 
         // Large object-log segment: the size sweep never crosses a segment boundary (isolating pure size-boundary behavior).

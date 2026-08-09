@@ -30,15 +30,24 @@ namespace Tsavorite.core
         /// and incremented with each buffer read; all of these should be aligned to sector size, so this address remains sector-aligned.</summary>
         internal ObjectLogFilePositionInfo nextFileReadPosition;
 
-        /// <summary>Track the remaining length to be read for one or more records for Object values, and we can also read some or all of Overflow values into the buffer.</summary>
-        ulong unreadLengthRemaining;
+        /// <summary>Exclusive logical endpoint requested by the caller's initial one-or-more-record range.</summary>
+        ulong baseRequiredEndAddress;
 
-        /// <summary>Physical bytes already read into the buffers beyond the logical length requested so far, because each partial read is
-        /// rounded up to sector alignment. A subsequent <see cref="ExtendUnreadLengthRemaining"/> (e.g. an overflow key/value whose true
-        /// length, read from its <see cref="ChunkHeader"/>, exceeds the capped RDH-sentinel hint that sized the initial read) is first
-        /// satisfied from this already-present data before <see cref="unreadLengthRemaining"/> grows, so a small extent increase does not
-        /// spuriously fill an additional read buffer that would never be consumed (leaving a dangling in-flight read).</summary>
-        ulong readAheadSlack;
+        /// <summary>Exclusive logical endpoint required by the component currently being framed. This may move backward after a discovery
+        /// read reveals an exact short chunk; already-issued physical IO is retained as reusable read-ahead.</summary>
+        ulong dynamicRequiredEndAddress;
+
+        /// <summary>Exclusive durable logical tail. Discovery hints clamp to this boundary; parsed framing may not cross it.</summary>
+        ulong hardReadEndAddress;
+
+        /// <summary>Unaligned logical start within the current buffer when repositioning did not yet require issuing it.</summary>
+        int unissuedCurrentStartPosition;
+
+        ulong RequiredEndAddress => Math.Max(baseRequiredEndAddress, dynamicRequiredEndAddress);
+
+        internal uint SectorSize => objectLogDevice.SectorSize;
+
+        internal bool UsesDevice(IDevice device) => ReferenceEquals(objectLogDevice, device);
 
         internal CircularDiskReadBuffer(SectorAlignedBufferPool bufferPool, int bufferSize, int numBuffers, IDevice objectLogDevice, ILogger logger)
         {
@@ -93,10 +102,14 @@ namespace Tsavorite.core
             var alignedReadStartPosition = RoundDown(unalignedReadStartPosition, (int)objectLogDevice.SectorSize);
             var bufferStartPosition = unalignedReadStartPosition - alignedReadStartPosition;
 
-            // See how much to read. We have two limits: the total size requested for this ReadAsync operation, and the segment size.
+            // See how much to read. We have two limits: the absolute logical endpoint and the segment size.
             var unalignedReadLength = bufferSize - alignedReadStartPosition;
-            if ((ulong)unalignedReadLength > unreadLengthRemaining)
-                unalignedReadLength = (int)unreadLengthRemaining;
+            var issuedThrough = nextFileReadPosition.CurrentAddress;
+            var requiredEnd = RequiredEndAddress;
+            Debug.Assert(requiredEnd > issuedThrough, $"required endpoint {requiredEnd} must exceed issued endpoint {issuedThrough}");
+            var logicalRemaining = requiredEnd - issuedThrough;
+            if ((ulong)unalignedReadLength > logicalRemaining)
+                unalignedReadLength = (int)logicalRemaining;
 
             Debug.Assert(IsAligned(nextFileReadPosition.Offset, (int)objectLogDevice.SectorSize), $"filePosition.Offset ({nextFileReadPosition.Offset}) is not sector-aligned");
             var segmentIsComplete = false;
@@ -110,10 +123,6 @@ namespace Tsavorite.core
             // We may not have had a sector-aligned amount of remaining unread data.
             var alignedReadLength = RoundUp(unalignedReadLength, (int)objectLogDevice.SectorSize);
 
-            // The rounding-up read some physical bytes past the logical request; track them so a later ExtendUnreadLengthRemaining can be
-            // satisfied from this already-present data rather than issuing a new read into a buffer that would never be consumed.
-            readAheadSlack += (uint)(alignedReadLength - unalignedReadLength);
-
             buffer.ReadFromDevice(nextFileReadPosition, bufferStartPosition, (uint)alignedReadLength, ReadFromDeviceCallback);
 
             // Advance the filePosition. This used aligned read length so may advance it past end of record but that's OK because
@@ -125,7 +134,6 @@ namespace Tsavorite.core
             if (segmentIsComplete)
                 nextFileReadPosition.AdvanceToNextSegment();
 
-            unreadLengthRemaining -= (uint)unalignedReadLength;
         }
 
         /// <summary>
@@ -134,15 +142,24 @@ namespace Tsavorite.core
         /// <param name="startFilePosition">The initial file position to read</param>
         /// <param name="totalLength">The cumulative length of all object-log entries for the span of records to be read. We read ahead for all record
         ///     in the ReadAsync call.</param>
-        internal void OnBeginReadRecords(ObjectLogFilePositionInfo startFilePosition, ulong totalLength)
+        internal void OnBeginReadRecords(ObjectLogFilePositionInfo startFilePosition, ulong totalLength, ObjectLogFilePositionInfo hardReadEnd)
         {
             if (disposed)
                 throw new ObjectDisposedException(nameof(CircularDiskReadBuffer));
 
             Debug.Assert(totalLength > 0, "TotalLength cannot be 0");
+            if (startFilePosition.SegmentSizeBits != hardReadEnd.SegmentSizeBits)
+                throw new TsavoriteException("Object-log read start and durable tail use different segment sizes");
+            hardReadEndAddress = hardReadEnd.HasData ? hardReadEnd.CurrentAddress : ulong.MaxValue;
+            if (startFilePosition.CurrentAddress >= hardReadEndAddress)
+                throw new TsavoriteException($"Object-log read starts at {startFilePosition.CurrentAddress}, outside durable tail {hardReadEnd.CurrentAddress}");
             nextFileReadPosition = startFilePosition;
-            unreadLengthRemaining = totalLength;
-            readAheadSlack = 0;
+            var requestedEnd = startFilePosition.CurrentAddress + totalLength;
+            if (requestedEnd < startFilePosition.CurrentAddress)
+                requestedEnd = ulong.MaxValue;
+            baseRequiredEndAddress = Math.Min(requestedEnd, hardReadEndAddress);
+            dynamicRequiredEndAddress = 0;
+            unissuedCurrentStartPosition = 0;
 
             // Initialize all buffers
             for (var ii = 0; ii < buffers.Length; ii++)
@@ -153,13 +170,12 @@ namespace Tsavorite.core
             // whether one or many. First align the initial read. recordStartPosition is the padding between rounded-down-to-align-readStart and recordStart.
             var alignedReadPosition = RoundDown(nextFileReadPosition.Offset, (int)objectLogDevice.SectorSize);
             var recordStartPosition = (int)(nextFileReadPosition.Offset - alignedReadPosition);
-            unreadLengthRemaining += (uint)recordStartPosition;
             nextFileReadPosition.Offset -= (uint)recordStartPosition;
 
             // Load all the buffers as long as we have more unread data. Leave currentIndex at 0.
             for (var ii = 0; ii < buffers.Length; ii++)
             {
-                if (unreadLengthRemaining == 0)
+                if (nextFileReadPosition.CurrentAddress >= RequiredEndAddress)
                     break;
                 DoReadBuffer(ii, recordStartPosition);
                 recordStartPosition = 0;  // After the first read, subsequent reads start on an aligned address
@@ -167,30 +183,33 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Extend the remaining read-ahead length by <paramref name="extra"/> bytes so subsequent buffer fills reach further. Used when a
-        /// record's on-disk extent exceeds the initial estimate — e.g. an overflow key/value at/above the RDH field sentinel whose true
-        /// length (read from its <see cref="ChunkHeader"/>) is larger than the capped sentinel hint that sized the initial read.
+        /// Set the absolute exclusive endpoint required by the component currently being framed. Unlike additive extension, this is
+        /// idempotent and may tighten after a discovery read reveals the exact chunk endpoint. Already-issued sector-rounded IO is retained.
         /// </summary>
-        internal void ExtendUnreadLengthRemaining(long extra)
+        internal void SetDynamicReadThrough(ObjectLogFilePositionInfo exclusiveEnd, bool isDiscoveryWindow = false)
         {
-            Debug.Assert(extra >= 0, $"ExtendUnreadLengthRemaining extra ({extra}) must be non-negative");
-            unreadLengthRemaining += (ulong)extra;
+            Debug.Assert(exclusiveEnd.SegmentSizeBits == nextFileReadPosition.SegmentSizeBits, "Endpoint and reader must use the same segment size");
+            if (exclusiveEnd.CurrentAddress > hardReadEndAddress)
+            {
+                if (!isDiscoveryWindow)
+                    throw new TsavoriteException($"Object-log framing requires endpoint {exclusiveEnd.CurrentAddress} beyond durable tail {hardReadEndAddress}");
+                dynamicRequiredEndAddress = hardReadEndAddress;
+            }
+            else
+                dynamicRequiredEndAddress = exclusiveEnd.CurrentAddress;
 
-            // If data still remains to be read, the ring may be under-primed (the initial fill stops when unreadLengthRemaining hits 0), so
-            // fill the empty buffers ahead of the current one; otherwise MoveToNextBuffer would advance onto an un-primed buffer and stop.
-            // Before each fill, absorb physical read-ahead slack (bytes already present because prior reads -- including earlier iterations
-            // of this loop -- were rounded up to sector alignment): the reader consumes those bytes from the existing buffer, so they must
-            // reduce the remaining need. This prevents filling a buffer that would never be consumed (its in-flight read would then race the
-            // 'using' disposal of this CircularDiskReadBuffer on the single-record read path, which does not wait for reads on success).
-            // Skip buffers that already had a read issued (readIssued) -- including still-in-flight initial fills; using readIssued rather
-            // than HasData/HasInFlightRead avoids a race where a completed-but-not-yet-visible endPosition makes a primed buffer look empty
-            // and get re-read at the wrong file offset, leaving a gap in the record.
+            var current = buffers[currentIndex];
+            if (nextFileReadPosition.CurrentAddress < RequiredEndAddress && (current is null || !current.readIssued))
+            {
+                DoReadBuffer(currentIndex, unissuedCurrentStartPosition);
+                unissuedCurrentStartPosition = 0;
+            }
+
+            // Fill empty buffers ahead of the current one toward the new absolute endpoint. Skip buffers that already had a read issued,
+            // including in-flight reads; their sector-rounded slack is already reflected by nextFileReadPosition (the issued high-water).
             for (var idx = GetNextBufferIndex(currentIndex); idx != currentIndex; idx = GetNextBufferIndex(idx))
             {
-                var absorbed = Math.Min(unreadLengthRemaining, readAheadSlack);
-                readAheadSlack -= absorbed;
-                unreadLengthRemaining -= absorbed;
-                if (unreadLengthRemaining == 0)
+                if (nextFileReadPosition.CurrentAddress >= RequiredEndAddress)
                     break;
 
                 var buf = buffers[idx];
@@ -207,14 +226,13 @@ namespace Tsavorite.core
         internal void OnEndReadRecords()
         {
             for (var ii = 0; ii < buffers.Length; ii++)
-            {
-                Debug.Assert(buffers[ii] is null || !buffers[ii].HasInFlightRead, $"All reads should have been completed by OnEndReadRecords()");
-            }
+                buffers[ii]?.WaitForReadCompletion();
         }
 
         internal bool OnBeginRecord(ObjectLogFilePositionInfo recordFilePosition)
         {
-            var buffer = buffers[currentIndex] ?? throw new TsavoriteException($"Internal error in read buffer sequencing; empty buffer[{currentIndex}] encountered with unreadLengthRemaining {unreadLengthRemaining}");
+            var buffer = buffers[currentIndex] ?? throw new TsavoriteException(
+                $"Internal error in read buffer sequencing; empty buffer[{currentIndex}] encountered with required endpoint {RequiredEndAddress}");
 
             // Because each partial flush ends with a sector-aligning write, we may have a record start position greater than our ongoing buffer.currentPosition
             // incrementing. It should never be less. recordFilePosition is only guaranteed to be sector-aligned if it's the first record after a partial flush. 
@@ -259,8 +277,8 @@ namespace Tsavorite.core
         /// <returns></returns>
         internal bool MoveToNextBuffer(out DiskReadBuffer nextBuffer)
         {
-            // If we have more data to read, "backfill" this buffer with a read before departing it, else initialize it.
-            if (unreadLengthRemaining > 0)
+            // If the required endpoint is beyond the issued high-water, backfill this buffer before departing it.
+            if (nextFileReadPosition.CurrentAddress < RequiredEndAddress)
                 DoReadBuffer(currentIndex, unalignedReadStartPosition: 0);
             else
                 buffers[currentIndex].Initialize();
@@ -272,8 +290,93 @@ namespace Tsavorite.core
             if (nextBuffer is not null && nextBuffer.WaitForDataAvailable())
                 return true;
 
-            Debug.Assert(unreadLengthRemaining == 0, $"unreadLengthRemaining ({unreadLengthRemaining}) was not 0 when WaitForDataAvailable returned false");
+            Debug.Assert(nextFileReadPosition.CurrentAddress >= RequiredEndAddress,
+                $"issued endpoint {nextFileReadPosition.CurrentAddress} did not reach required endpoint {RequiredEndAddress}");
             return false;
+        }
+
+        /// <summary>Discard buffered read-ahead and restart at <paramref name="logicalPosition"/>. Used after a direct overflow read
+        /// bypasses the ring. The initial batch endpoint and current dynamic endpoint remain in force for following components/records.</summary>
+        internal void RepositionAfterDirectRead(ObjectLogFilePositionInfo logicalPosition)
+        {
+            for (var ii = 0; ii < buffers.Length; ii++)
+            {
+                buffers[ii]?.WaitForReadCompletion();
+                buffers[ii]?.Initialize();
+            }
+
+            currentIndex = 0;
+            nextFileReadPosition = logicalPosition;
+            var alignedOffset = RoundDown(nextFileReadPosition.Offset, (int)objectLogDevice.SectorSize);
+            var startPosition = (int)(nextFileReadPosition.Offset - alignedOffset);
+            nextFileReadPosition.Offset = alignedOffset;
+            unissuedCurrentStartPosition = startPosition;
+
+            // Do not reread the trailing sector when the logical position itself is already at the required endpoint.
+            for (var ii = 0; logicalPosition.CurrentAddress < RequiredEndAddress
+                && ii < buffers.Length && nextFileReadPosition.CurrentAddress < RequiredEndAddress; ii++)
+            {
+                DoReadBuffer(ii, startPosition);
+                startPosition = 0;
+                unissuedCurrentStartPosition = 0;
+            }
+
+        }
+
+        /// <summary>Read a sector-aligned range directly into pinned memory, splitting the request at object-log segment boundaries.</summary>
+        internal void ReadDirect(ObjectLogFilePositionInfo source, IntPtr destination, long length)
+        {
+            Debug.Assert(source.Offset % objectLogDevice.SectorSize == 0, "Direct-read source must be sector aligned");
+            Debug.Assert(destination.ToInt64() % objectLogDevice.SectorSize == 0, "Direct-read destination must be sector aligned");
+            using var completion = new DirectReadCompletion();
+
+            while (length > 0)
+            {
+                var segmentRemaining = source.SegmentSize - source.Offset;
+                var readLength = (uint)Math.Min(Math.Min(length, (long)segmentRemaining), int.MaxValue);
+                completion.Prepare(readLength);
+                objectLogDevice.ReadAsync(source.SegmentId, source.Offset, destination, readLength, DirectReadCallback, completion);
+                completion.Wait();
+
+                source.Advance(readLength);
+                destination += (int)readLength;
+                length -= readLength;
+            }
+        }
+
+        static void DirectReadCallback(uint errorCode, uint numBytes, object context)
+            => ((DirectReadCompletion)context).Complete(errorCode, numBytes);
+
+        sealed class DirectReadCompletion : IDisposable
+        {
+            readonly ManualResetEventSlim completed = new(false);
+            uint expectedBytes;
+            uint errorCode;
+            uint numBytes;
+
+            internal void Prepare(uint expectedBytes)
+            {
+                this.expectedBytes = expectedBytes;
+                errorCode = 0;
+                numBytes = 0;
+                completed.Reset();
+            }
+
+            internal void Complete(uint errorCode, uint numBytes)
+            {
+                this.errorCode = errorCode;
+                this.numBytes = numBytes;
+                completed.Set();
+            }
+
+            internal void Wait()
+            {
+                completed.Wait();
+                if (errorCode != 0 || numBytes != expectedBytes)
+                    throw new TsavoriteException($"Direct object-log read failed: error {errorCode}, requested {expectedBytes} bytes, read {numBytes} bytes");
+            }
+
+            public void Dispose() => completed.Dispose();
         }
 
         internal void ReadFromDeviceCallback(uint errorCode, uint numBytes, object context)

@@ -43,8 +43,8 @@ namespace Tsavorite.core
         ulong recordStreamConsumed;
         /// <summary>True while reading a headered object: <see cref="Read"/> strips ChunkHeaders/padding and follows continuation.</summary>
         bool objectChunked;
-        /// <summary>The object's RDH page count is the sentinel: extend the read-ahead in 4 MB blocks as chunks are consumed.</summary>
-        bool objectSentinel;
+        /// <summary>Current record's object-log start position, used to convert framing-relative offsets to absolute read endpoints.</summary>
+        ObjectLogFilePositionInfo recordStartPosition;
         /// <summary>Headerless-prefix DATA bytes still to serve before the first ChunkHeader.</summary>
         long objectPrefixRemaining;
         /// <summary>DATA bytes still to serve in the current chunk.</summary>
@@ -82,11 +82,11 @@ namespace Tsavorite.core
         /// <param name="filePosition">The initial file position to read</param>
         /// <param name="totalLength">The cumulative length of all object-log entries for the span of records to be read. We read ahead for all record
         ///     in the ReadAsync call.</param>
-        internal void OnBeginReadRecords(ObjectLogFilePositionInfo filePosition, ulong totalLength)
+        internal void OnBeginReadRecords(ObjectLogFilePositionInfo filePosition, ulong totalLength, ObjectLogFilePositionInfo hardReadEnd)
         {
             inDeserialize = false;
             deserializedLength = 0UL;
-            readBuffers.OnBeginReadRecords(filePosition, totalLength);
+            readBuffers.OnBeginReadRecords(filePosition, totalLength, hardReadEnd);
         }
 
         /// <summary>
@@ -126,10 +126,11 @@ namespace Tsavorite.core
             if (readBuffers is null)
                 throw new TsavoriteException("ReadBuffers are required to ReadRecordObjects");
 
-            // GetObjectLogRecordStartPositionAndLengths returns the exact overflow/object lengths: from the RDH hints for a hint-format
-            // record, or from the split RDH+objectId-slot encoding for a legacy record. The object stream carries no separate length prefix.
+            // GetObjectLogRecordStartPositionAndLengths returns initial read extents from objectId hints for a current record, or exact
+            // lengths from the split RDH+objectId-slot encoding for a legacy record.
             var positionWord = logRecord.GetObjectLogRecordStartPositionAndLengths(out var keyLength, out var valueLength);
-            var recordStartPosition = new ObjectLogFilePositionInfo(positionWord, segmentSizeBits);
+            var isLegacy = logRecord.HasReuseObjectIdForSize;
+            recordStartPosition = new ObjectLogFilePositionInfo(positionWord, segmentSizeBits);
             if (!readBuffers.OnBeginRecord(recordStartPosition))
                 throw new TsavoriteException("ReadRecordObjects found no data available in ReadBuffers");
 
@@ -137,57 +138,52 @@ namespace Tsavorite.core
             recordStreamConsumed = 0;
             objectRecordStartOffsetLow3 = (int)(recordStartPosition.Offset & 7);
 
-            // TODO: Optimize the reading of large internal sector-aligned parts of Overflow Keys and Values to read directly into the overflow, similar to how ObjectLogWriter writes
-            //       directly from overflow. This requires changing the read-ahead in CircularDiskReadBuffer.OnBeginReadRecords and the "backfill" in CircularDiskReadBuffer.MoveToNextBuffer.
-
             // Note: Similar logic to this is in DiskLogRecord.Deserialize.
             var keyWasSet = false;
             try
             {
                 if (logRecord.DataHeader.KeyIsOverflow)
                 {
-                    // For a key at/above the RDH KeyLength sentinel (1023), its full length precedes the key bytes in a leading ChunkHeader;
-                    // otherwise the sentinel-capped hint is the exact length.
-                    var actualKeyLength = logRecord.DataHeader.KeyLengthIsSentinel ? ReadOverflowHeaderAndExtend(keyLength) : keyLength;
                     // This assignment also allocates the slot in ObjectIdMap, overwriting whatever the objectId slot at keyAddress held
                     // on disk (a stale objectId for a hint-format record, or the key length high bits for a legacy record).
-                    logRecord.KeyOverflow = new OverflowByteArray(actualKeyLength, startOffset: 0, endOffset: 0, zeroInit: false);
-                    _ = Read(logRecord.KeyOverflow.Span);
+                    var keyIsExactSize = isLegacy || logRecord.KeyIsExactSize;
+                    var exactKeyLength = isLegacy ? keyLength : logRecord.KeyObjectIdSizeHint;
+                    logRecord.KeyOverflow = ReadOverflow(keyIsExactSize, exactKeyLength);
                     if (!requestedKey.IsEmpty && !storeFunctions.KeysEqual(requestedKey, logRecord))
                         return false;
                     keyWasSet = true;
+                }
+
+                // The record-level base extent was formed from the key's initial hint. Once a headered key reveals its exact length,
+                // rebase the following value's initial requirement at the actual key end.
+                if (!logRecord.DataHeader.ValueIsInline)
+                {
+                    var valueExtentIsDiscovery = !isLegacy && !logRecord.ValueIsExactSize;
+                    SetDynamicRecordReadThrough(recordStreamConsumed + valueLength, valueExtentIsDiscovery);
                 }
 
                 if (logRecord.DataHeader.ValueIsOverflow)
                 {
                     // Overflow value v2.2 encoding: a headered value (ValueIsExactSize clear) carries its exact length (and any DMA alignment
                     // padding) in a leading ChunkHeader; a headerless (ValueIsExactSize set) value has its exact length in its objectId size hint.
-                    var actualValueLength = logRecord.ValueIsExactSize
-                        ? logRecord.ValueObjectIdSizeHint
-                        : ReadOverflowHeaderAndExtend((long)valueLength);
-                    logRecord.ValueOverflow = new OverflowByteArray(actualValueLength, startOffset: 0, endOffset: 0, zeroInit: false);
-                    _ = Read(logRecord.ValueOverflow.Span);
+                    var valueIsExactSize = isLegacy || logRecord.ValueIsExactSize;
+                    var exactValueLength = isLegacy ? checked((int)valueLength) : logRecord.ValueObjectIdSizeHint;
+                    logRecord.ValueOverflow = ReadOverflow(valueIsExactSize, exactValueLength);
                 }
                 else if (logRecord.DataHeader.ValueIsObject)
                 {
                     // A headered object (data length > cutoff, ValueIsExactSize clear) is [prefix][hdr][chunk]…; the reader strips headers/padding
                     // and follows the continuation chain in ReadObjectData. A headerless object (ValueIsExactSize set) is a plain dense stream. The
                     // deserializer self-terminates in both cases.
-                    if (!logRecord.ValueIsExactSize)
+                    if (!isLegacy && !logRecord.ValueIsExactSize)
                     {
                         objectChunked = true;
-                        // The proactive per-chunk read-ahead extension (AdvanceToNextObjectChunk) is only correct when the object's on-disk
-                        // extent exceeds the initial read-ahead block, so key it to the RDH page-count sentinel (~4 MB) rather than the coarser
-                        // objectId size-hint sentinel (~2 MB). The RDH ValueLength hint is still written for this; retiring it needs an
-                        // extent-vs-read-ahead signal (see objectSizeBoundary 2/3 MB window).
-                        objectSentinel = RecordDataHeader.FlushValuePageCountIsSentinel((uint)logRecord.DataHeader.GetValueLengthRaw());
                         objectPrefixRemaining = ObjectLogWriter<TStoreFunctions>.ObjectHeaderlessPrefixLen;
                         objectChunkRemaining = 0;
                         objectFirstHeaderRead = false;
                     }
                     DoDeserialize(ref logRecord);
                     objectChunked = false;
-                    objectSentinel = false;
                 }
 
                 // Restore non-inline length fields to ObjectIdSize for in-memory record length correctness.
@@ -214,7 +210,7 @@ namespace Tsavorite.core
                 throw new TsavoriteException("ReadBuffers are required to ReadOverflowKeyHashCodeForRecovery");
 
             var positionWord = logRecord.GetObjectLogRecordStartPositionAndLengths(out var keyLength, out _);
-            var recordStartPosition = new ObjectLogFilePositionInfo(positionWord, segmentSizeBits);
+            recordStartPosition = new ObjectLogFilePositionInfo(positionWord, segmentSizeBits);
             if (!readBuffers.OnBeginRecord(recordStartPosition))
                 throw new TsavoriteException("ReadOverflowKeyHashCodeForRecovery found no data available in ReadBuffers");
 
@@ -222,23 +218,13 @@ namespace Tsavorite.core
             recordStreamConsumed = 0;
             objectRecordStartOffsetLow3 = (int)(recordStartPosition.Offset & 7);
 
-            // For a key at/above the RDH KeyLength sentinel (1023), its full length precedes the key bytes in a leading ChunkHeader; otherwise
-            // the sentinel-capped hint is the exact length. The value is intentionally not read here.
-            var actualKeyLength = logRecord.DataHeader.KeyLengthIsSentinel ? ReadOverflowHeaderAndExtend(keyLength) : keyLength;
-
-            var rented = ArrayPool<byte>.Shared.Rent(actualKeyLength);
-            try
+            var keyIsExactSize = logRecord.HasReuseObjectIdForSize || logRecord.KeyIsExactSize;
+            var exactKeyLength = logRecord.HasReuseObjectIdForSize ? keyLength : logRecord.KeyObjectIdSizeHint;
+            var overflow = ReadOverflow(keyIsExactSize, exactKeyLength);
+            fixed (byte* keyPtr = overflow.Span)
             {
-                _ = Read(new Span<byte>(rented, 0, actualKeyLength));
-                fixed (byte* keyPtr = rented)
-                {
-                    var key = ConditionallyHoistedKey.CreatePinned(keyPtr, actualKeyLength);
-                    return storeFunctions.GetKeyHashCode64(key);
-                }
-            }
-            finally
-            {
-                ArrayPool<byte>.Shared.Return(rented);
+                var key = ConditionallyHoistedKey.CreatePinned(keyPtr, overflow.Length);
+                return storeFunctions.GetKeyHashCode64(key);
             }
         }
 
@@ -255,7 +241,7 @@ namespace Tsavorite.core
             if (readBuffers is null)
                 throw new TsavoriteException("ReadBuffers are required to CopyRecordObjectsFollowingFraming");
 
-            var recordStartPosition = new ObjectLogFilePositionInfo(snapshotPositionWord, segmentSizeBits);
+            recordStartPosition = new ObjectLogFilePositionInfo(snapshotPositionWord, segmentSizeBits);
             if (!readBuffers.OnBeginRecord(recordStartPosition))
                 throw new TsavoriteException("CopyRecordObjectsFollowingFraming found no data available in ReadBuffers");
             recordStreamConsumed = 0;
@@ -270,13 +256,13 @@ namespace Tsavorite.core
 
                 if (dataHeader.KeyIsOverflow)
                 {
-                    var actualKeyLength = dataHeader.KeyLengthIsSentinel ? ReadOverflowHeaderAndExtend(keyLength) : keyLength;
+                    var actualKeyLength = logRecord.KeyIsExactSize ? logRecord.KeyObjectIdSizeHint : ReadOverflowHeaderAndSetEndpoint();
                     DrainRawStream((ulong)actualKeyLength, discard);
                 }
 
                 if (dataHeader.ValueIsOverflow)
                 {
-                    var actualValueLength = logRecord.ValueIsExactSize ? logRecord.ValueObjectIdSizeHint : ReadOverflowHeaderAndExtend((long)valueLength);
+                    var actualValueLength = logRecord.ValueIsExactSize ? logRecord.ValueObjectIdSizeHint : ReadOverflowHeaderAndSetEndpoint();
                     DrainRawStream((ulong)actualValueLength, discard);
                 }
                 else if (dataHeader.ValueIsObject)
@@ -290,7 +276,6 @@ namespace Tsavorite.core
                         objectChunked = true;
                         objectFollowToEnd = true;
                         objectCurrentChunkContinues = true;   // "not yet at the final chunk"; overwritten as each data chunk's header is read
-                        objectSentinel = RecordDataHeader.FlushValuePageCountIsSentinel((uint)dataHeader.GetValueLengthRaw());
                         objectPrefixRemaining = ObjectLogWriter<TStoreFunctions>.ObjectHeaderlessPrefixLen;
                         objectChunkRemaining = 0;
                         objectFirstHeaderRead = false;
@@ -304,7 +289,6 @@ namespace Tsavorite.core
                         finally
                         {
                             objectChunked = false;
-                            objectSentinel = false;
                             objectFollowToEnd = false;
                         }
                     }
@@ -332,26 +316,25 @@ namespace Tsavorite.core
             }
         }
 
-        /// <summary>For an overflow key/value with a leading 8-byte <see cref="ChunkHeader"/> (key at/above its 1023 sentinel; value with the
-        /// v2.2 has-header bit set), read that header, extend the read-ahead to cover the full on-disk extent (header + any DMA alignment
-        /// padding + data) beyond what the initial read already accounted for, skip the alignment padding, and return the exact data length.</summary>
-        /// <param name="alreadyAccounted">Bytes this component already contributed to the initial read total: the key's sentinel-capped RDH
-        /// hint, or the value's v2.2 initial read-ahead extent (page count * 4 KB, one 4 MB block for the sentinel, or the exact size).</param>
-        int ReadOverflowHeaderAndExtend(long alreadyAccounted)
+        /// <summary>Read a framed overflow header, set the component's exact absolute endpoint, skip DMA padding, and return its payload length.</summary>
+        int ReadOverflowHeaderAndSetEndpoint()
         {
+            var componentStart = recordStreamConsumed;
             var currentLength = ReadOverflowChunkHeader(out var alignmentPadding);
-
-            // Extend the read-ahead only by the shortfall of the full on-disk extent over what the initial read already covered. The initial
-            // read for a below-sentinel value already includes the header (page count rounds the whole extent up to 4 KB), so the shortfall is
-            // <= 0 and no extend is issued; a sentinel value (initial read one 4 MB block) or a sentinel-capped key extends by the remainder.
-            var extra = (ChunkHeader.TotalSize + (long)alignmentPadding + currentLength) - alreadyAccounted;
-            if (extra > 0)
-                readBuffers.ExtendUnreadLengthRemaining(extra);
+            SetDynamicRecordReadThrough(componentStart + ChunkHeader.TotalSize + (ulong)alignmentPadding + (uint)currentLength,
+                isDiscoveryWindow: false);
 
             // Skip any O_DIRECT alignment padding between the header and the sector-aligned data start (0 on the buffered write path).
             if (alignmentPadding > 0)
                 SkipReadBytes(alignmentPadding);
             return currentLength;
+        }
+
+        void SetDynamicRecordReadThrough(ulong recordRelativeEnd, bool isDiscoveryWindow)
+        {
+            var end = recordStartPosition;
+            end.Advance(recordRelativeEnd);
+            readBuffers.SetDynamicReadThrough(end, isDiscoveryWindow);
         }
 
         /// <summary>Read the 8-byte <see cref="ChunkHeader"/> that precedes an overflow (key or value) with a leading header, returning the
@@ -406,7 +389,7 @@ namespace Tsavorite.core
 
             // Read from the circular buffer.
             var buffer = readBuffers.GetCurrentBuffer();
-            if (buffer is null || !buffer.HasData)
+            if (buffer is null || (!buffer.HasData && !buffer.WaitForDataAvailable()))
                 return 0;
             while (true)
             {
@@ -436,6 +419,80 @@ namespace Tsavorite.core
                         return prevCopyLength;
                 }
                 destinationSpanAppend = destinationSpan.Slice(prevCopyLength);
+            }
+        }
+
+        /// <summary>Copy only data already covered by issued ring-buffer reads; do not issue more IO when the ring is exhausted.</summary>
+        int ReadRawStreamAvailable(Span<byte> destinationSpan)
+        {
+            var buffer = readBuffers.GetCurrentBuffer();
+            if (buffer is null || !buffer.HasData)
+                return 0;
+
+            // One ring buffer is the maximum initial discovery window (4 MB). Do not wait for speculative successor-record
+            // reads here; the direct read bypasses them and RepositionAfterDirectRead drains them before resetting the ring.
+            var copyLength = Math.Min(buffer.AvailableLength, destinationSpan.Length);
+            buffer.AvailableSpan.Slice(0, copyLength).CopyTo(destinationSpan);
+            buffer.currentPosition += copyLength;
+            recordStreamConsumed += (uint)copyLength;
+            return copyLength;
+        }
+
+        OverflowByteArray ReadOverflow(bool isExactSize, int initialLength)
+        {
+            if (isExactSize)
+            {
+                var exactOverflow = new OverflowByteArray(initialLength, startOffset: 0, endOffset: 0, zeroInit: false);
+                if (Read(exactOverflow.Span) != initialLength)
+                    throw new TsavoriteException($"Expected {initialLength} headerless overflow bytes");
+                return exactOverflow;
+            }
+
+            var length = ReadOverflowHeaderAndSetEndpoint();
+            if (length <= ObjectLogWriter<TStoreFunctions>.MaxCopySpanLen)
+            {
+                var bufferedOverflow = new OverflowByteArray(length, startOffset: 0, endOffset: 0, zeroInit: false);
+                if (Read(bufferedOverflow.Span) != length)
+                    throw new TsavoriteException($"Expected {length} framed overflow bytes");
+                return bufferedOverflow;
+            }
+
+            var payloadPosition = recordStartPosition;
+            payloadPosition.Advance(recordStreamConsumed);
+            var sectorSize = (int)readBuffers.SectorSize;
+            var overflow = new OverflowByteArray(length + (3 * sectorSize), startOffset: 0, endOffset: 0, zeroInit: false);
+            var handle = overflow.Pin();
+            try
+            {
+                var allocationAddress = (nuint)handle.AddrOfPinnedObject();
+                var desiredResidue = (int)(payloadPosition.Offset % (uint)sectorSize);
+                var allocationResidue = (int)((allocationAddress + 8) % (uint)sectorSize);
+                var startOffset = sectorSize + ((desiredResidue - allocationResidue + sectorSize) % sectorSize);
+                overflow.SetAlignedReadOffsets(startOffset, (3 * sectorSize) - startOffset);
+
+                var copied = ReadRawStreamAvailable(overflow.Span);
+                if (copied < length)
+                {
+                    var directPosition = payloadPosition;
+                    directPosition.Advance((ulong)copied);
+                    var leadingBytes = (int)(directPosition.Offset % (uint)sectorSize);
+                    directPosition.Offset -= (uint)leadingBytes;
+
+                    var payloadEnd = payloadPosition;
+                    payloadEnd.Advance((ulong)length);
+                    var directEndAddress = (payloadEnd.CurrentAddress + (uint)sectorSize - 1) & ~((ulong)(uint)sectorSize - 1);
+                    var directLength = directEndAddress - directPosition.CurrentAddress;
+                    var destination = handle.AddrOfPinnedObject() + overflow.StartOffset + copied - leadingBytes;
+                    readBuffers.ReadDirect(directPosition, destination, (long)directLength);
+
+                    recordStreamConsumed += (uint)(length - copied);
+                    readBuffers.RepositionAfterDirectRead(payloadEnd);
+                }
+                return overflow;
+            }
+            finally
+            {
+                handle.Free();
             }
         }
 
@@ -509,10 +566,11 @@ namespace Tsavorite.core
                 {
                     // Remember this chunk's continuation flag so copy-to-end mode can stop after the final (non-continuing) data chunk.
                     objectCurrentChunkContinues = continues;
-                    // Keep the read-ahead ring ahead of consumption for a sentinel object (its initial read-ahead is only one 4 MB block):
-                    // proactively request this chunk's data plus the next chunk's header, mirroring the overflow ReadOverflowHeaderAndExtend pattern.
-                    if (objectSentinel)
-                        readBuffers.ExtendUnreadLengthRemaining(objectChunkRemaining + ChunkHeader.TotalSize);
+                    var chunkEnd = recordStreamConsumed + (ulong)objectChunkRemaining;
+                    // A continuation opens a normal 4 MB discovery window at the following header. A final chunk tightens the logical
+                    // requirement to its exact endpoint; already-issued physical over-read remains reusable by a following record.
+                    SetDynamicRecordReadThrough(continues ? chunkEnd + (ulong)IStreamBuffer.BufferSize : chunkEnd,
+                        isDiscoveryWindow: continues);
                     return true;                // a real (possibly final) chunk
                 }
                 if (!continues)
@@ -538,7 +596,7 @@ namespace Tsavorite.core
             valueObjectSerializer.Deserialize(out var valueObject);
 
             // Store the object value's on-disk EXTENT (data + 8-align padding + ChunkHeaders for a headered object; == data length for a
-            // headerless one), not the deserialized data length, so recovery reconstructs the correct on-disk footprint and RDH page-count hint.
+            // headerless one), not the deserialized data length, so recovery reconstructs the correct on-disk footprint and objectId size hint.
             var objectExtent = recordStreamConsumed - startConsumed;
             logRecord.SetDeserializedValueObject(valueObject, objectExtent);
             OnDeserializeComplete(valueObject);

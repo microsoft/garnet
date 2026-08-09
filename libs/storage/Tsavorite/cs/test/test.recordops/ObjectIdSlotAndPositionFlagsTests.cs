@@ -70,6 +70,23 @@ namespace Tsavorite.test.Objects
             Assert.That(ObjectIdMap.GetSizeHint(stamped), Is.EqualTo(ObjectIdMap.MaxObjectIdSizeHint));
         }
 
+        [Test]
+        [Category("Smoke")]
+        public void DecodeExactSizeReturnsExactBytes([Values(0, 1, 128, 510, 511)] int sizeHint)
+            => Assert.That(RecordDataHeader.DecodeObjectIdValueInitialReadExtent(sizeHint, isExactSize: true), Is.EqualTo((ulong)sizeHint));
+
+        [Test]
+        [Category("Smoke")]
+        public void DecodePageCountReturnsPageExtent([Values(1, 2, 64, 128, 510)] int pageCount)
+            => Assert.That(RecordDataHeader.DecodeObjectIdValueInitialReadExtent(pageCount, isExactSize: false),
+                Is.EqualTo((ulong)(uint)pageCount * RecordDataHeader.kFlushPageSize));
+
+        [Test]
+        [Category("Smoke")]
+        public void DecodeSentinelReturnsOneDiscoveryWindow()
+            => Assert.That(RecordDataHeader.DecodeObjectIdValueInitialReadExtent(ObjectIdMap.MaxObjectIdSizeHint, isExactSize: false),
+                Is.EqualTo((ulong)IStreamBuffer.BufferSize));
+
         // ── ObjectLogFilePositionInfo exact-size flag bits ───────────────────────────────────────────────
 
         [Test]
@@ -125,6 +142,39 @@ namespace Tsavorite.test.Objects
             // And distinct from the remaining reserved bit.
             Assert.That(ObjectLogFilePositionInfo.kKeyIsExactSizeMask & ObjectLogFilePositionInfo.kReservedFlagsMask, Is.EqualTo(0UL));
             Assert.That(ObjectLogFilePositionInfo.kValueIsExactSizeMask & ObjectLogFilePositionInfo.kReservedFlagsMask, Is.EqualTo(0UL));
+        }
+
+        [TestCase(50UL, 3, 4050UL)]
+        [TestCase(96UL, 4, 0UL)]
+        [TestCase(100UL, 4, 4UL)]
+        [TestCase(8296UL, 6, 8UL)]
+        public void PositionAdvanceHandlesSegmentBoundaries(ulong distance, int expectedSegment, ulong expectedOffset)
+        {
+            const int segmentBits = 12;
+            ObjectLogFilePositionInfo position = new(((ulong)3 << segmentBits) | 4000, segmentBits);
+
+            position.Advance(distance);
+
+            Assert.That(position.SegmentId, Is.EqualTo(expectedSegment));
+            Assert.That(position.Offset, Is.EqualTo(expectedOffset));
+        }
+
+        [Test]
+        public void PositionSubtractionRejectsReversedPositions()
+        {
+            ObjectLogFilePositionInfo earlier = new(100, 12);
+            ObjectLogFilePositionInfo later = new(200, 12);
+
+            Assert.Throws<System.IO.InvalidDataException>(() => _ = earlier - later);
+        }
+
+        [Test]
+        public void PositionSubtractionRejectsDifferentSegmentSizes()
+        {
+            ObjectLogFilePositionInfo left = new(200, 12);
+            ObjectLogFilePositionInfo right = new(100, 13);
+
+            Assert.Throws<System.IO.InvalidDataException>(() => _ = left - right);
         }
     }
 }

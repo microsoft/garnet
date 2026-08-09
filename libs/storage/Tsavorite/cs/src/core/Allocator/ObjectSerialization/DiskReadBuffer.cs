@@ -98,10 +98,16 @@ namespace Tsavorite.core
                 return false;
             if (!HasData)
                 countdownEvent.Wait();
-            return true;
+            return HasData;
         }
 
         internal bool HasInFlightRead => countdownEvent is not null && !countdownEvent.IsSet;
+
+        internal void WaitForReadCompletion()
+        {
+            if (HasInFlightRead)
+                countdownEvent.Wait();
+        }
 
         internal ObjectLogFilePositionInfo GetCurrentFilePosition()
         {

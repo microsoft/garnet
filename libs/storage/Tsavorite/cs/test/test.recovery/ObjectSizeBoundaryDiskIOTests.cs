@@ -30,11 +30,13 @@ namespace Tsavorite.test.recovery
     {
         // Sizes straddling every object-log encoding boundary (see ObjectSizeBoundaryRecoveryTests for the rationale of each point).
         // 2 MB / 3 MB land in the objectId size-hint sentinel window (extent >= ~2 MB saturates the 9-bit objectId page count to its
-        // sentinel while the RDH page count stays exact); the single-record read-ahead then issues a 4 MB initial read that OVERSHOOTS
+        // sentinel; the single-record read-ahead then issues a 4 MB initial read that OVERSHOOTS
         // these sub-4 MB values, including the last record near the object-log tail (short read past the written data).
         static readonly int[] BoundarySizes =
         [
-            1, 100, 511, 512, 513, 1023, 1024, 4095, 4096, 65535, 65536, 262144, 2 * 1024 * 1024, 3 * 1024 * 1024, 5 * 1024 * 1024
+            1, 100, 510, 511, 512, 513, 1023, 1024, 4095, 4096, 65535, 65536,
+            131071, 131072, 131073, 262144, 2 * 1024 * 1024, 3 * 1024 * 1024,
+            (4 * 1024 * 1024) - 1, 4 * 1024 * 1024, (4 * 1024 * 1024) + 1, 5 * 1024 * 1024
         ];
 
         // Large object-log segment: no single value spans a segment boundary (isolating pure size-boundary behavior).
@@ -176,7 +178,8 @@ namespace Tsavorite.test.recovery
         // to exercise the sub-1 KB boundaries as overflow keys.)
         static readonly int[] KeyBoundarySizes =
         [
-            17, 100, 511, 512, 513, 1023, 1024, 4095, 4096, 65535, 65536
+            17, 100, 510, 511, 512, 513, 1023, 1024, 4095, 4096, 65535, 65536, 131071, 131072, 131073,
+            5 * 1024 * 1024
         ];
 
         const int OverflowKeyInlineCutoff = 16;                 // keys longer than this go out of line

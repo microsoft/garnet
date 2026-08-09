@@ -102,7 +102,7 @@ namespace Tsavorite.core
             var startFilePos = filePosition;
             var buffer = GetCurrentBuffer();
             if (buffer is not null)
-                startFilePos.Offset += (uint)(buffer.currentPosition - buffer.flushedUntilPosition);
+                startFilePos.Advance((uint)(buffer.currentPosition - buffer.flushedUntilPosition));
             return startFilePos;
         }
 

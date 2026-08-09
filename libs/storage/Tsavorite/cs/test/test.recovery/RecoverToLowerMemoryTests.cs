@@ -255,8 +255,8 @@ namespace Tsavorite.test.recovery
 
         /// <summary>
         /// Snapshot-recovers records whose overflow VALUE is at/above the ~4 MB page-count sentinel, so each carries a leading ChunkHeader
-        /// AND its RDH page-count read hint (one 4 MB block) may UNDER-count the true extent. The snapshot-region recovery copy cannot size
-        /// such a record by the RDH KeyLength/ValueLength hints; instead it sizes by the successor object record's snapshot position minus
+        /// AND its objectId page-count read hint (one 4 MB block) may UNDER-count the true extent. The snapshot-region recovery copy cannot size
+        /// such a record by its size hint; instead it sizes by the successor object record's snapshot position minus
         /// this record's, copying the record's exact raw key+value+header+padding extent verbatim. A trailing small (headerless, at most
         /// 1023 B) overflow record keeps the headered ones off the last-record-on-page path (still guarded). Recovery uses a small heap budget so
         /// the object page is evicted and thus flushed through the snapshot-copy path. Every value must read back byte-for-byte.
