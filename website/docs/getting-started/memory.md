@@ -127,3 +127,26 @@ use `mmap`/`VirtualAlloc` and need no shipped binary, so they work on any platfo
 those regions are a Linux optimization (`madvise(MADV_HUGEPAGE)`); on Windows they use regular pages (large-page
 support there needs the privileged `SeLockMemoryPrivilege`), so `full` is functionally identical on Windows,
 just without the huge-page throughput bonus.
+
+### Building / bumping the mimalloc binaries (CI)
+
+The pinned mimalloc version lives in `libs/storage/Tsavorite/cs/src/core/Native/mimalloc.version` — the single
+source of truth for both `build-mimalloc.sh` and the P/Invoke ABI (it must match `mi_version()`, e.g. `v2.1.9`
+== `219`). The **Build Native mimalloc** workflow (`.github/workflows/native-mimalloc-build.yml`) builds the
+prebuilt library for every RID (glibc/musl × x64/arm64 in containers via QEMU; win-x64/arm64 with MSVC). It is
+separate from **Build Native Device** (`native-build.yml`, the C++ storage device) — the two components version
+and trigger independently, sharing only the publish step (`.github/actions/publish-native-prebuilts`).
+
+To ship a new mimalloc version, binaries and all, in one PR:
+
+1. On a branch, edit `mimalloc.version` (e.g. `v2.1.9` → `v2.1.10`) and open the PR. The push runs the workflow in
+   **build-only** mode across all RIDs, verifying the bump compiles and exports the required `mi_*` symbols
+   everywhere (it does not touch the repo).
+2. Dispatch the workflow on that same branch to publish the rebuilt binaries onto it (the open PR updates in place):
+   ```bash
+   gh workflow run native-mimalloc-build.yml --ref <your-branch> -f update_repo=true
+   ```
+3. Review and merge — the version pin and the regenerated `runtimes/<rid>/native/` binaries land together.
+
+A change to `build-mimalloc.sh` triggers the same build-only verification. For a single RID you can also run the
+script locally (inside the matching container) and commit the result under `runtimes/<rid>/native/`.

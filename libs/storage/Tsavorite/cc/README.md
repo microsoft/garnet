@@ -21,6 +21,11 @@ Garnet surfaces as `--device-io-backend default|libaio|uring`.
 > (`.github/workflows/native-build.yml`): dispatch it on your branch with
 > `update_repo = true` and it builds each RID and commits the refreshed binaries onto your
 > branch. See "Updating the shipped prebuilt binaries" below for details and the manual path.
+>
+> The prebuilt **mimalloc** library that backs Garnet's `--native-allocator` is a separate
+> concern with its own **Build Native mimalloc** workflow
+> (`.github/workflows/native-mimalloc-build.yml`, pinned by `Native/mimalloc.version`); the two
+> version and trigger independently. See `website/docs/getting-started/memory.md`.
 
 ## Runtime dependencies (end users)
 

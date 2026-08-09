@@ -1,0 +1,265 @@
+# Builds the prebuilt mimalloc shared library that backs Garnet's --native-allocator
+# (buffer-pool / full) for every supported runtime identifier (RID) and, on demand,
+# publishes it back to the branch it was dispatched on (updating an open PR in place),
+# or opens a PR when dispatched on a protected branch.
+#
+# Why this exists: --native-allocator routes Garnet's pooled pinned IO buffers through
+# mimalloc. The C# loader (Mimalloc.TryLoad) resolves runtimes/<rid>/native/<lib>, so we
+# ship one prebuilt per RID. mimalloc is pinned in Native/mimalloc.version - the single
+# source of truth and this workflow's trigger. It MUST stay ABI-compatible with the
+# P/Invoke bindings in Mimalloc.cs (mi_version(): e.g. 219 == v2.1.9).
+#
+# This is the SEPARATE counterpart to native-build.yml (which builds the C++ native
+# device); the two components version and trigger independently. Both share the
+# publish/commit-back step (.github/actions/publish-native-prebuilts).
+#
+# Version-bump flow (create a PR that ships a new mimalloc, binaries and all):
+#   1. On a branch, edit Native/mimalloc.version (e.g. v2.1.9 -> v2.1.10) and open the PR.
+#      The push builds + verifies mimalloc on all RIDs (BUILD-ONLY; does NOT touch the repo),
+#      so you know the bump compiles and exports the required symbols everywhere.
+#   2. Dispatch this workflow on that same branch to publish the rebuilt binaries onto it,
+#      so the PR updates in place:
+#          gh workflow run native-mimalloc-build.yml --ref <branch> -f update_repo=true
+#   3. Review and merge - the version pin and the regenerated Native/runtimes/<rid>/native/
+#      binaries land together in one PR.
+#
+# Note on re-triggering ci.yml: a push made with the default GITHUB_TOKEN does not start new
+# workflow runs (GitHub loop-prevention), so the binary commit lands on your branch but ci.yml
+# runs against it on your NEXT push (or a manual re-run). To auto-trigger ci.yml, a maintainer
+# can add a repo secret NATIVE_BINARIES_PAT (PAT / App token with contents:write); this
+# workflow uses it to push when present.
+#
+# Coverage:
+#   linux-x64, linux-arm64            (glibc, ubuntu:24.04 container; arm64 via QEMU)
+#   linux-musl-x64, linux-musl-arm64  (musl,  alpine:3.20 container; arm64 via QEMU)
+#   win-x64, win-arm64                (MSVC on windows-latest; arm64 cross-compiled)
+name: Build Native mimalloc
+
+on:
+  workflow_dispatch:
+    inputs:
+      update_repo:
+        description: "Publish the rebuilt mimalloc binaries to the dispatched branch (updates an open PR in place; opens a PR instead on main/dev)"
+        type: boolean
+        default: true
+  # A version bump or a change to the build script builds + verifies all RIDs (does NOT touch the repo).
+  push:
+    paths:
+      - 'libs/storage/Tsavorite/cs/src/core/Native/mimalloc.version'
+      - 'libs/storage/Tsavorite/cs/src/core/Native/build-mimalloc.sh'
+      - '.github/workflows/native-mimalloc-build.yml'
+  pull_request:
+    paths:
+      - 'libs/storage/Tsavorite/cs/src/core/Native/mimalloc.version'
+      - 'libs/storage/Tsavorite/cs/src/core/Native/build-mimalloc.sh'
+      - '.github/workflows/native-mimalloc-build.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  build-linux:
+    name: Build ${{ matrix.rid }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { rid: linux-x64,        image: 'ubuntu:24.04', platform: linux/amd64, libc: glibc }
+          - { rid: linux-arm64,      image: 'ubuntu:24.04', platform: linux/arm64, libc: glibc }
+          - { rid: linux-musl-x64,   image: 'alpine:3.20',  platform: linux/amd64, libc: musl }
+          - { rid: linux-musl-arm64, image: 'alpine:3.20',  platform: linux/arm64, libc: musl }
+    steps:
+      - uses: actions/checkout@v4
+
+      # Register QEMU so the arm64 containers can run on the x64 runner. No-op for amd64.
+      - name: Enable QEMU (arm64 emulation)
+        if: endsWith(matrix.platform, 'arm64')
+        run: docker run --rm --privileged tonistiigi/binfmt --install arm64
+
+      - name: Build mimalloc
+        run: |
+          set -euo pipefail
+          # build-mimalloc.sh clones the pinned tag (Native/mimalloc.version) and compiles
+          # src/static.c into runtimes/<rid>/native/libmimalloc.so inside the matching container.
+          if [ "${{ matrix.libc }}" = "glibc" ]; then
+            DEPS="export DEBIAN_FRONTEND=noninteractive; apt-get update -qq && apt-get install -y -qq build-essential git ca-certificates file"
+          else
+            DEPS="apk add --no-cache build-base git ca-certificates file"
+          fi
+          docker run --rm --platform ${{ matrix.platform }} \
+            -v "$GITHUB_WORKSPACE:/w" -w /w "${{ matrix.image }}" \
+            sh -c "$DEPS && libs/storage/Tsavorite/cs/src/core/Native/build-mimalloc.sh ${{ matrix.rid }}"
+
+      - name: Show results and verify exports
+        run: |
+          set -euo pipefail
+          out="libs/storage/Tsavorite/cs/src/core/Native/runtimes/${{ matrix.rid }}/native"
+          ls -la "$out"
+          file "$out/libmimalloc.so"
+          # The 7 dynamic symbols the loader (Mimalloc.TryLoad) binds and the export-guard
+          # unit test (NativeAllocatorTests) asserts must all be present.
+          syms="$(nm -D --defined-only "$out/libmimalloc.so")"
+          for s in mi_malloc mi_malloc_aligned mi_zalloc_aligned mi_free mi_usable_size mi_collect mi_process_info; do
+            echo "$syms" | grep -qw "$s" || { echo "missing export: $s" >&2; exit 1; }
+          done
+          echo "Exports verified."
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mimalloc-${{ matrix.rid }}
+          path: libs/storage/Tsavorite/cs/src/core/Native/runtimes/${{ matrix.rid }}/native/*
+          if-no-files-found: error
+
+  build-windows:
+    name: Build ${{ matrix.rid }}
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { rid: win-x64,   arch: x64 }
+          - { rid: win-arm64, arch: ARM64 }
+    steps:
+      - uses: actions/checkout@v4
+
+      # Same Spectre-mitigated CRT requirement as the native device build: we pass /Qspectre so
+      # the produced mimalloc.dll matches the device DLL's mitigation posture (see cc/README.md).
+      - name: Ensure MSVC Spectre-mitigated CRT libraries
+        shell: pwsh
+        run: |
+          $arch = '${{ matrix.arch }}'.ToLowerInvariant()   # x64 | arm64
+          $vsPath = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath
+          $msvc = Join-Path $vsPath 'VC\Tools\MSVC'
+          function Test-Spectre {
+            if (-not (Test-Path $msvc)) { return $false }
+            [bool](Get-ChildItem $msvc -Directory |
+              Where-Object { Test-Path (Join-Path $_.FullName "lib\spectre\$arch") } |
+              Select-Object -First 1)
+          }
+          if (Test-Spectre) {
+            Write-Host "Spectre-mitigated CRT for $arch is present."
+          } else {
+            Write-Host "Spectre-mitigated CRT for $arch not found; installing VS components..."
+            $installer = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\setup.exe"
+            $components = @('Microsoft.VisualStudio.Component.VC.Runtimes.x86.x64.Spectre')
+            if ($arch -eq 'arm64') {
+              $components += @(
+                'Microsoft.VisualStudio.Component.VC.Runtimes.ARM64.Spectre',
+                'Microsoft.VisualStudio.Component.VC.Tools.ARM64')
+            }
+            $vsArgs = @('modify','--installPath', $vsPath, '--quiet','--norestart','--nocache')
+            foreach ($c in $components) { $vsArgs += @('--add', $c) }
+            $p = Start-Process -FilePath $installer -ArgumentList $vsArgs -Wait -PassThru -NoNewWindow
+            if ($p.ExitCode -notin @(0,3010)) {
+              throw "VS installer failed (exit $($p.ExitCode)) installing: $($components -join ', ')"
+            }
+            if (-not (Test-Spectre)) { throw "Spectre-mitigated CRT for $arch still missing after install." }
+            Write-Host "Installed Spectre-mitigated CRT for $arch."
+          }
+
+      - name: Read pinned mimalloc version
+        id: ver
+        shell: pwsh
+        run: |
+          $v = (Get-Content "libs/storage/Tsavorite/cs/src/core/Native/mimalloc.version" -Raw).Trim()
+          if (-not $v) { throw "Native/mimalloc.version is empty" }
+          "version=$v" >> $env:GITHUB_OUTPUT
+          Write-Host "mimalloc version: $v"
+
+      - name: Clone mimalloc
+        shell: pwsh
+        run: git clone --depth 1 --branch ${{ steps.ver.outputs.version }} https://github.com/microsoft/mimalloc.git mimalloc-src
+
+      - name: Configure and build
+        shell: pwsh
+        run: |
+          # Shared build of the public mi_* API only: no malloc override, no Windows redirection
+          # (so no separate mimalloc-redirect.dll is needed), no secure heap. /guard:cf + /Qspectre
+          # + /sdl match the device DLL's mitigations; -A selects the target architecture.
+          cmake -S mimalloc-src -B mimalloc-src/build -A ${{ matrix.arch }} `
+            -DMI_BUILD_SHARED=ON -DMI_BUILD_STATIC=OFF -DMI_BUILD_OBJECT=OFF -DMI_BUILD_TESTS=OFF `
+            -DMI_OVERRIDE=OFF -DMI_WIN_REDIRECT=OFF -DMI_SECURE=OFF `
+            -DCMAKE_C_FLAGS="/guard:cf /Qspectre /sdl" `
+            -DCMAKE_SHARED_LINKER_FLAGS="/guard:cf"
+          cmake --build mimalloc-src/build --config Release
+
+      - name: Stage artifacts
+        shell: pwsh
+        run: |
+          $dst = "libs/storage/Tsavorite/cs/src/core/Native/runtimes/${{ matrix.rid }}/native"
+          New-Item -ItemType Directory -Force -Path $dst | Out-Null
+          # mimalloc's CMake may version-decorate the output (e.g. mimalloc-2.1.dll); pick the
+          # non-redirect shared lib and copy it under the flat name the loader expects.
+          $dll = Get-ChildItem -Recurse -Path "mimalloc-src/build" -Filter "mimalloc*.dll" |
+            Where-Object { $_.Name -notlike "*redirect*" } | Select-Object -First 1
+          if (-not $dll) { throw "mimalloc.dll was not produced by the build" }
+          Copy-Item $dll.FullName (Join-Path $dst "mimalloc.dll")
+          Get-ChildItem $dst
+
+      - name: Verify exports and security mitigations
+        shell: pwsh
+        run: |
+          $vsPath = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath
+          $dumpbin = (Get-ChildItem "$vsPath\VC\Tools\MSVC\*\bin\Hostx64\x64\dumpbin.exe" | Select-Object -First 1).FullName
+          $dll = "libs/storage/Tsavorite/cs/src/core/Native/runtimes/${{ matrix.rid }}/native/mimalloc.dll"
+
+          $exports = & $dumpbin /exports $dll
+          foreach ($s in @('mi_malloc','mi_malloc_aligned','mi_zalloc_aligned','mi_free','mi_usable_size','mi_collect','mi_process_info')) {
+            if (-not ($exports | Select-String -Quiet -Pattern "\b$s\b")) {
+              throw "mimalloc.dll missing export: $s"
+            }
+          }
+          Write-Host "Exports verified."
+
+          $cfg = & $dumpbin /loadconfig $dll
+          if (-not ($cfg | Select-String -Quiet -Pattern 'Guard')) {
+            throw "Control Flow Guard (/guard:cf) not present in $dll - security flags did not take effect"
+          }
+          if (-not ($cfg | Select-String -Quiet -Pattern 'Security Cookie')) {
+            throw "Stack Security Cookie (/GS,/sdl) not present in $dll - security flags did not take effect"
+          }
+          Write-Host "Security mitigations verified: Control Flow Guard + Security Cookie present."
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mimalloc-${{ matrix.rid }}
+          path: libs/storage/Tsavorite/cs/src/core/Native/runtimes/${{ matrix.rid }}/native/*
+          if-no-files-found: error
+
+  # Publishes the freshly built mimalloc binaries. Feature branch -> commit onto it so an open PR
+  # updates in place; protected branch (main/dev) -> open a PR. Manual dispatch + update_repo only.
+  # Shares the download/copy/commit-back logic with native-build.yml via publish-native-prebuilts.
+  publish:
+    name: Publish mimalloc to ${{ github.ref_name }}
+    needs: [build-linux, build-windows]
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.update_repo }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    # Serialize publishes per branch so two dispatches can't race on the same push. The group is
+    # shared with native-build.yml (device) so a device and a mimalloc publish to the same branch
+    # serialize instead of racing on the push.
+    concurrency:
+      group: native-publish-${{ github.ref_name }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+          fetch-depth: 0
+          # If a maintainer configured a PAT / App token, use it so the resulting push
+          # re-triggers ci.yml; otherwise fall back to GITHUB_TOKEN (push lands but does not
+          # start new runs - ci.yml then runs on the developer's next push or a manual re-run).
+          token: ${{ secrets.NATIVE_BINARIES_PAT || github.token }}
+
+      - uses: ./.github/actions/publish-native-prebuilts
+        with:
+          branch: ${{ github.ref_name }}
+          gh-token: ${{ github.token }}
+          artifact-pattern: mimalloc-*
+          artifact-prefix: mimalloc-
+          dest-base: libs/storage/Tsavorite/cs/src/core/Native/runtimes
+          label: mimalloc
+          run-id: ${{ github.run_id }}
