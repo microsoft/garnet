@@ -348,7 +348,8 @@ namespace Garnet.test
             LogCompactionType compactionType = LogCompactionType.None,
             int mutablePercent = 90,
             int compactionMaxSegments = 32,
-            string segmentSize = "1g"
+            string segmentSize = "1g",
+            NativeAllocatorSurfaces nativeAllocator = NativeAllocatorSurfaces.None
         )
         {
             if (useAzureStorage)
@@ -395,6 +396,7 @@ namespace Garnet.test
                 DisablePubSub = disablePubSub,
                 Recover = tryRecover,
                 IndexMemorySize = indexSize,
+                NativeAllocatorSurfaces = nativeAllocator,
                 EnableAOF = enableAOF,
                 EnableLua = enableLua,
                 AofMemorySize = aofMemorySize,
