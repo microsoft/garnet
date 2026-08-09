@@ -69,11 +69,21 @@ namespace Garnet.cluster
         }
 
         /// <summary>
-        /// Return previous address for a specific sublog without copying the full AofAddress struct
+        /// Return previous address for a specific sublog without copying the full AofAddress struct.
+        /// This is the address actually shipped (Consume'd) to the replica, used to bound AOF
+        /// truncation conservatively.
         /// </summary>
         /// <param name="physicalSublogIdx">Index of the physical sublog.</param>
         /// <returns>The previous address of the specified sublog's sync task.</returns>
         public long GetPreviousAddress(int physicalSublogIdx) => aofSyncTasks[physicalSublogIdx].PreviousAddress;
+
+        /// <summary>
+        /// Return the shipped watermark address for a specific sublog (the monotonic high-water this
+        /// replica's sync task has shipped/scanned past), used to drive the backpressure gate.
+        /// </summary>
+        /// <param name="physicalSublogIdx">Index of the physical sublog.</param>
+        /// <returns>The shipped watermark address of the specified sublog's sync task.</returns>
+        public long GetShippedWatermarkAddress(int physicalSublogIdx) => aofSyncTasks[physicalSublogIdx].ShippedWatermarkAddress;
 
         /// <summary>
         /// Return start address for a specific sublog without copying the full AofAddress struct
@@ -81,11 +91,6 @@ namespace Garnet.cluster
         /// <param name="physicalSublogIdx">Index of the physical sublog.</param>
         /// <returns>The start address of the specified sublog's sync task.</returns>
         public long GetStartAddress(int physicalSublogIdx) => aofSyncTasks[physicalSublogIdx].StartAddress;
-
-        /// <summary>
-        /// Replica endpoint
-        /// </summary>
-        readonly IPEndPoint endPoint;
 
         public AofSyncDriver(
             ClusterProvider clusterProvider,
@@ -100,13 +105,12 @@ namespace Garnet.cluster
             this.aofSyncDriverStore = aofSyncDriverStore;
             this.localNodeId = localNodeId;
             this.remoteNodeId = remoteNodeId;
-            this.endPoint = endPoint;
             cts = new();
             this.logger = logger;
 
             aofSyncTasks = new AofSyncTask[clusterProvider.serverOptions.AofPhysicalSublogCount];
             for (var physicalSublogIdx = 0; physicalSublogIdx < aofSyncTasks.Length; physicalSublogIdx++)
-                aofSyncTasks[physicalSublogIdx] = new AofSyncTask(clusterProvider, physicalSublogIdx, endPoint, startAddress[physicalSublogIdx], localNodeId, remoteNodeId, cts, logger);
+                aofSyncTasks[physicalSublogIdx] = new AofSyncTask(clusterProvider, aofSyncDriverStore, physicalSublogIdx, endPoint, startAddress[physicalSublogIdx], localNodeId, remoteNodeId, cts, logger);
         }
 
         /// <summary>
@@ -152,10 +156,9 @@ namespace Garnet.cluster
                 }
                 else
                 {
-                    var tasks = new Task[aofSyncTasks.Length + 1];
-                    tasks[0] = AdvancePhysicalSublogTimeAsync();
+                    var tasks = new Task[aofSyncTasks.Length];
                     for (var i = 0; i < aofSyncTasks.Length; i++)
-                        tasks[i + 1] = aofSyncTasks[i].RunAofSyncTaskAsync(this);
+                        tasks[i] = aofSyncTasks[i].RunAofSyncTaskAsync(this);
 
                     _ = await Task.WhenAny(tasks).ConfigureAwait(false);
                 }
@@ -171,60 +174,6 @@ namespace Garnet.cluster
 
                 if (!aofSyncDriverStore.TryRemove(this))
                     logger?.LogError("Unable to remove {remoteNodeId} from aofTaskStore at end of ReplicaSyncTask", remoteNodeId);
-            }
-        }
-
-        /// <summary>
-        /// Advance physical sublog time background task.
-        /// </summary>
-        /// <returns></returns>
-        /// <exception cref="GarnetException"></exception>
-        /// <seealso cref="T:Garnet.cluster.ReplicationManager.AdvanceTime"/>
-        async Task AdvancePhysicalSublogTimeAsync()
-        {
-            var enteredMonitor = false;
-            var client = new GarnetClientSession(
-                        endPoint,
-                        clusterProvider.replicationManager.GetAofSyncNetworkBufferSettings,
-                        clusterProvider.replicationManager.GetNetworkPool,
-                        tlsOptions: this.clusterProvider.serverOptions.TlsOptions?.TlsClientOptions,
-                        authUsername: this.clusterProvider.ClusterUsername,
-                        authPassword: this.clusterProvider.ClusterPassword,
-                        logger: logger);
-
-            try
-            {
-                enteredMonitor = activeWorkerMonitor.TryEnter();
-                if (!enteredMonitor)
-                    throw new GarnetException($"Failed to acquire read lock at {nameof(AdvancePhysicalSublogTimeAsync)}");
-
-                // Connect to replica
-                await client.ConnectAsync((int)clusterProvider.serverOptions.ReplicaSyncTimeout.TotalMilliseconds, cts.Token).ConfigureAwait(false);
-
-                var appendOnlyFile = clusterProvider.storeWrapper.appendOnlyFile;
-                var previousTailAddress = AofAddress.Create(appendOnlyFile.Log.Size, 0);
-
-                while (!cts.IsCancellationRequested)
-                {
-                    await Task.Delay(clusterProvider.storeWrapper.runtimeConfig.GetInt(ServerConfigType.AOF_TAIL_WITNESS_FREQ), cts.Token).ConfigureAwait(false);
-                    var currentTailAddress = appendOnlyFile.Log.TailAddress;
-                    var newWrites = previousTailAddress.AnyLesser(currentTailAddress);
-
-                    if (newWrites)
-                    {
-                        var sequenceNumber = appendOnlyFile.GetLargerThanMaximumSequenceNumber();
-                        _ = await client.ExecuteClusterAdvanceTime(sequenceNumber, currentTailAddress.Span).
-                            WaitAsync(clusterProvider.serverOptions.ReplicaSyncTimeout, cts.Token).
-                            ConfigureAwait(false);
-                        previousTailAddress.MonotonicUpdate(ref currentTailAddress);
-                    }
-                }
-            }
-            finally
-            {
-                if (enteredMonitor)
-                    _ = activeWorkerMonitor.Exit();
-                client?.Dispose();
             }
         }
 

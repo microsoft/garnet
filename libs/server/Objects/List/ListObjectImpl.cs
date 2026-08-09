@@ -144,7 +144,6 @@ namespace Garnet.server
                 if (start < 0) start = 0;
 
                 stop = stop < 0 ? list.Count + stop : stop;
-                if (stop < 0) stop = 0;
                 if (stop >= list.Count) stop = list.Count - 1;
 
                 if (start > stop || 0 == list.Count)

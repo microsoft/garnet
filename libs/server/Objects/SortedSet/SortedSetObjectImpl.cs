@@ -581,14 +581,21 @@ namespace Garnet.server
                 return;
             }
 
-            if (start > sortedSetDict.Count - 1)
-                return;
+            var count = sortedSetDict.Count;
 
-            // Shift from the end of the set
-            start = start < 0 ? sortedSetDict.Count + start : start;
-            stop = stop < 0
-                ? sortedSetDict.Count + stop
-                : stop >= sortedSetDict.Count ? sortedSetDict.Count - 1 : stop;
+            // Convert negative indexes, as Redis does in t_zset.c zremrangeGenericCommand
+            if (start < 0) start += count;
+            if (stop < 0) stop += count;
+            if (start < 0) start = 0;
+
+            // start is non-negative here, so start > stop also covers a stop that is still negative
+            if (start > stop || start >= count)
+            {
+                writer.WriteInt32(0);
+                return;
+            }
+
+            if (stop >= count) stop = count - 1;
 
             // Calculate number of elements
             var elementCount = stop - start + 1;

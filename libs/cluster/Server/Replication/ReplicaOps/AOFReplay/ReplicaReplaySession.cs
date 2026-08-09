@@ -27,7 +27,8 @@ namespace Garnet.cluster
         {
             // logger?.LogInformation("Processing {recordLength} bytes; previousAddress {previousAddress}, currentAddress {currentAddress}, nextAddress {nextAddress}, current AOF tail {tail}", recordLength, previousAddress, currentAddress, nextAddress, storeWrapper.appendOnlyFile.TailAddress);
             var currentConfig = clusterProvider.clusterManager.CurrentConfig;
-            var syncReplay = clusterProvider.storeWrapper.runtimeConfig.GetInt(ServerConfigType.REPLICATION_OFFSET_MAX_LAG) == 0;
+            var aofReplayMaxLagBytes = clusterProvider.storeWrapper.runtimeConfig.GetInt(ServerConfigType.AOF_REPLAY_MAX_LAG_BYTES);
+            var syncReplay = aofReplayMaxLagBytes == 0;
 
             // Need to ensure that this replay task is allowed to complete before the replicaReplayGroup is disposed
             // NOTE: this should not be expensive because every replay task has its own lock copy
@@ -89,7 +90,7 @@ namespace Garnet.cluster
                 }
 
                 // Address check only if synchronous replication is enabled
-                if (clusterProvider.storeWrapper.runtimeConfig.GetInt(ServerConfigType.REPLICATION_OFFSET_MAX_LAG) == 0 && clusterProvider.replicationManager.GetSublogReplicationOffset(physicalSublogIdx) != tail)
+                if (syncReplay && clusterProvider.replicationManager.GetSublogReplicationOffset(physicalSublogIdx) != tail)
                 {
                     logger?.LogInformation("Processing {recordLength} bytes; previousAddress {previousAddress}, currentAddress {currentAddress}, nextAddress {nextAddress}, current AOF tail {tail}", recordLength, previousAddress, currentAddress, nextAddress, tail);
                     logger?.LogError("Before ProcessPrimaryStream: Replication offset mismatch: ReplicaReplicationOffset {ReplicaReplicationOffset}, aof.TailAddress {tailAddress}", clusterProvider.replicationManager.GetSublogReplicationOffset(physicalSublogIdx), tail);
@@ -102,10 +103,11 @@ namespace Garnet.cluster
                 // Enqueue to AOF
                 _ = physicalSublog.UnsafeEnqueueRaw(new Span<byte>(record, recordLength), noCommit: true);
 
-                if (clusterProvider.storeWrapper.runtimeConfig.GetInt(ServerConfigType.REPLICATION_OFFSET_MAX_LAG) == 0)
+                if (syncReplay)
                 {
                     // Synchronous replay
                     replicaReplayDriverStore.GetReplayDriver(physicalSublogIdx).Consume(record, recordLength, currentAddress, nextAddress, isProtected: false);
+                    replicaReplayDriverStore.GetReplayDriver(physicalSublogIdx).Throttle();
                 }
                 else
                 {

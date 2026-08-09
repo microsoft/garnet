@@ -1025,6 +1025,19 @@ namespace Garnet.server
 
 
         /// <summary>
+        /// Push a runtime <c>aof-sync-max-lag-bytes</c> change into the always-constructed primary-side
+        /// <see cref="AofBackpressure"/> of every database, so a CONFIG SET retunes (or enables/disables)
+        /// the live gate without a restart. Best-effort: the gate stores the budget in plain fields, so the
+        /// new value propagates to appenders by cache coherence rather than a fence on the append hot path.
+        /// </summary>
+        /// <param name="newValueBytes">New whole-log lag budget in bytes (&lt;= 0 disables the gate).</param>
+        internal void ApplyAofSyncMaxLagBytes(long newValueBytes)
+        {
+            foreach (var db in GetDatabasesSnapshot())
+                db?.AppendOnlyFile?.backpressure?.SetBudget(newValueBytes);
+        }
+
+        /// <summary>
         /// Start background maintenance tasks that should only be run when this node is a replica.
         /// </summary>
         public void StartReplicaTasks()

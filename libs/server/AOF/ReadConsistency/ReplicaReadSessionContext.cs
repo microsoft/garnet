@@ -47,6 +47,16 @@ namespace Garnet.server
         public long[] cachedSublogMax;
 
         /// <summary>
+        /// Reusable waiter owned by this session, used when a consistent read must block for replay
+        /// to catch up. Allocated once per session and reused across every wait, avoiding a per-wait
+        /// node + <see cref="ManualResetEventSlim"/> allocation. Shared by reference across
+        /// batch/session context copies; a session waits sequentially so the single node is never
+        /// contended.
+        /// </summary>
+        [FieldOffset(40)]
+        internal ReadSessionWaiter waiter;
+
+        /// <summary>
         /// Resets the cached per-sublog max values (e.g., on version change).
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -125,7 +135,7 @@ namespace Garnet.server
             this.appendOnlyFile = appendOnlyFile;
             this.serverOptions = serverOptions;
             var sublogMax = new long[serverOptions.AofVirtualSublogCount];
-            replicaReadContext = new() { sessionVersion = -1, maximumSessionSequenceNumber = 0, lastVirtualSublogIdx = -1, cachedSublogMax = sublogMax };
+            replicaReadContext = new() { sessionVersion = -1, maximumSessionSequenceNumber = 0, lastVirtualSublogIdx = -1, cachedSublogMax = sublogMax, waiter = new ReadSessionWaiter() };
             consistentReadCts = new();
             readTimeout = serverOptions.ReplicaSyncTimeout;
         }
@@ -138,6 +148,8 @@ namespace Garnet.server
             consistentReadCts.Cancel();
             inProgress.WriteLock();
             consistentReadCts.Dispose();
+            // batchReadContext shares the same waiter reference, so dispose it once here.
+            replicaReadContext.waiter?.Dispose();
         }
 
         /// <summary>

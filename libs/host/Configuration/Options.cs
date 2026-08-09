@@ -216,8 +216,17 @@ namespace Garnet
         [Option("aof-replay-task-count", Required = false, HelpText = "Number of replay tasks per physical sublog at the replica.")]
         public int AofReplayTaskCount { get; set; }
 
-        [Option("aof-replay-max-drift", Required = false, HelpText = "Maximum allowed drift in key sequence numbers between physical sublog replay drivers. When a driver is ahead of the slowest peer by more than this value, it yields. Only effective when aof-physical-sublog-count > 1. -1 = disabled.")]
-        public long AofReplayMaxDrift { get; set; }
+        [IntRangeValidation(-1, int.MaxValue, isRequired: false)]
+        [Option("aof-replay-drift-threshold", Required = false, HelpText = "Cross-sublog replay drift, in sequence-number units, tolerated on a replica before a replay-align barrier round is triggered. -1 disables the barrier.")]
+        public int AofReplayDriftThreshold { get; set; }
+
+        [IntRangeValidation(0, int.MaxValue, isRequired: false)]
+        [Option("aof-replay-drift-check-freq", Required = false, HelpText = "How often the cross-sublog drift is re-checked during replay, as a multiple of aof-replay-drift-threshold: one scan per (this value x threshold) sequence-number window system-wide, rotated across replay threads (window index mod virtual sublog count), firing a replay-align round when the drift exceeds the threshold. 0 = readers about to wait are the only round source.")]
+        public int AofReplayDriftCheckFreq { get; set; }
+
+        [IntRangeValidation(-1, int.MaxValue, isRequired: false)]
+        [Option("aof-replay-barrier-spin-us", Required = false, HelpText = "How long a replay thread spins at the replay-align barrier before sleeping: -1 = spin forever, 0 = never spin, >0 = spin up to that many microseconds then sleep.")]
+        public int AofReplayBarrierSpinUs { get; set; }
 
         [IntRangeValidation(0, int.MaxValue)]
         [Option("aof-tail-witness-freq", Required = false, HelpText = "Polling frequency of the background task responsible for moving time ahead for all physical sublogs (Used only with physical sublog value >1).")]
@@ -414,8 +423,11 @@ namespace Garnet
         public int ReplicaSyncDelayMs { get; set; }
 
         [IntRangeValidation(-1, int.MaxValue)]
-        [Option("replica-offset-max-lag", Required = false, HelpText = "Throttle ClusterAppendLog when replica.AOFTailAddress - ReplicationOffset > ReplicationOffsetMaxLag. 0: Synchronous replay,  >=1: background replay with specified lag, -1: infinite lag")]
-        public int ReplicationOffsetMaxLag { get; set; }
+        [Option("aof-replay-max-lag-bytes", Required = false, HelpText = "Throttle ClusterAppendLog when replica.AOFTailAddress - ReplicationOffset > AofReplayMaxLagBytes. 0: Synchronous replay,  >=1: background replay with specified lag, -1: infinite lag")]
+        public int AofReplayMaxLagBytes { get; set; }
+
+        [Option("aof-sync-max-lag-bytes", Required = false, HelpText = "Stall primary AOF appends when the replication lag exceeds this budget, divided evenly per sublog (each sublog stalls at an even 1/m share). -1: disabled, >=1: max lag in bytes.")]
+        public long AofSyncMaxLagBytes { get; set; }
 
         [OptionValidation]
         [Option("main-memory-replication", Required = false, HelpText = "Use main-memory replication model.")]
@@ -880,7 +892,9 @@ namespace Garnet
                 AofSegmentSize = AofSegmentSize,
                 AofPhysicalSublogCount = AofPhysicalSublogCount,
                 AofReplayTaskCount = AofReplayTaskCount,
-                AofReplayMaxDrift = AofReplayMaxDrift,
+                AofReplayDriftThreshold = AofReplayDriftThreshold,
+                AofReplayDriftCheckFreq = AofReplayDriftCheckFreq,
+                AofReplayBarrierSpinUs = AofReplayBarrierSpinUs,
                 AofTailWitnessFreqMs = AofTailWitnessFreqMs,
                 CommitFrequencyMs = CommitFrequencyMs,
                 WaitForCommit = WaitForCommit.GetValueOrDefault(),
@@ -931,7 +945,8 @@ namespace Garnet
                 CheckpointThrottleFlushDelayMs = CheckpointThrottleFlushDelayMs,
                 EnableScatterGatherGet = EnableScatterGatherGet.GetValueOrDefault(true),
                 ReplicaSyncDelayMs = ReplicaSyncDelayMs,
-                ReplicationOffsetMaxLag = ReplicationOffsetMaxLag,
+                AofReplayMaxLagBytes = AofReplayMaxLagBytes,
+                AofSyncMaxLagBytes = AofSyncMaxLagBytes,
                 FastAofTruncate = GetFastAofTruncate(logger),
                 OnDemandCheckpoint = OnDemandCheckpoint.GetValueOrDefault(),
                 ReplicaDisklessSync = ReplicaDisklessSync.GetValueOrDefault(),

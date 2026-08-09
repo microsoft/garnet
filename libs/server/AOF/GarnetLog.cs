@@ -29,6 +29,7 @@ namespace Garnet.server
         readonly bool usingSinglePhysicalLog;
         readonly int physicalSublogCount;
         readonly int replayTaskCount;
+        readonly AofBackpressure backpressure;
 
         public static unsafe long GetSequenceNumberFromCookie(byte[] cookie)
         {
@@ -71,6 +72,10 @@ namespace Garnet.server
 
             physicalSublogCount = serverOptions.AofPhysicalSublogCount;
             replayTaskCount = serverOptions.AofReplayTaskCount;
+            // GarnetAppendOnlyFile constructs the gate before this ctor, so it is safe to cache.
+            backpressure = appendOnlyFile.backpressure;
+            // Give the gate a back-reference so its stall diagnostic can read live tail/safe-tail.
+            backpressure?.SetLog(this);
         }
 
         public TsavoriteLog SingleLog => singleLog.log;
@@ -587,6 +592,33 @@ namespace Garnet.server
             }
         }
 
+        // Fail-safe backpressure self-check for a single-key append: stall on the key's sublog
+        // when its lag (tail minus the published min-shipped watermark) exceeds the per-sublog
+        // budget. A stale watermark only over-estimates the lag, so this never permits a wrap.
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        void BackpressureWaitKey(ReadOnlySpan<byte> key)
+        {
+            if (backpressure == null)
+                return;
+            var sublogIdx = GetPhysicalSublogIdx(key);
+            backpressure.Wait(sublogIdx, GetTailAddress(sublogIdx));
+        }
+
+        // Fail-safe backpressure self-check for a multi-sublog append (transaction / stored proc /
+        // database commit / broadcast marker): stall on every participating sublog before acquiring
+        // sublog locks.
+        void BackpressureWaitVector(ulong physicalSublogAccessVector)
+        {
+            if (backpressure == null)
+                return;
+            var vector = physicalSublogAccessVector;
+            while (vector > 0)
+            {
+                var sublogIdx = vector.GetNextOffset();
+                backpressure.Wait(sublogIdx, GetTailAddress(sublogIdx));
+            }
+        }
+
         /// <summary>
         /// Enqueue an upsert-style record (key + value + input). If the combined data is "large" (see
         /// <see cref="TsavoriteLog.MinPartialAllocSize"/>) it is written as chunk records; otherwise it uses the single-record fast path.
@@ -595,6 +627,8 @@ namespace Garnet.server
             where TInput : IStoreInput
             where TEpochAccessor : IEpochAccessor
         {
+            BackpressureWaitKey(key);
+
             if (IsChunkable(key, value, input.SerializedLength))
             {
                 EnqueueSpanChunked(opType, version, sessionId, key, value, opType.HasChunkValue(), ref input, opType.HasChunkInput(), epochAccessor, out logicalAddress);
@@ -716,6 +750,8 @@ namespace Garnet.server
             where TInput : IStoreInput
             where TEpochAccessor : IEpochAccessor
         {
+            BackpressureWaitKey(key);
+
             // RMW shape (key + input, no value). Chunk when large so a big key/input is split across page-sized records.
             if (IsChunkable(key, default, input.SerializedLength))
             {
@@ -772,6 +808,8 @@ namespace Garnet.server
         internal void Enqueue<TEpochAccessor>(AofEntryType opType, long version, int sessionId, ReadOnlySpan<byte> key, ReadOnlySpan<byte> value, TEpochAccessor epochAccessor, out long logicalAddress)
             where TEpochAccessor : IEpochAccessor
         {
+            BackpressureWaitKey(key);
+
             // Delete shape (key only; value is unused on replay). Chunk when the key is large so it is split across page-sized
             // records. This overload has no input; a dummy input is passed and never written (HasChunkInput is false for deletes).
             if (IsChunkable(key, value, 0))
@@ -915,6 +953,11 @@ namespace Garnet.server
 
         internal unsafe void EnqueueStoredProc(AofEntryType opType, byte procedureId, long txnVersion, int sessionId, ref CustomProcedureInput procInput, CustomTransactionProcedure proc)
         {
+            if (usingSinglePhysicalLog)
+                backpressure?.Wait(0, GetTailAddress(0));
+            else
+                BackpressureWaitVector(proc.physicalSublogAccessVector);
+
             if (usingSingleLog)
             {
                 var header = new AofHeader
@@ -992,6 +1035,11 @@ namespace Garnet.server
 
         internal unsafe void EnqueueTxn(AofEntryType opType, long txnVersion, int sessionId, ulong physicalSublogAccessVector, BitVector[] virtualSublogAccessVector, int virtualSublogParticipantCount)
         {
+            if (usingSinglePhysicalLog)
+                backpressure?.Wait(0, GetTailAddress(0));
+            else
+                BackpressureWaitVector(physicalSublogAccessVector);
+
             if (usingSingleLog)
             {
                 var header = new AofHeader
@@ -1065,6 +1113,8 @@ namespace Garnet.server
         internal void Enqueue<TInput>(AofEntryType opType, long version, int sessionId, ReadOnlySpan<byte> key, ref TInput input, out long logicalAddress)
             where TInput : IStoreInput
         {
+            BackpressureWaitKey(key);
+
             // RMW shape (key + input, no value). Chunk when large so a big key/input is split across page-sized records.
             if (IsChunkable(key, default, input.SerializedLength))
             {
@@ -1123,6 +1173,11 @@ namespace Garnet.server
         /// </summary>
         private unsafe void EnqueueBroadcastEntry(AofHeader basicHeader)
         {
+            if (usingSinglePhysicalLog)
+                backpressure?.Wait(0, GetTailAddress(0));
+            else
+                BackpressureWaitVector(AllLogsBitmask());
+
             if (usingSingleLog)
             {
                 singleLog.log.Enqueue(basicHeader, out _);

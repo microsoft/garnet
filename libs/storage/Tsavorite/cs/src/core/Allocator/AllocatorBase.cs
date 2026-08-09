@@ -2019,6 +2019,10 @@ namespace Tsavorite.core
             {
                 var pageStartAddress = GetLogicalAddressOfStartOfPage(flushPage);
                 var flushFromAddress = Math.Max(scanFromAddress, pageStartAddress);
+
+                // When copying snapshot object bytes into the main object-log, rent this page's object-log write buffers; the hybrid-log region
+                // (which reuses the stored lengths/positions without writing object bytes) needs none.
+                var flushBuffers = copyObjects ? CreateCircularFlushBuffers(objectLogDevice: null, logger) : null;
                 var asyncResult = new PageAsyncFlushResult<TContext>()
                 {
                     page = flushPage,
@@ -2034,12 +2038,22 @@ namespace Tsavorite.core
                     flushRequestState = FlushRequestState.Recovery,
                     recoverySnapshotObjectLogDevice = snapshotObjectLogDevice,
                     recoveryFormerFlushedUntilAddress = formerFlushedUntilAddress,
-                    flushBuffers = copyObjects ? CreateCircularFlushBuffers(objectLogDevice: null, logger) : null
+                    flushBuffers = flushBuffers
                 };
 
-                // For the snapshot region (records at/above formerFlushedUntilAddress) we copy object bytes from the snapshot object-log to the main
-                // object-log using flushBuffers; otherwise (hybrid-log region) we reuse the stored lengths/positions without writing object bytes.
-                WriteAsync(flushPage, callback, asyncResult);
+                try
+                {
+                    // For the snapshot region (records at/above formerFlushedUntilAddress) we copy object bytes from the snapshot object-log to the main
+                    // object-log using flushBuffers; otherwise (hybrid-log region) we reuse the stored lengths/positions without writing object bytes.
+                    WriteAsync(flushPage, callback, asyncResult);
+                }
+                finally
+                {
+                    // WriteAsync issues all of this page's object-log and main-log device writes synchronously before returning, and the recovery completion
+                    // callback (AsyncFlushPageCallbackForRecovery) never reuses flushBuffers, so dispose it here, even if WriteAsync throws. Dispose defers the
+                    // actual return-to-pool (ClearBuffers) until any still-in-flight writes complete.
+                    flushBuffers?.Dispose();
+                }
             }
         }
 
