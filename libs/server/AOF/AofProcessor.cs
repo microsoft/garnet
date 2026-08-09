@@ -436,7 +436,7 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Shared preamble for both <c>ReplayOp</c> overloads: wait for pending vector operations (unless this is a StoreRMW),
+        /// Shared preamble for both <c>ReplayOp</c> overloads (with and without chunking): wait for pending vector operations (unless this is a StoreRMW),
         /// honor the skip/skip-buffer decision (<paramref name="skip"/>), and expose the object-output buffer. Returns true to
         /// proceed with dispatch (<paramref name="bufferPtr"/>/<paramref name="bufferLength"/> set); false if the op was skipped
         /// or buffered and the caller should stop.
