@@ -1459,61 +1459,88 @@ namespace Tsavorite.core
 
                 if (results == null) results = new NativeResult[MaxResults];
 
-                if (NativeDevice_QueueRun(newDevice, 0) >= 0)
+                // Exception-safe initialization: newDevice is created but not yet published to the
+                // nativeDevice field, so any throw between here and the Volatile.Write below would
+                // otherwise (a) leak the native handle — Dispose observes nativeDevice == Zero and skips
+                // NativeDevice_Destroy — and (b) leave partially-started drainer threads in
+                // completionThreads (with null slots) that a later Dispose would NRE on while joining.
+                // On any failure, stop whatever drainers were started, dispose the token, reset the
+                // partial fields, destroy the handle, and rethrow.
+                try
                 {
-                    try
+                    if (NativeDevice_QueueRun(newDevice, 0) >= 0)
                     {
-                        _ = NativeDevice_NumIoContexts(newDevice);
-                        _ = NativeDevice_QueueRunFor(newDevice, 0, 0);
-                        _ = NativeDevice_TryCompleteMine(newDevice);
-                    }
-                    catch (EntryPointNotFoundException ex)
-                    {
-                        NativeDevice_Destroy(newDevice);
-                        throw new TsavoriteException(
-                            "Loaded libnative_device.so/dll is missing the sharded-ABI exports " +
-                            "NativeDevice_NumIoContexts / NativeDevice_QueueRunFor / NativeDevice_TryCompleteMine. " +
-                            "The shared library predates the multi-io-context change and must be rebuilt from this branch " +
-                            "(libs/storage/Tsavorite/cc) and the resulting binary installed to " +
-                            "libs/storage/Tsavorite/cs/src/core/Device/runtimes/<rid>/native/.", ex);
-                    }
-
-                    completionThreadToken = new();
-                    int actualIoContexts = NativeDevice_NumIoContexts(newDevice);
-                    if (actualIoContexts < 1) actualIoContexts = 1;
-                    numRingsActual = actualIoContexts;
-                    if (uringSqPollConfig && ioBackendConfig == IoBackend.Uring)
-                        logger?.LogInformation(
-                            "NativeStorageDevice: io_uring SQPOLL enabled (rings={rings}, one kernel submission-poll thread per ring, sq_thread_idle={idle}). Submissions are syscall-free while the poll thread is awake.",
-                            actualIoContexts, uringSqPollIdleMsConfig > 0 ? $"{uringSqPollIdleMsConfig}ms" : "native-default");
-                    // Partition the io_contexts (rings) across a small pool of drainer threads. When
-                    // actualIoContexts == numCompletionThreadsConfig this reduces to a 1:1
-                    // ring-to-drainer binding; when there are more rings than drainers (to de-contend
-                    // io_submit), each drainer range-drains a contiguous slice so every ring is still
-                    // reaped promptly. Rings are split as evenly as possible; the first `remainder`
-                    // drainers get one extra ring.
-                    int numDrainers = numCompletionThreadsConfig;
-                    if (numDrainers > actualIoContexts) numDrainers = actualIoContexts;
-                    completionThreads = new Thread[numDrainers];
-                    int baseCount = actualIoContexts / numDrainers;
-                    int remainder = actualIoContexts % numDrainers;
-                    int nextStart = 0;
-                    for (int i = 0; i < numDrainers; i++)
-                    {
-                        int startCtx = nextStart;
-                        int count = baseCount + (i < remainder ? 1 : 0);
-                        nextStart += count;
-                        completionThreads[i] = new Thread(() => CompletionWorker(startCtx, count))
+                        try
                         {
-                            IsBackground = true
-                        };
-                        completionThreads[i].Start();
-                    }
-                }
+                            _ = NativeDevice_NumIoContexts(newDevice);
+                            _ = NativeDevice_QueueRunFor(newDevice, 0, 0);
+                            _ = NativeDevice_TryCompleteMine(newDevice);
+                        }
+                        catch (EntryPointNotFoundException ex)
+                        {
+                            throw new TsavoriteException(
+                                "Loaded libnative_device.so/dll is missing the sharded-ABI exports " +
+                                "NativeDevice_NumIoContexts / NativeDevice_QueueRunFor / NativeDevice_TryCompleteMine. " +
+                                "The shared library predates the multi-io-context change and must be rebuilt from this branch " +
+                                "(libs/storage/Tsavorite/cc) and the resulting binary installed to " +
+                                "libs/storage/Tsavorite/cs/src/core/Device/runtimes/<rid>/native/.", ex);
+                        }
 
-                // Publish last: a reader observing nativeDevice != IntPtr.Zero is guaranteed to
-                // see a fully-initialised handle with completion threads already running.
-                Volatile.Write(ref nativeDevice, newDevice);
+                        completionThreadToken = new();
+                        int actualIoContexts = NativeDevice_NumIoContexts(newDevice);
+                        if (actualIoContexts < 1) actualIoContexts = 1;
+                        numRingsActual = actualIoContexts;
+                        if (uringSqPollConfig && ioBackendConfig == IoBackend.Uring)
+                            logger?.LogInformation(
+                                "NativeStorageDevice: io_uring SQPOLL enabled (rings={rings}, one kernel submission-poll thread per ring, sq_thread_idle={idle}). Submissions are syscall-free while the poll thread is awake.",
+                                actualIoContexts, uringSqPollIdleMsConfig > 0 ? $"{uringSqPollIdleMsConfig}ms" : "native-default");
+                        // Partition the io_contexts (rings) across a small pool of drainer threads. When
+                        // actualIoContexts == numCompletionThreadsConfig this reduces to a 1:1
+                        // ring-to-drainer binding; when there are more rings than drainers (to de-contend
+                        // io_submit), each drainer range-drains a contiguous slice so every ring is still
+                        // reaped promptly. Rings are split as evenly as possible; the first `remainder`
+                        // drainers get one extra ring.
+                        int numDrainers = numCompletionThreadsConfig;
+                        if (numDrainers > actualIoContexts) numDrainers = actualIoContexts;
+                        completionThreads = new Thread[numDrainers];
+                        int baseCount = actualIoContexts / numDrainers;
+                        int remainder = actualIoContexts % numDrainers;
+                        int nextStart = 0;
+                        for (int i = 0; i < numDrainers; i++)
+                        {
+                            int startCtx = nextStart;
+                            int count = baseCount + (i < remainder ? 1 : 0);
+                            nextStart += count;
+                            completionThreads[i] = new Thread(() => CompletionWorker(startCtx, count))
+                            {
+                                IsBackground = true
+                            };
+                            completionThreads[i].Start();
+                        }
+                    }
+
+                    // Publish last: a reader observing nativeDevice != IntPtr.Zero is guaranteed to
+                    // see a fully-initialised handle with completion threads already running.
+                    Volatile.Write(ref nativeDevice, newDevice);
+                }
+                catch
+                {
+                    // Stop any drainers that were started. Pre-publish they are spin-yielding on the
+                    // still-null nativeDevice field (NativeDevice_QueueRunFor null-guards and returns -1),
+                    // so cancellation is observed promptly and Join returns quickly; null slots (a thread
+                    // that was never created/started) are skipped.
+                    if (completionThreads != null)
+                    {
+                        completionThreadToken?.Cancel();
+                        foreach (var t in completionThreads) t?.Join();
+                        completionThreads = null;
+                    }
+                    completionThreadToken?.Dispose();
+                    completionThreadToken = null;
+                    numRingsActual = 0;
+                    NativeDevice_Destroy(newDevice);
+                    throw;
+                }
             }
         }
 
@@ -1867,7 +1894,7 @@ namespace Tsavorite.core
                     // its QueueRunFor timeout fires.
                     for (int i = 0; i < numRingsActual; i++)
                         _ = NativeDevice_WakeCompletionWorker(nativeDevice, i);
-                    foreach (var t in completionThreads) t.Join();
+                    foreach (var t in completionThreads) t?.Join();
                     completionThreadToken.Dispose();
                     completionThreads = null;
                 }
