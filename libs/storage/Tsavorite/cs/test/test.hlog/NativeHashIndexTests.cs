@@ -50,6 +50,10 @@ namespace Tsavorite.test.spanbyte
         [Category(TsavoriteKVTestCategory)]
         public void NativeHashIndexInsertReadRoundTrips()
         {
+            // Drain any pending finalizer frees so the tracker delta below reflects only this store (the
+            // NativeMemoryTracker is process-global and NativePageBlockRegistry frees on the finalizer thread).
+            GC.Collect();
+            GC.WaitForPendingFinalizers();
             var before = NativeMemoryTracker.Bytes;
             var log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "hlog.log"), deleteOnClose: true);
             var store = new TsavoriteKV<SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>>(
@@ -114,6 +118,9 @@ namespace Tsavorite.test.spanbyte
             // Enable both direct-VM singleton surfaces: hash index + log pages.
             _ = NativeAllocatorInitializer.Initialize(NativeAllocatorSurfaces.HashIndex | NativeAllocatorSurfaces.LogPages);
 
+            // Drain pending finalizer frees so the tracker delta below reflects only this store.
+            GC.Collect();
+            GC.WaitForPendingFinalizers();
             var before = NativeMemoryTracker.Bytes;
             var log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "hlog.log"), deleteOnClose: true);
             var store = new TsavoriteKV<SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>>(
