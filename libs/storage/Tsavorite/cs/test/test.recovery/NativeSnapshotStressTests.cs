@@ -39,7 +39,7 @@ namespace Tsavorite.test.recovery
         [TearDown]
         public void TearDown()
         {
-            _ = NativeAllocatorInitializer.Initialize(NativeAllocatorSurfaces.None);
+            _ = NativeAllocatorInitializer.Initialize(NativeAllocatorInitializer.EnvBaselineSurfaces);
             // Drain finalizer-deferred native frees (NativePageBlockRegistry frees direct-VM blocks on the finalizer
             // thread) so a following fixture's NativeMemoryTracker baseline is not perturbed by this test's pending frees.
             GC.Collect();

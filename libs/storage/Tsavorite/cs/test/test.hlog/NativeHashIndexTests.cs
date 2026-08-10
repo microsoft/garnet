@@ -40,7 +40,7 @@ namespace Tsavorite.test.spanbyte
         [TearDown]
         public void TearDown()
         {
-            _ = NativeAllocatorInitializer.Initialize(NativeAllocatorSurfaces.None);
+            _ = NativeAllocatorInitializer.Initialize(NativeAllocatorInitializer.EnvBaselineSurfaces);
             GC.Collect();
             GC.WaitForPendingFinalizers();
             GC.Collect();

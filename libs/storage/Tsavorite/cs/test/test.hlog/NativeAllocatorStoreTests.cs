@@ -43,7 +43,7 @@ namespace Tsavorite.test.spanbyte
         [TearDown]
         public void TearDown()
         {
-            _ = NativeAllocatorInitializer.Initialize(NativeAllocatorSurfaces.None);
+            _ = NativeAllocatorInitializer.Initialize(NativeAllocatorInitializer.EnvBaselineSurfaces);
             // These tests create Full-mode stores whose direct-VM index/log blocks are freed lazily by the
             // NativePageBlockRegistry finalizer. Drain finalizers here so those deferred NativeMemoryTracker
             // Subtract calls do not fire during a later test (which would corrupt its tracker delta or leave a

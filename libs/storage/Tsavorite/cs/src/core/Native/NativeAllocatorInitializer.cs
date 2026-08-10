@@ -20,6 +20,13 @@ namespace Tsavorite.core
         /// <summary>The surfaces actually enabled after availability resolution (may be narrower than requested).</summary>
         public static NativeAllocatorSurfaces EnabledSurfaces { get; private set; }
 
+        /// <summary>The surfaces requested at process start via the <c>GARNET_NATIVE_ALLOCATOR</c> environment
+        /// variable (or <see cref="NativeAllocatorSurfaces.None"/> if unset). This is the immutable process baseline:
+        /// tests/harnesses that temporarily narrow or reset <see cref="EnabledSurfaces"/> restore to <b>this</b> (not
+        /// hard-coded None) so an env-var-forced native mode persists across the whole suite. Inert (None) when the
+        /// env var is unset.</summary>
+        public static NativeAllocatorSurfaces EnvBaselineSurfaces { get; internal set; }
+
         /// <summary>
         /// Resolve and install native allocators for the requested <paramref name="requested"/> scope. Must be
         /// called <b>once, before any store or buffer pool is constructed</b>.

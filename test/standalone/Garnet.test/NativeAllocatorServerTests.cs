@@ -154,5 +154,52 @@ namespace Garnet.test
             for (var i = 0; i < n; i += 250)
                 ClassicAssert.AreEqual($"{payload}:{i}", (string)db.StringGet($"key:{i}"));
         }
+
+        [Test]
+        [TestCaseSource(nameof(Modes))]
+        public void ObjectStoreEvictionChurn(NativeAllocatorSurfaces mode)
+        {
+            SkipIfUnavailable(mode);
+
+            // Regression guard for the native OBJECT-log-page recycle path: heavy SET + EXPIRE (plus collection
+            // commands) under lowMemory drives eviction of native object-log pages and their reuse via the recycle
+            // pool. A recycled page whose stale inline bytes were not re-zeroed leaves a stale KeyIsOverflow record
+            // that eviction misreads, crashing the server ("Get(): index 0 must be less than Count 0" in the
+            // ObjectIdMap). Full mode is the case under test; off/BufferPool are behavior-identical controls.
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, lowMemory: true, nativeAllocator: mode);
+            server.Start();
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var rng = new System.Random(17);
+            const int n = 8000;
+            for (var i = 0; i < n; i++)
+            {
+                var key = $"k:{System.Guid.NewGuid():N}";
+                ClassicAssert.IsTrue(db.StringSet(key, System.Guid.NewGuid().ToString("N")));
+                var chance = rng.Next(100);
+                if (chance < 30)
+                    _ = db.KeyExpire(key, System.TimeSpan.FromHours(2));         // long TTL (survives)
+                else if (chance < 60)
+                    _ = db.KeyExpire(key, System.TimeSpan.FromMilliseconds(1));  // immediate expiration -> tombstone
+
+                // Interleave collection commands so the object allocator's own records churn through eviction/
+                // recycle alongside the expirable string records.
+                if ((i & 0x3F) == 0)
+                {
+                    var ok = $"o:{i}";
+                    db.HashSet(ok, [new HashEntry("f", new string('v', 48))]);
+                    db.ListRightPush(ok + ":l", ["a", "b", "c"]);
+                    _ = db.KeyExpire(ok, System.TimeSpan.FromMilliseconds(1));
+                }
+            }
+
+            // The server must still be alive and correct after the eviction/recycle churn — a corrupt recycled page
+            // would have crashed the session/process during the loop above.
+            ClassicAssert.AreEqual("PONG", db.Execute("PING").ToString());
+            ClassicAssert.IsTrue(db.StringSet("sentinel", "ok"));
+            ClassicAssert.AreEqual("ok", (string)db.StringGet("sentinel"));
+        }
     }
 }

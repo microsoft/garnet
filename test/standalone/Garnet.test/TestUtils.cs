@@ -396,7 +396,7 @@ namespace Garnet.test
                 DisablePubSub = disablePubSub,
                 Recover = tryRecover,
                 IndexMemorySize = indexSize,
-                NativeAllocatorSurfaces = nativeAllocator,
+                NativeAllocatorSurfaces = nativeAllocator != NativeAllocatorSurfaces.None ? nativeAllocator : NativeAllocatorInitializer.EnvBaselineSurfaces,
                 EnableAOF = enableAOF,
                 EnableLua = enableLua,
                 AofMemorySize = aofMemorySize,
