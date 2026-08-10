@@ -58,7 +58,9 @@ namespace Tsavorite.core
             {
                 if (useNativeLogPages)
                 {
-                    // Native pages are not pooled: free the direct-VM block now (evicted/flush-complete).
+                    // Recycle the direct-VM block via nativeFreePagePool for reuse (evicted/flush-complete, so no
+                    // device IO references it). FreePage zeroed the inline bytes via ClearPage before this call, so
+                    // a later AllocatePinnedPageArray that reuses the block sees a clean page.
                     FreeNativeLogPage(index);
                 }
                 else

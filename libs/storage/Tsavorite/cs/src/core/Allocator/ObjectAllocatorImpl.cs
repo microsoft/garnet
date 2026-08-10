@@ -151,9 +151,14 @@ namespace Tsavorite.core
             {
                 if (useNativeLogPages)
                 {
-                    // Native inline pages are not pooled: release this page's managed object roots and free the
-                    // direct-VM block now (the page is evicted/flush-complete, so no device IO references it).
-                    objectPages[index].Clear();
+                    // Zero the inline page bytes AND clear this page's ObjectIdMap before pooling the direct-VM
+                    // block (FreeNativeLogPage recycles it via nativeFreePagePool). A recycled block is reused by a
+                    // later AllocatePinnedPageArray WITHOUT re-zeroing, so if stale inline bytes survived, a new page
+                    // that did not fully overwrite them would leave stale record headers in its unwritten tail that
+                    // eviction misreads as valid records (a stale KeyIsOverflow record indexing the fresh, empty
+                    // ObjectIdMap -> "index 0 must be less than Count 0" assertion). SpanByte.FreePage ClearPage's
+                    // before ReturnPage for the same reason.
+                    ClearPage(index, 0);
                     FreeNativeLogPage(index);
                 }
                 else
