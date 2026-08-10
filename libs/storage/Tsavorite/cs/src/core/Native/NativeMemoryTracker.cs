@@ -11,15 +11,14 @@ namespace Tsavorite.core
     /// <summary>
     /// Process-wide accounting of memory allocated through the native allocators, surfaced for telemetry
     /// (e.g. <c>INFO memory</c>) and for sizing the managed GC heap limit against the container limit. It is
-    /// deliberately <b>not</b> wired to <see cref="System.GC.AddMemoryPressure(long)"/> — for large, long-lived,
-    /// deterministically-freed allocations that would only bias the GC toward unproductive Gen2 collections
+    /// deliberately <b>not</b> wired to <see cref="System.GC.AddMemoryPressure(long)"/>: for large, long-lived,
+    /// deterministically-freed native allocations that would only bias the GC toward unproductive Gen2 collections
     /// without being able to reclaim the native memory.
     /// <para>
     /// mimalloc-backed usage (the buffer pool) is read <b>on demand</b> from mimalloc's own stats
-    /// (<see cref="Mimalloc.CommittedBytes"/>) so the hot rent/return path does <b>zero</b> per-op accounting —
-    /// profiling showed per-op counting cost ~15ns/op and (before striping) also capped throughput. Direct-VM
-    /// singletons (full mode) are allocated outside mimalloc and are counted via the striped per-CPU counter
-    /// below (cheap because those allocations are rare).
+    /// (<see cref="Mimalloc.CommittedBytes"/>), so the hot rent/return path does <b>zero</b> per-op accounting.
+    /// Direct-VM allocations (full mode) are outside mimalloc and are counted via the striped per-CPU counter
+    /// below (cheap because they are rare).
     /// </para>
     /// </summary>
     public static class NativeMemoryTracker

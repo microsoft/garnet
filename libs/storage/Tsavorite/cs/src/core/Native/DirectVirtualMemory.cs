@@ -76,10 +76,8 @@ namespace Tsavorite.core
         /// <para>
         /// On Linux, regions at least <see cref="HugePageSize"/> are aligned to 2&#160;MB and hinted with
         /// <c>madvise(MADV_HUGEPAGE)</c> so the kernel backs them with transparent huge pages. These regions (hash
-        /// index, log pages, recovery frames) are large, long-lived, and densely accessed at random — exactly the
-        /// TLB-bound profile where 2&#160;MB pages cut dTLB misses (measured ~25% lower random-access latency vs
-        /// 4&#160;KB pages). The managed POH backend gets 4&#160;KB pages under the common <c>madvise</c> THP mode,
-        /// so this is a direct-VM-only win. Best-effort: if THP is disabled the hint is a no-op and mapping proceeds.
+        /// index, log pages, recovery frames) are large, long-lived, and densely accessed at random, so 2&#160;MB
+        /// pages cut dTLB misses. Best-effort: if THP is disabled the hint is a no-op and mapping proceeds.
         /// </para>
         /// </summary>
         public static DirectVmBlock Allocate(long size, int alignment)

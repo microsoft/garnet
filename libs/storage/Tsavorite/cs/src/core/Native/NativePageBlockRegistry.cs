@@ -9,31 +9,20 @@ namespace Tsavorite.core
     /// Owns the lifetime of direct-VM blocks backing circular-buffer log pages and recovery/scan frames, freeing
     /// them from its <b>finalizer</b> rather than deterministically on Dispose.
     /// <para>
-    /// This matches the managed backend's timing and is required for correctness: a log page may have an
-    /// in-flight device flush/read (the device holds a raw pointer, not a managed reference) that outlives the
-    /// allocator's Dispose. Managed <c>byte[]</c> pages stay mapped until the GC reclaims them — which happens
-    /// only after the owning store (and therefore the device) is unreachable — so the in-flight IO never touches
-    /// unmapped memory. <c>munmap</c>/<c>VirtualFree</c> is immediate, so freeing at Dispose would unmap a page
-    /// while the device is still copying it (observed as an AccessViolation). Registering the blocks here and
-    /// freeing them only when this registry is finalized reproduces the managed lifetime exactly: the registry is
-    /// reachable only through the allocator, so it is finalized after the store and its device are gone.
-    /// </para>
-    /// <para>
-    /// This registry now holds only a bounded, one-time set of blocks at teardown (the live tail log pages and the
-    /// two live hash-index tables) — superseded index tables are freed deterministically on grow, not parked here.
-    /// It is deliberately <b>not</b> wired to <see cref="System.GC.AddMemoryPressure(long)"/> (matching
-    /// <see cref="NativeMemoryTracker"/>'s policy for large, long-lived native allocations): doing so biases the GC
-    /// toward unproductive Gen2 collections whose finalizers fire at unpredictable times, which both perturbs
-    /// native-memory measurements and adds GC pauses without being able to reclaim the memory any sooner in the
-    /// common single-store, process-lifetime case.
+    /// A log page may have an in-flight device flush/read (the device holds a raw pointer, not a managed reference)
+    /// that outlives the allocator's Dispose. <c>munmap</c>/<c>VirtualFree</c> is immediate, so freeing at Dispose
+    /// could unmap a page while the device is still copying it. This registry is reachable only through the
+    /// allocator, so it is finalized after the store and its device are gone, at which point no IO can reference
+    /// the blocks. It holds only a bounded set at teardown: the live tail log pages and the two live hash-index
+    /// tables (superseded index tables are freed deterministically on grow).
     /// </para>
     /// </summary>
     internal sealed class NativePageBlockRegistry
     {
         // Registrations are infrequent and lightly contended (page allocation). A plain lock-guarded list keeps
-        // both Register and the finalizer sweep allocation-free — important because the finalizer runs on the GC
-        // finalizer thread during shutdown, where allocating (e.g. a ConcurrentBag enumerator snapshot) is best
-        // avoided. When the finalizer runs the registry is already unreachable, so no concurrent Register can race.
+        // both Register and the finalizer sweep allocation-free — the finalizer runs on the GC finalizer thread,
+        // where allocating is best avoided. When the finalizer runs the registry is unreachable, so no concurrent
+        // Register can race.
         readonly List<DirectVmBlock> blocks = new();
         readonly object gate = new();
 

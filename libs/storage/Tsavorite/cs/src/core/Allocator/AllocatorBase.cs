@@ -134,25 +134,25 @@ namespace Tsavorite.core
 
         /// <summary>Bounded pool of evicted direct-VM page blocks kept for reuse by <see cref="AllocatePinnedPageArray"/>,
         /// so the common free-head/alloc-tail churn reuses a still-mapped (THP-backed) block instead of
-        /// munmap+mmap+re-fault (measured ~2.9x cheaper per page cycle). Mirrors the managed freePagePool. A block
-        /// enters the pool only when no snapshot IO references it (the fast path in <see cref="FreeNativeLogPage"/>, or
-        /// on snapshot completion in <see cref="EndNativeSnapshotFlush"/>), so a reused block is never one a snapshot
-        /// write is still reading; it was zeroed by ClearPage before being freed, so no re-zero is needed on reuse.
-        /// Overflow beyond the cap is munmap'd by the disposer. Null for the managed backend.</summary>
+        /// munmap+mmap+re-fault. A block enters the pool only when no snapshot IO references it (the fast path in
+        /// <see cref="FreeNativeLogPage"/>, or on snapshot completion in <see cref="EndNativeSnapshotFlush"/>), so a
+        /// reused block is never one a snapshot write is still reading; it was zeroed by ClearPage before being
+        /// freed, so no re-zero is needed on reuse. Overflow beyond the cap is munmap'd by the disposer. Null for the
+        /// managed backend.</summary>
         OverflowPool<DirectVmBlock> nativeFreePagePool;
 
-        /// <summary>Capacity of <see cref="nativeFreePagePool"/> (matches the managed freePagePool's OverflowPool size).</summary>
+        /// <summary>Capacity of <see cref="nativeFreePagePool"/>.</summary>
         const int NativeFreePagePoolSize = 4;
 
         /// <summary>Set (under <see cref="nativeFreeGate"/>) when <see cref="Dispose"/> has disposed
         /// <see cref="nativeFreePagePool"/>. A block offered for recycling after this must be munmap'd directly
-        /// rather than enqueued into the drained pool, which would silently leak it (a native mapping the pool's
-        /// disposer will never revisit). See <see cref="RecycleOrFreeNativeBlock"/>.</summary>
+        /// rather than enqueued into the drained pool, which would silently leak it. See
+        /// <see cref="RecycleOrFreeNativeBlock"/>.</summary>
         bool nativeFreePoolDisposed;
 
-        /// <summary>Owns the lifetime of the direct-VM log-page blocks that are still installed at Dispose, freeing
-        /// them at finalization to match the managed page lifetime (an in-flight device flush/read may still
-        /// reference them, and the device is disposed after this allocator). Null / unused for the managed backend.</summary>
+        /// <summary>Owns the direct-VM log-page blocks that are still installed at Dispose, freeing them at
+        /// finalization (an in-flight device flush/read may still reference them, and the device is disposed after
+        /// this allocator). Null / unused for the managed backend.</summary>
         NativePageBlockRegistry nativePageRegistry;
 
         #endregion
@@ -533,8 +533,8 @@ namespace Tsavorite.core
             // Direct-VM log-page blocks that are STILL INSTALLED at Dispose are not freed here: an in-flight device
             // flush/read may still reference such a page, and the device is disposed by the owner AFTER this
             // allocator. Hand them to nativePageRegistry, which frees them at finalization (after the store and
-            // device are unreachable), matching the managed page lifetime. Pages that were already evicted were
-            // freed deterministically in ReturnPage (post-flush), so only the live tail pages reach here.
+            // device are unreachable). Pages that were already evicted were freed deterministically in ReturnPage
+            // (post-flush), so only the live tail pages reach here.
             if (pageBlocks is not null)
             {
                 for (var i = 0; i < pageBlocks.Length; i++)

@@ -17,32 +17,28 @@ namespace Tsavorite.core
     /// </summary>
     public static class NativeAllocatorInitializer
     {
-        /// <summary>The surfaces actually enabled after availability resolution (may be narrower than requested).</summary>
+        /// <summary>The surfaces currently installed process-wide.</summary>
         public static NativeAllocatorSurfaces EnabledSurfaces { get; private set; }
 
         /// <summary>The surfaces requested at process start via the <c>GARNET_NATIVE_ALLOCATOR</c> environment
-        /// variable (or <see cref="NativeAllocatorSurfaces.None"/> if unset). This is the immutable process baseline:
-        /// tests/harnesses that temporarily narrow or reset <see cref="EnabledSurfaces"/> restore to <b>this</b> (not
-        /// hard-coded None) so an env-var-forced native mode persists across the whole suite. Inert (None) when the
-        /// env var is unset.</summary>
+        /// variable (or <see cref="NativeAllocatorSurfaces.None"/> if unset). Test harnesses that temporarily change
+        /// <see cref="EnabledSurfaces"/> restore it to this baseline.</summary>
         public static NativeAllocatorSurfaces EnvBaselineSurfaces { get; internal set; }
 
         /// <summary>
-        /// Resolve and install native allocators for the requested <paramref name="requested"/> scope. Must be
-        /// called <b>once, before any store or buffer pool is constructed</b>.
+        /// Install native allocators for the requested <paramref name="requested"/> scope. Must be called once,
+        /// before any store or buffer pool is constructed.
         /// <para>
-        /// The mimalloc-backed <see cref="NativeAllocatorSurfaces.BufferPool"/> surface is a hard requirement when
-        /// requested: if mimalloc cannot be loaded for this platform/RID, initialization <b>throws</b> rather than
-        /// silently falling back to the managed pool — an operator who explicitly selects a native mode should get
-        /// a loud packaging/config error, not a quiet degrade to the slower managed path. The direct-VM surfaces
-        /// (<see cref="NativeAllocatorSurfaces.LogPages"/>, <see cref="NativeAllocatorSurfaces.HashIndex"/>,
-        /// <see cref="NativeAllocatorSurfaces.Frames"/>) use <c>mmap</c>/<c>VirtualAlloc</c> and are always
-        /// available, so they never trigger this.
+        /// The mimalloc-backed <see cref="NativeAllocatorSurfaces.BufferPool"/> surface requires the mimalloc native
+        /// library: if it cannot be loaded for this platform/RID, initialization throws rather than running on the
+        /// managed pool. The direct-VM surfaces (<see cref="NativeAllocatorSurfaces.LogPages"/>,
+        /// <see cref="NativeAllocatorSurfaces.HashIndex"/>, <see cref="NativeAllocatorSurfaces.Frames"/>) use
+        /// <c>mmap</c>/<c>VirtualAlloc</c> and are always available.
         /// </para>
         /// </summary>
         /// <param name="requested">Requested surfaces (from the <c>--native-allocator</c> mode).</param>
         /// <param name="logger">Optional logger for diagnostics.</param>
-        /// <returns>The surfaces actually enabled.</returns>
+        /// <returns>The installed surfaces.</returns>
         /// <exception cref="TsavoriteException">
         /// The <see cref="NativeAllocatorSurfaces.BufferPool"/> surface was requested but mimalloc is unavailable.
         /// </exception>
@@ -60,26 +56,21 @@ namespace Tsavorite.core
                 }
                 else
                 {
-                    // Fail fast: the operator explicitly asked for a mimalloc-backed mode, so aborting at load with
-                    // a clear packaging error is safer than silently running on the managed buffer pool (which
-                    // would hide a missing native binary and mask the intended perf/contention characteristics).
+                    // BufferPool mode requires the mimalloc native library; abort rather than run on the managed pool.
                     SectorAlignedBufferPool.NativeAllocator = null;
                     EnabledSurfaces = NativeAllocatorSurfaces.None;
                     throw new TsavoriteException(
                         $"Native allocator mode requires mimalloc, but it could not be loaded for RID '{Mimalloc.GetRuntimeIdentifier()}'. " +
-                        "Ship the mimalloc native library for this platform (Native/runtimes/<rid>/native/), or set --native-allocator off. " +
-                        "Startup aborted to avoid silently falling back to the managed buffer pool.");
+                        "Ship the mimalloc native library for this platform (Native/runtimes/<rid>/native/), or set --native-allocator off.");
                 }
             }
             else
             {
-                // Not requested: ensure the pool is on the managed path even if a prior Initialize installed it,
-                // so this call is fully idempotent (an explicit 'off' / None uninstalls rather than silently keeping
-                // a previously-installed native pool).
+                // Put the buffer pool on the managed path (idempotent — uninstalls any installed native pool).
                 SectorAlignedBufferPool.NativeAllocator = null;
             }
 
-            // Direct-VM singletons (always available; no shipped binary needed). Wired incrementally.
+            // Direct-VM surfaces (always available; no native library needed).
             if ((requested & NativeAllocatorSurfaces.HashIndex) != 0)
             {
                 enabled |= NativeAllocatorSurfaces.HashIndex;
