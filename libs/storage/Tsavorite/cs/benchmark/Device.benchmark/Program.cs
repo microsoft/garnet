@@ -228,7 +228,7 @@ namespace Device.benchmark
                     deviceType: DeviceType.LocalMemory,
                     capacity: capacity,
                     numCompletionThreads: parallelism,
-                    localMemorySegmentSize: segSize);
+                    localMemoryDeviceOptions: new LocalMemoryDeviceOptions { SegmentSize = segSize });
             }
 
             var deviceType = opts.DeviceType;

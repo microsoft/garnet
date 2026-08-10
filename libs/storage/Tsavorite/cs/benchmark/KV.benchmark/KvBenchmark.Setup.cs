@@ -129,8 +129,7 @@ namespace Tsavorite.kvbench
                     deviceType: DeviceType.LocalMemory,
                     capacity: capacity,
                     numCompletionThreads: parallelism,
-                    localMemorySegmentSize: segSize,
-                    localMemoryRingCapacity: localMemRing);
+                    localMemoryDeviceOptions: new LocalMemoryDeviceOptions { SegmentSize = segSize, RingCapacity = localMemRing });
                 if (opts.DeviceThrottleLimit > 0) dev.ThrottleLimit = opts.DeviceThrottleLimit;   // reflect intent in reporting (LocalMemory enforces it via the ring)
                 return dev;
             }

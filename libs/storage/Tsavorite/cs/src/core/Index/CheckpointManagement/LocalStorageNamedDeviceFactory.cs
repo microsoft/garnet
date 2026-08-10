@@ -86,14 +86,17 @@ namespace Tsavorite.core
                 deleteOnClose: deleteOnClose,
                 disableFileBuffering: disableFileBuffering,
                 readOnly: readOnly,
-                ioBackend: ioBackend,
                 numCompletionThreads: numCompletionThreads,
-                numIoContexts: numIoContexts,
-                queueDepth: queueDepth,
-                uringSqPoll: uringSqPoll,
-                uringSqPollIdleMs: uringSqPollIdleMs,
-                localMemoryRingCapacity: localMemoryRingCapacity,
-                logger: logger);
+                logger: logger,
+                nativeDeviceOptions: new NativeDeviceOptions
+                {
+                    IoBackend = ioBackend,
+                    NumIoContexts = numIoContexts,
+                    QueueDepth = queueDepth,
+                    UringSqPoll = uringSqPoll,
+                    UringSqPollIdleMs = uringSqPollIdleMs,
+                },
+                localMemoryDeviceOptions: new LocalMemoryDeviceOptions { RingCapacity = localMemoryRingCapacity });
             if (throttleLimit.HasValue)
             {
                 device.ThrottleLimit = throttleLimit.Value;
