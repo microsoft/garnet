@@ -200,7 +200,7 @@ namespace Tsavorite.core
         /// <summary>Write the 8-byte <see cref="ChunkHeader"/> that precedes an overflow key/value with a leading header:
         /// <see cref="ChunkHeader.currentLength"/> carries the full length (single header, no continuation) and
         /// <see cref="ChunkHeader.alignmentPadding"/> the O_DIRECT alignment padding between the header and the sector-aligned data start
-        /// (0 on the buffered path). See website/docs/dev/objectlog-serialization.md.</summary>
+        /// (0 on the buffered path). See website/docs/dev/tsavorite/objectlog-serialization.md.</summary>
         void WriteOverflowChunkHeader(int overflowLength, uint alignmentPadding)
         {
             ChunkHeader header = default;
@@ -281,7 +281,7 @@ namespace Tsavorite.core
         /// byte[] data) is also sector-aligned; the sector-aligned interior is DMA'd straight from the byte[], iterating across 1 GB object-log
         /// segment boundaries (one <see cref="CircularDiskWriteBuffer.FlushToDevice"/> per segment, since a single device write cannot cross a
         /// segment); only a final sub-sector end fragment is copied through the buffer (and it never crosses a segment). Returns the alignment
-        /// padding (bytes after the header before the data). See website/docs/dev/objectlog-serialization.md.</summary>
+        /// padding (bytes after the header before the data). See website/docs/dev/tsavorite/objectlog-serialization.md.</summary>
         int WriteOverflowDma(in OverflowByteArray overflow)
         {
             var sectorSize = (int)device.SectorSize;
@@ -471,7 +471,7 @@ namespace Tsavorite.core
                 throw new TsavoriteException($"Object serialized size {valueObjectBytesWritten} exceeds max serialization limit of {IHeapObject.MaxSerializedObjectSize}");
         }
 
-        // ── Object chunk-framing write path (see the ObjectHeaderlessPrefixLen field comment and website/docs/dev/objectlog-serialization.md) ──
+        // ── Object chunk-framing write path (see the ObjectHeaderlessPrefixLen field comment and website/docs/dev/tsavorite/objectlog-serialization.md) ──
 
         /// <summary>Serialize object data through the chunk-framing path: the first <see cref="ObjectHeaderlessPrefixLen"/> data bytes are
         /// written headerless; beyond that, a fresh 8-aligned <see cref="ChunkHeader"/> is inserted and each buffer's chunk is back-filled at

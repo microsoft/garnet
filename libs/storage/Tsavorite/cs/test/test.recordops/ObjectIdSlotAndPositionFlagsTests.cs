@@ -11,7 +11,7 @@ namespace Tsavorite.test.Objects
     /// Key/ValueIsExactSize flag bits, and the <see cref="ObjectIdMap"/> objectId-slot index/size-hint bit layout. An out-of-line
     /// component whose byte length is &lt;= <see cref="ObjectIdMap.MaxObjectIdSizeHint"/> stores its exact length in the top bits of
     /// its objectId slot (no leading ChunkHeader), flagged in the record's position word. See
-    /// website/docs/dev/objectlog-serialization.md.
+    /// website/docs/dev/tsavorite/objectlog-serialization.md.
     /// </summary>
     [TestFixture]
     internal class ObjectIdSlotAndPositionFlagsTests

@@ -35,7 +35,7 @@ namespace Tsavorite.core
         /// When set, the out-of-line KEY's exact byte length (&lt;= <see cref="ObjectIdMap.MaxObjectIdSizeHint"/>) is stored in the top
         /// <see cref="ObjectIdMap.ObjectIdSizeHintBits"/> bits of the objectId slot at keyAddress (no leading ChunkHeader precedes the key
         /// bytes). When clear, the key is headered/chunked and its length comes from the object-log stream framing. See
-        /// website/docs/dev/objectlog-serialization.md.</summary>
+        /// website/docs/dev/tsavorite/objectlog-serialization.md.</summary>
         internal const int kKeyIsExactSizeBit = 61;
         internal const ulong kKeyIsExactSizeMask = 1UL << kKeyIsExactSizeBit;
 

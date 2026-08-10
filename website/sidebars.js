@@ -24,7 +24,7 @@ const sidebars = {
 		{type: 'category', label: 'Server Extensions', items: ["extensions/overview", "extensions/raw-strings", "extensions/objects", "extensions/transactions", "extensions/procedure", "extensions/module"]},
 		{type: 'category', label: 'Cluster Mode', items: ["cluster/overview", "cluster/replication", "cluster/key-migration"]},
 		{type: 'category', label: 'Developer Guide', items: ["dev/onboarding", "dev/code-structure", "dev/configuration", "dev/network", "dev/processing", "dev/garnet-api",
-		  {type: 'category', label: 'Tsavorite - Storage Layer', collapsed: true, items: ["dev/tsavorite/intro", "dev/tsavorite/reviv", "dev/tsavorite/locking", "dev/tsavorite/readcache", "dev/tsavorite/storefunctions", "dev/tsavorite/epochprotection", "dev/tsavorite/logrecord", "dev/tsavorite/object-allocator"]},
+		  {type: 'category', label: 'Tsavorite - Storage Layer', collapsed: true, items: ["dev/tsavorite/intro", "dev/tsavorite/reviv", "dev/tsavorite/locking", "dev/tsavorite/readcache", "dev/tsavorite/storefunctions", "dev/tsavorite/epochprotection", "dev/tsavorite/logrecord", "dev/tsavorite/object-allocator", "dev/tsavorite/objectlog-serialization"]},
 		  {type: 'category', label: 'Chunked Record Layouts', collapsed: true, items: ["dev/aof-record-layout", "dev/migration-replication-record-layout"]},
 		  "dev/transactions",
 		  "dev/custom-commands",

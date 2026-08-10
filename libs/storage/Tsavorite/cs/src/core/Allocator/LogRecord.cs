@@ -1765,10 +1765,8 @@ namespace Tsavorite.core
 
         /// <summary>
         /// Called after <see cref="ObjectLogReader{TStoreFunctions}"/> completes deserialization of a record's objects.
-        /// Restores the raw <see cref="RecordDataHeader.KeyLength"/> / <see cref="RecordDataHeader.ValueLength"/> fields back to
-        /// <see cref="ObjectIdMap.ObjectIdSize"/> for non-inline keys/values so the in-memory record length calculations work
-        /// correctly. (During disk read, these raw fields hold the low 12/22 bits of the on-disk overflow/object length per the
-        /// R11 encoding; runtime code expects them to be ObjectIdSize so the property getter returns ObjectIdSize for non-inline.)
+        /// Asserts that the exact physical <see cref="RecordDataHeader.KeyLength"/> / <see cref="RecordDataHeader.ValueLength"/>
+        /// fields remain <see cref="ObjectIdMap.ObjectIdSize"/> for non-inline keys/values.
         /// </summary>
         internal readonly void OnObjectReadComplete()
         {
