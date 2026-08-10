@@ -2201,6 +2201,68 @@ namespace Garnet.test.cluster
             }
         }
 
+        /// <summary>
+        /// Assigns all slots to primaryIndex and introduces every other node in [0, nodeCount) without attaching replicas.
+        /// </summary>
+        public void MeetAndAssignSlots(int primaryIndex, int nodeCount, ILogger logger = null)
+            => MeetAndAssignSlots(primaryIndex, [.. Enumerable.Range(0, nodeCount).Where(i => i != primaryIndex)], logger);
+
+        /// <summary>
+        /// Assigns all slots to primaryIndex and introduces the other nodes without attaching replicas.
+        /// </summary>
+        public void MeetAndAssignSlots(int primaryIndex, int[] otherIndexes, ILogger logger = null)
+        {
+            _ = AddDelSlotsRange(primaryIndex, [(0, 16383)], addslot: true, logger: logger);
+            SetConfigEpoch(primaryIndex, primaryIndex + 1, logger: logger);
+
+            foreach (var other in otherIndexes)
+            {
+                SetConfigEpoch(other, other + 1, logger: logger);
+                Meet(primaryIndex, other, logger: logger);
+                WaitUntilNodeIsKnown(primaryIndex, other, logger: logger);
+            }
+        }
+
+        /// <summary>Enables replica reads on a node.</summary>
+        public void ReadOnly(int nodeIndex, ILogger logger = null)
+            => ClassicAssert.AreEqual("OK", (string)Execute(GetEndPoint(nodeIndex), "READONLY", [], logger: logger));
+
+        /// <summary>
+        /// Writes filler keys so a re-attaching replica falls behind the primary's AOF window and cannot sync incrementally.
+        /// </summary>
+        public void AdvancePrimaryPastReplicaAofWindow(int primaryIndex, int keyCount = 256, int valueLength = 64)
+        {
+            var primary = GetEndPoint(primaryIndex);
+            for (var i = 0; i < keyCount; i++)
+            {
+                _ = Execute(primary, "SET", [$"{{padding}}key{i}", new string('x', valueLength)], skipLogging: true);
+            }
+        }
+
+        /// <summary>Attaches a replica to a primary and waits until it is in sync.</summary>
+        public void AttachReplicaToPrimary(int replicaIndex, int primaryIndex, bool waitForRecovery = false, ILogger logger = null)
+        {
+            _ = ClusterReplicate(replicaNodeIndex: replicaIndex, primaryNodeIndex: primaryIndex, logger: logger);
+
+            if (waitForRecovery)
+                WaitForReplicaRecovery(replicaIndex, logger);
+
+            WaitForReplicaAofSync(primaryIndex, replicaIndex, logger: logger);
+        }
+
+        /// <summary>Detaches and re-introduces a replica so the next attach starts from scratch.</summary>
+        public void ResetReplica(int replicaIndex, int primaryIndex, ILogger logger = null)
+        {
+            _ = ClusterReset(replicaIndex, soft: true, expiry: 1, logger: logger);
+            BumpEpoch(replicaIndex, logger: logger);
+
+            while (!IsKnown(replicaIndex, primaryIndex, logger: logger))
+            {
+                BackOff(cancellationToken: context.cts.Token);
+                Meet(replicaIndex, primaryIndex, logger: logger);
+            }
+        }
+
         public string ClusterReplicate(int replicaNodeIndex, int primaryNodeIndex, bool async = false, bool failEx = true, ILogger logger = null)
         {
             var primaryId = ClusterMyId(primaryNodeIndex, logger: logger);
@@ -2919,6 +2981,10 @@ namespace Garnet.test.cluster
 
         public Role RoleCommand(int nodeIndex, ILogger logger = null)
             => RoleCommand(endpoints[nodeIndex].ToIPEndPoint(), logger);
+
+        /// <summary>Asserts the node's replication role, e.g. "master" or "slave".</summary>
+        public void AssertRole(int nodeIndex, string expectedRole, ILogger logger = null)
+            => ClassicAssert.AreEqual(expectedRole, RoleCommand(nodeIndex, logger).Value, $"node {nodeIndex} should be {expectedRole}");
 
         public Role RoleCommand(IPEndPoint endPoint, ILogger logger = null)
         {
