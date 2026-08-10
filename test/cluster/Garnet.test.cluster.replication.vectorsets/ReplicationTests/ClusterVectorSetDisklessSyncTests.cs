@@ -227,7 +227,7 @@ namespace Garnet.test.cluster
 
             PopulateVectorSet(PrimaryIndex, Key, Elements);
 
-            using (ExceptionInjectionHelper.Enabled(ExceptionInjectionType.Replication_Diskless_Sync_Reset_Cts))
+            using (ExceptionInjectionHelper.EnabledScope(ExceptionInjectionType.Replication_Diskless_Sync_Reset_Cts))
             {
                 var failed = context.clusterTestUtils.ClusterReplicate(replicaNodeIndex: ReplicaIndex, primaryNodeIndex: PrimaryIndex, failEx: false, logger: context.logger);
                 ClassicAssert.AreEqual($"Exception injection triggered {ExceptionInjectionType.Replication_Diskless_Sync_Reset_Cts}", failed);
@@ -273,7 +273,7 @@ namespace Garnet.test.cluster
             var keptContext = ReadPersistedContext(PrimaryIndex, KeptKey);
             ClassicAssert.AreNotEqual(doomedContext, keptContext, "the two Vector Sets must not share a context or the test cannot distinguish their records");
 
-            using (ExceptionInjectionHelper.Enabled(ExceptionInjectionType.Replication_Diskless_Sync_Reset_Cts))
+            using (ExceptionInjectionHelper.EnabledScope(ExceptionInjectionType.Replication_Diskless_Sync_Reset_Cts))
             {
                 var failed = context.clusterTestUtils.ClusterReplicate(replicaNodeIndex: ReplicaIndex, primaryNodeIndex: PrimaryIndex, failEx: false, logger: context.logger);
                 ClassicAssert.AreEqual($"Exception injection triggered {ExceptionInjectionType.Replication_Diskless_Sync_Reset_Cts}", failed);

@@ -77,7 +77,7 @@ namespace Garnet.common
         /// armed injection into whatever runs next.
         /// </summary>
         /// <param name="exceptionType"></param>
-        public static Scope Enabled(ExceptionInjectionType exceptionType)
+        public static Scope EnabledScope(ExceptionInjectionType exceptionType)
         {
             EnableException(exceptionType);
             return new Scope(exceptionType);
