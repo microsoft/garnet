@@ -33,6 +33,9 @@ namespace Garnet.test.cluster
         /// <summary>Elements written through PopulateVectorSet, used for source-vs-target checks.</summary>
         private readonly Dictionary<string, List<byte[]>> writtenElements = [];
 
+        /// <summary>Distinguishes repeat populations of the same key within a test.</summary>
+        private int populateCalls;
+
         /// <summary>Raise this in a fixture to get more detail while debugging a replication failure.</summary>
         protected virtual LogLevel MonitorLogLevel => LogLevel.Error;
 
@@ -40,6 +43,7 @@ namespace Garnet.test.cluster
         public virtual void Setup()
         {
             writtenElements.Clear();
+            populateCalls = 0;
 
             context = new ClusterTestContext();
             context.Setup(new Dictionary<string, LogLevel> { [TestContext.CurrentContext.Test.MethodName] = MonitorLogLevel });
@@ -70,10 +74,10 @@ namespace Garnet.test.cluster
         /// Adds deterministic XB8 elements and records them so targets can be compared with the
         /// actual writes.
         /// </summary>
-        protected void PopulateVectorSet(int nodeIndex, string key, int count, int seed)
+        protected void PopulateVectorSet(int nodeIndex, string key, int count)
         {
             var endpoint = context.clusterTestUtils.GetEndPoint(nodeIndex);
-            var r = new Random(seed);
+            var r = new Random(DeriveSeed(TestContext.CurrentContext.Test.MethodName, key, populateCalls++));
 
             if (!writtenElements.TryGetValue(key, out var elements))
             {
@@ -93,6 +97,24 @@ namespace Garnet.test.cluster
 
                 elements.Add(element);
             }
+        }
+
+        /// <summary>
+        /// FNV-1a over the call's identity, so each vector set gets distinct data that still reproduces
+        /// across runs. String.GetHashCode is randomized per process and cannot be used here.
+        /// </summary>
+        private static int DeriveSeed(string testName, string key, int ordinal)
+        {
+            const uint FnvOffsetBasis = 2166136261;
+            const uint FnvPrime = 16777619;
+
+            var hash = FnvOffsetBasis;
+            foreach (var c in $"{testName}/{key}/{ordinal}")
+            {
+                hash = (hash ^ c) * FnvPrime;
+            }
+
+            return (int)(hash & int.MaxValue);
         }
 
         private IReadOnlyList<byte[]> ElementsWrittenTo(string key) => writtenElements.TryGetValue(key, out var e) ? e : [];

@@ -40,53 +40,34 @@ namespace Garnet.test.cluster
         }
 
         /// <summary>
-        /// A populated set travels by diskless full sync, then the replica reads it. This catches
-        /// foreign IndexPtr dereferences that used to surface at NativeDiskANNMethods.card.
+        /// Populated sets travel by diskless full sync, then the replica reads them. This catches
+        /// foreign IndexPtr dereferences that used to surface at NativeDiskANNMethods.card. Multiple
+        /// sets of differing sizes also expose cross-set substitution, where a foreign handle points
+        /// at the wrong live index instead of faulting.
         /// </summary>
         [Test]
         public void VectorSetReadableOnReplicaAfterDisklessFullSync()
-        {
-            const string Key = "{vsdisk}solo";
-            const int Elements = 500;
-
-            SetupDisklessCluster(2);
-            context.clusterTestUtils.AttachReplicaToPrimary(ReplicaIndex, PrimaryIndex, logger: context.logger);
-
-            // Attached writes arrive as VADD replay, so the replica builds its own index.
-            PopulateVectorSet(PrimaryIndex, Key, Elements, seed: 2026_07_29_00);
-            context.clusterTestUtils.WaitForReplicaAofSync(PrimaryIndex, ReplicaIndex, logger: context.logger);
-
-            context.clusterTestUtils.ReadOnly(ReplicaIndex);
-            AssertFullyReplicated(PrimaryIndex, ReplicaIndex, Key);
-
-            ForceDisklessFullSync();
-
-            context.clusterTestUtils.ReadOnly(ReplicaIndex);
-            AssertFullyReplicated(PrimaryIndex, ReplicaIndex, Key);
-        }
-
-        /// <summary>
-        /// Multiple sets can make a foreign handle point at the wrong live index instead of faulting.
-        /// Different sizes plus element checks expose cross-set substitution.
-        /// </summary>
-        [Test]
-        public void VectorSetsStayPartitionedAcrossDisklessFullSync()
         {
             // Same hash slot, so both keys live on the single primary in this topology.
             const string SmallKey = "{vsdisk}small";
             const string LargeKey = "{vsdisk}large";
             const int SmallElements = 10;
-            const int LargeElements = 400;
+            const int LargeElements = 500;
 
             SetupDisklessCluster(2);
             context.clusterTestUtils.AttachReplicaToPrimary(ReplicaIndex, PrimaryIndex, logger: context.logger);
 
-            PopulateVectorSet(PrimaryIndex, LargeKey, LargeElements, seed: 2026_07_29_02);
-            PopulateVectorSet(PrimaryIndex, SmallKey, SmallElements, seed: 2026_07_29_03);
+            // Attached writes arrive as VADD replay, so the replica builds its own index.
+            PopulateVectorSet(PrimaryIndex, LargeKey, LargeElements);
+            PopulateVectorSet(PrimaryIndex, SmallKey, SmallElements);
             context.clusterTestUtils.WaitForReplicaAofSync(PrimaryIndex, ReplicaIndex, logger: context.logger);
 
             ClassicAssert.AreEqual(LargeElements, VectorSetSize(PrimaryIndex, LargeKey));
             ClassicAssert.AreEqual(SmallElements, VectorSetSize(PrimaryIndex, SmallKey));
+
+            context.clusterTestUtils.ReadOnly(ReplicaIndex);
+            AssertFullyReplicated(PrimaryIndex, ReplicaIndex, SmallKey);
+            AssertFullyReplicated(PrimaryIndex, ReplicaIndex, LargeKey);
 
             ForceDisklessFullSync();
 
@@ -112,7 +93,7 @@ namespace Garnet.test.cluster
             SetupDisklessCluster(2);
             context.clusterTestUtils.AttachReplicaToPrimary(ReplicaIndex, PrimaryIndex, logger: context.logger);
 
-            PopulateVectorSet(PrimaryIndex, Key, Elements, seed: 2026_07_29_04);
+            PopulateVectorSet(PrimaryIndex, Key, Elements);
             context.clusterTestUtils.WaitForReplicaAofSync(PrimaryIndex, ReplicaIndex, logger: context.logger);
 
             context.clusterTestUtils.ReadOnly(ReplicaIndex);
@@ -135,7 +116,7 @@ namespace Garnet.test.cluster
             SetupDisklessCluster(1 + ReplicaCount);
 
             // Populated before any replica exists, so each attach carries the index record.
-            PopulateVectorSet(PrimaryIndex, Key, Elements, seed: 2026_07_29_06);
+            PopulateVectorSet(PrimaryIndex, Key, Elements);
 
             // Each replica starts with its own replication id, so every attach takes a full sync.
             for (var replica = 1; replica <= ReplicaCount; replica++)
@@ -171,7 +152,7 @@ namespace Garnet.test.cluster
 
             SetupDisklessCluster(2);
 
-            PopulateVectorSet(PrimaryIndex, Key, Elements, seed: 2026_07_29_07);
+            PopulateVectorSet(PrimaryIndex, Key, Elements);
 
             // The replica has its own replication id, so the attach takes a full sync.
             context.clusterTestUtils.AttachReplicaToPrimary(ReplicaIndex, PrimaryIndex, logger: context.logger);
@@ -185,7 +166,7 @@ namespace Garnet.test.cluster
             AssertFullyReplicated(ReplicaIndex, PrimaryIndex, Key);
 
             // Inherited sets must still accept writes and replicate them back.
-            PopulateVectorSet(ReplicaIndex, Key, count: 50, seed: 2026_07_29_08);
+            PopulateVectorSet(ReplicaIndex, Key, count: 50);
             context.clusterTestUtils.WaitForReplicaAofSync(ReplicaIndex, PrimaryIndex, logger: context.logger);
 
             context.clusterTestUtils.ReadOnly(PrimaryIndex);
@@ -207,7 +188,7 @@ namespace Garnet.test.cluster
 
             SetupDisklessCluster(2);
 
-            PopulateVectorSet(PrimaryIndex, StreamedKey, Elements, seed: 2026_07_29_10);
+            PopulateVectorSet(PrimaryIndex, StreamedKey, Elements);
 
             // The replica has its own replication id, so the attach takes a full sync that carries
             // the streamed set's index record (and its context) verbatim.
@@ -222,7 +203,7 @@ namespace Garnet.test.cluster
 
             var streamedContext = ReadPersistedContext(ReplicaIndex, StreamedKey);
 
-            PopulateVectorSet(ReplicaIndex, FreshKey, count: 50, seed: 2026_07_29_11);
+            PopulateVectorSet(ReplicaIndex, FreshKey, count: 50);
             var freshContext = ReadPersistedContext(ReplicaIndex, FreshKey);
 
             ClassicAssert.AreNotEqual(streamedContext, freshContext, $"a fresh Vector Set '{FreshKey}' was handed the streamed set '{StreamedKey}' context ({streamedContext}); the diskless full-sync receiver never reserved the streamed context, so the allocator reissued it");
@@ -270,7 +251,7 @@ namespace Garnet.test.cluster
                 ix++;
             }
 
-            PopulateVectorSet(Primary0, key, Elements, seed: 2026_07_29_09);
+            PopulateVectorSet(Primary0, key, Elements);
             context.clusterTestUtils.WaitForReplicaAofSync(Primary0, Replica0, logger: context.logger);
 
             WaitUntilServes(Replica0, key);
@@ -315,7 +296,7 @@ namespace Garnet.test.cluster
 
             SetupDisklessCluster(2);
 
-            PopulateVectorSet(PrimaryIndex, Key, Elements, seed: 2026_08_06_00);
+            PopulateVectorSet(PrimaryIndex, Key, Elements);
 
             try
             {
@@ -362,8 +343,8 @@ namespace Garnet.test.cluster
 
             SetupDisklessCluster(2);
 
-            PopulateVectorSet(PrimaryIndex, DoomedKey, DoomedElements, seed: 2026_08_06_20);
-            PopulateVectorSet(PrimaryIndex, KeptKey, KeptElements, seed: 2026_08_06_21);
+            PopulateVectorSet(PrimaryIndex, DoomedKey, DoomedElements);
+            PopulateVectorSet(PrimaryIndex, KeptKey, KeptElements);
 
             var doomedContext = ReadPersistedContext(PrimaryIndex, DoomedKey);
             var keptContext = ReadPersistedContext(PrimaryIndex, KeptKey);
