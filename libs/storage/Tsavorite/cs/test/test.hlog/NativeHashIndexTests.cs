@@ -55,7 +55,7 @@ namespace Tsavorite.test.spanbyte
             // NativeMemoryTracker is process-global and NativePageBlockRegistry frees on the finalizer thread).
             GC.Collect();
             GC.WaitForPendingFinalizers();
-            var before = NativeMemoryTracker.Bytes;
+            var before = NativeMemoryTracker.DirectVmBytes;
             var log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "hlog.log"), deleteOnClose: true);
             var store = new TsavoriteKV<SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>>(
                 new()
@@ -68,7 +68,7 @@ namespace Tsavorite.test.spanbyte
                     , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions));
 
             // The index table is now a direct-VM reservation, so tracked native bytes must have grown.
-            ClassicAssert.GreaterOrEqual(NativeMemoryTracker.Bytes - before, 1L << 22,
+            ClassicAssert.GreaterOrEqual(NativeMemoryTracker.DirectVmBytes - before, 1L << 22,
                 "hash index should be backed by direct virtual memory");
 
             var session = store.NewSession<TestSpanByteKey, PinnedSpanByte, int[], Empty, VLVectorFunctions>(new VLVectorFunctions());
@@ -122,7 +122,7 @@ namespace Tsavorite.test.spanbyte
             // Drain pending finalizer frees so the tracker delta below reflects only this store.
             GC.Collect();
             GC.WaitForPendingFinalizers();
-            var before = NativeMemoryTracker.Bytes;
+            var before = NativeMemoryTracker.DirectVmBytes;
             var log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "hlog.log"), deleteOnClose: true);
             var store = new TsavoriteKV<SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>>(
                 new()
@@ -135,7 +135,7 @@ namespace Tsavorite.test.spanbyte
                     , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions));
 
             // Both the index and (as pages are allocated) the log are direct-VM backed.
-            ClassicAssert.Greater(NativeMemoryTracker.Bytes - before, 0, "index + log pages should be direct-VM backed");
+            ClassicAssert.Greater(NativeMemoryTracker.DirectVmBytes - before, 0, "index + log pages should be direct-VM backed");
 
             var session = store.NewSession<TestSpanByteKey, PinnedSpanByte, int[], Empty, VLVectorFunctions>(new VLVectorFunctions());
             var bContext = session.BasicContext;
@@ -223,7 +223,7 @@ namespace Tsavorite.test.spanbyte
                         MemoryMarshal.Cast<int, byte>(valueSpan), Empty.Default);
                 }
 
-                var now = NativeMemoryTracker.Bytes;
+                var now = NativeMemoryTracker.DirectVmBytes;
                 if (pass == 4)
                     afterWarmup = now;   // baseline after the circular buffer + pool are warm
                 if (pass >= 4 && now > peak)
@@ -288,7 +288,7 @@ namespace Tsavorite.test.spanbyte
                 }
                 store.Log.FlushAndEvict(wait: true);   // bulk-close ~all pages -> overflow pool overflows -> drops
 
-                var now = NativeMemoryTracker.Bytes;
+                var now = NativeMemoryTracker.DirectVmBytes;
                 if (c == 2)
                     afterWarmup = now;
                 if (c >= 2 && now > peak)
@@ -348,7 +348,7 @@ namespace Tsavorite.test.spanbyte
             }
             store.Log.FlushAndEvict(wait: true);
 
-            var beforeScan = NativeMemoryTracker.Bytes;
+            var beforeScan = NativeMemoryTracker.DirectVmBytes;
             long peak = beforeScan;
             using (var iter = store.Log.Scan(store.Log.BeginAddress, store.Log.TailAddress))
             {
@@ -357,7 +357,7 @@ namespace Tsavorite.test.spanbyte
                 {
                     if ((++count & 0x3FF) == 0)
                     {
-                        var now = NativeMemoryTracker.Bytes;
+                        var now = NativeMemoryTracker.DirectVmBytes;
                         if (now > peak)
                             peak = now;
                     }
@@ -398,7 +398,7 @@ namespace Tsavorite.test.spanbyte
             // (log pages are managed here and are not counted).
             GC.Collect();
             GC.WaitForPendingFinalizers();
-            var baseline = NativeMemoryTracker.Bytes;
+            var baseline = NativeMemoryTracker.DirectVmBytes;
             var freedBefore = System.Threading.Interlocked.Read(ref TsavoriteBase.NativeIndexTableFreeCount);
             var deferredBefore = System.Threading.Interlocked.Read(ref TsavoriteBase.NativeIndexTableDeferredCount);
 
@@ -414,7 +414,7 @@ namespace Tsavorite.test.spanbyte
                     , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions));
 
             // One live table (the initial index) is mapped now; capture its mapped size (includes alignment overhead).
-            var initialIndexBytes = NativeMemoryTracker.Bytes - baseline;
+            var initialIndexBytes = NativeMemoryTracker.DirectVmBytes - baseline;
             ClassicAssert.GreaterOrEqual(initialIndexBytes, 1L << 20, "initial index should be direct-VM backed");
 
             // Insert entries so the grows actually split populated buckets (exercises the real grow path).
@@ -452,7 +452,7 @@ namespace Tsavorite.test.spanbyte
             // Secondary sanity: the live footprint reflects a bounded working set (current + previous version),
             // not the geometric sum of all generations. (Loose bound: Bytes also includes unrelated mimalloc-committed
             // bytes, so this is a coarse ceiling; the free-count delta above is the precise regression guard.)
-            var mapped = NativeMemoryTracker.Bytes - baseline;
+            var mapped = NativeMemoryTracker.DirectVmBytes - baseline;
             ClassicAssert.Less(mapped, (initialIndexBytes << grows) * 2,
                 $"native index footprint grew beyond a bounded working set: mapped={mapped:N0}");
 
@@ -479,7 +479,7 @@ namespace Tsavorite.test.spanbyte
 
             GC.Collect();
             GC.WaitForPendingFinalizers();
-            var baseline = NativeMemoryTracker.Bytes;
+            var baseline = NativeMemoryTracker.DirectVmBytes;
             var epochsBefore = LightEpoch.ActiveInstanceCount();
 
             var log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "hlog.log"), deleteOnClose: true);
@@ -514,7 +514,7 @@ namespace Tsavorite.test.spanbyte
             GC.Collect();
             GC.WaitForPendingFinalizers();
             GC.Collect();
-            var after = NativeMemoryTracker.Bytes;
+            var after = NativeMemoryTracker.DirectVmBytes;
             ClassicAssert.Less(after - baseline, 1L << 16,
                 $"construction failure leaked native memory: baseline={baseline:N0} after={after:N0}");
         }

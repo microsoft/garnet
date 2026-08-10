@@ -53,6 +53,22 @@ namespace Tsavorite.core
             }
         }
 
+        /// <summary>
+        /// Direct-VM tracked bytes only (mmap/VirtualAlloc), excluding mimalloc-committed bytes. Used by tests to
+        /// make deterministic assertions about direct-VM allocation/free without the noise of mimalloc's
+        /// process-global committed total, which fluctuates asynchronously as mimalloc returns memory to the OS.
+        /// </summary>
+        internal static long DirectVmBytes
+        {
+            get
+            {
+                long total = 0;
+                for (var i = 0; i < slots.Length; i += Stride)
+                    total += Interlocked.Read(ref slots[i]);
+                return total;
+            }
+        }
+
         /// <summary>Direct-VM only: record a native allocation (mmap/VirtualAlloc). Not called on the pool hot path.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static void Add(long delta)
