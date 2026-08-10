@@ -126,9 +126,7 @@ namespace Tsavorite.core
         /// Write Overflow and Object Keys and values in a <see cref="LogRecord"/> to the device.
         /// </summary>
         /// <remarks>This only writes Overflow and Object Keys and Values; inline portions of the record are written separately by the caller.
-        /// <para>Initial-read hints are stamped into the objectId slots; RDH lengths remain exact inline/physical-slot lengths. Databases
-        /// written before this format use the legacy split RDH + objectId-slot encoding, read via
-        /// <see cref="LogRecord.GetObjectLogRecordStartPositionAndLengths_v21"/>.</para></remarks>
+        /// Initial-read hints are stamped into the objectId slots; RDH lengths remain exact inline/physical-slot lengths.</remarks>
         /// <returns>The number of bytes written for the value object, if any.</returns>
         public ulong WriteRecordObjects(in OverflowByteArray keyOverflow, in OverflowByteArray valueOverflow, in IHeapObject valueObject)
         {
@@ -278,7 +276,7 @@ namespace Tsavorite.core
         /// <summary>Write a large overflow (key or value) mostly by direct O_DIRECT DMA from its pinned byte[], avoiding a copy through the
         /// write buffer. Layout on disk: [ChunkHeader][alignmentPadding][data]. The ChunkHeader + alignment padding + a small source-alignment
         /// initial fragment are copied through the buffer so the DMA disk offset lands on a sector boundary while the DMA source (the pinned
-        /// byte[] data) is also sector-aligned; the sector-aligned interior is DMA'd straight from the byte[], iterating across 1 GB object-log
+        /// byte[] data) is also sector-aligned; the sector-aligned interior is DMA'd straight from the byte[], iterating across object-log
         /// segment boundaries (one <see cref="CircularDiskWriteBuffer.FlushToDevice"/> per segment, since a single device write cannot cross a
         /// segment); only a final sub-sector end fragment is copied through the buffer (and it never crosses a segment). Returns the alignment
         /// padding (bytes after the header before the data). See website/docs/dev/tsavorite/objectlog-serialization.md.</summary>
@@ -387,7 +385,7 @@ namespace Tsavorite.core
             WriteRawBuffered(data, cancellationToken);
         }
 
-        /// <summary>Raw buffered write: copy <paramref name="data"/> into the sector-aligned write buffer, splitting across buffer and 1 GB
+        /// <summary>Raw buffered write: copy <paramref name="data"/> into the sector-aligned write buffer, splitting across buffer and object-log
         /// segment boundaries (flushing full buffers via <see cref="OnBufferComplete"/>). Used for overflow bytes/headers/padding and the
         /// recovery verbatim copy. Never called while serializing an object (that path is <see cref="WriteObjectData"/>).</summary>
         void WriteRawBuffered(ReadOnlySpan<byte> data, CancellationToken cancellationToken = default)

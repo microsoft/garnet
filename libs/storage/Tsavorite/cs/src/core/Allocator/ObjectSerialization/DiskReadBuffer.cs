@@ -13,17 +13,16 @@ namespace Tsavorite.core
         internal readonly IDevice device;
         internal readonly ILogger logger;
 
-        /// <summary>Signals when reads are complete. Allows multiple reads of buffer subsections to be enqueed, and uses a ManualResetEvent
-        ///     so it remains signaled until Reset() is called (currently only one read for a single span of the buffer is done).</summary>
+        /// <summary>Signals completion of asynchronous device reads submitted into this buffer. The current implementation submits one
+        /// contiguous request per initialization; the countdown form permits multiple requests if the buffer is later partitioned.</summary>
         internal CountdownEvent countdownEvent;
 
         /// <summary>The buffer to read (part of) the page image into.</summary>
         internal SectorAlignedMemory memory;
 
         /// <summary>
-        /// This is the initialization value for <see cref="currentPosition"/>; it means there is no data available for this buffer and no
-        /// in-flight read (we issue reads ahead of the buffer-array traversal, so this means that by the time we got to this buffer all
-        /// the data had already been read.
+        /// This is the initialization value for <see cref="currentPosition"/>; it means no device read has been submitted for this buffer
+        /// since its last <see cref="Initialize"/> call.
         /// </summary>
         const int NoPosition = -1;
 
@@ -36,7 +35,8 @@ namespace Tsavorite.core
         /// must move to the next buffer.</summary>
         internal int endPosition;
 
-        /// <summary>True once a device read has been issued into this buffer and not yet cleared by <see cref="Initialize"/>. Set and cleared
+        /// <summary>True after <see cref="ReadFromDevice"/> submits an <c>IDevice.ReadAsync</c> request into this buffer and until
+        /// <see cref="Initialize"/> clears it. This includes both in-flight and completed requests. Set and cleared
         /// only on the reader thread (in <see cref="ReadFromDevice"/> and <see cref="Initialize"/>), so it is a race-free indicator of "this
         /// buffer already holds, or is loading, data" -- unlike <see cref="HasData"/>/<see cref="HasInFlightRead"/>, whose underlying
         /// <see cref="endPosition"/> and <see cref="countdownEvent"/> are updated from the IO completion callback and can be observed in a
@@ -93,7 +93,7 @@ namespace Tsavorite.core
 
         internal bool WaitForDataAvailable()
         {
-            // Because we have issued reads ahead of the buffer wrap, if the currentPosition is NoPosition, we're done.
+            // NoPosition means the ring never submitted a read for this slot, so there is nothing to wait for or consume.
             if (currentPosition == NoPosition)
                 return false;
             if (!HasData)

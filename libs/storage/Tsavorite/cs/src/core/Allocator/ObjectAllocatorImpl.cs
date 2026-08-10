@@ -587,6 +587,16 @@ namespace Tsavorite.core
         internal override CircularDiskReadBuffer CreateCircularReadBuffers()
             => new(bufferPool, IStreamBuffer.BufferSize, numberOfDeserializationBuffers, objectLogDevice, logger);
 
+        /// <summary>Return the exclusive logical bound for reads submitted through <paramref name="readBuffers"/>. The allocator's
+        /// <see cref="objectLogTail"/> bounds only its main object-log device once that tail is set. An unset main tail disables the bound
+        /// during early recovery. Snapshot positions belong to an independent address space, and no snapshot tail is currently supplied
+        /// here, so <see cref="ObjectLogFilePositionInfo.NotSet"/> selects an unbounded logical read instead of incorrectly applying the
+        /// main tail.</summary>
+        ObjectLogFilePositionInfo GetObjectLogReadHardEnd(CircularDiskReadBuffer readBuffers)
+            => readBuffers.UsesDevice(objectLogDevice)
+                ? objectLogTail
+                : new ObjectLogFilePositionInfo(ObjectLogFilePositionInfo.NotSet, objectLogTail.SegmentSizeBits);
+
         /// <inheritdoc/>
         internal override int LowestObjectLogSegmentInUse => lowestObjectLogSegmentInUse;
         /// <inheritdoc/>
@@ -610,10 +620,7 @@ namespace Tsavorite.core
             using var readBuffers = CreateCircularReadBuffers(objectLogDevice, logger);
             readBuffers.nextFileReadPosition = startPosition;
             var logReader = new ObjectLogReader<TStoreFunctions>(readBuffers, storeFunctions);
-            var hardReadEnd = readBuffers.UsesDevice(this.objectLogDevice)
-                ? objectLogTail
-                : new ObjectLogFilePositionInfo(ObjectLogFilePositionInfo.NotSet, objectLogTail.SegmentSizeBits);
-            logReader.OnBeginReadRecords(startPosition, (ulong)keyLength, hardReadEnd);
+            logReader.OnBeginReadRecords(startPosition, (ulong)keyLength, GetObjectLogReadHardEnd(readBuffers));
             try
             {
                 return logReader.ReadOverflowKeyHashCodeForRecovery(in logRecord, objectLogTail.SegmentSizeBits);
@@ -1084,21 +1091,20 @@ namespace Tsavorite.core
                                     {
                                         if (logRecord.HasReuseObjectIdForSize)
                                         {
-                                            // Downlevel (v2.1) hybrid-log-region record: up-convert its split length/position encoding into the
-                                            // current v2.2 hint format (or fail fast for a large overflow/object that would need a not-yet-supported
-                                            // leading ChunkHeader insertion), advancing the running page position. This preserves the pre-existing
-                                            // (guarded) v2.1 recovery behavior; a v2.2 source never sets the ReuseObjectIdForSize flag.
+                                            // Legacy hybrid-log-region record: up-convert its split length/position encoding into the current
+                                            // hint format (or fail fast for a large overflow/object that would need a not-yet-supported leading
+                                            // ChunkHeader insertion), advancing the running page position.
                                             var objectLengths = logRecord.SetRecoveredObjectLogRecordStartPosition(recoveryOngoingPageHeader);
                                             recoveryOngoingPageHeader.Advance(objectLengths);
                                         }
-                                        // else: v2.2 hybrid-log-region record. Its object bytes are already durable in the main object-log and its
+                                        // else: current-format hybrid-log-region record. Its object bytes are already durable in the main object-log and its
                                         // copied disk-image record (object-log position + objectId size hints) is already correct; the only recovery
                                         // mutation for this page -- SetInvalid on undone v+1 records -- was applied to the live page by RecoverFromPage
                                         // and is captured by the srcBuffer copy. So persist the record VERBATIM. Calling
                                         // SetRecoveredObjectLogRecordStartPosition here would misread the (un-deserialized, Pass1) position slot as a
                                         // deserialized length and stamp a garbage position + length hint into the disk image -- masked in the
                                         // recovering run (which reads the live page) but corrupting any later recovery that reads the page from disk.
-                                        // recoveryOngoingPageHeader is consumed only by that setter and a page is single-version, so an all-v2.2 page
+                                        // recoveryOngoingPageHeader is consumed only by that setter and a page is single-version, so a current-format page
                                         // needs no advance here.
                                     }
                                 }
@@ -1173,9 +1179,7 @@ namespace Tsavorite.core
 
             readBuffers = CreateCircularReadBuffers(snapshotObjectLogDevice, logger);
             var reader = new ObjectLogReader<TStoreFunctions>(readBuffers, storeFunctions);
-            // The main object-log tail is in a different address space and cannot bound snapshot reads.
-            var unboundedSnapshotEnd = new ObjectLogFilePositionInfo(ObjectLogFilePositionInfo.NotSet, objectLogTail.SegmentSizeBits);
-            reader.OnBeginReadRecords(startPosition, endPosition - startPosition, unboundedSnapshotEnd);
+            reader.OnBeginReadRecords(startPosition, endPosition - startPosition, GetObjectLogReadHardEnd(readBuffers));
             return reader;
         }
 
@@ -1294,10 +1298,7 @@ namespace Tsavorite.core
             using var readBuffers = CreateCircularReadBuffers(objectLogDevice, logger);
 
             var logReader = new ObjectLogReader<TStoreFunctions>(readBuffers, storeFunctions);
-            var hardReadEnd = readBuffers.UsesDevice(objectLogDevice)
-                ? objectLogTail
-                : new ObjectLogFilePositionInfo(ObjectLogFilePositionInfo.NotSet, objectLogTail.SegmentSizeBits);
-            logReader.OnBeginReadRecords(startPosition, totalBytesToRead, hardReadEnd);
+            logReader.OnBeginReadRecords(startPosition, totalBytesToRead, GetObjectLogReadHardEnd(readBuffers));
             if (logReader.ReadRecordObjects(ref diskLogRecord.logRecord, ctx.requestKey, startPosition.SegmentSizeBits))
             {
                 // Success. The deserialized heap object's Dispose() will be invoked when the DiskLogRecord
@@ -1407,10 +1408,7 @@ namespace Tsavorite.core
             readBuffers.nextFileReadPosition = startPosition;
             recordAddress = pageStartPhysicalAddress + PageHeader.Size;
             var logReader = new ObjectLogReader<TStoreFunctions>(readBuffers, storeFunctions);
-            var hardReadEnd = readBuffers.UsesDevice(objectLogDevice)
-                ? objectLogTail
-                : new ObjectLogFilePositionInfo(ObjectLogFilePositionInfo.NotSet, objectLogTail.SegmentSizeBits);
-            logReader.OnBeginReadRecords(startPosition, totalBytesToRead, hardReadEnd);
+            logReader.OnBeginReadRecords(startPosition, totalBytesToRead, GetObjectLogReadHardEnd(readBuffers));
 
             try
             {

@@ -1,6 +1,6 @@
 # Object-log serialization
 
-This document describes the v2.2 file format and code paths used by Tsavorite's `ObjectAllocator` to persist and
+This document describes the current file format and code paths used by Tsavorite's `ObjectAllocator` to persist and
 reload a record's out-of-line pieces:
 
 - an overflow key;
@@ -257,7 +257,7 @@ never an authoritative total object length.
 4. converts each pair to exact bytes, page-count bytes, or a 4 MB discovery window; and
 5. masks the high flag bits from the returned object-log address.
 
-The method's output lengths are initial read extents for v2.2, not necessarily component lengths.
+The method's output lengths are initial read extents for current-format records, not necessarily component lengths.
 
 ---
 
@@ -446,9 +446,10 @@ The caller obtains the record's start position and initial key/value extents fro
   the last record's initial extent.
 - A following record's position in the same object-log address space is a safe read-ahead bound.
 
-Main object-log reads use the known `objectLogTail` as a hard logical end. Snapshot object-log readers currently pass
-`NotSet`, because the main object-log tail belongs to a different address space and must not clamp snapshot positions.
-In that case framing remains authoritative and the device may return a short read at its physical end.
+Main object-log reads use `objectLogTail` as a hard logical end once that tail is set. During early recovery an unset
+main tail disables this bound. Snapshot object-log readers currently pass a position containing `NotSet`, because the
+main object-log tail belongs to a different address space and must not clamp snapshot positions. In either unbounded
+case framing remains authoritative and the device may return a short read at its physical end.
 
 ### 6.2 Absolute endpoint accounting
 
@@ -456,18 +457,27 @@ In that case framing remains authoritative and the device may return a short rea
 
 | State | Meaning |
 |---|---|
-| `baseRequiredEndAddress` | caller's initial one-or-more-record read range |
-| `dynamicRequiredEndAddress` | exact current component/chunk end, or current discovery-window end |
-| `RequiredEndAddress` | maximum of base and dynamic ends |
-| `nextFileReadPosition` | sector-rounded issued high-water |
-| `hardReadEndAddress` | known main object-log durable tail, or `ulong.MaxValue` for an unbounded snapshot reader |
+| `baseRequiredEndAddress` | fixed endpoint of the caller's initial one-or-more-record read range |
+| `dynamicRequiredEndAddress` | replaceable current framing demand; grows for continuation/discovery and shrinks when a header reveals an earlier exact end |
+| `RequiredEndAddress` | maximum of the fixed base demand and replaceable framing demand |
+| `nextFileReadPosition` | sector-aligned start of the next sequential device request, and therefore the exclusive high-water submitted since ring initialization or the last direct-read reset |
+| `hardReadEndAddress` | known and initialized main object-log durable tail, or `ulong.MaxValue` while that tail is unset or no same-address-space tail was supplied |
+| `deferredBufferStartPosition` | payload-end offset within a sector, retained when a direct read resets the ring but no following ring read is yet required |
 
-All endpoints are absolute object-log addresses. Parsing the same header twice cannot double-extend a read, unlike an
-additive "remaining length" counter.
+All endpoints are absolute object-log addresses. "Submitted" means `IDevice.ReadAsync` has been called; the request may
+still be in flight and its bytes have not necessarily been consumed. Device requests are sector-rounded, so
+`nextFileReadPosition` may pass `RequiredEndAddress`. It advances monotonically within a ring-read epoch;
+`RepositionAfterDirectRead()` drains pending requests and begins a new epoch at the payload-end sector.
 
-A discovery endpoint may clamp to the hard tail. An authoritative endpoint parsed from a header may not cross it;
-crossing is treated as truncated/corrupt framing. Already-issued sector-rounded IO cannot be cancelled and is reused
-by later components/records or drained before disposal.
+`SetDynamicReadThrough()` replaces rather than adds to dynamic demand, so parsing the same header twice cannot
+double-extend a read. A discovery endpoint may clamp to the hard tail. An authoritative endpoint parsed from a header
+may not cross it; crossing is treated as truncated/corrupt framing. Already-submitted sector-rounded IO cannot be
+cancelled and is reused by later components/records or drained before disposal.
+
+Large overflow reads bypass the ring for the aligned payload interior. `RepositionAfterDirectRead()` drains and resets
+the ring at the logical payload end. If no later bytes are required yet, it saves that endpoint's in-sector offset in
+`deferredBufferStartPosition`; when framing later grows demand, the first refill starts at the preceding sector
+boundary but exposes bytes only from the saved logical offset.
 
 ### 6.3 Overflow read
 
@@ -572,12 +582,12 @@ proceeds.
 The source buffer for a recovery-state flush may also contain records from the hybrid-log region whose object bytes
 are already durable in the main object log:
 
-- A v2.2 record is written verbatim. Its position, objectId hints, and exact-size flags already describe those durable
+- A current-format record is written verbatim. Its position, objectId hints, and exact-size flags already describe those durable
   bytes. Calling `SetRecoveredObjectLogRecordStartPosition()` would incorrectly interpret its still-on-disk position
   word as the transient deserialized extent and corrupt the rewritten record.
 - A v2.1 record is identified by bit 63. After Pass 2 has replaced an object value's optional position with its
   serialized extent, `SetRecoveredObjectLogRecordStartPosition()` can convert a byte-compatible headerless record to
-  v2.2 metadata and advance the page's running object-log position. Conversions requiring header insertion fail fast.
+  current-format metadata and advance the page's running object-log position. Conversions requiring header insertion fail fast.
 
 This branch is separate from snapshot-region copying: hybrid-region object bytes remain at their existing main
 object-log positions and are not copied or reserialized.
@@ -608,7 +618,7 @@ Bit 63 selects v2.1's split exact-length decoder and dense, headerless object-lo
 preserve that bit.
 
 `SetRecoveredObjectLogRecordStartPosition()` may convert a v2.1 record only when its bytes are also valid current
-headerless bytes. A large v2.1 key/value/object that would require inserting v2.2 headers fails fast; header insertion
+headerless bytes. A large v2.1 key/value/object that would require inserting current-format headers fails fast; header insertion
 would shift subsequent positions and is not implemented without a validated v2.1 checkpoint fixture.
 
 ---
@@ -745,7 +755,7 @@ Indentation is call depth. Component branches and lifetime changes are included 
 
 - `ObjectAllocatorImpl.WriteAsync(..., FlushRequestState.Recovery, ...)`
   - identify a record outside the snapshot-copy region
-  - current v2.2 record
+  - current-format record
     - preserve its main object-log position, objectId hints, and flags verbatim
     - issue no object-log copy
   - legacy v2.1 record
@@ -753,7 +763,7 @@ Indentation is call depth. Component branches and lifetime changes are included 
       - read recovered overflow lengths from `ObjectIdMap`
       - read the recovered object extent from the repurposed optional word
       - convert only byte-compatible headerless metadata
-      - fail if v2.2 framing would have to be inserted
+      - fail if current framing would have to be inserted
     - advance the running page object-log position
 
 ---

@@ -10,12 +10,16 @@ using System.Threading;
 namespace Tsavorite.core
 {
     /// <summary>
-    /// The class that manages IO read of ObjectAllocator records. It manages the read buffer at two levels:
+    /// Reads out-of-line record components from the object log. It manages the read buffer at two levels:
     /// <list type="bullet">
-    ///     <item>At the higher level, called by IO routines, it manages the overall record reading, including issuing additional reads as the buffer is drained.</item>
-    ///     <item>At the lower level, it provides the stream for the valueObjectSerializer, which is called via Deserialize() by the higher level.</item>
+    ///     <item>At the record level, it decodes exact-size flags and framing, updates the ring's absolute demand endpoint, and chooses
+    ///     buffered or direct overflow reads.</item>
+    ///     <item>At the stream level, it supplies dense object data to the serializer while consuming object-log headers and padding internally.</item>
     /// </list>
     /// </summary>
+    /// <remarks><see cref="CircularDiskReadBuffer"/> owns device-read submission and sector alignment. This class owns the logical stream
+    /// position within a record. Framing converts record-relative lengths into absolute endpoints so the ring can submit enough IO without
+    /// treating an initial size hint as an authoritative total length.</remarks>
     internal unsafe partial class ObjectLogReader<TStoreFunctions> : IStreamBuffer
         where TStoreFunctions : IStoreFunctions
     {
@@ -80,13 +84,17 @@ namespace Tsavorite.core
         /// Called when one or more records with Objects have been read via ReadAsync, e.g. being processed by AsyncReadPageWithObjectsCallback.
         /// </summary>
         /// <param name="filePosition">The initial file position to read</param>
-        /// <param name="totalLength">The cumulative length of all object-log entries for the span of records to be read. We read ahead for all record
-        ///     in the ReadAsync call.</param>
-        internal void OnBeginReadRecords(ObjectLogFilePositionInfo filePosition, ulong totalLength, ObjectLogFilePositionInfo hardReadEnd)
+        /// <param name="totalLength">Initial object-log extent for the one-or-more-record span. Framing may revise the dynamic endpoint while
+        /// records are consumed.</param>
+        /// <param name="hardReadEndPosition">Exclusive durable tail in the same object-log address space as
+        /// <paramref name="filePosition"/>. For a snapshot object log with no supplied logical tail, pass a position whose word is
+        /// <see cref="ObjectLogFilePositionInfo.NotSet"/> and whose segment-size bits match the reader; the reader must not use the main
+        /// object-log tail as a cross-device bound. An unset main tail likewise disables the bound during early recovery.</param>
+        internal void OnBeginReadRecords(ObjectLogFilePositionInfo filePosition, ulong totalLength, ObjectLogFilePositionInfo hardReadEndPosition)
         {
             inDeserialize = false;
             deserializedLength = 0UL;
-            readBuffers.OnBeginReadRecords(filePosition, totalLength, hardReadEnd);
+            readBuffers.OnBeginReadRecords(filePosition, totalLength, hardReadEndPosition);
         }
 
         /// <summary>
@@ -164,7 +172,7 @@ namespace Tsavorite.core
 
                 if (logRecord.DataHeader.ValueIsOverflow)
                 {
-                    // Overflow value v2.2 encoding: a headered value (ValueIsExactSize clear) carries its exact length (and any DMA alignment
+                    // A headered overflow value (ValueIsExactSize clear) carries its exact length (and any DMA alignment
                     // padding) in a leading ChunkHeader; a headerless (ValueIsExactSize set) value has its exact length in its objectId size hint.
                     var valueIsExactSize = isLegacy || logRecord.ValueIsExactSize;
                     var exactValueLength = isLegacy ? checked((int)valueLength) : logRecord.ValueObjectIdSizeHint;
@@ -330,6 +338,8 @@ namespace Tsavorite.core
             return currentLength;
         }
 
+        /// <summary>Convert a record-relative exclusive endpoint to its absolute object-log address and replace the ring's current framing
+        /// demand. The same method handles both speculative discovery windows and authoritative endpoints parsed from headers.</summary>
         void SetDynamicRecordReadThrough(ulong recordRelativeEnd, bool isDiscoveryWindow)
         {
             var end = recordStartPosition;
@@ -339,7 +349,7 @@ namespace Tsavorite.core
 
         /// <summary>Read the 8-byte <see cref="ChunkHeader"/> that precedes an overflow (key or value) with a leading header, returning the
         /// full overflow length from <see cref="ChunkHeader.currentLength"/> and its O_DIRECT alignment padding via <paramref name="alignmentPadding"/>.
-        /// <para>This issues no extra IO: the header is included in the value's v2.2 initial read extent (or the key's sentinel-capped hint)
+        /// <para>This submits no separate IO for the header: it is included in the value's initial read extent (or the key's sentinel-capped hint)
         /// passed to <see cref="CircularDiskReadBuffer.OnBeginReadRecords"/> — the single-record read path sums those per-component hints (see
         /// <c>ObjectAllocatorImpl.VerifyRecordFromDiskCallback</c>) and multi-record scans size from absolute position differences — so the
         /// header bytes are already present in the read-ahead ring. The header may still span read buffers or a segment boundary, so it is read
@@ -422,7 +432,8 @@ namespace Tsavorite.core
             }
         }
 
-        /// <summary>Copy only data already covered by issued ring-buffer reads; do not issue more IO when the ring is exhausted.</summary>
+        /// <summary>Copy only data already present in the current ring buffer. Do not wait for or submit additional ring IO when that
+        /// buffer is exhausted; a large overflow direct read will supply the remainder into the final allocation.</summary>
         int ReadRawStreamAvailable(Span<byte> destinationSpan)
         {
             var buffer = readBuffers.GetCurrentBuffer();
@@ -438,6 +449,10 @@ namespace Tsavorite.core
             return copyLength;
         }
 
+        /// <summary>Read one overflow key or value. Exact-size components allocate their final array and copy the known byte count from the
+        /// ring. Framed components first parse the authoritative payload length and alignment padding. Small payloads then copy from the
+        /// ring; large payloads allocate the final array with sector slack, copy bytes already present in the current buffer, direct-read
+        /// the aligned remainder into that array, and reset ring consumption at the payload end.</summary>
         OverflowByteArray ReadOverflow(bool isExactSize, int initialLength)
         {
             if (isExactSize)
@@ -541,7 +556,7 @@ namespace Tsavorite.core
         {
             if (!objectFirstHeaderRead)
             {
-                // The first ChunkHeader is 8-aligned in the object-log; skip the padding written after the 1023-byte prefix.
+                // The first ChunkHeader is 8-aligned in the object log; skip the padding written after the headerless prefix.
                 var padLen = (8 - ((objectRecordStartOffsetLow3 + (int)(recordStreamConsumed & 7)) & 7)) & 7;
                 if (padLen > 0)
                 {
@@ -568,7 +583,7 @@ namespace Tsavorite.core
                     objectCurrentChunkContinues = continues;
                     var chunkEnd = recordStreamConsumed + (ulong)objectChunkRemaining;
                     // A continuation opens a normal 4 MB discovery window at the following header. A final chunk tightens the logical
-                    // requirement to its exact endpoint; already-issued physical over-read remains reusable by a following record.
+                    // requirement to its exact endpoint; already-submitted physical over-read remains reusable by a following record.
                     SetDynamicRecordReadThrough(continues ? chunkEnd + (ulong)IStreamBuffer.BufferSize : chunkEnd,
                         isDiscoveryWindow: continues);
                     return true;                // a real (possibly final) chunk

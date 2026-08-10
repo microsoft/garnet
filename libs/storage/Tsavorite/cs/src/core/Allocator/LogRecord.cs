@@ -339,7 +339,7 @@ namespace Tsavorite.core
 
             // Preserve the downlevel (v2.1) ReuseObjectIdForSize flag (bit 63) across the length store, so recovery can still detect a
             // downlevel source in SetRecoveredObjectLogRecordStartPosition. A real deserialized length is far below bit 63, so there is no
-            // collision, and the flag is never set on a v2.2 record (this OR is then a no-op).
+            // collision, and the flag is clear for a current-format record.
             var existingReuseObjectIdForSizeFlag = *objectLogPositionPtr & ObjectLogFilePositionInfo.kReuseObjectIdForSizeMask;
             *objectLogPositionPtr = deserializedLength | existingReuseObjectIdForSizeFlag;
 
@@ -1707,11 +1707,11 @@ namespace Tsavorite.core
 
             // The downlevel (v2.1) ReuseObjectIdForSize flag survives to here on the slot: overflow values never pass through
             // SetDeserializedValueObject, and for object values SetDeserializedValueObject preserves it. It identifies a downlevel source
-            // (split length encoding; dense object-log stream with no ChunkHeaders). It is never set on a v2.2 record.
+            // (split length encoding; dense object-log stream with no ChunkHeaders). It is clear for a current-format record.
             var wasReuseObjectIdForSize = (*objectLogPositionPtr & ObjectLogFilePositionInfo.kReuseObjectIdForSizeMask) != 0;
 
             // For ValueObject, the deserialized length was stored at objectLogPositionPtr by SetDeserializedValueObject; save it (masking
-            // off the preserved downlevel flag bit -- a no-op for v2.2, where the flag is clear).
+            // off the preserved downlevel flag bit -- a no-op for a current-format record).
             var valueObjectLength = *objectLogPositionPtr & ~ObjectLogFilePositionInfo.kReuseObjectIdForSizeMask;
 
             ulong keyLen = 0;
@@ -1729,14 +1729,14 @@ namespace Tsavorite.core
             // KeyLength sentinel) or overflow value (> kOutOfLineExactSizeCutoff) that the current format encodes WITH a leading ChunkHeader
             // has no such header in the downlevel bytes; clearing the flag and setting the hint-with-header encoding here would make the
             // reader consume 8 bytes of the value as a bogus header. Re-serializing to insert the header during recovery (which grows the
-            // object log and shifts following positions) is not yet implemented, so fail fast rather than silently corrupt. A v2.2 source
-            // never sets the flag, so this never fires for it.
+            // object log and shifts following positions) is not yet implemented, so fail fast rather than silently corrupt. A
+            // current-format source never sets the flag, so this never fires for it.
             if (wasReuseObjectIdForSize
                     && (keyLen > ObjectIdMap.MaxObjectIdSizeHint
                         || ((dataHeader.ValueIsOverflow || dataHeader.ValueIsObject) && valLen > (ulong)RecordDataHeader.kOutOfLineExactSizeCutoff)))
             {
                 throw new TsavoriteException(
-                    "Recovering a downlevel (v2.1) checkpoint record whose large overflow key/value or object requires a v2.2 leading ChunkHeader is not yet supported by the recovery reposition path (the v2.1 object log has no header, and header insertion during recovery is not implemented).");
+                    "Recovering a legacy checkpoint record whose large overflow key/value or object requires a leading ChunkHeader is not yet supported by the recovery reposition path (the legacy object log has no header, and header insertion during recovery is not implemented).");
             }
 
             // This guarded conversion only supports components that remain headerless in the current format.
