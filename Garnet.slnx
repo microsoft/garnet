@@ -77,7 +77,6 @@
     <File Path="Version.props" />
   </Folder>
   <Folder Name="/test/">
-    <Project Path="libs/storage/Tsavorite/cs/test/test.epoch/Tsavorite.test.epoch.csproj" />
     <Project Path="test/Garnet.fuzz/Garnet.fuzz.csproj" />
     <Project Path="test/standalone/BfTreeInterop.test/BfTreeInterop.test.csproj" />
     <Project Path="test/standalone/Garnet.test/Garnet.test.csproj" />
