@@ -535,7 +535,7 @@ namespace Garnet
         public bool? DeviceUringSqPoll { get; set; }
 
         [IntRangeValidation(0, 600000)]
-        [Option("device-uring-sqpoll-idle-ms", Required = false, HelpText = "io_uring SQPOLL poll-thread idle window in milliseconds (sq_thread_idle): how long the kernel poll thread spins after the last submit before parking. 0 = native default (10s). Only meaningful with --device-uring-sqpoll.")]
+        [Option("device-uring-sqpoll-idle-ms", Required = false, HelpText = "Linux-only, DeviceType=Native + --device-io-backend uring: io_uring SQPOLL poll-thread idle window in milliseconds (sq_thread_idle): how long the kernel poll thread spins after the last submit before parking. 0 = native default (10s). Only meaningful with --device-uring-sqpoll.")]
         public int? DeviceUringSqPollIdleMs { get; set; }
 
         [IntRangeValidation(1, 4096)]
