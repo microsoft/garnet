@@ -41,6 +41,12 @@ namespace Garnet.test
         {
             server?.Dispose();
             server = null;
+            // Native (Full) mode leaves direct-VM index/log blocks to be freed by the NativePageBlockRegistry
+            // finalizer; drain finalizers so those deferred frees do not bleed into a later test's process-global
+            // native state (tracker / LightEpoch) in the same assembly.
+            System.GC.Collect();
+            System.GC.WaitForPendingFinalizers();
+            System.GC.Collect();
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
         }
 

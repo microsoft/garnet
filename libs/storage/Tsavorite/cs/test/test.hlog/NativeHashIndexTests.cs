@@ -27,6 +27,12 @@ namespace Tsavorite.test.spanbyte
         public void Setup()
         {
             DeleteDirectory(MethodTestDir, wait: true);
+            // Drain any finalizer-deferred native frees from a prior test (the NativePageBlockRegistry frees direct-VM
+            // blocks in its finalizer) before enabling this surface, so the NativeMemoryTracker baseline captured in
+            // the tests below is not corrupted by another fixture's pending frees firing mid-test.
+            GC.Collect();
+            GC.WaitForPendingFinalizers();
+            GC.Collect();
             _ = NativeAllocatorInitializer.Initialize(NativeAllocatorSurfaces.HashIndex);
         }
 
@@ -34,6 +40,9 @@ namespace Tsavorite.test.spanbyte
         public void TearDown()
         {
             _ = NativeAllocatorInitializer.Initialize(NativeAllocatorSurfaces.None);
+            GC.Collect();
+            GC.WaitForPendingFinalizers();
+            GC.Collect();
             DeleteDirectory(MethodTestDir);
         }
 
