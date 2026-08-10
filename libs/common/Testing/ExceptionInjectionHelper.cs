@@ -73,8 +73,7 @@ namespace Garnet.common
         }
 
         /// <summary>
-        /// Enables an exception scenario until the returned scope is disposed, so tests cannot leak an
-        /// armed injection into whatever runs next.
+        /// Enables an exception scenario until the returned scope is disposed.
         /// </summary>
         /// <param name="exceptionType"></param>
         public static Scope EnabledScope(ExceptionInjectionType exceptionType)
