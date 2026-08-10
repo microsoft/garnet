@@ -669,6 +669,35 @@ namespace Tsavorite.test
 
         [Test]
         [Category("TsavoriteKV")]
+        public static void LogPathExtendedLengthSupport()
+        {
+            if (!OperatingSystem.IsWindows())
+                Assert.Ignore("Skipped");
+
+            // Comfortably short paths are returned unchanged, preserving existing behavior for normal checkouts and CI.
+            const string shortPath = @"C:\dir\hlog.log";
+            ClassicAssert.AreEqual(shortPath, EnsureExtendedLengthPathIfNeeded(shortPath));
+
+            // Build a path that exceeds MAX_PATH by nesting fixed-size components (each below the 255-char
+            // component limit), independent of the test output directory's own length.
+            var dir = MethodTestDir;
+            while (dir.Length < Native32.WIN32_MAX_PATH + 20)
+                dir = Path.Combine(dir, new string('d', 80));
+            var file = Path.Combine(dir, "hlog.log");
+
+            // The over-long path is rewritten as an extended-length (\\?\) path, and the conversion is idempotent.
+            var extended = EnsureExtendedLengthPathIfNeeded(file);
+            ClassicAssert.IsTrue(Native32.IsExtendedLengthPath(extended), "Expected an extended-length path");
+            ClassicAssert.AreEqual(extended, EnsureExtendedLengthPathIfNeeded(extended), "Conversion should be idempotent");
+
+            // The device honors the prefix and creates the directory/log beyond the 260-char limit; without it
+            // the device would throw (see LogPathtooLong). Files are cleaned up by TearDown via MethodTestDir.
+            using var log = Devices.CreateLogDevice(extended, deleteOnClose: true);
+            ClassicAssert.IsTrue(Directory.Exists(EnsureExtendedLengthPathIfNeeded(dir)));
+        }
+
+        [Test]
+        [Category("TsavoriteKV")]
         public static void BasicSyncOperationsTest()
         {
             using var log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "hlog.log"), deleteOnClose: false);
