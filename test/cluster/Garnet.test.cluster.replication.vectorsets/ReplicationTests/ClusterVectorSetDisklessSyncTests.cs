@@ -246,8 +246,8 @@ namespace Garnet.test.cluster
         /// An aborted diskless full sync leaves raw namespaced records on the replica: ContextMetadata in
         /// <see cref="VectorManager.MetadataNamespace"/> and element data under the streamed set's own
         /// namespaces. Those arrive as raw bytes, so nothing reserves their contexts in the replica's
-        /// allocator, and the attempt dies before ReconcileRecoveredState can mark the unreferenced ones for
-        /// cleanup. The only thing that can discard them is the CLUSTER FLUSHALL the primary issues at the
+        /// VectorManager, and the attempt dies before ReconcileRecoveredState can mark the unreferenced ones
+        /// for cleanup. The only thing that can discard them is the CLUSTER FLUSHALL the primary issues at the
         /// start of the next full sync.
         ///
         /// Deleting the set on the primary between the two attempts makes the leak observable: after the
