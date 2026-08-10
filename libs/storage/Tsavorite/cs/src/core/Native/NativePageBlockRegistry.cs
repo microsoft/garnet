@@ -1,6 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
 using System.Collections.Generic;
 
 namespace Tsavorite.core
@@ -18,6 +19,14 @@ namespace Tsavorite.core
     /// freeing them only when this registry is finalized reproduces the managed lifetime exactly: the registry is
     /// reachable only through the allocator, so it is finalized after the store and its device are gone.
     /// </para>
+    /// <para>
+    /// Direct-VM blocks are invisible to the GC (no managed backing), so a disposed-but-not-yet-collected store's
+    /// registry would otherwise apply no collection pressure and could sit uncollected for a long time while its
+    /// native mappings remain resident. Each registered block therefore calls <see cref="GC.AddMemoryPressure"/>
+    /// (removed when the finalizer frees it), so the GC accounts for the retained native bytes and collects the
+    /// dead store — and runs this finalizer — promptly under memory pressure. This is a timeliness mitigation, not
+    /// a correctness mechanism: the finalizer remains the sole owner of the free.
+    /// </para>
     /// </summary>
     internal sealed class NativePageBlockRegistry
     {
@@ -28,19 +37,33 @@ namespace Tsavorite.core
         readonly List<DirectVmBlock> blocks = new();
         readonly object gate = new();
 
+        // Total native bytes reported to the GC via AddMemoryPressure for blocks currently registered here; the
+        // finalizer removes exactly this amount so the process-wide pressure accounting nets to zero.
+        long pressureBytes;
+
         /// <summary>Record a block so it is freed when this registry is finalized.</summary>
         internal void Register(in DirectVmBlock block)
         {
             if (block.IsEmpty)
                 return;
             lock (gate)
+            {
                 blocks.Add(block);
+                pressureBytes += block.ReservedLength;
+            }
+            // Make the retained native mapping visible to the GC so the owning (disposed) store is collected, and
+            // this finalizer runs, promptly rather than only under managed-heap pressure. Cold path (Dispose/grow).
+            GC.AddMemoryPressure(block.ReservedLength);
         }
 
         ~NativePageBlockRegistry()
         {
             for (var i = 0; i < blocks.Count; i++)
                 DirectVirtualMemory.Free(blocks[i]);
+            // Balance the AddMemoryPressure calls made in Register. Safe if the process is exiting (the CLR simply
+            // stops tracking); the net pressure delta for this registry is always zero.
+            if (pressureBytes > 0)
+                GC.RemoveMemoryPressure(pressureBytes);
         }
     }
 }

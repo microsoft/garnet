@@ -1017,6 +1017,12 @@ namespace Tsavorite.core
                         logWriter.OnPartialFlushComplete(diskWritePtr, alignedBufferSize, device, alignedMainLogFlushPageAddress + (uint)alignedStartOffset, callback, asyncResult, ref objectLogTail);
                     else
                         device.WriteAsync((IntPtr)diskWritePtr, alignedMainLogFlushPageAddress + (uint)alignedStartOffset, (uint)alignedBufferSize, callback, asyncResult);
+
+                    // Main device write submitted: its completion callback owns releasing this page's native
+                    // snapshot-IO unit and buffers. Set inside the try (before the finally that disposes logWriter
+                    // and readers) so a throw from that cleanup does not make the issuer double-release. If the
+                    // submit itself threw, the flag stays false and the issuer releases (exactly-once via the claim).
+                    asyncResult.snapshotDeviceWriteIssued = true;
                 }
             }
             finally

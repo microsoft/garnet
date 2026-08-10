@@ -254,6 +254,9 @@ namespace Tsavorite.core
                     }
                     WriteInlinePageAsync((IntPtr)pagePointers[flushPage % BufferSize], (ulong)(AlignedPageSizeBytes * (flushPage - startPage)),
                                 (uint)AlignedPageSizeBytes, callback, asyncResult, device);
+                    // Main device write submitted: its completion callback owns releasing this page's snapshot-IO
+                    // unit and buffers. (If WriteInlinePageAsync threw, the flag stays false and the issuer releases.)
+                    asyncResult.snapshotDeviceWriteIssued = true;
                 }
                 finally
                 {
@@ -264,6 +267,7 @@ namespace Tsavorite.core
             }
             WriteInlinePageAsync((IntPtr)pagePointers[flushPage % BufferSize], (ulong)(AlignedPageSizeBytes * (flushPage - startPage)),
                         (uint)AlignedPageSizeBytes, callback, asyncResult, device);
+            asyncResult.snapshotDeviceWriteIssued = true;
         }
 
         protected override void ReadAsync<TContext>(ulong alignedSourceAddress, IntPtr destinationPtr, uint aligned_read_length,

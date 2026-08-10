@@ -144,6 +144,12 @@ namespace Tsavorite.core
         /// <summary>Capacity of <see cref="nativeFreePagePool"/> (matches the managed freePagePool's OverflowPool size).</summary>
         const int NativeFreePagePoolSize = 4;
 
+        /// <summary>Set (under <see cref="nativeFreeGate"/>) when <see cref="Dispose"/> has disposed
+        /// <see cref="nativeFreePagePool"/>. A block offered for recycling after this must be munmap'd directly
+        /// rather than enqueued into the drained pool, which would silently leak it (a native mapping the pool's
+        /// disposer will never revisit). See <see cref="RecycleOrFreeNativeBlock"/>.</summary>
+        bool nativeFreePoolDisposed;
+
         /// <summary>Owns the lifetime of the direct-VM log-page blocks that are still installed at Dispose, freeing
         /// them at finalization to match the managed page lifetime (an in-flight device flush/read may still
         /// reference them, and the device is disposed after this allocator). Null / unused for the managed backend.</summary>
@@ -551,8 +557,14 @@ namespace Tsavorite.core
 
                 // Pooled blocks are evicted and IO-free (they only enter the pool once no snapshot references them and
                 // after the main-log flush), so they can be unmapped now rather than deferred to finalization; the
-                // pool's disposer munmaps each. Teardown is quiescent, so no concurrent AllocatePage/ReturnPage races.
-                nativeFreePagePool.Dispose();
+                // pool's disposer munmaps each. Set nativeFreePoolDisposed and dispose under nativeFreeGate so a page
+                // eviction or snapshot completion racing this teardown (RecycleOrFreeNativeBlock) frees its block
+                // directly instead of enqueuing it into the just-drained pool (which would leak the mapping).
+                lock (nativeFreeGate)
+                {
+                    nativeFreePoolDisposed = true;
+                    nativeFreePagePool.Dispose();
+                }
             }
         }
 
@@ -905,7 +917,26 @@ namespace Tsavorite.core
                     }
                 }
             }
-            _ = nativeFreePagePool.TryAdd(block);
+            RecycleOrFreeNativeBlock(block);
+        }
+
+        /// <summary>Recycle an evicted, IO-free direct-VM page block into <see cref="nativeFreePagePool"/> for reuse,
+        /// or munmap it directly if the pool is already disposed by teardown. Serialized with the pool's disposal via
+        /// <see cref="nativeFreeGate"/> so a block can never be enqueued into an already-drained pool (which would leak
+        /// the mapping). Cold path (page eviction, snapshot completion, teardown) — never the record read/write or
+        /// <see cref="AllocatePinnedPageArray"/> allocation path, which reads the pool lock-free via TryGet.</summary>
+        void RecycleOrFreeNativeBlock(in DirectVmBlock block)
+        {
+            lock (nativeFreeGate)
+            {
+                if (!nativeFreePoolDisposed)
+                {
+                    _ = nativeFreePagePool.TryAdd(block);
+                    return;
+                }
+            }
+            // Teardown already drained and disposed the pool: free directly rather than leak into a dead pool.
+            DirectVirtualMemory.Free(block);
         }
 
         /// <summary>Mark the start of a snapshot-checkpoint flush that issues device writes from native page
@@ -936,9 +967,11 @@ namespace Tsavorite.core
             }
             // Snapshot writes have all completed, so these evicted pages are now IO-free: recycle them into the pool
             // for reuse (overflow beyond the cap is munmap'd by the pool's disposer) rather than unmapping outright.
+            // RecycleOrFreeNativeBlock serializes with pool teardown so a block completing here concurrently with
+            // Dispose is never lost into a drained pool.
             if (toFree is not null)
                 foreach (var block in toFree)
-                    _ = nativeFreePagePool.TryAdd(block);
+                    RecycleOrFreeNativeBlock(block);
         }
 
         /// <summary>Diagnostic counter of direct-VM log-page frees on eviction (see <see cref="FreeNativeLogPage"/>);
@@ -2260,22 +2293,35 @@ namespace Tsavorite.core
 
                         // Intended destination is flushPage
                         // Count this native page write as outstanding snapshot IO BEFORE issuing, so an eviction that
-                        // races the issue parks the page instead of unmapping it. The unit is released by the write's
-                        // completion callback iff the write is actually issued; otherwise (WriteNotIssued, or the
-                        // issue throwing before a callback is registered) it is released in the finally below.
+                        // races the issue parks the page instead of unmapping it. The unit is released exactly once:
+                        // by the write's completion callback iff the write was actually submitted
+                        // (snapshotDeviceWriteIssued), otherwise (WriteNotIssued, or the issue threw before the
+                        // submit) by the issuing thread here. The TryClaimSnapshotUnitRelease guards the exotic
+                        // overlap where a synchronously-invoked callback released and then threw back out of the submit.
                         BeginNativeSnapshotFlush();
-                        var writeIssued = false;
                         try
                         {
                             WriteAsyncToDeviceForSnapshot(startPage, flushPage, (int)flushSize, AsyncFlushPageForSnapshotCallback, asyncResult, logDevice, objectLogDevice, fuzzyStartLogicalAddress);
-                            writeIssued = asyncResult.flushRequestState != FlushRequestState.WriteNotIssued;
                         }
-                        finally
+                        catch (Exception writeEx)
                         {
-                            // WriteNotIssued or the issue threw -> no callback will fire, so release the unit here.
-                            if (!writeIssued)
-                                EndNativeSnapshotFlush();
+                            // Fault the flush FIRST so a racing callback's Release()->CompleteFlush cannot report
+                            // success for this page before we mark it failed. If the main device write was submitted,
+                            // its callback owns releasing this page's IO unit and buffers — releasing here too would
+                            // underflow nativeSnapshotIoOutstanding and could unmap a page under an in-flight write.
+                            // If it was NOT submitted, no callback will fire, so release the unit (exactly once) and
+                            // the buffers here. Then rethrow into the outer catch for logging + SetException.
+                            flushCompletionTracker.SetException(writeEx);
+                            if (!asyncResult.snapshotDeviceWriteIssued)
+                            {
+                                if (asyncResult.TryClaimSnapshotUnitRelease())
+                                    EndNativeSnapshotFlush();
+                                _ = asyncResult.Release();
+                            }
+                            throw;
                         }
+
+                        var writeIssued = asyncResult.snapshotDeviceWriteIssued;
 
                         // If we did not issue a flush write (due to HeadAddress moving past flushPage), then WriteAsync set isForSnapshot false and we release the asyncResult here;
                         // otherwise, we wait for the completion of the flush (and the callback will release the asyncResult).
@@ -2289,6 +2335,10 @@ namespace Tsavorite.core
                         }
                         else
                         {
+                            // WriteNotIssued: no callback will fire, so release this page's IO unit (exactly once)
+                            // and the asyncResult buffers here.
+                            if (asyncResult.TryClaimSnapshotUnitRelease())
+                                EndNativeSnapshotFlush();
                             _ = asyncResult.Release();
                             // Release() called CompleteFlush() which released the throttle semaphore.
                             // Drain it so the next real page's WaitOneFlush is not satisfied by this no-op.
@@ -2632,6 +2682,7 @@ namespace Tsavorite.core
         /// <param name="context"></param>
         protected void AsyncFlushPageForSnapshotCallback(uint errorCode, uint numBytes, object context)
         {
+            var result = (PageAsyncFlushResult<Empty>)context;
             try
             {
                 try
@@ -2642,11 +2693,10 @@ namespace Tsavorite.core
 
                         // Fault the snapshot's flush-completion so the checkpoint fails rather than committing a snapshot with
                         // an unwritten page; the Release() below still frees buffers and its CompleteFlush becomes a no-op.
-                        ((PageAsyncFlushResult<Empty>)context).flushCompletionTracker?.SetException(
+                        result.flushCompletionTracker?.SetException(
                             new TsavoriteException($"Snapshot page flush failed with error code {errorCode}"));
                     }
 
-                    var result = (PageAsyncFlushResult<Empty>)context;
                     var epochTaken = epoch.ResumeIfNotProtected();
 
                     try
@@ -2697,9 +2747,12 @@ namespace Tsavorite.core
             {
                 // Release this issued page write's unit of outstanding snapshot IO. In an OUTERMOST finally so it
                 // runs on every path (success, error, disposed, or a cleanup exception in the inner finally), since
-                // this callback fires exactly once per issued write. When the last unit is released, pages parked
-                // while snapshot writes were in flight are freed.
-                EndNativeSnapshotFlush();
+                // this callback fires exactly once per issued write. The TryClaim guards the exotic overlap where
+                // this callback ran synchronously during the submit, then threw back out so the issuing thread also
+                // attempts the release. When the last unit is released, pages parked while snapshot writes were in
+                // flight are freed.
+                if (result.TryClaimSnapshotUnitRelease())
+                    EndNativeSnapshotFlush();
             }
         }
 

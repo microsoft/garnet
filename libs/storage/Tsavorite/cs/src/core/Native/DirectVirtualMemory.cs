@@ -126,11 +126,14 @@ namespace Tsavorite.core
         {
             if (block.BasePtr == 0)
                 return;
-            NativeMemoryTracker.Subtract(block.ReservedLength);
-            if (OperatingSystem.IsWindows())
-                _ = VirtualFree(block.BasePtr, 0, MEM_RELEASE);
-            else
-                _ = munmap(block.BasePtr, (nuint)block.ReservedLength);
+            // Release the mapping FIRST, then decrement the tracked native bytes only on success. Subtracting
+            // before the OS call (or ignoring its result) would under-report resident native memory if the free
+            // failed, corrupting the heap-size tracker; a failed free leaves the region mapped and still counted.
+            bool freed = OperatingSystem.IsWindows()
+                ? VirtualFree(block.BasePtr, 0, MEM_RELEASE)
+                : munmap(block.BasePtr, (nuint)block.ReservedLength) == 0;
+            if (freed)
+                NativeMemoryTracker.Subtract(block.ReservedLength);
         }
 
         /// <summary>Zero <paramref name="length"/> bytes at <paramref name="ptr"/>.</summary>

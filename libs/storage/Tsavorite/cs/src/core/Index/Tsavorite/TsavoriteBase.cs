@@ -33,16 +33,37 @@ namespace Tsavorite.core
 
         // Per-version direct-VM backing block for the hash index when the HashIndex native surface is enabled
         // ("full" mode). Kept separate from <see cref="state"/> (which is set to default on grow-completion) so
-        // the pointer to free survives. Blocks are NEVER munmap'd deterministically: both the superseded block on
-        // a grow (a canceled index checkpoint can leave an async device write outstanding on it — see
-        // InitializeMainIndex) and the two LIVE tables at <see cref="Free"/> (a checkpoint write may reference them
-        // and the device is disposed after this store) are handed to <see cref="nativeTableRegistry"/> and freed at
-        // finalization, matching the managed table lifetime. Grows are few (log2 of the growth factor), so only a
-        // handful of superseded tables are ever retained.
+        // the pointer to free survives. A superseded block retired on a grow is munmap'd deterministically once no
+        // index-checkpoint write references it (immediately in the common no-checkpoint case, else when the write
+        // drains — see RetireNativeIndexTable), matching the managed backend where the old table array is dropped
+        // on grow and GC-freed. The two LIVE tables at <see cref="Free"/> (a checkpoint write may reference them,
+        // and the device is disposed after this store) are instead handed to <see cref="nativeTableRegistry"/> and
+        // freed at finalization, matching the managed table lifetime for in-flight IO.
         readonly DirectVmBlock[] tableBlocks = new DirectVmBlock[2];
 
         // Owns superseded/live direct-VM hash-index tables, freeing them at finalization (see tableBlocks).
         NativePageBlockRegistry nativeTableRegistry;
+
+        // Count of in-flight index-checkpoint device writes (a producer sentinel held for the duration of issuance,
+        // plus one unit per issued chunk write). A superseded table retired on a grow can be munmap'd immediately
+        // only when this is zero; otherwise a (possibly canceled) index checkpoint's async write may still
+        // reference it, so it is parked in deferredIndexFrees and freed when the last write completes. Zero and
+        // unused for the managed backend. See BeginNativeIndexCheckpointIo / RetireNativeIndexTable.
+        int nativeIndexIoOutstanding;
+
+        // Direct-VM hash-index tables superseded by a grow while an index-checkpoint write was still outstanding;
+        // freed deterministically once nativeIndexIoOutstanding drains to zero (or, if still parked at teardown,
+        // handed to nativeTableRegistry for finalization). Guarded by nativeIndexFreeGate. Null for managed.
+        System.Collections.Generic.List<DirectVmBlock> deferredIndexFrees;
+        readonly object nativeIndexFreeGate = new();
+
+        /// <summary>Diagnostic counter of superseded direct-VM hash-index tables freed deterministically (on grow,
+        /// or when an index-checkpoint write drains); used by tests to assert the prompt-free path is exercised.</summary>
+        internal static long NativeIndexTableFreeCount;
+
+        /// <summary>Diagnostic counter of superseded direct-VM hash-index tables parked because an index-checkpoint
+        /// write was in flight at grow time; used by tests to assert the deferral path is exercised.</summary>
+        internal static long NativeIndexTableDeferredCount;
 
         // Captured once at construction: whether the main hash-index table uses the direct-VM backend. Used
         // instead of re-reading the process-global NativeAllocatorInitializer.EnabledSurfaces in InitializeMainIndex
@@ -106,6 +127,21 @@ namespace Tsavorite.core
                 tableBlocks[0] = default;
                 tableBlocks[1] = default;
             }
+
+            // Any superseded tables still parked awaiting an outstanding index-checkpoint write also go to the
+            // registry (freed at finalization). We do NOT spin-wait on nativeIndexIoOutstanding here: the device is
+            // disposed by the owner after this store, and a canceled/hung checkpoint write could otherwise wedge
+            // teardown forever. This is the bounded, one-time teardown handover, not runtime accumulation.
+            lock (nativeIndexFreeGate)
+            {
+                if (deferredIndexFrees is { Count: > 0 })
+                {
+                    var registry = nativeTableRegistry ??= new NativePageBlockRegistry();
+                    foreach (var block in deferredIndexFrees)
+                        registry.Register(block);
+                    deferredIndexFrees.Clear();
+                }
+            }
         }
 
         /// <summary>
@@ -148,14 +184,17 @@ namespace Tsavorite.core
             if (useNativeHashIndex)
             {
                 // Direct-VM (mmap/VirtualAlloc): demand-zero, first-touch-placed pages, matching GC.AllocateArray.
-                // A prior block may still occupy this version slot (grow reuses the two versions alternately). Do
-                // NOT munmap it here: a canceled index checkpoint can leave an async device write outstanding on it
-                // (StateMachineDriver releases the state machine on cancellation without draining the index-write
-                // TCS), so hand it to the finalization-owned registry — matching the managed table lifetime. Grows
-                // are few (log2 of the growth factor), so at most a handful of superseded tables are retained.
+                // A prior block may still occupy this version slot (grow reuses the two versions alternately), and
+                // that superseded table is dead once we overwrite the slot. Free it deterministically here when no
+                // index-checkpoint write is outstanding (the common case); otherwise a canceled index checkpoint may
+                // have left an async device write referencing it (StateMachineDriver releases the state machine on
+                // cancellation without draining the index-write TCS), so park it and free it when the write drains
+                // (RetireNativeIndexTable). This reclaims superseded tables promptly, matching the managed backend
+                // where the old table array is dropped on grow and GC-freed, instead of retaining every generation
+                // until store teardown.
                 if (!tableBlocks[version].IsEmpty)
                 {
-                    (nativeTableRegistry ??= new NativePageBlockRegistry()).Register(tableBlocks[version]);
+                    RetireNativeIndexTable(tableBlocks[version]);
                     tableBlocks[version] = default;
                 }
                 var block = DirectVirtualMemory.Allocate(size_bytes, sector_size);
@@ -175,6 +214,63 @@ namespace Tsavorite.core
             state[version].size = size;
             state[version].size_mask = size - 1;
             state[version].size_bits = Utility.GetLogBase2((int)size);
+        }
+
+        /// <summary>Count one unit of in-flight index-checkpoint device IO (a producer sentinel for the duration of
+        /// issuance, or one issued chunk write). While non-zero, a superseded native table retired on a grow is
+        /// parked rather than munmap'd, because a (possibly canceled) index-checkpoint write may still reference it.
+        /// No-op for the managed backend.</summary>
+        internal void BeginNativeIndexCheckpointIo()
+        {
+            if (useNativeHashIndex)
+                _ = Interlocked.Increment(ref nativeIndexIoOutstanding);
+        }
+
+        /// <summary>Release one unit of in-flight index-checkpoint device IO (the issuance sentinel, or one chunk
+        /// write's completion callback — including the error path). When the last unit is released, free any tables
+        /// that were superseded by a grow while the write was outstanding. No-op for the managed backend.</summary>
+        internal void EndNativeIndexCheckpointIo()
+        {
+            if (!useNativeHashIndex || Interlocked.Decrement(ref nativeIndexIoOutstanding) != 0)
+                return;
+            DirectVmBlock[] toFree = null;
+            lock (nativeIndexFreeGate)
+            {
+                // Re-check under the lock: another checkpoint may have started (incremented) before we took it.
+                if (Volatile.Read(ref nativeIndexIoOutstanding) == 0 && deferredIndexFrees is { Count: > 0 })
+                {
+                    toFree = deferredIndexFrees.ToArray();
+                    deferredIndexFrees.Clear();
+                }
+            }
+            if (toFree is not null)
+                foreach (var block in toFree)
+                {
+                    _ = System.Threading.Interlocked.Increment(ref NativeIndexTableFreeCount);
+                    DirectVirtualMemory.Free(block);
+                }
+        }
+
+        /// <summary>Reclaim a direct-VM hash-index table superseded by a grow. Munmap it immediately when no
+        /// index-checkpoint write is outstanding (the common case); otherwise park it (guarded by
+        /// nativeIndexFreeGate) so a possibly-canceled index-checkpoint write still referencing it is never unmapped
+        /// early — it is freed when the last write completes (<see cref="EndNativeIndexCheckpointIo"/>) or, if still
+        /// parked at teardown, handed to the finalization-owned registry in <see cref="Free"/>. Cold path (grow).</summary>
+        void RetireNativeIndexTable(in DirectVmBlock block)
+        {
+            if (block.IsEmpty)
+                return;
+            lock (nativeIndexFreeGate)
+            {
+                if (Volatile.Read(ref nativeIndexIoOutstanding) > 0)
+                {
+                    _ = Interlocked.Increment(ref NativeIndexTableDeferredCount);
+                    (deferredIndexFrees ??= new()).Add(block);
+                    return;
+                }
+            }
+            _ = Interlocked.Increment(ref NativeIndexTableFreeCount);
+            DirectVirtualMemory.Free(block);
         }
 
         /// <summary>

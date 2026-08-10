@@ -4,6 +4,7 @@
 using System;
 using System.IO;
 using System.Runtime.InteropServices;
+using System.Threading.Tasks;
 using Garnet.test;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -377,6 +378,145 @@ namespace Tsavorite.test.spanbyte
             // GC-timing dependent (and unreliable in Debug where locals stay rooted); the scan-peak bound above is
             // the meaningful regression guard for the frame-reuse fix. NativeFullModeLogPageMemoryStaysBounded
             // separately proves the log-page footprint is bounded.
+        }
+
+        /// <summary>
+        /// Regression for the memory-review "delay leak" finding: growing the native hash index must FREE each
+        /// superseded table promptly (matching the managed backend, which drops the old array on grow so the GC
+        /// reclaims it), not retain every generation in the store's finalization registry for the store's whole
+        /// life. Grows the direct-VM index several times with no concurrent checkpoint and asserts the LIVE mapped
+        /// index footprint stays near the two-slot working set (current + previous version, ~1.5x the final size),
+        /// well below the geometric sum of all generations (~2x) that the retain-until-teardown behavior left
+        /// mapped. No GC is taken before the assertion: the retained tables live in the (still-reachable) store's
+        /// registry and are NOT collectable while the store is alive, so only prompt deterministic frees can pass.
+        /// </summary>
+        [Test]
+        [Category(TsavoriteKVTestCategory)]
+        public async Task NativeIndexGrowFreesSupersededTables()
+        {
+            // HashIndex-only native surface (set in Setup), so tracked native bytes reflect the index tables alone
+            // (log pages are managed here and are not counted).
+            GC.Collect();
+            GC.WaitForPendingFinalizers();
+            var baseline = NativeMemoryTracker.Bytes;
+            var freedBefore = System.Threading.Interlocked.Read(ref TsavoriteBase.NativeIndexTableFreeCount);
+            var deferredBefore = System.Threading.Interlocked.Read(ref TsavoriteBase.NativeIndexTableDeferredCount);
+
+            var log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "hlog.log"), deleteOnClose: true);
+            var store = new TsavoriteKV<SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>>(
+                new()
+                {
+                    IndexSize = 1L << 20,   // 1 MB starting index -> doubles each grow
+                    LogDevice = log,
+                    LogMemorySize = 1L << 20,
+                    PageSize = 1L << 14
+                }, StoreFunctions.Create(SpanByteComparer.Instance, SpanByteRecordTriggers.Instance)
+                    , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions));
+
+            // One live table (the initial index) is mapped now; capture its mapped size (includes alignment overhead).
+            var initialIndexBytes = NativeMemoryTracker.Bytes - baseline;
+            ClassicAssert.GreaterOrEqual(initialIndexBytes, 1L << 20, "initial index should be direct-VM backed");
+
+            // Insert entries so the grows actually split populated buckets (exercises the real grow path).
+            var session = store.NewSession<TestSpanByteKey, PinnedSpanByte, int[], Empty, VLVectorFunctions>(new VLVectorFunctions());
+            var bContext = session.BasicContext;
+            Span<int> keySpan = stackalloc int[1];
+            Span<int> valueSpan = stackalloc int[4];
+            for (var i = 0; i < 10_000; i++)
+            {
+                keySpan[0] = i;
+                for (var j = 0; j < 4; j++)
+                    valueSpan[j] = i;
+                _ = bContext.Upsert(TestSpanByteKey.FromPinnedSpan(MemoryMarshal.Cast<int, byte>(keySpan)),
+                    MemoryMarshal.Cast<int, byte>(valueSpan), Empty.Default);
+            }
+
+            const int grows = 4;   // 1 MB -> 16 MB
+            for (var g = 0; g < grows; g++)
+            {
+                var grew = await store.GrowIndexAsync().ConfigureAwait(false);
+                ClassicAssert.IsTrue(grew, $"grow {g} failed");
+            }
+
+            // The core invariant: each grow that reuses a version slot FREES the superseded table deterministically
+            // (there is no concurrent index checkpoint here, so nativeIndexIoOutstanding is 0 and none are deferred).
+            // The first grow reuses an empty slot, so grows-1 tables are freed. The pre-fix behavior registered every
+            // superseded table into the store's finalization registry (freed only at teardown), i.e. zero prompt
+            // frees — so this delta cleanly distinguishes prompt deterministic freeing from retain-until-teardown.
+            var freed = System.Threading.Interlocked.Read(ref TsavoriteBase.NativeIndexTableFreeCount) - freedBefore;
+            var deferred = System.Threading.Interlocked.Read(ref TsavoriteBase.NativeIndexTableDeferredCount) - deferredBefore;
+            ClassicAssert.AreEqual(grows - 1, freed,
+                $"expected {grows - 1} superseded index tables to be freed promptly on grow; freed={freed} deferred={deferred}");
+            ClassicAssert.AreEqual(0, deferred, "no index checkpoint is running, so no superseded table should be deferred");
+
+            // Secondary sanity: the live footprint reflects a bounded working set (current + previous version),
+            // not the geometric sum of all generations. (Loose bound: Bytes also includes unrelated mimalloc-committed
+            // bytes, so this is a coarse ceiling; the free-count delta above is the precise regression guard.)
+            var mapped = NativeMemoryTracker.Bytes - baseline;
+            ClassicAssert.Less(mapped, (initialIndexBytes << grows) * 2,
+                $"native index footprint grew beyond a bounded working set: mapped={mapped:N0}");
+
+            session.Dispose();
+            store.Dispose();
+            log.Dispose();
+        }
+
+        /// <summary>
+        /// Regression for the memory-review construction-failure finding: if the store constructor throws AFTER
+        /// allocating native (direct-VM) regions, those regions must not leak — there is no finalizer on a
+        /// partially-constructed store, and unlike managed byte[] pages the GC cannot reclaim raw mappings. Forces a
+        /// throw AFTER the native log pages are allocated (a sub-cache-line IndexSize throws in
+        /// GetIndexSizeCacheLines, which the constructor calls after hlog.Initialize), then asserts the tracked
+        /// native footprint returns to baseline after a GC drain (the cleanup path handed the pages to the
+        /// finalization registry). Without the cleanup the pages would leak permanently.
+        /// </summary>
+        [Test]
+        [Category(TsavoriteKVTestCategory)]
+        public void NativeConstructionFailureDoesNotLeak()
+        {
+            // Log pages native too, so hlog.Initialize allocates direct-VM pages before the (post-hlog) index step throws.
+            _ = NativeAllocatorInitializer.Initialize(NativeAllocatorSurfaces.HashIndex | NativeAllocatorSurfaces.LogPages);
+
+            GC.Collect();
+            GC.WaitForPendingFinalizers();
+            var baseline = NativeMemoryTracker.Bytes;
+            var epochsBefore = LightEpoch.ActiveInstanceCount();
+
+            var log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "hlog.log"), deleteOnClose: true);
+            // IndexSize below one cache line (64 B) throws in GetIndexSizeCacheLines, which the constructor calls
+            // AFTER hlog.Initialize has allocated native log pages -> exercises the partial-construction cleanup.
+            _ = Assert.Throws<TsavoriteException>(() =>
+            {
+                var store = new TsavoriteKV<SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>>(
+                    new()
+                    {
+                        IndexSize = 32,             // < 64 B -> throws after native log pages are allocated
+                        LogDevice = log,
+                        LogMemorySize = 1L << 20,
+                        PageSize = 1L << 16         // 64 KB pages -> the leaked tail+next pages are a clear >baseline signal
+                    }, StoreFunctions.Create(SpanByteComparer.Instance, SpanByteRecordTriggers.Instance)
+                        , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions));
+                store.Dispose();   // unreachable; the constructor throws
+            });
+
+            log.Dispose();
+
+            // The failed construction must not leak the store-owned epoch: the cleanup path disposes it, mirroring
+            // normal teardown. A leak here would surface later as "LightEpoch instances still active" in another
+            // fixture's OnTearDown.
+            ClassicAssert.AreEqual(epochsBefore, LightEpoch.ActiveInstanceCount(),
+                "construction failure leaked a LightEpoch");
+
+            // The failed construction allocated native log pages; the cleanup handed them to the finalization
+            // registry, so a GC drain frees them and the tracked footprint returns to baseline. Without the cleanup
+            // they would leak permanently (no finalizer on the abandoned allocator). Allow a small slack (< one
+            // 64 KB page) for any unrelated jitter; a real leak here is >= two 64 KB pages.
+            GC.Collect();
+            GC.WaitForPendingFinalizers();
+            GC.Collect();
+            var after = NativeMemoryTracker.Bytes;
+            ClassicAssert.Less(after - baseline, 1L << 16,
+                $"construction failure leaked native memory: baseline={baseline:N0} after={after:N0}");
         }
     }
 }
