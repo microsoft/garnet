@@ -234,7 +234,18 @@ namespace Garnet.server
             Array.Fill(quantizationTasks, Task.CompletedTask);
 
             // Exclusive locks for potential updates to Vector Set data
-            vectorSetElementSelectMask = (int)BitOperations.RoundUpToPowerOf2((uint)Environment.ProcessorCount * 2) - 1;
+            var unroundedElementSetSize = Environment.ProcessorCount * 2;
+            unroundedElementSetSize *= unroundedElementSetSize;
+            unroundedElementSetSize *= 2;
+            vectorSetElementSelectMask = (int)BitOperations.RoundUpToPowerOf2((uint)unroundedElementSetSize) - 1;
+            if (vectorSetElementSelectMask < 0)
+            {
+                logger?.LogWarning("Vector Set element lock set size overflowed due to high CPU count: {processorCount}", Environment.ProcessorCount);
+
+                // Large power-of-two < Array.MaxLength, then -1
+                vectorSetElementSelectMask = 0x4000_0000 - 1;
+            }
+
             vectorSetElementUpdateLocks = new int[vectorSetElementSelectMask + 1];
 
             logger?.LogInformation("Created VectorManager");
