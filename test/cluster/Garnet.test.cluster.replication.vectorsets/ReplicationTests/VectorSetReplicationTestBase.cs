@@ -51,19 +51,6 @@ namespace Garnet.test.cluster
             context?.TearDown();
         }
 
-        #region cluster formation
-
-        /// <summary>
-        /// Waits until nodeIndex serves key and has drained any Vector Set replay queued behind it.
-        /// </summary>
-        protected void WaitUntilServes(int nodeIndex, string key)
-        {
-            context.clusterTestUtils.WaitUntilServes(nodeIndex, key, context.logger);
-            WaitForVectorReplay(nodeIndex);
-        }
-
-        #endregion
-
         #region vector set operations
 
         /// <summary>

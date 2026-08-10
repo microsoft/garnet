@@ -2228,28 +2228,6 @@ namespace Garnet.test.cluster
             => ClassicAssert.AreEqual("OK", (string)Execute(GetEndPoint(nodeIndex), "READONLY", [], logger: logger));
 
         /// <summary>
-        /// Waits until nodeIndex serves key rather than redirecting, e.g. after a slot migration.
-        /// </summary>
-        public void WaitUntilServes(int nodeIndex, string key, ILogger logger = null)
-        {
-            var endpoint = GetEndPoint(nodeIndex);
-
-            for (var attempt = 0; attempt < 200; attempt++)
-            {
-                ReadOnly(nodeIndex, logger);
-
-                // A redirect comes back as a bulk string rather than the status reply TYPE would produce
-                var reply = Execute(endpoint, "TYPE", [key], skipLogging: true);
-                if (reply.Resp2Type == ResultType.SimpleString && (string)reply != "none")
-                    return;
-
-                BackOff();
-            }
-
-            Assert.Fail($"node {nodeIndex} never began serving '{key}'");
-        }
-
-        /// <summary>
         /// Writes filler keys so a re-attaching replica falls behind the primary's AOF window and cannot sync incrementally.
         /// </summary>
         public void AdvancePrimaryPastReplicaAofWindow(int primaryIndex, int keyCount = 256, int valueLength = 64)

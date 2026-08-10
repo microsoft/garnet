@@ -239,7 +239,6 @@ namespace Garnet.test.cluster
             context.clusterTestUtils.WaitForReplicasConnected(PrimaryIndex, 1, logger: context.logger);
 
             context.clusterTestUtils.ReadOnly(ReplicaIndex);
-            WaitUntilServes(ReplicaIndex, Key);
             AssertFullyReplicated(PrimaryIndex, ReplicaIndex, Key);
         }
 
@@ -295,7 +294,6 @@ namespace Garnet.test.cluster
 
             context.clusterTestUtils.WaitForReplicasConnected(PrimaryIndex, 1, logger: context.logger);
             context.clusterTestUtils.ReadOnly(ReplicaIndex);
-            WaitUntilServes(ReplicaIndex, KeptKey);
             AssertFullyReplicated(PrimaryIndex, ReplicaIndex, KeptKey);
 
             // Guards the checks below: if the census saw nothing at all they would pass vacuously.
