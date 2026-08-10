@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -429,7 +429,7 @@ namespace Garnet.test
                 EnableDebugCommand = enableDebugCommand,
                 EnableModuleCommand = enableModuleCommand,
                 EnableReadCache = enableReadCache,
-                ReplicationOffsetMaxLag = asyncReplay ? -1 : 0,
+                AofReplayMaxLagBytes = asyncReplay ? -1 : 0,
                 AofReplayTaskCount = replayTaskCount,
                 AofPhysicalSublogCount = aofPhysicalSublogCount,
                 LuaOptions = enableLua ? new LuaOptions(luaMemoryMode, luaMemoryLimit, luaTimeout ?? Timeout.InfiniteTimeSpan, luaLoggingMode, luaAllowedFunctions ?? [], logger) : null,
@@ -874,7 +874,7 @@ namespace Garnet.test
                 ClusterPassword = authPassword,
                 EnableLua = enableLua,
                 LuaTransactionMode = luaTransactionMode,
-                ReplicationOffsetMaxLag = asyncReplay ? -1 : 0,
+                AofReplayMaxLagBytes = asyncReplay ? -1 : 0,
                 LuaOptions = enableLua ? new LuaOptions(luaMemoryMode, luaMemoryLimit, luaTimeout ?? Timeout.InfiniteTimeSpan, luaLoggingMode, luaAllowedFunctions ?? [], logger) : null,
                 UnixSocketPath = unixSocketPath,
                 ReplicaDisklessSync = enableDisklessSync,

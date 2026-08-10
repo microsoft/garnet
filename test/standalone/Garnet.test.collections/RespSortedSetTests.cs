@@ -4430,6 +4430,26 @@ namespace Garnet.test
             expectedResponse = $"-{Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER)}\r\n";
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
+            // start > stop is an empty range, not a negative count
+            response = lightClientRequest.SendCommandChunks("ZREMRANGEBYRANK board 2 0", bytesSent);
+            expectedResponse = ":0\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            // Negative indexes that fall before the first element remove nothing
+            response = lightClientRequest.SendCommandChunks("ZREMRANGEBYRANK board -100 -50", bytesSent);
+            expectedResponse = ":0\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            response = lightClientRequest.SendCommandChunks("ZCARD board", bytesSent);
+            expectedResponse = ":3\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            // A start past the end of the set must still write exactly one reply,
+            // otherwise the trailing PING is answered out of sync
+            response = lightClientRequest.SendCommands("ZREMRANGEBYRANK board 3 5", "PING");
+            expectedResponse = ":0\r\n+PONG\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
             response = lightClientRequest.SendCommandChunks("ZREMRANGEBYRANK board 0 1", bytesSent);
             expectedResponse = ":2\r\n";
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
@@ -5168,6 +5188,41 @@ namespace Garnet.test
             {
                 expectedResponse = "*4\r\n$3\r\none\r\n$1\r\n2\r\n$3\r\ntwo\r\n$1\r\n4\r\n";
             }
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+        }
+
+        [Test]
+        public void CanDoZInterStoreWithBadNumKeysLC()
+        {
+            using var lightClientRequest = TestUtils.CreateRequest();
+
+            // A negative numkeys, or one that exceeds the number of keys actually sent, used to
+            // reach Parameters.Slice(2, nKeys) and throw out of the command handler, which tore
+            // down the connection without writing any reply. A zero numkeys did not throw, but
+            // reported a syntax error rather than the at-least-one-key error its ZUNIONSTORE
+            // sibling reports.
+            var expectedResponse = $"-{string.Format(CmdStrings.GenericErrAtLeastOneKey, nameof(RespCommand.ZINTERSTORE))}\r\n+PONG\r\n";
+
+            var response = lightClientRequest.SendCommands("ZINTERSTORE dest -1 zset1", "PING");
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            response = lightClientRequest.SendCommands("ZINTERSTORE dest 0 zset1", "PING");
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            expectedResponse = $"-{Encoding.ASCII.GetString(CmdStrings.RESP_SYNTAX_ERROR)}\r\n+PONG\r\n";
+
+            response = lightClientRequest.SendCommands("ZINTERSTORE dest 2 zset1", "PING");
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            response = lightClientRequest.SendCommands("ZINTERSTORE dest 3 zset1 zset2", "PING");
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            // A numkeys near int.MaxValue overflowed the argument-count check when it was written as
+            // 'parseState.Count < nKeys + 2', so it slipped past and still reached the slice.
+            response = lightClientRequest.SendCommands("ZINTERSTORE dest 2147483647 zset1", "PING");
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            response = lightClientRequest.SendCommands("ZINTERSTORE dest 2147483646 zset1", "PING");
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
 

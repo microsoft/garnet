@@ -7,7 +7,6 @@ using System.Collections.Frozen;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Threading;
-using System.Threading.Channels;
 using System.Threading.Tasks;
 using Garnet.common;
 using Garnet.networking;
@@ -87,13 +86,10 @@ namespace Garnet.server
             }
         }
 
-        private readonly Channel<object> cleanupTaskChannel;
-        private readonly Channel<(ulong Context, TaskCompletionSource MarkCompleted)> requestCleanupTaskChannel;
-        private readonly Channel<object> requestDropTaskChannel;
-        private readonly ConcurrentDictionary<byte[], (ulong Context, nint IndexPtr)> requestedDrops;
-#if NET9_0_OR_GREATER
-        private readonly ConcurrentDictionary<byte[], (ulong Context, nint IndexPtr)>.AlternateLookup<ReadOnlySpan<byte>> requestedDropsLookup;
-#endif
+        private readonly VectorSetCleanupWorkChannel<object> cleanupTaskChannel;
+        private readonly VectorSetCleanupWorkChannel<(ulong Context, TaskCompletionSource MarkCompleted)> requestCleanupTaskChannel;
+        private readonly VectorSetCleanupWorkChannel<object> requestDropTaskChannel;
+        private readonly VectorSetCleanupWorkSet<(ulong Context, nint IndexPtr)> requestedDrops;
         private readonly ConcurrentDictionary<ulong, byte[]> potentiallyDeleted;
         private readonly Task cleanupTask;
         private readonly Task requestCleanupTask;
@@ -138,12 +134,10 @@ namespace Garnet.server
         /// </summary>
         private async Task RunRequestDropTaskAsync()
         {
-            while (await requestDropTaskChannel.Reader.WaitToReadAsync().ConfigureAwait(false))
+            while (await requestDropTaskChannel.WaitToReadAsync().ConfigureAwait(false))
             {
-                // Drain all wake up signals
-                while (requestDropTaskChannel.Reader.TryRead(out _))
-                {
-                }
+                // Every pass services the whole of requestedDrops, so the backlog collapses into one pass
+                requestDropTaskChannel.DrainPending();
 
                 // TODO: this doesn't work with non-RESP impls... which maybe we don't care about?
                 using var dropSession = (RespServerSession)getTempSession();
@@ -176,7 +170,7 @@ namespace Garnet.server
                         finally
                         {
                             vectorSetLocks.ReleaseLock(lockToken);
-                            if (!requestedDrops.TryRemove(k, out _))
+                            if (!requestedDrops.TryComplete(k))
                             {
                                 logger?.LogCritical("Drop for {key} raced with some other cleanup, this should never happen", SpanByte.ToShortString(k));
                             }
@@ -200,7 +194,7 @@ namespace Garnet.server
         /// </summary>
         private async Task RunRequestCleanupTaskAsync()
         {
-            while (await requestCleanupTaskChannel.Reader.WaitToReadAsync().ConfigureAwait(false))
+            while (await requestCleanupTaskChannel.WaitToReadAsync().ConfigureAwait(false))
             {
                 Volatile.Write(ref requestCleanupTaskRunning, true);
 
@@ -226,7 +220,7 @@ namespace Garnet.server
                     lock (this)
                     {
                         // Read all pending requests so we can do one update
-                        while (requestCleanupTaskChannel.Reader.TryRead(out var t))
+                        while (requestCleanupTaskChannel.TryRead(out var t))
                         {
                             if (t.MarkCompleted != null)
                             {
@@ -265,7 +259,7 @@ namespace Garnet.server
                     }
 
                     // Pump the cleanup task once we're done
-                    _ = cleanupTaskChannel.Writer.TryWrite(null);
+                    _ = cleanupTaskChannel.TryPublish();
                 }
                 catch (Exception e)
                 {
@@ -296,10 +290,14 @@ namespace Garnet.server
         /// </summary>
         private async Task RunCleanupTaskAsync()
         {
-            // Each drop index will queue a null object here
-            // We'll handle multiple at once if possible, but using a channel simplifies cancellation and dispose
-            await foreach (var ignored in cleanupTaskChannel.Reader.ReadAllAsync().ConfigureAwait(false))
+            while (await cleanupTaskChannel.WaitToReadAsync().ConfigureAwait(false))
             {
+                // Each item is one outstanding scan
+                if (!cleanupTaskChannel.TryRead(out _))
+                {
+                    continue;
+                }
+
                 await cleanupGate.WaitAsync().ConfigureAwait(false);
 
                 try
@@ -384,7 +382,7 @@ namespace Garnet.server
         /// (if any) to finish. Callers (e.g., cluster re-attach paths) MUST balance every
         /// invocation with <see cref="ResumeCleanup"/>, ideally in a finally block.
         ///
-        /// While paused, drops still enqueue items into <see cref="cleanupTaskChannel"/>;
+        /// While paused, drops still publish to <see cref="cleanupTaskChannel"/>;
         /// the cleanup task wakes, awaits the gate until the pause is lifted, then
         /// processes the backlog — so no work is lost.
         ///
@@ -409,39 +407,21 @@ namespace Garnet.server
         /// <summary>
         /// True if a pending request to drop the DiskANN index behind this _specific_ key exists.
         /// </summary>
-        public bool DropRequested(ReadOnlySpan<byte> key)
-        {
-#if NET9_0_OR_GREATER
-            return requestedDropsLookup.ContainsKey(key);
-#else
-            return requestedDrops.ContainsKey(key.ToArray());
-#endif
-        }
+        public bool DropRequested(ReadOnlySpan<byte> key) => requestedDrops.Contains(key);
 
         /// <summary>
         /// Block until <see cref="DropRequested(ReadOnlySpan{byte})"/> would return false.
         /// 
         /// Do not call this while holding any Vector Set related locks, we will deadlock.
         /// </summary>
-        public void WaitForDiskANNIndexDrop(ReadOnlySpan<byte> key)
-        {
-#if NET9_0_OR_GREATER
-            while (requestedDropsLookup.ContainsKey(key))
-#else
-            var keyBytes = key.ToArray();
-            while (requestedDrops.ContainsKey(keyBytes))
-#endif
-            {
-                _ = Thread.Yield();
-            }
-        }
+        public void WaitForDiskANNIndexDrop(ReadOnlySpan<byte> key) => requestedDrops.WaitForCompletion(key);
 
         /// <summary>
         /// For testing purposes, block until all cleanup requests are processed.
         /// </summary>
         internal void WaitForCleanupRequests()
         {
-            while (!potentiallyDeleted.IsEmpty || requestCleanupTaskChannel.Reader.TryPeek(out _) || Volatile.Read(ref requestCleanupTaskRunning) || Interlocked.CompareExchange(ref postCheckpointTasksRunning, 0, 0) != 0)
+            while (!potentiallyDeleted.IsEmpty || requestCleanupTaskChannel.HasPending || Volatile.Read(ref requestCleanupTaskRunning) || Interlocked.CompareExchange(ref postCheckpointTasksRunning, 0, 0) != 0)
             {
                 _ = Thread.Yield();
             }
@@ -524,7 +504,7 @@ namespace Garnet.server
                                 if (needsDelete)
                                 {
                                     // No need to wait for marking, since the record is already "deleted"
-                                    if (!self.requestCleanupTaskChannel.Writer.TryWrite((context, null)))
+                                    if (!self.requestCleanupTaskChannel.TryPublish((context, null)))
                                     {
                                         self.logger?.LogWarning("Could not request delete of abandoned Vector Set {key}", SpanByte.ToShortString(key));
                                     }

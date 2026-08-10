@@ -21,6 +21,7 @@ namespace Garnet.cluster
     {
         internal readonly int physicalSublogIdx;
         readonly GarnetServerOptions serverOptions;
+        readonly RuntimeServerConfig runtimeConfig;
         readonly GarnetAppendOnlyFile appendOnlyFile;
         readonly ReplicationManager replicationManager;
         readonly CancellationTokenSource cts;
@@ -40,7 +41,12 @@ namespace Garnet.cluster
         /// </summary>
         internal readonly DoubleTurnstileBarrier barrier;
 
-        int throttleCounter;
+        long pendingPulseSequenceNumber;
+        long appliedPulseSequenceNumber;
+        long stagedPulseSequenceNumber;
+        readonly int directVirtualSublogIdx;
+
+        internal long StagedPulseSequenceNumber => Volatile.Read(ref stagedPulseSequenceNumber);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool ResumeReplay() => activeWorkerMonitor.TryEnter();
@@ -62,11 +68,13 @@ namespace Garnet.cluster
             this.physicalSublogIdx = physicalSublogIdx;
             this.respSessionNetworkSender = respSessionNetworkSender;
             serverOptions = clusterProvider.serverOptions;
+            runtimeConfig = clusterProvider.storeWrapper.runtimeConfig;
             appendOnlyFile = clusterProvider.storeWrapper.appendOnlyFile;
             replicationManager = clusterProvider.replicationManager;
             replayIterator = null;
             activeWorkerMonitor = new();
             physicalSublog = appendOnlyFile.Log.GetSubLog(physicalSublogIdx);
+            directVirtualSublogIdx = appendOnlyFile.GetVirtualSublogIdx(physicalSublogIdx, 0);
             this.cts = cts;
             this.logger = logger;
 
@@ -211,51 +219,65 @@ namespace Garnet.cluster
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void Throttle()
+            => TryApplyPendingPulse();
+        #endregion
+
+        public void SignalTimeAdvance(long sequenceNumber)
         {
-            if (serverOptions.AofPhysicalSublogCount <= 1)
+            if (sequenceNumber <= Volatile.Read(ref pendingPulseSequenceNumber))
+                return;
+            Volatile.Write(ref pendingPulseSequenceNumber, sequenceNumber);
+
+            var sessionThreadOwnsReplay = serverOptions.AofReplayMaxLagBytes == 0 || replayIterator == null;
+            if (!sessionThreadOwnsReplay || !ResumeReplay())
                 return;
 
-            var w = serverOptions.AofReplayMaxDrift;
-            if (w <= 0)
-                return;
-
-            if (++throttleCounter < w)
-                return;
-            throttleCounter = 0;
-            ThrottleSlow(w);
-
-            void ThrottleSlow(long w)
+            try
             {
-                var rcm = appendOnlyFile.readConsistencyManager;
-                if (rcm == null)
-                    return;
-
-                var myMax = rcm.GetPhysicalSublogMax(physicalSublogIdx);
-
-                // If we're too far ahead, wait until all peers reach our current max
-                if (!AllPeersReached(rcm, Math.Max(myMax - w, w)))
-                {
-                    do
-                    {
-                        cts.Token.ThrowIfCancellationRequested();
-                        Thread.Yield();
-                    } while (!AllPeersReached(rcm, myMax));
-                }
-
-                bool AllPeersReached(ReadConsistencyManager rcm, long target)
-                {
-                    for (var i = 0; i < serverOptions.AofPhysicalSublogCount; i++)
-                    {
-                        if (i == physicalSublogIdx)
-                            continue;
-                        if (rcm.GetPhysicalSublogMax(i) < target)
-                            return false;
-                    }
-                    return true;
-                }
+                TryApplyPendingPulse();
+            }
+            finally
+            {
+                SuspendReplay();
             }
         }
-        #endregion
+
+        void TryApplyPendingPulse()
+        {
+            var pending = Volatile.Read(ref pendingPulseSequenceNumber);
+            if (pending <= appliedPulseSequenceNumber)
+                return;
+            if (replicationManager.GetSublogReplicationOffset(physicalSublogIdx) != physicalSublog.TailAddress)
+                return;
+
+            ApplyPulse(pending);
+            appliedPulseSequenceNumber = pending;
+        }
+
+        unsafe void ApplyPulse(long sequenceNumber)
+        {
+            if (serverOptions.AofReplayTaskCount == 1)
+            {
+                appendOnlyFile.readConsistencyManager.AdvanceVirtualSublogTime(directVirtualSublogIdx, sequenceNumber);
+                return;
+            }
+
+            Volatile.Write(ref stagedPulseSequenceNumber, sequenceNumber);
+            try
+            {
+                replayBatchContext.Record = null;
+                replayBatchContext.RecordLength = 0;
+                replayBatchContext.CurrentAddress = 0;
+                replayBatchContext.NextAddress = 0;
+                replayBatchContext.IsProtected = false;
+                barrier.SignalWorkReadyWait(serverOptions.ReplicaSyncTimeout, cts.Token);
+                barrier.SignalWorkCompletedWait(serverOptions.ReplicaSyncTimeout, cts.Token);
+            }
+            finally
+            {
+                Volatile.Write(ref stagedPulseSequenceNumber, 0);
+            }
+        }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void ValidateSublogIndex(int physicalSublogIdx)
@@ -289,7 +311,7 @@ namespace Garnet.cluster
 
                     await replayIterator.BulkConsumeAllAsync(
                         this,
-                        serverOptions.ReplicaSyncDelayMs,
+                        runtimeConfig.GetInt(ServerConfigType.REPLICA_SYNC_DELAY),
                         maxChunkSize: 1 << 20,
                         cts.Token).ConfigureAwait(false);
                 }
@@ -308,8 +330,8 @@ namespace Garnet.cluster
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void ThrottlePrimary()
         {
-            while (serverOptions.ReplicationOffsetMaxLag != -1 && replayIterator != null &&
-                appendOnlyFile.Log.GetTailAddress(physicalSublogIdx) - replicationManager.GetReplicationOffset(physicalSublogIdx) > serverOptions.ReplicationOffsetMaxLag)
+            while (runtimeConfig.GetInt(ServerConfigType.AOF_REPLAY_MAX_LAG_BYTES) is var maxLag && maxLag != -1 && replayIterator != null &&
+                appendOnlyFile.Log.GetTailAddress(physicalSublogIdx) - replicationManager.GetReplicationOffset(physicalSublogIdx) > maxLag)
             {
                 cts.Token.ThrowIfCancellationRequested();
                 Thread.Yield();

@@ -548,19 +548,16 @@ namespace Garnet.client
         }
 
         /// <summary>
-        /// Issue CLUSTER ADVANCE_TIME
+        /// Issue an in-band CLUSTER ADVANCE_TIME pulse for one physical sublog. No response is
+        /// expected, so the pulse remains ordered with APPENDLOG traffic on this connection.
         /// </summary>
+        /// <param name="physicalSublogIdx"></param>
         /// <param name="sequenceNumber"></param>
-        /// <param name="aofAddress"></param>
-        /// <returns></returns>
         /// <seealso cref="M:Garnet.cluster.ClusterSession.NetworkClusterAdvanceTime"/>
-        public Task<string> ExecuteClusterAdvanceTime(long sequenceNumber, Span<byte> aofAddress)
+        public void ExecuteClusterAdvanceTime(int physicalSublogIdx, long sequenceNumber)
         {
-            var tcs = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
-            tcsQueue.Enqueue(tcs);
             var curr = offset;
-            var argCount = 2;
-            var arraySize = 2 + argCount;
+            const int arraySize = 4;
 
             while (!RespWriteUtils.TryWriteArrayLength(arraySize, ref curr, end))
             {
@@ -586,7 +583,7 @@ namespace Garnet.client
             offset = curr;
 
             //3
-            while (!RespWriteUtils.TryWriteArrayItem(sequenceNumber, ref curr, end))
+            while (!RespWriteUtils.TryWriteArrayItem(physicalSublogIdx, ref curr, end))
             {
                 Flush();
                 curr = offset;
@@ -594,16 +591,12 @@ namespace Garnet.client
             offset = curr;
 
             //4
-            while (!RespWriteUtils.TryWriteBulkString(aofAddress, ref curr, end))
+            while (!RespWriteUtils.TryWriteArrayItem(sequenceNumber, ref curr, end))
             {
                 Flush();
                 curr = offset;
             }
             offset = curr;
-
-            Flush();
-            Interlocked.Increment(ref numCommands);
-            return tcs.Task;
         }
 
         /// <summary>

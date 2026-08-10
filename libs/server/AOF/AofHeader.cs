@@ -39,7 +39,7 @@ namespace Garnet.server
         SingleLogTransactionHeader = 2,
         ShardedLogTransactionHeader = 3,
 
-        // Chunked variants of the non-transction types above, used when a large object value is split across multiple AOF entries
+        // Chunked variants of the non-transaction types above, used when a large object value is split across multiple AOF entries
         // (see the Aof*ChunkHeader structs). Each chunked variant has the same low two bits as its non-chunked counterpart, with the
         // ChunkedRecordFlag bit (0b0100) set, so it occupies the third bit of the (now 3-bit) AofHeaderTypeMask.
         BasicChunkHeader = 4,                            // BasicHeader | ChunkedRecordFlag

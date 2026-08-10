@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -123,10 +123,6 @@ namespace Garnet.cluster
                     // Suspend background tasks that may interfere with AOF
                     await storeWrapper.SuspendPrimaryOnlyTasksAsync().ConfigureAwait(false);
 
-                    // Stop advance time task when reconfiguring node to be replica
-                    if (storeWrapper.serverOptions.AofPhysicalSublogCount > 1)
-                        await clusterProvider.storeWrapper.TaskManager.CancelAsync(TaskType.AdvanceTimeReplicaTask).ConfigureAwait(false);
-
                     // Send request to primary
                     //      Primary will initiate background task and start sending checkpoint data
                     //
@@ -172,10 +168,10 @@ namespace Garnet.cluster
                         checkpointEntry: checkpointEntry);
 
                     // Exception injection point for testing cluster reset during diskless replication
-                    await ExceptionInjectionHelper.ResetAndWaitAsync(ExceptionInjectionType.Replication_InProgress_During_Diskless_Replica_Attach_Sync).WaitAsync(storeWrapper.serverOptions.ReplicaAttachTimeout, linkedCts.Token).ConfigureAwait(false);
+                    await ExceptionInjectionHelper.ResetAndWaitAsync(ExceptionInjectionType.Replication_InProgress_During_Diskless_Replica_Attach_Sync).WaitAsync(storeWrapper.runtimeConfig.GetTimeSpan(ServerConfigType.REPL_ATTACH_TIMEOUT), linkedCts.Token).ConfigureAwait(false);
 
                     var resp = await gcs.ExecuteClusterAttachSync(syncMetadata.ToByteArray()).
-                        WaitAsync(storeWrapper.serverOptions.ReplicaAttachTimeout, linkedCts.Token).ConfigureAwait(false);
+                        WaitAsync(storeWrapper.runtimeConfig.GetTimeSpan(ServerConfigType.REPL_ATTACH_TIMEOUT), linkedCts.Token).ConfigureAwait(false);
                 }
                 catch (Exception ex)
                 {
@@ -243,9 +239,6 @@ namespace Garnet.cluster
                 // Mark this txn run as a read-write session if we are replaying as a replica
                 // This is necessary to ensure that the stored procedure can perform write operations if needed
                 clusterProvider.replicationManager.aofProcessor.SetReadWriteSession();
-
-                // Start advance time signal processing background task
-                clusterProvider.replicationManager.StartAdvanceTimeBackgroundTask();
 
                 return this.replicationOffset;
             }

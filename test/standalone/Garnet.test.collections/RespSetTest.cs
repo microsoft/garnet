@@ -749,6 +749,18 @@ namespace Garnet.test
             ex = Assert.Throws<RedisServerException>(() => db.Execute("SINTERCARD", 2, "key1", "key2", "LIMIT"));
 
             ex = Assert.Throws<RedisServerException>(() => db.Execute("SINTERCARD", 2, "key1", "key2", "LIMIT", "not_a_number"));
+
+            // A negative numkeys used to reach Parameters.Slice(1, nKeys) and throw out of the
+            // command handler, which tore down the connection without writing any reply. A zero
+            // numkeys did not throw, but answered ':0' where Redis replies with an error.
+            using var lightClientRequest = TestUtils.CreateRequest();
+            var expectedResponse = $"-{string.Format(CmdStrings.GenericErrShouldBeGreaterThanZero, "numkeys")}\r\n+PONG\r\n";
+
+            var response = lightClientRequest.SendCommands("SINTERCARD -1 key1", "PING");
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            response = lightClientRequest.SendCommands("SINTERCARD 0 LIMIT 0", "PING");
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
 
         [Test]

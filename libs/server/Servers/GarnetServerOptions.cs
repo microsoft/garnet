@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -95,11 +95,27 @@ namespace Garnet.server
         public int AofReplayTaskCount = 1;
 
         /// <summary>
-        /// Maximum allowed drift (in key sequence numbers) between the fastest and slowest physical sublog replay drivers.
-        /// When a driver is ahead of the slowest peer by more than this value, it yields until the gap closes.
-        /// Only effective when AofPhysicalSublogCount > 1. -1 = disabled (no throttling).
+        /// Cross-sublog replay drift, in sequence-number units, tolerated before a replay-align
+        /// barrier round is triggered. -1 disables the barrier.
         /// </summary>
-        public long AofReplayMaxDrift = -1;
+        public int AofReplayDriftThreshold = -1;
+
+        /// <summary>
+        /// How often the cross-sublog drift is re-checked during replay, as a multiple of
+        /// AofReplayDriftThreshold: the sequence-number timeline is divided into windows of
+        /// (this value x threshold), and each window's drift scan runs on exactly one replay
+        /// thread (window index mod virtual sublog count, a rotating schedule needing no
+        /// cross-thread coordination), firing a replay-align round when the drift exceeds the
+        /// threshold. 0 disables the proactive check, leaving readers about to wait as the only
+        /// round source.
+        /// </summary>
+        public int AofReplayDriftCheckFreq = 1;
+
+        /// <summary>
+        /// How long a replay thread spins at the replay-align barrier before sleeping:
+        /// -1 spins forever, 0 sleeps immediately, and a positive value spins for that many microseconds.
+        /// </summary>
+        public int AofReplayBarrierSpinUs = 0;
 
         /// <summary>
         /// Polling frequency of the background task responsible for moving time ahead for all physical sublogs (Used only with physical sublog value >1).
@@ -339,9 +355,17 @@ namespace Garnet.server
         public int ReplicaSyncDelayMs = 5;
 
         /// <summary>
-        /// Throttle ClusterAppendLog when replica.AOFTailAddress - ReplicationOffset > ReplicationOffsetMaxLag. 0: Synchronous replay,  >=1: background replay with specified lag, -1: infinite lag
+        /// Throttle ClusterAppendLog when replica.AOFTailAddress - ReplicationOffset > AofReplayMaxLagBytes. 0: Synchronous replay,  >=1: background replay with specified lag, -1: infinite lag
         /// </summary>
-        public int ReplicationOffsetMaxLag = -1;
+        public int AofReplayMaxLagBytes = -1;
+
+        /// <summary>
+        /// Stall primary AOF appends when the replication lag exceeds this budget: a whole-log
+        /// budget divided evenly per sublog (each sublog stalls at tail-minus-shipped over an even
+        /// 1/m share). -1: disabled, >=1: max lag in bytes. Pair with AofReplayMaxLagBytes on
+        /// replicas for end-to-end backpressure.
+        /// </summary>
+        public long AofSyncMaxLagBytes = -1;
 
         /// <summary>
         /// Whether we truncate AOF as soon as replicas are fed (not just after checkpoints)
@@ -1132,5 +1156,17 @@ namespace Garnet.server
         /// </summary>
         public int AofVirtualSublogCount
             => AofPhysicalSublogCount * AofReplayTaskCount;
+
+        /// <summary>
+        /// Replay side periodic drift detection check and bounding enabled
+        /// </summary>
+        public bool ProactiveReplayDriftCheckEnabled
+            => AofReplayDriftCheckFreq > 0 && AofReplayDriftThreshold >= 0 && AofVirtualSublogCount > 1;
+
+        /// <summary>
+        /// Reader side drift check and bounding enabled
+        /// </summary>
+        public bool ReactiveReplayDriftCheckEnabled
+            => AofReplayDriftThreshold >= 0 && AofVirtualSublogCount > 1;
     }
 }

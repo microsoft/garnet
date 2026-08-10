@@ -254,7 +254,13 @@ namespace Tsavorite.core
             // any further writes. For this class, "disposed" means "we're done issuing writes". And filePosition must be preserved; checkpoints will retrieve it later,
             // and chained partial flushes will append to it.
             disposed = true;
-            if (numInFlightWrites == 0)
+
+            // Full fence so the 'disposed' store above is globally visible before we read numInFlightWrites below (and, symmetrically, so this read is
+            // not hoisted above the store). FlushToDeviceCallback decrements numInFlightWrites (a full-fence Interlocked op) and then reads 'disposed';
+            // without this barrier the store and load could reorder and both sides could observe the pre-decrement / pre-dispose values, so neither would
+            // call ClearBuffers and the pooled buffers would leak. This matters now that the ReadOnly flush path Disposes while writes may be in flight.
+            Interlocked.MemoryBarrier();
+            if (Interlocked.Read(ref numInFlightWrites) == 0)
                 ClearBuffers();
         }
 
