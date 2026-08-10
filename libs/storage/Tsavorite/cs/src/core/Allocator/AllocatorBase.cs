@@ -884,7 +884,7 @@ namespace Tsavorite.core
 
         /// <summary>Get page index from <paramref name="logicalAddress"/></summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public long GetPage(long logicalAddress) => GetPageOfAddress(logicalAddress, LogPageSizeBits);
+        public long GetPage(long logicalAddress) => _wrapper.GetPageOfAddress(logicalAddress, LogPageSizeBits);
 
         /// <summary>Get page index for page</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -892,7 +892,7 @@ namespace Tsavorite.core
 
         /// <summary>Get page index for address</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public int GetPageIndexForAddress(long logicalAddress) => GetPageIndexForPage(GetPageOfAddress(logicalAddress, LogPageSizeBits));
+        public int GetPageIndexForAddress(long logicalAddress) => GetPageIndexForPage(_wrapper.GetPageOfAddress(logicalAddress, LogPageSizeBits));
 
         /// <summary>Get page size</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -1508,6 +1508,19 @@ namespace Tsavorite.core
 
         private void OnPagesClosedWorker()
         {
+            try
+            {
+                OnPagesClosedWorkerCore();
+            }
+            catch (Exception ex)
+            {
+                logger?.LogCritical(ex, "OnPagesClosedWorker failed, page closing will not resume. ClosedUntilAddress={ClosedUntilAddress} OngoingCloseUntilAddress={OngoingCloseUntilAddress}", ClosedUntilAddress, OngoingCloseUntilAddress);
+                throw;
+            }
+        }
+
+        private void OnPagesClosedWorkerCore()
+        {
             while (true)
             {
                 var closeStartAddress = ClosedUntilAddress;
@@ -1933,23 +1946,43 @@ namespace Tsavorite.core
             var copyObjects = snapshotObjectLogDevice is not null;
             for (var flushPage = flushPageStart; flushPage < (flushPageStart + numPages); flushPage++)
             {
+                var pageStartAddress = GetLogicalAddressOfStartOfPage(flushPage);
+                var flushFromAddress = Math.Max(scanFromAddress, pageStartAddress);
+
+                // When copying snapshot object bytes into the main object-log, rent this page's object-log write buffers; the hybrid-log region
+                // (which reuses the stored lengths/positions without writing object bytes) needs none.
+                var flushBuffers = copyObjects ? CreateCircularFlushBuffers(objectLogDevice: null, logger) : null;
                 var asyncResult = new PageAsyncFlushResult<TContext>()
                 {
                     page = flushPage,
                     context = context,
                     count = 1,
-                    partial = false,
-                    fromAddress = Math.Max(scanFromAddress, GetLogicalAddressOfStartOfPage(flushPage)),
+                    // A recovery flush starts at scanFromAddress, which may be mid-page at the first record past the PageHeader.
+                    // In that case it is a front-partial flush: the write length is derived from untilAddress (the page end)
+                    // rather than a full page, and the PageHeader is re-included when the page is written. The snapshot/hybrid-log
+                    // boundary that selects which records copy their objects is carried separately via formerFlushedUntilAddress.
+                    partial = flushFromAddress > pageStartAddress,
+                    fromAddress = flushFromAddress,
                     untilAddress = GetLogicalAddressOfStartOfPage(flushPage + 1),
                     flushRequestState = FlushRequestState.Recovery,
                     recoverySnapshotObjectLogDevice = snapshotObjectLogDevice,
                     recoveryFormerFlushedUntilAddress = formerFlushedUntilAddress,
-                    flushBuffers = copyObjects ? CreateCircularFlushBuffers(objectLogDevice: null, logger) : null
+                    flushBuffers = flushBuffers
                 };
 
-                // For the snapshot region (records at/above formerFlushedUntilAddress) we copy object bytes from the snapshot object-log to the main
-                // object-log using flushBuffers; otherwise (hybrid-log region) we reuse the stored lengths/positions without writing object bytes.
-                WriteAsync(flushPage, callback, asyncResult);
+                try
+                {
+                    // For the snapshot region (records at/above formerFlushedUntilAddress) we copy object bytes from the snapshot object-log to the main
+                    // object-log using flushBuffers; otherwise (hybrid-log region) we reuse the stored lengths/positions without writing object bytes.
+                    WriteAsync(flushPage, callback, asyncResult);
+                }
+                finally
+                {
+                    // WriteAsync issues all of this page's object-log and main-log device writes synchronously before returning, and the recovery completion
+                    // callback (AsyncFlushPageCallbackForRecovery) never reuses flushBuffers, so dispose it here, even if WriteAsync throws. Dispose defers the
+                    // actual return-to-pool (ClearBuffers) until any still-in-flight writes complete.
+                    flushBuffers?.Dispose();
+                }
             }
         }
 
@@ -2376,7 +2409,14 @@ namespace Tsavorite.core
             try
             {
                 if (errorCode != 0)
+                {
                     logger?.LogError("AsyncFlushPageToDeviceCallback error: {errorCode}", errorCode);
+
+                    // Fault the snapshot's flush-completion so the checkpoint fails rather than committing a snapshot with
+                    // an unwritten page; the Release() below still frees buffers and its CompleteFlush becomes a no-op.
+                    ((PageAsyncFlushResult<Empty>)context).flushCompletionTracker?.SetException(
+                        new TsavoriteException($"Snapshot page flush failed with error code {errorCode}"));
+                }
 
                 var result = (PageAsyncFlushResult<Empty>)context;
                 var epochTaken = epoch.ResumeIfNotProtected();

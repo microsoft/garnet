@@ -49,7 +49,10 @@ namespace Garnet.server
                 var fromHeadToTail = count > 0;
                 var currentNode = fromHeadToTail ? list.First : list.Last;
 
-                count = Math.Abs(count);
+                // |int.MinValue| does not fit in an int, so Math.Abs would throw.
+                // The loop below is bounded by the list length, which cannot exceed
+                // int.MaxValue, so clamping removes exactly the same elements.
+                count = count == int.MinValue ? int.MaxValue : Math.Abs(count);
                 while (removedCount < count && currentNode != null)
                 {
                     var nextNode = fromHeadToTail ? currentNode.Next : currentNode.Previous;
@@ -141,7 +144,6 @@ namespace Garnet.server
                 if (start < 0) start = 0;
 
                 stop = stop < 0 ? list.Count + stop : stop;
-                if (stop < 0) stop = 0;
                 if (stop >= list.Count) stop = list.Count - 1;
 
                 if (start > stop || 0 == list.Count)
@@ -255,6 +257,13 @@ namespace Garnet.server
             {
                 writer.WriteNull();
                 count = 0;
+            }
+            else if (count <= 0)
+            {
+                // LPOP/RPOP with an explicit count of 0 replies with an empty array.
+                // Without this neither branch writes anything and the command produces
+                // no reply at all, which shifts every following reply in a pipeline.
+                writer.WriteEmptyArray();
             }
             else if (count > 1)
             {

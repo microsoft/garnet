@@ -30,6 +30,9 @@ namespace Tsavorite.core
         /// </summary>
         protected readonly ICheckpointNamingScheme checkpointNamingScheme;
         private readonly SemaphoreSlim semaphore;
+        /// <summary>First non-zero error code from the most recent metadata write via <see cref="IOCallback"/> (0 == success). Read after
+        /// the write's <see cref="semaphore"/> wait in <see cref="WriteInto"/> so a failed checkpoint-metadata write is not silently ignored.</summary>
+        private uint metadataWriteErrorCode;
 
         private readonly bool removeOutdated;
         private SectorAlignedBufferPool bufferPool;
@@ -365,6 +368,7 @@ namespace Tsavorite.core
             {
                 var errorMessage = Utility.GetCallbackErrorMessage(errorCode, numBytes, context);
                 logger?.LogError("[DeviceLogManager] OverlappedStream GetQueuedCompletionStatus error: {errorCode} msg: {errorMessage}", errorCode, errorMessage);
+                metadataWriteErrorCode = errorCode;
             }
             semaphore.Release();
         }
@@ -428,8 +432,11 @@ namespace Tsavorite.core
 
             try
             {
+                metadataWriteErrorCode = 0;
                 device.WriteAsync((IntPtr)pbuffer.aligned_pointer, address, (uint)numBytesToWrite, IOCallback, null);
                 semaphore.Wait();
+                if (metadataWriteErrorCode != 0)
+                    throw new TsavoriteException($"Checkpoint metadata write failed with error code {metadataWriteErrorCode}");
             }
             finally
             {

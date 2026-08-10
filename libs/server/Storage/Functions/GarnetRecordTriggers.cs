@@ -83,6 +83,12 @@ namespace Garnet.server
         }
 
         /// <inheritdoc/>
+        // Explicit no-op (rather than relying on the IRecordTriggers default) so that the call
+        // through the TRecordTriggers generic constraint in StoreFunctions resolves here instead of
+        // boxing this struct to dispatch the default interface method on disk-record disposal.
+        public readonly void OnDisposeDiskRecord(ref DiskLogRecord logRecord, DisposeReason reason) { }
+
+        /// <inheritdoc/>
         public readonly void OnFlush(ref LogRecord logRecord, long logicalAddress)
         {
             if (rangeIndexManager is null

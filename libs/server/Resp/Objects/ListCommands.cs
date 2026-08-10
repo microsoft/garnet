@@ -195,7 +195,7 @@ namespace Garnet.server
             var currTokenId = 0;
 
             // Read count of keys
-            if (!parseState.TryGetInt(currTokenId++, out var numKeys))
+            if (!parseState.TryGetInt(currTokenId++, out var numKeys) || numKeys < 1)
             {
                 var err = string.Format(CmdStrings.GenericErrShouldBeGreaterThanZero, "numkeys");
                 return AbortWithErrorMessage(Encoding.ASCII.GetBytes(err));
@@ -225,7 +225,7 @@ namespace Garnet.server
                     return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR);
 
                 // Read count
-                if (!parseState.TryGetInt(currTokenId, out popCount))
+                if (!parseState.TryGetInt(currTokenId, out popCount) || popCount < 1)
                 {
                     var err = string.Format(CmdStrings.GenericErrShouldBeGreaterThanZero, "count");
                     return AbortWithErrorMessage(Encoding.ASCII.GetBytes(err));
@@ -863,7 +863,7 @@ namespace Garnet.server
                 return AbortWithErrorMessage(error);
 
             // Read count of keys
-            if (!parseState.TryGetInt(currTokenId++, out var numKeys))
+            if (!parseState.TryGetInt(currTokenId++, out var numKeys) || numKeys < 1)
             {
                 var err = string.Format(CmdStrings.GenericParamShouldBeGreaterThanZero, "numkeys");
                 return AbortWithErrorMessage(Encoding.ASCII.GetBytes(err));
@@ -916,6 +916,7 @@ namespace Garnet.server
             {
                 while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_UNBLOCKED_CLIENT_VIA_CLIENT_UNBLOCK, ref dcurr, dend))
                     SendAndReset();
+                return true;
             }
 
             if (result.IsTypeMismatch)

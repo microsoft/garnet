@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using Garnet.common;
@@ -737,6 +738,418 @@ namespace Garnet.test
             var heapAfter = tracker.LogHeapSizeBytes;
             Assert.That(apcAfter < apcBefore || heapAfter < heapBefore, Is.True,
                 $"Expected APC ({apcBefore}->{apcAfter}) or heap ({heapBefore}->{heapAfter}) to decrease after trim.");
+        }
+
+        /// <summary>
+        /// Verifies that runtime-adjustable options (backed by <see cref="RuntimeServerConfig"/>) can be
+        /// read and written through CONFIG GET / CONFIG SET, covering integer, long, boolean, enum,
+        /// seconds-based timeout, alias, and multi-option forms.
+        /// </summary>
+        [Test]
+        public void ConfigGetSetRuntimeOptionsTest()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            static string Get(IDatabase db, string requestName, string expectedEchoName = null)
+            {
+                var res = (RedisResult[])db.Execute("CONFIG", "GET", requestName);
+                ClassicAssert.AreEqual(2, res.Length);
+                ClassicAssert.AreEqual(expectedEchoName ?? requestName, res[0].ToString());
+                return res[1].ToString();
+            }
+
+            // Integer option.
+            ClassicAssert.AreEqual("OK", db.Execute("CONFIG", "SET", "replica-sync-delay", "42").ToString());
+            ClassicAssert.AreEqual("42", Get(db, "replica-sync-delay"));
+
+            // Integer option accepting the -1 sentinel.
+            ClassicAssert.AreEqual("OK", db.Execute("CONFIG", "SET", "aof-replay-max-lag-bytes", "-1").ToString());
+            ClassicAssert.AreEqual("-1", Get(db, "aof-replay-max-lag-bytes"));
+
+            // 64-bit (long) option: value exceeds int.MaxValue and round-trips, and the -1 sentinel disables.
+            var largeLag = ((long)int.MaxValue + 1).ToString();
+            ClassicAssert.AreEqual("OK", db.Execute("CONFIG", "SET", "aof-sync-max-lag-bytes", largeLag).ToString());
+            ClassicAssert.AreEqual(largeLag, Get(db, "aof-sync-max-lag-bytes"));
+            ClassicAssert.AreEqual("OK", db.Execute("CONFIG", "SET", "aof-sync-max-lag-bytes", "-1").ToString());
+            ClassicAssert.AreEqual("-1", Get(db, "aof-sync-max-lag-bytes"));
+
+            // Boolean option (yes/no).
+            ClassicAssert.AreEqual("OK", db.Execute("CONFIG", "SET", "sg-get", "no").ToString());
+            ClassicAssert.AreEqual("no", Get(db, "sg-get"));
+            ClassicAssert.AreEqual("OK", db.Execute("CONFIG", "SET", "sg-get", "yes").ToString());
+            ClassicAssert.AreEqual("yes", Get(db, "sg-get"));
+
+            // Enum option.
+            ClassicAssert.AreEqual("OK", db.Execute("CONFIG", "SET", "compaction-type", "Lookup").ToString());
+            ClassicAssert.AreEqual("Lookup", Get(db, "compaction-type"));
+
+            // An enum option also accepts its underlying numeric value, and reports back the member name.
+            ClassicAssert.AreEqual("OK", db.Execute("CONFIG", "SET", "compaction-type", "1").ToString());
+            ClassicAssert.AreEqual(nameof(LogCompactionType.Shift), Get(db, "compaction-type"));
+
+            // Timeout option expressed in seconds.
+            ClassicAssert.AreEqual("OK", db.Execute("CONFIG", "SET", "repl-attach-timeout", "30").ToString());
+            ClassicAssert.AreEqual("30", Get(db, "repl-attach-timeout"));
+
+            // Alias resolves to the canonical cluster-node-timeout option; CONFIG GET echoes the canonical name.
+            ClassicAssert.AreEqual("OK", db.Execute("CONFIG", "SET", "cluster-timeout", "77").ToString());
+            ClassicAssert.AreEqual("77", Get(db, "cluster-timeout", expectedEchoName: "cluster-node-timeout"));
+            ClassicAssert.AreEqual("77", Get(db, "cluster-node-timeout"));
+
+            // Multiple options in a single CONFIG SET.
+            ClassicAssert.AreEqual("OK",
+                db.Execute("CONFIG", "SET", "compaction-max-segments", "7", "object-scan-count-limit", "500").ToString());
+            ClassicAssert.AreEqual("7", Get(db, "compaction-max-segments"));
+            ClassicAssert.AreEqual("500", Get(db, "object-scan-count-limit"));
+        }
+
+        /// <summary>
+        /// Verifies that an enum-valued option round-trips through its member name and through its
+        /// underlying numeric value, and that a numeric value naming no declared member is rejected.
+        /// </summary>
+        [Test]
+        public void RuntimeServerConfigRoundTripsEnumOption()
+        {
+            var runtimeConfig = new RuntimeServerConfig(new GarnetServerOptions());
+
+            // Member name, matched without regard to case.
+            ClassicAssert.IsTrue(runtimeConfig.TrySet(ServerConfigType.COMPACTION_TYPE, "lookup", out var error));
+            ClassicAssert.IsNull(error);
+            ClassicAssert.AreEqual(LogCompactionType.Lookup, runtimeConfig.GetEnum<LogCompactionType>(ServerConfigType.COMPACTION_TYPE));
+            ClassicAssert.AreEqual(nameof(LogCompactionType.Lookup), runtimeConfig.RespFormat(ServerConfigType.COMPACTION_TYPE));
+
+            // Underlying numeric value, reported back as the member name.
+            ClassicAssert.IsTrue(runtimeConfig.TrySet(ServerConfigType.COMPACTION_TYPE,
+                ((int)LogCompactionType.Shift).ToString(), out error));
+            ClassicAssert.IsNull(error);
+            ClassicAssert.AreEqual(LogCompactionType.Shift, runtimeConfig.GetEnum<LogCompactionType>(ServerConfigType.COMPACTION_TYPE));
+            ClassicAssert.AreEqual(nameof(LogCompactionType.Shift), runtimeConfig.RespFormat(ServerConfigType.COMPACTION_TYPE));
+
+            // A numeric value naming no declared member leaves the option untouched.
+            ClassicAssert.IsFalse(runtimeConfig.TrySet(ServerConfigType.COMPACTION_TYPE, "999", out error));
+            ClassicAssert.AreEqual("ERR Invalid value for 'compaction-type': '999'.", error);
+            ClassicAssert.AreEqual(LogCompactionType.Shift, runtimeConfig.GetEnum<LogCompactionType>(ServerConfigType.COMPACTION_TYPE));
+        }
+
+        /// <summary>
+        /// Verifies that a duration-valued option can be read through every unit it declares, and that a
+        /// non-positive value is surfaced as an infinite timeout where that is the documented meaning.
+        /// </summary>
+        [Test]
+        public void RuntimeServerConfigExposesDurationsInEveryDeclaredUnit()
+        {
+            var runtimeConfig = new RuntimeServerConfig(new GarnetServerOptions { ReplicaSyncDelayMs = 5000 });
+
+            ClassicAssert.AreEqual(5000, runtimeConfig.GetInt(ServerConfigType.REPLICA_SYNC_DELAY));
+            ClassicAssert.AreEqual(5000, runtimeConfig.GetMilliseconds(ServerConfigType.REPLICA_SYNC_DELAY));
+            ClassicAssert.AreEqual(5, runtimeConfig.GetSeconds(ServerConfigType.REPLICA_SYNC_DELAY));
+            ClassicAssert.AreEqual(TimeSpan.FromSeconds(5), runtimeConfig.GetTimeSpan(ServerConfigType.REPLICA_SYNC_DELAY));
+
+            // A zero value is surfaced as an infinite timeout (the "non-positive means infinite" convention).
+            ClassicAssert.IsTrue(runtimeConfig.TrySet(ServerConfigType.CLUSTER_NODE_TIMEOUT, "0", out var error));
+            ClassicAssert.IsNull(error);
+            ClassicAssert.AreEqual(Timeout.InfiniteTimeSpan, runtimeConfig.GetTimeSpan(ServerConfigType.CLUSTER_NODE_TIMEOUT));
+
+            // A negative value is out of range (0 is the canonical way to request an infinite timeout).
+            ClassicAssert.IsFalse(runtimeConfig.TrySet(ServerConfigType.CLUSTER_NODE_TIMEOUT, "-3", out error));
+            ClassicAssert.AreEqual("ERR Value for 'cluster-node-timeout' is out of range (0..2147483647).", error);
+            ClassicAssert.AreEqual("0", runtimeConfig.RespFormat(ServerConfigType.CLUSTER_NODE_TIMEOUT));
+        }
+
+        /// <summary>
+        /// Verifies that the slow log can be enabled at runtime on a server that started with it disabled,
+        /// which requires the threshold to be read live rather than captured at startup.
+        /// </summary>
+        [Test]
+        public void ConfigSetSlowLogThresholdTakesEffectAtRuntime()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            // The server starts with the slow log disabled.
+            ClassicAssert.AreEqual("0", ((RedisResult[])db.Execute("CONFIG", "GET", "slowlog-log-slower-than"))[1].ToString());
+
+            // Enable it with a threshold low enough that every command qualifies, regardless of host speed.
+            ClassicAssert.AreEqual("OK", db.Execute("CONFIG", "SET", "slowlog-log-slower-than", "1").ToString());
+            ClassicAssert.AreEqual("1", ((RedisResult[])db.Execute("CONFIG", "GET", "slowlog-log-slower-than"))[1].ToString());
+
+            for (var i = 0; i < 5; i++)
+                _ = db.StringSet($"slowlog-key-{i}", "value");
+
+            ClassicAssert.Greater((int)db.Execute("SLOWLOG", "LEN"), 0);
+        }
+
+        /// <summary>
+        /// Verifies that CONFIG SET rejects malformed / out-of-range values for runtime-adjustable options
+        /// and that a rejected value does not mutate the option.
+        /// </summary>
+        [Test]
+        public void ConfigSetRuntimeOptionValidationTest()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            // Out-of-range integer (min is 0).
+            var outOfRange = Assert.Throws<RedisServerException>(() => db.Execute("CONFIG", "SET", "replica-sync-delay", "-5"));
+            ClassicAssert.AreEqual("ERR Value for 'replica-sync-delay' is out of range (0..2147483647).", outOfRange.Message);
+            // Non-integer value.
+            var notInteger = Assert.Throws<RedisServerException>(() => db.Execute("CONFIG", "SET", "compaction-max-segments", "abc"));
+            ClassicAssert.AreEqual("ERR Invalid value for 'compaction-max-segments': expected an integer.", notInteger.Message);
+            // Invalid enum value.
+            var badEnum = Assert.Throws<RedisServerException>(() => db.Execute("CONFIG", "SET", "compaction-type", "Bogus"));
+            ClassicAssert.AreEqual("ERR Invalid value for 'compaction-type': 'Bogus'.", badEnum.Message);
+            // An out-of-range numeric value does not name a declared member and is rejected.
+            var numericEnumOutOfRange = Assert.Throws<RedisServerException>(() => db.Execute("CONFIG", "SET", "compaction-type", "999"));
+            ClassicAssert.AreEqual("ERR Invalid value for 'compaction-type': '999'.", numericEnumOutOfRange.Message);
+            // Invalid boolean value.
+            var badBool = Assert.Throws<RedisServerException>(() => db.Execute("CONFIG", "SET", "sg-get", "maybe"));
+            ClassicAssert.AreEqual("ERR Invalid value for 'sg-get': expected 'yes' or 'no'.", badBool.Message);
+
+            // A rejected value must not have mutated the option.
+            var res = (RedisResult[])db.Execute("CONFIG", "GET", "compaction-max-segments");
+            ClassicAssert.AreNotEqual("abc", res[1].ToString());
+        }
+
+        /// <summary>
+        /// Verifies that read-only parameters exposed through the runtime config table (timeout, save,
+        /// appendonly, databases) reject CONFIG SET, and that CONFIG GET * includes both the read-only
+        /// parameters and the per-session slave-read-only value.
+        /// </summary>
+        [Test]
+        public void ConfigGetAllAndReadOnlyRejectionTest()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            // CONFIG SET on read-only parameters is rejected.
+            var appendOnly = Assert.Throws<RedisServerException>(() => db.Execute("CONFIG", "SET", "appendonly", "yes"));
+            ClassicAssert.AreEqual("ERR Option 'appendonly' is read-only and cannot be set at runtime.", appendOnly.Message);
+            var databases = Assert.Throws<RedisServerException>(() => db.Execute("CONFIG", "SET", "databases", "32"));
+            ClassicAssert.AreEqual("ERR Option 'databases' is read-only and cannot be set at runtime.", databases.Message);
+            var timeout = Assert.Throws<RedisServerException>(() => db.Execute("CONFIG", "SET", "timeout", "10"));
+            ClassicAssert.AreEqual("ERR Option 'timeout' is read-only and cannot be set at runtime.", timeout.Message);
+
+            // CONFIG GET * returns a name/value map including read-only and per-session parameters.
+            var all = (RedisResult[])db.Execute("CONFIG", "GET", "*");
+            ClassicAssert.IsTrue(all.Length % 2 == 0);
+            var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            for (var i = 0; i < all.Length; i += 2)
+                map[all[i].ToString()] = all[i + 1].ToString();
+
+            // Read-only parameters.
+            ClassicAssert.IsTrue(map.ContainsKey("timeout"));
+            ClassicAssert.IsTrue(map.ContainsKey("save"));
+            ClassicAssert.IsTrue(map.ContainsKey("appendonly"));
+            ClassicAssert.IsTrue(map.ContainsKey("databases"));
+            // Per-session parameter.
+            ClassicAssert.IsTrue(map.ContainsKey("slave-read-only"));
+            ClassicAssert.AreEqual("no", map["slave-read-only"]);
+            // A settable runtime parameter.
+            ClassicAssert.IsTrue(map.ContainsKey("replica-sync-delay"));
+        }
+
+        /// <summary>
+        /// Verifies that the read-only AOF parameters are exposed through CONFIG GET (and GET *) but reject
+        /// CONFIG SET because they describe the physical AOF layout / startup-only toggles.
+        /// </summary>
+        [Test]
+        public void ConfigAofReadOnlyParametersTest()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            string[] readOnly =
+            [
+                "aof-memory", "aof-page-size", "aof-segment-size", "aof-physical-sublog-count",
+                "aof-replay-task-count", "aof-commit-wait", "aof-size-limit", "fast-aof-truncate",
+                "aof-null-device",
+            ];
+
+            foreach (var name in readOnly)
+            {
+                // Exposed through CONFIG GET.
+                var res = (RedisResult[])db.Execute("CONFIG", "GET", name);
+                ClassicAssert.AreEqual(2, res.Length);
+                ClassicAssert.AreEqual(name, res[0].ToString());
+
+                // But rejected by CONFIG SET.
+                var ex = Assert.Throws<RedisServerException>(() => db.Execute("CONFIG", "SET", name, res[1].ToString()));
+                ClassicAssert.AreEqual($"ERR Option '{name}' is read-only and cannot be set at runtime.", ex.Message);
+            }
+
+            // All appear in CONFIG GET *.
+            var all = (RedisResult[])db.Execute("CONFIG", "GET", "*");
+            var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            for (var i = 0; i < all.Length; i += 2)
+                map[all[i].ToString()] = all[i + 1].ToString();
+            foreach (var name in readOnly)
+                ClassicAssert.IsTrue(map.ContainsKey(name), $"CONFIG GET * missing '{name}'.");
+        }
+
+        /// <summary>
+        /// Verifies that the runtime-adjustable AOF options round-trip through CONFIG GET / CONFIG SET and
+        /// that out-of-range values are rejected.
+        /// </summary>
+        [Test]
+        public void ConfigAofRuntimeAdjustableParametersTest()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            static string Get(IDatabase db, string name)
+            {
+                var res = (RedisResult[])db.Execute("CONFIG", "GET", name);
+                ClassicAssert.AreEqual(2, res.Length);
+                ClassicAssert.AreEqual(name, res[0].ToString());
+                return res[1].ToString();
+            }
+
+            // aof-size-limit-enforce-frequency round-trips.
+            ClassicAssert.AreEqual("OK", db.Execute("CONFIG", "SET", "aof-size-limit-enforce-frequency", "10").ToString());
+            ClassicAssert.AreEqual("10", Get(db, "aof-size-limit-enforce-frequency"));
+            var negative = Assert.Throws<RedisServerException>(() => db.Execute("CONFIG", "SET", "aof-size-limit-enforce-frequency", "-1"));
+            ClassicAssert.AreEqual("ERR Value for 'aof-size-limit-enforce-frequency' is out of range (0..2147483647).", negative.Message);
+        }
+    }
+
+    /// <summary>
+    /// Tests for runtime CONFIG SET of background-task frequencies whose change is enacted by a task
+    /// lifecycle action (start / kill / restart) wired through <c>ConfigMeta.UpdateAction</c>.
+    /// </summary>
+    [TestFixture]
+    public class RespConfigTaskLifecycleTests : TestBase
+    {
+        GarnetServer server;
+
+        [SetUp]
+        public void Setup()
+        {
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            server?.Dispose();
+            TestUtils.OnTearDown();
+        }
+
+        static string Get(IDatabase db, string name)
+        {
+            var res = (RedisResult[])db.Execute("CONFIG", "GET", name);
+            ClassicAssert.AreEqual(2, res.Length);
+            ClassicAssert.AreEqual(name, res[0].ToString());
+            return res[1].ToString();
+        }
+
+        /// <summary>
+        /// When the server starts with per-operation auto-commit (aof-commit-freq 0), the value is fixed
+        /// into the AOF log at startup: runtime CONFIG SET is rejected and the option is left unchanged.
+        /// </summary>
+        [Test]
+        public void ConfigCommitFreqRejectedWhenStartedAtZeroTest()
+        {
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableAOF: true, commitFrequencyMs: 0);
+            server.Start();
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            ClassicAssert.AreEqual("0", Get(db, "aof-commit-freq"));
+
+            var toZero = Assert.Throws<RedisServerException>(() => db.Execute("CONFIG", "SET", "aof-commit-freq", "0"));
+            ClassicAssert.AreEqual("ERR 'aof-commit-freq' cannot be set to 0 at runtime; per-operation auto-commit is fixed at startup.", toZero.Message);
+
+            var fromZero = Assert.Throws<RedisServerException>(() => db.Execute("CONFIG", "SET", "aof-commit-freq", "100"));
+            ClassicAssert.AreEqual("ERR 'aof-commit-freq' cannot be changed at runtime because the server started with per-operation auto-commit (0).", fromZero.Message);
+
+            ClassicAssert.AreEqual("0", Get(db, "aof-commit-freq"));
+        }
+
+        /// <summary>
+        /// When the server starts with periodic commit (aof-commit-freq &gt; 0), the safe {-1, &gt; 0}
+        /// transitions are accepted and enacted by restarting / killing the commit task, while a move to 0
+        /// remains rejected and leaves the value intact.
+        /// </summary>
+        [Test]
+        public void ConfigCommitFreqRuntimeAdjustableTest()
+        {
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableAOF: true, commitFrequencyMs: 100);
+            server.Start();
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            ClassicAssert.AreEqual("100", Get(db, "aof-commit-freq"));
+
+            // -1 disables the periodic task (manual commit).
+            ClassicAssert.AreEqual("OK", db.Execute("CONFIG", "SET", "aof-commit-freq", "-1").ToString());
+            ClassicAssert.AreEqual("-1", Get(db, "aof-commit-freq"));
+
+            // A positive value re-enables / retunes the task.
+            ClassicAssert.AreEqual("OK", db.Execute("CONFIG", "SET", "aof-commit-freq", "250").ToString());
+            ClassicAssert.AreEqual("250", Get(db, "aof-commit-freq"));
+
+            // 0 remains rejected because auto-commit cannot be toggled on a live log.
+            var toZero = Assert.Throws<RedisServerException>(() => db.Execute("CONFIG", "SET", "aof-commit-freq", "0"));
+            ClassicAssert.AreEqual("ERR 'aof-commit-freq' cannot be set to 0 at runtime; per-operation auto-commit is fixed at startup.", toZero.Message);
+            ClassicAssert.AreEqual("250", Get(db, "aof-commit-freq"));
+        }
+
+        /// <summary>
+        /// expired-key-deletion-scan-freq toggles the background scan task, which in turn gates the
+        /// on-demand EXPDELSCAN command — verifying that the admin command reads the runtime value rather
+        /// than the startup value.
+        /// </summary>
+        [Test]
+        public void ConfigExpiredKeyDeletionScanRuntimeAdjustableTest()
+        {
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, expiredKeyDeletionScanFrequencySecs: -1);
+            server.Start();
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            ClassicAssert.AreEqual("-1", Get(db, "expired-key-deletion-scan-freq"));
+
+            // With the background scan disabled, on-demand EXPDELSCAN is allowed.
+            Assert.DoesNotThrow(() => db.Execute("EXPDELSCAN"));
+
+            // Enabling the background scan starts the task and disables the on-demand command.
+            ClassicAssert.AreEqual("OK", db.Execute("CONFIG", "SET", "expired-key-deletion-scan-freq", "5").ToString());
+            ClassicAssert.AreEqual("5", Get(db, "expired-key-deletion-scan-freq"));
+            var ex = Assert.Throws<RedisServerException>(() => db.Execute("EXPDELSCAN"));
+            ClassicAssert.AreEqual("ERR Cannot execute EXPDELSCAN with background expired key deletion scan enabled", ex.Message);
+
+            // Disabling it again kills the task and re-enables the on-demand command.
+            ClassicAssert.AreEqual("OK", db.Execute("CONFIG", "SET", "expired-key-deletion-scan-freq", "-1").ToString());
+            ClassicAssert.AreEqual("-1", Get(db, "expired-key-deletion-scan-freq"));
+            Assert.DoesNotThrow(() => db.Execute("EXPDELSCAN"));
+        }
+
+        /// <summary>
+        /// expired-object-collection-freq round-trips through CONFIG GET / CONFIG SET and starts / kills
+        /// the background collection task accordingly.
+        /// </summary>
+        [Test]
+        public void ConfigExpiredObjectCollectionRuntimeAdjustableTest()
+        {
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir);
+            server.Start();
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            ClassicAssert.AreEqual("0", Get(db, "expired-object-collection-freq"));
+
+            // Enabling starts the collection task.
+            ClassicAssert.AreEqual("OK", db.Execute("CONFIG", "SET", "expired-object-collection-freq", "5").ToString());
+            ClassicAssert.AreEqual("5", Get(db, "expired-object-collection-freq"));
+
+            // Disabling kills it.
+            ClassicAssert.AreEqual("OK", db.Execute("CONFIG", "SET", "expired-object-collection-freq", "0").ToString());
+            ClassicAssert.AreEqual("0", Get(db, "expired-object-collection-freq"));
+
+            // Out-of-range values are rejected.
+            var negative = Assert.Throws<RedisServerException>(() => db.Execute("CONFIG", "SET", "expired-object-collection-freq", "-1"));
+            ClassicAssert.AreEqual("ERR Value for 'expired-object-collection-freq' is out of range (0..2147483647).", negative.Message);
         }
     }
 }

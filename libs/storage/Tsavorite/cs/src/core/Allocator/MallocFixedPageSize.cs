@@ -39,6 +39,7 @@ namespace Tsavorite.core
         internal static bool IsBlittable => Utility.IsBlittable<T>();
 
         private int checkpointCallbackCount;
+        private int checkpointErrorCode;
         private TaskCompletionSource<bool> checkpointTcs;
 
         private readonly ConcurrentQueue<long> freeList;
@@ -298,6 +299,7 @@ namespace Tsavorite.core
             int numCompleteLevels = localCount >> PageSizeBits;
             int numLevels = numCompleteLevels + (recordsCountInLastLevel > 0 ? 1 : 0);
             checkpointCallbackCount = numLevels;
+            checkpointErrorCode = 0;
             checkpointTcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
             uint alignedPageSize = PageSize * (uint)RecordSize;
             uint lastLevelSize = (uint)recordsCountInLastLevel * (uint)RecordSize;
@@ -345,6 +347,7 @@ namespace Tsavorite.core
             if (errorCode != 0)
             {
                 logger?.LogError($"{nameof(AsyncFlushCallback)} error: {{errorCode}}", errorCode);
+                _ = Interlocked.CompareExchange(ref checkpointErrorCode, (int)errorCode, 0);
             }
 
             var mem = ((OverflowPagesFlushAsyncResult)context).mem;
@@ -352,7 +355,11 @@ namespace Tsavorite.core
 
             if (Interlocked.Decrement(ref checkpointCallbackCount) == 0)
             {
-                checkpointTcs.TrySetResult(true);
+                var err = checkpointErrorCode;
+                if (err != 0)
+                    checkpointTcs.TrySetException(new TsavoriteException($"Overflow-bucket checkpoint flush failed with error code {err}"));
+                else
+                    checkpointTcs.TrySetResult(true);
             }
         }
 

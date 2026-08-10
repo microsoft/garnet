@@ -1244,6 +1244,18 @@ namespace Garnet.server
                 return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER);
             }
 
+            if (nKeys < 1)
+            {
+                return AbortWithErrorMessage(CmdStrings.GenericErrAtLeastOneKey, nameof(RespCommand.ZINTERSTORE));
+            }
+
+            // Subtract rather than add, so that a numkeys near int.MaxValue cannot overflow past the
+            // check and reach the slice below. parseState.Count is at least 3 here.
+            if (parseState.Count - 2 < nKeys)
+            {
+                return AbortWithErrorMessage(CmdStrings.RESP_SYNTAX_ERROR);
+            }
+
             var destination = parseState.GetArgSliceByRef(0);
             var keys = parseState.Parameters.Slice(2, nKeys);
 
