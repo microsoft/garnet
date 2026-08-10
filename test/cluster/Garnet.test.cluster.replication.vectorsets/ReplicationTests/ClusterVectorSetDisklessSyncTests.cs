@@ -227,15 +227,10 @@ namespace Garnet.test.cluster
 
             PopulateVectorSet(PrimaryIndex, Key, Elements);
 
-            try
+            using (ExceptionInjectionHelper.Enabled(ExceptionInjectionType.Replication_Diskless_Sync_Reset_Cts))
             {
-                ExceptionInjectionHelper.EnableException(ExceptionInjectionType.Replication_Diskless_Sync_Reset_Cts);
                 var failed = context.clusterTestUtils.ClusterReplicate(replicaNodeIndex: ReplicaIndex, primaryNodeIndex: PrimaryIndex, failEx: false, logger: context.logger);
                 ClassicAssert.AreEqual($"Exception injection triggered {ExceptionInjectionType.Replication_Diskless_Sync_Reset_Cts}", failed);
-            }
-            finally
-            {
-                ExceptionInjectionHelper.DisableException(ExceptionInjectionType.Replication_Diskless_Sync_Reset_Cts);
             }
 
             var resp = context.clusterTestUtils.ClusterReplicate(replicaNodeIndex: ReplicaIndex, primaryNodeIndex: PrimaryIndex, logger: context.logger);
@@ -279,15 +274,10 @@ namespace Garnet.test.cluster
             var keptContext = ReadPersistedContext(PrimaryIndex, KeptKey);
             ClassicAssert.AreNotEqual(doomedContext, keptContext, "the two Vector Sets must not share a context or the test cannot distinguish their records");
 
-            try
+            using (ExceptionInjectionHelper.Enabled(ExceptionInjectionType.Replication_Diskless_Sync_Reset_Cts))
             {
-                ExceptionInjectionHelper.EnableException(ExceptionInjectionType.Replication_Diskless_Sync_Reset_Cts);
                 var failed = context.clusterTestUtils.ClusterReplicate(replicaNodeIndex: ReplicaIndex, primaryNodeIndex: PrimaryIndex, failEx: false, logger: context.logger);
                 ClassicAssert.AreEqual($"Exception injection triggered {ExceptionInjectionType.Replication_Diskless_Sync_Reset_Cts}", failed);
-            }
-            finally
-            {
-                ExceptionInjectionHelper.DisableException(ExceptionInjectionType.Replication_Diskless_Sync_Reset_Cts);
             }
 
             // The injection fires a full second into streaming, well after CLUSTER FLUSHALL and after these

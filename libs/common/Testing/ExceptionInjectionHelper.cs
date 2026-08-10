@@ -73,6 +73,27 @@ namespace Garnet.common
         }
 
         /// <summary>
+        /// Enables an exception scenario until the returned scope is disposed, so tests cannot leak an
+        /// armed injection into whatever runs next.
+        /// </summary>
+        /// <param name="exceptionType"></param>
+        public static Scope Enabled(ExceptionInjectionType exceptionType)
+        {
+            EnableException(exceptionType);
+            return new Scope(exceptionType);
+        }
+
+        /// <summary>
+        /// Disables the exception scenario it was created for when disposed.
+        /// </summary>
+        /// <param name="exceptionType"></param>
+        public readonly struct Scope(ExceptionInjectionType exceptionType) : IDisposable
+        {
+            /// <inheritdoc/>
+            public void Dispose() => DisableException(exceptionType);
+        }
+
+        /// <summary>
         /// Trigger exception scenario (NOTE: add this to the location where the exception should be emulated/triggered)
         /// </summary>
         /// <param name="exceptionType"></param>
