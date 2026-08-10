@@ -92,11 +92,6 @@ namespace Garnet.common
         /// <inheritdoc />
         public override string LocalEndpointName => localEndpoint;
 
-        /// <summary>
-        /// Whether closing has been requested or the connection has already closed.
-        /// </summary>
-        public bool IsClosingOrClosed => Volatile.Read(ref closeRequested) != 0;
-
         /// <inheritdoc />
         public override bool IsLocalConnection()
         {
@@ -251,8 +246,6 @@ namespace Garnet.common
         /// <inheritdoc />
         public override void DisposeNetworkSender(bool waitForSendCompletion)
         {
-            Interlocked.Exchange(ref closeRequested, 1);
-
             if (!waitForSendCompletion)
                 socket.Dispose();
 

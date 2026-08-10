@@ -148,11 +148,6 @@ namespace Garnet.server
                     var first = true;
                     foreach (var resp in toInclude)
                     {
-                        if (resp.IsClosingOrClosed)
-                        {
-                            continue;
-                        }
-
                         if (!first)
                         {
                             // Redis uses a single \n, not \r\n like you might expect

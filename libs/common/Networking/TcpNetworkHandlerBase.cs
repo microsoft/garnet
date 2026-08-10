@@ -56,11 +56,6 @@ namespace Garnet.common
         /// <inheritdoc />
         public override bool IsLocalConnection() => isLocalConnection;
 
-        /// <summary>
-        /// Whether closing has been requested or the connection has already closed.
-        /// </summary>
-        public bool IsClosingOrClosed => Volatile.Read(ref closeRequested) != 0;
-
         /// <inheritdoc />
         public override void Start(SslServerAuthenticationOptions tlsOptions = null, string remoteEndpointName = null, CancellationToken token = default)
         {
@@ -152,8 +147,6 @@ namespace Garnet.common
         /// <inheritdoc />
         public override void Dispose()
         {
-            Interlocked.Exchange(ref closeRequested, 1);
-
             try
             {
                 if (socket.Connected)

@@ -1303,17 +1303,6 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Whether the underlying network connection is closing or closed.
-        /// </summary>
-        internal bool IsClosingOrClosed =>
-            networkSender switch
-            {
-                ServerTcpNetworkHandler handler => handler.IsClosingOrClosed,
-                GarnetTcpNetworkSender sender => sender.IsClosingOrClosed,
-                _ => false
-            };
-
-        /// <summary>
         /// Attempt to kill this session.
         ///
         /// Returns true if this call actually kills the underlying network connection.
