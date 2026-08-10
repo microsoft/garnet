@@ -442,7 +442,7 @@ namespace Garnet.server
 
                 // Indices queued against the old array would index out of range, and would re-persist
                 // metadata for contexts the flush just removed
-                manager.dirtyContextMetadatas.Clear();
+                manager.dirtyContextMetadatas?.Clear();
 
                 // The flushed records are gone, so any inflight recovery state should be cleared since it's now invalid
                 manager.recoveredIndexes.Clear();
