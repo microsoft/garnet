@@ -11,8 +11,10 @@ The hybrid log stores the record header, inline fields, objectId slots, optional
 object log stores the bytes referenced by those slots. The two logs are written and read together, but their metadata
 has deliberately separate responsibilities:
 
-- `RecordDataHeader.KeyLength` and `RecordDataHeader.ValueLength` describe the physical fields in the hybrid-log
-  record. They are always exact and never contain object-log lengths or read hints.
+- The effective `RecordDataHeader.KeyLength` and `RecordDataHeader.ValueLength` properties describe physical fields in
+  the hybrid-log record. They always return an exact inline length or the 4-byte objectId-slot size.
+- For an overflow key, the raw 10-bit RDH KeyLength field is free because `KeyIsInline` is false. A flushed record uses
+  it for the high bits of the key's page-count read extent without changing the effective property or record layout.
 - The high 9 bits of each out-of-line field's objectId slot contain an initial object-log read hint.
 - `KeyIsExactSize` / `ValueIsExactSize` bits in the object-log position word select whether that 9-bit value is an
   exact byte length or a page-count hint.
@@ -90,7 +92,7 @@ Every in-memory lookup uses `ObjectIdMap.GetIndex()` and therefore masks away th
 
 ---
 
-## 2. `RecordDataHeader` lengths are physical and inline-only
+## 2. Effective RDH lengths and raw overflow-key metadata
 
 `RecordDataHeader` (RDH) is one atomically published 8-byte word. Its relevant fields are:
 
@@ -106,7 +108,7 @@ bit(s)   field
 
 ### 2.1 Exact meaning of `KeyLength` and `ValueLength`
 
-The lengths always describe the physical key/value fields in the hybrid-log record:
+The effective length properties always describe the physical key/value fields in the hybrid-log record:
 
 | Field kind | Physical field contents | RDH length |
 |---|---|---|
@@ -125,13 +127,19 @@ Consequently, `GetKeyFieldInfo`, `GetValueFieldInfo`, `ActualSize`, `AllocatedSi
 `ObjectLogPosition` placement, record scans, and filler calculations never depend on the serialized object-log size.
 Changing an overflow payload from 1 KB to 500 MB does not change the hybrid-log record's physical field size.
 
+For an inline key, raw RDH KeyLength and effective `KeyLength` are the same exact byte count. For an overflow key,
+effective `KeyLength` remains 4, but the raw field has no physical-layout consumer. The flushed record therefore uses
+those 10 raw bits as the high portion of the key's 4 KB page count. Assigning the recovered key to an `ObjectIdMap`
+restores the raw field to 4; the effective property remains 4 before and after restoration.
+
 ### 2.2 What object-log code must never do
 
 Current-format object-log flush and read paths do not:
 
-- put an overflow/object byte length into an RDH length field;
-- put a page-count or sentinel into an RDH length field;
-- derive current-format object-log framing from `GetKeyLengthRaw()` or `GetValueLengthRaw()`; or
+- put an overflow/object byte length into a raw RDH length field;
+- use raw RDH ValueLength as object-log metadata;
+- use raw RDH KeyLength for an overflow key except as the high page-count bits;
+- derive authoritative object-log framing from either RDH field; or
 - rewrite RDH lengths after deserializing an object, except to restore/assert the physical 4-byte objectId slot.
 
 This also keeps the file-IO format independent of the migration/replication format. Network serialization may add
@@ -143,8 +151,9 @@ Checkpoint v2.1 used an older split length encoding: the RDH raw field held the 
 held the next 32 bits. `ReuseObjectIdForSize` (object-log position bit 63) selects that decoder in
 `LogRecord_v21.cs`.
 
-`GetKeyLengthRaw()` and `GetValueLengthRaw()` remain available for that legacy decoder and for inspecting the exact
-physical field. They are not current-format object-log hint accessors.
+The legacy decoder interprets both raw fields according to that older layout. Current-format code uses
+`GetKeyLengthRaw()` only for the overflow-key page-count high bits and does not use `GetValueLengthRaw()` as an
+object-log hint.
 
 ---
 
@@ -164,7 +173,7 @@ Each objectId slot is one 32-bit integer:
 | Bits | Name | Meaning |
 |---|---|---|
 | 0..22 | index | Index into the record page's `ObjectIdMap` |
-| 23..31 | size hint | Exact byte length or 4 KB page count, selected by the position flag |
+| 23..31 | size hint | Exact byte length, value page count/sentinel, or low 9 bits of the key page count |
 
 The 23-bit index is larger than the maximum index needed by a 128 MB page at the minimum record size. The high 9 bits
 are therefore available for the disk-read hint without reducing the supported page population.
@@ -177,10 +186,10 @@ an in-memory lookup, and `ObjectIdMap.GetSizeHint(slot)` extracts the high 9 bit
 The optional 8-byte object-log position combines an address and format flags:
 
 ```text
-63             62            61                 60                 59..0
-+--------------+-------------+------------------+------------------+------------------+
-| v2.1 reuse   | reserved    | KeyIsExactSize   | ValueIsExactSize | segment + offset |
-+--------------+-------------+------------------+------------------+------------------+
+63             62                        61                 60                 59..0
++--------------+-------------------------+------------------+------------------+------------------+
+| v2.1 reuse   | KeyHasExtendedSizeHint  | KeyIsExactSize   | ValueIsExactSize | segment + offset |
++--------------+-------------------------+------------------+------------------+------------------+
 ```
 
 | Bit | Meaning |
@@ -188,7 +197,7 @@ The optional 8-byte object-log position combines an address and format flags:
 | 0..59 | Object-log segment and offset (about 1 EB address range) |
 | 60 | `ValueIsExactSize` |
 | 61 | `KeyIsExactSize` |
-| 62 | Reserved |
+| 62 | `KeyHasExtendedSizeHint`: a headered key's page count spans raw RDH KeyLength and the objectId hint |
 | 63 | Legacy v2.1 `ReuseObjectIdForSize` discriminator |
 
 The key and value flags are independent because one record can have, for example, a 100-byte headerless overflow key
@@ -200,36 +209,55 @@ extent when converting a supported v2.1 record. It is no longer an object-log po
 
 ### 3.3 Exact versus page-count interpretation
 
-For each out-of-line component:
+For an exact/headerless key or value:
 
-| Exact-size flag | 9-bit hint | Stream layout | Initial read |
+| Exact-size flag | objectId hint | Stream layout | Initial read |
 |---|---|---|---|
 | Set | 0..511 | Headerless | Exactly `hint` bytes |
-| Clear | 1..510 | Overflow: leading header; object: 511-byte prefix, padding, then headers | `hint * 4 KB` bytes |
-| Clear | 511 | Overflow: leading header; object: 511-byte prefix, padding, then headers | One 4 MB discovery window |
 
-The value 511 has two meanings selected by the flag:
+For a non-exact/headered overflow key with `KeyHasExtendedSizeHint` set:
 
-- flag set: exactly 511 headerless bytes;
-- flag clear: page-count sentinel, meaning "issue a 4 MB discovery read and follow framing."
+```text
+pageCount = (rawRdhKeyLength << 9) | objectIdHint
+initialReadExtent = pageCount * 4 KB
+```
 
-The sentinel is not `511 * 4 KB`. Saturating to 511 deliberately selects the full 4 MB
-`IStreamBuffer.BufferSize`, leaving enough space to parse a header and make progress without issuing a small
-header-only IO.
+The 19-bit page count is exact: it is `ceil((ChunkHeader + alignment padding + payload) / 4 KB)`. It covers the
+configured 512 MB maximum key size with framing and alignment overhead. The reader can allocate/read the complete key
+without a sentinel-driven extension path; `ChunkHeader` still supplies the exact logical payload length.
+
+When `KeyHasExtendedSizeHint` is clear, a checkpoint from the preceding chunk-framing format uses the value-style
+objectId-only page-count/sentinel interpretation. The checkpoint version was advanced when the extended encoding was
+introduced so a binary that does not recognize bit 62 rejects the checkpoint rather than under-reading a large key.
+
+For a non-exact overflow or object value:
+
+| 9-bit objectId hint | Stream layout | Initial read |
+|---|---|---|
+| 1..510 | Overflow: leading header; object: 511-byte prefix, padding, then headers | `hint * 4 KB` bytes |
+| 511 | Same framing | One 4 MB discovery window |
+
+For values only, 511 is the sentinel meaning "issue a 4 MB discovery read and follow framing." It is not
+`511 * 4 KB`.
 
 ### 3.4 Computing and stamping a hint
 
-`LogRecord.SetObjectLogPositionAndSizeHints()` calls `RecordDataHeader.ComputeObjectIdSizeHint()` independently for
-the key and value:
+`LogRecord.SetObjectLogPositionAndSizeHints()` handles keys and values separately:
 
 1. If the serialized data length is at most 511:
    - stamp the exact byte length;
    - set the component's exact-size flag;
    - write no `ChunkHeader`.
-2. Otherwise:
+2. For a larger overflow key:
+   - compute `ceil(totalOnDiskExtent / 4 KB)`;
+   - stamp its low 9 bits into the objectId and its high 10 bits into raw RDH KeyLength;
+   - set `KeyHasExtendedSizeHint`;
+   - leave `KeyIsExactSize` clear; and
+   - obtain the exact logical length from the leading `ChunkHeader`.
+3. For a larger overflow/object value:
    - compute `ceil(initialOnDiskExtent / 4 KB)`;
    - clamp it to 511;
-   - leave the exact-size flag clear;
+   - leave `ValueIsExactSize` clear;
    - obtain authoritative lengths from `ChunkHeader`.
 
 For overflow, `initialOnDiskExtent` is the complete component:
@@ -244,17 +272,18 @@ For an object, it covers only:
 511-byte prefix + 8-align padding + first ChunkHeader + first framed chunk
 ```
 
-Later object chunks are discovered from continuation headers. Thus a size hint is always an initial IO requirement,
-never an authoritative total object length.
+Later object chunks are discovered from continuation headers. The key page count is an exact rounded read extent, not
+an exact logical byte length. Value hints are initial IO requirements and may not cover the total value.
 
 ### 3.5 Decoding a hint
 
 `LogRecord.GetObjectLogRecordStartPositionAndLengths()`:
 
 1. checks `ReuseObjectIdForSize`; if set, dispatches to the v2.1 exact-length decoder;
-2. reads the key/value objectId high bits;
+2. reads the key/value objectId high bits and, for a non-exact key, raw RDH KeyLength;
 3. reads `KeyIsExactSize` / `ValueIsExactSize`;
-4. converts each pair to exact bytes, page-count bytes, or a 4 MB discovery window; and
+4. converts the key metadata to exact bytes or its full 19-bit page extent, and value metadata to exact bytes,
+   page-count bytes, or a 4 MB discovery window; and
 5. masks the high flag bits from the returned object-log address.
 
 The method's output lengths are initial read extents for current-format records, not necessarily component lengths.
@@ -373,10 +402,11 @@ epoch before disk IO:
 After serialization, `SetObjectLogPositionAndSizeHints()` writes:
 
 - the record's starting object-log segment/offset;
-- the key hint and `KeyIsExactSize`, if the key is overflow; and
+- the key objectId hint, raw RDH page-count high bits, `KeyHasExtendedSizeHint`, and `KeyIsExactSize`, if the key is overflow; and
 - the value hint and `ValueIsExactSize`, if the value is overflow/object.
 
-The method does not change RDH lengths.
+The method does not change either effective RDH length. Stamping raw RDH KeyLength for an overflow key is
+layout-neutral because `KeyLength` returns `ObjectIdSize` whenever `KeyIsInline` is false.
 
 ### 5.3 Buffered overflow write
 
@@ -546,7 +576,8 @@ After object deserialization, `LogRecord.SetDeserializedValueObject()`:
 5. restores/asserts the RDH physical value length as `ObjectIdMap.ObjectIdSize`.
 
 Overflow key/value reads similarly assign owned `OverflowByteArray` instances to objectId-map slots. The flushed
-size-hint bits are not treated as a live map index without `GetIndex()`.
+size-hint bits are not treated as a live map index without `GetIndex()`. Assigning an overflow key also clears its raw
+RDH page-count high bits back to the in-memory objectId-slot value.
 
 ---
 
@@ -562,6 +593,9 @@ populated in Pass 2. `ComputeRecoveryOverflowKeyHash()` therefore:
 3. uses `objectLogTail` only for the main device and `NotSet` for the snapshot device;
 4. reads only the overflow key with `ReadOverflowKeyHashCodeForRecovery()`; and
 5. pins its final span while calling the store's key comparer/hash function.
+
+For a headered key, the combined RDH/objectId page count already covers the entire framed key. Recovery Pass 1 does not
+need a key sentinel or repeated discovery reads; the leading header narrows the rounded extent to the exact payload.
 
 ### 7.2 Pass 2: page object loading
 
@@ -602,7 +636,7 @@ copies raw object-log bytes from the snapshot device to the main object log:
 3. align the destination record start so `destination % 8 == source % 8`;
 4. replace only the segment/offset with `RepointObjectLogPosition()`, preserving objectId hints and all format flags;
 5. copy the bounded raw extent when exact hints or a successor safely bound it; or
-6. for an unbounded last record whose sentinel hint may under-count, call
+6. for an unbounded last record whose rounded key extent may over-count or whose value sentinel may under-count, call
    `CopyRecordObjectsFollowingFraming()` and follow each header to the exact end.
 
 The modulo-8 preservation is required because the first object header is aligned from the absolute object start.
@@ -692,6 +726,8 @@ Indentation is call depth. Component branches and lifetime changes are included 
       - `LogRecord.SetObjectLogPositionAndSizeHints(...)`
         - write object-log position
         - stamp key/value objectId high bits
+        - stamp overflow-key page-count high bits into raw RDH KeyLength
+        - set `KeyHasExtendedSizeHint` for a headered overflow key
         - set `KeyIsExactSize` / `ValueIsExactSize` as applicable
     - `ObjectLogWriter.OnPartialFlushComplete()`
       - `CircularDiskWriteBuffer.OnPartialFlushComplete()`
@@ -772,7 +808,8 @@ Indentation is call depth. Component branches and lifetime changes are included 
 
 - 510, 511, and 512 bytes exercise headerless-before-cutoff, maximum exact, and first framed values.
 - Page-count hints round up the complete initial on-disk extent, including headers and padding.
-- Hint 511 with exact flag clear always means one 4 MB discovery window.
+- For keys, page-count low bits 511 are ordinary data and carry into raw RDH KeyLength at 512 pages.
+- For values, objectId hint 511 with the exact flag clear means one 4 MB discovery window.
 - Parsed authoritative lengths are checked against the known main object-log hard tail.
 - Main and snapshot object-log positions are never mixed for subtraction or hard bounds.
 - `ObjectLogFilePositionInfo.Advance()` is used for segment-crossing arithmetic; direct IO splits at segment boundaries.
@@ -790,12 +827,15 @@ keys, overflow/object values, direct-IO thresholds, 4 MB discovery boundaries, a
 
 ## 11. Version and format separation
 
-The current object-log format is checkpoint v2.2 (version 8). Checkpoint v2.1 (version 7) is recoverable through the
-per-record bit-63 discriminator and its dedicated decoder.
+The current object-log format is checkpoint version 9. Version 8 uses the same chunk framing but does not set
+`KeyHasExtendedSizeHint`; its overflow keys use the objectId-only page-count/sentinel decoder. Version 7 is recoverable
+through the per-record bit-63 legacy discriminator and its dedicated decoder. A version 8 binary rejects a version 9
+checkpoint rather than silently interpreting an extended key hint as an objectId-only hint.
 
 The following formats are separate and must not borrow each other's length semantics:
 
-- hybrid-log RDH fields: exact physical inline/objectId-slot lengths;
+- hybrid-log effective RDH lengths: exact physical inline/objectId-slot lengths; raw overflow-key KeyLength additionally
+  carries page-count high bits;
 - object-log file: objectId initial hints plus `ChunkHeader` authoritative framing;
 - migration/replication wire record: explicit network component framing described in the companion document; and
 - [AOF](../aof-record-layout.md): operation serialization, not a `DiskLogRecord` object-log image.

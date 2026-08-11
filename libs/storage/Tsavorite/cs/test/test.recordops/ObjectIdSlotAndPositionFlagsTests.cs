@@ -1,6 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
 using NUnit.Framework;
 using Tsavorite.core;
 
@@ -10,7 +11,8 @@ namespace Tsavorite.test.Objects
     /// Unit tests for the object-log out-of-line size-hint primitives: the <see cref="ObjectLogFilePositionInfo"/> position-word
     /// Key/ValueIsExactSize flag bits, and the <see cref="ObjectIdMap"/> objectId-slot index/size-hint bit layout. An out-of-line
     /// component whose byte length is &lt;= <see cref="ObjectIdMap.MaxObjectIdSizeHint"/> stores its exact length in the top bits of
-    /// its objectId slot (no leading ChunkHeader), flagged in the record's position word. See
+    /// its objectId slot (no leading ChunkHeader), flagged in the record's position word. Larger keys combine those bits with raw
+    /// RDH KeyLength to encode an exact page count; values retain the objectId-only sentinel scheme. See
     /// website/docs/dev/tsavorite/objectlog-serialization.md.
     /// </summary>
     [TestFixture]
@@ -87,6 +89,80 @@ namespace Tsavorite.test.Objects
             => Assert.That(RecordDataHeader.DecodeObjectIdValueInitialReadExtent(ObjectIdMap.MaxObjectIdSizeHint, isExactSize: false),
                 Is.EqualTo((ulong)IStreamBuffer.BufferSize));
 
+        [TestCase(0, 0, true, 0UL)]
+        [TestCase(4, 511, true, 511UL)]
+        [TestCase(0, 1, false, 1UL * RecordDataHeader.kFlushPageSize)]
+        [TestCase(0, 511, false, 511UL * RecordDataHeader.kFlushPageSize)]
+        [TestCase(1, 0, false, 512UL * RecordDataHeader.kFlushPageSize)]
+        [TestCase(1, 1, false, 513UL * RecordDataHeader.kFlushPageSize)]
+        [TestCase(1023, 511, false, (ulong)RecordDataHeader.kMaxOverflowKeyPageCount * RecordDataHeader.kFlushPageSize)]
+        public void DecodeOverflowKeyPageCountUsesRdhHighBits(int rdhKeyLengthBits, int objectIdHint, bool isExact, ulong expected)
+            => Assert.That(RecordDataHeader.DecodeOverflowKeyInitialReadExtent(rdhKeyLengthBits, objectIdHint, isExact), Is.EqualTo(expected));
+
+        [TestCase(4, 1, 1UL * RecordDataHeader.kFlushPageSize)]
+        [TestCase(4, 510, 510UL * RecordDataHeader.kFlushPageSize)]
+        [TestCase(4, 511, (ulong)IStreamBuffer.BufferSize)]
+        public void DecodeEarlierOverflowKeyHintIgnoresRdhBits(int rdhKeyLengthBits, int objectIdHint, ulong expected)
+            => Assert.That(RecordDataHeader.DecodeOverflowKeyInitialReadExtent(rdhKeyLengthBits, objectIdHint, isExactSize: false,
+                hasExtendedSizeHint: false), Is.EqualTo(expected));
+
+        [TestCase(0, 0, 0, 4, true)]
+        [TestCase(511, 511, 511, 4, true)]
+        [TestCase(512, 520, 1, 0, false)]
+        [TestCase((510 * RecordDataHeader.kFlushPageSize) - ChunkHeader.TotalSize, 510 * RecordDataHeader.kFlushPageSize, 510, 0, false)]
+        [TestCase((511 * RecordDataHeader.kFlushPageSize) - ChunkHeader.TotalSize, 511 * RecordDataHeader.kFlushPageSize, 511, 0, false)]
+        [TestCase((512 * RecordDataHeader.kFlushPageSize) - ChunkHeader.TotalSize, 512 * RecordDataHeader.kFlushPageSize, 0, 1, false)]
+        [TestCase((513 * RecordDataHeader.kFlushPageSize) - ChunkHeader.TotalSize, 513 * RecordDataHeader.kFlushPageSize, 1, 1, false)]
+        public void ComputeOverflowKeyPageCountRoundTrips(int dataLength, int extent, int expectedObjectIdHint, int expectedRdhBits, bool expectedExact)
+        {
+            var hint = RecordDataHeader.ComputeOverflowKeySizeHint(dataLength, extent, out var rdhBits, out var isExact);
+
+            Assert.That(hint, Is.EqualTo(expectedObjectIdHint));
+            Assert.That(rdhBits, Is.EqualTo(expectedRdhBits));
+            Assert.That(isExact, Is.EqualTo(expectedExact));
+            Assert.That(RecordDataHeader.DecodeOverflowKeyInitialReadExtent(rdhBits, hint, isExact),
+                Is.EqualTo(isExact ? (ulong)dataLength : (ulong)RoundUpToPage(extent)));
+        }
+
+        [Test]
+        public unsafe void DeserializationErrorNormalizesOverflowKeyLengthBeforeMakingItInline()
+        {
+            var storage = stackalloc byte[64];
+            new Span<byte>(storage, 64).Clear();
+            var record = new LogRecord(storage, new ObjectIdMap());
+            RecordDataHeader dataHeader = default;
+            dataHeader.SetKeyIsOverflow();
+            dataHeader.KeyLength = 1; // Simulate the high page-count bits of a key above the 9-bit range.
+            dataHeader.SetValueIsInline();
+            dataHeader.ValueLength = 0;
+            record.SetDataHeader(dataHeader);
+
+            record.OnDeserializationError(keyWasSet: false);
+
+            Assert.That(record.DataHeader.KeyIsInline, Is.True);
+            Assert.That(record.DataHeader.GetKeyLengthRaw(), Is.EqualTo(ObjectIdMap.ObjectIdSize));
+            Assert.That(record.DataHeader.KeyLength, Is.EqualTo(ObjectIdMap.ObjectIdSize));
+        }
+
+        [Test]
+        public void OverflowKeyPageCountCoversMaximumConfiguredKeyAndAlignment()
+        {
+            const long maxConfiguredKeyLength = 1L << LogSettings.kMaxStringSizeBits;
+            const int maxSectorAlignmentPadding = (1 << 16) - 1;
+            var extent = maxConfiguredKeyLength + ChunkHeader.TotalSize + maxSectorAlignmentPadding;
+
+            var hint = RecordDataHeader.ComputeOverflowKeySizeHint(maxConfiguredKeyLength, extent, out var rdhBits, out var isExact);
+            var decodedExtent = RecordDataHeader.DecodeOverflowKeyInitialReadExtent(rdhBits, hint, isExact);
+
+            Assert.That(isExact, Is.False);
+            Assert.That(decodedExtent, Is.GreaterThanOrEqualTo((ulong)extent));
+            Assert.That(decodedExtent - (ulong)extent, Is.LessThan((ulong)RecordDataHeader.kFlushPageSize));
+            Assert.That(rdhBits, Is.LessThanOrEqualTo((1 << RecordDataHeader.kKeyLengthBits) - 1));
+        }
+
+        static int RoundUpToPage(int length)
+            => ((length + RecordDataHeader.kFlushPageSize - 1) / RecordDataHeader.kFlushPageSize) * RecordDataHeader.kFlushPageSize;
+
         // ── ObjectLogFilePositionInfo exact-size flag bits ───────────────────────────────────────────────
 
         [Test]
@@ -109,6 +185,17 @@ namespace Tsavorite.test.Objects
             ObjectLogFilePositionInfo.SetValueIsExactSize(&word);
             Assert.That(ObjectLogFilePositionInfo.GetValueIsExactSize(&word), Is.True);
             Assert.That(word, Is.EqualTo(ObjectLogFilePositionInfo.kValueIsExactSizeMask));
+        }
+
+        [Test]
+        [Category("Smoke")]
+        public unsafe void KeyHasExtendedSizeHintFlagSetsAndClears()
+        {
+            ulong word = 0;
+            Assert.That(ObjectLogFilePositionInfo.GetKeyHasExtendedSizeHint(&word), Is.False);
+            ObjectLogFilePositionInfo.SetKeyHasExtendedSizeHint(&word);
+            Assert.That(ObjectLogFilePositionInfo.GetKeyHasExtendedSizeHint(&word), Is.True);
+            Assert.That(word, Is.EqualTo(ObjectLogFilePositionInfo.kKeyHasExtendedSizeHintMask));
         }
 
         [Test]
@@ -139,9 +226,8 @@ namespace Tsavorite.test.Objects
             Assert.That(ObjectLogFilePositionInfo.kValueIsExactSizeMask & ObjectLogFilePositionInfo.SegmentAndOffsetMask, Is.EqualTo(0UL));
             Assert.That(ObjectLogFilePositionInfo.kKeyIsExactSizeMask & ObjectLogFilePositionInfo.kReuseObjectIdForSizeMask, Is.EqualTo(0UL));
             Assert.That(ObjectLogFilePositionInfo.kValueIsExactSizeMask & ObjectLogFilePositionInfo.kReuseObjectIdForSizeMask, Is.EqualTo(0UL));
-            // And distinct from the remaining reserved bit.
-            Assert.That(ObjectLogFilePositionInfo.kKeyIsExactSizeMask & ObjectLogFilePositionInfo.kReservedFlagsMask, Is.EqualTo(0UL));
-            Assert.That(ObjectLogFilePositionInfo.kValueIsExactSizeMask & ObjectLogFilePositionInfo.kReservedFlagsMask, Is.EqualTo(0UL));
+            Assert.That(ObjectLogFilePositionInfo.kKeyIsExactSizeMask & ObjectLogFilePositionInfo.kKeyHasExtendedSizeHintMask, Is.EqualTo(0UL));
+            Assert.That(ObjectLogFilePositionInfo.kValueIsExactSizeMask & ObjectLogFilePositionInfo.kKeyHasExtendedSizeHintMask, Is.EqualTo(0UL));
         }
 
         [TestCase(50UL, 3, 4050UL)]

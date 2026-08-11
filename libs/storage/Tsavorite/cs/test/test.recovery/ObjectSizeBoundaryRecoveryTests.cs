@@ -451,7 +451,8 @@ namespace Tsavorite.test.recovery
         [Test]
         [Category("TsavoriteKV"), Category("CheckpointRestore")]
         public Task RecoverOverflowKey(
-            [Values(CheckpointType.Snapshot, CheckpointType.FoldOver)] CheckpointType checkpointType)
-            => RunOverflowKeyRecovery(checkpointType, keySize: 512, numRecords: RecordCountForSize(512));
+            [Values(CheckpointType.Snapshot, CheckpointType.FoldOver)] CheckpointType checkpointType,
+            [Values(512, 5 * 1024 * 1024)] int keySize)
+            => RunOverflowKeyRecovery(checkpointType, keySize, numRecords: RecordCountForSize(keySize));
     }
 }

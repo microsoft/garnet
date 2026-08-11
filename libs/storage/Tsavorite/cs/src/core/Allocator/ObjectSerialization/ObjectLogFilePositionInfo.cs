@@ -34,7 +34,8 @@ namespace Tsavorite.core
         /// <summary>Bit position of the <c>KeyIsExactSize</c> flag in <see cref="word"/>.
         /// When set, the out-of-line KEY's exact byte length (&lt;= <see cref="ObjectIdMap.MaxObjectIdSizeHint"/>) is stored in the top
         /// <see cref="ObjectIdMap.ObjectIdSizeHintBits"/> bits of the objectId slot at keyAddress (no leading ChunkHeader precedes the key
-        /// bytes). When clear, the key is headered/chunked and its length comes from the object-log stream framing. See
+        /// bytes). When clear, the key is headered; its exact 4 KB-page-count read extent is split between raw RDH KeyLength high bits and
+        /// objectId hint low bits, while its exact logical byte length comes from the object-log stream framing. See
         /// website/docs/dev/tsavorite/objectlog-serialization.md.</summary>
         internal const int kKeyIsExactSizeBit = 61;
         internal const ulong kKeyIsExactSizeMask = 1UL << kKeyIsExactSizeBit;
@@ -46,8 +47,11 @@ namespace Tsavorite.core
         internal const int kValueIsExactSizeBit = 60;
         internal const ulong kValueIsExactSizeMask = 1UL << kValueIsExactSizeBit;
 
-        /// <summary>Mask for the reserved flag bit 62 (future use).</summary>
-        internal const ulong kReservedFlagsMask = 0x1UL << 62;
+        /// <summary>Bit position of the <c>KeyHasExtendedSizeHint</c> flag in <see cref="word"/>.
+        /// When set on a headered overflow key, raw RDH KeyLength contains the high 10 bits and the objectId hint contains the low 9 bits
+        /// of the exact 4 KB-page-count read extent. When clear, the key uses the earlier objectId-only page-count/sentinel encoding.</summary>
+        internal const int kKeyHasExtendedSizeHintBit = 62;
+        internal const ulong kKeyHasExtendedSizeHintMask = 1UL << kKeyHasExtendedSizeHintBit;
 
         /// <summary>Object log segment size bits</summary>
         internal int SegmentSizeBits;
@@ -106,6 +110,12 @@ namespace Tsavorite.core
         /// <summary>Read the <c>KeyIsExactSize</c> flag bit on the position word pointed to by <paramref name="wordPtr"/>.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static unsafe bool GetKeyIsExactSize(ulong* wordPtr) => (*wordPtr & kKeyIsExactSizeMask) != 0;
+
+        /// <summary>Set the <c>KeyHasExtendedSizeHint</c> flag on a headered overflow key.</summary>
+        public static unsafe void SetKeyHasExtendedSizeHint(ulong* wordPtr) => *wordPtr |= kKeyHasExtendedSizeHintMask;
+
+        /// <summary>Read the <c>KeyHasExtendedSizeHint</c> flag from an overflow key.</summary>
+        public static unsafe bool GetKeyHasExtendedSizeHint(ulong* wordPtr) => (*wordPtr & kKeyHasExtendedSizeHintMask) != 0;
 
         /// <summary>Set the <c>ValueIsExactSize</c> flag bit on the position word pointed to by <paramref name="wordPtr"/>.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

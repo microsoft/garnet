@@ -569,8 +569,9 @@ namespace Tsavorite.core
         /// (see <c>ChunkedRecordReassembler</c>) directly into their final buffers: the pre-populated overflow key and/or value,
         /// and/or the already-deserialized object value (which can exceed 2 GB). <paramref name="headerSpan"/> holds only the
         /// inline portion (its length is <see cref="GetChunkedRecordInlineSize"/>) - the overflow bytes are NOT in it. Assigns
-        /// each present component directly (no re-allocation or copy). The RDH length fields are left untouched (the out-of-line
-        /// lengths rode in 4-byte wire length prefixes, which the receiver already consumed).
+        /// each present component directly (no re-allocation or copy). Effective RDH lengths remain unchanged. Assigning an overflow key
+        /// normalizes its raw KeyLength from any object-log page-count high bits to <see cref="ObjectIdMap.ObjectIdSize"/>; the out-of-line
+        /// logical lengths rode in 4-byte wire prefixes, which the receiver already consumed.
         /// </summary>
         /// <param name="headerSpan">The record's inline portion.</param>
         /// <param name="keyOverflow">The pre-populated overflow key (used only when the RDH marks the key overflow).</param>

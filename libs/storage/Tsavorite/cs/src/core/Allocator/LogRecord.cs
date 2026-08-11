@@ -226,10 +226,9 @@ namespace Tsavorite.core
         }
 
         /// <summary>Get and set the <see cref="OverflowByteArray"/> if this Key is not pinned; an exception is thrown if it is a pinned pointer (e.g. to a <see cref="SectorAlignedMemory"/>.</summary>
-        /// <remarks>The setter restores <see cref="RecordDataHeader.KeyLength"/> to <see cref="ObjectIdMap.ObjectIdSize"/> if needed
-        /// (e.g. when called on a deserialized record whose KeyLength holds the actual overflow length or sentinel from the disk image).
-        /// The restoration uses a local + <see cref="SetDataHeader"/> for atomicity. No-op for the common in-memory case where
-        /// the raw KeyLength field is already <see cref="ObjectIdMap.ObjectIdSize"/>.</remarks>
+        /// <remarks>The setter restores the raw <see cref="RecordDataHeader.KeyLength"/> field to
+        /// <see cref="ObjectIdMap.ObjectIdSize"/> if a flushed record used those bits for the overflow key's page-count hint. The effective
+        /// KeyLength is ObjectIdSize in either state. The restoration uses a local + <see cref="SetDataHeader"/> for atomicity.</remarks>
         public readonly OverflowByteArray KeyOverflow
         {
             get
@@ -246,9 +245,8 @@ namespace Tsavorite.core
                     ThrowTsavoriteException("set_KeyOverflow should only be called when transferring into a new record with KeyIsInline==false and key.Length==ObjectIdSize");
                 *(int*)dataAddress = objectIdMap.AllocateAndSet(value);
 
-                // Restore KeyLength to ObjectIdSize for the in-memory invariant (atomic single-write via local + SetDataHeader).
-                // No-op when already ObjectIdSize (the common in-memory path); only writes when called on a deserialized record
-                // whose KeyLength held the actual overflow length or sentinel from the disk image.
+                // Clear the on-disk key page-count high bits after replacing the stamped objectId with a live map index.
+                // Effective KeyLength remains ObjectIdSize throughout because KeyIsInline is false.
                 var localDataHeader = DataHeader;
                 if (localDataHeader.GetKeyLengthRaw() != ObjectIdMap.ObjectIdSize)
                 {
@@ -1512,8 +1510,9 @@ namespace Tsavorite.core
         /// <param name="objectLogFilePosition">The starting position of the serialized key and value data in the object log.</param>
         /// <param name="valueObjectLength">The serialized length of the value object if it is an object and not inline or overflow. Overflow
         ///     fields have their length known from the <see cref="OverflowByteArray.Length"/> property.</param>
-        /// <remarks>RDH KeyLength/ValueLength are not object-log metadata; they remain exact inline lengths or the physical objectId-slot
-        /// size. Stamping preserves each slot's low index bits, so in-memory readers are unaffected.</remarks>
+        /// <remarks>The effective RDH KeyLength/ValueLength properties remain exact inline lengths or the physical objectId-slot size.
+        /// For an overflow key, the raw RDH KeyLength bits are also stamped with the high portion of its page-count read hint; because
+        /// KeyIsInline is false, this does not affect physical record sizing. Stamping preserves each objectId slot's low index bits.</remarks>
         internal readonly void SetObjectLogPositionAndSizeHints(in ObjectLogFilePositionInfo objectLogFilePosition, ulong valueObjectLength,
             int keyAlignmentPadding = 0, int valueAlignmentPadding = 0, long valueObjectFirstChunkExtent = 0)
         {
@@ -1535,8 +1534,15 @@ namespace Tsavorite.core
             {
                 var (_, keyAddress) = dataHeader.GetKeyFieldInfo(physicalAddress);
                 var keyLen = objectIdMap.GetOverflowByteArray(*(int*)keyAddress).Length;
-                StampSizeHint(keyLen, RecordDataHeader.OverflowValueOnDiskExtent(keyLen, keyAlignmentPadding),
-                    (int*)keyAddress, objectLogPositionPtr, isKey: true);
+                var keyExtent = RecordDataHeader.OverflowOnDiskExtent(keyLen, keyAlignmentPadding);
+                var keySizeHint = RecordDataHeader.ComputeOverflowKeySizeHint(keyLen, keyExtent, out var rdhKeyLengthBits, out var keyIsExact);
+                *(int*)keyAddress = ObjectIdMap.StampSizeHint(ObjectIdMap.GetIndex(*(int*)keyAddress), keySizeHint);
+                dataHeader.KeyLength = rdhKeyLengthBits;
+                SetDataHeader(dataHeader);
+                if (keyIsExact)
+                    ObjectLogFilePositionInfo.SetKeyIsExactSize(objectLogPositionPtr);
+                else
+                    ObjectLogFilePositionInfo.SetKeyHasExtendedSizeHint(objectLogPositionPtr);
             }
 
             // An object's hint covers its headerless prefix and first framed chunk; continuation headers drive later discovery windows.
@@ -1545,7 +1551,7 @@ namespace Tsavorite.core
             {
                 var initialExtent = dataHeader.ValueIsObject
                     ? valueObjectFirstChunkExtent
-                    : RecordDataHeader.OverflowValueOnDiskExtent(valLen, valueAlignmentPadding);
+                    : RecordDataHeader.OverflowOnDiskExtent(valLen, valueAlignmentPadding);
                 StampSizeHint(valLen, initialExtent, (int*)valueAddress, objectLogPositionPtr, isKey: false);
             }
         }
@@ -1554,7 +1560,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private static void StampSizeHint(long dataLength, long initialOnDiskExtent, int* objectIdPtr, ulong* objectLogPositionPtr, bool isKey)
         {
-            var sizeHint = RecordDataHeader.ComputeObjectIdSizeHint(dataLength, initialOnDiskExtent, out var isExact);
+            var sizeHint = RecordDataHeader.ComputeObjectIdValueSizeHint(dataLength, initialOnDiskExtent, out var isExact);
             *objectIdPtr = ObjectIdMap.StampSizeHint(ObjectIdMap.GetIndex(*objectIdPtr), sizeHint);
             if (isExact)
             {
@@ -1581,6 +1587,32 @@ namespace Tsavorite.core
                 Debug.Assert(DataHeader.KeyIsOverflow, "KeyObjectIdSizeHint is only meaningful for an overflow key");
                 var (_, keyAddress) = DataHeader.GetKeyFieldInfo(physicalAddress);
                 return ObjectIdMap.GetSizeHint(*(int*)keyAddress);
+            }
+        }
+
+        /// <summary>Whether a headered overflow key carries its exact page count across raw RDH KeyLength and the objectId hint.
+        /// When false, the key uses the earlier objectId-only page-count/sentinel encoding.</summary>
+        internal readonly bool KeyHasExtendedSizeHint
+        {
+            get
+            {
+                Debug.Assert(DataHeader.KeyIsOverflow, "KeyHasExtendedSizeHint is only meaningful for an overflow key");
+                return ObjectLogFilePositionInfo.GetKeyHasExtendedSizeHint((ulong*)GetObjectLogPositionAddress(GetOptionalStartAddress()));
+            }
+        }
+
+        /// <summary>The overflow key's initial object-log read extent. A headerless key uses the exact byte count from its objectId hint.
+        /// A current headered key combines that hint with raw RDH KeyLength to recover its exact rounded-up 4 KB page extent; an earlier
+        /// headered key uses the objectId-only page-count/sentinel encoding.</summary>
+        internal readonly ulong KeyInitialReadExtent
+        {
+            get
+            {
+                Debug.Assert(DataHeader.KeyIsOverflow, "KeyInitialReadExtent is only meaningful for an overflow key");
+                var dataHeader = DataHeader;
+                var (_, keyAddress) = dataHeader.GetKeyFieldInfo(physicalAddress);
+                return RecordDataHeader.DecodeOverflowKeyInitialReadExtent(dataHeader.GetKeyLengthRaw(),
+                    ObjectIdMap.GetSizeHint(*(int*)keyAddress), KeyIsExactSize, KeyHasExtendedSizeHint);
             }
         }
 
@@ -1618,7 +1650,7 @@ namespace Tsavorite.core
         /// Used by the snapshot-recovery flush, which copies a record's object bytes from the snapshot object-log to the main object-log
         /// verbatim and must repoint the disk-image record to the main position. The record's objects are NOT deserialized at this point,
         /// so unlike the setters this does not read lengths from objectIdMap; the copied lengths and encoding are unchanged, so ALL existing
-        /// position-word flag bits are preserved (ReuseObjectIdForSize, Key/ValueIsExactSize, reserved) — only the segment+offset is taken from
+        /// position-word flag bits are preserved (ReuseObjectIdForSize, KeyHasExtendedSizeHint, Key/ValueIsExactSize) — only the segment+offset is taken from
         /// the new position. A downlevel record copied verbatim stays downlevel; a hint-format record keeps its size-hint flags to match its
         /// verbatim-copied objectId-slot stamp.
         /// <para>Only safe to call on the disk-image copy of the record.</para>
@@ -1652,11 +1684,7 @@ namespace Tsavorite.core
             var dataHeader = DataHeader;
             var word = *(ulong*)GetObjectLogPositionAddress(GetOptionalStartAddress());
             if (dataHeader.KeyIsOverflow)
-            {
-                var (_, keyAddress) = dataHeader.GetKeyFieldInfo(physicalAddress);
-                keyLength = checked((int)RecordDataHeader.DecodeObjectIdValueInitialReadExtent(
-                    ObjectIdMap.GetSizeHint(*(int*)keyAddress), (word & ObjectLogFilePositionInfo.kKeyIsExactSizeMask) != 0));
-            }
+                keyLength = checked((int)KeyInitialReadExtent);
             else
                 keyLength = 0;
 
@@ -1726,7 +1754,7 @@ namespace Tsavorite.core
             // Converting a downlevel (v2.1) source to the current format is only byte-safe when the current encoding is
             // headerless: a v2.1 object-log stream carries no ChunkHeaders, so its bytes match the current headerless (small overflow) and
             // chunked-object (dense, no per-chunk header) encodings and can be repointed as-is. But a large overflow key (>= the 1023
-            // KeyLength sentinel) or overflow value (> kOutOfLineExactSizeCutoff) that the current format encodes WITH a leading ChunkHeader
+            // key or overflow value (> kOutOfLineExactSizeCutoff) that the current format encodes WITH a leading ChunkHeader
             // has no such header in the downlevel bytes; clearing the flag and setting the hint-with-header encoding here would make the
             // reader consume 8 bytes of the value as a bogus header. Re-serializing to insert the header during recovery (which grows the
             // object log and shifts following positions) is not yet implemented, so fail fast rather than silently corrupt. A
@@ -1765,30 +1793,16 @@ namespace Tsavorite.core
 
         /// <summary>
         /// Called after <see cref="ObjectLogReader{TStoreFunctions}"/> completes deserialization of a record's objects.
-        /// Asserts that the exact physical <see cref="RecordDataHeader.KeyLength"/> / <see cref="RecordDataHeader.ValueLength"/>
-        /// fields remain <see cref="ObjectIdMap.ObjectIdSize"/> for non-inline keys/values.
+        /// Asserts that the raw <see cref="RecordDataHeader.KeyLength"/> / <see cref="RecordDataHeader.ValueLength"/>
+        /// fields have been restored to <see cref="ObjectIdMap.ObjectIdSize"/> for non-inline keys/values.
         /// </summary>
         internal readonly void OnObjectReadComplete()
         {
-            // Simply assert Key and Value lengths. We should always have the check for !InlineKey/Value returning ObjectIdSize.
-            Debug.Assert(DataHeader.KeyIsInline || DataHeader.KeyLength == ObjectIdMap.ObjectIdSize, "Expected KeyLength to always be ObjectIdSize for non-inline key");
-            Debug.Assert(DataHeader.ValueIsInline || DataHeader.ValueLength == ObjectIdMap.ObjectIdSize, "Expected ValueLength to always be ObjectIdSize for non-inline value");
-#if false
             var dataHeader = DataHeader;
-            var modified = false;
-            if (!dataHeader.KeyIsInline && dataHeader.GetKeyLengthRaw() != ObjectIdMap.ObjectIdSize)
-            {
-                dataHeader.KeyLength = ObjectIdMap.ObjectIdSize;
-                modified = true;
-            }
-            if (!dataHeader.ValueIsInline && dataHeader.GetValueLengthRaw() != ObjectIdMap.ObjectIdSize)
-            {
-                dataHeader.ValueLength = ObjectIdMap.ObjectIdSize;
-                modified = true;
-            }
-            if (modified)
-                SetDataHeader(dataHeader);
-#endif
+            Debug.Assert(dataHeader.KeyIsInline || dataHeader.GetKeyLengthRaw() == ObjectIdMap.ObjectIdSize,
+                "Expected raw KeyLength to be restored to ObjectIdSize after reading an overflow key");
+            Debug.Assert(dataHeader.ValueIsInline || dataHeader.GetValueLengthRaw() == ObjectIdMap.ObjectIdSize,
+                "Expected raw ValueLength to be ObjectIdSize after reading an out-of-line value");
         }
 
         internal readonly void OnDeserializationError(bool keyWasSet)
@@ -1807,6 +1821,9 @@ namespace Tsavorite.core
             }
             else if (!localDataHeader.KeyIsInline)
             {
+                // SetKeyIsInline makes the raw field effective, so replace the flushed key page-count high bits with the physical slot
+                // length before changing the discriminator.
+                localDataHeader.KeyLength = ObjectIdMap.ObjectIdSize;
                 localDataHeader.SetKeyIsInline();
             }
 

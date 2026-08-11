@@ -179,7 +179,7 @@ namespace Tsavorite.test.recovery
         static readonly int[] KeyBoundarySizes =
         [
             17, 100, 510, 511, 512, 513, 1023, 1024, 4095, 4096, 65535, 65536, 131071, 131072, 131073,
-            5 * 1024 * 1024
+            (2 * 1024 * 1024) - 1, 2 * 1024 * 1024, (2 * 1024 * 1024) + 1, 5 * 1024 * 1024
         ];
 
         const int OverflowKeyInlineCutoff = 16;                 // keys longer than this go out of line

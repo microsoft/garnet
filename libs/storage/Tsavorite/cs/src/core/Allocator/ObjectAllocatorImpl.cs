@@ -1019,12 +1019,9 @@ namespace Tsavorite.core
                                         // below-sentinel headered overflow value (its page-count hint rounds the header+data up to 4 KB, so it
                                         // OVER-counts safely), and a chunked object value (its size hint over-reads by < one block harmlessly),
                                         // the key/value objectId size hints equal or safely exceed the extent, so use them.
-                                        // But a record whose overflow key/value or object value is at the page-count sentinel
-                                        // (extent >= the sentinel block, so the block-sized hint may UNDER-count the true length),
-                                        // carries a leading ChunkHeader whose length the hint omits: a hint-sized copy would truncate. Size such a
-                                        // record by the successor object record's snapshot position minus this record's -- exactly this record's full
-                                        // key+value+header(s)+alignment/straddle padding verbatim (any trailing over-copy is ignored by the reader,
-                                        // which re-frames from the header).
+                                        // Non-exact extents are read-ahead bounds, not exact copy lengths. An overflow key's page count rounds up;
+                                        // an overflow/object value's sentinel may under-count. Size either case from the successor object record's
+                                        // snapshot position when available, which gives this record's exact key+value+header/alignment extent.
                                         ulong copyObjectLength;
                                         var copyIsLastRecord = false;
                                         if (!logRecord.HasReuseObjectIdForSize
@@ -1045,9 +1042,8 @@ namespace Tsavorite.core
                                                 }
                                             }
 
-                                            // The last object record on the page has no successor to bound its exact extent, and its size hint
-                                            // under-counts a sentinel-sized value. Mark it so the copy follows the record's ChunkHeader framing to
-                                            // the exact on-disk extent (self-extending the read-ahead) instead of a hint-sized copy that truncates.
+                                            // The last object record on the page has no successor to bound its exact extent. Follow its ChunkHeader
+                                            // framing so a rounded-up key hint does not over-copy and a sentinel value hint does not truncate.
                                             if (copyObjectLength == 0)
                                                 copyIsLastRecord = true;
                                         }
@@ -1069,10 +1065,9 @@ namespace Tsavorite.core
                                         ulong copiedLength;
                                         if (copyIsLastRecord)
                                         {
-                                            // No successor bounds this last-on-page record, and its size hint under-counts a sentinel-sized value.
-                                            // Follow the record's ChunkHeader framing (self-extending the snapshot read-ahead) to copy exactly its
-                                            // on-disk extent into the main object-log -- neither truncating a multi-buffer value nor over-copying into
-                                            // the next record. This positions the snapshot read buffers at the record itself.
+                                            // No successor bounds this last-on-page record. Follow the record's ChunkHeader framing to copy exactly
+                                            // its on-disk extent into the main object log, neither truncating a sentinel value nor over-copying the
+                                            // page-rounded tail of a key. This positions the snapshot read buffers at the record itself.
                                             copiedLength = logWriter.CopyRecoveredObjectBytesFollowingFraming(snapshotObjectReader, in logRecord, snapshotPositionWord,
                                                 copyKeyLength, copyValueLength, objectLogTail.SegmentSizeBits);
                                         }

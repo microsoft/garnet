@@ -254,20 +254,20 @@ namespace Tsavorite.test.recovery
                (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions));
 
         /// <summary>
-        /// Snapshot-recovers records whose overflow VALUE is at/above the ~4 MB page-count sentinel, so each carries a leading ChunkHeader
-        /// AND its objectId page-count read hint (one 4 MB block) may UNDER-count the true extent. The snapshot-region recovery copy cannot size
+        /// Snapshot-recovers records whose overflow VALUE exceeds the 4 MB discovery window, so each carries a leading ChunkHeader
+        /// AND its sentinel objectId read hint may UNDER-count the true extent. The snapshot-region recovery copy cannot size
         /// such a record by its size hint; instead it sizes by the successor object record's snapshot position minus
         /// this record's, copying the record's exact raw key+value+header+padding extent verbatim. A trailing small (headerless, at most
-        /// 1023 B) overflow record keeps the headered ones off the last-record-on-page path (still guarded). Recovery uses a small heap budget so
+        /// 511 B) overflow record keeps the headered ones off the last-record-on-page path (still guarded). Recovery uses a small heap budget so
         /// the object page is evicted and thus flushed through the snapshot-copy path. Every value must read back byte-for-byte.
         /// </summary>
         [Test]
         [Category("TsavoriteKV"), Category("CheckpointRestore")]
         public async Task RecoverSnapshotHeaderedOverflowValue()
         {
-            const int headeredLen = (16 * 1024 * 1024) + 5000;   // >= the ~4 MB page-count sentinel -> leading ChunkHeader + under-counting hint
-            const int numHeadered = 3;                           // keys 0..2 are sentinel-headered (non-last); key 3 is a small trailing overflow (last on page)
-            const int smallLen = 1000;                           // <= kOutOfLineExactSizeCutoff (1023) -> headerless (isExactSize), sized exactly by its hint
+            const int headeredLen = (16 * 1024 * 1024) + 5000;   // > 4 MB discovery window -> leading ChunkHeader + under-counting hint
+            const int numHeadered = 3;                           // records 0..2 have sentinel values; record 3 has a small trailing overflow value
+            const int smallLen = 100;                            // <= kOutOfLineExactSizeCutoff (511) -> headerless and exactly sized by its hint
 
             static byte[] MakeValue(int key, int len) { var v = new byte[len]; new Span<byte>(v).Fill((byte)(0x30 + key)); return v; }
 
@@ -332,7 +332,7 @@ namespace Tsavorite.test.recovery
         }
 
         /// <summary>
-        /// FoldOver-recovers multiple records whose overflow VALUE is headered (> 1023 bytes: a leading ChunkHeader precedes the data).
+        /// FoldOver-recovers multiple records whose overflow VALUE is headered (> 511 bytes: a leading ChunkHeader precedes the data).
         /// FoldOver recovery reuses the on-disk object bytes in place and reconstructs each record's object-log position by accumulating
         /// per-record extents; if that accumulation advances by the data length only (omitting the ChunkHeader + any DMA/straddle padding),
         /// the second and later records' reconstructed positions drift earlier and read back corrupted. Every value must read back

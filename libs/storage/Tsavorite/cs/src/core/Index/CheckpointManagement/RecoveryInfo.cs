@@ -13,12 +13,13 @@ namespace Tsavorite.core
     /// </summary>
     public struct HybridLogRecoveryInfo
     {
-        /// <summary>Current checkpoint version written by this build. v8 = the object-log chunk-framing format ("v2.2"); v7 = the
+        /// <summary>Current checkpoint version written by this build. v9 adds the extended overflow-key size-hint discriminator;
+        /// v8 = the object-log chunk-framing format ("v2.2"); v7 = the
         /// downlevel split/objectId-slot object-log encoding ("v2.1", read via <see cref="LogRecord.GetObjectLogRecordStartPositionAndLengths_v21"/>).</summary>
-        public const int CheckpointVersion = 8;
+        public const int CheckpointVersion = 9;
 
-        /// <summary>Oldest checkpoint version this build can recover. v7 (v2.1) checkpoints remain readable; a v2.1 binary (which only
-        /// accepts v7) rejects a v8 checkpoint, so the version acts as the file-level v2.1-vs-v2.2 discriminator.</summary>
+        /// <summary>Oldest checkpoint version this build can recover. v7 and v8 checkpoints remain readable. Increasing the version to v9
+        /// ensures a v8 binary rejects extended overflow-key hints that it cannot decode.</summary>
         public const int MinRecoverableCheckpointVersion = 7;
 
         /// <summary>

@@ -349,7 +349,7 @@ namespace Tsavorite.core
 
         /// <summary>Read the 8-byte <see cref="ChunkHeader"/> that precedes an overflow (key or value) with a leading header, returning the
         /// full overflow length from <see cref="ChunkHeader.currentLength"/> and its O_DIRECT alignment padding via <paramref name="alignmentPadding"/>.
-        /// <para>This submits no separate IO for the header: it is included in the value's initial read extent (or the key's sentinel-capped hint)
+        /// <para>This submits no separate IO for the header: it is included in the component's initial read extent
         /// passed to <see cref="CircularDiskReadBuffer.OnBeginReadRecords"/> — the single-record read path sums those per-component hints (see
         /// <c>ObjectAllocatorImpl.VerifyRecordFromDiskCallback</c>) and multi-record scans size from absolute position differences — so the
         /// header bytes are already present in the read-ahead ring. The header may still span read buffers or a segment boundary, so it is read

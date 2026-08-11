@@ -126,7 +126,8 @@ namespace Tsavorite.core
         /// Write Overflow and Object Keys and values in a <see cref="LogRecord"/> to the device.
         /// </summary>
         /// <remarks>This only writes Overflow and Object Keys and Values; inline portions of the record are written separately by the caller.
-        /// Initial-read hints are stamped into the objectId slots; RDH lengths remain exact inline/physical-slot lengths.</remarks>
+        /// Initial-read hints are stamped into the objectId slots; an overflow key also uses raw RDH KeyLength for its page-count high
+        /// bits. Effective RDH lengths remain exact inline/physical-slot lengths.</remarks>
         /// <returns>The number of bytes written for the value object, if any.</returns>
         public ulong WriteRecordObjects(in OverflowByteArray keyOverflow, in OverflowByteArray valueOverflow, in IHeapObject valueObject)
         {
@@ -259,7 +260,7 @@ namespace Tsavorite.core
         /// <param name="reader">The reader over the snapshot object-log; this method positions it at <paramref name="snapshotPositionWord"/>.</param>
         /// <param name="logRecord">The record whose object bytes are copied (read for its framing flags and length hints).</param>
         /// <param name="snapshotPositionWord">The record's snapshot object-log start position word (segment+offset; flag bits ignored).</param>
-        /// <param name="keyLength">The record's key length hint (exact for a below-sentinel overflow key; the sentinel-capped hint otherwise).</param>
+        /// <param name="keyLength">The record's key initial-read extent: exact bytes for a headerless key, or the exact rounded-up page extent otherwise.</param>
         /// <param name="valueLength">The record's value initial-read-extent hint.</param>
         /// <param name="segmentSizeBits">The object-log segment size in bits, for decoding the position word.</param>
         /// <returns>The exact number of object-log bytes copied (key plus value).</returns>

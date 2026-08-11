@@ -273,15 +273,14 @@ namespace Tsavorite.test.Objects
         [Test, Category(TsavoriteKVTestCategory), Category(LogRecordCategory), Category(SmokeTestCategory), Category(ObjectIdMapCategory)]
         //[Repeat(50)]
         public void LargeObjectDiskWriteReadChunkedValue([Values(
-            IStreamBuffer.BufferSize * 4,                 // exactly 4 buffers (>= the 16 MB ValueLength sentinel): full-buffer count only, 0 final pages
+            IStreamBuffer.BufferSize * 4,                 // exactly 4 buffers: exercises an exact chunk-buffer boundary
             (IStreamBuffer.BufferSize * 4) + 4096,        // 4 buffers + one 4 KB final page
             (IStreamBuffer.BufferSize * 4) + 5000,        // 4 buffers + a non-page-aligned tail (exercises the final-page round-up)
             (IStreamBuffer.BufferSize * 5) + 123456       // 5 buffers + an odd tail
             )] int baseValueSize)
         {
-            // Small (inline) key, big (>= 16 MB ValueLength sentinel) object value: validates the chunked ValueLength encoding
-            // (bit-23 full-buffer count + final-4KB-page count) and the reader's read-ahead extent decode for values whose exact
-            // serialized length does not fit the 24-bit field.
+            // Small inline key and a multi-buffer object value: validates continuation headers and read-ahead across exact and
+            // non-page-aligned chunk boundaries without using RDH ValueLength as object-log metadata.
             using var session = store.NewSession<TestObjectKey, TestLargeObjectInput, TestLargeObjectOutput, Empty, TestLargeObjectFunctions>(new TestLargeObjectFunctions());
             var bContext = session.BasicContext;
 
@@ -689,12 +688,12 @@ namespace Tsavorite.test.Objects
 
         [Test, Category(TsavoriteKVTestCategory), Category(LogRecordCategory), Category(SmokeTestCategory), Category(ObjectIdMapCategory)]
         public void LargeOverflowValueChunkedTest([Values(
-            (IStreamBuffer.BufferSize * 4) + 5000,        // >= the 16 MB ValueLength sentinel: full length carried in a leading ChunkHeader
+            (IStreamBuffer.BufferSize * 4) + 5000,        // multi-buffer payload; full length carried in a leading ChunkHeader
             (IStreamBuffer.BufferSize * 5) + 123456
             )] int valueLength)
         {
             // Recreate the store with MaxInlineValueSize == 0 so the large raw byte value is stored as an overflow value (not an object),
-            // exercising the >= sentinel overflow-value leading-ChunkHeader read path (symmetric with a large overflow key).
+            // exercising a sentinel overflow-value's leading-ChunkHeader and direct-read path.
             store?.Dispose();
             store = new(new()
             {
@@ -752,12 +751,12 @@ namespace Tsavorite.test.Objects
         public void ObjectChunkZeroLengthFirstChunkTest()
         {
             // Drive the object chunk-framing writer to the zero-length-first-chunk boundary: position the chunked object so that, after its
-            // 1023-byte headerless prefix, the first 8-aligned ChunkHeader lands at exactly buffer_end - ChunkHeader.TotalSize (RemainingCapacity
+            // 511-byte headerless prefix, the first 8-aligned ChunkHeader lands at exactly buffer_end - ChunkHeader.TotalSize (RemainingCapacity
             // == 8) with no data room. The writer must emit a zero-length continuation chunk (filling the buffer) and resume the object data in
             // the next buffer; the reader must skip the zero-length chunk and reassemble the object.
             //
             // Overflow byte-span fillers pack densely in the object log (each contributes ChunkHeader.TotalSize + length bytes, no inter-record
-            // padding), so a precise filler set positions the object's start at buffer_end - (1023 + 8). All fillers + the object live on one page
+            // padding), so a precise filler set positions the object's start at buffer_end - (511 + 8). All fillers + the object live on one page
             // => one object-log partial flush that begins at write-buffer position 0, so the object's start offset equals the filler byte total.
             store?.Dispose();
             store = new(new()
@@ -773,19 +772,19 @@ namespace Tsavorite.test.Objects
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 
-            const int prefixLen = RecordDataHeader.kOutOfLineExactSizeCutoff;                 // 1023 (== ObjectLogWriter.ObjectHeaderlessPrefixLen)
+            const int prefixLen = RecordDataHeader.kOutOfLineExactSizeCutoff;                 // 511 (== ObjectLogWriter.ObjectHeaderlessPrefixLen)
             var bufferEnd = IStreamBuffer.BufferSize;                                          // 4 MB (buffer_end for the first buffer of a partial flush)
             var targetObjectValueStart = bufferEnd - (prefixLen + ChunkHeader.TotalSize);     // object starts here => first header at buffer_end - 8
 
-            // Fillers: fixed 128 KB overflow values (buffered: length == MaxCopySpanLen, not DMA'd; headered: > 1023) plus one remainder filler
+            // Fillers: fixed 128 KB overflow values (buffered: length == MaxCopySpanLen, not DMA'd; headered: > 511) plus one remainder filler
             // to reach the target exactly. Each contributes ChunkHeader.TotalSize + length dense object-log bytes.
             const int fixedFillerLen = 128 * 1024;
             var fixedContribution = fixedFillerLen + ChunkHeader.TotalSize;
-            var numFixed = (targetObjectValueStart - (prefixLen + 1)) / fixedContribution;    // leave the remainder headered (> 1023) and non-empty
+            var numFixed = (targetObjectValueStart - (prefixLen + 1)) / fixedContribution;    // leave the remainder headered (> 511) and non-empty
             var fixedTotal = numFixed * fixedContribution;
             var remainderLen = (targetObjectValueStart - fixedTotal) - ChunkHeader.TotalSize;
             Assert.That(remainderLen, Is.GreaterThan(prefixLen).And.LessThanOrEqualTo(fixedFillerLen),
-                "remainder filler must be headered (> 1023) and buffered (<= 128 KB)");
+                "remainder filler must be headered (> 511) and buffered (<= 128 KB)");
             Assert.That(fixedTotal + remainderLen + ChunkHeader.TotalSize, Is.EqualTo(targetObjectValueStart), "filler accounting");
 
             using var session = store.NewSession<TestObjectKey, TestLargeObjectInput, TestLargeObjectOutput, Empty, TestLargeObjectFunctions>(new TestLargeObjectFunctions());
