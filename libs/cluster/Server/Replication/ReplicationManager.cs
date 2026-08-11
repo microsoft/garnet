@@ -1,8 +1,7 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
-using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
@@ -182,7 +181,7 @@ namespace Garnet.cluster
         /// </summary>
         public void EnsureReplication(ClusterSession activeSession, IEnumerable<IClusterSession> allClusterSessions)
         {
-            var pollFrequency = clusterProvider.serverOptions.ClusterReplicationReestablishmentTimeout;
+            var pollFrequency = clusterProvider.storeWrapper.runtimeConfig.GetInt(ServerConfigType.CLUSTER_REPLICATION_REESTABLISHMENT_TIMEOUT);
 
             if (pollFrequency == 0)
             {
@@ -615,100 +614,6 @@ namespace Garnet.cluster
             else
             {
                 logger?.LogWarning("Replication manager starting configuration inconsistent role:{role} replicaOfId:{replicaOfNodeId}", replicaOfNodeId, localNodeRole);
-            }
-        }
-
-        struct AdvanceTimeEvent
-        {
-            public long sequenceNumber;
-            public AofAddress tailAddress;
-        }
-
-        ConcurrentStack<AdvanceTimeEvent> advanceTimeWorkQueue;
-        SingleWaiterAutoResetEvent onAdvanceTimeSignal;
-        SingleWaiterAutoResetEvent onAdvanceTimeWorkerStart;
-
-        /// <summary>
-        /// Process message from primary related to observing a specific tail address snapshot at a given sequence number (timestamp).
-        /// </summary>
-        /// <param name="sequenceNumber">Sequence number associated with observing the given tail address.</param>
-        /// <param name="tailAddress">Tail address snapshot.</param>
-        /// <seealso cref="T:Garnet.cluster.AofSyncDriver.AdvancePhysicalSublogTime"/>
-        /// <returns></returns>
-        public void SignalAdvanceTime(long sequenceNumber, AofAddress tailAddress)
-        {
-            advanceTimeWorkQueue?.Push(new() { sequenceNumber = sequenceNumber, tailAddress = tailAddress });
-            onAdvanceTimeSignal?.Signal();
-        }
-
-        /// <summary>
-        /// Start replica background task to process advance time signals from the primary.
-        /// </summary>
-        /// <exception cref="GarnetException"></exception>
-        public void StartAdvanceTimeBackgroundTask()
-        {
-            // NOTE: At this point the AdvanceTimeReplicaTask should not be running. This applies to both Single and MultiLog cases.
-            // In SingleLog the task should not be spawned and for multi-log it should have been disposed at the beginning of sync.
-            Debug.Assert(!storeWrapper.TaskManager.IsRunning(TaskType.AdvanceTimeReplicaTask), "AdvanceTimeReplicaTask should be not running at this stage!");
-            onAdvanceTimeWorkerStart = new();
-            if (clusterProvider.serverOptions.AofPhysicalSublogCount > 1 &&
-                !clusterProvider.storeWrapper.TaskManager.RegisterAndRun(TaskType.AdvanceTimeReplicaTask, (token) => AdvanceTimeWorkerAsync(token)))
-            {
-                logger?.LogError("Failed to register AdvanceTime task at the replica");
-                throw new GarnetException("Failed to register AdvanceTime task at the replica");
-            }
-
-            _ = onAdvanceTimeWorkerStart?.WaitAsync().AsTask().WaitAsync(storeWrapper.serverOptions.ReplicaSyncTimeout);
-
-            async Task AdvanceTimeWorkerAsync(CancellationToken token)
-            {
-                var appendOnlyFile = storeWrapper.appendOnlyFile;
-                advanceTimeWorkQueue = new();
-                onAdvanceTimeSignal = new() { RunContinuationsAsynchronously = true };
-                onAdvanceTimeWorkerStart.Signal();
-                try
-                {
-                    while (!token.IsCancellationRequested)
-                    {
-                        var advanceTimeSignalTask = onAdvanceTimeSignal.WaitAsync().AsTask();
-                        await advanceTimeSignalTask.WaitAsync(token).ConfigureAwait(false);
-
-                        while (advanceTimeWorkQueue.TryPop(out var result))
-                        {
-                            var observationSequenceNumber = result.sequenceNumber;
-                            var observedTailAddress = result.tailAddress;
-                            var converged = false;
-                            while (!converged)
-                            {
-                                converged = true;
-                                for (var i = 0; i < observedTailAddress.Length; i++)
-                                {
-                                    // Move logical time forward for sublog if the replay has progressed at least until the tailAddress
-                                    if (observedTailAddress[i] <= replicationOffset[i])
-                                        appendOnlyFile.readConsistencyManager.UpdatePhysicalSublogMaxSequenceNumber(i, observationSequenceNumber);
-                                    else
-                                        converged = false;
-                                }
-                                await Task.Delay(storeWrapper.serverOptions.AofTailWitnessFreqMs, token).ConfigureAwait(false);
-                            }
-                        }
-                    }
-                }
-                catch (TaskCanceledException) when (token.IsCancellationRequested)
-                {
-                    // Suppress the exception if the task was cancelled because of store wrapper disposal
-                }
-                catch (Exception ex)
-                {
-                    logger?.LogError(ex, "Failed at {method}", nameof(AdvanceTimeWorkerAsync));
-                }
-                finally
-                {
-                    advanceTimeWorkQueue.Clear();
-                    advanceTimeWorkQueue = null;
-                    onAdvanceTimeWorkerStart = null;
-                    onAdvanceTimeSignal = null;
-                }
             }
         }
     }

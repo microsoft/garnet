@@ -50,6 +50,7 @@
     <Project Path="playground/CommandInfoUpdater/CommandInfoUpdater.csproj" />
     <Project Path="playground/Embedded.perftest/Embedded.perftest.csproj" />
     <Project Path="playground/GarnetClientStress/GarnetClientStress.csproj" />
+    <Project Path="playground/LightEpochLitmus/LightEpochLitmus.csproj" />
     <Project Path="playground/MigrateBench/MigrateBench.csproj" />
     <Project Path="playground/SampleModule/SampleModule.csproj" />
     <Project Path="playground/TstRunner/TstRunner.csproj" />
@@ -97,5 +98,6 @@
     <Project Path="test/cluster/Garnet.test.cluster.replication.tls/Garnet.test.cluster.replication.tls.csproj" />
     <Project Path="test/cluster/Garnet.test.cluster.vectorsets/Garnet.test.cluster.vectorsets.csproj" />
     <Project Path="test/cluster/Garnet.test.cluster.replication.rangeindex/Garnet.test.cluster.replication.rangeindex.csproj" />
+    <Project Path="test/cluster/Garnet.test.cluster.replication.vectorsets/Garnet.test.cluster.replication.vectorsets.csproj" />
   </Folder>
 </Solution>

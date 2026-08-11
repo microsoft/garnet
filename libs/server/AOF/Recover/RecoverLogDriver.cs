@@ -19,6 +19,7 @@ namespace Garnet.server
     /// <param name="aofProcessor">Processor responsible for handling append-only file operations.</param>
     /// <param name="appendOnlyFile">The append-only file to be scanned for recovery.</param>
     /// <param name="serverOptions">Configuration options for the server.</param>
+    /// <param name="runtimeConfig">Runtime-adjustable server configuration.</param>
     /// <param name="dbId">Identifier of the database we are recovering.</param>
     /// <param name="physicalSublogIdx">Index of the physical sublog to scan.</param>
     /// <param name="startAddress">Start address in the append-only file for recovery.</param>
@@ -29,6 +30,7 @@ namespace Garnet.server
         AofProcessor aofProcessor,
         GarnetAppendOnlyFile appendOnlyFile,
         GarnetServerOptions serverOptions,
+        RuntimeServerConfig runtimeConfig,
         int dbId,
         int physicalSublogIdx,
         long startAddress,
@@ -39,6 +41,7 @@ namespace Garnet.server
         readonly int physicalSublogIdx = physicalSublogIdx;
         readonly AofProcessor aofProcessor = aofProcessor;
         readonly GarnetServerOptions serverOptions = serverOptions;
+        readonly RuntimeServerConfig runtimeConfig = runtimeConfig;
         readonly GarnetAppendOnlyFile appendOnlyFile = appendOnlyFile;
         readonly TsavoriteLogScanSingleIterator replayIterator = appendOnlyFile.Log.ScanSingle(physicalSublogIdx, startAddress, untilAddress, scanUncommitted: true, recover: false, logger: logger);
         readonly TsavoriteLog physicalSublog = appendOnlyFile.Log.GetSubLog(physicalSublogIdx);
@@ -199,7 +202,7 @@ namespace Garnet.server
                     {
                         await replayIterator.BulkConsumeAllAsync(
                             this,
-                            serverOptions.ReplicaSyncDelayMs,
+                            runtimeConfig.GetInt(ServerConfigType.REPLICA_SYNC_DELAY),
                             maxChunkSize: 1 << 20,
                             cts.Token).ConfigureAwait(false);
 

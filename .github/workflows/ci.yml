@@ -159,7 +159,7 @@ jobs:
         os: [ ubuntu-latest, windows-latest ]
         framework: [ 'net8.0' , 'net10.0']
         configuration: [ 'Debug', 'Release' ]
-        test: [ 'Garnet.test.cluster', 'Garnet.test.cluster.migrate', 'Garnet.test.cluster.migrate.rangeindex', 'Garnet.test.cluster.replication', 'Garnet.test.cluster.replication.tls', 'Garnet.test.cluster.replication.disklesssync', 'Garnet.test.cluster.replication.rangeindex', 'Garnet.test.cluster.vectorsets', 'Garnet.test.cluster.multilog' ]
+        test: [ 'Garnet.test.cluster', 'Garnet.test.cluster.migrate', 'Garnet.test.cluster.migrate.rangeindex', 'Garnet.test.cluster.replication', 'Garnet.test.cluster.replication.tls', 'Garnet.test.cluster.replication.disklesssync', 'Garnet.test.cluster.replication.rangeindex', 'Garnet.test.cluster.replication.vectorsets', 'Garnet.test.cluster.vectorsets', 'Garnet.test.cluster.multilog' ]
     if: needs.changes.outputs.garnet == 'true'
     steps:
       - name: Check out code
@@ -222,32 +222,32 @@ jobs:
         os: [ ubuntu-latest, windows-latest ]
         framework: [ 'net8.0', 'net10.0' ]
         configuration: [ 'Debug', 'Release' ]
-        test: [ 'Tsavorite.test', 'Tsavorite.test.recordops', 'Tsavorite.test.session', 'Tsavorite.test.session.context', 'Tsavorite.test.hlog', 'Tsavorite.test.recovery' ]
+        test: [ 'Tsavorite.test', 'Tsavorite.test.recordops', 'Tsavorite.test.session', 'Tsavorite.test.session.context', 'Tsavorite.test.hlog', 'Tsavorite.test.recovery', 'Tsavorite.test.epoch' ]
     if: needs.changes.outputs.tsavorite == 'true'
     steps:
       - name: Check out code
         uses: actions/checkout@v6
       - name: Set environment variable for Linux
         run: echo "RunAzureTests=yes" >> $GITHUB_ENV
-        if: ${{ matrix.os == 'ubuntu-latest' && matrix.test != 'Tsavorite.test.recordops' && matrix.test != 'Tsavorite.test.session' && matrix.test != 'Tsavorite.test.session.context' && matrix.test != 'Tsavorite.test.recovery' }}
+        if: ${{ matrix.os == 'ubuntu-latest' && matrix.test != 'Tsavorite.test.recordops' && matrix.test != 'Tsavorite.test.session' && matrix.test != 'Tsavorite.test.session.context' && matrix.test != 'Tsavorite.test.recovery' && matrix.test != 'Tsavorite.test.epoch' }}
       - name: Set environment variable for Windows
         run: echo ("RunAzureTests=yes") >> $env:GITHUB_ENV
-        if: ${{ matrix.os == 'windows-latest' && matrix.test != 'Tsavorite.test.recordops' && matrix.test != 'Tsavorite.test.session' && matrix.test != 'Tsavorite.test.session.context' && matrix.test != 'Tsavorite.test.recovery' }}
+        if: ${{ matrix.os == 'windows-latest' && matrix.test != 'Tsavorite.test.recordops' && matrix.test != 'Tsavorite.test.session' && matrix.test != 'Tsavorite.test.session.context' && matrix.test != 'Tsavorite.test.recovery' && matrix.test != 'Tsavorite.test.epoch' }}
       - name: Setup .NET
         uses: actions/setup-dotnet@v5
       - name: Setup Node.js for Azurite
-        if: ${{ matrix.test != 'Tsavorite.test.recordops' && matrix.test != 'Tsavorite.test.session' && matrix.test != 'Tsavorite.test.session.context' && matrix.test != 'Tsavorite.test.recovery' }}
+        if: ${{ matrix.test != 'Tsavorite.test.recordops' && matrix.test != 'Tsavorite.test.session' && matrix.test != 'Tsavorite.test.session.context' && matrix.test != 'Tsavorite.test.recovery' && matrix.test != 'Tsavorite.test.epoch' }}
         uses: actions/setup-node@v6
         with:
           node-version: 22
       - name: Cache Azurite
-        if: ${{ matrix.test != 'Tsavorite.test.recordops' && matrix.test != 'Tsavorite.test.session' && matrix.test != 'Tsavorite.test.session.context' && matrix.test != 'Tsavorite.test.recovery' }}
+        if: ${{ matrix.test != 'Tsavorite.test.recordops' && matrix.test != 'Tsavorite.test.session' && matrix.test != 'Tsavorite.test.session.context' && matrix.test != 'Tsavorite.test.recovery' && matrix.test != 'Tsavorite.test.epoch' }}
         uses: actions/cache@v5
         with:
           path: ${{ runner.os == 'Windows' && '%APPDATA%\npm-cache' || '~/.npm' }}
           key: azurite-${{ runner.os }}
       - name: Install and Run Azurite
-        if: ${{ matrix.test != 'Tsavorite.test.recordops' && matrix.test != 'Tsavorite.test.session' && matrix.test != 'Tsavorite.test.session.context' && matrix.test != 'Tsavorite.test.recovery' }}
+        if: ${{ matrix.test != 'Tsavorite.test.recordops' && matrix.test != 'Tsavorite.test.session' && matrix.test != 'Tsavorite.test.session.context' && matrix.test != 'Tsavorite.test.recovery' && matrix.test != 'Tsavorite.test.epoch' }}
         shell: bash
         run: |
           npm install -g azurite
@@ -271,6 +271,7 @@ jobs:
             'Tsavorite.test.session.context' = 'libs/storage/Tsavorite/cs/test/test.session.context'
             'Tsavorite.test.hlog' = 'libs/storage/Tsavorite/cs/test/test.hlog'
             'Tsavorite.test.recovery' = 'libs/storage/Tsavorite/cs/test/test.recovery'
+            'Tsavorite.test.epoch' = 'libs/storage/Tsavorite/cs/test/test.epoch'
           }
           $dir = $tsavoriteDirMap['${{ matrix.test }}']
           echo "TSAVORITE_TEST_DIR=$dir" >> $env:GITHUB_ENV

@@ -372,6 +372,28 @@ namespace Garnet.test
         }
 
         [Test]
+        public void LREMWithIntMinValueCountRemovesAllMatches()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var key = "List_Test_LREM_MinValue";
+            db.KeyDelete(key);
+            db.ListRightPush(key, ["a", "b", "a", "c", "a"]);
+
+            // |int.MinValue| does not fit in an int; before the fix Math.Abs threw
+            // OverflowException out of ProcessMessages and the session was dropped.
+            var removed = db.ListRemove(key, "a", int.MinValue);
+            ClassicAssert.AreEqual(3, removed);
+
+            var remaining = db.ListRange(key, 0, -1);
+            ClassicAssert.AreEqual(new RedisValue[] { "b", "c" }, remaining);
+
+            // The connection must still be usable.
+            ClassicAssert.AreEqual("PONG", db.Execute("PING").ToString());
+        }
+
+        [Test]
         public void MultiLPUSHAndLPOPV1()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
@@ -656,6 +678,42 @@ namespace Garnet.test
             ClassicAssert.AreEqual(2, result.Length);
             ClassicAssert.IsTrue(result[0].ToString().Equals("f"));
             ClassicAssert.IsTrue(result[1].ToString().Equals("g"));
+
+            // A stop that is still negative after adding the list length addresses nothing,
+            // so the reply must be an empty array and not the head of the list
+            var key3 = "mylist3";
+            _ = db.ListRightPush(key3, "a");
+            _ = db.ListRightPush(key3, "b");
+            _ = db.ListRightPush(key3, "c");
+
+            result = db.ListRange(key3, 0, -3);
+            ClassicAssert.AreEqual(1, result.Length);
+            ClassicAssert.IsTrue(result[0].ToString().Equals("a"));
+
+            result = db.ListRange(key3, 0, -4);
+            ClassicAssert.AreEqual(0, result.Length);
+
+            result = db.ListRange(key3, 0, -5);
+            ClassicAssert.AreEqual(0, result.Length);
+
+            result = db.ListRange(key3, -5, -4);
+            ClassicAssert.AreEqual(0, result.Length);
+
+            result = db.ListRange(key3, 1, -10);
+            ClassicAssert.AreEqual(0, result.Length);
+
+            var key5 = "mylist5";
+            _ = db.ListRightPush(key5, "a");
+            _ = db.ListRightPush(key5, "b");
+            _ = db.ListRightPush(key5, "c");
+            _ = db.ListRightPush(key5, "d");
+            _ = db.ListRightPush(key5, "e");
+
+            result = db.ListRange(key5, 0, -6);
+            ClassicAssert.AreEqual(0, result.Length);
+
+            result = db.ListRange(key5, 0, -7);
+            ClassicAssert.AreEqual(0, result.Length);
         }
 
         [Test]
@@ -1458,6 +1516,23 @@ namespace Garnet.test
             // The connection must survive, and the list must be untouched.
             ClassicAssert.AreEqual("PONG", db.Execute("PING").ToString());
             ClassicAssert.AreEqual(3, db.ListLength(key));
+
+            // A negative numkeys used to reach 'new PinnedSpanByte[numKeys]' and throw out of the
+            // command handler, which tore down the connection without writing any reply. A zero
+            // numkeys did not throw, but answered a null array where Redis replies with an error.
+            using var lightClientRequest = TestUtils.CreateRequest();
+            var expectedResponse = $"-{string.Format(CmdStrings.GenericErrShouldBeGreaterThanZero, "numkeys")}\r\n+PONG\r\n";
+
+            var response = lightClientRequest.SendCommands("LMPOP -1 a b", "PING");
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            response = lightClientRequest.SendCommands("LMPOP 0 LEFT COUNT 5", "PING");
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            expectedResponse = $"-{string.Format(CmdStrings.GenericParamShouldBeGreaterThanZero, "numkeys")}\r\n+PONG\r\n";
+
+            response = lightClientRequest.SendCommands("BLMPOP 0 -1 a b", "PING");
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
 
         [Test]

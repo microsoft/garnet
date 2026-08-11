@@ -86,7 +86,8 @@ namespace Garnet.cluster
                 tlsOptions,
                 sendPageSize: opts.DisablePubSub ? defaultSendPageSize : Math.Max(defaultSendPageSize, (int)opts.PubSubPageSizeBytes()),
                 maxOutstandingTasks: defaultMaxOutstandingTask,
-                timeoutMilliseconds: GetClientTimeoutMilliseconds(opts.ClusterTimeout),
+                timeoutMilliseconds: GetClientTimeoutMilliseconds(
+                    clusterProvider.storeWrapper.runtimeConfig.GetInt(ServerConfigType.CLUSTER_NODE_TIMEOUT)),
                 authUsername: clusterProvider.clusterManager.clusterProvider.ClusterUsername,
                 authPassword: clusterProvider.clusterManager.clusterProvider.ClusterPassword,
                 epoch: epoch,

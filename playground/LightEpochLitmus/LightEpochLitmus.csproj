@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- See README.md. -->
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>Tsavorite.epoch.litmus</RootNamespace>
+    <SignAssembly>true</SignAssembly>
+    <AssemblyOriginatorKeyFile>../../Garnet.snk</AssemblyOriginatorKeyFile>
+    <DelaySign>false</DelaySign>
+    <IsPackable>false</IsPackable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <NoWarn>1701;1702;1591;IDE0130;IDE0065;IDE0007;IDE0048</NoWarn>
+
+    <ServerGarbageCollection>true</ServerGarbageCollection>
+    <ConcurrentGarbageCollection>false</ConcurrentGarbageCollection>
+    <TieredCompilation>false</TieredCompilation>
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\libs\storage\Tsavorite\cs\src\core\Tsavorite.core.csproj" />
+  </ItemGroup>
+
+</Project>
