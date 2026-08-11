@@ -475,6 +475,9 @@ The caller obtains the record's start position and initial key/value extents fro
 - A page load/recovery pass scans object-bearing records first and uses the span from the first object position through
   the last record's initial extent.
 - A following record's position in the same object-log address space is a safe read-ahead bound.
+- Recovery Pass 2 may use the next included page's lowest object-log position instead of the current page's
+  last-record hint. It does so only when both pages select the same main or snapshot object-log device; the
+  hybrid-log/snapshot boundary never supplies a cross-space bound.
 
 Main object-log reads use `objectLogTail` as a hard logical end once that tail is set. During early recovery an unset
 main tail disables this bound. Snapshot object-log readers currently pass a position containing `NotSet`, because the
@@ -765,12 +768,14 @@ Indentation is call depth. Component branches and lifetime changes are included 
 ### 9.4 Recovery Pass 2 / page load
 
 - `Recovery.RecoveryLoadObjectsPass2(...)`
+  - obtain the next included page's lowest object-log position only when both pages use the same object-log address space
   - `ObjectAllocatorImpl.LoadObjectsForRecoveryPass2(...)`
     - `DeserializeObjectsOnPage(...)`
-      - first pass: establish same-space object-log range
+      - first pass: establish the same-space range, using the next-page position as the fixed read-ahead endpoint when available
       - `OnBeginReadRecords(...)`
       - second pass, each valid object record
         - `ReadRecordObjects(...)`
+        - parsed framing independently sets the authoritative dynamic endpoint
         - `TrackRecoveredObjectRecord(...)`
       - `OnEndReadRecords()`
 

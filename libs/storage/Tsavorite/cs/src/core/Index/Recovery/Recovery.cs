@@ -1022,9 +1022,10 @@ namespace Tsavorite.core
                         continue;
 
                     var objectLogDevice = page >= snapshotBoundaryPage ? snapshotObjectLogDevice : null;
+                    var nextPageObjectLogPosition = GetNextPageObjectLogPosition(page, endPage, snapshotBoundaryPage);
                     var pageFromAddress = page == startPage ? fromAddress : hlogBase.GetFirstValidLogicalAddressOnPage(page);
                     var pageUntilAddress = page == endPage - 1 ? untilAddress : hlogBase.GetLogicalAddressOfStartOfPage(page + 1);
-                    hlogBase.LoadObjectsForRecoveryPass2(page, pageFromAddress, pageUntilAddress, objectLogDevice);
+                    hlogBase.LoadObjectsForRecoveryPass2(page, pageFromAddress, pageUntilAddress, objectLogDevice, nextPageObjectLogPosition);
                 }
                 return;
             }
@@ -1044,6 +1045,7 @@ namespace Tsavorite.core
                     continue;
 
                 var objectLogDevice = page >= snapshotBoundaryPage ? snapshotObjectLogDevice : null;
+                var nextPageObjectLogPosition = GetNextPageObjectLogPosition(page, endPage, snapshotBoundaryPage);
 
                 // Enforce MinEvictionHeadAddressLag: clamp pageFromAddress
                 if (pageFromAddress > maxHeadAddress)
@@ -1052,7 +1054,7 @@ namespace Tsavorite.core
                 var totalPageObjectSize = hlogBase.CalculatePageObjectSizes(page, pageFromAddress, pageUntilAddress);
                 if (totalPageObjectSize == 0)
                 {
-                    hlogBase.LoadObjectsForRecoveryPass2(page, pageFromAddress, pageUntilAddress, objectLogDevice);
+                    hlogBase.LoadObjectsForRecoveryPass2(page, pageFromAddress, pageUntilAddress, objectLogDevice, nextPageObjectLogPosition);
                     continue;
                 }
 
@@ -1080,7 +1082,7 @@ namespace Tsavorite.core
 
                 // Load objects, using per-record budget checking via DeserializeObjectsOnPage.
                 // The method handles all records from pageCutoff to pageUntilAddress.
-                hlogBase.LoadObjectsForRecoveryPass2(page, pageCutoff, pageUntilAddress, objectLogDevice);
+                hlogBase.LoadObjectsForRecoveryPass2(page, pageCutoff, pageUntilAddress, objectLogDevice, nextPageObjectLogPosition);
 
                 // After loading, recheck budget. If over budget, evict from headAddress up to and including loaded records.
                 if (hlogBase.logSizeTracker.IsOverBudget && recoveryStatus.headAddress < maxHeadAddress)
@@ -1098,6 +1100,7 @@ namespace Tsavorite.core
 
                         recoveryStatus.headAddress = hlogBase.GetFirstValidLogicalAddressOnPage(currentHeadPage + 1);
                     }
+
                 }
 
                 // Advance headAddress to the cutoff ONLY when the current page is the head page (all pages below it were evicted above, so
@@ -1112,6 +1115,14 @@ namespace Tsavorite.core
                 // If headAddress is on or above the current page, we're done
                 if (recoveryStatus.headAddress >= hlogBase.GetFirstValidLogicalAddressOnPage(page))
                     break;
+            }
+
+            ObjectLogFilePositionInfo GetNextPageObjectLogPosition(long page, long exclusiveEndPage, long snapshotBoundary)
+            {
+                var nextPage = page + 1;
+                if (nextPage >= exclusiveEndPage || (page < snapshotBoundary) != (nextPage < snapshotBoundary))
+                    return new();
+                return hlogBase.GetLowestObjectLogPositionForPage(nextPage);
             }
         }
 

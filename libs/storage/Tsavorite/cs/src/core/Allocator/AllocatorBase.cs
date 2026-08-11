@@ -36,7 +36,12 @@ namespace Tsavorite.core
         /// <summary>Calculate the total serialized object size on a loaded page. Only implemented by ObjectAllocator.</summary>
         internal virtual long CalculatePageObjectSizes(long page, long startAddress, long untilAddress) => 0;
         /// <summary>Load objects for records on an already-loaded page for recovery pass 2.</summary>
-        internal virtual void LoadObjectsForRecoveryPass2(long page, long fromAddress, long untilAddress, IDevice objectLogDevice) { }
+        internal virtual void LoadObjectsForRecoveryPass2(long page, long fromAddress, long untilAddress, IDevice objectLogDevice,
+            ObjectLogFilePositionInfo nextPageObjectLogPosition) { }
+
+        /// <summary>Return the first object-log position recorded in the header of <paramref name="page"/>, or an unset position when
+        /// this allocator has no object log or the page contains no out-of-line records.</summary>
+        internal virtual ObjectLogFilePositionInfo GetLowestObjectLogPositionForPage(long page) => new();
         /// <summary>Compute the hash code of a record's overflow key during recovery Pass 1 (index build) by reading the key bytes from
         /// the object log, since the objectIdMap is not yet populated so <see cref="LogRecord.Key"/> cannot resolve it. Only implemented
         /// by the object allocator; other allocators never have overflow keys, so this is never called for them.</summary>

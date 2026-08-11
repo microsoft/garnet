@@ -601,6 +601,16 @@ namespace Tsavorite.core
         internal override int LowestObjectLogSegmentInUse => lowestObjectLogSegmentInUse;
         /// <inheritdoc/>
         internal override ObjectLogFilePositionInfo GetObjectLogTail() => objectLogTail;
+
+        /// <inheritdoc/>
+        internal override ObjectLogFilePositionInfo GetLowestObjectLogPositionForPage(long page)
+        {
+            var pageIndex = GetPageIndexForPage(page);
+            if (!IsAllocated(pageIndex))
+                return new();
+            var pagePhysicalAddress = GetPhysicalAddress(GetLogicalAddressOfStartOfPage(page));
+            return ((PageHeader*)pagePhysicalAddress)->GetLowestObjectLogPosition(objectLogTail.SegmentSizeBits);
+        }
         /// <inheritdoc/>
         internal override void SetObjectLogTail(ObjectLogFilePositionInfo tail)
         {
@@ -1370,7 +1380,8 @@ namespace Tsavorite.core
         /// <param name="maxAddressOffsetOnPage">Maximum offset on the page (PageSize or less for partial pages)</param>
         /// <param name="objectIdMap">The ObjectIdMap to use for deserialized objects</param>
         /// <param name="readBuffers">The circular read buffers for object log reading</param>
-        private void DeserializeObjectsOnPage(long pageStartPhysicalAddress, long maxAddressOffsetOnPage, ObjectIdMap objectIdMap, CircularDiskReadBuffer readBuffers)
+        private void DeserializeObjectsOnPage(long pageStartPhysicalAddress, long maxAddressOffsetOnPage, ObjectIdMap objectIdMap,
+            CircularDiskReadBuffer readBuffers, ObjectLogFilePositionInfo nextPageObjectLogPosition = default)
         {
             ObjectLogFilePositionInfo startPosition = new(), endPosition = new();
             var endKeyLength = 0;
@@ -1396,7 +1407,17 @@ namespace Tsavorite.core
             if (!startPosition.IsSet)
                 return;
 
-            endPosition.Advance((ulong)endKeyLength + endValueLength);
+            if (nextPageObjectLogPosition.HasData)
+            {
+                // This is a same-device read-ahead endpoint, not an authoritative record extent. Per-component framing may tighten or
+                // extend its dynamic endpoint independently.
+                _ = nextPageObjectLogPosition - endPosition;
+                endPosition = nextPageObjectLogPosition;
+            }
+            else
+            {
+                endPosition.Advance((ulong)endKeyLength + endValueLength);
+            }
             var totalBytesToRead = endPosition - startPosition;
 
             // Second pass: deserialize objects
@@ -1510,7 +1531,8 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc/>
-        internal override void LoadObjectsForRecoveryPass2(long page, long fromAddress, long untilAddress, IDevice objectLogDevice)
+        internal override void LoadObjectsForRecoveryPass2(long page, long fromAddress, long untilAddress, IDevice objectLogDevice,
+            ObjectLogFilePositionInfo nextPageObjectLogPosition)
         {
             var pageStartAddress = GetFirstValidLogicalAddressOnPage(page);
             var address = Math.Max(fromAddress, pageStartAddress);
@@ -1522,7 +1544,7 @@ namespace Tsavorite.core
             var maxOffset = endAddress - GetLogicalAddressOfStartOfPage(page);
             var objectIdMapToUse = objectPages[page % BufferSize].objectIdMap;
             using var readBuffers = CreateCircularReadBuffers(objectLogDevice, logger);
-            DeserializeObjectsOnPage(pagePhysicalAddress, maxOffset, objectIdMapToUse, readBuffers);
+            DeserializeObjectsOnPage(pagePhysicalAddress, maxOffset, objectIdMapToUse, readBuffers, nextPageObjectLogPosition);
         }
 
         /// <inheritdoc/>
