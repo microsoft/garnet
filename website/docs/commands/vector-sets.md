@@ -105,8 +105,7 @@ verbatim in search results.
 ### Cluster
 
 Vector Sets participate in cluster sharding by their key. `MIGRATE` is supported and ships both the index stub and
-all internal per-element data. The number of simultaneously open Vector Sets on a single instance is currently capped
-(approximately 15) by an internal context metadata limit.
+all internal per-element data.
 
 ---
 
@@ -637,7 +636,7 @@ Or in `garnet.conf`:
 | Maximum `COUNT` | 100,000,000 | `VectorManager.MaxRetrieveCount` |
 | Maximum `FILTER-EF` | 256 | `VectorManager.MaxFilteringScaleFactor` |
 | Maximum elements per Vector Set | 2³² − 1 | DiskANN limit |
-| Concurrent Vector Sets per instance | ~15 | Internal context metadata limit |
+| Concurrent Vector Sets per instance | (2³² − 8)/8 (approx. 500 million) | Internal context metadata limit |
 | Empty Vector Set keys | not allowed | Returns `ERR Vector Set key cannot be empty` (preview restriction) |
 
 ---
