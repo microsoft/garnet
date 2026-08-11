@@ -670,6 +670,12 @@ namespace Garnet.server
 
             lock (this)
             {
+                // Vector sets disabled, or not yet initialized: no namespaces exist to migrate.
+                if (contextMetadatas is null)
+                {
+                    return null;
+                }
+
                 for (var i = 0; i < contextMetadatas.Length; i++)
                 {
                     var offset = ContextMetadata.OffsetForContextMetadata(i);
