@@ -820,14 +820,17 @@ namespace Garnet.server
                 DeviceType = Devices.GetDefaultDeviceType();
             DeviceFactoryCreator ??= new LocalStorageNamedDeviceFactoryCreator(
                 deviceType: DeviceType,
-                ioBackend: DeviceIoBackend,
                 numCompletionThreads: DeviceCompletionThreads,
-                numIoContexts: DeviceIoContexts,
-                queueDepth: DeviceQueueDepth,
-                uringSqPoll: DeviceUringSqPoll,
-                uringSqPollIdleMs: DeviceUringSqPollIdleMs,
                 throttleLimit: DeviceThrottleLimit > 0 ? DeviceThrottleLimit : null,
-                logger: logger);
+                logger: logger,
+                nativeDeviceOptions: new NativeDeviceOptions
+                {
+                    IoBackend = DeviceIoBackend,
+                    NumIoContexts = DeviceIoContexts,
+                    QueueDepth = DeviceQueueDepth,
+                    UringSqPoll = DeviceUringSqPoll,
+                    UringSqPollIdleMs = DeviceUringSqPollIdleMs,
+                });
             if (DeviceType == DeviceType.Native && OperatingSystem.IsLinux())
                 logger?.LogInformation("Using device type {deviceType} (io-backend={ioBackend}, completion-threads={ct}, io-contexts={ioc}, queue-depth={qd}, throttle-limit={tl}, uring-sqpoll={sqpoll})", DeviceType, DeviceIoBackend, DeviceCompletionThreads, DeviceIoContexts > 0 ? DeviceIoContexts.ToString() : "device-default", DeviceQueueDepth > 0 ? DeviceQueueDepth.ToString() : "device-default", DeviceThrottleLimit > 0 ? DeviceThrottleLimit.ToString() : "device-default", DeviceIoBackend == NativeStorageDevice.IoBackend.Uring && DeviceUringSqPoll ? "on" : "off");
             else

@@ -972,14 +972,17 @@ namespace Garnet
                 DeviceFactoryCreator = deviceType == DeviceType.AzureStorage ? azureFactoryCreator()
                     : new LocalStorageNamedDeviceFactoryCreator(
                         deviceType: deviceType,
-                        ioBackend: DeviceIoBackend ?? NativeStorageDevice.IoBackend.Default,
                         numCompletionThreads: DeviceCompletionThreads ?? 4,
-                        numIoContexts: DeviceIoContexts ?? 0,
-                        queueDepth: DeviceQueueDepth ?? 0,
-                        uringSqPoll: DeviceUringSqPoll ?? false,
-                        uringSqPollIdleMs: DeviceUringSqPollIdleMs ?? 0,
                         throttleLimit: DeviceThrottleLimit is > 0 ? DeviceThrottleLimit : null,
-                        logger: logger),
+                        logger: logger,
+                        nativeDeviceOptions: new NativeDeviceOptions
+                        {
+                            IoBackend = DeviceIoBackend ?? NativeStorageDevice.IoBackend.Default,
+                            NumIoContexts = DeviceIoContexts ?? 0,
+                            QueueDepth = DeviceQueueDepth ?? 0,
+                            UringSqPoll = DeviceUringSqPoll ?? false,
+                            UringSqPollIdleMs = DeviceUringSqPollIdleMs ?? 0,
+                        }),
                 CheckpointThrottleFlushDelayMs = CheckpointThrottleFlushDelayMs,
                 EnableScatterGatherGet = EnableScatterGatherGet.GetValueOrDefault(true),
                 ReplicaSyncDelayMs = ReplicaSyncDelayMs,
