@@ -604,6 +604,17 @@ namespace Garnet.server
             backpressure.Wait(sublogIdx, GetTailAddress(sublogIdx));
         }
 
+        // As BackpressureWaitKey, but for a caller that has already hashed the key (the object-store
+        // chunked path computes the key hash up front for the chunk header, so reuse it here).
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        void BackpressureWaitKeyHash(long keyHash)
+        {
+            if (backpressure == null)
+                return;
+            var sublogIdx = GetPhysicalSublogIdx(keyHash);
+            backpressure.Wait(sublogIdx, GetTailAddress(sublogIdx));
+        }
+
         // Fail-safe backpressure self-check for a multi-sublog append (transaction / stored proc /
         // database commit / broadcast marker): stall on every participating sublog before acquiring
         // sublog locks.
@@ -884,6 +895,10 @@ namespace Garnet.server
             // into the log allocator's buffer pool — a heap key cannot be referenced by raw pointer across the write, so a copy is
             // required there. Disposed after the (synchronous) write.
             var keyHash = HASH(key.KeyBytes);
+
+            // Apply the same per-key replication backpressure wait as the span Enqueue overloads, before selecting/
+            // writing the sublog, so a large-object upsert cannot advance its sublog past the shipped watermark.
+            BackpressureWaitKeyHash(keyHash);
             // The object value is streamed (its length is not known up front), so overflowValueLength is left 0 and the reader
             // accumulates the value; the key length is known, and object upserts carry no replayed input (inputLength 0).
             var chunkHeader = new AofChunkHeader

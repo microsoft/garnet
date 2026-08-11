@@ -167,7 +167,13 @@ namespace Tsavorite.core.Allocator.ObjectSerialization
         {
             do
             {
+                var before = count;
                 DrainOnce(isComplete: true);
+                // The final drain must run once even when the ring is empty (to deliver isComplete and, on the generic
+                // subclass, the key/input tail), but a non-empty ring the consumer did not shrink means no progress:
+                // fail rather than spin forever (mirrors the full-buffer guard in Write).
+                if (count > 0 && count == before)
+                    throw new TsavoriteException("Chunk consumer did not consume any bytes on the final flush");
             } while (count > 0);
 
             // Reset the (now-empty) ring to position 0 so the next serialization drains contiguously (a record that fits the ring

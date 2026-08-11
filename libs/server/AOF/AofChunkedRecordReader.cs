@@ -223,6 +223,10 @@ namespace Garnet.server
                 off += sizeof(int);
                 var more = (prefix & ChunkedRecordConstants.ContinuationFlag) != 0;
                 var dataLen = prefix & ~ChunkedRecordConstants.ContinuationFlag;
+                // Guard against a corrupt/truncated prefix: the segment must fit in this entry's remaining chunk
+                // region, otherwise AppendChunk would read past the entry payload (an OOB read of the unmanaged buffer).
+                if (dataLen > chunkRegion - off)
+                    throw new GarnetException($"Corrupt AOF chunk: segment length {dataLen} exceeds {chunkRegion - off} remaining bytes in entry");
                 if (dataLen > 0)
                     AppendChunk(acc, payload + off, dataLen);
                 off += dataLen;

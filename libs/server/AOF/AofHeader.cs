@@ -179,7 +179,12 @@ namespace Garnet.server
         // Version 4 makes the RespCommand write block dense/explicit (writes-first) and moves the
         // object sub-operation id (SubId) from the low 5 bits of the flags byte into its own header
         // byte; AofProcessor remaps v3 entries on replay.
-        internal const byte AofHeaderVersion = 4;
+        // Version 5 repurposes the 0b0100 flags bit from a standalone reserved flag into the high bit of
+        // AofHeaderTypeMask (now 3 bits wide) and adds the chunked header types BasicChunkHeader /
+        // ShardedChunkHeader for large values split across multiple entries. A version-4 reader masks the
+        // type with 0b0011 and would misparse a chunk header as its non-chunked base type, so this bump
+        // makes down-level recovery fail safe (a v4 build rejects v5 entries as an unsupported newer version).
+        internal const byte AofHeaderVersion = 5;
 
         /// <summary>
         /// Highest AOF header version this build can read/replay. Entries with a higher version were
