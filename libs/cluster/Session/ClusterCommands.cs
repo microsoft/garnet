@@ -144,6 +144,7 @@ namespace Garnet.cluster
                 RespCommand.CLUSTER_INITIATE_REPLICA_SYNC => NetworkClusterInitiateReplicaSync(out invalidParameters),
                 RespCommand.CLUSTER_KEYSLOT => NetworkClusterKeySlot(out invalidParameters),
                 RespCommand.CLUSTER_MEET => NetworkClusterMeet(out invalidParameters),
+                RespCommand.CLUSTER_POKEGOSSIP => NetworkClusterPokeGossip(out invalidParameters),
                 RespCommand.CLUSTER_MIGRATE => NetworkClusterMigrate(out invalidParameters),
                 RespCommand.CLUSTER_MTASKS => NetworkClusterMTasks(out invalidParameters),
                 RespCommand.CLUSTER_MYID => NetworkClusterMyId(out invalidParameters),

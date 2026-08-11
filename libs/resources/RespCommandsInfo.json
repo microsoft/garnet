@@ -1,4 +1,4 @@
-[
+﻿[
   {
     "Command": "ACL",
     "Name": "ACL",
@@ -825,6 +825,13 @@
         "Arity": 2,
         "Flags": "Admin, NoMulti, NoScript",
         "AclCategories": "Admin, Dangerous, Slow, Garnet"
+      },
+      {
+        "Command": "CLUSTER_POKEGOSSIP",
+        "Name": "CLUSTER|POKEGOSSIP",
+        "Arity": 2,
+        "Flags": "Admin, NoAsyncLoading, NoMulti, NoScript, Stale",
+        "AclCategories": "Admin, Dangerous, Slow"
       },
       {
         "Command": "CLUSTER_MYID",

@@ -1,4 +1,4 @@
-// Copyright (c) Microsoft Corporation.
+﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -32,6 +32,35 @@ namespace Garnet.cluster
 
         readonly ConcurrentDictionary<string, long> workerBanList = new();
         public readonly CancellationTokenSource ctsGossip = new();
+
+        /// <summary>
+        /// Signalled to cut short the sleep between gossip rounds.
+        /// </summary>
+        readonly SemaphoreSlim gossipWakeup = new(0, 1);
+
+        /// <summary>
+        /// Runs the next gossip round immediately instead of waiting out the remaining
+        /// <see cref="gossipDelay"/>.
+        /// </summary>
+        /// <remarks>
+        /// Cluster membership changes only become visible to a node once a gossip round carries
+        /// them, so an orchestrator that has just reconfigured the cluster would otherwise wait
+        /// out the delay purely to observe its own change.
+        /// </remarks>
+        public void PokeGossip()
+        {
+            if (gossipWakeup.CurrentCount == 0)
+            {
+                try
+                {
+                    gossipWakeup.Release();
+                }
+                catch (SemaphoreFullException)
+                {
+                    // A concurrent poke already scheduled the round.
+                }
+            }
+        }
 
         /// <summary>
         /// Return worker ban list
@@ -351,7 +380,8 @@ namespace Garnet.cluster
                     else
                         await GossipSampleSendAsync().ConfigureAwait(false);
 
-                    await Task.Delay(gossipDelay, ctsGossip.Token).ConfigureAwait(false);
+                    // Wakes early when an orchestrator pokes gossip after changing membership.
+                    _ = await gossipWakeup.WaitAsync(gossipDelay, ctsGossip.Token).ConfigureAwait(false);
                 }
             }
             catch (TaskCanceledException) when (ctsGossip.Token.IsCancellationRequested)

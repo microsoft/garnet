@@ -352,6 +352,7 @@ namespace Garnet.server
             ("MYID", RespCommand.CLUSTER_MYID),
             ("MYPARENTID", RespCommand.CLUSTER_MYPARENTID),
             ("NODES", RespCommand.CLUSTER_NODES),
+            ("POKEGOSSIP", RespCommand.CLUSTER_POKEGOSSIP),
             ("PUBLISH", RespCommand.CLUSTER_PUBLISH),
             ("SPUBLISH", RespCommand.CLUSTER_SPUBLISH),
             ("REPLICAS", RespCommand.CLUSTER_REPLICAS),

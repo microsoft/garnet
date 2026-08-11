@@ -46,6 +46,30 @@ namespace Garnet.cluster
         }
 
         /// <summary>
+        /// Implements CLUSTER POKEGOSSIP command
+        /// </summary>
+        /// <param name="invalidParameters"></param>
+        /// <returns></returns>
+        private bool NetworkClusterPokeGossip(out bool invalidParameters)
+        {
+            invalidParameters = false;
+
+            // Expecting exactly 0 arguments
+            if (parseState.Count != 0)
+            {
+                invalidParameters = true;
+                return true;
+            }
+
+            clusterProvider.clusterManager.PokeGossip();
+
+            while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                SendAndReset();
+
+            return true;
+        }
+
+        /// <summary>
         /// Implements CLUSTER FORGET command
         /// </summary>
         /// <param name="invalidParameters"></param>

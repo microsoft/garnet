@@ -414,6 +414,7 @@ namespace Garnet.server
         CLUSTER_MYID,
         CLUSTER_MYPARENTID,
         CLUSTER_NODES,
+        CLUSTER_POKEGOSSIP,
         CLUSTER_PUBLISH,
         CLUSTER_SPUBLISH,
         CLUSTER_REPLICAS,

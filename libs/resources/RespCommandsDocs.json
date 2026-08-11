@@ -1,4 +1,4 @@
-[
+﻿[
   {
     "Command": "ACL",
     "Name": "ACL",
@@ -1475,6 +1475,13 @@
         "Summary": "Returns sequence number for provided key.",
         "Group": "Cluster",
         "Complexity": "O(1)"
+      },
+      {
+        "Command": "CLUSTER_POKEGOSSIP",
+        "Name": "CLUSTER|POKEGOSSIP",
+        "Summary": "Runs the next gossip round immediately instead of waiting out the gossip delay.",
+        "Group": "Cluster",
+        "Complexity": "O(N) where N is the number of cluster nodes"
       },
       {
         "Command": "CLUSTER_MYID",
