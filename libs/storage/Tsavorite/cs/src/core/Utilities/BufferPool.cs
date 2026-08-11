@@ -314,6 +314,11 @@ namespace Tsavorite.core
         /// <summary>Per-pool captured native allocator (see the constructor). Immutable for the pool's lifetime.</summary>
         internal readonly INativePinnedAllocator nativeAllocator;
 
+        /// <summary>True when <see cref="nativeAllocator"/> is the standard mimalloc backend, letting the rent/return
+        /// path call the static mimalloc entry points directly (devirtualized/inlinable) instead of dispatching
+        /// through <see cref="INativePinnedAllocator"/>.</summary>
+        private readonly bool nativeIsMimalloc;
+
         /// <summary>Thread-local free list of recycled wrapper objects for the native path (see <see cref="SectorAlignedMemory.wrapperNext"/>).</summary>
         [ThreadStatic]
         private static SectorAlignedMemory t_wrapperFreeList;
@@ -342,6 +347,7 @@ namespace Tsavorite.core
             // immutable for its lifetime, so a later Initialize(off) that clears the static cannot strand/leak this
             // pool's outstanding native buffers (they still free through the captured allocator).
             nativeAllocator = NativeAllocator;
+            nativeIsMimalloc = nativeAllocator is MimallocPooledAllocator;
         }
 
         public void EnsureSize(ref SectorAlignedMemory page, int size)
@@ -533,7 +539,22 @@ namespace Tsavorite.core
         private unsafe SectorAlignedMemory GetNative(INativePinnedAllocator nativeAlloc, int required_bytes, int index, bool clearOnReturn)
         {
             int allocSize = sectorSize * (1 << index);
-            nint ptr = nativeAlloc.Allocate((nuint)allocSize, (nuint)sectorSize, zeroed: clearOnReturn);
+            // Devirtualized fast path for the standard mimalloc backend: call the static (function-pointer) entry
+            // points directly so the JIT inlines them, instead of dispatching through INativePinnedAllocator.
+            // Custom allocators go through the interface.
+            nint ptr;
+            if (nativeIsMimalloc)
+            {
+                ptr = clearOnReturn
+                    ? Mimalloc.ZallocAligned((nuint)allocSize, (nuint)sectorSize)
+                    : Mimalloc.MallocAligned((nuint)allocSize, (nuint)sectorSize);
+                if (ptr == 0)
+                    ThrowNativeOom(allocSize, sectorSize);
+            }
+            else
+            {
+                ptr = nativeAlloc.Allocate((nuint)allocSize, (nuint)sectorSize, zeroed: clearOnReturn);
+            }
 
             var page = RentWrapper();
             page.Reset(index, this);
@@ -546,23 +567,32 @@ namespace Tsavorite.core
             return page;
         }
 
-        /// <summary>Native (mimalloc) return path: free the backing block and recycle the wrapper.</summary>
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        private static void ThrowNativeOom(int size, int alignment)
+            => throw new OutOfMemoryException($"mimalloc aligned allocation of {size} bytes (alignment {alignment}) failed");
+
+        /// <summary>
+        /// Native (mimalloc) return path: free the backing block and recycle the wrapper. Only
+        /// <see cref="SectorAlignedMemory.nativePtr"/> is cleared — that is the one field whose stale value
+        /// could cause harm (a double-free via <see cref="SectorAlignedMemory.Dispose"/>). Every other field is
+        /// unconditionally re-initialized by the next <see cref="GetNative"/> (wrappers are shared across pools
+        /// through the thread-local free list), so clearing them here would be redundant hot-path work.
+        /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private unsafe void ReturnNative(SectorAlignedMemory page)
         {
 #if CHECK_FREE
             page.Free = true;
 #endif
-            page.available_bytes = 0;
-            page.required_bytes = 0;
-            page.valid_offset = 0;
             var ptr = page.nativePtr;
-            var len = page.allocatedLength;
             page.nativePtr = 0;
-            page.aligned_pointer = null;
-            page.allocatedLength = 0;
-            page.clearOnReturn = true;
-            nativeAllocator?.Free(ptr, (nuint)len);
+            if (nativeIsMimalloc)
+            {
+                if (ptr != 0)
+                    Mimalloc.Free(ptr);
+            }
+            else
+                nativeAllocator?.Free(ptr, (nuint)page.allocatedLength);
             ReturnWrapper(page);
         }
 
