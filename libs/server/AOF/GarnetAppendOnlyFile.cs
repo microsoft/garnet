@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -34,6 +34,15 @@ namespace Garnet.server
         /// Provides an interface for managing and interacting with physical sublog instances.
         /// </summary>
         public GarnetLog Log { get; private set; }
+
+        /// <summary>
+        /// Primary-side replication backpressure gate. The cluster layer publishes each physical
+        /// sublog's min shipped address into it; the append paths in <see cref="GarnetLog"/> stall
+        /// on it. Always constructed; when AofSyncMaxLagBytes &lt;= 0 the gate is disabled via an
+        /// internal flag (<see cref="AofBackpressure.Enabled"/>) so <see cref="AofBackpressure.Wait"/>
+        /// returns immediately, and a runtime CONFIG SET can enable/retune it without a restart.
+        /// </summary>
+        public readonly AofBackpressure backpressure;
 
         public readonly GarnetServerOptions serverOptions;
 
@@ -71,13 +80,21 @@ namespace Garnet.server
             if (serverOptions.AofPhysicalSublogCount > 1)
                 seqNumGen = new SequenceNumberGenerator(0);
             this.logger = logger;
+            // Must be before Log is constructed, which caches it for the append paths. Always
+            // constructed (even when AofSyncMaxLagBytes <= 0) so a runtime CONFIG SET can enable the
+            // gate live; the disabled state is carried by an internal flag that short-circuits Wait.
+            backpressure = new AofBackpressure(serverOptions, logger);
             Log = new(this, serverOptions, logSettings, logger);
         }
 
         /// <summary>
         /// Dispose append only file
         /// </summary>
-        public void Dispose() => Log.Dispose();
+        public void Dispose()
+        {
+            backpressure?.Dispose();
+            Log.Dispose();
+        }
 
         /// <summary>
         /// Get a sequence number that is strictly greater than any sequence number assigned to records
@@ -102,9 +119,13 @@ namespace Garnet.server
         {
             // Create manager only if sharded log is enabled
             if (!serverOptions.MultiLogEnabled) return;
-            var currentVersion = readConsistencyManager?.CurrentVersion ?? 0L;
+            var previous = readConsistencyManager;
+            var currentVersion = previous?.CurrentVersion ?? 0L;
             var _readConsistencyManager = new ReadConsistencyManager(currentVersion + 1, this, serverOptions);
-            _ = Interlocked.CompareExchange(ref readConsistencyManager, _readConsistencyManager, readConsistencyManager);
+            _ = Interlocked.CompareExchange(ref readConsistencyManager, _readConsistencyManager, previous);
+            // Release any replay thread parked in the old barrier; it would otherwise wait on a round
+            // that the new manager's replayers no longer participate in.
+            previous?.replayBarrier.Disable();
         }
 
         /// <summary>

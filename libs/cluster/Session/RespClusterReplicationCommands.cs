@@ -548,6 +548,7 @@ namespace Garnet.cluster
 
             TrackImportProgress(recordCount, recordCount == 0);
             var storeWrapper = clusterProvider.storeWrapper;
+            var vectorManager = storeWrapper.DefaultDatabase.VectorManager;
             var transientObjectIdMap = storeWrapper.store.Log.TransientObjectIdMap;
 
             DiskLogRecord diskLogRecord = default;
@@ -565,6 +566,10 @@ namespace Garnet.cluster
                             return false;
 
                         diskLogRecord = DiskLogRecord.Deserialize(recordSpan, storeWrapper.GarnetObjectSerializer, transientObjectIdMap, storeWrapper.storeFunctions);
+
+                        // Streamed records carry the primary's native handle and bypass the RMW path that maintains the context reservation
+                        vectorManager?.SanitizeAndTrackIngestedRecordIfApplicable(ref diskLogRecord);
+
                         _ = basicGarnetApi.SET(in diskLogRecord);
                         storeWrapper.storeFunctions.OnDisposeDiskRecord(ref diskLogRecord, DisposeReason.DeserializedFromDisk);
                         diskLogRecord.Dispose();
@@ -620,7 +625,7 @@ namespace Garnet.cluster
         }
 
         /// <summary>
-        /// Implements CLUSTER_ADVANCE_TIME
+        /// Implements an in-band CLUSTER ADVANCE_TIME pulse for one physical sublog.
         /// </summary>
         /// <param name="invalidParameters"></param>
         /// <returns></returns>
@@ -636,11 +641,21 @@ namespace Garnet.cluster
                 return true;
             }
 
-            var sequenceNumber = parseState.GetLong(0);
-            var tailAddressSpan = parseState.GetArgSliceByRef(1).Span;
-            clusterProvider.replicationManager.SignalAdvanceTime(sequenceNumber, AofAddress.FromSpan(tailAddressSpan));
-            while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
-                SendAndReset();
+            if (!parseState.TryGetInt(0, out var physicalSublogIdx) ||
+                !parseState.TryGetLong(1, out var sequenceNumber))
+            {
+                logger?.LogError("{str}", Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER));
+                return true;
+            }
+
+            if (physicalSublogIdx < 0 || physicalSublogIdx >= clusterProvider.serverOptions.AofPhysicalSublogCount)
+                return true;
+            if (clusterProvider.replicationManager.CannotStreamAOF)
+                return true;
+
+            // The pulse is meaningful only on the APPENDLOG session that established this driver
+            // store; routing it globally would lose its ordering relative to that sublog stream.
+            replicaReplayDriverStore?.GetReplayDriver(physicalSublogIdx)?.SignalTimeAdvance(sequenceNumber);
             return true;
         }
 

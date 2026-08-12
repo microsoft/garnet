@@ -532,6 +532,8 @@ namespace Tsavorite.core
                 , allows ref struct
 #endif
         {
+            RecordNamespace.AssertKeyCorrectlySized(key, in sizeInfo);
+
             // Build the full RDH in a local (Initialize folds indicator bits + lengths + namespace + recordType + FillerWords
             // into a SINGLE atomic word write at the end). We pass `physicalAddress` as baseAddress and the returned addresses
             // are within it (NOT addresses based on the stack variable). Any record-split work for over-large filler writes the
@@ -606,6 +608,8 @@ namespace Tsavorite.core
                 , allows ref struct
 #endif
         {
+            RecordNamespace.AssertKeyCorrectlySized(key, in sizeInfo);
+
             // Build the full RDH in a local; SpanByteAllocator records are always inline keys + inline values, so
             // sizeInfo.KeyIsInline and sizeInfo.ValueIsInline must both be true (Initialize encodes both). We pass
             // `physicalAddress` as baseAddress and the returned addresses are within it (NOT addresses based on the stack variable).

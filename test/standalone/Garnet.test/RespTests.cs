@@ -2740,6 +2740,93 @@ namespace Garnet.test
                 var exc = ClassicAssert.Throws<RedisServerException>(() => db.Execute(command, "foo", "100", "128"));
                 ClassicAssert.AreEqual("ERR Unsupported option 128", exc.Message);
             }
+
+            // A brace in the rejected option used to reach string.Format a second time, because
+            // AbortWithErrorMessage(string.Format(...)) bound to the params overload and re-formatted
+            // the already-substituted text. That threw FormatException out of the handler and dropped
+            // the connection instead of writing this error.
+            {
+                var exc = ClassicAssert.Throws<RedisServerException>(() => db.Execute(command, "foo", "100", "{"));
+                ClassicAssert.AreEqual("ERR Unsupported option {", exc.Message);
+            }
+
+            // The second option is reported when it is the one that is unsupported. Before this change
+            // the first option was echoed back regardless of which one failed to parse.
+            {
+                var exc = ClassicAssert.Throws<RedisServerException>(() => db.Execute(command, "foo", "100", "NX", "ZZ"));
+                ClassicAssert.AreEqual("ERR Unsupported option ZZ", exc.Message);
+            }
+
+            {
+                var exc = ClassicAssert.Throws<RedisServerException>(() => db.Execute(command, "foo", "100", "NX", "{"));
+                ClassicAssert.AreEqual("ERR Unsupported option {", exc.Message);
+            }
+        }
+
+        /// <summary>
+        /// An expiry option pair that Garnet rejects must be answered by the error and nothing else,
+        /// and must leave the key untouched. The trailing PING is what makes a second reply visible:
+        /// LightClientRequest reads raw RESP, while a reply-counting client would absorb the extra
+        /// reply and mis-associate every reply that follows it on the connection.
+        /// </summary>
+        [Test]
+        public void KeyExpireIncompatibleOptionsSingleReplyTest()
+        {
+            using var lightClientRequest = TestUtils.CreateRequest();
+
+            var incompatibleOptionsResponse = "-ERR NX and XX, GT or LT options at the same time are not compatible\r\n+PONG\r\n";
+            var unsupportedOptionResponse = "-ERR Unsupported option ZZ\r\n+PONG\r\n";
+
+            lightClientRequest.SendCommand("SET keyA valueA");
+
+            // All four commands share the same option parsing, so all four must reject the pair identically.
+            var response = lightClientRequest.SendCommands("EXPIRE keyA 100 NX XX", "PING", 1, 1);
+            TestUtils.AssertEqualUpToExpectedLength(incompatibleOptionsResponse, response);
+
+            response = lightClientRequest.SendCommands("PEXPIRE keyA 100000 NX XX", "PING", 1, 1);
+            TestUtils.AssertEqualUpToExpectedLength(incompatibleOptionsResponse, response);
+
+            response = lightClientRequest.SendCommands("EXPIREAT keyA 99999999999 NX XX", "PING", 1, 1);
+            TestUtils.AssertEqualUpToExpectedLength(incompatibleOptionsResponse, response);
+
+            response = lightClientRequest.SendCommands("PEXPIREAT keyA 99999999999000 NX XX", "PING", 1, 1);
+            TestUtils.AssertEqualUpToExpectedLength(incompatibleOptionsResponse, response);
+
+            response = lightClientRequest.SendCommands("EXPIRE keyA 100 GT LT", "PING", 1, 1);
+            TestUtils.AssertEqualUpToExpectedLength(incompatibleOptionsResponse, response);
+
+            // None of the rejected expiries may have been applied.
+            response = lightClientRequest.SendCommand("TTL keyA");
+            TestUtils.AssertEqualUpToExpectedLength(":-1\r\n", response);
+
+            // A rejected expiry of 0 must not delete the key either.
+            lightClientRequest.SendCommand("SET keyB valueB");
+
+            response = lightClientRequest.SendCommands("EXPIRE keyB 0 NX XX", "PING", 1, 1);
+            TestUtils.AssertEqualUpToExpectedLength(incompatibleOptionsResponse, response);
+
+            response = lightClientRequest.SendCommand("EXISTS keyB");
+            TestUtils.AssertEqualUpToExpectedLength(":1\r\n", response);
+
+            // The unsupported option error must name the option that failed to parse, not the one before it.
+            response = lightClientRequest.SendCommands("EXPIRE keyA 100 NX ZZ", "PING", 1, 1);
+            TestUtils.AssertEqualUpToExpectedLength(unsupportedOptionResponse, response);
+
+            // The accepted pairs and the sibling error paths keep replying exactly once.
+            response = lightClientRequest.SendCommands("EXPIRE keyA 100 XX GT", "PING", 1, 1);
+            TestUtils.AssertEqualUpToExpectedLength(":0\r\n+PONG\r\n", response);
+
+            response = lightClientRequest.SendCommands("EXPIRE keyA 100 LT XX", "PING", 1, 1);
+            TestUtils.AssertEqualUpToExpectedLength(":0\r\n+PONG\r\n", response);
+
+            response = lightClientRequest.SendCommands("EXPIRE keyA 100 NX", "PING", 1, 1);
+            TestUtils.AssertEqualUpToExpectedLength(":1\r\n+PONG\r\n", response);
+
+            response = lightClientRequest.SendCommands("EXPIRE keyA 100 ZZ", "PING", 1, 1);
+            TestUtils.AssertEqualUpToExpectedLength(unsupportedOptionResponse, response);
+
+            response = lightClientRequest.SendCommands("EXPIRE keyA -1 NX XX", "PING", 1, 1);
+            TestUtils.AssertEqualUpToExpectedLength("-ERR invalid expire time, must be >= 0\r\n+PONG\r\n", response);
         }
 
         #region ExpireAt
@@ -5192,6 +5279,47 @@ namespace Garnet.test
             // Attempt to unblock again will return 0
             unblockResult = (int)mainDB.Execute("CLIENT", [.. args]);
             ClassicAssert.AreEqual(0, unblockResult);
+        }
+
+        [Test]
+        [TestCase("BLMPOP 10 1 keyA LEFT", Description = "BLMPOP replies to CLIENT UNBLOCK ERROR with the error only")]
+        [TestCase("BLPOP keyA 10", Description = "BLPOP replies to CLIENT UNBLOCK ERROR with the error only")]
+        [TestCase("BLMOVE keyA keyB LEFT LEFT 10", Description = "BLMOVE replies to CLIENT UNBLOCK ERROR with the error only")]
+        [TestCase("BZMPOP 10 1 keyA MIN", Description = "BZMPOP replies to CLIENT UNBLOCK ERROR with the error only")]
+        public async Task ClientUnblockWithErrorWritesSingleReplyTest(string blockingCommand)
+        {
+            var expectedError = "-UNBLOCKED client unblocked via CLIENT UNBLOCK\r\n";
+            var expectedPong = "+PONG\r\n";
+
+            using var mainConnection = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
+            var mainDB = mainConnection.GetDatabase(0);
+
+            // Start blocking client
+            using var blockingClient = TestUtils.CreateRequest();
+            var clientIdResponse = Encoding.ASCII.GetString(blockingClient.SendCommand("CLIENT ID"));
+            var clientId = clientIdResponse.Substring(1, clientIdResponse.IndexOf("\r\n") - 1);
+
+            string blockingResponse = null;
+            var blockingTask = taskFactory.StartNew(() =>
+            {
+                var response = blockingClient.SendCommand(blockingCommand);
+                blockingResponse = Encoding.ASCII.GetString(response, 0, expectedError.Length);
+            });
+
+            // Wait for client to enter blocking state
+            await Task.Delay(1000).ConfigureAwait(false);
+
+            // Unblock from main connection
+            var unblockResult = (int)mainDB.Execute("CLIENT", "UNBLOCK", clientId, "ERROR");
+            ClassicAssert.AreEqual(1, unblockResult);
+            blockingTask.Wait();
+
+            ClassicAssert.AreEqual(expectedError, blockingResponse);
+
+            // The error is the only reply the blocking command may write - a second reply (a null)
+            // would shift every subsequent reply on this connection by one
+            var pingResponse = Encoding.ASCII.GetString(blockingClient.SendCommand("PING"), 0, expectedPong.Length);
+            ClassicAssert.AreEqual(expectedPong, pingResponse, $"Expected PING to be answered with +PONG after unblocking {blockingCommand}");
         }
 
         [Test]
