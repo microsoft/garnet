@@ -165,6 +165,7 @@ namespace Tsavorite.core
                 {
                     KeySize = key.KeyBytes.Length,
                     ValueSize = 0,  // No payload for the default value
+                    ExtendedNamespaceSize = RecordNamespace.GetExtendedNamespaceSize(in key),
                     HasETag = false,
                     HasExpiration = false
                 }
