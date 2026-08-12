@@ -237,7 +237,9 @@ namespace Garnet.test
 
             var vectorManager = server.Provider.StoreWrapper.DefaultDatabase.VectorManager;
 
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
+            var config = TestUtils.GetConfig(allowAdmin: true);
+            config.AsyncTimeout = (int)TimeSpan.FromMinutes(3).TotalMilliseconds;
+            using var redis = ConnectionMultiplexer.Connect(config);
             var s = redis.GetServers().Single();
             var db = redis.GetDatabase();
 
