@@ -410,7 +410,7 @@ namespace Garnet.server
         /// <summary>
         /// Used to prevent new contexts from being issued during a FLUSHDB / FLUSHALL, as well as any new Vector Set operations from starting.
         /// 
-        /// Also updates and clears cached <see cref="ContextMetadata"/> upon disposal.
+        /// Also clears cached <see cref="ContextMetadata"/> and pending recovery state upon disposal.
         /// </summary>
         internal readonly struct FlushGuard : IDisposable
         {
@@ -439,6 +439,14 @@ namespace Garnet.server
 
                 // Clear out all context data
                 manager.contextMetadatas = new ContextMetadata[1];
+
+                // Indices queued against the old array would index out of range, and would re-persist
+                // metadata for contexts the flush just removed
+                manager.dirtyContextMetadatas?.Clear();
+
+                // The flushed records are gone, so any inflight recovery state should be cleared since it's now invalid
+                manager.recoveredIndexes.Clear();
+                manager.recoveredMetadata.Clear();
 
                 // Allow Vector Set operations again
                 manager.vectorSetLocks.ReleaseLock(lockToken);
@@ -724,7 +732,7 @@ namespace Garnet.server
             Debug.Assert(namespaceBytes.Length >= sizeof(uint), "Insufficient space in provided Span");
             Debug.Assert(context is > 0 and <= uint.MaxValue, "Context must be (0, uint.MaxValue]");
 
-            if (context <= RecordDataHeader.MaximumSingleByteNamespaceValue)
+            if (context <= RecordNamespace.MaximumSingleByteNamespaceValue)
             {
                 namespaceBytes = namespaceBytes[..1];
                 namespaceBytes[0] = (byte)context;
@@ -734,6 +742,8 @@ namespace Garnet.server
                 namespaceBytes = namespaceBytes[0..sizeof(uint)];
                 BinaryPrimitives.WriteUInt32LittleEndian(namespaceBytes, (uint)context);
             }
+
+            RecordNamespace.AssertValid(namespaceBytes);
         }
 
         /// <summary>

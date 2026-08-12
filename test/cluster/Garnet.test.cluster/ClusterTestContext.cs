@@ -38,6 +38,7 @@ namespace Garnet.test.cluster
         ClusterReplicationRangeIndex = 7800,
         ClusterMultiLogDiskless = 7900,
         ClusterMigrateRangeIndex = 8000,
+        ClusterReplicationVectorSets = 8100,
     }
 
     public class ClusterTestContext
@@ -840,6 +841,23 @@ namespace Garnet.test.cluster
                 }
                 Thread.Sleep(1000);
             }
+        }
+
+        /// <summary>Opens a connection, assigns all slots to primaryIndex, and introduces every other created node.</summary>
+        public void MeetAndAssignSlotsAllNodes(int nodeCount, int primaryIndex = 0)
+        {
+            CreateConnection();
+            clusterTestUtils.MeetAndAssignSlots(primaryIndex, nodeCount, logger);
+        }
+
+        /// <summary>Promotes replicaIndex, waits for the demoted node to sync, and asserts the roles swapped.</summary>
+        public void FailoverTo(int replicaIndex, int oldPrimaryIndex)
+        {
+            ClusterFailoverSpinWait(replicaIndex, logger);
+            clusterTestUtils.WaitForReplicaAofSync(replicaIndex, oldPrimaryIndex, logger: logger);
+
+            clusterTestUtils.AssertRole(replicaIndex, "master", logger);
+            clusterTestUtils.AssertRole(oldPrimaryIndex, "slave", logger);
         }
 
         public async Task AttachAndWaitForSyncAsync(int primaryIndex, int replicaStartIndex, int replicaCount, bool disableObjects)
