@@ -95,10 +95,9 @@ namespace Garnet.common
         /// </summary>
         public VectorElementKey(ReadOnlySpan<byte> namespaceBytes, ReadOnlySpan<byte> key)
         {
-            Debug.Assert(namespaceBytes.Length > 0, "Namespace cannot be empty");
+            RecordNamespace.AssertValid(namespaceBytes);
             Debug.Assert(namespaceBytes.Length == 1 || (namespaceBytes.Length % 4) == 0, "Namespace must be either 1-byte or a multiple of 4-bytes long");
-            Debug.Assert(namespaceBytes.Length != 1 || namespaceBytes[0] is > 0 and < 128, "Namespaces of length 1 must be > 0 and < 128");
-            Debug.Assert(namespaceBytes.Length != 4 || BinaryPrimitives.ReadUInt32LittleEndian(namespaceBytes) >= 128, "Namespaces larger than 1 byte must be >= 128");
+            Debug.Assert(namespaceBytes.Length != 4 || BinaryPrimitives.ReadUInt32LittleEndian(namespaceBytes) > RecordNamespace.MaximumSingleByteNamespaceValue, $"A context of {RecordNamespace.MaximumSingleByteNamespaceValue} or less must be stored in a single byte");
 
 #if NET9_0_OR_GREATER
             KeyBytes = key;

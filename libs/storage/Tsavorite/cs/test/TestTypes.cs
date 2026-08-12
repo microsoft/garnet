@@ -244,13 +244,13 @@ namespace Tsavorite.test
 
         /// <inheritdoc/>
         public override unsafe RecordFieldInfo GetRMWModifiedFieldInfo<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref InputStruct input)
-            => new() { KeySize = srcLogRecord.Key.Length, ValueSize = sizeof(ValueStruct), ExtendedNamespaceSize = TestNamespaceHelper.GetExtendedNamespaceSize(in srcLogRecord) };
+            => new() { KeySize = srcLogRecord.Key.Length, ValueSize = sizeof(ValueStruct), ExtendedNamespaceSize = RecordNamespace.GetExtendedNamespaceSize(in srcLogRecord) };
         /// <inheritdoc/>
         public override unsafe RecordFieldInfo GetRMWInitialFieldInfo<TKey>(TKey key, ref InputStruct input)
-            => new() { KeySize = key.KeyBytes.Length, ValueSize = sizeof(ValueStruct), ExtendedNamespaceSize = TestNamespaceHelper.GetExtendedNamespaceSize(in key) };
+            => new() { KeySize = key.KeyBytes.Length, ValueSize = sizeof(ValueStruct), ExtendedNamespaceSize = RecordNamespace.GetExtendedNamespaceSize(in key) };
         /// <inheritdoc/>
         public override unsafe RecordFieldInfo GetUpsertFieldInfo<TKey>(TKey key, ReadOnlySpan<byte> value, ref InputStruct input)
-            => new() { KeySize = key.KeyBytes.Length, ValueSize = value.Length, ExtendedNamespaceSize = TestNamespaceHelper.GetExtendedNamespaceSize(in key) };
+            => new() { KeySize = key.KeyBytes.Length, ValueSize = value.Length, ExtendedNamespaceSize = RecordNamespace.GetExtendedNamespaceSize(in key) };
     }
 
     public class FunctionsCompaction : SessionFunctionsBase<InputStruct, OutputStruct, int>
@@ -314,13 +314,13 @@ namespace Tsavorite.test
 
         /// <inheritdoc/>
         public override unsafe RecordFieldInfo GetRMWModifiedFieldInfo<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref InputStruct input)
-            => new() { KeySize = srcLogRecord.Key.Length, ValueSize = sizeof(ValueStruct), ExtendedNamespaceSize = TestNamespaceHelper.GetExtendedNamespaceSize(in srcLogRecord) };
+            => new() { KeySize = srcLogRecord.Key.Length, ValueSize = sizeof(ValueStruct), ExtendedNamespaceSize = RecordNamespace.GetExtendedNamespaceSize(in srcLogRecord) };
         /// <inheritdoc/>
         public override unsafe RecordFieldInfo GetRMWInitialFieldInfo<TKey>(TKey key, ref InputStruct input)
-            => new() { KeySize = key.KeyBytes.Length, ValueSize = sizeof(ValueStruct), ExtendedNamespaceSize = TestNamespaceHelper.GetExtendedNamespaceSize(in key) };
+            => new() { KeySize = key.KeyBytes.Length, ValueSize = sizeof(ValueStruct), ExtendedNamespaceSize = RecordNamespace.GetExtendedNamespaceSize(in key) };
         /// <inheritdoc/>
         public override unsafe RecordFieldInfo GetUpsertFieldInfo<TKey>(TKey key, ReadOnlySpan<byte> value, ref InputStruct input)
-            => new() { KeySize = key.KeyBytes.Length, ValueSize = value.Length, ExtendedNamespaceSize = TestNamespaceHelper.GetExtendedNamespaceSize(in key) };
+            => new() { KeySize = key.KeyBytes.Length, ValueSize = value.Length, ExtendedNamespaceSize = RecordNamespace.GetExtendedNamespaceSize(in key) };
     }
 
     public class FunctionsCopyOnWrite : SessionFunctionsBase<InputStruct, OutputStruct, Empty>
@@ -398,13 +398,13 @@ namespace Tsavorite.test
 
         /// <inheritdoc/>
         public override unsafe RecordFieldInfo GetRMWModifiedFieldInfo<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref InputStruct input)
-            => new() { KeySize = srcLogRecord.Key.Length, ValueSize = sizeof(ValueStruct), ExtendedNamespaceSize = TestNamespaceHelper.GetExtendedNamespaceSize(in srcLogRecord) };
+            => new() { KeySize = srcLogRecord.Key.Length, ValueSize = sizeof(ValueStruct), ExtendedNamespaceSize = RecordNamespace.GetExtendedNamespaceSize(in srcLogRecord) };
         /// <inheritdoc/>
         public override unsafe RecordFieldInfo GetRMWInitialFieldInfo<TKey>(TKey key, ref InputStruct input)
-            => new() { KeySize = key.KeyBytes.Length, ValueSize = sizeof(ValueStruct), ExtendedNamespaceSize = TestNamespaceHelper.GetExtendedNamespaceSize(in key) };
+            => new() { KeySize = key.KeyBytes.Length, ValueSize = sizeof(ValueStruct), ExtendedNamespaceSize = RecordNamespace.GetExtendedNamespaceSize(in key) };
         /// <inheritdoc/>
         public override RecordFieldInfo GetUpsertFieldInfo<TKey>(TKey key, ReadOnlySpan<byte> value, ref InputStruct input)
-            => new() { KeySize = key.KeyBytes.Length, ValueSize = value.Length, ExtendedNamespaceSize = TestNamespaceHelper.GetExtendedNamespaceSize(in key) };
+            => new() { KeySize = key.KeyBytes.Length, ValueSize = value.Length, ExtendedNamespaceSize = RecordNamespace.GetExtendedNamespaceSize(in key) };
     }
 
     public class SimpleLongSimpleFunctions : SimpleIntegerFunctionsBase<long>
@@ -481,47 +481,21 @@ namespace Tsavorite.test
         public override unsafe RecordFieldInfo GetRMWModifiedFieldInfo<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref TInteger input)
         {
             Assert.That(srcLogRecord.ValueSpan.Length, Is.EqualTo(sizeof(TInteger)));
-            return new() { KeySize = srcLogRecord.Key.Length, ValueSize = sizeof(TInteger), ExtendedNamespaceSize = TestNamespaceHelper.GetExtendedNamespaceSize(in srcLogRecord) };
+            return new() { KeySize = srcLogRecord.Key.Length, ValueSize = sizeof(TInteger), ExtendedNamespaceSize = RecordNamespace.GetExtendedNamespaceSize(in srcLogRecord) };
         }
 
         /// <inheritdoc/>
         public override unsafe RecordFieldInfo GetRMWInitialFieldInfo<TKey>(TKey key, ref TInteger input)
         {
             Assert.That(key.KeyBytes.Length, Is.EqualTo(sizeof(TInteger)));
-            return new() { KeySize = key.KeyBytes.Length, ValueSize = sizeof(TInteger), ExtendedNamespaceSize = TestNamespaceHelper.GetExtendedNamespaceSize(in key) };
+            return new() { KeySize = key.KeyBytes.Length, ValueSize = sizeof(TInteger), ExtendedNamespaceSize = RecordNamespace.GetExtendedNamespaceSize(in key) };
         }
 
         /// <inheritdoc/>
         public override unsafe RecordFieldInfo GetUpsertFieldInfo<TKey>(TKey key, ReadOnlySpan<byte> value, ref TInteger input)
         {
             Assert.That(value.Length, Is.EqualTo(sizeof(TInteger)));
-            return new() { KeySize = key.KeyBytes.Length, ValueSize = sizeof(TInteger), ExtendedNamespaceSize = TestNamespaceHelper.GetExtendedNamespaceSize(in key) };
-        }
-    }
-
-    internal static class TestNamespaceHelper
-    {
-        /// <summary>
-        /// Get extended storage needed for the <see cref="IKey.NamespaceBytes"/> carried by <paramref name="key"/>, if any.
-        /// </summary>
-        internal static int GetExtendedNamespaceSize<TKey>(in TKey key)
-            where TKey : IKey
-#if NET9_0_OR_GREATER
-                , allows ref struct
-#endif
-        {
-            if (!key.HasNamespace)
-            {
-                return 0;
-            }
-
-            var nsBytes = key.NamespaceBytes;
-            if (nsBytes.Length > 1 || nsBytes[0] > 127)
-            {
-                return nsBytes.Length;
-            }
-
-            return 0;
+            return new() { KeySize = key.KeyBytes.Length, ValueSize = sizeof(TInteger), ExtendedNamespaceSize = RecordNamespace.GetExtendedNamespaceSize(in key) };
         }
     }
 }

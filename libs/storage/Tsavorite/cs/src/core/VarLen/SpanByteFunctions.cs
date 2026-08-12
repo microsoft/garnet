@@ -31,19 +31,16 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         public override RecordFieldInfo GetRMWModifiedFieldInfo<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref PinnedSpanByte input)
-            => new() { KeySize = srcLogRecord.Key.Length, ValueSize = input.Length };
+            => new() { KeySize = srcLogRecord.Key.Length, ValueSize = input.Length, ExtendedNamespaceSize = RecordNamespace.GetExtendedNamespaceSize(in srcLogRecord) };
         /// <inheritdoc/>
         public override RecordFieldInfo GetRMWInitialFieldInfo<TKey>(TKey key, ref PinnedSpanByte input)
-            // TODO: Namespaces!
-            => new() { KeySize = key.KeyBytes.Length, ValueSize = input.Length };
+            => new() { KeySize = key.KeyBytes.Length, ValueSize = input.Length, ExtendedNamespaceSize = RecordNamespace.GetExtendedNamespaceSize(in key) };
         /// <inheritdoc/>
         public override RecordFieldInfo GetUpsertFieldInfo<TKey>(TKey key, ReadOnlySpan<byte> value, ref PinnedSpanByte input)
-            // TODO: Namespaces!
-            => new() { KeySize = key.KeyBytes.Length, ValueSize = value.Length };
+            => new() { KeySize = key.KeyBytes.Length, ValueSize = value.Length, ExtendedNamespaceSize = RecordNamespace.GetExtendedNamespaceSize(in key) };
         /// <inheritdoc/>
         public override RecordFieldInfo GetUpsertFieldInfo<TKey>(TKey key, IHeapObject value, ref PinnedSpanByte input)
-            // TODO: Namespaces!
-            => new() { KeySize = key.KeyBytes.Length, ValueSize = ObjectIdMap.ObjectIdSize, ValueIsObject = true };
+            => new() { KeySize = key.KeyBytes.Length, ValueSize = ObjectIdMap.ObjectIdSize, ValueIsObject = true, ExtendedNamespaceSize = RecordNamespace.GetExtendedNamespaceSize(in key) };
 
         /// <inheritdoc />
         public override void ConvertOutputToHeap(ref PinnedSpanByte input, ref SpanByteAndMemory output)

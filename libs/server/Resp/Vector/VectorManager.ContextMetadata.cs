@@ -732,7 +732,7 @@ namespace Garnet.server
             Debug.Assert(namespaceBytes.Length >= sizeof(uint), "Insufficient space in provided Span");
             Debug.Assert(context is > 0 and <= uint.MaxValue, "Context must be (0, uint.MaxValue]");
 
-            if (context <= RecordDataHeader.MaximumSingleByteNamespaceValue)
+            if (context <= RecordNamespace.MaximumSingleByteNamespaceValue)
             {
                 namespaceBytes = namespaceBytes[..1];
                 namespaceBytes[0] = (byte)context;
@@ -742,6 +742,8 @@ namespace Garnet.server
                 namespaceBytes = namespaceBytes[0..sizeof(uint)];
                 BinaryPrimitives.WriteUInt32LittleEndian(namespaceBytes, (uint)context);
             }
+
+            RecordNamespace.AssertValid(namespaceBytes);
         }
 
         /// <summary>
