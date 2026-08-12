@@ -157,10 +157,10 @@ namespace Garnet.server
             if (input.WriteDesiredSize < 0)
             {
                 // Add to value, this is a dynamically sized type - which are only used from Garnet, not DiskANN
-                return new() { KeySize = srcLogRecord.Key.Length, ValueSize = value.Length + (-input.WriteDesiredSize), ExtendedNamespaceSize = GetExtendedNamespaceSize(in srcLogRecord) };
+                return new() { KeySize = srcLogRecord.Key.Length, ValueSize = value.Length + (-input.WriteDesiredSize), ExtendedNamespaceSize = RecordNamespace.GetExtendedNamespaceSize(in srcLogRecord) };
             }
 
-            return new() { KeySize = srcLogRecord.Key.Length, ValueSize = input.WriteDesiredSize, ExtendedNamespaceSize = GetExtendedNamespaceSize(in srcLogRecord) };
+            return new() { KeySize = srcLogRecord.Key.Length, ValueSize = input.WriteDesiredSize, ExtendedNamespaceSize = RecordNamespace.GetExtendedNamespaceSize(in srcLogRecord) };
         }
 
         /// <summary>Initial expected length of value object when populated by RMW using given input</summary>
@@ -177,7 +177,7 @@ namespace Garnet.server
                 effectiveWriteDesiredSize = -effectiveWriteDesiredSize;
             }
 
-            return new() { KeySize = key.KeyBytes.Length, ValueSize = effectiveWriteDesiredSize, ExtendedNamespaceSize = GetExtendedNamespaceSize(in key) };
+            return new() { KeySize = key.KeyBytes.Length, ValueSize = effectiveWriteDesiredSize, ExtendedNamespaceSize = RecordNamespace.GetExtendedNamespaceSize(in key) };
         }
 
         /// <summary>Length of value object, when populated by Upsert using given value and input</summary>
@@ -186,7 +186,7 @@ namespace Garnet.server
 #if NET9_0_OR_GREATER
                 , allows ref struct
 #endif
-        => new() { KeySize = key.KeyBytes.Length, ValueSize = value.Length, ExtendedNamespaceSize = GetExtendedNamespaceSize(in key) };
+        => new() { KeySize = key.KeyBytes.Length, ValueSize = value.Length, ExtendedNamespaceSize = RecordNamespace.GetExtendedNamespaceSize(in key) };
 
         /// <summary>Length of value object, when populated by Upsert using given value and input</summary>
         public readonly RecordFieldInfo GetUpsertFieldInfo<TKey>(TKey key, IHeapObject value, ref VectorInput input)
@@ -203,7 +203,7 @@ namespace Garnet.server
                 , allows ref struct
 #endif
             where TSourceLogRecord : ISourceLogRecord
-        => new() { KeySize = key.KeyBytes.Length, ValueSize = inputLogRecord.ValueSpan.Length, ExtendedNamespaceSize = GetExtendedNamespaceSize(in key) };
+        => new() { KeySize = key.KeyBytes.Length, ValueSize = inputLogRecord.ValueSpan.Length, ExtendedNamespaceSize = RecordNamespace.GetExtendedNamespaceSize(in key) };
         #endregion Variable Length
 
         #region InitialUpdater
@@ -508,25 +508,6 @@ namespace Garnet.server
         {
         }
         #endregion
-
-        private static int GetExtendedNamespaceSize<TKey>(in TKey key)
-            where TKey : IKey
-#if NET9_0_OR_GREATER
-                , allows ref struct
-#endif
-        {
-            if (!key.HasNamespace)
-            {
-                return 0;
-            }
-
-            if (key.NamespaceBytes.Length == 1 && key.NamespaceBytes[0] < 128)
-            {
-                return 0;
-            }
-
-            return key.NamespaceBytes.Length;
-        }
 
         /// <inheritdoc />
         public void PreSingleKeyConsistentRead(long hash)
