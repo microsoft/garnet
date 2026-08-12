@@ -168,16 +168,14 @@ namespace Tsavorite.core
 #if NET9_0_OR_GREATER
                 , allows ref struct
 #endif
-            // TODO: Namespace!
-            => new() { KeySize = key.KeyBytes.Length, ValueSize = value.Length, ValueIsObject = false };
+            => new() { KeySize = key.KeyBytes.Length, ValueSize = value.Length, ValueIsObject = false, ExtendedNamespaceSize = RecordNamespace.GetExtendedNamespaceSize(in key) };
         /// <inheritdoc/>
         public virtual RecordFieldInfo GetUpsertFieldInfo<TKey>(TKey key, IHeapObject value, ref TInput input)
             where TKey : IKey
 #if NET9_0_OR_GREATER
                 , allows ref struct
 #endif
-            // TODO: Namespace!
-            => new() { KeySize = key.KeyBytes.Length, ValueSize = ObjectIdMap.ObjectIdSize, ValueIsObject = true };
+            => new() { KeySize = key.KeyBytes.Length, ValueSize = ObjectIdMap.ObjectIdSize, ValueIsObject = true, ExtendedNamespaceSize = RecordNamespace.GetExtendedNamespaceSize(in key) };
         /// <inheritdoc/>
         public virtual RecordFieldInfo GetUpsertFieldInfo<TKey, TSourceLogRecord>(TKey key, in TSourceLogRecord inputLogRecord, ref TInput input)
             where TKey : IKey
@@ -185,8 +183,7 @@ namespace Tsavorite.core
                 , allows ref struct
 #endif
             where TSourceLogRecord : ISourceLogRecord
-            // TODO: Namespace!
-            => new() { KeySize = key.KeyBytes.Length, ValueSize = inputLogRecord.DataHeader.ValueIsObject ? ObjectIdMap.ObjectIdSize : inputLogRecord.ValueSpan.Length, ValueIsObject = inputLogRecord.DataHeader.ValueIsObject };
+            => new() { KeySize = key.KeyBytes.Length, ValueSize = inputLogRecord.DataHeader.ValueIsObject ? ObjectIdMap.ObjectIdSize : inputLogRecord.ValueSpan.Length, ValueIsObject = inputLogRecord.DataHeader.ValueIsObject, ExtendedNamespaceSize = RecordNamespace.GetExtendedNamespaceSize(in key) };
 
         /// <inheritdoc/>
         public virtual void ConvertOutputToHeap(ref TInput input, ref TOutput output) { }
