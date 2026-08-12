@@ -187,6 +187,14 @@ namespace Tsavorite.kvbench
             var gc0 = GC.CollectionCount(0);
             var gc1 = GC.CollectionCount(1);
             var gc2 = GC.CollectionCount(2);
+
+            // Buffer-pool instrumentation: reset the per-size-class counters exactly at the measured
+            // window's open so the sampled curve/table reflect ONLY steady-state run traffic (the cache
+            // is already warm from load + warmup, so allocations should plateau while reuse climbs).
+            var poolStatsThisPhase = Options.PoolStats && phase == "run";
+            if (poolStatsThisPhase)
+                SectorAlignedBufferPool.Stats.Reset();
+
             startTicks = Stopwatch.GetTimestamp();
             gate.Set();
 
@@ -209,12 +217,18 @@ namespace Tsavorite.kvbench
             }
             else
             {
-                Thread.Sleep(TimeSpan.FromSeconds(durationSec));
+                if (poolStatsThisPhase)
+                    PoolStatsSampleWindow(durationSec);
+                else
+                    Thread.Sleep(TimeSpan.FromSeconds(durationSec));
                 Volatile.Write(ref doneBox[0].Value, true);
                 doneTicks = Stopwatch.GetTimestamp();
                 totalForThroughput = SumScoreboard(threadCount);
                 foreach (var t in threads) t.Join();
             }
+
+            if (poolStatsThisPhase)
+                PrintPoolStatsTable(phase, threadCount);
 
             // Aggregate per-worker stats.
             var finalTotal = 0L;
@@ -265,6 +279,75 @@ namespace Tsavorite.kvbench
             for (int i = 1; i <= threadCount; i++)
                 total += Volatile.Read(ref scoreboard[i].Value);
             return total;
+        }
+
+        // ====== Buffer-pool instrumentation (--pool-stats) ======
+
+        /// <summary>
+        /// Samples the buffer-pool alloc/reuse counters across the measured run window, printing a line every
+        /// --report-interval-sec. New-buffer allocations should quickly plateau while cache reuses climb — the
+        /// direct evidence that the origin-return pool stabilizes and reuses buffers across threads and classes.
+        /// </summary>
+        void PoolStatsSampleWindow(int durationSec)
+        {
+            var intervalSec = Options.ReportIntervalSec > 0 ? Options.ReportIntervalSec : 1;
+            var deadline = Stopwatch.GetTimestamp() + (long)(durationSec * (double)Stopwatch.Frequency);
+            long prevAllocs = 0, prevReuses = 0;
+            var proc = Process.GetCurrentProcess();
+            Console.WriteLine($"  [pool-stats] run window ({durationSec}s), sampling every {intervalSec}s:");
+            Console.WriteLine($"    {"t(s)",4}  {"newAllocs",12}  {"dAlloc/s",10}  {"reuses",14}  {"dReuse/s",12}  {"bypass",8}  {"rss(MB)",8}");
+            var start = Stopwatch.GetTimestamp();
+            while (Stopwatch.GetTimestamp() < deadline && !Volatile.Read(ref doneBox[0].Value))
+            {
+                Thread.Sleep(TimeSpan.FromSeconds(intervalSec));
+                var allocs = SumLongs(SectorAlignedBufferPool.Stats.SnapshotAllocs());
+                var reuses = SumLongs(SectorAlignedBufferPool.Stats.SnapshotReuses());
+                var bypass = SectorAlignedBufferPool.Stats.BypassAllocs;
+                var elapsed = (Stopwatch.GetTimestamp() - start) / (double)Stopwatch.Frequency;
+                proc.Refresh();
+                var rssMb = proc.WorkingSet64 / (1024.0 * 1024.0);
+                Console.WriteLine($"    {elapsed,4:0.0}  {allocs,12:N0}  {(allocs - prevAllocs) / (double)intervalSec,10:N0}  {reuses,14:N0}  {(reuses - prevReuses) / (double)intervalSec,12:N0}  {bypass,8:N0}  {rssMb,8:0.0}");
+                prevAllocs = allocs;
+                prevReuses = reuses;
+            }
+        }
+
+        /// <summary>Prints the per-size-class allocation/reuse table gathered over the run window.</summary>
+        void PrintPoolStatsTable(string phase, int threadCount)
+        {
+            var allocs = SectorAlignedBufferPool.Stats.SnapshotAllocs();
+            var reuses = SectorAlignedBufferPool.Stats.SnapshotReuses();
+            var bypass = SectorAlignedBufferPool.Stats.BypassAllocs;
+            var sectorSize = device?.SectorSize ?? 512;
+            long totalAllocs = 0, totalReuses = 0;
+            for (int c = 0; c < allocs.Length; c++) { totalAllocs += allocs[c]; totalReuses += reuses[c]; }
+
+            Console.WriteLine();
+            Console.WriteLine($"  [pool-stats] per-size-class summary (phase={phase}, threads={threadCount}, sector={sectorSize}B):");
+            Console.WriteLine($"    {"cls",3}  {"capacity",12}  {"newAllocs",12}  {"reuses",14}  {"reuse%",8}  {"gets",14}");
+            for (int c = 0; c < allocs.Length; c++)
+            {
+                if (allocs[c] == 0 && reuses[c] == 0)
+                    continue;
+                var capBytes = (long)SectorAlignedBufferPool.Stats.ClassCapacitySectors(c) * sectorSize;
+                var gets = allocs[c] + reuses[c];
+                var reusePct = gets > 0 ? 100.0 * reuses[c] / gets : 0.0;
+                Console.WriteLine($"    {c,3}  {KvSize.FormatSize(capBytes),12}  {allocs[c],12:N0}  {reuses[c],14:N0}  {reusePct,7:0.0}%  {gets,14:N0}");
+            }
+            var totalGets = totalAllocs + totalReuses;
+            var totalReusePct = totalGets > 0 ? 100.0 * totalReuses / totalGets : 0.0;
+            Console.WriteLine($"    {"ALL",3}  {"",12}  {totalAllocs,12:N0}  {totalReuses,14:N0}  {totalReusePct,7:0.0}%  {totalGets,14:N0}");
+            Console.WriteLine($"    bypass (> pooled ceiling) allocations: {bypass:N0}");
+            if (totalGets > 0)
+                Console.WriteLine($"    reuse efficiency: {(totalAllocs > 0 ? (double)totalGets / totalAllocs : double.PositiveInfinity):0.0}x gets per new allocation");
+            Console.WriteLine();
+        }
+
+        static long SumLongs(long[] a)
+        {
+            long s = 0;
+            for (int i = 0; i < a.Length; i++) s += a[i];
+            return s;
         }
 
         // ====== Cleanup ======

@@ -75,3 +75,88 @@ Read cache helps bring in records from disk to memory in a separate read cache r
 Use the `--readcache` option to enable the read cache. The following configuration options control its memory utilization:
 * `--readcache-page` controls the size of each read cache page.
 * `--readcache-memory` controls the total read cache memory, covering both inline bytes and referenced heap memory.
+## Sector-aligned buffer pool
+
+Direct (unbuffered) disk I/O requires **sector-aligned** buffers. Garnet serves these from a
+`SectorAlignedBufferPool`, one instance per log/device, that recycles buffers instead of allocating a fresh
+pinned array for every read/flush. By default this is a **scalable, per-thread, origin-return** pool: a returned
+buffer is routed back to the thread that originally allocated it, so it scales with the many I/O-completion
+threads that free buffers concurrently, under a per-pool byte budget that bounds retained memory. The internals
+are described in the developer guide under
+[Sector-Aligned Buffer Pool](../dev/tsavorite/buffer-pool.md).
+
+The `--use-legacy-buffer-pool` (`UseLegacyBufferPool`) switch selects the older per-size-level
+`ConcurrentQueue` pool instead. It is a boolean switch (default **off**):
+
+* **off** (default) — the origin-return per-thread pool. Recommended; it scales across concurrent
+  I/O-completion threads and caps retained bytes with a per-pool byte budget.
+* **on** — the legacy pool: one shared `ConcurrentQueue` per size level with no per-pool byte budget. Provided
+  as a fallback; it does not scale with core count under cross-thread frees.
+
+This switch is decided once per pool at construction and should be set at program entry (like the other pool
+policies). It is independent of `--use-native-allocator`: the buffer pool always uses managed (Pinned Object
+Heap) buffers in this release, regardless of the native-allocator setting.
+
+### Buffer pool memory budget
+
+The `--buffer-pool-memory-budget` (`BufferPoolMemoryBudget`) setting bounds how many buffer bytes the
+origin-return pool keeps cached for reuse **per pool**, across all I/O-completion threads. It is a
+memory-size string (default **`1g`**; e.g. `512m`, `1g`, `8g`):
+
+* The budget is split **25% to small size-classes / 75% to large**, so a burst of large record/flush buffers
+  cannot evict the hot small-buffer cache (and vice-versa).
+* A buffer that would push cached bytes past the budget — or a request above the pooled size ceiling — is
+  still served, but is allocated on demand and freed on return instead of being cached. This caps retained
+  memory at the cost of lower reuse for that buffer.
+* Raise the budget for workloads with a large working set of big values paged to/from disk (fewer
+  large-object-heap allocations and less GC churn); lower it to cap the pool's steady-state footprint.
+* The setting is **ignored when `--use-legacy-buffer-pool` is set** (the legacy pool has no per-pool byte
+  budget), and, like the pool-selection switch, is applied once at program entry before any pool is created.
+* Setting the budget to **`0` disables buffer caching entirely**: every I/O buffer is allocated on demand and
+  reclaimed by the GC on return. This trades reuse for the smallest possible steady-state pool footprint, and
+  is useful when you would rather give that memory to the store and let the GC absorb the buffer churn.
+  Unlike a positive budget, `0` applies to **both** pool backends (it short-circuits the pool entirely rather
+  than bounding it), so it is also honored under `--use-legacy-buffer-pool`.
+
+## Native (off-heap) allocator
+
+By default, Garnet's large, long-lived buffers — the hash index, hybrid-log pages, and recovery frames —
+are allocated as pinned arrays on the managed .NET heap (the Pinned Object Heap). The optional
+`--use-native-allocator` setting moves these allocations *off* the managed heap, into native memory, which reduces
+GC pause times (the collector has far less to scan/compact) and removes POH fragmentation. It is **off by
+default** and opt-in. (The `SectorAlignedBufferPool` IO/flush buffers always remain on the managed Pinned Object
+Heap regardless of this setting.)
+
+`--use-native-allocator` is a boolean switch (default **off**):
+
+* **off** (default) — all allocations use the managed heap.
+* **on** — routes the hash index, hybrid-log pages, and recovery frames to a direct OS
+  virtual-memory allocator (`mmap`/`VirtualAlloc`). These give demand-zero, first-touch-placed pages that match
+  the managed allocator's behavior, but off the GC heap — so a large index/log does not inflate the managed
+  heap. On Linux these regions are 2&#160;MB-aligned and hinted for transparent huge pages, which lowers dTLB
+  misses on random index/log access (measured ~8% higher in-memory throughput vs the managed heap). No native
+  library is required — the direct-VM surfaces call the OS virtual-memory APIs directly. (Network buffers and
+  the sector-aligned IO/flush buffer pool remain managed in this release.)
+
+### Sizing and the GC when native memory is enabled
+
+Native memory lives **outside** the managed GC heap, so:
+
+* Size `GCHeapHardLimit`/`GCHeapHardLimitPercent` to leave headroom for the native pools; the GC's own limit
+  does not account for native memory.
+* Set `DOTNET_GCDynamicAdaptationMode=0` — DATAS (default in .NET 9+) resizes the managed heap by throughput and
+  is blind to native memory, so it can grow the heap into a container OOM.
+* Monitor `native_allocator_bytes` in `INFO memory` alongside `gc_heap_bytes`. For example, with a large index and
+  the native allocator enabled you will see the index bytes move from `gc_heap_bytes` into `native_allocator_bytes`,
+  with the managed heap becoming dramatically smaller.
+
+Native memory is not reported to the GC via `GC.AddMemoryPressure` (which would only trigger unproductive Gen2
+collections that cannot reclaim it); use the hard-limit + telemetry approach above instead.
+
+### Platform support
+
+The direct-VM surfaces (hash index, log pages, frames) use `mmap`/`VirtualAlloc` and need no shipped
+native binary, so they work on any platform. Transparent huge pages for those regions are a Linux optimization
+(`madvise(MADV_HUGEPAGE)`); on Windows they use regular pages (large-page support there needs the privileged
+`SeLockMemoryPrivilege`), so the native allocator is functionally identical on Windows, just without the huge-page
+throughput bonus.

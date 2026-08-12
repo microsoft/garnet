@@ -31,6 +31,28 @@ namespace Tsavorite.core
         // An array of size two, that contains the old and new versions of the hash-table
         internal InternalHashTable[] state = new InternalHashTable[2];
 
+        // Direct-VM ownership of the two hash-index table versions when the HashIndex native surface is enabled;
+        // null for the managed backend, which is therefore what useNativeHashIndex tests. Blocks are kept here
+        // rather than in <see cref="state"/> (which is set to default on grow-completion) so the pointer to free
+        // survives. See DirectVmBlockOwner for the retire/park/drain protocol; RetireNativeIndexTable and
+        // Begin/EndNativeIndexCheckpointIo below are this store's uses of it.
+        readonly DirectVmBlockOwner nativeIndex = NativeAllocatorInitializer.Enabled ? new DirectVmBlockOwner(blockCount: 2) : null;
+
+        /// <summary>Diagnostic counter of superseded direct-VM hash-index tables freed deterministically (on grow,
+        /// or when an index-checkpoint write drains); used by tests to assert the prompt-free path is exercised.</summary>
+        internal static long NativeIndexTableFreeCount;
+
+        /// <summary>Diagnostic counter of superseded direct-VM hash-index tables parked because an index-checkpoint
+        /// write was in flight at grow time; used by tests to assert the deferral path is exercised.</summary>
+        internal static long NativeIndexTableDeferredCount;
+
+        // Whether the main hash-index table uses the direct-VM backend, captured once at construction by whether
+        // nativeIndex was created. Used instead of re-reading the process-global NativeAllocatorInitializer.Enabled
+        // in InitializeMainIndex (called at construction and on grow). Production sets that global once at startup
+        // (GarnetServer.Initialize) and never changes it, but test fixtures do flip it between runs in a single
+        // process, so capturing keeps this index on the backend that was in effect when the store was built.
+        bool useNativeHashIndex => nativeIndex is not null;
+
         // Array used to denote if a specific chunk is merged or not
         internal long[] splitStatus;
 
@@ -73,6 +95,13 @@ namespace Tsavorite.core
                 epoch.Dispose();
             overflowBucketsAllocator.Dispose();
             overflowBucketsAllocatorResize?.Dispose();
+
+            // Hand the LIVE direct-VM index tables, and any superseded tables still parked awaiting an outstanding
+            // index-checkpoint write, to the finalization-owned registry rather than munmap'ing here: an index
+            // checkpoint's async device write may still reference a table (the device holds a raw pointer and is
+            // disposed by the owner AFTER this store). Null (no-op) for the managed backend.
+            nativeIndex?.HandOffInstalledBlocks();
+            nativeIndex?.HandOffDeferredBlocks();
         }
 
         /// <summary>
@@ -112,15 +141,80 @@ namespace Tsavorite.core
 
             logger?.LogTrace("KV Initialize size:{size}, sizeBytes:{sizeBytes} sectorSize:{sectorSize} alignedSizeBytes:{alignedSizeBytes}", size, size_bytes, sector_size, aligned_size_bytes);
 
-            // Over-allocate and align the table to the cacheline
-            state[version].tableRaw = GC.AllocateArray<HashBucket>((int)(aligned_size_bytes / Constants.kCacheLineBytes), true);
-            var sectorAlignedPointer = ((long)Unsafe.AsPointer(ref state[version].tableRaw[0]) + (sector_size - 1)) & ~(sector_size - 1);
-            state[version].tableAligned = (HashBucket*)sectorAlignedPointer;
+            if (useNativeHashIndex)
+            {
+                // Direct-VM (mmap/VirtualAlloc): demand-zero, first-touch-placed pages. A prior block may still
+                // occupy this version slot (grow reuses the two versions alternately), and that superseded table is
+                // dead once we overwrite the slot. Allocate the replacement FIRST: a throwing allocation (e.g. OOM
+                // mapping a large index) then leaves the existing table and its state pointer intact rather than
+                // dangling into a freed/parked block. Only after the new block is live do we retire the old one —
+                // deterministically here when no index-checkpoint write is outstanding; otherwise a canceled index
+                // checkpoint may have left an async device write referencing it (StateMachineDriver releases the
+                // state machine on cancellation without draining the index-write TCS), so park it and free it when
+                // the write drains (RetireNativeIndexTable).
+                var block = DirectVirtualMemory.Allocate(size_bytes, sector_size);
+                var oldBlock = nativeIndex.Blocks[version];
+                nativeIndex.Blocks[version] = block;
+                state[version].tableRaw = null;
+                state[version].tableAligned = (HashBucket*)block.AlignedPtr;
+                if (!oldBlock.IsEmpty)
+                    RetireNativeIndexTable(oldBlock);
+            }
+            else
+            {
+                // Over-allocate and align the table to the cacheline
+                state[version].tableRaw = GC.AllocateArray<HashBucket>((int)(aligned_size_bytes / Constants.kCacheLineBytes), true);
+                var sectorAlignedPointer = ((long)Unsafe.AsPointer(ref state[version].tableRaw[0]) + (sector_size - 1)) & ~(sector_size - 1);
+                state[version].tableAligned = (HashBucket*)sectorAlignedPointer;
+            }
 
             // Successful (re-)allocation so update the state sizes.
             state[version].size = size;
             state[version].size_mask = size - 1;
             state[version].size_bits = Utility.GetLogBase2((int)size);
+        }
+
+        /// <summary>Count one unit of in-flight index-checkpoint device IO (a producer sentinel for the duration of
+        /// issuance, or one issued chunk write). While non-zero, a superseded native table retired on a grow is
+        /// parked rather than munmap'd, because a (possibly canceled) index-checkpoint write may still reference it.
+        /// No-op for the managed backend.</summary>
+        internal void BeginNativeIndexCheckpointIo()
+        {
+            nativeIndex?.BeginIo();
+        }
+
+        /// <summary>Release one unit of in-flight index-checkpoint device IO (the issuance sentinel, or one chunk
+        /// write's completion callback — including the error path). When the last unit is released, free any tables
+        /// that were superseded by a grow while the write was outstanding. No-op for the managed backend.</summary>
+        internal void EndNativeIndexCheckpointIo()
+        {
+            if (nativeIndex is null || !nativeIndex.EndIo())
+                return;
+            var toFree = nativeIndex.TryDrainDeferred();
+            if (toFree is not null)
+                foreach (var block in toFree)
+                {
+                    _ = Interlocked.Increment(ref NativeIndexTableFreeCount);
+                    DirectVirtualMemory.Free(block);
+                }
+        }
+
+        /// <summary>Reclaim a direct-VM hash-index table superseded by a grow. Munmap it immediately when no
+        /// index-checkpoint write is outstanding (the common case); otherwise park it (guarded by the direct-VM
+        /// owner's gate) so a possibly-canceled index-checkpoint write still referencing it is never unmapped
+        /// early — it is freed when the last write completes (<see cref="EndNativeIndexCheckpointIo"/>) or, if still
+        /// parked at teardown, handed to the finalization-owned registry in <see cref="Free"/>. Cold path (grow).</summary>
+        void RetireNativeIndexTable(in DirectVmBlock block)
+        {
+            if (block.IsEmpty)
+                return;
+            if (nativeIndex.TryDeferFree(block))
+            {
+                _ = Interlocked.Increment(ref NativeIndexTableDeferredCount);
+                return;
+            }
+            _ = Interlocked.Increment(ref NativeIndexTableFreeCount);
+            DirectVirtualMemory.Free(block);
         }
 
         /// <summary>

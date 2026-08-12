@@ -410,8 +410,14 @@ namespace Tsavorite.core
         /// <inheritdoc />
         public void Reset()
         {
-            // Reset the hash index
-            Array.Clear(state[resizeInfo.version].tableRaw, 0, state[resizeInfo.version].tableRaw.Length);
+            // Reset the hash index (backend-neutral: managed array vs direct-VM region).
+            if (state[resizeInfo.version].tableRaw != null)
+                Array.Clear(state[resizeInfo.version].tableRaw, 0, state[resizeInfo.version].tableRaw.Length);
+            else
+                unsafe
+                {
+                    DirectVirtualMemory.Clear((nint)state[resizeInfo.version].tableAligned, state[resizeInfo.version].size * sizeof(HashBucket));
+                }
             overflowBucketsAllocator.Dispose();
             overflowBucketsAllocator = new MallocFixedPageSize<HashBucket>(logger);
 

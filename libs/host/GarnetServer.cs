@@ -199,6 +199,35 @@ namespace Garnet
                 string.Join(',', opts.EndPoints.Select(endpoint => endpoint.ToString())));
             logger?.LogInformation("Environment .NET {netVersion}; {osPlatform}; {processArch}", Environment.Version, Environment.OSVersion.Platform, RuntimeInformation.ProcessArchitecture);
 
+            // Install the native (off-managed-heap) allocator before any store or buffer pool is created.
+            NativeAllocatorInitializer.Initialize(opts.UseNativeAllocator, loggerFactory?.CreateLogger("NativeAllocator"));
+
+            // Select the managed SectorAlignedBufferPool backend before any pool is constructed (each pool captures
+            // this static once at construction). Default is the origin-return (per-thread) pool; the flag
+            // selects the per-level ConcurrentQueue pool instead.
+            SectorAlignedBufferPool.UseOriginReturn = !opts.UseLegacyBufferPool;
+
+            // Set the origin-return pool's managed byte budget before any pool is constructed (ignored in legacy mode).
+            // A budget of zero is an explicit opt-out of buffer caching: route it to the pool's Disabled short-circuit
+            // (honored by both backends) so every Get allocates and every Return drops, rather than paying for shard
+            // and bucket lookups plus a doomed permit reservation on each Get. A negative budget is only reachable by
+            // overflowing ParseSize (e.g. "16000000p"), so it is a misconfiguration rather than an intent; reject it.
+            if (!string.IsNullOrEmpty(opts.BufferPoolMemoryBudget))
+            {
+                var bufferPoolBudgetBytes = opts.GetBufferPoolMemoryBudgetBytes();
+                if (bufferPoolBudgetBytes > 0)
+                    SectorAlignedBufferPool.ManagedBudgetBytes = bufferPoolBudgetBytes;
+                else if (bufferPoolBudgetBytes == 0)
+                {
+                    SectorAlignedBufferPool.Disabled = true;
+                    logger?.LogInformation("Buffer pool caching disabled by --buffer-pool-memory-budget '{budget}': every IO buffer is allocated on demand and freed on return.",
+                        opts.BufferPoolMemoryBudget);
+                }
+                else
+                    logger?.LogWarning("Ignoring --buffer-pool-memory-budget '{budget}': value is out of range. Using {default} bytes.",
+                        opts.BufferPoolMemoryBudget, SectorAlignedBufferPool.ManagedBudgetBytes);
+            }
+
             // Flush initialization logs from memory logger
             FlushMemoryLogger(this.initLogger, "ArgParser", this.loggerFactory);
 

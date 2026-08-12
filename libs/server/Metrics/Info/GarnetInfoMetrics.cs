@@ -140,6 +140,7 @@ namespace Garnet.server
                 new("gc_heap_bytes", gcMemoryInfo.HeapSizeBytes.ToString()),
                 new("gc_managed_memory_bytes_excluding_heap", gcAvailableMemory.ToString()),
                 new("gc_fragmented_bytes", gcMemoryInfo.FragmentedBytes.ToString()),
+                new("native_allocator_bytes", Tsavorite.core.NativeMemoryTracker.Bytes.ToString()),
                 new("store_index_size", store_index_size.ToString()),
                 new("store_mainlog_memory_size", store_mainlog_memory_size.ToString()),
                 new("store_readcache_memory_size", store_readcache_memory_size.ToString()),
