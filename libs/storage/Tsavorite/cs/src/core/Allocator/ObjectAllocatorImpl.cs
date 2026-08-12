@@ -293,6 +293,7 @@ namespace Tsavorite.core
                 {
                     KeySize = key.KeyBytes.Length,
                     ValueSize = 0,          // This will be inline, and with the length prefix and possible space when rounding up to kRecordAlignment, allows the possibility revivification can reuse the record for a Heap Field
+                    ExtendedNamespaceSize = RecordNamespace.GetExtendedNamespaceSize(in key),
                     HasETag = false,
                     HasExpiration = false
                 }

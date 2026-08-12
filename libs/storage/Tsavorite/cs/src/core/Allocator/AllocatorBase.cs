@@ -1514,8 +1514,9 @@ namespace Tsavorite.core
             }
             catch (Exception ex)
             {
-                logger?.LogCritical(ex, "OnPagesClosedWorker failed, page closing will not resume. ClosedUntilAddress={ClosedUntilAddress} OngoingCloseUntilAddress={OngoingCloseUntilAddress}", ClosedUntilAddress, OngoingCloseUntilAddress);
-                throw;
+                // Page closing cannot resume after a failure here, so the log would stall silently. Crash instead: a dump is the
+                // only practical way to diagnose this.
+                Environment.FailFast($"OnPagesClosedWorker failed; allocator state is unrecoverable. ClosedUntilAddress={ClosedUntilAddress}, OngoingCloseUntilAddress={OngoingCloseUntilAddress}", ex);
             }
         }
 
