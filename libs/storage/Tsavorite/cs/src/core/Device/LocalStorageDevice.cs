@@ -334,6 +334,7 @@ namespace Tsavorite.core
             catch (IOException e)
             {
                 logger?.LogCritical(e, $"{nameof(WriteAsync)}");
+                RecordError(e);
                 Interlocked.Decrement(ref numPending);
                 callback((uint)(e.HResult & 0x0000FFFF), 0, context);
                 results.Enqueue(result);
@@ -341,6 +342,7 @@ namespace Tsavorite.core
             catch (Exception e)
             {
                 logger?.LogCritical(e, $"{nameof(WriteAsync)}");
+                RecordError(e);
                 Interlocked.Decrement(ref numPending);
                 callback(uint.MaxValue, 0, context);
                 results.Enqueue(result);

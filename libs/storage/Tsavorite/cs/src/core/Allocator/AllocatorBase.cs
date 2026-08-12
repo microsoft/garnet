@@ -2357,8 +2357,9 @@ namespace Tsavorite.core
                 {
                     if (errorCode != 0)
                     {
-                        // Note down error details and trigger handling only when we are certain this is the earliest error among currently issued flushes
-                        errorList.Add(new CommitInfo { FromAddress = result.fromAddress, UntilAddress = result.untilAddress, ErrorCode = errorCode });
+                        // Note down error details and trigger handling only when we are certain this is the earliest error among currently issued flushes.
+                        // Capture the device's underlying exception (the completion channel only carries a numeric code) so it can be surfaced for diagnosis.
+                        errorList.Add(new CommitInfo { FromAddress = result.fromAddress, UntilAddress = result.untilAddress, ErrorCode = errorCode, Exception = (device as StorageDeviceBase)?.LastError });
                     }
                     else
                     {

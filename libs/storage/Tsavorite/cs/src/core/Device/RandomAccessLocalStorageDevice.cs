@@ -302,6 +302,7 @@ namespace Tsavorite.core
             catch (Exception ex)
             {
                 logger?.LogCritical(ex, $"{nameof(WriteAsync)}");
+                RecordError(ex);
                 var ioex = ex as IOException ?? ex.InnerException as IOException;
                 if (ioex is not null)
                     errorCode = (uint)(ioex.HResult & 0x0000FFFF);

@@ -277,6 +277,7 @@ namespace Tsavorite.core
             catch (Exception e)
             {
                 logger?.LogCritical(e, $"{nameof(WriteAsync)}");
+                RecordError(e);
                 Interlocked.Decrement(ref numPending);
 
                 // Perform pool returns and disposals
@@ -305,6 +306,7 @@ namespace Tsavorite.core
                     catch (Exception e)
                     {
                         logger?.LogCritical(e, $"{nameof(WriteAsync)}");
+                        RecordError(e);
                         Interlocked.Decrement(ref numPending);
 
                         // Perform pool returns and disposals
@@ -323,6 +325,7 @@ namespace Tsavorite.core
                 catch (Exception ex)
                 {
                     logger?.LogCritical(ex, $"{nameof(WriteAsync)}");
+                    RecordError(ex);
                     if (ex.InnerException != null && ex.InnerException is IOException ioex)
                         errorCode = (uint)(ioex.HResult & 0x0000FFFF);
                     else

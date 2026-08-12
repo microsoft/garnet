@@ -2685,7 +2685,8 @@ namespace Tsavorite.core
             if (commitInfo.ErrorCode != 0)
             {
                 var exception = new CommitFailureException(new LinkedCommitInfo { CommitInfo = commitInfo },
-                    $"Commit of address range [{commitInfo.FromAddress}-{commitInfo.UntilAddress}] failed with error code {commitInfo.ErrorCode}");
+                    $"Commit of address range [{commitInfo.FromAddress}-{commitInfo.UntilAddress}] failed with error code {commitInfo.ErrorCode}",
+                    commitInfo.Exception);
                 if (tolerateDeviceFailure)
                 {
                     var oldCommitTcs = commitTcs;

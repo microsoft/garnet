@@ -79,6 +79,20 @@ namespace Tsavorite.core
         /// <remarks>If true, SegmentSize must be -1</remarks>
         protected bool OmitSegmentIdFromFileName;
 
+        private Exception lastError;
+
+        /// <summary>
+        /// The most recent exception thrown while issuing or completing an I/O on this device, or null if none has occurred.
+        /// The device-to-allocator completion callback only carries a numeric error code (a non-<see cref="System.IO.IOException"/>
+        /// failure collapses to <see cref="uint.MaxValue"/>), which discards the original type and stack. Capturing it here lets an
+        /// upper layer (e.g. <see cref="AllocatorBase{TStoreFunctions, TAllocator}"/>.AsyncFlushPageCallback) surface the real fault
+        /// as the InnerException of a <see cref="CommitFailureException"/> so failures are diagnosable.
+        /// </summary>
+        internal Exception LastError => Volatile.Read(ref lastError);
+
+        /// <summary>Record a device I/O exception for later diagnostic retrieval via <see cref="LastError"/>.</summary>
+        protected internal void RecordError(Exception ex) => Volatile.Write(ref lastError, ex);
+
         /// <summary>
         /// Initializes a new StorageDeviceBase
         /// </summary>
