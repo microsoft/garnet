@@ -88,6 +88,7 @@ namespace Garnet
         public string IndexMaxMemorySize { get; set; }
 
         [Option("native-allocator", Required = false, HelpText = "Route large/pooled memory through a native (off-managed-heap) allocator. Values: off (default), buffer-pool (SectorAlignedBufferPool IO buffers via mimalloc), full (also routes log pages / hash index / frames to a direct-VM allocator). buffer-pool and full require the mimalloc native library; if it cannot be loaded for the platform, startup fails (rather than silently using the managed pool). Set off to run fully managed.")]
+        [NativeAllocatorModeValidation(false)]
         public string NativeAllocator { get; set; }
 
         [PercentageValidation(false)]
@@ -740,27 +741,44 @@ namespace Garnet
             return isValid;
         }
 
-        static NativeAllocatorSurfaces ParseNativeAllocatorMode(string mode, ILogger logger)
+        /// <summary>
+        /// Parse the <c>--native-allocator</c> mode string into its surface set. Returns <c>false</c> for an
+        /// unrecognized value (empty/unset maps to <see cref="NativeAllocatorSurfaces.None"/>).
+        /// </summary>
+        internal static bool TryParseNativeAllocatorMode(string mode, out NativeAllocatorSurfaces surfaces)
         {
             if (string.IsNullOrWhiteSpace(mode))
-                return NativeAllocatorSurfaces.None;
+            {
+                surfaces = NativeAllocatorSurfaces.None;
+                return true;
+            }
             switch (mode.Trim().ToLowerInvariant())
             {
                 case "off":
                 case "none":
                 case "managed":
-                    return NativeAllocatorSurfaces.None;
+                    surfaces = NativeAllocatorSurfaces.None;
+                    return true;
                 case "buffer-pool":
                 case "bufferpool":
                 case "pool":
-                    return NativeAllocatorSurfaces.BufferPool;
+                    surfaces = NativeAllocatorSurfaces.BufferPool;
+                    return true;
                 case "full":
                 case "all":
-                    return NativeAllocatorSurfaces.Full;
+                    surfaces = NativeAllocatorSurfaces.Full;
+                    return true;
                 default:
-                    logger?.LogWarning("Unknown --native-allocator value '{mode}'; defaulting to 'off'.", mode);
-                    return NativeAllocatorSurfaces.None;
+                    surfaces = NativeAllocatorSurfaces.None;
+                    return false;
             }
+        }
+
+        static NativeAllocatorSurfaces ParseNativeAllocatorMode(string mode)
+        {
+            if (!TryParseNativeAllocatorMode(mode, out var surfaces))
+                throw new GarnetException($"Invalid --native-allocator value '{mode}'. Expected one of: off, buffer-pool, full.");
+            return surfaces;
         }
 
         public GarnetServerOptions GetServerOptions(ILogger logger = null)
@@ -891,7 +909,7 @@ namespace Garnet
                 ObjectLogSegmentSize = ObjectLogSegmentSize,
                 IndexMemorySize = IndexMemorySize,
                 IndexMaxMemorySize = IndexMaxMemorySize,
-                NativeAllocatorSurfaces = ParseNativeAllocatorMode(NativeAllocator, logger),
+                NativeAllocatorSurfaces = ParseNativeAllocatorMode(NativeAllocator),
                 MutablePercent = MutablePercent,
                 EnableReadCache = EnableReadCache.GetValueOrDefault(),
                 ReadCacheMemorySize = ReadCacheMemorySize,

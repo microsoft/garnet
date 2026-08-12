@@ -120,7 +120,8 @@ collections that cannot reclaim it); use the hard-limit + telemetry approach abo
 
 The mimalloc-backed `buffer-pool` (and `full`, which includes it) requires the prebuilt mimalloc native library,
 shipped per-RID under `runtimes/<rid>/native/` (`libmimalloc.so`, `mimalloc.dll`, …). Prebuilt binaries are
-currently shipped for **linux-x64** and **win-x64**; on a platform without one, `buffer-pool`/`full` fail fast at
+shipped for **linux-x64**, **linux-arm64**, **linux-musl-x64**, **linux-musl-arm64**, **win-x64**, and
+**win-arm64**; on a platform without one, `buffer-pool`/`full` fail fast at
 startup (see above) — build the binary for that RID with `libs/storage/Tsavorite/cs/src/core/Native/build-mimalloc.sh`
 and commit it under `runtimes/<rid>/native/`. The direct-VM surfaces in `full` (hash index, log pages, frames)
 use `mmap`/`VirtualAlloc` and need no shipped binary, so they work on any platform. Transparent huge pages for

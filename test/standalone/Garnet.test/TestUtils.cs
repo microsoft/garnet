@@ -349,7 +349,7 @@ namespace Garnet.test
             int mutablePercent = 90,
             int compactionMaxSegments = 32,
             string segmentSize = "1g",
-            NativeAllocatorSurfaces nativeAllocator = NativeAllocatorSurfaces.None
+            NativeAllocatorSurfaces? nativeAllocator = null
         )
         {
             if (useAzureStorage)
@@ -396,7 +396,7 @@ namespace Garnet.test
                 DisablePubSub = disablePubSub,
                 Recover = tryRecover,
                 IndexMemorySize = indexSize,
-                NativeAllocatorSurfaces = nativeAllocator != NativeAllocatorSurfaces.None ? nativeAllocator : NativeAllocatorInitializer.EnvBaselineSurfaces,
+                NativeAllocatorSurfaces = nativeAllocator ?? NativeAllocatorInitializer.EnvBaselineSurfaces,
                 EnableAOF = enableAOF,
                 EnableLua = enableLua,
                 AofMemorySize = aofMemorySize,

@@ -27,15 +27,9 @@ namespace Tsavorite.core
         // managed array's base alignment.
         const int Stride = 16;
 
-        static readonly long[] slots;
-        static readonly int mask;
-
-        static NativeMemoryTracker()
-        {
-            var stripes = (int)BitOperations.RoundUpToPowerOf2((uint)Math.Max(1, Environment.ProcessorCount));
-            slots = new long[stripes * Stride];
-            mask = stripes - 1;
-        }
+        static readonly int stripes = (int)BitOperations.RoundUpToPowerOf2((uint)Math.Max(1, Environment.ProcessorCount));
+        static readonly long[] slots = new long[stripes * Stride];
+        static readonly int mask = stripes - 1;
 
         /// <summary>
         /// Current outstanding native bytes: mimalloc committed (on-demand) plus direct-VM tracked bytes.
@@ -47,7 +41,7 @@ namespace Tsavorite.core
             {
                 long total = Mimalloc.CommittedBytes();
                 for (var i = 0; i < slots.Length; i += Stride)
-                    total += Interlocked.Read(ref slots[i]);
+                    total += Volatile.Read(ref slots[i]);
                 return total;
             }
         }
@@ -63,7 +57,7 @@ namespace Tsavorite.core
             {
                 long total = 0;
                 for (var i = 0; i < slots.Length; i += Stride)
-                    total += Interlocked.Read(ref slots[i]);
+                    total += Volatile.Read(ref slots[i]);
                 return total;
             }
         }

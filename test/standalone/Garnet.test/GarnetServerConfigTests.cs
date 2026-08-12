@@ -128,6 +128,10 @@ namespace Garnet.test
             ok = ServerSettingsManager.TryParseCommandLineArguments(["--native-allocator", "full"], out options, out _, out _, out _, silentMode: true);
             ClassicAssert.IsTrue(ok);
             ClassicAssert.AreEqual(NativeAllocatorSurfaces.Full, options.GetServerOptions().NativeAllocatorSurfaces);
+
+            // An unrecognized value is rejected during validation, not silently defaulted to "off".
+            ok = ServerSettingsManager.TryParseCommandLineArguments(["--native-allocator", "ful"], out _, out _, out _, out _, silentMode: true);
+            ClassicAssert.IsFalse(ok, "an unrecognized --native-allocator value must fail validation");
         }
 
         [Test]

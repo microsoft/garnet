@@ -3,6 +3,7 @@
 
 using System;
 using System.IO;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using Microsoft.Extensions.Logging;
 
@@ -18,8 +19,8 @@ namespace Tsavorite.core
     internal static unsafe class Mimalloc
     {
         static readonly object InitLock = new();
-        static bool initialized;
-        static bool available;
+        static volatile bool initialized;
+        static volatile bool available;
 
         static delegate* unmanaged[Cdecl]<nuint, nuint, nint> p_malloc_aligned;
         static delegate* unmanaged[Cdecl]<nuint, nuint, nint> p_zalloc_aligned;
@@ -99,35 +100,35 @@ namespace Tsavorite.core
             return available;
         }
 
-        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static nint MallocAligned(nuint size, nuint alignment) => p_malloc_aligned(size, alignment);
 
-        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static nint ZallocAligned(nuint size, nuint alignment) => p_zalloc_aligned(size, alignment);
 
-        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static void Free(nint ptr) => p_free(ptr);
 
         // ---- SuppressGCTransition fast variants (hot path) ----
 
-        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static nint MallocAlignedFast(nuint size, nuint alignment) => p_malloc_aligned_fast(size, alignment);
 
-        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static nint ZallocAlignedFast(nuint size, nuint alignment) => p_zalloc_aligned_fast(size, alignment);
 
-        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static void FreeFast(nint ptr) => p_free_fast(ptr);
 
         // ---- Plain (unaligned) malloc, profiling only ----
 
-        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static nint Malloc(nuint size) => p_malloc(size);
 
-        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static nint MallocFast(nuint size) => p_malloc_fast(size);
 
-        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static nuint UsableSize(nint ptr) => p_usable_size(ptr);
 
         /// <summary>Force mimalloc to return as much unused memory to the OS as possible. Used at shutdown.</summary>

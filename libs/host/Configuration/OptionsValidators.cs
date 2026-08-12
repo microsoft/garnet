@@ -413,6 +413,32 @@ namespace Garnet
     }
 
     /// <summary>
+    /// Validation logic for the <c>--native-allocator</c> mode string (off | buffer-pool | full).
+    /// </summary>
+    [AttributeUsage(AttributeTargets.Property)]
+    internal sealed class NativeAllocatorModeValidationAttribute : OptionValidationAttribute
+    {
+        internal NativeAllocatorModeValidationAttribute(bool isRequired = true) : base(isRequired)
+        {
+        }
+
+        protected override ValidationResult IsValid(object value, ValidationContext validationContext)
+        {
+            if (TryInitialValidation<string>(value, validationContext, out var initValidationResult, out var mode))
+                return initValidationResult;
+
+            if (!Options.TryParseNativeAllocatorMode(mode, out _))
+            {
+                var baseError = validationContext.MemberName != null ? base.FormatErrorMessage(validationContext.MemberName) : string.Empty;
+                var errorMessage = $"{baseError} Expected one of: off, buffer-pool, full. Actual value: {mode}";
+                return new ValidationResult(errorMessage, [validationContext.MemberName]);
+            }
+
+            return ValidationResult.Success;
+        }
+    }
+
+    /// <summary>
     /// Validation logic for an integer representing a percentage (range between 0 and 100)
     /// </summary>
     [AttributeUsage(AttributeTargets.Property)]

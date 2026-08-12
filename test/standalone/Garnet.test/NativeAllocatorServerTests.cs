@@ -29,7 +29,7 @@ namespace Garnet.test
     /// </summary>
     [TestFixture]
     [NonParallelizable]
-    public class NativeAllocatorServerTests
+    public class NativeAllocatorServerTests : TestBase
     {
         GarnetServer server;
 
