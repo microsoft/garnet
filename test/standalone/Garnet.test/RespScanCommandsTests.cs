@@ -648,6 +648,53 @@ namespace Garnet.test
             }
         }
 
+        [Test]
+        [TestCase("SCAN", new[] { "0", "MATCH" })]
+        [TestCase("SCAN", new[] { "0", "COUNT" })]
+        [TestCase("SCAN", new[] { "0", "TYPE" })]
+        [TestCase("SCAN", new[] { "0", "TYPE", "string", "COUNT", "5", "MATCH" })]
+        [TestCase("SCAN", new[] { "0", "MATCH", "*", "COUNT", "10", "TYPE" })]
+        [TestCase("HSCAN", new[] { "myhash", "0", "MATCH" })]
+        [TestCase("HSCAN", new[] { "myhash", "0", "COUNT" })]
+        [TestCase("HSCAN", new[] { "myhash", "0", "NOVALUES", "MATCH" })]
+        [TestCase("SSCAN", new[] { "myset", "0", "MATCH" })]
+        [TestCase("ZSCAN", new[] { "myzset", "0", "MATCH" })]
+        public void ScanOptionKeywordAsLastTokenReturnsSyntaxError(string command, string[] args)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            // HSCAN / SSCAN / ZSCAN only reach the option parser when the key exists
+            db.Execute("HSET", "myhash", "myfield", "myvalue");
+            db.Execute("SADD", "myset", "mymember");
+            db.Execute("ZADD", "myzset", "1", "mymember");
+
+            // MATCH, COUNT and TYPE in final position have no value left to read
+            var exc = ClassicAssert.Throws<RedisServerException>(() => db.Execute(command, args.Cast<object>().ToArray()));
+            ClassicAssert.AreEqual("ERR syntax error", exc.Message);
+        }
+
+        [Test]
+        [TestCase("SCAN", new[] { "0" })]
+        [TestCase("SCAN", new[] { "0", "MATCH", "*" })]
+        [TestCase("SCAN", new[] { "0", "COUNT", "5" })]
+        [TestCase("SCAN", new[] { "0", "TYPE", "string" })]
+        [TestCase("SCAN", new[] { "0", "FOO" })]
+        [TestCase("HSCAN", new[] { "myhash", "0", "MATCH", "*" })]
+        [TestCase("HSCAN", new[] { "myhash", "0", "NOVALUES" })]
+        public void ScanWithCompleteOptionsReturnsCursorAndItems(string command, string[] args)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            db.StringSet("mykey", "myvalue");
+            db.Execute("HSET", "myhash", "myfield", "myvalue");
+
+            // "FOO" is an unrecognized token, which Garnet ignores instead of rejecting
+            var result = db.Execute(command, args.Cast<object>().ToArray());
+            ClassicAssert.AreEqual(2, ((RedisResult[])result).Length);
+        }
+
         #region LigthClientTests
 
         [Test]
