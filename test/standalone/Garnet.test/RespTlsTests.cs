@@ -50,6 +50,50 @@ namespace Garnet.test
         }
 
         [Test]
+        public async Task ClientListSurvivesConnectionsClosedByClientKill()
+        {
+            const int victimCount = 16;
+            var victims = new List<ConnectionMultiplexer>(victimCount);
+
+            try
+            {
+                for (var i = 0; i < victimCount; i++)
+                {
+                    var config = TestUtils.GetConfig(disablePubSub: true, useTLS: true);
+                    config.ClientName = $"client-list-victim-{i}";
+                    victims.Add(await ConnectionMultiplexer.ConnectAsync(config).ConfigureAwait(false));
+                }
+
+                var adminConfig = TestUtils.GetConfig(disablePubSub: true, useTLS: true);
+                adminConfig.AllowAdmin = true;
+                using var admin = await ConnectionMultiplexer.ConnectAsync(adminConfig).ConfigureAwait(false);
+                var server = admin.GetServer(TestUtils.EndPoint);
+                var clients = await server.ClientListAsync().ConfigureAwait(false);
+                var victimClients = clients.Where(client => client.Name?.StartsWith("client-list-victim-", StringComparison.Ordinal) == true).ToArray();
+                ClassicAssert.IsNotEmpty(victimClients);
+
+                foreach (var victim in victimClients)
+                {
+                    _ = await server.ClientKillAsync(victim.Id, skipMe: true).ConfigureAwait(false);
+                }
+
+                var clientListsAfterKill = Enumerable.Range(0, 8)
+                    .Select(_ => server.ClientListAsync())
+                    .ToArray();
+
+                await Task.WhenAll(clientListsAfterKill).ConfigureAwait(false);
+                ClassicAssert.IsTrue(clientListsAfterKill.All(task => task.Result is not null));
+            }
+            finally
+            {
+                foreach (var victim in victims)
+                {
+                    victim.Dispose();
+                }
+            }
+        }
+
+        [Test]
         public async Task TlsSingleSetGetGarnetClient()
         {
             using var db = TestUtils.GetGarnetClient(useTLS: true);

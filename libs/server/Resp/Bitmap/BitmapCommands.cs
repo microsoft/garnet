@@ -373,6 +373,13 @@ namespace Garnet.server
                 return AbortWithErrorMessage(CmdStrings.RESP_ERR_BITOP_DIFF_TWO_SOURCE_KEYS_REQUIRED);
             }
 
+            // NOT is unary: exactly one source key (parseState is [destkey, srckey]).
+            // Extra source keys otherwise produce an undefined result instead of an error.
+            if (bitOp == BitmapOperation.NOT && parseState.Count > 2)
+            {
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_BITOP_NOT_SINGLE_SOURCE_KEY);
+            }
+
             if (parseState.Count > 64)
             {
                 return AbortWithErrorMessage(CmdStrings.RESP_ERR_BITOP_KEY_LIMIT);

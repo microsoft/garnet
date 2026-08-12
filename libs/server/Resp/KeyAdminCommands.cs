@@ -387,14 +387,14 @@ namespace Garnet.server
             {
                 if (!parseState.TryGetExpireOption(2, out expireOption))
                 {
-                    return AbortWithErrorMessage(string.Format(CmdStrings.GenericErrUnsupportedOption, parseState.GetString(2)));
+                    return AbortWithErrorMessage(CmdStrings.GenericErrUnsupportedOption, parseState.GetString(2));
                 }
 
                 if (parseState.Count > 3)
                 {
                     if (!parseState.TryGetExpireOption(3, out var additionExpireOption))
                     {
-                        return AbortWithErrorMessage(string.Format(CmdStrings.GenericErrUnsupportedOption, parseState.GetString(2)));
+                        return AbortWithErrorMessage(CmdStrings.GenericErrUnsupportedOption, parseState.GetString(3));
                     }
 
                     if (expireOption == ExpireOption.XX && (additionExpireOption == ExpireOption.GT ||
@@ -412,10 +412,7 @@ namespace Garnet.server
                     }
                     else
                     {
-                        while (!RespWriteUtils.TryWriteError(
-                                   "ERR NX and XX, GT or LT options at the same time are not compatible", ref dcurr,
-                                   dend))
-                            SendAndReset();
+                        return AbortWithErrorMessage("ERR NX and XX, GT or LT options at the same time are not compatible"u8);
                     }
                 }
             }
