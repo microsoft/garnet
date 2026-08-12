@@ -29,6 +29,7 @@ namespace Tsavorite.core
             var logRecord = log._wrapper.CreateLogRecord(logicalAddress, physicalAddress);
             logRecord.InitializeHeadersForNewRecord(inNewVersion, previousAddress);
             log._wrapper.InitializeRecord(key, logicalAddress, in sizeInfo, ref logRecord);
+            Debug.Assert(logRecord.AllocatedSize == sizeInfo.AllocatedInlineRecordSize, $"Framed record length {logRecord.AllocatedSize} does not match the allocated size {sizeInfo.AllocatedInlineRecordSize}");
             return logRecord;
         }
 

@@ -133,6 +133,39 @@ namespace Garnet.test
                                    ex.Message);
         }
 
+        [Test]
+        [Category("BITOP")]
+        public void BitmapBitOpNotRejectsMultipleSourceKeys()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            db.StringSet("bitop_not_a", "ab");          // length 2
+            db.StringSet("bitop_not_b", "abcdefghij");  // length 10
+
+            // NOT is unary: a single source key works.
+            ClassicAssert.AreEqual(2, (long)db.Execute("BITOP", "NOT", "bitop_not_dst", "bitop_not_a"));
+
+            // More than one source key must be rejected, matching Redis. On unpatched
+            // main the extra keys are silently accepted and NOT produces an undefined
+            // result (destination length becomes that of the longest source).
+            var ex = Assert.Throws<RedisServerException>(() =>
+                db.Execute("BITOP", "NOT", "bitop_not_dst", "bitop_not_a", "bitop_not_b"));
+            ClassicAssert.AreEqual("ERR BITOP NOT must be called with a single source key.", ex.Message);
+
+            ex = Assert.Throws<RedisServerException>(() =>
+                db.Execute("BITOP", "NOT", "bitop_not_dst", "bitop_not_a", "bitop_not_b", "bitop_not_a"));
+            ClassicAssert.AreEqual("ERR BITOP NOT must be called with a single source key.", ex.Message);
+
+            // The rejected commands leave the destination as the unary call left it.
+            ClassicAssert.AreEqual(2, (long)db.Execute("STRLEN", "bitop_not_dst"));
+
+            // AND/OR/XOR remain variadic and still accept multiple source keys.
+            ClassicAssert.AreEqual(10, (long)db.Execute("BITOP", "AND", "bitop_and_dst", "bitop_not_a", "bitop_not_b"));
+            ClassicAssert.AreEqual(10, (long)db.Execute("BITOP", "OR", "bitop_or_dst", "bitop_not_a", "bitop_not_b"));
+            ClassicAssert.AreEqual(10, (long)db.Execute("BITOP", "XOR", "bitop_xor_dst", "bitop_not_a", "bitop_not_b"));
+        }
+
         [Test, Order(2)]
         [Category("GETBIT")]
         public void BitmapGetBitResponseTest()
