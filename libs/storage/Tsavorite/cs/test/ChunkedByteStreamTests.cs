@@ -58,6 +58,21 @@ namespace Tsavorite.test
             return b;
         }
 
+        // A consumer that never takes any bytes; used to verify the final-flush no-progress guard.
+        sealed class NonConsumingConsumer : IChunkedObjectSerializerConsumer
+        {
+            public int Consume<TContext>(ReadOnlySpan<byte> first, ReadOnlySpan<byte> second, bool isStart, bool isComplete, TContext context)
+                => 0;
+
+            public int Consume<TContext, TKey, TInput>(ReadOnlySpan<byte> first, ReadOnlySpan<byte> second, bool isStart, bool isComplete, TKey key, ref TInput input, TContext context)
+                where TKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
+                where TInput : IStoreInput
+                => 0;
+        }
+
         [Test]
         [Category("TsavoriteLog")]
         public void ChunkedRawByteRoundTripTest([Values(1, 3, 16, 64, 1000)] int totalLength, [Values(4, 16, 64)] int bufferSize)
@@ -95,6 +110,19 @@ namespace Tsavorite.test
 
             ClassicAssert.IsTrue(receiver.SawFinal, "an empty stream still delivers a final (zero-length) chunk");
             ClassicAssert.AreEqual(0, receiver.Reassembled.Length);
+        }
+
+        [Test]
+        [Category("TsavoriteLog")]
+        public void ChunkedFinalFlushFailsWhenConsumerMakesNoProgressTest()
+        {
+            var receiver = new NonConsumingConsumer();
+            var chunker = new ChunkedObjectSerializer<int>(receiver, bufferSize: 8);
+            chunker.BeginSerialize(context: 0);
+            // Fewer bytes than the ring, so nothing drains until the final flush; the consumer then takes 0 bytes from a
+            // non-empty ring. The FlushFinal no-progress guard must fail fast rather than spin forever.
+            chunker.WriteBytes(MakeBytes(3));
+            _ = Assert.Throws<TsavoriteException>(() => chunker.EndSerialize());
         }
     }
 }
