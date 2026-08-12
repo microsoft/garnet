@@ -548,6 +548,7 @@ namespace Garnet.cluster
 
             TrackImportProgress(recordCount, recordCount == 0);
             var storeWrapper = clusterProvider.storeWrapper;
+            var vectorManager = storeWrapper.DefaultDatabase.VectorManager;
             var transientObjectIdMap = storeWrapper.store.Log.TransientObjectIdMap;
 
             DiskLogRecord diskLogRecord = default;
@@ -565,6 +566,10 @@ namespace Garnet.cluster
                             return false;
 
                         diskLogRecord = DiskLogRecord.Deserialize(recordSpan, storeWrapper.GarnetObjectSerializer, transientObjectIdMap, storeWrapper.storeFunctions);
+
+                        // Streamed records carry the primary's native handle and bypass the RMW path that maintains the context reservation
+                        vectorManager?.SanitizeAndTrackIngestedRecordIfApplicable(ref diskLogRecord);
+
                         _ = basicGarnetApi.SET(in diskLogRecord);
                         storeWrapper.storeFunctions.OnDisposeDiskRecord(ref diskLogRecord, DisposeReason.DeserializedFromDisk);
                         diskLogRecord.Dispose();
