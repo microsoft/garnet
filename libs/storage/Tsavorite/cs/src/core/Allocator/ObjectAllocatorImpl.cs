@@ -826,7 +826,7 @@ namespace Tsavorite.core
             var alignedBufferSize = RoundUp(startPadding + (int)numBytesToWrite, (int)device.SectorSize);
 
             // Two flush strategies stamp the on-disk length hints + ObjectLogPosition into the record image before writing it:
-            //  - Copy path (Snapshot/Recovery/unaligned ReadOnly flushes): copy the record bytes into srcBuffer, stamp the COPY, write the copy.
+            //  - Copy path (Snapshot and unaligned ReadOnly flushes): copy the record bytes into srcBuffer, stamp the COPY, write the copy.
             //    Why Snapshot MUST copy (do not "optimize" this to a live-page write): a Snapshot flush serializes each record's objects to a
             //    SEPARATE snapshot object-log device (snapshotFileObjectLogDevice, created in SnapshotCheckpointSMTask and DISPOSED right after the
             //    checkpoint), and stamps the record's ObjectLogPosition with a position in THAT device. Stamping the COPY leaves the live record's
@@ -834,17 +834,18 @@ namespace Tsavorite.core
             //    object lives in the MAIN object-log, not the snapshot). The copy also lets a Snapshot flush SetInvalid v+1 records in the disk image
             //    ONLY -- a v+1 record created by CheckCPRConsistency's RCU-at-tail is live, current, hash-chain-linked data, so SetInvalid on the live
             //    page would destroy it. (Open question under investigation: a ReadOnly flush racing a snapshot over the same page -- the stamp is
-            //    probably transient/overwritten, but the ordering is not obviously deterministic, so we retain the copy.) A Recovery flush reads the
-            //    deferred-load length back out of the live ObjectLogPosition slot, so it also copies.
-            //  - No-copy path (plain ReadOnly flush with a sector-aligned start; useLivePage below): stamp the LIVE records in place and write the live
-            //    page directly. This is safe ONLY for ReadOnly because a ReadOnly flush writes to the MAIN object-log at the MAIN tail, so the position
-            //    stamped onto the live record is exactly the record's real main-object-log position. Correctness also relies on the OnDispose contract
+            //    probably transient/overwritten, but the ordering is not obviously deterministic, so we retain the copy.)
+            //  - No-copy path (Recovery, or a ReadOnly flush with a sector-aligned start; useLivePage below): stamp the LIVE records in place and write
+            //    the live page directly. Recovery has exclusive access to its pages; current-format hybrid records retain their existing main positions,
+            //    while snapshot records are repointed after their bytes are copied to the main object log. For ReadOnly, the position stamped onto the
+            //    live record is exactly the record's real main-object-log position. Correctness also relies on the OnDispose contract
             //    that a record stays READABLE (byte-consistent) throughout a flush -- OnDispose implementations copy off whatever they need for cleanup
             //    rather than tearing the record's flush-critical bytes -- so the async device write always observes a consistent record even if a
             //    concurrent op supersedes it. The stamping is non-destructive to in-memory readers (the ValueLength property masks the raw field to
             //    ObjectIdSize; the objectId slot is untouched), and the page stays resident throughout the flush (HeadAddress <= FlushedUntilAddress
             //    until this flush completes).
-            var useLivePage = asyncResult.flushRequestState == FlushRequestState.ReadOnly && startPadding == 0;
+            var useLivePage = asyncResult.flushRequestState == FlushRequestState.Recovery
+                || (asyncResult.flushRequestState == FlushRequestState.ReadOnly && startPadding == 0);
 
             // If we are in snapshot checkpoint we will need to acquire the epoch whenever we access the log record or oidMap; we will not have the epoch
             // when we enter here. If we are in recovery, we will not have the epoch either, but we don't need to acquire it as there are no other operations
@@ -870,16 +871,13 @@ namespace Tsavorite.core
             SectorAlignedMemory srcBuffer = default;
             try
             {
-                // Create a local copy of the main-log page inline data. Space for ObjectIds and the ObjectLogPosition will be updated as we go
-                // (ObjectId space and the RecordDataHeader length fields will combine for the full range of object sizes). This does
-                // not change record sizes, so the logicalAddress space is unchanged. Also, we will not advance HeadAddress until this flush is complete
-                // and has updated FlushedUntilAddress, so we don't have to worry about the page being yanked out from underneath us (and Objects
-                // won't be disposed before we're done). TODO: Loop on successive subsets of the page's records to make this initial copy buffer smaller.
+                // Select either the stable live page or a private image whose object-log metadata can diverge from the live records. Neither path
+                // changes record sizes, so logical addresses remain unchanged. The page stays resident until this flush completes.
                 byte* recordsBasePtr, diskWritePtr;
                 if (useLivePage)
                 {
                     // No copy: address the live page directly. recordsBasePtr is page-relative (record at pageOffset is at logPagePointer + pageOffset);
-                    // diskWritePtr is the sector-aligned start (startPadding == 0 here, so alignedStartOffset == startOffset).
+                    // Recovery writes the page from offset 0; ReadOnly reaches this path only when startPadding is zero.
                     recordsBasePtr = (byte*)logPagePointer;
                     diskWritePtr = (byte*)logPagePointer + alignedStartOffset;
                 }
@@ -932,10 +930,9 @@ namespace Tsavorite.core
                 var endPhysicalAddress = (long)recordsBasePtr + startOffset + numBytesToWrite;
                 var physicalAddress = (long)recordsBasePtr + firstRecordOffset;
 
-                // For recovery flushes we don't re-serialize; rather we just update the object lengths and positions in the log file using deserialized
-                // Overflow and/or Object information. That means we also have to track the increasing object log position "as if" we were re-serializing
-                // the objects (because it is recovery, the lengths will not change--even if this is a page from snapshot, in which case we still don't
-                // want to write to an object-log segment; that is ONLY done on OnPagesMarkedReadOnly.
+                // Recovery does not reserialize current-format records. Hybrid-log records already point to durable main object-log bytes and are
+                // written unchanged. Snapshot records copy their framed bytes verbatim into the main object log and are repointed as the copy advances.
+                // The running page position remains for the guarded legacy conversion path.
                 ref var pageHeader = ref *(PageHeader*)recordsBasePtr;
 
                 var recoveryOngoingPageHeader = asyncResult.flushRequestState == FlushRequestState.Recovery ? pageHeader.GetLowestObjectLogPosition(objectLogTail.SegmentSizeBits) : default;
@@ -1106,11 +1103,11 @@ namespace Tsavorite.core
                                             recoveryOngoingPageHeader.Advance(objectLengths);
                                         }
                                         // else: current-format hybrid-log-region record. Its object bytes are already durable in the main object-log and its
-                                        // copied disk-image record (object-log position + objectId size hints) is already correct; the only recovery
+                                        // record (object-log position + objectId size hints) is already correct; the only recovery
                                         // mutation for this page -- SetInvalid on undone v+1 records -- was applied to the live page by RecoverFromPage
-                                        // and is captured by the srcBuffer copy. So persist the record VERBATIM. Calling
+                                        // and is already present on the live page. So persist the record VERBATIM. Calling
                                         // SetRecoveredObjectLogRecordStartPosition here would misread the (un-deserialized, Pass1) position slot as a
-                                        // deserialized length and stamp a garbage position + length hint into the disk image -- masked in the
+                                        // deserialized length and stamp a garbage position + length hint into the page -- masked in the
                                         // recovering run (which reads the live page) but corrupting any later recovery that reads the page from disk.
                                         // recoveryOngoingPageHeader is consumed only by that setter and a page is single-version, so a current-format page
                                         // needs no advance here.

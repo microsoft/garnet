@@ -1648,12 +1648,11 @@ namespace Tsavorite.core
         /// <param name="objectLogFilePosition">The new object-log position (e.g. the main object-log position a snapshot record's bytes were copied to).</param>
         /// <remarks>
         /// Used by the snapshot-recovery flush, which copies a record's object bytes from the snapshot object-log to the main object-log
-        /// verbatim and must repoint the disk-image record to the main position. The record's objects are NOT deserialized at this point,
+        /// verbatim and repoints the live record to the main position before writing it. The record's objects are NOT deserialized at this point,
         /// so unlike the setters this does not read lengths from objectIdMap; the copied lengths and encoding are unchanged, so ALL existing
         /// position-word flag bits are preserved (ReuseObjectIdForSize, KeyHasExtendedSizeHint, Key/ValueIsExactSize) — only the segment+offset is taken from
         /// the new position. A downlevel record copied verbatim stays downlevel; a hint-format record keeps its size-hint flags to match its
         /// verbatim-copied objectId-slot stamp.
-        /// <para>Only safe to call on the disk-image copy of the record.</para>
         /// </remarks>
         internal readonly void RepointObjectLogPosition(in ObjectLogFilePositionInfo objectLogFilePosition)
         {
@@ -1716,9 +1715,6 @@ namespace Tsavorite.core
         /// ReuseObjectIdForSize cleared; recovery re-writes records in the current format regardless of their source.
         /// </summary>
         /// <param name="pagePositionInfo">The cumulative position on the page (starting from the PageHeader)</param>
-        /// <remarks>
-        /// IMPORTANT: This is only to be called in the disk image copy of the log record, not in the actual log record itself.
-        /// </remarks>
         /// <returns>The total "serialized" lengths from this LogRecord; will be 0 for inline records. Caller will adjust for
         ///     segment boundaries.</returns>
         internal readonly ulong SetRecoveredObjectLogRecordStartPosition(ObjectLogFilePositionInfo pagePositionInfo)

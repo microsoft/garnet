@@ -496,9 +496,10 @@ The caller obtains the record's start position and initial key/value extents fro
   hybrid-log/snapshot boundary never supplies a cross-space bound.
 
 Main object-log reads use `objectLogTail` as a hard logical end once that tail is set. During early recovery an unset
-main tail disables this bound. Snapshot object-log readers currently pass a position containing `NotSet`, because the
-main object-log tail belongs to a different address space and must not clamp snapshot positions. In either unbounded
-case framing remains authoritative and the device may return a short read at its physical end.
+main tail disables this bound. Snapshot recovery carries the persisted `snapshotEndObjectLogTail` as a separate,
+same-space hard end through Pass 1 overflow-key hashing, snapshot-to-main verbatim copying, and Pass 2 deserialization.
+Framing may tighten or extend speculative read-ahead within that boundary, but an authoritative endpoint beyond it is
+reported as truncation or corruption.
 
 ### 6.2 Absolute endpoint accounting
 
@@ -632,8 +633,8 @@ proceeds.
 
 ### 7.3 Recovery-state flush of hybrid-log-region records
 
-The source buffer for a recovery-state flush may also contain records from the hybrid-log region whose object bytes
-are already durable in the main object log:
+The live page for a recovery-state flush may also contain records from the hybrid-log region whose object bytes are
+already durable in the main object log:
 
 - A current-format record is written verbatim. Its position, objectId hints, and exact-size flags already describe those durable
   bytes. Calling `SetRecoveredObjectLogRecordStartPosition()` would incorrectly interpret its still-on-disk position
@@ -642,8 +643,9 @@ are already durable in the main object log:
   serialized extent, `SetRecoveredObjectLogRecordStartPosition()` can convert a byte-compatible headerless record to
   current-format metadata and advance the page's running object-log position. Conversions requiring header insertion fail fast.
 
-This branch is separate from snapshot-region copying: hybrid-region object bytes remain at their existing main
-object-log positions and are not copied or reserialized.
+Recovery has exclusive access to these pages, so the current-format branch writes the live page directly. This branch
+is separate from snapshot-region copying: hybrid-region object bytes remain at their existing main object-log positions
+and are not copied or reserialized.
 
 ### 7.4 Snapshot-region verbatim copy
 
@@ -653,10 +655,15 @@ copies raw object-log bytes from the snapshot device to the main object log:
 1. use the exact key/value hints directly when both components are headerless;
 2. for a non-exact component, scan same-page successor object positions in the snapshot address space;
 3. align the destination record start so `destination % 8 == source % 8`;
-4. replace only the segment/offset with `RepointObjectLogPosition()`, preserving objectId hints and all format flags;
+4. replace only the live record's segment/offset with `RepointObjectLogPosition()`, preserving objectId hints and all
+   format flags;
 5. copy the bounded raw extent when exact hints or a successor safely bound it; or
-6. for an unbounded last record whose rounded key extent may over-count or whose value sentinel may under-count, call
+6. for a last record without a same-page successor whose rounded key extent may over-count or whose value sentinel may under-count, call
    `CopyRecordObjectsFollowingFraming()` and follow each header to the exact end.
+
+The recovery write uses the live page rather than allocating a page-image copy. If the page remains resident after the
+copy, recovery records that its positions now address the main object log and Pass 2 deserializes it from that device.
+It discards any next-page position hint from snapshot space for that page.
 
 The modulo-8 preservation is required because the first object header is aligned from the absolute object start.
 Moving identical bytes to a different residue would move the expected first-header location and make the copy
@@ -687,8 +694,8 @@ would shift subsequent positions and is not implemented without a validated v2.1
 | Framed overflow >128 KB | no payload-sized staging allocation | header/padding/fragments into ring; aligned interior not copied | source array pinned; direct writes split by segment | avoid copying a large payload through the ring |
 | Exact object <=511 | serializer/ring reused | serializer bytes into reused ring | no | headerless object |
 | Framed object >511 | serializer/ring reused | serializer bytes into reused ring | no | headers must be reserved/backfilled as chunks close |
-| Main-log page copy path | one pooled aligned page buffer | page copied once | page buffer held through callback | isolates asynchronous device write from later page mutation |
-| Main-log live-page path | no page-copy allocation | no page copy | live memory used by device | only where flush-state/alignment safety gate permits |
+| Main-log page copy path | one pooled aligned page buffer | page copied once | page buffer held through callback | snapshot checkpoint image or unaligned concurrent ReadOnly write |
+| Main-log live-page path | no page-copy allocation | no page copy | live memory used by device | Recovery, full ReadOnly pages, and sector-aligned partial ReadOnly ranges |
 
 The object serializer, pinned stream, and circular write buffers are reused; they are not allocated per object.
 
@@ -798,6 +805,7 @@ Indentation is call depth. Component branches and lifetime changes are included 
 ### 9.5 Snapshot recovery copy
 
 - `ObjectAllocatorImpl.WriteAsync(..., FlushRequestState.Recovery, snapshotObjectLogDevice, ...)`
+  - use the live recovery page as the main-log write source
   - identify snapshot-region record and same-space successor, if any
   - `AlignNextRecordStartLike(snapshotPosition)`
   - `RepointObjectLogPosition(mainPosition)`
@@ -807,10 +815,13 @@ Indentation is call depth. Component branches and lifetime changes are included 
       - parse overflow/object headers
       - tee every consumed raw byte to the main `ObjectLogWriter`
   - advance recovery page object-log position by exact copied extent
+  - mark the resident page as repointed to the main object-log address space
+  - Pass 2 reads that page from the main object log and does not use a snapshot next-page hint
 
 ### 9.6 Recovery-state flush of hybrid-log-region records
 
 - `ObjectAllocatorImpl.WriteAsync(..., FlushRequestState.Recovery, ...)`
+  - use the live recovery page as the main-log write source
   - identify a record outside the snapshot-copy region
   - current-format record
     - preserve its main object-log position, objectId hints, and flags verbatim

@@ -39,6 +39,9 @@ namespace Tsavorite.core
         public ReadStatus[] readStatus;
         /// <summary>Circular status buffer of 'capacity' size; the indexing wraps per hlog.GetPageIndexForPage().</summary>
         public FlushStatus[] flushStatus;
+        /// <summary>For each resident snapshot page, whether recovery copied its objects to the main object log and repointed
+        /// the live records. Such a page must subsequently deserialize from the main object log.</summary>
+        public bool[] snapshotPageFlushedToMain;
 
         /// <summary>Signals completion of an in-progress page read.</summary>
         private readonly SemaphoreSlim readSemaphore = new(0);
@@ -49,6 +52,7 @@ namespace Tsavorite.core
         {
             readStatus = new ReadStatus[bufferSize];
             flushStatus = new FlushStatus[bufferSize];
+            snapshotPageFlushedToMain = new bool[bufferSize];
             for (int i = 0; i < bufferSize; i++)
             {
                 flushStatus[i] = FlushStatus.Done;
@@ -667,6 +671,7 @@ namespace Tsavorite.core
                 recoveryStatus, recoveryStatus.objectLogRecoveryDevice, formerFlushedUntilAddress: recoveryStatus.snapshotScanFromAddress,
                 snapshotObjectLogReadEndWord: recoveryStatus.objectLogRecoveryReadEnd.word);
             recoveryStatus.WaitFlush(pageIndex);
+            recoveryStatus.snapshotPageFlushedToMain[pageIndex] = true;
         }
 
         private void TrimLogPages(RecoveryStatus recoveryStatus, long tailPage, int numPagesToRead, long untilAddress)
@@ -953,8 +958,12 @@ namespace Tsavorite.core
 
             for (long page = startPage; page < endPage; page += numPagesToReadPerIteration)
             {
+                var batchEnd = Math.Min(page + numPagesToReadPerIteration, endPage);
+                for (var pendingPage = page; pendingPage < batchEnd; pendingPage++)
+                    recoveryStatus.snapshotPageFlushedToMain[hlogBase.GetPageIndexForPage(pendingPage)] = false;
+
                 _ = await ReadPagesForRecoveryAsync(snapshotEndAddress, recoveryStatus, snapshotEndPage, numPagesToReadPerIteration, page, cancellationToken).ConfigureAwait(false);
-                var end = Math.Min(page + numPagesToReadPerIteration, endPage);
+                var end = batchEnd;
 
                 for (long p = page; p < end; p++)
                 {
@@ -1028,11 +1037,10 @@ namespace Tsavorite.core
                     if (!hlogBase.IsAllocated(pageIndex))
                         continue;
 
-                    var objectLogDevice = page >= snapshotBoundaryPage ? snapshotObjectLogDevice : null;
-                    var nextPageObjectLogPosition = GetNextPageObjectLogPosition(page, endPage, snapshotBoundaryPage);
+                    GetRecoveryObjectLogReadState(recoveryStatus, page, endPage, snapshotObjectLogDevice, snapshotBoundaryPage,
+                        out var objectLogDevice, out var nextPageObjectLogPosition, out var hardReadEndPosition);
                     var pageFromAddress = page == startPage ? fromAddress : hlogBase.GetFirstValidLogicalAddressOnPage(page);
                     var pageUntilAddress = page == endPage - 1 ? untilAddress : hlogBase.GetLogicalAddressOfStartOfPage(page + 1);
-                    var hardReadEndPosition = page >= snapshotBoundaryPage ? recoveryStatus.objectLogRecoveryReadEnd : default;
                     hlogBase.LoadObjectsForRecoveryPass2(page, pageFromAddress, pageUntilAddress, objectLogDevice, nextPageObjectLogPosition, hardReadEndPosition);
                 }
                 return;
@@ -1052,8 +1060,8 @@ namespace Tsavorite.core
                 if (pageFromAddress >= pageUntilAddress)
                     continue;
 
-                var objectLogDevice = page >= snapshotBoundaryPage ? snapshotObjectLogDevice : null;
-                var nextPageObjectLogPosition = GetNextPageObjectLogPosition(page, endPage, snapshotBoundaryPage);
+                GetRecoveryObjectLogReadState(recoveryStatus, page, endPage, snapshotObjectLogDevice, snapshotBoundaryPage,
+                    out var objectLogDevice, out var nextPageObjectLogPosition, out var hardReadEndPosition);
 
                 // Enforce MinEvictionHeadAddressLag: clamp pageFromAddress
                 if (pageFromAddress > maxHeadAddress)
@@ -1062,7 +1070,6 @@ namespace Tsavorite.core
                 var totalPageObjectSize = hlogBase.CalculatePageObjectSizes(page, pageFromAddress, pageUntilAddress);
                 if (totalPageObjectSize == 0)
                 {
-                    var hardReadEndPosition = page >= snapshotBoundaryPage ? recoveryStatus.objectLogRecoveryReadEnd : default;
                     hlogBase.LoadObjectsForRecoveryPass2(page, pageFromAddress, pageUntilAddress, objectLogDevice, nextPageObjectLogPosition, hardReadEndPosition);
                     continue;
                 }
@@ -1087,12 +1094,15 @@ namespace Tsavorite.core
                 // page stays resident above the cutoff, so flush the page to the main log first — keeping it resident — so they are durable and can be read
                 // back. Must be before deserialization, while the records still carry their snapshot object-log positions.
                 if (page >= snapshotBoundaryPage && pageCutoff > hlogBase.GetFirstValidLogicalAddressOnPage(page))
+                {
                     FlushSnapshotPageForRecovery(recoveryStatus, page);
+                    GetRecoveryObjectLogReadState(recoveryStatus, page, endPage, snapshotObjectLogDevice, snapshotBoundaryPage,
+                        out objectLogDevice, out nextPageObjectLogPosition, out hardReadEndPosition);
+                }
 
                 // Load objects, using per-record budget checking via DeserializeObjectsOnPage.
                 // The method handles all records from pageCutoff to pageUntilAddress.
-                var pageHardReadEndPosition = page >= snapshotBoundaryPage ? recoveryStatus.objectLogRecoveryReadEnd : default;
-                hlogBase.LoadObjectsForRecoveryPass2(page, pageCutoff, pageUntilAddress, objectLogDevice, nextPageObjectLogPosition, pageHardReadEndPosition);
+                hlogBase.LoadObjectsForRecoveryPass2(page, pageCutoff, pageUntilAddress, objectLogDevice, nextPageObjectLogPosition, hardReadEndPosition);
 
                 // After loading, recheck budget. If over budget, evict from headAddress up to and including loaded records.
                 if (hlogBase.logSizeTracker.IsOverBudget && recoveryStatus.headAddress < maxHeadAddress)
@@ -1132,7 +1142,21 @@ namespace Tsavorite.core
                 var nextPage = page + 1;
                 if (nextPage >= exclusiveEndPage || (page < snapshotBoundary) != (nextPage < snapshotBoundary))
                     return new();
+                if (nextPage >= snapshotBoundary
+                    && recoveryStatus.snapshotPageFlushedToMain[hlogBase.GetPageIndexForPage(nextPage)])
+                    return new();
                 return hlogBase.GetLowestObjectLogPositionForPage(nextPage);
+            }
+
+            void GetRecoveryObjectLogReadState(RecoveryStatus status, long page, long exclusiveEndPage, IDevice snapshotDevice,
+                long snapshotBoundary, out IDevice readDevice, out ObjectLogFilePositionInfo nextPagePosition,
+                out ObjectLogFilePositionInfo hardReadEnd)
+            {
+                var isSnapshotPage = page >= snapshotBoundary;
+                var readsFromMain = isSnapshotPage && status.snapshotPageFlushedToMain[hlogBase.GetPageIndexForPage(page)];
+                readDevice = isSnapshotPage && !readsFromMain ? snapshotDevice : null;
+                nextPagePosition = readsFromMain ? default : GetNextPageObjectLogPosition(page, exclusiveEndPage, snapshotBoundary);
+                hardReadEnd = isSnapshotPage && !readsFromMain ? status.objectLogRecoveryReadEnd : default;
             }
         }
 
