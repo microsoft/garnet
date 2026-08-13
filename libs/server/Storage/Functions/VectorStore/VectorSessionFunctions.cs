@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Buffers.Binary;
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
@@ -63,7 +64,7 @@ namespace Garnet.server
                     var dataPtr = (nint)Unsafe.AsPointer(ref MemoryMarshal.GetReference(value));
                     var dataLen = (nuint)value.Length;
 
-                    Debug.Assert((dataPtr % 4) == 0, "About to pass unaligned value to DiskANN");
+                    AssertAlignment(in srcLogRecord, dataPtr);
                     callback(input.Index, input.CallbackContext, dataPtr, dataLen);
                     return true;
                 }
@@ -260,7 +261,7 @@ namespace Garnet.server
                     var dataPtr = (nint)Unsafe.AsPointer(ref MemoryMarshal.GetReference(alignedValue));
                     var dataLen = (nuint)input.WriteDesiredSize;
 
-                    Debug.Assert((dataPtr % 4) == 0, "About to pass unaligned value to DiskANN");
+                    AssertAlignment(in logRecord, dataPtr);
                     callback(input.CallbackContext, dataPtr, dataLen);
 
                     return logRecord.TrySetContentLengths(logRecord.ValueSpan.Length, in sizeInfo);
@@ -332,7 +333,7 @@ namespace Garnet.server
                     var dataPtr = (nint)Unsafe.AsPointer(ref MemoryMarshal.GetReference(newValueAligned));
                     var dataLen = (nuint)input.WriteDesiredSize;
 
-                    Debug.Assert((dataPtr % 4) == 0, "About to pass unaligned value to DiskANN");
+                    AssertAlignment(in srcLogRecord, dataPtr);
                     callback(input.CallbackContext, dataPtr, dataLen);
                 }
 
@@ -394,7 +395,7 @@ namespace Garnet.server
                     var dataPtr = (nint)Unsafe.AsPointer(ref MemoryMarshal.GetReference(alignedValue));
                     var dataLen = (nuint)input.WriteDesiredSize;
 
-                    Debug.Assert((dataPtr % 4) == 0, "About to pass unaligned value to DiskANN");
+                    AssertAlignment(in logRecord, dataPtr);
                     callback(input.CallbackContext, dataPtr, dataLen);
                 }
 
@@ -524,5 +525,14 @@ namespace Garnet.server
         /// <inheritdoc />
         public bool PostBatchKeyConsistentReadCallback(int keyCount)
             => readSessionState != null && readSessionState.PostBatchKeyConsistentReadCallback(keyCount);
+
+        [Conditional("DEBUG")]
+        private static void AssertAlignment<TSourceLogRecord>(in TSourceLogRecord record, nint dataPtr)
+            where TSourceLogRecord : ISourceLogRecord
+        {
+            var nsBytes = record.NamespaceBytes;
+            var ns = nsBytes.Length == 1 ? nsBytes[0] : BinaryPrimitives.ReadInt32LittleEndian(nsBytes);
+            Debug.Assert((((ulong)ns & (VectorManager.ContextStep - 1)) is DiskANNService.InternalIdMap or DiskANNService.Attributes) ||  (dataPtr % 4) == 0, "About to pass unaligned value to DiskANN");
+        }
     }
 }

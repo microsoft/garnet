@@ -346,7 +346,7 @@ namespace Garnet.server
         [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
         private static unsafe byte WriteCallbackUnmanaged(ulong context, nint keyData, nuint keyLength, nint writeData, nuint writeLength)
         {
-            Debug.Assert((keyLength % 4) == 0, "Unaligned key provided by DiskANN");
+            Debug.Assert(((context & (ContextStep - 1)) is DiskANNService.InternalIdMap or DiskANNService.Attributes) ||  (keyLength % 4) == 0, "Unaligned key provided by DiskANN");
 
             var keyWithNamespace = MakeVectorElementKey(context, keyData, keyLength);
 
@@ -367,7 +367,7 @@ namespace Garnet.server
         [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
         private static byte DeleteCallbackUnmanaged(ulong context, nint keyData, nuint keyLength)
         {
-            Debug.Assert((keyLength % 4) == 0, "Unaligned key provided by DiskANN");
+            Debug.Assert(((context & (ContextStep - 1)) is DiskANNService.InternalIdMap or DiskANNService.Attributes) || (keyLength % 4) == 0, "Unaligned key provided by DiskANN");
 
             var keyWithNamespace = MakeVectorElementKey(context, keyData, keyLength);
 
@@ -382,7 +382,7 @@ namespace Garnet.server
         [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
         private static byte ReadModifyWriteCallbackUnmanaged(ulong context, nint keyData, nuint keyLength, nuint writeLength, nint dataCallback, nint dataCallbackContext)
         {
-            Debug.Assert((keyLength % 4) == 0, "Unaligned key provided by DiskANN");
+            Debug.Assert(((context & (ContextStep - 1)) is DiskANNService.InternalIdMap or DiskANNService.Attributes) || (keyLength % 4) == 0, "Unaligned key provided by DiskANN");
 
             var keyWithNamespace = MakeVectorElementKey(context, keyData, keyLength);
 
