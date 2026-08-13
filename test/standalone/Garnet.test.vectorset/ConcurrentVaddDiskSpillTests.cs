@@ -73,6 +73,13 @@ namespace Garnet.test
                 const int threads = 8, dim = 32;
                 const int runSeconds = 60;
                 const int stallLimitSeconds = 45;
+
+                // Records spill to the object log within the first few inserts (4 KB pages vs ~8 KB records), so a
+                // small floor already proves the spill/flush path ran; it only guards against the workers never
+                // executing (e.g. VADD rejected). It is kept well below the throughput of a heavily loaded,
+                // disk-bound CI runner (observed ~800 inserts here) so slow hardware cannot make it flake. The
+                // deadlock itself is detected by the no-progress stall monitor below, not by this count.
+                const int minInserts = 100;
                 var cfg = TestUtils.GetConfig(allowAdmin: true);
                 cfg.SyncTimeout = 60000;
                 using var redis = ConnectionMultiplexer.Connect(cfg);
@@ -127,7 +134,7 @@ namespace Garnet.test
                 stop.Cancel();
 
                 Task.WaitAll(workers);
-                Assert.That(Interlocked.Read(ref done), Is.GreaterThan(1000),
+                Assert.That(Interlocked.Read(ref done), Is.GreaterThan(minInserts),
                     "Workers did not perform enough inserts to exercise the object-log spill path.");
             }
             finally
