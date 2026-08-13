@@ -167,6 +167,60 @@ namespace Tsavorite.test.LogRecordTests
             }
         }
 
+        [TestCase(0, 38, 0, 0)]
+        [TestCase(0, 37, 0, 1)]
+        [TestCase(29, 41, 0, 0)]
+        [TestCase(29, 37, 0, 4)]
+        [TestCase(0, 38, 24, 0)]
+        [TestCase(0, 7, 24, 7)]
+        [TestCase(29, 41, 24, 0)]
+        [TestCase(29, 7, 24, 2)]
+        [Category(LogRecordCategory), Category(SmokeTestCategory)]
+        public void RevivificationPreparationPreservesLiveFraming(int extendedNamespaceSize, int valueSize, int explicitFillerLength, int implicitFillerLength)
+        {
+            nativePointer = (long)NativeMemory.AlignedAlloc(512, Constants.kCacheLineBytes);
+            NativeMemory.Clear((void*)nativePointer, 512);
+
+            var oldSizeInfo = new RecordSizeInfo { FieldInfo = new() { KeySize = initialKeyLen, ValueSize = valueSize, ExtendedNamespaceSize = extendedNamespaceSize, RecordType = 7 } };
+            UpdateRecordSizeInfo(ref oldSizeInfo);
+            oldSizeInfo.AllocatedInlineRecordSize += explicitFillerLength;
+
+            var newSizeInfo = new RecordSizeInfo { FieldInfo = new() { KeySize = initialKeyLen, ValueSize = 8 } };
+            UpdateRecordSizeInfo(ref newSizeInfo);
+            ref var dataHeader = ref *(RecordDataHeader*)(nativePointer + RecordInfo.Size);
+
+            _ = dataHeader.Initialize(in oldSizeInfo, out _, out _, out _, nativePointer);
+            var oldRecordLength = dataHeader.GetRecordLength();
+            Assert.That(dataHeader.KeyLength, Is.EqualTo(oldSizeInfo.InlineKeySize));
+            Assert.That(dataHeader.ValueLength, Is.EqualTo(oldSizeInfo.InlineValueSize));
+            Assert.That(dataHeader.ExtendedNamespaceLength, Is.EqualTo(oldSizeInfo.FieldInfo.ExtendedNamespaceSize));
+            Assert.That(dataHeader.RecordType, Is.EqualTo(oldSizeInfo.FieldInfo.RecordType));
+            Assert.That(dataHeader.GetUnalignedComponentSum(), Is.EqualTo(oldSizeInfo.ActualInlineRecordSize));
+            Assert.That(oldRecordLength, Is.EqualTo(oldSizeInfo.AllocatedInlineRecordSize));
+            Assert.That(dataHeader.GetExplicitFillerLength(), Is.EqualTo(explicitFillerLength));
+            var totalFillerLength = dataHeader.GetTotalFillerLength();
+            Assert.That(totalFillerLength, Is.EqualTo(explicitFillerLength + implicitFillerLength));
+            var expectedKeyLength = dataHeader.KeyLength;
+            var expectedValueLength = dataHeader.ValueLength;
+            var logRecord = new LogRecord(nativePointer);
+            logRecord.PrepareForRevivification(ref newSizeInfo);
+
+            Assert.That(dataHeader.GetRecordLength(), Is.EqualTo(oldRecordLength));
+            Assert.That(dataHeader.KeyLength, Is.EqualTo(expectedKeyLength));
+            Assert.That(dataHeader.ValueLength, Is.EqualTo(expectedValueLength));
+            Assert.That(dataHeader.ExtendedNamespaceLength, Is.EqualTo(oldSizeInfo.FieldInfo.ExtendedNamespaceSize));
+            Assert.That(dataHeader.GetExplicitFillerLength(), Is.EqualTo(explicitFillerLength));
+            Assert.That(dataHeader.GetTotalFillerLength(), Is.EqualTo(totalFillerLength));
+            Assert.That(dataHeader.RecordType, Is.EqualTo(oldSizeInfo.FieldInfo.RecordType));
+            Assert.That(newSizeInfo.AllocatedInlineRecordSize, Is.EqualTo(oldRecordLength));
+
+            Span<byte> key = stackalloc byte[initialKeyLen];
+            key.Fill(0x42);
+            logRecord.InitializeHeadersForNewRecord(inNewVersion: false, previousAddress: 64);
+            logRecord.InitializeRecord(TestSpanByteKey.FromPinnedSpan(key), in newSizeInfo);
+            Assert.That(dataHeader.GetRecordLength(), Is.EqualTo(oldRecordLength));
+        }
+
         [Test]
         [Category(LogRecordCategory), Category(SmokeTestCategory)]
         //[Repeat(900)]
