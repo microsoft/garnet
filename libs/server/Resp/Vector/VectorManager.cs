@@ -9,7 +9,6 @@ using System.Diagnostics;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Text;
-using System.Threading;
 using System.Threading.Channels;
 using System.Threading.Tasks;
 using Garnet.common;
@@ -230,7 +229,10 @@ namespace Garnet.server
                 throw new GarnetException($"VectorSetQuantizationTaskCount should be in range [0,{Environment.ProcessorCount}]!");
             var vectorSetQuantizationTaskCount = serverOptions.VectorSetQuantizationTaskCount == 0 ? Environment.ProcessorCount : serverOptions.VectorSetQuantizationTaskCount;
             quantizationTaskCount = vectorSetQuantizationTaskCount;
-            quantizationThreads = new Thread[vectorSetQuantizationTaskCount];
+            quantizationTasks = new Task[vectorSetQuantizationTaskCount];
+
+            // So Dispose's Task.WhenAll is safe even if StartQuantizationTasks never ran.
+            Array.Fill(quantizationTasks, Task.CompletedTask);
 
             logger?.LogInformation("Created VectorManager");
         }
@@ -445,13 +447,10 @@ namespace Garnet.server
             // Cleanup task has fully drained, so nothing else can take this gate.
             cleanupGate.Dispose();
 
-            // drain quantization work and stop the dedicated worker threads
+            // drain quantization work and stop the worker tasks
             _ = quantizationChannel.Writer.TryComplete();
             while (quantizationChannel.Reader.TryRead(out _)) { }
-            foreach (var thread in quantizationThreads)
-            {
-                thread?.Join();
-            }
+            AsyncUtils.BlockingWait(Task.WhenAll(quantizationTasks));
         }
 
         private static void CompletePending(ref Status status, ref VectorOutput output, ref VectorBasicContext ctx)

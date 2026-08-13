@@ -3,7 +3,6 @@
 
 using System;
 using System.Buffers.Binary;
-using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
@@ -16,9 +15,10 @@ namespace Garnet.test
     /// Regression tests for concurrent VADD to a vector set whose records spill to the object log.
     /// Concurrent inserts historically deadlocked: a server VADD that recreates a disk-tiered index blocks
     /// on a pending disk read while holding the vector-set lock exclusively, and the quantization workers,
-    /// which ran on .NET thread-pool threads and spin-wait on that same lock, consumed every pool thread so
-    /// the disk-read completion (also a pool work item) could never be scheduled. The fix runs the
-    /// quantization workers on dedicated threads so their spin can never starve the pool.
+    /// which run on .NET thread-pool threads, spin-waited on that same lock and consumed every pool thread so
+    /// the disk-read completion (also a pool work item) could never be scheduled. The fix makes the quantization
+    /// workers acquire the lock non-blockingly and yield their pool thread (await) on contention instead of
+    /// spin-waiting, so a disk-IO completion can always be scheduled and release the lock.
     /// </summary>
     [TestFixture]
     public class ConcurrentVaddDiskSpillTests : TestBase
@@ -43,47 +43,6 @@ namespace Garnet.test
             n = Math.Sqrt(n);
             for (var i = 0; i < dim; i++) v[i] = (float)(v[i] / n);
             return MemoryMarshal.Cast<float, byte>(v.AsSpan()).ToArray();
-        }
-
-        /// <summary>
-        /// Directly guards the fix: quantization work must never execute on a thread-pool thread, because it
-        /// spin-waits on the per-set lock and would otherwise starve the pool of the disk-IO completion that
-        /// releases that lock. Inserts enough BIN-quantized vectors to force a real quantization table build
-        /// (which proves the workers actually ran), then asserts none of that work happened on the pool.
-        /// </summary>
-        [Test]
-        public void QuantizationDoesNotRunOnThreadPoolThreads()
-        {
-            using var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableVectorSetPreview: true);
-            server.Start();
-
-            var vectorManager = server.Provider.StoreWrapper.DefaultDatabase.VectorManager;
-            var buildsAtStart = vectorManager.QuantizationRequestsProcessed;
-
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
-            var db = redis.GetDatabase(0);
-
-            const int vectors = 2000, dim = 32;
-            var r = new Random(1);
-            var id = new byte[4];
-            for (var k = 0; k < vectors; k++)
-            {
-                BinaryPrimitives.WriteInt32LittleEndian(id, k);
-                db.Execute("VADD", ["hk", "FP32", Vec(r, dim), (byte[])id.Clone(), "BIN", "M", "16"]);
-            }
-
-            // Wait for a successful quantization table build so the assertion below is non-vacuous
-            // (a build increments the counter only after a worker has dequeued and processed the request).
-            var sw = Stopwatch.StartNew();
-            while (vectorManager.QuantizationRequestsProcessed == buildsAtStart)
-            {
-                Assert.That(sw.Elapsed, Is.LessThan(TimeSpan.FromSeconds(60)), "Quantization table build did not complete in time.");
-                Thread.Sleep(200);
-            }
-
-            Assert.That(vectorManager.QuantizationRanOnThreadPoolThread, Is.False,
-                "Quantization ran on a thread-pool thread; it must run on dedicated threads so its lock spin-wait " +
-                "cannot starve the pool of the disk-IO completion that releases the vector-set lock (deadlock).");
         }
 
         long done;
