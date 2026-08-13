@@ -346,6 +346,8 @@ namespace Garnet.server
         [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
         private static unsafe byte WriteCallbackUnmanaged(ulong context, nint keyData, nuint keyLength, nint writeData, nuint writeLength)
         {
+            Debug.Assert((keyLength % 4) == 0, "Unaligned key provided by DiskANN");
+
             var keyWithNamespace = MakeVectorElementKey(context, keyData, keyLength);
 
             ref var ctx = ref ActiveThreadSession.vectorBasicContext;
