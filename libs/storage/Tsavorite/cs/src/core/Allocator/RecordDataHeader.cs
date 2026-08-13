@@ -625,11 +625,8 @@ namespace Tsavorite.core
             return Size;
         }
 
-        /// <summary>Prepare the header for revivification: clear filler, namespace, and recordType; preserve inline bits and lengths.
-        /// This is called only when an existing allocation is being reused (revivification or retry on CAS failure), so preserves length info.
-        /// <para>Atomicity: builds the cleaned RDH in a local then publishes via a single 8-byte word write (<c>word = local.word</c>).
-        /// Concurrent scanners observe either the pre-revivification or post-revivification state, never an intermediate.</para></summary>
-        internal void InitializeForRevivification(ref RecordSizeInfo sizeInfo, long recordBaseAddress)
+        /// <summary>Prepare size metadata for reuse while preserving live framing for concurrent physical scans.</summary>
+        internal void InitializeForRevivification(ref RecordSizeInfo sizeInfo)
         {
             Debug.Assert(KeyIsInline, "Expected Key to be inline in InitializeForRevivification");
             Debug.Assert(ValueIsInline, "Expected Value to be inline in InitializeForRevivification");
@@ -637,15 +634,6 @@ namespace Tsavorite.core
 
             var recordLength = GetRecordLength();
             Debug.Assert(sizeInfo.AllocatedInlineRecordSize <= recordLength, "Cannot exceed previous Record size in InitializeForRevivification");
-
-            // Build the cleaned RDH in a local: clear FillerWords + Namespace + RecordType bytes; preserve inline bits + lengths.
-            var localDataHeader = this;
-            localDataHeader.FillerWords = 0;
-            localDataHeader.SetNamespaceByteRaw(0);
-            localDataHeader.RecordType = 0;
-
-            // Single atomic publish via word assignment through `ref this`.
-            word = localDataHeader.word;
 
             // Ensure the AllocatedInlineRecordSize retains recordLength when LogRecord.InitializeRecord is called
             sizeInfo.AllocatedInlineRecordSize = recordLength;
