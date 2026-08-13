@@ -56,61 +56,85 @@ namespace Garnet.test
         [Test]
         public void ConcurrentVaddToSpilledSetMakesProgress()
         {
-            using var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, lowMemory: true, enableVectorSetPreview: true);
-            server.Start();
+            var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, lowMemory: true, enableVectorSetPreview: true);
 
-            const int threads = 8, dim = 32;
-            const int runSeconds = 60;
-            const int stallLimitSeconds = 45;
-            var cfg = TestUtils.GetConfig(allowAdmin: true);
-            cfg.SyncTimeout = 60000;
-            using var redis = ConnectionMultiplexer.Connect(cfg);
-
-            var stop = new CancellationTokenSource();
-            var deadline = DateTime.UtcNow.AddSeconds(runSeconds);
-            var workers = new Task[threads];
-            for (var t = 0; t < threads; t++)
+            // Under a regression the quantization workers spin-wait on the vector-set lock permanently and
+            // VectorManager.Dispose() blocks on Task.WhenAll of them, so disposing the server inline (via a using)
+            // on the deadlock path would hang teardown before NUnit could report the failure. The deadlock branch
+            // below instead disposes on a background task with a bounded wait and, if that does not complete,
+            // abandons the wedged server (its workers are background thread-pool tasks that do not block process
+            // exit, and OnTearDown resets the leaked epoch instances). This keeps the failure deterministic without
+            // spawning a separate, killable process.
+            var disposeServer = true;
+            try
             {
-                var tid = t;
-                workers[tid] = Task.Run(() =>
+                server.Start();
+
+                const int threads = 8, dim = 32;
+                const int runSeconds = 60;
+                const int stallLimitSeconds = 45;
+                var cfg = TestUtils.GetConfig(allowAdmin: true);
+                cfg.SyncTimeout = 60000;
+                using var redis = ConnectionMultiplexer.Connect(cfg);
+
+                var stop = new CancellationTokenSource();
+                var deadline = DateTime.UtcNow.AddSeconds(runSeconds);
+                var workers = new Task[threads];
+                for (var t = 0; t < threads; t++)
                 {
-                    var db = redis.GetDatabase(0);
-                    var r = new Random(tid);
-                    var id = new byte[4];
-                    var k = 0;
-                    while (!stop.IsCancellationRequested && DateTime.UtcNow < deadline)
+                    var tid = t;
+                    workers[tid] = Task.Run(() =>
                     {
-                        BinaryPrimitives.WriteInt32LittleEndian(id, tid * 10_000_000 + k++);
-                        db.Execute("VADD", ["hk", "FP32", Vec(r, dim), (byte[])id.Clone(), "BIN", "EF", "64", "M", "16", "XDISTANCE_METRIC", "COSINE"]);
-                        Interlocked.Increment(ref done);
-                    }
-                });
-            }
-
-            long last = 0;
-            var stalledSeconds = 0;
-            while (true)
-            {
-                var allDone = true;
-                foreach (var w in workers)
-                    if (!w.IsCompleted) allDone = false;
-                if (allDone) break;
-                Thread.Sleep(2000);
-                var cur = Interlocked.Read(ref done);
-                stalledSeconds = cur == last ? stalledSeconds + 2 : 0;
-                last = cur;
-                if (stalledSeconds >= stallLimitSeconds)
-                {
-                    stop.Cancel();
-                    Assert.Fail($"DEADLOCK: {threads} concurrent VADD workers made no progress for {stalledSeconds}s at {cur} inserts " +
-                                "(a server VADD is blocked in VectorManager.ReadCallbackUnmanaged on a pending-read completion that is starved of a thread).");
+                        var db = redis.GetDatabase(0);
+                        var r = new Random(tid);
+                        var id = new byte[4];
+                        var k = 0;
+                        while (!stop.IsCancellationRequested && DateTime.UtcNow < deadline)
+                        {
+                            BinaryPrimitives.WriteInt32LittleEndian(id, tid * 10_000_000 + k++);
+                            db.Execute("VADD", ["hk", "FP32", Vec(r, dim), (byte[])id.Clone(), "BIN", "EF", "64", "M", "16", "XDISTANCE_METRIC", "COSINE"]);
+                            Interlocked.Increment(ref done);
+                        }
+                    });
                 }
-            }
-            stop.Cancel();
 
-            Task.WaitAll(workers);
-            Assert.That(Interlocked.Read(ref done), Is.GreaterThan(1000),
-                "Workers did not perform enough inserts to exercise the object-log spill path.");
+                long last = 0;
+                var stalledSeconds = 0;
+                while (true)
+                {
+                    var allDone = true;
+                    foreach (var w in workers)
+                        if (!w.IsCompleted) allDone = false;
+                    if (allDone) break;
+                    Thread.Sleep(2000);
+                    var cur = Interlocked.Read(ref done);
+                    stalledSeconds = cur == last ? stalledSeconds + 2 : 0;
+                    last = cur;
+                    if (stalledSeconds >= stallLimitSeconds)
+                    {
+                        stop.Cancel();
+
+                        // Bounded shutdown path (see the note above): attempt disposal off the test thread and wait
+                        // only briefly. A regressed deadlock makes VectorManager.Dispose() block forever, so the
+                        // finally block must not run it and this must not wait on it.
+                        disposeServer = false;
+                        _ = Task.Run(() => server.Dispose()).Wait(TimeSpan.FromSeconds(10));
+
+                        Assert.Fail($"DEADLOCK: {threads} concurrent VADD workers made no progress for {stalledSeconds}s at {cur} inserts " +
+                                    "(a server VADD is blocked in VectorManager.ReadCallbackUnmanaged on a pending-read completion that is starved of a thread).");
+                    }
+                }
+                stop.Cancel();
+
+                Task.WaitAll(workers);
+                Assert.That(Interlocked.Read(ref done), Is.GreaterThan(1000),
+                    "Workers did not perform enough inserts to exercise the object-log spill path.");
+            }
+            finally
+            {
+                if (disposeServer)
+                    server.Dispose();
+            }
         }
     }
 }
