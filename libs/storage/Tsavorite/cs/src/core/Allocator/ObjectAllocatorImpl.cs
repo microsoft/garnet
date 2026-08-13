@@ -587,13 +587,14 @@ namespace Tsavorite.core
         internal override CircularDiskReadBuffer CreateCircularReadBuffers()
             => new(bufferPool, IStreamBuffer.BufferSize, numberOfDeserializationBuffers, objectLogDevice, logger);
 
-        /// <summary>Return the exclusive logical bound for reads submitted through <paramref name="readBuffers"/>. The allocator's
-        /// <see cref="objectLogTail"/> bounds only its main object-log device once that tail is set. An unset main tail disables the bound
-        /// during early recovery. Snapshot positions belong to an independent address space, and no snapshot tail is currently supplied
-        /// here, so <see cref="ObjectLogFilePositionInfo.NotSet"/> selects an unbounded logical read instead of incorrectly applying the
-        /// main tail.</summary>
-        ObjectLogFilePositionInfo GetObjectLogReadHardEnd(CircularDiskReadBuffer readBuffers)
-            => readBuffers.UsesDevice(objectLogDevice)
+        /// <summary>Return the exclusive logical bound for reads submitted through <paramref name="readBuffers"/>. A supplied recovery
+        /// bound belongs to that reader's snapshot object-log address space. Otherwise, the allocator's <see cref="objectLogTail"/> bounds
+        /// only its main object-log device once that tail is set. An unset main tail during early recovery, or a non-main reader without
+        /// an explicit bound, selects an unbounded logical read rather than applying a tail from another device.</summary>
+        ObjectLogFilePositionInfo GetObjectLogReadHardEnd(CircularDiskReadBuffer readBuffers, ObjectLogFilePositionInfo suppliedHardEnd = default)
+            => suppliedHardEnd.HasData
+                ? suppliedHardEnd
+                : readBuffers.UsesDevice(objectLogDevice)
                 ? objectLogTail
                 : new ObjectLogFilePositionInfo(ObjectLogFilePositionInfo.NotSet, objectLogTail.SegmentSizeBits);
 
@@ -619,7 +620,8 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc/>
-        internal override long ComputeRecoveryOverflowKeyHash(in LogRecord logRecord, IDevice objectLogDevice)
+        internal override long ComputeRecoveryOverflowKeyHash(in LogRecord logRecord, IDevice objectLogDevice,
+            ObjectLogFilePositionInfo hardReadEndPosition = default)
         {
             // The transient objectIdMap is not populated during recovery Pass 1 (index build), so LogRecord.Key cannot resolve an overflow
             // key. Read just this record's overflow key bytes from the object log — the main object log for FoldOver/hybrid-log pages, or the
@@ -630,7 +632,7 @@ namespace Tsavorite.core
             using var readBuffers = CreateCircularReadBuffers(objectLogDevice, logger);
             readBuffers.nextFileReadPosition = startPosition;
             var logReader = new ObjectLogReader<TStoreFunctions>(readBuffers, storeFunctions);
-            logReader.OnBeginReadRecords(startPosition, (ulong)keyLength, GetObjectLogReadHardEnd(readBuffers));
+            logReader.OnBeginReadRecords(startPosition, (ulong)keyLength, GetObjectLogReadHardEnd(readBuffers, hardReadEndPosition));
             try
             {
                 return logReader.ReadOverflowKeyHashCodeForRecovery(in logRecord, objectLogTail.SegmentSizeBits);
@@ -1065,7 +1067,8 @@ namespace Tsavorite.core
                                         // Demand-load the snapshot object reader on the first valid record with objects, so pages with few or no object
                                         // records avoid an up-front full-page pre-pass. The read-ahead range is sized by scanning forward from here.
                                         snapshotObjectReader ??= CreateSnapshotObjectReader(physicalAddress + logRecordSize, endPhysicalAddress, snapshotPositionWord,
-                                            copyKeyLength, copyValueLength, asyncResult.recoverySnapshotObjectLogDevice, out snapshotObjectReadBuffers);
+                                            copyKeyLength, copyValueLength, asyncResult.recoverySnapshotObjectLogDevice,
+                                            asyncResult.recoverySnapshotObjectLogReadEnd, out snapshotObjectReadBuffers);
 
                                         var snapshotPosition = new ObjectLogFilePositionInfo(snapshotPositionWord, objectLogTail.SegmentSizeBits);
                                         logWriter.AlignNextRecordStartLike(snapshotPosition);
@@ -1167,7 +1170,8 @@ namespace Tsavorite.core
         /// <param name="snapshotObjectLogDevice">The snapshot object-log device to read from.</param>
         /// <param name="readBuffers">Outputs the created read buffers; the caller disposes them.</param>
         private ObjectLogReader<TStoreFunctions> CreateSnapshotObjectReader(long nextRecordAddress, long endPhysicalAddress, ulong firstPositionWord,
-            int firstKeyLength, ulong firstValueLength, IDevice snapshotObjectLogDevice, out CircularDiskReadBuffer readBuffers)
+            int firstKeyLength, ulong firstValueLength, IDevice snapshotObjectLogDevice, ObjectLogFilePositionInfo hardReadEndPosition,
+            out CircularDiskReadBuffer readBuffers)
         {
             var startPosition = new ObjectLogFilePositionInfo(firstPositionWord, objectLogTail.SegmentSizeBits);
             var endPosition = startPosition;
@@ -1184,7 +1188,7 @@ namespace Tsavorite.core
 
             readBuffers = CreateCircularReadBuffers(snapshotObjectLogDevice, logger);
             var reader = new ObjectLogReader<TStoreFunctions>(readBuffers, storeFunctions);
-            reader.OnBeginReadRecords(startPosition, endPosition - startPosition, GetObjectLogReadHardEnd(readBuffers));
+            reader.OnBeginReadRecords(startPosition, endPosition - startPosition, GetObjectLogReadHardEnd(readBuffers, hardReadEndPosition));
             return reader;
         }
 
@@ -1381,7 +1385,8 @@ namespace Tsavorite.core
         /// <param name="objectIdMap">The ObjectIdMap to use for deserialized objects</param>
         /// <param name="readBuffers">The circular read buffers for object log reading</param>
         private void DeserializeObjectsOnPage(long pageStartPhysicalAddress, long maxAddressOffsetOnPage, ObjectIdMap objectIdMap,
-            CircularDiskReadBuffer readBuffers, ObjectLogFilePositionInfo nextPageObjectLogPosition = default)
+            CircularDiskReadBuffer readBuffers, ObjectLogFilePositionInfo nextPageObjectLogPosition = default,
+            ObjectLogFilePositionInfo hardReadEndPosition = default)
         {
             ObjectLogFilePositionInfo startPosition = new(), endPosition = new();
             var endKeyLength = 0;
@@ -1424,7 +1429,7 @@ namespace Tsavorite.core
             readBuffers.nextFileReadPosition = startPosition;
             recordAddress = pageStartPhysicalAddress + PageHeader.Size;
             var logReader = new ObjectLogReader<TStoreFunctions>(readBuffers, storeFunctions);
-            logReader.OnBeginReadRecords(startPosition, totalBytesToRead, GetObjectLogReadHardEnd(readBuffers));
+            logReader.OnBeginReadRecords(startPosition, totalBytesToRead, GetObjectLogReadHardEnd(readBuffers, hardReadEndPosition));
 
             try
             {
@@ -1532,7 +1537,7 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         internal override void LoadObjectsForRecoveryPass2(long page, long fromAddress, long untilAddress, IDevice objectLogDevice,
-            ObjectLogFilePositionInfo nextPageObjectLogPosition)
+            ObjectLogFilePositionInfo nextPageObjectLogPosition, ObjectLogFilePositionInfo hardReadEndPosition = default)
         {
             var pageStartAddress = GetFirstValidLogicalAddressOnPage(page);
             var address = Math.Max(fromAddress, pageStartAddress);
@@ -1544,7 +1549,7 @@ namespace Tsavorite.core
             var maxOffset = endAddress - GetLogicalAddressOfStartOfPage(page);
             var objectIdMapToUse = objectPages[page % BufferSize].objectIdMap;
             using var readBuffers = CreateCircularReadBuffers(objectLogDevice, logger);
-            DeserializeObjectsOnPage(pagePhysicalAddress, maxOffset, objectIdMapToUse, readBuffers, nextPageObjectLogPosition);
+            DeserializeObjectsOnPage(pagePhysicalAddress, maxOffset, objectIdMapToUse, readBuffers, nextPageObjectLogPosition, hardReadEndPosition);
         }
 
         /// <inheritdoc/>

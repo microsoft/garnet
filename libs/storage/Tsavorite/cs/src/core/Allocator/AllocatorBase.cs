@@ -37,7 +37,8 @@ namespace Tsavorite.core
         internal virtual long CalculatePageObjectSizes(long page, long startAddress, long untilAddress) => 0;
         /// <summary>Load objects for records on an already-loaded page for recovery pass 2.</summary>
         internal virtual void LoadObjectsForRecoveryPass2(long page, long fromAddress, long untilAddress, IDevice objectLogDevice,
-            ObjectLogFilePositionInfo nextPageObjectLogPosition) { }
+            ObjectLogFilePositionInfo nextPageObjectLogPosition, ObjectLogFilePositionInfo hardReadEndPosition = default)
+        { }
 
         /// <summary>Return the first object-log position recorded in the header of <paramref name="page"/>, or an unset position when
         /// this allocator has no object log or the page contains no out-of-line records.</summary>
@@ -45,7 +46,8 @@ namespace Tsavorite.core
         /// <summary>Compute the hash code of a record's overflow key during recovery Pass 1 (index build) by reading the key bytes from
         /// the object log, since the objectIdMap is not yet populated so <see cref="LogRecord.Key"/> cannot resolve it. Only implemented
         /// by the object allocator; other allocators never have overflow keys, so this is never called for them.</summary>
-        internal virtual long ComputeRecoveryOverflowKeyHash(in LogRecord logRecord, IDevice objectLogDevice)
+        internal virtual long ComputeRecoveryOverflowKeyHash(in LogRecord logRecord, IDevice objectLogDevice,
+            ObjectLogFilePositionInfo hardReadEndPosition = default)
             => throw new TsavoriteException("Overflow keys are only supported by the object allocator");
     }
 
@@ -2018,8 +2020,11 @@ namespace Tsavorite.core
         /// <param name="snapshotObjectLogDevice">For the snapshot-replay flush, the snapshot object-log device whose object bytes (for records at/above
         ///     <paramref name="formerFlushedUntilAddress"/>) are copied into the main object-log during the flush. Null for non-object or hybrid-log-only flushes.</param>
         /// <param name="formerFlushedUntilAddress">The former FlushedUntilAddress (hybrid-log/snapshot boundary); records at/above it have their objects copied.</param>
+        /// <param name="snapshotObjectLogReadEndWord">Exclusive durable end of <paramref name="snapshotObjectLogDevice"/>, encoded in that
+        /// device's object-log address space. Zero when no snapshot object-log bound applies.</param>
         public void AsyncFlushPagesForRecovery<TContext>(long scanFromAddress, long flushPageStart, int numPages, DeviceIOCompletionCallback callback, TContext context,
-            IDevice snapshotObjectLogDevice = null, long formerFlushedUntilAddress = long.MaxValue)
+            IDevice snapshotObjectLogDevice = null, long formerFlushedUntilAddress = long.MaxValue,
+            ulong snapshotObjectLogReadEndWord = 0)
         {
             Debug.Assert(scanFromAddress < GetLogicalAddressOfStartOfPage(flushPageStart + 1), $"scanFromAddress ({scanFromAddress}) must be on flushPageStart ({flushPageStart})");
 
@@ -2047,6 +2052,9 @@ namespace Tsavorite.core
                     untilAddress = GetLogicalAddressOfStartOfPage(flushPage + 1),
                     flushRequestState = FlushRequestState.Recovery,
                     recoverySnapshotObjectLogDevice = snapshotObjectLogDevice,
+                    recoverySnapshotObjectLogReadEnd = snapshotObjectLogReadEndWord == 0
+                        ? default
+                        : new ObjectLogFilePositionInfo(snapshotObjectLogReadEndWord, GetObjectLogTail().SegmentSizeBits),
                     recoveryFormerFlushedUntilAddress = formerFlushedUntilAddress,
                     flushBuffers = flushBuffers
                 };

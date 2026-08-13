@@ -134,6 +134,9 @@ namespace Tsavorite.core
         /// (for records at/above <see cref="recoveryFormerFlushedUntilAddress"/>). Null for non-recovery flushes and for the hybrid-log region.</summary>
         internal IDevice recoverySnapshotObjectLogDevice;
 
+        /// <summary>Exclusive durable end of <see cref="recoverySnapshotObjectLogDevice"/> in that device's logical address space.</summary>
+        internal ObjectLogFilePositionInfo recoverySnapshotObjectLogReadEnd;
+
         /// <summary>During snapshot recovery, the former FlushedUntilAddress (the hybrid-log/snapshot boundary). Records whose logical address is at or
         /// above this are in the snapshot region and their objects must be copied from the snapshot object-log to the main object-log during the flush.</summary>
         internal long recoveryFormerFlushedUntilAddress;
