@@ -19,11 +19,11 @@ jobs:
     if: ${{ github.event.workflow_run.conclusion == 'success' || github.event_name != 'workflow_run' }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
       
       - name: Docker meta
         id: meta
-        uses: docker/metadata-action@80c7e94dd9b9319bd5eb7a0e0fe9291e23a2a2e9 # v6 for security reasons we have pinned the tag (commit SHA) for 3rd party
+        uses: docker/metadata-action@80c7e94dd9b9319bd5eb7a0e0fe9291e23a2a2e9 # v6.1.0 for security reasons we have pinned the tag (commit SHA) for 3rd party
         with:
           images: ghcr.io/${{ github.repository }}-nanoserver-ltsc2022
           tags: |
@@ -39,7 +39,7 @@ jobs:
       
       - name: Login to GitHub Container Registry
         if: github.event_name != 'pull_request'
-        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee  # v4 for security reasons we have pinned the tag (commit SHA) for 3rd party
+        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee  # v4.2.0 for security reasons we have pinned the tag (commit SHA) for 3rd party
         with:
             registry: ghcr.io
             username: ${{ github.actor }}

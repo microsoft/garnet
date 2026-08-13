@@ -66,7 +66,7 @@ jobs:
           - { rid: linux-musl-x64,   image: 'alpine:3.20',  platform: linux/amd64, libc: musl }
           - { rid: linux-musl-arm64, image: 'alpine:3.20',  platform: linux/arm64, libc: musl }
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       # Register QEMU so the arm64 containers can run on the x64 runner. No-op for amd64.
       - name: Enable QEMU (arm64 emulation)
@@ -91,7 +91,7 @@ jobs:
           ls -la "staging/${{ matrix.rid }}/native"
           file "staging/${{ matrix.rid }}/native"/*.so
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: native-${{ matrix.rid }}
           path: staging/${{ matrix.rid }}/native/*
@@ -107,7 +107,7 @@ jobs:
           - { rid: win-x64,   arch: x64 }
           - { rid: win-arm64, arch: ARM64 }
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       # CMakeLists builds with /Qspectre /guard:cf /sdl and links the Spectre-mitigated CRT, so a
       # missing "Spectre-mitigated libs" component fails the link with MSB8040 (see cc/README.md,
@@ -197,7 +197,7 @@ jobs:
           }
           Write-Host "Security mitigations verified: Control Flow Guard + Security Cookie present."
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: native-${{ matrix.rid }}
           path: staging/${{ matrix.rid }}/native/*
@@ -219,7 +219,7 @@ jobs:
       group: native-publish-${{ github.ref_name }}
       cancel-in-progress: false
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           ref: ${{ github.ref_name }}
           fetch-depth: 0
@@ -229,7 +229,7 @@ jobs:
           token: ${{ secrets.NATIVE_BINARIES_PAT || github.token }}
 
       - name: Download all native artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           path: staging
           pattern: native-*
