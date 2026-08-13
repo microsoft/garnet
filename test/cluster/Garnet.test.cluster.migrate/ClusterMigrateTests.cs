@@ -1074,6 +1074,88 @@ namespace Garnet.test.cluster
             context.clusterTestUtils.WaitForMigrationCleanup(logger: context.logger);
         }
 
+        [Test, Order(102)]
+        [Category("CLUSTER")]
+        public void ClusterMigrateLargeObjectMultiLogAofReplay()
+        {
+            // Migrate a large hash into a target whose AOF is split across multiple physical sublogs (sublogCount: 2).
+            // On the target the migrated object is logged to its multiLog AOF via the chunked object path
+            // (GarnetLog.EnqueueObjectChunked selects a physical sublog by key hash and streams the value as
+            // AofShardedChunkHeader chunk records, rather than the single-log AofBasicChunkHeader path). Restarting the
+            // target with recovery replays that multiLog AOF, so the migrated object must be reconstructed from the
+            // sharded chunk records - exercising both the sharded chunked-object write and the multiLog chunked recovery.
+            context.logger.LogDebug("0. ClusterMigrateLargeObjectMultiLogAofReplay started");
+
+            // Small main-store page => small migration send buffer (1 << PageSizeBits), so the object migrates over the
+            // wire via the chunked path. Small AOF page => the target streams the object as several AOF chunk records.
+            // enableAOF + tryRecover let the target replay its AOF on restart; sublogCount: 2 forces the sharded
+            // (multi physical sublog) chunk write + recovery path.
+            context.CreateInstances(defaultShards, useTLS: UseTLS, enableAOF: true, tryRecover: true, sublogCount: 2,
+                pageSize: "16k", AofPageSize: "32k", memorySize: "1m", lowMemory: true);
+            context.CreateConnection(useTLS: UseTLS);
+            _ = context.clusterTestUtils.SimpleSetupCluster(logger: context.logger);
+
+            var sourceNodeIndex = 1;
+            var targetNodeIndex = 2;
+            var sourceNodeId = context.clusterTestUtils.GetNodeIdFromNode(sourceNodeIndex, context.logger);
+            var targetNodeId = context.clusterTestUtils.GetNodeIdFromNode(targetNodeIndex, context.logger);
+
+            var key = "{abc}mlhash";
+            var slot = ClusterTestUtils.HashSlot(Encoding.ASCII.GetBytes(key));
+            ClassicAssert.AreEqual(7638, slot);
+
+            // Build a hash far larger than the AOF page: 200 * 4 KB => ~800 KB object streamed as many AOF chunk
+            // records on the target's selected sublog. Each individual HSET is a small AOF entry that fits the page.
+            const int fieldCount = 200;
+            const int fieldSize = 4 * 1024;
+            var db = context.clusterTestUtils.GetDatabase();
+            for (var i = 0; i < fieldCount; i++)
+                db.HashSet(key, "f" + i, MakeHashFieldBytes(i, fieldSize));
+            ClassicAssert.AreEqual(fieldCount, db.HashLength(key));
+
+            // Migrate the single-key slot source -> target.
+            ClassicAssert.AreEqual("OK", context.clusterTestUtils.SetSlot(targetNodeIndex, slot, "IMPORTING", sourceNodeId, logger: context.logger));
+            ClassicAssert.AreEqual("OK", context.clusterTestUtils.SetSlot(sourceNodeIndex, slot, "MIGRATING", targetNodeId, logger: context.logger));
+
+            var keysInSlot = context.clusterTestUtils.GetKeysInSlot(sourceNodeIndex, slot, 1, context.logger);
+            context.clusterTestUtils.MigrateKeys(context.clusterTestUtils.GetEndPoint(sourceNodeIndex), context.clusterTestUtils.GetEndPoint(targetNodeIndex), keysInSlot, context.logger);
+
+            ClassicAssert.AreEqual("OK", context.clusterTestUtils.SetSlot(targetNodeIndex, slot, "NODE", targetNodeId, logger: context.logger));
+            context.clusterTestUtils.BumpEpoch(targetNodeIndex, waitForSync: true, logger: context.logger);
+            ClassicAssert.AreEqual("OK", context.clusterTestUtils.SetSlot(sourceNodeIndex, slot, "NODE", targetNodeId, logger: context.logger));
+            context.clusterTestUtils.BumpEpoch(sourceNodeIndex, waitForSync: true, logger: context.logger);
+
+            context.clusterTestUtils.WaitForMigrationCleanup(logger: context.logger);
+
+            // The target owns the slot now; verify the migrated object round-tripped (reads route to the target).
+            ClassicAssert.AreEqual(fieldCount, db.HashLength(key));
+            for (var i = 0; i < fieldCount; i++)
+                ClassicAssert.AreEqual(MakeHashFieldBytes(i, fieldSize), (byte[])db.HashGet(key, "f" + i), $"field f{i} (pre-restart)");
+
+            // Restart the target with recovery: ensureAofFlush commits the multiLog AOF before shutdown, then startup
+            // replays it and must reconstruct the migrated object from the sharded chunk records.
+            context.RestartNode(targetNodeIndex, ensureAofFlush: true);
+            context.CreateConnection(useTLS: UseTLS);
+            db = context.clusterTestUtils.GetDatabase();
+
+            // Wait for the recovered target to finish loading (it may transiently report LOADING/MOVED/CLUSTERDOWN),
+            // then verify every field survived the multiLog AOF replay.
+            while (true)
+            {
+                try
+                {
+                    if (db.HashLength(key) == fieldCount)
+                        break;
+                }
+                catch (RedisException) { /* target still loading/redirecting right after restart; retry */ }
+                ClusterTestUtils.BackOff(cancellationToken: context.cts.Token);
+            }
+            for (var i = 0; i < fieldCount; i++)
+                ClassicAssert.AreEqual(MakeHashFieldBytes(i, fieldSize), (byte[])db.HashGet(key, "f" + i), $"field f{i} (post-restart AOF replay)");
+
+            context.logger.LogDebug("Done ClusterMigrateLargeObjectMultiLogAofReplay");
+        }
+
         [Test, Order(10)]
         [Category("CLUSTER")]
         public void ClusterSimpleMigrateKeysWithObjects()
