@@ -346,7 +346,7 @@ namespace Garnet.server
         [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
         private static unsafe byte WriteCallbackUnmanaged(ulong context, nint keyData, nuint keyLength, nint writeData, nuint writeLength)
         {
-            Debug.Assert(((context & (ContextStep - 1)) is DiskANNService.InternalIdMap or DiskANNService.Attributes) ||  (keyLength % 4) == 0, "Unaligned key provided by DiskANN");
+            Debug.Assert(((context & (ContextStep - 1)) is DiskANNService.InternalIdMap or DiskANNService.Attributes) || (keyLength % 4) == 0, "Unaligned key provided by DiskANN");
 
             var keyWithNamespace = MakeVectorElementKey(context, keyData, keyLength);
 
