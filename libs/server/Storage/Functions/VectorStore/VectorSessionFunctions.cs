@@ -532,7 +532,7 @@ namespace Garnet.server
         {
             var nsBytes = record.NamespaceBytes;
             var ns = nsBytes.Length == 1 ? nsBytes[0] : BinaryPrimitives.ReadInt32LittleEndian(nsBytes);
-            Debug.Assert((((ulong)ns & (VectorManager.ContextStep - 1)) is DiskANNService.InternalIdMap or DiskANNService.Attributes) ||  (dataPtr % 4) == 0, "About to pass unaligned value to DiskANN");
+            Debug.Assert((((ulong)ns & (VectorManager.ContextStep - 1)) is DiskANNService.InternalIdMap or DiskANNService.Attributes) || (dataPtr % 4) == 0, "About to pass unaligned value to DiskANN");
         }
     }
 }
