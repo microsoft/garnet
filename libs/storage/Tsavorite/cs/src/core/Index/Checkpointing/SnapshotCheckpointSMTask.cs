@@ -36,6 +36,18 @@ namespace Tsavorite.core
                     base.GlobalBeforeEnteringState(next, stateMachineDriver);
 
                     store._hybridLogCheckpoint.info.snapshotFinalLogicalAddress = store._hybridLogCheckpoint.info.finalLogicalAddress;
+
+                    // Flush complete stable pages below the fuzzy-region boundary directly to the main log. This uses the
+                    // ordinary read-only flush path, which can write immutable live pages without copying them or replacing
+                    // their main-object-log positions with snapshot-object-log positions. Keep the boundary page wholly in
+                    // the snapshot so all object positions on that page use the snapshot object-log address space.
+                    if (!store.hlogBase.IsNullDevice)
+                    {
+                        var stablePageEndAddress = store.hlogBase.GetLogicalAddressOfStartOfPage(
+                            store.hlogBase.GetPage(store._hybridLogCheckpoint.info.startLogicalAddress));
+                        store.hlogBase.ShiftReadOnlyAddressWithWait(stablePageEndAddress, wait: true);
+                    }
+
                     store._hybridLogCheckpoint.snapshotFileDevice = store.checkpointManager.GetSnapshotLogDevice(store._hybridLogCheckpointToken);
                     store._hybridLogCheckpoint.snapshotFileObjectLogDevice = store.checkpointManager.GetSnapshotObjectLogDevice(store._hybridLogCheckpointToken);
                     store._hybridLogCheckpoint.snapshotFileDevice.Initialize(store.hlogBase.GetMainLogSegmentSize());

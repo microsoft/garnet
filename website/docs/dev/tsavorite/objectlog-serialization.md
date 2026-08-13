@@ -462,6 +462,22 @@ On the private-copy path, `PageAsyncFlushResult.freeBuffer1` keeps the aligned p
 callback. On a live-page write, objectId hint stamping is index-preserving, but the broader concurrent-mutation safety
 requirements still apply; metadata non-destructiveness alone does not make every asynchronous live-page flush safe.
 
+### 5.7 Snapshot stable-prefix flush
+
+At `PREPARE`, `startLogicalAddress` captures the exact tail that starts the fuzzy region. At `WAIT_FLUSH`, a snapshot
+checkpoint rounds that address down to its page start and advances the ordinary read-only flush to that page boundary.
+Complete stable pages below the boundary therefore use the normal main-log flush path: immutable live page bytes can be
+written without a page copy, and their object positions continue to address the main object log.
+
+The page containing `startLogicalAddress` remains entirely in the snapshot region even when it begins with stable records.
+Snapshot serialization copies that whole page and rewrites every object position on it into the snapshot object-log address
+space. Recovery selects an object-log device per page, so a page must never contain a mixture of main and snapshot object-log
+positions.
+
+`startLogicalAddress` itself is not rounded in checkpoint metadata. Recovery uses the exact persisted address as the fuzzy
+lower boundary: records at or above it that belong to the next version are invalidated, while preceding stable records on
+the same snapshot page remain valid. `snapshotStartFlushedLogicalAddress` records the page-aligned main/snapshot boundary.
+
 ---
 
 ## 6. Read flow
@@ -806,6 +822,20 @@ Indentation is call depth. Component branches and lifetime changes are included 
       - convert only byte-compatible headerless metadata
       - fail if current framing would have to be inserted
     - advance the running page object-log position
+
+### 9.7 Snapshot checkpoint stable-prefix split
+
+- `SnapshotCheckpointSMTask.GlobalBeforeEnteringState(WAIT_FLUSH)`
+  - round persisted `startLogicalAddress` down to the fuzzy boundary page start
+  - `AllocatorBase.ShiftReadOnlyAddressWithWait(boundaryPageStart, wait: true)`
+    - `ShiftReadOnlyAddress()`
+    - epoch barrier -> `ObjectAllocatorImpl.OnPagesMarkedReadOnly()`
+    - `OnPagesMarkedReadOnlyWorker()`
+    - `AsyncFlushPagesForReadOnly()` -> normal page flush sequence
+    - wait until `FlushedUntilAddress >= boundaryPageStart`
+  - capture `snapshotStartFlushedLogicalAddress = FlushedUntilAddress`
+  - `AsyncFlushPagesForSnapshot(snapshotStartFlushedLogicalAddress, finalLogicalAddress, startLogicalAddress, ...)`
+    - copy and serialize the boundary page and fuzzy suffix in snapshot object-log address space
 
 ---
 

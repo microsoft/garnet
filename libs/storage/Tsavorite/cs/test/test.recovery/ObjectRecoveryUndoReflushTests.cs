@@ -50,6 +50,80 @@ namespace Tsavorite.test.recovery.objects
         [TearDown]
         public void TearDown() => TestUtils.OnTearDown();
 
+        [Test]
+        [Category("TsavoriteKV"), Category("CheckpointRestore")]
+        public async Task SnapshotFlushesStablePrefixBeforeCopyingFuzzyRegion()
+        {
+            var logMemorySize = 64L * MinKvLogPageSize;
+            Guid token;
+            long flushedBeforeCheckpoint;
+
+            Prepare(logMemorySize, out var log, out var objlog, out var store);
+            try
+            {
+                using (var session = store.NewSession<TestObjectKey, TestObjectInput, TestObjectOutput, Empty, TestObjectFunctions>(new TestObjectFunctions()))
+                {
+                    var bContext = session.BasicContext;
+                    for (var i = 0; i < NumStable; i++)
+                        _ = bContext.Upsert(new TestObjectKey { key = i }, new TestObjectValue { value = i });
+
+                    flushedBeforeCheckpoint = store.Log.FlushedUntilAddress;
+                    ClassicAssert.IsTrue(store.TryInitiateHybridLogCheckpoint(out token, CheckpointType.Snapshot), "failed to initiate Snapshot checkpoint");
+
+                    var guard = 0;
+                    while (store.SystemState.Phase != Phase.IN_PROGRESS)
+                    {
+                        bContext.Refresh();
+                        if (++guard > 1_000_000)
+                        {
+                            Assert.Fail($"state machine never reached IN_PROGRESS (stuck at {store.SystemState.Phase})");
+                            return;
+                        }
+                    }
+
+                    for (var i = NumStable; i < NumStable + NumFuzzy; i++)
+                        _ = bContext.Upsert(new TestObjectKey { key = i }, new TestObjectValue { value = i });
+                }
+
+                await store.CompleteCheckpointAsync().AsTask().ConfigureAwait(false);
+            }
+            finally
+            {
+                Destroy(log, objlog, store);
+            }
+
+            var checkpointInfo = default(HybridLogRecoveryInfo);
+            checkpointInfo.Recover(token,
+                new DeviceLogCommitCheckpointManager(
+                    new LocalStorageNamedDeviceFactoryCreator(),
+                    new DefaultCheckpointNamingScheme(new DirectoryInfo(Path.Combine(MethodTestDir, "check-points")).FullName)));
+            var fuzzyStartPageAddress = checkpointInfo.startLogicalAddress & ~(MinKvLogPageSize - 1);
+            Assert.That(checkpointInfo.snapshotStartFlushedLogicalAddress, Is.EqualTo(fuzzyStartPageAddress));
+            Assert.That(checkpointInfo.snapshotStartFlushedLogicalAddress, Is.GreaterThan(flushedBeforeCheckpoint));
+
+            Prepare(logMemorySize, out log, out objlog, out store);
+            try
+            {
+                _ = await store.RecoverAsync(default, token).ConfigureAwait(false);
+
+                using var session = store.NewSession<TestObjectKey, TestObjectInput, TestObjectOutput, Empty, TestObjectFunctions>(new TestObjectFunctions());
+                var bContext = session.BasicContext;
+                for (var i = 0; i < NumStable; i++)
+                {
+                    var found = TryReadValue(bContext, i, out var value);
+                    ClassicAssert.IsTrue(found, $"stable key {i} not found");
+                    ClassicAssert.AreEqual(i, value, $"stable key {i} has wrong value");
+                }
+
+                for (var i = NumStable; i < NumStable + NumFuzzy; i++)
+                    ClassicAssert.IsFalse(TryReadValue(bContext, i, out _), $"fuzzy key {i} was not undone");
+            }
+            finally
+            {
+                Destroy(log, objlog, store);
+            }
+        }
+
         /// <summary>
         /// Build a FoldOver checkpoint with a fuzzy region (v+1 records undone on recovery) whose boundary page also carries
         /// valid v object records, then recover from it TWICE. The undo-reflush must NOT corrupt the on-disk object-log
