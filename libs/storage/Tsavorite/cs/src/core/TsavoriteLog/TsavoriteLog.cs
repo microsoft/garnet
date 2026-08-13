@@ -255,7 +255,17 @@ namespace Tsavorite.core
                 {
                     RecoverAsync(-1).AsTask().GetAwaiter().GetResult();
                 }
-                catch { }
+                catch (Exception ex)
+                {
+                    // A non-tolerated recovery failure (TolerateDeviceFailure short-circuits inside recovery and never
+                    // reaches here). Fail fast: silently continuing would present an empty log as if recovery succeeded,
+                    // which is data loss for callers such as the Garnet AOF. RestoreLatestAsync/RestoreSpecificCommitAsync
+                    // have already rolled the allocator back to a clean, empty state, so the log is not left poisoned with
+                    // a sentinel HeadAddress even if a caller catches this and retries. This mirrors the async CreateAsync
+                    // path, which likewise propagates recovery failures.
+                    logger?.LogError(ex, "TsavoriteLog recovery failed during construction");
+                    throw;
+                }
             }
 
             // Claim a LightEpoch user-word slot for our in-flight enqueue publish protocol.
@@ -2872,7 +2882,14 @@ namespace Tsavorite.core
                 catch
                 {
                     if (!tolerateDeviceFailure)
+                    {
+                        // Recovery failed after the fast-commit scan set the "shut up safe guards" sentinels
+                        // (CommittedUntilAddress / HeadAddress = long.MaxValue). Roll the allocator back to a clean, empty
+                        // state so a failed recovery never retains a log poisoned with HeadAddress == long.MaxValue, which
+                        // overflows CalculateReadOnlyAddress on the next enqueue.
+                        ResetRecoveryState();
                         throw;
+                    }
                 }
             }
 
@@ -2949,7 +2966,14 @@ namespace Tsavorite.core
                 catch
                 {
                     if (!tolerateDeviceFailure)
+                    {
+                        // Recovery failed after the fast-commit scan set the "shut up safe guards" sentinels
+                        // (CommittedUntilAddress / HeadAddress = long.MaxValue). Roll the allocator back to a clean, empty
+                        // state so a failed recovery never retains a log poisoned with HeadAddress == long.MaxValue, which
+                        // overflows CalculateReadOnlyAddress on the next enqueue.
+                        ResetRecoveryState();
                         throw;
+                    }
                 }
             }
 
@@ -2971,6 +2995,19 @@ namespace Tsavorite.core
             CommittedUntilAddress = info.UntilAddress;
             CommittedBeginAddress = info.BeginAddress;
             AdvanceSafeTailFloor(info.UntilAddress);
+        }
+
+        /// <summary>
+        /// Roll the allocator back to a clean, freshly-initialized (empty) state, undoing the "shut up safe guards"
+        /// sentinels (HeadAddress / CommittedUntilAddress = long.MaxValue) that fast-commit recovery sets before scanning
+        /// the log tail. Mirrors the "unable to recover using any available commit" reset so a failed recovery never
+        /// leaves the log with a sentinel HeadAddress that overflows address arithmetic on the next enqueue.
+        /// </summary>
+        private void ResetRecoveryState()
+        {
+            allocator.Initialize();
+            CommittedUntilAddress = FirstValidAddress;
+            beginAddress = allocator.BeginAddress;
         }
 
         /// <summary>

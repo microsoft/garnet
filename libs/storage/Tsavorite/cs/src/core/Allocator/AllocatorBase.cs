@@ -1306,6 +1306,14 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal long CalculateReadOnlyAddress(long tailAddress, long headAddress)
         {
+            // Defensive clamp: during normal operation HeadAddress is strictly behind TailAddress. If a caller passes an
+            // out-of-range headAddress (e.g. the long.MaxValue "never evict" sentinel that fast-commit recovery leaves in
+            // place, or that a read-only-mode log carries), the page arithmetic below overflows to a negative address.
+            // Clamp so we never return an out-of-range ReadOnlyAddress that would corrupt the log's address invariants
+            // (or, in Debug, trip the asserts below).
+            if (headAddress >= tailAddress)
+                return tailAddress;
+
             // Snap ReadOnlyAddress to the start of the page that this calculation on logMutableFraction ends up in. If this is below HeadAddress,
             // then make it the end of the HeadAddress page. If tailAddress is still on the first page, return HeadAddress.
             if (tailAddress <= PageSize + PageHeader.Size)
