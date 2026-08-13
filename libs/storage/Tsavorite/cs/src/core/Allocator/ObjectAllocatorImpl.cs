@@ -826,7 +826,7 @@ namespace Tsavorite.core
             var alignedBufferSize = RoundUp(startPadding + (int)numBytesToWrite, (int)device.SectorSize);
 
             // Two flush strategies stamp the on-disk length hints + ObjectLogPosition into the record image before writing it:
-            //  - Copy path (Snapshot/Recovery/partial/unaligned flushes): copy the record bytes into srcBuffer, stamp the COPY, write the copy.
+            //  - Copy path (Snapshot/Recovery/unaligned ReadOnly flushes): copy the record bytes into srcBuffer, stamp the COPY, write the copy.
             //    Why Snapshot MUST copy (do not "optimize" this to a live-page write): a Snapshot flush serializes each record's objects to a
             //    SEPARATE snapshot object-log device (snapshotFileObjectLogDevice, created in SnapshotCheckpointSMTask and DISPOSED right after the
             //    checkpoint), and stamps the record's ObjectLogPosition with a position in THAT device. Stamping the COPY leaves the live record's
@@ -836,7 +836,7 @@ namespace Tsavorite.core
             //    page would destroy it. (Open question under investigation: a ReadOnly flush racing a snapshot over the same page -- the stamp is
             //    probably transient/overwritten, but the ordering is not obviously deterministic, so we retain the copy.) A Recovery flush reads the
             //    deferred-load length back out of the live ObjectLogPosition slot, so it also copies.
-            //  - No-copy path (plain ReadOnly full-page, sector-aligned flush; useLivePage below): stamp the LIVE records in place and write the live
+            //  - No-copy path (plain ReadOnly flush with a sector-aligned start; useLivePage below): stamp the LIVE records in place and write the live
             //    page directly. This is safe ONLY for ReadOnly because a ReadOnly flush writes to the MAIN object-log at the MAIN tail, so the position
             //    stamped onto the live record is exactly the record's real main-object-log position. Correctness also relies on the OnDispose contract
             //    that a record stays READABLE (byte-consistent) throughout a flush -- OnDispose implementations copy off whatever they need for cleanup
@@ -844,7 +844,7 @@ namespace Tsavorite.core
             //    concurrent op supersedes it. The stamping is non-destructive to in-memory readers (the ValueLength property masks the raw field to
             //    ObjectIdSize; the objectId slot is untouched), and the page stays resident throughout the flush (HeadAddress <= FlushedUntilAddress
             //    until this flush completes).
-            var useLivePage = asyncResult.flushRequestState == FlushRequestState.ReadOnly && !asyncResult.partial && startPadding == 0;
+            var useLivePage = asyncResult.flushRequestState == FlushRequestState.ReadOnly && startPadding == 0;
 
             // If we are in snapshot checkpoint we will need to acquire the epoch whenever we access the log record or oidMap; we will not have the epoch
             // when we enter here. If we are in recovery, we will not have the epoch either, but we don't need to acquire it as there are no other operations
