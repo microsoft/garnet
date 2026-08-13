@@ -80,7 +80,7 @@ Integer Reply: the size of the string stored in the destination key, that is equ
 BITOP NOT destkey srckey
 ```
 
-Perform a bitwise NOT operation between multiple keys (containing string values) and store the result in the destination key.
+Perform a bitwise NOT operation on the source key (containing a string value) and store the result in the destination key.
 
 #### Resp Reply
 
