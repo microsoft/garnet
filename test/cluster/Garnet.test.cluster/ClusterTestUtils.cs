@@ -1,4 +1,4 @@
-// Copyright (c) Microsoft Corporation.
+﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -2103,6 +2103,37 @@ namespace Garnet.test.cluster
                     }
                 }
                 break;
+            }
+        }
+
+        /// <summary>
+        /// Waits until every slot is served by some node according to the local view of <paramref name="endPoint"/>.
+        /// Until that holds the node answers with CLUSTERDOWN instead of serving or redirecting.
+        /// </summary>
+        /// <param name="endPoint">Node whose local view is inspected</param>
+        /// <param name="cancellationToken">Token used to abort the wait</param>
+        /// <param name="logger">Logger</param>
+        public async Task WaitForAllSlotsServedAsync(IPEndPoint endPoint, CancellationToken cancellationToken, ILogger logger = null)
+        {
+            while (true)
+            {
+                var config = await ClusterNodesAsync(endPoint, logger).ConfigureAwait(false);
+
+                var allServed = true;
+                for (var slot = 0; slot <= 16383; slot++)
+                {
+                    var owner = config.GetBySlot(slot);
+                    if (owner == null || owner.NodeId == null)
+                    {
+                        allServed = false;
+                        break;
+                    }
+                }
+
+                if (allServed)
+                    return;
+
+                await BackOffAsync(cancellationToken, msg: $"Timed out waiting for all slots to be served by {endPoint}").ConfigureAwait(false);
             }
         }
 

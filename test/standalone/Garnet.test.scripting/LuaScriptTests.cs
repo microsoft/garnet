@@ -192,7 +192,7 @@ namespace Garnet.test
             var db = redis.GetDatabase(0);
 
             var globalFuncExc =
-                ClassicAssert.Throws<RedisServerException>(
+                TestUtils.ThrowsRedisException<RedisServerException>(
                     () =>
                     {
                         _ = db.ScriptEvaluate(
@@ -204,13 +204,13 @@ namespace Garnet.test
                 );
             ClassicAssert.IsTrue(globalFuncExc.Message.Contains("Attempt to modify a readonly table"));
 
-            var globalVar = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("global_var = 'hello'"));
+            var globalVar = TestUtils.ThrowsRedisException<RedisServerException>(() => db.ScriptEvaluate("global_var = 'hello'"));
             ClassicAssert.IsTrue(globalVar.Message.Contains("Attempt to modify a readonly table"));
 
-            var metatableUpdateOnGlobals = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("setmetatable(_G, nil)"));
+            var metatableUpdateOnGlobals = TestUtils.ThrowsRedisException<RedisServerException>(() => db.ScriptEvaluate("setmetatable(_G, nil)"));
             ClassicAssert.IsTrue(metatableUpdateOnGlobals.Message.Contains("Attempt to modify a readonly table"));
 
-            var rawSetG = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("rawset(_G, 'hello', 'world')"));
+            var rawSetG = TestUtils.ThrowsRedisException<RedisServerException>(() => db.ScriptEvaluate("rawset(_G, 'hello', 'world')"));
             ClassicAssert.IsTrue(globalVar.Message.Contains("Attempt to modify a readonly table"));
         }
 
@@ -228,7 +228,7 @@ namespace Garnet.test
 
             foreach (var illegal in illegalToModify)
             {
-                var exc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate($"table.insert({illegal}, 'foo')"));
+                var exc = TestUtils.ThrowsRedisException<RedisServerException>(() => db.ScriptEvaluate($"table.insert({illegal}, 'foo')"));
                 ClassicAssert.IsTrue(exc.Message.Contains("Attempt to modify a readonly table"));
             }
 
@@ -481,7 +481,7 @@ namespace Garnet.test
             server.ScriptFlush();
 
             // Assert the script is not found
-            _ = Assert.Throws<RedisServerException>(() => db.ScriptEvaluate(scriptId));
+            _ = TestUtils.ThrowsRedisException<RedisServerException>(() => db.ScriptEvaluate(scriptId));
         }
 
         [Test]
@@ -551,11 +551,11 @@ namespace Garnet.test
             var db = redis.GetDatabase(0);
             var statusReplyScript = "return redis.error_reply('GET')";
 
-            var excReply = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate(statusReplyScript));
+            var excReply = TestUtils.ThrowsRedisException<RedisServerException>(() => db.ScriptEvaluate(statusReplyScript));
             ClassicAssert.AreEqual("ERR GET", excReply.Message);
 
             var directReplyScript = "return { err = 'Failure' }";
-            var excDirect = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate(directReplyScript));
+            var excDirect = TestUtils.ThrowsRedisException<RedisServerException>(() => db.ScriptEvaluate(directReplyScript));
             ClassicAssert.AreEqual("Failure", excDirect.Message);
         }
 
@@ -567,11 +567,11 @@ namespace Garnet.test
 
             // ATan2
             {
-                _ = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("math.atan2()"));
-                _ = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("math.atan2(1)"));
-                _ = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("math.atan2(1, 2, 3)"));
-                _ = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("math.atan2('a', 1)"));
-                _ = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("math.atan2(1, 'b')"));
+                _ = TestUtils.ThrowsRedisException<RedisServerException>(() => db.ScriptEvaluate("math.atan2()"));
+                _ = TestUtils.ThrowsRedisException<RedisServerException>(() => db.ScriptEvaluate("math.atan2(1)"));
+                _ = TestUtils.ThrowsRedisException<RedisServerException>(() => db.ScriptEvaluate("math.atan2(1, 2, 3)"));
+                _ = TestUtils.ThrowsRedisException<RedisServerException>(() => db.ScriptEvaluate("math.atan2('a', 1)"));
+                _ = TestUtils.ThrowsRedisException<RedisServerException>(() => db.ScriptEvaluate("math.atan2(1, 'b')"));
 
                 var val = (string)db.ScriptEvaluate("return tostring(math.atan2(0.1, 0.2))");
                 ClassicAssert.AreEqual(Math.Round(Math.Atan2(0.1, 0.2), 14).ToString(), val);
@@ -579,9 +579,9 @@ namespace Garnet.test
 
             // Cosh
             {
-                _ = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("math.cosh()"));
-                _ = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("math.cosh('a')"));
-                _ = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("math.cosh(1, 2)"));
+                _ = TestUtils.ThrowsRedisException<RedisServerException>(() => db.ScriptEvaluate("math.cosh()"));
+                _ = TestUtils.ThrowsRedisException<RedisServerException>(() => db.ScriptEvaluate("math.cosh('a')"));
+                _ = TestUtils.ThrowsRedisException<RedisServerException>(() => db.ScriptEvaluate("math.cosh(1, 2)"));
 
                 var val = (string)db.ScriptEvaluate("return tostring(math.cosh(0.1))");
                 ClassicAssert.AreEqual(Math.Round(Math.Cosh(0.1), 14).ToString(), val);
@@ -589,9 +589,9 @@ namespace Garnet.test
 
             // Log10
             {
-                _ = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("math.log10()"));
-                _ = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("math.log10('a')"));
-                _ = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("math.log10(1, 2)"));
+                _ = TestUtils.ThrowsRedisException<RedisServerException>(() => db.ScriptEvaluate("math.log10()"));
+                _ = TestUtils.ThrowsRedisException<RedisServerException>(() => db.ScriptEvaluate("math.log10('a')"));
+                _ = TestUtils.ThrowsRedisException<RedisServerException>(() => db.ScriptEvaluate("math.log10(1, 2)"));
 
                 var val = (string)db.ScriptEvaluate("return tostring(math.log10(0.1))");
                 ClassicAssert.AreEqual("-1.0", val);
@@ -599,11 +599,11 @@ namespace Garnet.test
 
             // Pow
             {
-                _ = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("math.pow()"));
-                _ = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("math.pow(1)"));
-                _ = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("math.pow(1, 2, 3)"));
-                _ = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("math.pow('a', 1)"));
-                _ = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("math.pow(1, 'b')"));
+                _ = TestUtils.ThrowsRedisException<RedisServerException>(() => db.ScriptEvaluate("math.pow()"));
+                _ = TestUtils.ThrowsRedisException<RedisServerException>(() => db.ScriptEvaluate("math.pow(1)"));
+                _ = TestUtils.ThrowsRedisException<RedisServerException>(() => db.ScriptEvaluate("math.pow(1, 2, 3)"));
+                _ = TestUtils.ThrowsRedisException<RedisServerException>(() => db.ScriptEvaluate("math.pow('a', 1)"));
+                _ = TestUtils.ThrowsRedisException<RedisServerException>(() => db.ScriptEvaluate("math.pow(1, 'b')"));
 
                 var val = (string)db.ScriptEvaluate("return tostring(math.pow(0.1, 0.2))");
                 ClassicAssert.AreEqual(Math.Round(Math.Pow(0.1, 0.2), 14).ToString(), val);
@@ -611,9 +611,9 @@ namespace Garnet.test
 
             // Sinh
             {
-                _ = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("math.sinh()"));
-                _ = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("math.sinh('a')"));
-                _ = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("math.sinh(1, 2)"));
+                _ = TestUtils.ThrowsRedisException<RedisServerException>(() => db.ScriptEvaluate("math.sinh()"));
+                _ = TestUtils.ThrowsRedisException<RedisServerException>(() => db.ScriptEvaluate("math.sinh('a')"));
+                _ = TestUtils.ThrowsRedisException<RedisServerException>(() => db.ScriptEvaluate("math.sinh(1, 2)"));
 
                 var val = (string)db.ScriptEvaluate("return tostring(math.sinh(0.1))");
                 ClassicAssert.AreEqual(Math.Round(Math.Sinh(0.1), 14).ToString(), val);
@@ -621,9 +621,9 @@ namespace Garnet.test
 
             // Tanh
             {
-                _ = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("math.tanh()"));
-                _ = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("math.tanh('a')"));
-                _ = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("math.tanh(1, 2)"));
+                _ = TestUtils.ThrowsRedisException<RedisServerException>(() => db.ScriptEvaluate("math.tanh()"));
+                _ = TestUtils.ThrowsRedisException<RedisServerException>(() => db.ScriptEvaluate("math.tanh('a')"));
+                _ = TestUtils.ThrowsRedisException<RedisServerException>(() => db.ScriptEvaluate("math.tanh(1, 2)"));
 
                 var val = (string)db.ScriptEvaluate("return tostring(math.tanh(0.2))");
                 ClassicAssert.AreEqual(Math.Round(Math.Tanh(0.2), 14).ToString(), val);
@@ -665,10 +665,10 @@ namespace Garnet.test
             var resTable = (string)db.ScriptEvaluate("return redis.sha1hex({ 1234 })");
             ClassicAssert.AreEqual("da39a3ee5e6b4b0d3255bfef95601890afd80709", resTable);
 
-            var excEmpty = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return redis.sha1hex()"));
+            var excEmpty = TestUtils.ThrowsRedisException<RedisServerException>(() => db.ScriptEvaluate("return redis.sha1hex()"));
             ClassicAssert.IsTrue(excEmpty.Message.StartsWith("ERR wrong number of arguments"));
 
-            var excTwo = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return redis.sha1hex('a', 'b')"));
+            var excTwo = TestUtils.ThrowsRedisException<RedisServerException>(() => db.ScriptEvaluate("return redis.sha1hex('a', 'b')"));
             ClassicAssert.IsTrue(excTwo.Message.StartsWith("ERR wrong number of arguments"));
         }
 
@@ -678,16 +678,16 @@ namespace Garnet.test
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
 
-            var excZero = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return redis.log()"));
+            var excZero = TestUtils.ThrowsRedisException<RedisServerException>(() => db.ScriptEvaluate("return redis.log()"));
             ClassicAssert.IsTrue(excZero.Message.StartsWith("ERR redis.log() requires two arguments or more."));
 
-            var excOne = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return redis.log(redis.LOG_DEBUG)"));
+            var excOne = TestUtils.ThrowsRedisException<RedisServerException>(() => db.ScriptEvaluate("return redis.log(redis.LOG_DEBUG)"));
             ClassicAssert.IsTrue(excOne.Message.StartsWith("ERR redis.log() requires two arguments or more."));
 
-            var excBadLevelType = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return redis.log('hello', 'world')"));
+            var excBadLevelType = TestUtils.ThrowsRedisException<RedisServerException>(() => db.ScriptEvaluate("return redis.log('hello', 'world')"));
             ClassicAssert.IsTrue(excBadLevelType.Message.StartsWith("ERR First argument must be a number (log level)."));
 
-            var excBadLevelValue = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return redis.log(-1, 'world')"));
+            var excBadLevelValue = TestUtils.ThrowsRedisException<RedisServerException>(() => db.ScriptEvaluate("return redis.log(-1, 'world')"));
             ClassicAssert.IsTrue(excBadLevelValue.Message.StartsWith("ERR Invalid debug level."));
 
             // Test logs at each level
@@ -723,7 +723,7 @@ namespace Garnet.test
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
 
-            var excNotSupported = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return redis.set_repl(redis.REPL_ALL)"));
+            var excNotSupported = TestUtils.ThrowsRedisException<RedisServerException>(() => db.ScriptEvaluate("return redis.set_repl(redis.REPL_ALL)"));
             ClassicAssert.IsTrue(excNotSupported.Message.StartsWith("ERR redis.set_repl is not supported in Garnet"));
 
             var constantsDefined = (int[])db.ScriptEvaluate("return {redis.REPL_ALL, redis.REPL_AOF, redis.REPL_REPLICA, redis.REPL_SLAVE, redis.REPL_NONE}");
@@ -747,10 +747,10 @@ namespace Garnet.test
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
 
-            var excBreakpoint = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("redis.breakpoint()"));
+            var excBreakpoint = TestUtils.ThrowsRedisException<RedisServerException>(() => db.ScriptEvaluate("redis.breakpoint()"));
             ClassicAssert.IsTrue(excBreakpoint.Message.StartsWith("ERR redis.breakpoint is not supported in Garnet"));
 
-            var excDebug = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("redis.debug('hello')"));
+            var excDebug = TestUtils.ThrowsRedisException<RedisServerException>(() => db.ScriptEvaluate("redis.debug('hello')"));
             ClassicAssert.IsTrue(excDebug.Message.StartsWith("ERR redis.debug is not supported in Garnet"));
         }
 
@@ -765,16 +765,16 @@ namespace Garnet.test
             using var denyRedis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(authUsername: "deny"));
             var denyDB = denyRedis.GetDatabase(0);
 
-            var noArgs = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return redis.acl_check_cmd()"));
+            var noArgs = TestUtils.ThrowsRedisException<RedisServerException>(() => db.ScriptEvaluate("return redis.acl_check_cmd()"));
             ClassicAssert.IsTrue(noArgs.Message.StartsWith("ERR Please specify at least one argument for this redis lib call"));
 
-            var invalidCmdArgType = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return redis.acl_check_cmd({123})"));
+            var invalidCmdArgType = TestUtils.ThrowsRedisException<RedisServerException>(() => db.ScriptEvaluate("return redis.acl_check_cmd({123})"));
             ClassicAssert.IsTrue(invalidCmdArgType.Message.StartsWith("ERR Lua redis lib command arguments must be strings or integers"));
 
-            var invalidCmd = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return redis.acl_check_cmd('nope')"));
+            var invalidCmd = TestUtils.ThrowsRedisException<RedisServerException>(() => db.ScriptEvaluate("return redis.acl_check_cmd('nope')"));
             ClassicAssert.IsTrue(invalidCmd.Message.StartsWith("ERR Invalid command passed to redis.acl_check_cmd()"));
 
-            var invalidArgType = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return redis.acl_check_cmd('GET', {123})"));
+            var invalidArgType = TestUtils.ThrowsRedisException<RedisServerException>(() => db.ScriptEvaluate("return redis.acl_check_cmd('GET', {123})"));
             ClassicAssert.IsTrue(invalidArgType.Message.StartsWith("ERR Lua redis lib command arguments must be strings or integers"));
 
             var canRun = (bool)db.ScriptEvaluate("return redis.acl_check_cmd('GET')");
@@ -814,13 +814,13 @@ namespace Garnet.test
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
 
-            var noArgs = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("redis.setresp()"));
+            var noArgs = TestUtils.ThrowsRedisException<RedisServerException>(() => db.ScriptEvaluate("redis.setresp()"));
             ClassicAssert.IsTrue(noArgs.Message.StartsWith("ERR redis.setresp() requires one argument."));
 
-            var tooManyArgs = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("redis.setresp(1, 2)"));
+            var tooManyArgs = TestUtils.ThrowsRedisException<RedisServerException>(() => db.ScriptEvaluate("redis.setresp(1, 2)"));
             ClassicAssert.IsTrue(tooManyArgs.Message.StartsWith("ERR redis.setresp() requires one argument."));
 
-            var badArg = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("redis.setresp({123})"));
+            var badArg = TestUtils.ThrowsRedisException<RedisServerException>(() => db.ScriptEvaluate("redis.setresp({123})"));
             ClassicAssert.IsTrue(badArg.Message.StartsWith("ERR RESP version must be 2 or 3."));
 
             var resp2 = db.ScriptEvaluate("redis.setresp(2)");
@@ -829,7 +829,7 @@ namespace Garnet.test
             var resp3 = db.ScriptEvaluate("redis.setresp(3)");
             ClassicAssert.IsTrue(resp3.IsNull);
 
-            var badRespVersion = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("redis.setresp(1)"));
+            var badRespVersion = TestUtils.ThrowsRedisException<RedisServerException>(() => db.ScriptEvaluate("redis.setresp(1)"));
             ClassicAssert.IsTrue(badRespVersion.Message.StartsWith("ERR RESP version must be 2 or 3."));
         }
 
@@ -974,7 +974,7 @@ return redis.status_reply("OK")
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
 
-            var exc = ClassicAssert.Throws<RedisServerException>(() => db.Execute("SCRIPT", "EXISTS"));
+            var exc = TestUtils.ThrowsRedisException<RedisServerException>(() => db.Execute("SCRIPT", "EXISTS"));
             ClassicAssert.AreEqual("ERR wrong number of arguments for 'script|exists' command", exc.Message);
         }
 
@@ -986,13 +986,13 @@ return redis.status_reply("OK")
 
             // > 1 args
             {
-                var exc = ClassicAssert.Throws<RedisServerException>(() => db.Execute("SCRIPT", "FLUSH", "ASYNC", "BAR"));
+                var exc = TestUtils.ThrowsRedisException<RedisServerException>(() => db.Execute("SCRIPT", "FLUSH", "ASYNC", "BAR"));
                 ClassicAssert.AreEqual("ERR SCRIPT FLUSH only support SYNC|ASYNC option", exc.Message);
             }
 
             // 1 arg, but not ASYNC or SYNC
             {
-                var exc = ClassicAssert.Throws<RedisServerException>(() => db.Execute("SCRIPT", "FLUSH", "NOW"));
+                var exc = TestUtils.ThrowsRedisException<RedisServerException>(() => db.Execute("SCRIPT", "FLUSH", "NOW"));
                 ClassicAssert.AreEqual("ERR SCRIPT FLUSH only support SYNC|ASYNC option", exc.Message);
             }
         }
@@ -1020,8 +1020,8 @@ return redis.status_reply("OK")
 
             _ = db1.Execute("SCRIPT", "FLUSH", "SYNC");
 
-            var exc1 = ClassicAssert.Throws<RedisServerException>(() => db1.Execute("EVALSHA", hash, "0"));
-            var exc2 = ClassicAssert.Throws<RedisServerException>(() => db2.Execute("EVALSHA", hash, "0"));
+            var exc1 = TestUtils.ThrowsRedisException<RedisServerException>(() => db1.Execute("EVALSHA", hash, "0"));
+            var exc2 = TestUtils.ThrowsRedisException<RedisServerException>(() => db2.Execute("EVALSHA", hash, "0"));
 
             ClassicAssert.True(exc1.Message.StartsWith("NOSCRIPT "));
             ClassicAssert.True(exc2.Message.StartsWith("NOSCRIPT "));
@@ -1065,13 +1065,13 @@ return redis.status_reply("OK")
 
             // 0 args
             {
-                var exc = ClassicAssert.Throws<RedisServerException>(() => db.Execute("SCRIPT", "LOAD"));
+                var exc = TestUtils.ThrowsRedisException<RedisServerException>(() => db.Execute("SCRIPT", "LOAD"));
                 ClassicAssert.AreEqual("ERR wrong number of arguments for 'script|load' command", exc.Message);
             }
 
             // > 1 args
             {
-                var exc = ClassicAssert.Throws<RedisServerException>(() => db.Execute("SCRIPT", "LOAD", "return 'foo'", "return 'bar'"));
+                var exc = TestUtils.ThrowsRedisException<RedisServerException>(() => db.Execute("SCRIPT", "LOAD", "return 'foo'", "return 'bar'"));
                 ClassicAssert.AreEqual("ERR wrong number of arguments for 'script|load' command", exc.Message);
             }
         }
@@ -1111,7 +1111,7 @@ return redis.status_reply("OK")
 
         private static void DoErroneousRedisCall(IDatabase db, string[] args, string expectedError)
         {
-            var exc = Assert.Throws<RedisServerException>(() => db.ScriptEvaluate($"return redis.call({string.Join(',', args)})"));
+            var exc = TestUtils.ThrowsRedisException<RedisServerException>(() => db.ScriptEvaluate($"return redis.call({string.Join(',', args)})"));
             ClassicAssert.IsNotNull(exc);
             StringAssert.StartsWith(expectedError, exc!.Message);
         }
@@ -1381,7 +1381,7 @@ return foo";
             var loadedScriptOOM = scriptOOM.Load(redis.GetServers()[0]);
 
             // OOM actually happens and is reported
-            var exc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate(loadedScriptOOM, new { Ctrl = "OOM" }));
+            var exc = TestUtils.ThrowsRedisException<RedisServerException>(() => db.ScriptEvaluate(loadedScriptOOM, new { Ctrl = "OOM" }));
             ClassicAssert.AreEqual("ERR Lua encountered an error: not enough memory", exc.Message);
 
             // We can still run the script without issue (with non-crashing args) afterwards
@@ -1472,7 +1472,7 @@ return retArray";
             }
 
             // Finally, check that nil is an illegal argument
-            var exc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return redis.call('GET', nil)"));
+            var exc = TestUtils.ThrowsRedisException<RedisServerException>(() => db.ScriptEvaluate("return redis.call('GET', nil)"));
             ClassicAssert.True(exc.Message.StartsWith("ERR Lua redis lib command arguments must be strings or integers"));
         }
 
@@ -1489,10 +1489,10 @@ return retArray";
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase();
 
-            var brokenExc1 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("EVAL", BrokenScript, 0));
+            var brokenExc1 = TestUtils.ThrowsRedisException<RedisServerException>(() => db.Execute("EVAL", BrokenScript, 0));
             ClassicAssert.True(brokenExc1.Message.StartsWith("Compilation error: "));
 
-            var brokenExc2 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("EVAL", BrokenScript, 0));
+            var brokenExc2 = TestUtils.ThrowsRedisException<RedisServerException>(() => db.Execute("EVAL", BrokenScript, 0));
             ClassicAssert.AreEqual(brokenExc1.Message, brokenExc2.Message);
 
             var success = (string)db.Execute("EVAL", FixedScript, 0);
@@ -1782,7 +1782,7 @@ return retArray";
             ClassicAssert.AreEqual("table", simpleStringRes[0]);
             ClassicAssert.AreEqual("PONG", simpleStringRes[1]);
 
-            var errExc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return { err = 'ERR mapped to ERR response' }"));
+            var errExc = TestUtils.ThrowsRedisException<RedisServerException>(() => db.ScriptEvaluate("return { err = 'ERR mapped to ERR response' }"));
             ClassicAssert.AreEqual("ERR mapped to ERR response", errExc.Message);
 
             var nullBulkRes = (string[])db.ScriptEvaluate("local res = redis.call('GET', KEYS[1]); return { type(res), tostring(res) };", [(RedisKey)"not-set-ever"]);
@@ -1814,14 +1814,14 @@ return retArray";
 
             foreach (var (cmd, _) in fullCommands)
             {
-                var exc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate($"redis.call('{cmd}')"));
+                var exc = TestUtils.ThrowsRedisException<RedisServerException>(() => db.ScriptEvaluate($"redis.call('{cmd}')"));
                 ClassicAssert.True(exc.Message.StartsWith("ERR This Redis command is not allowed from script"), $"Allowed NoScript command: {cmd}");
             }
 
             var subCommands = allCommands.Where(static kv => (kv.Value.SubCommands?.Length ?? 0) > 0).SelectMany(static kv => kv.Value.SubCommands.Where(static t => t.Flags.HasFlag(RespCommandFlags.NoScript)).Select(t => (kv.Key, t.Name.Split('|')[1])));
             foreach (var (cmd, subCmd) in subCommands)
             {
-                var exc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate($"redis.call('{cmd}', '{subCmd}')"));
+                var exc = TestUtils.ThrowsRedisException<RedisServerException>(() => db.ScriptEvaluate($"redis.call('{cmd}', '{subCmd}')"));
                 ClassicAssert.True(exc.Message.StartsWith("ERR This Redis command is not allowed from script"), $"Allowed NoScript command: {cmd}|{subCmd}");
             }
         }
@@ -1842,20 +1842,20 @@ return retArray";
             ClassicAssert.AreEqual("bar", allowRes[0]);
 
             // Not a lot of sub commands a non-admin can run, so use CLUSTER|MYID and check the exception
-            var allowSubExc = ClassicAssert.Throws<RedisServerException>(() => allowDb.ScriptEvaluate("return redis.call('CLUSTER', 'MYID')"));
+            var allowSubExc = TestUtils.ThrowsRedisException<RedisServerException>(() => allowDb.ScriptEvaluate("return redis.call('CLUSTER', 'MYID')"));
             ClassicAssert.False(allowSubExc.Message.Contains("NOPERM"));
 
-            var exc = ClassicAssert.Throws<RedisServerException>(() => denyDb.ScriptEvaluate("return redis.call('GET', 'foo')"));
+            var exc = TestUtils.ThrowsRedisException<RedisServerException>(() => denyDb.ScriptEvaluate("return redis.call('GET', 'foo')"));
             ClassicAssert.IsTrue(exc.Message.Contains("NOPERM"));
 
-            var excSub = ClassicAssert.Throws<RedisServerException>(() => denyDb.ScriptEvaluate("return redis.call('CLUSTER', 'MYID')"));
+            var excSub = TestUtils.ThrowsRedisException<RedisServerException>(() => denyDb.ScriptEvaluate("return redis.call('CLUSTER', 'MYID')"));
             ClassicAssert.IsTrue(excSub.Message.Contains("NOPERM"));
 
             // SET is dispatched through a separate fast path in LuaRunner, so cover it explicitly
             using var denySetRedis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(authUsername: "denyset"));
             var denySetDb = denySetRedis.GetDatabase();
 
-            var excSet = ClassicAssert.Throws<RedisServerException>(() => denySetDb.ScriptEvaluate("return redis.call('SET', 'foo', 'baz')"));
+            var excSet = TestUtils.ThrowsRedisException<RedisServerException>(() => denySetDb.ScriptEvaluate("return redis.call('SET', 'foo', 'baz')"));
             ClassicAssert.IsTrue(excSet.Message.Contains("NOPERM"), $"Expected NOPERM for denied SET, got: {excSet.Message}");
 
             var allowSetRes = (string[])denySetDb.ScriptEvaluate("return redis.call('GET', 'foo')");
@@ -1890,7 +1890,7 @@ return count";
             var loadedScriptTimeout = scriptTimeout.Load(redis.GetServers()[0]);
 
             // Timeout actually happens and is reported
-            var exc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate(loadedScriptTimeout, new { Ctrl = "Timeout" }));
+            var exc = TestUtils.ThrowsRedisException<RedisServerException>(() => db.ScriptEvaluate(loadedScriptTimeout, new { Ctrl = "Timeout" }));
             ClassicAssert.AreEqual("ERR Lua script exceeded configured timeout", exc.Message);
 
             // We can still run the script without issue (with non-crashing args) afterwards
@@ -2001,12 +2001,12 @@ return count";
 
             // tobit
             {
-                var noArgExc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return bit.tobit()"));
+                var noArgExc = TestUtils.ThrowsRedisException<RedisServerException>(() => db.ScriptEvaluate("return bit.tobit()"));
                 ClassicAssert.True(noArgExc.Message.Contains("bad argument") && noArgExc.Message.Contains("tobit"));
 
                 // Extra arguments are legal, but ignored
 
-                var badTypeExc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return bit.tobit({})"));
+                var badTypeExc = TestUtils.ThrowsRedisException<RedisServerException>(() => db.ScriptEvaluate("return bit.tobit({})"));
                 ClassicAssert.True(badTypeExc.Message.Contains("bad argument") && badTypeExc.Message.Contains("tobit"));
 
                 // Rules are suprisingly subtle, so test a bunch of tricky values
@@ -2043,15 +2043,15 @@ return count";
 
             // tohex
             {
-                var noArgExc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return bit.tohex()"));
+                var noArgExc = TestUtils.ThrowsRedisException<RedisServerException>(() => db.ScriptEvaluate("return bit.tohex()"));
                 ClassicAssert.True(noArgExc.Message.Contains("bad argument") && noArgExc.Message.Contains("tohex"));
 
                 // Extra arguments are legal, but ignored
 
-                var badType1Exc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return bit.tohex({})"));
+                var badType1Exc = TestUtils.ThrowsRedisException<RedisServerException>(() => db.ScriptEvaluate("return bit.tohex({})"));
                 ClassicAssert.True(badType1Exc.Message.Contains("bad argument") && badType1Exc.Message.Contains("tohex"));
 
-                var badType2Exc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return bit.tohex(1, {})"));
+                var badType2Exc = TestUtils.ThrowsRedisException<RedisServerException>(() => db.ScriptEvaluate("return bit.tohex(1, {})"));
                 ClassicAssert.True(badType2Exc.Message.Contains("bad argument") && badType2Exc.Message.Contains("tohex"));
 
                 // Make sure casing is handled correctly
@@ -2093,12 +2093,12 @@ return count";
 
             // bswap
             {
-                var noArgExc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return bit.bswap()"));
+                var noArgExc = TestUtils.ThrowsRedisException<RedisServerException>(() => db.ScriptEvaluate("return bit.bswap()"));
                 ClassicAssert.True(noArgExc.Message.Contains("bad argument") && noArgExc.Message.Contains("bswap"));
 
                 // Extra arguments are legal, but ignored
 
-                var badTypeExc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return bit.bswap({})"));
+                var badTypeExc = TestUtils.ThrowsRedisException<RedisServerException>(() => db.ScriptEvaluate("return bit.bswap({})"));
                 ClassicAssert.True(badTypeExc.Message.Contains("bad argument") && badTypeExc.Message.Contains("bswap"));
 
                 // Just brute force a bunch of trial values
@@ -2123,12 +2123,12 @@ return count";
 
             // bnot
             {
-                var noArgExc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return bit.bnot()"));
+                var noArgExc = TestUtils.ThrowsRedisException<RedisServerException>(() => db.ScriptEvaluate("return bit.bnot()"));
                 ClassicAssert.True(noArgExc.Message.Contains("bad argument") && noArgExc.Message.Contains("bnot"));
 
                 // Extra arguments are legal, but ignored
 
-                var badTypeExc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return bit.bnot({})"));
+                var badTypeExc = TestUtils.ThrowsRedisException<RedisServerException>(() => db.ScriptEvaluate("return bit.bnot({})"));
                 ClassicAssert.True(badTypeExc.Message.Contains("bad argument") && badTypeExc.Message.Contains("bnot"));
 
                 foreach (var input in new int[] { 0, 1, 2, 4, 8, 32, 64, 128, 256, 0x70F0_F0F0, 0x6BCD_EF01, int.MinValue, int.MaxValue, -1 })
@@ -2150,16 +2150,16 @@ return count";
 
                 foreach (var op in ops)
                 {
-                    var noArgExc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate($"return bit.{op.Name}()"));
+                    var noArgExc = TestUtils.ThrowsRedisException<RedisServerException>(() => db.ScriptEvaluate($"return bit.{op.Name}()"));
                     ClassicAssert.True(noArgExc.Message.Contains("bad argument") && noArgExc.Message.Contains(op.Name));
 
-                    var badType1Exc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate($"return bit.{op.Name}({{}})"));
+                    var badType1Exc = TestUtils.ThrowsRedisException<RedisServerException>(() => db.ScriptEvaluate($"return bit.{op.Name}({{}})"));
                     ClassicAssert.True(badType1Exc.Message.Contains("bad argument") && badType1Exc.Message.Contains(op.Name));
 
-                    var badType2Exc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate($"return bit.{op.Name}(1, {{}})"));
+                    var badType2Exc = TestUtils.ThrowsRedisException<RedisServerException>(() => db.ScriptEvaluate($"return bit.{op.Name}(1, {{}})"));
                     ClassicAssert.True(badType2Exc.Message.Contains("bad argument") && badType2Exc.Message.Contains(op.Name));
 
-                    var badType3Exc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate($"return bit.{op.Name}(1, 2, {{}})"));
+                    var badType3Exc = TestUtils.ThrowsRedisException<RedisServerException>(() => db.ScriptEvaluate($"return bit.{op.Name}(1, 2, {{}})"));
                     ClassicAssert.True(badType3Exc.Message.Contains("bad argument") && badType3Exc.Message.Contains(op.Name));
 
                     // Gin up some unusual values and test them in different combinations
@@ -2198,13 +2198,13 @@ return count";
 
                 foreach (var op in ops)
                 {
-                    var noArgExc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate($"return bit.{op.Name}()"));
+                    var noArgExc = TestUtils.ThrowsRedisException<RedisServerException>(() => db.ScriptEvaluate($"return bit.{op.Name}()"));
                     ClassicAssert.True(noArgExc.Message.Contains("bad argument") && noArgExc.Message.Contains(op.Name));
 
-                    var badType1Exc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate($"return bit.{op.Name}({{}})"));
+                    var badType1Exc = TestUtils.ThrowsRedisException<RedisServerException>(() => db.ScriptEvaluate($"return bit.{op.Name}({{}})"));
                     ClassicAssert.True(badType1Exc.Message.Contains("bad argument") && badType1Exc.Message.Contains(op.Name));
 
-                    var badType2Exc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate($"return bit.{op.Name}(1, {{}})"));
+                    var badType2Exc = TestUtils.ThrowsRedisException<RedisServerException>(() => db.ScriptEvaluate($"return bit.{op.Name}(1, {{}})"));
                     ClassicAssert.True(badType2Exc.Message.Contains("bad argument") && badType2Exc.Message.Contains(op.Name));
 
                     // Extra args are allowed, but ignored
@@ -2230,13 +2230,13 @@ return count";
 
             // Encoding
             {
-                var noArgExc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return cjson.encode()"));
+                var noArgExc = TestUtils.ThrowsRedisException<RedisServerException>(() => db.ScriptEvaluate("return cjson.encode()"));
                 ClassicAssert.True(noArgExc.Message.Contains("bad argument") && noArgExc.Message.Contains("encode"));
 
-                var twoArgExc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return cjson.encode(1, 2)"));
+                var twoArgExc = TestUtils.ThrowsRedisException<RedisServerException>(() => db.ScriptEvaluate("return cjson.encode(1, 2)"));
                 ClassicAssert.True(twoArgExc.Message.Contains("bad argument") && twoArgExc.Message.Contains("encode"));
 
-                var badTypeExc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return cjson.encode((function() end))"));
+                var badTypeExc = TestUtils.ThrowsRedisException<RedisServerException>(() => db.ScriptEvaluate("return cjson.encode((function() end))"));
                 ClassicAssert.True(badTypeExc.Message.Contains("Cannot serialise"));
 
                 var nilResp = (string)db.ScriptEvaluate("return cjson.encode(nil)");
@@ -2311,7 +2311,7 @@ return cjson.encode(nested)");
                 ClassicAssert.AreEqual(new string('[', 1000) + 1 + new string(']', 1000), deeplyNestedButLegal);
 
                 var deeplyNestedExc =
-                ClassicAssert.Throws<RedisServerException>(
+                TestUtils.ThrowsRedisException<RedisServerException>(
                     () => db.ScriptEvaluate(
 @"local nested = 1
     for x = 1, 1001 do
@@ -2326,16 +2326,16 @@ return cjson.encode(nested)");
 
             // Decoding
             {
-                var noArgExc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return cjson.decode()"));
+                var noArgExc = TestUtils.ThrowsRedisException<RedisServerException>(() => db.ScriptEvaluate("return cjson.decode()"));
                 ClassicAssert.True(noArgExc.Message.Contains("bad argument") && noArgExc.Message.Contains("decode"));
 
-                var twoArgExc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return cjson.decode(1, 2)"));
+                var twoArgExc = TestUtils.ThrowsRedisException<RedisServerException>(() => db.ScriptEvaluate("return cjson.decode(1, 2)"));
                 ClassicAssert.True(twoArgExc.Message.Contains("bad argument") && twoArgExc.Message.Contains("decode"));
 
-                var badTypeExc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return cjson.decode({})"));
+                var badTypeExc = TestUtils.ThrowsRedisException<RedisServerException>(() => db.ScriptEvaluate("return cjson.decode({})"));
                 ClassicAssert.True(badTypeExc.Message.Contains("bad argument") && badTypeExc.Message.Contains("decode"));
 
-                var badFormatExc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return cjson.decode('hello world')"));
+                var badFormatExc = TestUtils.ThrowsRedisException<RedisServerException>(() => db.ScriptEvaluate("return cjson.decode('hello world')"));
                 ClassicAssert.True(badFormatExc.Message.Contains("Expected value but found invalid token"));
 
                 var nullDecode = (string)db.ScriptEvaluate("return type(cjson.decode('null'))");
@@ -2387,7 +2387,7 @@ return cjson.encode(nested)");
                 }
                 ClassicAssert.AreEqual(0, deeplyNestedButLegalCur.Length);
 
-                var deeplyNestedExc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate($"return cjson.decode('{new string('[', 1001)}{new string(']', 1001)}')"));
+                var deeplyNestedExc = TestUtils.ThrowsRedisException<RedisServerException>(() => db.ScriptEvaluate($"return cjson.decode('{new string('[', 1001)}{new string(']', 1001)}')"));
                 ClassicAssert.True(deeplyNestedExc.Message.Contains("Found too many nested data structures"));
             }
         }
@@ -2398,7 +2398,7 @@ return cjson.encode(nested)");
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase();
 
-            var noArgExc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return cmsgpack.pack()"));
+            var noArgExc = TestUtils.ThrowsRedisException<RedisServerException>(() => db.ScriptEvaluate("return cmsgpack.pack()"));
             ClassicAssert.True(noArgExc.Message.Contains("bad argument") && noArgExc.Message.Contains("pack"));
 
             // Multiple args are legal, and concat
@@ -2592,13 +2592,13 @@ return cjson.encode(nested)");
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase();
 
-            var noArgExc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return cmsgpack.unpack()"));
+            var noArgExc = TestUtils.ThrowsRedisException<RedisServerException>(() => db.ScriptEvaluate("return cmsgpack.unpack()"));
             ClassicAssert.True(noArgExc.Message.Contains("bad argument") && noArgExc.Message.Contains("unpack"));
 
             // Multiple arguments are allowed, but ignored
 
             // Table ends before it should
-            var badDataExc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return cmsgpack.unpack('\\220\\0\\96')"));
+            var badDataExc = TestUtils.ThrowsRedisException<RedisServerException>(() => db.ScriptEvaluate("return cmsgpack.unpack('\\220\\0\\96')"));
             ClassicAssert.True(badDataExc.Message.Contains("Missing bytes in input"));
 
             var nullResp = (string)db.ScriptEvaluate($"return type(cmsgpack.unpack({ToLuaString(0xC0)}))");
@@ -2906,31 +2906,31 @@ return cjson.encode(nested)");
             var db = redis.GetDatabase();
 
             // Not power of two
-            var excNotPowerOfTwoArgs = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return struct.pack('!9')"));
+            var excNotPowerOfTwoArgs = TestUtils.ThrowsRedisException<RedisServerException>(() => db.ScriptEvaluate("return struct.pack('!9')"));
             ClassicAssert.AreEqual("ERR Lua encountered an error: bad argument to format", excNotPowerOfTwoArgs.Message);
 
             // Invalid format
-            var excFormat = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return struct.pack(123, 123)"));
+            var excFormat = TestUtils.ThrowsRedisException<RedisServerException>(() => db.ScriptEvaluate("return struct.pack(123, 123)"));
             ClassicAssert.AreEqual("ERR Lua encountered an error: bad argument to pack", excFormat.Message);
 
             // Format opt size exceed max int size 32
-            var excOptSize = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return struct.pack('I64', 512)"));
+            var excOptSize = TestUtils.ThrowsRedisException<RedisServerException>(() => db.ScriptEvaluate("return struct.pack('I64', 512)"));
             ClassicAssert.AreEqual("ERR Lua encountered an error: bad argument to format", excOptSize.Message);
 
             // Format opt size integeral size overflow
-            var excOptSizeOverflow = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return struct.pack('I2147483648', 512)"));
+            var excOptSizeOverflow = TestUtils.ThrowsRedisException<RedisServerException>(() => db.ScriptEvaluate("return struct.pack('I2147483648', 512)"));
             ClassicAssert.AreEqual("ERR Lua encountered an error: bad argument to format", excOptSizeOverflow.Message);
 
             // String too short, expected at least {size} bytes but got {l}
-            var excArgPack = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return struct.pack('c6', 'hello')"));
+            var excArgPack = TestUtils.ThrowsRedisException<RedisServerException>(() => db.ScriptEvaluate("return struct.pack('c6', 'hello')"));
             ClassicAssert.AreEqual("ERR Lua encountered an error: bad argument to pack", excArgPack.Message);
 
             // Invalid Control Options
-            var excControlOptions = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return struct.pack('@I', 'hello')"));
+            var excControlOptions = TestUtils.ThrowsRedisException<RedisServerException>(() => db.ScriptEvaluate("return struct.pack('@I', 'hello')"));
             ClassicAssert.AreEqual("ERR Lua encountered an error: bad argument to format", excControlOptions.Message);
 
             // Invalid alignment
-            var excBadAlignment = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return struct.pack('!9c1', 'Z')"));
+            var excBadAlignment = TestUtils.ThrowsRedisException<RedisServerException>(() => db.ScriptEvaluate("return struct.pack('!9c1', 'Z')"));
             ClassicAssert.AreEqual("ERR Lua encountered an error: bad argument to format", excBadAlignment.Message);
         }
 
@@ -3063,55 +3063,55 @@ return cjson.encode(nested)");
             var db = redis.GetDatabase();
 
             // Invalid format
-            var excFormat = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return struct.unpack(123, 123)"));
+            var excFormat = TestUtils.ThrowsRedisException<RedisServerException>(() => db.ScriptEvaluate("return struct.unpack(123, 123)"));
             ClassicAssert.AreEqual("ERR Lua encountered an error: bad argument to unpack", excFormat.Message);
 
             // Format opt size exceed max int size 32
-            var excOptSize = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return struct.unpack('I64', '\\000\\000\\000\\000')"));
+            var excOptSize = TestUtils.ThrowsRedisException<RedisServerException>(() => db.ScriptEvaluate("return struct.unpack('I64', '\\000\\000\\000\\000')"));
             ClassicAssert.AreEqual("ERR Lua encountered an error: bad argument to format", excOptSize.Message);
 
             // Format opt size integeral size overflow
-            var excOptSizeOverflow = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return struct.unpack('I2147483648', '\\000\\002')"));
+            var excOptSizeOverflow = TestUtils.ThrowsRedisException<RedisServerException>(() => db.ScriptEvaluate("return struct.unpack('I2147483648', '\\000\\002')"));
             ClassicAssert.AreEqual("ERR Lua encountered an error: bad argument to format", excOptSizeOverflow.Message);
 
             // String too short, expected at least {size} bytes but got {l}
-            var excArgPack = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return struct.unpack('c6', 'hello')"));
+            var excArgPack = TestUtils.ThrowsRedisException<RedisServerException>(() => db.ScriptEvaluate("return struct.unpack('c6', 'hello')"));
             ClassicAssert.AreEqual("ERR Lua encountered an error: bad argument to unpack", excArgPack.Message);
 
             // Invalid Control Options
-            var excControlOptions = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return struct.unpack('@I', 'hello')"));
+            var excControlOptions = TestUtils.ThrowsRedisException<RedisServerException>(() => db.ScriptEvaluate("return struct.unpack('@I', 'hello')"));
             ClassicAssert.AreEqual("ERR Lua encountered an error: bad argument to format", excControlOptions.Message);
 
             // Missing argument
-            var excMissingArgs = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return struct.unpack('!8')"));
+            var excMissingArgs = TestUtils.ThrowsRedisException<RedisServerException>(() => db.ScriptEvaluate("return struct.unpack('!8')"));
             ClassicAssert.AreEqual("ERR Lua encountered an error: bad argument to unpack", excMissingArgs.Message);
 
             // Invalid number of arguments
-            var excBadAlignment = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return struct.unpack('!5', '\\157\\255\\255\\255')"));
+            var excBadAlignment = TestUtils.ThrowsRedisException<RedisServerException>(() => db.ScriptEvaluate("return struct.unpack('!5', '\\157\\255\\255\\255')"));
             ClassicAssert.AreEqual("ERR Lua encountered an error: bad argument to format", excBadAlignment.Message);
 
             // Invalid Third argument
-            var excBadThirdArg = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return struct.unpack('@I', 'hello', 'test')"));
+            var excBadThirdArg = TestUtils.ThrowsRedisException<RedisServerException>(() => db.ScriptEvaluate("return struct.unpack('@I', 'hello', 'test')"));
             ClassicAssert.AreEqual("ERR Lua encountered an error: bad argument to unpack", excBadThirdArg.Message);
 
             // Invalid Third argument
-            var excArgTooShort = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return struct.unpack('c4', '\\065\\066')"));
+            var excArgTooShort = TestUtils.ThrowsRedisException<RedisServerException>(() => db.ScriptEvaluate("return struct.unpack('c4', '\\065\\066')"));
             ClassicAssert.AreEqual("ERR Lua encountered an error: bad argument to unpack", excArgTooShort.Message);
 
             // Missing character size
-            var excMissingCharacterSize = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return struct.unpack('c0', 'dynamic')"));
+            var excMissingCharacterSize = TestUtils.ThrowsRedisException<RedisServerException>(() => db.ScriptEvaluate("return struct.unpack('c0', 'dynamic')"));
             ClassicAssert.AreEqual("ERR Lua encountered an error: bad argument to unpack", excMissingCharacterSize.Message);
 
             // Invalid character size
-            var excInvalidCharacterZeroSize = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return struct.unpack('sc0', 'size\\000dynamic')"));
+            var excInvalidCharacterZeroSize = TestUtils.ThrowsRedisException<RedisServerException>(() => db.ScriptEvaluate("return struct.unpack('sc0', 'size\\000dynamic')"));
             ClassicAssert.AreEqual("ERR Lua encountered an error: bad argument to unpack", excInvalidCharacterZeroSize.Message);
 
             // Invalid String without terminator
-            var excBadString = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return struct.unpack('s', 'hello')"));
+            var excBadString = TestUtils.ThrowsRedisException<RedisServerException>(() => db.ScriptEvaluate("return struct.unpack('s', 'hello')"));
             ClassicAssert.AreEqual("ERR Lua encountered an error: bad argument to unpack", excBadString.Message);
 
             // Third pos has to be greater than 0
-            var unpackBadPosRes = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return struct.unpack('s', 'hello', 0)"));
+            var unpackBadPosRes = TestUtils.ThrowsRedisException<RedisServerException>(() => db.ScriptEvaluate("return struct.unpack('s', 'hello', 0)"));
             ClassicAssert.AreEqual("ERR Lua encountered an error: bad argument to unpack", unpackBadPosRes.Message);
         }
 
@@ -3155,16 +3155,16 @@ return cjson.encode(nested)");
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase();
 
-            var excFormatString = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return struct.size('s')"));
+            var excFormatString = TestUtils.ThrowsRedisException<RedisServerException>(() => db.ScriptEvaluate("return struct.size('s')"));
             ClassicAssert.AreEqual("ERR Lua encountered an error: bad argument to format", excFormatString.Message);
 
-            var excFormatCharacter = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return struct.size('c0')"));
+            var excFormatCharacter = TestUtils.ThrowsRedisException<RedisServerException>(() => db.ScriptEvaluate("return struct.size('c0')"));
             ClassicAssert.AreEqual("ERR Lua encountered an error: bad argument to format", excFormatCharacter.Message);
 
-            var excBadControlOptions = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return struct.size('@I')"));
+            var excBadControlOptions = TestUtils.ThrowsRedisException<RedisServerException>(() => db.ScriptEvaluate("return struct.size('@I')"));
             ClassicAssert.AreEqual("ERR Lua encountered an error: bad argument to format", excBadControlOptions.Message);
 
-            var excBadFormat = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return struct.size(123)"));
+            var excBadFormat = TestUtils.ThrowsRedisException<RedisServerException>(() => db.ScriptEvaluate("return struct.size(123)"));
             ClassicAssert.AreEqual("ERR Lua encountered an error: bad argument to format", excBadFormat.Message);
         }
 
@@ -3266,10 +3266,10 @@ return cjson.encode(nested)");
             var db = redis.GetDatabase();
 
             // load and loadstring are not part of the sandbox allowed functions
-            var loadExc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("local x = load('return 123'); return x()"));
+            var loadExc = TestUtils.ThrowsRedisException<RedisServerException>(() => db.ScriptEvaluate("local x = load('return 123'); return x()"));
             ClassicAssert.True(loadExc.Message.Contains("attempt to call a nil value"));
 
-            var loadstringExc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("local x = loadstring('return 123'); return x()"));
+            var loadstringExc = TestUtils.ThrowsRedisException<RedisServerException>(() => db.ScriptEvaluate("local x = loadstring('return 123'); return x()"));
             ClassicAssert.True(loadstringExc.Message.Contains("attempt to call a nil value"));
         }
 
@@ -3362,7 +3362,7 @@ return count";
                                     else
                                     {
                                         // Periodically cause a timeout
-                                        var exc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate(loadedScriptTimeout, timeout));
+                                        var exc = TestUtils.ThrowsRedisException<RedisServerException>(() => db.ScriptEvaluate(loadedScriptTimeout, timeout));
                                         ClassicAssert.AreEqual("ERR Lua script exceeded configured timeout", exc.Message);
                                     }
                                 }
@@ -3546,7 +3546,7 @@ return count";
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
 
-            var exc = ClassicAssert.Throws<RedisServerException>(() =>
+            var exc = TestUtils.ThrowsRedisException<RedisServerException>(() =>
                 db.ScriptEvaluate("return redis.call('SUBSCRIBE', KEYS[1])", [new RedisKey("any_channel")]));
 
             ClassicAssert.IsTrue(exc.Message.Contains("not allowed from script"),

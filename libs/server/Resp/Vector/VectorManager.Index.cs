@@ -206,7 +206,7 @@ namespace Garnet.server
         /// 
         /// Assumes that appropriate locking has been done to prevent concurrent modification to the index.
         /// </summary>
-        private static void SetFlags<TContext>(ReadOnlySpan<byte> key, VectorSetFlags flags, ref TContext stringContext)
+        internal static void SetFlags<TContext>(ReadOnlySpan<byte> key, VectorSetFlags flags, ref TContext stringContext)
             where TContext : ITsavoriteContext<FixedSpanByteKey, StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions<GarnetKeyComparer, GarnetRecordTriggers>, ObjectAllocator<StoreFunctions<GarnetKeyComparer, GarnetRecordTriggers>>>
         {
             var input = new StringInput(RespCommand.VADD, arg1: VADDSetFlagsArg);

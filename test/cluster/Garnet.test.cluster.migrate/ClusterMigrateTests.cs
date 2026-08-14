@@ -1138,6 +1138,8 @@ namespace Garnet.test.cluster
             context.clusterTestUtils.SetConfigEpoch(dstNodeIndex, dstNodeIndex + 2, logger: context.logger);
             context.clusterTestUtils.Meet(srcNodeIndex, dstNodeIndex, logger: context.logger);
             context.clusterTestUtils.WaitUntilNodeIsKnown(dstNodeIndex, srcNodeIndex, logger: context.logger);
+            // MIGRATE is issued against the source, so the source has to know the target endpoint
+            context.clusterTestUtils.WaitUntilNodeIsKnown(srcNodeIndex, dstNodeIndex, logger: context.logger);
             var migrateSlots = new List<int> { 0, 10 };
 
             // Start operations
@@ -1518,6 +1520,9 @@ namespace Garnet.test.cluster
             context.clusterTestUtils.SetConfigEpoch(srcNodeIndex, srcNodeIndex + 1, logger: context.logger);
             context.clusterTestUtils.SetConfigEpoch(dstNodeIndex, dstNodeIndex + 2, logger: context.logger);
             context.clusterTestUtils.Meet(srcNodeIndex, dstNodeIndex, logger: context.logger);
+            context.clusterTestUtils.WaitUntilNodeIsKnown(dstNodeIndex, srcNodeIndex, logger: context.logger);
+            // MIGRATE is issued against the source, so the source has to know the target endpoint
+            context.clusterTestUtils.WaitUntilNodeIsKnown(srcNodeIndex, dstNodeIndex, logger: context.logger);
 
             var keySize = 16;
             var keyCount = 1024;
@@ -1853,6 +1858,8 @@ namespace Garnet.test.cluster
             context.clusterTestUtils.SetConfigEpoch(targetNodeIndex, targetNodeIndex + 1, logger: context.logger);
             context.clusterTestUtils.Meet(sourceNodeIndex, targetNodeIndex, logger: context.logger);
             context.clusterTestUtils.WaitUntilNodeIsKnown(targetNodeIndex, sourceNodeIndex, logger: context.logger);
+            // Slot state transitions are issued against the source, so the source has to know the target node id
+            context.clusterTestUtils.WaitUntilNodeIsKnown(sourceNodeIndex, targetNodeIndex, logger: context.logger);
 
             var sourceNodeId = context.clusterTestUtils.GetNodeIdFromNode(sourceNodeIndex, context.logger);
             var targetNodeId = context.clusterTestUtils.GetNodeIdFromNode(targetNodeIndex, context.logger);
@@ -1939,6 +1946,8 @@ namespace Garnet.test.cluster
             context.clusterTestUtils.SetConfigEpoch(targetNodeIndex, targetNodeIndex + 1, logger: context.logger);
             context.clusterTestUtils.Meet(sourceNodeIndex, targetNodeIndex, logger: context.logger);
             context.clusterTestUtils.WaitUntilNodeIsKnown(targetNodeIndex, sourceNodeIndex, logger: context.logger);
+            // Slot state transitions are issued against the source, so the source has to know the target node id
+            context.clusterTestUtils.WaitUntilNodeIsKnown(sourceNodeIndex, targetNodeIndex, logger: context.logger);
 
             var sourceNodeId = context.clusterTestUtils.GetNodeIdFromNode(sourceNodeIndex, context.logger);
             var targetNodeId = context.clusterTestUtils.GetNodeIdFromNode(targetNodeIndex, context.logger);
@@ -2012,6 +2021,8 @@ namespace Garnet.test.cluster
             context.clusterTestUtils.SetConfigEpoch(targetNodeIndex, targetNodeIndex + 1, logger: context.logger);
             context.clusterTestUtils.Meet(sourceNodeIndex, targetNodeIndex, logger: context.logger);
             context.clusterTestUtils.WaitUntilNodeIsKnown(targetNodeIndex, sourceNodeIndex, logger: context.logger);
+            // Slot state transitions are issued against the source, so the source has to know the target node id
+            context.clusterTestUtils.WaitUntilNodeIsKnown(sourceNodeIndex, targetNodeIndex, logger: context.logger);
 
             var sourceNodeId = context.clusterTestUtils.GetNodeIdFromNode(sourceNodeIndex, context.logger);
             var targetNodeId = context.clusterTestUtils.GetNodeIdFromNode(targetNodeIndex, context.logger);

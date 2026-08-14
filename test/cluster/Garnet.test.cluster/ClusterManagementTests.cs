@@ -1559,6 +1559,11 @@ namespace Garnet.test.cluster
 
                     break;
                 }
+
+                // Role flips before slot ownership settles, so both nodes have to see every slot served
+                // before they will serve or redirect reads instead of answering CLUSTERDOWN
+                await context.clusterTestUtils.WaitForAllSlotsServedAsync(replica1, cancellation, context.logger).ConfigureAwait(false);
+                await context.clusterTestUtils.WaitForAllSlotsServedAsync(replica2, cancellation, context.logger).ConfigureAwait(false);
             }
         }
     }

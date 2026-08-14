@@ -86,6 +86,41 @@ namespace Garnet.server
             }
         }
 
+        /// <summary>
+        /// Collects the context of every live Vector Set index record in the store.
+        /// </summary>
+        private sealed class CollectLiveIndexContextsFunctions : IScanIteratorFunctions
+        {
+            private readonly ConcurrentDictionary<ulong, ushort> liveIndexes;
+
+            public CollectLiveIndexContextsFunctions(ConcurrentDictionary<ulong, ushort> liveIndexes)
+            {
+                this.liveIndexes = liveIndexes;
+            }
+
+            public void OnException(Exception exception, long numberOfRecords) { }
+            public bool OnStart(long beginAddress, long endAddress) => true;
+            public void OnStop(bool completed, long numberOfRecords) { }
+
+            /// <inheritdoc/>
+            public bool Reader<TSourceLogRecord>(in TSourceLogRecord logRecord, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
+                where TSourceLogRecord : ISourceLogRecord
+            {
+                cursorRecordResult = CursorRecordResult.Skip;
+
+                if (logRecord.HasNamespace || logRecord.RecordType != RecordType || logRecord.ValueSpan.Length != IndexSize)
+                {
+                    return true;
+                }
+
+                ReadIndex(logRecord.ValueSpan, out var context, out _, out _, out _, out _, out _, out _, out _, out _);
+
+                liveIndexes[context] = HashSlotUtils.HashSlot(logRecord.Key);
+
+                return true;
+            }
+        }
+
         private readonly VectorSetCleanupWorkChannel<object> cleanupTaskChannel;
         private readonly VectorSetCleanupWorkChannel<(ulong Context, TaskCompletionSource MarkCompleted)> requestCleanupTaskChannel;
         private readonly VectorSetCleanupWorkChannel<object> requestDropTaskChannel;

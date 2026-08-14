@@ -962,6 +962,11 @@ namespace Garnet.test.cluster
             _ = context.clusterTestUtils.AddDelSlotsRange(newPrimaryIndex, [(0, 16383)], addslot: true, context.logger);
             context.clusterTestUtils.BumpEpoch(newPrimaryIndex, logger: context.logger);
 
+            // Slot re-assignment settles asynchronously, so the new primary has to observe itself as the
+            // owner before it will serve writes instead of redirecting them
+            var newPrimaryId = context.clusterTestUtils.ClusterMyId(newPrimaryIndex, context.logger);
+            context.clusterTestUtils.WaitForSlotOwnership(newPrimaryIndex, newPrimaryId, [0, 16383], context.logger);
+
             // New primary diverges to its own history by new random seed
             kvpairCount <<= 1;
             if (disableObjects)
@@ -974,7 +979,6 @@ namespace Garnet.test.cluster
 
             if (!ckptBeforeDivergence || multiCheckpointAfterDivergence) context.clusterTestUtils.Checkpoint(newPrimaryIndex, logger: context.logger);
 
-            var newPrimaryId = context.clusterTestUtils.ClusterMyId(newPrimaryIndex, context.logger);
             while (true)
             {
                 var replicaConfig = context.clusterTestUtils.ClusterNodes(replicaIndex, context.logger);

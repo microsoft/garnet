@@ -3,6 +3,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Net;
@@ -64,6 +65,14 @@ namespace Garnet.test.cluster
         public ClusterTestUtils clusterTestUtils = null;
 
         public CancellationTokenSource cts;
+
+        /// <summary>
+        /// Total time budget shared across all nodes in <see cref="DisposeCluster"/>. Kept below the
+        /// teardown timeout so stalled nodes are reported precisely instead of tripping the outer guard.
+        /// No per-node cap is applied on top of this: a single slow node is only a problem once it
+        /// threatens the budget the remaining nodes still need to release their ports.
+        /// </summary>
+        private static readonly TimeSpan DisposeClusterBudget = TimeSpan.FromSeconds(45);
 
         public void EnableGarnetLoggingEvents(GarnetTestLoggingEventType[] events)
         {
@@ -537,20 +546,74 @@ namespace Garnet.test.cluster
         /// </summary>
         public void DisposeCluster()
         {
-            if (nodes != null)
+            if (nodes == null)
+                return;
+
+            // Each node is disposed under its own bounded wait, and a node that stalls or throws does
+            // not stop the remaining nodes from being disposed. GarnetServer.Dispose closes its listeners
+            // before draining handlers, so every node reached here releases its port. Aborting the loop on
+            // the first failure would leave every later node bound to its port and cascade into startup
+            // failures for subsequent tests in the same process.
+            var stalledNodes = new List<int>();
+            var disposeFailures = new List<Exception>();
+            var elapsed = Stopwatch.StartNew();
+
+            for (var i = 0; i < nodes.Length; i++)
             {
-                for (var i = 0; i < nodes.Length; i++)
+                var node = nodes[i];
+                if (node == null)
+                    continue;
+
+                nodes[i] = null;
+                logger.LogDebug("\t a. Before dispose node {i}{testName}", i, TestContext.CurrentContext.Test.Name);
+
+                var disposeTask = Task.Run(() => node.Dispose(true));
+                var wait = DisposeClusterBudget - elapsed.Elapsed;
+
+                // Task.Wait rethrows a faulted dispose as an AggregateException. Letting it propagate
+                // would abandon every later node, which is the cascade this loop exists to prevent, so
+                // the fault is caught here and reported from disposeTask.Exception below.
+                bool completed;
+                try
                 {
-                    if (nodes[i] != null)
-                    {
-                        logger.LogDebug("\t a. Before dispose node {i}{testName}", i, TestContext.CurrentContext.Test.Name);
-                        var node = nodes[i];
-                        nodes[i] = null;
-                        node.Dispose(true);
-                        logger.LogDebug("\t b. After dispose node {i}{testName}", i, TestContext.CurrentContext.Test.Name);
-                    }
+                    completed = wait > TimeSpan.Zero && disposeTask.Wait(wait);
                 }
+                catch (AggregateException)
+                {
+                    completed = true;
+                }
+
+                // Once the budget is spent the dispose is still started so the node frees its port,
+                // but the remaining nodes are not made to wait behind it.
+                if (!completed)
+                {
+                    stalledNodes.Add(i);
+                    logger.LogError("\t !. Dispose stalled for node {i}{testName}", i, TestContext.CurrentContext.Test.Name);
+                    continue;
+                }
+
+                if (disposeTask.Exception is { } disposeException)
+                {
+                    // Unwrapped so the reported failure names the original fault rather than the
+                    // AggregateException that Task.Run wraps it in.
+                    disposeFailures.Add(disposeException.InnerExceptions.Count == 1
+                        ? disposeException.InnerExceptions[0]
+                        : disposeException);
+                    logger.LogError(disposeException, "\t !. Dispose failed for node {i}{testName}", i, TestContext.CurrentContext.Test.Name);
+                    continue;
+                }
+
+                logger.LogDebug("\t b. After dispose node {i}{testName}", i, TestContext.CurrentContext.Test.Name);
             }
+
+            if (stalledNodes.Count > 0)
+                disposeFailures.Add(new TimeoutException($"Dispose stalled for node(s): {string.Join(", ", stalledNodes)}"));
+
+            if (disposeFailures.Count == 1)
+                throw disposeFailures[0];
+
+            if (disposeFailures.Count > 1)
+                throw new AggregateException("Dispose failed for multiple nodes", disposeFailures);
         }
 
         /// <summary>
