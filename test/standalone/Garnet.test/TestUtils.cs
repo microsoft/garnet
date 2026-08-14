@@ -12,6 +12,7 @@ using System.Net.NetworkInformation;
 using System.Net.Security;
 using System.Net.Sockets;
 using System.Runtime.CompilerServices;
+using System.Runtime.ExceptionServices;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
@@ -277,6 +278,63 @@ namespace Garnet.test
                     break;
                 Thread.Sleep(100);
             }
+        }
+
+        /// <summary>
+        /// Asserts that <paramref name="code"/> throws <typeparamref name="TActual"/>, running it on a dedicated thread.
+        /// </summary>
+        /// <remarks>
+        /// StackExchange.Redis' synchronous request path (<c>ConnectionMultiplexer.ExecuteSyncImpl</c>) parks the caller on a
+        /// <c>[ThreadStatic]</c> result box. A server error reply faults that box from the connection's reader thread, and when
+        /// the fault lands before the caller reaches <c>Monitor.Wait</c> the caller skips the wait and recycles the box while the
+        /// reader thread still has a <c>Monitor.PulseAll</c> outstanding on it. The next synchronous call on the same thread
+        /// takes the recycled box, consumes that stale pulse, and returns with neither a result nor an exception, shifting every
+        /// subsequent reply on that thread by one. Running calls that are expected to fail on their own thread keeps the
+        /// recycled box off the shared test thread.
+        /// </remarks>
+        /// <typeparam name="TActual">Expected exception type.</typeparam>
+        /// <param name="code">Delegate performing the call that is expected to fail.</param>
+        /// <returns>The exception thrown by <paramref name="code"/>.</returns>
+        public static TActual ThrowsRedisException<TActual>(TestDelegate code) where TActual : Exception
+            => ClassicAssert.Throws<TActual>(CaptureOnDedicatedThread(code));
+
+        /// <summary>
+        /// Variant of <see cref="ThrowsRedisException{TActual}(TestDelegate)"/> that reports <paramref name="message"/> on failure.
+        /// </summary>
+        /// <typeparam name="TActual">Expected exception type.</typeparam>
+        /// <param name="code">Delegate performing the call that is expected to fail.</param>
+        /// <param name="message">Message reported when no matching exception is thrown.</param>
+        /// <param name="args">Format arguments for <paramref name="message"/>.</param>
+        /// <returns>The exception thrown by <paramref name="code"/>.</returns>
+        public static TActual ThrowsRedisException<TActual>(TestDelegate code, string message, params object[] args) where TActual : Exception
+            => ClassicAssert.Throws<TActual>(CaptureOnDedicatedThread(code), message, args);
+
+        /// <summary>
+        /// Runs <paramref name="code"/> to completion on a dedicated thread, returning a delegate that replays whatever it threw.
+        /// </summary>
+        /// <param name="code">Delegate to run.</param>
+        /// <returns>Delegate that rethrows the captured exception, preserving its original stack trace.</returns>
+        private static TestDelegate CaptureOnDedicatedThread(TestDelegate code)
+        {
+            ExceptionDispatchInfo captured = null;
+
+            var thread = new Thread(() =>
+            {
+                try
+                {
+                    code();
+                }
+                catch (Exception ex)
+                {
+                    captured = ExceptionDispatchInfo.Capture(ex);
+                }
+            })
+            { IsBackground = true };
+
+            thread.Start();
+            thread.Join();
+
+            return () => captured?.Throw();
         }
 
         /// <summary>
