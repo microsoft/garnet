@@ -229,6 +229,7 @@ namespace Tsavorite.core
         {
             uint errorCode = 0;
             uint numBytes = 0;
+            Exception completionException = null;
 
             _ = Interlocked.Increment(ref numPending);
 
@@ -251,6 +252,7 @@ namespace Tsavorite.core
                     errorCode = (uint)(ioex.HResult & 0x0000FFFF);
                 else
                     errorCode = uint.MaxValue;
+                completionException = ex;
             }
             finally
             {
@@ -258,7 +260,7 @@ namespace Tsavorite.core
                     ummPool.Enqueue(memoryManager);
                 _ = Interlocked.Decrement(ref numPending);
                 // Issue user callback
-                callback(errorCode, numBytes, context);
+                callback(errorCode, numBytes, context, ioException: completionException);
             }
         }
 
@@ -283,6 +285,7 @@ namespace Tsavorite.core
         async ValueTask WriteWorkerAsync(IntPtr sourceAddress, int segmentId, ulong destinationAddress, uint numBytesToWrite, DeviceIOCompletionCallback callback, object context)
         {
             uint errorCode = 0;
+            Exception completionException = null;
 
             HandleCapacity(segmentId);
 
@@ -302,13 +305,13 @@ namespace Tsavorite.core
             catch (Exception ex)
             {
                 logger?.LogCritical(ex, $"{nameof(WriteAsync)}");
-                RecordError(ex);
                 var ioex = ex as IOException ?? ex.InnerException as IOException;
                 if (ioex is not null)
                     errorCode = (uint)(ioex.HResult & 0x0000FFFF);
                 else
                     errorCode = uint.MaxValue;
                 numBytesToWrite = 0;
+                completionException = ex;
             }
             finally
             {
@@ -316,7 +319,7 @@ namespace Tsavorite.core
                     ummPool.Enqueue(memoryManager);
                 _ = Interlocked.Decrement(ref numPending);
                 // Issue user callback
-                callback(errorCode, numBytesToWrite, context);
+                callback(errorCode, numBytesToWrite, context, ioException: completionException);
             }
         }
 

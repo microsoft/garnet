@@ -64,6 +64,13 @@ namespace Tsavorite.core
         /// </summary>
         internal long AllocatorGetPage(long logicalAddress) => allocator.GetPage(logicalAddress);
 
+        /// <summary>
+        /// Forwards to the allocator's read-only-address computation; used in tests to verify the out-of-range/sentinel
+        /// HeadAddress clamp (e.g. the fast-commit <c>long.MaxValue</c> "never evict" sentinel) directly, without driving a
+        /// full fast-commit recovery.
+        /// </summary>
+        internal long AllocatorCalculateReadOnlyAddress(long tailAddress, long headAddress) => allocator.CalculateReadOnlyAddress(tailAddress, headAddress);
+
         // Here's a soft begin address that is observed by all access at the TsavoriteLog level but not actually on the
         // allocator. This is to make sure that any potential physical deletes only happen after commit.
         long beginAddress;
@@ -258,12 +265,31 @@ namespace Tsavorite.core
                 catch (Exception ex)
                 {
                     // A non-tolerated recovery failure (TolerateDeviceFailure short-circuits inside recovery and never
-                    // reaches here). Fail fast: silently continuing would present an empty log as if recovery succeeded,
-                    // which is data loss for callers such as the Garnet AOF. RestoreLatestAsync/RestoreSpecificCommitAsync
-                    // have already rolled the allocator back to a clean, empty state, so the log is not left poisoned with
-                    // a sentinel HeadAddress even if a caller catches this and retries. This mirrors the async CreateAsync
-                    // path, which likewise propagates recovery failures.
+                    // reaches here). Fail fast: silently continuing would present an empty log as if recovery had
+                    // succeeded, hiding real corruption/data loss from the caller. RestoreLatestAsync/
+                    // RestoreSpecificCommitAsync have already rolled the allocator back to a clean, empty state, so a
+                    // caller that catches this and retries never observes a log poisoned with a sentinel HeadAddress.
+                    // This mirrors the async CreateAsync path, which likewise propagates recovery failures.
                     logger?.LogError(ex, "TsavoriteLog recovery failed during construction");
+
+                    // This partially-constructed instance is about to be abandoned (the constructor throws), so its
+                    // Dispose will never run. Release the resources already allocated above so repeated construction
+                    // failures cannot leak an owned LightEpoch (and its epoch-table slots), the allocator's page
+                    // buffers, the commit queue, or a default commit manager. inflightWord is allocated only after this
+                    // block, so it is not released here. Cleanup is best-effort and must not mask the recovery failure.
+                    try
+                    {
+                        allocator.Dispose();
+                        commitQueue.Dispose();
+                        if (isEpochOwned)
+                            epoch.Dispose();
+                        if (disposeLogCommitManager)
+                            logCommitManager.Dispose();
+                    }
+                    catch (Exception cleanupEx)
+                    {
+                        logger?.LogError(cleanupEx, "Error releasing partially-constructed TsavoriteLog after recovery failure");
+                    }
                     throw;
                 }
             }
@@ -3062,13 +3088,16 @@ namespace Tsavorite.core
             return true;
         }
 
-        private unsafe void AsyncGetFromDiskCallback(uint errorCode, uint numBytes, object context)
+        private unsafe void AsyncGetFromDiskCallback(uint errorCode, uint numBytes, object context, Exception ioException)
         {
             var ctx = (SimpleReadContext)context;
 
             if (errorCode != 0)
             {
-                logger?.LogError($"{nameof(AsyncGetFromDiskCallback)} error: {{errorCode}}", errorCode);
+                if (ioException is null)
+                    logger?.LogError($"{nameof(AsyncGetFromDiskCallback)} error: {{errorCode}}", errorCode);
+                else
+                    logger?.LogError($"{nameof(AsyncGetFromDiskCallback)} error: {{exception}}", Utility.GetCallbackExceptionDetail(ioException));
                 ctx.record.Return();
                 ctx.record = null;
                 _ = ctx.completedRead.Release();
@@ -3101,13 +3130,16 @@ namespace Tsavorite.core
             }
         }
 
-        private void AsyncGetHeaderOnlyFromDiskCallback(uint errorCode, uint numBytes, object context)
+        private void AsyncGetHeaderOnlyFromDiskCallback(uint errorCode, uint numBytes, object context, Exception ioException)
         {
             var ctx = (SimpleReadContext)context;
 
             if (errorCode != 0)
             {
-                logger?.LogError($"{nameof(AsyncGetHeaderOnlyFromDiskCallback)} error: {{errorCode}}", errorCode);
+                if (ioException is null)
+                    logger?.LogError($"{nameof(AsyncGetHeaderOnlyFromDiskCallback)} error: {{errorCode}}", errorCode);
+                else
+                    logger?.LogError($"{nameof(AsyncGetHeaderOnlyFromDiskCallback)} error: {{exception}}", Utility.GetCallbackExceptionDetail(ioException));
                 ctx.record.Return();
                 ctx.record = null;
                 _ = ctx.completedRead.Release();

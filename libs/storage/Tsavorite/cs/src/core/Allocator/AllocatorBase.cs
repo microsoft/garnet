@@ -2295,10 +2295,15 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.NoInlining)]
-        private void AsyncGetFromDiskCallback(uint errorCode, uint numBytes, object context)
+        private void AsyncGetFromDiskCallback(uint errorCode, uint numBytes, object context, Exception ioException)
         {
             if (errorCode != 0)
-                logger?.LogError("AsyncGetFromDiskCallback error: {errorCode}", errorCode);
+            {
+                if (ioException is null)
+                    logger?.LogError("AsyncGetFromDiskCallback error: {errorCode}", errorCode);
+                else
+                    logger?.LogError("AsyncGetFromDiskCallback error: {exception}", Utility.GetCallbackExceptionDetail(ioException));
+            }
 
             // The AsyncIOContext is the object-context handed to the device; it comes back here directly.
             var ctx = (AsyncIOContext)context;
@@ -2351,12 +2356,17 @@ namespace Tsavorite.core
         /// <param name="numBytes"></param>
         /// <param name="context"></param>
         [MethodImpl(MethodImplOptions.NoInlining)]
-        private protected void AsyncFlushPageCallback(uint errorCode, uint numBytes, object context)
+        private protected void AsyncFlushPageCallback(uint errorCode, uint numBytes, object context, Exception ioException)
         {
             try
             {
                 if (errorCode != 0)
-                    logger?.LogError("AsyncFlushPageCallback error: {errorCode}", errorCode);
+                {
+                    if (ioException is null)
+                        logger?.LogError("AsyncFlushPageCallback error: {errorCode}", errorCode);
+                    else
+                        logger?.LogError("AsyncFlushPageCallback error: {exception}", Utility.GetCallbackExceptionDetail(ioException));
+                }
 
                 // Set the page status to flushed
                 var result = (PageAsyncFlushResult<Empty>)context;
@@ -2366,8 +2376,8 @@ namespace Tsavorite.core
                     if (errorCode != 0)
                     {
                         // Note down error details and trigger handling only when we are certain this is the earliest error among currently issued flushes.
-                        // Capture the device's underlying exception (the completion channel only carries a numeric code) so it can be surfaced for diagnosis.
-                        errorList.Add(new CommitInfo { FromAddress = result.fromAddress, UntilAddress = result.untilAddress, ErrorCode = errorCode, Exception = (device as StorageDeviceBase)?.LastError });
+                        // Surface the device's underlying exception (plumbed through the completion callback) so an opaque numeric code carries the real fault for diagnosis.
+                        errorList.Add(new CommitInfo { FromAddress = result.fromAddress, UntilAddress = result.untilAddress, ErrorCode = errorCode, Exception = ioException });
                     }
                     else
                     {
@@ -2413,13 +2423,16 @@ namespace Tsavorite.core
         /// <param name="errorCode"></param>
         /// <param name="numBytes"></param>
         /// <param name="context"></param>
-        protected void AsyncFlushPageForSnapshotCallback(uint errorCode, uint numBytes, object context)
+        protected void AsyncFlushPageForSnapshotCallback(uint errorCode, uint numBytes, object context, Exception ioException)
         {
             try
             {
                 if (errorCode != 0)
                 {
-                    logger?.LogError("AsyncFlushPageToDeviceCallback error: {errorCode}", errorCode);
+                    if (ioException is null)
+                        logger?.LogError("AsyncFlushPageToDeviceCallback error: {errorCode}", errorCode);
+                    else
+                        logger?.LogError("AsyncFlushPageToDeviceCallback error: {exception}", Utility.GetCallbackExceptionDetail(ioException));
 
                     // Fault the snapshot's flush-completion so the checkpoint fails rather than committing a snapshot with
                     // an unwritten page; the Release() below still frees buffers and its CompleteFlush becomes a no-op.

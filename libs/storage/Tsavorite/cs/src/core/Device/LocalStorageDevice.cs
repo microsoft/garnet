@@ -84,7 +84,7 @@ namespace Tsavorite.core
         {
             Interlocked.Decrement(ref numPending);
             var result = (SimpleAsyncResult)Overlapped.Unpack(pOVERLAP).AsyncResult;
-            result.callback(errorCode, numBytes, result.context);
+            result.callback(errorCode, numBytes, result.context, ioException: default);
             results.Enqueue(result);
         }
 
@@ -266,14 +266,14 @@ namespace Tsavorite.core
             {
                 logger?.LogCritical(e, $"{nameof(ReadAsync)}");
                 Interlocked.Decrement(ref numPending);
-                callback((uint)(e.HResult & 0x0000FFFF), 0, context);
+                callback((uint)(e.HResult & 0x0000FFFF), 0, context, ioException: e);
                 results.Enqueue(result);
             }
             catch (Exception e)
             {
                 logger?.LogCritical(e, $"{nameof(ReadAsync)}");
                 Interlocked.Decrement(ref numPending);
-                callback(uint.MaxValue, 0, context);
+                callback(uint.MaxValue, 0, context, ioException: e);
                 results.Enqueue(result);
             }
         }
@@ -334,17 +334,15 @@ namespace Tsavorite.core
             catch (IOException e)
             {
                 logger?.LogCritical(e, $"{nameof(WriteAsync)}");
-                RecordError(e);
                 Interlocked.Decrement(ref numPending);
-                callback((uint)(e.HResult & 0x0000FFFF), 0, context);
+                callback((uint)(e.HResult & 0x0000FFFF), 0, context, ioException: e);
                 results.Enqueue(result);
             }
             catch (Exception e)
             {
                 logger?.LogCritical(e, $"{nameof(WriteAsync)}");
-                RecordError(e);
                 Interlocked.Decrement(ref numPending);
-                callback(uint.MaxValue, 0, context);
+                callback(uint.MaxValue, 0, context, ioException: e);
                 results.Enqueue(result);
             }
         }

@@ -669,7 +669,7 @@ namespace Tsavorite.core
             // underneath them.
             try
             {
-                result.callback((uint)errorCode, (uint)numBytes, result.context);
+                result.callback((uint)errorCode, (uint)numBytes, result.context, ioException: default);
             }
             catch (Exception ex)
             {
@@ -1109,7 +1109,7 @@ namespace Tsavorite.core
                 logger?.LogCritical(e, $"{nameof(ReadAsync)}");
                 try
                 {
-                    callback((uint)(e.HResult & 0x0000FFFF), 0, context);
+                    callback((uint)(e.HResult & 0x0000FFFF), 0, context, ioException: e);
                 }
                 finally
                 {
@@ -1122,7 +1122,7 @@ namespace Tsavorite.core
                 logger?.LogCritical(e, $"{nameof(ReadAsync)}");
                 try
                 {
-                    callback(uint.MaxValue, 0, context);
+                    callback(uint.MaxValue, 0, context, ioException: e);
                 }
                 finally
                 {
@@ -1196,10 +1196,9 @@ namespace Tsavorite.core
             catch (IOException e)
             {
                 logger?.LogCritical(e, $"{nameof(WriteAsync)}");
-                RecordError(e);
                 try
                 {
-                    callback((uint)(e.HResult & 0x0000FFFF), 0, context);
+                    callback((uint)(e.HResult & 0x0000FFFF), 0, context, ioException: e);
                 }
                 finally
                 {
@@ -1210,10 +1209,9 @@ namespace Tsavorite.core
             catch (Exception e)
             {
                 logger?.LogCritical(e, $"{nameof(WriteAsync)}");
-                RecordError(e);
                 try
                 {
-                    callback(uint.MaxValue, 0, context);
+                    callback(uint.MaxValue, 0, context, ioException: e);
                 }
                 finally
                 {

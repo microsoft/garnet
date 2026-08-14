@@ -167,7 +167,7 @@ namespace Tsavorite.core
             await mainIndexCheckpointTcs.Task.WaitAsync(token).ConfigureAwait(false);
         }
 
-        private void AsyncPageFlushCallback(uint errorCode, uint numBytes, object context)
+        private void AsyncPageFlushCallback(uint errorCode, uint numBytes, object context, Exception ioException)
         {
             // Set the page status to flushed
             var mem = ((HashIndexPageAsyncFlushResult)context).mem;
@@ -175,7 +175,10 @@ namespace Tsavorite.core
 
             if (errorCode != 0)
             {
-                logger?.LogError($"{nameof(AsyncPageFlushCallback)} error: {{errorCode}}", errorCode);
+                if (ioException is null)
+                    logger?.LogError($"{nameof(AsyncPageFlushCallback)} error: {{errorCode}}", errorCode);
+                else
+                    logger?.LogError($"{nameof(AsyncPageFlushCallback)} error: {{exception}}", Utility.GetCallbackExceptionDetail(ioException));
                 _ = Interlocked.CompareExchange(ref mainIndexCheckpointErrorCode, (int)errorCode, 0);
             }
             if (Interlocked.Decrement(ref mainIndexCheckpointCallbackCount) == 0)

@@ -147,6 +147,7 @@ namespace Tsavorite.core
             Stream logReadHandle = null;
             AsyncPool<Stream> streampool = null;
             uint errorCode = 0;
+            Exception completionException = null;
             Task<int> readTask = default;
             bool gotHandle;
             int numBytes = 0;
@@ -176,7 +177,7 @@ namespace Tsavorite.core
                 if (logReadHandle != null) streampool?.Return(logReadHandle);
 
                 // Issue user callback
-                callback(uint.MaxValue, 0, context);
+                callback(uint.MaxValue, 0, context, ioException: e);
                 return;
             }
 
@@ -194,7 +195,7 @@ namespace Tsavorite.core
                         }
                         readTask = logReadHandle.ReadAsync(umm.Memory).AsTask();
                     }
-                    catch
+                    catch (Exception e)
                     {
                         Interlocked.Decrement(ref numPending);
 
@@ -202,7 +203,7 @@ namespace Tsavorite.core
                         if (logReadHandle != null) streampool?.Return(logReadHandle);
 
                         // Issue user callback
-                        callback(uint.MaxValue, 0, context);
+                        callback(uint.MaxValue, 0, context, ioException: e);
                         return;
                     }
                 }
@@ -219,6 +220,7 @@ namespace Tsavorite.core
                     else
                         errorCode = uint.MaxValue;
                     numBytes = 0;
+                    completionException = ex;
                 }
                 finally
                 {
@@ -228,7 +230,7 @@ namespace Tsavorite.core
                     streampool?.Return(logReadHandle);
 
                     // Issue user callback
-                    callback(errorCode, (uint)numBytes, context);
+                    callback(errorCode, (uint)numBytes, context, ioException: completionException);
                 }
             });
         }
@@ -252,6 +254,7 @@ namespace Tsavorite.core
             Stream logWriteHandle = null;
             AsyncPool<Stream> streampool = null;
             uint errorCode = 0;
+            Exception completionException = null;
             Task writeTask = default;
             bool gotHandle;
 
@@ -277,14 +280,13 @@ namespace Tsavorite.core
             catch (Exception e)
             {
                 logger?.LogCritical(e, $"{nameof(WriteAsync)}");
-                RecordError(e);
                 Interlocked.Decrement(ref numPending);
 
                 // Perform pool returns and disposals
                 if (logWriteHandle != null) streampool?.Return(logWriteHandle);
 
                 // Issue user callback
-                callback(uint.MaxValue, 0, context);
+                callback(uint.MaxValue, 0, context, ioException: e);
                 return;
             }
 
@@ -306,14 +308,13 @@ namespace Tsavorite.core
                     catch (Exception e)
                     {
                         logger?.LogCritical(e, $"{nameof(WriteAsync)}");
-                        RecordError(e);
                         Interlocked.Decrement(ref numPending);
 
                         // Perform pool returns and disposals
                         if (logWriteHandle != null) streampool?.Return(logWriteHandle);
 
                         // Issue user callback
-                        callback(uint.MaxValue, 0, context);
+                        callback(uint.MaxValue, 0, context, ioException: e);
                         return;
                     }
                 }
@@ -325,12 +326,12 @@ namespace Tsavorite.core
                 catch (Exception ex)
                 {
                     logger?.LogCritical(ex, $"{nameof(WriteAsync)}");
-                    RecordError(ex);
                     if (ex.InnerException != null && ex.InnerException is IOException ioex)
                         errorCode = (uint)(ioex.HResult & 0x0000FFFF);
                     else
                         errorCode = uint.MaxValue;
                     numBytesToWrite = 0;
+                    completionException = ex;
                 }
                 finally
                 {
@@ -341,7 +342,7 @@ namespace Tsavorite.core
                     streampool?.Return(logWriteHandle);
 
                     // Issue user callback
-                    callback(errorCode, numBytesToWrite, context);
+                    callback(errorCode, numBytesToWrite, context, ioException: completionException);
                 }
             });
         }
