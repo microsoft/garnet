@@ -119,7 +119,9 @@ namespace Garnet.server
                                                 {
                                                     self.logger?.LogError("Quantization backfill {step}/{total} failed for context {context}", state.StepIndex, self.quantizationTasks.Length, context);
 
-                                                    // TODO: What sort of retry makes sense here?
+                                                    // Post a retry back on the channel
+                                                    _ = writer.TryWrite(new(state.Key, QuantizationStep.BackfillQuantizedVectors, state.StepIndex));
+                                                    break;
                                                 }
 
                                                 _ = Interlocked.Increment(ref self.quantizationBackfillsProcessed);
