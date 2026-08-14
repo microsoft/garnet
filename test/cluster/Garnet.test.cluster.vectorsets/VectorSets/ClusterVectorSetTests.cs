@@ -1337,10 +1337,14 @@ namespace Garnet.test.cluster
                 ClassicAssert.IsTrue(exc0.StartsWith("Key has MOVED to "));
             }
 
+            // Same convergence window the single-slot variant of this test uses: the source replica keeps
+            // serving the migrated keys for a while, then passes through a window where the slot is not yet
+            // known-stable from its point of view, before it settles on redirecting to the new primary.
             var start = Stopwatch.GetTimestamp();
 
             var success = false;
-            while (Stopwatch.GetElapsedTime(start) < TimeSpan.FromSeconds(5))
+            string lastResponse = null;
+            while (Stopwatch.GetElapsedTime(start) < TimeSpan.FromSeconds(15))
             {
                 try
                 {
@@ -1348,29 +1352,30 @@ namespace Garnet.test.cluster
                     foreach (var (key, _, _, data, _) in primary0Keys.Concat(primary1Keys))
                     {
                         var exc1 = (string)context.clusterTestUtils.Execute(secondary0, "VSIM", [key, "XB8", data, "WITHSCORES", "WITHATTRIBS"], flags: CommandFlags.NoRedirect);
-                        if (!exc1.StartsWith("Key has MOVED to "))
+                        lastResponse = exc1;
+                        if (exc1 is null || !exc1.StartsWith("Key has MOVED to "))
                         {
                             migrationNotFinished = true;
                             break;
                         }
                     }
 
-                    if (migrationNotFinished)
+                    if (!migrationNotFinished)
                     {
-                        continue;
+                        success = true;
+                        break;
                     }
-
-                    success = true;
-                    break;
                 }
-                catch
+                catch (Exception ex)
                 {
-                    // Secondary can still have the key for a bit
-                    Thread.Sleep(100);
+                    // Secondary can still have the key for a bit (VSIM returns vector data, not a string)
+                    lastResponse = ex.Message;
                 }
+
+                Thread.Sleep(100);
             }
 
-            ClassicAssert.IsTrue(success, "Original replica still has Vector Set long after primary has completed");
+            ClassicAssert.IsTrue(success, $"Original replica still has Vector Set long after primary has completed; last response was '{lastResponse}'");
 
             // Check available on new secondary
             var readonlyOnReplica1 = (string)context.clusterTestUtils.Execute(secondary1, "READONLY", [], flags: CommandFlags.NoRedirect);
@@ -1379,37 +1384,67 @@ namespace Garnet.test.cluster
             start = Stopwatch.GetTimestamp();
 
             success = false;
+            lastResponse = null;
 
-            while (Stopwatch.GetElapsedTime(start) < TimeSpan.FromSeconds(5))
+            // Poll until every migrated key is readable on the new replica, and only then assert on the
+            // contents. ClusterTestUtils.Execute turns any exception into a single-element reply holding the
+            // message, and a VSIM ... WITHSCORES WITHATTRIBS hit is always three elements, so a single element
+            // always means the read did not land: MOVED while this replica's view of slot ownership catches up,
+            // CLUSTERDOWN, or an SE.Redis timeout. Asserting inside the loop would record a failure on the test
+            // result even for a poll that the very next one resolves.
+            List<(string Key, byte[] Data, byte[][] Reply)> replicated = [];
+
+            while (Stopwatch.GetElapsedTime(start) < TimeSpan.FromSeconds(15))
             {
                 success = true;
+                replicated.Clear();
 
                 foreach (var (key, _, _, data, _) in primary0Keys.Concat(primary1Keys))
                 {
-                    var migrateSimRes = (byte[][])context.clusterTestUtils.Execute(secondary1, "VSIM", [key, "XB8", data, "WITHSCORES", "WITHATTRIBS"], flags: CommandFlags.NoRedirect);
-
-                    if (migrateSimRes.Length == 1 && Encoding.UTF8.GetString(migrateSimRes[0]).StartsWith("Key has MOVED to "))
+                    byte[][] migrateSimRes;
+                    try
                     {
+                        migrateSimRes = (byte[][])context.clusterTestUtils.Execute(secondary1, "VSIM", [key, "XB8", data, "WITHSCORES", "WITHATTRIBS"], flags: CommandFlags.NoRedirect);
+                    }
+                    catch (Exception ex)
+                    {
+                        lastResponse = ex.Message;
                         success = false;
                         break;
                     }
 
-                    ClassicAssert.AreEqual(3, migrateSimRes.Length);
+                    // A nil reply casts to a null array, so null must be handled alongside the
+                    // single-element error reply.
+                    if (migrateSimRes is null || migrateSimRes.Length == 1)
+                    {
+                        lastResponse = migrateSimRes is null ? "<nil>" : Encoding.UTF8.GetString(migrateSimRes[0]);
+                        success = false;
+                        break;
+                    }
 
-                    var (elem, attr, score) = expected[(key, data)];
-
-                    ClassicAssert.IsTrue(elem.SequenceEqual(migrateSimRes[0]));
-                    ClassicAssert.AreEqual(score, float.Parse(Encoding.ASCII.GetString(migrateSimRes[1])));
-                    ClassicAssert.IsTrue(attr.SequenceEqual(migrateSimRes[2]));
+                    replicated.Add((key, data, migrateSimRes));
                 }
 
                 if (success)
                 {
                     break;
                 }
+
+                Thread.Sleep(100);
             }
 
-            ClassicAssert.IsTrue(success, "New replica hasn't replicated Vector Set long after primary has received data");
+            ClassicAssert.IsTrue(success, $"New replica hasn't replicated Vector Set long after primary has received data; last response was '{lastResponse}'");
+
+            foreach (var (key, data, migrateSimRes) in replicated)
+            {
+                ClassicAssert.AreEqual(3, migrateSimRes.Length, $"Unexpected VSIM reply length for key '{key}'");
+
+                var (elem, attr, score) = expected[(key, data)];
+
+                ClassicAssert.IsTrue(elem.SequenceEqual(migrateSimRes[0]));
+                ClassicAssert.AreEqual(score, float.Parse(Encoding.ASCII.GetString(migrateSimRes[1])));
+                ClassicAssert.IsTrue(attr.SequenceEqual(migrateSimRes[2]));
+            }
         }
 
         [Test]

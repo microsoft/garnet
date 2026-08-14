@@ -448,6 +448,10 @@ namespace Garnet.server
                 manager.recoveredIndexes.Clear();
                 manager.recoveredMetadata.Clear();
 
+                // Migration remappings name contexts in the array just replaced, so a surviving entry would
+                // steer the rest of that migration into a context this flush has already handed back
+                manager.ClearMigratedContextRemap();
+
                 // Allow Vector Set operations again
                 manager.vectorSetLocks.ReleaseLock(lockToken);
 

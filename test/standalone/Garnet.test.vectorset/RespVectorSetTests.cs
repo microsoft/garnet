@@ -71,7 +71,7 @@ namespace Garnet.test
             foreach (var cmd in vectorSetCommands)
             {
                 // Should all fault before any validation
-                var exc = ClassicAssert.Throws<RedisServerException>(() => db.Execute(cmd.ToString()));
+                var exc = TestUtils.ThrowsRedisException<RedisServerException>(() => db.Execute(cmd.ToString()));
                 ClassicAssert.AreEqual("ERR Vector Set (preview) commands are not enabled", exc.Message);
             }
         }
@@ -95,22 +95,22 @@ namespace Garnet.test
                     switch (cmd)
                     {
                         case RespCommand.VADD:
-                            exc = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", ["foo", "REDUCE", "50", "VALUES", "75", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", new byte[] { 0, 0, 0, 0 }, "CAS", "NOQUANT", "EF", "16", "M", "32"]));
+                            exc = TestUtils.ThrowsRedisException<RedisServerException>(() => db.Execute("VADD", ["foo", "REDUCE", "50", "VALUES", "75", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", new byte[] { 0, 0, 0, 0 }, "CAS", "NOQUANT", "EF", "16", "M", "32"]));
                             break;
                         case RespCommand.VCARD:
                             // TODO: Implement when VCARD works
                             continue;
                         case RespCommand.VDIM:
-                            exc = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VDIM", ["foo"]));
+                            exc = TestUtils.ThrowsRedisException<RedisServerException>(() => db.Execute("VDIM", ["foo"]));
                             break;
                         case RespCommand.VEMB:
-                            exc = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VEMB", ["foo", new byte[] { 0, 0, 0, 0 }]));
+                            exc = TestUtils.ThrowsRedisException<RedisServerException>(() => db.Execute("VEMB", ["foo", new byte[] { 0, 0, 0, 0 }]));
                             break;
                         case RespCommand.VGETATTR:
-                            exc = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VGETATTR", ["foo", new byte[] { 0, 0, 0, 0 }]));
+                            exc = TestUtils.ThrowsRedisException<RedisServerException>(() => db.Execute("VGETATTR", ["foo", new byte[] { 0, 0, 0, 0 }]));
                             break;
                         case RespCommand.VINFO:
-                            exc = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VINFO", ["foo"]));
+                            exc = TestUtils.ThrowsRedisException<RedisServerException>(() => db.Execute("VINFO", ["foo"]));
                             break;
                         case RespCommand.VISMEMBER:
                             // TODO: Implement when VISMEMBER works
@@ -122,13 +122,13 @@ namespace Garnet.test
                             // TODO: Implement when VRANDMEMBER works
                             continue;
                         case RespCommand.VREM:
-                            exc = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VREM", ["foo", new byte[] { 0, 0, 0, 0 }]));
+                            exc = TestUtils.ThrowsRedisException<RedisServerException>(() => db.Execute("VREM", ["foo", new byte[] { 0, 0, 0, 0 }]));
                             break;
                         case RespCommand.VSETATTR:
                             // TODO: Implement when VSETATTR works
                             continue;
                         case RespCommand.VSIM:
-                            exc = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VSIM", ["foo", "VALUES", "75", "110.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "COUNT", "5", "EPSILON", "1.0", "EF", "40"]));
+                            exc = TestUtils.ThrowsRedisException<RedisServerException>(() => db.Execute("VSIM", ["foo", "VALUES", "75", "110.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "COUNT", "5", "EPSILON", "1.0", "EF", "40"]));
                             break;
                         default:
                             throw new InvalidOperationException($"Unexpected Vector Set command: {cmd}");
@@ -182,7 +182,7 @@ namespace Garnet.test
             var res5 = db.Execute("VADD", ["fizz", "REDUCE", "50", "VALUES", "75", "150.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", new byte[] { 0, 0, 0, 0 }, "CAS", "NOQUANT", "EF", "16", "M", "32"]);
             ClassicAssert.AreEqual(1, (int)res5);
 
-            var exc1 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", ["fizz", "VALUES", "4", "5.0", "6.0", "7.0", "8.0", new byte[] { 0, 0, 0, 1 }, "CAS", "NOQUANT", "EF", "16", "M", "32"]));
+            var exc1 = TestUtils.ThrowsRedisException<RedisServerException>(() => db.Execute("VADD", ["fizz", "VALUES", "4", "5.0", "6.0", "7.0", "8.0", new byte[] { 0, 0, 0, 1 }, "CAS", "NOQUANT", "EF", "16", "M", "32"]));
             ClassicAssert.AreEqual("ERR Vector dimension mismatch - got 4 but set has 75", exc1.Message);
 
             // Add without specifying EF after first vector
@@ -190,11 +190,11 @@ namespace Garnet.test
             ClassicAssert.AreEqual(1, (int)res6);
 
             // Add without specifying M after first vector
-            var exc2 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", ["fizz", "REDUCE", "50", "VALUES", "75", "180.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", new byte[] { 0, 0, 0, 4 }, "CAS", "NOQUANT", "EF", "16"]));
+            var exc2 = TestUtils.ThrowsRedisException<RedisServerException>(() => db.Execute("VADD", ["fizz", "REDUCE", "50", "VALUES", "75", "180.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", new byte[] { 0, 0, 0, 4 }, "CAS", "NOQUANT", "EF", "16"]));
             ClassicAssert.AreEqual("ERR asked M value mismatch with existing vector set", exc2.Message);
 
             // Mismatch vector size for projection
-            var exc3 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", ["fizz", "REDUCE", "50", "VALUES", "5", "1.0", "2.0", "3.0", "4.0", "5.0", new byte[] { 0, 0, 0, 0 }, "CAS", "NOQUANT", "EF", "16", "M", "32"]));
+            var exc3 = TestUtils.ThrowsRedisException<RedisServerException>(() => db.Execute("VADD", ["fizz", "REDUCE", "50", "VALUES", "5", "1.0", "2.0", "3.0", "4.0", "5.0", new byte[] { 0, 0, 0, 0 }, "CAS", "NOQUANT", "EF", "16", "M", "32"]));
             ClassicAssert.AreEqual("ERR REDUCE dimension must be <= vector dimensions", exc3.Message);
         }
 
@@ -258,7 +258,7 @@ namespace Garnet.test
             }
 
             // REDUCE not allowed with XPREQ8
-            var exc1 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", ["fizz", "REDUCE", "2", "XB8", smallVectorData, new byte[] { 0, 0, 0, 0 }, "XPREQ8"]));
+            var exc1 = TestUtils.ThrowsRedisException<RedisServerException>(() => db.Execute("VADD", ["fizz", "REDUCE", "2", "XB8", smallVectorData, new byte[] { 0, 0, 0, 0 }, "XPREQ8"]));
             ClassicAssert.AreEqual("ERR asked quantization mismatch with existing vector set", exc1.Message);
 
             // Create a vector set with XB8 + XPREQ8
@@ -287,61 +287,61 @@ namespace Garnet.test
             var vectorSetKey = $"{nameof(VADDErrors)}_{Guid.NewGuid()}";
 
             // Bad arity
-            var exc1 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD"));
+            var exc1 = TestUtils.ThrowsRedisException<RedisServerException>(() => db.Execute("VADD"));
             ClassicAssert.AreEqual("ERR wrong number of arguments for 'VADD' command", exc1.Message);
-            var exc2 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", [vectorSetKey]));
+            var exc2 = TestUtils.ThrowsRedisException<RedisServerException>(() => db.Execute("VADD", [vectorSetKey]));
             ClassicAssert.AreEqual("ERR wrong number of arguments for 'VADD' command", exc2.Message);
-            var exc3 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", [vectorSetKey, "FP32"]));
+            var exc3 = TestUtils.ThrowsRedisException<RedisServerException>(() => db.Execute("VADD", [vectorSetKey, "FP32"]));
             ClassicAssert.AreEqual("ERR wrong number of arguments for 'VADD' command", exc3.Message);
-            var exc4 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", [vectorSetKey, "VALUES"]));
+            var exc4 = TestUtils.ThrowsRedisException<RedisServerException>(() => db.Execute("VADD", [vectorSetKey, "VALUES"]));
             ClassicAssert.AreEqual("ERR wrong number of arguments for 'VADD' command", exc4.Message);
-            var exc5 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", [vectorSetKey, "VALUES", "1"]));
+            var exc5 = TestUtils.ThrowsRedisException<RedisServerException>(() => db.Execute("VADD", [vectorSetKey, "VALUES", "1"]));
             ClassicAssert.AreEqual("ERR wrong number of arguments for 'VADD' command", exc5.Message);
-            var exc6 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", [vectorSetKey, "VALUES", "1", "1.0"]));
+            var exc6 = TestUtils.ThrowsRedisException<RedisServerException>(() => db.Execute("VADD", [vectorSetKey, "VALUES", "1", "1.0"]));
             ClassicAssert.AreEqual("ERR wrong number of arguments for 'VADD' command", exc6.Message);
 
             // Reduce after vector
-            var exc7 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", [vectorSetKey, "VALUES", "2", "1.0", "2.0", "bar", "REDUCE", "1"]));
+            var exc7 = TestUtils.ThrowsRedisException<RedisServerException>(() => db.Execute("VADD", [vectorSetKey, "VALUES", "2", "1.0", "2.0", "bar", "REDUCE", "1"]));
             ClassicAssert.AreEqual("ERR invalid option after element", exc7.Message);
 
             // Duplicate flags
             // TODO: Redis doesn't error on these which seems... wrong, confirm with them
-            //var exc8 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", [vectorSetKey, "VALUES", "1", "2.0", "bar", "CAS", "CAS"]));
-            //var exc9 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", [vectorSetKey, "VALUES", "1", "2.0", "bar", "NOQUANT", "Q8"]));
-            //var exc10 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", [vectorSetKey, "VALUES", "1", "2.0", "bar", "EF", "1", "EF", "1"]));
-            //var exc11 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", [vectorSetKey, "VALUES", "1", "2.0", "bar", "SETATTR", "abc", "SETATTR", "abc"]));
-            //var exc12 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", [vectorSetKey, "VALUES", "1", "2.0", "bar", "M", "5", "M", "5"]));
+            //var exc8 = TestUtils.ThrowsRedisException<RedisServerException>(() => db.Execute("VADD", [vectorSetKey, "VALUES", "1", "2.0", "bar", "CAS", "CAS"]));
+            //var exc9 = TestUtils.ThrowsRedisException<RedisServerException>(() => db.Execute("VADD", [vectorSetKey, "VALUES", "1", "2.0", "bar", "NOQUANT", "Q8"]));
+            //var exc10 = TestUtils.ThrowsRedisException<RedisServerException>(() => db.Execute("VADD", [vectorSetKey, "VALUES", "1", "2.0", "bar", "EF", "1", "EF", "1"]));
+            //var exc11 = TestUtils.ThrowsRedisException<RedisServerException>(() => db.Execute("VADD", [vectorSetKey, "VALUES", "1", "2.0", "bar", "SETATTR", "abc", "SETATTR", "abc"]));
+            //var exc12 = TestUtils.ThrowsRedisException<RedisServerException>(() => db.Execute("VADD", [vectorSetKey, "VALUES", "1", "2.0", "bar", "M", "5", "M", "5"]));
 
             // M out of range (Redis imposes M >= 4 and m <= 4096
-            var exc13 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", [vectorSetKey, "VALUES", "1", "2.0", "bar", "M", "1"]));
+            var exc13 = TestUtils.ThrowsRedisException<RedisServerException>(() => db.Execute("VADD", [vectorSetKey, "VALUES", "1", "2.0", "bar", "M", "1"]));
             ClassicAssert.AreEqual("ERR M must be an integer between 4 and 4096", exc13.Message);
-            var exc14 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", [vectorSetKey, "VALUES", "1", "2.0", "bar", "M", "10000"]));
+            var exc14 = TestUtils.ThrowsRedisException<RedisServerException>(() => db.Execute("VADD", [vectorSetKey, "VALUES", "1", "2.0", "bar", "M", "10000"]));
             ClassicAssert.AreEqual("ERR M must be an integer between 4 and 4096", exc14.Message);
 
             // Missing/bad option value
-            var exc20 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", [vectorSetKey, "VALUES", "1", "2.0", "bar", "EF"]));
+            var exc20 = TestUtils.ThrowsRedisException<RedisServerException>(() => db.Execute("VADD", [vectorSetKey, "VALUES", "1", "2.0", "bar", "EF"]));
             ClassicAssert.AreEqual("ERR invalid option after element", exc20.Message);
-            var exc21 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", [vectorSetKey, "VALUES", "1", "2.0", "bar", "EF", "0"]));
+            var exc21 = TestUtils.ThrowsRedisException<RedisServerException>(() => db.Execute("VADD", [vectorSetKey, "VALUES", "1", "2.0", "bar", "EF", "0"]));
             ClassicAssert.AreEqual("ERR EF must be an integer between 1 and 1000000", exc21.Message);
-            var exc22 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", [vectorSetKey, "VALUES", "1", "2.0", "bar", "SETATTR"]));
+            var exc22 = TestUtils.ThrowsRedisException<RedisServerException>(() => db.Execute("VADD", [vectorSetKey, "VALUES", "1", "2.0", "bar", "SETATTR"]));
             ClassicAssert.AreEqual("ERR invalid option after element", exc22.Message);
-            var exc23 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", [vectorSetKey, "VALUES", "1", "2.0", "bar", "M"]));
+            var exc23 = TestUtils.ThrowsRedisException<RedisServerException>(() => db.Execute("VADD", [vectorSetKey, "VALUES", "1", "2.0", "bar", "M"]));
             ClassicAssert.AreEqual("ERR invalid option after element", exc23.Message);
-            var exc24 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", [vectorSetKey, "VALUES", "2", "2.0", "bar"]));
+            var exc24 = TestUtils.ThrowsRedisException<RedisServerException>(() => db.Execute("VADD", [vectorSetKey, "VALUES", "2", "2.0", "bar"]));
             ClassicAssert.AreEqual("ERR invalid vector specification", exc24.Message);
-            var exc25 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", [vectorSetKey, "VALUES", "0", "bar"]));
+            var exc25 = TestUtils.ThrowsRedisException<RedisServerException>(() => db.Execute("VADD", [vectorSetKey, "VALUES", "0", "bar"]));
             ClassicAssert.AreEqual("ERR invalid vector specification", exc25.Message);
-            var exc26 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", [vectorSetKey, "VALUES", "1", "fizz", "bar"]));
+            var exc26 = TestUtils.ThrowsRedisException<RedisServerException>(() => db.Execute("VADD", [vectorSetKey, "VALUES", "1", "fizz", "bar"]));
             ClassicAssert.AreEqual("ERR invalid vector specification", exc26.Message);
 
             // Unknown option
-            var exc27 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", [vectorSetKey, "VALUES", "1", "2.0", "bar", "FOO"]));
+            var exc27 = TestUtils.ThrowsRedisException<RedisServerException>(() => db.Execute("VADD", [vectorSetKey, "VALUES", "1", "2.0", "bar", "FOO"]));
             ClassicAssert.AreEqual("ERR invalid option after element", exc27.Message);
 
             // Malformed FP32
             var binary = new float[] { 1, 2, 3 };
             var blob = MemoryMarshal.Cast<float, byte>(binary)[..^1].ToArray();
-            var exc15 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", [vectorSetKey, "FP32", blob, "bar"]));
+            var exc15 = TestUtils.ThrowsRedisException<RedisServerException>(() => db.Execute("VADD", [vectorSetKey, "FP32", blob, "bar"]));
             ClassicAssert.AreEqual("ERR invalid vector specification", exc15.Message);
 
             // Mismatch after creating a vector set
@@ -349,41 +349,41 @@ namespace Garnet.test
 
             _ = db.Execute("VADD", [vectorSetKey, "VALUES", "75", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", new byte[] { 0, 0, 1, 0 }, "NOQUANT", "EF", "6", "M", "10", "XDISTANCE_METRIC", "L2"]);
 
-            var exc16 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", [vectorSetKey, "VALUES", "2", "1.0", "2.0", "fizz", "NOQUANT", "EF", "6", "M", "10"]));
+            var exc16 = TestUtils.ThrowsRedisException<RedisServerException>(() => db.Execute("VADD", [vectorSetKey, "VALUES", "2", "1.0", "2.0", "fizz", "NOQUANT", "EF", "6", "M", "10"]));
             ClassicAssert.AreEqual("ERR Vector dimension mismatch - got 2 but set has 75", exc16.Message);
-            var exc17 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", [vectorSetKey, "VALUES", "75", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "fizz", "XPREQ8", "EF", "6", "M", "10"]));
+            var exc17 = TestUtils.ThrowsRedisException<RedisServerException>(() => db.Execute("VADD", [vectorSetKey, "VALUES", "75", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "fizz", "XPREQ8", "EF", "6", "M", "10"]));
             ClassicAssert.AreEqual("ERR asked quantization mismatch with existing vector set", exc17.Message);
-            var exc18 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", [vectorSetKey, "VALUES", "75", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "fizz", "NOQUANT", "EF", "12", "M", "20"]));
+            var exc18 = TestUtils.ThrowsRedisException<RedisServerException>(() => db.Execute("VADD", [vectorSetKey, "VALUES", "75", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "fizz", "NOQUANT", "EF", "12", "M", "20"]));
             ClassicAssert.AreEqual("ERR asked M value mismatch with existing vector set", exc18.Message);
 
             // TODO: Redis doesn't appear to validate attributes... so that's weird
 
             // Empty Vector Set keys are forbidden (TODO: Remove this constraint)
-            var exc19 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", ["", "VALUES", "75", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", new byte[] { 0, 0, 0, 0 }, "XPREQ8"]));
+            var exc19 = TestUtils.ThrowsRedisException<RedisServerException>(() => db.Execute("VADD", ["", "VALUES", "75", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", new byte[] { 0, 0, 0, 0 }, "XPREQ8"]));
             ClassicAssert.AreEqual("ERR Vector Set key cannot be empty", exc19.Message);
 
             // Malformed XDISTANCE_METRIC
-            var exc31 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", [vectorSetKey, "VALUES", "75", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "bar", "NOQUANT", "XDISTANCE_METRIC"]));
+            var exc31 = TestUtils.ThrowsRedisException<RedisServerException>(() => db.Execute("VADD", [vectorSetKey, "VALUES", "75", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "bar", "NOQUANT", "XDISTANCE_METRIC"]));
             ClassicAssert.AreEqual("ERR invalid option after element", exc31.Message);
-            var exc32 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", [vectorSetKey, "VALUES", "75", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "bar", "NOQUANT", "XDISTANCE_METRIC", "FOO"]));
+            var exc32 = TestUtils.ThrowsRedisException<RedisServerException>(() => db.Execute("VADD", [vectorSetKey, "VALUES", "75", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "bar", "NOQUANT", "XDISTANCE_METRIC", "FOO"]));
             ClassicAssert.AreEqual("ERR invalid XDISTANCE_METRIC", exc32.Message);
 
             // Invalid vector type keyword (not FP32, VALUES, or XB8)
-            var exc40 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", ["mykey", "GARBAGE", "data", "elem1"]));
+            var exc40 = TestUtils.ThrowsRedisException<RedisServerException>(() => db.Execute("VADD", ["mykey", "GARBAGE", "data", "elem1"]));
             ClassicAssert.AreEqual("ERR invalid vector specification", exc40.Message);
 
             // VALUES count exceeding MaxVectorDimensions (65536) must be rejected
-            var exc41 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", ["foo", "VALUES", "100000", "1.0", "elem"]));
+            var exc41 = TestUtils.ThrowsRedisException<RedisServerException>(() => db.Execute("VADD", ["foo", "VALUES", "100000", "1.0", "elem"]));
             ClassicAssert.IsTrue(exc41.Message.Contains("maximum"), $"Expected dimension limit error, got: {exc41.Message}");
 
             // EF exceeding MaxExplorationFactor (1,000,000) must be rejected
-            var exc42 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", ["foo", "VALUES", "3", "1.0", "2.0", "3.0", new byte[] { 0, 0, 0, 0 }, "CAS", "NOQUANT", "EF", "2000000000", "M", "32"]));
+            var exc42 = TestUtils.ThrowsRedisException<RedisServerException>(() => db.Execute("VADD", ["foo", "VALUES", "3", "1.0", "2.0", "3.0", new byte[] { 0, 0, 0, 0 }, "CAS", "NOQUANT", "EF", "2000000000", "M", "32"]));
             ClassicAssert.IsTrue(exc42.Message.Contains("EF must be an integer between"), $"Expected EF validation error, got: {exc42.Message}");
 
             // REDUCE dim exceeding vector dimensions must be rejected
-            var exc43 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", ["foo", "REDUCE", "100000", "VALUES", "3", "1.0", "2.0", "3.0", new byte[] { 0, 0, 0, 0 }, "CAS", "NOQUANT", "EF", "16", "M", "32"]));
+            var exc43 = TestUtils.ThrowsRedisException<RedisServerException>(() => db.Execute("VADD", ["foo", "REDUCE", "100000", "VALUES", "3", "1.0", "2.0", "3.0", new byte[] { 0, 0, 0, 0 }, "CAS", "NOQUANT", "EF", "16", "M", "32"]));
             ClassicAssert.IsTrue(exc43.Message.Contains("REDUCE dimension must be <= vector dimensions"), $"Expected REDUCE dimension limit error, got: {exc43.Message}");
-            var exc33 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", [vectorSetKey, "VALUES", "75", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "bar", "NOQUANT", "XDISTANCE_METRIC", "XCOSINE_NORMALIZED"]));
+            var exc33 = TestUtils.ThrowsRedisException<RedisServerException>(() => db.Execute("VADD", [vectorSetKey, "VALUES", "75", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "bar", "NOQUANT", "XDISTANCE_METRIC", "XCOSINE_NORMALIZED"]));
             ClassicAssert.AreEqual("ERR Distance metric mismatch - got XCosine_Normalized but set has L2", exc33.Message);
         }
 
@@ -437,7 +437,7 @@ namespace Garnet.test
             var res1 = db.Execute("VADD", ["foo", "REDUCE", "50", "VALUES", "75", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", new byte[] { 0, 0, 0, 0 }, "CAS", "NOQUANT", "EF", "16", "M", "32"]);
             ClassicAssert.AreEqual(1, (int)res1);
 
-            var res2 = ClassicAssert.Throws<RedisServerException>(() => db.StringGet("foo"));
+            var res2 = TestUtils.ThrowsRedisException<RedisServerException>(() => db.StringGet("foo"));
             ClassicAssert.True(res2.Message.Contains("WRONGTYPE"));
         }
 
@@ -793,7 +793,7 @@ namespace Garnet.test
             var res4 = db.Execute("VDIM", "bar");
             ClassicAssert.AreEqual(75, (int)res4);
 
-            var exc1 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VDIM", "fizz"));
+            var exc1 = TestUtils.ThrowsRedisException<RedisServerException>(() => db.Execute("VDIM", "fizz"));
             ClassicAssert.IsTrue(exc1.Message.Contains("Key not found"));
 
             // TODO: Add WRONGTYPE behavior check once implemented
@@ -1057,7 +1057,7 @@ namespace Garnet.test
 
             foreach (var (filter, why) in badFilters)
             {
-                var exc = ClassicAssert.Throws<RedisServerException>(
+                var exc = TestUtils.ThrowsRedisException<RedisServerException>(
                     () => db.Execute("VSIM", [VectorSet, "VALUES", "3", "0.0", "0.0", "0.0", "FILTER", filter, "COUNT", "10"]),
                     $"Expected compile failure for filter '{filter}' ({why})");
                 ClassicAssert.AreEqual(CompileErr, exc.Message, $"Wrong error message for filter '{filter}' ({why})");
@@ -1246,19 +1246,19 @@ namespace Garnet.test
             ClassicAssert.AreEqual(1, (int)res1);
 
             // FILTER-EF exceeding MaxFilteringScaleFactor must be rejected
-            var exc1 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VSIM", ["foo", "VALUES", "3", "0.0", "0.0", "0.0", "FILTER", ".year > 1950", "FILTER-EF", "999999999", "COUNT", "3", "WITHATTRIBS"]));
+            var exc1 = TestUtils.ThrowsRedisException<RedisServerException>(() => db.Execute("VSIM", ["foo", "VALUES", "3", "0.0", "0.0", "0.0", "FILTER", ".year > 1950", "FILTER-EF", "999999999", "COUNT", "3", "WITHATTRIBS"]));
             ClassicAssert.AreEqual("ERR FILTER-EF must be an integer between 4 and 256", exc1.Message);
 
             // COUNT exceeding MaxRetrieveCount must be rejected
-            var exc2 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VSIM", ["foo", "VALUES", "3", "0.0", "0.0", "0.0", "COUNT", "999999999"]));
+            var exc2 = TestUtils.ThrowsRedisException<RedisServerException>(() => db.Execute("VSIM", ["foo", "VALUES", "3", "0.0", "0.0", "0.0", "COUNT", "999999999"]));
             ClassicAssert.AreEqual("ERR COUNT must be an integer between 0 and 100000000", exc2.Message);
 
             // VALUES count exceeding MaxVectorDimensions (65536) must be rejected
-            var exc3 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VSIM", ["foo", "VALUES", "100000", "1.0"]));
+            var exc3 = TestUtils.ThrowsRedisException<RedisServerException>(() => db.Execute("VSIM", ["foo", "VALUES", "100000", "1.0"]));
             ClassicAssert.AreEqual("ERR vector exceeds maximum of 65536 dimensions", exc3.Message);
 
             // EF exceeding MaxExplorationFactor (1,000,000) must be rejected
-            var exc4 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VSIM", ["foo", "VALUES", "3", "0.0", "0.0", "0.0", "EF", "2000000000"]));
+            var exc4 = TestUtils.ThrowsRedisException<RedisServerException>(() => db.Execute("VSIM", ["foo", "VALUES", "3", "0.0", "0.0", "0.0", "EF", "2000000000"]));
             ClassicAssert.AreEqual("ERR EF must be an integer between 1 and 1000000", exc4.Message);
         }
 
@@ -1699,7 +1699,7 @@ namespace Garnet.test
                     var addRes2 = (int)db.Execute("VADD", ["foo", "XB8", bytes2, new byte[] { 0, 0, 0, 1 }, "XPREQ8"]);
                     ClassicAssert.AreEqual(1, addRes2);
 
-                    var readExc = ClassicAssert.Throws<RedisServerException>(() => db.Execute("GET", ["foo"]));
+                    var readExc = TestUtils.ThrowsRedisException<RedisServerException>(() => db.Execute("GET", ["foo"]));
                     ClassicAssert.IsTrue(readExc.Message.Equals("WRONGTYPE Operation against a key holding the wrong kind of value."), $"In iteration: {i}");
                 }
 
@@ -2798,7 +2798,7 @@ namespace Garnet.test
             // Remove on non-vector set fails
             // TODO: test against Redis, how do they respond (I expect WRONGTYPE, but needs verification)
             //_ = db.StringSet("fizz", "buzz");
-            //var exc1 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VREM", "fizz", new byte[] { 0, 0, 0, 0 }));
+            //var exc1 = TestUtils.ThrowsRedisException<RedisServerException>(() => db.Execute("VREM", "fizz", new byte[] { 0, 0, 0, 0 }));
             //ClassicAssert.AreEqual("", exc1.Message);
 
             // Remove exists

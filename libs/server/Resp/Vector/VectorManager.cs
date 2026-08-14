@@ -172,7 +172,7 @@ namespace Garnet.server
 
         private readonly int dbId;
 
-        private ConcurrentDictionary<ulong, byte> recoveredIndexes;
+        private ConcurrentDictionary<ulong, ushort> recoveredIndexes;
         private ConcurrentDictionary<int, ContextMetadata> recoveredMetadata;
 
         public VectorManager(int dbId, GarnetServerOptions serverOptions, Func<IMessageConsumer> getTempSession, ILoggerFactory loggerFactory)
@@ -308,6 +308,11 @@ namespace Garnet.server
 
                 recoveredMetadata.Clear();
 
+                // Rebuilding contextMetadatas invalidates any migration remapping built against the old array.
+                // An interrupted migration is treated as failed below - its context is marked for cleanup - so
+                // a surviving entry would steer the retried migration into a context being torn down.
+                ClearMigratedContextRemap();
+
                 // If we come up and contexts are marked for migration, that means the migration FAILED
                 // and we'd like those contexts back ASAP
                 for (var i = 0; i < contextMetadatas.Length; i++)
@@ -329,9 +334,21 @@ namespace Garnet.server
                 }
 
                 // Any non-deleted records we recovered for contexts being deleted, we need to undo that
-                foreach (var (context, _) in recoveredIndexes)
+                foreach (var (context, hashSlot) in recoveredIndexes)
                 {
                     var (contextIndex, contextValue) = ContextMetadata.DecomposeContext(context);
+
+                    // The index record is written before the context metadata that reserves its context, so a
+                    // recovery boundary between the two leaves a live index record pointing at a free context.
+                    // Reserving it here keeps the context from being handed to a different Vector Set.
+                    if (!contextMetadatas[contextIndex].IsInUse(contextIndex != 0, contextValue))
+                    {
+                        contextMetadatas[contextIndex].MarkInUse(contextIndex != 0, contextValue, hashSlot);
+
+                        _ = dirtyContextMetadatas.Add(contextIndex);
+
+                        needsUpdated = true;
+                    }
 
                     if (contextMetadatas[contextIndex].IsCleaningUp(contextIndex != 0, contextValue))
                     {
@@ -399,7 +416,10 @@ namespace Garnet.server
             }
 
             ReadIndex(record.ValueSpan, out var context, out _, out _, out _, out _, out _, out _, out _, out _);
-            recoveredIndexes[context] = 0;
+
+            // The hash slot is needed to restore the context reservation in ReconcileRecoveredState, which
+            // has only this map to work from - the record itself is not retained past this call
+            recoveredIndexes[context] = HashSlotUtils.HashSlot(record.Key);
         }
 
         /// <summary>
