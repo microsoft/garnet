@@ -497,7 +497,12 @@ namespace Tsavorite.core
         /// </summary>
         /// <param name="scanFunctions">Functions receiving pushed records.</param>
         /// <param name="includeTombstones">Whether to include tombstoned records while iterating. Default <c>false</c>.</param>
-        /// <returns>True if iteration completed; false if <c>Reader</c> returned false or iteration ended early.</returns>
+        /// <returns>
+        /// Mirrors <see cref="ScanCursor"/>: true only when the scan stopped early because the record
+        /// budget was filled or a batch ended. A scan that walks the whole range returns false, so this
+        /// value does <b>not</b> distinguish successful completion from an early exit and callers should
+        /// not treat false as failure.
+        /// </returns>
         public bool IterateLookupSnapshot<TScanFunctions>(ref TScanFunctions scanFunctions, bool includeTombstones = false)
             where TScanFunctions : IScanIteratorFunctions
         {
