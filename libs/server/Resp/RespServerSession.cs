@@ -758,7 +758,12 @@ namespace Garnet.server
             if (cmd == RespCommand.HELLO)
                 return true;
 
-            return storeWrapper.serverOptions.IsRespProtocolVersionAllowed(respProtocolVersion);
+            return storeWrapper.serverOptions.AllowedProtocols switch
+            {
+                RespProtocolMode.Resp2 => respProtocolVersion == 2,
+                RespProtocolMode.Resp3 => respProtocolVersion == 3,
+                _ => respProtocolVersion is 2 or 3,
+            };
         }
 
         // Make first command in string as uppercase
