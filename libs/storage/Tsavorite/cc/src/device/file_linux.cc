@@ -743,14 +743,20 @@ Status UringFile::ScheduleOperation(FileOperationType operationType, uint8_t* bu
     // io_uring_submit()'s internal flush UNCONDITIONALLY publishes our SQE (advances ktail to the
     // tail) before any syscall; the syscall it may issue only (re)wakes a parked poll thread. Hence
     // once we call submit our SQE is owned by the kernel regardless of the return value — we retry
-    // only to redeliver the wakeup on a transient -EAGAIN/-EBUSY, and always treat the op as
-    // submitted. SQ-full backpressure is already handled above by io_uring_get_sqe returning nullptr.
+    // only to redeliver the wakeup, and always treat the op as submitted. SQ-full backpressure is
+    // already handled above by io_uring_get_sqe returning nullptr.
+    //
+    // Every negative return is retried, not just -EAGAIN/-EBUSY: the enter that carries
+    // IORING_ENTER_SQ_WAKEUP is only issued when the kernel has flagged the poll thread as parked,
+    // so ANY failure (e.g. -EINTR from a signal) can leave the SQE published with the poller still
+    // asleep. With no later submit to redeliver the wakeup, that IO would never complete and
+    // Dispose's drain-wait would hang. Retrying is safe and effective: liburing recomputes the
+    // pending count from the ring, so while our SQE is unconsumed the retry re-issues the wakeup.
     int submit_retries = 0;
     while (true) {
       res = io_uring_submit(ring);
       if (res >= 0) break;                                   // awake: pending count; parked: wakeup delivered
-      if (res != -EAGAIN && res != -EBUSY) break;            // hard enter error; SQE already published
-      if (submit_retries >= kSubmitYieldBudget) break;       // transient wakeup; SQE already published
+      if (submit_retries >= kSubmitYieldBudget) break;        // gave up redelivering; SQE already published
       ::sched_yield();
       ++submit_retries;
     }

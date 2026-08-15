@@ -1347,9 +1347,10 @@ namespace Tsavorite.test
             // Decouple ring count from drainer count: 8 io_contexts served by 2 drainers, default
             // (auto-derived) queue depth. For libaio + default queueDepth this also exercises the
             // ResolveLibaioReservationDepth branch (the reservation is sized from the throttle share
-            // rather than the io_uring per-ring ceiling). Fire more concurrent reads than rings so the
-            // submit path fans out across all 8 rings.
-            const int N = 128, size = 4 * 1024;
+            // rather than the io_uring per-ring ceiling). Rings are assigned per submitting thread
+            // (thread-affine), so the reads are issued from 8 concurrent threads to actually fan out
+            // across all 8 rings rather than piling onto the single test thread's ring.
+            const int N = 128, size = 4 * 1024, submitThreads = 8;
             using var device = CreateNativeForTest(Path.Join(TestUtils.MethodTestDir, "test.log"), 256 * Mib, backend,
                                                    completionThreads: 2, throttleLimit: 1024, numIoContexts: 8);
 
@@ -1363,8 +1364,21 @@ namespace Tsavorite.test
             {
                 var (rb, rp) = AllocateAlignedBuffer(size, _ => 0);
                 rbufs[i] = rb; rptrs[i] = rp;
-                device.ReadAsync(0, (ulong)(i * size), rp, (uint)size, IOCallback, null);
             }
+
+            var submitters = new Thread[submitThreads];
+            for (int t = 0; t < submitThreads; t++)
+            {
+                int start = t;
+                submitters[t] = new Thread(() =>
+                {
+                    for (int i = start; i < N; i += submitThreads)
+                        device.ReadAsync(0, (ulong)(i * size), rptrs[i], (uint)size, IOCallback, null);
+                })
+                { IsBackground = true };
+                submitters[t].Start();
+            }
+            foreach (var s in submitters) s.Join();
             for (int i = 0; i < N; i++) semaphore.Wait();
 
             for (int i = 0; i < N; i++)

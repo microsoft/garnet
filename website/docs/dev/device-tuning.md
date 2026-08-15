@@ -225,8 +225,10 @@ effectiveThrottle   = min(requestedThrottle, kernelCapacity)       // cap at ker
 
 Capping `T` at `N × D` enforces the "in-flight ≤ kernel capacity" invariant that prevents the
 ring-full submit spin. This cap is **decoupled** from the depth cap, so a high-connection
-deployment can raise `T` (e.g. to 65536) for a few % more throughput at high connection counts
-as long as `N × D` is large enough — something the old coupled design forbade.
+deployment can raise `T` as long as `N × D` is large enough — something the old coupled design
+forbade. Note that the per-shard clamp described next imposes a second, independent ceiling:
+raising `T` above `NumShards × MaxPerThreadInFlight` (**4096** on any host with ≥ 16 logical
+processors) has no effect, because the per-thread budget saturates at `MaxPerThreadInFlight`.
 
 ### Derived: per-thread in-flight (sharding) {#derived-sharding}
 
@@ -249,6 +251,12 @@ always reflects the live set of concurrently-submitting shards, with no global i
 and no periodic reconciliation. Once more submitter threads than `NumShards` are active they
 collide on the fixed shard set, so this counts occupied shards rather than distinct threads; the
 shard count is sized so that stays a close proxy for concurrent submitter count.
+
+Because `perThread` saturates at `MaxPerThreadInFlight`, device-wide in-flight is bounded by
+`NumShards × MaxPerThreadInFlight` = **4096** (on hosts with ≥ 16 logical processors)
+independently of `T`. `T` therefore controls in-flight only in the `0 < T ≤ 4096` range; the
+default `T = 4096` already sits at that ceiling. Raising the ceiling would mean growing
+`SlotsPerShard` (and with it `MaxResults`), not raising `--device-throttle-limit`.
 
 ## Internal constants
 
@@ -322,10 +330,6 @@ Start from the defaults — on x64 Linux they already reach the hand-tuned peak 
 * **io_uring, high connection count.** Set `--device-io-contexts` ≥ your peak concurrent
   connections (e.g. `96` or `128`). The default caps at 64 rings; more connections than that
   want more rings to stay 1:1 and contention-free.
-* **io_uring, very high connection count, want the last few %.** Also raise
-  `--device-throttle-limit` (e.g. `65536`) so aggregate in-flight can grow past 4096 — worth
-  ~5–7% at very high connection counts. Ensure `N × D ≥ T` (with `D = 4096` that means
-  `N ≥ 16`).
 * **libaio.** Leave `--device-io-contexts` at the default (ring-count-neutral). If you run
   **many** Native devices in one process (cluster with many shards/AOF/checkpoint logs) and hit
   `io_setup` `EAGAIN`, either raise `fs.aio-max-nr` (`sysctl -w fs.aio-max-nr=1048576`) or raise
@@ -340,8 +344,6 @@ Start from the defaults — on x64 Linux they already reach the hand-tuned peak 
 
 ## Diagnostics
 
-* Set `TSAVORITE_DEVICE_INSTRUMENT=1` to enable per-second submit/complete/peak-in-flight
-  counters on the device (`GetAndResetStats`).
 * Watch `iostat -x 1` on the tiered mount: at the serving peak the device queue (`aqu-sz`)
   should be deep and `%util` ~100%. A shallow queue with idle device indicates the throttle or
   ring depth is too low (or, for io_uring, too few rings serializing submitters).

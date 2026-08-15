@@ -58,6 +58,18 @@ wait_ready() {  # wait until the server accepts connections
   return 1
 }
 
+dbsize() {      # current key count, or empty if it cannot be read
+  if have redis-cli; then
+    redis-cli -p "$PORT" DBSIZE 2>/dev/null | grep -oE '^[0-9]+'
+    return
+  fi
+  # Raw RESP: send DBSIZE, read the ":<n>" integer reply.
+  (exec 3<>/dev/tcp/127.0.0.1/"$PORT" || return 0
+   printf '*1\r\n$6\r\nDBSIZE\r\n' >&3
+   head -c 32 <&3 | grep -oE ':[0-9]+' | head -1 | tr -d ':'
+   exec 3>&- 3<&-) 2>/dev/null
+}
+
 stop_srv() {    # stop by real GarnetServer.dll PID (not the dotnet launcher)
   local p; p="$(srv_pid)"
   [ -n "$p" ] && kill "$p" 2>/dev/null
@@ -99,8 +111,18 @@ run_config() {
 
   # load the 100 M dataset (writes tier to the device; no run phase)
   # shellcheck disable=SC2086
-  $cli_pin dotnet "$RB" --port "$PORT" --op MSET --dbsize "$DBSIZE" --keylength "$KEYLEN" --valuelength "$VALLEN" \
-    --client LightClient --load-threads 32 -b 4096 --runtime 0 >/tmp/nvme-matrix-load.log 2>&1
+  if ! $cli_pin dotnet "$RB" --port "$PORT" --op MSET --dbsize "$DBSIZE" --keylength "$KEYLEN" --valuelength "$VALLEN" \
+    --client LightClient --load-threads 32 -b 4096 --runtime 0 >/tmp/nvme-matrix-load.log 2>&1; then
+    echo "!! dataset load failed ($backend/$pinmode)"; tail -20 /tmp/nvme-matrix-load.log; stop_srv; return 1
+  fi
+
+  # Guard against a silently short load: GETs against a mostly-empty store are served as
+  # in-memory misses, which would publish a high but meaningless "NVMe" number.
+  local loaded; loaded="$(dbsize)"
+  if [ -z "$loaded" ] || [ "$loaded" -lt "$((DBSIZE / 10 * 9))" ]; then
+    echo "!! dataset load short ($backend/$pinmode): DBSIZE=${loaded:-unknown}, expected >= $((DBSIZE / 10 * 9))"
+    stop_srv; return 1
+  fi
 
   for t in $THREADS; do
     local vals=()

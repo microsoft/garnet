@@ -135,8 +135,9 @@ namespace Tsavorite.core
         /// so a shard's free-list occupancy never approaches <see cref="SlotsPerShard"/> no matter how many
         /// submitter threads share it — a small shard count neither starves the free-list nor re-introduces
         /// counter contention. Sized via <see cref="ConcurrencySharding.NumShardCount"/>
-        /// (<see cref="ConcurrencySharding.Compute"/>: 2 × ProcessorCount capped at 32, its floor being the
-        /// peak concurrent submitter count); see that type for the sizing rationale.
+        /// (<see cref="ConcurrencySharding.Compute"/>: 2 × ProcessorCount capped at 32, the cap bounding
+        /// <see cref="MaxResults"/> and the O(shards) <see cref="TotalInFlight"/> scan); see that type for
+        /// the sizing rationale.
         /// </para>
         /// </summary>
         static readonly int NumShards = ConcurrencySharding.NumShardCount;
@@ -830,14 +831,6 @@ namespace Tsavorite.core
         Thread[] completionThreads;
         int numRingsActual;
 
-        // Instrumentation: peak concurrent in-flight writes seen, and submit/complete counters.
-        // Set TSAVORITE_DEVICE_INSTRUMENT=1 in the environment to enable.
-        static readonly bool s_instrument = Environment.GetEnvironmentVariable("TSAVORITE_DEVICE_INSTRUMENT") == "1";
-        int peakNumPending;
-        long submitCount;
-        long completeCount;
-        long submitNanos;
-
         /// <summary>Shard index for the calling thread on this device (assigned on first access).</summary>
         [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
         int GetShard() => shardIndex.Value;
@@ -989,7 +982,6 @@ namespace Tsavorite.core
 
         void _callback(IntPtr context, int errorCode, ulong numBytes)
         {
-            if (s_instrument) Interlocked.Increment(ref completeCount);
             int offset = (int)context;
             var result = results[offset];
             // CRITICAL: this method is invoked via a function pointer from native code (libaio /
@@ -1028,19 +1020,6 @@ namespace Tsavorite.core
                 CompleteShard(offset / SlotsPerShard);
                 ReturnSlot(offset);
             }
-        }
-
-        /// <summary>Diagnostic: snapshot and reset per-second submit/complete counters and peak in-flight.
-        /// Set environment variable <c>TSAVORITE_DEVICE_INSTRUMENT=1</c> to enable population.</summary>
-        public (int curPending, int peakPending, long submits, long completes, long submitNs) GetAndResetStats()
-        {
-            int cur = (int)TotalInFlight();
-            var stats = (cur, peakNumPending, submitCount, completeCount, submitNanos);
-            peakNumPending = cur;
-            submitCount = 0;
-            completeCount = 0;
-            submitNanos = 0;
-            return stats;
         }
 
         /// <inheritdoc />
@@ -1700,25 +1679,7 @@ namespace Tsavorite.core
 
             try
             {
-                if (s_instrument)
-                {
-                    Interlocked.Increment(ref submitCount);
-                    long inflight = TotalInFlight();
-                    var prevPeak = peakNumPending;
-                    while (inflight > prevPeak)
-                    {
-                        var actual = Interlocked.CompareExchange(ref peakNumPending, (int)inflight, prevPeak);
-                        if (actual == prevPeak) break;
-                        prevPeak = actual;
-                    }
-                }
-                long ts0 = s_instrument ? Stopwatch.GetTimestamp() : 0;
                 int _result = NativeDevice_WriteAsync(nativeDevice, sourceAddress, ((ulong)segmentId << segmentSizeBits) | destinationAddress, numBytesToWrite, _callbackDelegate, (IntPtr)offset);
-                if (s_instrument)
-                {
-                    var elapsed = Stopwatch.GetTimestamp() - ts0;
-                    Interlocked.Add(ref submitNanos, (long)(elapsed * 1_000_000_000.0 / Stopwatch.Frequency));
-                }
 
                 if (_result != 0)
                 {
