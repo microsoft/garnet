@@ -37,8 +37,12 @@ from RAM with no device.)
 
 ### NVMe storage-bound
 
-Reference host: **8×NVMe SSD RAID-0** (Linux `md`, mounted `/raid`); `fio` 4K
-randread ceiling ≈ **8.24 M IOPS**. The Device benchmark reaches this at the raw
+Reference host: **8×NVMe SSD RAID-0** (Linux `md`, mounted `/raid`). The array is
+IOPS-bound rather than bandwidth-bound at these sizes, so its `fio` random-read
+ceiling is effectively the same at both block sizes used across this suite:
+**8.24 M IOPS at 4 K** and **8.20 M IOPS at 512 B** (same job — 32 jobs × QD64,
+`io_uring`, `O_DIRECT`, 8 files). The runs below issue 512 B reads, so **8.2 M** is
+the like-for-like ceiling. The Device benchmark reaches it at the raw
 `IDevice` level with **either** backend. The config is kept **compatible with the
 KV/RESP benchmarks**: `--sector-size 512` (the array's logical block size — Garnet
 reads the sector-aligned window covering a 128 B record) and `--file-size

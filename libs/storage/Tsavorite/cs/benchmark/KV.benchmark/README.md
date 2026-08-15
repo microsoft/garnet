@@ -47,8 +47,9 @@ random NVMe fetch through the pending-read path. On a fast array set
 `--device-completion-threads 8` (the default is 1). The Native throttle already
 defaults to 4096, sized for a fast NVMe queue; the managed devices
 (`randomaccess`/`filestream`) default to 120 and need `--device-throttle-limit 512`
-to spin up. Reference host: **8×NVMe RAID-0** (`/raid`, `fio` 4K
-ceiling ≈ **8.24 M IOPS**); KV peaks at **~7.8 M** (≈ 95% of `fio`) — the small
+to spin up. Reference host: **8×NVMe RAID-0** (`/raid`, `fio` random-read ceiling
+≈ **8.24 M IOPS at 4 K** / **8.20 M at 512 B** — the array is IOPS-bound, so block
+size barely moves it); KV peaks at **~7.8 M** (≈ 95% of `fio`) — the small
 remaining gap is Tsavorite managed per-op CPU (hash lookup, pending context,
 completion dispatch), not the device, which reaches `fio` parity in
 [Device.benchmark](../Device.benchmark/README.md#nvme-storage-bound).

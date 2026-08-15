@@ -65,8 +65,9 @@ dotnet $RB -s --op GET --dbsize 16777216 --valuelength 100 -t 1,2,4,8,16,32 -b 1
 Tier the store with a tiny memory log so ~99.9% of a 100 M dataset is on NVMe and
 every GET is a random device fetch. Use **100 M × 128 B** records (`--keylength 16
 --valuelength 96`, matching the KV/Device benchmarks — 128 B records read over the
-array's 512 B sectors). Reference host: **8×NVMe RAID-0** (`/raid`, `fio` 4K ceiling
-≈ **8.24 M IOPS**); Garnet sustains **~7.2 M** end-to-end (≈ 87% of `fio`).
+array's 512 B sectors). Reference host: **8×NVMe RAID-0** (`/raid`, `fio` random-read
+ceiling ≈ **8.24 M IOPS at 4 K** / **8.20 M at 512 B** — the array is IOPS-bound, so
+block size barely moves it); Garnet sustains **~7.2 M** end-to-end (≈ 87% of `fio`).
 
 ```bash
 DATA=/raid/garnet; mkdir -p $DATA
@@ -128,7 +129,9 @@ device tuning. Median of 3 passes per cell.
 **Host** — 2× Intel Xeon Platinum 8480CL (56 cores × 2 threads/socket, 224 logical CPUs, 2 NUMA nodes),
 ~2 TB DDR5; **8× Kioxia KCM6DRUL3T84** 3.84 TB PCIe-Gen4 NVMe in Linux `md` RAID-0 (`/dev/md1`, 512 KB
 chunks, ext4, ≈28 TB); Ubuntu 24.04.4 LTS, kernel 6.8.0-136, .NET 10.0.302; `fs.aio-max-nr` = 4194304.
-`fio` 4 KB random-read ceiling on this array: **8.24 M IOPS** (32 jobs × QD64, io_uring).
+`fio` random-read ceiling on this array: **8.24 M IOPS at 4 K** and **8.20 M IOPS at 512 B**
+(32 jobs × QD64, io_uring, `O_DIRECT`, 8 files) — the array is IOPS-bound at these sizes, so the
+ceiling is effectively block-size independent.
 
 **Workload** — 100 M × 128 B records (`--keylength 16 --valuelength 96`) tiered onto the array
 (`--memory 16m --page 4m --segment 1g --index 8g`); 100% random GET; client `-b 1024`; 12 s per cell.
@@ -140,9 +143,9 @@ chunks, ext4, ≈28 TB); Ubuntu 24.04.4 LTS, kernel 6.8.0-136, .NET 10.0.302; `f
 | Uring | srv node-0 / cli node-1 | 1.84 M | 6.33 M | **7.41 M** | 7.18 M |
 | Uring | no pin | 1.52 M | 4.87 M | 6.23 M | 7.12 M |
 
-- **Peak ≈ 7.4 M ops/sec** (uring, pinned, t=48) — **~90% of the `fio` 8.24 M ceiling** for the same
-  4 KB-class random reads, driven end-to-end through the RESP protocol and the Tsavorite pending-read
-  path (not raw device IO).
+- **Peak ≈ 7.4 M ops/sec** (uring, pinned, t=48) — **~90% of the `fio` ceiling** for random reads
+  of the same shape (128 B records fetched over the array's 512 B sectors), driven end-to-end
+  through the RESP protocol and the Tsavorite pending-read path (not raw device IO).
 - **Defaults reach the tuned peak.** Uring's smart ring-count default (`min(2 × cores, 64)` rings,
   decoupled from the 4 completion threads) closes the ring-starvation foot-gun with no flags; libaio
   needs no ring tuning. Hand-tuning (`--device-completion-threads 8 --device-throttle-limit 4096`,
