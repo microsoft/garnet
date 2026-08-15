@@ -48,9 +48,9 @@ random NVMe fetch through the pending-read path. On a fast array set
 defaults to 4096, sized for a fast NVMe queue; the managed devices
 (`randomaccess`/`filestream`) default to 120 and need `--device-throttle-limit 512`
 to spin up. Reference host: **8×NVMe RAID-0** (`/raid`, `fio` 4K
-ceiling ≈ **8.24 M IOPS**); KV peaks at **~6.7 M** (≈ 81% of `fio`) — the remaining
-gap is Tsavorite managed per-op CPU (hash lookup, pending context, completion
-dispatch), not the device, which reaches `fio` parity in
+ceiling ≈ **8.24 M IOPS**); KV peaks at **~7.8 M** (≈ 95% of `fio`) — the small
+remaining gap is Tsavorite managed per-op CPU (hash lookup, pending context,
+completion dispatch), not the device, which reaches `fio` parity in
 [Device.benchmark](../Device.benchmark/README.md#nvme-storage-bound).
 
 ```bash
@@ -62,18 +62,21 @@ numactl --cpunodebind=0 --membind=0 dotnet $KV -n 100000000 -v 100 \
   --runsec 12 --warmup-sec 4 --data-path /raid/kv
 
 # uring: no extra flag needed — the smart default sizes rings to min(2×cores, 64),
-# covering these run-thread counts (see Device README).
+# covering these run-thread counts (see Device README). The uring rows below were
+# measured with an explicit --device-io-contexts 32.
 ```
 
 | backend | pin | t=8 | t=32 | t=64 |
 |---|---|---|---|---|
-| libaio | node-0 | 2.39 M | **6.67 M** | 5.27 M |
-| libaio | none | 1.94 M | 6.58 M | 5.17 M |
-| uring (`--device-io-contexts 32`) | node-0 | 2.29 M | 6.54 M | 4.94 M |
-| uring (`--device-io-contexts 32`) | none | 1.74 M | 6.02 M | 4.97 M |
+| libaio | node-0 | 2.41 M | 6.89 M | **7.76 M** |
+| libaio | none | 2.37 M | 6.83 M | **7.80 M** |
+| uring (`--device-io-contexts 32`) | node-0 | 2.28 M | **7.50 M** | 7.21 M |
+| uring (`--device-io-contexts 32`) | none | 2.30 M | **7.57 M** | 7.32 M |
 
-Peak is at **t=32** (falls off by t=64 as submit+drain threads oversubscribe node-0's
-cores). libaio edges uring slightly; NUMA pinning helps a little (~1–2%). Swap
+The two backends peak at different thread counts: libaio keeps scaling through
+**t=64** (~7.8 M), while uring peaks at **t=32** (~7.5 M) and eases off at t=64 as
+its submit+drain threads oversubscribe node-0's cores. NUMA pinning is within
+run-to-run noise at these thread counts. Swap
 `--device native` → `randomaccess` (BCL async, slower) / `filestream` (slowest) to
 compare backends. Compare to the device's `fio` ceiling (`--rw=randread --bs=4k
 --direct=1 --ioengine=libaio --iodepth=64 --numjobs=8`).
