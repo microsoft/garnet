@@ -149,18 +149,30 @@ namespace Tsavorite.core
             Debug.Assert(index < BufferSize);
             if (pagePointers[index] != default)
             {
-                var enqueued = freePagePool.TryAdd(new()
+                if (useNativeLogPages)
                 {
-                    array = pageArrays[index],
-                    pointer = pagePointers[index],
-                    value = objectPages[index]
-                });
-
-                // We only need to clear the page if it's enqueued; otherwise we don't reuse the page, so can save the time
-                if (enqueued)
+                    // Zero the inline page bytes and clear the ObjectIdMap before pooling the direct-VM block:
+                    // FreeNativeLogPage recycles it, and AllocatePinnedPageArray reuses a pooled block without
+                    // re-zeroing. Leaving stale bytes would let a new page that does not fully overwrite them retain
+                    // stale record headers that eviction reads as valid records. ClearPage does both.
                     ClearPage(index, 0);
+                    FreeNativeLogPage(index);
+                }
                 else
-                    objectPages[index].Clear();
+                {
+                    var enqueued = freePagePool.TryAdd(new()
+                    {
+                        array = pageArrays[index],
+                        pointer = pagePointers[index],
+                        value = objectPages[index]
+                    });
+
+                    // We only need to clear the page if it's enqueued; otherwise we don't reuse the page, so can save the time
+                    if (enqueued)
+                        ClearPage(index, 0);
+                    else
+                        objectPages[index].Clear();
+                }
                 pageArrays[index] = default;
                 pagePointers[index] = default;
                 _ = Interlocked.Decrement(ref AllocatedPageCount);
@@ -1008,6 +1020,12 @@ namespace Tsavorite.core
                         logWriter.OnPartialFlushComplete(diskWritePtr, alignedBufferSize, device, alignedMainLogFlushPageAddress + (uint)alignedStartOffset, callback, asyncResult, ref objectLogTail);
                     else
                         device.WriteAsync((IntPtr)diskWritePtr, alignedMainLogFlushPageAddress + (uint)alignedStartOffset, (uint)alignedBufferSize, callback, asyncResult);
+
+                    // Main device write submitted: its completion callback owns releasing this page's native
+                    // snapshot-IO unit and buffers. Set inside the try (before the finally that disposes logWriter
+                    // and readers) so a throw from that cleanup does not make the issuer double-release. If the
+                    // submit itself threw, the flag stays false and the issuer releases (exactly-once via the claim).
+                    asyncResult.snapshotDeviceWriteIssued = true;
                 }
             }
             finally

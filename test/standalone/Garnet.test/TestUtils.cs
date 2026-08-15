@@ -348,7 +348,9 @@ namespace Garnet.test
             LogCompactionType compactionType = LogCompactionType.None,
             int mutablePercent = 90,
             int compactionMaxSegments = 32,
-            string segmentSize = "1g"
+            string segmentSize = "1g",
+            bool? nativeAllocator = null,
+            string bufferPoolMemoryBudget = null
         )
         {
             if (useAzureStorage)
@@ -395,6 +397,7 @@ namespace Garnet.test
                 DisablePubSub = disablePubSub,
                 Recover = tryRecover,
                 IndexMemorySize = indexSize,
+                UseNativeAllocator = nativeAllocator ?? false,
                 EnableAOF = enableAOF,
                 EnableLua = enableLua,
                 AofMemorySize = aofMemorySize,
@@ -525,6 +528,9 @@ namespace Garnet.test
             {
                 opts.RevivInChainOnly = true;
             }
+
+            if (bufferPoolMemoryBudget != null)
+                opts.BufferPoolMemoryBudget = bufferPoolMemoryBudget;
 
             return new GarnetServer(opts, loggerFactory);
         }
