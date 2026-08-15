@@ -42,6 +42,8 @@ THROTTLE="${THROTTLE:-}"                            # --device-throttle-limit   
 URING_IOCTX="${URING_IOCTX:-}"                      # Uring --device-io-contexts (empty = smart default, ~64 rings)
 SRVNODE="${SRVNODE:-0}"; CLINODE="${CLINODE:-1}"   # NUMA nodes for pinned mode
 OUT="${OUT:-/tmp/nvme-raid0-matrix.tsv}"
+SRV_LOG="${SRV_LOG:-/tmp/nvme-matrix-srv.log}"
+LOAD_LOG="${LOAD_LOG:-/tmp/nvme-matrix-load.log}"
 
 # ---- helpers -----------------------------------------------------------------
 have() { command -v "$1" >/dev/null 2>&1; }
@@ -58,19 +60,8 @@ wait_ready() {  # wait until the server accepts connections
   return 1
 }
 
-dbsize() {      # current key count, or empty if it cannot be read
-  if have redis-cli; then
-    redis-cli -p "$PORT" DBSIZE 2>/dev/null | grep -oE '^[0-9]+'
-    return
-  fi
-  # Raw RESP: send DBSIZE, read the single ":<n>\r\n" integer reply line. Read with a
-  # timeout and stop at the line terminator — a fixed-size read would block waiting for
-  # bytes the server never sends.
-  (exec 3<>/dev/tcp/127.0.0.1/"$PORT" || return 0
-   printf '*1\r\n$6\r\nDBSIZE\r\n' >&3
-   IFS= read -r -t 10 reply <&3
-   exec 3>&- 3<&-
-   printf '%s' "${reply:-}" | grep -oE ':[0-9]+' | head -1 | tr -d ':') 2>/dev/null
+loaded_ops() { # ops the loader reports it pushed, or empty if the line is absent
+  grep -E '^\[Total time\]' "$LOAD_LOG" | tail -1 | grep -oE 'for [0-9,]+' | tr -cd '0-9'
 }
 
 stop_srv() {    # stop by real GarnetServer.dll PID (not the dotnet launcher)
@@ -109,21 +100,23 @@ run_config() {
   # shellcheck disable=SC2086
   $srv_pin dotnet "$GS" --port "$PORT" --bind 127.0.0.1 \
     --memory 16m --page 4m --segment 1g --index 8g --storage-tier --logdir "$DATA" \
-    $devflags --logger-level Warning >/tmp/nvme-matrix-srv.log 2>&1 &
-  if ! wait_ready; then echo "!! server failed to start ($backend/$pinmode)"; cat /tmp/nvme-matrix-srv.log; return 1; fi
+    $devflags --logger-level Warning >"$SRV_LOG" 2>&1 &
+  if ! wait_ready; then echo "!! server failed to start ($backend/$pinmode)"; cat "$SRV_LOG"; return 1; fi
 
   # load the 100 M dataset (writes tier to the device; no run phase)
   # shellcheck disable=SC2086
   if ! $cli_pin dotnet "$RB" --port "$PORT" --op MSET --dbsize "$DBSIZE" --keylength "$KEYLEN" --valuelength "$VALLEN" \
-    --client LightClient --load-threads 32 -b 4096 --runtime 0 >/tmp/nvme-matrix-load.log 2>&1; then
-    echo "!! dataset load failed ($backend/$pinmode)"; tail -20 /tmp/nvme-matrix-load.log; stop_srv; return 1
+    --client LightClient --load-threads 32 -b 4096 --runtime 0 >"$LOAD_LOG" 2>&1; then
+    echo "!! dataset load failed ($backend/$pinmode)"; tail -20 "$LOAD_LOG"; stop_srv; return 1
   fi
 
   # Guard against a silently short load: GETs against a mostly-empty store are served as
-  # in-memory misses, which would publish a high but meaningless "NVMe" number.
-  local loaded; loaded="$(dbsize)"
+  # in-memory misses, which would publish a high but meaningless "NVMe" number. The check
+  # uses the op count the loader reports rather than DBSIZE, which scans the whole index
+  # on a 100 M-key store and takes far longer than a startup probe should.
+  local loaded; loaded="$(loaded_ops)"
   if [ -z "$loaded" ] || [ "$loaded" -lt "$((DBSIZE / 10 * 9))" ]; then
-    echo "!! dataset load short ($backend/$pinmode): DBSIZE=${loaded:-unknown}, expected >= $((DBSIZE / 10 * 9))"
+    echo "!! dataset load short ($backend/$pinmode): loaded ${loaded:-unknown} ops, expected >= $((DBSIZE / 10 * 9))"
     stop_srv; return 1
   fi
 
