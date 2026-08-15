@@ -63,11 +63,14 @@ dbsize() {      # current key count, or empty if it cannot be read
     redis-cli -p "$PORT" DBSIZE 2>/dev/null | grep -oE '^[0-9]+'
     return
   fi
-  # Raw RESP: send DBSIZE, read the ":<n>" integer reply.
+  # Raw RESP: send DBSIZE, read the single ":<n>\r\n" integer reply line. Read with a
+  # timeout and stop at the line terminator — a fixed-size read would block waiting for
+  # bytes the server never sends.
   (exec 3<>/dev/tcp/127.0.0.1/"$PORT" || return 0
    printf '*1\r\n$6\r\nDBSIZE\r\n' >&3
-   head -c 32 <&3 | grep -oE ':[0-9]+' | head -1 | tr -d ':'
-   exec 3>&- 3<&-) 2>/dev/null
+   IFS= read -r -t 10 reply <&3
+   exec 3>&- 3<&-
+   printf '%s' "${reply:-}" | grep -oE ':[0-9]+' | head -1 | tr -d ':') 2>/dev/null
 }
 
 stop_srv() {    # stop by real GarnetServer.dll PID (not the dotnet launcher)
