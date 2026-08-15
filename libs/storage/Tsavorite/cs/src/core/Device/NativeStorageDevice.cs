@@ -134,10 +134,9 @@ namespace Tsavorite.core
         /// <see cref="PerThreadLimit"/> (≈ throttle ÷ active shards, capped at <see cref="MaxPerThreadInFlight"/>),
         /// so a shard's free-list occupancy never approaches <see cref="SlotsPerShard"/> no matter how many
         /// submitter threads share it — a small shard count neither starves the free-list nor re-introduces
-        /// counter contention. Sized via <see cref="ConcurrencySharding.NumShardCount"/> (shares the
-        /// <see cref="ConcurrencySharding.Compute"/> formula with the buffer pool's stripe count so the sizing
-        /// logic cannot diverge, but carries its own cap since its floor is the peak concurrent submitter
-        /// count); see that type for the sizing rationale.
+        /// counter contention. Sized via <see cref="ConcurrencySharding.NumShardCount"/>
+        /// (<see cref="ConcurrencySharding.Compute"/>: 2 × ProcessorCount capped at 32, its floor being the
+        /// peak concurrent submitter count); see that type for the sizing rationale.
         /// </para>
         /// </summary>
         static readonly int NumShards = ConcurrencySharding.NumShardCount;
