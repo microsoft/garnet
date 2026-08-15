@@ -162,9 +162,10 @@ namespace Tsavorite.core
     /// <item><b>No per-push allocation.</b> <c>ConcurrentStack.Push</c> allocates a link node per item; this pool
     /// exists to avoid exactly that. <see cref="Stack{T}"/> pushes into a pre-grown array.</item>
     /// </list>
-    /// Contention is a non-issue: the depot is already striped <c>DepotStripes</c> ways, is reached only on
-    /// magazine overflow/underflow, and each critical section is O(1). A lock-free CAS on one shared head would
-    /// reintroduce the cross-core ping-pong on a single cache line that this design removes.
+    /// Contention is bounded by striping: the depot is spread <c>DepotStripes</c> ways, sized from the machine's
+    /// processor count so the number of threads that can enter it concurrently scales with the hardware, and each
+    /// critical section is O(1). A lock-free CAS on one shared head would reintroduce the cross-core ping-pong on
+    /// a single cache line that this design removes.
     /// </remarks>
     internal sealed class DepotStripe
     {
@@ -229,7 +230,8 @@ namespace Tsavorite.core
         // Soft reuse targets (the byte budget is the only hard bound).
         private const int LocalCap = 128;               // buffers retained per (thread, class) before spilling to depot
         private const long LocalByteCap = 32L << 20;    // and a per-(thread, class) byte ceiling so large classes can't park the whole budget on one thread
-        private const int DepotStripes = 8;             // power of two
+        private static readonly int DepotStripes = ConcurrencySharding.DepotStripeCount;   // power of two
+        private static readonly int DepotStripeMask = DepotStripes - 1;
         private const int DepotStripeCap = 1024;        // buffers per depot stripe
         private const int InitialRegistryCompactThreshold = 64;  // compact dead shard weak-references once the registry first exceeds this
 
@@ -662,7 +664,7 @@ namespace Tsavorite.core
         // ---- Depot ---------------------------------------------------------------------------------------------
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private static int ThreadStripe() => Environment.CurrentManagedThreadId & (DepotStripes - 1);
+        private static int ThreadStripe() => Environment.CurrentManagedThreadId & DepotStripeMask;
 
         private bool DepotPush(int cls, SectorAlignedMemory page)
         {
@@ -677,7 +679,7 @@ namespace Tsavorite.core
             var start = ThreadStripe();
             for (var i = 0; i < DepotStripes; i++)
             {
-                var page = depot[baseIdx + ((start + i) & (DepotStripes - 1))].TryPop();
+                var page = depot[baseIdx + ((start + i) & DepotStripeMask)].TryPop();
                 if (page is not null)
                     return page;
             }
