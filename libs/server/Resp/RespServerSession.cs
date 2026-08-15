@@ -755,7 +755,7 @@ namespace Garnet.server
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private bool IsCommandAllowedByRespProtocolPolicy(RespCommand cmd)
         {
-            if (storeWrapper.serverOptions.AllowedProtocols == RespProtocolMode.Both || cmd == RespCommand.HELLO)
+            if (cmd == RespCommand.HELLO)
                 return true;
 
             return storeWrapper.serverOptions.IsRespProtocolVersionAllowed(respProtocolVersion);
