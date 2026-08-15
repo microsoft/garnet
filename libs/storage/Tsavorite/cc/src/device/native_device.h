@@ -339,7 +339,8 @@ public:
                 "Possible causes: (1) RLIMIT_AIO / fs.aio-max-nr exceeded "
                 "(try: sudo sysctl -w fs.aio-max-nr=1048576); "
                 "(2) io_uring disabled by kernel.io_uring_disabled or seccomp policy; "
-                "(3) kernel too old (libaio < 2.4 / io_uring < 5.1).",
+                "(3) kernel too old (libaio < 2.4 / io_uring < 5.1); "
+                "(4) --device-uring-sqpoll requires kernel 5.11+ (errno 95 / EOPNOTSUPP).",
                 e, std::strerror(e));
             init_status_ = FASTER::core::Status::IOError;
             return;

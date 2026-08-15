@@ -4,6 +4,7 @@
 #pragma once
 
 #include <atomic>
+#include <cerrno>
 #include <cstdint>
 #include <cstdio>
 #include <memory>
@@ -18,6 +19,12 @@
 
 #ifdef FASTER_URING
 #include <liburing.h>
+// Kernel 5.11 signals via this feature bit that SQPOLL accepts non-registered file descriptors.
+// The value is fixed ABI; define it when building against a liburing that predates the bit so the
+// SQPOLL capability check below still compiles (and correctly refuses on such kernels).
+#ifndef IORING_FEAT_SQPOLL_NONFIXED
+#define IORING_FEAT_SQPOLL_NONFIXED (1U << 7)
+#endif
 #endif
 
 #include "async.h"
@@ -532,11 +539,14 @@ class UringIoHandler {
     Init(num_rings < 1 ? 1 : num_rings);
   }
 
-  /// As above, plus an explicit per-ring SQ depth (rounded up to a power of two and floored at
-  /// kMaxEvents). Callers pass NextPowerOf2(throttle_limit) so the SQ ring can absorb the full
-  /// in-flight burst without io_uring_get_sqe returning null (which forces the backoff spin).
+  /// As above, plus an explicit per-ring SQ depth. A positive value is honoured VERBATIM apart from
+  /// the power-of-two rounding io_uring_queue_init requires (only a non-positive value falls back to
+  /// the kMaxEvents default), matching QueueIoHandler: a caller that deliberately asks for a shallow
+  /// ring to bound per-ring memory must get one. Callers that want the full in-flight burst to fit
+  /// without io_uring_get_sqe returning null (which forces the backoff spin) pass
+  /// NextPowerOf2(throttle_limit).
   UringIoHandler(size_t /*max_threads*/, int num_rings, int max_events)
-    : max_events_{ RoundUpPow2(max_events < kMaxEvents ? kMaxEvents : max_events) }
+    : max_events_{ RoundUpPow2(max_events > 0 ? max_events : kMaxEvents) }
     , init_errno_{ 0 } {
     Init(num_rings < 1 ? 1 : num_rings);
   }
@@ -549,7 +559,7 @@ class UringIoHandler {
   /// ceiling. `sq_thread_idle_ms` sets the poll thread's idle-before-park window
   /// (<= 0 => kDefaultSqThreadIdleMs).
   UringIoHandler(size_t /*max_threads*/, int num_rings, int max_events, bool sqpoll, int sq_thread_idle_ms)
-    : max_events_{ RoundUpPow2(max_events < kMaxEvents ? kMaxEvents : max_events) }
+    : max_events_{ RoundUpPow2(max_events > 0 ? max_events : kMaxEvents) }
     , sqpoll_{ sqpoll }
     , sq_thread_idle_ms_{ sq_thread_idle_ms > 0 ? sq_thread_idle_ms : kDefaultSqThreadIdleMs }
     , init_errno_{ 0 } {
@@ -704,6 +714,7 @@ private:
     for (int i = 0; i < num_rings; ++i) {
       auto raw_ring = new struct io_uring();
       int ret;
+      unsigned params_features = 0;
       if (sqpoll_) {
         // IORING_SETUP_SQPOLL: a kernel thread polls this ring's SQ, so submissions are syscall-free
         // while it is awake. sq_thread_idle is in milliseconds. Each ring gets its OWN poll thread
@@ -713,6 +724,7 @@ private:
         params.flags = IORING_SETUP_SQPOLL;
         params.sq_thread_idle = static_cast<unsigned>(sq_thread_idle_ms_);
         ret = io_uring_queue_init_params(max_events_, raw_ring, &params);
+        params_features = params.features;
       } else {
         ret = io_uring_queue_init(max_events_, raw_ring, 0);
       }
@@ -722,6 +734,13 @@ private:
         return;
       }
       rings.emplace_back(raw_ring);
+      if (sqpoll_ && (params_features & IORING_FEAT_SQPOLL_NONFIXED) == 0) {
+        // Before kernel 5.11 SQPOLL only accepts files registered with the ring; we submit
+        // ordinary descriptors, which would complete with EBADF on every IO. Refuse at init so
+        // the caller sees an actionable error instead of a silently failing data path.
+        init_errno_ = EOPNOTSUPP;
+        return;
+      }
       sq_locks.emplace_back(std::make_unique<SpinLock>());
       cq_locks.emplace_back(std::make_unique<SpinLock>());
     }
@@ -746,8 +765,8 @@ private:
   std::vector<SpinLock*> cq_locks_;
   /// Round-robin submit counter; only consulted when rings_.size() > 1.
   std::atomic<uint64_t> submit_counter_{ 0 };
-  /// Per-ring io_uring SQ depth passed to io_uring_queue_init(). Power of two, defaulted to
-  /// (and floored at) kMaxEvents; sized up from the device throttle limit by the 3-arg ctor.
+  /// Per-ring io_uring SQ depth passed to io_uring_queue_init(). Power of two; kMaxEvents when the
+  /// caller supplies no positive depth, otherwise the caller's value rounded up to a power of two.
   int max_events_ = kMaxEvents;
   /// True iff IORING_SETUP_SQPOLL was requested: rings are created with a kernel SQ-poll thread so
   /// submissions are syscall-free. Off by default (opt-in via the managed --device-uring-sqpoll knob).

@@ -258,6 +258,14 @@ independently of `T`. `T` therefore controls in-flight only in the `0 < T ≤ 40
 default `T = 4096` already sits at that ceiling. Raising the ceiling would mean growing
 `SlotsPerShard` (and with it `MaxResults`), not raising `--device-throttle-limit`.
 
+`T` is a **coarse** bound, not an exact global cap. A shard admits against whatever divisor was
+in effect at the time, and keeps that budget until it drains, so shards that filled while few
+were occupied hold more than the final `T / active` share. Worst case is shards becoming
+occupied one at a time with no completions in between: for `T = 120` across 32 shards the
+aggregate settles near `Σ(⌊120/k⌋ + 1) ≈ 510`, roughly 4× the configured value. Exact
+kernel-queue safety does not depend on this — it is enforced downstream by the native ring-full
+retry (a submit that finds the ring full unwinds to `Pending` and retries after a completion).
+
 ## Internal constants
 
 These are compile-time constants in `NativeStorageDevice.cs` (and `kMaxEvents` in

@@ -109,9 +109,10 @@ Peaks near the physical core count, then falls off. Use a large `--device-thrott
 
 - **`--device-throttle-limit`** — user-side in-flight cap (not a kernel limit). On a fast
   multi-drive array use **4096**; on a single NVMe **512** is enough (Little's Law
-  keeps actual kernel in-flight well below the ring depth). `0` floods the ring →
-  `code4` (EAGAIN) errors; halve until errors disappear. For `LocalMemory`, use a
-  large value (8192).
+  keeps actual kernel in-flight well below the ring depth). `0` disables the cap: this is
+  safe — a submit that finds the ring full unwinds and retries after a completion, it does
+  not error — but the retry churn costs throughput, so prefer sizing it. For `LocalMemory`,
+  use a large value (8192).
 - **`--device-completion-threads`** — background drainer count. **8** is a good default for
   a fast array (both backends); 1 suffices for a single NVMe. LocalMemory: match
   `--threads`.
@@ -133,13 +134,16 @@ Peaks near the physical core count, then falls off. Use a large `--device-thrott
 
 The completion path is **block-on-signal**, not busy-spin. A read that misses
 memory goes pending; the waiting thread suspends its epoch and parks on the
-session's `readyResponses` semaphore (`SemaphoreSlim`, via `WaitPending`). The
-background drainer parks in the kernel — `io_getevents(min_nr=1, timeout)`
-(libaio) or `io_uring_wait_cqe_timeout` (uring; rings are created with flags `0`,
-so **no SQPOLL** kernel poller) — and releases the semaphore when a completion
-lands. A waiting reader therefore burns no CPU during the device-latency window;
-this is the steady state on a **high-latency (cloud) device** (Azure/EBS-class,
-~0.5–2 ms), where throughput is latency×concurrency-bound, as it must be.
+session's `readyResponses` semaphore (`SemaphoreSlim`, via `WaitPending`). A drainer that
+owns a single ring parks in the kernel — `io_getevents(min_nr=1, timeout)` (libaio) or
+`io_uring_wait_cqe_timeout` (uring) — and releases the semaphore when a completion lands.
+A drainer that owns several rings (the common uring case, where the smart default creates
+more rings than drainers) must not park on one of them or it would hide the siblings, so it
+polls the whole slice non-blocking and sleeps 1 ms only after a sustained idle. Either way a
+waiting reader burns no CPU during the device-latency window; this is the steady state on a
+**high-latency (cloud) device** (Azure/EBS-class, ~0.5–2 ms), where throughput is
+latency×concurrency-bound, as it must be. SQPOLL (a kernel-side submission poller) is
+opt-in via `--device-uring-sqpoll` and off by default.
 
 Two poll levers exist only to reach the local-NVMe ceiling; neither is a hot
 idle-spin, and both fall through to the block-on-signal path when completions are
@@ -164,8 +168,9 @@ Benchmark finished: <ok> ok, <err> err, <submitted> submitted in <T> s, throughp
   error breakdown: code<N>=<count> ...   # only when err > 0
 ```
 
-`code4` (`Status::IOError`) = kernel ring full (libaio `io_submit` EAGAIN /
-io_uring SQ full). Fix by lowering `--device-throttle-limit`.
+`code4` (`Status::IOError`) = a **permanent** submit or completion error (a non-retryable
+`io_submit` / `io_uring_enter` return, or a failed IO). A transiently full kernel ring is
+**not** an error — it unwinds and retries after a completion drains a slot.
 
 ## Related
 

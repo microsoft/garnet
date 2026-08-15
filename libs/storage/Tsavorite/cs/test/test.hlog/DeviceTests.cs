@@ -1338,6 +1338,29 @@ namespace Tsavorite.test
 
         // ----- io_context / ring-count / queue-depth / SQPOLL ctor knobs --------------------------
 
+        /// <summary>
+        /// Issues one read per buffer, striped across <paramref name="submitThreads"/> background threads,
+        /// and returns once every read has been submitted (completions are awaited by the caller).
+        /// Native rings/io_contexts are picked per submitting thread, so a single-threaded issue loop puts
+        /// every read on one ring; fanning out is what actually exercises a multi-ring configuration.
+        /// </summary>
+        void SubmitReadsFromThreads(IDevice device, IntPtr[] rptrs, int size, int submitThreads)
+        {
+            var submitters = new Thread[submitThreads];
+            for (int t = 0; t < submitThreads; t++)
+            {
+                int start = t;
+                submitters[t] = new Thread(() =>
+                {
+                    for (int i = start; i < rptrs.Length; i += submitThreads)
+                        device.ReadAsync(0, (ulong)((long)i * size), rptrs[i], (uint)size, IOCallback, null);
+                })
+                { IsBackground = true };
+                submitters[t].Start();
+            }
+            foreach (var s in submitters) s.Join();
+        }
+
         [Test]
         [TestCase(NativeBackend.Libaio)]
         [TestCase(NativeBackend.Uring)]
@@ -1366,19 +1389,7 @@ namespace Tsavorite.test
                 rbufs[i] = rb; rptrs[i] = rp;
             }
 
-            var submitters = new Thread[submitThreads];
-            for (int t = 0; t < submitThreads; t++)
-            {
-                int start = t;
-                submitters[t] = new Thread(() =>
-                {
-                    for (int i = start; i < N; i += submitThreads)
-                        device.ReadAsync(0, (ulong)(i * size), rptrs[i], (uint)size, IOCallback, null);
-                })
-                { IsBackground = true };
-                submitters[t].Start();
-            }
-            foreach (var s in submitters) s.Join();
+            SubmitReadsFromThreads(device, rptrs, size, submitThreads);
             for (int i = 0; i < N; i++) semaphore.Wait();
 
             for (int i = 0; i < N; i++)
@@ -1398,7 +1409,8 @@ namespace Tsavorite.test
             // Explicit shallow per-ring queue depth (64) across 4 rings, and fire more concurrent reads
             // (256) than the aggregate ring capacity so the native ring-full backpressure (submit unwinds
             // to Pending and retries after a completion) is exercised and every read still completes.
-            const int N = 256, size = 4 * 1024;
+            // Reads are issued from 4 concurrent threads so all 4 shallow rings are driven at once.
+            const int N = 256, size = 4 * 1024, submitThreads = 4;
             using var device = CreateNativeForTest(Path.Join(TestUtils.MethodTestDir, "test.log"), 256 * Mib, backend,
                                                    completionThreads: 2, throttleLimit: 256, numIoContexts: 4, queueDepth: 64);
 
@@ -1412,8 +1424,9 @@ namespace Tsavorite.test
             {
                 var (rb, rp) = AllocateAlignedBuffer(size, _ => 0);
                 rbufs[i] = rb; rptrs[i] = rp;
-                device.ReadAsync(0, (ulong)(i * size), rp, (uint)size, IOCallback, null);
             }
+
+            SubmitReadsFromThreads(device, rptrs, size, submitThreads);
             for (int i = 0; i < N; i++) semaphore.Wait();
 
             for (int i = 0; i < N; i++)
@@ -1429,8 +1442,9 @@ namespace Tsavorite.test
         public unsafe void Native_Uring_SqPoll_RoundTrips()
         {
             // io_uring SQPOLL is Uring-only (libaio/Windows ignore it). Each ring gets its own kernel
-            // poll thread; verify a small multi-ring round-trip through the SQPOLL submit branch.
-            const int N = 32, size = 4 * 1024;
+            // poll thread, so the reads are issued from 4 concurrent threads to drive all 4 rings (and
+            // their poll threads) through the SQPOLL submit branch.
+            const int N = 32, size = 4 * 1024, submitThreads = 4;
             using var device = CreateNativeForTest(Path.Join(TestUtils.MethodTestDir, "test.log"), 128 * Mib, NativeBackend.Uring,
                                                    completionThreads: 2, throttleLimit: 512, numIoContexts: 4, uringSqPoll: true);
 
@@ -1444,8 +1458,9 @@ namespace Tsavorite.test
             {
                 var (rb, rp) = AllocateAlignedBuffer(size, _ => 0);
                 rbufs[i] = rb; rptrs[i] = rp;
-                device.ReadAsync(0, (ulong)(i * size), rp, (uint)size, IOCallback, null);
             }
+
+            SubmitReadsFromThreads(device, rptrs, size, submitThreads);
             for (int i = 0; i < N; i++) semaphore.Wait();
 
             for (int i = 0; i < N; i++)

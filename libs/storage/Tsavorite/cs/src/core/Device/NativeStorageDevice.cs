@@ -931,10 +931,13 @@ namespace Tsavorite.core
         /// Per-thread in-flight budget = global throttle split across the currently-occupied shards
         /// (≈ live concurrent submitters, tracked exactly by <see cref="activeShards"/>), clamped to
         /// <see cref="MaxPerThreadInFlight"/>. Each shard admits against this budget independently, so the
-        /// device-wide in-flight count closely tracks the configured <see cref="StorageDeviceBase.ThrottleLimit"/>
-        /// but is not an exact global cap: at the admission boundary every occupied shard may hold one extra IO,
-        /// so the aggregate can overshoot by up to ≈ <see cref="activeShards"/>. This is intentional — the throttle
-        /// is a coarse backpressure/memory bound, and exact kernel-queue-capacity safety is enforced downstream by
+        /// device-wide in-flight count tracks the configured <see cref="StorageDeviceBase.ThrottleLimit"/>
+        /// only approximately: a shard admits against the divisor in effect at the time, so shards that
+        /// filled while few were occupied keep the larger budget they were granted. Aggregate in-flight is
+        /// therefore bounded absolutely by <see cref="NumShards"/> × <see cref="MaxPerThreadInFlight"/>,
+        /// and a low configured throttle can be exceeded by several times if shards become occupied one at
+        /// a time without completions in between. This is intentional — the throttle is a coarse
+        /// backpressure/memory bound, and exact kernel-queue-capacity safety is enforced downstream by
         /// the native ring-full retry (a submit that finds the SQ/io_context ring full unwinds to Pending and waits
         /// for a completion before retrying), not by the precision of this split. Keeping the check per-shard lets
         /// the hot <see cref="Throttle"/> path read only the calling thread's own cache lines.
@@ -1395,46 +1398,46 @@ namespace Tsavorite.core
                             : "Verify the native library matches the requested backend."));
                 }
 
-                ulong actualSegmentSize = NativeDevice_GetSegmentSize(newDevice);
-                if (actualSegmentSize != sizeForNative)
-                {
-                    NativeDevice_Destroy(newDevice);
-                    throw new TsavoriteException(
-                        $"Native device segment size mismatch: requested {sizeForNative}, native returned {actualSegmentSize}. " +
-                        "This indicates an ABI mismatch between the loaded native_device library and the managed wrapper. " +
-                        "Ensure libnative_device.so matches the current build.");
-                }
-
-                uint nativeSectorSize = NativeDevice_sector_size(newDevice);
-                if (nativeSectorSize != SectorSize)
-                {
-                    // Both sides (managed probe in EnsureParentDirectoryAndProbeSectorSize,
-                    // native probe in NativeDeviceImpl's field initializer) go through the
-                    // same ProbeDioAlignment routine on the same filename with the parent
-                    // directory pre-materialised, so the two values are guaranteed to agree
-                    // on every well-formed host. A drift here is a real ABI / loaded-library
-                    // mismatch — e.g. the shipped libnative_device.so was rebuilt from a
-                    // different branch than the managed wrapper, or the host kernel changed
-                    // STATX_DIOALIGN semantics between the two calls. Hard-fail so it is
-                    // caught at the first I/O rather than silently mis-aligning every write.
-                    NativeDevice_Destroy(newDevice);
-                    throw new TsavoriteException(
-                        $"Native device sector-size mismatch on '{filename}': managed wrapper probed {SectorSize} bytes but the kernel reports {nativeSectorSize} bytes for the actual file. " +
-                        "The most likely cause is a stale libnative_device.so or a managed/native version skew. " +
-                        "Rebuild the native library from this branch (libs/storage/Tsavorite/cc) and reinstall the resulting binary into libs/storage/Tsavorite/cs/src/core/Device/runtimes/<rid>/native/.");
-                }
-
-                if (results == null) results = new NativeResult[MaxResults];
-
                 // Exception-safe initialization: newDevice is created but not yet published to the
                 // nativeDevice field, so any throw between here and the Volatile.Write below would
                 // otherwise (a) leak the native handle — Dispose observes nativeDevice == Zero and skips
                 // NativeDevice_Destroy — and (b) leave partially-started drainer threads in
                 // completionThreads (with null slots) that a later Dispose would NRE on while joining.
+                // The region starts at handle creation so it also covers the ABI-probe P/Invokes below,
+                // which throw EntryPointNotFoundException against an older native library.
                 // On any failure, stop whatever drainers were started, dispose the token, reset the
                 // partial fields, destroy the handle, and rethrow.
                 try
                 {
+                    ulong actualSegmentSize = NativeDevice_GetSegmentSize(newDevice);
+                    if (actualSegmentSize != sizeForNative)
+                    {
+                        throw new TsavoriteException(
+                            $"Native device segment size mismatch: requested {sizeForNative}, native returned {actualSegmentSize}. " +
+                            "This indicates an ABI mismatch between the loaded native_device library and the managed wrapper. " +
+                            "Ensure libnative_device.so matches the current build.");
+                    }
+
+                    uint nativeSectorSize = NativeDevice_sector_size(newDevice);
+                    if (nativeSectorSize != SectorSize)
+                    {
+                        // Both sides (managed probe in EnsureParentDirectoryAndProbeSectorSize,
+                        // native probe in NativeDeviceImpl's field initializer) go through the
+                        // same ProbeDioAlignment routine on the same filename with the parent
+                        // directory pre-materialised, so the two values are guaranteed to agree
+                        // on every well-formed host. A drift here is a real ABI / loaded-library
+                        // mismatch — e.g. the shipped libnative_device.so was rebuilt from a
+                        // different branch than the managed wrapper, or the host kernel changed
+                        // STATX_DIOALIGN semantics between the two calls. Hard-fail so it is
+                        // caught at the first I/O rather than silently mis-aligning every write.
+                        throw new TsavoriteException(
+                            $"Native device sector-size mismatch on '{filename}': managed wrapper probed {SectorSize} bytes but the kernel reports {nativeSectorSize} bytes for the actual file. " +
+                            "The most likely cause is a stale libnative_device.so or a managed/native version skew. " +
+                            "Rebuild the native library from this branch (libs/storage/Tsavorite/cc) and reinstall the resulting binary into libs/storage/Tsavorite/cs/src/core/Device/runtimes/<rid>/native/.");
+                    }
+
+                    if (results == null) results = new NativeResult[MaxResults];
+
                     if (NativeDevice_QueueRun(newDevice, 0) >= 0)
                     {
                         try
@@ -2069,11 +2072,12 @@ namespace Tsavorite.core
         /// <summary>
         /// Drain loop for one completion thread. The thread owns the contiguous range of ring
         /// shards <c>[startCtx, startCtx + ctxCount)</c>. For a single ring it blocks in
-        /// <c>NativeDevice_QueueRunFor</c> with a long timeout (single-ring fast path). For a range it
-        /// polls every ring non-blocking (timeout 0) and, only when the whole pass is idle, blocks
-        /// on the first ring with the timeout so it sleeps instead of busy-spinning. Dispose() wakes
-        /// blocked workers via <c>NativeDevice_WakeCompletionWorker</c> rather than relying on the
-        /// timeout to fire.
+        /// <c>NativeDevice_QueueRunFor</c> with a long timeout (single-ring fast path), and Dispose()
+        /// wakes it via <c>NativeDevice_WakeCompletionWorker</c> rather than relying on the timeout to
+        /// fire. For a range it never blocks on any one ring — blocking would hide completions on the
+        /// siblings for the whole timeout — so it polls every ring non-blocking (timeout 0), yields on a
+        /// brief idle, and sleeps 1 ms only after <see cref="CompletionWorkerIdleSpinBudget"/> consecutive
+        /// idle passes; cancellation is observed within one pass, with no wake dependency.
         /// </summary>
         void CompletionWorker(int startCtx, int ctxCount)
         {

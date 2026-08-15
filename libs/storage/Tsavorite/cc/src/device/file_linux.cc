@@ -392,8 +392,10 @@ Status QueueFile::ScheduleOperation(FileOperationType operationType, uint8_t* bu
   while (true) {
     result = ::io_submit(ctx, 1, iocbs);
     if (result == 1) break;
-    if (result < 0 && result != -EAGAIN) return Status::IOError;
-    // result == 0 (ring full) or result == -EAGAIN (kernel saying "try later")
+    // Nothing was queued (result != 1), so retrying can never double-submit. -EINTR is not a
+    // documented io_submit(2) error, but treat it as transient rather than failing the read.
+    if (result < 0 && result != -EAGAIN && result != -EINTR) return Status::IOError;
+    // result == 0 (ring full), -EAGAIN (kernel saying "try later"), or -EINTR (signal)
     if (retries >= kSubmitYieldBudget) {
       // Unwind to NativeDeviceImpl::SubmitWithEpoch to wait without holding the epoch.
       return Status::Pending;
@@ -766,13 +768,16 @@ Status UringFile::ScheduleOperation(FileOperationType operationType, uint8_t* bu
     while (true) {
       res = io_uring_submit(ring);
       if (io_uring_sq_ready(ring) == 0) break;                 // success: our SQE (and any stale nop) flushed
-      if (res < 0 && res != -EAGAIN && res != -EBUSY) break;   // permanent submit error; our SQE still pending
+      // Reaching here means our SQE was NOT consumed, so retrying can never double-submit. -EINTR
+      // (io_uring_enter interrupted by a signal — routine in a managed process) is transient like
+      // -EAGAIN/-EBUSY: surfacing it as a permanent IO error would fail an otherwise healthy read.
+      if (res < 0 && res != -EAGAIN && res != -EBUSY && res != -EINTR) break;  // permanent submit error
       if (submit_retries >= kSubmitYieldBudget) break;         // sustained transient; unwind (our SQE still pending)
       ::sched_yield();
       ++submit_retries;
     }
     submitted = io_uring_sq_ready(ring) == 0;
-    permanent = !submitted && res < 0 && res != -EAGAIN && res != -EBUSY;
+    permanent = !submitted && res < 0 && res != -EAGAIN && res != -EBUSY && res != -EINTR;
     if (!submitted) {
       // Our SQE was never consumed (sq_ready > 0 and we held sq_lock throughout). Rewrite it to a
       // no-op (the drain loop skips null user_data) so a later submit cannot reference the io_context
