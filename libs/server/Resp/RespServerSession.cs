@@ -652,7 +652,7 @@ namespace Garnet.server
 
                     if (CheckACLPermissions(cmd) && (noScriptPassed = CheckScriptPermissions(cmd)))
                     {
-                        if (!IsCommandAllowedByRespProtocolPolicy(cmd))
+                        if (cmd != RespCommand.HELLO && !storeWrapper.serverOptions.IsRespProtocolVersionAllowed(respProtocolVersion))
                         {
                             WriteError(CmdStrings.RESP_ERR_PROTOCOL_VERSION_NOT_ALLOWED);
                             commandStats?.IncrementRejected(cmd);
@@ -750,20 +750,6 @@ namespace Garnet.server
                     networkSender.DisposeNetworkSender(true);
                 }
             }
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private bool IsCommandAllowedByRespProtocolPolicy(RespCommand cmd)
-        {
-            if (cmd == RespCommand.HELLO)
-                return true;
-
-            return storeWrapper.serverOptions.AllowedProtocols switch
-            {
-                RespProtocolMode.Resp2 => respProtocolVersion == 2,
-                RespProtocolMode.Resp3 => respProtocolVersion == 3,
-                _ => respProtocolVersion is 2 or 3,
-            };
         }
 
         // Make first command in string as uppercase
