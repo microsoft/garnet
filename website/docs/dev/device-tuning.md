@@ -203,17 +203,25 @@ while (depth > 1 && N × depth > perDeviceBudget)  depth >>= 1  // halve (stay p
 The caller then caps `effectiveThrottleLimit` at `N × depth` so aggregate in-flight tracks the
 (possibly reduced) reservation. Consequences:
 
-* **Multi-ring serving devices** (`N ≥ 4`) keep `N × depth ≥ T`, so the full aggregate
-  throttle stays usable — **no IOPS cost** — while the per-device global-budget footprint drops.
+* **Multi-ring serving devices** (`N ≥ 4`) keep `N × depth ≥ T` from the share math alone, so
+  the full aggregate throttle stays usable — **no IOPS cost** — while the per-device
+  global-budget footprint drops.
 * **Low-ring-count auxiliary devices** (e.g. cluster AOF / checkpoint logs created with the
-  raw `Devices.CreateLogDevice` single-ring defaults) drop to `≈ N × cap`, so ~15 of them
-  coexist within a stock 65536 budget.
+  raw `Devices.CreateLogDevice` single-ring defaults) drop to `≈ N × cap`, so the
+  `--device-aio-max-devices` target of them coexists within a stock 65536 budget.
 * The hard per-device ceiling keeps at least `--device-aio-max-devices` devices fitting the
   budget: on a stock 65536 budget it bounds each device to 2048 events; a host that sizes
   `fs.aio-max-nr` for its workload keeps serving devices at full depth (e.g. `4194304 / 32 =
   131072` per device, which never binds). It is best-effort in two respects: `depth` cannot fall
   below one event per ring, so an `N` above the per-device share still exceeds it (warned at
   creation); and the budget is the machine total, not what remains after other processes.
+* **When the budget ceiling binds, it overrides the "no IOPS cost" property above**, because
+  `effectiveThrottleLimit` is capped at `N × depth ≤ perDeviceBudget`. On a stock 65536 budget
+  that bound is 2048, so the default `T = 4096` is halved at every ring count — worth ~9% on a
+  libaio disk-serving workload. Size `fs.aio-max-nr` for the host (`sysctl -w
+  fs.aio-max-nr=…`, persisted under `/etc/sysctl.d/`) so `fs.aio-max-nr /
+  --device-aio-max-devices ≥ T`; a serving host wanting the default `T = 4096` across 32
+  devices needs `fs.aio-max-nr ≥ 131072`.
 
 io_uring skips all of this — it uses `D` directly (per-ring mmap memory, no global budget).
 
@@ -336,9 +344,13 @@ queues full. Only reach for the knobs below for a specific reason.
 * **io_uring, high connection count.** Set `--device-io-contexts` ≥ your peak concurrent
   connections (e.g. `96` or `128`). The default caps at 64 rings; more connections than that
   want more rings to stay 1:1 and contention-free.
-* **libaio.** Leave `--device-io-contexts` at the default (ring-count-neutral). If you run
-  **many** Native devices in one process (cluster with many shards/AOF/checkpoint logs) and hit
-  `io_setup` `EAGAIN`, either raise `fs.aio-max-nr` (`sysctl -w fs.aio-max-nr=1048576`) or raise
+* **libaio.** Leave `--device-io-contexts` at the default (ring-count-neutral). On a host left
+  at the stock `fs.aio-max-nr` of 65536 the per-device budget ceiling caps each device at 2048
+  events, halving the default 4096 throttle — worth ~9% on a disk-serving workload, and silent
+  (no error). Size the budget so `fs.aio-max-nr / --device-aio-max-devices ≥` your throttle
+  (`sysctl -w fs.aio-max-nr=1048576`, persisted under `/etc/sysctl.d/` so it survives reboot).
+  If you run **many** Native devices in one process (cluster with many shards/AOF/checkpoint
+  logs) and hit `io_setup` `EAGAIN`, either raise `fs.aio-max-nr` or raise
   `--device-aio-max-devices` so each device reserves a smaller slice of the budget
   (`perDeviceBudget = fs.aio-max-nr / device-aio-max-devices`). The reservation guard logs an
   actionable warning when `N × D` exceeds `fs.aio-max-nr`, and when a device's own reservation
