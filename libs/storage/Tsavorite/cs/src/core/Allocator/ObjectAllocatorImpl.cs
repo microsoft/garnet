@@ -491,6 +491,12 @@ namespace Tsavorite.core
         /// </summary>
         public override void Dispose()
         {
+            // Stop the resizer before clearing objectPages, for the same reason AllocatorBase.Dispose() stops it before
+            // tearing down the resources it owns: a resizer already inside ShiftAddresses can reach EvictRecordsInRange,
+            // which dereferences objectPages, and the resulting NullReferenceException is escalated to FailFast by
+            // OnPagesClosedWorker. base.Dispose() below stops it again, which is a no-op once it has stopped.
+            logSizeTracker?.Stop(wait: true);
+
             var localValues = Interlocked.Exchange(ref objectPages, null);
             if (localValues != null)
             {
