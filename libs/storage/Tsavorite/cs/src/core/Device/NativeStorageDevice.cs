@@ -149,9 +149,10 @@ namespace Tsavorite.core
         /// <summary>
         /// Number of completion-tracking slots per shard (power of two), i.e. the depth of each shard's
         /// free-list (<see cref="shardFreeSlots"/>). Sized at 2x <see cref="MaxPerThreadInFlight"/> so a shard's
-        /// list never empties under the throttle: a submitter rents at most <see cref="MaxPerThreadInFlight"/>
-        /// slots before it must wait for completions, leaving ample free slots even accounting for the brief
-        /// overshoot where a thread clears the throttle gate and submits before a completion lands.
+        /// list never empties under the throttle: <see cref="Throttle"/> gates a shard's whole in-flight, so a
+        /// shard holds at most <see cref="MaxPerThreadInFlight"/> slots however many threads share it, leaving
+        /// ample free slots even accounting for the brief overshoot where a thread clears the throttle gate and
+        /// submits before a completion lands.
         /// </summary>
         const int SlotsPerShard = 256;
 
