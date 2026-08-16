@@ -1471,23 +1471,13 @@ namespace Tsavorite.core
 
                     if (results == null) results = new NativeResult[MaxResults];
 
-                    // NativeDevice_QueueRun doubles as the platform capability probe. The Windows IOCP
-                    // backend returns a permanent negative — completions arrive on threadpool threads, so
-                    // there is no queue to drain and no drainer to start. The Linux backends return the
-                    // number of completions reaped, but can also return a transient negative when the
-                    // probing thread is interrupted by a signal (the runtime signals threads routinely for
-                    // GC and suspension), so retry a few times before concluding the backend has no
-                    // drainable queue. Publishing a Linux device with no drainers would leave every
-                    // completion to the inline drain path alone.
-                    const int queueProbeAttempts = 3;
-                    int queueProbe = NativeDevice_QueueRun(newDevice, 0);
-                    for (int attempt = 0; queueProbe < 0 && attempt < queueProbeAttempts; attempt++)
-                    {
-                        _ = Thread.Yield();
-                        queueProbe = NativeDevice_QueueRun(newDevice, 0);
-                    }
-
-                    if (queueProbe >= 0)
+                    // NativeDevice_QueueRun doubles as the platform capability probe: a negative result
+                    // means the backend has no drainable completion queue, so no drainer is started. Only
+                    // the Windows IOCP backend answers that way (completions arrive on threadpool threads);
+                    // the Linux backends report the number of completions reaped. A zero timeout never
+                    // blocks — libaio passes a zero io_getevents timeout and io_uring reads the completion
+                    // queue in user space — so neither can answer with a transient error here.
+                    if (NativeDevice_QueueRun(newDevice, 0) >= 0)
                     {
                         try
                         {

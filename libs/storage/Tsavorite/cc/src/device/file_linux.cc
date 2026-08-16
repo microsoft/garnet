@@ -30,14 +30,6 @@ namespace {
 /// epoch quickly over avoiding the per-retry io_context rebuild. Permanent submission errors are
 /// surfaced immediately and not retried.
 constexpr int kSubmitYieldBudget = 16;
-
-/// Additional 1 ms sleeps used only by the io_uring SQPOLL submit path. Once io_uring_submit()
-/// publishes an SQE to an SQPOLL ring the kernel owns it, so that path cannot unwind like the
-/// others — a failed enter means only that the wakeup was not delivered to a parked poll thread,
-/// and it must be redelivered or the IO never completes. The budget is bounded rather than
-/// unbounded because sq_lock and the epoch are held throughout: a poll thread that is genuinely
-/// unrecoverable would otherwise wedge its ring and block epoch reclamation indefinitely.
-constexpr int kSqPollWakeupSleepBudget = 1000;
 } // anonymous namespace
 
 namespace {
@@ -774,27 +766,25 @@ Status UringFile::ScheduleOperation(FileOperationType operationType, uint8_t* bu
     //
     // Every negative return is retried, not just -EAGAIN/-EBUSY: the enter that carries
     // IORING_ENTER_SQ_WAKEUP is only issued when the kernel has flagged the poll thread as parked,
-    // so ANY failure (e.g. -EINTR from a signal) can leave the SQE published with the poller still
-    // asleep. With no later submit to redeliver the wakeup, that IO would never complete and
-    // Dispose's drain-wait would hang. Retrying is safe and effective: liburing recomputes the
-    // pending count from the ring, so while our SQE is unconsumed the retry re-issues the wakeup.
+    // so a failure can leave the SQE published with the poller still asleep. With no later submit to
+    // redeliver the wakeup, that IO would never complete and Dispose's drain-wait would hang.
+    // Retrying is safe: liburing recomputes the pending count from the ring, so while our SQE is
+    // unconsumed the retry re-issues the wakeup.
     //
-    // Two-stage backoff: kSubmitYieldBudget sched_yield's absorb the microsecond-scale transient,
-    // then kSqPollWakeupSleepBudget 1 ms sleeps cover a longer stall. The total is bounded because
-    // sq_lock and the epoch are held here. Exhausting it means the poll thread is unrecoverable;
-    // the op is still reported submitted (the kernel owns the SQE) and the next submit on this ring
-    // redelivers the wakeup and flushes it.
+    // Retries are bounded to a few yields because the failures here are terminal rather than
+    // transient: an enter carrying only IORING_ENTER_SQ_WAKEUP never waits, so it cannot return
+    // -EINTR (documented only for IORING_ENTER_GETEVENTS), and the rest are permanent —
+    // -EOWNERDEAD once the poll thread has been killed, -EBADF / -ENXIO / -EINVAL / -EOPNOTSUPP
+    // otherwise. Waiting longer cannot turn such a failure into a success, and sq_lock and the
+    // epoch are held throughout, so a larger budget would only stall the ring and block epoch
+    // reclamation before reaching the same outcome. On exhaustion the op is still reported
+    // submitted (the kernel owns the SQE) and the next submit on this ring redelivers the wakeup.
     int submit_retries = 0;
     while (true) {
       res = io_uring_submit(ring);
       if (res >= 0) break;                                   // awake: pending count; parked: wakeup delivered
-      if (submit_retries >= kSubmitYieldBudget + kSqPollWakeupSleepBudget) break;
-      if (submit_retries < kSubmitYieldBudget) {
-        ::sched_yield();
-      } else {
-        struct timespec wakeup_backoff { 0, 1000000 };       // 1 ms
-        ::nanosleep(&wakeup_backoff, nullptr);
-      }
+      if (submit_retries >= kSubmitYieldBudget) break;        // gave up redelivering; SQE already published
+      ::sched_yield();
       ++submit_retries;
     }
     submitted = true;
