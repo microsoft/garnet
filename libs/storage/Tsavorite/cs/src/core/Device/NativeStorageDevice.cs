@@ -76,6 +76,8 @@ namespace Tsavorite.core
         /// <summary>
         /// Floor for the default libaio <c>io_setup</c> reservation depth (<see cref="ResolveLibaioReservationDepth"/>),
         /// giving headroom when the throttle share is tiny (high io-contexts). Matches the native default ring depth.
+        /// The per-device AIO-budget ceiling applied afterwards overrides it, since exceeding the budget fails device
+        /// creation while a shallow ring only costs throughput.
         /// </summary>
         const int LibaioReservationFloor = 1 << 7;  // 128
 

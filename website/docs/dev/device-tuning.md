@@ -300,10 +300,14 @@ The reservation math uses four distinct bounding concepts:
   steady-state in-flight (`share`). It is not a limit; it is slack so a transient burst of
   reads does not momentarily fill the ring (which costs a ~2% ring-full IOPS dip).
 
-* **Floor** — a **lower bound**: the value is never sized *below* it. `LibaioReservationFloor
-  = 128` (and the native `kMaxEvents = 128`) guarantees a ring can hold a minimum useful burst
-  even when the throttle-share math computes something tiny (e.g. a high ring count dividing a
-  modest throttle), which would otherwise produce rings shallow enough to stall constantly.
+* **Floor** — a **lower bound**: the value is not sized *below* it by the share math.
+  `LibaioReservationFloor = 128` (and the native `kMaxEvents = 128`) keeps a ring able to hold
+  a minimum useful burst even when the throttle-share math computes something tiny (e.g. a high
+  ring count dividing a modest throttle), which would otherwise produce rings shallow enough to
+  stall constantly. A ceiling still overrides it: the per-device budget loop runs last and
+  halves below the floor when the reservation does not fit (e.g. 32 rings on a stock 65536
+  budget resolve to `64`), because exceeding the budget fails device creation outright while a
+  shallow ring only costs throughput.
 
 * **Cap** — an **upper bound that is a self-imposed *policy* choice**. `LibaioReservationCap =
   2048` says a *single* libaio ring never reserves the full deep queue (`4096`) from the
