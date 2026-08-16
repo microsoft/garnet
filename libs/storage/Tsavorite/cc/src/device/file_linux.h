@@ -513,9 +513,14 @@ class UringIoHandler {
   /// liburing's io_uring_submit re-wakes it with a single IORING_ENTER_SQ_WAKEUP syscall.
   constexpr static int kDefaultSqThreadIdleMs = 10000;
 
-  /// Smallest power of two >= v (v already assumed > 0). Used to satisfy io_uring_queue_init's
-  /// power-of-two entries requirement when a throttle-derived depth is passed in.
+  /// Largest per-ring depth accepted. Matches io_uring's IORING_MAX_ENTRIES. Clamping here keeps
+  /// RoundUpPow2 from overflowing when a caller passes an out-of-range depth through the C ABI.
+  constexpr static int kMaxEventsLimit = 32768;
+
+  /// Smallest power of two >= v, clamped to kMaxEventsLimit (v already assumed > 0). Used to satisfy
+  /// io_uring_queue_init's power-of-two entries requirement when a throttle-derived depth is passed in.
   static int RoundUpPow2(int v) {
+    if (v >= kMaxEventsLimit) return kMaxEventsLimit;
     int p = 1;
     while (p < v) p <<= 1;
     return p;
@@ -734,6 +739,7 @@ private:
         return;
       }
       rings.emplace_back(raw_ring);
+      if ((raw_ring->features & IORING_FEAT_EXT_ARG) == 0) ext_arg_supported_ = false;
       if (sqpoll_ && (params_features & IORING_FEAT_SQPOLL_NONFIXED) == 0) {
         // Before kernel 5.11 SQPOLL only accepts files registered with the ring; we submit
         // ordinary descriptors, which would complete with EBADF on every IO. Refuse at init so
@@ -774,6 +780,11 @@ private:
   /// SQPOLL sq_thread_idle window in milliseconds (poll-thread spin-before-park). Only consulted when
   /// sqpoll_ is true; the ctor floors a non-positive request at kDefaultSqThreadIdleMs.
   int sq_thread_idle_ms_ = kDefaultSqThreadIdleMs;
+  /// True iff every ring reports IORING_FEAT_EXT_ARG (kernel 5.11+), i.e. io_uring_enter accepts the
+  /// wait timeout directly. Without it liburing emulates io_uring_wait_cqe_timeout by posting a
+  /// timeout SQE, which mutates the SQ (and its user_data) from the completion side; submitters hold
+  /// sq_lock while mutating the same SQ, so the drainer must not take that path. See QueueRunFor.
+  bool ext_arg_supported_ = true;
   /// If non-zero, the positive errno from a failed io_uring_queue_init() in the constructor.
   int init_errno_;
 };

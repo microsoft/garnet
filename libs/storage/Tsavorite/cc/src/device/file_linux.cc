@@ -30,6 +30,14 @@ namespace {
 /// epoch quickly over avoiding the per-retry io_context rebuild. Permanent submission errors are
 /// surfaced immediately and not retried.
 constexpr int kSubmitYieldBudget = 16;
+
+/// Additional 1 ms sleeps used only by the io_uring SQPOLL submit path. Once io_uring_submit()
+/// publishes an SQE to an SQPOLL ring the kernel owns it, so that path cannot unwind like the
+/// others — a failed enter means only that the wakeup was not delivered to a parked poll thread,
+/// and it must be redelivered or the IO never completes. The budget is bounded rather than
+/// unbounded because sq_lock and the epoch are held throughout: a poll thread that is genuinely
+/// unrecoverable would otherwise wedge its ring and block epoch reclamation indefinitely.
+constexpr int kSqPollWakeupSleepBudget = 1000;
 } // anonymous namespace
 
 namespace {
@@ -543,11 +551,27 @@ int UringIoHandler::QueueRunFor(int idx, int timeout_secs) {
 
     // Phase 1: wait up to `timeout_secs` for at least one CQE; do not consume.
     if (timeout_secs > 0) {
-        struct __kernel_timespec ts;
-        ts.tv_sec = timeout_secs;
-        ts.tv_nsec = 0;
-        struct io_uring_cqe* wait_cqe = nullptr;
-        (void)io_uring_wait_cqe_timeout(ring, &wait_cqe, &ts);
+        if (ext_arg_supported_) {
+            struct __kernel_timespec ts;
+            ts.tv_sec = timeout_secs;
+            ts.tv_nsec = 0;
+            struct io_uring_cqe* wait_cqe = nullptr;
+            (void)io_uring_wait_cqe_timeout(ring, &wait_cqe, &ts);
+        } else {
+            // Without IORING_FEAT_EXT_ARG the kernel cannot carry the timeout in io_uring_enter, so
+            // liburing emulates it by taking an SQE, writing a timeout request with a reserved
+            // user_data and flushing the SQ. That is unusable here on two counts: submitters mutate
+            // the same SQ under sq_lock, which this path does not hold, and the reserved user_data is
+            // non-null so the batch dispatch below would treat it as a caller context. Poll the CQ
+            // instead. The wait only saves wakeups; Wake() posts a CQE, so shutdown still unblocks
+            // within one sleep interval.
+            constexpr long kPollIntervalNs = 1000000;
+            const long iterations = static_cast<long>(timeout_secs) * 1000;
+            for (long i = 0; i < iterations && io_uring_cq_ready(ring) == 0; ++i) {
+                struct timespec poll_backoff { 0, kPollIntervalNs };
+                (void)nanosleep(&poll_backoff, nullptr);
+            }
+        }
     }
 
     // Phase 2: batch-drain. The current scheme amortizes one cq_lock acquire/release across
@@ -754,12 +778,23 @@ Status UringFile::ScheduleOperation(FileOperationType operationType, uint8_t* bu
     // asleep. With no later submit to redeliver the wakeup, that IO would never complete and
     // Dispose's drain-wait would hang. Retrying is safe and effective: liburing recomputes the
     // pending count from the ring, so while our SQE is unconsumed the retry re-issues the wakeup.
+    //
+    // Two-stage backoff: kSubmitYieldBudget sched_yield's absorb the microsecond-scale transient,
+    // then kSqPollWakeupSleepBudget 1 ms sleeps cover a longer stall. The total is bounded because
+    // sq_lock and the epoch are held here. Exhausting it means the poll thread is unrecoverable;
+    // the op is still reported submitted (the kernel owns the SQE) and the next submit on this ring
+    // redelivers the wakeup and flushes it.
     int submit_retries = 0;
     while (true) {
       res = io_uring_submit(ring);
       if (res >= 0) break;                                   // awake: pending count; parked: wakeup delivered
-      if (submit_retries >= kSubmitYieldBudget) break;        // gave up redelivering; SQE already published
-      ::sched_yield();
+      if (submit_retries >= kSubmitYieldBudget + kSqPollWakeupSleepBudget) break;
+      if (submit_retries < kSubmitYieldBudget) {
+        ::sched_yield();
+      } else {
+        struct timespec wakeup_backoff { 0, 1000000 };       // 1 ms
+        ::nanosleep(&wakeup_backoff, nullptr);
+      }
       ++submit_retries;
     }
     submitted = true;

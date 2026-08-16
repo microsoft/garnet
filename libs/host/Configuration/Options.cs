@@ -539,7 +539,7 @@ namespace Garnet
         public int? DeviceUringSqPollIdleMs { get; set; }
 
         [IntRangeValidation(1, 4096)]
-        [Option("device-aio-max-devices", Required = false, HelpText = "Linux-only, DeviceType=Native (libaio): target number of Native devices to fit within the machine-global fs.aio-max-nr libaio budget (default 32). libaio io_setup permanently reserves io-contexts x queue-depth events from that global budget per device, so the default per-device reservation is capped at fs.aio-max-nr / this, guaranteeing at least this many devices can always be created regardless of --device-completion-threads / --device-throttle-limit. Raise fs.aio-max-nr, or lower this, to give each serving device a deeper reservation. Ignored for io_uring (no global budget) and non-Linux.")]
+        [Option("device-aio-max-devices", Required = false, HelpText = "Linux-only, DeviceType=Native (libaio): target number of Native devices to fit within the machine-global fs.aio-max-nr libaio budget (default 32). libaio io_setup permanently reserves io-contexts x queue-depth events from that global budget per device, so the default per-device reservation is capped at fs.aio-max-nr / this, keeping at least this many devices creatable regardless of --device-completion-threads / --device-throttle-limit. The cap cannot go below one event per ring, so an explicit --device-io-contexts above the per-device share still exceeds it (warned). Raise fs.aio-max-nr, or lower this, to give each serving device a deeper reservation. Ignored for io_uring (no global budget) and non-Linux.")]
         public int? DeviceAioMaxDevices { get; set; }
 
         [Option("reviv-bin-record-sizes", Separator = ',', Required = false,

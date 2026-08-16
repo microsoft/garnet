@@ -1014,7 +1014,17 @@ namespace Tsavorite.core
             }
             catch (Exception ex)
             {
-                logger?.LogCritical(ex, "Unhandled exception in user IO completion callback (suppressed to keep drainer alive)");
+                // The logger is host-supplied and can itself throw (for example a provider whose sink was
+                // disposed during shutdown). An exception escaping this handler would defeat the firewall
+                // described above, so the report is guarded too.
+                try
+                {
+                    logger?.LogCritical(ex, "Unhandled exception in user IO completion callback (suppressed to keep drainer alive)");
+                }
+                catch
+                {
+                    // Nothing further can be reported from inside a completion callback.
+                }
             }
             finally
             {
@@ -1084,9 +1094,11 @@ namespace Tsavorite.core
         /// NOT reduced =&gt; no IOPS cost); low-ring-count auxiliary devices drop to <c>~= io-contexts * cap</c>,
         /// letting many coexist in a stock 65536 budget. Finally the WHOLE-device reservation is hard-capped at
         /// <c>fs.aio-max-nr / AioMaxDevices</c> (default <see cref="DefaultAioMaxDevices"/>) so at least that many
-        /// devices always fit the kernel budget regardless of io-contexts / throttle; on a stock 65536 budget this
-        /// bounds each device to 2048 events, while a host that sizes fs.aio-max-nr for its workload keeps serving
-        /// devices at full depth (e.g. 4194304 / 32 = 131072 per device, which never binds).
+        /// devices fit the kernel budget; on a stock 65536 budget this bounds each device to 2048 events, while a
+        /// host that sizes fs.aio-max-nr for its workload keeps serving devices at full depth (e.g. 4194304 / 32 =
+        /// 131072 per device, which never binds). The cap is best-effort in two respects: depth cannot fall below
+        /// one event per ring, so a device configured with more rings than its per-device share still exceeds it
+        /// (warned); and the budget is the machine total, not what remains after other processes' reservations.
         /// </summary>
         int ResolveLibaioReservationDepth(int ringCount, int throttle, int ceilingDepth)
         {
@@ -1096,15 +1108,27 @@ namespace Tsavorite.core
             if (depth > LibaioReservationCap) depth = LibaioReservationCap;
             if (depth > ceilingDepth) depth = ceilingDepth;
 
-            // Hard per-device AIO budget: guarantee at least AioMaxDevices libaio devices fit the global
+            // Hard per-device AIO budget: keep at least AioMaxDevices libaio devices fitting the global
             // fs.aio-max-nr budget by bounding this device's WHOLE reservation (ringCount * depth), independent
-            // of ring count or throttle. Halve the depth (staying a power of two) until it fits; this wins over
-            // the soft floor above. The caller then caps effectiveThrottleLimit at ringCount * depth, so
-            // aggregate in-flight tracks the (possibly reduced) reservation.
+            // of throttle. Halve the depth (staying a power of two) until it fits; this wins over the soft floor
+            // above. The caller then caps effectiveThrottleLimit at ringCount * depth, so aggregate in-flight
+            // tracks the (possibly reduced) reservation.
             int maxDevices = AioMaxDevices < 1 ? DefaultAioMaxDevices : AioMaxDevices;
             long perDeviceBudget = GetAioMaxNr() / maxDevices;
             while (depth > 1 && (long)ringCount * depth > perDeviceBudget)
                 depth >>= 1;
+
+            // One event per ring is the floor, so a device with more rings than its per-device share cannot be
+            // brought within the bound by depth alone. Surface it: the operator must lower --device-io-contexts
+            // or raise fs.aio-max-nr / --device-aio-max-devices, or io_setup may fail with EAGAIN.
+            if ((long)ringCount * depth > perDeviceBudget)
+            {
+                logger?.LogWarning(
+                    "NativeStorageDevice: libaio reservation ({rings} rings x {depth} events = {total}) exceeds the " +
+                    "per-device share of fs.aio-max-nr ({budget} = {aioMaxNr} / {maxDevices}); lower --device-io-contexts, " +
+                    "raise fs.aio-max-nr, or lower --device-aio-max-devices.",
+                    ringCount, depth, (long)ringCount * depth, perDeviceBudget, GetAioMaxNr(), maxDevices);
+            }
 
             return (int)depth;
         }
@@ -1131,7 +1155,7 @@ namespace Tsavorite.core
         /// global <c>fs.aio-max-nr</c> budget (distro default 65536, shared across every process). If the
         /// requested total exceeds that budget, warn up front so the operator sees an actionable message
         /// rather than a cryptic <c>io_setup</c> EAGAIN at device creation. io_uring uses per-ring mmap memory
-        /// only (no global budget), so this applies to libaio just. Never throws (best-effort /proc read).
+        /// only (no global budget), so this applies to libaio only. Never throws (best-effort /proc read).
         /// </summary>
         void WarnIfLibaioAioBudgetExceeded(int numContexts, int queueDepth)
         {
@@ -1438,7 +1462,23 @@ namespace Tsavorite.core
 
                     if (results == null) results = new NativeResult[MaxResults];
 
-                    if (NativeDevice_QueueRun(newDevice, 0) >= 0)
+                    // NativeDevice_QueueRun doubles as the platform capability probe. The Windows IOCP
+                    // backend returns a permanent negative — completions arrive on threadpool threads, so
+                    // there is no queue to drain and no drainer to start. The Linux backends return the
+                    // number of completions reaped, but can also return a transient negative when the
+                    // probing thread is interrupted by a signal (the runtime signals threads routinely for
+                    // GC and suspension), so retry a few times before concluding the backend has no
+                    // drainable queue. Publishing a Linux device with no drainers would leave every
+                    // completion to the inline drain path alone.
+                    const int queueProbeAttempts = 3;
+                    int queueProbe = NativeDevice_QueueRun(newDevice, 0);
+                    for (int attempt = 0; queueProbe < 0 && attempt < queueProbeAttempts; attempt++)
+                    {
+                        _ = Thread.Yield();
+                        queueProbe = NativeDevice_QueueRun(newDevice, 0);
+                    }
+
+                    if (queueProbe >= 0)
                     {
                         try
                         {
@@ -1481,11 +1521,15 @@ namespace Tsavorite.core
                             int startCtx = nextStart;
                             int count = baseCount + (i < remainder ? 1 : 0);
                             nextStart += count;
-                            completionThreads[i] = new Thread(() => CompletionWorker(startCtx, count))
+                            var drainer = new Thread(() => CompletionWorker(startCtx, count))
                             {
                                 IsBackground = true
                             };
-                            completionThreads[i].Start();
+                            // Publish the slot only once the thread is running: Join() on an unstarted
+                            // thread throws ThreadStateException, which would escape the cleanup below and
+                            // leak the native handle if Start() failed under resource pressure.
+                            drainer.Start();
+                            completionThreads[i] = drainer;
                         }
                     }
 
@@ -1495,20 +1539,28 @@ namespace Tsavorite.core
                 }
                 catch
                 {
-                    // Stop any drainers that were started. Pre-publish they are spin-yielding on the
-                    // still-null nativeDevice field (NativeDevice_QueueRunFor null-guards and returns -1),
-                    // so cancellation is observed promptly and Join returns quickly; null slots (a thread
-                    // that was never created/started) are skipped.
-                    if (completionThreads != null)
+                    try
                     {
-                        completionThreadToken?.Cancel();
-                        foreach (var t in completionThreads) t?.Join();
-                        completionThreads = null;
+                        // Stop any drainers that were started. Pre-publish they are spin-yielding on the
+                        // still-null nativeDevice field (NativeDevice_QueueRunFor null-guards and returns -1),
+                        // so cancellation is observed promptly and Join returns quickly; null slots (a thread
+                        // that was never created/started) are skipped.
+                        if (completionThreads != null)
+                        {
+                            completionThreadToken?.Cancel();
+                            foreach (var t in completionThreads) t?.Join();
+                            completionThreads = null;
+                        }
+                        completionThreadToken?.Dispose();
+                        completionThreadToken = null;
+                        numRingsActual = 0;
                     }
-                    completionThreadToken?.Dispose();
-                    completionThreadToken = null;
-                    numRingsActual = 0;
-                    NativeDevice_Destroy(newDevice);
+                    finally
+                    {
+                        // Free the handle even if drainer teardown throws: nativeDevice was never published,
+                        // so Dispose() would skip the destroy and leak the fd and its kernel rings.
+                        NativeDevice_Destroy(newDevice);
+                    }
                     throw;
                 }
             }
@@ -1605,45 +1657,57 @@ namespace Tsavorite.core
             {
                 CompleteShard(shard);
                 ReturnSlot(offset);
-                callback(uint.MaxValue, 0, context);
+                callback(uint.MaxValue, 0, context, ioException: default);
                 return;
             }
             ref var result = ref results[offset];
             result.context = context;
             result.callback = callback;
 
+            // Second, independently balanced in-flight lease covering the native call itself. The IO's own
+            // bump above is dropped by _callback, which runs on a drainer thread and can fire before this
+            // frame has left native code; without this lease Dispose could observe zero in-flight and free
+            // the device under a submitter still inside it. Same role as TryLease on the non-IO entry points.
+            SubmitToShard(shard);
             try
             {
-                int _result = NativeDevice_ReadAsync(nativeDevice, ((ulong)segmentId << segmentSizeBits) | sourceAddress, destinationAddress, readLength, _callbackDelegate, (IntPtr)offset);
+                try
+                {
+                    int _result = NativeDevice_ReadAsync(nativeDevice, ((ulong)segmentId << segmentSizeBits) | sourceAddress, destinationAddress, readLength, _callbackDelegate, (IntPtr)offset);
 
-                if (_result != 0)
-                    throw new IOException($"Error reading from log file (status {_result}){FormatNativeError()}", _result);
+                    if (_result != 0)
+                        throw new IOException($"Error reading from log file (status {_result}){FormatNativeError()}", _result);
+                }
+                catch (IOException e)
+                {
+                    logger?.LogCritical(e, $"{nameof(ReadAsync)}");
+                    try
+                    {
+                        callback((uint)(e.HResult & 0x0000FFFF), 0, context, ioException: e);
+                    }
+                    finally
+                    {
+                        CompleteShard(shard);
+                        ReturnSlot(offset);
+                    }
+                }
+                catch (Exception e)
+                {
+                    logger?.LogCritical(e, $"{nameof(ReadAsync)}");
+                    try
+                    {
+                        callback(uint.MaxValue, 0, context, ioException: e);
+                    }
+                    finally
+                    {
+                        CompleteShard(shard);
+                        ReturnSlot(offset);
+                    }
+                }
             }
-            catch (IOException e)
+            finally
             {
-                logger?.LogCritical(e, $"{nameof(ReadAsync)}");
-                try
-                {
-                    callback((uint)(e.HResult & 0x0000FFFF), 0, context, ioException: e);
-                }
-                finally
-                {
-                    CompleteShard(shard);
-                    ReturnSlot(offset);
-                }
-            }
-            catch (Exception e)
-            {
-                logger?.LogCritical(e, $"{nameof(ReadAsync)}");
-                try
-                {
-                    callback(uint.MaxValue, 0, context, ioException: e);
-                }
-                finally
-                {
-                    CompleteShard(shard);
-                    ReturnSlot(offset);
-                }
+                CompleteShard(shard);
             }
         }
 
@@ -1673,47 +1737,56 @@ namespace Tsavorite.core
             {
                 CompleteShard(shard);
                 ReturnSlot(offset);
-                callback(uint.MaxValue, 0, context);
+                callback(uint.MaxValue, 0, context, ioException: default);
                 return;
             }
             ref var result = ref results[offset];
             result.context = context;
             result.callback = callback;
 
+            // Native-call lease; see ReadAsync for the rationale.
+            SubmitToShard(shard);
             try
             {
-                int _result = NativeDevice_WriteAsync(nativeDevice, sourceAddress, ((ulong)segmentId << segmentSizeBits) | destinationAddress, numBytesToWrite, _callbackDelegate, (IntPtr)offset);
+                try
+                {
+                    int _result = NativeDevice_WriteAsync(nativeDevice, sourceAddress, ((ulong)segmentId << segmentSizeBits) | destinationAddress, numBytesToWrite, _callbackDelegate, (IntPtr)offset);
 
-                if (_result != 0)
+                    if (_result != 0)
+                    {
+                        throw new IOException($"Error writing to log file (status {_result}){FormatNativeError()}", _result);
+                    }
+                }
+                catch (IOException e)
                 {
-                    throw new IOException($"Error writing to log file (status {_result}){FormatNativeError()}", _result);
+                    logger?.LogCritical(e, $"{nameof(WriteAsync)}");
+                    try
+                    {
+                        callback((uint)(e.HResult & 0x0000FFFF), 0, context, ioException: e);
+                    }
+                    finally
+                    {
+                        CompleteShard(shard);
+                        ReturnSlot(offset);
+                    }
+                }
+                catch (Exception e)
+                {
+                    logger?.LogCritical(e, $"{nameof(WriteAsync)}");
+                    try
+                    {
+                        callback(uint.MaxValue, 0, context, ioException: e);
+                    }
+                    finally
+                    {
+                        CompleteShard(shard);
+                        ReturnSlot(offset);
+                    }
                 }
             }
-            catch (IOException e)
+            finally
             {
-                logger?.LogCritical(e, $"{nameof(WriteAsync)}");
-                try
-                {
-                    callback((uint)(e.HResult & 0x0000FFFF), 0, context, ioException: e);
-                }
-                finally
-                {
-                    CompleteShard(shard);
-                    ReturnSlot(offset);
-                }
-            }
-            catch (Exception e)
-            {
-                logger?.LogCritical(e, $"{nameof(WriteAsync)}");
-                try
-                {
-                    callback(uint.MaxValue, 0, context, ioException: e);
-                }
-                finally
-                {
-                    CompleteShard(shard);
-                    ReturnSlot(offset);
-                }
+                CompleteShard(shard);
             }
         }
 

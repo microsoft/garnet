@@ -206,10 +206,12 @@ The caller then caps `effectiveThrottleLimit` at `N × depth` so aggregate in-fl
 * **Low-ring-count auxiliary devices** (e.g. cluster AOF / checkpoint logs created with the
   raw `Devices.CreateLogDevice` single-ring defaults) drop to `≈ N × cap`, so ~15 of them
   coexist within a stock 65536 budget.
-* The hard per-device ceiling guarantees at least `--device-aio-max-devices` devices always
-  fit: on a stock 65536 budget it bounds each device to 2048 events; a host that sizes
+* The hard per-device ceiling keeps at least `--device-aio-max-devices` devices fitting the
+  budget: on a stock 65536 budget it bounds each device to 2048 events; a host that sizes
   `fs.aio-max-nr` for its workload keeps serving devices at full depth (e.g. `4194304 / 32 =
-  131072` per device, which never binds).
+  131072` per device, which never binds). It is best-effort in two respects: `depth` cannot fall
+  below one event per ring, so an `N` above the per-device share still exceeds it (warned at
+  creation); and the budget is the machine total, not what remains after other processes.
 
 io_uring skips all of this — it uses `D` directly (per-ring mmap memory, no global budget).
 

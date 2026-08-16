@@ -113,9 +113,11 @@ The **depot** is the third tier — a shared fallback owned by the pool. Decodin
   (unlike shards/buckets, which are per-thread).
 * **per-class** — it is logically one depot *per size-class*. The backing array is laid out as
   `depot[cls * DepotStripes + stripe]`, so buffers of different sizes never mix.
-* **lock-striped (8 stripes)** — within each class the depot is split into `DepotStripes = 8` independent
-  sub-stacks. A thread picks its stripe by `ThreadId & 7`. This is classic **lock striping** (8 locks instead of
-  1), so several threads can push/pop concurrently without colliding.
+* **lock-striped** — within each class the depot is split into `DepotStripes` independent sub-stacks. A thread
+  picks its stripe by `ThreadId & (DepotStripes - 1)`. This is classic **lock striping** (`DepotStripes` locks
+  instead of 1), so several threads can push/pop concurrently without colliding. The count is
+  `ConcurrencySharding.DepotStripeCount` — `2 × ProcessorCount` rounded up to a power of two, floored at 8 and
+  capped at 64 — so the number of locks scales with the number of threads that can contend for them.
 * **locked** — each stripe (`DepotStripe`) is a plain `Stack<SectorAlignedMemory>` guarded by a `lock` (Monitor).
   A lock is acceptable here because the depot is the **cold path** — only reached when a thread's own local *and*
   cross-thread lists are both empty (on `Get`), or when a thread's local cache is over its cap (on `Return`). A
@@ -131,15 +133,16 @@ The **depot** is the third tier — a shared fallback owned by the pool. Decodin
   3. **No per-push allocation.** `ConcurrentStack.Push` allocates a link node per item, which is exactly what this
      pool exists to avoid; `Stack<T>` pushes into a pre-grown array.
 
-  Contention is a non-issue: the depot is already striped 8 ways, each critical section is O(1), and a lock-free
-  CAS on a single shared head would reintroduce the cross-core cache-line ping-pong this design removes.
+  Contention is bounded by striping: the depot is spread `DepotStripes` ways, sized from the machine's processor
+  count, each critical section is O(1), and a lock-free CAS on a single shared head would reintroduce the
+  cross-core cache-line ping-pong this design removes.
 * **overflow pool** — it catches buffers that cannot stay in per-thread caches, and redistributes them:
   * On **Return**, if the origin thread's local stack is full (over `LocalCap`/`LocalByteCap`) or the origin
     shard has retired (its thread died), the buffer overflows into the depot (`DepotPush`) instead of being
     dropped.
   * On **Get**, after checking its own local and cross-thread lists, a thread pulls from the depot (`DepotPop`)
-    before allocating fresh. `DepotPop` scans all 8 stripes starting at the thread's own — a cheap form of
-    **work-stealing** so buffers parked by a now-idle thread get reused by an active one.
+    before allocating fresh. `DepotPop` scans every stripe of the class, starting at the thread's own — a cheap
+    form of **work-stealing** so buffers parked by a now-idle thread get reused by an active one.
 
 ### Large classes are depot-only
 
@@ -193,8 +196,8 @@ fastest first:
    own buffers.
 2. **Cross-thread stack** — if local is empty, bulk-claim `crossThreadHead` with one CAS, keep one buffer, splice
    the rest into local. This is where buffers that other threads returned to me come home.
-3. **Depot** — if both are empty, `DepotPop(cls)` across the 8 stripes. For **large** classes the first two tiers
-   are always empty (large buffers are returned straight to the depot — see §6), so this is their normal source.
+3. **Depot** — if both are empty, `DepotPop(cls)` across the class's stripes. For **large** classes the first two
+   tiers are always empty (large buffers are returned straight to the depot — see §6), so this is their normal source.
 4. **Allocate** — `AllocateForBucket`: allocate a new `byte[]`, compute alignment, and try to reserve a budget
    **permit** (see §9). If the reservation succeeds, the buffer is marked `cacheable`; otherwise it is still
    served to the caller but marked non-cacheable and dropped on `Return`.
