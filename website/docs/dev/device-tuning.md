@@ -113,11 +113,13 @@ size of pinned read buffers); in the split model it sizes nothing in the kernel.
 
 libaio only. `fs.aio-max-nr` is a *machine-global* event budget shared by every device in
 every process. `io_setup` permanently draws `N × D` events from it per device. This knob is
-the **target number of Native libaio devices that must always fit** within that budget: the
-default per-device reservation is hard-capped at `fs.aio-max-nr / this` (default 32),
-guaranteeing at least this many devices can be created regardless of the other knobs. Raise
-`fs.aio-max-nr` (e.g. `sysctl -w fs.aio-max-nr=1048576`) or lower this value to give each
-serving device a deeper reservation. Ignored for io_uring (no global budget) and non-Linux.
+the **target number of Native libaio devices to fit** within that budget: the default per-device
+reservation is hard-capped at `fs.aio-max-nr / this` (default 32), keeping at least this many
+devices creatable regardless of `--device-completion-threads` / `--device-throttle-limit`. The
+cap is best-effort — see [the reservation derivation](#derived-libaio-reservation-depth) for the
+two cases it cannot cover. Raise `fs.aio-max-nr` (e.g. `sysctl -w fs.aio-max-nr=1048576`) or
+lower this value to give each serving device a deeper reservation. Ignored for io_uring (no
+global budget) and non-Linux.
 
 ### `--device-uring-sqpoll` (io_uring submission polling)
 
@@ -335,7 +337,8 @@ queues full. Only reach for the knobs below for a specific reason.
   `io_setup` `EAGAIN`, either raise `fs.aio-max-nr` (`sysctl -w fs.aio-max-nr=1048576`) or raise
   `--device-aio-max-devices` so each device reserves a smaller slice of the budget
   (`perDeviceBudget = fs.aio-max-nr / device-aio-max-devices`). The reservation guard logs an
-  actionable warning when `N × D` exceeds `fs.aio-max-nr`.
+  actionable warning when `N × D` exceeds `fs.aio-max-nr`, and when a device's own reservation
+  cannot be brought within its per-device share (one event per ring is the floor).
 * **Memory-constrained host.** Lower `--device-queue-depth` (e.g. `1024`) to cut io_uring ring
   memory ~4× (uring ring memory ≈ `N × D × ~100 B`), and/or lower `--device-throttle-limit` to
   cut pinned read-buffer memory (`T ×` read size). Both reduce a ceiling, not steady-state work.
