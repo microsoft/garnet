@@ -203,9 +203,9 @@ while (depth > 1 && N × depth > perDeviceBudget)  depth >>= 1  // halve (stay p
 The caller then caps `effectiveThrottleLimit` at `N × depth` so aggregate in-flight tracks the
 (possibly reduced) reservation. Consequences:
 
-* **Multi-ring serving devices** (`N ≥ 4`) keep `N × depth ≥ T` from the share math alone, so
-  the full aggregate throttle stays usable — **no IOPS cost** — while the per-device
-  global-budget footprint drops.
+* **Multi-ring serving devices** (`N ≥ 4`) keep `N × depth ≥ T` through the share clamps, so
+  those clamps drop the per-device global-budget footprint at no IOPS cost. The budget ceiling
+  below runs after them and can still reduce it.
 * **Low-ring-count auxiliary devices** (e.g. cluster AOF / checkpoint logs created with the
   raw `Devices.CreateLogDevice` single-ring defaults) drop to `≈ N × cap`, so the
   `--device-aio-max-devices` target of them coexists within a stock 65536 budget.
@@ -215,7 +215,7 @@ The caller then caps `effectiveThrottleLimit` at `N × depth` so aggregate in-fl
   131072` per device, which never binds). It is best-effort in two respects: `depth` cannot fall
   below one event per ring, so an `N` above the per-device share still exceeds it (warned at
   creation); and the budget is the machine total, not what remains after other processes.
-* **When the budget ceiling binds, it overrides the "no IOPS cost" property above**, because
+* **When the budget ceiling binds it lowers the throttle**, overriding the share math above, because
   `effectiveThrottleLimit` is capped at `N × depth ≤ perDeviceBudget`. On a stock 65536 budget
   that bound is 2048, so the default `T = 4096` is halved at every ring count — worth ~9% on a
   libaio disk-serving workload. Size `fs.aio-max-nr` for the host (`sysctl -w
