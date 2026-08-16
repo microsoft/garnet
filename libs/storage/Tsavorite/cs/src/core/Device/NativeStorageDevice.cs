@@ -1222,10 +1222,10 @@ namespace Tsavorite.core
             //
             // Smart default when the caller leaves numIoContexts unset (<= 0): io_uring is ring-STARVED
             // when rings < submitter concurrency — many submitters serialize on the per-ring submit lock
-            // (~3x slower), the single biggest io_uring foot-gun. So default io_uring to a hardware-aware
-            // ring count that covers typical submitter concurrency (2x cores, capped at 64 to bound ring
-            // memory at ~400 KB/ring). libaio is ring-count-neutral (its kernel io_context mutex is cheap)
-            // and its io-contexts x queue-depth draws from the global fs.aio-max-nr budget, so it keeps the
+            // (~3x slower). So default io_uring to a hardware-aware ring count that covers typical
+            // submitter concurrency (2x cores, capped at 64 to bound ring memory at ~400 KB/ring).
+            // libaio is ring-count-neutral (its kernel io_context mutex is cheap) and its
+            // io-contexts x queue-depth draws from the global fs.aio-max-nr budget, so it keeps the
             // conservative rings = drainers default.
             int defaultIoContexts = ioBackend == IoBackend.Uring
                 ? Math.Max(this.numCompletionThreadsConfig, Math.Min(2 * Environment.ProcessorCount, 64))

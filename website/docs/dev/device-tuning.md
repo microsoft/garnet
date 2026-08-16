@@ -8,8 +8,8 @@ This page documents the tuning surface of Garnet's **Native storage device** —
 Linux `io_uring` / `libaio` `IDevice` implementation used when the hybrid log is tiered to
 an NVMe/SSD (`--storage-tier`). It covers every `--device-*` knob, its default, the exact
 formulas the device uses to derive its internal parameters, the internal constants that
-bound those formulas, and — because the same words recur throughout the code — precise
-definitions of **headroom**, **floor**, **cap**, and **ceiling** and why each exists.
+bound those formulas, and the definitions of **headroom**, **floor**, **cap**, and
+**ceiling** as the code uses them.
 
 The Native device is the default on x64 Linux and is what lets a disk-served workload
 approach raw-device (`fio`) IOPS. On Windows it uses the IOCP thread-pool backend and most
@@ -35,8 +35,8 @@ aggregate in-flight  T  ≤  kernel capacity  N × D
 
 `T` is **software backpressure** enforced by the Tsavorite allocator — it bounds how much
 pending-read work (and thus how much pinned read-buffer memory) accumulates. `N` and `D`
-size actual kernel structures. Keeping them as separate knobs means, for example, that
-raising the ring count no longer silently shrinks each ring's depth.
+size actual kernel structures. Keeping them as separate knobs lets ring count and ring
+depth be sized independently.
 
 ## The tuning knobs
 
@@ -90,7 +90,7 @@ drainers are a backstop for rings whose owning thread is idle.
 The single most important knob for **io_uring**. It is the ring count, decoupled from the
 drainer count. Set it at or above your submitter concurrency (roughly your connection count)
 so each submitter owns a ring and `io_submit` is contention-free. Too few rings serialize
-submitters on the per-ring lock (~3× slower) — the biggest io_uring foot-gun. **libaio is
+submitters on the per-ring lock (~3× slower). **libaio is
 largely indifferent** to it. `0` selects the [smart default](#derived-smart-io-context-default).
 
 ### `--device-queue-depth` (ring depth `D`)
@@ -123,11 +123,11 @@ serving device a deeper reservation. Ignored for io_uring (no global budget) and
 
 io_uring only. Enables `IORING_SETUP_SQPOLL` so a **kernel thread** polls the submission
 queue and user-side submissions become syscall-free (no `io_uring_enter` per submit). Each
-ring gets its **own** poll thread (no `IORING_SETUP_ATTACH_WQ`) so submission stays parallel
-across rings — an earlier prototype that shared one poll thread across all rings serialized
-submission and was a hard ceiling; that is fixed. `--device-uring-sqpoll-idle-ms` sets
-`sq_thread_idle` (how long a poll thread spins after the last submit before parking; `0` = 10s
-native default). **Off by default (opt-in).** Ignored for libaio / on Windows.
+ring gets its **own** poll thread (no `IORING_SETUP_ATTACH_WQ`), so submission stays parallel
+across rings; one poll thread shared across rings would serialize it.
+`--device-uring-sqpoll-idle-ms` sets `sq_thread_idle` (how long a poll thread spins after the
+last submit before parking; `0` = 10s native default). **Off by default (opt-in).** Ignored
+for libaio / on Windows.
 
 With one poll thread per ring, SQPOLL **matches or slightly beats** the default per-submit
 path on the 8×NVMe RAID-0 target (uring, 512B random reads), peaking at fio parity:
@@ -141,9 +141,9 @@ path on the 8×NVMe RAID-0 target (uring, 512B random reads), peaking at fio par
 
 :::tip Let the kernel place the poll threads
 The poll threads are left unpinned so the scheduler can spread them across node 0's mostly-idle
-cores — this beat every static pinning map we tried (pinning onto the submitter / RESP cores
-cost throughput). The poll threads are busy-polling kernel threads and consume CPU, so give
-them cores to run on; on core-starved hosts SQPOLL can still lose to the default path.
+cores; pinning them onto the submitter / RESP cores costs throughput. They are busy-polling
+kernel threads and consume CPU, so give them cores to run on; on core-starved hosts SQPOLL can
+lose to the default path.
 :::
 
 ## Derived parameters
@@ -162,11 +162,10 @@ libaio: N = completion-threads
 ```
 
 The value is then clamped up to `completion-threads` so every drainer owns at least one ring.
-Rationale: io_uring is ring-starved below submitter concurrency, so it defaults to a
-hardware-aware ring count (`2 × cores`, **capped** at 64 to bound ring memory at ~400 KB/ring
-→ ≤ ~25 MB). libaio is ring-count-neutral and its `N × D` draws from the global budget, so it
-keeps the conservative `rings = drainers` default. This closes the io_uring foot-gun with
-zero user action.
+io_uring is ring-starved below submitter concurrency, so it defaults to a hardware-aware ring
+count (`2 × cores`, **capped** at 64 to bound ring memory at ~400 KB/ring → ≤ ~25 MB). libaio
+is ring-count-neutral and its `N × D` draws from the global budget, so it keeps the
+conservative `rings = drainers` default.
 
 ### Derived: queue depth `D` {#derived-queue-depth}
 
@@ -205,9 +204,8 @@ The caller then caps `effectiveThrottleLimit` at `N × depth` so aggregate in-fl
 * **Multi-ring serving devices** (`N ≥ 4`) keep `N × depth ≥ T`, so the full aggregate
   throttle stays usable — **no IOPS cost** — while the per-device global-budget footprint drops.
 * **Low-ring-count auxiliary devices** (e.g. cluster AOF / checkpoint logs created with the
-  raw `Devices.CreateLogDevice` single-ring defaults) drop to `≈ N × cap`, letting many
-  coexist within a stock 65536 budget. This is why ~15 single-ring cluster devices no longer
-  exhaust `fs.aio-max-nr`.
+  raw `Devices.CreateLogDevice` single-ring defaults) drop to `≈ N × cap`, so ~15 of them
+  coexist within a stock 65536 budget.
 * The hard per-device ceiling guarantees at least `--device-aio-max-devices` devices always
   fit: on a stock 65536 budget it bounds each device to 2048 events; a host that sizes
   `fs.aio-max-nr` for its workload keeps serving devices at full depth (e.g. `4194304 / 32 =
@@ -225,10 +223,10 @@ effectiveThrottle   = min(requestedThrottle, kernelCapacity)       // cap at ker
 
 Capping `T` at `N × D` enforces the "in-flight ≤ kernel capacity" invariant that prevents the
 ring-full submit spin. This cap is **decoupled** from the depth cap, so a high-connection
-deployment can raise `T` as long as `N × D` is large enough — something the old coupled design
-forbade. Note that the per-shard clamp described next imposes a second, independent ceiling:
-raising `T` above `NumShards × MaxPerThreadInFlight` (**4096** on any host with ≥ 16 logical
-processors) has no effect, because the per-thread budget saturates at `MaxPerThreadInFlight`.
+deployment can raise `T` as long as `N × D` is large enough. The per-shard clamp described
+next imposes a second, independent ceiling: raising `T` above
+`NumShards × MaxPerThreadInFlight` (**4096** on any host with ≥ 16 logical processors) has no
+effect, because the per-thread budget saturates at `MaxPerThreadInFlight`.
 
 ### Derived: per-thread in-flight (sharding) {#derived-sharding}
 
@@ -269,8 +267,8 @@ retry (a submit that finds the ring full unwinds to `Pending` and retries after 
 ## Internal constants
 
 These are compile-time constants in `NativeStorageDevice.cs` (and `kMaxEvents` in
-`file_linux.h`). They bound the formulas above. They are intentionally **not** knobs — each
-has a single correct regime — but knowing them explains the tuning envelope.
+`file_linux.h`). They bound the formulas above. They are **not** knobs — each has a single
+correct regime — but they define the tuning envelope.
 
 | Constant | Value | Role |
 |---|---|---|
@@ -289,51 +287,43 @@ has a single correct regime — but knowing them explains the tuning envelope.
 | `ShardCounter` | `128 B` | cache-line-pair-padded per-shard in-flight counter struct (each shard's counter owns its own line, preventing false sharing). |
 | `MaxResults` | `NumShards × 256` | size of the completion-context slot table (pure managed memory). |
 
-## Floor, cap, ceiling, headroom — what each means and why {#floor-cap-ceiling-headroom}
+## Floor, cap, ceiling, headroom {#floor-cap-ceiling-headroom}
 
-The reservation math uses four bounding concepts that are easy to conflate. They are
-genuinely different, and the code needs all four:
+The reservation math uses four distinct bounding concepts:
 
 * **Headroom** — a **multiplicative over-provision factor applied *above* a computed
   need**. `LibaioReservationHeadroom = 2` sizes each libaio ring to *twice* its expected
-  steady-state in-flight (`share`). It is not a limit at all; it is deliberate slack so a
-  transient burst of reads does not momentarily fill the ring (which would cost a ~2%
-  ring-full IOPS dip). Think "size it 2× bigger than I think I need."
+  steady-state in-flight (`share`). It is not a limit; it is slack so a transient burst of
+  reads does not momentarily fill the ring (which costs a ~2% ring-full IOPS dip).
 
 * **Floor** — a **lower bound**: the value is never sized *below* it. `LibaioReservationFloor
-  = 128` (and the native `kMaxEvents = 128`) guarantees a ring can always hold a minimum
-  useful burst even when the throttle-share math would compute something tiny (e.g. a huge
-  ring count dividing a modest throttle). Without a floor, high-`N`/low-`T` configs would
-  produce pathologically shallow rings that stall constantly. Think "never smaller than this."
+  = 128` (and the native `kMaxEvents = 128`) guarantees a ring can hold a minimum useful burst
+  even when the throttle-share math computes something tiny (e.g. a high ring count dividing a
+  modest throttle), which would otherwise produce rings shallow enough to stall constantly.
 
 * **Cap** — an **upper bound that is a self-imposed *policy* choice**. `LibaioReservationCap =
-  2048` says a *single* libaio ring should never reserve the full deep queue (`4096`) from the
-  global budget, because (a) no single ring needs that much in-flight, and (b) it deliberately
-  leaves budget for other coexisting devices. Nothing physically breaks if you exceed it — we
-  *choose* not to. Think "we decline to go above this, by policy."
+  2048` says a *single* libaio ring never reserves the full deep queue (`4096`) from the
+  global budget, because no single ring needs that much in-flight and the remainder stays
+  available to other coexisting devices. Exceeding it breaks nothing physically.
 
 * **Ceiling** — an **upper bound imposed by a *hard external constraint*** (kernel limit,
-  hardware, or a shared global budget), not a policy preference. Three appear in the math:
+  hardware, or a shared global budget), not a policy preference. Violating it is a hard
+  failure. Three appear in the math:
   * `ceilingDepth` = the resolved `--device-queue-depth` — never reserve more than the ring is
     actually sized for.
   * `MaxQueueDepth = 32768` — io_uring's hard kernel maximum entries per ring.
   * `perDeviceBudget = fs.aio-max-nr / AioMaxDevices` — the machine-global libaio budget
     divided by the device target; exceeding it makes `io_setup` fail with `EAGAIN`.
-  Think "the system physically will not allow more."
 
-The distinction that matters: a **cap** is *"we choose this maximum"* (tunable policy — e.g.
-`LibaioReservationCap` could be larger with no error), whereas a **ceiling** is *"the
-environment forbids more"* (violating it is a hard failure). A **floor** is the minimum, and
-**headroom** is over-provisioning above the computed need. In `ResolveLibaioReservationDepth`
-you can see them applied in order: compute `share`, multiply by **headroom**, raise to the
-**floor**, lower to the policy **cap**, lower to the queue-depth **ceiling**, then lower again
-to the hard global-budget **ceiling**.
+`ResolveLibaioReservationDepth` applies them in order: compute `share`, multiply by
+**headroom**, raise to the **floor**, lower to the policy **cap**, lower to the queue-depth
+**ceiling**, then lower again to the hard global-budget **ceiling**.
 
 ## Tuning recipes
 
-Start from the defaults — on x64 Linux they already reach the hand-tuned peak out of the box
-(the smart io-context default closes the io_uring foot-gun, and the Native throttle default of
-4096 keeps NVMe queues full). Only reach for the knobs below for a specific reason.
+Start from the defaults — on x64 Linux they reach peak out of the box: the smart io-context
+default sizes rings to the hardware, and the Native throttle default of 4096 keeps NVMe
+queues full. Only reach for the knobs below for a specific reason.
 
 * **io_uring, high connection count.** Set `--device-io-contexts` ≥ your peak concurrent
   connections (e.g. `96` or `128`). The default caps at 64 rings; more connections than that

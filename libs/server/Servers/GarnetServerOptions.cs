@@ -474,7 +474,7 @@ namespace Garnet.server
         /// For DeviceType.Native on Linux: per-ring kernel submission depth D (maxEvents passed to
         /// io_uring_queue_init / libaio io_setup). Orthogonal to <see cref="DeviceIoContexts"/> (ring
         /// count) and <see cref="DeviceThrottleLimit"/> (aggregate in-flight). 0 means "use the device
-        /// default". Note libaio draws io-contexts * queue-depth from the global fs.aio-max-nr budget.
+        /// default". libaio draws io-contexts * queue-depth from the global fs.aio-max-nr budget.
         /// </summary>
         public int DeviceQueueDepth = 0;
 

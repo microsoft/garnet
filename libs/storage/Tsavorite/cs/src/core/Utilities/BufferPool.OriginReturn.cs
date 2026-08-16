@@ -162,10 +162,10 @@ namespace Tsavorite.core
     /// <item><b>No per-push allocation.</b> <c>ConcurrentStack.Push</c> allocates a link node per item; this pool
     /// exists to avoid exactly that. <see cref="Stack{T}"/> pushes into a pre-grown array.</item>
     /// </list>
-    /// Contention is bounded by striping: the depot is spread <c>DepotStripes</c> ways, sized from the machine's
-    /// processor count so the number of threads that can enter it concurrently scales with the hardware, and each
-    /// critical section is O(1). A lock-free CAS on one shared head would reintroduce the cross-core ping-pong on
-    /// a single cache line that this design removes.
+    /// Contention is bounded by striping: the depot is spread <c>DepotStripes</c> ways, sized from the
+    /// machine's processor count, is reached only on magazine overflow/underflow, and each critical section
+    /// is O(1). A lock-free CAS on one shared head would reintroduce the cross-core ping-pong on a single
+    /// cache line that this design removes.
     /// </remarks>
     internal sealed class DepotStripe
     {

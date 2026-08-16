@@ -147,8 +147,8 @@ ceiling is effectively block-size independent.
   of the same shape (128 B records fetched over the array's 512 B sectors), driven end-to-end
   through the RESP protocol and the Tsavorite pending-read path (not raw device IO).
 - **Defaults reach the tuned peak.** Uring's smart ring-count default (`min(2 × cores, 64)` rings,
-  decoupled from the 4 completion threads) closes the ring-starvation foot-gun with no flags; libaio
-  needs no ring tuning. Hand-tuning (`--device-completion-threads 8 --device-throttle-limit 4096`,
+  decoupled from the 4 completion threads) sizes rings to the hardware with no flags; libaio
+  needs no ring tuning. Explicit tuning (`--device-completion-threads 8 --device-throttle-limit 4096`,
   uring `--device-io-contexts 96`) moves each cell < 5%.
 - **NUMA pinning is the largest single factor** on this dual-socket box (stateful server): e.g. uring
   t=48 rises 6.23 → 7.41 M when the server is pinned to node 0 and the client to node 1. On a
@@ -166,7 +166,7 @@ DATA=/mnt/nvme/garnet benchmark/Resp.benchmark/scripts/nvme-raid0-matrix.sh
 
 It sweeps both backends × pin/no-pin × threads, takes the median of `PASSES` (default 3) per cell, and
 prints the Markdown table above. Override `DATA`, `THREADS`, `PASSES`, `RUNTIME`, or set
-`CT` / `THROTTLE` / `URING_IOCTX` to reproduce the hand-tuned configuration instead of the defaults.
+`CT` / `THROTTLE` / `URING_IOCTX` to run the explicitly tuned configuration instead of the defaults.
 Generator: [`scripts/nvme-raid0-matrix.sh`](scripts/nvme-raid0-matrix.sh).
 
 ## Offline variations

@@ -116,11 +116,10 @@ namespace Device.benchmark
                     {
                         // Pool empty: every buffer this worker owns is in flight. The device's
                         // dedicated completion-drainer threads refill the pool via Callback, so
-                        // we only help drain here as a liveness fallback. This is rarely hit
-                        // because the per-thread throttle caps in-flight well below batchSize.
-                        // Draining on the fast path (after every submit) is an anti-pattern: the
-                        // single-event TryComplete serializes all submitters on context 0's kernel
-                        // ring mutex (a hot-path contention point in osq_lock), so keep it off the hot path.
+                        // this drains only as a liveness fallback. It is rarely hit because the
+                        // per-thread throttle caps in-flight well below batchSize. Draining after
+                        // every submit would keep it on the hot path, where the single-event
+                        // TryComplete serializes all submitters on context 0's kernel ring mutex.
                         device.TryComplete();
                         Thread.Yield();
                     }
