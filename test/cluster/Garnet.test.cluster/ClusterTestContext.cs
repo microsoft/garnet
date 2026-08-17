@@ -468,6 +468,11 @@ namespace Garnet.test.cluster
         /// <param name="certificates"></param>
         /// <param name="clusterCreds"></param>
         /// <param name="threadPoolMinIOCompletionThreads"></param>
+        /// <param name="clusterPreferredEndpointType"></param>
+        /// <param name="clusterAnnounceHostname"></param>
+        /// <param name="clusterClientAnnounceIp"></param>
+        /// <param name="clusterClientAnnouncePort"></param>
+        /// <param name="clusterClientAnnounceHostname"></param>
         /// <returns></returns>
         public GarnetServer CreateInstance(
             EndPoint endpoint,
@@ -499,7 +504,12 @@ namespace Garnet.test.cluster
             X509CertificateCollection certificates = null,
             ServerCredential clusterCreds = new ServerCredential(),
             int threadPoolMinIOCompletionThreads = 0,
-            bool enableRangeIndexPreview = false)
+            bool enableRangeIndexPreview = false,
+            ClusterPreferredEndpointType clusterPreferredEndpointType = ClusterPreferredEndpointType.Ip,
+            string clusterAnnounceHostname = null,
+            string clusterClientAnnounceIp = null,
+            int clusterClientAnnouncePort = 0,
+            string clusterClientAnnounceHostname = null)
         {
             var opts = TestUtils.GetGarnetServerOptions(
                 TestFolder,
@@ -533,6 +543,11 @@ namespace Garnet.test.cluster
                 authPassword: clusterCreds.password,
                 certificates: certificates,
                 clusterAnnounceEndpoint: clusterAnnounceEndpoint,
+                clusterPreferredEndpointType: clusterPreferredEndpointType,
+                clusterAnnounceHostname: clusterAnnounceHostname,
+                clusterClientAnnounceIp: clusterClientAnnounceIp,
+                clusterClientAnnouncePort: clusterClientAnnouncePort,
+                clusterClientAnnounceHostname: clusterClientAnnounceHostname,
                 vectorSetReplayTaskCount: vectorSetReplayTaskCount,
                 threadPoolMinIOCompletionThreads: threadPoolMinIOCompletionThreads,
                 enableRangeIndexPreview: enableRangeIndexPreview,

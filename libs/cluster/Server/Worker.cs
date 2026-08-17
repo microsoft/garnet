@@ -65,22 +65,22 @@ namespace Garnet.cluster
         public long ReplicationOffset;
 
         /// <summary>
-        /// Hostname of this instance
+        /// Hostname associated with this node and used as its default client hostname.
         /// </summary>
         public string hostname;
 
         /// <summary>
-        /// IP address advertised to clients.
+        /// IP address returned to clients.
         /// </summary>
         public string ClientAddress;
 
         /// <summary>
-        /// Port advertised to clients.
+        /// Port returned to clients.
         /// </summary>
         public int ClientPort;
 
         /// <summary>
-        /// Hostname advertised to clients.
+        /// Hostname returned to clients.
         /// </summary>
         public string ClientHostname;
 

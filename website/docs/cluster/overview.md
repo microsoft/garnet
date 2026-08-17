@@ -50,6 +50,38 @@ in the cluster.
 
 For more information about the cluster configuration please see the description of *CLUSTER NODES* command.
 
+### Separate Client Endpoints
+
+By default, Garnet uses each node's cluster announce address and port for node-to-node
+traffic and reuses the cluster announce settings in client responses. Deployments behind
+a load balancer or network address translation can configure a separate endpoint for
+clients:
+
+- `--cluster-announce-ip` and `--cluster-announce-port` identify the directly reachable
+  endpoint used for gossip, replication, migration, and other node-to-node traffic.
+- `--cluster-announce-hostname` supplies the default hostname reported to clients.
+- `--cluster-client-announce-ip`, `--cluster-client-announce-port`, and
+  `--cluster-client-announce-hostname` override the endpoint returned in `MOVED`, `ASK`,
+  `CLUSTER SLOTS`, and `CLUSTER SHARDS` responses.
+- `--cluster-preferred-endpoint-type` selects whether client responses prefer the client
+  IP address or hostname.
+
+Each client setting falls back independently to its corresponding cluster announce
+setting when omitted.
+`CLUSTER NODES` continues to report the node-to-node endpoint so a control plane can use
+it for cluster management.
+
+For example, this node listens and communicates with peers on `10.0.0.4:6379`, while
+clients connect through a load balancer using `node.example.com:10000`:
+
+```bash
+GarnetServer --cluster --bind 10.0.0.4 --port 6379 \
+  --cluster-announce-ip 10.0.0.4 --cluster-announce-port 6379 \
+  --cluster-client-announce-hostname node.example.com \
+  --cluster-client-announce-port 10000 \
+  --cluster-preferred-endpoint-type hostname
+```
+
 ## Control Plane
 
 It is important to keep in mind that Garnet's cluster mode design is currently _passive_: this means that it does not implement leader election, and simply responds to cluster 
@@ -158,4 +190,3 @@ PS C:\Dev>
 ```
 
 Note that the use of redis-cli is not required; any client compatible with the RESP protocol may be used to execute the aforementioned commands.
-

@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.IO;
 using System.Runtime.InteropServices;
 using System.Threading;
 using Microsoft.Extensions.Logging;
@@ -13,8 +14,15 @@ namespace Garnet.cluster
     {
         public static byte[] ReadDevice(IDevice device, SectorAlignedBufferPool pool, ILogger logger = null)
         {
+            var fileSize = device.GetFileSize(0);
+            if (fileSize < sizeof(int))
+                throw new InvalidDataException($"Invalid cluster configuration file size: {fileSize}");
+
             ReadInto(device, pool, 0, out byte[] writePad, sizeof(int), logger);
             int size = BitConverter.ToInt32(writePad, 0);
+            if (size < 0 || size > Array.MaxLength - sizeof(int) || (long)size + sizeof(int) > fileSize)
+                throw new InvalidDataException($"Invalid cluster configuration payload size: {size}");
+
             byte[] body;
             if (writePad.Length >= size + sizeof(int))
                 body = writePad;
