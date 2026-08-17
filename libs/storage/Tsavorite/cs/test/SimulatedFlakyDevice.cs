@@ -80,7 +80,10 @@ namespace Tsavorite.test
                 // Otherwise, decide whether we need to introduce a failure
                 if (random.Value.NextDouble() < options.writeTransientErrorRate)
                 {
+                    // A device must complete each IO exactly once. Having signaled failure, return
+                    // instead of also forwarding to the underlying device (which would deliver a second completion).
                     callback(42, numBytesToWrite, context, ioException: default);
+                    return;
                 }
                 // decide whether failure should be in fact permanent. Don't necessarily need to fail concurrent requests
                 else if (random.Value.NextDouble() < options.writePermanentErrorRate)
@@ -101,6 +104,7 @@ namespace Tsavorite.test
                             permanentlyFailedRangesEnd.Insert(i, logicalDestEnd);
                         }
                     });
+                    return;
                 }
             }
             finally
@@ -142,7 +146,10 @@ namespace Tsavorite.test
                 // Otherwise, decide whether we need to introduce a failure
                 if (random.Value.NextDouble() < options.readTransientErrorRate)
                 {
+                    // A device must complete each IO exactly once. Having signaled failure, return
+                    // instead of also forwarding to the underlying device (which would deliver a second completion).
                     callback(42, readLength, context, ioException: default);
+                    return;
                 }
                 else if (random.Value.NextDouble() < options.readPermanentErrorRate)
                 {
@@ -161,6 +168,7 @@ namespace Tsavorite.test
                             permanentlyFailedRangesEnd.Insert(i, logicalSrcEnd);
                         }
                     });
+                    return;
                 }
             }
             finally

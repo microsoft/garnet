@@ -74,9 +74,6 @@ namespace Tsavorite.test
         /// </summary>
         [Test]
         [Category("TsavoriteLog")]
-        [Explicit("Flaky under test-suite ordering: process-global recovery state can leak between fixtures and make " +
-            "Phase 2a recover an empty log (no read attempted, so no fast-fail throw). The clamp regression is covered " +
-            "deterministically by CalculateReadOnlyAddressClampsOutOfRangeHeadAddress; the leak is tracked separately.")]
         [CancelAfter(60000)]
         public void FastCommitRecoveryFailureFailsFastAndDoesNotPoisonLog(CancellationToken cancellationToken)
         {
@@ -114,6 +111,37 @@ namespace Tsavorite.test
                 for (int i = 0; i < seededEntries; i++)
                     _ = seedLog.Enqueue(entry);
                 seedLog.Commit(spinWait: true);
+
+                // Fast commit persists the manager's commit-metadata file asynchronously: spinWait guarantees the
+                // in-memory commit and the inline log commit record, but not that the metadata file is yet visible via
+                // the commit manager. Phase 2a recovers with a device whose reads all fail, so that metadata file is its
+                // only usable recovery source. Wait until it is actually loadable; otherwise recovery races the not-yet-
+                // written file, finds no commit, and returns an empty log without ever issuing the device read that must throw.
+                var seedDeadline = System.Diagnostics.Stopwatch.StartNew();
+                bool seedCommitVisible = false;
+                while (!seedCommitVisible && seedDeadline.Elapsed < TimeSpan.FromSeconds(30))
+                {
+                    foreach (var commitNum in manager.ListCommits())
+                    {
+                        try
+                        {
+                            var metadata = manager.GetCommitMetadata(commitNum);
+                            if (metadata is { Length: > 0 })
+                            {
+                                seedCommitVisible = true;
+                                break;
+                            }
+                        }
+                        catch
+                        {
+                            // Metadata file exists but is not fully written yet; keep waiting.
+                        }
+                    }
+                    if (!seedCommitVisible)
+                        _ = Thread.Yield();
+                }
+                ClassicAssert.IsTrue(seedCommitVisible,
+                    "Seed commit metadata was never persisted by the commit manager, so Phase 2a could not recover a non-empty log.");
             }
 
             // Phase 2a: recover with a device whose reads all fail. Recovery loads the committed metadata (UntilAddress
