@@ -19,8 +19,14 @@ namespace Garnet.server
         {
             if (!dstLogRecord.TrySetValueSpanAndPrepareOptionals(srcValue, in sizeInfo))
                 return false;
-            if (input.arg1 != 0 && !dstLogRecord.TrySetExpiration(input.arg1))
-                return false;
+
+            // RENAMEs use arg1 for RecordType, not expiration
+            if (input.header.cmd is not (RespCommand.RENAME or RespCommand.RENAMENX))
+            {
+                if (input.arg1 != 0 && !dstLogRecord.TrySetExpiration(input.arg1))
+                    return false;
+            }
+
             sizeInfo.AssertOptionalsIfSet(dstLogRecord.DataHeader);
             return true;
         }
@@ -31,9 +37,16 @@ namespace Garnet.server
         {
             if (!dstLogRecord.TrySetValueObjectAndPrepareOptionals(srcValue, in sizeInfo))
                 return false;
+            
             // TODO ETag
-            if (input.arg1 != 0 && !dstLogRecord.TrySetExpiration(input.arg1))
-                return false;
+
+            // RENAMEs use arg1 for RecordType, not expiration
+            if (input.header.cmd is not (RespCommand.RENAME or RespCommand.RENAMENX))
+            {
+                if (input.arg1 != 0 && !dstLogRecord.TrySetExpiration(input.arg1))
+                    return false;
+            }
+
             sizeInfo.AssertOptionalsIfSet(dstLogRecord.DataHeader);
             return true;
         }

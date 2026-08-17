@@ -379,19 +379,38 @@ namespace Garnet.server
             if (serverOptions.EnableCluster)
             {
                 if (serverOptions.Recover)
+                {
                     await clusterProvider.RecoverAsync().ConfigureAwait(false);
+                }
+
+                databaseManager.RecoverVectorSets();
             }
             else
             {
                 if (serverOptions.Recover)
                 {
                     await RecoverCheckpointAsync().ConfigureAwait(false);
+
+                    databaseManager.RecoverVectorSets();
+
                     await RecoverAOFAsync().ConfigureAwait(false);
-                    ReplayAOF(AofAddress.Create(length: serverOptions.AofPhysicalSublogCount, value: -1));
+                    _ = ReplayAOF(AofAddress.Create(length: serverOptions.AofPhysicalSublogCount, value: -1));
+
+                    // Wait for all async Vector Set ops to complete
+                    for (var db = 0; db <= databaseManager.MaxDatabaseId; db++)
+                    {
+                        var dbRes = databaseManager.TryGetDatabase(db, out var found);
+                        if (found)
+                        {
+                            dbRes.VectorManager?.WaitForVectorOperationsToComplete();
+                        }
+                    }
+                }
+                else
+                {
+                    databaseManager.RecoverVectorSets();
                 }
             }
-
-            databaseManager.RecoverVectorSets();
         }
 
         /// <summary>

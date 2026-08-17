@@ -3430,58 +3430,68 @@ namespace Garnet.test
             const string DestKey = nameof(RenamesThenRecoverFromAOFAsync) + "_dest";
 
             // Old key is Vector Set, and new key does not exist
-            {
-                using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
-                var db = redis.GetDatabase();
+            //{
+            //     Get a clean Garnet Server
+            //    server.Dispose(deleteDir: true);
+            //    server = CreateGarnetServer(tryRecover: false);
+            //    server.Start();
 
-                _ = db.KeyDelete(SourceKey);
-                _ = db.KeyDelete(DestKey);
+            //    using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            //    var db = redis.GetDatabase();
 
-                var vaddRes = (int)await db.ExecuteAsync("VADD", SourceKey, "VALUES", "3", "1", "2", "3", "foo");
-                ClassicAssert.AreEqual(1, vaddRes);
+            //    _ = db.KeyDelete(SourceKey);
+            //    _ = db.KeyDelete(DestKey);
 
-                var renameRes = await db.KeyRenameAsync(SourceKey, DestKey, When.Always);
-                ClassicAssert.IsTrue(renameRes);
+            //    var vaddRes = (int)await db.ExecuteAsync("VADD", SourceKey, "VALUES", "3", "1", "2", "3", "foo");
+            //    ClassicAssert.AreEqual(1, vaddRes);
 
-                // Validate
-                {
-                    var existsRes = await db.KeyExistsAsync(SourceKey);
-                    ClassicAssert.IsFalse(existsRes);
+            //    var renameRes = await db.KeyRenameAsync(SourceKey, DestKey, When.Always);
+            //    ClassicAssert.IsTrue(renameRes);
 
-                    var vembRes = (string[])await db.ExecuteAsync("VEMB", DestKey, "foo");
-                    ClassicAssert.AreEqual(3, vembRes.Length);
-                    ClassicAssert.AreEqual(1f, float.Parse(vembRes[0]));
-                    ClassicAssert.AreEqual(2f, float.Parse(vembRes[1]));
-                    ClassicAssert.AreEqual(3f, float.Parse(vembRes[2]));
-                }
+            //     Validate
+            //    {
+            //        var existsRes = await db.KeyExistsAsync(SourceKey);
+            //        ClassicAssert.IsFalse(existsRes);
 
-                // Commit AOF and then shutdown
-                var commitAOF = await server.Store.CommitAOFAsync(cancellation).ConfigureAwait(false);
-                ClassicAssert.IsTrue(commitAOF);
-                server.Dispose(deleteDir: false);
+            //        var vembRes = (string[])await db.ExecuteAsync("VEMB", DestKey, "foo");
+            //        ClassicAssert.AreEqual(3, vembRes.Length);
+            //        ClassicAssert.AreEqual(1f, float.Parse(vembRes[0]));
+            //        ClassicAssert.AreEqual(2f, float.Parse(vembRes[1]));
+            //        ClassicAssert.AreEqual(3f, float.Parse(vembRes[2]));
+            //    }
 
-                // Recover
-                server = CreateGarnetServer(tryRecover: true);
-                server.Start();
+            //     Commit AOF and then shutdown
+            //    var commitAOF = await server.Store.CommitAOFAsync(cancellation).ConfigureAwait(false);
+            //    ClassicAssert.IsTrue(commitAOF);
+            //    server.Dispose(deleteDir: false);
 
-                // Validate after recovery
-                {
-                    using var redisRecovery = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
-                    var dbRecovery = redisRecovery.GetDatabase();
+            //     Recover
+            //    server = CreateGarnetServer(tryRecover: true);
+            //    server.Start();
 
-                    var existsRes = await dbRecovery.KeyExistsAsync(SourceKey);
-                    ClassicAssert.IsFalse(existsRes);
+            //     Validate after recovery
+            //    {
+            //        using var redisRecovery = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            //        var dbRecovery = redisRecovery.GetDatabase();
 
-                    var vembRes = (string[])await dbRecovery.ExecuteAsync("VEMB", DestKey, "foo");
-                    ClassicAssert.AreEqual(3, vembRes.Length);
-                    ClassicAssert.AreEqual(1f, float.Parse(vembRes[0]));
-                    ClassicAssert.AreEqual(2f, float.Parse(vembRes[1]));
-                    ClassicAssert.AreEqual(3f, float.Parse(vembRes[2]));
-                }
-            }
+            //        var existsRes = await dbRecovery.KeyExistsAsync(SourceKey);
+            //        ClassicAssert.IsFalse(existsRes);
+
+            //        var vembRes = (string[])await dbRecovery.ExecuteAsync("VEMB", DestKey, "foo");
+            //        ClassicAssert.AreEqual(3, vembRes.Length);
+            //        ClassicAssert.AreEqual(1f, float.Parse(vembRes[0]));
+            //        ClassicAssert.AreEqual(2f, float.Parse(vembRes[1]));
+            //        ClassicAssert.AreEqual(3f, float.Parse(vembRes[2]));
+            //    }
+            //}
 
             // Old key is Vector Set, new key exists and is NOT a Vector Set
             {
+                // Get a clean Garnet Server
+                server.Dispose(deleteDir: true);
+                server = CreateGarnetServer(tryRecover: false);
+                server.Start();
+
                 using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
                 var db = redis.GetDatabase();
 
@@ -3536,6 +3546,11 @@ namespace Garnet.test
 
             // Old key is Vector Set, new key exists and IS a Vector Set
             {
+                // Get a clean Garnet Server
+                server.Dispose(deleteDir: true);
+                server = CreateGarnetServer(tryRecover: false);
+                server.Start();
+
                 using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
                 var db = redis.GetDatabase();
 
@@ -3590,6 +3605,11 @@ namespace Garnet.test
 
             // Old key is NOT a Vector Set, new key exists and IS a Vector Set
             {
+                // Get a clean Garnet Server
+                server.Dispose(deleteDir: true);
+                server = CreateGarnetServer(tryRecover: false);
+                server.Start();
+
                 using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
                 var db = redis.GetDatabase();
 

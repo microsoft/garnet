@@ -21,12 +21,14 @@ namespace Tsavorite.core
         /// <param name="readCopyOptions"><see cref="ReadCopyOptions"/> for this session; override those specified at TsavoriteKV level, and may be overridden on individual Read operations</param>
         /// <param name="initialIORecordSize">Initial IO record size for disk reads in this session;
         ///     <see cref="KVSettings.UseDefaultInitialIORecordSize"/> means inherit from the store-level setting, and may be overridden on individual Read operations via <see cref="ReadOptions.InitialIORecordSize"/>.</param>
+        /// <param name="explicitSessionId">Override session id - must be acquired from another <see cref="ClientSession{TKey, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator}"/>.</param>
         /// <returns>Session instance</returns>
         public ClientSession<TKey, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> NewSession<TKey, TInput, TOutput, TContext, TFunctions>(
             TFunctions functions,
             bool enableConsistentRead = false,
             ReadCopyOptions readCopyOptions = default,
-            int initialIORecordSize = KVSettings.UseDefaultInitialIORecordSize)
+            int initialIORecordSize = KVSettings.UseDefaultInitialIORecordSize,
+            int? explicitSessionId = null)
             where TKey : IKey
 #if NET9_0_OR_GREATER
                 , allows ref struct
@@ -36,7 +38,7 @@ namespace Tsavorite.core
             if (functions == null)
                 throw new ArgumentNullException(nameof(functions));
 
-            int sessionID = Interlocked.Increment(ref maxSessionID);
+            int sessionID = explicitSessionId ?? Interlocked.Increment(ref maxSessionID);
             var ctx = new TsavoriteExecutionContext<TInput, TOutput, TContext>(sessionID);
             ctx.MergeReadCopyOptions(ReadCopyOptions, readCopyOptions);
             ctx.InitialIORecordSize = initialIORecordSize;
@@ -47,8 +49,8 @@ namespace Tsavorite.core
                     _ = Interlocked.CompareExchange(ref _activeSessions, [], null);
             }
             var session = new ClientSession<TKey, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator>(this, ctx, functions, enableConsistentRead);
-            lock (_activeSessions)
-                _activeSessions.Add(sessionID, new SessionInfo { session = session, isActive = true });
+            //lock (_activeSessions)
+            //    _activeSessions.Add(sessionID, new SessionInfo { session = session, isActive = true });
             return session;
         }
 

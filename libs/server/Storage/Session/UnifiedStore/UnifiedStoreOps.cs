@@ -349,9 +349,14 @@ namespace Garnet.server
                     {
                         // Case #2 or #4 - old key is a Vector Set, so suppress cleanups on the coming delete
 
-                        VectorManager.MarkSuppressCleanup(oldKey, ref stringTransactionalContext);
+                        var strCtx = txnManager.StringTransactionalContext;
+
+                        VectorManager.MarkSuppressCleanup(oldKey, ref strCtx);
                         suppressedCleanup = true;
                     }
+
+                    // Pass record type for the new record in - this is necessary for AOF replay
+                    input.arg1 = oldIsVectorSet ? VectorManager.RecordType : 0;
 
                     // Copy old record into new key - this happens in all 4 cases
                     status = SET(newKey, ref input, in logRecord, ref context);
