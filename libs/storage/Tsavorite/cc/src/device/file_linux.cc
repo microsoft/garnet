@@ -777,8 +777,13 @@ Status UringFile::ScheduleOperation(FileOperationType operationType, uint8_t* bu
     // -EOWNERDEAD once the poll thread has been killed, -EBADF / -ENXIO / -EINVAL / -EOPNOTSUPP
     // otherwise. Waiting longer cannot turn such a failure into a success, and sq_lock and the
     // epoch are held throughout, so a larger budget would only stall the ring and block epoch
-    // reclamation before reaching the same outcome. On exhaustion the op is still reported
-    // submitted (the kernel owns the SQE) and the next submit on this ring redelivers the wakeup.
+    // reclamation before reaching the same outcome. On exhaustion the op is still reported submitted,
+    // because the kernel owns the SQE. While the poll thread is merely parked the next submit on this
+    // ring redelivers the wakeup and the SQE is consumed then. Once it is gone (-EOWNERDEAD) nothing
+    // redelivers: that ring accepts IOs whose completions never arrive. Failing them individually would
+    // not restore correctness — everything already in flight on the ring is lost with it, and the kernel
+    // holds the only reference to those contexts (their user_data), so there is nothing to enumerate.
+    // NativeStorageDevice.Dispose bounds its drain so a ring in this state cannot hang teardown.
     int submit_retries = 0;
     while (true) {
       res = io_uring_submit(ring);

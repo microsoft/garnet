@@ -1899,8 +1899,29 @@ namespace Tsavorite.core
             // handle, or this drain observes their bump and waits. The in-flight decrement for an accepted IO
             // runs in _callback's `finally` after the user callback, so once in-flight reaches 0 all completions
             // (and their user callbacks) have finished.
+            //
+            // Bounded, because in-flight only returns to zero if the kernel completes every accepted IO. A
+            // completion that never arrives (a stalled device or driver, a dropped CQE, an io_uring ring whose
+            // SQPOLL thread has died) would otherwise spin here forever, burning a core and reporting nothing.
+            // The deadline sits orders of magnitude above any legitimate drain: every native call a lease can be
+            // held across is itself bounded (the submit paths unwind after a fixed yield budget, QueueRunFor
+            // takes a timeout), so reaching it means completions are lost rather than slow. Proceeding is then
+            // safe: the drainers are cancelled and joined before the handle is freed, so no user callback can
+            // run during teardown, and NativeDevice_Destroy cancels or waits for whatever the kernel still owns.
+            var drainStart = Stopwatch.StartNew();
+            var drainSpin = new SpinWait();
             while (TotalInFlight() != 0)
-                Thread.Yield();
+            {
+                if (drainStart.ElapsedMilliseconds >= DisposeDrainTimeoutMs)
+                {
+                    logger?.LogError(
+                        "NativeStorageDevice.Dispose() timed out after {timeoutMs}ms with {inFlight} in-flight IO(s) whose completions "
+                        + "were never delivered by the kernel. Proceeding with teardown; their buffers and contexts are leaked.",
+                        DisposeDrainTimeoutMs, TotalInFlight());
+                    break;
+                }
+                drainSpin.SpinOnce(sleep1Threshold: DisposeDrainSleepThreshold);
+            }
 
             // Cancel and Join every completion thread, then destroy the native device.
             // Take nativeCreateLock so a concurrent EnsureNativeDeviceCreated cannot publish a
@@ -2241,5 +2262,16 @@ namespace Tsavorite.core
         // read workload the idle branch is never taken, so this only bounds CPU when the device is
         // quiescent (e.g. between log-flush completions during load).
         const long CompletionWorkerIdleSpinBudget = 1024;
+
+        // Upper bound on Dispose()'s in-flight drain. A normal drain finishes in microseconds: the
+        // outstanding IOs are already queued in the kernel and the leases held across native calls are
+        // individually bounded. This only fires when completions are permanently lost, so it is set far
+        // above any legitimate drain to keep a degraded-but-live device from tripping it.
+        const int DisposeDrainTimeoutMs = 30_000;
+
+        // Iterations Dispose()'s drain spins before SpinWait starts inserting Thread.Sleep(1). Keeps the
+        // common case (drain completes almost immediately) spin-fast while stopping a drain that runs to
+        // DisposeDrainTimeoutMs from pinning a core.
+        const int DisposeDrainSleepThreshold = 20;
     }
 }
