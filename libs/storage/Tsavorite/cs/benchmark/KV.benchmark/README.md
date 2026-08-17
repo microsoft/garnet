@@ -8,7 +8,9 @@ false-sharing-free scoreboard, central tick timing).
 
 It sits one layer above [Device.benchmark](../Device.benchmark/README.md)
 (raw IDevice IOPS) and below [Resp.benchmark](../../../../../../benchmark/Resp.benchmark/README.md)
-(full RESP server): **Resp ≤ KV ≤ Device ≤ fio**.
+(full RESP server): each layer adds per-op work on top of the one below it. The
+three benchmarks use different datasets and configurations, so their absolute
+numbers are not directly comparable.
 
 ## Build & run
 
@@ -26,8 +28,10 @@ counts (Server GC scales past ~8 threads). Run `dotnet $KV --help` for all flags
 ## The three scenarios
 
 Same dataset (100 M × 100 B), three setups distinguished by **where reads land**.
-All NUMA-pin (`numactl --cpunodebind=0 --membind=0`; **required** — without it
-throughput varies ~2×). Common tail: `-v 100 --rumd 100,0,0,0 --runsec 15
+All NUMA-pin (`numactl --cpunodebind=0 --membind=0`). Pinning matters most where
+reads are served from RAM (scenarios 1 and 3), since remote-DRAM latency then gates
+throughput directly; in the disk-bound scenario NVMe latency dominates and pinning
+is within run-to-run noise. Common tail: `-v 100 --rumd 100,0,0,0 --runsec 15
 --warmup-sec 5 -i 3` (`-i 3` = 3 iterations; use the `trimmed` mean).
 
 ### 1. Memory-bound — pure engine ceiling, no IO
@@ -49,9 +53,9 @@ defaults to 4096, sized for a fast NVMe queue; the managed devices
 (`randomaccess`/`filestream`) default to 120 and need `--device-throttle-limit 512`
 to spin up. Reference host: **8×NVMe RAID-0** (`/raid`, `fio` random-read ceiling
 ≈ **8.24 M IOPS at 4 K** / **8.20 M at 512 B** — the array is IOPS-bound, so block
-size barely moves it); KV peaks at **~7.8 M** (≈ 95% of `fio`) — the small
-remaining gap is Tsavorite managed per-op CPU (hash lookup, pending context,
-completion dispatch), not the device, which reaches `fio` parity in
+size barely moves it); KV peaks at **~6.3 M** (≈ 77% of `fio`). The gap is
+Tsavorite managed per-op CPU (hash lookup, pending context, completion dispatch),
+not the device, which reaches `fio` parity in
 [Device.benchmark](../Device.benchmark/README.md#nvme-storage-bound).
 
 ```bash
@@ -60,24 +64,25 @@ numactl --cpunodebind=0 --membind=0 dotnet $KV -n 100000000 -v 100 \
   --device native --device-io-backend libaio --device-throttle-limit 4096 \
   --device-completion-threads 8 --log-memory 16m --page-size 4m --segment-size 1g \
   --rumd 100,0,0,0 --load-threads 8 --run-threads-sweep 8,32,64 \
-  --runsec 12 --warmup-sec 4 --data-path /raid/kv
+  --runsec 12 --warmup-sec 4 -i 3 --data-path /raid/kv
 
-# uring: no extra flag needed — the smart default sizes rings to min(2×cores, 64),
-# covering these run-thread counts (see Device README). The uring rows below were
-# measured with an explicit --device-io-contexts 32.
+# uring: swap in --device-io-backend uring. No extra flag needed — the smart
+# default sizes rings to min(2×cores, 64), covering these run-thread counts (see
+# Device README); the uring rows below use it.
 ```
+
+Trimmed means of 3 iterations:
 
 | backend | pin | t=8 | t=32 | t=64 |
 |---|---|---|---|---|
-| libaio | node-0 | 2.41 M | 6.89 M | **7.76 M** |
-| libaio | none | 2.37 M | 6.83 M | **7.80 M** |
-| uring (`--device-io-contexts 32`) | node-0 | 2.28 M | **7.50 M** | 7.21 M |
-| uring (`--device-io-contexts 32`) | none | 2.30 M | **7.57 M** | 7.32 M |
+| libaio | node-0 | 2.24 M | 5.57 M | **6.34 M** |
+| libaio | none | 2.23 M | 5.67 M | **6.20 M** |
+| uring | node-0 | 2.17 M | 5.98 M | **6.21 M** |
+| uring | none | 2.17 M | 6.01 M | **6.21 M** |
 
-The two backends peak at different thread counts: libaio keeps scaling through
-**t=64** (~7.8 M), while uring peaks at **t=32** (~7.5 M) and eases off at t=64 as
-its submit+drain threads oversubscribe node-0's cores. NUMA pinning is within
-run-to-run noise at these thread counts. Swap
+Both backends scale through **t=64**, landing at ~6.2–6.3 M; uring leads at t=32
+(~6.0 M vs ~5.6 M). Pinned and unpinned rows differ by at most ~2%, inside
+run-to-run noise. Swap
 `--device native` → `randomaccess` (BCL async, slower) / `filestream` (slowest) to
 compare backends. Compare to the device's `fio` ceiling (`--rw=randread --bs=4k
 --direct=1 --ioengine=libaio --iodepth=64 --numjobs=8`).
