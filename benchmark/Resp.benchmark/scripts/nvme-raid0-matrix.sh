@@ -110,13 +110,17 @@ run_config() {
     echo "!! dataset load failed ($backend/$pinmode)"; tail -20 "$LOAD_LOG"; stop_srv; return 1
   fi
 
-  # Guard against a silently short load: GETs against a mostly-empty store are served as
-  # in-memory misses, which would publish a high but meaningless "NVMe" number. The check
+  # Guard against a silently short load: a key that was never written is answered from
+  # memory with no device IO, so a partial load publishes a number that is not
+  # storage-bound. The inflation is steep because a miss is ~30x cheaper than a disk
+  # read, so the threshold is tight: at 99% the reported figure is within ~1% of the
+  # fully-loaded value, whereas a 10% shortfall would overstate it by ~11%. The check
   # uses the op count the loader reports rather than DBSIZE, which scans the whole index
   # on a 100 M-key store and takes far longer than a startup probe should.
+  local floor=$((DBSIZE / 100 * 99))
   local loaded; loaded="$(loaded_ops)"
-  if [ -z "$loaded" ] || [ "$loaded" -lt "$((DBSIZE / 10 * 9))" ]; then
-    echo "!! dataset load short ($backend/$pinmode): loaded ${loaded:-unknown} ops, expected >= $((DBSIZE / 10 * 9))"
+  if [ -z "$loaded" ] || [ "$loaded" -lt "$floor" ]; then
+    echo "!! dataset load short ($backend/$pinmode): loaded ${loaded:-unknown} ops, expected >= $floor"
     stop_srv; return 1
   fi
 
