@@ -3424,6 +3424,220 @@ namespace Garnet.test
         }
 
         [Test]
+        public async Task RenamesThenRecoverFromAOFAsync(CancellationToken cancellation)
+        {
+            const string SourceKey = nameof(RenamesThenRecoverFromAOFAsync) + "_source";
+            const string DestKey = nameof(RenamesThenRecoverFromAOFAsync) + "_dest";
+
+            // Old key is Vector Set, and new key does not exist
+            {
+                using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+                var db = redis.GetDatabase();
+
+                _ = db.KeyDelete(SourceKey);
+                _ = db.KeyDelete(DestKey);
+
+                var vaddRes = (int)await db.ExecuteAsync("VADD", SourceKey, "VALUES", "3", "1", "2", "3", "foo");
+                ClassicAssert.AreEqual(1, vaddRes);
+
+                var renameRes = await db.KeyRenameAsync(SourceKey, DestKey, When.Always);
+                ClassicAssert.IsTrue(renameRes);
+
+                // Validate
+                {
+                    var existsRes = await db.KeyExistsAsync(SourceKey);
+                    ClassicAssert.IsFalse(existsRes);
+
+                    var vembRes = (string[])await db.ExecuteAsync("VEMB", DestKey, "foo");
+                    ClassicAssert.AreEqual(3, vembRes.Length);
+                    ClassicAssert.AreEqual(1f, float.Parse(vembRes[0]));
+                    ClassicAssert.AreEqual(2f, float.Parse(vembRes[1]));
+                    ClassicAssert.AreEqual(3f, float.Parse(vembRes[2]));
+                }
+
+                // Commit AOF and then shutdown
+                var commitAOF = await server.Store.CommitAOFAsync(cancellation).ConfigureAwait(false);
+                ClassicAssert.IsTrue(commitAOF);
+                server.Dispose(deleteDir: false);
+
+                // Recover
+                server = CreateGarnetServer(tryRecover: true);
+                server.Start();
+
+                // Validate after recovery
+                {
+                    using var redisRecovery = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+                    var dbRecovery = redisRecovery.GetDatabase();
+
+                    var existsRes = await dbRecovery.KeyExistsAsync(SourceKey);
+                    ClassicAssert.IsFalse(existsRes);
+
+                    var vembRes = (string[])await dbRecovery.ExecuteAsync("VEMB", DestKey, "foo");
+                    ClassicAssert.AreEqual(3, vembRes.Length);
+                    ClassicAssert.AreEqual(1f, float.Parse(vembRes[0]));
+                    ClassicAssert.AreEqual(2f, float.Parse(vembRes[1]));
+                    ClassicAssert.AreEqual(3f, float.Parse(vembRes[2]));
+                }
+            }
+
+            // Old key is Vector Set, new key exists and is NOT a Vector Set
+            {
+                using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+                var db = redis.GetDatabase();
+
+                _ = db.KeyDelete(SourceKey);
+                _ = db.KeyDelete(DestKey);
+
+                var vaddRes = (int)await db.ExecuteAsync("VADD", SourceKey, "VALUES", "3", "1", "2", "3", "foo");
+                ClassicAssert.AreEqual(1, vaddRes);
+
+                var setRes = await db.StringSetAsync(DestKey, "fizzbuzz");
+                ClassicAssert.IsTrue(setRes);
+
+                var renameRes = await db.KeyRenameAsync(SourceKey, DestKey, When.Always);
+                ClassicAssert.IsTrue(renameRes);
+
+                // Validate
+                {
+                    var existsRes = await db.KeyExistsAsync(SourceKey);
+                    ClassicAssert.IsFalse(existsRes);
+
+                    var vembRes = (string[])await db.ExecuteAsync("VEMB", DestKey, "foo");
+                    ClassicAssert.AreEqual(3, vembRes.Length);
+                    ClassicAssert.AreEqual(1f, float.Parse(vembRes[0]));
+                    ClassicAssert.AreEqual(2f, float.Parse(vembRes[1]));
+                    ClassicAssert.AreEqual(3f, float.Parse(vembRes[2]));
+                }
+
+                // Commit AOF and then shutdown
+                var commitAOF = await server.Store.CommitAOFAsync(cancellation).ConfigureAwait(false);
+                ClassicAssert.IsTrue(commitAOF);
+                server.Dispose(deleteDir: false);
+
+                // Recover
+                server = CreateGarnetServer(tryRecover: true);
+                server.Start();
+
+                // Validate after recovery
+                {
+                    using var redisRecovery = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+                    var dbRecovery = redisRecovery.GetDatabase();
+
+                    var existsRes = await dbRecovery.KeyExistsAsync(SourceKey);
+                    ClassicAssert.IsFalse(existsRes);
+
+                    var vembRes = (string[])await dbRecovery.ExecuteAsync("VEMB", DestKey, "foo");
+                    ClassicAssert.AreEqual(3, vembRes.Length);
+                    ClassicAssert.AreEqual(1f, float.Parse(vembRes[0]));
+                    ClassicAssert.AreEqual(2f, float.Parse(vembRes[1]));
+                    ClassicAssert.AreEqual(3f, float.Parse(vembRes[2]));
+                }
+            }
+
+            // Old key is Vector Set, new key exists and IS a Vector Set
+            {
+                using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+                var db = redis.GetDatabase();
+
+                _ = db.KeyDelete(SourceKey);
+                _ = db.KeyDelete(DestKey);
+
+                var vaddRes = (int)await db.ExecuteAsync("VADD", SourceKey, "VALUES", "3", "1", "2", "3", "foo");
+                ClassicAssert.AreEqual(1, vaddRes);
+
+                var vaddRes2 = (int)await db.ExecuteAsync("VADD", DestKey, "VALUES", "3", "4", "5", "6", "foo");
+                ClassicAssert.AreEqual(1, vaddRes2);
+
+                var renameRes = await db.KeyRenameAsync(SourceKey, DestKey, When.Always);
+                ClassicAssert.IsTrue(renameRes);
+
+                // Validate
+                {
+                    var existsRes = await db.KeyExistsAsync(SourceKey);
+                    ClassicAssert.IsFalse(existsRes);
+
+                    var vembRes = (string[])await db.ExecuteAsync("VEMB", DestKey, "foo");
+                    ClassicAssert.AreEqual(3, vembRes.Length);
+                    ClassicAssert.AreEqual(1f, float.Parse(vembRes[0]));
+                    ClassicAssert.AreEqual(2f, float.Parse(vembRes[1]));
+                    ClassicAssert.AreEqual(3f, float.Parse(vembRes[2]));
+                }
+
+                // Commit AOF and then shutdown
+                var commitAOF = await server.Store.CommitAOFAsync(cancellation).ConfigureAwait(false);
+                ClassicAssert.IsTrue(commitAOF);
+                server.Dispose(deleteDir: false);
+
+                // Recover
+                server = CreateGarnetServer(tryRecover: true);
+                server.Start();
+
+                // Validate after recovery
+                {
+                    using var redisRecovery = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+                    var dbRecovery = redisRecovery.GetDatabase();
+
+                    var existsRes = await dbRecovery.KeyExistsAsync(SourceKey);
+                    ClassicAssert.IsFalse(existsRes);
+
+                    var vembRes = (string[])await dbRecovery.ExecuteAsync("VEMB", DestKey, "foo");
+                    ClassicAssert.AreEqual(3, vembRes.Length);
+                    ClassicAssert.AreEqual(1f, float.Parse(vembRes[0]));
+                    ClassicAssert.AreEqual(2f, float.Parse(vembRes[1]));
+                    ClassicAssert.AreEqual(3f, float.Parse(vembRes[2]));
+                }
+            }
+
+            // Old key is NOT a Vector Set, new key exists and IS a Vector Set
+            {
+                using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+                var db = redis.GetDatabase();
+
+                _ = db.KeyDelete(SourceKey);
+                _ = db.KeyDelete(DestKey);
+
+                var setRes = await db.StringSetAsync(SourceKey, "fizzbuzz");
+                ClassicAssert.IsTrue(setRes);
+
+                var vaddRes = (int)await db.ExecuteAsync("VADD", DestKey, "VALUES", "3", "4", "5", "6", "foo");
+                ClassicAssert.AreEqual(1, vaddRes);
+
+                var renameRes = await db.KeyRenameAsync(SourceKey, DestKey, When.Always);
+                ClassicAssert.IsTrue(renameRes);
+
+                // Validate
+                {
+                    var existsRes = await db.KeyExistsAsync(SourceKey);
+                    ClassicAssert.IsFalse(existsRes);
+
+                    var getRes = (string)await db.StringGetAsync(DestKey);
+                    ClassicAssert.AreEqual("fizzbuzz", getRes);
+                }
+
+                // Commit AOF and then shutdown
+                var commitAOF = await server.Store.CommitAOFAsync(cancellation).ConfigureAwait(false);
+                ClassicAssert.IsTrue(commitAOF);
+                server.Dispose(deleteDir: false);
+
+                // Recover
+                server = CreateGarnetServer(tryRecover: true);
+                server.Start();
+
+                // Validate after recovery
+                {
+                    using var redisRecovery = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+                    var dbRecovery = redisRecovery.GetDatabase();
+
+                    var existsRes = await dbRecovery.KeyExistsAsync(SourceKey);
+                    ClassicAssert.IsFalse(existsRes);
+
+                    var getRes = (string)await dbRecovery.StringGetAsync(DestKey);
+                    ClassicAssert.AreEqual("fizzbuzz", getRes);
+                }
+            }
+        }
+
+        [Test]
         public async Task LotsOfVectorSetsAsync()
         {
             const int NumVectorSets = 1_000;
