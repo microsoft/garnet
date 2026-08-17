@@ -262,6 +262,18 @@ namespace Garnet.server
                 }
                 return;
             }
+            else if(input.arg1 == VectorManager.VADDSetFlagsArg)
+            {
+                // These are injected to update flags on a Vector Set
+                //
+                // Should be relatively rare, today they only happen on RENAMEs
+
+                var flag = MemoryMarshal.Cast<byte, VectorSetFlags>(input.parseState.GetArgSliceByRef(0))[0];
+
+                SetFlags(key, flag, ref currentSession.stringBasicContext);
+
+                return;
+            }
 
             Debug.Assert(input.arg1 == VADDAppendLogArg, "Unexpected operation during replication");
 
