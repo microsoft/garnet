@@ -532,6 +532,8 @@ namespace Tsavorite.core
                 , allows ref struct
 #endif
         {
+            RecordNamespace.AssertKeyCorrectlySized(key, in sizeInfo);
+
             // Build the full RDH in a local (Initialize folds indicator bits + lengths + namespace + recordType + FillerWords
             // into a SINGLE atomic word write at the end). We pass `physicalAddress` as baseAddress and the returned addresses
             // are within it (NOT addresses based on the stack variable). Any record-split work for over-large filler writes the
@@ -606,6 +608,8 @@ namespace Tsavorite.core
                 , allows ref struct
 #endif
         {
+            RecordNamespace.AssertKeyCorrectlySized(key, in sizeInfo);
+
             // Build the full RDH in a local; SpanByteAllocator records are always inline keys + inline values, so
             // sizeInfo.KeyIsInline and sizeInfo.ValueIsInline must both be true (Initialize encodes both). We pass
             // `physicalAddress` as baseAddress and the returned addresses are within it (NOT addresses based on the stack variable).
@@ -1499,7 +1503,7 @@ namespace Tsavorite.core
         /// <remarks>This is 'readonly' because it does not alter the fields of this object, only what they point to.</remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly void PrepareForRevivification(ref RecordSizeInfo sizeInfo)
-            => DataHeaderRef.InitializeForRevivification(ref sizeInfo, physicalAddress);
+            => DataHeaderRef.InitializeForRevivification(ref sizeInfo);
 
         /// <summary>
         /// Sets the lengths of Overflow Keys and Values and Object values into the disk-image copy of the log record before the main-log page is flushed.

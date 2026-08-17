@@ -81,6 +81,12 @@ namespace Tsavorite.core
             mainIndexCheckpointErrorCode = 0;
             mainIndexCheckpointTcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
 
+            // Producer sentinel: count index-checkpoint IO as outstanding for the whole issuance so a concurrent
+            // grow parks (does not munmap) a superseded native table this checkpoint may still be writing. Released
+            // in FlushRunner's finally; each issued chunk write holds its own unit until its completion callback
+            // fires. No-op for the managed hash index.
+            BeginNativeIndexCheckpointIo();
+
             if (throttleCheckpointFlushDelayMs >= 0)
                 Task.Run(FlushRunner);
             else
@@ -115,9 +121,25 @@ namespace Tsavorite.core
                         IntPtr chunkStartBucket = (IntPtr)((byte*)start + (index * chunkSize));
                         HashIndexPageAsyncFlushResult result = default;
                         result.chunkIndex = index;
+                        result.ioUnitReleaseGuard = new(0);
                         if (!useReadCache)
                         {
-                            device.WriteAsync(chunkStartBucket, numBytesWritten, chunkSize, AsyncPageFlushCallback, result);
+                            BeginNativeIndexCheckpointIo();
+                            try
+                            {
+                                device.WriteAsync(chunkStartBucket, numBytesWritten, chunkSize, AsyncPageFlushCallback, result);
+                            }
+                            catch
+                            {
+                                // A device may invoke the completion callback synchronously and then throw back out of
+                                // the submit (LocalMemoryDevice propagates callback exceptions), so the callback may
+                                // already have released this chunk's unit. Claim exactly once to avoid underflowing
+                                // the index's outstanding-IO count, which could free a superseded table while issuance still
+                                // reads it. If the submit failed before any callback ran, we are the only claimant.
+                                if (result.TryClaimIoUnitRelease())
+                                    EndNativeIndexCheckpointIo();
+                                throw;
+                            }
                         }
                         else
                         {
@@ -136,7 +158,22 @@ namespace Tsavorite.core
                             if (prot)
                                 epoch.Suspend();
 
-                            device.WriteAsync((IntPtr)result.mem.aligned_pointer, numBytesWritten, chunkSize, AsyncPageFlushCallback, result);
+                            BeginNativeIndexCheckpointIo();
+                            try
+                            {
+                                device.WriteAsync((IntPtr)result.mem.aligned_pointer, numBytesWritten, chunkSize, AsyncPageFlushCallback, result);
+                            }
+                            catch
+                            {
+                                // A device may invoke the completion callback synchronously and then throw back out of
+                                // the submit (LocalMemoryDevice propagates callback exceptions), so the callback may
+                                // already have released this chunk's unit. Claim exactly once to avoid underflowing
+                                // the index's outstanding-IO count, which could free a superseded table while issuance still
+                                // reads it. If the submit failed before any callback ran, we are the only claimant.
+                                if (result.TryClaimIoUnitRelease())
+                                    EndNativeIndexCheckpointIo();
+                                throw;
+                            }
                         }
                         if (throttleCheckpointFlushDelayMs >= 0)
                         {
@@ -154,6 +191,12 @@ namespace Tsavorite.core
                     logger?.LogError(ex, "{method} failed while flushing index checkpoint", nameof(BeginMainIndexCheckpoint));
                     mainIndexCheckpointTcs.TrySetException(ex);
                 }
+                finally
+                {
+                    // Release the issuance sentinel. Any chunk writes still in flight keep the outstanding-IO count
+                    // > 0 until their callbacks fire; the last release frees tables superseded during this flush.
+                    EndNativeIndexCheckpointIo();
+                }
             }
         }
 
@@ -169,27 +212,39 @@ namespace Tsavorite.core
 
         private void AsyncPageFlushCallback(uint errorCode, uint numBytes, object context, Exception ioException)
         {
-            // Set the page status to flushed
-            var mem = ((HashIndexPageAsyncFlushResult)context).mem;
-            mem?.Dispose();
+            try
+            {
+                // Set the page status to flushed
+                var mem = ((HashIndexPageAsyncFlushResult)context).mem;
+                mem?.Dispose();
 
-            if (errorCode != 0)
-            {
-                if (ioException is null)
-                    logger?.LogError($"{nameof(AsyncPageFlushCallback)} error: {{errorCode}}", errorCode);
-                else
-                    logger?.LogError($"{nameof(AsyncPageFlushCallback)} error: {{exception}}", Utility.GetCallbackExceptionDetail(ioException));
-                _ = Interlocked.CompareExchange(ref mainIndexCheckpointErrorCode, (int)errorCode, 0);
+                if (errorCode != 0)
+                {
+                    if (ioException is null)
+                        logger?.LogError($"{nameof(AsyncPageFlushCallback)} error: {{errorCode}}", errorCode);
+                    else
+                        logger?.LogError($"{nameof(AsyncPageFlushCallback)} error: {{exception}}", Utility.GetCallbackExceptionDetail(ioException));
+                    _ = Interlocked.CompareExchange(ref mainIndexCheckpointErrorCode, (int)errorCode, 0);
+                }
+                if (Interlocked.Decrement(ref mainIndexCheckpointCallbackCount) == 0)
+                {
+                    var err = mainIndexCheckpointErrorCode;
+                    if (err != 0)
+                        mainIndexCheckpointTcs.TrySetException(new TsavoriteException($"Main index checkpoint flush failed with error code {err}"));
+                    else
+                        mainIndexCheckpointTcs.TrySetResult(true);
+                }
+                throttleIndexCheckpointFlushSemaphore?.Release();
             }
-            if (Interlocked.Decrement(ref mainIndexCheckpointCallbackCount) == 0)
+            finally
             {
-                var err = mainIndexCheckpointErrorCode;
-                if (err != 0)
-                    mainIndexCheckpointTcs.TrySetException(new TsavoriteException($"Main index checkpoint flush failed with error code {err}"));
-                else
-                    mainIndexCheckpointTcs.TrySetResult(true);
+                // Release this chunk write's unit of outstanding index-checkpoint IO. In a finally so it runs on
+                // every path (success, error, exception); when the last unit is released, tables superseded by a
+                // grow while this write was in flight are munmap'd. No-op for the managed hash index. Claimed
+                // exactly once so a synchronous callback here and the issuer's catch cannot both release.
+                if (((HashIndexPageAsyncFlushResult)context).TryClaimIoUnitRelease())
+                    EndNativeIndexCheckpointIo();
             }
-            throttleIndexCheckpointFlushSemaphore?.Release();
         }
     }
 }

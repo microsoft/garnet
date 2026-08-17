@@ -7,7 +7,7 @@ namespace Tsavorite.core
 {
     struct PageUnit<TValuePage>
     {
-        /// <summary>The byte array of this circular buffer page</summary>
+        /// <summary>The byte array of this circular buffer page (null when the page is direct-VM backed)</summary>
         public byte[] array;
 
         /// <summary>The pinned pointer to this circular buffer page</summary>
@@ -17,7 +17,7 @@ namespace Tsavorite.core
         public TValuePage value;
 
         /// <inheritdoc/>
-        public override readonly string ToString() => $"Value {value}, Pointer {pointer}, Array.Length {array.Length}";
+        public override readonly string ToString() => $"Value {value}, Pointer {pointer}, Array.Length {(array?.Length ?? 0)}";
     }
 
     [StructLayout(LayoutKind.Explicit)]
