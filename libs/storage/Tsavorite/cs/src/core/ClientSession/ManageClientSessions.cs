@@ -2,7 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.Threading;
 
 namespace Tsavorite.core
@@ -11,7 +11,7 @@ namespace Tsavorite.core
         where TStoreFunctions : IStoreFunctions
         where TAllocator : IAllocator<TStoreFunctions>
     {
-        internal ConcurrentDictionary<object, SessionInfo> _activeSessions = [];
+        internal Dictionary<object, SessionInfo> _activeSessions = [];
 
         /// <summary>
         /// Start a new client session with Tsavorite.
@@ -44,7 +44,12 @@ namespace Tsavorite.core
             ctx.InitialIORecordSize = initialIORecordSize;
 
             var session = new ClientSession<TKey, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator>(this, ctx, functions, enableConsistentRead);
-            _ = _activeSessions.TryAdd(session, new SessionInfo { session = session, isActive = true });
+
+            lock (_activeSessions)
+            {
+                _ = _activeSessions.TryAdd(session, new SessionInfo { session = session, isActive = true });
+            }
+
             return session;
         }
 
@@ -55,10 +60,15 @@ namespace Tsavorite.core
         /// <returns></returns>
         internal void DisposeClientSession(object sessionRef)
         {
-            if (_activeSessions.TryRemove(sessionRef, out var sessionInfo))
+            lock (_activeSessions)
             {
-                var session = sessionInfo.session;
-                session.MergeRevivificationStatsTo(ref RevivificationManager.stats, reset: true);
+                if (_activeSessions.TryGetValue(sessionRef, out var sessionInfo))
+                {
+                    var session = sessionInfo.session;
+                    session.MergeRevivificationStatsTo(ref RevivificationManager.stats, reset: true);
+
+                    _ = _activeSessions.Remove(sessionRef);
+                }
             }
         }
 
@@ -68,8 +78,11 @@ namespace Tsavorite.core
         public string DumpRevivificationStats()
         {
             // Merge the session-level stats into the global stats, clear the session-level stats, and keep the cumulative stats.
-            foreach (var sessionInfo in _activeSessions.Values)
-                sessionInfo.session.MergeRevivificationStatsTo(ref RevivificationManager.stats, reset: true);
+            lock (_activeSessions)
+            {
+                foreach (var sessionInfo in _activeSessions.Values)
+                    sessionInfo.session.MergeRevivificationStatsTo(ref RevivificationManager.stats, reset: true);
+            }
 
             return RevivificationManager.stats.Dump();
         }
@@ -79,8 +92,11 @@ namespace Tsavorite.core
         /// </summary>
         public void ResetRevivificationStats()
         {
-            foreach (var sessionInfo in _activeSessions.Values)
-                sessionInfo.session.ResetRevivificationStats();
+            lock (_activeSessions)
+            {
+                foreach (var sessionInfo in _activeSessions.Values)
+                    sessionInfo.session.ResetRevivificationStats();
+            }
 
             RevivificationManager.stats.Reset();
         }
