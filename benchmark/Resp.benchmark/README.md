@@ -167,7 +167,7 @@ below is storage-bound rather than partly served as in-memory misses.
   t=48 rises 5.55 → 7.32 M when the server is pinned to node 0 and the client to node 1. On a
   single-socket host the pin / no-pin rows converge.
 - Both backends reach the same ~7 M plateau once each has its required ring config — uring leads by
-  5–7% at t=32–48, libaio by 2% at t=64 — so pick either and tune the thread count (see
+  5–8% at t=32–48, libaio by ~2% at t=64 — so pick either and tune the thread count (see
   [Device Tuning](https://microsoft.github.io/garnet/docs/dev/device-tuning)).
 
 Reproduce with the checked-in generator (needs Release builds of `GarnetServer` + `Resp.benchmark`,
