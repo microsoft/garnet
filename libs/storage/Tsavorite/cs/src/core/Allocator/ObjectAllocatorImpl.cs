@@ -149,18 +149,30 @@ namespace Tsavorite.core
             Debug.Assert(index < BufferSize);
             if (pagePointers[index] != default)
             {
-                var enqueued = freePagePool.TryAdd(new()
+                if (useNativeLogPages)
                 {
-                    array = pageArrays[index],
-                    pointer = pagePointers[index],
-                    value = objectPages[index]
-                });
-
-                // We only need to clear the page if it's enqueued; otherwise we don't reuse the page, so can save the time
-                if (enqueued)
+                    // Zero the inline page bytes and clear the ObjectIdMap before pooling the direct-VM block:
+                    // FreeNativeLogPage recycles it, and AllocatePinnedPageArray reuses a pooled block without
+                    // re-zeroing. Leaving stale bytes would let a new page that does not fully overwrite them retain
+                    // stale record headers that eviction reads as valid records. ClearPage does both.
                     ClearPage(index, 0);
+                    FreeNativeLogPage(index);
+                }
                 else
-                    objectPages[index].Clear();
+                {
+                    var enqueued = freePagePool.TryAdd(new()
+                    {
+                        array = pageArrays[index],
+                        pointer = pagePointers[index],
+                        value = objectPages[index]
+                    });
+
+                    // We only need to clear the page if it's enqueued; otherwise we don't reuse the page, so can save the time
+                    if (enqueued)
+                        ClearPage(index, 0);
+                    else
+                        objectPages[index].Clear();
+                }
                 pageArrays[index] = default;
                 pagePointers[index] = default;
                 _ = Interlocked.Decrement(ref AllocatedPageCount);
@@ -293,6 +305,7 @@ namespace Tsavorite.core
                 {
                     KeySize = key.KeyBytes.Length,
                     ValueSize = 0,          // This will be inline, and with the length prefix and possible space when rounding up to kRecordAlignment, allows the possibility revivification can reuse the record for a Heap Field
+                    ExtendedNamespaceSize = RecordNamespace.GetExtendedNamespaceSize(in key),
                     HasETag = false,
                     HasExpiration = false
                 }
@@ -669,7 +682,7 @@ namespace Tsavorite.core
                 if (headAddress >= asyncResult.untilAddress)
                 {
                     // Requested span on page is entirely unavailable in memory; ignore it and call the callback directly.
-                    callback(0, 0, asyncResult);
+                    callback(0, 0, asyncResult, ioException: default);
                     return;
                 }
 
@@ -1007,6 +1020,12 @@ namespace Tsavorite.core
                         logWriter.OnPartialFlushComplete(diskWritePtr, alignedBufferSize, device, alignedMainLogFlushPageAddress + (uint)alignedStartOffset, callback, asyncResult, ref objectLogTail);
                     else
                         device.WriteAsync((IntPtr)diskWritePtr, alignedMainLogFlushPageAddress + (uint)alignedStartOffset, (uint)alignedBufferSize, callback, asyncResult);
+
+                    // Main device write submitted: its completion callback owns releasing this page's native
+                    // snapshot-IO unit and buffers. Set inside the try (before the finally that disposes logWriter
+                    // and readers) so a throw from that cleanup does not make the issuer double-release. If the
+                    // submit itself threw, the flag stays false and the issuer releases (exactly-once via the claim).
+                    asyncResult.snapshotDeviceWriteIssued = true;
                 }
             }
             finally
@@ -1136,10 +1155,15 @@ namespace Tsavorite.core
             }
         }
 
-        private void AsyncReadPageCallback(uint errorCode, uint numBytes, object context)
+        private void AsyncReadPageCallback(uint errorCode, uint numBytes, object context, Exception ioException)
         {
             if (errorCode != 0)
-                logger?.LogError($"{nameof(AsyncReadPageCallback)} error: {{errorCode}}", errorCode);
+            {
+                if (ioException is null)
+                    logger?.LogError($"{nameof(AsyncReadPageCallback)} error: {{errorCode}}", errorCode);
+                else
+                    logger?.LogError($"{nameof(AsyncReadPageCallback)} error: {{exception}}", Utility.GetCallbackExceptionDetail(ioException));
+            }
 
             // Set the page status to flushed
             var result = (PageAsyncReadResult<Empty>)context;
@@ -1210,7 +1234,7 @@ namespace Tsavorite.core
             device.ReadAsync(alignedSourceAddress, destinationPtr, aligned_read_length, AsyncReadPageWithObjectsCallback<TContext>, asyncResult);
         }
 
-        private void AsyncReadPageWithObjectsCallback<TContext>(uint errorCode, uint numBytes, object context)
+        private void AsyncReadPageWithObjectsCallback<TContext>(uint errorCode, uint numBytes, object context, Exception ioException)
         {
             var result = (PageAsyncReadResult<TContext>)context;
 
@@ -1220,8 +1244,11 @@ namespace Tsavorite.core
                 // garbage data, so do not attempt to parse record headers or deserialize objects from it
                 // (doing so can compute bogus lengths and throw OutOfMemoryException/AccessViolation).
                 // Surface the error to the real page-read callback, which handles the failure.
-                logger?.LogError($"{nameof(AsyncReadPageWithObjectsCallback)} error: {{errorCode}}", errorCode);
-                result.callback(errorCode, numBytes, context);
+                if (ioException is null)
+                    logger?.LogError($"{nameof(AsyncReadPageWithObjectsCallback)} error: {{errorCode}}", errorCode);
+                else
+                    logger?.LogError($"{nameof(AsyncReadPageWithObjectsCallback)} error: {{exception}}", Utility.GetCallbackExceptionDetail(ioException));
+                result.callback(errorCode, numBytes, context, ioException: ioException);
                 return;
             }
 
@@ -1233,7 +1260,7 @@ namespace Tsavorite.core
             }
 
             // Call the "real" page read callback
-            result.callback(errorCode, numBytes, context);
+            result.callback(errorCode, numBytes, context, ioException: ioException);
             result.Free();
         }
 

@@ -34,6 +34,12 @@ namespace Tsavorite.core
     }
 
     /// <summary>Tracks and controls size of log</summary>
+    /// <remarks>
+    /// The budget covers the hybrid log's circular-buffer pages and any heap objects referenced from records on those
+    /// pages, and is independent of how the page memory itself was obtained: a page counts the same whether it is a
+    /// pinned managed array or a direct-VM (mmap/VirtualAlloc) block. Eviction therefore behaves identically on both
+    /// backends — the tracker sizes the log in pages and objects, not in GC-heap bytes.
+    /// </remarks>
     /// <typeparam name="TStoreFunctions"></typeparam>
     /// <typeparam name="TAllocator"></typeparam>
     public sealed class LogSizeTracker<TStoreFunctions, TAllocator> : LogSizeTracker

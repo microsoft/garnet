@@ -51,27 +51,55 @@ namespace Tsavorite.kvbench
 
             if (isLoad)
             {
-                // Each thread Upserts its partition deterministically. Single small buffer suffices.
-                byte* valuePtr = stackalloc byte[Options.ValueSize];
-                for (int i = 0; i < Options.ValueSize; i++)
-                    valuePtr[i] = (byte)((threadIdx * 31 + i) & 0xFF);
-                var valueSpan = new Span<byte>(valuePtr, Options.ValueSize);
-
                 KvKey key = default;
-                for (long chunkStart = loadFrom; chunkStart < loadTo; chunkStart += kChunkSize)
+                if (Options.VariableValueSize)
                 {
-                    long chunkEnd = Math.Min(chunkStart + kChunkSize, loadTo);
-                    bContext.CompletePending(false);
-                    for (long k = chunkStart; k < chunkEnd; k++)
+                    // Per-key variable value size: one heap buffer sized to the max, filled once with the
+                    // per-thread pattern; each key Upserts a leading slice of its deterministic size. The
+                    // first kReaderCopyBytes bytes still carry the per-thread pattern so --validate passes.
+                    int maxSize = (int)Options.ResolvedValueSizeMaxBytes;
+                    var valueBuf = GC.AllocateArray<byte>(maxSize, pinned: false);
+                    for (int i = 0; i < maxSize; i++)
+                        valueBuf[i] = (byte)((threadIdx * 31 + i) & 0xFF);
+
+                    for (long chunkStart = loadFrom; chunkStart < loadTo; chunkStart += kChunkSize)
                     {
-                        key.Value = k;
-                        bContext.Upsert(key, valueSpan, Empty.Default);
+                        long chunkEnd = Math.Min(chunkStart + kChunkSize, loadTo);
+                        bContext.CompletePending(false);
+                        for (long k = chunkStart; k < chunkEnd; k++)
+                        {
+                            key.Value = k;
+                            bContext.Upsert(key, valueBuf.AsSpan(0, Options.SizeForKey(k)), Empty.Default);
+                        }
+                        localOps = chunkEnd - loadFrom;
+                        Volatile.Write(ref mySlot.Value, localOps);
                     }
-                    localOps = chunkEnd - loadFrom;
-                    Volatile.Write(ref mySlot.Value, localOps);
+                    bContext.CompletePending(true);
+                    writes = localOps;
                 }
-                bContext.CompletePending(true);
-                writes = localOps;
+                else
+                {
+                    // Each thread Upserts its partition deterministically. Single small buffer suffices.
+                    byte* valuePtr = stackalloc byte[Options.ValueSize];
+                    for (int i = 0; i < Options.ValueSize; i++)
+                        valuePtr[i] = (byte)((threadIdx * 31 + i) & 0xFF);
+                    var valueSpan = new Span<byte>(valuePtr, Options.ValueSize);
+
+                    for (long chunkStart = loadFrom; chunkStart < loadTo; chunkStart += kChunkSize)
+                    {
+                        long chunkEnd = Math.Min(chunkStart + kChunkSize, loadTo);
+                        bContext.CompletePending(false);
+                        for (long k = chunkStart; k < chunkEnd; k++)
+                        {
+                            key.Value = k;
+                            bContext.Upsert(key, valueSpan, Empty.Default);
+                        }
+                        localOps = chunkEnd - loadFrom;
+                        Volatile.Write(ref mySlot.Value, localOps);
+                    }
+                    bContext.CompletePending(true);
+                    writes = localOps;
+                }
             }
             else
             {

@@ -98,8 +98,7 @@ namespace Tsavorite.core
                 , allows ref struct
 #endif
             where TSourceLogRecord : ISourceLogRecord
-            // TODO: Namespace!
-            => new() { KeySize = key.KeyBytes.Length, ValueSize = inputLogRecord.DataHeader.ValueIsObject ? ObjectIdMap.ObjectIdSize : inputLogRecord.ValueSpan.Length, ValueIsObject = inputLogRecord.DataHeader.ValueIsObject };
+            => new() { KeySize = key.KeyBytes.Length, ValueSize = inputLogRecord.DataHeader.ValueIsObject ? ObjectIdMap.ObjectIdSize : inputLogRecord.ValueSpan.Length, ValueIsObject = inputLogRecord.DataHeader.ValueIsObject, ExtendedNamespaceSize = RecordNamespace.GetExtendedNamespaceSize(in key) };
 
         /// <summary>
         /// No reads during compaction

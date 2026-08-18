@@ -3,6 +3,8 @@
 
 #pragma warning disable 0162
 
+using System;
+
 namespace Tsavorite.core
 {
     /// <summary>
@@ -17,6 +19,10 @@ namespace Tsavorite.core
 
         internal CommitFailureException(LinkedCommitInfo linkedCommitInfo, string message)
             : base(message)
+            => LinkedCommitInfo = linkedCommitInfo;
+
+        internal CommitFailureException(LinkedCommitInfo linkedCommitInfo, string message, Exception innerException)
+            : base(message, innerException)
             => LinkedCommitInfo = linkedCommitInfo;
     }
 }

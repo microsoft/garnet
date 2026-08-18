@@ -13,6 +13,11 @@ namespace Garnet.server
     /// Based on the current size and the target size, it uses the corresponding LogSizeTracker objects to increase
     /// or decrease memory utilization.
     /// </summary>
+    /// <remarks>
+    /// The tracked budget is the log pages plus any heap objects on those pages, regardless of whether the page
+    /// memory is a pinned managed array or a direct-VM (mmap/VirtualAlloc) block, so enabling the native allocator
+    /// does not change what this tracker measures or when it trims.
+    /// </remarks>
     public class CacheSizeTracker
     {
         internal LogSizeTracker<StoreFunctions, StoreAllocator> mainLogTracker;

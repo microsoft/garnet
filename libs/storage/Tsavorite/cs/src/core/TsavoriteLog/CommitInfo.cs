@@ -3,6 +3,7 @@
 
 #pragma warning disable 0162
 
+using System;
 using System.Threading.Tasks;
 
 namespace Tsavorite.core
@@ -26,6 +27,13 @@ namespace Tsavorite.core
         /// Error code (0 = success)
         /// </summary>
         public uint ErrorCode;
+
+        /// <summary>
+        /// The underlying device exception that caused the failure, if any. The device-to-allocator completion
+        /// channel only carries a numeric <see cref="ErrorCode"/>, so this preserves the original exception (type
+        /// and stack) so it can be surfaced as the InnerException of a <see cref="CommitFailureException"/> for diagnosis.
+        /// </summary>
+        public Exception Exception;
     }
 
     /// <summary>
