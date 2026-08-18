@@ -539,12 +539,11 @@ namespace Tsavorite.core
                 return;
             }
 
-            // Large (record/flush) classes are shared globally via the striped depot instead of parking per-thread
-            // (on either the owner-local stack or the origin's cross-thread stack). With a wide value-size mix a
-            // thread rarely re-requests the same large class back-to-back, so per-thread parking strands big
-            // buffers and multiplies the working set across (thread x class), inflating RSS / GC. Routing both the
-            // owner and foreign returns of large buffers to the pool-owned depot lets any thread reuse them under
-            // the same byte budget, restoring legacy-like memory behavior; it also sidesteps the origin-shard
+            // Large (record/flush) classes are shared globally via the striped depot, on both the owner and the
+            // foreign return path. The per-thread tiers exploit a thread reusing the same size back-to-back; with
+            // a wide value-size mix a thread rarely re-requests the same large class, so a large buffer parked on
+            // its origin thread sits idle while the working set grows as (thread x class). One global working set
+            // under the same byte budget serves every thread, and keeps large returns clear of the origin-shard
             // finalize race (the depot is pool-owned). Large-buffer ops are low-rate and the workload is
             // bandwidth-bound, so the striped-depot handoff costs ~nothing. Small classes keep the atomic-free
             // per-thread origin-return fast path below. If the depot is closed (pool teardown), drop the buffer and
