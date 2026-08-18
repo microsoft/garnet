@@ -44,5 +44,12 @@ namespace Tsavorite.core
         /// performs.
         /// </summary>
         internal static readonly int DepotStripeCount = ComputePow2(min: 8, cap: 64);
+
+        /// <summary>
+        /// Expected number of threads concurrently renting from one buffer pool. Used to divide the pool's
+        /// cacheable byte budget into equal per-thread slices, so that the slices of that many threads sum to
+        /// the budget and no thread can retain enough to starve the others.
+        /// </summary>
+        internal static readonly int ExpectedConcurrentThreads = Compute(64);
     }
 }

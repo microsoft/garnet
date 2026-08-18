@@ -438,6 +438,96 @@ namespace Tsavorite.test
             ClassicAssert.AreEqual(0, pool.ReservedBytes, "budget must return to zero after Free");
         }
 
+        // ---- Per-thread local retention ------------------------------------------------------------------------
+
+        /// <summary>Rent <paramref name="count"/> buffers of <paramref name="size"/> simultaneously, then return them all.</summary>
+        private static void RentBurstAndReturn(SectorAlignedBufferPool pool, int size, int count)
+        {
+            var held = new List<SectorAlignedMemory>(count);
+            for (var i = 0; i < count; i++)
+                held.Add(pool.Get(size, clearOnReturn: false));
+            foreach (var p in held)
+                p.Return();
+        }
+
+        [Test]
+        public void LocalRetentionIsBoundedByThePerThreadByteCap()
+        {
+            // A burst far larger than the thread's slice must spill to the shared depot rather than park on the
+            // thread: local retention is bounded in bytes, not by a per-class buffer count.
+            SectorAlignedBufferPool.ManagedBudgetBytes = 64L << 20;
+            var pool = new SectorAlignedBufferPool(1, SectorSize);
+            try
+            {
+                var cap = pool.ThreadLocalByteCap;
+                ClassicAssert.Greater(cap, 0, "pool must publish a per-thread local byte cap");
+
+                RentBurstAndReturn(pool, SectorSize, (int)(cap / (2 * SectorSize)) * 3);
+
+                ClassicAssert.Greater(pool.CallerLocalBytes, 0, "the thread must retain buffers up to its slice");
+                ClassicAssert.LessOrEqual(pool.CallerLocalBytes, cap, "a thread must not retain more than its slice");
+            }
+            finally { pool.Free(); }
+            ClassicAssert.AreEqual(0, pool.ReservedBytes, "budget must return to zero after Free");
+        }
+
+        [Test]
+        public void LocalByteCapIsSharedFairlyAcrossClasses()
+        {
+            // The slice is shared across the classes a thread uses: one class alone may hold all of it, but a
+            // second active class reclaims down to an equal share instead of being shut out.
+            SectorAlignedBufferPool.ManagedBudgetBytes = 64L << 20;
+            var pool = new SectorAlignedBufferPool(1, SectorSize);
+            try
+            {
+                var cap = pool.ThreadLocalByteCap;
+                var clsA = SectorAlignedBufferPool.TestClassOfSectors(1);       // SectorSize
+                var clsB = SectorAlignedBufferPool.TestClassOfSectors(8);       // 4 KB
+                ClassicAssert.AreNotEqual(clsA, clsB, "the two probe sizes must land in different classes");
+
+                // Only class A is active: it may take the whole slice.
+                RentBurstAndReturn(pool, SectorSize, (int)(cap / (2 * SectorSize)) + 64);
+                ClassicAssert.Greater(pool.CallerLocalBytesForClass(clsA), cap / 2,
+                    "a thread using a single size class must be able to hold the whole slice");
+
+                // Class B becomes active against a full slice: it must reclaim toward an equal share.
+                RentBurstAndReturn(pool, 4096, (int)(cap / (2 * 9 * SectorSize)) + 64);
+
+                ClassicAssert.LessOrEqual(pool.CallerLocalBytes, cap, "the shared slice must still bound the total");
+                ClassicAssert.Greater(pool.CallerLocalBytesForClass(clsB), 0,
+                    "a newly active class must obtain a share of the slice");
+                ClassicAssert.LessOrEqual(pool.CallerLocalBytesForClass(clsA), cap * 3 / 4,
+                    "the incumbent class must give bytes back toward its share");
+            }
+            finally { pool.Free(); }
+            ClassicAssert.AreEqual(0, pool.ReservedBytes, "budget must return to zero after Free");
+        }
+
+        [Test]
+        public void MixedClassBurstStaysWithinOneThreadSlice()
+        {
+            // A thread cycling through many size classes must hold no more than its slice in total. A per-class
+            // count cap would admit a full chain per class, so the thread's total would scale with the number of
+            // classes it touches rather than being bounded.
+            SectorAlignedBufferPool.ManagedBudgetBytes = 64L << 20;
+            var pool = new SectorAlignedBufferPool(1, SectorSize);
+            try
+            {
+                var cap = pool.ThreadLocalByteCap;
+                for (var round = 0; round < 4; round++)
+                {
+                    for (var sectors = 1; sectors <= 16; sectors++)
+                        RentBurstAndReturn(pool, sectors * SectorSize, 64);
+                }
+
+                ClassicAssert.LessOrEqual(pool.CallerLocalBytes, cap,
+                    "a thread's total local retention must be bounded across all size classes it uses");
+                ClassicAssert.Greater(pool.CallerLocalBytes, 0, "the thread must still cache within its slice");
+            }
+            finally { pool.Free(); }
+            ClassicAssert.AreEqual(0, pool.ReservedBytes, "budget must return to zero after Free");
+        }
+
         // ---- Dead-thread permit reclamation --------------------------------------------------------------------
 
         [Test]
