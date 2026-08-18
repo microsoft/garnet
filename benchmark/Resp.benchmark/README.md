@@ -67,7 +67,7 @@ every GET is a random device fetch. Use **100 M × 128 B** records (`--keylength
 --valuelength 96`, matching the KV/Device benchmarks — 128 B records read over the
 array's 512 B sectors). Reference host: **8×NVMe RAID-0** (`/raid`, `fio` random-read
 ceiling ≈ **8.24 M IOPS at 4 K** / **8.20 M at 512 B** — the array is IOPS-bound, so
-block size barely moves it); Garnet sustains **~7.0 M** end-to-end (≈ 84% of `fio`).
+block size barely moves it); Garnet sustains **~7.3 M** end-to-end (≈ 89% of `fio`).
 
 ```bash
 DATA=/raid/garnet; mkdir -p $DATA
@@ -89,19 +89,19 @@ disk read, so a partial load silently inflates the result — an unloaded store 
 
 | backend | NUMA | t=8 | t=32 | t=48 | t=64 |
 |---|---|---|---|---|---|
-| Libaio | srv node-0 / cli node-1 | 1.76 M | 5.45 M | **6.51 M** | 6.34 M |
-| Libaio | no pin | 1.56 M | 3.78 M | 4.35 M | 4.24 M |
+| Libaio | srv node-0 / cli node-1 | 1.82 M | 5.70 M | 6.97 M | **7.06 M** |
+| Libaio | no pin | 1.38 M | 5.09 M | 5.72 M | 5.57 M |
 
 > `Libaio` (the Linux default) is shown here for a quick look. For the full
 > backend × pin matrix — including `Uring` on out-of-box defaults, which reaches a
 > slightly higher peak — see [Sample results](#sample-results--8-nvme-ssd-raid-0) below.
 
 - `--index 8g` for 100 M keys (default 128 m → 3–4× slowdown from hash chains).
-- Peak is at **t=48**: the RESP server's pipelined client connections drive in-flight
-  depth through the server's own network + completion threads, so throughput keeps
-  climbing past the raw device's t=32 peak before queueing costs take over at t=64.
+- Peak is in the **t=48–64** band: the RESP server's pipelined client connections drive
+  in-flight depth through the server's own network + completion threads, so throughput
+  keeps climbing well past the raw device's t=32 peak before queueing costs take over.
 - **NUMA pinning matters most here** (stateful server): pinning the server to node 0
-  and the client to node 1 lifts t=32 from 3.78 → 5.45 M and t=48 from 4.35 → 6.51 M.
+  and the client to node 1 lifts t=48 from 5.72 → 6.97 M and t=64 from 5.57 → 7.06 M.
 - **`Libaio`** is the Linux default and needs no ring tuning. **`Uring`** now auto-sizes
   its ring count to `min(2 × cores, 64)` — decoupled from `--device-completion-threads` —
   so it is competitive with libaio out of the box; use **`--device-io-contexts N`** to set
@@ -147,26 +147,27 @@ below is storage-bound rather than partly served as in-memory misses.
 
 | backend | NUMA | t=8 | t=32 | t=48 | t=64 |
 |---|---|---|---|---|---|
-| Libaio | srv node-0 / cli node-1 | 1.76 M | 5.45 M | **6.51 M** | 6.34 M |
-| Libaio | no pin | 1.56 M | 3.78 M | 4.35 M | 4.24 M |
-| Uring | srv node-0 / cli node-1 | 1.78 M | 5.76 M | **6.96 M** | 6.56 M |
-| Uring | no pin | 1.74 M | 4.11 M | 4.88 M | 4.99 M |
+| Libaio | srv node-0 / cli node-1 | 1.82 M | 5.70 M | 6.97 M | 7.06 M |
+| Libaio | no pin | 1.38 M | 5.09 M | 5.72 M | 5.57 M |
+| Uring | srv node-0 / cli node-1 | 1.82 M | 6.13 M | **7.32 M** | 6.89 M |
+| Uring | no pin | 1.48 M | 4.60 M | 5.55 M | 6.29 M |
 
-- **Peak ≈ 7.0 M ops/sec** (uring, pinned, t=48) — **~84% of the `fio` ceiling** for random reads
+- **Peak ≈ 7.3 M ops/sec** (uring, pinned, t=48) — **~89% of the `fio` ceiling** for random reads
   of the same shape (128 B records fetched over the array's 512 B sectors), driven end-to-end
   through the RESP protocol and the Tsavorite pending-read path (not raw device IO). The remaining
   gap to `fio` is the RESP + pending-read path: the raw device layer reaches ~8.4 M on this array.
-- **Both backends peak at t=48** and ease off at t=64, where added client concurrency costs more in
-  queueing than it recovers in in-flight depth.
+- **The two backends peak at different thread counts.** Uring peaks at t=48 and eases off at t=64,
+  where added client concurrency costs more in queueing than it recovers in in-flight depth; libaio
+  is still climbing at t=64. Sweep the t=48–64 band rather than assuming a single best value.
 - **Defaults reach the tuned peak.** Uring's smart ring-count default (`min(2 × cores, 64)` rings,
   decoupled from the 4 completion threads) sizes rings to the hardware with no flags; libaio
   needs no ring tuning. Explicit tuning (`--device-completion-threads 8 --device-throttle-limit 4096`,
-  uring `--device-io-contexts 96`) moves each cell < 5%.
+  uring `--device-io-contexts 96`) moves each cell by only a few percent on this host.
 - **NUMA pinning is the largest single factor** on this dual-socket box (stateful server): e.g. uring
-  t=48 rises 4.88 → 6.96 M when the server is pinned to node 0 and the client to node 1. On a
+  t=48 rises 5.55 → 7.32 M when the server is pinned to node 0 and the client to node 1. On a
   single-socket host the pin / no-pin rows converge.
-- Both backends land within a few percent at every pinned cell — the device layer is backend-agnostic
-  once each backend has its required ring config (see
+- Both backends reach the same ~7 M plateau once each has its required ring config — uring leads by
+  5–7% at t=32–48, libaio by 2% at t=64 — so pick either and tune the thread count (see
   [Device Tuning](https://microsoft.github.io/garnet/docs/dev/device-tuning)).
 
 Reproduce with the checked-in generator (needs Release builds of `GarnetServer` + `Resp.benchmark`,
