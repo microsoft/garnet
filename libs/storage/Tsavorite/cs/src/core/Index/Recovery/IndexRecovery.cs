@@ -105,10 +105,15 @@ namespace Tsavorite.core
             Debug.Assert(numBytesRead == num_bytes);
         }
 
-        private unsafe void AsyncPageReadCallback(uint errorCode, uint numBytes, object overlap)
+        private unsafe void AsyncPageReadCallback(uint errorCode, uint numBytes, object overlap, Exception ioException)
         {
             if (errorCode != 0)
-                logger?.LogError($"{nameof(AsyncPageReadCallback)} error: {{errorCode}}", errorCode);
+            {
+                if (ioException is null)
+                    logger?.LogError($"{nameof(AsyncPageReadCallback)} error: {{errorCode}}", errorCode);
+                else
+                    logger?.LogError($"{nameof(AsyncPageReadCallback)} error: {{exception}}", Utility.GetCallbackExceptionDetail(ioException));
+            }
             recoveryCountdown.Decrement();
         }
 

@@ -362,12 +362,17 @@ namespace Tsavorite.core
             => deviceFactory.Get(checkpointNamingScheme.LogCheckpointMetadata(token));
         #endregion
 
-        private unsafe void IOCallback(uint errorCode, uint numBytes, object context)
+        private unsafe void IOCallback(uint errorCode, uint numBytes, object context, Exception ioException)
         {
             if (errorCode != 0)
             {
-                var errorMessage = Utility.GetCallbackErrorMessage(errorCode, numBytes, context);
-                logger?.LogError("[DeviceLogManager] OverlappedStream GetQueuedCompletionStatus error: {errorCode} msg: {errorMessage}", errorCode, errorMessage);
+                if (ioException is null)
+                {
+                    var errorMessage = Utility.GetCallbackErrorMessage(errorCode, numBytes, context);
+                    logger?.LogError("[DeviceLogManager] OverlappedStream GetQueuedCompletionStatus error: {errorCode} msg: {errorMessage}", errorCode, errorMessage);
+                }
+                else
+                    logger?.LogError("[DeviceLogManager] OverlappedStream GetQueuedCompletionStatus error: {exception}", Utility.GetCallbackExceptionDetail(ioException));
                 metadataWriteErrorCode = errorCode;
             }
             semaphore.Release();

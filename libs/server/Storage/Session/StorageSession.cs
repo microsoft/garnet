@@ -119,7 +119,7 @@ namespace Garnet.server
             if (!storeWrapper.serverOptions.DisableObjects)
             {
                 var objectStoreFunctions = new ObjectSessionFunctions(functionsState, readSessionState);
-                var objectStoreSession = db.Store.NewSession<FixedSpanByteKey, ObjectInput, ObjectOutput, long, ObjectSessionFunctions>(objectStoreFunctions, IsConsistentReadSession, explicitSessionId: session.ID);
+                var objectStoreSession = db.Store.NewSession<FixedSpanByteKey, ObjectInput, ObjectOutput, long, ObjectSessionFunctions>(objectStoreFunctions, IsConsistentReadSession, sessionIdOverride: session.ID);
                 objectBasicContext = objectStoreSession.BasicContext;
                 objectTransactionalContext = objectStoreSession.TransactionalContext;
                 objectStoreConsistentReadContext = objectStoreSession.ConsistentReadContext;
@@ -127,10 +127,10 @@ namespace Garnet.server
             }
 
             var unifiedStoreFunctions = new UnifiedSessionFunctions(functionsState, readSessionState);
-            var unifiedStoreSession = db.Store.NewSession<FixedSpanByteKey, UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions>(unifiedStoreFunctions, IsConsistentReadSession, explicitSessionId: session.ID);
+            var unifiedStoreSession = db.Store.NewSession<FixedSpanByteKey, UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions>(unifiedStoreFunctions, IsConsistentReadSession, sessionIdOverride: session.ID);
 
             var vectorFunctions = new VectorSessionFunctions(functionsState, readSessionState);
-            var vectorSession = db.Store.NewSession<VectorElementKey, VectorInput, VectorOutput, long, VectorSessionFunctions>(vectorFunctions, explicitSessionId: session.ID);
+            var vectorSession = db.Store.NewSession<VectorElementKey, VectorInput, VectorOutput, long, VectorSessionFunctions>(vectorFunctions, sessionIdOverride: session.ID);
 
             stringBasicContext = session.BasicContext;
             stringTransactionalContext = session.TransactionalContext;

@@ -647,7 +647,7 @@ namespace Tsavorite.core
                 long devicePageOffset = 0, IDevice device = null, IDevice objectLogDevice = null, CancellationTokenSource cts = null)
             => allocator.AsyncReadPageFromDeviceToFrame(readBuffers: null, readPage, untilAddress, AsyncReadPagesToFrameCallback, context, frame, out completed, devicePageOffset, device, objectLogDevice, cts);
 
-        private unsafe void AsyncReadPagesToFrameCallback(uint errorCode, uint numBytes, object context)
+        private unsafe void AsyncReadPagesToFrameCallback(uint errorCode, uint numBytes, object context, Exception ioException)
         {
             try
             {
@@ -657,7 +657,10 @@ namespace Tsavorite.core
                     _ = result.handle?.Signal();
                 else
                 {
-                    logger?.LogError($"{nameof(AsyncReadPagesToFrameCallback)} error: {{errorCode}}", errorCode);
+                    if (ioException is null)
+                        logger?.LogError($"{nameof(AsyncReadPagesToFrameCallback)} error: {{errorCode}}", errorCode);
+                    else
+                        logger?.LogError($"{nameof(AsyncReadPagesToFrameCallback)} error: {{exception}}", Utility.GetCallbackExceptionDetail(ioException));
                     result.cts?.Cancel();
                 }
                 Interlocked.MemoryBarrier();
