@@ -22,6 +22,33 @@ namespace Garnet.server
         public bool DisableObjects = false;
 
         /// <summary>
+        /// Whether large memory surfaces (log pages / hash index / recovery frames) use a native
+        /// (off-managed-heap) allocator. Resolved from the <c>--use-native-allocator</c> switch and installed at
+        /// startup via <see cref="NativeAllocatorInitializer"/>. The direct-VM backend calls the OS virtual-memory
+        /// APIs directly and is always available; no native library is required.
+        /// </summary>
+        public bool UseNativeAllocator = false;
+
+        /// <summary>
+        /// Select the per-level <c>ConcurrentQueue</c> <see cref="SectorAlignedBufferPool"/> instead of the
+        /// default origin-return (per-thread) pool. The origin-return pool returns each buffer to the
+        /// thread that allocated it, scaling with concurrent IO-completion threads under a per-pool byte budget.
+        /// Installed at startup by toggling <see cref="SectorAlignedBufferPool.UseOriginReturn"/> before any pool
+        /// is created.
+        /// </summary>
+        public bool UseLegacyBufferPool = false;
+
+        /// <summary>
+        /// Per-pool managed byte budget for the default origin-return <see cref="SectorAlignedBufferPool"/>
+        /// (ignored when <see cref="UseLegacyBufferPool"/> is set). Bounds the total cacheable buffer bytes
+        /// across all IO-completion threads, split 25% small size-classes / 75% large so large record/flush
+        /// buffers cannot starve caching of hot small buffers. Set to 0 to disable buffer caching entirely
+        /// (every IO buffer is allocated on demand and reclaimed by the GC; applies to both pool backends).
+        /// Applied at startup to <see cref="SectorAlignedBufferPool.ManagedBudgetBytes"/> before any pool is created.
+        /// </summary>
+        public string BufferPoolMemoryBudget = "1g";
+
+        /// <summary>
         /// Enable cluster.
         /// </summary>
         public bool EnableCluster = false;
@@ -1069,6 +1096,13 @@ namespace Garnet.server
                 logger?.LogInformation("Warning: using lower AOF memory size than specified (power of 2)");
             return (int)Math.Log(adjustedSize, 2);
         }
+
+        /// <summary>
+        /// Get the origin-return <see cref="SectorAlignedBufferPool"/> managed byte budget
+        /// (<see cref="SectorAlignedBufferPool.ManagedBudgetBytes"/>) parsed from <see cref="BufferPoolMemoryBudget"/>.
+        /// </summary>
+        /// <returns>The budget in bytes.</returns>
+        public long GetBufferPoolMemoryBudgetBytes() => ParseSize(BufferPoolMemoryBudget, out _);
 
         /// <summary>
         /// Get AOF Page size in bits

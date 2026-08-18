@@ -278,6 +278,10 @@ namespace Garnet.server
 
                 if (parameterWord.EqualsUpperCaseSpanIgnoringCase(CmdStrings.MATCH))
                 {
+                    // MATCH must be followed by a pattern
+                    if (tokenIdx >= parseState.Count)
+                        return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR);
+
                     // Read pattern for keys filter
                     patternArgSlice = parseState.GetArgSliceByRef(tokenIdx++);
                     pattern = patternArgSlice.ReadOnlySpan;
@@ -286,6 +290,10 @@ namespace Garnet.server
                 }
                 else if (parameterWord.EqualsUpperCaseSpanIgnoringCase(CmdStrings.COUNT))
                 {
+                    // COUNT must be followed by a value
+                    if (tokenIdx >= parseState.Count)
+                        return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR);
+
                     // Validate count
                     if (!parseState.TryGetLong(tokenIdx++, out countValue))
                     {
@@ -296,6 +304,10 @@ namespace Garnet.server
                 }
                 else if (parameterWord.EqualsUpperCaseSpanIgnoringCase(CmdStrings.TYPE))
                 {
+                    // TYPE must be followed by a type name
+                    if (tokenIdx >= parseState.Count)
+                        return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR);
+
                     typeParameterValue = parseState.GetArgSliceByRef(tokenIdx++).ReadOnlySpan;
                 }
             }

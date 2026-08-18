@@ -188,18 +188,18 @@ namespace Tsavorite.core
         {
             if ((uint)segmentId >= (uint)maxSegments)
             {
-                callback(2, 0, context); // ENOENT
+                callback(2, 0, context, ioException: default); // ENOENT
                 return;
             }
             var arr = Volatile.Read(ref segmentArrays[segmentId]);
             if (arr == null)
             {
-                callback(2, 0, context);
+                callback(2, 0, context, ioException: default);
                 return;
             }
             if ((long)sourceAddress + readLength > sz_segment)
             {
-                callback(22, 0, context); // EINVAL
+                callback(22, 0, context, ioException: default); // EINVAL
                 return;
             }
             Enqueue(segmentPtrs[segmentId] + sourceAddress, (void*)destinationAddress, readLength, callback, context);
@@ -230,7 +230,7 @@ namespace Tsavorite.core
                 if (latencyEnabled)
                     WaitLatency(Stopwatch.GetTimestamp());
                 Buffer.MemoryCopy(src, dst, bytes, bytes);
-                callback(0, bytes, context);
+                callback(0, bytes, context, ioException: default);
                 return;
             }
 
@@ -246,7 +246,7 @@ namespace Tsavorite.core
             if (idxPlusOne == ProcessorThreadRingIdx && ReferenceEquals(t_processorOwner, this))
             {
                 Buffer.MemoryCopy(src, dst, bytes, bytes);
-                callback(0, bytes, context);
+                callback(0, bytes, context, ioException: default);
                 return;
             }
 
@@ -330,7 +330,7 @@ namespace Tsavorite.core
                     // Guard the callback inline (no helper — a try/catch blocks JIT inlining, so factoring
                     // this would add a call on the hot drain path). A faulty callback must not kill the
                     // dedicated drain thread: that would wedge the bounded ring (producers block forever).
-                    try { req.callback(0, req.bytes, req.context); }
+                    try { req.callback(0, req.bytes, req.context, ioException: default); }
                     catch (Exception ex) { Debug.WriteLine($"LocalMemoryDevice completion callback threw: {ex}"); }
                 }
                 else
@@ -346,7 +346,7 @@ namespace Tsavorite.core
             while (ring.TryDequeue(out var req))
             {
                 Buffer.MemoryCopy(req.srcAddress, req.dstAddress, req.bytes, req.bytes);
-                try { req.callback(0, req.bytes, req.context); }
+                try { req.callback(0, req.bytes, req.context, ioException: default); }
                 catch (Exception ex) { Debug.WriteLine($"LocalMemoryDevice completion callback threw: {ex}"); }
             }
         }

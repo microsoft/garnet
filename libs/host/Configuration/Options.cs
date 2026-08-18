@@ -87,6 +87,18 @@ namespace Garnet
         [Option("index-max-size", Required = false, HelpText = "Max size of hash index in bytes (rounds down to power of 2)")]
         public string IndexMaxMemorySize { get; set; }
 
+        [OptionValidation]
+        [Option("use-native-allocator", Required = false, HelpText = "Route large memory regions (log pages / hash index / recovery frames) through a native (off-managed-heap) direct-VM allocator (mmap/VirtualAlloc) instead of the GC heap. No native library is required. When enabled, this memory is outside the managed GC heap: size GCHeapHardLimit to leave headroom and monitor 'native_allocator_bytes' in INFO memory.")]
+        public bool? UseNativeAllocator { get; set; }
+
+        [OptionValidation]
+        [Option("use-legacy-buffer-pool", Required = false, HelpText = "Select the per-level ConcurrentQueue SectorAlignedBufferPool instead of the default origin-return (per-thread) pool. The origin-return pool returns each buffer to the thread that allocated it, so it scales with concurrent IO-completion threads under a per-pool byte budget.")]
+        public bool? UseLegacyBufferPool { get; set; }
+
+        [MemorySizeValidation]
+        [Option("buffer-pool-memory-budget", Required = false, HelpText = "Per-pool managed byte budget for the default origin-return SectorAlignedBufferPool (ignored when --use-legacy-buffer-pool is set). Bounds the total cacheable buffer bytes across all IO-completion threads, reserving 25% for small size-classes and 75% for large so large record/flush buffers cannot starve caching of hot small buffers. Requests above the pooled ceiling, or beyond the budget, allocate on demand and free on return (bounded memory, lower reuse). Set to 0 to disable buffer caching entirely (every IO buffer is allocated on demand and reclaimed by the GC; applies to both pool backends). E.g. 1g, 8g.")]
+        public string BufferPoolMemoryBudget { get; set; }
+
         [PercentageValidation(false)]
         [Option("mutable-percent", Required = false, HelpText = "Percentage of log memory that is kept mutable")]
         public int MutablePercent { get; set; }
@@ -865,6 +877,9 @@ namespace Garnet
                 ObjectLogSegmentSize = ObjectLogSegmentSize,
                 IndexMemorySize = IndexMemorySize,
                 IndexMaxMemorySize = IndexMaxMemorySize,
+                UseNativeAllocator = UseNativeAllocator.GetValueOrDefault(),
+                UseLegacyBufferPool = UseLegacyBufferPool.GetValueOrDefault(),
+                BufferPoolMemoryBudget = BufferPoolMemoryBudget,
                 MutablePercent = MutablePercent,
                 EnableReadCache = EnableReadCache.GetValueOrDefault(),
                 ReadCacheMemorySize = ReadCacheMemorySize,

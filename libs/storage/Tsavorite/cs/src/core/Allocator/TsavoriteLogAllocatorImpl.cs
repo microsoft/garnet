@@ -20,7 +20,7 @@ namespace Tsavorite.core
         public TsavoriteLogAllocatorImpl(AllocatorSettings settings)
             : base(settings, new TsavoriteLogStoreFunctions(), @this => new TsavoriteLogAllocator(@this), settings.logger)
         {
-            freePagePool = new OverflowPool<PageUnit<Empty>>(4, p => { });
+            freePagePool = new OverflowPool<PageUnit<Empty>>(4, static p => { });
         }
 
         /// <inheritdoc />
@@ -59,12 +59,20 @@ namespace Tsavorite.core
             Debug.Assert(index < BufferSize);
             if (pagePointers[index] != default)
             {
-                _ = freePagePool.TryAdd(new()
+                if (useNativeLogPages)
                 {
-                    array = pageArrays[index],
-                    pointer = pagePointers[index],
-                    value = Empty.Default
-                });
+                    // Native pages are not pooled: free the direct-VM block now (evicted/flush-complete).
+                    FreeNativeLogPage(index);
+                }
+                else
+                {
+                    _ = freePagePool.TryAdd(new()
+                    {
+                        array = pageArrays[index],
+                        pointer = pagePointers[index],
+                        value = Empty.Default
+                    });
+                }
                 pageArrays[index] = default;
                 pagePointers[index] = default;
                 _ = Interlocked.Decrement(ref AllocatedPageCount);
@@ -108,10 +116,40 @@ namespace Tsavorite.core
             VerifyCompatibleSectorSize(device);
             var alignedPageSize = (pageSize + (sectorSize - 1)) & ~(sectorSize - 1);
 
+            if (useNativeLogPages)
+            {
+                // See SpanByteAllocatorImpl.WriteAsyncToDeviceForSnapshot: under the direct-VM backend, skip a page
+                // the eviction boundary has already fully passed (its slot pointer is cleared) rather than write from
+                // a stale/zero pointer; epoch protection pins a live page for the pointer read, and parking keeps an
+                // in-flight write's block mapped.
+                var epochTaken = epoch.ResumeIfNotProtected();
+                try
+                {
+                    if (HeadAddress >= GetLogicalAddressOfStartOfPage(flushPage + 1))
+                    {
+                        asyncResult.flushRequestState = FlushRequestState.WriteNotIssued;
+                        return;
+                    }
+                    WriteInlinePageAsync((IntPtr)pagePointers[flushPage % BufferSize],
+                                (ulong)(AlignedPageSizeBytes * (flushPage - startPage)),
+                                (uint)alignedPageSize, callback, asyncResult, device);
+                    // Main device write submitted: its completion callback owns releasing this page's snapshot-IO
+                    // unit and buffers. (If WriteInlinePageAsync threw, the flag stays false and the issuer releases.)
+                    asyncResult.snapshotDeviceWriteIssued = true;
+                }
+                finally
+                {
+                    if (epochTaken)
+                        epoch.Suspend();
+                }
+                return;
+            }
+
             WriteInlinePageAsync((IntPtr)pagePointers[flushPage % BufferSize],
                         (ulong)(AlignedPageSizeBytes * (flushPage - startPage)),
                         (uint)alignedPageSize, callback, asyncResult,
                         device);
+            asyncResult.snapshotDeviceWriteIssued = true;
         }
 
         protected override void ReadAsync<TContext>(ulong alignedSourceAddress, IntPtr destinationPtr, uint aligned_read_length,
@@ -174,7 +212,7 @@ namespace Tsavorite.core
             completed = new CountdownEvent(1);
 
             int pageIndex = (int)(readPage % frame.frameSize);
-            if (frame.frame[pageIndex] == null)
+            if (!frame.IsAllocated(pageIndex))
                 frame.Allocate(pageIndex);
             else
                 frame.Clear(pageIndex);
