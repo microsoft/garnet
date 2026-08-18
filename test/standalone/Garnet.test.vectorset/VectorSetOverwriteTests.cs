@@ -297,7 +297,7 @@ namespace Garnet.test
 #pragma warning restore CS0618 // Type or member is obsolete
             }
 
-            vectorManager.WaitForCleanupRequests();
+            vectorManager.WaitForQuiescence();
 
             vectorManager.GetContextState(vectorSetContext, out var inUse, out var isCleaningUp, out _);
 

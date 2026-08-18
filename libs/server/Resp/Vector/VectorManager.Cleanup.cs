@@ -417,11 +417,11 @@ namespace Garnet.server
         public void WaitForDiskANNIndexDrop(ReadOnlySpan<byte> key) => requestedDrops.WaitForCompletion(key);
 
         /// <summary>
-        /// For testing purposes, block until all cleanup requests are processed.
+        /// For use during recovery, wait for any background processing (deletion, cleanup, cleanup requests, etc.) to finish.
         /// </summary>
-        internal void WaitForCleanupRequests()
+        internal void WaitForQuiescence()
         {
-            while (!potentiallyDeleted.IsEmpty || requestCleanupTaskChannel.HasPending || Volatile.Read(ref requestCleanupTaskRunning) || Interlocked.CompareExchange(ref postCheckpointTasksRunning, 0, 0) != 0)
+            while (!potentiallyDeleted.IsEmpty || requestCleanupTaskChannel.HasPending || cleanupTaskChannel.HasPending || replicationReplayChannel.Reader.TryPeek(out _) || !replicationBlockEvent.Wait(0) || Volatile.Read(ref requestCleanupTaskRunning) || Interlocked.CompareExchange(ref postCheckpointTasksRunning, 0, 0) != 0)
             {
                 _ = Thread.Yield();
             }

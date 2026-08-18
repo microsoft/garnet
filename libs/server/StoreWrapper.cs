@@ -395,16 +395,6 @@ namespace Garnet.server
 
                     await RecoverAOFAsync().ConfigureAwait(false);
                     _ = ReplayAOF(AofAddress.Create(length: serverOptions.AofPhysicalSublogCount, value: -1));
-
-                    // Wait for all async Vector Set ops to complete
-                    for (var db = 0; db <= databaseManager.MaxDatabaseId; db++)
-                    {
-                        var dbRes = databaseManager.TryGetDatabase(db, out var found);
-                        if (found)
-                        {
-                            dbRes.VectorManager?.WaitForVectorOperationsToComplete();
-                        }
-                    }
                 }
                 else
                 {
