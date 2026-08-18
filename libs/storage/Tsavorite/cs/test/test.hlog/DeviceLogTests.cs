@@ -165,7 +165,7 @@ namespace Tsavorite.test
             long completed = 0;
             var reentrantLeft = 200;
             DeviceIOCompletionCallback cb = null;
-            cb = (errorCode, numBytes, context) =>
+            cb = (errorCode, numBytes, context, ex) =>
             {
                 _ = Interlocked.Increment(ref completed);
                 // Re-issue from within the completion (runs on the drain thread) — the deadlock trigger.

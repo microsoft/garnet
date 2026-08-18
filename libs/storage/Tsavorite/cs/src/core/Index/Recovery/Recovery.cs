@@ -1330,10 +1330,15 @@ namespace Tsavorite.core
             return touched;
         }
 
-        private void AsyncFlushPageCallbackForRecovery(uint errorCode, uint numBytes, object context)
+        private void AsyncFlushPageCallbackForRecovery(uint errorCode, uint numBytes, object context, Exception ioException)
         {
             if (errorCode != 0)
-                logger?.LogError($"{nameof(AsyncFlushPageCallbackForRecovery)} error: {{errorCode}}", errorCode);
+            {
+                if (ioException is null)
+                    logger?.LogError($"{nameof(AsyncFlushPageCallbackForRecovery)} error: {{errorCode}}", errorCode);
+                else
+                    logger?.LogError($"{nameof(AsyncFlushPageCallbackForRecovery)} error: {{exception}}", Utility.GetCallbackExceptionDetail(ioException));
+            }
 
             // Set the page status to "flush done"
             var result = (PageAsyncFlushResult<RecoveryStatus>)context;
@@ -1444,10 +1449,15 @@ namespace Tsavorite.core
             return false;
         }
 
-        internal void AsyncReadPagesForRecoveryCallback(uint errorCode, uint numBytes, object context)
+        internal void AsyncReadPagesForRecoveryCallback(uint errorCode, uint numBytes, object context, Exception ioException)
         {
             if (errorCode != 0)
-                logger?.LogError($"{nameof(AsyncReadPagesForRecoveryCallback)} error: {{errorCode}}", errorCode);
+            {
+                if (ioException is null)
+                    logger?.LogError($"{nameof(AsyncReadPagesForRecoveryCallback)} error: {{errorCode}}", errorCode);
+                else
+                    logger?.LogError($"{nameof(AsyncReadPagesForRecoveryCallback)} error: {{exception}}", Utility.GetCallbackExceptionDetail(ioException));
+            }
 
             // Set the page status to "read done"
             var result = (PageAsyncReadResult<RecoveryStatus>)context;
