@@ -137,9 +137,8 @@ The **depot** is the third tier — a shared fallback owned by the pool. Decodin
   count, each critical section is O(1), and a lock-free CAS on a single shared head would reintroduce the
   cross-core cache-line ping-pong this design removes.
 * **overflow pool** — it catches buffers that cannot stay in per-thread caches, and redistributes them:
-  * On **Return**, if the origin thread's local stack is full (over `LocalCap`/`LocalByteCap`) or the origin
-    shard has retired (its thread died), the buffer overflows into the depot (`DepotPush`) instead of being
-    dropped.
+  * On **Return**, if the origin thread is at its local byte ceiling (§9) or the origin shard has retired (its
+    thread died), the buffer overflows into the depot (`DepotPush`) instead of being dropped.
   * On **Get**, after checking its own local and cross-thread lists, a thread pulls from the depot (`DepotPop`)
     before allocating fresh. `DepotPop` scans every stripe of the class, starting at the thread's own — a cheap
     form of **work-stealing** so buffers parked by a now-idle thread get reused by an active one.
@@ -232,13 +231,32 @@ is partitioned into **two independent `BudgetState` instances**:
 capacity exceeds it draw from `largeBudget`; everything else draws from `smallBudget`. A flood of large record or
 flush buffers can, at worst, exhaust the large slice; the small slice is reserved for the hot path.
 
-### Local retention caps
+### Per-thread local retention
 
-`LocalCap` (128 buffers) and `LocalByteCap` (32 MB) bound a single `(thread, size-class)` **local stack** only —
-they govern placement/locality, not the global budget. When a local stack exceeds either cap on `Return`, the
-buffer spills to the shared depot (relocated, not dropped — it still counts against the byte budget). These caps
-stop one thread from hoarding an unbounded number, or an unbounded byte-size, of buffers for a single class while
-other threads starve.
+Local retention is bounded in **bytes per thread**, not in buffers per class: one class's buffer is up to 512×
+another's, and the buffer count a thread needs is its in-flight I/O pipeline depth — a property of the caller
+rather than of the pool. Each thread's ceiling (`ThreadShard.localByteCap`) is an equal slice of the sub-budget
+that local caching draws from:
+
+```
+threadLocalByteCap = max(smallBudget / ExpectedConcurrentThreads, MinThreadLocalBytes)
+```
+
+`ExpectedConcurrentThreads` is `2 × ProcessorCount` capped at 64, and `MinThreadLocalBytes` (1 MB) is a floor so
+a small configured budget still caches. At the 1 GiB default on a 32-core or larger box that is
+256 MB / 64 = **4 MB** per thread. The slices of that many threads sum to the sub-budget, so no thread can retain
+enough to starve the others. Only small classes reach this path; large classes go straight to the depot (§6).
+
+The ceiling is shared across all of a thread's size classes and is enforced only once the thread reaches it, so a
+thread whose traffic is a single class keeps the whole slice. At the ceiling, admission is **max-min fair** across
+the classes that thread actually uses (`TryMakeRoom`): a class holding less than an equal share
+(`localByteCap / activeClasses`) is admitted, and room is made by spilling the class furthest *above* its share
+(`WorstOverShare` → `SpillOneLocal`). A class whose chain is empty still counts itself active, so a starved class
+is not shut out by the classes crowding it.
+
+A spill is a **relocation, not an eviction**: the buffer moves to the shared depot, where any thread can still
+reuse it, and its permit travels unchanged. The cap therefore selects *where* a buffer is cached, never *whether* —
+only budget exhaustion makes a buffer uncacheable.
 
 ## 10. Lifecycle and correctness
 
@@ -281,7 +299,8 @@ freeing thread is not the allocating thread, each **(pool, thread)** gets a priv
 **buckets**; each bucket has an atomic-free **local stack** (owner reuse) and a lock-free MPSC **cross-thread
 stack** (buffers routed home to their *origin* thread). **Small** classes use those per-thread tiers as the hot
 path; **large** classes (> 256 KB) bypass them and share globally through the depot. Overflow and cross-thread
-redistribution go through a shared, per-class, 8-way lock-striped **depot**. A per-pool **byte budget**, split
-into isolated small and large slices, caps total retained bytes via one permit per buffer taken at birth and
-released at death. Seal sentinels, finalizers, and a closing state machine make thread death and pool teardown
-race-safe.
+redistribution go through a shared, per-class, lock-striped **depot** (8–64 stripes, sized from the processor
+count). A per-pool **byte budget**, split into isolated small and large slices, caps total retained bytes via one
+permit per buffer taken at birth and released at death; within the small slice each thread retains up to an equal
+per-thread byte share, spilling the surplus to the depot rather than dropping it. Seal sentinels, finalizers, and
+a closing state machine make thread death and pool teardown race-safe.
