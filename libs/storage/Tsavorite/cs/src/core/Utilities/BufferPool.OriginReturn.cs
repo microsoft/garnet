@@ -227,8 +227,10 @@ namespace Tsavorite.core
         private const int NumClasses = LinearClasses + 2 * GeometricDoublings;      // 28 (2 classes per doubling)
         private const int MaxPooledSectors = LinearTopSectors << GeometricDoublings; // 32768 (16 MB at 512 B sectors)
 
-        // Soft reuse targets (the byte budget is the only hard bound).
-        private const int LocalCap = 128;               // buffers retained per (thread, class) before spilling to depot
+        // Soft reuse targets (the byte budget is the only hard bound). LocalCap is sized to admit a thread's
+        // whole in-flight IO pipeline, so a batch that rents many buffers before returning any is served from
+        // the owner-local chain instead of round-tripping through the lock-guarded depot on every operation.
+        private const int LocalCap = 1024;              // buffers retained per (thread, class) before spilling to depot
         private const long LocalByteCap = 32L << 20;    // and a per-(thread, class) byte ceiling so large classes can't park the whole budget on one thread
         private static readonly int DepotStripes = ConcurrencySharding.DepotStripeCount;   // power of two
         private static readonly int DepotStripeMask = DepotStripes - 1;

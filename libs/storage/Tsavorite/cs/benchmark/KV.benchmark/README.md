@@ -31,8 +31,10 @@ Same dataset (100 M × 100 B), three setups distinguished by **where reads land*
 All NUMA-pin (`numactl --cpunodebind=0 --membind=0`). Pinning matters most where
 reads are served from RAM (scenarios 1 and 3), since remote-DRAM latency then gates
 throughput directly; in the disk-bound scenario NVMe latency dominates and pinning
-is within run-to-run noise. Common tail: `-v 100 --rumd 100,0,0,0 --runsec 15
---warmup-sec 5 -i 3` (`-i 3` = 3 iterations; use the `trimmed` mean).
+is within run-to-run noise. Common tail: `-v 100 --rumd 100,0,0,0 -i 3` (`-i 3` = 3
+iterations; use the `trimmed` mean). Scenarios 1 and 3 measure with `--runsec 15
+--warmup-sec 5`; the disk-bound scenario needs a longer window (`--runsec 25
+--warmup-sec 5`) to reach steady state — at 12 s it reads ~10% low.
 
 ### 1. Memory-bound — pure engine ceiling, no IO
 
@@ -53,9 +55,8 @@ defaults to 4096, sized for a fast NVMe queue; the managed devices
 (`randomaccess`/`filestream`) default to 120 and need `--device-throttle-limit 512`
 to spin up. Reference host: **8×NVMe RAID-0** (`/raid`, `fio` random-read ceiling
 ≈ **8.24 M IOPS at 4 K** / **8.20 M at 512 B** — the array is IOPS-bound, so block
-size barely moves it); KV peaks at **~6.3 M** (≈ 77% of `fio`). The gap is
-Tsavorite managed per-op CPU (hash lookup, pending context, completion dispatch),
-not the device, which reaches `fio` parity in
+size barely moves it); KV peaks at **~7.7 M** (≈ 94% of `fio`), close to the
+raw-device ceiling measured in
 [Device.benchmark](../Device.benchmark/README.md#nvme-storage-bound).
 
 ```bash
@@ -64,7 +65,7 @@ numactl --cpunodebind=0 --membind=0 dotnet $KV -n 100000000 -v 100 \
   --device native --device-io-backend libaio --device-throttle-limit 4096 \
   --device-completion-threads 8 --log-memory 16m --page-size 4m --segment-size 1g \
   --rumd 100,0,0,0 --load-threads 8 --run-threads-sweep 8,32,64 \
-  --runsec 12 --warmup-sec 4 -i 3 --data-path /raid/kv
+  --runsec 25 --warmup-sec 5 -i 3 --data-path /raid/kv
 
 # uring: swap in --device-io-backend uring. No extra flag needed — the smart
 # default sizes rings to min(2×cores, 64), covering these run-thread counts (see
@@ -75,14 +76,14 @@ Trimmed means of 3 iterations:
 
 | backend | pin | t=8 | t=32 | t=64 |
 |---|---|---|---|---|
-| libaio | node-0 | 2.24 M | 5.57 M | **6.34 M** |
-| libaio | none | 2.23 M | 5.67 M | **6.20 M** |
-| uring | node-0 | 2.17 M | 5.98 M | **6.21 M** |
-| uring | none | 2.17 M | 6.01 M | **6.21 M** |
+| libaio | node-0 | 2.37 M | 6.86 M | **7.71 M** |
+| libaio | none | 2.39 M | 6.90 M | **7.65 M** |
+| uring | node-0 | 2.30 M | **7.62 M** | 7.23 M |
+| uring | none | 2.27 M | **7.72 M** | 7.37 M |
 
-Both backends scale through **t=64**, landing at ~6.2–6.3 M; uring leads at t=32
-(~6.0 M vs ~5.6 M). Pinned and unpinned rows differ by at most ~2%, inside
-run-to-run noise. Swap
+libaio scales through **t=64** and peaks there (~7.7 M); uring peaks at **t=32**
+(~7.6–7.7 M) and eases ~5% by t=64. Pinned and unpinned rows differ by at most ~2%,
+inside run-to-run noise. Swap
 `--device native` → `randomaccess` (BCL async, slower) / `filestream` (slowest) to
 compare backends. Compare to the device's `fio` ceiling (`--rw=randread --bs=4k
 --direct=1 --ioengine=libaio --iodepth=64 --numjobs=8`).
@@ -96,14 +97,20 @@ compare backends. Compare to the device's `fio` ceiling (`--rw=randread --bs=4k
 
 Same as (2) but `--device localmemory`, a syscall-free RAM-backed `IDevice`. Reads
 still go through the full pending-read path (hash walk, `OperationState`, completion
-dispatch) but with **zero disk latency**, isolating engine per-op CPU/GC. Sits
-between (1) and (2), and below the
+dispatch) but with **zero disk latency**, isolating engine per-op CPU/GC. It stays
+below the
 [Device.benchmark LocalMemory ceiling](../Device.benchmark/README.md#memory-device-bound-localmemory)
 (which excludes the KV path).
 
+The device copies the record on the completion thread, so a drainer pool smaller than
+the run-thread count gates throughput: with `--device-completion-threads 8` this peaks
+at ~3.4 M, below scenario 2. `--device-inline-completion` completes on the issuing
+thread and removes that bottleneck (~19.6 M at t=32) — that is the configuration that
+measures the engine's pending-read path rather than the drainer pool.
+
 ```bash
 numactl --cpunodebind=0 --membind=0 dotnet $KV -n 100000000 -v 100 \
-  --device localmemory --device-completion-threads 8 \
+  --device localmemory --device-inline-completion \
   --log-memory 16m --page-size 4m --segment-size 1g \
   --rumd 100,0,0,0 --load-threads 8 --run-threads-sweep 1,2,4,8,16,32 \
   --runsec 15 --warmup-sec 5
@@ -134,8 +141,10 @@ datasets touch few NAND dies and understate IOPS.
   the submitter count cap uring well below libaio (see
   [Device README](../Device.benchmark/README.md#nvme-storage-bound)).
 - **`-b` / `--batch-size`** — run-phase batch depth (ops issued per chunk before an
-  opportunistic non-blocking drain). Default 1024. In-flight is bounded by
-  `--device-throttle-limit`, not by this, so it is largely throughput-neutral.
+  opportunistic non-blocking drain). Default 1024. It sets the **per-thread buffer-rent
+  burst**: a thread rents one read buffer per op in the chunk before returning any, so
+  the batch size is what the buffer pool's per-thread reuse must cover. In-flight is
+  still bounded by `--device-throttle-limit`.
 - **`-n` keys / `-v` value-size / `--rumd` mix / `-t` threads / `-d` distribution.**
 
 ## Output
