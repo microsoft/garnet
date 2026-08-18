@@ -5,6 +5,7 @@ using System;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
+using System.Linq;
 using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
@@ -483,6 +484,26 @@ namespace Tsavorite.core
 
         [DllImport("libc")]
         private static extern IntPtr strerror(int errnum);
+
+        /// <summary>
+        /// Formats, for logging, the typed exception a device surfaced through an IO completion callback: the exception's
+        /// type and message, flattening an <see cref="AggregateException"/> (e.g. from a sharded or tiered device that fans a
+        /// single IO across multiple underlying devices) so each real fault is surfaced instead of the generic aggregate
+        /// wrapper. The exception is preferred over the numeric error code because, whenever an exception accompanies a
+        /// completion, that error code is only a sentinel indicating failure (e.g. <see cref="uint.MaxValue"/>) rather than
+        /// the device's actual error code, so callers log this under an "{exception}" placeholder while the plain numeric
+        /// "{errorCode}" placeholder is reserved for the no-exception case.
+        /// </summary>
+        internal static string GetCallbackExceptionDetail(Exception ioException)
+        {
+            if (ioException is AggregateException aggregate)
+            {
+                var inner = aggregate.Flatten().InnerExceptions;
+                if (inner.Count > 0)
+                    return string.Join("; ", inner.Select(static e => $"{e.GetType()}: {e.Message}"));
+            }
+            return $"{ioException.GetType()}: {ioException.Message}";
+        }
 
         /// <summary>
         /// Should only be called in Debug.Assert or other DEBUG-conditional code
