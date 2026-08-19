@@ -46,6 +46,12 @@ namespace Tsavorite.core
         /// <summary>Number of bytes read.</summary>
         public uint numBytesRead;
 
+        /// <summary>Numeric error code returned by the device read callback.</summary>
+        internal uint errorCode;
+
+        /// <summary>Underlying exception returned by the device read callback, if any.</summary>
+        internal Exception ioException;
+
         /// <summary>The max offset on the main log page to iterate records when determining how many bytes in the ObjectLog to read.</summary>
         internal long maxAddressOffsetOnPage;
 
@@ -54,7 +60,8 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         public override string ToString()
-            => $"page {page}, recovPhase {recoveryPhase}, devPgOffset {devicePageOffset}, ctx {context}, countdown {handle?.CurrentCount}, destPtr {destinationPtr} (0x{destinationPtr:X}), maxPtr {maxAddressOffsetOnPage}";
+            => $"page {page}, recovPhase {recoveryPhase}, devPgOffset {devicePageOffset}, ctx {context}, countdown {handle?.CurrentCount}, destPtr {destinationPtr} (0x{destinationPtr:X}),"
+             + $" maxPtr {maxAddressOffsetOnPage}, bytesRead {numBytesRead}, errorCode {errorCode}, ioException {ioException?.GetType().Name}";
 
         /// <summary>Currently nothing to free.</summary>
         public void Free()
