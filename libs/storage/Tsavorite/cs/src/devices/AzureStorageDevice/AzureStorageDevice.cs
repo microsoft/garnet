@@ -295,7 +295,7 @@ namespace Tsavorite.devices
                     {
                         BlobManager?.StorageTracer?.TsavoriteStorageProgress($"StorageOpReturned AzureStorageDevice.WriteAsync id={id} (Canceled)");
                     }
-                    request.Callback(uint.MaxValue, request.NumBytes, request.Context);
+                    request.Callback(uint.MaxValue, request.NumBytes, request.Context, ioException: default);
                 }
             }
             foreach (var id in pendingRemoveOperations.Keys.ToList())
@@ -489,12 +489,12 @@ namespace Tsavorite.devices
                         if (t.IsFaulted)
                         {
                             BlobManager?.StorageTracer?.TsavoriteStorageProgress($"StorageOpReturned AzureStorageDevice.ReadAsync id={id} (Failure)");
-                            request.Callback(uint.MaxValue, request.NumBytes, request.Context);
+                            request.Callback(uint.MaxValue, request.NumBytes, request.Context, ioException: t.Exception);
                         }
                         else
                         {
                             BlobManager?.StorageTracer?.TsavoriteStorageProgress($"StorageOpReturned AzureStorageDevice.ReadAsync id={id} for blob={blobEntry.ETag}");
-                            request.Callback(0, request.NumBytes, request.Context);
+                            request.Callback(0, request.NumBytes, request.Context, ioException: default);
                         }
                     }
                 }, TaskContinuationOptions.ExecuteSynchronously);
@@ -672,12 +672,12 @@ namespace Tsavorite.devices
                         if (t.IsFaulted)
                         {
                             BlobManager?.StorageTracer?.TsavoriteStorageProgress($"StorageOpReturned AzureStorageDevice.WriteAsync id={id} (Failure)");
-                            request.Callback(uint.MaxValue, request.NumBytes, request.Context);
+                            request.Callback(uint.MaxValue, request.NumBytes, request.Context, ioException: t.Exception);
                         }
                         else
                         {
                             BlobManager?.StorageTracer?.TsavoriteStorageProgress($"StorageOpReturned AzureStorageDevice.WriteAsync id={id}");
-                            request.Callback(0, request.NumBytes, request.Context);
+                            request.Callback(0, request.NumBytes, request.Context, ioException: default);
                         }
                     }
 

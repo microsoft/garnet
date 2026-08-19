@@ -110,7 +110,7 @@ namespace Garnet.cluster
             device?.Dispose();
         }
 
-        private void IOCallback(uint errorCode, uint numBytes, object context)
+        private void IOCallback(uint errorCode, uint numBytes, object context, Exception ioException)
         {
             lastIOErrorCode = errorCode;
             if (errorCode != 0)
