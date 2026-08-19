@@ -803,10 +803,17 @@ Status UringFile::ScheduleOperation(FileOperationType operationType, uint8_t* bu
     }
     submitted = true;
   } else {
+    // Acceptance is decided by io_uring_sq_ready(), not by the submit return value. That helper is
+    // sqe_tail - *khead: it measures against the KERNEL head, not against ktail. io_uring_submit()'s
+    // internal flush only advances ktail, so the flush alone can never drive it to zero — only the
+    // kernel consuming SQEs can. sq_lock is held throughout, so our SQE is the last one produced, and
+    // the kernel consumes in order. Hence sq_ready == 0 proves the kernel took ours, and sq_ready > 0
+    // proves it did not — covering a short submit that consumed only a preceding stale no-op, and an
+    // io_uring_enter that returned an error without consuming anything.
     int submit_retries = 0;
     while (true) {
       res = io_uring_submit(ring);
-      if (io_uring_sq_ready(ring) == 0) break;                 // success: our SQE (and any stale nop) flushed
+      if (io_uring_sq_ready(ring) == 0) break;                 // kernel consumed our SQE (and any stale nop)
       // Reaching here means our SQE was NOT consumed, so retrying can never double-submit. -EINTR
       // (io_uring_enter interrupted by a signal — routine in a managed process) is transient like
       // -EAGAIN/-EBUSY: surfacing it as a permanent IO error would fail an otherwise healthy read.

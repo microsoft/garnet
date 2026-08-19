@@ -191,7 +191,8 @@ namespace Tsavorite.core
 
         /// <summary>
         /// Per-shard signed in-flight IO count, sharded by submitter thread; each element (<see cref="ShardCounter"/>)
-        /// is padded to its own cache-line pair so counters never false-share. A submit (or lease) bumps it +1 via <see cref="SubmitToShard"/>;
+        /// is padded to its own cache-line pair so counters never false-share. A submit bumps it +1 via
+        /// <see cref="SubmitToShard"/> and a native call via <see cref="EnterNativeCall"/>;
         /// the matching completion, submit error/abort unwind, or lease-release drops it −1 via
         /// <see cref="CompleteShard"/>. It drives <see cref="Throttle"/> and <see cref="Dispose()"/>'s drain-wait,
         /// and its exact 0↔1 transitions maintain the live <see cref="activeShards"/> occupancy count.
@@ -211,6 +212,15 @@ namespace Tsavorite.core
 
             /// <summary>Signed in-flight IO count for the shard; mutated via Interlocked, read via Volatile.</summary>
             [FieldOffset(0)] public long InFlight;
+
+            /// <summary>
+            /// Native-call leases held on the shard: the subset of <see cref="InFlight"/> that represents threads
+            /// executing inside native code right now, rather than IOs awaiting a completion. Maintained by
+            /// <see cref="EnterNativeCall"/> / <see cref="ExitNativeCall"/> and shares this counter's cache line,
+            /// so tracking it costs no additional miss. <see cref="Dispose()"/> drains it separately from
+            /// <see cref="InFlight"/> because only the latter can be stuck forever on a lost completion.
+            /// </summary>
+            [FieldOffset(8)] public long Leases;
         }
 
         /// <summary>
@@ -933,6 +943,40 @@ namespace Tsavorite.core
         }
 
         /// <summary>
+        /// Marks the calling thread as executing inside a native call on <paramref name="shard"/>. Bumps the shard's
+        /// in-flight counter — so <see cref="Throttle"/> and <see cref="activeShards"/> observe the lease exactly as
+        /// a submit does — and, on the same cache line, the lease counter <see cref="Dispose()"/> drains separately.
+        /// Bumping in-flight first keeps leases ≤ in-flight at every instant, so an in-flight count of zero proves
+        /// no native call is in progress. Caller MUST balance this with <see cref="ExitNativeCall"/> in a finally.
+        /// </summary>
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
+        void EnterNativeCall(int shard)
+        {
+            SubmitToShard(shard);
+            Interlocked.Increment(ref shardInFlight[shard].Leases);
+        }
+
+        /// <summary>
+        /// Balances <see cref="EnterNativeCall"/>. Drops the lease before the in-flight count, preserving the
+        /// leases ≤ in-flight invariant.
+        /// </summary>
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
+        void ExitNativeCall(int shard)
+        {
+            Interlocked.Decrement(ref shardInFlight[shard].Leases);
+            CompleteShard(shard);
+        }
+
+        /// <summary>Sum of native-call leases across all shards. Cold path only (Dispose teardown).</summary>
+        long TotalLeases()
+        {
+            long total = 0;
+            for (int s = 0; s < NumShards; s++)
+                total += Volatile.Read(ref shardInFlight[s].Leases);
+            return total;
+        }
+
+        /// <summary>
         /// Per-thread in-flight budget = global throttle split across the currently-occupied shards
         /// (≈ live concurrent submitters, tracked exactly by <see cref="activeShards"/>), clamped to
         /// <see cref="MaxPerThreadInFlight"/>. Each shard admits against this budget independently, so the
@@ -965,19 +1009,20 @@ namespace Tsavorite.core
         /// Leases the native handle for a non-IO native call (TryComplete / Reset / RemoveSegment / GetFileSize)
         /// so a concurrent <see cref="Dispose"/> cannot free it mid-call. Returns false (without leasing) once
         /// disposal has begun. On success the caller MUST call <see cref="ReleaseLease"/> in a finally. The lease
-        /// reuses the shard in-flight counter, so Dispose's drain-wait covers leased native calls automatically.
+        /// bumps the shard in-flight counter, so Dispose's drain-wait covers leased native calls automatically,
+        /// and the shard lease counter, which gates handle destruction even if that drain hits its deadline.
         /// </summary>
         bool TryLease(out int shard)
         {
             shard = GetShard();
             if (Volatile.Read(ref disposedFlag) != 0)
                 return false;
-            SubmitToShard(shard);
+            EnterNativeCall(shard);
             // Re-check after publishing the lease: if Dispose set the flag concurrently, its drain-wait either
             // already observed this lease (and is waiting) or will not — either way we must not touch the handle.
             if (Volatile.Read(ref disposedFlag) != 0)
             {
-                CompleteShard(shard);
+                ExitNativeCall(shard);
                 return false;
             }
             return true;
@@ -986,7 +1031,7 @@ namespace Tsavorite.core
         /// <summary>Releases a lease taken by <see cref="TryLease"/>.</summary>
         [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
         void ReleaseLease(int shard)
-            => CompleteShard(shard);
+            => ExitNativeCall(shard);
 
         void _callback(IntPtr context, int errorCode, ulong numBytes)
         {
@@ -1667,7 +1712,7 @@ namespace Tsavorite.core
             // bump above is dropped by _callback, which runs on a drainer thread and can fire before this
             // frame has left native code; without this lease Dispose could observe zero in-flight and free
             // the device under a submitter still inside it. Same role as TryLease on the non-IO entry points.
-            SubmitToShard(shard);
+            EnterNativeCall(shard);
             try
             {
                 try
@@ -1706,7 +1751,7 @@ namespace Tsavorite.core
             }
             finally
             {
-                CompleteShard(shard);
+                ExitNativeCall(shard);
             }
         }
 
@@ -1744,7 +1789,7 @@ namespace Tsavorite.core
             result.callback = callback;
 
             // Native-call lease; see ReadAsync for the rationale.
-            SubmitToShard(shard);
+            EnterNativeCall(shard);
             try
             {
                 try
@@ -1785,7 +1830,7 @@ namespace Tsavorite.core
             }
             finally
             {
-                CompleteShard(shard);
+                ExitNativeCall(shard);
             }
         }
 
@@ -1903,11 +1948,11 @@ namespace Tsavorite.core
             // Bounded, because in-flight only returns to zero if the kernel completes every accepted IO. A
             // completion that never arrives (a stalled device or driver, a dropped CQE, an io_uring ring whose
             // SQPOLL thread has died) would otherwise spin here forever, burning a core and reporting nothing.
-            // The deadline sits orders of magnitude above any legitimate drain: every native call a lease can be
-            // held across is itself bounded (the submit paths unwind after a fixed yield budget, QueueRunFor
-            // takes a timeout), so reaching it means completions are lost rather than slow. Proceeding is then
-            // safe: the drainers are cancelled and joined before the handle is freed, so no user callback can
-            // run during teardown, and NativeDevice_Destroy cancels or waits for whatever the kernel still owns.
+            // The deadline sits orders of magnitude above any legitimate drain, so reaching it means completions
+            // are lost rather than slow. Proceeding is then safe: the drainers are cancelled and joined before
+            // the handle is freed, the separate lease drain below stops this deadline from freeing the handle
+            // under a native call still in progress, and NativeDevice_Destroy cancels or waits for whatever the
+            // kernel still owns.
             var drainStart = Stopwatch.StartNew();
             var drainSpin = new SpinWait();
             while (TotalInFlight() != 0)
@@ -1947,6 +1992,34 @@ namespace Tsavorite.core
                 var dev = Interlocked.Exchange(ref nativeDevice, IntPtr.Zero);
                 if (dev != IntPtr.Zero)
                 {
+                    // Destroying the handle is gated on the lease counter rather than on the in-flight drain
+                    // above. That drain has a deadline because a completion can be lost forever; a lease instead
+                    // means a thread is executing inside native code right now. TryComplete / TryCompleteMine
+                    // hold one across a native call that dispatches user callbacks inline, so a lease is bounded
+                    // only by user code — letting the lost-completion deadline free the handle would pull the
+                    // rings and locks out from under a running native frame. No lease can be newly acquired once
+                    // disposedFlag is published (every lease site re-checks it after publishing), so this waits
+                    // only for calls that were already inside native code, and it is a single read in the normal
+                    // case: leases are a subset of in-flight, so an in-flight drain that completed proves zero.
+                    var leaseStart = Stopwatch.StartNew();
+                    var leaseSpin = new SpinWait();
+                    while (TotalLeases() != 0)
+                    {
+                        if (leaseStart.ElapsedMilliseconds >= DisposeLeaseDrainTimeoutMs)
+                        {
+                            // Leak the native device rather than free it: a native frame still owns its rings
+                            // and locks. A leaked handle at teardown is bounded and diagnosable; freeing memory
+                            // under a running frame is neither.
+                            logger?.LogError(
+                                "NativeStorageDevice.Dispose() timed out after {timeoutMs}ms with {leases} native call(s) still "
+                                + "executing. Leaking the native device instead of destroying it, since freeing it would "
+                                + "invalidate state those calls are still using.",
+                                DisposeLeaseDrainTimeoutMs, TotalLeases());
+                            return;
+                        }
+                        leaseSpin.SpinOnce(sleep1Threshold: DisposeDrainSleepThreshold);
+                    }
+
                     NativeDevice_Destroy(dev);
                     // NativeDevice_Destroy runs log_.Close() under the C ABI firewall; if that threw
                     // it was caught and recorded rather than crashing teardown. Surface it so a
@@ -2268,6 +2341,12 @@ namespace Tsavorite.core
         // individually bounded. This only fires when completions are permanently lost, so it is set far
         // above any legitimate drain to keep a degraded-but-live device from tripping it.
         const int DisposeDrainTimeoutMs = 30_000;
+
+        // Upper bound on Dispose()'s wait for in-progress native calls to return before the handle is destroyed.
+        // Unlike the in-flight drain this cannot be tripped by lost completions — only leases already inside
+        // native code are counted — so it fires only when a user callback dispatched inline by TryComplete /
+        // TryCompleteMine blocks indefinitely. Expiry leaks the handle rather than freeing it.
+        const int DisposeLeaseDrainTimeoutMs = 30_000;
 
         // Iterations Dispose()'s drain spins before SpinWait starts inserting Thread.Sleep(1). Keeps the
         // common case (drain completes almost immediately) spin-fast while stopping a drain that runs to
