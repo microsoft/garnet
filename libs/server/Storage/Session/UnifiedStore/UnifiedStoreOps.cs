@@ -289,8 +289,12 @@ namespace Garnet.server
             var output = new UnifiedOutput();
             try
             {
+                // UnifiedInput needs to know the keys involved for AOF purposes
+                SessionParseState toRecord = new();
+                toRecord.InitializeWithArguments(oldKey, newKeySlice);
+                UnifiedInput input = new(RespCommand.RENAME, ref toRecord);
+
                 // Check if new key exists.
-                UnifiedInput input = new(RespCommand.RENAME);
                 var status = GET(newKey, ref input, ref output, ref context);
 
                 var newExists = status != GarnetStatus.NOTFOUND;
@@ -348,10 +352,7 @@ namespace Garnet.server
                     if (oldIsVectorSet)
                     {
                         // Case #2 or #4 - old key is a Vector Set, so suppress cleanups on the coming delete
-
-                        var strCtx = txnManager.StringTransactionalContext;
-
-                        VectorManager.MarkSuppressCleanup(oldKey, ref strCtx);
+                        VectorManager.MarkSuppressCleanup(oldKey, ref stringTransactionalContext);
                         suppressedCleanup = true;
                     }
 

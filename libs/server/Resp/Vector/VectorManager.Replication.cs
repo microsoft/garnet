@@ -262,15 +262,32 @@ namespace Garnet.server
                 }
                 return;
             }
-            else if(input.arg1 == VectorManager.VADDSetFlagsArg)
+            else if (input.arg1 == VectorManager.VADDSetFlagsArg)
             {
                 // These are injected to update flags on a Vector Set
                 //
                 // Should be relatively rare, today they only happen on RENAMEs
 
+                // Flag updates need to wait for any VADDs to complete, in case they are modifying Vector Sets that are created due to a VADD
+                WaitForVectorOperationsToComplete();
+
                 var flag = MemoryMarshal.Cast<byte, VectorSetFlags>(input.parseState.GetArgSliceByRef(0))[0];
 
-                SetFlags(key, flag, ref currentSession.stringBasicContext);
+                SessionParseState parse = default;
+                parse.InitializeWithArgument(PinnedSpanByte.FromPinnedSpan(key));
+
+                var readInput = new StringInput(RespCommand.VSIM, ref parse);
+
+                Span<byte> indexSpan = stackalloc byte[IndexSize];
+                using (ReadVectorIndex(currentSession, key, ref readInput, indexSpan, out var status))
+                {
+                    if (status != GarnetStatus.OK)
+                    {
+                        throw new GarnetException("Failed to apply flags to Vector Set, data loss is likely");
+                    }
+
+                    SetFlags(key, flag, ref currentSession.stringBasicContext);
+                }
 
                 return;
             }
@@ -589,16 +606,57 @@ namespace Garnet.server
                 // Dispose already takes pains to drain everything before disposing, so this is safe to ignore
             }
         }
-        // Helper to complete read/writes during vector set synthetic op goes async
-        private static void CompletePending<TContext>(ref Status status, ref VectorBasicContext context)
+
+        /// <summary>
+        /// During AOF replay we need to copy one Vector Set index into another, but we can't use the bytes stored in the log since
+        /// VADD replay will have produced different contexts and pointers.
+        /// 
+        /// So do a simple copy instead.
+        /// </summary>
+        internal unsafe void HandleVectorSetRenameCopy(StorageSession storageSession, ReadOnlySpan<byte> oldVectorSet, ReadOnlySpan<byte> newVectorSet)
         {
-            _ = context.CompletePendingWithOutputs(out var completedOutputs, wait: true);
-            var more = completedOutputs.Next();
-            Debug.Assert(more);
-            status = completedOutputs.Current.Status;
-            more = completedOutputs.Next();
-            Debug.Assert(!more);
-            completedOutputs.Dispose();
+            SessionParseState parseState = default;
+            parseState.InitializeWithArguments([PinnedSpanByte.FromPinnedSpan(oldVectorSet), PinnedSpanByte.FromPinnedSpan(newVectorSet)]);
+
+            UnifiedInput input = new(RespCommand.RENAME, ref parseState);
+            UnifiedOutput output = new();
+
+            var readStatus = storageSession.unifiedBasicContext.Read((FixedSpanByteKey)oldVectorSet, ref input, ref output);
+            if (readStatus.IsPending)
+            {
+                _ = storageSession.unifiedBasicContext.CompletePendingWithOutputs(out var completedOutputs, wait: true);
+                var more = completedOutputs.Next();
+                Debug.Assert(more);
+                readStatus = completedOutputs.Current.Status;
+                output = completedOutputs.Current.Output;
+                Debug.Assert(!completedOutputs.Next());
+                completedOutputs.Dispose();
+            }
+
+            if (!readStatus.Found)
+            {
+                throw new GarnetException("Should never fail to find original key during RENAME replay");
+            }
+
+            fixed (byte* recordPtr = output.SpanByteAndMemory.ReadOnlySpan)
+            {
+                // We have a record in in-memory, unserialized format, with its objects (if any) resolved to the TransientObjectIdMap.
+                var logRecord = new LogRecord(recordPtr, storageSession.functionsState.transientObjectIdMap);
+
+                var upsertStatus = storageSession.unifiedBasicContext.Upsert((FixedSpanByteKey)newVectorSet, ref input, in logRecord);
+
+                if (upsertStatus.IsPending)
+                {
+                    _ = storageSession.unifiedBasicContext.CompletePendingWithOutputs(out var completedOutputs, wait: true);
+                    var more = completedOutputs.Next();
+                    Debug.Assert(more);
+                    upsertStatus = completedOutputs.Current.Status;
+                    Debug.Assert(!completedOutputs.Next());
+                    completedOutputs.Dispose();
+                }
+            }
+
+            output.Dispose();
         }
     }
 }
