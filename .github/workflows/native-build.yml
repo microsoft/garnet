@@ -91,6 +91,23 @@ jobs:
           ls -la "staging/${{ matrix.rid }}/native"
           file "staging/${{ matrix.rid }}/native"/*.so
 
+      - name: Verify required exports
+        run: |
+          set -euo pipefail
+          so="staging/${{ matrix.rid }}/native/libnative_device.so"
+          # The C# NativeStorageDevice loader hard-probes these at device creation: ImportResolver
+          # binds the P/Invokes and the startup ABI probe calls NumIoContexts / QueueRunFor /
+          # TryCompleteMine (the affine inline-drain path is on by default). CreateWithBackend is the
+          # create export the managed wrapper binds; a binary missing any of these throws at server
+          # startup on this RID, so fail the build here instead of shipping it.
+          # Host nm reads the ELF dynamic symbol table for every RID (x64/arm64, glibc/musl) alike.
+          command -v nm >/dev/null || { sudo apt-get update -qq && sudo apt-get install -y -qq binutils; }
+          rc=0
+          for sym in NativeDevice_CreateWithBackend NativeDevice_NumIoContexts NativeDevice_QueueRunFor NativeDevice_TryCompleteMine; do
+            if nm -D --defined-only "$so" | grep -qw "$sym"; then echo "  OK      $sym"; else echo "  MISSING $sym"; rc=1; fi
+          done
+          [ $rc -eq 0 ] || { echo "::error::$so is missing a required NativeDevice_* export the C# loader probes at startup"; exit 1; }
+
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: native-${{ matrix.rid }}
@@ -179,10 +196,18 @@ jobs:
           $dll = "staging/${{ matrix.rid }}/native/native_device.dll"
 
           $exports = & $dumpbin /exports $dll
-          if (-not ($exports | Select-String 'NativeDevice_CreateWithBackend')) {
-            throw "native_device.dll is missing NativeDevice_CreateWithBackend export"
+          # The C# NativeStorageDevice loader hard-probes these at device creation: ImportResolver
+          # binds the P/Invokes and the startup ABI probe calls NumIoContexts / QueueRunFor /
+          # TryCompleteMine (the affine inline-drain path is on by default). CreateWithBackend is the
+          # create export the managed wrapper binds; a binary missing any of these throws at server
+          # startup on this RID, so fail the build here instead of shipping it.
+          $required = @('NativeDevice_CreateWithBackend','NativeDevice_NumIoContexts','NativeDevice_QueueRunFor','NativeDevice_TryCompleteMine')
+          foreach ($sym in $required) {
+            if (-not ($exports | Select-String -SimpleMatch $sym)) {
+              throw "native_device.dll is missing required export $sym"
+            }
           }
-          Write-Host "Exports verified."
+          Write-Host "Exports verified: $($required -join ', ')."
 
           # Confirm the security flags in CMakeLists (/guard:cf and /GS /sdl, set alongside /Qspectre)
           # actually took effect in the produced binary: Control Flow Guard and the stack Security
