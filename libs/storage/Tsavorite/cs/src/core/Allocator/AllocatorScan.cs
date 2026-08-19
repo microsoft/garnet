@@ -15,6 +15,9 @@ namespace Tsavorite.core
         where TStoreFunctions : IStoreFunctions
         where TAllocator : IAllocator<TStoreFunctions>
     {
+        /// <summary>Clear checkpoint serialization cached by heap objects in the specified in-memory range.</summary>
+        internal virtual void ClearSerializedObjectData(long beginAddress, long endAddress) { }
+
         /// <summary>
         /// Pull-based scan interface for HLOG; user calls GetNext() which advances through the address range.
         /// </summary>
