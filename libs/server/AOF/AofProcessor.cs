@@ -685,7 +685,7 @@ namespace Garnet.server
             {
                 // Renaming a Vector SET, this requires special handling during a replay since the bytes in the value have an invalid pointer and (potentially) an invalid context
 
-                activeVectorManager.HandleVectorSetRenameCopy(storageSession, unifiedInput.parseState.GetArgSliceByRef(0).ReadOnlySpan, unifiedInput.parseState.GetArgSliceByRef(1).ReadOnlySpan);
+                activeVectorManager.HandleVectorSetRenameCopy(storageSession, ref unifiedContext, unifiedInput.parseState.GetArgSliceByRef(0).ReadOnlySpan, unifiedInput.parseState.GetArgSliceByRef(1).ReadOnlySpan);
 
                 return;
             }

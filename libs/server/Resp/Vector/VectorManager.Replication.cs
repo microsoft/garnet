@@ -613,7 +613,8 @@ namespace Garnet.server
         /// 
         /// So do a simple copy instead.
         /// </summary>
-        internal unsafe void HandleVectorSetRenameCopy(StorageSession storageSession, ReadOnlySpan<byte> oldVectorSet, ReadOnlySpan<byte> newVectorSet)
+        internal unsafe void HandleVectorSetRenameCopy<TUnifiedContext>(StorageSession storageSession, ref TUnifiedContext unifiedContext, ReadOnlySpan<byte> oldVectorSet, ReadOnlySpan<byte> newVectorSet)
+            where TUnifiedContext : ITsavoriteContext<FixedSpanByteKey, UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator>
         {
             SessionParseState parseState = default;
             parseState.InitializeWithArguments([PinnedSpanByte.FromPinnedSpan(oldVectorSet), PinnedSpanByte.FromPinnedSpan(newVectorSet)]);
@@ -621,10 +622,10 @@ namespace Garnet.server
             UnifiedInput input = new(RespCommand.RENAME, ref parseState);
             UnifiedOutput output = new();
 
-            var readStatus = storageSession.unifiedBasicContext.Read((FixedSpanByteKey)oldVectorSet, ref input, ref output);
+            var readStatus = unifiedContext.Read((FixedSpanByteKey)oldVectorSet, ref input, ref output);
             if (readStatus.IsPending)
             {
-                _ = storageSession.unifiedBasicContext.CompletePendingWithOutputs(out var completedOutputs, wait: true);
+                _ = unifiedContext.CompletePendingWithOutputs(out var completedOutputs, wait: true);
                 var more = completedOutputs.Next();
                 Debug.Assert(more);
                 readStatus = completedOutputs.Current.Status;
@@ -643,11 +644,11 @@ namespace Garnet.server
                 // We have a record in in-memory, unserialized format, with its objects (if any) resolved to the TransientObjectIdMap.
                 var logRecord = new LogRecord(recordPtr, storageSession.functionsState.transientObjectIdMap);
 
-                var upsertStatus = storageSession.unifiedBasicContext.Upsert((FixedSpanByteKey)newVectorSet, ref input, in logRecord);
+                var upsertStatus = unifiedContext.Upsert((FixedSpanByteKey)newVectorSet, ref input, in logRecord);
 
                 if (upsertStatus.IsPending)
                 {
-                    _ = storageSession.unifiedBasicContext.CompletePendingWithOutputs(out var completedOutputs, wait: true);
+                    _ = unifiedContext.CompletePendingWithOutputs(out var completedOutputs, wait: true);
                     var more = completedOutputs.Next();
                     Debug.Assert(more);
                     upsertStatus = completedOutputs.Current.Status;
