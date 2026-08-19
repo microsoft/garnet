@@ -683,7 +683,7 @@ namespace Garnet.server
 
             if (unifiedInput.header.cmd == RespCommand.RENAME && unifiedInput.arg1 == VectorManager.RecordType)
             {
-                // Renaming a Vector SEt, this requires special handling during a replay since the bytes in the value have an invalid pointer and (potentially) an invalid context
+                // Renaming a Vector SET, this requires special handling during a replay since the bytes in the value have an invalid pointer and (potentially) an invalid context
 
                 activeVectorManager.HandleVectorSetRenameCopy(storageSession, unifiedInput.parseState.GetArgSliceByRef(0).ReadOnlySpan, unifiedInput.parseState.GetArgSliceByRef(1).ReadOnlySpan);
 

@@ -292,13 +292,13 @@ namespace Garnet.server
         {
             while (await cleanupTaskChannel.WaitToReadAsync().ConfigureAwait(false))
             {
+                await cleanupGate.WaitAsync().ConfigureAwait(false);
+
                 // Each item is one outstanding scan
                 if (!cleanupTaskChannel.TryRead(out _))
                 {
                     continue;
                 }
-
-                await cleanupGate.WaitAsync().ConfigureAwait(false);
 
                 try
                 {
@@ -421,8 +421,40 @@ namespace Garnet.server
         /// </summary>
         internal void WaitForQuiescence()
         {
-            while (!potentiallyDeleted.IsEmpty || requestCleanupTaskChannel.HasPending || cleanupTaskChannel.HasPending || replicationReplayChannel.Reader.TryPeek(out _) || !replicationBlockEvent.Wait(0) || Volatile.Read(ref requestCleanupTaskRunning) || Interlocked.CompareExchange(ref postCheckpointTasksRunning, 0, 0) != 0)
+            while (true)
             {
+                // We care that all these actions are quiet in a row (indicating that work queued before this call has finished)
+                // NOT that they are all quiet at the same time
+
+                var hasPendingDrops = !requestedDrops.IsEmpty;
+                var hasPendingReconciliation = !potentiallyDeleted.IsEmpty;
+                var hasPendingVaddsAwaitingReplay = !replicationBlockEvent.Wait(0);
+                var hasPendingPostCheckpointTask = Interlocked.CompareExchange(ref postCheckpointTasksRunning, 0, 0) != 0;
+
+                // We don't remove from the channel until setting requestCleanupTaskRunning
+                var hasPendingCleanupRequests = Volatile.Read(ref requestCleanupTaskRunning) || requestCleanupTaskChannel.HasPending;
+
+                var hasPendingCleanup = cleanupTaskChannel.HasPending;
+                if (!hasPendingCleanup)
+                {
+                    // Acquire and immediately release to ensure cleanup task itself is quiescent
+                    if (cleanupGate.Wait(0))
+                    {
+                        _ = cleanupGate.Release();
+                    }
+                    else
+                    {
+                        // Cleanup task is (probably) active since gate is held
+                        hasPendingCleanup = true;
+                    }
+                }
+
+                var quiescent = !hasPendingDrops && !hasPendingReconciliation && !hasPendingVaddsAwaitingReplay && !hasPendingPostCheckpointTask && !hasPendingCleanupRequests && !hasPendingCleanup;
+                if (quiescent)
+                {
+                    return;
+                }
+
                 _ = Thread.Yield();
             }
         }
