@@ -784,6 +784,7 @@ Status UringFile::ScheduleOperation(FileOperationType operationType, uint8_t* bu
     // not restore correctness — everything already in flight on the ring is lost with it, and the kernel
     // holds the only reference to those contexts (their user_data), so there is nothing to enumerate.
     // NativeStorageDevice.Dispose bounds its drain so a ring in this state cannot hang teardown.
+    // The condition is reported once per device, with the errno and its consequence.
     int submit_retries = 0;
     while (true) {
       res = io_uring_submit(ring);
@@ -791,6 +792,14 @@ Status UringFile::ScheduleOperation(FileOperationType operationType, uint8_t* bu
       if (submit_retries >= kSubmitYieldBudget) break;        // gave up redelivering; SQE already published
       ::sched_yield();
       ++submit_retries;
+    }
+    if (res < 0 && handler_->TryClaimSqPollWakeFailureReport()) {
+      // pick_ring_index returns this thread's cached affine ring, i.e. the one just submitted to.
+      fprintf(stderr,
+              "Tsavorite native device: io_uring SQPOLL wakeup failed on ring %d with errno %d; the "
+              "kernel owns the submitted entry, so this ring may accept IOs whose completions never "
+              "arrive. Reported once per device.\n",
+              handler_->pick_ring_index(), -res);
     }
     submitted = true;
   } else {

@@ -616,6 +616,13 @@ class UringIoHandler {
   /// io_uring_sq_ready() as a synchronous "consumed" signal nor mutate an SQE after flushing it.
   bool sqpoll() const { return sqpoll_; }
 
+  /// Claims the right to report a permanent SQPOLL wakeup failure. Returns true for the first
+  /// caller only, so the diagnostic is emitted once per device rather than once per affected IO.
+  /// Cold path: only reached after the submit retry budget is exhausted.
+  bool TryClaimSqPollWakeFailureReport() {
+    return !sqpoll_wake_failure_reported_.exchange(true, std::memory_order_relaxed);
+  }
+
   /// Pick a (ring, sq_lock) pair for the next submission via per-thread affinity.
   /// Each calling thread is assigned a ring on first call (round-robin against other
   /// callers) and continues to use that same ring for every subsequent submission.
@@ -785,6 +792,9 @@ private:
   /// timeout SQE, which mutates the SQ (and its user_data) from the completion side; submitters hold
   /// sq_lock while mutating the same SQ, so the drainer must not take that path. See QueueRunFor.
   bool ext_arg_supported_ = true;
+  /// Set once a permanent SQPOLL wakeup failure has been reported, so the diagnostic is emitted a
+  /// single time per device rather than once per affected IO.
+  std::atomic<bool> sqpoll_wake_failure_reported_{ false };
   /// If non-zero, the positive errno from a failed io_uring_queue_init() in the constructor.
   int init_errno_;
 };
