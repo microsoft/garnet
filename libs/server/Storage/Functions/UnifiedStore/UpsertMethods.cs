@@ -37,7 +37,7 @@ namespace Garnet.server
         {
             if (!dstLogRecord.TrySetValueObjectAndPrepareOptionals(srcValue, in sizeInfo))
                 return false;
-            
+
             // TODO ETag
 
             // RENAMEs use arg1 for RecordType, not expiration
