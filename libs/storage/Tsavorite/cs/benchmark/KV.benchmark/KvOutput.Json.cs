@@ -112,7 +112,7 @@ namespace Tsavorite.kvbench
             sb.Append("\"mutable_fraction\":0.9,");
             sb.Append($"\"preallocate_log\":{(_opts.PreallocateLog ? "true" : "false")},");
             sb.Append($"\"device\":\"{_opts.ResolvedDeviceType}\",");
-            sb.Append($"\"device_throttle\":{_opts.DeviceThrottle},");
+            sb.Append($"\"device_throttle\":{_opts.DeviceThrottleLimit},");
             sb.Append($"\"device_completion_threads\":{_opts.DeviceCompletionThreads},");
             sb.Append($"\"device_io_backend\":\"{_opts.ResolvedIoBackend}\",");
             sb.Append("\"session_context\":\"basic\",");
