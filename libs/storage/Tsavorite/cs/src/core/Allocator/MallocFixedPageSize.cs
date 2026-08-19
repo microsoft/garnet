@@ -342,11 +342,14 @@ namespace Tsavorite.core
             }
         }
 
-        private unsafe void AsyncFlushCallback(uint errorCode, uint numBytes, object context)
+        private unsafe void AsyncFlushCallback(uint errorCode, uint numBytes, object context, Exception ioException)
         {
             if (errorCode != 0)
             {
-                logger?.LogError($"{nameof(AsyncFlushCallback)} error: {{errorCode}}", errorCode);
+                if (ioException is null)
+                    logger?.LogError($"{nameof(AsyncFlushCallback)} error: {{errorCode}}", errorCode);
+                else
+                    logger?.LogError($"{nameof(AsyncFlushCallback)} error: {{exception}}", Utility.GetCallbackExceptionDetail(ioException));
                 _ = Interlocked.CompareExchange(ref checkpointErrorCode, (int)errorCode, 0);
             }
 
@@ -428,11 +431,14 @@ namespace Tsavorite.core
             }
         }
 
-        private unsafe void AsyncPageReadCallback(uint errorCode, uint numBytes, object context)
+        private unsafe void AsyncPageReadCallback(uint errorCode, uint numBytes, object context, Exception ioException)
         {
             if (errorCode != 0)
             {
-                logger?.LogError($"{nameof(AsyncPageReadCallback)} error: {{errorCode}}", errorCode);
+                if (ioException is null)
+                    logger?.LogError($"{nameof(AsyncPageReadCallback)} error: {{errorCode}}", errorCode);
+                else
+                    logger?.LogError($"{nameof(AsyncPageReadCallback)} error: {{exception}}", Utility.GetCallbackExceptionDetail(ioException));
             }
             recoveryCountdown.Decrement();
         }

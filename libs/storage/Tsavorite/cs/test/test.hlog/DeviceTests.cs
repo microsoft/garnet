@@ -92,7 +92,7 @@ namespace Tsavorite.test
             }
         }
 
-        void Callback(uint errorCode, uint numBytes, object context)
+        void Callback(uint errorCode, uint numBytes, object context, Exception ioException)
         {
             semaphore.Release();
         }
@@ -132,7 +132,7 @@ namespace Tsavorite.test
             pbuffer.Return();
         }
 
-        void IOCallback(uint errorCode, uint numBytes, object context)
+        void IOCallback(uint errorCode, uint numBytes, object context, Exception ioException)
         {
             if (errorCode != 0)
                 Assert.Fail($"OverlappedStream GetQueuedCompletionStatus error: {errorCode}");
@@ -576,11 +576,11 @@ namespace Tsavorite.test
             var (rbuf, rptr) = AllocateAlignedBuffer((int)kBlock, _ => 0);
 
             var write = new System.Threading.SemaphoreSlim(0, 1);
-            device.WriteAsync(wptr, 0, kHighOffset, kBlock, (e, n, c) => write.Release(), null);
+            device.WriteAsync(wptr, 0, kHighOffset, kBlock, (e, n, c, _) => write.Release(), null);
             write.Wait();
 
             var read = new System.Threading.SemaphoreSlim(0, 1);
-            device.ReadAsync(0, kHighOffset, rptr, kBlock, (e, n, c) => read.Release(), null);
+            device.ReadAsync(0, kHighOffset, rptr, kBlock, (e, n, c, _) => read.Release(), null);
             read.Wait();
 
             AssertBufferContents(rptr, (int)kBlock, i => (byte)((i * 11 + 3) & 0xFF), $"{kind} unbounded round-trip");
@@ -613,7 +613,7 @@ namespace Tsavorite.test
 
                 var (wbuf, wptr) = AllocateAlignedBuffer((int)kBlock, i => (byte)((i * 7 + 1) & 0xFF));
                 var write = new System.Threading.SemaphoreSlim(0, 1);
-                device.WriteAsync(wptr, 0, 0, kBlock, (e, n, c) => write.Release(), null);
+                device.WriteAsync(wptr, 0, 0, kBlock, (e, n, c, _) => write.Release(), null);
                 write.Wait();
 
                 // The on-disk file must be the bare basename (no `.0` suffix).
@@ -890,7 +890,7 @@ namespace Tsavorite.test
             try
             {
                 ulong unaligned = sector - 1; // smaller than sector, definitely misaligned
-                Assert.Throws<TsavoriteException>(() => device.ReadAsync(0, unaligned, ptr, length, (_, _, _) => { }, null));
+                Assert.Throws<TsavoriteException>(() => device.ReadAsync(0, unaligned, ptr, length, (_, _, _, _) => { }, null));
             }
             finally { GC.KeepAlive(buf); }
         }
@@ -908,7 +908,7 @@ namespace Tsavorite.test
             try
             {
                 uint bad = sector + 1; // not a multiple of sector
-                Assert.Throws<TsavoriteException>(() => device.WriteAsync(ptr, 0, 0, bad, (_, _, _) => { }, null));
+                Assert.Throws<TsavoriteException>(() => device.WriteAsync(ptr, 0, 0, bad, (_, _, _, _) => { }, null));
             }
             finally { GC.KeepAlive(buf); }
         }
@@ -925,7 +925,7 @@ namespace Tsavorite.test
             try
             {
                 IntPtr misalignedPtr = ptr + 1; // misaligned buffer pointer
-                Assert.Throws<TsavoriteException>(() => device.WriteAsync(misalignedPtr, 0, 0, sector, (_, _, _) => { }, null));
+                Assert.Throws<TsavoriteException>(() => device.WriteAsync(misalignedPtr, 0, 0, sector, (_, _, _, _) => { }, null));
             }
             finally { GC.KeepAlive(buf); }
         }
@@ -967,7 +967,7 @@ namespace Tsavorite.test
                 uint observedError = 0;
                 using var done = new SemaphoreSlim(0);
 
-                device.WriteAsync(ptr, 0, 0, sector, (errorCode, _, _) =>
+                device.WriteAsync(ptr, 0, 0, sector, (errorCode, _, _, _) =>
                 {
                     observedError = errorCode;
                     done.Release();
@@ -1024,7 +1024,7 @@ namespace Tsavorite.test
                 var ptr = (IntPtr)(((long)Unsafe.AsPointer(ref buf[0]) + (sz - 1)) & ~(sz - 1));
                 using var sem = new SemaphoreSlim(0);
                 uint err = 0;
-                d.WriteAsync(ptr, 0, 0, sz, (e, _, _) => { err = e; sem.Release(); }, null);
+                d.WriteAsync(ptr, 0, 0, sz, (e, _, _, _) => { err = e; sem.Release(); }, null);
                 bool ok = sem.Wait(TimeSpan.FromSeconds(5)) && err == 0;
                 GC.KeepAlive(buf);
                 return ok;
@@ -1177,7 +1177,7 @@ namespace Tsavorite.test
             var (wb, wpb) = AllocateAlignedBuffer(size, j => (byte)((j ^ 0x5A) & 0xFF));
             using var done = new SemaphoreSlim(0);
             int errors = 0;
-            void Cb(uint e, uint n, object c) { if (e != 0) Interlocked.Increment(ref errors); done.Release(); }
+            void Cb(uint e, uint n, object c, Exception ioException) { if (e != 0) Interlocked.Increment(ref errors); done.Release(); }
 
             var ts = new Thread[threads];
             for (int t = 0; t < threads; t++)
@@ -1298,7 +1298,7 @@ namespace Tsavorite.test
 
             using var done = new SemaphoreSlim(0);
             int errors = 0;
-            void Cb(uint e, uint n, object c) { if (e != 0) Interlocked.Increment(ref errors); done.Release(); }
+            void Cb(uint e, uint n, object c, Exception ioException) { if (e != 0) Interlocked.Increment(ref errors); done.Release(); }
 
             var ts = new Thread[threads];
             for (int t = 0; t < threads; t++)

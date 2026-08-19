@@ -109,7 +109,7 @@ namespace Garnet.common
             }
         }
 
-        private static void IOCallback(uint errorCode, uint numBytes, object context)
+        private static void IOCallback(uint errorCode, uint numBytes, object context, Exception ioException)
         {
             ((SemaphoreSlim)context).Release();
         }
