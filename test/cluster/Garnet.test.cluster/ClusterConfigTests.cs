@@ -238,5 +238,121 @@ namespace Garnet.test.cluster
             // Deserialization should throw
             Assert.Throws<System.IO.InvalidDataException>(() => ReplicationHistory.FromByteArray(bytes));
         }
+
+        /// <summary>
+        /// Verifies that a merge whose only effect is resetting stale slot attributions is retained.
+        /// When a sender no longer claims a slot the receiver attributes to it, MergeSlotMap resets
+        /// that slot to OFFLINE so the real owner can reclaim it.
+        /// </summary>
+        [Test, Order(10)]
+        [Category("CLUSTER-CONFIG"), CancelAfter(1000)]
+        public void ClusterConfigMergeSlotMapRetainsStaleOwnershipResetTest()
+        {
+            const int StaleSlot = 100;   // receiver wrongly thinks sender owns this
+            const int SenderSlot = 200;  // sender genuinely owns this, receiver agrees
+
+            var senderId = Generator.CreateHexId();
+            var thirdPartyId = Generator.CreateHexId();
+
+            var thirdParty = new ClusterConfig().InitializeLocalWorker(
+                thirdPartyId, "127.0.0.1", ClusterTestContext.Port + 3,
+                configEpoch: 5, Garnet.cluster.NodeRole.PRIMARY, null, "");
+
+            // Sender knows the third party, owns SenderSlot, and attributes StaleSlot to the
+            // third party — i.e. it does NOT claim StaleSlot.
+            var sender = new ClusterConfig()
+                .InitializeLocalWorker(
+                    senderId, "127.0.0.1", ClusterTestContext.Port + 1,
+                    configEpoch: 20, Garnet.cluster.NodeRole.PRIMARY, null, "")
+                .Merge(thirdParty, []);
+            sender = sender
+                .UpdateSlotState(SenderSlot, ClusterConfig.LOCAL_WORKER_ID, SlotState.STABLE)
+                .UpdateSlotState(StaleSlot, sender.GetWorkerIdFromNodeId(thirdPartyId), SlotState.STABLE);
+
+            // Receiver believes the sender owns BOTH slots (StaleSlot is the stale belief).
+            var receiver = new ClusterConfig()
+                .InitializeLocalWorker(
+                    Generator.CreateHexId(), "127.0.0.1", ClusterTestContext.Port + 2,
+                    configEpoch: 1, Garnet.cluster.NodeRole.PRIMARY, null, "")
+                .Merge(sender, []);
+            var senderWorkerId = receiver.GetWorkerIdFromNodeId(senderId);
+            Assert.That(senderWorkerId, Is.Not.Zero);
+            receiver = receiver
+                .UpdateSlotState(StaleSlot, senderWorkerId, SlotState.STABLE)
+                .UpdateSlotState(SenderSlot, senderWorkerId, SlotState.STABLE);
+
+            Assert.That(receiver.GetNodeIdFromSlot(StaleSlot), Is.EqualTo(senderId),
+                "precondition: receiver starts out wrongly attributing StaleSlot to the sender");
+
+            // Gossip from the sender. Its only effect is the stale-ownership reset, since the
+            // sender's genuine slot is already correct on the receiver.
+            var merged = receiver.Merge(sender, []);
+
+            Assert.That(merged.GetNodeIdFromSlot(StaleSlot), Is.Not.EqualTo(senderId),
+                "stale attribution should be cleared");
+            Assert.That(merged.GetState((ushort)StaleSlot), Is.EqualTo(SlotState.OFFLINE),
+                "cleared slot should be OFFLINE so the true owner can claim it");
+            Assert.That(merged.GetNodeIdFromSlot(SenderSlot), Is.EqualTo(senderId),
+                "the sender's genuine slot must be unaffected");
+        }
+
+        /// <summary>
+        /// Verifies that MergeSlotMap accumulates its updated flag across slots, so a later slot that
+        /// assigns no change cannot discard an earlier stale-ownership reset.
+        /// </summary>
+        /// <remarks>
+        /// The sender's config epoch is zero, which is what lets the slot it genuinely owns bypass the
+        /// epoch guard and reach the ownership-assignment path. The receiver already agrees about that
+        /// slot, so the assignment produces no change; because it sits at a higher slot index than the
+        /// reset, a plain assignment there would clear the flag and the whole merge would be discarded.
+        /// </remarks>
+        [Test, Order(11)]
+        [Category("CLUSTER-CONFIG"), CancelAfter(1000)]
+        public void ClusterConfigMergeSlotMapAccumulatesUpdatedAcrossSlotsTest()
+        {
+            const int StaleSlot = 100;   // reset happens here, visited first
+            const int SenderSlot = 200;  // no-change assignment, visited after the reset
+
+            var senderId = Generator.CreateHexId();
+            var thirdPartyId = Generator.CreateHexId();
+
+            var thirdParty = new ClusterConfig().InitializeLocalWorker(
+                thirdPartyId, "127.0.0.1", ClusterTestContext.Port + 3,
+                configEpoch: 5, Garnet.cluster.NodeRole.PRIMARY, null, "");
+
+            // Config epoch zero keeps SenderSlot from being short-circuited by the epoch guard,
+            // so it reaches the ownership-assignment path with nothing to change.
+            var sender = new ClusterConfig()
+                .InitializeLocalWorker(
+                    senderId, "127.0.0.1", ClusterTestContext.Port + 1,
+                    configEpoch: 0, Garnet.cluster.NodeRole.PRIMARY, null, "")
+                .Merge(thirdParty, []);
+            sender = sender
+                .UpdateSlotState(SenderSlot, ClusterConfig.LOCAL_WORKER_ID, SlotState.STABLE)
+                .UpdateSlotState(StaleSlot, sender.GetWorkerIdFromNodeId(thirdPartyId), SlotState.STABLE);
+
+            var receiver = new ClusterConfig()
+                .InitializeLocalWorker(
+                    Generator.CreateHexId(), "127.0.0.1", ClusterTestContext.Port + 2,
+                    configEpoch: 1, Garnet.cluster.NodeRole.PRIMARY, null, "")
+                .Merge(sender, []);
+            var senderWorkerId = receiver.GetWorkerIdFromNodeId(senderId);
+            Assert.That(senderWorkerId, Is.Not.Zero);
+            receiver = receiver
+                .UpdateSlotState(StaleSlot, senderWorkerId, SlotState.STABLE)
+                .UpdateSlotState(SenderSlot, senderWorkerId, SlotState.STABLE);
+
+            Assert.That(receiver.GetNodeIdFromSlot(StaleSlot), Is.EqualTo(senderId),
+                "precondition: receiver starts out wrongly attributing StaleSlot to the sender");
+            Assert.That(receiver.GetNodeIdFromSlot(SenderSlot), Is.EqualTo(senderId),
+                "precondition: SenderSlot already matches the sender, so its assignment changes nothing");
+
+            var merged = receiver.Merge(sender, []);
+
+            Assert.That(merged.GetState((ushort)StaleSlot), Is.EqualTo(SlotState.OFFLINE),
+                "the reset must survive the no-change assignment at the higher slot index");
+            Assert.That(merged.GetNodeIdFromSlot(StaleSlot), Is.Not.EqualTo(senderId),
+                "stale attribution should be cleared");
+        }
     }
 }

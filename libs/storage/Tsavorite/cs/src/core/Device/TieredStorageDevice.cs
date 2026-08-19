@@ -95,13 +95,13 @@ namespace Tsavorite.core
                 if (i <= commitPoint)
                 {
 
-                    // All tiers before the commit point (incluisive) need to be persistent before the callback is invoked.
-                    devices[i].WriteAsync(sourceAddress, segmentId, destinationAddress, numBytesToWrite, (e, n, o) =>
+                    // All tiers before the commit point (inclusive) need to be persistent before the callback is invoked.
+                    devices[i].WriteAsync(sourceAddress, segmentId, destinationAddress, numBytesToWrite, (e, n, o, ex) =>
                     {
                         // The last tier to finish invokes the callback
                         if (countdown.Signal())
                         {
-                            callback(e, n, o);
+                            callback(e, n, o, ioException: ex);
                             countdown.Dispose();
                         }
 
@@ -110,7 +110,7 @@ namespace Tsavorite.core
                 else
                 {
                     // Otherwise, simply issue the write without caring about callbacks
-                    devices[i].WriteAsync(sourceAddress, segmentId, destinationAddress, numBytesToWrite, (e, n, o) => { }, null);
+                    devices[i].WriteAsync(sourceAddress, segmentId, destinationAddress, numBytesToWrite, (e, n, o, ex) => { }, null);
                 }
             }
         }

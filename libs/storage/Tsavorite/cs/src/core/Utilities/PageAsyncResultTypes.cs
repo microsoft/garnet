@@ -46,6 +46,12 @@ namespace Tsavorite.core
         /// <summary>Number of bytes read.</summary>
         public uint numBytesRead;
 
+        /// <summary>Numeric error code returned by the device read callback.</summary>
+        internal uint errorCode;
+
+        /// <summary>Underlying exception returned by the device read callback, if any.</summary>
+        internal Exception ioException;
+
         /// <summary>The max offset on the main log page to iterate records when determining how many bytes in the ObjectLog to read.</summary>
         internal long maxAddressOffsetOnPage;
 
@@ -54,7 +60,8 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         public override string ToString()
-            => $"page {page}, recovPhase {recoveryPhase}, devPgOffset {devicePageOffset}, ctx {context}, countdown {handle?.CurrentCount}, destPtr {destinationPtr} (0x{destinationPtr:X}), maxPtr {maxAddressOffsetOnPage}";
+            => $"page {page}, recovPhase {recoveryPhase}, devPgOffset {devicePageOffset}, ctx {context}, countdown {handle?.CurrentCount}, destPtr {destinationPtr} (0x{destinationPtr:X}),"
+             + $" maxPtr {maxAddressOffsetOnPage}, bytesRead {numBytesRead}, errorCode {errorCode}, ioException {ioException?.GetType().Name}";
 
         /// <summary>Currently nothing to free.</summary>
         public void Free()
@@ -234,13 +241,13 @@ namespace Tsavorite.core
         /// <summary>This write is associated with a <see cref="DiskWriteBuffer"/> so we need to signal the countdown event for that buffer when we are done.</summary>
         public void SetBufferCountdownEvent(CountdownEvent countdownEvent) => bufferCountdownEvent = countdownEvent;
 
-        public long Release(uint errorCode = 0)
+        public long Release(uint errorCode = 0, Exception ioException = null)
         {
             refCountedGCHandle?.Release();
             if (gcHandle.IsAllocated)
                 gcHandle.Free();
             _ = bufferCountdownEvent?.Signal();
-            countdownCallbackAndContext?.RecordError(errorCode);
+            countdownCallbackAndContext?.RecordError(errorCode, ioException);
             return countdownCallbackAndContext?.Decrement() ?? 0;
         }
     }
@@ -277,6 +284,8 @@ namespace Tsavorite.core
         /// layer (e.g. <see cref="AllocatorBase{TStoreFunctions, TAllocator}"/>.AsyncFlushPageCallback) does not treat a failed flush as successful and
         /// advance FlushedUntilAddress past unflushed data.</summary>
         private int firstErrorCode;
+        /// <summary>The device exception (if any) that accompanied the first non-zero <see cref="firstErrorCode"/>, forwarded to <see cref="callback"/> alongside the error code.</summary>
+        private Exception firstException;
 
         public override string ToString()
         {
@@ -299,17 +308,21 @@ namespace Tsavorite.core
         internal void Increment() => _ = Interlocked.Increment(ref count);
 
         /// <summary>Record a device write error; the first non-zero error is retained and forwarded to the caller's callback on final completion.</summary>
-        internal void RecordError(uint errorCode)
+        internal void RecordError(uint errorCode, Exception ioException)
         {
             if (errorCode != 0)
-                _ = Interlocked.CompareExchange(ref firstErrorCode, (int)errorCode, 0);
+            {
+                // The thread that wins the race to set firstErrorCode also owns firstException, keeping the two consistent.
+                if (Interlocked.CompareExchange(ref firstErrorCode, (int)errorCode, 0) == 0)
+                    firstException = ioException;
+            }
         }
 
         internal long Decrement()
         {
             var remaining = Interlocked.Decrement(ref count);
             if (remaining == 0)
-                callback?.Invoke(errorCode: (uint)firstErrorCode, numBytes, context);
+                callback?.Invoke(errorCode: (uint)firstErrorCode, numBytes, context, ioException: firstException);
             return remaining;
         }
     }
