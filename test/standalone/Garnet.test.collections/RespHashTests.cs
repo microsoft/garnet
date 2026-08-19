@@ -1687,6 +1687,70 @@ namespace Garnet.test
         }
 
         [Test]
+        public void CanDoHRANDFIELDWithOverflowingCountLC()
+        {
+            using var lightClientRequest = TestUtils.CreateRequest();
+            var response = lightClientRequest.SendCommand("HSET randhash f1 v1 f2 v2 f3 v3");
+            var expectedResponse = ":3\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            // A count too large for the packed count field that carries it to the object store is pinned to
+            // the largest representable count, which for a positive count is then saturated to the size of
+            // the hash. Pipelining PING checks that each reply is complete and correctly framed.
+
+            // This count used to unpack to 0, and the reply was an empty array
+            response = lightClientRequest.SendCommands("HRANDFIELD randhash 1073741824", "PING", 4, 1);
+            expectedResponse = "*3\r\n"; // all 3 fields
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            // This count used to unpack to -536870912, and the object store then attempted a ~2GB reply
+            response = lightClientRequest.SendCommands("HRANDFIELD randhash 536870912", "PING", 4, 1);
+            expectedResponse = "*3\r\n"; // all 3 fields
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            // This count used to unpack to -1, and only a single field came back
+            response = lightClientRequest.SendCommands("HRANDFIELD randhash 2147483647", "PING", 4, 1);
+            expectedResponse = "*3\r\n"; // all 3 fields
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            // The clamp must not disturb the WITHVALUES bit packed next to the count
+            response = lightClientRequest.SendCommands("HRANDFIELD randhash 2147483647 WITHVALUES", "PING", 7, 1);
+            expectedResponse = "*6\r\n"; // 3 field/value pairs
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            // int.MaxValue >> 2 is the largest count the packing represents faithfully, so the clamp is a no-op
+            response = lightClientRequest.SendCommands("HRANDFIELD randhash 536870911", "PING", 4, 1);
+            expectedResponse = "*3\r\n"; // all 3 fields
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            // Counts well inside the representable range are untouched
+            response = lightClientRequest.SendCommands("HRANDFIELD randhash 2", "PING", 3, 1);
+            expectedResponse = "*2\r\n"; // 2 distinct fields
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            response = lightClientRequest.SendCommands("HRANDFIELD randhash 5", "PING", 4, 1);
+            expectedResponse = "*3\r\n"; // saturated to the size of the hash
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            response = lightClientRequest.SendCommands("HRANDFIELD randhash -5", "PING", 6, 1);
+            expectedResponse = "*5\r\n"; // 5 fields, repeats allowed
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            response = lightClientRequest.SendCommands("HRANDFIELD randhash 0", "PING", 1, 1);
+            expectedResponse = "*0\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            // Without a count the reply is a single bulk string, not an array
+            response = lightClientRequest.SendCommands("HRANDFIELD randhash", "PING", 1, 1);
+            expectedResponse = "$2\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            response = lightClientRequest.SendCommands("HRANDFIELD randhash 2 WITHVALUES", "PING", 5, 1);
+            expectedResponse = "*4\r\n"; // 2 field/value pairs
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+        }
+
+        [Test]
         public void CanDoKeyNotFoundCommandLC()
         {
             using var lightClientRequest = TestUtils.CreateRequest();

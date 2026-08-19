@@ -4635,6 +4635,70 @@ namespace Garnet.test
         }
 
         [Test]
+        public void CanUseZRandMemberWithOverflowingCount()
+        {
+            using var lightClientRequest = TestUtils.CreateRequest();
+            var response = lightClientRequest.SendCommand("ZADD randzset 1 m1 2 m2 3 m3");
+            var expectedResponse = ":3\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            // A count too large for the packed count field that carries it to the object store is pinned to
+            // the largest representable count, which for a positive count is then saturated to the size of
+            // the sorted set. Pipelining PING checks that each reply is complete and correctly framed.
+
+            // This count used to unpack to 0, for which ZRANDMEMBER wrote no reply at all
+            response = lightClientRequest.SendCommands("ZRANDMEMBER randzset 1073741824", "PING", 4, 1);
+            expectedResponse = "*3\r\n"; // all 3 members
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            // This count used to unpack to -536870912, and the object store then attempted a ~2GB reply
+            response = lightClientRequest.SendCommands("ZRANDMEMBER randzset 536870912", "PING", 4, 1);
+            expectedResponse = "*3\r\n"; // all 3 members
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            // This count used to unpack to -1, and only a single member came back
+            response = lightClientRequest.SendCommands("ZRANDMEMBER randzset 2147483647", "PING", 4, 1);
+            expectedResponse = "*3\r\n"; // all 3 members
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            // The clamp must not disturb the WITHSCORES bit packed next to the count
+            response = lightClientRequest.SendCommands("ZRANDMEMBER randzset 2147483647 WITHSCORES", "PING", 7, 1);
+            expectedResponse = "*6\r\n"; // 3 member/score pairs
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            // int.MaxValue >> 2 is the largest count the packing represents faithfully, so the clamp is a no-op
+            response = lightClientRequest.SendCommands("ZRANDMEMBER randzset 536870911", "PING", 4, 1);
+            expectedResponse = "*3\r\n"; // all 3 members
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            // Counts well inside the representable range are untouched
+            response = lightClientRequest.SendCommands("ZRANDMEMBER randzset 2", "PING", 3, 1);
+            expectedResponse = "*2\r\n"; // 2 distinct members
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            response = lightClientRequest.SendCommands("ZRANDMEMBER randzset 5", "PING", 4, 1);
+            expectedResponse = "*3\r\n"; // saturated to the size of the sorted set
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            response = lightClientRequest.SendCommands("ZRANDMEMBER randzset -5", "PING", 6, 1);
+            expectedResponse = "*5\r\n"; // 5 members, repeats allowed
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            response = lightClientRequest.SendCommands("ZRANDMEMBER randzset 0", "PING", 1, 1);
+            expectedResponse = "*0\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            // Without a count the reply is a single bulk string, not an array
+            response = lightClientRequest.SendCommands("ZRANDMEMBER randzset", "PING", 1, 1);
+            expectedResponse = "$2\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            response = lightClientRequest.SendCommands("ZRANDMEMBER randzset 2 WITHSCORES", "PING", 5, 1);
+            expectedResponse = "*4\r\n"; // 2 member/score pairs
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+        }
+
+        [Test]
         public async Task CanUseZRandMemberWithSE()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
