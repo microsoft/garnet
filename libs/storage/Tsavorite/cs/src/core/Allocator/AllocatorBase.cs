@@ -1712,7 +1712,10 @@ namespace Tsavorite.core
             {
                 // Page closing cannot resume after a failure here, so the log would stall silently. Crash instead: a dump is the
                 // only practical way to diagnose this.
-                Environment.FailFast($"OnPagesClosedWorker failed; allocator state is unrecoverable. ClosedUntilAddress={ClosedUntilAddress}, OngoingCloseUntilAddress={OngoingCloseUntilAddress}", ex);
+                Environment.FailFast(
+                    $"OnPagesClosedWorker failed; allocator state is unrecoverable. ClosedUntilAddress={ClosedUntilAddress}, OngoingCloseUntilAddress={OngoingCloseUntilAddress}"
+                    + $"{Environment.NewLine}Caught exception:{Environment.NewLine}{ex}",
+                    ex);
             }
         }
 
