@@ -7,12 +7,9 @@
 // #define CHECK_FOR_LEAKS // disabled by default due to overhead
 
 using System;
-using System.Collections.Concurrent;
-using System.Diagnostics;
 using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
-using System.Threading;
 
 namespace Tsavorite.core
 {
@@ -98,6 +95,44 @@ namespace Tsavorite.core
         /// </para>
         /// </summary>
         internal bool isDirty;
+
+        /// <summary>
+        /// Intrusive singly-linked list link. A buffer is in <b>exactly one</b> list at a time, so a single link
+        /// serves every list it may join: the origin-return owner-local stack, the cross-thread return stack,
+        /// and the pool depot. Cleared before a buffer is handed to a renter so a long-lived rental never roots a chain.
+        /// </summary>
+        internal SectorAlignedMemory next;
+
+        /// <summary>
+        /// Origin-return owner: the exact <c>(pool, thread, size-class)</c> bucket that owns this buffer's
+        /// <b>current</b> rental. Set at <see cref="SectorAlignedBufferPool.Get(int,bool)"/>; the matching
+        /// cross-thread <see cref="SectorAlignedBufferPool.Return(SectorAlignedMemory)"/> routes the buffer back
+        /// to this bucket's owner thread rather than to the freeing thread.
+        /// Cleared when the buffer migrates into the pool depot (so a depot entry never roots a retired shard).
+        /// </summary>
+        internal Bucket originBucket;
+
+        /// <summary>
+        /// Standalone byte-budget accounting object this buffer's poolability permit was reserved against.
+        /// Held directly (not via <see cref="pool"/>) so the permit can be released even after the pool is
+        /// closed (e.g. from a retired shard's finalizer). Null for non-cacheable / bypass buffers.
+        /// </summary>
+        internal BudgetState budget;
+
+        /// <summary>
+        /// Poolability-permit size in bytes reserved against <see cref="budget"/> when this buffer was first
+        /// designated cacheable (at allocation). Persists unchanged while the buffer cycles through
+        /// rented → local → cross-thread → depot states; released exactly once (guarded by
+        /// <see cref="permitReleased"/>) when the buffer is permanently dropped. 0 when non-cacheable.
+        /// </summary>
+        internal long permitBytes;
+
+        /// <summary>Exactly-once release guard for <see cref="permitBytes"/> (CAS 0 → 1). </summary>
+        internal int permitReleased;
+
+        /// <summary>True when this buffer holds a poolability permit and may re-enter the pool's caches on
+        /// Return; false for bypass/overflow buffers that are dropped on Return.</summary>
+        internal bool cacheable;
 
         private int level;
         internal int Level => level
@@ -242,12 +277,21 @@ namespace Tsavorite.core
     }
 
     /// <summary>
-    /// SectorAlignedBufferPool is a pool of memory. 
-    /// Internally, it is organized as an array of concurrent queues where each concurrent
-    /// queue represents a memory of size in particular range. queue[i] contains memory 
-    /// segments each of size (2^i * sectorSize).
+    /// A pool of sector-aligned memory buffers.
+    /// <para>
+    /// The default managed backend is <b>origin-return</b> and per-thread: a buffer is parked on the thread that
+    /// <see cref="Get(int,bool)"/>s it, and a <see cref="Return(SectorAlignedMemory)"/> from a different
+    /// (IO-completion) thread routes the buffer back to its originating thread rather than parking it on the
+    /// freeing thread. Per-thread parking gives each thread contention-free reuse of its own buffers. Routing
+    /// cross-thread returns back to origin is what keeps that parking from bloating: IO-completion threads free
+    /// far more buffers than they allocate, so parking on the freeing thread would strand buffers there (never
+    /// reused) while issuing threads keep allocating fresh. A per-pool byte budget caps the total retained bytes.
+    /// Setting <see cref="UseOriginReturn"/> = false at startup routes the pool to a <see cref="LegacyBufferPool"/>
+    /// instead: an array of shared queues (no per-thread parking) that is simpler but serializes every Get/Return
+    /// on one queue's head per size class, so it does not scale with thread count.
+    /// </para>
     /// </summary>
-    public sealed class SectorAlignedBufferPool
+    public sealed partial class SectorAlignedBufferPool
     {
         /// <summary>
         /// Disable buffer pool.
@@ -262,10 +306,33 @@ namespace Tsavorite.core
         /// </summary>
         public static bool UnpinOnReturn;
 
-        private const int levels = 32;
+        /// <summary>
+        /// Selects the origin-return managed backend (default). When false, the pool routes to a
+        /// <see cref="LegacyBufferPool"/>. Captured once per pool at construction (so a toggled static can
+        /// never mix modes within a pool). Set at program entry only, mirroring <see cref="Disabled"/> /
+        /// <see cref="UnpinOnReturn"/>.
+        /// </summary>
+        public static bool UseOriginReturn = true;
+
+        /// <summary>
+        /// Per-pool byte budget for the origin-return backend: the single hard bound on the total
+        /// <b>reusable</b> (cacheable) bytes the pool will retain across all threads/classes. Captured once per
+        /// pool at construction. An allocation that cannot reserve a permit against this budget is still served
+        /// to the caller but marked non-cacheable and dropped on Return. Default 1 GiB per pool.
+        /// </summary>
+        public static long ManagedBudgetBytes = 1L << 30;
+
+        /// <summary>Non-null only in legacy mode (<see cref="UseOriginReturn"/> = false); Get/Return/Free/Print
+        /// route to it. Null selects the origin-return path. Captured once at construction.</summary>
+        private readonly LegacyBufferPool legacy;
+
+        /// <summary>Per-pool captured unpin-on-return policy (see <see cref="UnpinOnReturn"/>). Read once at
+        /// construction so a buffer allocated under one pin policy is always returned under that policy.</summary>
+        private readonly bool unpinOnReturn;
+
         private readonly int recordSize;
         private readonly int sectorSize;
-        private readonly ConcurrentQueue<SectorAlignedMemory>[] queue;
+        private readonly int sectorSizeShift;   // Log2(sectorSize) if a power of two, else -1 (fall back to division)
 #if CHECK_FOR_LEAKS
         static int totalGets, totalReturns;
 #endif
@@ -277,9 +344,18 @@ namespace Tsavorite.core
         /// <param name="sectorSize">Sector size, e.g. from log device</param>
         public SectorAlignedBufferPool(int recordSize, int sectorSize)
         {
-            queue = new ConcurrentQueue<SectorAlignedMemory>[levels];
             this.recordSize = recordSize;
             this.sectorSize = sectorSize;
+            sectorSizeShift = BitOperations.IsPow2((uint)sectorSize) ? BitOperations.Log2((uint)sectorSize) : -1;
+
+            // Capture the managed-mode and pin policy once so Get/Return route from immutable per-pool state:
+            // a buffer allocated under one mode/pin-policy is always returned under that same mode.
+            unpinOnReturn = UnpinOnReturn;
+
+            if (UseOriginReturn)
+                InitOriginReturn();
+            else
+                legacy = new LegacyBufferPool(recordSize, sectorSize, this, unpinOnReturn);
         }
 
         public void EnsureSize(ref SectorAlignedMemory page, int size)
@@ -314,55 +390,16 @@ namespace Tsavorite.core
         public void Return(SectorAlignedMemory page)
         {
 #if CHECK_FOR_LEAKS
-            Interlocked.Increment(ref totalReturns);
+            System.Threading.Interlocked.Increment(ref totalReturns);
 #endif
 
-#if CHECK_FREE
-            page.Free = true;
-#endif // CHECK_FREE
+            if (legacy is not null)
+            {
+                legacy.Return(page);
+                return;
+            }
 
-            Debug.Assert(queue[page.Level] != null);
-            page.available_bytes = 0;
-            page.required_bytes = 0;
-            page.valid_offset = 0;
-            if (page.clearOnReturn)
-            {
-                Array.Clear(page.buffer, 0, page.buffer.Length);
-                page.isDirty = false;
-            }
-            else
-            {
-                // Renter opted out of clear; the buffer may carry non-zero tail bytes from
-                // the previous IO. A future default Get will lazy-clear before handing it
-                // to a write-staging caller that depends on zero tail padding.
-                page.isDirty = true;
-            }
-            // Reset the rental policy so a buffer that's been opted-out once doesn't
-            // surprise the next renter (which gets the default safe behaviour unless
-            // it also opts out via the Get overload).
-            page.clearOnReturn = true;
-            if (!Disabled)
-            {
-                if (UnpinOnReturn)
-                {
-                    page.handle.Free();
-                    page.handle = default;
-                }
-                queue[page.Level].Enqueue(page);
-            }
-            else
-            {
-                if (UnpinOnReturn)
-                    page.handle.Free();
-                page.buffer = null;
-            }
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private static int Position(int v)
-        {
-            if (v == 1) return 0;
-            return BitOperations.Log2((uint)v - 1) + 1;
+            ReturnOriginReturn(page);
         }
 
         /// <summary>
@@ -395,58 +432,15 @@ namespace Tsavorite.core
         public unsafe SectorAlignedMemory Get(int numRecords, bool clearOnReturn)
         {
 #if CHECK_FOR_LEAKS
-            Interlocked.Increment(ref totalGets);
+            System.Threading.Interlocked.Increment(ref totalGets);
 #endif
+
+            if (legacy is not null)
+                return legacy.Get(numRecords, clearOnReturn);
 
             int required_bytes = numRecords * recordSize;
             int requiredSize = RoundUp(required_bytes, sectorSize);
-            int index = Position(requiredSize / sectorSize);
-            if (queue[index] == null)
-            {
-                var localPool = new ConcurrentQueue<SectorAlignedMemory>();
-                Interlocked.CompareExchange(ref queue[index], localPool, null);
-            }
-
-            if (!Disabled && queue[index].TryDequeue(out SectorAlignedMemory page))
-            {
-#if CHECK_FREE
-                page.Free = false;
-#endif // CHECK_FREE
-                if (UnpinOnReturn)
-                {
-                    page.handle = GCHandle.Alloc(page.buffer, GCHandleType.Pinned);
-                    page.aligned_pointer = (byte*)RoundUp(page.handle.AddrOfPinnedObject(), sectorSize);
-                    page.aligned_offset = (int)((long)page.aligned_pointer - page.handle.AddrOfPinnedObject());
-                }
-                // If the renter wants the historical zero-init contract and the slot is
-                // dirty from a prior opt-out rental, clear here. Renters that themselves
-                // opt out of the clear (clearOnReturn=false) will overwrite the buffer's
-                // read region and don't need it cleared, regardless of incoming dirty state.
-                if (clearOnReturn && page.isDirty)
-                {
-                    Array.Clear(page.buffer, 0, page.buffer.Length);
-                    page.isDirty = false;
-                }
-                page.required_bytes = required_bytes;
-                page.clearOnReturn = clearOnReturn;
-                return page;
-            }
-
-            page = new SectorAlignedMemory(level: index)
-            {
-                // Add an additional sector for the leading RoundUp of pageAddr to sectorSize.
-                buffer = GC.AllocateArray<byte>(sectorSize * ((1 << index) + 1), !UnpinOnReturn)
-            };
-            if (UnpinOnReturn)
-                page.handle = GCHandle.Alloc(page.buffer, GCHandleType.Pinned);
-            long pageAddr = (long)Unsafe.AsPointer(ref page.buffer[0]);
-            page.aligned_pointer = (byte*)RoundUp(pageAddr, sectorSize);
-            page.aligned_offset = (int)((long)page.aligned_pointer - pageAddr);
-            page.required_bytes = required_bytes;
-            // Freshly-allocated buffer from GC.AllocateArray is zero-init; isDirty stays false.
-            page.clearOnReturn = clearOnReturn;
-            page.pool = this;
-            return page;
+            return GetOriginReturn(required_bytes, requiredSize, clearOnReturn);
         }
 
         /// <summary>
@@ -456,14 +450,15 @@ namespace Tsavorite.core
         public void Free()
         {
 #if CHECK_FOR_LEAKS
-            Debug.Assert(totalGets == totalReturns);
+            System.Diagnostics.Debug.Assert(totalGets == totalReturns);
 #endif
-            for (int i = 0; i < levels; i++)
+            if (legacy is not null)
             {
-                if (queue[i] == null) continue;
-                while (queue[i].TryDequeue(out SectorAlignedMemory result))
-                    result.buffer = null;
+                legacy.Free();
+                return;
             }
+
+            FreeOriginReturn();
         }
 
         /// <summary>
@@ -471,14 +466,13 @@ namespace Tsavorite.core
         /// </summary>
         public void Print()
         {
-            for (int i = 0; i < levels; i++)
+            if (legacy is not null)
             {
-                if (queue[i] == null) continue;
-                foreach (var item in queue[i])
-                {
-                    Console.WriteLine("  " + item.ToString());
-                }
+                legacy.Print();
+                return;
             }
+
+            PrintOriginReturn();
         }
     }
 }

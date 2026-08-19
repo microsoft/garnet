@@ -1503,7 +1503,7 @@ namespace Tsavorite.core
         /// <remarks>This is 'readonly' because it does not alter the fields of this object, only what they point to.</remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly void PrepareForRevivification(ref RecordSizeInfo sizeInfo)
-            => DataHeaderRef.InitializeForRevivification(ref sizeInfo, physicalAddress);
+            => DataHeaderRef.InitializeForRevivification(ref sizeInfo);
 
         /// <summary>
         /// Sets the lengths of Overflow Keys and Values and Object values into the disk-image copy of the log record before the main-log page is flushed.

@@ -94,7 +94,7 @@ namespace Garnet.cluster
             }
         }
 
-        private static void IOCallback(uint errorCode, uint numBytes, object context)
+        private static void IOCallback(uint errorCode, uint numBytes, object context, Exception ioException)
         {
             ((SemaphoreSlim)context).Release();
         }
@@ -102,7 +102,7 @@ namespace Garnet.cluster
 
     static class LoggerExtensions
     {
-        public static void IOCallback(this ILogger logger, uint errorCode, uint numBytes, object context)
+        public static void IOCallback(this ILogger logger, uint errorCode, uint numBytes, object context, Exception ioException)
         {
             if (errorCode != 0)
             {

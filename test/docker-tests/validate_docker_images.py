@@ -415,6 +415,85 @@ def test_native_device(images: list[ImageDef], results: TestResult, base_port: i
     shutil.rmtree(tmpdir, ignore_errors=True)
 
 
+def test_native_allocator(images: list[ImageDef], results: TestResult, base_port: int):
+    """Test the native (direct-VM) allocator across a checkpoint/recover cycle.
+
+    Drives --use-native-allocator true, which routes the log pages / hash index / recovery frames off the
+    managed GC heap via mmap/VirtualAlloc. No native library is required — the direct-VM surfaces call
+    the OS virtual-memory APIs directly — so we assert the "Native allocator" init marker in the logs to
+    catch a silent no-op, then run a write -> SAVE -> restart -> recover cycle so the direct-VM
+    log/index/frame surfaces (and the checkpoint flush buffers) are all exercised end to end.
+    """
+    print("\n" + "=" * 70)
+    print("PHASE: Native allocator (direct-VM, --use-native-allocator on) tests")
+    print("=" * 70)
+
+    tmpdir = tempfile.mkdtemp(prefix="garnet-na-validate-")
+    os.chmod(tmpdir, 0o777)
+
+    for i, img in enumerate(images):
+        port = base_port + 400 + i
+        print(f"\n  [{img.name}]")
+
+        vol = os.path.join(tmpdir, img.name)
+        os.makedirs(vol, exist_ok=True)
+        os.chmod(vol, 0o777)
+        container_name = f"garnet-na-validate-{img.name}"
+
+        na_args = (
+            "--use-native-allocator true --logger-level Information "
+            "--storage-tier true "
+            "--logdir /data/store --checkpointdir /data/checkpoint "
+            "--aof true"
+        )
+
+        try:
+            # Phase A: startup + confirm the surface marker + write a mix of small and large (100 KB)
+            # values to push through the IO/flush buffers.
+            with garnet_container(img.tag, port, extra_args=na_args,
+                                  volume_dir=vol, name=container_name):
+                logs = docker(f"logs {container_name}").stdout + docker(f"logs {container_name}").stderr
+                if "Native allocator" in logs:
+                    results.ok(f"{img.name}: native allocator engaged")
+                else:
+                    results.fail(f"{img.name}: native allocator init marker",
+                                 "no 'Native allocator' log line — flag ignored / ran managed?")
+
+                s = connect(port)
+                r = resp_send_recv(s, "SET", "na-key1", "hello-native")
+                if "OK" not in r:
+                    results.fail(f"{img.name}: native allocator SET", r[:80])
+                    s.close()
+                    continue
+
+                resp_send_recv(s, "SET", "na-key2", "alloc-survives-restart")
+                resp_send_recv(s, "SET", "na-big", "x" * 100_000)  # large value -> IO/flush buffers
+                resp_send_recv(s, "SAVE", timeout=30.0)
+                resp_send_recv(s, "COMMITAOF")
+                s.close()
+                results.ok(f"{img.name}: native allocator write + SAVE")
+
+            # Phase B: restart with --recover (again under the allocator), verify data survived.
+            with garnet_container(img.tag, port, extra_args=na_args + " --recover",
+                                  volume_dir=vol, name=container_name):
+                s = connect(port)
+                r1 = resp_send_recv(s, "GET", "na-key1")
+                r2 = resp_send_recv(s, "GET", "na-key2")
+                s.close()
+
+                if "hello-native" in r1 and "alloc-survives-restart" in r2:
+                    results.ok(f"{img.name}: native allocator persistence after restart")
+                else:
+                    results.fail(
+                        f"{img.name}: native allocator persistence",
+                        f"key1={r1[:40]}, key2={r2[:40]}"
+                    )
+        except Exception as e:
+            results.fail(f"{img.name}: native allocator", str(e)[:120])
+
+    shutil.rmtree(tmpdir, ignore_errors=True)
+
+
 def test_library_resolution(images: list[ImageDef], results: TestResult):
     """Verify native libraries resolve correctly inside each image."""
     print("\n" + "=" * 70)
@@ -517,6 +596,9 @@ def main():
                         help="Test only specific images by name (e.g., default alpine)")
     parser.add_argument("--base-port", type=int, default=BASE_PORT,
                         help=f"Base port for test containers (default: {BASE_PORT})")
+    parser.add_argument("--use-native-allocator", dest="native_allocator",
+                        action=argparse.BooleanOptionalAction, default=True,
+                        help="Run the native-allocator phase (default: on; --no-use-native-allocator skips it)")
     args = parser.parse_args()
 
     # Filter images if specified
@@ -557,6 +639,8 @@ def main():
         test_lua(selected, results, args.base_port)
         test_default_device(selected, results, args.base_port)
         test_native_device(selected, results, args.base_port)
+        if args.native_allocator:
+            test_native_allocator(selected, results, args.base_port)
         test_library_resolution(selected, results)
 
         if args.multiplatform:

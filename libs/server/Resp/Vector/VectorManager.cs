@@ -229,8 +229,10 @@ namespace Garnet.server
 
             if (serverOptions.VectorSetQuantizationTaskCount < 0 || serverOptions.VectorSetQuantizationTaskCount > Environment.ProcessorCount)
                 throw new GarnetException($"VectorSetQuantizationTaskCount should be in range [0,{Environment.ProcessorCount}]!");
-            var vectorSetQuantizationTaskCount = serverOptions.VectorSetQuantizationTaskCount == 0 ? Environment.ProcessorCount : serverOptions.VectorSetQuantizationTaskCount;
-            quantizationTasks = new Task[vectorSetQuantizationTaskCount];
+            quantizationTaskCount = serverOptions.VectorSetQuantizationTaskCount == 0 ? Environment.ProcessorCount : serverOptions.VectorSetQuantizationTaskCount;
+            quantizationTasks = new Task[quantizationTaskCount];
+
+            // So Dispose's Task.WhenAll is safe even if StartQuantizationTasks never ran.
             Array.Fill(quantizationTasks, Task.CompletedTask);
 
             // Exclusive locks for potential updates to Vector Set data
@@ -511,7 +513,7 @@ namespace Garnet.server
             // Cleanup task has fully drained, so nothing else can take this gate.
             cleanupGate.Dispose();
 
-            // drain quantization task
+            // drain quantization work and stop the worker tasks
             _ = quantizationChannel.Writer.TryComplete();
             while (quantizationChannel.Reader.TryRead(out _)) { }
             AsyncUtils.BlockingWait(Task.WhenAll(quantizationTasks));

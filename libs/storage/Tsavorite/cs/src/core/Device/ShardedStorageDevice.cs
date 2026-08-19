@@ -210,6 +210,7 @@ namespace Tsavorite.core
             long currentWriteStart = (long)destinationAddress;
             long writeEnd = currentWriteStart + (long)numBytesToWrite;
             uint aggregateErrorCode = 0;
+            Exception aggregateException = null;
             while (currentWriteStart < writeEnd)
             {
                 long newStart = partitions.MapRange(currentWriteStart, writeEnd, out int shard, out long shardStartAddress, out long shardEndAddress);
@@ -224,13 +225,17 @@ namespace Tsavorite.core
                                                      segmentId,
                                                      (ulong)shardStartAddress,
                                                      (uint)(shardEndAddress - shardStartAddress),
-                                                     (e, n, o) =>
+                                                     (e, n, o, ex) =>
                                                      {
                                                          // TODO: Check if it is incorrect to ignore o
-                                                         if (e != 0) aggregateErrorCode = e;
+                                                         if (e != 0)
+                                                         {
+                                                             aggregateErrorCode = e;
+                                                             aggregateException = ex;
+                                                         }
                                                          if (countdown.Signal())
                                                          {
-                                                             callback(aggregateErrorCode, n, o);
+                                                             callback(aggregateErrorCode, n, o, ioException: aggregateException);
                                                              countdown.Dispose();
                                                          }
                                                      },
@@ -242,7 +247,7 @@ namespace Tsavorite.core
             // TODO: Check if overlapped wrapper is handled correctly
             if (countdown.Signal())
             {
-                callback(aggregateErrorCode, numBytesToWrite, context);
+                callback(aggregateErrorCode, numBytesToWrite, context, ioException: aggregateException);
                 countdown.Dispose();
             }
         }
@@ -264,6 +269,7 @@ namespace Tsavorite.core
             long readEnd = currentReadStart + readLength;
             uint aggregateErrorCode = 0;
             uint aggregateNumBytes = 0;
+            Exception aggregateException = null;
             while (currentReadStart < readEnd)
             {
                 long newStart = partitions.MapRange(currentReadStart, readEnd, out int shard, out long shardStartAddress, out long shardEndAddress);
@@ -276,18 +282,21 @@ namespace Tsavorite.core
                                                     (ulong)shardStartAddress,
                                                     IntPtr.Add(destinationAddress, (int)writeOffset),
                                                     (uint)(shardEndAddress - shardStartAddress),
-                                                    (errorCode, numBytes, ctx) =>
+                                                    (errorCode, numBytes, ctx, ex) =>
                                                     {
                                                         // TODO: this is incorrect if returned "bytes" written is allowed to be less than requested like POSIX.
                                                         if (errorCode != 0)
+                                                        {
                                                             aggregateErrorCode = errorCode;
+                                                            aggregateException = ex;
+                                                        }
                                                         _ = Interlocked.Add(ref aggregateNumBytes, numBytes);
 
                                                         if (countdown.Signal())
                                                         {
                                                             // ReadAsync has called the ending .Signal() and exited, and we're the last parallel reader to finish.
                                                             // Call the callback with the full length read.
-                                                            callback(aggregateErrorCode, aggregateNumBytes, ctx);
+                                                            callback(aggregateErrorCode, aggregateNumBytes, ctx, ioException: aggregateException);
                                                             countdown.Dispose();
                                                         }
                                                     },
@@ -300,7 +309,7 @@ namespace Tsavorite.core
             if (countdown.Signal())
             {
                 // All parallel readers have finished. Call the callback with the full length read.
-                callback(aggregateErrorCode, aggregateNumBytes, context);
+                callback(aggregateErrorCode, aggregateNumBytes, context, ioException: aggregateException);
                 countdown.Dispose();
             }
         }

@@ -5,6 +5,7 @@ using System;
 using System.Collections.Generic;
 using System.Threading;
 using CommandLine;
+using Tsavorite.core;
 
 namespace Tsavorite.kvbench
 {
@@ -29,6 +30,40 @@ namespace Tsavorite.kvbench
             {
                 Console.Error.WriteLine($"ERROR: {err}");
                 return 64;
+            }
+
+            // Install the native (direct-VM) allocator before any store/device/pool is created.
+            if (opts.UseNativeAllocator)
+            {
+                var enabled = NativeAllocatorInitializer.Initialize(true);
+                Console.WriteLine($"[native-allocator] enabled={enabled} (native bytes tracked via NativeMemoryTracker)");
+            }
+
+            // Select the buffer-pool implementation before any pool is created.
+            if (opts.UseLegacyBufferPool)
+            {
+                SectorAlignedBufferPool.UseOriginReturn = false;
+                Console.WriteLine("[buffer-pool] using legacy per-level ConcurrentQueue pool (UseOriginReturn=false)");
+            }
+
+            // Enable per-size-class buffer-pool instrumentation before any pool is created.
+            if (opts.PoolStats)
+            {
+                if (!SectorAlignedBufferPool.Stats.Compiled)
+                {
+                    Console.WriteLine("[pool-stats] WARNING: requested but not compiled in — the recording call sites are " +
+                        "removed by [Conditional(\"BUFFER_POOL_STATS\")] in a default build. Rebuild KV.benchmark with " +
+                        "-p:BufferPoolStats=true to collect counts (the shipping Get path stays zero-overhead by default).");
+                }
+                SectorAlignedBufferPool.Stats.Enabled = true;
+                Console.WriteLine($"[pool-stats] enabled ({SectorAlignedBufferPool.Stats.NumSizeClasses} size classes tracked)");
+            }
+
+            // Override the pool's managed byte budget before any pool is created.
+            if (opts.ResolvedPoolBudgetBytes > 0)
+            {
+                SectorAlignedBufferPool.ManagedBudgetBytes = opts.ResolvedPoolBudgetBytes;
+                Console.WriteLine($"[pool-budget] SectorAlignedBufferPool.ManagedBudgetBytes = {opts.ResolvedPoolBudgetBytes:N0} bytes");
             }
 
             int oldMinW = 0, oldMinIO = 0;
