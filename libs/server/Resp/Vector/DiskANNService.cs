@@ -137,6 +137,7 @@ namespace Garnet.server
             int maxFilteringEffort,
             SpanByteAndMemory outputIds,
             SpanByteAndMemory outputDistances,
+            int beamWidth,
             out nint continuation
         )
         {
@@ -202,6 +203,7 @@ namespace Garnet.server
                     (nuint)output_ids_len,
                     (nint)output_distances,
                     (nuint)output_distances_len,
+                    beamWidth,
                     continuationAddr
                 );
             }
@@ -222,6 +224,7 @@ namespace Garnet.server
             int maxFilteringEffort,
             SpanByteAndMemory outputIds,
             SpanByteAndMemory outputDistances,
+            int beamWidth,
             out nint continuation
         )
         {
@@ -288,6 +291,7 @@ namespace Garnet.server
                     (nuint)output_ids_len,
                     (nint)output_distances,
                     (nuint)output_distances_len,
+                    beamWidth,
                     continuationAddr
                 );
             }
@@ -513,6 +517,7 @@ namespace Garnet.server
             nuint output_ids_len,
             nint output_distances,
             nuint output_distances_len,
+            int beam_width,
             nint continuation
         );
 
@@ -531,6 +536,7 @@ namespace Garnet.server
             nuint output_ids_len,
             nint output_distances,
             nuint output_distances_len,
+            int beam_width,
             nint continuation
         );
 

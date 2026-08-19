@@ -432,6 +432,7 @@ namespace Garnet.test
                         0,
                         (nint)Unsafe.AsPointer(ref MemoryMarshal.GetReference(outputIds)), (nuint)outputIds.Length,
                         (nint)Unsafe.AsPointer(ref MemoryMarshal.GetReference(outputDistances)), (nuint)outputDistances.Length,
+                        4,
                         (nint)Unsafe.AsPointer(ref continuation)
                     );
                 ClassicAssert.AreEqual(1, numRes);
@@ -465,6 +466,7 @@ namespace Garnet.test
                         0,
                         (nint)Unsafe.AsPointer(ref MemoryMarshal.GetReference(outputIds)), (nuint)outputIds.Length,
                         (nint)Unsafe.AsPointer(ref MemoryMarshal.GetReference(outputDistances)), (nuint)outputDistances.Length,
+                        4,
                         (nint)Unsafe.AsPointer(ref continuation)
                     );
                 ClassicAssert.AreEqual(1, numRes);
@@ -491,6 +493,7 @@ namespace Garnet.test
                         0,
                         (nint)Unsafe.AsPointer(ref MemoryMarshal.GetReference(outputIds)), (nuint)outputIds.Length,
                         (nint)Unsafe.AsPointer(ref MemoryMarshal.GetReference(outputDistances)), (nuint)outputDistances.Length,
+                        4,
                         (nint)Unsafe.AsPointer(ref continuation)
                     );
                 ClassicAssert.AreEqual(1, numRes);

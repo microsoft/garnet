@@ -93,6 +93,11 @@ namespace Garnet.server
         internal const int MaxExplorationFactor = 1_000_000;
 
         /// <summary>
+        /// Beam width default for SearchXXX methods.
+        /// </summary>
+        internal const int DefaultBeamWidth = 4;
+
+        /// <summary>
         /// Ensures the VSIM distance output buffer has at least <paramref name="retrieveCount"/> * sizeof(float) bytes.
         /// Rents from <see cref="MemoryPool{T}"/> if the current buffer is too small.
         /// </summary>
@@ -892,6 +897,7 @@ namespace Garnet.server
                             maxFilteringEffort,
                             outputIds,
                             outputDistances,
+                            DefaultBeamWidth,
                             out continuation
                         );
 
@@ -935,6 +941,7 @@ namespace Garnet.server
                             maxFilteringEffort,
                             outputIds,
                             outputDistances,
+                            DefaultBeamWidth,
                             out continuation
                         );
 
@@ -1086,6 +1093,7 @@ namespace Garnet.server
                         maxFilteringEffort,
                         outputIds,
                         outputDistances,
+                        DefaultBeamWidth,
                         out continuation
                     );
 
@@ -1129,6 +1137,7 @@ namespace Garnet.server
                     maxFilteringEffort,
                     outputIds,
                     outputDistances,
+                    DefaultBeamWidth,
                     out continuation
                 );
 
