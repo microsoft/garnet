@@ -3,6 +3,7 @@
 
 using System;
 using System.Diagnostics;
+using System.IO;
 using System.Runtime.CompilerServices;
 using System.Threading;
 using Microsoft.Extensions.Logging;
@@ -566,25 +567,25 @@ namespace Tsavorite.core
                 return objectLogSegment;
 
             var buffer = bufferPool.Get(sectorSize);
-            PageAsyncReadResult<Empty> result = new() { handle = new CountdownEvent(1) };
             try
             {
-                device.ReadAsync((ulong)addressOfStartOfMainLogPage, (IntPtr)buffer.aligned_pointer, (uint)sectorSize, AsyncReadPageCallback, result);
-                result.handle.Wait();
-                if (result.numBytesRead >= PageHeader.Size)
+                if (!TryReadDevice(device, (ulong)addressOfStartOfMainLogPage, (IntPtr)buffer.aligned_pointer, (uint)sectorSize,
+                    nameof(GetLowestObjectLogSegmentInUse), out var errorCode, out var numBytesRead, out var ioException))
                 {
-                    var pageHeader = *(PageHeader*)buffer.aligned_pointer;
-                    if (pageHeader.objectLogLowestPositionWord != ObjectLogFilePositionInfo.NotSet)
-                    {
-                        var objectLogPosition = new ObjectLogFilePositionInfo(pageHeader.objectLogLowestPositionWord, objectLogTail.SegmentSizeBits);   // TODO verify SegmentSizeBits is correct
-                        objectLogSegment = objectLogPosition.SegmentId;
-                    }
+                    throw CreateReadException(nameof(GetLowestObjectLogSegmentInUse), (ulong)addressOfStartOfMainLogPage, (uint)sectorSize,
+                        errorCode, numBytesRead, ioException);
+                }
+
+                var pageHeader = *(PageHeader*)buffer.aligned_pointer;
+                if (pageHeader.objectLogLowestPositionWord != ObjectLogFilePositionInfo.NotSet)
+                {
+                    var objectLogPosition = new ObjectLogFilePositionInfo(pageHeader.objectLogLowestPositionWord, objectLogTail.SegmentSizeBits);   // TODO verify SegmentSizeBits is correct
+                    objectLogSegment = objectLogPosition.SegmentId;
                 }
             }
             finally
             {
                 bufferPool.Return(buffer);
-                result.DisposeHandle();
             }
 
             return objectLogSegment;
@@ -836,14 +837,18 @@ namespace Tsavorite.core
                 asyncResult.freeBuffer1 = srcBuffer;
 
                 // Read back the first sector if the start is not aligned (this means we already wrote a partially-filled sector with ObjectLog fields set).
-                if (startPadding > 0)
+                // Snapshot files are new, so their unwritten prefix remains zero in the freshly cleared srcBuffer.
+                if (startPadding > 0 && asyncResult.flushRequestState != FlushRequestState.Snapshot)
                 {
                     // TODO: This will potentially overwrite partial sectors (with the same data) if this is a partial flush; a workaround would be difficult.
                     // TODO: Cache the last sector flushed in readBuffers so we can avoid this Read.
-                    PageAsyncReadResult<Empty> result = new() { handle = new CountdownEvent(1) };
-                    device.ReadAsync(alignedMainLogFlushPageAddress + (ulong)alignedStartOffset, (IntPtr)srcBuffer.aligned_pointer, (uint)sectorSize, AsyncReadPageCallback, result);
-                    result.handle.Wait();
-                    result.DisposeHandle();
+                    var readAddress = alignedMainLogFlushPageAddress + (ulong)alignedStartOffset;
+                    if (!TryReadDevice(device, readAddress, (IntPtr)srcBuffer.aligned_pointer, (uint)sectorSize,
+                        "Partial-sector flush read-back", out var errorCode, out var numBytesRead, out var ioException))
+                    {
+                        callback(errorCode, numBytesRead, asyncResult, ioException);
+                        return;
+                    }
                 }
 
                 try
@@ -1164,19 +1169,57 @@ namespace Tsavorite.core
 
         private void AsyncReadPageCallback(uint errorCode, uint numBytes, object context, Exception ioException)
         {
-            if (errorCode != 0)
-            {
-                if (ioException is null)
-                    logger?.LogError($"{nameof(AsyncReadPageCallback)} error: {{errorCode}}", errorCode);
-                else
-                    logger?.LogError($"{nameof(AsyncReadPageCallback)} error: {{exception}}", Utility.GetCallbackExceptionDetail(ioException));
-            }
-
-            // Set the page status to flushed
             var result = (PageAsyncReadResult<Empty>)context;
+            result.errorCode = errorCode;
             result.numBytesRead = numBytes;
+            result.ioException = ioException;
             _ = result.handle.Signal();
         }
+
+        private bool TryReadDevice(IDevice readDevice, ulong sourceAddress, IntPtr destinationAddress, uint readLength, string operation,
+            out uint errorCode, out uint numBytesRead, out Exception ioException)
+        {
+            PageAsyncReadResult<Empty> result = new() { handle = new CountdownEvent(1) };
+            try
+            {
+                readDevice.ReadAsync(sourceAddress, destinationAddress, readLength, AsyncReadPageCallback, result);
+                result.handle.Wait();
+
+                errorCode = result.errorCode;
+                numBytesRead = result.numBytesRead;
+                ioException = result.ioException;
+
+                if (errorCode == 0 && numBytesRead == readLength)
+                    return true;
+
+                if (errorCode == 0)
+                {
+                    errorCode = uint.MaxValue;
+                    ioException = new EndOfStreamException($"{operation} read {numBytesRead} of {readLength} bytes at device offset {sourceAddress}");
+                }
+
+                if (ioException is null)
+                {
+                    logger?.LogError("{operation} failed reading {readLength} bytes at device offset {sourceAddress}: error {errorCode}; transferred {numBytesRead} bytes",
+                        operation, readLength, sourceAddress, errorCode, numBytesRead);
+                }
+                else
+                {
+                    logger?.LogError("{operation} failed reading {readLength} bytes at device offset {sourceAddress}: {exception}; transferred {numBytesRead} bytes",
+                        operation, readLength, sourceAddress, Utility.GetCallbackExceptionDetail(ioException), numBytesRead);
+                }
+
+                return false;
+            }
+            finally
+            {
+                result.DisposeHandle();
+            }
+        }
+
+        private static TsavoriteIOException CreateReadException(string operation, ulong sourceAddress, uint readLength,
+            uint errorCode, uint numBytesRead, Exception ioException)
+            => new($"{operation} failed reading {readLength} bytes at device offset {sourceAddress}: error {errorCode}; transferred {numBytesRead} bytes", ioException);
 
         /// <inheritdoc />
         /// <remarks>This override of the base function reads Overflow keys or values, or Object values.</remarks>
