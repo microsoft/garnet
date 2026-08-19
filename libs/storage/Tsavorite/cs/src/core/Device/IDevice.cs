@@ -8,10 +8,15 @@ namespace Tsavorite.core
     /// <summary>
     /// Delegate for callback on IO completion
     /// </summary>
-    /// <param name="errorCode"></param>
-    /// <param name="numBytes"></param>
-    /// <param name="context"></param>
-    public delegate void DeviceIOCompletionCallback(uint errorCode, uint numBytes, object context);
+    /// <param name="errorCode">Numeric error code from the IO completion channel (0 on success).</param>
+    /// <param name="numBytes">Number of bytes transferred.</param>
+    /// <param name="context">Caller-supplied context object.</param>
+    /// <param name="ioException">
+    /// The underlying exception behind a failed IO, when the device has one to report; otherwise <see langword="null"/>.
+    /// The numeric <paramref name="errorCode"/> is the authoritative success/failure signal; this only carries the typed
+    /// exception for diagnosis and is currently consumed solely by the page-flush completion path.
+    /// </param>
+    public delegate void DeviceIOCompletionCallback(uint errorCode, uint numBytes, object context, Exception ioException);
 
     /// <summary>
     /// Interface for devices

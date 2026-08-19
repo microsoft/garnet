@@ -689,7 +689,7 @@ namespace Tsavorite.core
                 if (headAddress >= asyncResult.untilAddress)
                 {
                     // Requested span on page is entirely unavailable in memory; ignore it and call the callback directly.
-                    callback(0, 0, asyncResult);
+                    callback(0, 0, asyncResult, ioException: default);
                     return;
                 }
 
@@ -1162,10 +1162,15 @@ namespace Tsavorite.core
             }
         }
 
-        private void AsyncReadPageCallback(uint errorCode, uint numBytes, object context)
+        private void AsyncReadPageCallback(uint errorCode, uint numBytes, object context, Exception ioException)
         {
             if (errorCode != 0)
-                logger?.LogError($"{nameof(AsyncReadPageCallback)} error: {{errorCode}}", errorCode);
+            {
+                if (ioException is null)
+                    logger?.LogError($"{nameof(AsyncReadPageCallback)} error: {{errorCode}}", errorCode);
+                else
+                    logger?.LogError($"{nameof(AsyncReadPageCallback)} error: {{exception}}", Utility.GetCallbackExceptionDetail(ioException));
+            }
 
             // Set the page status to flushed
             var result = (PageAsyncReadResult<Empty>)context;
@@ -1236,7 +1241,7 @@ namespace Tsavorite.core
             device.ReadAsync(alignedSourceAddress, destinationPtr, aligned_read_length, AsyncReadPageWithObjectsCallback<TContext>, asyncResult);
         }
 
-        private void AsyncReadPageWithObjectsCallback<TContext>(uint errorCode, uint numBytes, object context)
+        private void AsyncReadPageWithObjectsCallback<TContext>(uint errorCode, uint numBytes, object context, Exception ioException)
         {
             var result = (PageAsyncReadResult<TContext>)context;
 
@@ -1246,8 +1251,11 @@ namespace Tsavorite.core
                 // garbage data, so do not attempt to parse record headers or deserialize objects from it
                 // (doing so can compute bogus lengths and throw OutOfMemoryException/AccessViolation).
                 // Surface the error to the real page-read callback, which handles the failure.
-                logger?.LogError($"{nameof(AsyncReadPageWithObjectsCallback)} error: {{errorCode}}", errorCode);
-                result.callback(errorCode, numBytes, context);
+                if (ioException is null)
+                    logger?.LogError($"{nameof(AsyncReadPageWithObjectsCallback)} error: {{errorCode}}", errorCode);
+                else
+                    logger?.LogError($"{nameof(AsyncReadPageWithObjectsCallback)} error: {{exception}}", Utility.GetCallbackExceptionDetail(ioException));
+                result.callback(errorCode, numBytes, context, ioException: ioException);
                 return;
             }
 
@@ -1259,7 +1267,7 @@ namespace Tsavorite.core
             }
 
             // Call the "real" page read callback
-            result.callback(errorCode, numBytes, context);
+            result.callback(errorCode, numBytes, context, ioException: ioException);
             result.Free();
         }
 

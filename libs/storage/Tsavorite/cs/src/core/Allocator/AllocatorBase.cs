@@ -1505,6 +1505,14 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal long CalculateReadOnlyAddress(long tailAddress, long headAddress)
         {
+            // Defensive clamp: during normal operation HeadAddress is strictly behind TailAddress. If a caller passes an
+            // out-of-range headAddress (e.g. the long.MaxValue "never evict" sentinel that fast-commit recovery leaves in
+            // place, or that a read-only-mode log carries), the page arithmetic below overflows to a negative address.
+            // Clamp so we never return an out-of-range ReadOnlyAddress that would corrupt the log's address invariants
+            // (or, in Debug, trip the asserts below).
+            if (headAddress >= tailAddress)
+                return tailAddress;
+
             // Snap ReadOnlyAddress to the start of the page that this calculation on logMutableFraction ends up in. If this is below HeadAddress,
             // then make it the end of the HeadAddress page. If tailAddress is still on the first page, return HeadAddress.
             if (tailAddress <= PageSize + PageHeader.Size)
@@ -2534,10 +2542,15 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.NoInlining)]
-        private void AsyncGetFromDiskCallback(uint errorCode, uint numBytes, object context)
+        private void AsyncGetFromDiskCallback(uint errorCode, uint numBytes, object context, Exception ioException)
         {
             if (errorCode != 0)
-                logger?.LogError("AsyncGetFromDiskCallback error: {errorCode}", errorCode);
+            {
+                if (ioException is null)
+                    logger?.LogError("AsyncGetFromDiskCallback error: {errorCode}", errorCode);
+                else
+                    logger?.LogError("AsyncGetFromDiskCallback error: {exception}", Utility.GetCallbackExceptionDetail(ioException));
+            }
 
             // The AsyncIOContext is the object-context handed to the device; it comes back here directly.
             var ctx = (AsyncIOContext)context;
@@ -2590,12 +2603,17 @@ namespace Tsavorite.core
         /// <param name="numBytes"></param>
         /// <param name="context"></param>
         [MethodImpl(MethodImplOptions.NoInlining)]
-        private protected void AsyncFlushPageCallback(uint errorCode, uint numBytes, object context)
+        private protected void AsyncFlushPageCallback(uint errorCode, uint numBytes, object context, Exception ioException)
         {
             try
             {
                 if (errorCode != 0)
-                    logger?.LogError("AsyncFlushPageCallback error: {errorCode}", errorCode);
+                {
+                    if (ioException is null)
+                        logger?.LogError("AsyncFlushPageCallback error: {errorCode}", errorCode);
+                    else
+                        logger?.LogError("AsyncFlushPageCallback error: {exception}", Utility.GetCallbackExceptionDetail(ioException));
+                }
 
                 // Set the page status to flushed
                 var result = (PageAsyncFlushResult<Empty>)context;
@@ -2604,8 +2622,9 @@ namespace Tsavorite.core
                 {
                     if (errorCode != 0)
                     {
-                        // Note down error details and trigger handling only when we are certain this is the earliest error among currently issued flushes
-                        errorList.Add(new CommitInfo { FromAddress = result.fromAddress, UntilAddress = result.untilAddress, ErrorCode = errorCode });
+                        // Note down error details and trigger handling only when we are certain this is the earliest error among currently issued flushes.
+                        // Surface the device's underlying exception (plumbed through the completion callback) so an opaque numeric code carries the real fault for diagnosis.
+                        errorList.Add(new CommitInfo { FromAddress = result.fromAddress, UntilAddress = result.untilAddress, ErrorCode = errorCode, Exception = ioException });
                     }
                     else
                     {
@@ -2651,7 +2670,7 @@ namespace Tsavorite.core
         /// <param name="errorCode"></param>
         /// <param name="numBytes"></param>
         /// <param name="context"></param>
-        protected void AsyncFlushPageForSnapshotCallback(uint errorCode, uint numBytes, object context)
+        protected void AsyncFlushPageForSnapshotCallback(uint errorCode, uint numBytes, object context, Exception ioException)
         {
             var result = (PageAsyncFlushResult<Empty>)context;
             try
@@ -2660,7 +2679,10 @@ namespace Tsavorite.core
                 {
                     if (errorCode != 0)
                     {
-                        logger?.LogError("AsyncFlushPageToDeviceCallback error: {errorCode}", errorCode);
+                        if (ioException is null)
+                            logger?.LogError("AsyncFlushPageToDeviceCallback error: {errorCode}", errorCode);
+                        else
+                            logger?.LogError("AsyncFlushPageToDeviceCallback error: {exception}", Utility.GetCallbackExceptionDetail(ioException));
 
                         // Fault the snapshot's flush-completion so the checkpoint fails rather than committing a snapshot with
                         // an unwritten page; the Release() below still frees buffers and its CompleteFlush becomes a no-op.
