@@ -71,7 +71,7 @@ namespace Tsavorite.test
                         if (permanentlyFailedRangesEnd[i] > logicalDestStart)
                         {
                             // If so, simulate a failure by calling callback with an error
-                            callback(42, numBytesToWrite, context);
+                            callback(42, numBytesToWrite, context, ioException: default);
                             return;
                         }
                     }
@@ -80,12 +80,15 @@ namespace Tsavorite.test
                 // Otherwise, decide whether we need to introduce a failure
                 if (random.Value.NextDouble() < options.writeTransientErrorRate)
                 {
-                    callback(42, numBytesToWrite, context);
+                    // A device must complete each IO exactly once. Having signaled failure, return
+                    // instead of also forwarding to the underlying device (which would deliver a second completion).
+                    callback(42, numBytesToWrite, context, ioException: default);
+                    return;
                 }
                 // decide whether failure should be in fact permanent. Don't necessarily need to fail concurrent requests
                 else if (random.Value.NextDouble() < options.writePermanentErrorRate)
                 {
-                    callback(42, numBytesToWrite, context);
+                    callback(42, numBytesToWrite, context, ioException: default);
                     versionScheme.TryAdvanceVersionWithCriticalSection((_, _) =>
                     {
                         var index = permanentlyFailedRangesStart.BinarySearch(logicalDestStart);
@@ -101,6 +104,7 @@ namespace Tsavorite.test
                             permanentlyFailedRangesEnd.Insert(i, logicalDestEnd);
                         }
                     });
+                    return;
                 }
             }
             finally
@@ -134,7 +138,7 @@ namespace Tsavorite.test
                         if (permanentlyFailedRangesEnd[i] > logicalSrcStart)
                         {
                             // If so, simulate a failure by calling callback with an error
-                            callback(42, readLength, context);
+                            callback(42, readLength, context, ioException: default);
                             return;
                         }
                     }
@@ -142,11 +146,14 @@ namespace Tsavorite.test
                 // Otherwise, decide whether we need to introduce a failure
                 if (random.Value.NextDouble() < options.readTransientErrorRate)
                 {
-                    callback(42, readLength, context);
+                    // A device must complete each IO exactly once. Having signaled failure, return
+                    // instead of also forwarding to the underlying device (which would deliver a second completion).
+                    callback(42, readLength, context, ioException: default);
+                    return;
                 }
                 else if (random.Value.NextDouble() < options.readPermanentErrorRate)
                 {
-                    callback(42, readLength, context);
+                    callback(42, readLength, context, ioException: default);
 
                     versionScheme.TryAdvanceVersionWithCriticalSection((_, _) =>
                     {
@@ -161,6 +168,7 @@ namespace Tsavorite.test
                             permanentlyFailedRangesEnd.Insert(i, logicalSrcEnd);
                         }
                     });
+                    return;
                 }
             }
             finally

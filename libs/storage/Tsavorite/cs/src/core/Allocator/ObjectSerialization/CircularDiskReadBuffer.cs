@@ -229,10 +229,15 @@ namespace Tsavorite.core
             return false;
         }
 
-        internal void ReadFromDeviceCallback(uint errorCode, uint numBytes, object context)
+        internal void ReadFromDeviceCallback(uint errorCode, uint numBytes, object context, Exception ioException)
         {
             if (errorCode != 0)
-                logger?.LogError($"{nameof(ReadFromDeviceCallback)} error: {{errorCode}}", errorCode);
+            {
+                if (ioException is null)
+                    logger?.LogError($"{nameof(ReadFromDeviceCallback)} error: {{errorCode}}", errorCode);
+                else
+                    logger?.LogError($"{nameof(ReadFromDeviceCallback)} error: {{exception}}", Utility.GetCallbackExceptionDetail(ioException));
+            }
 
             // Finish setting up the buffer
             var buffer = (DiskReadBuffer)context;

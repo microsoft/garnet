@@ -69,7 +69,7 @@ namespace Device.benchmark
             }
         }
 
-        unsafe void Callback(uint errorCode, uint numBytes, object ctx)
+        unsafe void Callback(uint errorCode, uint numBytes, object ctx, Exception ioException)
         {
 #if DEBUG
             if (errorCode == 0)

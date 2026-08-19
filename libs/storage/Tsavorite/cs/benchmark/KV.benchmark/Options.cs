@@ -32,8 +32,12 @@ namespace Tsavorite.kvbench
         public long Keys { get; set; }
 
         [Option('v', "value-size", Required = false, Default = 100,
-            HelpText = "Value length in bytes. Range: 32..1048576 (must also be <= --max-inline-value-size).")]
+            HelpText = "Value length in bytes. Range: 32..1048576 (must also be <= --max-inline-value-size). In variable mode (--value-size-max > this) it is the MINIMUM per-key size.")]
         public int ValueSize { get; set; }
+
+        [Option("value-size-max", Required = false, Default = "0",
+            HelpText = "When > --value-size, enables VARIABLE per-key value sizes drawn log-uniformly in [--value-size, this] (deterministic per key). Must be <= --max-inline-value-size. 0 = fixed size (every key uses --value-size). Use to spread records across buffer-pool size classes, e.g. --value-size 100 --value-size-max 10m.")]
+        public string ValueSizeMax { get; set; }
 
         [Option("rumd", Separator = ',', Required = false, Default = new[] { 100, 0, 0, 0 },
             HelpText = "#,#,#,#: Percentages of [(r)eads,(u)pserts,r(m)ws,(d)eletes] (summing to 100). When d% > 0, deletes auto-reinsert.")]
@@ -132,6 +136,11 @@ namespace Tsavorite.kvbench
                        "Overrides --device-completion-threads.")]
         public bool DeviceInlineCompletion { get; set; }
 
+        [Option("use-native-allocator", Required = false, Default = false,
+            HelpText = "Route hash index / log pages / frames through a native (off-managed-heap) direct-VM " +
+                       "allocator instead of the GC heap.")]
+        public bool UseNativeAllocator { get; set; }
+
         [Option("data-path", Required = false, Default = null,
             HelpText = "Directory where hlog files live. Default OS temp.")]
         public string DataPath { get; set; }
@@ -159,6 +168,18 @@ namespace Tsavorite.kvbench
         [Option("dump-distribution", Required = false, Default = false,
             HelpText = "After load: print the hash-table bucket distribution (TsavoriteKV.DumpDistribution()).")]
         public bool DumpDistribution { get; set; }
+
+        [Option("pool-stats", Required = false, Default = false,
+            HelpText = "Instrument the sector-aligned buffer pool: at the start of each measured run window reset per-size-class allocation/reuse counters, sample them every --report-interval-sec (showing new allocations plateau while cache reuse climbs), and print a per-size-class alloc/reuse table afterward. Requires building with -p:BufferPoolStats=true; without it the recording call sites are compiled out (zero Get-path overhead) and a warning is printed.")]
+        public bool PoolStats { get; set; }
+
+        [Option("use-legacy-buffer-pool", Required = false, Default = false,
+            HelpText = "Use the legacy per-level ConcurrentQueue SectorAlignedBufferPool (sets SectorAlignedBufferPool.UseOriginReturn=false) instead of the default origin-return per-thread pool, for A/B throughput comparison.")]
+        public bool UseLegacyBufferPool { get; set; }
+
+        [Option("pool-budget", Required = false, Default = "0",
+            HelpText = "Override the sector-aligned buffer pool's per-pool managed byte budget (SectorAlignedBufferPool.ManagedBudgetBytes; default 1GB) before any pool is created, e.g. 8g. The budget bounds cacheable bytes (25% small classes, 75% large); a budget smaller than the in-flight large-buffer working set forces large reads to allocate-on-Get / drop-on-Return (bounded memory, lower reuse). 0 = leave the default.")]
+        public string PoolBudget { get; set; }
 
         // ===== Output =====
 
@@ -191,6 +212,12 @@ namespace Tsavorite.kvbench
         internal long ResolvedIndexAppliedBytes;
         internal long ResolvedRecordSizeBytes;
         internal long ResolvedMaxInlineValueSizeBytes;
+        /// <summary>True when --value-size-max enables per-key variable value sizes.</summary>
+        internal bool VariableValueSize;
+        /// <summary>Maximum per-key value size in variable mode (0 in fixed mode). Min is <see cref="ValueSize"/>.</summary>
+        internal long ResolvedValueSizeMaxBytes;
+        /// <summary>Override for SectorAlignedBufferPool.ManagedBudgetBytes (0 = leave default).</summary>
+        internal long ResolvedPoolBudgetBytes;
         internal int ReadPct, UpsertPctCumulative, RmwPctCumulative;
         internal bool UseZipf;
         internal Tsavorite.core.DeviceType ResolvedDeviceType;
@@ -271,8 +298,35 @@ namespace Tsavorite.kvbench
             if (ValueSize > ResolvedMaxInlineValueSizeBytes)
                 return $"--value-size ({ValueSize}) exceeds --max-inline-value-size ({ResolvedMaxInlineValueSizeBytes}); values larger than the inline threshold overflow to heap and skew the benchmark.";
 
+            // Variable value sizes (--value-size-max): per-key log-uniform in [ValueSize, max].
+            ResolvedValueSizeMaxBytes = 0;
+            VariableValueSize = false;
+            if (!string.IsNullOrWhiteSpace(ValueSizeMax) && ValueSizeMax != "0")
+            {
+                var vmax = KvSize.ParseSize(ValueSizeMax);
+                if (vmax <= 0)
+                    return $"--value-size-max invalid: {ValueSizeMax}";
+                if (vmax > int.MaxValue)
+                    return $"--value-size-max too large: {ValueSizeMax}";
+                if (vmax < ValueSize)
+                    return $"--value-size-max ({vmax}) must be >= --value-size ({ValueSize})";
+                if (vmax > ResolvedMaxInlineValueSizeBytes)
+                    return $"--value-size-max ({vmax}) exceeds --max-inline-value-size ({ResolvedMaxInlineValueSizeBytes}); values larger than the inline threshold overflow to heap and would not exercise the inline-record read pool.";
+                ResolvedValueSizeMaxBytes = vmax;
+                VariableValueSize = vmax > ValueSize;
+            }
+
             // Estimated record size: 8 RecordInfo + 5 length-byte hdr + 8 key + value, aligned to 8.
-            var rec = 21L + ValueSize;
+            // In variable mode use the log-uniform MEAN value size ((b-a)/ln(b/a)) so auto log-memory
+            // sizing and the displayed dataset estimate reflect the true average, not the tiny minimum.
+            long effValueSize = ValueSize;
+            if (VariableValueSize)
+            {
+                double a = ValueSize, b = ResolvedValueSizeMaxBytes;
+                effValueSize = (long)((b - a) / Math.Log(b / a));
+                if (effValueSize < ValueSize) effValueSize = ValueSize;
+            }
+            var rec = 21L + effValueSize;
             ResolvedRecordSizeBytes = (rec + 7) & ~7L;
 
             // --log-memory auto-default: NextPow2(ceil(keys * record / 0.9)), floored at 2 * page-size.
@@ -297,7 +351,43 @@ namespace Tsavorite.kvbench
             if (ResolvedIndexRequestedBytes < 64) ResolvedIndexRequestedBytes = 64;
             ResolvedIndexAppliedBytes = PreviousPow2(ResolvedIndexRequestedBytes);
 
+            ResolvedPoolBudgetBytes = 0;
+            if (!string.IsNullOrWhiteSpace(PoolBudget) && PoolBudget != "0")
+            {
+                ResolvedPoolBudgetBytes = KvSize.ParseSize(PoolBudget);
+                if (ResolvedPoolBudgetBytes <= 0) return $"--pool-budget invalid: {PoolBudget}";
+            }
+
             return null;
+        }
+
+        /// <summary>
+        /// Deterministic per-key value size. In fixed mode returns <see cref="ValueSize"/> for every key.
+        /// In variable mode returns a log-uniform draw in [ValueSize, ResolvedValueSizeMaxBytes] hashed from
+        /// the key and seed (stable across load/validate/run), rounded down to a multiple of 8 and floored at
+        /// <see cref="ValueSize"/>. Log-uniform spreads keys evenly across the pool's geometric size classes.
+        /// </summary>
+        internal int SizeForKey(long k)
+        {
+            if (!VariableValueSize)
+                return ValueSize;
+
+            // SplitMix64(seed ^ mix ^ key) -> [0,1) via the top 53 bits.
+            ulong x = Seed ^ 0xA5A55A5A12349E37UL ^ (ulong)k;
+            x += 0x9E3779B97F4A7C15UL;
+            ulong z = x;
+            z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9UL;
+            z = (z ^ (z >> 27)) * 0x94D049BB133111EBUL;
+            z ^= z >> 31;
+            double u = (z >> 11) * (1.0 / (1UL << 53));
+
+            double min = ValueSize, max = ResolvedValueSizeMaxBytes;
+            int size = (int)(min * Math.Pow(max / min, u));
+            if (size < ValueSize) size = ValueSize;
+            if (size > ResolvedValueSizeMaxBytes) size = (int)ResolvedValueSizeMaxBytes;
+            size &= ~7;                      // multiple of 8 (record alignment)
+            if (size < ValueSize) size = ValueSize;
+            return size;
         }
 
         internal long ClampToRam(long autoLogMemory)

@@ -410,8 +410,14 @@ namespace Tsavorite.core
         /// <inheritdoc />
         public void Reset()
         {
-            // Reset the hash index
-            Array.Clear(state[resizeInfo.version].tableRaw, 0, state[resizeInfo.version].tableRaw.Length);
+            // Reset the hash index (backend-neutral: managed array vs direct-VM region).
+            if (state[resizeInfo.version].tableRaw != null)
+                Array.Clear(state[resizeInfo.version].tableRaw, 0, state[resizeInfo.version].tableRaw.Length);
+            else
+                unsafe
+                {
+                    DirectVirtualMemory.Clear((nint)state[resizeInfo.version].tableAligned, state[resizeInfo.version].size * sizeof(HashBucket));
+                }
             overflowBucketsAllocator.Dispose();
             overflowBucketsAllocator = new MallocFixedPageSize<HashBucket>(logger);
 
@@ -1324,10 +1330,15 @@ namespace Tsavorite.core
             return touched;
         }
 
-        private void AsyncFlushPageCallbackForRecovery(uint errorCode, uint numBytes, object context)
+        private void AsyncFlushPageCallbackForRecovery(uint errorCode, uint numBytes, object context, Exception ioException)
         {
             if (errorCode != 0)
-                logger?.LogError($"{nameof(AsyncFlushPageCallbackForRecovery)} error: {{errorCode}}", errorCode);
+            {
+                if (ioException is null)
+                    logger?.LogError($"{nameof(AsyncFlushPageCallbackForRecovery)} error: {{errorCode}}", errorCode);
+                else
+                    logger?.LogError($"{nameof(AsyncFlushPageCallbackForRecovery)} error: {{exception}}", Utility.GetCallbackExceptionDetail(ioException));
+            }
 
             // Set the page status to "flush done"
             var result = (PageAsyncFlushResult<RecoveryStatus>)context;
@@ -1438,10 +1449,15 @@ namespace Tsavorite.core
             return false;
         }
 
-        internal void AsyncReadPagesForRecoveryCallback(uint errorCode, uint numBytes, object context)
+        internal void AsyncReadPagesForRecoveryCallback(uint errorCode, uint numBytes, object context, Exception ioException)
         {
             if (errorCode != 0)
-                logger?.LogError($"{nameof(AsyncReadPagesForRecoveryCallback)} error: {{errorCode}}", errorCode);
+            {
+                if (ioException is null)
+                    logger?.LogError($"{nameof(AsyncReadPagesForRecoveryCallback)} error: {{errorCode}}", errorCode);
+                else
+                    logger?.LogError($"{nameof(AsyncReadPagesForRecoveryCallback)} error: {{exception}}", Utility.GetCallbackExceptionDetail(ioException));
+            }
 
             // Set the page status to "read done"
             var result = (PageAsyncReadResult<RecoveryStatus>)context;

@@ -70,11 +70,24 @@ namespace Garnet.server
         /// Returns a disposable that prevents the index from being deleted while undisposed.
         /// </summary>
         internal VectorSetLock ReadVectorIndex(StorageSession storageSession, ReadOnlySpan<byte> key, ref StringInput input, scoped Span<byte> indexSpan, out GarnetStatus status)
+            => ReadVectorIndexCore(storageSession, key, ref input, indexSpan, nonBlocking: false, out status, out _);
+
+        /// <summary>
+        /// Core of <see cref="ReadVectorIndex"/>. When <paramref name="nonBlocking"/> is <c>true</c>, the per-set
+        /// lock is taken with the non-spinning <c>TryAcquire*</c> path: if it cannot be acquired immediately
+        /// (another thread holds it — typically a network VADD recreating a disk-tiered index and blocked on a
+        /// pending disk read), this returns a default (empty) lock with <paramref name="wouldBlock"/> set to
+        /// <c>true</c> instead of spin-waiting. Callers that run on the thread pool use this so they can yield
+        /// their pool thread and retry asynchronously rather than consuming the pool and starving the disk-IO
+        /// completion that releases the lock.
+        /// </summary>
+        private VectorSetLock ReadVectorIndexCore(StorageSession storageSession, ReadOnlySpan<byte> key, ref StringInput input, scoped Span<byte> indexSpan, bool nonBlocking, out GarnetStatus status, out bool wouldBlock)
         {
             Debug.Assert(indexSpan.Length == IndexSizeBytes, "Insufficient space for index");
 
             Debug.Assert(ActiveThreadSession == null, "Shouldn't enter context when already in one");
             ActiveThreadSession = storageSession;
+            wouldBlock = false;
             try
             {
                 var keyHash = storageSession.stringBasicContext.GetKeyHash((FixedSpanByteKey)key);
@@ -93,14 +106,38 @@ namespace Garnet.server
                     ReadOptimizedLock.LockToken lockToken;
                     if (takeExclusiveLock)
                     {
-                        vectorSetLocks.AcquireExclusiveLock(keyHash, out lockToken);
+                        if (nonBlocking)
+                        {
+                            if (!vectorSetLocks.TryAcquireExclusiveLock(keyHash, out lockToken))
+                            {
+                                status = default;
+                                wouldBlock = true;
+                                return default;
+                            }
+                        }
+                        else
+                        {
+                            vectorSetLocks.AcquireExclusiveLock(keyHash, out lockToken);
+                        }
 
                         // If we pass through _again_, don't start with an exclusive lock
                         takeExclusiveLock = false;
                     }
                     else
                     {
-                        vectorSetLocks.AcquireSharedLock(keyHash, out lockToken);
+                        if (nonBlocking)
+                        {
+                            if (!vectorSetLocks.TryAcquireSharedLock(keyHash, out lockToken))
+                            {
+                                status = default;
+                                wouldBlock = true;
+                                return default;
+                            }
+                        }
+                        else
+                        {
+                            vectorSetLocks.AcquireSharedLock(keyHash, out lockToken);
+                        }
                     }
 
                     GarnetStatus readRes;
@@ -145,6 +182,15 @@ namespace Garnet.server
                         {
                             vectorSetLocks.ReleaseLock(lockToken);
                             takeExclusiveLock = false;
+
+                            if (nonBlocking)
+                            {
+                                // Don't spin on a pool thread waiting for the drop to finish; report contention so
+                                // the caller yields its pool thread and retries.
+                                status = default;
+                                wouldBlock = true;
+                                return default;
+                            }
 
                             WaitForDiskANNIndexDrop(key);
                             continue;

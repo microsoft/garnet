@@ -7,6 +7,14 @@
     <EmbedUntrackedSources>true</EmbedUntrackedSources>
   </PropertyGroup>
 
+  <!-- Opt-in diagnostic: build with -p:BufferPoolStats=true to compile the origin-return
+       SectorAlignedBufferPool per-size-class allocation/reuse counters (used by the KV.benchmark
+       disk-stress harness). Off by default so the shipping Get hot path pays zero overhead: the
+       [Conditional("BUFFER_POOL_STATS")] recording calls are removed by the compiler. -->
+  <PropertyGroup Condition="'$(BufferPoolStats)' == 'true'">
+    <DefineConstants>$(DefineConstants);BUFFER_POOL_STATS</DefineConstants>
+  </PropertyGroup>
+
   <PropertyGroup Condition="'$(Configuration)' == 'Debug'">
     <WarningsAsErrors>;NU1605</WarningsAsErrors>
   </PropertyGroup>
