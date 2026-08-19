@@ -312,7 +312,7 @@ namespace Tsavorite.core
         private static int s_slotHighWater;
 
         // ---- Per-pool origin-return state (set in InitOriginReturn) --------------------------------------------
-        private int slotIndex;                            // this pool's column in every thread's t_shards array (see above)
+        private int slotIndex;                            // this pool's position in every thread's t_shards array (see above)
         private BudgetState smallBudget;                  // isolated sub-budget for small classes (capacity <= LargeTierMinBytes)
         private BudgetState largeBudget;                  // isolated sub-budget for large (record/flush) classes
         private int firstLargeClass;                      // classes at or above this index draw from largeBudget
