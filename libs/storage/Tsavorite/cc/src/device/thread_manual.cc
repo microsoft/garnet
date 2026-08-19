@@ -10,7 +10,7 @@ namespace core {
 std::atomic<uint32_t> Thread::next_index_{ 0 };
 
 /// No thread IDs have been used yet.
-std::atomic<bool> Thread::id_used_[kMaxNumThreads] = {};
+Thread::PaddedAtomicFlag Thread::id_used_[kMaxNumThreads] = {};
 
 #ifdef COUNT_ACTIVE_THREADS
 std::atomic<int32_t> Thread::current_num_threads_ { 0 };
