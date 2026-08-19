@@ -351,7 +351,18 @@ namespace Garnet.server
         private bool NetworkSET<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            Debug.Assert(parseState.Count == 2);
+            if (parseState.Count < 2)
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.SET));
+
+            // SET is declared with arity -3, and the fast parser only routes it to SETEXNX for
+            // array lengths 3..7 - so an option-bearing SET longer than that arrives here rather
+            // than at the option parser. Hand it back instead of treating "not exactly 2" as a
+            // wrong-argument-count error: "SET k v GET GET GET GET GET GET" is accepted by Redis,
+            // and "SET k v GET GET GET GET GET GET GET EX 100" would otherwise keep silently
+            // dropping its EX and replying +OK.
+            if (parseState.Count > 2)
+                return NetworkSETEXNX(ref storageApi);
+
             var key = parseState.GetArgSliceByRef(0);
             var value = parseState.GetArgSliceByRef(1);
 
@@ -379,7 +390,9 @@ namespace Garnet.server
         private bool NetworkGETSET<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            Debug.Assert(parseState.Count == 2);
+            if (parseState.Count != 2)
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.GETSET));
+
             var key = parseState.GetArgSliceByRef(0);
 
             return NetworkSET_Conditional(RespCommand.SET, 0, key, getValue: true, highPrecision: false,
@@ -392,6 +405,9 @@ namespace Garnet.server
         private bool NetworkSetRange<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            if (parseState.Count != 3)
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.SETRANGE));
+
             var key = parseState.GetArgSliceByRef(0);
 
             // Validate offset
@@ -433,9 +449,14 @@ namespace Garnet.server
             return true;
         }
 
-        private bool NetworkGetRange<TGarnetApi>(ref TGarnetApi storageApi)
+        private bool NetworkGetRange<TGarnetApi>(RespCommand cmd, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            Debug.Assert(cmd is RespCommand.GETRANGE or RespCommand.SUBSTR);
+
+            if (parseState.Count != 3)
+                return AbortWithWrongNumberOfArguments(cmd.ToString());
+
             var key = parseState.GetArgSliceByRef(0);
 
             // Validate range
@@ -476,6 +497,9 @@ namespace Garnet.server
         private bool NetworkSETEX<TGarnetApi>(bool highPrecision, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            if (parseState.Count != 3)
+                return AbortWithWrongNumberOfArguments(highPrecision ? nameof(RespCommand.PSETEX) : nameof(RespCommand.SETEX));
+
             var key = parseState.GetArgSliceByRef(0);
 
             // Validate expiry
@@ -579,7 +603,17 @@ namespace Garnet.server
                     // based on above check if it is not KEEPTTL, it has to be either EX or PX
                     if (expOption != ExpirationOption.KEEPTTL)
                     {
-                        // EX and PX optionare followed by an expiry argument; account for the expiry argument by moving past the tokenIdx
+                        // EX and PX are followed by an expiry argument. Reject the option
+                        // appearing as the final token before consuming it, otherwise the
+                        // read runs past the parse state (a Debug.Assert failure that aborts
+                        // the process, an out-of-bounds read in Release).
+                        if (tokenIdx >= parseState.Count)
+                        {
+                            errorMessage = CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR;
+                            break;
+                        }
+
+                        // account for the expiry argument by moving past the tokenIdx
                         if (!parseState.TryGetInt(tokenIdx++, out expiry))
                         {
                             errorMessage = CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER;
@@ -889,6 +923,9 @@ namespace Garnet.server
         private bool NetworkAppend<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            if (parseState.Count != 2)
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.APPEND));
+
             var sbKey = parseState.GetArgSliceByRef(0);
 
             var input = new StringInput(RespCommand.APPEND, ref parseState, startIdx: 1);
