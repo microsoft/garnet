@@ -497,6 +497,9 @@ namespace Tsavorite.core
 
         internal virtual bool TryComplete() => device.TryComplete();
 
+        /// <summary>Drain only the calling thread's affine device completion context (see <see cref="IDevice.TryCompleteMine"/>).</summary>
+        internal virtual bool TryCompleteMine() => device.TryCompleteMine();
+
         /// <summary>
         /// Mark the allocator disposed and stop the size-tracker resizer, waiting for it to exit, BEFORE tearing down the epoch,
         /// buffer pool, flush event (and, by the owner, the log device) that it uses; otherwise a still-running resizer can spin
@@ -2367,7 +2370,7 @@ namespace Tsavorite.core
             {
                 while (device.Throttle())
                 {
-                    _ = device.TryComplete();
+                    _ = device.TryCompleteMine();
                     _ = Thread.Yield();
                     epoch.ProtectAndDrain();
                 }

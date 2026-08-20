@@ -67,6 +67,8 @@ namespace Device.benchmark
             Console.WriteLine($"Segment Size: {opts.SegmentSize}");
             Console.WriteLine($"Throttle Limit: {opts.ThrottleLimit}");
             Console.WriteLine($"Completion Threads: {opts.CompletionThreads}");
+            Console.WriteLine($"IO Contexts: {opts.IoContexts}");
+            Console.WriteLine($"Queue Depth: {opts.QueueDepth}");
             Console.WriteLine($"Runtime: {opts.Runtime}");
             Console.WriteLine($"BatchSize: {string.Join(",", opts.BatchSize.ToList())}");
             Console.WriteLine($"NumThreads: {string.Join(",", opts.NumThreads.ToList())}");
@@ -220,13 +222,33 @@ namespace Device.benchmark
                 if (capacity % segSize != 0)
                     capacity = ((capacity + segSize - 1) / segSize) * segSize;
                 int parallelism = opts.CompletionThreads > 0 ? opts.CompletionThreads : Environment.ProcessorCount;
-                Console.WriteLine($"[local-memory] capacity={capacity} segmentSize={segSize} parallelism(={CompletionThreadsLabel}={parallelism})");
+
+                // LocalMemoryDevice has no Throttle() override, so setting ThrottleLimit on it is inert: its
+                // in-flight bound is the per-submitter SPSC ring, whose producer blocks when full. Map the
+                // requested throttle onto that ring capacity (rounded up to a power of two, overflow-safe —
+                // the value is user-supplied, so a naive doubling loop would go negative above 2^30 and spin)
+                // so --device-throttle-limit means the same thing here as it does for the native device.
+                int localMemRing = 0;
+                if (opts.ThrottleLimit > 0)
+                {
+                    const int MaxRing = 1 << 30;
+                    if (opts.ThrottleLimit >= MaxRing)
+                        localMemRing = MaxRing;
+                    else
+                    {
+                        localMemRing = 1;
+                        while (localMemRing < opts.ThrottleLimit)
+                            localMemRing <<= 1;
+                    }
+                }
+
+                Console.WriteLine($"[local-memory] capacity={capacity} segmentSize={segSize} parallelism(={CompletionThreadsLabel}={parallelism}) ringCapacity={(localMemRing > 0 ? localMemRing : 1024)}");
                 return Devices.CreateLogDevice(
                     logPath: null,
                     deviceType: DeviceType.LocalMemory,
                     capacity: capacity,
                     numCompletionThreads: parallelism,
-                    localMemorySegmentSize: segSize);
+                    localMemoryDeviceOptions: new LocalMemoryDeviceOptions { SegmentSize = segSize, RingCapacity = localMemRing });
             }
 
             var deviceType = opts.DeviceType;
@@ -241,7 +263,11 @@ namespace Device.benchmark
                     capacity: -1,
                     numCompletionThreads: opts.CompletionThreads > 0 ? opts.CompletionThreads : 1,
                     ioBackend: ParseBackend(opts.IoBackend),
-                    logger: null),
+                    logger: null,
+                    numIoContexts: opts.IoContexts,
+                    queueDepth: opts.QueueDepth,
+                    uringSqPoll: opts.DeviceUringSqPoll,
+                    uringSqPollIdleMs: opts.DeviceUringSqPollIdleMs),
                 DeviceType.FileStream => new ManagedLocalStorageDevice(fileName, true, false, true, -1, false, false, false),
                 DeviceType.RandomAccess => new RandomAccessLocalStorageDevice(fileName, true, true, true, -1, false, false, false),
                 _ => throw new ArgumentOutOfRangeException()

@@ -53,6 +53,9 @@ namespace Resp.benchmark
         [Option('t', "threads", Separator = ',', Default = new[] { 1, 2, 4, 8, 16, 32 }, HelpText = "Number of threads (comma separated)")]
         public IEnumerable<int> NumThreads { get; set; }
 
+        [Option("load-threads", Required = false, Default = 8, HelpText = "Number of threads used for the initial data load phase")]
+        public int LoadThreads { get; set; }
+
         [Option('a', "auth", Required = false, Default = null, HelpText = "Authentication password")]
         public string Auth { get; set; }
 

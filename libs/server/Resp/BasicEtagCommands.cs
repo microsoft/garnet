@@ -20,7 +20,8 @@ namespace Garnet.server
         private bool NetworkGETWITHETAG<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            Debug.Assert(parseState.Count == 1);
+            if (parseState.Count != 1)
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.GETWITHETAG));
 
             var key = parseState.GetArgSliceByRef(0);
             var input = new StringInput(RespCommand.GETWITHETAG);
@@ -51,7 +52,8 @@ namespace Garnet.server
         private bool NetworkGETIFNOTMATCH<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            Debug.Assert(parseState.Count == 2);
+            if (parseState.Count != 2)
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.GETIFNOTMATCH));
 
             var key = parseState.GetArgSliceByRef(0);
             var input = new StringInput(RespCommand.GETIFNOTMATCH, ref parseState, startIdx: 1);
