@@ -540,6 +540,9 @@ namespace Garnet.cluster
             await storeWrapper.RecoverAOFAsync().ConfigureAwait(false);
             if (clusterProvider.serverOptions.EnableAOF)
             {
+                storeWrapper.DefaultDatabase.VectorManager?.Initialize();
+                storeWrapper.DefaultDatabase.VectorManager?.ReconcileRecoveredState();
+
                 // If recovered checkpoint corresponds to an unavailable AOF address, we initialize AOF to that address
                 var recoveredSafeAofAddress = GetRecoveredSafeAofAddress();
                 storeWrapper.appendOnlyFile.Log.InitializeIf(ref recoveredSafeAofAddress);
