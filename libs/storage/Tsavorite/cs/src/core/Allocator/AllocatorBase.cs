@@ -1338,7 +1338,7 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.NoInlining)]
-        long HandlePageOverflow(ref PageOffset localTailPageOffset, int numSlots)
+        long HandlePageOverflow(ref PageOffset localTailPageOffset, int numSlots, int partialSlots)
         {
             var pageIndex = localTailPageOffset.Page + 1;
 
@@ -1353,9 +1353,31 @@ namespace Tsavorite.core
                 return -1; // RETRY_NOW
             }
 
-            // The single thread that "owns" the page-increment proceeds below. This is the thread for which:
+            // We are the single thread that "owns" the page-increment. This is the thread for which:
             // 1. Old image of offset (pre-Interlocked.Increment) is <= PageSize, and
             // 2. New image of offset (post-Interlocked.Increment) is > PageSize.
+            // We have an implicit latch because other threads exited in TryAllocate, so we can safely proceed.
+
+            // First see if partialSlots is > 0. If so, and the amount remaining on the page would split numSlots
+            // into two parts each of which is >= partialSlots, then we can satisfy the allocation by allocating
+            // the first part on this page and returning to the caller the length of that allocation. The caller
+            // will then allocate the second part on the next page after populating the first part.
+            if (partialSlots > 0)
+            {
+                var remainingOnPage = PageSize - (localTailPageOffset.Offset - numSlots);
+                if (remainingOnPage >= partialSlots && numSlots - remainingOnPage >= partialSlots)
+                {
+                    // Get the logical address using the original offset.
+                    var logicalAddress = GetLogicalAddressOfStartOfPage(localTailPageOffset.Page) | ((long)(localTailPageOffset.Offset - numSlots));
+
+                    // Reset to end of page
+                    localTailPageOffset.Offset = PageSize;
+                    _ = Interlocked.Exchange(ref TailPageOffset.PageAndOffset, localTailPageOffset.PageAndOffset);
+
+                    // We have satisfied the allocation on this page so we do not need to do size tracking, and can simply return the address.
+                    return logicalAddress;
+                }
+            }
 
             // If we need to wait for the flushEvent, we have to RETRY_LATER
             if (NeedToWaitForFlush(pageIndex))
@@ -1385,6 +1407,15 @@ namespace Tsavorite.core
                 return -1; // RETRY_NOW
             }
 
+            // TODO: Here we can "allocate" the last chunk on the page as an invalid record, and enqueue it into the revivification freelist if enabled,
+            // before we proceed to the next page. This will speed up scan by letting it jump to the end of the page rather than relying on the end of
+            // the page to be zero-initialized and traversing it by 8-byte IsNull RecordInfo increments.
+            // NOTE: this filler must be written differently per allocator. The main store uses a RecordInfo/RecordDataHeader invalid record
+            // (KeyLength=0, ValueLength=tail, PreviousAddress=kTempInvalidAddress, Filler unset). TsavoriteLog does NOT use RecordInfo records —
+            // its scan (TsavoriteLogScanIterator.GetNextInternal) already skips a zero-length page tail by jumping to the next page — so for
+            // TsavoriteLog the filler must be an entry-length-prefixed record (or left as a zero tail), not a RecordInfo record. Deferred for now
+            // (only exercised once a partialSlots caller wastes a sub-partialSlots tail; the AOF chunk writer's zero tails are already handled).
+
             // Allocate next page and set new tail
             if (!IsAllocated(pageIndex % BufferSize) || !IsAllocated((pageIndex + 1) % BufferSize))
                 AllocatePagesWithException(pageIndex, localTailPageOffset, numSlots);
@@ -1410,9 +1441,12 @@ namespace Tsavorite.core
 
         /// <summary>Try allocate, no thread spinning allowed</summary>
         /// <param name="numSlots">Number of slots to allocate</param>
+        /// <param name="partialSlots">If nonzero, the number of partial slots to allocate if we are at the end of a page and we would split <paramref name="numSlots"/>
+        ///     into two parts, on this page and on the following page, each of size at least <paramref name="partialSlots"/>. If this condition is met we satisfy the
+        ///     allocation and the caller will also receive the length of the allocation so it can allocate the second part after populating the first.</param>
         /// <returns>The allocated logical address, or 0 in case of inability to allocate</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private long TryAllocate(int numSlots = 1)
+        private long TryAllocate(int numSlots, int partialSlots)
         {
             if (numSlots > PageSize)
                 ThrowTsavoriteException("Entry does not fit on page");
@@ -1441,7 +1475,7 @@ namespace Tsavorite.core
                 // Note that TailPageOffset is now unstable -- there may be a GetTailAddress call spinning for
                 // it to stabilize. Therefore, HandlePageOverflow needs to stabilize TailPageOffset immediately,
                 // before performing any epoch bumps or system calls.
-                return HandlePageOverflow(ref localTailPageOffset, numSlots);
+                return HandlePageOverflow(ref localTailPageOffset, numSlots, partialSlots);
             }
 
             return GetLogicalAddressOfStartOfPage(localTailPageOffset.Page) | ((long)(localTailPageOffset.Offset - numSlots));
@@ -1454,37 +1488,74 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool TryAllocateRetryNow(int numSlots, out long logicalAddress)
         {
-            // Bounded backoff: yield kFlushSpinCount times, then suspend the epoch and wait on flushEvent.
-            // This eliminates CPU burn from all 64 inserter threads spinning while a flush is in flight
-            // (typically ~900us for libaio). We use a short timeout to handle the case where flushEvent was
-            // already Set() and replaced (no further flush coming) but we still need to drain OnPagesClosed.
-            int spins = 0;
+            var spins = 0;
             var localFlushEvent = flushEvent;
-            while ((logicalAddress = TryAllocate(numSlots)) < 0)
+            while ((logicalAddress = TryAllocate(numSlots, partialSlots: 0)) < 0)
             {
                 // -1: RETRY_NOW
-                _ = TryComplete();
-                epoch.ProtectAndDrain();
-                if (++spins < Constants.kFlushSpinCount)
-                {
-                    _ = Thread.Yield();
-                    continue;
-                }
-                try
-                {
-                    epoch.Suspend();
-                    _ = localFlushEvent.Wait(TimeSpan.FromMilliseconds(1));
-                }
-                finally
-                {
-                    epoch.Resume();
-                }
-                localFlushEvent = flushEvent;
-                spins = 0;
+                WaitToRetryNow(ref spins, ref localFlushEvent);
             }
 
             // 0: RETRY_LATER
             return logicalAddress != 0;
+        }
+
+        /// <summary>Try allocate, spin for RETRY_NOW (logicalAddress is less than 0) case</summary>
+        /// <param name="numSlots">Number of slots to allocate</param>
+        /// <param name="partialSlots">If nonzero, the number of partial slots to allocate if we are at the end of a page and we would split <paramref name="numSlots"/>
+        ///     into two parts, on this page and on the following page, each of size at least <paramref name="partialSlots"/>. If this condition is met we satisfy the
+        ///     allocation and the caller will also receive the length of the allocation so it can allocate the second part after populating the first.</param>
+        /// <param name="logicalAddress">Returned address, or RETRY_LATER (if 0) indicator</param>
+        /// <param name="length">Length of the allocation, if successful</param>
+        /// <returns>True if we were able to allocate, else false</returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public bool TryAllocateRetryNow(int numSlots, int partialSlots, out long logicalAddress, out long length)
+        {
+            var spins = 0;
+            var localFlushEvent = flushEvent;
+            while ((logicalAddress = TryAllocate(numSlots, partialSlots)) < 0)
+            {
+                // -1: RETRY_NOW
+                WaitToRetryNow(ref spins, ref localFlushEvent);
+            }
+
+            if (logicalAddress != 0)
+            {
+                // If we are at the end of a page, we may have allocated only a partial amount of the requested numSlots.
+                var offsetOnPage = GetOffsetOnPage(logicalAddress);
+                length = (offsetOnPage + numSlots > PageSize) ? (PageSize - offsetOnPage) : numSlots;
+                return true;
+            }
+
+            // 0: RETRY_LATER
+            length = 0;
+            return logicalAddress != 0;
+        }
+
+        void WaitToRetryNow(ref int spins, ref CompletionEvent localFlushEvent)
+        {
+            // Bounded backoff: yield kFlushSpinCount times, then suspend the epoch and wait on flushEvent.
+            // This eliminates CPU burn from all 64 inserter threads spinning while a flush is in flight
+            // (typically ~900us for libaio). We use a short timeout to handle the case where flushEvent was
+            // already Set() and replaced (no further flush coming) but we still need to drain OnPagesClosed.
+            _ = TryComplete();
+            epoch.ProtectAndDrain();
+            if (++spins < Constants.kFlushSpinCount)
+            {
+                _ = Thread.Yield();
+                return;
+            }
+            try
+            {
+                epoch.Suspend();
+                _ = localFlushEvent.Wait(TimeSpan.FromMilliseconds(1));
+            }
+            finally
+            {
+                epoch.Resume();
+            }
+            localFlushEvent = flushEvent;
+            spins = 0;
         }
 
         /// <summary>

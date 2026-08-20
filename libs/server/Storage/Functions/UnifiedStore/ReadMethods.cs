@@ -29,7 +29,7 @@ namespace Garnet.server
             return cmd switch
             {
                 RespCommand.EXISTS => true,
-                RespCommand.MIGRATE => HandleMigrate(in srcLogRecord, (int)input.arg1, ref output),
+                RespCommand.MIGRATE => HandleMigrate(in srcLogRecord, ref output),
                 RespCommand.MEMORY_USAGE => HandleMemoryUsage(in srcLogRecord, ref output),
                 RespCommand.TYPE => HandleType(in srcLogRecord, ref output),
                 RespCommand.OBJECT_ENCODING => HandleObjectEncoding(in srcLogRecord, ref output),
@@ -187,12 +187,32 @@ namespace Garnet.server
             return true;
         }
 
-        private bool HandleMigrate<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, int maxHeapAllocationSize, ref UnifiedOutput output)
+        private bool HandleMigrate<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref UnifiedOutput output)
             where TSourceLogRecord : ISourceLogRecord
         {
-            DiskLogRecord.Serialize(in srcLogRecord, maxHeapAllocationSize,
-                valueObjectSerializer: srcLogRecord.DataHeader.ValueIsObject ? functionsState.garnetObjectSerializer : null,
-                memoryPool: functionsState.memoryPool, output: ref output.SpanByteAndMemory);
+            // Capture the record's pieces while holding the store epoch (a migrating key is NOT locked, so its object/overflow
+            // value may be concurrently updated). We cannot stream to the network here: migration sends asynchronously and the
+            // store epoch must never be held across an await (unlike replication, which sends synchronously via BlockingWait and
+            // so CAN stream to the network in-epoch). So capture now and let the caller assemble and send out of epoch:
+            //   - inline portion  -> SpanByteAndMemory (compacted to RoundUp(ActualSize) so the receiver locates the overflow/object pieces),
+            //   - overflow key     -> accumulator (shallow ref; store keys are immutable so the backing array is stable),
+            //   - overflow value   -> accumulator (deep copy; the store value may be mutated once we release the epoch),
+            //   - object value     -> accumulator (serialized into a chunk list; may exceed 2 GB).
+            var acc = output.Accumulator ??= new MigrationChunkWriterAccumulator();
+            acc.Reset();
+
+            acc.InlineLength = DiskLogRecord.SerializeInlinePortionForMigration(in srcLogRecord, functionsState.memoryPool, ref output.SpanByteAndMemory);
+
+            if (!srcLogRecord.DataHeader.RecordIsInline)
+            {
+                if (srcLogRecord.DataHeader.KeyIsOverflow)
+                    acc.SetKeyOverflow(srcLogRecord.KeyOverflow);
+
+                if (srcLogRecord.DataHeader.ValueIsOverflow)
+                    acc.SetValueOverflowDeepCopy(srcLogRecord.ValueOverflow);
+                else
+                    acc.SerializeObjectValue(srcLogRecord.ValueObject, functionsState.garnetObjectSerializer);
+            }
             return true;
         }
 
