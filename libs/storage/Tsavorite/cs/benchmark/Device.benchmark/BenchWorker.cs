@@ -114,8 +114,14 @@ namespace Device.benchmark
                 {
                     while (!_benchmarkPool.TryDequeue(out op))
                     {
+                        // Pool empty: every buffer this worker owns is in flight. The device's
+                        // dedicated completion-drainer threads refill the pool via Callback, so
+                        // this drains only as a liveness fallback. It is rarely hit because the
+                        // per-thread throttle caps in-flight well below batchSize. Draining after
+                        // every submit would keep it on the hot path, where the single-event
+                        // TryComplete serializes all submitters on context 0's kernel ring mutex.
+                        device.TryComplete();
                         Thread.Yield();
-                        continue;
                     }
                     long sectorCount = (long)(fileSize / sectorSize);
                     long sector = threadRnd.NextInt64(0, (long)sectorCount) * sectorSize;
@@ -123,12 +129,18 @@ namespace Device.benchmark
                     while (device.Throttle()) Thread.Yield();
                     localTotalSubmitted++;
                     device.ReadAsync((ulong)sector, (IntPtr)dest, (uint)sectorSize, Callback, op);
-                    device.TryComplete();
                 }
             }
             finally
             {
-                while (_benchmarkPool.Count < batchSize) Thread.Yield();
+                // Drain until every buffer this worker owns has returned, polling completions so
+                // any reads submitted during the last iterations complete here rather than
+                // stranding the shutdown wait.
+                while (_benchmarkPool.Count < batchSize)
+                {
+                    device.TryComplete();
+                    Thread.Yield();
+                }
                 // Authoritative throughput counter (successful ops only) is updated in the
                 // callback. We also publish the per-thread submission count for diagnostics
                 // (helps spot pathological submit/complete ratios under errors).

@@ -98,17 +98,16 @@ namespace Garnet.cluster
             /// <returns></returns>
             public async Task<bool> TransmitSlotsAsync()
             {
-                var output = new UnifiedOutput();       // TODO: initialize this based on gcs curr and end; make sure it has the initial part of the "send" set
-                var vectorOutput = new VectorOutput();  // TODO: initialize this based on gcs curr and end; make sure it has the initial part of the "send" set
+                var output = new UnifiedOutput();
+                var vectorOutput = new VectorOutput();
 
                 try
                 {
                     var input = new UnifiedInput(RespCommand.MIGRATE);
-                    input.arg1 = session.NetworkBufferSettings.sendBufferSize - common.NetworkBufferSettings.SendBufferOverheadReserve;
 
                     VectorInput vectorInput = new();
                     vectorInput.AlignmentExpected = true; // We're moving DiskANN sourced data, so alignment is expected
-                    vectorInput.MaxMigrationHeapAllocationSize = session.NetworkBufferSettings.sendBufferSize - common.NetworkBufferSettings.SendBufferOverheadReserve;
+                    vectorInput.MaxMigrationHeapAllocationSize = session.NetworkBufferSettings.MaxSendBufferContentSize;
 
                     foreach (var (ns, key, hasNs) in sketch.argSliceVector)
                     {
@@ -141,20 +140,15 @@ namespace Garnet.cluster
 
             public async Task<bool> TransmitKeysAsync(Func<PinnedSpanByte, bool> shouldSkipKey)
             {
-                // Use this for both stores; main store will just use the SpanByteAndMemory directly. We want it to be outside iterations
-                // so we can reuse the SpanByteAndMemory.Memory across iterations.
-                // TODO: initialize 'output' based on gcs curr and end; make sure it has the initial part of the "send" set, and call gcs.IncrementRecordDirect().
-                //       This will still allow SBAM.Memory to be reused.
+                // Reused across iterations so the SpanByteAndMemory.Memory can be reused; the serialized record is sent (whole
+                // if it fits a send buffer, else chunked) out of epoch after each read.
                 var output = new UnifiedOutput();
 
                 try
                 {
                     var keys = sketch.Keys;
 
-                    var input = new UnifiedInput(RespCommand.MIGRATE)
-                    {
-                        arg1 = session.NetworkBufferSettings.sendBufferSize - 1024   // Reserve some space for overhead
-                    };
+                    var input = new UnifiedInput(RespCommand.MIGRATE);
                     for (var i = 0; i < keys.Count; i++)
                     {
                         if (keys[i].Item2)

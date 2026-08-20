@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System.Diagnostics;
@@ -30,12 +30,20 @@ namespace Garnet.server
     //   Single log (1 physical, 1 replay task)  → BasicHeader
     //   Single physical log, multi-replay       → BasicHeader (per-key), SingleLogTransactionHeader (broadcast)
     //   Multi physical log, multi-replay        → ShardedHeader (per-key), ShardedLogTransactionHeader (broadcast)
+    //
+    // There are also chunked variants of non-Transaction header types, used when a large object value is split across multiple AOF entries.
     internal enum AofHeaderType : byte
     {
         BasicHeader = 0,
         ShardedHeader = 1,
         SingleLogTransactionHeader = 2,
         ShardedLogTransactionHeader = 3,
+
+        // Chunked variants of the non-transaction types above, used when a large object value is split across multiple AOF entries
+        // (see the Aof*ChunkHeader structs). Each chunked variant has the same low two bits as its non-chunked counterpart, with the
+        // ChunkedRecordFlag bit (0b0100) set, so it occupies the third bit of the (now 3-bit) AofHeaderTypeMask.
+        BasicChunkHeader = 4,                            // BasicHeader | ChunkedRecordFlag
+        ShardedChunkHeader = 5,                          // ShardedHeader | ChunkedRecordFlag
     }
 
     /// <summary>
@@ -134,8 +142,25 @@ namespace Garnet.server
                 AofHeaderType.ShardedHeader => entryPtr + AofShardedHeader.TotalSize,
                 AofHeaderType.ShardedLogTransactionHeader => entryPtr + AofShardedLogTransactionHeader.TotalSize,
                 AofHeaderType.SingleLogTransactionHeader => entryPtr + AofSingleLogTransactionHeader.TotalSize,
+                AofHeaderType.BasicChunkHeader => entryPtr + AofBasicChunkHeader.TotalSize,
+                AofHeaderType.ShardedChunkHeader => entryPtr + AofShardedChunkHeader.TotalSize,
                 _ => throw new GarnetException($"Type not supported {headerType}"),
             };
+        }
+
+        /// <summary>
+        /// Like <see cref="SkipHeader"/>, but returns a reference to the embedded <see cref="AofChunkHeader"/> of a chunk record
+        /// (its lengths/objectId/keyHash), for <see cref="AofHeaderType.BasicChunkHeader"/> and
+        /// <see cref="AofHeaderType.ShardedChunkHeader"/>.
+        /// </summary>
+        public static unsafe ref AofChunkHeader GetChunkedHeaderRef(byte* entryPtr)
+        {
+            var headerType = ((AofHeader*)entryPtr)->HeaderType;
+            if (headerType == AofHeaderType.BasicChunkHeader)
+                return ref ((AofBasicChunkHeader*)entryPtr)->chunkHeader;
+            if (headerType == AofHeaderType.ShardedChunkHeader)
+                return ref ((AofShardedChunkHeader*)entryPtr)->chunkHeader;
+            throw new GarnetException($"Type is not a chunk header: {headerType}");
         }
 
         public const int TotalSize = 16;
@@ -154,7 +179,12 @@ namespace Garnet.server
         // Version 4 makes the RespCommand write block dense/explicit (writes-first) and moves the
         // object sub-operation id (SubId) from the low 5 bits of the flags byte into its own header
         // byte; AofProcessor remaps v3 entries on replay.
-        internal const byte AofHeaderVersion = 4;
+        // Version 5 repurposes the 0b0100 flags bit from a standalone reserved flag into the high bit of
+        // AofHeaderTypeMask (now 3 bits wide) and adds the chunked header types BasicChunkHeader /
+        // ShardedChunkHeader for large values split across multiple entries. A version-4 reader masks the
+        // type with 0b0011 and would misparse a chunk header as its non-chunked base type, so this bump
+        // makes down-level recovery fail safe (a v4 build rejects v5 entries as an unsupported newer version).
+        internal const byte AofHeaderVersion = 5;
 
         /// <summary>
         /// Highest AOF header version this build can read/replay. Entries with a higher version were
@@ -163,12 +193,16 @@ namespace Garnet.server
         internal const byte MaxSupportedAofHeaderVersion = AofHeaderVersion;
 
         /// <summary>
-        /// Bits in <see cref="flags"/> that identify the <see cref="AofHeaderType"/>
+        /// Bits in <see cref="flags"/> that identify the <see cref="AofHeaderType"/>.
+        /// Three bits wide: the low two bits select the base header type, and the third bit
+        /// (<see cref="ChunkedRecordFlag"/>) selects the chunked variant of that base type.
         /// </summary>
-        internal const byte AofHeaderTypeMask = 0b0011;
+        internal const byte AofHeaderTypeMask = 0b0111;
 
         /// <summary>
-        /// Bit in <see cref="flags"/> that indicates that the record is chunked
+        /// Bit in <see cref="flags"/> that indicates that the record is chunked. This is the high
+        /// bit of <see cref="AofHeaderTypeMask"/>, so a chunked <see cref="AofHeaderType"/> value is
+        /// its non-chunked counterpart with this bit set.
         /// </summary>
         internal const byte ChunkedRecordFlag = 0b0100;
 
@@ -240,10 +274,63 @@ namespace Garnet.server
             }
         }
 
+        /// <summary>True if this record is one chunk of a larger, chunked logical record.</summary>
+        public readonly bool IsChunked => (flags & ChunkedRecordFlag) != 0;
+
         public AofHeader()
         {
             flags = 0;
             aofHeaderVersion = AofHeaderVersion;
         }
+    }
+
+    /// <summary>
+    /// Chunked variant of <see cref="AofHeader"/>: a basic header immediately followed by an
+    /// <see cref="AofChunkHeader"/>. Used when a large value is split across multiple AOF entries.
+    /// </summary>
+    [StructLayout(LayoutKind.Explicit, Size = TotalSize)]
+    struct AofBasicChunkHeader
+    {
+        public const int TotalSize = AofHeader.TotalSize + AofChunkHeader.TotalSize;
+
+        /// <summary>Byte offset of the chunk's objectId within this header (the only field patched per-chunk at write time).</summary>
+        public const int ObjectIdOffset = AofHeader.TotalSize + AofChunkHeader.ObjectIdOffset;
+
+        /// <summary>
+        /// Basic AOF header.
+        /// </summary>
+        [FieldOffset(0)]
+        public AofHeader basicHeader;
+
+        /// <summary>
+        /// Chunk framing for this entry.
+        /// </summary>
+        [FieldOffset(AofHeader.TotalSize)]
+        public AofChunkHeader chunkHeader;
+    }
+
+    /// <summary>
+    /// Chunked variant of <see cref="AofShardedHeader"/>: a sharded header immediately followed by an
+    /// <see cref="AofChunkHeader"/>.
+    /// </summary>
+    [StructLayout(LayoutKind.Explicit, Size = TotalSize)]
+    struct AofShardedChunkHeader
+    {
+        public const int TotalSize = AofShardedHeader.TotalSize + AofChunkHeader.TotalSize;
+
+        /// <summary>Byte offset of the chunk's objectId within this header (the only field patched per-chunk at write time).</summary>
+        public const int ObjectIdOffset = AofShardedHeader.TotalSize + AofChunkHeader.ObjectIdOffset;
+
+        /// <summary>
+        /// Sharded AOF header.
+        /// </summary>
+        [FieldOffset(0)]
+        public AofShardedHeader shardedHeader;
+
+        /// <summary>
+        /// Chunk framing for this entry.
+        /// </summary>
+        [FieldOffset(AofShardedHeader.TotalSize)]
+        public AofChunkHeader chunkHeader;
     }
 }

@@ -174,6 +174,8 @@ public:
 
     virtual int CreateDir(const std::string& dir, bool delete_existing) = 0;
     virtual bool TryComplete() = 0;
+    /// Drain only the calling thread's affine context/ring (see QueueIoHandler::TryCompleteMine).
+    virtual bool TryCompleteMine() = 0;
     virtual uint64_t GetFileSize(uint64_t segment) = 0;
     virtual void RemoveSegment(uint64_t segment) = 0;
     virtual int QueueRun(int timeout_secs) = 0;
@@ -307,14 +309,18 @@ public:
         bool enablePrivileges = false,
         bool unbuffered = true,
         bool delete_on_close = false,
-        int max_events = 0)
+        int max_events = 0,
+        bool uring_sqpoll = false,
+        int uring_sqpoll_idle_ms = 0)
         : epoch_ { }
         // max_events is the per-context kernel submission-ring depth (libaio io_setup /
         // io_uring SQ entries). The managed wrapper sizes it up from the device throttle limit
         // (NextPowerOf2) so the ring can hold the full in-flight burst the throttle permits;
         // this keeps io_submit / io_uring_get_sqe off their EAGAIN/ring-full backoff spins,
         // which would otherwise pin epoch slots. <= 0 means "use the handler's default depth".
-        , handler_{ 16 /*max threads*/, num_io_contexts < 1 ? 1 : num_io_contexts, max_events }
+        // uring_sqpoll / uring_sqpoll_idle_ms are io_uring-only (IORING_SETUP_SQPOLL and the poll
+        // thread's idle window); the libaio / ThreadPool handlers accept and ignore them.
+        , handler_{ 16 /*max threads*/, num_io_contexts < 1 ? 1 : num_io_contexts, max_events, uring_sqpoll, uring_sqpoll_idle_ms }
         , default_file_options_{ unbuffered, delete_on_close }
         // FileSystemSegmentedFile validates segment_size internally (must be a positive power
         // of two) and throws std::invalid_argument otherwise. The C ABI wrapper wraps `new
@@ -333,7 +339,8 @@ public:
                 "Possible causes: (1) RLIMIT_AIO / fs.aio-max-nr exceeded "
                 "(try: sudo sysctl -w fs.aio-max-nr=1048576); "
                 "(2) io_uring disabled by kernel.io_uring_disabled or seccomp policy; "
-                "(3) kernel too old (libaio < 2.4 / io_uring < 5.1).",
+                "(3) kernel too old (libaio < 2.4 / io_uring < 5.1); "
+                "(4) --device-uring-sqpoll requires kernel 5.11+ (errno 95 / EOPNOTSUPP).",
                 e, std::strerror(e));
             init_status_ = FASTER::core::Status::IOError;
             return;
@@ -531,6 +538,10 @@ public:
 
     bool TryComplete() override {
         return handler_.TryComplete();
+    }
+
+    bool TryCompleteMine() override {
+        return handler_.TryCompleteMine();
     }
 
     uint64_t GetFileSize(uint64_t segment) override {

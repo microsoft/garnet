@@ -297,6 +297,12 @@ namespace Garnet.cluster
                 lastAdvanceTimePulse = now;
             }
 
+            /// <summary>
+            /// This does a direct copy of the AOF records from the primary to the replica, starting from startAddress. We don't deserialize anything;
+            /// it is a vein-to-vein transfusion of records that we do not otherwise operate on.
+            /// </summary>
+            /// <param name="aofSyncDriver"></param>
+            /// <returns></returns>
             public async Task RunAofSyncTaskAsync(AofSyncDriver aofSyncDriver)
             {
                 var enteredMonitor = false;
@@ -308,7 +314,7 @@ namespace Garnet.cluster
 
                     logger?.LogInformation(
                         "{RunAofSyncTask}[{taskId}]: syncing {remoteNodeId} starting from address {address}",
-                        nameof(AofSyncTask.RunAofSyncTaskAsync),
+                        nameof(RunAofSyncTaskAsync),
                         physicalSublogIdx,
                         remoteNodeId,
                         startAddress);

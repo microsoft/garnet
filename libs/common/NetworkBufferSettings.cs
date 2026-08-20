@@ -29,8 +29,22 @@ namespace Garnet.common
         /// </summary>
         public readonly int maxReceiveBufferSize;
 
-        /// <summary>Reserve some space for overhead in send buffer when determining the max size of a single send buffer (e.g. for object serialization during migration)</summary>
-        public const int SendBufferOverheadReserve = 64;    // TODO verify this value
+        /// <summary>
+        /// Reserve in the send buffer for per-batch/per-record overhead when computing <see cref="MaxSendBufferContentSize"/>,
+        /// the largest single record or record-chunk we write. It must cover the once-per-batch cluster header
+        /// (<c>SetClusterMigrateHeader</c> — a 6-element RESP array <c>CLUSTER MIGRATE nodeId replace vector</c> plus the
+        /// payload length reservation — is the larger of the two, ~104 bytes for a 40-char nodeId) plus per-record framing
+        /// (a type byte + a 4-byte chunk length + the batch trailer). 256 leaves comfortable margin (was 64, which was too small).
+        /// </summary>
+        public const int SendBufferOverheadReserve = 256;
+
+        /// <summary>
+        /// The largest single record, or record-chunk, that fits in the send buffer once the per-batch header and per-record
+        /// framing (<see cref="SendBufferOverheadReserve"/>) are accounted for. Used by both migration and replication (both are
+        /// based on <see cref="sendBufferSize"/>): a record whose serialized length exceeds this is split into chunks of at most
+        /// this size.
+        /// </summary>
+        public int MaxSendBufferContentSize => sendBufferSize - SendBufferOverheadReserve;
 
         /// <summary>
         /// Default constructor
