@@ -17,6 +17,10 @@ namespace Garnet.server
 #if NET9_0_OR_GREATER
         private readonly ConcurrentDictionary<byte[], TValue>.AlternateLookup<ReadOnlySpan<byte>> lookup;
 #endif
+        /// <summary>
+        /// Are there any pending items for cleanup?
+        /// </summary>
+        public bool IsEmpty => entries.IsEmpty;
 
         public VectorSetCleanupWorkSet()
         {
