@@ -66,7 +66,7 @@ jobs:
           - { rid: linux-musl-x64,   image: 'alpine:3.20',  platform: linux/amd64, libc: musl }
           - { rid: linux-musl-arm64, image: 'alpine:3.20',  platform: linux/arm64, libc: musl }
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       # Register QEMU so the arm64 containers can run on the x64 runner. No-op for amd64.
       - name: Enable QEMU (arm64 emulation)
@@ -91,7 +91,24 @@ jobs:
           ls -la "staging/${{ matrix.rid }}/native"
           file "staging/${{ matrix.rid }}/native"/*.so
 
-      - uses: actions/upload-artifact@v4
+      - name: Verify required exports
+        run: |
+          set -euo pipefail
+          so="staging/${{ matrix.rid }}/native/libnative_device.so"
+          # The C# NativeStorageDevice loader hard-probes these at device creation: ImportResolver
+          # binds the P/Invokes and the startup ABI probe calls NumIoContexts / QueueRunFor /
+          # TryCompleteMine (the affine inline-drain path is on by default). CreateWithBackend is the
+          # create export the managed wrapper binds; a binary missing any of these throws at server
+          # startup on this RID, so fail the build here instead of shipping it.
+          # Host nm reads the ELF dynamic symbol table for every RID (x64/arm64, glibc/musl) alike.
+          command -v nm >/dev/null || { sudo apt-get update -qq && sudo apt-get install -y -qq binutils; }
+          rc=0
+          for sym in NativeDevice_CreateWithBackend NativeDevice_NumIoContexts NativeDevice_QueueRunFor NativeDevice_TryCompleteMine; do
+            if nm -D --defined-only "$so" | grep -qw "$sym"; then echo "  OK      $sym"; else echo "  MISSING $sym"; rc=1; fi
+          done
+          [ $rc -eq 0 ] || { echo "::error::$so is missing a required NativeDevice_* export the C# loader probes at startup"; exit 1; }
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: native-${{ matrix.rid }}
           path: staging/${{ matrix.rid }}/native/*
@@ -107,7 +124,7 @@ jobs:
           - { rid: win-x64,   arch: x64 }
           - { rid: win-arm64, arch: ARM64 }
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       # CMakeLists builds with /Qspectre /guard:cf /sdl and links the Spectre-mitigated CRT, so a
       # missing "Spectre-mitigated libs" component fails the link with MSB8040 (see cc/README.md,
@@ -179,10 +196,18 @@ jobs:
           $dll = "staging/${{ matrix.rid }}/native/native_device.dll"
 
           $exports = & $dumpbin /exports $dll
-          if (-not ($exports | Select-String 'NativeDevice_CreateWithBackend')) {
-            throw "native_device.dll is missing NativeDevice_CreateWithBackend export"
+          # The C# NativeStorageDevice loader hard-probes these at device creation: ImportResolver
+          # binds the P/Invokes and the startup ABI probe calls NumIoContexts / QueueRunFor /
+          # TryCompleteMine (the affine inline-drain path is on by default). CreateWithBackend is the
+          # create export the managed wrapper binds; a binary missing any of these throws at server
+          # startup on this RID, so fail the build here instead of shipping it.
+          $required = @('NativeDevice_CreateWithBackend','NativeDevice_NumIoContexts','NativeDevice_QueueRunFor','NativeDevice_TryCompleteMine')
+          foreach ($sym in $required) {
+            if (-not ($exports | Select-String -SimpleMatch $sym)) {
+              throw "native_device.dll is missing required export $sym"
+            }
           }
-          Write-Host "Exports verified."
+          Write-Host "Exports verified: $($required -join ', ')."
 
           # Confirm the security flags in CMakeLists (/guard:cf and /GS /sdl, set alongside /Qspectre)
           # actually took effect in the produced binary: Control Flow Guard and the stack Security
@@ -197,7 +222,7 @@ jobs:
           }
           Write-Host "Security mitigations verified: Control Flow Guard + Security Cookie present."
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: native-${{ matrix.rid }}
           path: staging/${{ matrix.rid }}/native/*
@@ -219,7 +244,7 @@ jobs:
       group: native-publish-${{ github.ref_name }}
       cancel-in-progress: false
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.ref_name }}
           fetch-depth: 0
@@ -229,7 +254,7 @@ jobs:
           token: ${{ secrets.NATIVE_BINARIES_PAT || github.token }}
 
       - name: Download all native artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           path: staging
           pattern: native-*

@@ -1,4 +1,4 @@
-// Copyright (c) Microsoft Corporation.
+﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -707,19 +707,22 @@ namespace Garnet.server
         /// <param name="dstKey">The destination key where the range will be stored.</param>
         /// <param name="srcKey">The source key from which the range will be taken.</param>
         /// <param name="input">The input object containing range parameters.</param>
-        /// <param name="result">The result of the operation, indicating the number of elements stored.</param>
+        /// <param name="output">Receives the number of elements stored, or the error the range operation rejected the parameters with.</param>
         /// <param name="objectContext">The context of the object store.</param>
         /// <returns>Returns a GarnetStatus indicating the success or failure of the operation.</returns>
-        public unsafe GarnetStatus SortedSetRangeStore<TObjectContext>(PinnedSpanByte dstKey, PinnedSpanByte srcKey, ref ObjectInput input, out int result, ref TObjectContext objectContext)
+        public unsafe GarnetStatus SortedSetRangeStore<TObjectContext>(PinnedSpanByte dstKey, PinnedSpanByte srcKey, ref ObjectInput input, ref SpanByteAndMemory output, ref TObjectContext objectContext)
             where TObjectContext : ITsavoriteContext<FixedSpanByteKey, ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
         {
             if (txnManager.ObjectTransactionalContext.Session is null)
                 ThrowObjectStoreUninitializedException();
 
-            result = 0;
+            using var writer = new RespMemoryWriter(functionsState.respProtocolVersion, ref output);
 
             if (dstKey.Length == 0 || srcKey.Length == 0)
+            {
+                writer.WriteInt32(0);
                 return GarnetStatus.OK;
+            }
 
             var createTransaction = false;
 
@@ -751,6 +754,27 @@ namespace Garnet.server
                 {
                     // Expire/Delete the destination key if the source key is not found
                     _ = EXPIRE(dstKey, TimeSpan.Zero, out _, ExpireOption.None, ref ssUnifiedTransactionalContext);
+                    writer.WriteInt32(0);
+                    return GarnetStatus.OK;
+                }
+
+                // SortedSetRange writes a RESP error into its output instead of a range when the range
+                // parameters are invalid (LIMIT in index mode, a non-float min/max, ...) and flags it
+                // with a negative result1. Pass that error straight through to the client - as
+                // GEOSEARCHSTORE already does in SortedSetGeoOps - instead of reading the error payload
+                // as an array length, which aborts the RESP session with a protocol error, and only
+                // after the destination key has already been deleted.
+                if (rangeOutput.result1 == SortedSetObject.RangeError)
+                {
+                    try
+                    {
+                        writer.WriteDirect(rangeOutputMem.ReadOnlySpan);
+                    }
+                    finally
+                    {
+                        rangeOutputMem.Dispose();
+                    }
+
                     return GarnetStatus.OK;
                 }
 
@@ -768,7 +792,7 @@ namespace Garnet.server
 
                     RespReadUtils.TryReadUnsignedArrayLength(out var arrayLen, ref currOutPtr, endOutPtr);
                     Debug.Assert(arrayLen % 2 == 0, "Should always contain element and its score");
-                    result = arrayLen / 2;
+                    var result = arrayLen / 2;
 
                     if (result > 0)
                     {
@@ -803,6 +827,8 @@ namespace Garnet.server
                                 zAddOutput.SpanByteAndMemory.Memory?.Dispose();
                         }
                     }
+
+                    writer.WriteInt32(result);
                 }
                 finally
                 {

@@ -284,7 +284,7 @@ namespace Tsavorite.core
         internal abstract void AsyncReadPageFromDeviceToFrame<TContext>(CircularDiskReadBuffer readBuffers, long readPage, long untilAddress, TContext context, out CountdownEvent completed,
                 long devicePageOffset = 0, IDevice device = null, IDevice objectLogDevice = null, CancellationTokenSource cts = null);
 
-        protected void AsyncReadPageFromDeviceToFrameCallback(uint errorCode, uint numBytes, object context)
+        protected void AsyncReadPageFromDeviceToFrameCallback(uint errorCode, uint numBytes, object context, Exception ioException)
         {
             try
             {
@@ -294,7 +294,10 @@ namespace Tsavorite.core
                     _ = result.handle?.Signal();
                 else
                 {
-                    logger?.LogError($"{nameof(AsyncReadPageFromDeviceToFrameCallback)} error: {{errorCode}}", errorCode);
+                    if (ioException is null)
+                        logger?.LogError($"{nameof(AsyncReadPageFromDeviceToFrameCallback)} error: {{errorCode}}", errorCode);
+                    else
+                        logger?.LogError($"{nameof(AsyncReadPageFromDeviceToFrameCallback)} error: {{exception}}", Utility.GetCallbackExceptionDetail(ioException));
                     result.cts?.Cancel();
                 }
             }

@@ -111,6 +111,111 @@ namespace Garnet.test
         }
 
         [Test]
+        public void NativeAllocatorOptionParsing()
+        {
+            // Default: native allocator off (fully managed).
+            var ok = ServerSettingsManager.TryParseCommandLineArguments([], out var options, out _, out _, out _, silentMode: true);
+            ClassicAssert.IsTrue(ok);
+            ClassicAssert.IsFalse(options.UseNativeAllocator.GetValueOrDefault());
+            ClassicAssert.IsFalse(options.GetServerOptions().UseNativeAllocator);
+
+            // Enabled: routes all direct-VM surfaces.
+            ok = ServerSettingsManager.TryParseCommandLineArguments(["--use-native-allocator", "true"], out options, out _, out _, out _, silentMode: true);
+            ClassicAssert.IsTrue(ok);
+            ClassicAssert.IsTrue(options.UseNativeAllocator.GetValueOrDefault());
+            ClassicAssert.IsTrue(options.GetServerOptions().UseNativeAllocator);
+        }
+
+        [Test]
+        public void UseLegacyBufferPoolOptionParsing()
+        {
+            // Default: origin-return pool is used (legacy flag off).
+            var ok = ServerSettingsManager.TryParseCommandLineArguments([], out var options, out _, out _, out _, silentMode: true);
+            ClassicAssert.IsTrue(ok);
+            ClassicAssert.IsFalse(options.UseLegacyBufferPool.GetValueOrDefault());
+            ClassicAssert.IsFalse(options.GetServerOptions().UseLegacyBufferPool);
+
+            // Flag selects the legacy per-level ConcurrentQueue pool.
+            ok = ServerSettingsManager.TryParseCommandLineArguments(["--use-legacy-buffer-pool", "true"], out options, out _, out _, out _, silentMode: true);
+            ClassicAssert.IsTrue(ok);
+            ClassicAssert.IsTrue(options.UseLegacyBufferPool.GetValueOrDefault());
+            ClassicAssert.IsTrue(options.GetServerOptions().UseLegacyBufferPool);
+        }
+
+        [Test]
+        public void BufferPoolMemoryBudgetOptionParsing()
+        {
+            // Default from defaults.conf is 1g (1 GiB).
+            var ok = ServerSettingsManager.TryParseCommandLineArguments([], out var options, out _, out _, out _, silentMode: true);
+            ClassicAssert.IsTrue(ok);
+            ClassicAssert.AreEqual("1g", options.BufferPoolMemoryBudget);
+            ClassicAssert.AreEqual(1L << 30, options.GetServerOptions().GetBufferPoolMemoryBudgetBytes());
+
+            // Override parses to bytes.
+            ok = ServerSettingsManager.TryParseCommandLineArguments(["--buffer-pool-memory-budget", "8g"], out options, out _, out _, out _, silentMode: true);
+            ClassicAssert.IsTrue(ok);
+            ClassicAssert.AreEqual("8g", options.BufferPoolMemoryBudget);
+            ClassicAssert.AreEqual(8L << 30, options.GetServerOptions().GetBufferPoolMemoryBudgetBytes());
+
+            // Non-memory-size values are rejected by validation.
+            ok = ServerSettingsManager.TryParseCommandLineArguments(["--buffer-pool-memory-budget", "notasize"], out _, out var invalidOptions, out _, out _, silentMode: true);
+            ClassicAssert.IsFalse(ok);
+            ClassicAssert.IsTrue(invalidOptions.Contains(nameof(Options.BufferPoolMemoryBudget)));
+
+            // "0" passes memory-size validation and is an explicit opt-out of buffer caching
+            // (see BufferPoolMemoryBudgetZeroDisablesCaching).
+            ok = ServerSettingsManager.TryParseCommandLineArguments(["--buffer-pool-memory-budget", "0"], out options, out _, out _, out _, silentMode: true);
+            ClassicAssert.IsTrue(ok);
+            ClassicAssert.AreEqual(0L, options.GetServerOptions().GetBufferPoolMemoryBudgetBytes());
+        }
+
+        [Test]
+        public void BufferPoolMemoryBudgetZeroDisablesCaching()
+        {
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
+
+            var savedBudget = SectorAlignedBufferPool.ManagedBudgetBytes;
+            var savedDisabled = SectorAlignedBufferPool.Disabled;
+            try
+            {
+                // A zero budget is an explicit opt-out: disable pool caching outright (so every Get allocates and
+                // every Return drops) rather than paying for a shard lookup and a doomed permit reservation per Get.
+                using (var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, bufferPoolMemoryBudget: "0", lowMemory: true))
+                {
+                    ClassicAssert.IsTrue(SectorAlignedBufferPool.Disabled, "a zero budget must disable buffer caching");
+                    ClassicAssert.AreEqual(savedBudget, SectorAlignedBufferPool.ManagedBudgetBytes, "a zero budget must not be applied as a budget");
+
+                    // With caching off every device IO buffer is allocated on demand and dropped on return, so
+                    // exercise the paged read/write path end-to-end to prove the server is fully functional.
+                    server.Start();
+                    using var redis = StackExchange.Redis.ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+                    var db = redis.GetDatabase(0);
+                    const int keyCount = 2000;
+                    var payload = new string('x', 2048);
+                    for (var i = 0; i < keyCount; i++)
+                        db.StringSet($"disabledpool:{i}", $"{i}:{payload}");
+                    for (var i = 0; i < keyCount; i++)
+                        ClassicAssert.AreEqual($"{i}:{payload}", (string)db.StringGet($"disabledpool:{i}"),
+                            "values must round-trip through disk IO with buffer caching disabled");
+                }
+
+                // A positive budget is applied and leaves caching enabled.
+                SectorAlignedBufferPool.Disabled = false;
+                using (var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, bufferPoolMemoryBudget: "256m"))
+                {
+                    ClassicAssert.AreEqual(256L << 20, SectorAlignedBufferPool.ManagedBudgetBytes);
+                    ClassicAssert.IsFalse(SectorAlignedBufferPool.Disabled);
+                }
+            }
+            finally
+            {
+                SectorAlignedBufferPool.ManagedBudgetBytes = savedBudget;
+                SectorAlignedBufferPool.Disabled = savedDisabled;
+                TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
+            }
+        }
+
+        [Test]
         public void LoadModuleCsInvalidSpecIsRejected()
         {
             // A malformed quoted module specification must be rejected by validation rather than silently ignored.
@@ -126,6 +231,107 @@ namespace Garnet.test
             parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out _, out invalidOptions, out _, out _, silentMode: true);
             ClassicAssert.IsTrue(parseSuccessful, "An existing module path must be accepted");
             ClassicAssert.AreEqual(0, invalidOptions.Count);
+        }
+
+        [Test]
+        public void DeviceIoContextsAndQueueDepthOptions()
+        {
+            // Defaults: with no explicit override the values come from defaults.conf (0 = device default)
+            // and flow through to GarnetServerOptions unchanged.
+            {
+                var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments([], out var options, out _, out _, out _, silentMode: true);
+                ClassicAssert.IsTrue(parseSuccessful);
+                ClassicAssert.AreEqual(0, options.DeviceIoContexts);
+                ClassicAssert.AreEqual(0, options.DeviceQueueDepth);
+
+                var serverOptions = options.GetServerOptions();
+                ClassicAssert.AreEqual(0, serverOptions.DeviceIoContexts);
+                ClassicAssert.AreEqual(0, serverOptions.DeviceQueueDepth);
+            }
+
+            // Explicit values are parsed and flow through to GarnetServerOptions.
+            {
+                var args = new[] { "--device-io-contexts", "96", "--device-queue-depth", "4096" };
+                var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out _, out _, out _, silentMode: true);
+                ClassicAssert.IsTrue(parseSuccessful);
+                ClassicAssert.AreEqual(96, options.DeviceIoContexts);
+                ClassicAssert.AreEqual(4096, options.DeviceQueueDepth);
+
+                var serverOptions = options.GetServerOptions();
+                ClassicAssert.AreEqual(96, serverOptions.DeviceIoContexts);
+                ClassicAssert.AreEqual(4096, serverOptions.DeviceQueueDepth);
+            }
+        }
+
+        [Test]
+        public void DeviceAioMaxDevicesOption()
+        {
+            var savedAioMaxDevices = NativeStorageDevice.AioMaxDevices;
+            try
+            {
+                // Default: with no explicit override the value comes from defaults.conf (32) and flows
+                // through to GarnetServerOptions unchanged; Initialize applies it to the process-global static.
+                {
+                    var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments([], out var options, out _, out _, out _, silentMode: true);
+                    ClassicAssert.IsTrue(parseSuccessful);
+                    ClassicAssert.AreEqual(32, options.DeviceAioMaxDevices);
+
+                    var serverOptions = options.GetServerOptions();
+                    ClassicAssert.AreEqual(32, serverOptions.DeviceAioMaxDevices);
+
+                    NativeStorageDevice.AioMaxDevices = 7; // perturb to prove Initialize reapplies
+                    serverOptions.Initialize();
+                    ClassicAssert.AreEqual(32, NativeStorageDevice.AioMaxDevices);
+                }
+
+                // Explicit value is parsed, flows through to GarnetServerOptions, and Initialize applies it.
+                {
+                    var args = new[] { "--device-aio-max-devices", "64" };
+                    var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out _, out _, out _, silentMode: true);
+                    ClassicAssert.IsTrue(parseSuccessful);
+                    ClassicAssert.AreEqual(64, options.DeviceAioMaxDevices);
+
+                    var serverOptions = options.GetServerOptions();
+                    ClassicAssert.AreEqual(64, serverOptions.DeviceAioMaxDevices);
+
+                    serverOptions.Initialize();
+                    ClassicAssert.AreEqual(64, NativeStorageDevice.AioMaxDevices);
+                }
+            }
+            finally
+            {
+                NativeStorageDevice.AioMaxDevices = savedAioMaxDevices;
+            }
+        }
+
+        [Test]
+        public void DeviceUringSqPollOptions()
+        {
+            // Defaults: opt-in SQPOLL is off and the idle window is the native default (0) per
+            // defaults.conf, flowing through to GarnetServerOptions unchanged.
+            {
+                var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments([], out var options, out _, out _, out _, silentMode: true);
+                ClassicAssert.IsTrue(parseSuccessful);
+                ClassicAssert.AreEqual(false, options.DeviceUringSqPoll);
+                ClassicAssert.AreEqual(0, options.DeviceUringSqPollIdleMs);
+
+                var serverOptions = options.GetServerOptions();
+                ClassicAssert.IsFalse(serverOptions.DeviceUringSqPoll);
+                ClassicAssert.AreEqual(0, serverOptions.DeviceUringSqPollIdleMs);
+            }
+
+            // Explicit values are parsed and flow through to GarnetServerOptions.
+            {
+                var args = new[] { "--device-uring-sqpoll", "true", "--device-uring-sqpoll-idle-ms", "2000" };
+                var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out _, out _, out _, silentMode: true);
+                ClassicAssert.IsTrue(parseSuccessful);
+                ClassicAssert.AreEqual(true, options.DeviceUringSqPoll);
+                ClassicAssert.AreEqual(2000, options.DeviceUringSqPollIdleMs);
+
+                var serverOptions = options.GetServerOptions();
+                ClassicAssert.IsTrue(serverOptions.DeviceUringSqPoll);
+                ClassicAssert.AreEqual(2000, serverOptions.DeviceUringSqPollIdleMs);
+            }
         }
 
         [Test]

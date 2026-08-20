@@ -59,7 +59,7 @@ namespace Tsavorite.core
         /// available in this device's address space. Speculative discovery windows clamp to this boundary; an authoritative endpoint parsed
         /// from framing may not cross it. Sector-rounded device requests may extend past it physically.</summary>
         ulong hardReadEndAddress;
-
+        ulong hardWriteEndAddress;
         /// <summary>Offset at which consumption must begin if the current buffer is filled later. A direct overflow read resets the ring at
         /// the sector containing the payload end. If no following bytes are currently required, no device read is submitted, so this retains
         /// the payload-end offset within that sector. If later framing grows <see cref="RequiredEndAddress"/>, the first deferred read uses
@@ -300,7 +300,7 @@ namespace Tsavorite.core
                     buffer.currentPosition += (int)increment;
                     break;
                 }
-
+                currentIndex++;
                 Debug.Assert(buffer.currentPosition + (int)increment == buffer.endPosition, $"Increment {increment} overflows buffer (curPos {buffer.currentPosition}, endPos {buffer.endPosition}) by more than alignment");
                 if (!MoveToNextBuffer(out buffer))
                     break;
@@ -401,8 +401,8 @@ namespace Tsavorite.core
             }
         }
 
-        static void DirectReadCallback(uint errorCode, uint numBytes, object context)
-            => ((DirectReadCompletion)context).Complete(errorCode, numBytes);
+        static void DirectReadCallback(uint errorCode, uint numBytes, object context, Exception ioException)
+            => ((DirectReadCompletion)context).Complete(errorCode, numBytes, ioException);
 
         sealed class DirectReadCompletion : IDisposable
         {
@@ -410,19 +410,22 @@ namespace Tsavorite.core
             uint expectedBytes;
             uint errorCode;
             uint numBytes;
+            Exception ioException;
 
             internal void Prepare(uint expectedBytes)
             {
                 this.expectedBytes = expectedBytes;
                 errorCode = 0;
                 numBytes = 0;
+                ioException = null;
                 completed.Reset();
             }
 
-            internal void Complete(uint errorCode, uint numBytes)
+            internal void Complete(uint errorCode, uint numBytes, Exception ioException)
             {
                 this.errorCode = errorCode;
                 this.numBytes = numBytes;
+                this.ioException = ioException;
                 completed.Set();
             }
 
@@ -430,16 +433,23 @@ namespace Tsavorite.core
             {
                 completed.Wait();
                 if (errorCode != 0 || numBytes != expectedBytes)
-                    throw new TsavoriteException($"Direct object-log read failed: error {errorCode}, requested {expectedBytes} bytes, read {numBytes} bytes");
+                    throw new TsavoriteIOException(
+                        $"Direct object-log read failed: error {errorCode}, requested {expectedBytes} bytes, read {numBytes} bytes",
+                        ioException);
             }
 
             public void Dispose() => completed.Dispose();
         }
 
-        internal void ReadFromDeviceCallback(uint errorCode, uint numBytes, object context)
+        internal void ReadFromDeviceCallback(uint errorCode, uint numBytes, object context, Exception ioException)
         {
             if (errorCode != 0)
-                logger?.LogError($"{nameof(ReadFromDeviceCallback)} error: {{errorCode}}", errorCode);
+            {
+                if (ioException is null)
+                    logger?.LogError($"{nameof(ReadFromDeviceCallback)} error: {{errorCode}}", errorCode);
+                else
+                    logger?.LogError($"{nameof(ReadFromDeviceCallback)} error: {{exception}}", Utility.GetCallbackExceptionDetail(ioException));
+            }
 
             // Finish setting up the buffer
             var buffer = (DiskReadBuffer)context;

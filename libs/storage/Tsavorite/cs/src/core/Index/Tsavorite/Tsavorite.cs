@@ -157,85 +157,110 @@ namespace Tsavorite.core
         public TsavoriteKV(KVSettings kvSettings, TStoreFunctions storeFunctions, Func<AllocatorSettings, TStoreFunctions, TAllocator> allocatorFactory)
             : base(kvSettings.Epoch, kvSettings.logger ?? kvSettings.loggerFactory?.CreateLogger("TsavoriteKV Index Overflow buckets"))
         {
-            this.allocatorFactory = allocatorFactory;
-            loggerFactory = kvSettings.loggerFactory;
-            logger = kvSettings.logger ?? kvSettings.loggerFactory?.CreateLogger("TsavoriteKV");
-
-            this.storeFunctions = storeFunctions;
-
-            var checkpointSettings = kvSettings.GetCheckpointSettings() ?? new CheckpointSettings();
-
-            ThrottleCheckpointFlushDelayMs = checkpointSettings.ThrottleCheckpointFlushDelayMs;
-
-            if (checkpointSettings.CheckpointDir != null && checkpointSettings.CheckpointManager != null)
-                logger?.LogInformation("CheckpointManager and CheckpointDir specified, ignoring CheckpointDir");
-
-            checkpointManager = checkpointSettings.CheckpointManager ??
-                new DeviceLogCommitCheckpointManager
-                (new LocalStorageNamedDeviceFactoryCreator(),
-                    new DefaultCheckpointNamingScheme(
-                        new DirectoryInfo(checkpointSettings.CheckpointDir ?? ".").FullName), removeOutdated: checkpointSettings.RemoveOutdated);
-
-            if (checkpointSettings.CheckpointManager is null)
-                disposeCheckpointManager = true;
-
-            var logSettings = kvSettings.GetLogSettings();
-
-            UseReadCache = kvSettings.ReadCacheEnabled;
-
-            ReadCopyOptions = logSettings.ReadCopyOptions;
-            if (ReadCopyOptions.CopyTo == ReadCopyTo.Inherit)
-                ReadCopyOptions.CopyTo = UseReadCache ? ReadCopyTo.ReadCache : ReadCopyTo.None;
-            else if (ReadCopyOptions.CopyTo == ReadCopyTo.ReadCache && !UseReadCache)
-                ReadCopyOptions.CopyTo = ReadCopyTo.None;
-
-            if (ReadCopyOptions.CopyFrom == ReadCopyFrom.Inherit)
-                ReadCopyOptions.CopyFrom = ReadCopyFrom.Device;
-
-            // Create the allocator
-            var allocatorSettings = new AllocatorSettings(logSettings, epoch, kvSettings.logger ?? kvSettings.loggerFactory?.CreateLogger(typeof(TAllocator).Name));
-            hlog = allocatorFactory(allocatorSettings, storeFunctions);
-            hlogBase = hlog.GetBase<TAllocator>();
-            hlogBase.Initialize();
-            Log = new(this, hlog);
-
-            if (UseReadCache)
+            try
             {
-                allocatorSettings.LogSettings = new()
+                this.allocatorFactory = allocatorFactory;
+                loggerFactory = kvSettings.loggerFactory;
+                logger = kvSettings.logger ?? kvSettings.loggerFactory?.CreateLogger("TsavoriteKV");
+
+                this.storeFunctions = storeFunctions;
+
+                var checkpointSettings = kvSettings.GetCheckpointSettings() ?? new CheckpointSettings();
+
+                ThrottleCheckpointFlushDelayMs = checkpointSettings.ThrottleCheckpointFlushDelayMs;
+
+                if (checkpointSettings.CheckpointDir != null && checkpointSettings.CheckpointManager != null)
+                    logger?.LogInformation("CheckpointManager and CheckpointDir specified, ignoring CheckpointDir");
+
+                checkpointManager = checkpointSettings.CheckpointManager ??
+                    new DeviceLogCommitCheckpointManager
+                    (new LocalStorageNamedDeviceFactoryCreator(),
+                        new DefaultCheckpointNamingScheme(
+                            new DirectoryInfo(checkpointSettings.CheckpointDir ?? ".").FullName), removeOutdated: checkpointSettings.RemoveOutdated);
+
+                if (checkpointSettings.CheckpointManager is null)
+                    disposeCheckpointManager = true;
+
+                var logSettings = kvSettings.GetLogSettings();
+
+                UseReadCache = kvSettings.ReadCacheEnabled;
+
+                ReadCopyOptions = logSettings.ReadCopyOptions;
+                if (ReadCopyOptions.CopyTo == ReadCopyTo.Inherit)
+                    ReadCopyOptions.CopyTo = UseReadCache ? ReadCopyTo.ReadCache : ReadCopyTo.None;
+                else if (ReadCopyOptions.CopyTo == ReadCopyTo.ReadCache && !UseReadCache)
+                    ReadCopyOptions.CopyTo = ReadCopyTo.None;
+
+                if (ReadCopyOptions.CopyFrom == ReadCopyFrom.Inherit)
+                    ReadCopyOptions.CopyFrom = ReadCopyFrom.Device;
+
+                // Create the allocator
+                var allocatorSettings = new AllocatorSettings(logSettings, epoch, kvSettings.logger ?? kvSettings.loggerFactory?.CreateLogger(typeof(TAllocator).Name));
+                hlog = allocatorFactory(allocatorSettings, storeFunctions);
+                hlogBase = hlog.GetBase<TAllocator>();
+                hlogBase.Initialize();
+                Log = new(this, hlog);
+
+                if (UseReadCache)
                 {
-                    LogDevice = new NullDevice(),
-                    ObjectLogDevice = hlog.HasObjectLog ? new NullDevice() : null,
-                    MemorySize = logSettings.ReadCacheSettings.MemorySize,
-                    PageSizeBits = logSettings.ReadCacheSettings.PageSizeBits,
-                    SegmentSizeBits = logSettings.ReadCacheSettings.PageSizeBits + 1,   // Not used by readcache but make sure it passes validation
-                    MutableFraction = 1 - logSettings.ReadCacheSettings.SecondChanceFraction
-                };
-                allocatorSettings.logger = kvSettings.logger ?? kvSettings.loggerFactory?.CreateLogger($"{typeof(TAllocator).Name} ReadCache");
-                allocatorSettings.evictCallback = ReadCacheEvict;
-                allocatorSettings.IsReadCache = true;
-                readcache = allocatorFactory(allocatorSettings, storeFunctions);
-                readcacheBase = readcache.GetBase<TAllocator>();
-                readcacheBase.Initialize();
-                ReadCache = new(this, readcache);
-            }
-
-            sectorSize = (int)logSettings.LogDevice.SectorSize;
-            InitialIORecordSize = kvSettings.InitialIORecordSize;
-            Initialize(kvSettings.GetIndexSizeCacheLines(), sectorSize);
-
-            LockTable = new OverflowBucketLockTable<TStoreFunctions, TAllocator>(this);
-            RevivificationManager = new(this, kvSettings.RevivificationSettings, logSettings);
-
-            stateMachineDriver = kvSettings.StateMachineDriver ?? new(epoch, kvSettings.logger ?? kvSettings.loggerFactory?.CreateLogger($"StateMachineDriver"));
-
-            if (kvSettings.TryRecoverLatest)
-            {
-                try
-                {
-                    RecoverAsync().AsTask().GetAwaiter().GetResult();
+                    allocatorSettings.LogSettings = new()
+                    {
+                        LogDevice = new NullDevice(),
+                        ObjectLogDevice = hlog.HasObjectLog ? new NullDevice() : null,
+                        MemorySize = logSettings.ReadCacheSettings.MemorySize,
+                        PageSizeBits = logSettings.ReadCacheSettings.PageSizeBits,
+                        SegmentSizeBits = logSettings.ReadCacheSettings.PageSizeBits + 1,   // Not used by readcache but make sure it passes validation
+                        MutableFraction = 1 - logSettings.ReadCacheSettings.SecondChanceFraction
+                    };
+                    allocatorSettings.logger = kvSettings.logger ?? kvSettings.loggerFactory?.CreateLogger($"{typeof(TAllocator).Name} ReadCache");
+                    allocatorSettings.evictCallback = ReadCacheEvict;
+                    allocatorSettings.IsReadCache = true;
+                    readcache = allocatorFactory(allocatorSettings, storeFunctions);
+                    readcacheBase = readcache.GetBase<TAllocator>();
+                    readcacheBase.Initialize();
+                    ReadCache = new(this, readcache);
                 }
-                catch { }
+
+                sectorSize = (int)logSettings.LogDevice.SectorSize;
+                InitialIORecordSize = kvSettings.InitialIORecordSize;
+                Initialize(kvSettings.GetIndexSizeCacheLines(), sectorSize);
+
+                LockTable = new OverflowBucketLockTable<TStoreFunctions, TAllocator>(this);
+                RevivificationManager = new(this, kvSettings.RevivificationSettings, logSettings);
+
+                stateMachineDriver = kvSettings.StateMachineDriver ?? new(epoch, kvSettings.logger ?? kvSettings.loggerFactory?.CreateLogger($"StateMachineDriver"));
+
+                if (kvSettings.TryRecoverLatest)
+                {
+                    try
+                    {
+                        RecoverAsync().AsTask().GetAwaiter().GetResult();
+                    }
+                    catch { }
+                }
             }
+            catch
+            {
+                // A throw after allocating resources would otherwise leak them: the direct-VM (native) log-page and
+                // hash-index regions are invisible to the GC, and a partially-constructed store gets neither a
+                // Dispose nor a finalizer. Best-effort free the allocators and hand any native index tables to the
+                // finalization registry, and dispose the store-owned epoch — mirroring normal teardown. Construction
+                // has issued no device IO yet, so this is safe.
+                DisposeOnConstructionFailure();
+                throw;
+            }
+        }
+
+        /// <summary>Best-effort cleanup when the constructor throws after allocating resources: disposes the
+        /// allocators (freeing/recycling their native log pages) and calls <see cref="TsavoriteBase.Free"/> to
+        /// dispose the store-owned epoch and overflow-bucket allocator and hand any native hash-index tables to the
+        /// finalization registry. Each step is guarded so a cleanup fault cannot mask the original exception. No-op
+        /// for anything not yet constructed.</summary>
+        private void DisposeOnConstructionFailure()
+        {
+            try { hlogBase?.Dispose(); } catch { }
+            try { readcacheBase?.Dispose(); } catch { }
+            try { Free(); } catch { }
         }
 
         /// <summary>Get the hashcode for a key.</summary>

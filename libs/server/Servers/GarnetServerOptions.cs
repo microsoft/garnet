@@ -22,6 +22,33 @@ namespace Garnet.server
         public bool DisableObjects = false;
 
         /// <summary>
+        /// Whether large memory surfaces (log pages / hash index / recovery frames) use a native
+        /// (off-managed-heap) allocator. Resolved from the <c>--use-native-allocator</c> switch and installed at
+        /// startup via <see cref="NativeAllocatorInitializer"/>. The direct-VM backend calls the OS virtual-memory
+        /// APIs directly and is always available; no native library is required.
+        /// </summary>
+        public bool UseNativeAllocator = false;
+
+        /// <summary>
+        /// Select the per-level <c>ConcurrentQueue</c> <see cref="SectorAlignedBufferPool"/> instead of the
+        /// default origin-return (per-thread) pool. The origin-return pool returns each buffer to the
+        /// thread that allocated it, scaling with concurrent IO-completion threads under a per-pool byte budget.
+        /// Installed at startup by toggling <see cref="SectorAlignedBufferPool.UseOriginReturn"/> before any pool
+        /// is created.
+        /// </summary>
+        public bool UseLegacyBufferPool = false;
+
+        /// <summary>
+        /// Per-pool managed byte budget for the default origin-return <see cref="SectorAlignedBufferPool"/>
+        /// (ignored when <see cref="UseLegacyBufferPool"/> is set). Bounds the total cacheable buffer bytes
+        /// across all IO-completion threads, split 25% small size-classes / 75% large so large record/flush
+        /// buffers cannot starve caching of hot small buffers. Set to 0 to disable buffer caching entirely
+        /// (every IO buffer is allocated on demand and reclaimed by the GC; applies to both pool backends).
+        /// Applied at startup to <see cref="SectorAlignedBufferPool.ManagedBudgetBytes"/> before any pool is created.
+        /// </summary>
+        public string BufferPoolMemoryBudget = "1g";
+
+        /// <summary>
         /// Enable cluster.
         /// </summary>
         public bool EnableCluster = false;
@@ -435,6 +462,52 @@ namespace Garnet.server
         public int DeviceThrottleLimit = 0;
 
         /// <summary>
+        /// For DeviceType.Native on Linux: number of independent kernel io_contexts / io_uring rings
+        /// (the ring COUNT), decoupled from the completion drainers. This is the critical io_uring
+        /// lever: set it at or above submitter concurrency so each submitter owns a ring and io_submit
+        /// is contention-free (few rings + many submitters serialize on the per-ring lock). libaio is
+        /// largely indifferent (its kernel io_context mutex is cheap). 0 means "use the device default".
+        /// </summary>
+        public int DeviceIoContexts = 0;
+
+        /// <summary>
+        /// For DeviceType.Native on Linux: per-ring kernel submission depth D (maxEvents passed to
+        /// io_uring_queue_init / libaio io_setup). Orthogonal to <see cref="DeviceIoContexts"/> (ring
+        /// count) and <see cref="DeviceThrottleLimit"/> (aggregate in-flight). 0 means "use the device
+        /// default". libaio draws io-contexts * queue-depth from the global fs.aio-max-nr budget.
+        /// </summary>
+        public int DeviceQueueDepth = 0;
+
+        /// <summary>
+        /// For DeviceType.Native on Linux with the io_uring backend (<see cref="DeviceIoBackend"/> = Uring):
+        /// enable io_uring SQPOLL (IORING_SETUP_SQPOLL) so a kernel thread polls the submission queue and
+        /// submissions are syscall-free. Each ring gets its own poll thread (no IORING_SETUP_ATTACH_WQ) so
+        /// submission stays parallel across rings. Ignored for libaio / on Windows. Off by default (opt-in).
+        /// </summary>
+        public bool DeviceUringSqPoll = false;
+
+        /// <summary>
+        /// io_uring SQPOLL poll-thread idle window in milliseconds (sq_thread_idle): how long the kernel
+        /// poll thread spins after the last submit before parking. Only meaningful when
+        /// <see cref="DeviceUringSqPoll"/> is true; 0 means "use the native default".
+        /// </summary>
+        public int DeviceUringSqPollIdleMs = 0;
+
+        /// <summary>
+        /// For DeviceType.Native on Linux (libaio): target number of Native device instances the process is
+        /// provisioned to coexist within the machine-global <c>fs.aio-max-nr</c> libaio event budget. libaio
+        /// <c>io_setup</c> permanently reserves io-contexts * queue-depth events from that global budget at
+        /// device creation, so a default reservation ceiling of <c>fs.aio-max-nr / this</c> is applied
+        /// per-device, guaranteeing at least this many devices can always be created regardless of
+        /// <see cref="DeviceCompletionThreads"/> / <see cref="DeviceThrottleLimit"/>. Because the budget is
+        /// machine-global, this is a process-wide setting (applied to
+        /// <see cref="NativeStorageDevice.AioMaxDevices"/> in <see cref="Initialize"/>) that also covers
+        /// devices created outside the serving factory (cluster auxiliary logs, AOF). Default 32; ignored for
+        /// io_uring (no global budget) and non-Linux.
+        /// </summary>
+        public int DeviceAioMaxDevices = 32;
+
+        /// <summary>
         /// Limit of items to return in one iteration of *SCAN command
         /// </summary>
         public int ObjectScanCountLimit = 1000;
@@ -653,6 +726,11 @@ namespace Garnet.server
         /// <param name="loggerFactory"></param>
         public void Initialize(ILoggerFactory loggerFactory = null)
         {
+            // fs.aio-max-nr is a machine-global libaio event budget shared by every device in the process, so
+            // the per-device io_setup reservation ceiling is a process-wide policy rather than per-device config.
+            // Apply it once here (Initialize runs before any serving / cluster-auxiliary / AOF device is created).
+            if (DeviceAioMaxDevices > 0)
+                NativeStorageDevice.AioMaxDevices = DeviceAioMaxDevices;
         }
 
         /// <summary>
@@ -742,12 +820,19 @@ namespace Garnet.server
                 DeviceType = Devices.GetDefaultDeviceType();
             DeviceFactoryCreator ??= new LocalStorageNamedDeviceFactoryCreator(
                 deviceType: DeviceType,
-                ioBackend: DeviceIoBackend,
                 numCompletionThreads: DeviceCompletionThreads,
                 throttleLimit: DeviceThrottleLimit > 0 ? DeviceThrottleLimit : null,
-                logger: logger);
+                logger: logger,
+                nativeDeviceOptions: new NativeDeviceOptions
+                {
+                    IoBackend = DeviceIoBackend,
+                    NumIoContexts = DeviceIoContexts,
+                    QueueDepth = DeviceQueueDepth,
+                    UringSqPoll = DeviceUringSqPoll,
+                    UringSqPollIdleMs = DeviceUringSqPollIdleMs,
+                });
             if (DeviceType == DeviceType.Native && OperatingSystem.IsLinux())
-                logger?.LogInformation("Using device type {deviceType} (io-backend={ioBackend}, completion-threads={ct}, throttle-limit={tl})", DeviceType, DeviceIoBackend, DeviceCompletionThreads, DeviceThrottleLimit > 0 ? DeviceThrottleLimit.ToString() : "device-default");
+                logger?.LogInformation("Using device type {deviceType} (io-backend={ioBackend}, completion-threads={ct}, io-contexts={ioc}, queue-depth={qd}, throttle-limit={tl}, uring-sqpoll={sqpoll})", DeviceType, DeviceIoBackend, DeviceCompletionThreads, DeviceIoContexts > 0 ? DeviceIoContexts.ToString() : "device-default", DeviceQueueDepth > 0 ? DeviceQueueDepth.ToString() : "device-default", DeviceThrottleLimit > 0 ? DeviceThrottleLimit.ToString() : "device-default", DeviceIoBackend == NativeStorageDevice.IoBackend.Uring && DeviceUringSqPoll ? "on" : "off");
             else
                 logger?.LogInformation("Using device type {deviceType} (throttle-limit={tl})", DeviceType, DeviceThrottleLimit > 0 ? DeviceThrottleLimit.ToString() : "device-default");
 
@@ -1069,6 +1154,13 @@ namespace Garnet.server
                 logger?.LogInformation("Warning: using lower AOF memory size than specified (power of 2)");
             return (int)Math.Log(adjustedSize, 2);
         }
+
+        /// <summary>
+        /// Get the origin-return <see cref="SectorAlignedBufferPool"/> managed byte budget
+        /// (<see cref="SectorAlignedBufferPool.ManagedBudgetBytes"/>) parsed from <see cref="BufferPoolMemoryBudget"/>.
+        /// </summary>
+        /// <returns>The budget in bytes.</returns>
+        public long GetBufferPoolMemoryBudgetBytes() => ParseSize(BufferPoolMemoryBudget, out _);
 
         /// <summary>
         /// Get AOF Page size in bits

@@ -8,10 +8,15 @@ namespace Tsavorite.core
     /// <summary>
     /// Delegate for callback on IO completion
     /// </summary>
-    /// <param name="errorCode"></param>
-    /// <param name="numBytes"></param>
-    /// <param name="context"></param>
-    public delegate void DeviceIOCompletionCallback(uint errorCode, uint numBytes, object context);
+    /// <param name="errorCode">Numeric error code from the IO completion channel (0 on success).</param>
+    /// <param name="numBytes">Number of bytes transferred.</param>
+    /// <param name="context">Caller-supplied context object.</param>
+    /// <param name="ioException">
+    /// The underlying exception behind a failed IO, when the device has one to report; otherwise <see langword="null"/>.
+    /// The numeric <paramref name="errorCode"/> is the authoritative success/failure signal; this only carries the typed
+    /// exception for diagnosis and is currently consumed solely by the page-flush completion path.
+    /// </param>
+    public delegate void DeviceIOCompletionCallback(uint errorCode, uint numBytes, object context, Exception ioException);
 
     /// <summary>
     /// Interface for devices
@@ -86,6 +91,20 @@ namespace Tsavorite.core
         /// </summary>
         /// <returns></returns>
         bool TryComplete();
+
+        /// <summary>
+        /// Try to complete async IO completions for only the calling thread's affine completion
+        /// context/ring, rather than scanning all of them. Used by the inline submitter-thread
+        /// completion path to avoid redundant per-context work when many threads drain concurrently.
+        /// Devices that do not shard completions may simply fall back to <see cref="TryComplete"/>.
+        /// <para>
+        /// Provided as a default interface method delegating to <see cref="TryComplete"/> so that
+        /// existing external <see cref="IDevice"/> implementations continue to compile and behave
+        /// correctly without change; sharded devices (e.g. NativeStorageDevice) override it.
+        /// </para>
+        /// </summary>
+        /// <returns></returns>
+        bool TryCompleteMine() => TryComplete();
 
         /// <summary>
         /// Whether device should be throttled at this instant (i.e., caller should stop issuing new I/Os)

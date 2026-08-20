@@ -601,6 +601,77 @@ namespace Garnet.test
         }
 
         [Test]
+        public void StringCommandsWrongArityReturnErrorAndKeepSessionAlive()
+        {
+            using var lightClientRequest = TestUtils.CreateRequest();
+
+            // Each malformed command is followed by PING. On unpatched main these
+            // reach a handler that only Debug.Assert()s the argument count (or reads
+            // the missing argument past the parse state), aborting the process in a
+            // Debug build and reading out of bounds in Release, instead of replying
+            // with an error. The trailing PONG proves the session stayed alive.
+            void ExpectError(string cmd, string expectedError)
+            {
+                var response = lightClientRequest.SendCommands(cmd, "PING");
+                TestUtils.AssertEqualUpToExpectedLength($"{expectedError}\r\n+PONG\r\n", response);
+            }
+
+            ExpectError("SET k", "-ERR wrong number of arguments for 'SET' command");
+            ExpectError("SET", "-ERR wrong number of arguments for 'SET' command");
+            ExpectError("SET k v EX", "-ERR syntax error");
+            ExpectError("SET k v PX", "-ERR syntax error");
+            ExpectError("GETSET k", "-ERR wrong number of arguments for 'GETSET' command");
+            ExpectError("GETSET k v extra", "-ERR wrong number of arguments for 'GETSET' command");
+            ExpectError("SETEX k", "-ERR wrong number of arguments for 'SETEX' command");
+            ExpectError("SETEX k 10", "-ERR wrong number of arguments for 'SETEX' command");
+            ExpectError("PSETEX k 10", "-ERR wrong number of arguments for 'PSETEX' command");
+            ExpectError("SETRANGE k", "-ERR wrong number of arguments for 'SETRANGE' command");
+            ExpectError("SETRANGE k 0", "-ERR wrong number of arguments for 'SETRANGE' command");
+            ExpectError("APPEND k", "-ERR wrong number of arguments for 'APPEND' command");
+            ExpectError("GETRANGE k", "-ERR wrong number of arguments for 'GETRANGE' command");
+            ExpectError("GETRANGE k 0", "-ERR wrong number of arguments for 'GETRANGE' command");
+            ExpectError("SUBSTR k", "-ERR wrong number of arguments for 'SUBSTR' command");
+            ExpectError("SUBSTR k 0", "-ERR wrong number of arguments for 'SUBSTR' command");
+            ExpectError("GETWITHETAG", "-ERR wrong number of arguments for 'GETWITHETAG' command");
+            ExpectError("GETWITHETAG k extra", "-ERR wrong number of arguments for 'GETWITHETAG' command");
+            ExpectError("GETIFNOTMATCH", "-ERR wrong number of arguments for 'GETIFNOTMATCH' command");
+            ExpectError("GETIFNOTMATCH k", "-ERR wrong number of arguments for 'GETIFNOTMATCH' command");
+
+            // Well-formed forms are unchanged.
+            void ExpectOk(string cmd)
+            {
+                var response = lightClientRequest.SendCommands(cmd, "PING");
+                TestUtils.AssertEqualUpToExpectedLength("+OK\r\n+PONG\r\n", response);
+            }
+
+            ExpectOk("SET a 1");
+            ExpectOk("SETEX b 100 v");
+            ExpectOk("PSETEX c 5000 v");
+
+            var response = lightClientRequest.SendCommands("SETRANGE a 1 XY", "PING");
+            TestUtils.AssertEqualUpToExpectedLength(":3\r\n+PONG\r\n", response);
+            response = lightClientRequest.SendCommands("APPEND a Z", "PING");
+            TestUtils.AssertEqualUpToExpectedLength(":4\r\n+PONG\r\n", response);
+            response = lightClientRequest.SendCommands("GETSET a fresh", "PING");
+            TestUtils.AssertEqualUpToExpectedLength("$4\r\n1XYZ\r\n+PONG\r\n", response);
+            response = lightClientRequest.SendCommands("GETRANGE a 0 2", "PING");
+            TestUtils.AssertEqualUpToExpectedLength("$3\r\nfre\r\n+PONG\r\n", response);
+            response = lightClientRequest.SendCommands("SUBSTR a 0 2", "PING");
+            TestUtils.AssertEqualUpToExpectedLength("$3\r\nfre\r\n+PONG\r\n", response);
+
+            // SET is declared with arity -3 and the fast parser only routes it to the option
+            // parser for array lengths 3..7, so a longer option-bearing SET reaches NetworkSET.
+            // Redis accepts a repeated GET, and must not lose a trailing EX.
+            response = lightClientRequest.SendCommands("SET a fresh2 GET GET GET GET GET GET", "PING");
+            TestUtils.AssertEqualUpToExpectedLength("$5\r\nfresh\r\n+PONG\r\n", response);
+            response = lightClientRequest.SendCommands("SET a fresh3 GET GET GET GET GET GET GET EX 100", "PING");
+            TestUtils.AssertEqualUpToExpectedLength("$6\r\nfresh2\r\n+PONG\r\n", response);
+            // The EX actually applied rather than being dropped.
+            response = lightClientRequest.SendCommands("TTL a", "PING");
+            TestUtils.AssertEqualUpToExpectedLength(":100\r\n+PONG\r\n", response);
+        }
+
+        [Test]
         public void LargeSetGet()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
@@ -2740,6 +2811,93 @@ namespace Garnet.test
                 var exc = ClassicAssert.Throws<RedisServerException>(() => db.Execute(command, "foo", "100", "128"));
                 ClassicAssert.AreEqual("ERR Unsupported option 128", exc.Message);
             }
+
+            // A brace in the rejected option used to reach string.Format a second time, because
+            // AbortWithErrorMessage(string.Format(...)) bound to the params overload and re-formatted
+            // the already-substituted text. That threw FormatException out of the handler and dropped
+            // the connection instead of writing this error.
+            {
+                var exc = ClassicAssert.Throws<RedisServerException>(() => db.Execute(command, "foo", "100", "{"));
+                ClassicAssert.AreEqual("ERR Unsupported option {", exc.Message);
+            }
+
+            // The second option is reported when it is the one that is unsupported. Before this change
+            // the first option was echoed back regardless of which one failed to parse.
+            {
+                var exc = ClassicAssert.Throws<RedisServerException>(() => db.Execute(command, "foo", "100", "NX", "ZZ"));
+                ClassicAssert.AreEqual("ERR Unsupported option ZZ", exc.Message);
+            }
+
+            {
+                var exc = ClassicAssert.Throws<RedisServerException>(() => db.Execute(command, "foo", "100", "NX", "{"));
+                ClassicAssert.AreEqual("ERR Unsupported option {", exc.Message);
+            }
+        }
+
+        /// <summary>
+        /// An expiry option pair that Garnet rejects must be answered by the error and nothing else,
+        /// and must leave the key untouched. The trailing PING is what makes a second reply visible:
+        /// LightClientRequest reads raw RESP, while a reply-counting client would absorb the extra
+        /// reply and mis-associate every reply that follows it on the connection.
+        /// </summary>
+        [Test]
+        public void KeyExpireIncompatibleOptionsSingleReplyTest()
+        {
+            using var lightClientRequest = TestUtils.CreateRequest();
+
+            var incompatibleOptionsResponse = "-ERR NX and XX, GT or LT options at the same time are not compatible\r\n+PONG\r\n";
+            var unsupportedOptionResponse = "-ERR Unsupported option ZZ\r\n+PONG\r\n";
+
+            lightClientRequest.SendCommand("SET keyA valueA");
+
+            // All four commands share the same option parsing, so all four must reject the pair identically.
+            var response = lightClientRequest.SendCommands("EXPIRE keyA 100 NX XX", "PING", 1, 1);
+            TestUtils.AssertEqualUpToExpectedLength(incompatibleOptionsResponse, response);
+
+            response = lightClientRequest.SendCommands("PEXPIRE keyA 100000 NX XX", "PING", 1, 1);
+            TestUtils.AssertEqualUpToExpectedLength(incompatibleOptionsResponse, response);
+
+            response = lightClientRequest.SendCommands("EXPIREAT keyA 99999999999 NX XX", "PING", 1, 1);
+            TestUtils.AssertEqualUpToExpectedLength(incompatibleOptionsResponse, response);
+
+            response = lightClientRequest.SendCommands("PEXPIREAT keyA 99999999999000 NX XX", "PING", 1, 1);
+            TestUtils.AssertEqualUpToExpectedLength(incompatibleOptionsResponse, response);
+
+            response = lightClientRequest.SendCommands("EXPIRE keyA 100 GT LT", "PING", 1, 1);
+            TestUtils.AssertEqualUpToExpectedLength(incompatibleOptionsResponse, response);
+
+            // None of the rejected expiries may have been applied.
+            response = lightClientRequest.SendCommand("TTL keyA");
+            TestUtils.AssertEqualUpToExpectedLength(":-1\r\n", response);
+
+            // A rejected expiry of 0 must not delete the key either.
+            lightClientRequest.SendCommand("SET keyB valueB");
+
+            response = lightClientRequest.SendCommands("EXPIRE keyB 0 NX XX", "PING", 1, 1);
+            TestUtils.AssertEqualUpToExpectedLength(incompatibleOptionsResponse, response);
+
+            response = lightClientRequest.SendCommand("EXISTS keyB");
+            TestUtils.AssertEqualUpToExpectedLength(":1\r\n", response);
+
+            // The unsupported option error must name the option that failed to parse, not the one before it.
+            response = lightClientRequest.SendCommands("EXPIRE keyA 100 NX ZZ", "PING", 1, 1);
+            TestUtils.AssertEqualUpToExpectedLength(unsupportedOptionResponse, response);
+
+            // The accepted pairs and the sibling error paths keep replying exactly once.
+            response = lightClientRequest.SendCommands("EXPIRE keyA 100 XX GT", "PING", 1, 1);
+            TestUtils.AssertEqualUpToExpectedLength(":0\r\n+PONG\r\n", response);
+
+            response = lightClientRequest.SendCommands("EXPIRE keyA 100 LT XX", "PING", 1, 1);
+            TestUtils.AssertEqualUpToExpectedLength(":0\r\n+PONG\r\n", response);
+
+            response = lightClientRequest.SendCommands("EXPIRE keyA 100 NX", "PING", 1, 1);
+            TestUtils.AssertEqualUpToExpectedLength(":1\r\n+PONG\r\n", response);
+
+            response = lightClientRequest.SendCommands("EXPIRE keyA 100 ZZ", "PING", 1, 1);
+            TestUtils.AssertEqualUpToExpectedLength(unsupportedOptionResponse, response);
+
+            response = lightClientRequest.SendCommands("EXPIRE keyA -1 NX XX", "PING", 1, 1);
+            TestUtils.AssertEqualUpToExpectedLength("-ERR invalid expire time, must be >= 0\r\n+PONG\r\n", response);
         }
 
         #region ExpireAt

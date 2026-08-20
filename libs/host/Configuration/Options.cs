@@ -87,6 +87,18 @@ namespace Garnet
         [Option("index-max-size", Required = false, HelpText = "Max size of hash index in bytes (rounds down to power of 2)")]
         public string IndexMaxMemorySize { get; set; }
 
+        [OptionValidation]
+        [Option("use-native-allocator", Required = false, HelpText = "Route large memory regions (log pages / hash index / recovery frames) through a native (off-managed-heap) direct-VM allocator (mmap/VirtualAlloc) instead of the GC heap. No native library is required. When enabled, this memory is outside the managed GC heap: size GCHeapHardLimit to leave headroom and monitor 'native_allocator_bytes' in INFO memory.")]
+        public bool? UseNativeAllocator { get; set; }
+
+        [OptionValidation]
+        [Option("use-legacy-buffer-pool", Required = false, HelpText = "Select the per-level ConcurrentQueue SectorAlignedBufferPool instead of the default origin-return (per-thread) pool. The origin-return pool returns each buffer to the thread that allocated it, so it scales with concurrent IO-completion threads under a per-pool byte budget.")]
+        public bool? UseLegacyBufferPool { get; set; }
+
+        [MemorySizeValidation]
+        [Option("buffer-pool-memory-budget", Required = false, HelpText = "Per-pool managed byte budget for the default origin-return SectorAlignedBufferPool (ignored when --use-legacy-buffer-pool is set). Bounds the total cacheable buffer bytes across all IO-completion threads, reserving 25% for small size-classes and 75% for large so large record/flush buffers cannot starve caching of hot small buffers. Requests above the pooled ceiling, or beyond the budget, allocate on demand and free on return (bounded memory, lower reuse). Set to 0 to disable buffer caching entirely (every IO buffer is allocated on demand and reclaimed by the GC; applies to both pool backends). E.g. 1g, 8g.")]
+        public string BufferPoolMemoryBudget { get; set; }
+
         [PercentageValidation(false)]
         [Option("mutable-percent", Required = false, HelpText = "Percentage of log memory that is kept mutable")]
         public int MutablePercent { get; set; }
@@ -508,8 +520,27 @@ namespace Garnet
         public int? DeviceCompletionThreads { get; set; }
 
         [IntRangeValidation(0, 65536)]
-        [Option("device-throttle-limit", Required = false, HelpText = "Per-device max number of in-flight IOs (IDevice.ThrottleLimit). 0 = use the device's built-in default (120 for the in-box Tsavorite devices). Raising this lets disk-bound workloads keep the queue depth high enough to saturate fast NVMe / io_uring backends. For DeviceType=LocalMemory (which has no device-wide throttle) this instead sets the per-ring in-flight capacity, rounded up to a power of two.")]
+        [Option("device-throttle-limit", Required = false, HelpText = "Per-device max number of in-flight IOs (IDevice.ThrottleLimit). 0 = use the device's built-in default: 4096 for the Native device (deep NVMe / io_uring queues), 120 for the managed in-box devices. Raising this lets disk-bound workloads keep the queue depth high enough to saturate fast NVMe / io_uring backends. For DeviceType=LocalMemory (which has no device-wide throttle) this instead sets the per-ring in-flight capacity, rounded up to a power of two.")]
         public int? DeviceThrottleLimit { get; set; }
+
+        [IntRangeValidation(0, 4096)]
+        [Option("device-io-contexts", Required = false, HelpText = "Linux-only, DeviceType=Native: number of independent kernel io_contexts / io_uring rings (ring COUNT), decoupled from --device-completion-threads. Critical for io_uring: set at or above submitter concurrency (roughly your connection count) so each submitter owns a ring and io_submit is contention-free; too few rings serialize submitters on a per-ring lock and cost up to ~3x. libaio is largely indifferent. 0 = device default.")]
+        public int? DeviceIoContexts { get; set; }
+
+        [IntRangeValidation(0, 32768)]
+        [Option("device-queue-depth", Required = false, HelpText = "Linux-only, DeviceType=Native: per-ring kernel submission depth (maxEvents for io_uring_queue_init / libaio io_setup). Orthogonal to --device-io-contexts (ring count) and --device-throttle-limit (aggregate in-flight). 0 = device default. Note: for libaio, io-contexts x queue-depth is drawn from the global fs.aio-max-nr budget.")]
+        public int? DeviceQueueDepth { get; set; }
+
+        [Option("device-uring-sqpoll", Required = false, HelpText = "Linux-only, DeviceType=Native + --device-io-backend uring: enable io_uring SQPOLL (IORING_SETUP_SQPOLL) so a kernel thread polls the submission queue and submissions are syscall-free. Each ring gets its own poll thread (no IORING_SETUP_ATTACH_WQ) so submission stays parallel across rings. Ignored for libaio. Off by default (opt-in). NOTE: busy-polling kernel threads consume CPU; for high-IOPS multi-ring serving benchmark it against the default per-submit path.")]
+        public bool? DeviceUringSqPoll { get; set; }
+
+        [IntRangeValidation(0, 600000)]
+        [Option("device-uring-sqpoll-idle-ms", Required = false, HelpText = "Linux-only, DeviceType=Native + --device-io-backend uring: io_uring SQPOLL poll-thread idle window in milliseconds (sq_thread_idle): how long the kernel poll thread spins after the last submit before parking. 0 = native default (10s). Only meaningful with --device-uring-sqpoll.")]
+        public int? DeviceUringSqPollIdleMs { get; set; }
+
+        [IntRangeValidation(1, 4096)]
+        [Option("device-aio-max-devices", Required = false, HelpText = "Linux-only, DeviceType=Native (libaio): target number of Native devices to fit within the machine-global fs.aio-max-nr libaio budget (default 32). libaio io_setup permanently reserves io-contexts x queue-depth events from that global budget per device, so the default per-device reservation is capped at fs.aio-max-nr / this, keeping at least this many devices creatable regardless of --device-completion-threads / --device-throttle-limit. The cap cannot go below one event per ring, so an explicit --device-io-contexts above the per-device share still exceeds it (warned). Raise fs.aio-max-nr, or lower this, to give each serving device a deeper reservation. Ignored for io_uring (no global budget) and non-Linux.")]
+        public int? DeviceAioMaxDevices { get; set; }
 
         [Option("reviv-bin-record-sizes", Separator = ',', Required = false,
             HelpText = "#,#,...,#: For the main store, the sizes of records in each revivification bin, in order of increasing size." +
@@ -865,6 +896,9 @@ namespace Garnet
                 ObjectLogSegmentSize = ObjectLogSegmentSize,
                 IndexMemorySize = IndexMemorySize,
                 IndexMaxMemorySize = IndexMaxMemorySize,
+                UseNativeAllocator = UseNativeAllocator.GetValueOrDefault(),
+                UseLegacyBufferPool = UseLegacyBufferPool.GetValueOrDefault(),
+                BufferPoolMemoryBudget = BufferPoolMemoryBudget,
                 MutablePercent = MutablePercent,
                 EnableReadCache = EnableReadCache.GetValueOrDefault(),
                 ReadCacheMemorySize = ReadCacheMemorySize,
@@ -938,10 +972,17 @@ namespace Garnet
                 DeviceFactoryCreator = deviceType == DeviceType.AzureStorage ? azureFactoryCreator()
                     : new LocalStorageNamedDeviceFactoryCreator(
                         deviceType: deviceType,
-                        ioBackend: DeviceIoBackend ?? NativeStorageDevice.IoBackend.Default,
                         numCompletionThreads: DeviceCompletionThreads ?? 4,
                         throttleLimit: DeviceThrottleLimit is > 0 ? DeviceThrottleLimit : null,
-                        logger: logger),
+                        logger: logger,
+                        nativeDeviceOptions: new NativeDeviceOptions
+                        {
+                            IoBackend = DeviceIoBackend ?? NativeStorageDevice.IoBackend.Default,
+                            NumIoContexts = DeviceIoContexts ?? 0,
+                            QueueDepth = DeviceQueueDepth ?? 0,
+                            UringSqPoll = DeviceUringSqPoll ?? false,
+                            UringSqPollIdleMs = DeviceUringSqPollIdleMs ?? 0,
+                        }),
                 CheckpointThrottleFlushDelayMs = CheckpointThrottleFlushDelayMs,
                 EnableScatterGatherGet = EnableScatterGatherGet.GetValueOrDefault(true),
                 ReplicaSyncDelayMs = ReplicaSyncDelayMs,
@@ -961,6 +1002,11 @@ namespace Garnet
                 DeviceIoBackend = DeviceIoBackend ?? NativeStorageDevice.IoBackend.Default,
                 DeviceCompletionThreads = DeviceCompletionThreads ?? 4,
                 DeviceThrottleLimit = DeviceThrottleLimit ?? 0,
+                DeviceIoContexts = DeviceIoContexts ?? 0,
+                DeviceQueueDepth = DeviceQueueDepth ?? 0,
+                DeviceUringSqPoll = DeviceUringSqPoll ?? false,
+                DeviceUringSqPollIdleMs = DeviceUringSqPollIdleMs ?? 0,
+                DeviceAioMaxDevices = DeviceAioMaxDevices ?? 32,
                 ObjectScanCountLimit = ObjectScanCountLimit,
                 RevivBinRecordSizes = revivBinRecordSizes,
                 RevivBinRecordCounts = revivBinRecordCounts,

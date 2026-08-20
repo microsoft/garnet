@@ -238,10 +238,15 @@ namespace Tsavorite.core
             mainLogDevice.WriteAsync((IntPtr)spanPtr, alignedMainLogFlushAddress, (uint)spanLength, FlushToDeviceCallback, writeCallbackContext);
         }
 
-        private void FlushToDeviceCallback(uint errorCode, uint numBytes, object context)
+        private void FlushToDeviceCallback(uint errorCode, uint numBytes, object context, Exception ioException)
         {
             if (errorCode != 0)
-                logger?.LogError($"{nameof(FlushToDeviceCallback)} error: {{errorCode}}", errorCode);
+            {
+                if (ioException is null)
+                    logger?.LogError($"{nameof(FlushToDeviceCallback)} error: {{errorCode}}", errorCode);
+                else
+                    logger?.LogError($"{nameof(FlushToDeviceCallback)} error: {{exception}}", Utility.GetCallbackExceptionDetail(ioException));
+            }
 
             // Try to signal the event; if we have finished the last write for this buffer, the count will hit zero and Set the event so any Waits we do on it will succeed.
             // We don't wait on the result of individual device writes; we may wait due to a call (e.g. FlushAndEvict()) with a "wait" parameter set to true.
@@ -251,7 +256,7 @@ namespace Tsavorite.core
             // active even if we have been disposed, so adjust and check the global count, and if *that* is zero, check the disposed state (being disposed ensures that no
             // further partial flush ranges will be sent).
             _ = Interlocked.Decrement(ref numInFlightWrites);
-            if (writeCallbackContext.Release(errorCode) == 0 && numInFlightWrites == 0 && disposed)
+            if (writeCallbackContext.Release(errorCode, ioException) == 0 && numInFlightWrites == 0 && disposed)
                 ClearBuffers();
         }
 
