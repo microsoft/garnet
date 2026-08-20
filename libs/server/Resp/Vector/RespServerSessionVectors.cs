@@ -1706,7 +1706,7 @@ namespace Garnet.server
             var distanceResult = SpanByteAndMemory.FromPinnedSpan(distanceSpace);
             try
             {
-                var res = storageApi.VectorSetLinks(key, element, withScores, ref idResult, ref distanceResult);
+                var res = storageApi.VectorSetLinks(key, element, ref idResult, ref distanceResult);
 
                 switch (res)
                 {
@@ -1720,9 +1720,42 @@ namespace Garnet.server
 
                     case GarnetStatus.OK:
                         {
-                            // TODO: implement!
-                            while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
-                                SendAndReset();
+                            var numLinks = distanceResult.Length / sizeof(float);
+
+                            WriteArrayLength(numLinks);
+
+                            var remainingIds = idResult.Span;
+                            var remainingScores = distanceResult.Span;
+                            for (var i = 0; i < numLinks; i++)
+                            {
+                                var idLen = BinaryPrimitives.ReadInt32LittleEndian(remainingIds);
+                                var id = remainingIds.Slice(sizeof(int), idLen);
+                                var score = BinaryPrimitives.ReadSingleLittleEndian(remainingScores);
+
+                                if (withScores)
+                                {
+                                    if (respProtocolVersion == 3)
+                                    {
+                                        WriteMapLength(2);
+                                    }
+                                    else
+                                    {
+                                        WriteArrayLength(2);
+                                    }
+
+                                    WriteArrayLength(2);
+                                    WriteBulkString(id);
+                                    WriteDoubleNumeric(score);
+                                }
+                                else
+                                {
+                                    WriteArrayLength(1);
+                                    WriteBulkString(id);
+                                }
+
+                                remainingIds = remainingIds[(sizeof(int) + idLen)..];
+                                remainingScores = remainingScores[sizeof(float)..];
+                            }
                         }
                         break;
                 }
@@ -1769,7 +1802,7 @@ namespace Garnet.server
             try
             {
 
-                var res = storageApi.VectorSetRandomMembers(key, count, ref idResult);
+                var res = storageApi.VectorSetRandomMembers(key, count, ref idResult, out var actualCount);
 
                 switch (res)
                 {
@@ -1789,9 +1822,18 @@ namespace Garnet.server
 
                     case GarnetStatus.OK:
                         {
-                            // TODO: implement!
-                            while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
-                                SendAndReset();
+                            WriteArrayLength(actualCount);
+                            var remainingIds = idResult.ReadOnlySpan;
+
+                            while (!remainingIds.IsEmpty)
+                            {
+                                var idLen = BinaryPrimitives.ReadInt32LittleEndian(remainingIds);
+                                var id = remainingIds.Slice(sizeof(int), idLen);
+
+                                WriteBulkString(id);
+
+                                remainingIds = remainingIds[(sizeof(int) + idLen)..];
+                            }
                         }
                         break;
                 }

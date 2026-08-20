@@ -163,10 +163,18 @@ namespace Garnet.server
                                         break;
 
                                     case QuantizationStep.BackfillQuantizedVectors:
-                                        self.Service.BackfillQuantizedVectors(context, indexPtr, state.StepIndex, self.quantizationTaskCount);
+                                        if (!self.Service.BackfillQuantizedVectors(context, indexPtr, state.StepIndex, self.quantizationTasks.Length))
+                                        {
+                                            self.logger?.LogError("Quantization backfill {step}/{total} failed for context {context}", state.StepIndex, self.quantizationTasks.Length, context);
+
+                                            // Post a retry back on the channel
+                                            _ = writer.TryWrite(new(state.Key, QuantizationStep.BackfillQuantizedVectors, state.StepIndex));
+                                            break;
+                                        }
 
                                         _ = Interlocked.Increment(ref self.quantizationBackfillsProcessed);
                                         break;
+
                                     default:
                                         self.logger?.LogError("Unexpected step: {step}", state.Step);
                                         break;

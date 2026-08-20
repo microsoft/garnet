@@ -503,7 +503,7 @@ namespace Garnet.server
         /// <summary>
         /// Determine neighbors of a given element, and (optionally) the distance to each neighbor.
         /// </summary>
-        internal GarnetStatus VectorSetLinks(PinnedSpanByte key, PinnedSpanByte element, bool withScores, ref SpanByteAndMemory idResults, ref SpanByteAndMemory memoryResults)
+        internal GarnetStatus VectorSetLinks(PinnedSpanByte key, PinnedSpanByte element, ref SpanByteAndMemory idResults, ref SpanByteAndMemory distanceResults)
         {
             parseState.InitializeWithArgument(key);
 
@@ -516,10 +516,8 @@ namespace Garnet.server
                     return status;
                 }
 
-                // TODO: Implement!
-                idResults.Length = 0;
-                memoryResults.Length = 0;
-                return GarnetStatus.OK;
+                var res = vectorManager.GetNeighbors(indexSpan, element, ref idResults, ref distanceResults);
+                return res == VectorManagerResult.OK && distanceResults.Length > 0 ? GarnetStatus.OK : GarnetStatus.NOTFOUND;
             }
         }
 
@@ -532,7 +530,7 @@ namespace Garnet.server
         /// 
         /// On success, <paramref name="idResults"/> has length prefixed element names.
         /// </summary>
-        internal GarnetStatus VectorSetRandomMembers(PinnedSpanByte key, int count, ref SpanByteAndMemory idResults)
+        internal GarnetStatus VectorSetRandomMembers(PinnedSpanByte key, int count, ref SpanByteAndMemory idResults, out int actualCount)
         {
             parseState.InitializeWithArgument(key);
 
@@ -542,12 +540,12 @@ namespace Garnet.server
             {
                 if (status != GarnetStatus.OK)
                 {
+                    actualCount = 0;
                     return status;
                 }
 
-                // TODO: Implement!
-                idResults.Length = 0;
-                return GarnetStatus.OK;
+                var result = vectorManager.RandomMembers(key, Math.Abs(count), allowDuplicates: count < 0, ref idResults, out actualCount);
+                return result == VectorManagerResult.OK ? GarnetStatus.OK : GarnetStatus.NOTFOUND;
             }
         }
 

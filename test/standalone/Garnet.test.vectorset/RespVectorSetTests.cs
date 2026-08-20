@@ -1752,7 +1752,7 @@ namespace Garnet.test
                 fixed (int* dataPtr = data)
                 {
                     var keyData = PinnedSpanByte.FromPinnedPointer((byte*)dataPtr, data.Length * sizeof(int));
-                    var batch = new VectorManager.VectorReadBatch(input.Callback, input.CallbackContext, 1, keyData, namespaceBytes);
+                    var batch = new VectorManager.VectorReadBatch(input.Callback, input.CallbackContext, 1, keyData, namespaceBytes, new ReadCopyOptions { CopyFrom = ReadCopyFrom.AllImmutable, CopyTo = ReadCopyTo.MainLog }, 0);
 
                     var iters = 0;
                     for (var i = 0; i < batch.Count; i++)
@@ -1802,7 +1802,7 @@ namespace Garnet.test
                 fixed (int* dataPtr = data)
                 {
                     var keyData = PinnedSpanByte.FromPinnedPointer((byte*)dataPtr, data.Length * sizeof(int));
-                    var batch = new VectorManager.VectorReadBatch(input.Callback, input.CallbackContext, 7, keyData, namespaceBytes);
+                    var batch = new VectorManager.VectorReadBatch(input.Callback, input.CallbackContext, 7, keyData, namespaceBytes, new ReadCopyOptions { CopyFrom = ReadCopyFrom.AllImmutable, CopyTo = ReadCopyTo.MainLog }, 0);
 
                     var iters = 0;
                     for (var i = 0; i < batch.Count; i++)
@@ -1856,7 +1856,7 @@ namespace Garnet.test
                 fixed (int* dataPtr = data)
                 {
                     var keyData = PinnedSpanByte.FromPinnedPointer((byte*)dataPtr, data.Length * sizeof(int));
-                    var batch = new VectorManager.VectorReadBatch(input.Callback, input.CallbackContext, 7, keyData, namespaceBytes);
+                    var batch = new VectorManager.VectorReadBatch(input.Callback, input.CallbackContext, 7, keyData, namespaceBytes, new ReadCopyOptions { CopyFrom = ReadCopyFrom.AllImmutable, CopyTo = ReadCopyTo.MainLog }, 0);
 
                     var rand = new Random(2025_10_06_00);
 
@@ -1914,7 +1914,7 @@ namespace Garnet.test
                 fixed (byte* dataPtr = data)
                 {
                     var keyData = PinnedSpanByte.FromPinnedPointer((byte*)dataPtr, data.Length);
-                    var batch = new VectorManager.VectorReadBatch(input.Callback, input.CallbackContext, 1, keyData, namespaceBytes);
+                    var batch = new VectorManager.VectorReadBatch(input.Callback, input.CallbackContext, 1, keyData, namespaceBytes, new ReadCopyOptions { CopyFrom = ReadCopyFrom.AllImmutable, CopyTo = ReadCopyTo.MainLog }, 0);
 
                     var iters = 0;
                     for (var i = 0; i < batch.Count; i++)
@@ -2033,7 +2033,7 @@ namespace Garnet.test
                 fixed (byte* dataPtr = data)
                 {
                     var keyData = PinnedSpanByte.FromPinnedPointer((byte*)dataPtr, data.Length);
-                    var batch = new VectorManager.VectorReadBatch(input.Callback, input.CallbackContext, 8, keyData, namespaceBytes);
+                    var batch = new VectorManager.VectorReadBatch(input.Callback, input.CallbackContext, 8, keyData, namespaceBytes, new ReadCopyOptions { CopyFrom = ReadCopyFrom.AllImmutable, CopyTo = ReadCopyTo.MainLog }, 0);
 
                     var iters = 0;
                     for (var i = 0; i < batch.Count; i++)
@@ -2166,7 +2166,7 @@ namespace Garnet.test
                 fixed (byte* dataPtr = data)
                 {
                     var keyData = PinnedSpanByte.FromPinnedPointer((byte*)dataPtr, data.Length);
-                    var batch = new VectorManager.VectorReadBatch(input.Callback, input.CallbackContext, 8, keyData, namespaceBytes);
+                    var batch = new VectorManager.VectorReadBatch(input.Callback, input.CallbackContext, 8, keyData, namespaceBytes, new ReadCopyOptions { CopyFrom = ReadCopyFrom.AllImmutable, CopyTo = ReadCopyTo.MainLog }, 0);
 
                     var rand = new Random(2025_10_06_01);
 
@@ -3975,7 +3975,7 @@ namespace Garnet.test
                         var elementKey = new VectorElementKey(new ReadOnlySpan<byte>(nsPtr, ns.Length), new ReadOnlySpan<byte>(keyPtr, key.Length));
 
                         {
-                            var input = new VectorInput { AlignmentExpected = true };
+                            var input = new VectorInput();
                             var valueSpan = SpanByte.FromPinnedPointer(valuePtr, value.Length);
                             var output = new VectorOutput();
 
@@ -3990,7 +3990,7 @@ namespace Garnet.test
                             Span<byte> buffer = stackalloc byte[256];
                             fixed (byte* bufferPtr = buffer)
                             {
-                                var input = new VectorInput { AlignmentExpected = true, ReadDesiredSize = -1 };
+                                var input = new VectorInput { ReadDesiredSize = -1 };
                                 var output = new VectorOutput(bufferPtr, buffer.Length);
 
                                 var status = context.Read(elementKey, ref input, ref output);
