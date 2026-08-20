@@ -7,6 +7,7 @@ using System.Buffers.Binary;
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Linq;
+using System.Numerics;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading.Channels;
@@ -190,16 +191,20 @@ namespace Garnet.server
             logger = loggerFactory?.CreateLogger($"{nameof(VectorManager)}:{dbId}");
 
             replicationBlockEvent = CountingEventSlim.Create();
-            // NOTE: for multi-log we need to disable single writer since multiple AOF replay tasks may append to this common channel.
-            replicationReplayChannel = Channel.CreateUnbounded<VADDReplicationState>(new() { SingleWriter = !serverOptions.MultiLogEnabled, SingleReader = false, AllowSynchronousContinuations = false });
 
             if (serverOptions.VectorSetReplayTaskCount < 0 || serverOptions.VectorSetReplayTaskCount > Environment.ProcessorCount)
                 throw new GarnetException($"VectorSetReplayTaskCount should be in range [0,{Environment.ProcessorCount}]!");
             var vectorSetReplayCount = serverOptions.VectorSetReplayTaskCount == 0 ? Environment.ProcessorCount : serverOptions.VectorSetReplayTaskCount;
+
+            replicationReplayChannels = new Channel<VADDReplicationState>[vectorSetReplayCount];
             replicationReplayTasks = new Task[vectorSetReplayCount];
+
             for (var i = 0; i < replicationReplayTasks.Length; i++)
             {
                 replicationReplayTasks[i] = Task.CompletedTask;
+
+                // NOTE: for multi-log we need to disable single writer since multiple AOF replay tasks may append to this common channel.
+                replicationReplayChannels[i] = Channel.CreateUnbounded<VADDReplicationState>(new() { SingleWriter = !serverOptions.MultiLogEnabled, SingleReader = false, AllowSynchronousContinuations = false });
             }
 
             vectorSetLocks = new(vectorSetReplayCount);
@@ -229,6 +234,21 @@ namespace Garnet.server
 
             // So Dispose's Task.WhenAll is safe even if StartQuantizationTasks never ran.
             Array.Fill(quantizationTasks, Task.CompletedTask);
+
+            // Exclusive locks for potential updates to Vector Set data
+            var unroundedElementSetSize = Environment.ProcessorCount * 2;
+            unroundedElementSetSize *= unroundedElementSetSize;
+            unroundedElementSetSize *= 2;
+            vectorSetElementSelectMask = (int)BitOperations.RoundUpToPowerOf2((uint)unroundedElementSetSize) - 1;
+            if (vectorSetElementSelectMask < 0)
+            {
+                logger?.LogWarning("Vector Set element lock set size overflowed due to high CPU count: {processorCount}", Environment.ProcessorCount);
+
+                // Large power-of-two < Array.MaxLength, then -1
+                vectorSetElementSelectMask = 0x4000_0000 - 1;
+            }
+
+            vectorSetElementUpdateLocks = new int[vectorSetElementSelectMask + 1];
 
             logger?.LogInformation("Created VectorManager");
         }
@@ -467,8 +487,12 @@ namespace Garnet.server
         public void Dispose()
         {
             // We must drain all these before disposing, otherwise we'll leave replicationBlockEvent unset
-            _ = replicationReplayChannel.Writer.TryComplete();
-            AsyncUtils.BlockingWait(replicationReplayChannel.Reader.Completion);
+            foreach (var channel in replicationReplayChannels)
+            {
+                _ = channel.Writer.TryComplete();
+                AsyncUtils.BlockingWait(channel.Reader.Completion);
+            }
+
             AsyncUtils.BlockingWait(Task.WhenAll(replicationReplayTasks));
 
             replicationBlockEvent.Dispose();

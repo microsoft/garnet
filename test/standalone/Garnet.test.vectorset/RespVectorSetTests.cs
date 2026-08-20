@@ -388,6 +388,42 @@ namespace Garnet.test
         }
 
         [Test]
+        public async Task VADDUpdatesAsync()
+        {
+            const string Key = nameof(VADDUpdatesAsync);
+            const string Element = nameof(Element);
+
+            await using var redis = await ConnectionMultiplexer.ConnectAsync(TestUtils.GetConfig()).ConfigureAwait(false);
+            var db = redis.GetDatabase();
+
+            var res0 = await db.VectorSetAddAsync(Key, VectorSetAddRequest.Member(Element, new float[] { 1, 2, 3 })).ConfigureAwait(false);
+            ClassicAssert.IsTrue(res0);
+
+            // Basic overwrite works
+            var res1 = await db.VectorSetAddAsync(Key, VectorSetAddRequest.Member(Element, new float[] { 4, 5, 6 })).ConfigureAwait(false);
+            //ClassicAssert.IsFalse(res1);
+
+            using var res2 = await db.VectorSetGetApproximateVectorAsync(Key, Element).ConfigureAwait(false);
+            ClassicAssert.IsTrue(res2.Span.SequenceEqual([4, 5, 6]));
+
+            // Delete followed up overwrite works
+            var res3 = await db.VectorSetRemoveAsync(Key, Element).ConfigureAwait(false);
+            ClassicAssert.IsTrue(res3);
+
+            var res4 = await db.VectorSetAddAsync(Key, VectorSetAddRequest.Member(Element, new float[] { 7, 8, 9 })).ConfigureAwait(false);
+            ClassicAssert.IsTrue(res4);
+
+            using var res5 = await db.VectorSetGetApproximateVectorAsync(Key, Element).ConfigureAwait(false);
+            ClassicAssert.IsTrue(res5.Span.SequenceEqual([7, 8, 9]));
+
+            var res6 = await db.VectorSetAddAsync(Key, VectorSetAddRequest.Member(Element, new float[] { 10, 11, 12 })).ConfigureAwait(false);
+            //ClassicAssert.IsFalse(res6);
+
+            using var res7 = await db.VectorSetGetApproximateVectorAsync(Key, Element).ConfigureAwait(false);
+            ClassicAssert.IsTrue(res7.Span.SequenceEqual([10, 11, 12]));
+        }
+
+        [Test]
         public void VEMB_FP32Storage()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());

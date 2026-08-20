@@ -172,11 +172,12 @@ Backfills are triggered by `insert` returning `DiskANNInsertResult.QuantizationR
 
 Vector Sets workloads require extreme parallelism, and so intricate locking protocols are required for both performance and correctness.
 
-Concretely, there are 4 sorts of locks involved:
+Concretely, there are 5 sorts of locks involved:
  - Tsavorite hashbucket locks
  - A `ReadOptimizedLock` instance
  - `VectorManager` lock around `ContextMetadata`
  - Spin wait around `drop_index` calls
+ - An `int[]` used for element-level locks
 
 ### Tsavorite Locks
 
@@ -220,6 +221,26 @@ To prevent that, when we recreate an index we first check if that key has a sche
 > The code in `VectorManager.WaitForDiskANNIndexDrop` is a naive `while(...) { Thread.Yield(); }`-loop, which is decidedly suboptimal.
 > 
 > Since this case should be rare, that should be fine.  If it turns out this is less rare than hoped, we'll need to do something smarter.
+
+### Element Ordering Locks
+
+Operations that may update an element (`VADD`, `VREM`, and `VSETATTR`) take an exclusive lock in addition to `ReadOptimizedLock`.  This guarantees that entries are placed in the AOF in the same order they occurred against the main log.
+
+Operations on different elements within the same Vector Set can proceed in parallel, and operations on the same element name in different Vector Sets can also proceed in parallel.
+
+This lock is based on the Vector Set name and the element name, and is a simple `Interlocked.CompareExchange(...)` of an element in an `int[]` with a `Thread.Yield()` busy-loop for retries.  The underlying `int[]` is chosen to have ~5% collision odds if all cores are committed to an update operation.  We could push this number lower by committing more memory to the locking scheme - right now we cap out around 2MB for large machines.
+
+| Logical Processors | `int[]` Size | Approx.Collision Odds |
+| -----------------: | -----------: | --------------------: |
+|                  8 |          512 |                    5% |
+|                 16 |        2,048 |                    6% |
+|                 32 |        8,192 |                    5% |
+|                 48 |       32,768 |                    3% |
+|                 64 |       32,768 |                    6% |
+|                 80 |       65,536 |                    5% |
+|                 96 |      131,072 |                    3% |
+|                128 |      131,072 |                    6% |
+|                192 |      524,288 |                    3% |
 
 ## Replication
 
