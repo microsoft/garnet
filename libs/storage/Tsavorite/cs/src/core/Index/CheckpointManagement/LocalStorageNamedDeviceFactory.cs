@@ -21,8 +21,8 @@ namespace Tsavorite.core
         readonly bool preallocateFile;
         readonly bool disableFileBuffering;
         readonly DeviceType deviceType;
-        readonly NativeStorageDevice.IoBackend ioBackend;
         readonly int numCompletionThreads;
+        readonly NativeDeviceOptions nativeDeviceOptions;
         readonly bool readOnly;
         readonly ILogger logger;
 
@@ -34,20 +34,20 @@ namespace Tsavorite.core
         /// <param name="disableFileBuffering">Whether file buffering (during write) is disabled (default of true requires aligned writes)</param>
         /// <param name="throttleLimit">Throttle limit (max number of pending I/Os) for this device instance. For DeviceType.LocalMemory (which has no device-wide throttle) it instead sets the per-ring capacity, rounded up to a power of two.</param>
         /// <param name="deviceType">Device type to use</param>
-        /// <param name="ioBackend">For DeviceType.Native on Linux: which IO backend (libaio or io_uring) to use. Ignored otherwise.</param>
         /// <param name="numCompletionThreads">For DeviceType.Native on Linux: number of IO completion drain threads (default 1). Ignored otherwise.</param>
         /// <param name="readOnly">Whether files are opened as readonly</param>
         /// <param name="baseName">Base name</param>
         /// <param name="logger">Logger</param>
-        public LocalStorageNamedDeviceFactory(bool preallocateFile = false, bool deleteOnClose = false, bool disableFileBuffering = true, int? throttleLimit = null, DeviceType deviceType = DeviceType.Default, NativeStorageDevice.IoBackend ioBackend = NativeStorageDevice.IoBackend.Default, int numCompletionThreads = 1, bool readOnly = false, string baseName = null, ILogger logger = null)
+        /// <param name="nativeDeviceOptions">For DeviceType.Native on Linux: libaio / io_uring backend tuning (IO backend, ring count, per-ring queue depth, SQPOLL). Null (default) uses the backend-specific defaults. Ignored otherwise. See <see cref="NativeDeviceOptions"/>.</param>
+        public LocalStorageNamedDeviceFactory(bool preallocateFile = false, bool deleteOnClose = false, bool disableFileBuffering = true, int? throttleLimit = null, DeviceType deviceType = DeviceType.Default, int numCompletionThreads = 1, bool readOnly = false, string baseName = null, ILogger logger = null, NativeDeviceOptions nativeDeviceOptions = null)
         {
             this.preallocateFile = preallocateFile;
             this.deleteOnClose = deleteOnClose;
             this.disableFileBuffering = disableFileBuffering;
             this.throttleLimit = throttleLimit;
             this.deviceType = deviceType;
-            this.ioBackend = ioBackend;
             this.numCompletionThreads = numCompletionThreads;
+            this.nativeDeviceOptions = nativeDeviceOptions;
             this.readOnly = readOnly;
             this.baseName = baseName;
             this.logger = logger;
@@ -74,10 +74,10 @@ namespace Tsavorite.core
                 deleteOnClose: deleteOnClose,
                 disableFileBuffering: disableFileBuffering,
                 readOnly: readOnly,
-                ioBackend: ioBackend,
                 numCompletionThreads: numCompletionThreads,
-                localMemoryRingCapacity: localMemoryRingCapacity,
-                logger: logger);
+                logger: logger,
+                nativeDeviceOptions: nativeDeviceOptions,
+                localMemoryDeviceOptions: new LocalMemoryDeviceOptions { RingCapacity = localMemoryRingCapacity });
             if (throttleLimit.HasValue)
             {
                 device.ThrottleLimit = throttleLimit.Value;

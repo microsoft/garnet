@@ -1559,6 +1559,15 @@ namespace Garnet.test.cluster
 
                     break;
                 }
+
+                // The role flips to "master" (via TryTakeOverForPrimary) before the failover
+                // session clears its recovery flag (EndRecovery) and reports completion. While a
+                // promoted primary is still recovering, reads to its own slots are answered with
+                // "CLUSTERDOWN Hash slot not served" (see ClusterSlotVerify). Wait for the failover
+                // to fully complete on both nodes so the immediately-following reads don't race
+                // that window.
+                context.clusterTestUtils.WaitForFailoverCompleted(replica1, context.logger);
+                context.clusterTestUtils.WaitForFailoverCompleted(replica2, context.logger);
             }
         }
     }

@@ -3404,10 +3404,13 @@ namespace Garnet.test.cluster
         }
 
         public void WaitForFailoverCompleted(int nodeIndex, ILogger logger = null)
+            => WaitForFailoverCompleted((IPEndPoint)endpoints[nodeIndex], logger);
+
+        public void WaitForFailoverCompleted(IPEndPoint endPoint, ILogger logger = null)
         {
             while (true)
             {
-                var infoItem = context.clusterTestUtils.GetReplicationInfo(nodeIndex, [ReplicationInfoItem.LAST_FAILOVER_STATE], logger: context.logger);
+                var infoItem = GetReplicationInfo(endPoint, [ReplicationInfoItem.LAST_FAILOVER_STATE], logger: logger);
                 if (infoItem[0].Item2.Equals("failover-completed"))
                     break;
                 BackOff(cancellationToken: context.cts.Token, msg: nameof(WaitForFailoverCompleted));
