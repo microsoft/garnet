@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using Tsavorite.core;
@@ -16,6 +16,14 @@ namespace Garnet.server
         /// Span byte and memory
         /// </summary>
         public SpanByteAndMemory SpanByteAndMemory;
+
+        /// <summary>
+        /// Out-of-line record pieces, set by migration's <c>HandleMigrate</c> for a non-inline record. Captured in-epoch and sent
+        /// out of epoch by the caller (migration cannot hold the store epoch across its async network sends). Holds the overflow
+        /// key (shallow), the overflow value (deep copy), or an object value serialized to chunks (which may exceed 2 GB). When
+        /// <see cref="MigrationChunkWriterAccumulator.IsEmpty"/> the whole record is in <see cref="SpanByteAndMemory"/>.
+        /// </summary>
+        public MigrationChunkWriterAccumulator Accumulator;
 
         public UnifiedOutput() => SpanByteAndMemory = new(null);
 

@@ -203,6 +203,9 @@ namespace Garnet.cluster
         public bool TryWriteRecordSpan(ReadOnlySpan<byte> recordSpan, MigrationRecordSpanType type, out Task<string> task)
             => aofSyncTasks[0].garnetClient.TryWriteRecordSpan(recordSpan, type, out task);
 
+        public bool TryWriteChunkedRecordSpan(ReadOnlySpan<byte> chunk, bool moreChunksFollow, out Task<string> task)
+            => aofSyncTasks[0].garnetClient.TryWriteChunkedRecordSpan(chunk, moreChunksFollow, out task);
+
         public Task<string> SendAndResetIterationBufferAsync()
             => aofSyncTasks[0].garnetClient.SendAndResetIterationBuffer();
         #endregion
