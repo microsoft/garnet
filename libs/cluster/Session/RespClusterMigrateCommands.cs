@@ -17,6 +17,38 @@ namespace Garnet.cluster
         long lastLog = 0;
         long totalKeyCount = 0;
 
+        // Per-connection reassembly state for MigrationRecordSpanType.ChunkedLogRecord records whose chunks may span commands.
+        ChunkedRecordReassembler chunkedRecordReassembler;
+
+        /// <summary>
+        /// Complete a reassembled <see cref="MigrationRecordSpanType.ChunkedLogRecord"/>. A non-inline object value is streamed
+        /// from a <see cref="System.Buffers.ReadOnlySequence{T}"/> and deserialized with the object serializer (so it can exceed
+        /// 2 GB), returned pre-deserialized alongside the small inline+key header; every other record is returned as one
+        /// contiguous buffer. Returns true when the record has a streamed object value.
+        /// </summary>
+        /// <summary>
+        /// Build the <see cref="DiskLogRecord"/> for a completed chunked record from the pieces reassembled by
+        /// <see cref="chunkedRecordReassembler"/>: a fully-inline record from its contiguous inline buffer, else the inline portion
+        /// plus the pre-populated overflow key/value and/or the streamed (now deserialized) object value.
+        /// <paramref name="headerPtr"/> must point at the pinned inline buffer (<see cref="ChunkedRecordReassembler.InlineBuffer"/>)
+        /// and remain pinned while the returned record is used.
+        /// </summary>
+        unsafe DiskLogRecord CompleteChunkedRecordReassembly(byte* headerPtr, StoreWrapper storeWrapper, ObjectIdMap transientObjectIdMap)
+        {
+            var reassembler = chunkedRecordReassembler;
+            var headerSpan = PinnedSpanByte.FromPinnedPointer(headerPtr, reassembler.InlineSize);
+            if (reassembler.RecordIsInline)
+                return DiskLogRecord.Deserialize(headerSpan, storeWrapper.GarnetObjectSerializer, transientObjectIdMap, storeWrapper.storeFunctions);
+
+            // Non-inline: deserialize the streamed object value (if any) from its chunks, then assign the pre-populated pieces.
+            IHeapObject valueObject = null;
+            if (reassembler.IsObjectValue)
+                valueObject = (IHeapObject)storeWrapper.GarnetObjectSerializer.Deserialize(reassembler.ObjectValueSequence());
+
+            return DiskLogRecord.CompleteDeserializeChunkedRecord(headerSpan, reassembler.KeyOverflow, reassembler.ValueOverflow,
+                valueObject, transientObjectIdMap);
+        }
+
         /// <summary>
         /// Logging of migrate session status
         /// </summary>
@@ -85,7 +117,6 @@ namespace Garnet.cluster
                     var storeWrapper = clusterProvider.storeWrapper;
                     var transientObjectIdMap = storeWrapper.store.Log.TransientObjectIdMap;
 
-                    // Use try/finally instead of "using" because we don't want the boxing that an interface call would entail. Double-Dispose() is OK for DiskLogRecord.
                     DiskLogRecord diskLogRecord = default;
                     try
                     {
@@ -101,9 +132,7 @@ namespace Garnet.cluster
                                     return;
 
                                 if (kind != MigrationRecordSpanType.VectorSetIndex)
-                                {
                                     throw new InvalidOperationException($"Unexpected {nameof(MigrationRecordSpanType)}: {kind}");
-                                }
 
                                 var payload = payloadRaw.ReadOnlySpan;
 
@@ -126,6 +155,62 @@ namespace Garnet.cluster
                             {
                                 var kind = (MigrationRecordSpanType)(*payloadPtr);
                                 payloadPtr++;
+
+                                if (kind == MigrationRecordSpanType.ChunkedLogRecord)
+                                {
+                                    // A record too large for one send buffer arrives as chunks (possibly across commands):
+                                    // [int chunkLength | continuation][chunk bytes]. GetSerializedRecordSpan cannot read these
+                                    // because the continuation flag makes the length read as negative.
+                                    if (payloadPtr + sizeof(int) > payloadEndPtr)
+                                        return;
+                                    var rawChunkLength = *(int*)payloadPtr;
+                                    payloadPtr += sizeof(int);
+                                    var moreChunksFollow = (rawChunkLength & ChunkedRecordConstants.ContinuationFlag) != 0;
+                                    var chunkLength = rawChunkLength & ~ChunkedRecordConstants.ContinuationFlag;
+                                    if (chunkLength < 0 || payloadPtr + chunkLength > payloadEndPtr)
+                                        return;
+                                    var chunkSpan = new ReadOnlySpan<byte>(payloadPtr, chunkLength);
+                                    payloadPtr += chunkLength;
+
+                                    // An error has occurred; keep consuming chunks but do not process.
+                                    if (migrateState > 0)
+                                    {
+                                        chunkedRecordReassembler?.Reset();
+                                        i++;
+                                        continue;
+                                    }
+
+                                    chunkedRecordReassembler ??= new();
+                                    if (chunkedRecordReassembler.Append(chunkSpan, moreChunksFollow))
+                                    {
+                                        // The reassembler owns the inline buffer; pin it while the record it backs is used.
+                                        fixed (byte* headerPtr = chunkedRecordReassembler.InlineBuffer)
+                                        {
+                                            diskLogRecord = CompleteChunkedRecordReassembly(headerPtr, storeWrapper, transientObjectIdMap);
+
+                                            var slot = HashSlotUtils.HashSlot(diskLogRecord.Key);
+                                            if (!currentConfig.IsImportingSlot(slot)) // Slot is not in importing state
+                                            {
+                                                migrateState = 1;
+                                            }
+                                            else
+                                            {
+                                                // Set if key replace flag is set or key does not exist
+                                                var keySlice = PinnedSpanByte.FromPinnedSpan(diskLogRecord.Key);
+                                                if (replaceOption || !Exists(keySlice))
+                                                    _ = basicGarnetApi.SET(in diskLogRecord);
+                                            }
+
+                                            storeWrapper.storeFunctions.OnDisposeDiskRecord(ref diskLogRecord, DisposeReason.DeserializedFromDisk);
+                                            diskLogRecord.Dispose();
+                                            diskLogRecord = default; // prevent double-trigger in finally
+                                        }
+                                        chunkedRecordReassembler.Reset();
+                                    }
+
+                                    i++;
+                                    continue;
+                                }
 
                                 if (!RespReadUtils.GetSerializedRecordSpan(out var payloadRaw, ref payloadPtr, payloadEndPtr))
                                     return;
