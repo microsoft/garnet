@@ -621,7 +621,8 @@ namespace Tsavorite.core
             return true;
         }
 
-        private void ReadPagesWithMemoryConstraint(long endAddress, RecoveryStatus recoveryStatus, long page, long endPage, int numPagesToRead)
+        private void ReadPagesWithMemoryConstraint(long endAddress, RecoveryStatus recoveryStatus, long page, long endPage, int numPagesToRead,
+            long mergeFromAddress = -1)
         {
             // Before reading in additional pages, trim memory if needed to make room for the inline page space.
             TrimLogPages(recoveryStatus, tailPage: page, numPagesToRead, untilAddress: endAddress);
@@ -632,7 +633,7 @@ namespace Tsavorite.core
 
             // Issue request to read pages as much as possible
             hlogBase.AsyncReadPagesForRecovery(page, numPagesToRead, endAddress, recoveryStatus, recoveryStatus.recoveryDevicePageOffset,
-                recoveryStatus.recoveryDevice, recoveryStatus.objectLogRecoveryDevice, RecoveryPhase.Pass1);
+                recoveryStatus.recoveryDevice, recoveryStatus.objectLogRecoveryDevice, RecoveryPhase.Pass1, mergeFromAddress);
         }
 
         /// <summary>
@@ -739,7 +740,8 @@ namespace Tsavorite.core
             }
         }
 
-        private async ValueTask<long> ReadPagesForRecoveryAsync(long untilAddress, RecoveryStatus recoveryStatus, long endPage, int numPagesToReadPerIteration, long page, CancellationToken cancellationToken)
+        private async ValueTask<long> ReadPagesForRecoveryAsync(long untilAddress, RecoveryStatus recoveryStatus, long endPage,
+            int numPagesToReadPerIteration, long page, CancellationToken cancellationToken, long mergeFromAddress = -1)
         {
             var readEndPage = Math.Min(page + numPagesToReadPerIteration, endPage);
             if (page < readEndPage)
@@ -750,7 +752,7 @@ namespace Tsavorite.core
                 // this must be done in batches of all flushes followed by all reads to ensure proper sequencing of reads when
                 // usableCapacity != capacity (and thus the page-read index is not equal to the page-flush index).
                 await WaitUntilAllPagesHaveBeenFlushedAsync(page, readEndPage, recoveryStatus, cancellationToken).ConfigureAwait(false);
-                ReadPagesWithMemoryConstraint(untilAddress, recoveryStatus, page, readEndPage, numPagesToRead);
+                ReadPagesWithMemoryConstraint(untilAddress, recoveryStatus, page, readEndPage, numPagesToRead, mergeFromAddress);
             }
 
             return readEndPage;
@@ -902,7 +904,7 @@ namespace Tsavorite.core
                 pageUntilAddressOffset = hlogBase.GetOffsetOnPage(untilAddress);
 
             if (RecoverFromPage(recoverFromAddress, pageFromAddressOffset, pageUntilAddressOffset, startLogicalAddressOfPage, startPhysicalAddressOfPage,
-                options, objectLogRecoveryDevice: null, objectLogRecoveryReadEnd: default))
+                options, isSnapshotPage: false, objectLogRecoveryDevice: null, objectLogRecoveryReadEnd: default))
             {
                 // The current page was modified due to undoFutureVersion; caller will flush it to storage and issue a read request if necessary.
                 recoveryStatus.readStatus[pageIndex] = ReadStatus.Pending;
@@ -952,6 +954,23 @@ namespace Tsavorite.core
             recoveryStatus.snapshotScanFromAddress = scanFromAddress;
             var snapshotBoundaryPage = hlogBase.GetPage(scanFromAddress);
 
+            // Snapshot recovery overlays the snapshot image only at/above scanFromAddress, which is the recovered
+            // flushedLogicalAddress. Usually the preceding main-log recovery leaves this boundary page resident. An
+            // index checkpoint may make that replay unnecessary, however, so load the durable main prefix on demand
+            // before issuing the snapshot suffix read.
+            if (hlogBase.GetOffsetOnPage(scanFromAddress) > 0)
+            {
+                var boundaryPageIndex = hlogBase.GetPageIndexForPage(snapshotBoundaryPage);
+                if (!hlogBase.IsAllocated(boundaryPageIndex))
+                {
+                    recoveryStatus.readStatus[boundaryPageIndex] = ReadStatus.Pending;
+                    hlogBase.AsyncReadPagesForRecovery(snapshotBoundaryPage, 1, scanFromAddress, recoveryStatus,
+                        recoveryPhase: RecoveryPhase.Pass1);
+                    await recoveryStatus.WaitReadAsync(boundaryPageIndex, cancellationToken).ConfigureAwait(false);
+                    ClearBitsOnPage(snapshotBoundaryPage, scanFromAddress, in options, recoveryStatus.headAddress);
+                }
+            }
+
             // Notify application of checkpoint token before processing snapshot records
             if (storeFunctions.CallOnDiskRead)
                 storeFunctions.OnRecovery(guid);
@@ -962,7 +981,8 @@ namespace Tsavorite.core
                 for (var pendingPage = page; pendingPage < batchEnd; pendingPage++)
                     recoveryStatus.snapshotPageFlushedToMain[hlogBase.GetPageIndexForPage(pendingPage)] = false;
 
-                _ = await ReadPagesForRecoveryAsync(snapshotEndAddress, recoveryStatus, snapshotEndPage, numPagesToReadPerIteration, page, cancellationToken).ConfigureAwait(false);
+                _ = await ReadPagesForRecoveryAsync(snapshotEndAddress, recoveryStatus, snapshotEndPage, numPagesToReadPerIteration, page,
+                    cancellationToken, mergeFromAddress: scanFromAddress).ConfigureAwait(false);
                 var end = batchEnd;
 
                 for (long p = page; p < end; p++)
@@ -986,7 +1006,7 @@ namespace Tsavorite.core
                     }
                 }
 
-                RecoverSnapshotPages(recoverFromAddress, untilAddress, nextVersion, in options, recoveryStatus, page, end);
+                RecoverSnapshotPages(Math.Max(recoverFromAddress, scanFromAddress), untilAddress, nextVersion, in options, recoveryStatus, page, end);
             }
 
             await WaitUntilAllPagesHaveBeenFlushedAsync(startPage, endPage, recoveryStatus, cancellationToken).ConfigureAwait(false);
@@ -1015,9 +1035,9 @@ namespace Tsavorite.core
         /// <param name="recoveryStatus">The <see cref="RecoveryStatus"/> instance; its headAddress is the eviction floor and is advanced as pages are evicted</param>
         /// <param name="fromAddress">The lowest address whose objects are to be loaded (the load floor; pages below it are not loaded by this call)</param>
         /// <param name="untilAddress">The end of the range whose objects are to be loaded</param>
-        /// <param name="snapshotObjectLogDevice">The snapshot object-log device, used for snapshot-region pages (at or above <paramref name="snapshotBoundaryPage"/>)
-        ///     whose records still carry snapshot object-log positions; hybrid-log-region pages below the boundary read from the main object-log (null device).</param>
-        /// <param name="snapshotBoundaryPage">The first snapshot-region page (the page of the hybrid-log/snapshot boundary); long.MaxValue for FoldOver (no snapshot region).</param>
+        /// <param name="snapshotObjectLogDevice">The snapshot object-log device used for records at or above the exact snapshot boundary whose
+        /// positions have not yet been rewritten to the main object log</param>
+        /// <param name="snapshotBoundaryPage">The page containing the hybrid-log/snapshot boundary; long.MaxValue for FoldOver</param>
         private void RecoveryLoadObjectsPass2(RecoveryStatus recoveryStatus, long fromAddress, long untilAddress, IDevice snapshotObjectLogDevice, long snapshotBoundaryPage)
         {
             if (fromAddress >= untilAddress)
@@ -1037,11 +1057,9 @@ namespace Tsavorite.core
                     if (!hlogBase.IsAllocated(pageIndex))
                         continue;
 
-                    GetRecoveryObjectLogReadState(recoveryStatus, page, endPage, snapshotObjectLogDevice, snapshotBoundaryPage,
-                        out var objectLogDevice, out var nextPageObjectLogPosition, out var hardReadEndPosition);
                     var pageFromAddress = page == startPage ? fromAddress : hlogBase.GetFirstValidLogicalAddressOnPage(page);
                     var pageUntilAddress = page == endPage - 1 ? untilAddress : hlogBase.GetLogicalAddressOfStartOfPage(page + 1);
-                    hlogBase.LoadObjectsForRecoveryPass2(page, pageFromAddress, pageUntilAddress, objectLogDevice, nextPageObjectLogPosition, hardReadEndPosition);
+                    LoadPageObjects(page, pageFromAddress, pageUntilAddress);
                 }
                 return;
             }
@@ -1060,17 +1078,14 @@ namespace Tsavorite.core
                 if (pageFromAddress >= pageUntilAddress)
                     continue;
 
-                GetRecoveryObjectLogReadState(recoveryStatus, page, endPage, snapshotObjectLogDevice, snapshotBoundaryPage,
-                    out var objectLogDevice, out var nextPageObjectLogPosition, out var hardReadEndPosition);
-
                 // Enforce MinEvictionHeadAddressLag: clamp pageFromAddress
                 if (pageFromAddress > maxHeadAddress)
                     pageFromAddress = maxHeadAddress;
 
-                var totalPageObjectSize = hlogBase.CalculatePageObjectSizes(page, pageFromAddress, pageUntilAddress);
+                var totalPageObjectSize = CalculatePageObjectSizes(page, pageFromAddress, pageUntilAddress);
                 if (totalPageObjectSize == 0)
                 {
-                    hlogBase.LoadObjectsForRecoveryPass2(page, pageFromAddress, pageUntilAddress, objectLogDevice, nextPageObjectLogPosition, hardReadEndPosition);
+                    LoadPageObjects(page, pageFromAddress, pageUntilAddress);
                     continue;
                 }
 
@@ -1094,15 +1109,11 @@ namespace Tsavorite.core
                 // page stays resident above the cutoff, so flush the page to the main log first — keeping it resident — so they are durable and can be read
                 // back. Must be before deserialization, while the records still carry their snapshot object-log positions.
                 if (page >= snapshotBoundaryPage && pageCutoff > hlogBase.GetFirstValidLogicalAddressOnPage(page))
-                {
                     FlushSnapshotPageForRecovery(recoveryStatus, page);
-                    GetRecoveryObjectLogReadState(recoveryStatus, page, endPage, snapshotObjectLogDevice, snapshotBoundaryPage,
-                        out objectLogDevice, out nextPageObjectLogPosition, out hardReadEndPosition);
-                }
 
                 // Load objects, using per-record budget checking via DeserializeObjectsOnPage.
                 // The method handles all records from pageCutoff to pageUntilAddress.
-                hlogBase.LoadObjectsForRecoveryPass2(page, pageCutoff, pageUntilAddress, objectLogDevice, nextPageObjectLogPosition, hardReadEndPosition);
+                LoadPageObjects(page, pageCutoff, pageUntilAddress);
 
                 // After loading, recheck budget. If over budget, evict from headAddress up to and including loaded records.
                 if (hlogBase.logSizeTracker.IsOverBudget && recoveryStatus.headAddress < maxHeadAddress)
@@ -1137,26 +1148,44 @@ namespace Tsavorite.core
                     break;
             }
 
-            ObjectLogFilePositionInfo GetNextPageObjectLogPosition(long page, long exclusiveEndPage, long snapshotBoundary)
+            void LoadPageObjects(long page, long pageFromAddress, long pageUntilAddress)
             {
-                var nextPage = page + 1;
-                if (nextPage >= exclusiveEndPage || (page < snapshotBoundary) != (nextPage < snapshotBoundary))
-                    return new();
-                if (nextPage >= snapshotBoundary
-                    && recoveryStatus.snapshotPageFlushedToMain[hlogBase.GetPageIndexForPage(nextPage)])
-                    return new();
-                return hlogBase.GetLowestObjectLogPositionForPage(nextPage);
+                var pageIndex = hlogBase.GetPageIndexForPage(page);
+                var readsFromMain = page < snapshotBoundaryPage || recoveryStatus.snapshotPageFlushedToMain[pageIndex];
+                if (readsFromMain)
+                {
+                    hlogBase.LoadObjectsForRecoveryPass2(page, pageFromAddress, pageUntilAddress, objectLogDevice: null);
+                    return;
+                }
+
+                var boundaryAddress = recoveryStatus.snapshotScanFromAddress;
+                if (page == snapshotBoundaryPage && pageFromAddress < boundaryAddress)
+                {
+                    hlogBase.LoadObjectsForRecoveryPass2(page, pageFromAddress, Math.Min(pageUntilAddress, boundaryAddress), objectLogDevice: null);
+                    pageFromAddress = boundaryAddress;
+                }
+
+                if (pageFromAddress < pageUntilAddress)
+                    hlogBase.LoadObjectsForRecoveryPass2(page, pageFromAddress, pageUntilAddress, snapshotObjectLogDevice,
+                        recoveryStatus.objectLogRecoveryReadEnd);
             }
 
-            void GetRecoveryObjectLogReadState(RecoveryStatus status, long page, long exclusiveEndPage, IDevice snapshotDevice,
-                long snapshotBoundary, out IDevice readDevice, out ObjectLogFilePositionInfo nextPagePosition,
-                out ObjectLogFilePositionInfo hardReadEnd)
+            long CalculatePageObjectSizes(long page, long pageFromAddress, long pageUntilAddress)
             {
-                var isSnapshotPage = page >= snapshotBoundary;
-                var readsFromMain = isSnapshotPage && status.snapshotPageFlushedToMain[hlogBase.GetPageIndexForPage(page)];
-                readDevice = isSnapshotPage && !readsFromMain ? snapshotDevice : null;
-                nextPagePosition = readsFromMain ? default : GetNextPageObjectLogPosition(page, exclusiveEndPage, snapshotBoundary);
-                hardReadEnd = isSnapshotPage && !readsFromMain ? status.objectLogRecoveryReadEnd : default;
+                var pageIndex = hlogBase.GetPageIndexForPage(page);
+                if (page != snapshotBoundaryPage || recoveryStatus.snapshotPageFlushedToMain[pageIndex])
+                    return hlogBase.CalculatePageObjectSizes(page, pageFromAddress, pageUntilAddress);
+
+                // Main- and snapshot-object-log positions are unrelated address spaces. Size each side independently
+                // so neither the budget estimate nor its final-record hint treats the first record across the boundary as a successor.
+                var boundaryAddress = recoveryStatus.snapshotScanFromAddress;
+                var mainSize = pageFromAddress < boundaryAddress
+                    ? hlogBase.CalculatePageObjectSizes(page, pageFromAddress, Math.Min(pageUntilAddress, boundaryAddress))
+                    : 0;
+                var snapshotSize = pageUntilAddress > boundaryAddress
+                    ? hlogBase.CalculatePageObjectSizes(page, Math.Max(pageFromAddress, boundaryAddress), pageUntilAddress)
+                    : 0;
+                return checked(mainSize + snapshotSize);
             }
         }
 
@@ -1256,7 +1285,7 @@ namespace Tsavorite.core
                     pageUntilAddressOffset = hlogBase.GetOffsetOnPage(untilAddress);
 
                 _ = RecoverFromPage(recoverFromAddress, pageFromAddressOffset, pageUntilAddressOffset, startLogicalAddressOfPage, startPhysicalAddressOfPage,
-                    options, recoveryStatus.objectLogRecoveryDevice, recoveryStatus.objectLogRecoveryReadEnd);
+                    options, isSnapshotPage: true, recoveryStatus.objectLogRecoveryDevice, recoveryStatus.objectLogRecoveryReadEnd);
             }
 
             recoveryStatus.flushStatus[pageIndex] = FlushStatus.Done;
@@ -1281,6 +1310,8 @@ namespace Tsavorite.core
             var endOffset = (untilAddress < endLogicalAddress) ? hlogBase.GetOffsetOnPage(untilAddress) : pageSize;
 
             long recordOffset = hlogBase.pageHeaderSize;
+            if (snapshotFromAddress > startLogicalAddress && snapshotFromAddress < endLogicalAddress)
+                recordOffset = Math.Max(recordOffset, hlogBase.GetOffsetOnPage(snapshotFromAddress));
             while (recordOffset < endOffset)
             {
                 var logRecord = new LogRecord(physicalAddress + recordOffset);
@@ -1323,6 +1354,9 @@ namespace Tsavorite.core
         /// <param name="pageStartLogicalAddress">The logical address of the start of the page</param>
         /// <param name="pageStartPhysicalAddress">The physical address of the start of the page</param>
         /// <param name="options">Recovery options</param>
+        /// <param name="isSnapshotPage">Whether this page came from the Snapshot file. Snapshot fuzzy v+1 records were historically
+        /// invalid in that file and must be rejected before any key or object-log access, independently of FoldOver's
+        /// <see cref="RecoveryOptions.undoNextVersion"/> option.</param>
         /// <param name="objectLogRecoveryDevice">The object-log device to read overflow keys from during index build: <c>null</c> for the
         /// main object log (FoldOver/hybrid-log pages), or the snapshot object-log device for snapshot pages. Only used when a record has an
         /// overflow key (whose bytes are not yet in the transient objectIdMap during Pass 1).</param>
@@ -1331,7 +1365,7 @@ namespace Tsavorite.core
         /// <returns>True if we touched the page (and thus it needs to be flushed), else false</returns>
         private unsafe bool RecoverFromPage(long recoverFromAddress, long pageFromAddressOffset, long pageUntilAddressOffset,
                                      long pageStartLogicalAddress, long pageStartPhysicalAddress, in RecoveryOptions options,
-                                     IDevice objectLogRecoveryDevice, ObjectLogFilePositionInfo objectLogRecoveryReadEnd)
+                                     bool isSnapshotPage, IDevice objectLogRecoveryDevice, ObjectLogFilePositionInfo objectLogRecoveryReadEnd)
         {
             Debug.Assert(pageFromAddressOffset >= hlogBase.pageHeaderSize, $"fromLogicalAddressInPage {pageFromAddressOffset} must be >= hlogBase.pageHeaderSize {hlogBase.pageHeaderSize} (which may be 0)");
             Debug.Assert(pageUntilAddressOffset <= hlogBase.GetPageSize(), $"pageSize {pageUntilAddressOffset} must be <= PageSize {hlogBase.GetPageSize()}");
@@ -1351,6 +1385,17 @@ namespace Tsavorite.core
 
                 if (!info.Invalid)
                 {
+                    var recordLogicalAddress = pageStartLogicalAddress + recordOffset;
+                    if (isSnapshotPage && recordLogicalAddress >= options.fuzzyRegionStartAddress && info.IsInNewVersion)
+                    {
+                        // Snapshot flush leaves the live v+1 record intact. Recreate the historical snapshot image semantics before
+                        // hashing an overflow key or reading any payload: only the stable RDH allocation is needed to reach the next record.
+                        touched = true;
+                        info.SetInvalid();
+                        recordOffset += logRecord.AllocatedSize;
+                        continue;
+                    }
+
                     // During Pass 1 the transient objectIdMap is not yet populated, so an overflow key cannot be resolved via LogRecord.Key
                     // (that would NRE on a null objectIdMap). Read its bytes on demand from the object log to compute the hash; inline keys
                     // hash directly from the record image.
@@ -1360,7 +1405,7 @@ namespace Tsavorite.core
                     HashEntryInfo hei = new(keyHashCode);
                     FindOrCreateTag(ref hei, hlogBase.BeginAddress);
 
-                    if ((pageStartLogicalAddress + recordOffset) < options.fuzzyRegionStartAddress || !info.IsInNewVersion || !options.undoNextVersion)
+                    if (recordLogicalAddress < options.fuzzyRegionStartAddress || !info.IsInNewVersion || !options.undoNextVersion)
                     {
                         // Update the hash table with this record
                         hei.entry.Set(pageStartLogicalAddress + recordOffset, hei.tag);
@@ -1505,6 +1550,7 @@ namespace Tsavorite.core
 
             // Set the page status to "read done"
             var result = (PageAsyncReadResult<RecoveryStatus>)context;
+            result.RestorePreservedPagePrefix();
 
             var pageIndex = GetPageIndexForPage(result.page);
             if (errorCode != 0)

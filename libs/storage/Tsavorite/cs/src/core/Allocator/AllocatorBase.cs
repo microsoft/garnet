@@ -37,7 +37,7 @@ namespace Tsavorite.core
         internal virtual long CalculatePageObjectSizes(long page, long startAddress, long untilAddress) => 0;
         /// <summary>Load objects for records on an already-loaded page for recovery pass 2.</summary>
         internal virtual void LoadObjectsForRecoveryPass2(long page, long fromAddress, long untilAddress, IDevice objectLogDevice,
-            ObjectLogFilePositionInfo nextPageObjectLogPosition, ObjectLogFilePositionInfo hardReadEndPosition = default)
+            ObjectLogFilePositionInfo hardReadEndPosition = default)
         { }
 
         /// <summary>Return the first object-log position recorded in the header of <paramref name="page"/>, or an unset position when
@@ -1676,16 +1676,34 @@ namespace Tsavorite.core
         /// <param name="desiredHeadAddress"></param>
         public long ShiftHeadAddress(long desiredHeadAddress)
         {
-            // Obtain local values of variables that can change
-            var currentFlushedUntilAddress = FlushedUntilAddress;
+            long newHeadAddress;
+            bool updated;
+            var coordination = IsNullDevice ? Volatile.Read(ref snapshotFlushCoordination) : null;
+            if (coordination is null || coordination.IsTerminal)
+            {
+                // Real devices need no Snapshot lock: FlushedUntilAddress already carries the watermark restriction
+                // into this HeadAddress cap. NullDevice uses the lock only while nonterminal coordination is installed.
+                var currentFlushedUntilAddress = FlushedUntilAddress;
+                newHeadAddress = desiredHeadAddress;
+                if (newHeadAddress > currentFlushedUntilAddress)
+                    newHeadAddress = currentFlushedUntilAddress;
+                updated = MonotonicUpdate(ref HeadAddress, newHeadAddress, out _);
+            }
+            else
+            {
+                lock (snapshotFlushSync)
+                {
+                    // PREPARE publishes coordination before its epoch barrier and WAIT_FLUSH arms it only after that
+                    // barrier. Thus a no-coordination fast-path shift completes before a newly published gate can arm.
+                    var currentFlushedUntilAddress = FlushedUntilAddress;
+                    newHeadAddress = CapHeadAddressForSnapshot(desiredHeadAddress);
+                    if (newHeadAddress > currentFlushedUntilAddress)
+                        newHeadAddress = currentFlushedUntilAddress;
+                    updated = MonotonicUpdate(ref HeadAddress, newHeadAddress, out _);
+                }
+            }
 
-            // Cap the new head address at the last flushed address.
-            var newHeadAddress = desiredHeadAddress;
-            if (newHeadAddress > currentFlushedUntilAddress)
-                newHeadAddress = currentFlushedUntilAddress;
-
-            // Note: Currently nothing needs to be done if HeadAddress advancement is at a finer grain than page-level.
-            if (MonotonicUpdate(ref HeadAddress, newHeadAddress, out _))
+            if (updated)
             {
                 // Debug.WriteLine("Allocate: Moving head offset from {0:X} to {1:X}", oldHeadAddress, newHeadAddress);
                 epoch.BumpCurrentEpoch(() => OnPagesClosed(newHeadAddress));
@@ -1845,23 +1863,34 @@ namespace Tsavorite.core
         /// <summary>Read pages from specified device(s) for recovery, with no output of the countdown event (but it is still created in the
         ///     <see cref="PageAsyncReadResult{TContext}"/> and thus must be Dispose()d).</summary>
         internal void AsyncReadPagesForRecovery<TContext>(long readPageStart, int numPages, long untilAddress, TContext context,
-            long devicePageOffset = 0, IDevice logDevice = null, IDevice objectLogDevice = null, RecoveryPhase recoveryPhase = RecoveryPhase.Pass1)
-            => AsyncReadPagesForRecovery(readPageStart, numPages, untilAddress, context, out _, devicePageOffset, logDevice, objectLogDevice, recoveryPhase);
+            long devicePageOffset = 0, IDevice logDevice = null, IDevice objectLogDevice = null, RecoveryPhase recoveryPhase = RecoveryPhase.Pass1,
+            long mergeFromAddress = -1)
+            => AsyncReadPagesForRecovery(readPageStart, numPages, untilAddress, context, out _, devicePageOffset, logDevice, objectLogDevice,
+                recoveryPhase, mergeFromAddress);
 
         /// <summary>Read pages from specified device for recovery, returning the countdown event</summary>
         [MethodImpl(MethodImplOptions.NoInlining)]
         private void AsyncReadPagesForRecovery<TContext>(long readPageStart, int numPages, long untilAddress, TContext context,
-            out CountdownEvent completed, long devicePageOffset = 0, IDevice logDevice = null, IDevice objectLogDevice = null, RecoveryPhase recoveryPhase = RecoveryPhase.Pass1)
+            out CountdownEvent completed, long devicePageOffset = 0, IDevice logDevice = null, IDevice objectLogDevice = null,
+            RecoveryPhase recoveryPhase = RecoveryPhase.Pass1, long mergeFromAddress = -1)
         {
             var usedDevice = logDevice ?? this.device;
+            var mergePage = mergeFromAddress >= 0 ? GetPage(mergeFromAddress) : -1;
+            Debug.Assert(mergeFromAddress < 0 || recoveryPhase == RecoveryPhase.Pass1,
+                "Snapshot suffix merge is performed during recovery Pass 1");
 
             completed = new CountdownEvent(numPages);
             for (long readPage = readPageStart; readPage < (readPageStart + numPages); readPage++)
             {
                 var pageIndex = (int)(readPage % BufferSize);
+                var mergeSnapshotSuffix = readPage == mergePage;
                 if (!IsAllocated(pageIndex))
+                {
+                    if (mergeSnapshotSuffix && GetOffsetOnPage(mergeFromAddress) > 0)
+                        throw new TsavoriteException($"Cannot merge snapshot suffix at {mergeFromAddress}: main-log page {readPage} is not resident");
                     _wrapper.AllocatePage(pageIndex);
-                else
+                }
+                else if (!mergeSnapshotSuffix)
                     ClearPage(readPage, offset: 0);
 
                 var asyncResult = new PageAsyncReadResult<TContext>()
@@ -1890,6 +1919,29 @@ namespace Tsavorite.core
                 if (logDevice != null)
                     offsetInFile = (ulong)(AlignedPageSizeBytes * (readPage - devicePageOffset));
 
+                var destinationPtr = (IntPtr)pagePointers[pageIndex];
+                if (mergeSnapshotSuffix)
+                {
+                    var mergeOffset = GetOffsetOnPage(mergeFromAddress);
+                    var alignedMergeOffset = RoundDown(mergeOffset, sectorSize);
+                    var prefixLength = (int)(mergeOffset - alignedMergeOffset);
+                    if (prefixLength > 0)
+                    {
+                        var preservedPrefix = bufferPool.Get(sectorSize, clearOnReturn: false);
+                        new ReadOnlySpan<byte>((byte*)destinationPtr + alignedMergeOffset, prefixLength)
+                            .CopyTo(preservedPrefix.TotalValidSpan);
+                        asyncResult.preservedPagePrefix = preservedPrefix;
+                        asyncResult.preservedPagePrefixDestination = destinationPtr + (int)alignedMergeOffset;
+                        asyncResult.preservedPagePrefixLength = prefixLength;
+                    }
+
+                    offsetInFile += (ulong)alignedMergeOffset;
+                    destinationPtr += (int)alignedMergeOffset;
+                    readLength -= (uint)alignedMergeOffset;
+                }
+
+                asyncResult.destinationPtr = destinationPtr;
+
                 if (recoveryPhase == RecoveryPhase.Pass2)
                 {
                     // Create separate readBuffers for each main-log page, as each page launches its own async read and callbacks are on different threads.
@@ -1898,7 +1950,17 @@ namespace Tsavorite.core
                 }
 
                 // Call the overridden ReadAsync for the derived allocator class
-                ReadAsync(offsetInFile, (IntPtr)pagePointers[pageIndex], readLength, AsyncReadPagesForRecoveryCallback, asyncResult, usedDevice);
+                try
+                {
+                    ReadAsync(offsetInFile, destinationPtr, readLength, AsyncReadPagesForRecoveryCallback, asyncResult, usedDevice);
+                }
+                catch
+                {
+                    asyncResult.Free();
+                    asyncResult.readBuffers?.Dispose();
+                    asyncResult.readBuffers = null;
+                    throw;
+                }
             }
         }
 
@@ -2089,8 +2151,9 @@ namespace Tsavorite.core
         /// <param name="completedTask">Task that completes when all pages are flushed, or faults if an exception occurs</param>
         /// <param name="throttleCheckpointFlushDelayMs"></param>
         [MethodImpl(MethodImplOptions.NoInlining)]
-        public void AsyncFlushPagesForSnapshot(CircularDiskWriteBuffer flushBuffers, long startPage, long endPage, long startLogicalAddress, long endLogicalAddress,
-            long fuzzyStartLogicalAddress, IDevice logDevice, IDevice objectLogDevice, out Task completedTask, int throttleCheckpointFlushDelayMs)
+        internal void AsyncFlushPagesForSnapshot(CircularDiskWriteBuffer flushBuffers, long startPage, long endPage, long startLogicalAddress, long endLogicalAddress,
+            long fuzzyStartLogicalAddress, IDevice logDevice, IDevice objectLogDevice, SnapshotFlushCoordination coordination,
+            out Task completedTask, int throttleCheckpointFlushDelayMs)
         {
             logger?.LogTrace("Starting async full log flush with throttling {throttlingEnabled}", throttleCheckpointFlushDelayMs >= 0 ? $"enabled ({throttleCheckpointFlushDelayMs}ms)" : "disabled");
 
@@ -2107,7 +2170,7 @@ namespace Tsavorite.core
             {
                 var totalNumPages = (int)(endPage - startPage);
 
-                var flushCompletionTracker = new FlushCompletionTracker(completionTcs, enableThrottling: throttleCheckpointFlushDelayMs >= 0, totalNumPages);
+                var flushCompletionTracker = new FlushCompletionTracker(completionTcs, enableThrottling: true, totalNumPages);
 
                 try
                 {
@@ -2130,6 +2193,7 @@ namespace Tsavorite.core
                             // satisfied by this page's release.
                             flushCompletionTracker.CompleteFlush();
                             flushCompletionTracker.WaitOneFlush();
+                            coordination.CompletePage(flushPage);
                             continue;
                         }
 
@@ -2141,35 +2205,28 @@ namespace Tsavorite.core
                             untilAddress = flushEndAddress,
                             count = 1,
                             flushRequestState = FlushRequestState.Snapshot,
-                            flushBuffers = flushBuffers
+                            flushBuffers = flushBuffers,
+                            snapshotFlushCoordination = coordination
                         };
 
                         // Intended destination is flushPage
                         WriteAsyncToDeviceForSnapshot(startPage, flushPage, (int)flushSize, AsyncFlushPageForSnapshotCallback, asyncResult, logDevice, objectLogDevice, fuzzyStartLogicalAddress);
 
-                        // If we did not issue a flush write (due to HeadAddress moving past flushPage), then WriteAsync set isForSnapshot false and we release the asyncResult here;
-                        // otherwise, we wait for the completion of the flush (and the callback will release the asyncResult).
-                        if (asyncResult.flushRequestState != FlushRequestState.WriteNotIssued)
-                        {
-                            if (throttleCheckpointFlushDelayMs >= 0)
-                            {
-                                flushCompletionTracker.WaitOneFlush();
-                                Thread.Sleep(throttleCheckpointFlushDelayMs);
-                            }
-                        }
-                        else
-                        {
-                            _ = asyncResult.Release();
-                            // Release() called CompleteFlush() which released the throttle semaphore.
-                            // Drain it so the next real page's WaitOneFlush is not satisfied by this no-op.
-                            flushCompletionTracker.WaitOneFlush();
-                        }
+                        flushCompletionTracker.WaitOneFlush();
+                        if (throttleCheckpointFlushDelayMs >= 0)
+                            Thread.Sleep(throttleCheckpointFlushDelayMs);
                     }
+                    coordination.Complete(endPage);
                 }
                 catch (Exception ex)
                 {
                     logger?.LogError(ex, "{method} failed while flushing snapshot pages from {startPage} to {endPage}", nameof(AsyncFlushPagesForSnapshot), startPage, endPage);
+                    coordination.Fail(ex);
                     flushCompletionTracker.SetException(ex);
+                }
+                finally
+                {
+                    ClearSnapshotFlushCoordination(coordination);
                 }
             }
         }
@@ -2243,7 +2300,7 @@ namespace Tsavorite.core
                 readLength = (uint)(adjustedUntilAddress - (long)offsetInFile);
                 // Record the scan's true end (untilAddress) before rounding up to a sector boundary: the object-record walk must
                 // stop here. untilAddress can be mid-page, so the sector-aligned read pulls in records that lie ABOVE the requested
-                // range and can straddle the read end -- their ObjectLogPosition word and R11 value-length high bits then fall past
+                // range and can straddle the read end -- their ObjectLogPosition word and raw RDH ValueLength bits then fall past
                 // the bytes actually transferred and are read from the un-read (only incidentally zeroed) buffer tail, yielding a
                 // bogus position/length. Such records must not be parsed as in-range records.
                 asyncResult.maxAddressOffsetOnPage = readLength;
@@ -2441,21 +2498,35 @@ namespace Tsavorite.core
 
                 // Set the page status to flushed
                 var result = (PageAsyncFlushResult<Empty>)context;
+                errorCode = result.RecordError(errorCode);
 
                 if (result.Release() == 0)
                 {
-                    if (errorCode != 0)
+                    try
                     {
-                        // Note down error details and trigger handling only when we are certain this is the earliest error among currently issued flushes
-                        errorList.Add(new CommitInfo { FromAddress = result.fromAddress, UntilAddress = result.untilAddress, ErrorCode = errorCode });
-                    }
-                    else
-                    {
-                        // There is no failure so update the page's last flushed until address.
-                        _ = MonotonicUpdate(ref PageStatusIndicator[result.page % BufferSize].LastFlushedUntilAddress, result.untilAddress, out _);
-                    }
+                        if (errorCode != 0)
+                        {
+                            // Note down error details and trigger handling only when we are certain this is the earliest error among currently issued flushes
+                            errorList.Add(new CommitInfo { FromAddress = result.fromAddress, UntilAddress = result.untilAddress, ErrorCode = errorCode });
+                        }
+                        else
+                        {
+                            // There is no failure so update the page's last flushed until address.
+                            _ = MonotonicUpdate(ref PageStatusIndicator[result.page % BufferSize].LastFlushedUntilAddress, result.untilAddress, out _);
+                        }
 
-                    ShiftFlushedUntilAddress();
+                        ShiftFlushedUntilAddress();
+                    }
+                    finally
+                    {
+                        // Keep the claim through publication so Snapshot installation cannot capture its start while
+                        // this callback still has a pending FlushedUntilAddress advance.
+                        if (result.hasReadOnlyFlushClaim)
+                        {
+                            result.hasReadOnlyFlushClaim = false;
+                            ReleaseReadOnlyPageFlush();
+                        }
+                    }
                 }
 
                 // Continue the chained flushes, popping the next request from the queue if it is adjacent.
@@ -2497,60 +2568,22 @@ namespace Tsavorite.core
         {
             try
             {
+                var result = (PageAsyncFlushResult<Empty>)context;
+                errorCode = result.RecordError(errorCode);
                 if (errorCode != 0)
                 {
                     logger?.LogError("AsyncFlushPageToDeviceCallback error: {errorCode}", errorCode);
 
                     // Fault the snapshot's flush-completion so the checkpoint fails rather than committing a snapshot with
                     // an unwritten page; the Release() below still frees buffers and its CompleteFlush becomes a no-op.
-                    ((PageAsyncFlushResult<Empty>)context).flushCompletionTracker?.SetException(
-                        new TsavoriteException($"Snapshot page flush failed with error code {errorCode}"));
+                    var exception = new TsavoriteException($"Snapshot page flush failed with error code {errorCode}");
+                    result.snapshotFlushCoordination?.Fail(exception);
+                    result.flushCompletionTracker?.SetException(exception);
                 }
 
-                var result = (PageAsyncFlushResult<Empty>)context;
-                var epochTaken = epoch.ResumeIfNotProtected();
-
-                try
-                {
-                    var startAddress = GetLogicalAddressOfStartOfPage(result.page);
-                    var endAddress = startAddress + PageSize;
-
-                    // First make sure we're not trying to process a logical address that's in a page header.
-                    startAddress += PageHeader.Size;
-
-                    if (result.fromAddress > startAddress)
-                        startAddress = result.fromAddress;
-                    if (result.untilAddress < endAddress)
-                        endAddress = result.untilAddress;
-
-                    var _readOnlyAddress = SafeReadOnlyAddress;
-                    if (_readOnlyAddress > startAddress)
-                        startAddress = _readOnlyAddress;
-                    if (_readOnlyAddress > endAddress)
-                        endAddress = _readOnlyAddress;
-
-                    var flushWidth = (int)(endAddress - startAddress);
-
-                    if (flushWidth > 0)
-                    {
-                        var physicalAddress = GetPhysicalAddress(startAddress);
-                        var endPhysicalAddress = physicalAddress + flushWidth;
-
-                        while (physicalAddress < endPhysicalAddress)
-                        {
-                            var logRecord = _wrapper.CreateLogRecord(startAddress);
-                            var alignedRecordSize = logRecord.AllocatedSize;
-                            physicalAddress += alignedRecordSize;
-                            startAddress += alignedRecordSize;
-                        }
-                    }
-                }
-                finally
-                {
-                    if (epochTaken)
-                        epoch.Suspend();
-                    _ = result.Release();
-                }
+                var finalWrite = result.Release() == 0;
+                if (finalWrite && errorCode == 0)
+                    result.snapshotFlushCoordination?.CompletePage(result.page);
             }
             catch when (disposed) { }
         }

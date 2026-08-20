@@ -52,11 +52,12 @@ namespace Tsavorite.test.recovery.objects
 
         [Test]
         [Category("TsavoriteKV"), Category("CheckpointRestore")]
-        public async Task SnapshotFlushesStablePrefixBeforeCopyingFuzzyRegion()
+        public async Task SnapshotDoesNotAdvanceReadOnlyAddress()
         {
             var logMemorySize = 64L * MinKvLogPageSize;
             Guid token;
-            long flushedBeforeCheckpoint;
+            long flushedObservedDuringCheckpoint;
+            long readOnlyBeforeSnapshotFlush;
 
             Prepare(logMemorySize, out var log, out var objlog, out var store);
             try
@@ -67,7 +68,6 @@ namespace Tsavorite.test.recovery.objects
                     for (var i = 0; i < NumStable; i++)
                         _ = bContext.Upsert(new TestObjectKey { key = i }, new TestObjectValue { value = i });
 
-                    flushedBeforeCheckpoint = store.Log.FlushedUntilAddress;
                     ClassicAssert.IsTrue(store.TryInitiateHybridLogCheckpoint(out token, CheckpointType.Snapshot), "failed to initiate Snapshot checkpoint");
 
                     var guard = 0;
@@ -83,9 +83,12 @@ namespace Tsavorite.test.recovery.objects
 
                     for (var i = NumStable; i < NumStable + NumFuzzy; i++)
                         _ = bContext.Upsert(new TestObjectKey { key = i }, new TestObjectValue { value = i });
+                    flushedObservedDuringCheckpoint = store.Log.FlushedUntilAddress;
+                    readOnlyBeforeSnapshotFlush = store.Log.ReadOnlyAddress;
                 }
 
                 await store.CompleteCheckpointAsync().AsTask().ConfigureAwait(false);
+                Assert.That(store.Log.ReadOnlyAddress, Is.EqualTo(readOnlyBeforeSnapshotFlush));
             }
             finally
             {
@@ -97,9 +100,7 @@ namespace Tsavorite.test.recovery.objects
                 new DeviceLogCommitCheckpointManager(
                     new LocalStorageNamedDeviceFactoryCreator(),
                     new DefaultCheckpointNamingScheme(new DirectoryInfo(Path.Combine(MethodTestDir, "check-points")).FullName)));
-            var fuzzyStartPageAddress = checkpointInfo.startLogicalAddress & ~(MinKvLogPageSize - 1);
-            Assert.That(checkpointInfo.snapshotStartFlushedLogicalAddress, Is.EqualTo(fuzzyStartPageAddress));
-            Assert.That(checkpointInfo.snapshotStartFlushedLogicalAddress, Is.GreaterThan(flushedBeforeCheckpoint));
+            Assert.That(checkpointInfo.snapshotStartFlushedLogicalAddress, Is.LessThanOrEqualTo(flushedObservedDuringCheckpoint));
 
             Prepare(logMemorySize, out log, out objlog, out store);
             try
@@ -116,6 +117,174 @@ namespace Tsavorite.test.recovery.objects
                 }
 
                 for (var i = NumStable; i < NumStable + NumFuzzy; i++)
+                    ClassicAssert.IsFalse(TryReadValue(bContext, i, out _), $"fuzzy key {i} was not undone");
+            }
+            finally
+            {
+                Destroy(log, objlog, store);
+            }
+        }
+
+        [Test]
+        [Category("TsavoriteKV"), Category("CheckpointRestore")]
+        public async Task SnapshotRecoveryMergesSuffixAtFlushedBoundary()
+        {
+            const int candidateStartRecord = 5000;
+            const int numRecords = 8000;
+            var logMemorySize = 2048L * MinKvLogPageSize;
+            long snapshotStartFlushedLogicalAddress = 0, flushedLogicalAddress = 0;
+            long snapshotStartPage = 0;
+            uint sectorSize = 0;
+            Guid token;
+
+            Prepare(logMemorySize, out var log, out var objlog, out var store, throttleCheckpointFlushDelayMs: 5);
+            try
+            {
+                using var session = store.NewSession<TestObjectKey, TestObjectInput, TestObjectOutput, Empty, TestObjectFunctions>(new TestObjectFunctions());
+                var bContext = session.BasicContext;
+
+                for (var i = 0; i < numRecords; i++)
+                {
+                    _ = bContext.Upsert(new TestObjectKey { key = i }, new TestObjectValue { value = i });
+                    var tail = store.Log.TailAddress;
+                    var offset = store.hlogBase.GetOffsetOnPage(tail);
+
+                    if (i >= candidateStartRecord && snapshotStartFlushedLogicalAddress == 0 && tail > store.Log.ReadOnlyAddress
+                        && offset > log.SectorSize && offset < MinKvLogPageSize - (2 * log.SectorSize)
+                        && offset % log.SectorSize != 0)
+                    {
+                        snapshotStartFlushedLogicalAddress = tail;
+                    }
+                    else if (snapshotStartFlushedLogicalAddress != 0 && flushedLogicalAddress == 0
+                        && store.hlogBase.GetPage(tail) == store.hlogBase.GetPage(snapshotStartFlushedLogicalAddress)
+                        && tail > snapshotStartFlushedLogicalAddress
+                        && offset < MinKvLogPageSize - log.SectorSize && offset % log.SectorSize != 0)
+                    {
+                        flushedLogicalAddress = tail;
+                    }
+                }
+
+                Assert.That(snapshotStartFlushedLogicalAddress, Is.GreaterThan(0),
+                    "failed to find an unaligned snapshotStartFlushedLogicalAddress record boundary");
+                Assert.That(flushedLogicalAddress, Is.GreaterThan(snapshotStartFlushedLogicalAddress),
+                    "failed to find a later unaligned flushedLogicalAddress record boundary on the same page");
+                snapshotStartPage = store.hlogBase.GetPage(snapshotStartFlushedLogicalAddress);
+                sectorSize = log.SectorSize;
+                store.Log.ShiftReadOnlyAddress(snapshotStartFlushedLogicalAddress, wait: true);
+
+                ClassicAssert.IsTrue(store.TryInitiateHybridLogCheckpoint(out token, CheckpointType.Snapshot),
+                    "failed to initiate Snapshot checkpoint");
+
+                var guard = 0;
+                while (store.SystemState.Phase != Phase.WAIT_FLUSH)
+                {
+                    bContext.Refresh();
+                    if (++guard > 1_000_000)
+                    {
+                        Assert.Fail($"state machine never reached WAIT_FLUSH (stuck at {store.SystemState.Phase})");
+                        return;
+                    }
+                }
+
+                store.Log.ShiftReadOnlyAddress(flushedLogicalAddress, wait: true);
+                await store.CompleteCheckpointAsync().AsTask().ConfigureAwait(false);
+            }
+            finally
+            {
+                Destroy(log, objlog, store);
+            }
+
+            var checkpointInfo = default(HybridLogRecoveryInfo);
+            checkpointInfo.Recover(token,
+                new DeviceLogCommitCheckpointManager(
+                    new LocalStorageNamedDeviceFactoryCreator(),
+                    new DefaultCheckpointNamingScheme(new DirectoryInfo(Path.Combine(MethodTestDir, "check-points")).FullName)));
+            Assert.Multiple(() =>
+            {
+                Assert.That(checkpointInfo.snapshotStartFlushedLogicalAddress, Is.EqualTo(snapshotStartFlushedLogicalAddress));
+                Assert.That(checkpointInfo.flushedLogicalAddress, Is.EqualTo(flushedLogicalAddress));
+                Assert.That(checkpointInfo.flushedLogicalAddress % sectorSize, Is.Not.Zero);
+                Assert.That(checkpointInfo.flushedLogicalAddress / MinKvLogPageSize, Is.EqualTo(snapshotStartPage));
+            });
+
+            Prepare(logMemorySize, out log, out objlog, out store);
+            try
+            {
+                _ = await store.RecoverAsync(default, token).ConfigureAwait(false);
+
+                using var session = store.NewSession<TestObjectKey, TestObjectInput, TestObjectOutput, Empty, TestObjectFunctions>(new TestObjectFunctions());
+                var bContext = session.BasicContext;
+                for (var i = 0; i < numRecords; i++)
+                {
+                    var found = TryReadValue(bContext, i, out var value);
+                    ClassicAssert.IsTrue(found, $"recovered key {i} not found");
+                    ClassicAssert.AreEqual(i, value, $"recovered key {i} has wrong value");
+                }
+            }
+            finally
+            {
+                Destroy(log, objlog, store);
+            }
+        }
+
+        [Test]
+        [Category("TsavoriteKV"), Category("CheckpointRestore")]
+        public async Task NullDeviceSnapshotKeepsActivePageResident()
+        {
+            const int stableCount = 200;
+            const int fuzzyCount = 3000;
+            var logMemorySize = 8L * MinKvLogPageSize;
+            Guid token;
+
+            Prepare(logMemorySize, out var log, out var objlog, out var store,
+                throttleCheckpointFlushDelayMs: 5, useNullMainDevices: true);
+            try
+            {
+                using var session = store.NewSession<TestObjectKey, TestObjectInput, TestObjectOutput, Empty, TestObjectFunctions>(new TestObjectFunctions());
+                var bContext = session.BasicContext;
+                for (var i = 0; i < stableCount; i++)
+                    _ = bContext.Upsert(new TestObjectKey { key = i }, new TestObjectValue { value = i });
+
+                Assert.That(store.hlogBase.HeadAddress, Is.LessThanOrEqualTo(store.hlogBase.GetFirstValidLogicalAddressOnPage(0)),
+                    "stable setup evicted records before Snapshot began");
+                ClassicAssert.IsTrue(store.TryInitiateHybridLogCheckpoint(out token, CheckpointType.Snapshot),
+                    "failed to initiate Snapshot checkpoint");
+
+                var guard = 0;
+                while (store.SystemState.Phase != Phase.WAIT_FLUSH)
+                {
+                    bContext.Refresh();
+                    if (++guard > 1_000_000)
+                    {
+                        Assert.Fail($"state machine never reached WAIT_FLUSH (stuck at {store.SystemState.Phase})");
+                        return;
+                    }
+                }
+
+                for (var i = stableCount; i < stableCount + fuzzyCount; i++)
+                    _ = bContext.Upsert(new TestObjectKey { key = i }, new TestObjectValue { value = i });
+
+                await store.CompleteCheckpointAsync().AsTask().ConfigureAwait(false);
+            }
+            finally
+            {
+                Destroy(log, objlog, store);
+            }
+
+            Prepare(logMemorySize, out log, out objlog, out store, useNullMainDevices: true);
+            try
+            {
+                _ = await store.RecoverAsync(default, token).ConfigureAwait(false);
+
+                using var session = store.NewSession<TestObjectKey, TestObjectInput, TestObjectOutput, Empty, TestObjectFunctions>(new TestObjectFunctions());
+                var bContext = session.BasicContext;
+                for (var i = 0; i < stableCount; i++)
+                {
+                    var found = TryReadValue(bContext, i, out var value);
+                    ClassicAssert.IsTrue(found, $"stable key {i} not found");
+                    ClassicAssert.AreEqual(i, value, $"stable key {i} has wrong value");
+                }
+                for (var i = stableCount; i < stableCount + fuzzyCount; i++)
                     ClassicAssert.IsFalse(TryReadValue(bContext, i, out _), $"fuzzy key {i} was not undone");
             }
             finally
@@ -346,10 +515,12 @@ namespace Tsavorite.test.recovery.objects
             return status.Found;
         }
 
-        private static void Prepare(long logMemorySize, out IDevice log, out IDevice objlog, out TsavoriteKV<ClassStoreFunctions, ClassAllocator> store)
+        private static void Prepare(long logMemorySize, out IDevice log, out IDevice objlog,
+            out TsavoriteKV<ClassStoreFunctions, ClassAllocator> store, int throttleCheckpointFlushDelayMs = -1,
+            bool useNullMainDevices = false)
         {
-            log = Devices.CreateLogDevice(Path.Combine(MethodTestDir, "undoreflush.log"));
-            objlog = Devices.CreateLogDevice(Path.Combine(MethodTestDir, "undoreflush.obj.log"));
+            log = useNullMainDevices ? new NullDevice() : Devices.CreateLogDevice(Path.Combine(MethodTestDir, "undoreflush.log"));
+            objlog = useNullMainDevices ? new NullDevice() : Devices.CreateLogDevice(Path.Combine(MethodTestDir, "undoreflush.obj.log"));
             store = new(new()
             {
                 IndexSize = 1L << 22,
@@ -358,7 +529,8 @@ namespace Tsavorite.test.recovery.objects
                 SegmentSize = 1L << 20,
                 LogMemorySize = logMemorySize,
                 PageSize = MinKvLogPageSize,
-                CheckpointDir = Path.Combine(MethodTestDir, "check-points")
+                CheckpointDir = Path.Combine(MethodTestDir, "check-points"),
+                ThrottleCheckpointFlushDelayMs = throttleCheckpointFlushDelayMs
             }, StoreFunctions.Create(new TestObjectKey.Comparer(), () => new TestObjectValue.Serializer())
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );

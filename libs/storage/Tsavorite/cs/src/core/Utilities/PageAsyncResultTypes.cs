@@ -37,6 +37,14 @@ namespace Tsavorite.core
         /// <summary>The destination pointer being read into.</summary>
         internal IntPtr destinationPtr;
 
+        /// <summary>
+        /// Main-log bytes below a snapshot suffix-merge boundary that share the first sector read from the snapshot file.
+        /// Restored after the device read so only bytes at or above the logical merge boundary replace the recovered main page.
+        /// </summary>
+        internal SectorAlignedMemory preservedPagePrefix;
+        internal IntPtr preservedPagePrefixDestination;
+        internal int preservedPagePrefixLength;
+
         /// <summary>The cancellation token source, if any, for the Read operation</summary>
         internal CancellationTokenSource cts;
 
@@ -56,14 +64,32 @@ namespace Tsavorite.core
         public override string ToString()
             => $"page {page}, recovPhase {recoveryPhase}, devPgOffset {devicePageOffset}, ctx {context}, countdown {handle?.CurrentCount}, destPtr {destinationPtr} (0x{destinationPtr:X}), maxPtr {maxAddressOffsetOnPage}";
 
-        /// <summary>Currently nothing to free.</summary>
-        public void Free()
+        internal unsafe void RestorePreservedPagePrefix()
         {
+            if (preservedPagePrefix is null)
+                return;
+
+            try
+            {
+                preservedPagePrefix.TotalValidSpan.Slice(0, preservedPagePrefixLength)
+                    .CopyTo(new Span<byte>((void*)preservedPagePrefixDestination, preservedPagePrefixLength));
+            }
+            finally
+            {
+                preservedPagePrefix.Return();
+                preservedPagePrefix = null;
+                preservedPagePrefixDestination = IntPtr.Zero;
+                preservedPagePrefixLength = 0;
+            }
         }
+
+        /// <summary>Release temporary read state.</summary>
+        public void Free() => RestorePreservedPagePrefix();
 
         /// <inheritdoc/>
         public void DisposeHandle()
         {
+            RestorePreservedPagePrefix();
             handle?.Dispose();
             handle = null;
             readBuffers?.Dispose();
@@ -86,10 +112,7 @@ namespace Tsavorite.core
 
         /// <summary>The flush is for <see cref="AllocatorBase{TStoreFunctions, TAllocator}.AsyncFlushPagesForSnapshot"/>, so we do not hold the epoch
         /// initially and thus must check to handle the case where HeadAddress increases out of the range of the flush</summary>
-        Snapshot,
-
-        /// <summary>The flush operation did not issue a write, likely because <see cref="Snapshot"/> is true and HeadAddress advanced beyond the page</summary>
-        WriteNotIssued
+        Snapshot
     }
 
     /// <summary>
@@ -109,6 +132,7 @@ namespace Tsavorite.core
 
         /// <summary>Count of active pending flush operations; the callback decrements this and when it hits 0, the overall flush operation is complete.</summary>
         public int count;
+        int firstErrorCode;
 
         /// <summary>If true, this is a flush of a partial page.</summary>
         internal bool partial;
@@ -121,11 +145,18 @@ namespace Tsavorite.core
 
         /// <summary>The record buffer, passed through the IO process to retain a reference to it so it will not be GC'd before the Flush write completes.</summary>
         internal SectorAlignedMemory freeBuffer1;
+        /// <summary>Optional second sector buffer for a split partial-page write.</summary>
+        internal SectorAlignedMemory freeBuffer2;
 
         /// <summary>The event that is signaled by the callback so any waiting thread knows the IO has completed.</summary>
         internal AutoResetEvent done;
 
         internal FlushCompletionTracker flushCompletionTracker;
+
+        /// <summary>Runtime-only Snapshot/ReadOnly page-ordering state. Set only for Snapshot page writes.</summary>
+        internal SnapshotFlushCoordination snapshotFlushCoordination;
+        /// <summary>Whether this ReadOnly page write holds an allocator flush-ordering claim.</summary>
+        internal bool hasReadOnlyFlushClaim;
 
         /// <summary>If this is set then we are using a different objectLog device from that in the allocator, and do not use the allocator's <see cref="ObjectLogFilePositionInfo"/>.</summary>
         internal ObjectLogFilePositionInfo objectLogFilePositionInfo;
@@ -162,10 +193,20 @@ namespace Tsavorite.core
             {
                 freeBuffer1?.Return();
                 freeBuffer1 = null;
+                freeBuffer2?.Return();
+                freeBuffer2 = null;
                 flushCompletionTracker?.CompleteFlush();
                 flushCompletionTracker = null;
             }
             return result;
+        }
+
+        /// <summary>Retain the first error reported by any write span in this page batch.</summary>
+        internal uint RecordError(uint errorCode)
+        {
+            if (errorCode != 0)
+                _ = Interlocked.CompareExchange(ref firstErrorCode, unchecked((int)errorCode), 0);
+            return unchecked((uint)Volatile.Read(ref firstErrorCode));
         }
     }
 

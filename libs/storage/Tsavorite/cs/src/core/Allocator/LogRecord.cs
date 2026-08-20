@@ -69,8 +69,8 @@ namespace Tsavorite.core
         public readonly RecordDataHeader DataHeader => *(RecordDataHeader*)DataHeaderAddress;
 
         /// <summary>Returns a ref to the in-memory <see cref="core.RecordDataHeader"/> for mutations.</summary>
-        /// <remarks>Private as of R9: external callers (and even most LogRecord methods) must not assign directly through
-        /// this ref. Build multi-field mutations on a local <see cref="RecordDataHeader"/> snapshot, then publish via
+        /// <remarks>External callers (and even most LogRecord methods) must not assign directly through this ref. Build
+        /// multi-field mutations on a local <see cref="RecordDataHeader"/> snapshot, then publish via
         /// <see cref="SetDataHeader"/>, which guarantees a single atomic 8-byte word write that scanners cannot observe
         /// in a half-updated state.</remarks>
         private readonly ref RecordDataHeader DataHeaderRef => ref *(RecordDataHeader*)DataHeaderAddress;

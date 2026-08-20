@@ -46,7 +46,7 @@ namespace Tsavorite.core
         /// submitted-IO high-water since the ring was initialized or last reset by <see cref="RepositionAfterDirectRead"/>.</summary>
         internal ObjectLogFilePositionInfo nextFileReadPosition;
 
-        /// <summary>Fixed exclusive endpoint of the caller's initial one-or-more-record range, clamped to
+        /// <summary>Fixed exclusive endpoint of the current record's initial hint range, clamped to
         /// <see cref="hardReadEndAddress"/>. This preserves caller-requested read-ahead while framing changes dynamic demand.</summary>
         ulong baseRequiredEndAddress;
 
@@ -71,6 +71,8 @@ namespace Tsavorite.core
         ulong RequiredEndAddress => Math.Max(baseRequiredEndAddress, dynamicRequiredEndAddress);
 
         internal uint SectorSize => objectLogDevice.SectorSize;
+        /// <summary>Total bytes that can be covered by one complete fill of the circular buffer.</summary>
+        internal ulong Capacity => (ulong)bufferSize * (uint)buffers.Length;
 
         /// <summary>Whether this ring reads from <paramref name="device"/>. The allocator uses this to apply its durable tail only to
         /// the main object-log address space; a snapshot device requires its own bound.</summary>
@@ -169,7 +171,7 @@ namespace Tsavorite.core
         /// Called when one or more records are to be read via ReadAsync.
         /// </summary>
         /// <param name="startFilePosition">The initial file position to read</param>
-        /// <param name="totalLength">Initial read extent for the one-or-more-record span. It may be based on size hints; framing can later
+        /// <param name="totalLength">Initial read extent for the current record(s). It may be based on size hints; framing can later
         /// extend or tighten demand through <see cref="SetDynamicReadThrough"/>.</param>
         /// <param name="hardReadEndPosition">Exclusive durable tail in the same object-log address space as
         /// <paramref name="startFilePosition"/>. Supply a position whose word is <see cref="ObjectLogFilePositionInfo.NotSet"/> and whose
@@ -177,8 +179,7 @@ namespace Tsavorite.core
         /// Neither case substitutes a tail from another object-log device.</param>
         internal void OnBeginReadRecords(ObjectLogFilePositionInfo startFilePosition, ulong totalLength, ObjectLogFilePositionInfo hardReadEndPosition)
         {
-            if (disposed)
-                throw new ObjectDisposedException(nameof(CircularDiskReadBuffer));
+            ObjectDisposedException.ThrowIf(disposed, nameof(CircularDiskReadBuffer));
 
             Debug.Assert(totalLength > 0, "TotalLength cannot be 0");
             if (startFilePosition.SegmentSizeBits != hardReadEndPosition.SegmentSizeBits)

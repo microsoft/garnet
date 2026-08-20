@@ -377,7 +377,7 @@ referenced object-log bytes are durable.
 ```mermaid
 flowchart LR
     A[ObjectAllocatorImpl.WriteAsync] --> B[walk page records]
-    B --> C[resolve overflow/object under epoch]
+    B --> C[resolve overflow/object from resident page map]
     C --> D[ObjectLogWriter.WriteRecordObjects]
     D --> E[SetObjectLogPositionAndSizeHints]
     E --> B
@@ -389,10 +389,11 @@ flowchart LR
 
 ### 5.2 Per-record serialization
 
-`ObjectAllocatorImpl.WriteAsync()` briefly enters epoch protection, re-checks `HeadAddress`, and resolves the objectId
-slots to stable `OverflowByteArray` / `IHeapObject` references. If `HeadAddress` overtook part of the requested range,
-the flush skips that retired prefix or abandons the write when the whole range was retired. Otherwise it drops the
-epoch before disk IO:
+`ObjectAllocatorImpl.WriteAsync()` resolves objectId slots to local `OverflowByteArray` / `IHeapObject` references.
+ReadOnly enters from an epoch callback and suspends that hold while serializing; Snapshot enters without epoch
+protection. Snapshot/ReadOnly ordering prevents `FlushedUntilAddress`, and therefore `HeadAddress`, from reaching the
+active Snapshot page on a real main-log device. For `NullDevice`, the same watermark directly caps `HeadAddress`.
+Thus the page and its `ObjectIdMap` remain resident without a Snapshot epoch pulse:
 
 - overflow key -> `ObjectLogWriter.WriteOverflowComponent()`;
 - overflow value -> `ObjectLogWriter.WriteOverflowComponent()`;
@@ -455,28 +456,58 @@ the 4 MB buffer or segment boundary because both are multiples of 8.
 ### 5.6 Buffer and callback lifetime
 
 `CircularDiskWriteBuffer` owns pooled `DiskWriteBuffer` instances. It tracks each buffer's completion plus a global
-in-flight count. `OnPartialFlushComplete()` sector-pads and flushes the last object-log buffer, then schedules the
-main-log page write. Disposal returns buffers only after their writes complete.
+in-flight count. `OnSplitPartialFlushComplete()` sector-pads and flushes the last object-log buffer, then schedules the
+direct and optional trailing main-log spans in the same completion batch. Disposal returns buffers only after their
+writes complete. `PageAsyncFlushResult.RecordError()` retains the first error even when split writes complete out of
+order.
 
-On the private-copy path, `PageAsyncFlushResult.freeBuffer1` keeps the aligned page copy alive through the device
-callback. On a live-page write, objectId hint stamping is index-preserving, but the broader concurrent-mutation safety
-requirements still apply; metadata non-destructiveness alone does not make every asynchronous live-page flush safe.
+The main-log write always uses the allocator's live page; objectId hint stamping is index-preserving, but metadata
+non-destructiveness alone is not sufficient. Recovery has exclusive access. Snapshot/ReadOnly coordination keeps the
+page resident and prevents those modes from stamping the same page concurrently.
 
-### 5.7 Snapshot stable-prefix flush
+A front-partial ReadOnly flush starts after a prefix already written by the same monotonic flush sequence. The physical
+write rounds down to the sector boundary and rewrites that prefix from the live page; those records already carry
+main-object-log positions, so no leading-sector read or page image is needed. Complete sectors are written directly.
+If the logical endpoint is inside a sector, one pooled sector buffer copies live bytes through that endpoint and zeros
+the remainder. The zero suffix prevents metadata above the main-log durable boundary from looking valid if recovery
+boundaries ever become inconsistent; a later ReadOnly flush overwrites it.
 
-At `PREPARE`, `startLogicalAddress` captures the exact tail that starts the fuzzy region. At `WAIT_FLUSH`, a snapshot
-checkpoint rounds that address down to its page start and advances the ordinary read-only flush to that page boundary.
-Complete stable pages below the boundary therefore use the normal main-log flush path: immutable live page bytes can be
-written without a page copy, and their object positions continue to address the main object log.
+### 5.7 Snapshot and ReadOnly page ordering
 
-The page containing `startLogicalAddress` remains entirely in the snapshot region even when it begins with stable records.
-Snapshot serialization copies that whole page and rewrites every object position on it into the snapshot object-log address
-space. Recovery selects an object-log device per page, so a page must never contain a mixture of main and snapshot object-log
-positions.
+At `PREPARE`, `startLogicalAddress` captures the exact tail that starts the fuzzy region and Snapshot publishes
+permissive coordination. ReadOnly work during PREPARE/IN_PROGRESS is tracked but not blocked. PREPARE's epoch barrier
+captures the endpoint of any ReadOnly worker that started before coordination publication. At `WAIT_FLUSH`,
+`finalLogicalAddress` captures TailAddress; Snapshot arms the conservative page gate, drains tracked and
+pre-coordination ReadOnly flushes through address publication, then captures `snapshotStartFlushedLogicalAddress` from
+the stable `FlushedUntilAddress`. Snapshot does not advance `ReadOnlyAddress`.
 
-`startLogicalAddress` itself is not rounded in checkpoint metadata. Recovery uses the exact persisted address as the fuzzy
-lower boundary: records at or above it that belong to the next version are invalidated, while preceding stable records on
-the same snapshot page remain valid. `snapshotStartFlushedLogicalAddress` records the page-aligned main/snapshot boundary.
+`HybridLogCheckpointInfo.LastCompletedSnapshotPage` is a runtime-only contiguous completion watermark. Snapshot issues one
+page write at a time. During `WAIT_FLUSH`, ReadOnly may serialize page `P` only while
+`P < LastCompletedSnapshotPage`. The value is the exclusive page after the most recently completed Snapshot page, so
+ReadOnly waits only when Snapshot is still writing that same page; once Snapshot completes it, ReadOnly proceeds and
+retains eviction priority. After the final page containing captured TailAddress completes, Snapshot publishes the
+exclusive end page so ReadOnly may process the final page. One active-ReadOnly-write
+counter closes the state-transition race: a claim remains active through `LastFlushedUntilAddress` and
+`FlushedUntilAddress` publication, installation waits for all prior claims to drain, and new ReadOnly work claims its
+page before either issuing IO or taking a no-IO address-advancement path. ReadOnly suspends epoch protection while
+waiting on Snapshot progress, then resumes only to preserve the epoch callback's entry/exit contract.
+
+Outside a Snapshot checkpoint, ReadOnly samples coordination once per contiguous flush range and performs no lock,
+counter update, or epoch suspend. With no ReadOnly waiters, each Snapshot page completion advances the watermark with a
+monotonic CAS and does not acquire the progress monitor.
+
+For `NullDevice`, Head may advance behind completed Snapshot pages even though no main-log bytes are durable.
+`flushedLogicalAddress` therefore remains the captured Snapshot start rather than the later HeadAddress; recovery reads
+that evicted prefix from the snapshot file.
+
+Snapshot serializes stable records into the snapshot object log and stamps their snapshot positions directly on the live
+page. ReadOnly does not consume `ObjectLogPosition`; after Snapshot completes the page, ReadOnly resolves each object through
+`ObjectIdMap`, serializes it to the main object log, and replaces the Snapshot position. No page-image copy or metadata
+journal is required.
+
+Snapshot leaves fuzzy v+1 records unchanged. Recovery uses the exact persisted `startLogicalAddress` as the fuzzy lower
+boundary and invalidates such records before hashing overflow keys or reading payloads. RDH must still describe the record's
+stable allocation so recovery can advance to the next record.
 
 ---
 
@@ -487,13 +518,25 @@ the same snapshot page remain valid. `snapshotStartFlushedLogicalAddress` record
 The caller obtains the record's start position and initial key/value extents from
 `GetObjectLogRecordStartPositionAndLengths()`.
 
-- A single pending read begins with the sum of that record's hints.
-- A page load/recovery pass scans object-bearing records first and uses the span from the first object position through
-  the last record's initial extent.
-- A following record's position in the same object-log address space is a safe read-ahead bound.
-- Recovery Pass 2 may use the next included page's lowest object-log position instead of the current page's
-  last-record hint. It does so only when both pages select the same main or snapshot object-log device; the
-  hybrid-log/snapshot boundary never supplies a cross-space bound.
+- A record with an overflow key begins with only that key's exact-byte or 4 KB-page discovery extent.
+- After a framed key reveals its exact endpoint, the value demand is rebased there and uses its own exact-byte or initial
+  4 KB-page extent.
+- A record without an overflow key begins directly with the value's extent.
+- Page load/recovery scans object-bearing records in one object-log address space. Each later record position safely
+  bounds the preceding record; the final scanned record contributes only its first-component hint.
+- The scan stops as soon as the initial range reaches one complete circular-ring capacity
+  (`bufferSize * numberOfBuffers`, 16 MB with defaults). Framing and later record hints extend demand while consumed.
+- Recovery splits the page containing the exact Snapshot/main boundary into separate main- and snapshot-device ranges.
+  A main-log record is therefore never used as a Snapshot record's successor. Iterators use the same scan entirely in
+  main-object-log space.
+
+For Snapshot recovery, `flushedLogicalAddress` is the exact overlay boundary. Main-log recovery supplies the page
+prefix below `flushedLogicalAddress`. Snapshot recovery then reads only the suffix at/above that address from the
+snapshot file; if it is not sector-aligned, recovery saves and restores the main bytes below it in the first shared
+sector. The snapshot file's
+`snapshotStartFlushedLogicalAddress` remains the page-offset mapping for locating that suffix, but it is not the
+main/snapshot object-device split. If the main boundary page is not resident (for example, because an index checkpoint
+made replay unnecessary), recovery first reloads its durable main prefix.
 
 Main object-log reads use `objectLogTail` as a hard logical end once that tail is set. During early recovery an unset
 main tail disables this bound. Snapshot recovery carries the persisted `snapshotEndObjectLogTail` as a separate,
@@ -507,7 +550,7 @@ reported as truncation or corruption.
 
 | State | Meaning |
 |---|---|
-| `baseRequiredEndAddress` | fixed endpoint of the caller's initial one-or-more-record read range |
+| `baseRequiredEndAddress` | fixed endpoint of the caller's bounded same-space scan range |
 | `dynamicRequiredEndAddress` | replaceable current framing demand; grows for continuation/discovery and shrinks when a header reveals an earlier exact end |
 | `RequiredEndAddress` | maximum of the fixed base demand and replaceable framing demand |
 | `nextFileReadPosition` | sector-aligned start of the next sequential device request, and therefore the exclusive high-water submitted since ring initialization or the last direct-read reset |
@@ -520,9 +563,10 @@ still be in flight and its bytes have not necessarily been consumed. Device requ
 `RepositionAfterDirectRead()` drains pending requests and begins a new epoch at the payload-end sector.
 
 `SetDynamicReadThrough()` replaces rather than adds to dynamic demand, so parsing the same header twice cannot
-double-extend a read. A discovery endpoint may clamp to the hard tail. An authoritative endpoint parsed from a header
-may not cross it; crossing is treated as truncated/corrupt framing. Already-submitted sector-rounded IO cannot be
-cancelled and is reused by later components/records or drained before disposal.
+double-extend a read. `RequiredEndAddress` remains the maximum of that dynamic demand and the bounded initial range.
+A discovery endpoint may clamp to the hard tail. An authoritative endpoint parsed from a header may not cross it;
+crossing is treated as truncated/corrupt framing. Already-submitted sector-rounded IO cannot be cancelled and is
+reused by later components and same-space records or drained at disposal.
 
 Large overflow reads bypass the ring for the aligned payload interior. `RepositionAfterDirectRead()` drains and resets
 the ring at the logical payload end. If no later bytes are required yet, it saves that endpoint's in-sector offset in
@@ -616,12 +660,15 @@ populated in Pass 2. `ComputeRecoveryOverflowKeyHash()` therefore:
 
 For a headered key, the combined RDH/objectId page count already covers the entire framed key. Recovery Pass 1 does not
 need a key sentinel or repeated discovery reads; the leading header narrows the rounded extent to the exact payload.
+The Snapshot Pass 1 scan begins at `flushedLogicalAddress`, so records in the preserved main prefix are neither
+rehashed nor reported as snapshot reads a second time.
 
 ### 7.2 Pass 2: page object loading
 
-`LoadObjectsForRecoveryPass2()` calls `DeserializeObjectsOnPage()`:
+`LoadObjectsForRecoveryPass2()` calls `DeserializeObjectsOnPage()` once per same-device range:
 
-1. first page pass: locate the first and last valid object-bearing records and compute an initial same-space range;
+1. first range pass: compute successor bounds until one ring capacity is covered, then include the last record's
+   first-component hint when capacity has not yet been reached;
 2. initialize one `ObjectLogReader`;
 3. second page pass: call `ReadRecordObjects()` for each valid object-bearing record;
 4. allocate recovered objects into the page's `ObjectIdMap`;
@@ -629,7 +676,8 @@ need a key sentinel or repeated discovery reads; the leading header narrows the 
 6. drain outstanding reads in `finally`.
 
 Low-memory recovery may calculate page object sizes, evict older pages, and flush snapshot-region pages while this pass
-proceeds.
+proceeds. On the page containing `snapshotScanFromAddress`, both size estimation and loading split at that exact record
+boundary. If recovery has already rewritten the page, the whole requested range reads from the main object log.
 
 ### 7.3 Recovery-state flush of hybrid-log-region records
 
@@ -652,18 +700,16 @@ and are not copied or reserialized.
 When a recovered snapshot page must become durable in the main log before its objects are deserialized, the flush path
 copies raw object-log bytes from the snapshot device to the main object log:
 
-1. use the exact key/value hints directly when both components are headerless;
-2. for a non-exact component, scan same-page successor object positions in the snapshot address space;
-3. align the destination record start so `destination % 8 == source % 8`;
-4. replace only the live record's segment/offset with `RepointObjectLogPosition()`, preserving objectId hints and all
+1. initialize demand from the record's first out-of-line component;
+2. align the destination record start so `destination % 8 == source % 8`;
+3. replace only the live record's segment/offset with `RepointObjectLogPosition()`, preserving objectId hints and all
    format flags;
-5. copy the bounded raw extent when exact hints or a successor safely bound it; or
-6. for a last record without a same-page successor whose rounded key extent may over-count or whose value sentinel may under-count, call
-   `CopyRecordObjectsFollowingFraming()` and follow each header to the exact end.
+4. call `CopyRecordObjectsFollowingFraming()` for every record; and
+5. use exact hints directly while following headers for non-exact overflow and object components through their exact end.
 
 The recovery write uses the live page rather than allocating a page-image copy. If the page remains resident after the
 copy, recovery records that its positions now address the main object log and Pass 2 deserializes it from that device.
-It discards any next-page position hint from snapshot space for that page.
+Each record's framing supplies its copy endpoint; no following record or page contributes a bound.
 
 The modulo-8 preservation is required because the first object header is aligned from the absolute object start.
 Moving identical bytes to a different residue would move the expected first-header location and make the copy
@@ -694,8 +740,7 @@ would shift subsequent positions and is not implemented without a validated v2.1
 | Framed overflow >128 KB | no payload-sized staging allocation | header/padding/fragments into ring; aligned interior not copied | source array pinned; direct writes split by segment | avoid copying a large payload through the ring |
 | Exact object <=511 | serializer/ring reused | serializer bytes into reused ring | no | headerless object |
 | Framed object >511 | serializer/ring reused | serializer bytes into reused ring | no | headers must be reserved/backfilled as chunks close |
-| Main-log page copy path | one pooled aligned page buffer | page copied once | page buffer held through callback | snapshot checkpoint image or unaligned concurrent ReadOnly write |
-| Main-log live-page path | no page-copy allocation | no page copy | live memory used by device | Recovery, full ReadOnly pages, and sector-aligned partial ReadOnly ranges |
+| Main-log live-page path | at most one pooled trailing-sector buffer | no page copy; only final partial-sector bytes copied | live memory and optional trailing sector held through callbacks | Recovery, Snapshot, and ReadOnly, including front/back-partial ranges |
 
 The object serializer, pinned stream, and circular write buffers are reused; they are not allocated per object.
 
@@ -730,13 +775,12 @@ Indentation is call depth. Component branches and lifetime changes are included 
 
 - `ObjectAllocatorImpl.AsyncFlushPagesForReadOnly()` / `WriteAsyncToDeviceForSnapshot()`
   - `ObjectAllocatorImpl.WriteAsync(...)`
-    - choose live page or pooled aligned page copy
+    - use the resident live page
     - create `ObjectLogWriter` over the supplied pooled `CircularDiskWriteBuffer`
     - for each object-bearing `LogRecord`
-      - enter epoch, re-check `HeadAddress`, and resolve objectIds
+      - resolve objectIds from the resident page map
         - `objectIdMap.GetOverflowByteArray(...)`
         - `objectIdMap.GetHeapObject(...)`
-      - leave epoch before device IO
       - `ObjectLogWriter.WriteRecordObjects(keyOverflow, valueOverflow, valueObject)`
         - overflow key -> `WriteOverflowComponent()`
           - <=511 -> headerless
@@ -755,10 +799,10 @@ Indentation is call depth. Component branches and lifetime changes are included 
         - stamp overflow-key page-count high bits into raw RDH KeyLength
         - set `KeyHasExtendedSizeHint` for a headered overflow key
         - set `KeyIsExactSize` / `ValueIsExactSize` as applicable
-    - `ObjectLogWriter.OnPartialFlushComplete()`
-      - `CircularDiskWriteBuffer.OnPartialFlushComplete()`
+    - `ObjectLogWriter.OnSplitPartialFlushComplete()`
+      - `CircularDiskWriteBuffer.OnSplitPartialFlushComplete()`
         - sector-pad and flush final object-log buffer
-        - submit main-log page write
+        - submit direct complete-sector and optional zero-padded trailing-sector main-log writes
         - final callback after all writes complete
 
 ### 9.2 Single-record pending disk read
@@ -779,6 +823,7 @@ Indentation is call depth. Component branches and lifetime changes are included 
 ### 9.3 Recovery Pass 1
 
 - `Recovery.RecoverFromPage(...)`
+  - Snapshot boundary page starts at `flushedLogicalAddress` after merging its snapshot suffix over the main prefix
   - inline key -> hash directly from `LogRecord`
   - overflow key -> `ObjectAllocatorImpl.ComputeRecoveryOverflowKeyHash(...)`
     - decode position/hint
@@ -791,14 +836,15 @@ Indentation is call depth. Component branches and lifetime changes are included 
 ### 9.4 Recovery Pass 2 / page load
 
 - `Recovery.RecoveryLoadObjectsPass2(...)`
-  - obtain the next included page's lowest object-log position only when both pages use the same object-log address space
   - `ObjectAllocatorImpl.LoadObjectsForRecoveryPass2(...)`
     - `DeserializeObjectsOnPage(...)`
-      - first pass: establish the same-space range, using the next-page position as the fixed read-ahead endpoint when available
+      - scan same-device object-bearing records until one read-ring capacity is covered
+      - include the final scanned record's first-component hint
       - `OnBeginReadRecords(...)`
       - second pass, each valid object record
         - `ReadRecordObjects(...)`
-        - parsed framing independently sets the authoritative dynamic endpoint
+        - record hints set initial component demand
+        - parsed framing rebases following components and sets authoritative endpoints
         - `TrackRecoveredObjectRecord(...)`
       - `OnEndReadRecords()`
 
@@ -806,17 +852,16 @@ Indentation is call depth. Component branches and lifetime changes are included 
 
 - `ObjectAllocatorImpl.WriteAsync(..., FlushRequestState.Recovery, snapshotObjectLogDevice, ...)`
   - use the live recovery page as the main-log write source
-  - identify snapshot-region record and same-space successor, if any
+  - identify a snapshot-region record
   - `AlignNextRecordStartLike(snapshotPosition)`
   - `RepointObjectLogPosition(mainPosition)`
-  - bounded record -> `ObjectLogWriter.CopyRecoveredObjectBytes(...)`
-  - unbounded last record -> `CopyRecoveredObjectBytesFollowingFraming(...)`
+  - `CopyRecoveredObjectBytesFollowingFraming(...)`
     - `ObjectLogReader.CopyRecordObjectsFollowingFraming(...)`
       - parse overflow/object headers
       - tee every consumed raw byte to the main `ObjectLogWriter`
   - advance recovery page object-log position by exact copied extent
   - mark the resident page as repointed to the main object-log address space
-  - Pass 2 reads that page from the main object log and does not use a snapshot next-page hint
+  - Pass 2 reads that page from the main object log
 
 ### 9.6 Recovery-state flush of hybrid-log-region records
 
@@ -834,19 +879,22 @@ Indentation is call depth. Component branches and lifetime changes are included 
       - fail if current framing would have to be inserted
     - advance the running page object-log position
 
-### 9.7 Snapshot checkpoint stable-prefix split
+### 9.7 Snapshot checkpoint no-copy ordering
 
+- `SnapshotCheckpointSMTask.GlobalBeforeEnteringState(PREPARE)`
+  - publish permissive `SnapshotFlushCoordination`
+- `SnapshotCheckpointSMTask.GlobalAfterEnteringState(PREPARE)`
+  - capture the endpoint of ReadOnly work issued before coordination publication
 - `SnapshotCheckpointSMTask.GlobalBeforeEnteringState(WAIT_FLUSH)`
-  - round persisted `startLogicalAddress` down to the fuzzy boundary page start
-  - `AllocatorBase.ShiftReadOnlyAddressWithWait(boundaryPageStart, wait: true)`
-    - `ShiftReadOnlyAddress()`
-    - epoch barrier -> `ObjectAllocatorImpl.OnPagesMarkedReadOnly()`
-    - `OnPagesMarkedReadOnlyWorker()`
-    - `AsyncFlushPagesForReadOnly()` -> normal page flush sequence
-    - wait until `FlushedUntilAddress >= boundaryPageStart`
-  - capture `snapshotStartFlushedLogicalAddress = FlushedUntilAddress`
+  - capture TailAddress as `finalLogicalAddress`
+  - arm the page watermark
+  - drain pre-coordination and claimed ReadOnly page writes through FUA publication
+  - capture the stable `snapshotStartFlushedLogicalAddress`
   - `AsyncFlushPagesForSnapshot(snapshotStartFlushedLogicalAddress, finalLogicalAddress, startLogicalAddress, ...)`
-    - copy and serialize the boundary page and fuzzy suffix in snapshot object-log address space
+    - issue one live Snapshot page at a time
+    - publish `LastCompletedSnapshotPage` after complete page IO
+    - ReadOnly waits only while Snapshot is writing that same page
+    - publish the exclusive end page after the final page completes
 
 ---
 
@@ -862,7 +910,7 @@ Indentation is call depth. Component branches and lifetime changes are included 
 - Object headers are absolute 8-byte aligned; snapshot relocation preserves the source modulo-8 start.
 - Direct-read pins remain alive through every callback.
 - `OverflowByteArray` leading/trailing slack covers sector overlap; logical length excludes that slack.
-- A final recovery record is copied by framing when no same-space successor proves its extent.
+- Every recovery record is copied from its own exact hints and framing; successor positions are not consulted.
 - Speculative ring reads are drained before buffers are reused or disposed.
 - Any unsupported v2.1 conversion that would require inserting headers fails rather than guessing.
 

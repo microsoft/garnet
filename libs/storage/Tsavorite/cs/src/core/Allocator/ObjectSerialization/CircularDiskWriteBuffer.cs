@@ -151,15 +151,21 @@ namespace Tsavorite.core
         /// <param name="endObjectLogFilePosition">The ending file position after the partial flush is complete</param>
         internal unsafe void OnPartialFlushComplete(byte* mainLogPageSpanPtr, int mainLogPageSpanLength, IDevice mainLogDevice, ulong alignedMainLogFlushAddress,
                 DeviceIOCompletionCallback externalCallback, object externalContext, ref ObjectLogFilePositionInfo endObjectLogFilePosition)
+            => OnSplitPartialFlushComplete(mainLogPageSpanPtr, mainLogPageSpanLength, alignedMainLogFlushAddress,
+                null, 0, 0, mainLogDevice, externalCallback, externalContext, ref endObjectLogFilePosition);
+
+        /// <summary>Finish object-log writes, then write the direct and optional zero-padded trailing main-log spans as one completion batch.</summary>
+        internal unsafe void OnSplitPartialFlushComplete(byte* directPtr, int directLength, ulong directAddress,
+                byte* trailingPtr, int trailingLength, ulong trailingAddress,
+                IDevice mainLogDevice, DeviceIOCompletionCallback externalCallback, object externalContext, ref ObjectLogFilePositionInfo endObjectLogFilePosition)
         {
             // Lock this with a reference until we have set the callback and issue the write. This callback is for the main log page write, and
             // when the countdownCallbackAndContext.Decrement hits 0 again, we're done with this partial flush range and will call the external callback.
             countdownCallbackAndContext.Increment();
-            countdownCallbackAndContext.Set(externalCallback, externalContext, (uint)mainLogPageSpanLength);
+            countdownCallbackAndContext.Set(externalCallback, externalContext, (uint)(directLength + trailingLength));
 
             // Issue the last ObjectLog write for this partial flush.
             var buffer = GetCurrentBuffer();
-            Debug.Assert(IsAligned(alignedMainLogFlushAddress, (int)mainLogDevice.SectorSize), "alignedMainLogFlushAddress is not aligned to sector size");
             Debug.Assert(IsAligned(buffer.flushedUntilPosition, (int)device.SectorSize), $"flushedUntilPosition {buffer.flushedUntilPosition} is not sector-aligned");
             Debug.Assert(buffer.currentPosition >= buffer.flushedUntilPosition, $"buffer.currentPosition {buffer.currentPosition} must be >= buffer.flushedUntilPosition {buffer.flushedUntilPosition}");
 
@@ -184,8 +190,11 @@ namespace Tsavorite.core
             if (!ownFilePosition)
                 endObjectLogFilePosition = filePosition;
 
-            // Write the main log page to the mainLogDevice.
-            FlushToMainLogDevice(mainLogPageSpanPtr, mainLogPageSpanLength, mainLogDevice, alignedMainLogFlushAddress, CreateDiskWriteCallbackContext());
+            // Both main-log spans join the same countdown batch, so the external callback runs only after all object-log and main-log writes complete.
+            if (directLength > 0)
+                FlushToMainLogDevice(directPtr, directLength, mainLogDevice, directAddress, CreateDiskWriteCallbackContext());
+            if (trailingLength > 0)
+                FlushToMainLogDevice(trailingPtr, trailingLength, mainLogDevice, trailingAddress, CreateDiskWriteCallbackContext());
 
             // We added a count to countdownCallbackAndContext at the start, and the callback state creation also added a count. Remove the one we added at the start.
             // If the write in FlushToMainLogDeviced completed fast, this decrement here may be the final one.

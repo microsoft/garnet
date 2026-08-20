@@ -122,6 +122,13 @@ namespace Tsavorite.core
             => flushBuffers.OnPartialFlushComplete(mainLogPageSpanPtr, mainLogPageSpanLength, mainLogDevice, alignedMainLogFlushAddress,
                 externalCallback, externalContext, ref endFilePosition);
 
+        /// <summary>Finish object-log writes, then write the direct and optional zero-padded trailing main-log spans as one completion batch.</summary>
+        internal void OnSplitPartialFlushComplete(byte* directPtr, int directLength, ulong directAddress,
+                byte* trailingPtr, int trailingLength, ulong trailingAddress,
+                IDevice mainLogDevice, DeviceIOCompletionCallback externalCallback, object externalContext, ref ObjectLogFilePositionInfo endFilePosition)
+            => flushBuffers.OnSplitPartialFlushComplete(directPtr, directLength, directAddress, trailingPtr, trailingLength,
+                trailingAddress, mainLogDevice, externalCallback, externalContext, ref endFilePosition);
+
         /// <summary>
         /// Write Overflow and Object Keys and values in a <see cref="LogRecord"/> to the device.
         /// </summary>
@@ -211,9 +218,9 @@ namespace Tsavorite.core
         /// <summary>
         /// Copies <paramref name="totalLength"/> bytes of a record's serialized object data verbatim from the snapshot object-log (via
         /// <paramref name="reader"/>) into this (main) object-log, then signals record completion. Used by the snapshot-region recovery
-        /// flush for a record whose exact on-disk extent is known (a successor object record bounded it, or its size hints equal it). The
+        /// flush for a record whose exact on-disk extent is already known from exact hints. The
         /// <paramref name="reader"/> must already be positioned at the record (via <see cref="CircularDiskReadBuffer.OnBeginRecord"/>). A record
-        /// that is the last on its page with a sentinel-sized value is copied instead by <see cref="CopyRecoveredObjectBytesFollowingFraming"/>.
+        /// non-exact path uses <see cref="CopyRecoveredObjectBytesFollowingFraming"/>.
         /// </summary>
         /// <param name="reader">The reader over the snapshot object-log, positioned at the record to copy.</param>
         /// <param name="totalLength">The exact total number of object-log bytes for the record (key plus value).</param>
@@ -251,8 +258,7 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Snapshot-recovery verbatim copy for a record that is the last object record on its page (no successor bounds its extent) and whose
-        /// size hint under-counts a sentinel-sized value: drive <paramref name="reader"/>'s framing walk -- following the ChunkHeader chain to
+        /// Snapshot-recovery verbatim copy driven by <paramref name="reader"/>'s framing walk -- following the ChunkHeader chain to
         /// the object's exact on-disk extent and self-extending the snapshot read-ahead -- which tees every consumed byte into this (main)
         /// object-log, then signal record completion. Unlike <see cref="CopyRecoveredObjectBytes"/> (bounded by a caller-supplied length), this
         /// copies exactly the record's on-disk extent, so it neither truncates a multi-buffer value nor over-copies into the next record.

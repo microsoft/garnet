@@ -84,7 +84,7 @@ namespace Tsavorite.core
         /// Called when one or more records with Objects have been read via ReadAsync, e.g. being processed by AsyncReadPageWithObjectsCallback.
         /// </summary>
         /// <param name="filePosition">The initial file position to read</param>
-        /// <param name="totalLength">Initial object-log extent for the one-or-more-record span. Framing may revise the dynamic endpoint while
+        /// <param name="totalLength">Initial object-log extent for the first record(s). Framing may revise the dynamic endpoint while
         /// records are consumed.</param>
         /// <param name="hardReadEndPosition">Exclusive durable tail in the same object-log address space as
         /// <paramref name="filePosition"/>. For a snapshot object log with no supplied logical tail, pass a position whose word is
@@ -139,6 +139,11 @@ namespace Tsavorite.core
             var positionWord = logRecord.GetObjectLogRecordStartPositionAndLengths(out var keyLength, out var valueLength);
             var isLegacy = logRecord.HasReuseObjectIdForSize;
             recordStartPosition = new ObjectLogFilePositionInfo(positionWord, segmentSizeBits);
+            var initialLength = logRecord.DataHeader.KeyIsOverflow ? (ulong)keyLength : valueLength;
+            var initialEnd = recordStartPosition;
+            initialEnd.Advance(initialLength);
+            readBuffers.SetDynamicReadThrough(initialEnd,
+                isDiscoveryWindow: !isLegacy && (logRecord.DataHeader.KeyIsOverflow ? !logRecord.KeyIsExactSize : !logRecord.ValueIsExactSize));
             if (!readBuffers.OnBeginRecord(recordStartPosition))
                 throw new TsavoriteException("ReadRecordObjects found no data available in ReadBuffers");
 
@@ -236,8 +241,7 @@ namespace Tsavorite.core
             }
         }
 
-        /// <summary>Recovery snapshot-copy helper for a record whose objects are the last on a page (no successor record bounds the extent) and
-        /// whose objectId size hint under-counts a sentinel-sized value: walk this record's object-log framing (overflow key, then overflow or
+        /// <summary>Recovery snapshot-copy helper that walks this record's object-log framing (overflow key, then overflow or
         /// object value), following the ChunkHeader chain to its exact on-disk extent and self-extending the read-ahead as chunks are consumed,
         /// WITHOUT materializing the objects. Every raw byte consumed is tee'd to <paramref name="sink"/> (see <see cref="verbatimCopySink"/>) so
         /// the record's object bytes are copied byte-exact into the main object-log. This positions the read-ahead ring at
@@ -250,6 +254,11 @@ namespace Tsavorite.core
                 throw new TsavoriteException("ReadBuffers are required to CopyRecordObjectsFollowingFraming");
 
             recordStartPosition = new ObjectLogFilePositionInfo(snapshotPositionWord, segmentSizeBits);
+            var initialLength = logRecord.DataHeader.KeyIsOverflow ? (ulong)keyLength : valueLength;
+            var initialEnd = recordStartPosition;
+            initialEnd.Advance(initialLength);
+            readBuffers.SetDynamicReadThrough(initialEnd,
+                isDiscoveryWindow: logRecord.DataHeader.KeyIsOverflow ? !logRecord.KeyIsExactSize : !logRecord.ValueIsExactSize);
             if (!readBuffers.OnBeginRecord(recordStartPosition))
                 throw new TsavoriteException("CopyRecordObjectsFollowingFraming found no data available in ReadBuffers");
             recordStreamConsumed = 0;
@@ -267,6 +276,9 @@ namespace Tsavorite.core
                     var actualKeyLength = logRecord.KeyIsExactSize ? logRecord.KeyObjectIdSizeHint : ReadOverflowHeaderAndSetEndpoint();
                     DrainRawStream((ulong)actualKeyLength, discard);
                 }
+
+                if (!dataHeader.ValueIsInline)
+                    SetDynamicRecordReadThrough(recordStreamConsumed + valueLength, isDiscoveryWindow: !logRecord.ValueIsExactSize);
 
                 if (dataHeader.ValueIsOverflow)
                 {
@@ -440,8 +452,8 @@ namespace Tsavorite.core
             if (buffer is null || !buffer.HasData)
                 return 0;
 
-            // One ring buffer is the maximum initial discovery window (4 MB). Do not wait for speculative successor-record
-            // reads here; the direct read bypasses them and RepositionAfterDirectRead drains them before resetting the ring.
+            // One ring buffer is the maximum initial discovery window (4 MB). The direct read bypasses later ring demand,
+            // and RepositionAfterDirectRead drains submitted read-ahead before resetting the ring.
             var copyLength = Math.Min(buffer.AvailableLength, destinationSpan.Length);
             buffer.AvailableSpan.Slice(0, copyLength).CopyTo(destinationSpan);
             buffer.currentPosition += copyLength;
@@ -579,11 +591,17 @@ namespace Tsavorite.core
                 var continues = (raw & unchecked((uint)ChunkedRecordConstants.ContinuationFlag)) != 0;
                 if (objectChunkRemaining > 0)
                 {
+                    var chunkStart = recordStartPosition;
+                    chunkStart.Advance(recordStreamConsumed);
+                    if ((ulong)objectChunkRemaining > chunkStart.RemainingSizeInSegment)
+                        throw new TsavoriteException($"Object chunk length {objectChunkRemaining} crosses segment {chunkStart.SegmentId} from offset {chunkStart.Offset}");
                     // Remember this chunk's continuation flag so copy-to-end mode can stop after the final (non-continuing) data chunk.
                     objectCurrentChunkContinues = continues;
                     var chunkEnd = recordStreamConsumed + (ulong)objectChunkRemaining;
                     // A continuation opens a normal 4 MB discovery window at the following header. A final chunk tightens the logical
-                    // requirement to its exact endpoint; already-submitted physical over-read remains reusable by a following record.
+                    // requirement to its exact endpoint; already-submitted physical over-read remains reusable by later components of this record.
+                    if (continues)
+                        SetDynamicRecordReadThrough(chunkEnd + ChunkHeader.TotalSize, isDiscoveryWindow: false);
                     SetDynamicRecordReadThrough(continues ? chunkEnd + (ulong)IStreamBuffer.BufferSize : chunkEnd,
                         isDiscoveryWindow: continues);
                     return true;                // a real (possibly final) chunk
