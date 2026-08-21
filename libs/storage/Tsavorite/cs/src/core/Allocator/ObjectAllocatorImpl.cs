@@ -1515,6 +1515,71 @@ namespace Tsavorite.core
         }
 
         /// <summary>
+        /// Clear checkpoint serialization cached by heap objects without copying records or remapping overflow keys.
+        /// </summary>
+        internal override void ClearSerializedObjectData(long beginAddress, long endAddress)
+        {
+            var address = beginAddress;
+            while (address < endAddress)
+            {
+                IHeapObject valueObject = default;
+                var epochTaken = epoch.ResumeIfNotProtected();
+                try
+                {
+                    if (Initializing)
+                        return;
+
+                    var headAddress = Volatile.Read(ref HeadAddress);
+                    var stopAddress = Math.Min(endAddress, GetTailAddress());
+                    if (address < headAddress)
+                        address = headAddress;
+                    if (address >= stopAddress)
+                        return;
+
+                    var page = GetPage(address);
+                    var firstValidAddress = GetFirstValidLogicalAddressOnPage(page);
+                    if (address < firstValidAddress)
+                        address = firstValidAddress;
+                    if (address >= stopAddress)
+                        return;
+
+                    var offset = GetOffsetOnPage(address);
+                    if (offset == 0)
+                    {
+                        address = GetFirstValidLogicalAddressOnPage(page + 1);
+                        continue;
+                    }
+
+                    var physicalAddress = GetPhysicalAddress(address);
+                    var objectIdMap = objectPages[GetPageIndexForAddress(address)].objectIdMap;
+                    var logRecord = new LogRecord(physicalAddress, objectIdMap);
+                    var allocatedSize = logRecord.AllocatedSize;
+                    if (allocatedSize <= 0 || offset + allocatedSize > PageSize)
+                    {
+                        address = GetFirstValidLogicalAddressOnPage(page + 1);
+                        continue;
+                    }
+                    address += allocatedSize;
+
+                    var dataHeader = logRecord.DataHeader;
+                    if (logRecord.Info.IsNull || !dataHeader.ValueIsObject)
+                        continue;
+
+                    var (_, valueAddress) = dataHeader.GetValueFieldInfo(physicalAddress);
+                    _ = objectIdMap.TryGetHeapObject(*(int*)valueAddress, out valueObject);
+                }
+                finally
+                {
+                    if (epochTaken)
+                        epoch.Suspend();
+                }
+
+                // The local reference remains valid if the record clears or reuses its object-map slot.
+                valueObject?.ClearSerializedObjectData();
+            }
+        }
+
+        /// <summary>
         /// Iterator interface for scanning Tsavorite log
         /// </summary>
         /// <returns></returns>
