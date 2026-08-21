@@ -483,6 +483,8 @@ namespace Tsavorite.core
             }
             catch
             {
+                if (_hybridLogCheckpoint.snapshotFlushCoordination is not null)
+                    hlogBase.ClearSnapshotFlushCoordination(_hybridLogCheckpoint.snapshotFlushCoordination);
                 _indexCheckpoint.Reset();
                 _hybridLogCheckpoint.Dispose();
                 throw;

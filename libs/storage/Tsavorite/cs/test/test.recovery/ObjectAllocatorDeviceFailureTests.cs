@@ -8,7 +8,6 @@ using System.Threading;
 using Garnet.test;
 using NUnit.Framework;
 using Tsavorite.core;
-using static Tsavorite.core.Utility;
 using static Tsavorite.test.TestUtils;
 
 namespace Tsavorite.test
@@ -50,7 +49,7 @@ namespace Tsavorite.test
         [Test]
         [Category(TsavoriteKVTestCategory)]
         [Category(ObjectIdMapCategory)]
-        public void PartialSectorReadFailureStopsFlush([Values] InjectedReadFailure failureMode)
+        public void PartialSectorFlushSkipsReadBack()
         {
             CreateStore(useLargeObjects: false, captureFlushFailures: true);
 
@@ -63,34 +62,19 @@ namespace Tsavorite.test
             var lastSuccessfulFlush = store.Log.FlushedUntilAddress;
             Assert.That(lastSuccessfulFlush, Is.EqualTo(store.Log.TailAddress));
             Assert.That(lastSuccessfulFlush % logDevice.SectorSize, Is.Not.Zero,
-                "The first flush must end mid-sector so the next flush performs a sector read-back.");
+                "The first flush must end mid-sector so the next flush rewrites an aligned live-page prefix.");
 
-            var writeCountBeforeFailure = logDevice.WriteCount;
+            var writeCountBeforeFlush = logDevice.WriteCount;
             _ = context.Upsert(new TestObjectKey { key = 2 }, new TestObjectValue { value = 2 }, Empty.Default);
-            var failedFlushUntilAddress = store.Log.TailAddress;
+            var expectedFlushUntilAddress = store.Log.TailAddress;
 
-            logDevice.FailNextRead(failureMode);
-            store.Log.Flush(wait: false);
+            logDevice.FailNextRead(InjectedReadFailure.DeviceError);
+            store.Log.Flush(wait: true);
 
-            Assert.That(flushFailureEvent.Wait(TimeSpan.FromSeconds(10)), Is.True, "The failed read was not propagated to the flush callback.");
-            Assert.That(logDevice.FailedReadCount, Is.EqualTo(1));
-            Assert.That(logDevice.LastFailedReadLength, Is.EqualTo(logDevice.SectorSize));
-            Assert.That(logDevice.LastFailedReadAddress, Is.EqualTo((ulong)RoundDown(lastSuccessfulFlush, (int)logDevice.SectorSize)));
-            Assert.That(logDevice.WriteCount, Is.EqualTo(writeCountBeforeFailure), "A failed sector read-back must not submit a replacement main-log write.");
-            Assert.That(store.Log.FlushedUntilAddress, Is.EqualTo(lastSuccessfulFlush), "A failed read-back must not advance FlushedUntilAddress.");
-            Assert.That(flushFailure.FromAddress, Is.EqualTo(lastSuccessfulFlush));
-            Assert.That(flushFailure.UntilAddress, Is.EqualTo(failedFlushUntilAddress));
-
-            if (failureMode == InjectedReadFailure.DeviceError)
-            {
-                Assert.That(flushFailure.ErrorCode, Is.EqualTo(ControlledReadFailureDevice.InjectedErrorCode));
-                Assert.That(flushFailure.Exception, Is.Null);
-            }
-            else
-            {
-                Assert.That(flushFailure.ErrorCode, Is.EqualTo(uint.MaxValue));
-                Assert.That(flushFailure.Exception, Is.TypeOf<EndOfStreamException>());
-            }
+            Assert.That(logDevice.FailedReadCount, Is.Zero, "Front-partial flushing must not read back the already-durable sector prefix.");
+            Assert.That(logDevice.WriteCount, Is.GreaterThan(writeCountBeforeFlush));
+            Assert.That(store.Log.FlushedUntilAddress, Is.EqualTo(expectedFlushUntilAddress));
+            Assert.That(flushFailureEvent.IsSet, Is.False);
         }
 
         [Test]
@@ -119,8 +103,11 @@ namespace Tsavorite.test
 
             var startPage = store.hlogBase.GetPage(snapshotStartAddress);
             var endPage = store.hlogBase.GetPage(snapshotEndAddress) + 1;
+            using var coordination = new SnapshotFlushCoordination(startPage);
+            coordination.Arm(startPage);
+            coordination.CompleteInstallation();
             store.hlogBase.AsyncFlushPagesForSnapshot(flushBuffers, startPage, endPage, snapshotStartAddress, snapshotEndAddress,
-                long.MaxValue, snapshotLogDevice, snapshotObjectLogDevice, out var completedTask, throttleCheckpointFlushDelayMs: -1);
+                long.MaxValue, snapshotLogDevice, snapshotObjectLogDevice, coordination, out var completedTask, throttleCheckpointFlushDelayMs: -1);
 
             Assert.DoesNotThrowAsync(async () => await completedTask);
             Assert.That(snapshotLogDevice.ReadCount, Is.Zero, "A fresh snapshot sector has no existing prefix to preserve.");

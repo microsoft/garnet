@@ -35,7 +35,7 @@ namespace Tsavorite.core
                 case Phase.PREPARE:
                     // Capture state before checkpoint starts
                     lastVersion = store._hybridLogCheckpoint.info.version = next.Version;
-                    store._hybridLogCheckpoint.info.startLogicalAddress = store.hlogBase.GetTailAddress();
+                    store._hybridLogCheckpoint.info.fuzzyRegionStartAddress = store.hlogBase.GetTailAddress();
                     store._hybridLogCheckpoint.info.beginAddress = store.hlogBase.BeginAddress;
                     break;
 
@@ -51,7 +51,7 @@ namespace Tsavorite.core
                     Debug.Assert(stateMachineDriver.GetNumActiveTransactions(lastVersion) == 0, $"Active transactions in last version: {stateMachineDriver.GetNumActiveTransactions(lastVersion)}");
                     stateMachineDriver.ResetLastVersion();
                     // Grab final logical address (end of fuzzy region)
-                    store._hybridLogCheckpoint.info.finalLogicalAddress = store.hlogBase.GetTailAddress();
+                    store._hybridLogCheckpoint.info.recoveredTailAddress = store.hlogBase.GetTailAddress();
 
                     // Grab other metadata for the checkpoint
                     store._hybridLogCheckpoint.info.headAddress = store.hlogBase.HeadAddress;
