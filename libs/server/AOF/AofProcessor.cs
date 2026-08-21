@@ -490,6 +490,7 @@ namespace Garnet.server
             // byte. Translate those on replay: remap header.cmd for string/unified entries and
             // relocate the sub-op id for object RMW entries.
             var legacyCmdFormat = header.aofHeaderVersion < 4;
+
             switch (header.opType)
             {
                 case AofEntryType.StoreUpsert:
@@ -514,7 +515,7 @@ namespace Garnet.server
                     ObjectStoreDelete(preparedParameters, objectContext);
                     break;
                 case AofEntryType.UnifiedStoreStringUpsert:
-                    UnifiedStoreStringUpsert(preparedParameters, unifiedContext, ref replayContext.parseState, bufferPtr, bufferLength, legacyCmdFormat);
+                    UnifiedStoreStringUpsert(preparedParameters, unifiedContext, ref replayContext.parseState, activeVectorManager, replayContext.respServerSession.storageSession, bufferPtr, bufferLength, legacyCmdFormat);
                     break;
                 case AofEntryType.UnifiedStoreRMW:
                     UnifiedStoreRMW(preparedParameters, unifiedContext, ref replayContext.parseState, bufferPtr, bufferLength, legacyCmdFormat);
@@ -694,7 +695,7 @@ namespace Garnet.server
             where TObjectContext : ITsavoriteContext<FixedSpanByteKey, ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
             => objectContext.Delete((FixedSpanByteKey)preparedParameters.Key);
 
-        static void UnifiedStoreStringUpsert<TUnifiedContext>(PreparedParameters preparedParameters, TUnifiedContext unifiedContext, ref SessionParseState parseState, byte* outputPtr, int outputLength, bool legacyCmdFormat)
+        static void UnifiedStoreStringUpsert<TUnifiedContext>(PreparedParameters preparedParameters, TUnifiedContext unifiedContext, ref SessionParseState parseState, VectorManager activeVectorManager, StorageSession storageSession, byte* outputPtr, int outputLength, bool legacyCmdFormat)
             where TUnifiedContext : ITsavoriteContext<FixedSpanByteKey, UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator>
         {
             var curr = preparedParameters.PayloadPtr;
@@ -706,6 +707,15 @@ namespace Garnet.server
             _ = unifiedInput.DeserializeFrom(curr);
             if (legacyCmdFormat)
                 unifiedInput.header.cmd = LegacyRespCommand.FromV3(unifiedInput.header.cmd);
+
+            if (unifiedInput.header.cmd == RespCommand.RENAME && unifiedInput.arg1 == VectorManager.RecordType)
+            {
+                // Renaming a Vector SET, this requires special handling during a replay since the bytes in the value have an invalid pointer and (potentially) an invalid context
+
+                activeVectorManager.HandleVectorSetRenameCopy(storageSession, ref unifiedContext, unifiedInput.parseState.GetArgSliceByRef(0).ReadOnlySpan, unifiedInput.parseState.GetArgSliceByRef(1).ReadOnlySpan);
+
+                return;
+            }
 
             var output = UnifiedOutput.FromPinnedPointer(outputPtr, outputLength);
             var upsertOptions = new UpsertOptions() { KeyHash = preparedParameters.KeyHash };
