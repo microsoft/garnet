@@ -39,7 +39,7 @@ namespace Tsavorite.core
                 case Phase.WAIT_FLUSH:
                     base.GlobalBeforeEnteringState(next, stateMachineDriver);
 
-                    store._hybridLogCheckpoint.info.snapshotFinalLogicalAddress = store._hybridLogCheckpoint.info.finalLogicalAddress;
+                    store._hybridLogCheckpoint.info.snapshotFinalLogicalAddress = store._hybridLogCheckpoint.info.recoveredTailAddress;
 
                     store._hybridLogCheckpoint.snapshotFileDevice = store.checkpointManager.GetSnapshotLogDevice(store._hybridLogCheckpointToken);
                     store._hybridLogCheckpoint.snapshotFileObjectLogDevice = store.checkpointManager.GetSnapshotObjectLogDevice(store._hybridLogCheckpointToken);
@@ -48,14 +48,14 @@ namespace Tsavorite.core
 
                     // If we are using a NullDevice then storage tier is not enabled and FlushedUntilAddress may be ReadOnlyAddress but no records
                     // have actually been written; get all records in memory for the (non-NullDevice) Snapshot to write.
-                    // Install a conservative gate before capturing snapshotStartFlushedLogicalAddress. Installation
+                    // Install a conservative gate before capturing snapshotFileLogicalStartAddress. Installation
                     // waits until every ReadOnly page flush already in flight has published its FlushedUntilAddress
                     // advancement; new flushes at or above the provisional page block on the coordination watermark.
                     var provisionalSnapshotStart = store.hlogBase.IsNullDevice ? store.hlogBase.HeadAddress : store.hlogBase.FlushedUntilAddress;
-                    if (store._hybridLogCheckpoint.info.finalLogicalAddress <= provisionalSnapshotStart)
+                    if (store._hybridLogCheckpoint.info.recoveredTailAddress <= provisionalSnapshotStart)
                     {
-                        // Nothing to flush because the flushed region already contains everything up to finalLogicalAddress.
-                        store._hybridLogCheckpoint.info.snapshotStartFlushedLogicalAddress = provisionalSnapshotStart;
+                        // Nothing to flush because the flushed region already contains everything up to recoveredTailAddress.
+                        store._hybridLogCheckpoint.info.snapshotFileLogicalStartAddress = provisionalSnapshotStart;
                         store._hybridLogCheckpoint.snapshotFlushCoordination.Dispose();
                         store.hlogBase.ClearSnapshotFlushCoordination(store._hybridLogCheckpoint.snapshotFlushCoordination);
                         break;
@@ -63,7 +63,7 @@ namespace Tsavorite.core
 
                     try
                     {
-                        store._hybridLogCheckpoint.info.snapshotStartFlushedLogicalAddress =
+                        store._hybridLogCheckpoint.info.snapshotFileLogicalStartAddress =
                             store.hlogBase.InstallSnapshotFlushCoordination(store._hybridLogCheckpoint.snapshotFlushCoordination);
                     }
                     catch (Exception ex)
@@ -73,7 +73,7 @@ namespace Tsavorite.core
                         throw;
                     }
 
-                    if (store._hybridLogCheckpoint.info.finalLogicalAddress <= store._hybridLogCheckpoint.info.snapshotStartFlushedLogicalAddress)
+                    if (store._hybridLogCheckpoint.info.recoveredTailAddress <= store._hybridLogCheckpoint.info.snapshotFileLogicalStartAddress)
                     {
                         // Existing ReadOnly writes completed the range while installation drained. Release threads that
                         // sampled the coordination and remove the now-unneeded gate.
@@ -82,9 +82,9 @@ namespace Tsavorite.core
                         break;
                     }
 
-                    var startPage = store.hlogBase.GetPage(store._hybridLogCheckpoint.info.snapshotStartFlushedLogicalAddress);
-                    var endPage = store.hlogBase.GetPage(store._hybridLogCheckpoint.info.finalLogicalAddress);
-                    if (store._hybridLogCheckpoint.info.finalLogicalAddress > store.hlogBase.GetLogicalAddressOfStartOfPage(endPage))
+                    var startPage = store.hlogBase.GetPage(store._hybridLogCheckpoint.info.snapshotFileLogicalStartAddress);
+                    var endPage = store.hlogBase.GetPage(store._hybridLogCheckpoint.info.recoveredTailAddress);
+                    if (store._hybridLogCheckpoint.info.recoveredTailAddress > store.hlogBase.GetLogicalAddressOfStartOfPage(endPage))
                         endPage++;
 
                     // ReadOnly can advance only through pages strictly below Snapshot's completion watermark. Because HeadAddress
@@ -93,9 +93,9 @@ namespace Tsavorite.core
                     // changes during the flush; correctness is not affected as we will only read safe pages during recovery.
                     store.hlogBase.AsyncFlushPagesForSnapshot(ObjectLog_OnWaitFlush(),
                         startPage, endPage,
-                        startLogicalAddress: store._hybridLogCheckpoint.info.snapshotStartFlushedLogicalAddress,
-                        endLogicalAddress: store._hybridLogCheckpoint.info.finalLogicalAddress,
-                        fuzzyStartLogicalAddress: store._hybridLogCheckpoint.info.startLogicalAddress,
+                        startLogicalAddress: store._hybridLogCheckpoint.info.snapshotFileLogicalStartAddress,
+                        endLogicalAddress: store._hybridLogCheckpoint.info.recoveredTailAddress,
+                        fuzzyStartLogicalAddress: store._hybridLogCheckpoint.info.fuzzyRegionStartAddress,
                         logDevice: store._hybridLogCheckpoint.snapshotFileDevice,
                         objectLogDevice: store._hybridLogCheckpoint.snapshotFileObjectLogDevice,
                         coordination: store._hybridLogCheckpoint.snapshotFlushCoordination,
@@ -110,8 +110,8 @@ namespace Tsavorite.core
                     // main-log prefix; Head may advance behind Snapshot for eviction, so recovery must still begin the
                     // snapshot overlay at the captured Snapshot start.
                     ObjectLog_OnPersistenceCallback();
-                    store._hybridLogCheckpoint.info.flushedLogicalAddress = store.hlogBase.IsNullDevice
-                        ? store._hybridLogCheckpoint.info.snapshotStartFlushedLogicalAddress
+                    store._hybridLogCheckpoint.info.mainLogRecoveryEndAddress = store.hlogBase.IsNullDevice
+                        ? store._hybridLogCheckpoint.info.snapshotFileLogicalStartAddress
                         : store.hlogBase.FlushedUntilAddress;
                     base.GlobalBeforeEnteringState(next, stateMachineDriver);
                     store._hybridLogCheckpoint.snapshotFileDevice?.Dispose();

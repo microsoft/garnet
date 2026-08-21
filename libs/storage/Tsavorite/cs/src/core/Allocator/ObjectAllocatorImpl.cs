@@ -760,7 +760,7 @@ namespace Tsavorite.core
                 $"Snapshot page {flushPage} starts at {asyncResult.fromAddress}, below HeadAddress {HeadAddress}");
 
             // We are writing to a separate device which starts at startPage. Eventually, startPage becomes the basis of
-            // HybridLogRecoveryInfo.snapshotStartFlushedLogicalAddress, which is the page starting at offset 0 of the snapshot file.
+            // HybridLogRecoveryInfo.snapshotFileLogicalStartAddress, which is the page starting at offset 0 of the snapshot file.
             WriteAsync(flushPage, (ulong)(AlignedPageSizeBytes * (flushPage - startPage)), (uint)pageFlushSize,
                         callback, asyncResult, device, objectLogDevice, fuzzyStartLogicalAddress);
         }

@@ -13,13 +13,12 @@ namespace Tsavorite.core
     /// </summary>
     public struct HybridLogRecoveryInfo
     {
-        /// <summary>Current checkpoint version written by this build. v9 adds the extended overflow-key size-hint discriminator;
-        /// v8 = the object-log chunk-framing format ("v2.2"); v7 = the
+        /// <summary>Current checkpoint version written by this build. v8 is the object-log chunk-framing format ("v2.2");
+        /// v7 is the
         /// downlevel split/objectId-slot object-log encoding ("v2.1", read via <see cref="LogRecord.GetObjectLogRecordStartPositionAndLengths_v21"/>).</summary>
-        public const int CheckpointVersion = 9;
+        public const int CheckpointVersion = 8;
 
-        /// <summary>Oldest checkpoint version this build can recover. v7 and v8 checkpoints remain readable. Increasing the version to v9
-        /// ensures a v8 binary rejects extended overflow-key hints that it cannot decode.</summary>
+        /// <summary>Oldest checkpoint version this build can recover. Version 7 checkpoints remain readable.</summary>
         public const int MinRecoverableCheckpointVersion = 7;
 
         /// <summary>
@@ -43,24 +42,23 @@ namespace Tsavorite.core
         /// </summary>
         public long nextVersion;
         /// <summary>
-        /// FlushedUntilAddress at the PERSISTENCE_CALLBACK phase; indicates the latest immutable (flushed) address on the main Tsavorite log at checkpoint commit time.
+        /// Exclusive end of the main-log recovery range. For Snapshot recovery, the Snapshot overlay begins here.
         /// </summary>
-        public long flushedLogicalAddress;
+        public long mainLogRecoveryEndAddress;
         /// <summary>
-        /// FlushedUntilAddress at the start of the WAIT_FLUSH phase; indicates device offset for snapshot file
+        /// Logical base used to map snapshot-file pages to hybrid-log addresses.
         /// </summary>
-        public long snapshotStartFlushedLogicalAddress;
+        public long snapshotFileLogicalStartAddress;
         /// <summary>
-        /// Start logical address; the tail address at PREPARE phase, which is the start of the "fuzzy region"
+        /// Start of the version-fuzzy region used to reject or undo next-version records during recovery.
         /// </summary>
-        public long startLogicalAddress;
+        public long fuzzyRegionStartAddress;
         /// <summary>
-        /// Final logical address; initially the tail address at WAIT_FLUSH phase, which is the the end of the "fuzzy region". It may be increase beyond this due to delta records.
+        /// TailAddress established after recovery; also the exclusive logical end represented by a Snapshot file.
         /// </summary>
-        public long finalLogicalAddress;
+        public long recoveredTailAddress;
         /// <summary>
-        /// Snapshot end logical address: snapshot is [startLogicalAddress, snapshotFinalLogicalAddress)
-        /// Note that this is initially set to finalLogicalAddress at the start of WAIT_FLUSH, but finalLogicalAddress may be higher due to delta records
+        /// Exclusive logical end represented by the Snapshot file. Currently equal to <see cref="recoveredTailAddress"/>.
         /// </summary>
         public long snapshotFinalLogicalAddress;
         /// <summary>
@@ -80,7 +78,7 @@ namespace Tsavorite.core
         internal int beginAddressObjectLogSegment;
 
         /// <summary>
-        /// The <see cref="ObjectAllocatorImpl{TStoreFunctions>.objectLogTail"/> taken at PERSISTENCE_CALLBACK (matching <see cref="flushedLogicalAddress"/>).
+        /// The <see cref="ObjectAllocatorImpl{TStoreFunctions>.objectLogTail"/> taken at PERSISTENCE_CALLBACK (matching <see cref="mainLogRecoveryEndAddress"/>).
         /// This is incremented for any flushes due to ReadOnlyAddress growth during the snapshot.
         /// </summary>
         internal ObjectLogFilePositionInfo hlogEndObjectLogTail;
@@ -116,10 +114,10 @@ namespace Tsavorite.core
             guid = token;
             useSnapshotFile = 0;
             version = _version;
-            flushedLogicalAddress = 0;
-            snapshotStartFlushedLogicalAddress = 0;
-            startLogicalAddress = 0;
-            finalLogicalAddress = 0;
+            mainLogRecoveryEndAddress = 0;
+            snapshotFileLogicalStartAddress = 0;
+            fuzzyRegionStartAddress = 0;
+            recoveredTailAddress = 0;
             snapshotFinalLogicalAddress = 0;
             headAddress = 0;
 
@@ -158,16 +156,16 @@ namespace Tsavorite.core
             nextVersion = long.Parse(value);
 
             value = reader.ReadLine();
-            flushedLogicalAddress = long.Parse(value);
+            mainLogRecoveryEndAddress = long.Parse(value);
 
             value = reader.ReadLine();
-            snapshotStartFlushedLogicalAddress = long.Parse(value);
+            snapshotFileLogicalStartAddress = long.Parse(value);
 
             value = reader.ReadLine();
-            startLogicalAddress = long.Parse(value);
+            fuzzyRegionStartAddress = long.Parse(value);
 
             value = reader.ReadLine();
-            finalLogicalAddress = long.Parse(value);
+            recoveredTailAddress = long.Parse(value);
 
             value = reader.ReadLine();
             snapshotFinalLogicalAddress = long.Parse(value);
@@ -248,10 +246,10 @@ namespace Tsavorite.core
                     writer.WriteLine(useSnapshotFile);
                     writer.WriteLine(version);
                     writer.WriteLine(nextVersion);
-                    writer.WriteLine(flushedLogicalAddress);
-                    writer.WriteLine(snapshotStartFlushedLogicalAddress);
-                    writer.WriteLine(startLogicalAddress);
-                    writer.WriteLine(finalLogicalAddress);
+                    writer.WriteLine(mainLogRecoveryEndAddress);
+                    writer.WriteLine(snapshotFileLogicalStartAddress);
+                    writer.WriteLine(fuzzyRegionStartAddress);
+                    writer.WriteLine(recoveredTailAddress);
                     writer.WriteLine(snapshotFinalLogicalAddress);
                     writer.WriteLine(headAddress);
                     writer.WriteLine(beginAddress);
@@ -280,7 +278,7 @@ namespace Tsavorite.core
             var bytes = guid.ToByteArray();
             var long1 = BitConverter.ToInt64(bytes, 0);
             var long2 = BitConverter.ToInt64(bytes, 8);
-            return long1 ^ long2 ^ version ^ flushedLogicalAddress ^ snapshotStartFlushedLogicalAddress ^ startLogicalAddress ^ finalLogicalAddress ^ snapshotFinalLogicalAddress
+            return long1 ^ long2 ^ version ^ mainLogRecoveryEndAddress ^ snapshotFileLogicalStartAddress ^ fuzzyRegionStartAddress ^ recoveredTailAddress ^ snapshotFinalLogicalAddress
                 ^ headAddress ^ beginAddress ^ beginAddressObjectLogSegment ^ (long)hlogEndObjectLogTail.word ^ (long)snapshotStartObjectLogTail.word ^ (long)snapshotEndObjectLogTail.word;
         }
 
@@ -293,10 +291,10 @@ namespace Tsavorite.core
             logger?.LogInformation("Version: {version}", version);
             logger?.LogInformation("Next Version: {nextVersion}", nextVersion);
             logger?.LogInformation("Is Snapshot?: {useSnapshotFile}", useSnapshotFile == 1);
-            logger?.LogInformation("Flushed LogicalAddress: {flushedLogicalAddress}", flushedLogicalAddress);
-            logger?.LogInformation("SnapshotStart Flushed LogicalAddress: {snapshotStartFlushedLogicalAddress}", snapshotStartFlushedLogicalAddress);
-            logger?.LogInformation("Start Logical Address: {startLogicalAddress}", startLogicalAddress);
-            logger?.LogInformation("Final Logical Address: {finalLogicalAddress}", finalLogicalAddress);
+            logger?.LogInformation("Main-log recovery end address: {mainLogRecoveryEndAddress}", mainLogRecoveryEndAddress);
+            logger?.LogInformation("Snapshot-file logical start address: {snapshotFileLogicalStartAddress}", snapshotFileLogicalStartAddress);
+            logger?.LogInformation("Fuzzy-region start address: {fuzzyRegionStartAddress}", fuzzyRegionStartAddress);
+            logger?.LogInformation("Recovered tail address: {recoveredTailAddress}", recoveredTailAddress);
             logger?.LogInformation("Snapshot Final Logical Address: {snapshotFinalLogicalAddress}", snapshotFinalLogicalAddress);
             logger?.LogInformation("Head Address: {headAddress}", headAddress);
             logger?.LogInformation("Begin Address: {beginAddress}", beginAddress);

@@ -100,7 +100,7 @@ namespace Tsavorite.test.recovery.objects
                 new DeviceLogCommitCheckpointManager(
                     new LocalStorageNamedDeviceFactoryCreator(),
                     new DefaultCheckpointNamingScheme(new DirectoryInfo(Path.Combine(MethodTestDir, "check-points")).FullName)));
-            Assert.That(checkpointInfo.snapshotStartFlushedLogicalAddress, Is.LessThanOrEqualTo(flushedObservedDuringCheckpoint));
+            Assert.That(checkpointInfo.snapshotFileLogicalStartAddress, Is.LessThanOrEqualTo(flushedObservedDuringCheckpoint));
 
             Prepare(logMemorySize, out log, out objlog, out store);
             try
@@ -132,7 +132,7 @@ namespace Tsavorite.test.recovery.objects
             const int candidateStartRecord = 5000;
             const int numRecords = 8000;
             var logMemorySize = 2048L * MinKvLogPageSize;
-            long snapshotStartFlushedLogicalAddress = 0, flushedLogicalAddress = 0;
+            long snapshotFileLogicalStartAddress = 0, mainLogRecoveryEndAddress = 0;
             long snapshotStartPage = 0;
             uint sectorSize = 0;
             Guid token;
@@ -149,28 +149,28 @@ namespace Tsavorite.test.recovery.objects
                     var tail = store.Log.TailAddress;
                     var offset = store.hlogBase.GetOffsetOnPage(tail);
 
-                    if (i >= candidateStartRecord && snapshotStartFlushedLogicalAddress == 0 && tail > store.Log.ReadOnlyAddress
+                    if (i >= candidateStartRecord && snapshotFileLogicalStartAddress == 0 && tail > store.Log.ReadOnlyAddress
                         && offset > log.SectorSize && offset < MinKvLogPageSize - (2 * log.SectorSize)
                         && offset % log.SectorSize != 0)
                     {
-                        snapshotStartFlushedLogicalAddress = tail;
+                        snapshotFileLogicalStartAddress = tail;
                     }
-                    else if (snapshotStartFlushedLogicalAddress != 0 && flushedLogicalAddress == 0
-                        && store.hlogBase.GetPage(tail) == store.hlogBase.GetPage(snapshotStartFlushedLogicalAddress)
-                        && tail > snapshotStartFlushedLogicalAddress
+                    else if (snapshotFileLogicalStartAddress != 0 && mainLogRecoveryEndAddress == 0
+                        && store.hlogBase.GetPage(tail) == store.hlogBase.GetPage(snapshotFileLogicalStartAddress)
+                        && tail > snapshotFileLogicalStartAddress
                         && offset < MinKvLogPageSize - log.SectorSize && offset % log.SectorSize != 0)
                     {
-                        flushedLogicalAddress = tail;
+                        mainLogRecoveryEndAddress = tail;
                     }
                 }
 
-                Assert.That(snapshotStartFlushedLogicalAddress, Is.GreaterThan(0),
-                    "failed to find an unaligned snapshotStartFlushedLogicalAddress record boundary");
-                Assert.That(flushedLogicalAddress, Is.GreaterThan(snapshotStartFlushedLogicalAddress),
-                    "failed to find a later unaligned flushedLogicalAddress record boundary on the same page");
-                snapshotStartPage = store.hlogBase.GetPage(snapshotStartFlushedLogicalAddress);
+                Assert.That(snapshotFileLogicalStartAddress, Is.GreaterThan(0),
+                    "failed to find an unaligned snapshotFileLogicalStartAddress record boundary");
+                Assert.That(mainLogRecoveryEndAddress, Is.GreaterThan(snapshotFileLogicalStartAddress),
+                    "failed to find a later unaligned mainLogRecoveryEndAddress record boundary on the same page");
+                snapshotStartPage = store.hlogBase.GetPage(snapshotFileLogicalStartAddress);
                 sectorSize = log.SectorSize;
-                store.Log.ShiftReadOnlyAddress(snapshotStartFlushedLogicalAddress, wait: true);
+                store.Log.ShiftReadOnlyAddress(snapshotFileLogicalStartAddress, wait: true);
 
                 ClassicAssert.IsTrue(store.TryInitiateHybridLogCheckpoint(out token, CheckpointType.Snapshot),
                     "failed to initiate Snapshot checkpoint");
@@ -186,7 +186,7 @@ namespace Tsavorite.test.recovery.objects
                     }
                 }
 
-                store.Log.ShiftReadOnlyAddress(flushedLogicalAddress, wait: true);
+                store.Log.ShiftReadOnlyAddress(mainLogRecoveryEndAddress, wait: true);
                 await store.CompleteCheckpointAsync().AsTask().ConfigureAwait(false);
             }
             finally
@@ -201,10 +201,10 @@ namespace Tsavorite.test.recovery.objects
                     new DefaultCheckpointNamingScheme(new DirectoryInfo(Path.Combine(MethodTestDir, "check-points")).FullName)));
             Assert.Multiple(() =>
             {
-                Assert.That(checkpointInfo.snapshotStartFlushedLogicalAddress, Is.EqualTo(snapshotStartFlushedLogicalAddress));
-                Assert.That(checkpointInfo.flushedLogicalAddress, Is.EqualTo(flushedLogicalAddress));
-                Assert.That(checkpointInfo.flushedLogicalAddress % sectorSize, Is.Not.Zero);
-                Assert.That(checkpointInfo.flushedLogicalAddress / MinKvLogPageSize, Is.EqualTo(snapshotStartPage));
+                Assert.That(checkpointInfo.snapshotFileLogicalStartAddress, Is.EqualTo(snapshotFileLogicalStartAddress));
+                Assert.That(checkpointInfo.mainLogRecoveryEndAddress, Is.EqualTo(mainLogRecoveryEndAddress));
+                Assert.That(checkpointInfo.mainLogRecoveryEndAddress % sectorSize, Is.Not.Zero);
+                Assert.That(checkpointInfo.mainLogRecoveryEndAddress / MinKvLogPageSize, Is.EqualTo(snapshotStartPage));
             });
 
             Prepare(logMemorySize, out log, out objlog, out store);

@@ -791,8 +791,8 @@ namespace Tsavorite.core
 
             var diskBeginAddress = recoveredHLCInfo.info.beginAddress;
             var diskFlushedUntilAddress = recoveredHLCInfo.info.useSnapshotFile == 0
-                ? recoveredHLCInfo.info.finalLogicalAddress
-                : recoveredHLCInfo.info.flushedLogicalAddress;
+                ? recoveredHLCInfo.info.recoveredTailAddress
+                : recoveredHLCInfo.info.mainLogRecoveryEndAddress;
 
             // Delete disk segments until specified disk begin address
 

@@ -20,7 +20,7 @@ namespace Tsavorite.core
         public IDevice recoveryDevice;
         /// <summary>The first page to recover; this is the page index of the snapshotStartAddress and is the page-offset into
         /// the address range of the snapshot file (i.e. the page at the snapshot file's offset 0). This field is populated
-        /// from <see cref="HybridLogRecoveryInfo.snapshotStartFlushedLogicalAddress"/>.</summary>
+        /// from <see cref="HybridLogRecoveryInfo.snapshotFileLogicalStartAddress"/>.</summary>
         public long recoveryDevicePageOffset;
         /// <summary>Object log recovery device, obtained from CheckpointManager.</summary>
         public IDevice objectLogRecoveryDevice;
@@ -229,7 +229,7 @@ namespace Tsavorite.core
             using var current = new HybridLogCheckpointInfo();
             current.Recover(token, checkpointManager, out var _);
             var hasSnapshotObjects = current.info.snapshotEndObjectLogTail.HasData;
-            var snapshotDeviceOffset = hlogBase.GetLogicalAddressOfStartOfPage(hlogBase.GetPage(current.info.snapshotStartFlushedLogicalAddress));
+            var snapshotDeviceOffset = hlogBase.GetLogicalAddressOfStartOfPage(hlogBase.GetPage(current.info.snapshotFileLogicalStartAddress));
             return new LogFileInfo
             {
                 // Hybrid (main log file) info:
@@ -242,7 +242,7 @@ namespace Tsavorite.core
                 // The overlap between the FlushedUntilAddress for the main log being recorded after the flush completes and the FlushedUntilAddress for the snapshot 
                 // being recorded before the flush starts ensures there is no gap.
                 hybridLogFileStartAddress = hlogBase.GetLogicalAddressOfStartOfPage(hlogBase.GetPage(current.info.beginAddress)),
-                hybridLogFileEndAddress = current.info.flushedLogicalAddress,
+                hybridLogFileEndAddress = current.info.mainLogRecoveryEndAddress,
                 snapshotFileEndAddress = current.info.snapshotFinalLogicalAddress - snapshotDeviceOffset,
 
                 // Object log file info:
@@ -379,7 +379,7 @@ namespace Tsavorite.core
         }
 
         private static bool IsCompatible(in IndexRecoveryInfo indexInfo, in HybridLogRecoveryInfo recoveryInfo)
-            => indexInfo.finalLogicalAddress <= recoveryInfo.finalLogicalAddress;
+            => indexInfo.finalLogicalAddress <= recoveryInfo.recoveredTailAddress;
 
         private void GetRecoveryInfo(Guid indexToken, Guid hybridLogToken, out HybridLogCheckpointInfo recoveredHLCInfo, out IndexCheckpointInfo recoveredICInfo)
         {
@@ -458,7 +458,7 @@ namespace Tsavorite.core
 
             if (!SetRecoveryPageRanges(recoveredHLCInfo, numPagesToPreload, recoverFromAddress, out long tailAddress, out long headAddress, out long scanFromAddress))
                 return -1;
-            RecoveryOptions options = new(fuzzyRegionStartAddress: recoveredHLCInfo.info.startLogicalAddress, undoNextVersion);
+            RecoveryOptions options = new(fuzzyRegionStartAddress: recoveredHLCInfo.info.fuzzyRegionStartAddress, undoNextVersion);
 
             // Make index consistent for version v
             long readOnlyAddress;
@@ -466,7 +466,7 @@ namespace Tsavorite.core
             RecoveryStatus recoveryStatus;
             if (recoveredHLCInfo.info.useSnapshotFile == 0)
             {
-                recoveryStatus = await RecoverHybridLogAsync(scanFromAddress, recoverFromAddress, untilAddress: recoveredHLCInfo.info.finalLogicalAddress,
+                recoveryStatus = await RecoverHybridLogAsync(scanFromAddress, recoverFromAddress, untilAddress: recoveredHLCInfo.info.recoveredTailAddress,
                         recoveredHLCInfo.info.nextVersion, CheckpointType.FoldOver, headAddress, options, cancellationToken).ConfigureAwait(false);
 
                 // FoldOver objects are already durable in the main object-log; set the tail to its end so subsequent writes append after it.
@@ -476,12 +476,12 @@ namespace Tsavorite.core
             }
             else
             {
-                if (recoveredHLCInfo.info.flushedLogicalAddress < headAddress)
-                    headAddress = recoveredHLCInfo.info.flushedLogicalAddress;
+                if (recoveredHLCInfo.info.mainLogRecoveryEndAddress < headAddress)
+                    headAddress = recoveredHLCInfo.info.mainLogRecoveryEndAddress;
 
-                // First recover from index starting point (fromAddress) to snapshot starting point (flushedLogicalAddress taken at PERSISTENCE_CALLBACK, so it includes
+                // First recover from index starting point (fromAddress) to the main-log recovery end captured at PERSISTENCE_CALLBACK, so it includes
                 // any flushes to the hybrid log files due to OnPagesMarkedReadOnly while we were flushing to the snapshot files). Object loading is deferred (see below).
-                recoveryStatus = await RecoverHybridLogAsync(scanFromAddress, recoverFromAddress, untilAddress: recoveredHLCInfo.info.flushedLogicalAddress,
+                recoveryStatus = await RecoverHybridLogAsync(scanFromAddress, recoverFromAddress, untilAddress: recoveredHLCInfo.info.mainLogRecoveryEndAddress,
                         recoveredHLCInfo.info.nextVersion, CheckpointType.Snapshot, headAddress, options, cancellationToken).ConfigureAwait(false);
 
                 // Initialize the main object-log tail to the end of the hybrid-log objects BEFORE recovering the snapshot pages: the snapshot-region flushes copy
@@ -492,14 +492,14 @@ namespace Tsavorite.core
                 // Then recover snapshot into mutable region. The snapshot-region pages are read (without their objects), flushed to the main log with their objects
                 // copied into the main object-log (so they are durable and can be evicted into a smaller memory budget), and then objects are loaded once over the full
                 // recovered range (both the hybrid-log and snapshot regions), honoring the final headAddress.
-                finalHeadAddress = await RecoverHybridLogFromSnapshotFileAsync(scanFromAddress: recoveredHLCInfo.info.flushedLogicalAddress,
-                        recoverFromAddress, untilAddress: recoveredHLCInfo.info.finalLogicalAddress,
-                        snapshotStartAddress: recoveredHLCInfo.info.snapshotStartFlushedLogicalAddress, snapshotEndAddress: recoveredHLCInfo.info.snapshotFinalLogicalAddress,
+                finalHeadAddress = await RecoverHybridLogFromSnapshotFileAsync(scanFromAddress: recoveredHLCInfo.info.mainLogRecoveryEndAddress,
+                        recoverFromAddress, untilAddress: recoveredHLCInfo.info.recoveredTailAddress,
+                        snapshotStartAddress: recoveredHLCInfo.info.snapshotFileLogicalStartAddress, snapshotEndAddress: recoveredHLCInfo.info.snapshotFinalLogicalAddress,
                         snapshotObjectLogReadEnd: recoveredHLCInfo.info.snapshotEndObjectLogTail,
                         recoveredHLCInfo.info.nextVersion, recoveredHLCInfo.info.guid, headAddress: recoveryStatus.headAddress,
                         options, cancellationToken).ConfigureAwait(false);
 
-                readOnlyAddress = recoveredHLCInfo.info.flushedLogicalAddress;
+                readOnlyAddress = recoveredHLCInfo.info.mainLogRecoveryEndAddress;
             }
 
             DoPostRecovery(recoveredICInfo, recoveredHLCInfo, tailAddress, finalHeadAddress, readOnlyAddress);
@@ -514,7 +514,7 @@ namespace Tsavorite.core
             if (readOnlyAddress < headAddress)
                 readOnlyAddress = headAddress;
 
-            // If eviction advanced headAddress (past the checkpoint's flushedLogicalAddress) to the first valid address of its page, that page is fully
+            // If eviction advanced headAddress past the checkpoint's mainLogRecoveryEndAddress to the first valid address of its page, that page is fully
             // resident and was NOT flushed to the main log (recovery flushes only pages it evicts), so the flushed/read-only boundary is the page's start
             // (the end of the last flushed page). Leaving ReadOnlyAddress/FlushedUntilAddress at the first-valid address would mark the page's header region
             // as read-only/flushed while the page is not on disk, so a read up to that boundary (e.g. a Scan up to SafeReadOnlyAddress) would issue a disk
@@ -523,7 +523,7 @@ namespace Tsavorite.core
             if (readOnlyAddress == headAddress && headAddress == hlogBase.GetFirstValidLogicalAddressOnPage(hlogBase.GetPage(headAddress)))
             {
                 var headPageStart = hlogBase.GetLogicalAddressOfStartOfPage(hlogBase.GetPage(headAddress));
-                if (headPageStart >= recoveredHLCInfo.info.flushedLogicalAddress)
+                if (headPageStart >= recoveredHLCInfo.info.mainLogRecoveryEndAddress)
                     headAddress = readOnlyAddress = headPageStart;
             }
 
@@ -577,8 +577,8 @@ namespace Tsavorite.core
 
                 // Start recovery at least from beginning of fuzzy log region. Needed if we are recovering to the same checkpoint
                 // a second time, with undo set to true during the second time.
-                if (recoveredHLCInfo.info.startLogicalAddress < recoverFromAddress)
-                    recoverFromAddress = recoveredHLCInfo.info.startLogicalAddress;
+                if (recoveredHLCInfo.info.fuzzyRegionStartAddress < recoverFromAddress)
+                    recoverFromAddress = recoveredHLCInfo.info.fuzzyRegionStartAddress;
             }
             else
             {
@@ -595,13 +595,13 @@ namespace Tsavorite.core
 
         private bool SetRecoveryPageRanges(HybridLogCheckpointInfo recoveredHLCInfo, int numPagesToPreload, long recoverFromAddress, out long tailAddress, out long headAddress, out long scanFromAddress)
         {
-            if ((recoveredHLCInfo.info.useSnapshotFile == 0) && (recoveredHLCInfo.info.finalLogicalAddress <= hlogBase.GetTailAddress()))
+            if ((recoveredHLCInfo.info.useSnapshotFile == 0) && (recoveredHLCInfo.info.recoveredTailAddress <= hlogBase.GetTailAddress()))
             {
                 tailAddress = headAddress = scanFromAddress = default;
                 return false;
             }
 
-            tailAddress = recoveredHLCInfo.info.finalLogicalAddress;
+            tailAddress = recoveredHLCInfo.info.recoveredTailAddress;
             headAddress = recoveredHLCInfo.info.headAddress;
             if (numPagesToPreload != -1)
             {
@@ -961,7 +961,7 @@ namespace Tsavorite.core
             var snapshotBoundaryPage = hlogBase.GetPage(scanFromAddress);
 
             // Snapshot recovery overlays the snapshot image only at/above scanFromAddress, which is the recovered
-            // flushedLogicalAddress. Usually the preceding main-log recovery leaves this boundary page resident. An
+            // mainLogRecoveryEndAddress. Usually the preceding main-log recovery leaves this boundary page resident. An
             // index checkpoint may make that replay unnecessary, however, so load the durable main prefix on demand
             // before issuing the snapshot suffix read.
             if (hlogBase.GetOffsetOnPage(scanFromAddress) > 0)

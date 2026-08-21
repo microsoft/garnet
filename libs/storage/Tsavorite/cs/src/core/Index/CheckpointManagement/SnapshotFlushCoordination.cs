@@ -101,7 +101,7 @@ namespace Tsavorite.core
             if (coordination.IsTerminal)
                 return false;
 
-            // Once snapshotStartFlushedLogicalAddress is stable, no installation drain remains. Far-behind pages take
+            // Once snapshotFileLogicalStartAddress is stable, no installation drain remains. Far-behind pages take
             // this lock-free path; only an actual same-page conflict proceeds to the epoch-suspend/wait path below.
             if (coordination.InstallationCompleted && coordination.ReadOnlyMayFlushFast(page))
                 return false;
@@ -320,7 +320,7 @@ namespace Tsavorite.core
             }
         }
 
-        /// <summary>Publish that snapshotStartFlushedLogicalAddress is stable and ReadOnly claims are no longer required.</summary>
+        /// <summary>Publish that snapshotFileLogicalStartAddress is stable and ReadOnly claims are no longer required.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void CompleteInstallation() => Volatile.Write(ref installationCompleted, true);
 

@@ -474,11 +474,11 @@ boundaries ever become inconsistent; a later ReadOnly flush overwrites it.
 
 ### 5.7 Snapshot and ReadOnly page ordering
 
-At `PREPARE`, `startLogicalAddress` captures the exact tail that starts the fuzzy region and Snapshot publishes
+At `PREPARE`, `fuzzyRegionStartAddress` captures the exact tail that starts the fuzzy region and Snapshot publishes
 permissive coordination. ReadOnly work during PREPARE/IN_PROGRESS is tracked but not blocked. PREPARE's epoch barrier
 captures the endpoint of any ReadOnly worker that started before coordination publication. At `WAIT_FLUSH`,
-`finalLogicalAddress` captures TailAddress; Snapshot arms the conservative page gate, drains tracked and
-pre-coordination ReadOnly flushes through address publication, then captures `snapshotStartFlushedLogicalAddress` from
+`recoveredTailAddress` captures TailAddress; Snapshot arms the conservative page gate, drains tracked and
+pre-coordination ReadOnly flushes through address publication, then captures `snapshotFileLogicalStartAddress` from
 the stable `FlushedUntilAddress`. Snapshot does not advance `ReadOnlyAddress`.
 
 `HybridLogCheckpointInfo.LastCompletedSnapshotPage` is a runtime-only contiguous completion watermark. Snapshot issues one
@@ -497,7 +497,7 @@ counter update, or epoch suspend. With no ReadOnly waiters, each Snapshot page c
 monotonic CAS and does not acquire the progress monitor.
 
 For `NullDevice`, Head may advance behind completed Snapshot pages even though no main-log bytes are durable.
-`flushedLogicalAddress` therefore remains the captured Snapshot start rather than the later HeadAddress; recovery reads
+`mainLogRecoveryEndAddress` therefore remains the captured Snapshot start rather than the later HeadAddress; recovery reads
 that evicted prefix from the snapshot file.
 
 Snapshot serializes stable records into the snapshot object log and stamps their snapshot positions directly on the live
@@ -505,7 +505,7 @@ page. ReadOnly does not consume `ObjectLogPosition`; after Snapshot completes th
 `ObjectIdMap`, serializes it to the main object log, and replaces the Snapshot position. No page-image copy or metadata
 journal is required.
 
-Snapshot leaves fuzzy v+1 records unchanged. Recovery uses the exact persisted `startLogicalAddress` as the fuzzy lower
+Snapshot leaves fuzzy v+1 records unchanged. Recovery uses the exact persisted `fuzzyRegionStartAddress` as the fuzzy lower
 boundary and invalidates such records before hashing overflow keys or reading payloads. RDH must still describe the record's
 stable allocation so recovery can advance to the next record.
 
@@ -530,11 +530,11 @@ The caller obtains the record's start position and initial key/value extents fro
   A main-log record is therefore never used as a Snapshot record's successor. Iterators use the same scan entirely in
   main-object-log space.
 
-For Snapshot recovery, `flushedLogicalAddress` is the exact overlay boundary. Main-log recovery supplies the page
-prefix below `flushedLogicalAddress`. Snapshot recovery then reads only the suffix at/above that address from the
+For Snapshot recovery, `mainLogRecoveryEndAddress` is the exact overlay boundary. Main-log recovery supplies the page
+prefix below `mainLogRecoveryEndAddress`. Snapshot recovery then reads only the suffix at/above that address from the
 snapshot file; if it is not sector-aligned, recovery saves and restores the main bytes below it in the first shared
 sector. The snapshot file's
-`snapshotStartFlushedLogicalAddress` remains the page-offset mapping for locating that suffix, but it is not the
+`snapshotFileLogicalStartAddress` remains the page-offset mapping for locating that suffix, but it is not the
 main/snapshot object-device split. If the main boundary page is not resident (for example, because an index checkpoint
 made replay unnecessary), recovery first reloads its durable main prefix.
 
@@ -660,7 +660,7 @@ populated in Pass 2. `ComputeRecoveryOverflowKeyHash()` therefore:
 
 For a headered key, the combined RDH/objectId page count already covers the entire framed key. Recovery Pass 1 does not
 need a key sentinel or repeated discovery reads; the leading header narrows the rounded extent to the exact payload.
-The Snapshot Pass 1 scan begins at `flushedLogicalAddress`, so records in the preserved main prefix are neither
+The Snapshot Pass 1 scan begins at `mainLogRecoveryEndAddress`, so records in the preserved main prefix are neither
 rehashed nor reported as snapshot reads a second time.
 
 ### 7.2 Pass 2: page object loading
@@ -823,7 +823,7 @@ Indentation is call depth. Component branches and lifetime changes are included 
 ### 9.3 Recovery Pass 1
 
 - `Recovery.RecoverFromPage(...)`
-  - Snapshot boundary page starts at `flushedLogicalAddress` after merging its snapshot suffix over the main prefix
+  - Snapshot boundary page starts at `mainLogRecoveryEndAddress` after merging its snapshot suffix over the main prefix
   - inline key -> hash directly from `LogRecord`
   - overflow key -> `ObjectAllocatorImpl.ComputeRecoveryOverflowKeyHash(...)`
     - decode position/hint
@@ -886,11 +886,11 @@ Indentation is call depth. Component branches and lifetime changes are included 
 - `SnapshotCheckpointSMTask.GlobalAfterEnteringState(PREPARE)`
   - capture the endpoint of ReadOnly work issued before coordination publication
 - `SnapshotCheckpointSMTask.GlobalBeforeEnteringState(WAIT_FLUSH)`
-  - capture TailAddress as `finalLogicalAddress`
+  - capture TailAddress as `recoveredTailAddress`
   - arm the page watermark
   - drain pre-coordination and claimed ReadOnly page writes through FUA publication
-  - capture the stable `snapshotStartFlushedLogicalAddress`
-  - `AsyncFlushPagesForSnapshot(snapshotStartFlushedLogicalAddress, finalLogicalAddress, startLogicalAddress, ...)`
+  - capture the stable `snapshotFileLogicalStartAddress`
+  - `AsyncFlushPagesForSnapshot(snapshotFileLogicalStartAddress, recoveredTailAddress, fuzzyRegionStartAddress, ...)`
     - issue one live Snapshot page at a time
     - publish `LastCompletedSnapshotPage` after complete page IO
     - ReadOnly waits only while Snapshot is writing that same page
@@ -921,10 +921,9 @@ keys, overflow/object values, direct-IO thresholds, 4 MB discovery boundaries, a
 
 ## 11. Version and format separation
 
-The current object-log format is checkpoint version 9. Version 8 uses the same chunk framing but does not set
-`KeyHasExtendedSizeHint`; its overflow keys use the objectId-only page-count/sentinel decoder. Version 7 is recoverable
-through the per-record bit-63 legacy discriminator and its dedicated decoder. A version 8 binary rejects a version 9
-checkpoint rather than silently interpreting an extended key hint as an objectId-only hint.
+The current object-log format is checkpoint version 8. It uses chunk framing and carries extended overflow-key page
+hints across raw RDH KeyLength and the objectId hint, marked by `KeyHasExtendedSizeHint`. Version 7 is recoverable
+through the per-record bit-63 legacy discriminator and its dedicated decoder.
 
 The following formats are separate and must not borrow each other's length semantics:
 
