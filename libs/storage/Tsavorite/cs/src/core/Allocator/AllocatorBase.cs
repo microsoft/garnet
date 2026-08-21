@@ -500,17 +500,28 @@ namespace Tsavorite.core
         /// <summary>Drain only the calling thread's affine device completion context (see <see cref="IDevice.TryCompleteMine"/>).</summary>
         internal virtual bool TryCompleteMine() => device.TryCompleteMine();
 
+        /// <summary>
+        /// Mark the allocator disposed and stop the size-tracker resizer, waiting for it to exit, BEFORE tearing down the epoch,
+        /// buffer pool, flush event (and, by the owner, the log device) that it uses; otherwise a still-running resizer can spin
+        /// on or dereference these cleared resources. Setting disposed = true first makes the resizer's eviction spin-waits bail
+        /// out, so this Stop(wait: true) cannot itself hang even if an in-flight eviction target is no longer reachable. The
+        /// device is still alive at this point, so any already-issued resizer flush completes and the resizer terminates promptly.
+        /// <para>
+        /// Idempotent: disposed is already true on a second call, and Stop() compare-exchanges runState from Running, so it takes
+        /// neither the signal path nor the wait loop once the resizer has stopped. A derived Dispose() that tears down its own
+        /// resizer-visible state must call this before doing so, then still call base.Dispose().
+        /// </para>
+        /// </summary>
+        protected void StopSizeTrackerForDispose()
+        {
+            disposed = true;
+            logSizeTracker?.Stop(wait: true);
+        }
+
         /// <summary>Dispose allocator</summary>
         public virtual void Dispose()
         {
-            disposed = true;
-
-            // Stop the size-tracker resizer and wait for it to exit BEFORE tearing down the epoch, buffer pool, flush event
-            // (and, by the owner, the log device) that it uses; otherwise a still-running resizer can spin on or dereference
-            // these cleared resources. Setting disposed = true above makes the resizer's eviction spin-waits bail out, so this
-            // Stop(wait: true) cannot itself hang even if an in-flight eviction target is no longer reachable. The device is
-            // still alive at this point, so any already-issued resizer flush completes and the resizer terminates promptly.
-            logSizeTracker?.Stop(wait: true);
+            StopSizeTrackerForDispose();
 
             if (isEpochOwned)
                 epoch.Dispose();
