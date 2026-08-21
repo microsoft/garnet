@@ -89,7 +89,7 @@ namespace Garnet.server
 
         private void SortedSetAdd(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion)
         {
-            DeleteExpiredItems();
+            DeleteExpiredItems(bound: 16);
 
             var addedOrChanged = 0;
             double incrResult = 0;
@@ -210,7 +210,7 @@ namespace Garnet.server
 
         private void SortedSetRemove(ref ObjectInput input, ref ObjectOutput output)
         {
-            DeleteExpiredItems();
+            DeleteExpiredItems(bound: 16);
 
             var removed = 0;
 
@@ -320,7 +320,7 @@ namespace Garnet.server
 
         private void SortedSetIncrement(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion)
         {
-            DeleteExpiredItems();
+            DeleteExpiredItems(bound: 16);
 
             // It's useful to fix RESP2 in the internal API as that just reads back the output.
             if (input.arg2 > 0)
@@ -514,7 +514,7 @@ namespace Garnet.server
                                 var n = maxIndex - minIndex + 1;
                                 var iterator = options.Reverse ? sortedSet.Reverse() : sortedSet;
 
-                                if (expirationTimes is not null)
+                                if (HasExpirableItems())
                                 {
                                     iterator = iterator.Where(x => !IsExpired(x.Element));
                                 }
@@ -588,7 +588,7 @@ namespace Garnet.server
 
         private void SortedSetRemoveRangeByRank(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion)
         {
-            DeleteExpiredItems();
+            DeleteExpiredItems(bound: 16);
 
             using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
 
@@ -637,7 +637,7 @@ namespace Garnet.server
 
         private void SortedSetRemoveRangeByScore(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion)
         {
-            DeleteExpiredItems();
+            DeleteExpiredItems(bound: 16);
 
             using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
 
@@ -720,7 +720,7 @@ namespace Garnet.server
 
             if (isRemove)
             {
-                DeleteExpiredItems();
+                DeleteExpiredItems(bound: 16);
             }
 
             var rem = GetElementsInRangeByLex(minParamBytes, maxParamBytes, false, false, isRemove, out int errorCode);
@@ -870,7 +870,7 @@ namespace Garnet.server
 
         private void SortedSetPersist(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion)
         {
-            DeleteExpiredItems();
+            DeleteExpiredItems(bound: 16);
 
             var numFields = input.parseState.Count;
 
@@ -936,7 +936,7 @@ namespace Garnet.server
 
         private void SortedSetExpire(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion)
         {
-            DeleteExpiredItems();
+            DeleteExpiredItems(bound: 16);
 
             var expirationWithOption = new ExpirationWithOption(input.arg1, input.arg2);
 

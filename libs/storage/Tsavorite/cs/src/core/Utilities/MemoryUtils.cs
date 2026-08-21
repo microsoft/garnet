@@ -43,6 +43,18 @@ namespace Tsavorite.core
         /// <summary>.Net object avg. overhead for holding a priority queue entry</summary>
         public const int PriorityQueueEntryOverhead = 48;
 
+        /// <summary>
+        /// .Net object overhead for IndexedPriorityQueue (Dictionary + array + count).
+        /// Dictionary(80) + array object header(24) + int(4) ≈ 108, rounded to 112.
+        /// </summary>
+        public const int IndexedPriorityQueueOverhead = 112;
+
+        /// <summary>
+        /// .Net object avg. overhead per entry in IndexedPriorityQueue.
+        /// Dictionary entry(64) + heap array slot (ref 8 + long 8 = 16) = 80.
+        /// </summary>
+        public const int IndexedPriorityQueueEntryOverhead = 80;
+
         /// <summary>This is <see cref="Array.MaxLength"/> but that is a static expression, not a constant</summary>
         public const int ArrayMaxLength = 0x7FFFFFC7;
 
