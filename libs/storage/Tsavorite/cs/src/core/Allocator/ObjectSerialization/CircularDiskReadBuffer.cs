@@ -59,7 +59,6 @@ namespace Tsavorite.core
         /// available in this device's address space. Speculative discovery windows clamp to this boundary; an authoritative endpoint parsed
         /// from framing may not cross it. Sector-rounded device requests may extend past it physically.</summary>
         ulong hardReadEndAddress;
-        ulong hardWriteEndAddress;
         /// <summary>Offset at which consumption must begin if the current buffer is filled later. A direct overflow read resets the ring at
         /// the sector containing the payload end. If no following bytes are currently required, no device read is submitted, so this retains
         /// the payload-end offset within that sector. If later framing grows <see cref="RequiredEndAddress"/>, the first deferred read uses
