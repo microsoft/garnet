@@ -1,0 +1,28 @@
+{
+  "id": "azure/overview",
+  "title": "Azure Cosmos DB Garnet Cache Overview",
+  "description": "Azure Cosmos DB Garnet Cache is a fully managed, high-performance caching service built on the Garnet remote cache-store from Microsoft Research. It provides enterprise-grade reliability, security, and scalability without the operational overhead of managing your own cache infrastructure. With consistent low latency and high throughput even with many client connections, Azure Cosmos DB Garnet Cache accelerates data access and leads to cost savings for large apps and services.",
+  "source": "@site/docs/azure/overview.md",
+  "sourceDirName": "azure",
+  "slug": "/azure/overview",
+  "permalink": "/garnet/docs/azure/overview",
+  "draft": false,
+  "unlisted": false,
+  "editUrl": "https://github.com/microsoft/garnet/tree/main/website/docs/azure/overview.md",
+  "tags": [],
+  "version": "current",
+  "frontMatter": {
+    "id": "overview",
+    "sidebar_label": "Overview",
+    "title": "Azure Cosmos DB Garnet Cache Overview"
+  },
+  "sidebar": "garnetDocSidebar",
+  "previous": {
+    "title": "Contributing",
+    "permalink": "/garnet/docs/dev/contributing"
+  },
+  "next": {
+    "title": "Quick Start",
+    "permalink": "/garnet/docs/azure/quickstart"
+  }
+}

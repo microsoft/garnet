@@ -1,0 +1,28 @@
+{
+  "id": "dev/tsavorite/intro",
+  "title": "Introduction",
+  "description": "Garnet’s storage layer, called Tsavorite, was forked from our prior open-source project FASTER. Tsavorite includes strong database features such as thread scalability,",
+  "source": "@site/docs/dev/tsavorite/intro.md",
+  "sourceDirName": "dev/tsavorite",
+  "slug": "/dev/tsavorite/intro",
+  "permalink": "/garnet/docs/dev/tsavorite/intro",
+  "draft": false,
+  "unlisted": false,
+  "editUrl": "https://github.com/microsoft/garnet/tree/main/website/docs/dev/tsavorite/intro.md",
+  "tags": [],
+  "version": "current",
+  "frontMatter": {
+    "id": "intro",
+    "sidebar_label": "Introduction",
+    "title": "Introduction"
+  },
+  "sidebar": "garnetDocSidebar",
+  "previous": {
+    "title": "Garnet API",
+    "permalink": "/garnet/docs/dev/garnet-api"
+  },
+  "next": {
+    "title": "Revivification",
+    "permalink": "/garnet/docs/dev/tsavorite/reviv"
+  }
+}

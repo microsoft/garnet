@@ -1,0 +1,28 @@
+{
+  "id": "dev/multi-db",
+  "title": "Logical Databases",
+  "description": "Overview",
+  "source": "@site/docs/dev/multi-db.md",
+  "sourceDirName": "dev",
+  "slug": "/dev/multi-db",
+  "permalink": "/garnet/docs/dev/multi-db",
+  "draft": false,
+  "unlisted": false,
+  "editUrl": "https://github.com/microsoft/garnet/tree/main/website/docs/dev/multi-db.md",
+  "tags": [],
+  "version": "current",
+  "frontMatter": {
+    "id": "multi-db",
+    "sidebar_label": "Logical Databases",
+    "title": "Logical Databases"
+  },
+  "sidebar": "garnetDocSidebar",
+  "previous": {
+    "title": "Custom Commands",
+    "permalink": "/garnet/docs/dev/custom-commands"
+  },
+  "next": {
+    "title": "Collection Broker",
+    "permalink": "/garnet/docs/dev/collection-broker"
+  }
+}
