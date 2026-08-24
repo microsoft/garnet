@@ -198,7 +198,7 @@ namespace Garnet.test
             unsafe
             {
                 var insertRes = NativeDiskANNMethods.insert(Context, rawIndex, (nint)Unsafe.AsPointer(ref MemoryMarshal.GetReference(id)), (nuint)id.Length, (nint)Unsafe.AsPointer(ref MemoryMarshal.GetReference(elem)), (nuint)elem.Length, (nint)Unsafe.AsPointer(ref MemoryMarshal.GetReference(attr)), (nuint)attr.Length);
-                ClassicAssert.AreEqual(NativeDiskANNMethods.DiskANNInsertResult.True, insertRes);
+                ClassicAssert.AreEqual(NativeDiskANNMethods.DiskANNInsertResult.Success, insertRes);
             }
 
             // Check valid initially
@@ -410,7 +410,7 @@ namespace Garnet.test
             unsafe
             {
                 var insertRes = NativeDiskANNMethods.insert(Context, rawIndex, (nint)Unsafe.AsPointer(ref MemoryMarshal.GetReference(id)), (nuint)id.Length, (nint)Unsafe.AsPointer(ref MemoryMarshal.GetReference(elem)), (nuint)elem.Length, (nint)Unsafe.AsPointer(ref MemoryMarshal.GetReference(attr)), (nuint)attr.Length);
-                ClassicAssert.AreEqual(NativeDiskANNMethods.DiskANNInsertResult.True, insertRes);
+                ClassicAssert.AreEqual(NativeDiskANNMethods.DiskANNInsertResult.Success, insertRes);
             }
 
             Span<byte> filter = [];
@@ -527,7 +527,7 @@ namespace Garnet.test
                     (nint)Unsafe.AsPointer(ref MemoryMarshal.GetReference(elem2)), (nuint)elem2.Length,
                     (nint)Unsafe.AsPointer(ref MemoryMarshal.GetReference(attr2)), (nuint)attr2.Length
                 );
-                ClassicAssert.AreEqual(NativeDiskANNMethods.DiskANNInsertResult.True, insertRes);
+                ClassicAssert.AreEqual(NativeDiskANNMethods.DiskANNInsertResult.Success, insertRes);
             }
 
             GC.KeepAlive(deleteDel);

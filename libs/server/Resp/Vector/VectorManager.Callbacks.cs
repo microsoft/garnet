@@ -180,11 +180,11 @@ namespace Garnet.server
                 static void AssertKeyAlignment(in VectorElementKey key)
                 {
                     ulong context;
-                    if(key.NamespaceBytes.Length == 1)
+                    if (key.NamespaceBytes.Length == 1)
                     {
                         context = key.NamespaceBytes[0];
                     }
-                    else if(key.NamespaceBytes.Length ==4)
+                    else if (key.NamespaceBytes.Length == 4)
                     {
                         context = BinaryPrimitives.ReadUInt32LittleEndian(key.NamespaceBytes);
                     }
@@ -384,7 +384,14 @@ namespace Garnet.server
                 CompletePending(ref status, ref outputSpan, ref ctx);
             }
 
-            return status.IsCompletedSuccessfully ? (byte)1 : default;
+            if (status.IsCompletedSuccessfully)
+            {
+                return 1;
+            }
+            else
+            {
+                return 0;
+            }
         }
 
         [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
@@ -399,7 +406,14 @@ namespace Garnet.server
             var status = ctx.Delete(keyWithNamespace);
             Debug.Assert(!status.IsPending, "Deletes should never go async");
 
-            return status.IsCompletedSuccessfully && status.Found ? (byte)1 : default;
+            if (status.IsCompletedSuccessfully && status.Found)
+            {
+                return 1;
+            }
+            else
+            {
+                return 0;
+            }
         }
 
         [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
@@ -424,7 +438,14 @@ namespace Garnet.server
                 CompletePending(ref status, ref ignored, ref ctx);
             }
 
-            return status.IsCompletedSuccessfully ? (byte)1 : default;
+            if (status.IsCompletedSuccessfully)
+            {
+                return 1;
+            }
+            else
+            {
+                return 0;
+            }
         }
 
         [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]

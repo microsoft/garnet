@@ -100,14 +100,23 @@ namespace Garnet.server
             var attributes_len = attributes.Length;
 
             var res = NativeDiskANNMethods.insert(context, index, (nint)id_data, (nuint)id_len, (nint)vector_data, (nuint)vectorElementCount, (nint)attributes_data, (nuint)attributes_len);
-            if (res == NativeDiskANNMethods.DiskANNInsertResult.False)
+            if (res == NativeDiskANNMethods.DiskANNInsertResult.Fail)
             {
                 needsQuantization = false;
                 return false;
             }
+            else if (res == NativeDiskANNMethods.DiskANNInsertResult.Success)
+            {
+                needsQuantization = false;
+                return true;
+            }
+            else
+            {
+                Debug.Assert(res == NativeDiskANNMethods.DiskANNInsertResult.SuccessStartTraining, "Unexpected DiskANNInsertResult");
 
-            needsQuantization = res == NativeDiskANNMethods.DiskANNInsertResult.QuantizationRequested;
-            return true;
+                needsQuantization = true;
+                return true;
+            }
         }
 
         public bool BuildQuantizationTable(ulong context, nint index)
@@ -441,9 +450,9 @@ namespace Garnet.server
     {
         public enum DiskANNInsertResult : byte
         {
-            False = 0,
-            True = 1,
-            QuantizationRequested = 2,
+            Fail = 0,
+            Success = 1,
+            SuccessStartTraining = 2,
         }
 
         const string DISKANN_GARNET = "diskann_garnet";
