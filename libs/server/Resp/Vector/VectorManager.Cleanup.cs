@@ -87,7 +87,7 @@ namespace Garnet.server
         }
 
         private readonly VectorSetCleanupWorkChannel<object> cleanupTaskChannel;
-        private readonly VectorSetCleanupWorkChannel<(ulong Context, TaskCompletionSource MarkCompleted)> requestCleanupTaskChannel;
+        private readonly VectorSetCleanupWorkChannel<ulong> requestCleanupTaskChannel;
         private readonly VectorSetCleanupWorkChannel<object> requestDropTaskChannel;
         private readonly VectorSetCleanupWorkSet<(ulong Context, nint IndexPtr)> requestedDrops;
         private readonly ConcurrentDictionary<ulong, byte[]> potentiallyDeleted;
@@ -203,8 +203,6 @@ namespace Garnet.server
                 //
                 // The fact that we're in an OnDispose means Reset() isn't running.
 
-                var completions = new List<TaskCompletionSource>();
-
                 try
                 {
                     // TODO: this doesn't work with non-RESP impls... which maybe we don't care about?
@@ -220,14 +218,9 @@ namespace Garnet.server
                     lock (this)
                     {
                         // Read all pending requests so we can do one update
-                        while (requestCleanupTaskChannel.TryRead(out var t))
+                        while (requestCleanupTaskChannel.TryRead(out var context))
                         {
-                            if (t.MarkCompleted != null)
-                            {
-                                completions.Add(t.MarkCompleted);
-                            }
-
-                            var (contextIndex, contextValue) = ContextMetadata.DecomposeContext(t.Context);
+                            var (contextIndex, contextValue) = ContextMetadata.DecomposeContext(context);
                             if (!contextMetadatas[contextIndex].IsCleaningUp(contextIndex != 0, contextValue))
                             {
                                 contextMetadatas[contextIndex].MarkCleaningUp(contextIndex != 0, contextValue);
@@ -246,35 +239,12 @@ namespace Garnet.server
 
                     ExceptionInjectionHelper.TriggerException(ExceptionInjectionType.VectorSet_Interrupt_Delete_3);
 
-                    foreach (var completion in completions)
-                    {
-                        try
-                        {
-                            _ = completion.TrySetResult();
-                        }
-                        catch (Exception innerE)
-                        {
-                            logger?.LogError(innerE, "While completing Vector Set cleanup request");
-                        }
-                    }
-
                     // Pump the cleanup task once we're done
                     _ = cleanupTaskChannel.TryPublish();
                 }
                 catch (Exception e)
                 {
-                    foreach (var completion in completions)
-                    {
-                        try
-                        {
-                            _ = completion.TrySetException(e);
-                        }
-                        catch (Exception innerE)
-                        {
-                            // Best effort
-                            logger?.LogError(innerE, "While cancelling Vector Set cleanup requests");
-                        }
-                    }
+                    logger?.LogError(e, "During request cleanup task");
                 }
                 finally
                 {
@@ -504,7 +474,7 @@ namespace Garnet.server
                                 if (needsDelete)
                                 {
                                     // No need to wait for marking, since the record is already "deleted"
-                                    if (!self.requestCleanupTaskChannel.TryPublish((context, null)))
+                                    if (!self.requestCleanupTaskChannel.TryPublish(context))
                                     {
                                         self.logger?.LogWarning("Could not request delete of abandoned Vector Set {key}", SpanByte.ToShortString(key));
                                     }
