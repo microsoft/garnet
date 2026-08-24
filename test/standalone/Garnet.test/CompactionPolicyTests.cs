@@ -66,6 +66,29 @@ namespace Garnet.test
         }
 
         [Test]
+        public void ProductiveChunksDrainThenLowYieldParks()
+        {
+            // Models the drain-fully loop: several productive chunks in a row keep compaction running
+            // (no backoff, RetryAfterTailAddress stays cleared) and only the first low-yield chunk parks
+            // it. This is why a high-churn workload cannot outrun compaction while an all-live workload
+            // still backs off as soon as a chunk stops reclaiming.
+            const long segmentSize = 1024;
+            const int minReclaimPercent = 20;
+            var state = new CompactionState();
+
+            // Two productive chunks (reclaim >= 20% of the advanced range) → keep draining.
+            Assert.That(state.RecordCycle(0, 10 * segmentSize, 0, 5 * segmentSize, 4 * segmentSize, minReclaimPercent), Is.False);
+            Assert.That(state.RetryAfterTailAddress, Is.Zero);
+            Assert.That(state.RecordCycle(10 * segmentSize, 20 * segmentSize, 5 * segmentSize, 12 * segmentSize, 4 * segmentSize, minReclaimPercent), Is.False);
+            Assert.That(state.RetryAfterTailAddress, Is.Zero);
+
+            // A low-yield chunk (advances 10 segments but reclaims only 256B of alignment noise) → park.
+            var tailAfter = 22 * segmentSize - 256;
+            Assert.That(state.RecordCycle(20 * segmentSize, 30 * segmentSize, 12 * segmentSize, tailAfter, 4 * segmentSize, minReclaimPercent), Is.True);
+            Assert.That(state.RetryAfterTailAddress, Is.EqualTo(tailAfter + 4 * segmentSize));
+        }
+
+        [Test]
         public void EnabledPolicyBoundsCycleToRequestedSegments()
         {
             const long segmentSize = 1024;

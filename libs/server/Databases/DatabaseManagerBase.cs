@@ -453,7 +453,12 @@ namespace Garnet.server
 
             var mainStoreMaxLogSize = segmentSize * mainStoreMaxSegments;
 
-            if (storeLog.ReadOnlyAddress - storeLog.BeginAddress > mainStoreMaxLogSize)
+            // Drain the log back under the configured limit. When low-yield backoff is disabled this
+            // runs a single unbounded pass (original behavior). When enabled, each iteration compacts a
+            // bounded chunk and measures its yield: productive chunks keep draining until the log is back
+            // under the limit, so a high-churn workload cannot outrun compaction, while the first low-yield
+            // chunk parks compaction until the tail grows again (the all-live copy-forward case).
+            while (storeLog.ReadOnlyAddress - storeLog.BeginAddress > mainStoreMaxLogSize)
             {
                 var beginAddressBefore = storeLog.BeginAddress;
                 var tailAddressBefore = storeLog.TailAddress;
@@ -505,15 +510,26 @@ namespace Garnet.server
                     untilAddress, beginAddressAfter, readOnlyAddress, tailAddressAfter, beginAddressAdvance, tailAddressGrowth,
                     netReclaimedBytes, tailGrowthRatio, stopwatch.ElapsedMilliseconds, db.Id);
 
-                if (lowYieldBackoffEnabled &&
-                    db.CompactionState.RecordCycle(beginAddressBefore, beginAddressAfter, tailAddressBefore, tailAddressAfter,
+                if (!lowYieldBackoffEnabled)
+                {
+                    // Original behavior: a single unbounded pass already brings the log under the limit.
+                    break;
+                }
+
+                if (db.CompactionState.RecordCycle(beginAddressBefore, beginAddressAfter, tailAddressBefore, tailAddressAfter,
                         CompactionPolicy.GetBackoffBytes(segmentSize, lowYieldBackoffSegments),
                         StoreWrapper.serverOptions.CompactionLowYieldReclaimPercent))
                 {
                     Logger?.LogWarning(
                         "Compaction was low-yield; pausing until tail reaches {retryTailAddress}; DB ID = {id}",
                         db.CompactionState.RetryAfterTailAddress, db.Id);
+                    break;
                 }
+
+                // Safety: if a chunk classified as productive did not actually advance the begin address,
+                // stop to avoid spinning; the next scheduled compaction will retry.
+                if (beginAddressAfter <= beginAddressBefore)
+                    break;
             }
         }
 
