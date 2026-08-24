@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
 using Garnet.common;
@@ -427,17 +428,42 @@ namespace Garnet.server
             if (compactionType == LogCompactionType.None) return;
 
             var storeLog = db.Store.Log;
+            var segmentSize = 1L << StoreWrapper.serverOptions.SegmentSizeBits(isObj: false);
+            var lowYieldBackoffSegments = StoreWrapper.serverOptions.CompactionLowYieldBackoffSegments;
+            var lowYieldBackoffEnabled = lowYieldBackoffSegments > 0 &&
+                                         compactionType is LogCompactionType.Lookup or LogCompactionType.Scan;
 
-            var mainStoreMaxLogSize = (1L << StoreWrapper.serverOptions.SegmentSizeBits(isObj: false)) * mainStoreMaxSegments;
+            if (lowYieldBackoffEnabled)
+            {
+                if (db.CompactionState.ShouldSkip(storeLog.TailAddress))
+                {
+                    Logger?.LogDebug(
+                        "Skipping low-yield compaction until tail reaches {retryTailAddress}; current Tail = {tailAddress}; DB ID = {id}",
+                        db.CompactionState.RetryAfterTailAddress, storeLog.TailAddress, db.Id);
+                    return;
+                }
+
+                if (db.CompactionState.TryResume(storeLog.TailAddress))
+                {
+                    Logger?.LogInformation(
+                        "Retrying compaction after foreground tail growth; Tail = {tailAddress}; DB ID = {id}",
+                        storeLog.TailAddress, db.Id);
+                }
+            }
+
+            var mainStoreMaxLogSize = segmentSize * mainStoreMaxSegments;
 
             if (storeLog.ReadOnlyAddress - storeLog.BeginAddress > mainStoreMaxLogSize)
             {
+                var beginAddressBefore = storeLog.BeginAddress;
+                var tailAddressBefore = storeLog.TailAddress;
                 var readOnlyAddress = storeLog.ReadOnlyAddress;
-                var compactLength = (1L << StoreWrapper.serverOptions.SegmentSizeBits(isObj: false)) * (mainStoreMaxSegments - numSegmentsToCompact);
-                var untilAddress = readOnlyAddress - compactLength;
+                var untilAddress = CompactionPolicy.GetUntilAddress(beginAddressBefore, readOnlyAddress, segmentSize,
+                    mainStoreMaxSegments, numSegmentsToCompact, lowYieldBackoffEnabled);
+                var stopwatch = Stopwatch.StartNew();
                 Logger?.LogInformation(
-                    "Begin main store compact until {untilAddress}, Begin = {beginAddress}, ReadOnly = {readOnlyAddress}, Tail = {tailAddress}",
-                    untilAddress, storeLog.BeginAddress, readOnlyAddress, storeLog.TailAddress);
+                    "Begin main store compact until {untilAddress}, Begin = {beginAddress}, ReadOnly = {readOnlyAddress}, Tail = {tailAddress}; DB ID = {id}",
+                    untilAddress, beginAddressBefore, readOnlyAddress, tailAddressBefore, db.Id);
 
                 switch (compactionType)
                 {
@@ -464,9 +490,30 @@ namespace Garnet.server
                         break;
                 }
 
+                stopwatch.Stop();
+                var beginAddressAfter = storeLog.BeginAddress;
+                var tailAddressAfter = storeLog.TailAddress;
+                var beginAddressAdvance = beginAddressAfter - beginAddressBefore;
+                var tailAddressGrowth = tailAddressAfter - tailAddressBefore;
+                var netReclaimedBytes = beginAddressAdvance - tailAddressGrowth;
+                var tailGrowthRatio = beginAddressAdvance > 0 ? tailAddressGrowth / (double)beginAddressAdvance : 0;
+
                 Logger?.LogInformation(
-                    "End store compact until {untilAddress}, Begin = {beginAddress}, ReadOnly = {readOnlyAddress}, Tail = {tailAddress}",
-                    untilAddress, storeLog.BeginAddress, readOnlyAddress, storeLog.TailAddress);
+                    "End store compact until {untilAddress}, Begin = {beginAddress}, ReadOnly = {readOnlyAddress}, Tail = {tailAddress}; " +
+                    "Begin advance = {beginAddressAdvance}; Tail growth = {tailAddressGrowth}; Net reclaimed = {netReclaimedBytes}; " +
+                    "Tail growth ratio = {tailGrowthRatio}; Duration ms = {durationMs}; DB ID = {id}",
+                    untilAddress, beginAddressAfter, readOnlyAddress, tailAddressAfter, beginAddressAdvance, tailAddressGrowth,
+                    netReclaimedBytes, tailGrowthRatio, stopwatch.ElapsedMilliseconds, db.Id);
+
+                if (lowYieldBackoffEnabled &&
+                    db.CompactionState.RecordCycle(beginAddressBefore, beginAddressAfter, tailAddressBefore, tailAddressAfter,
+                        CompactionPolicy.GetBackoffBytes(segmentSize, lowYieldBackoffSegments),
+                        StoreWrapper.serverOptions.CompactionLowYieldReclaimPercent))
+                {
+                    Logger?.LogWarning(
+                        "Compaction reclaimed no space; pausing until tail reaches {retryTailAddress}; DB ID = {id}",
+                        db.CompactionState.RetryAfterTailAddress, db.Id);
+                }
             }
         }
 

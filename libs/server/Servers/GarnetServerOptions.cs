@@ -209,6 +209,24 @@ namespace Garnet.server
         public int CompactionMaxSegments = 32;
 
         /// <summary>
+        /// Number of log segments the tail must grow before retrying after a compaction cycle that
+        /// reclaimed no space. 0 disables low-yield backoff.
+        /// Default-enabled (32) so the protection is active even when a host wrapper constructs
+        /// GarnetServerOptions without forwarding this knob from configuration.
+        /// </summary>
+        public int CompactionLowYieldBackoffSegments = 32;
+
+        /// <summary>
+        /// Minimum percent of the compacted (begin-address) range a cycle must reclaim to be
+        /// considered productive when low-yield backoff is enabled. A copy-forward pass over
+        /// all-live data re-writes almost every byte it truncates, so net reclaim hovers near
+        /// zero (only alignment noise); requiring a meaningful floor here prevents that wasteful
+        /// loop from being misclassified as productive. Only applies when
+        /// CompactionLowYieldBackoffSegments &gt; 0. Range 0..100; default 20.
+        /// </summary>
+        public int CompactionLowYieldReclaimPercent = 20;
+
+        /// <summary>
         /// Percent of cluster nodes to gossip with at each gossip iteration.
         /// </summary>
         public int GossipSamplePercent = 100;

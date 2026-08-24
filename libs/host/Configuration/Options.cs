@@ -267,6 +267,10 @@ namespace Garnet
         [Option("compaction-max-segments", Required = false, HelpText = "Number of log segments created on disk before compaction triggers.")]
         public int CompactionMaxSegments { get; set; }
 
+        [IntRangeValidation(0, int.MaxValue)]
+        [Option("compaction-low-yield-backoff-segments", Required = false, HelpText = "Number of log segments the tail must grow before retrying after a compaction cycle that reclaimed no space. 0 = disabled.")]
+        public int CompactionLowYieldBackoffSegments { get; set; }
+
         [OptionValidation]
         [Option("lua", Required = false, HelpText = "Enable Lua scripts on server.")]
         public bool? EnableLua { get; set; }
@@ -905,6 +909,7 @@ namespace Garnet
                 CompactionType = CompactionType,
                 CompactionForceDelete = CompactionForceDelete.GetValueOrDefault(),
                 CompactionMaxSegments = CompactionMaxSegments,
+                CompactionLowYieldBackoffSegments = CompactionLowYieldBackoffSegments,
                 GossipSamplePercent = GossipSamplePercent,
                 GossipDelay = GossipDelay,
                 ClusterTimeout = ClusterTimeout,
