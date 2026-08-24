@@ -154,7 +154,7 @@ namespace Tsavorite.core
             // By the time Dispose is called, we should have no outstanding locks, so can use the BasicContext's sessionFunctions.
             _ = CompletePending(bContext.sessionFunctions, true);
 
-            store.DisposeClientSession(ID);
+            store.DisposeClientSession(this);
         }
 
         /// <summary>

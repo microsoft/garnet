@@ -255,7 +255,12 @@ namespace Garnet.server
 
             try
             {
-                return ReplayDatabaseAOF(aofProcessor, defaultDatabase, untilAddress);
+                var res = ReplayDatabaseAOF(aofProcessor, defaultDatabase, untilAddress);
+
+                // Wait for Vector Sets to catch up before declaring us "recovered"
+                defaultDatabase.VectorManager?.WaitForQuiescence();
+
+                return res;
             }
             finally
             {
@@ -399,9 +404,10 @@ namespace Garnet.server
         public override void RecoverVectorSets()
         {
             // Guarantee initialize has happened before we attempt to recover
-            defaultDatabase.VectorManager.Initialize();
+            defaultDatabase.VectorManager?.Initialize();
 
-            defaultDatabase.VectorManager.ReconcileRecoveredState();
+            defaultDatabase.VectorManager?.ReconcileRecoveredState();
+            defaultDatabase.VectorManager?.WaitForQuiescence();
         }
 
         public override void Dispose()

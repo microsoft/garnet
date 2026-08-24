@@ -196,6 +196,7 @@ namespace Garnet.server
             if (serverOptions.VectorSetReplayTaskCount < 0 || serverOptions.VectorSetReplayTaskCount > Environment.ProcessorCount)
                 throw new GarnetException($"VectorSetReplayTaskCount should be in range [0,{Environment.ProcessorCount}]!");
             var vectorSetReplayCount = serverOptions.VectorSetReplayTaskCount == 0 ? Environment.ProcessorCount : serverOptions.VectorSetReplayTaskCount;
+
             replicationReplayTasks = new Task[vectorSetReplayCount];
             for (var i = 0; i < replicationReplayTasks.Length; i++)
             {
@@ -224,8 +225,10 @@ namespace Garnet.server
 
             if (serverOptions.VectorSetQuantizationTaskCount < 0 || serverOptions.VectorSetQuantizationTaskCount > Environment.ProcessorCount)
                 throw new GarnetException($"VectorSetQuantizationTaskCount should be in range [0,{Environment.ProcessorCount}]!");
-            var vectorSetQuantizationTaskCount = serverOptions.VectorSetQuantizationTaskCount == 0 ? Environment.ProcessorCount : serverOptions.VectorSetQuantizationTaskCount;
-            quantizationTasks = new Task[vectorSetQuantizationTaskCount];
+            quantizationTaskCount = serverOptions.VectorSetQuantizationTaskCount == 0 ? Environment.ProcessorCount : serverOptions.VectorSetQuantizationTaskCount;
+            quantizationTasks = new Task[quantizationTaskCount];
+
+            // So Dispose's Task.WhenAll is safe even if StartQuantizationTasks never ran.
             Array.Fill(quantizationTasks, Task.CompletedTask);
 
             logger?.LogInformation("Created VectorManager");
@@ -487,7 +490,7 @@ namespace Garnet.server
             // Cleanup task has fully drained, so nothing else can take this gate.
             cleanupGate.Dispose();
 
-            // drain quantization task
+            // drain quantization work and stop the worker tasks
             _ = quantizationChannel.Writer.TryComplete();
             while (quantizationChannel.Reader.TryRead(out _)) { }
             AsyncUtils.BlockingWait(Task.WhenAll(quantizationTasks));
@@ -664,7 +667,7 @@ namespace Garnet.server
         /// <summary>
         /// Request deletion of a Vector Set given the VALUE of the index key.
         /// </summary>
-        internal void RequestDeletion(Span<byte> value)
+        internal void RequestDeletion(ReadOnlySpan<byte> value)
         {
             if (value.Length != IndexSize)
             {
@@ -684,15 +687,10 @@ namespace Garnet.server
                 return;
             }
 
-            var tcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-
-            if (!requestCleanupTaskChannel.TryPublish((context, tcs)))
+            if (!requestCleanupTaskChannel.TryPublish(context))
             {
                 throw new GarnetException("Could not submit request for Vector Set cleanup, aborting delete");
             }
-
-            // Wait until the context is _marked_ for cleanup, but not the actual cleanup
-            AsyncUtils.BlockingWait(tcs.Task);
 
             // Tell DiskANN to clean itself up
             DropIndex(value);
@@ -706,8 +704,6 @@ namespace Garnet.server
         /// There's subtlety here because the DiskANN index might be in use (on the current or other threads)
         /// and we can't allow the index to be recreated until any requested drops are processed.
         /// </summary>
-        /// <param name="key"></param>
-        /// <param name="value"></param>
         internal void RequestDropInMemoryIndex(ReadOnlySpan<byte> key, ReadOnlySpan<byte> value)
         {
             if (value.Length != IndexSize)

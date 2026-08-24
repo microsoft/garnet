@@ -24,40 +24,152 @@ namespace Tsavorite.core
     public unsafe class NativeStorageDevice : StorageDeviceBase
     {
         /// <summary>
-        /// Hard ceiling on the effective in-flight throttle (max concurrent I/Os the device will drive),
-        /// and the upper bound the native submission ring is sized to. A configured
-        /// <see cref="StorageDeviceBase.ThrottleLimit"/> above this is clamped (and logged).
+        /// Default per-ring native submission depth D (io_uring SQ entries / libaio io_setup maxevents)
+        /// used when <c>--device-queue-depth</c> is not set. This is the per-ring kernel queue capacity,
+        /// one of the two physical device dimensions (ring COUNT = io-contexts, ring DEPTH = this).
         ///
-        /// This is a kernel-aware ceiling, not an arbitrary number:
-        /// <list type="bullet">
-        /// <item><b>libaio</b>: each io_context's <c>io_setup(maxevents)</c> draws from the system-wide
-        /// <c>fs.aio-max-nr</c> budget (default 65536, shared across every io_context in every process); one
-        /// device at this depth already takes ~1/16 of it, and deeper rings risk <c>io_setup</c> EAGAIN failures
-        /// elsewhere.</item>
-        /// <item><b>io_uring</b>: <c>IORING_MAX_ENTRIES</c> caps a ring at 32768 entries.</item>
-        /// </list>
-        /// 4096 is already 8-32x a single NVMe's useful queue depth, so it is not a practical limit. If an exotic
-        /// configuration ever needs more, raise this constant deliberately and re-validate against the kernel
-        /// limits above — do not allow an unbounded throttle that would silently degrade into the submit-ring spin.
+        /// For io_uring this 4096 is a headroom CEILING, not pre-allocated work: the SQ is per-ring mmap
+        /// memory with no global budget, a ring never holds more than <c>throttle / io-contexts</c> in-flight,
+        /// and deeper rings than the workload uses cost only bounded pinned ring memory (~D*100B/ring), never
+        /// extra IO. For libaio it is NOT free: <c>io_setup</c> permanently reserves <c>io-contexts * D</c>
+        /// events from the global <c>fs.aio-max-nr</c> budget at creation whether used or not, so reserving the
+        /// full 4096/ring wastes budget and, with many coexisting devices (e.g. cluster nodes), exhausts a
+        /// stock 65536 budget (io_setup EAGAIN). Therefore, when queue-depth is left at the default, the libaio
+        /// io_setup reservation is sized DOWN to the throttle share, capped per-ring (<see cref="ResolveLibaioReservationDepth"/>),
+        /// rather than this ceiling. For multi-ring serving devices the full aggregate throttle is preserved
+        /// (io-contexts * reservation &gt;= throttle) so there is no IOPS cost, unless the per-device
+        /// <c>fs.aio-max-nr</c> ceiling binds and reduces it; low-ring-count auxiliary devices (which do not
+        /// serve deep queues) have their reservation — and effective throttle — reduced.
+        /// An explicit <c>--device-queue-depth</c> is honored verbatim.
         /// </summary>
-        const int MaxThrottle = 1 << 12;
+        const int DefaultQueueDepth = 1 << 12;      // 4096
 
         /// <summary>
-        /// Size of the in-flight completion-tracking pool (the <see cref="results"/> array). Deliberately larger
-        /// than <see cref="MaxThrottle"/> so the pool is never the binding backpressure: with the effective
-        /// throttle capped at <see cref="MaxThrottle"/>, in-flight settles around that value, and the extra
-        /// headroom absorbs the brief race where several engine threads clear the <see cref="Throttle"/> gate at
-        /// once — so those overshoot reads never hit the userspace slot spin-wait in <see cref="ReadAsync"/>.
-        /// The pool is pure managed memory (no kernel cost), so the headroom is cheap.
+        /// Per-ring headroom multiple applied when sizing the default libaio <c>io_setup</c> reservation to the
+        /// throttle share (<see cref="ResolveLibaioReservationDepth"/>): each ring is sized to
+        /// <c>headroom * ceil(throttle / io-contexts)</c> so an uneven submitter-&gt;ring distribution rarely
+        /// drives a ring to exactly-full (which would trigger a non-fatal io_submit EAGAIN unwind/retry). 2x
+        /// keeps a ring clear of exactly-full even under an uneven submitter-to-ring distribution. Combined with <see cref="LibaioReservationCap"/>
+        /// (which bounds the per-ring depth) the per-device global-budget reservation is
+        /// <c>min(2 * throttle, io-contexts * cap)</c>, so multi-ring serving devices keep full depth headroom
+        /// while low-ring-count devices stay small.
         /// </summary>
-        const int MaxResults = MaxThrottle * 2;
+        const int LibaioReservationHeadroom = 2;
 
         /// <summary>
-        /// Default per-context native submission-ring depth (libaio io_setup maxevents / io_uring
-        /// SQ entries) when the throttle limit does not call for a deeper ring. Matches the native
-        /// backend floor (file_linux.h QueueIoHandler/UringIoHandler kMaxEvents).
+        /// Ceiling on the per-ring default libaio <c>io_setup</c> reservation depth
+        /// (<see cref="ResolveLibaioReservationDepth"/>). A single libaio io_context (ring) is drained by one
+        /// completion thread and submitted through one kernel aio ring lock, so making a SINGLE ring hold the
+        /// full 4096-deep throttle is both inefficient (one drainer cannot keep a 4096-deep ring saturated)
+        /// and wasteful of the global <c>fs.aio-max-nr</c>
+        /// budget: deep in-flight should come from MORE rings (higher <c>--device-completion-threads</c>), not
+        /// one mega-deep ring. Capping the per-ring reservation here keeps low-ring-count devices — auxiliary
+        /// logs that do not serve deep random-read queues (AOF append, checkpoint bulk IO, per-node cluster
+        /// replication logs), which default to a single ring — small, so many of them coexist in a stock 65536
+        /// budget (e.g. a multi-node cluster process opening ~15 such devices reserves ~15*<see cref="LibaioReservationCap"/>
+        /// instead of 15*4096, which exhausts the budget). Multi-ring serving devices are unaffected by this cap:
+        /// at <c>io-contexts &gt;= 4</c> the 2x throttle share (<c>2 * 4096 / io-contexts</c>) is already &lt;= this
+        /// cap, so their per-ring depth and full aggregate throttle are preserved. Only applies to the DEFAULT
+        /// reservation; an explicit <c>--device-queue-depth</c> is honored verbatim (bypasses this path).
         /// </summary>
-        const int DefaultNativeRingDepth = 128;
+        const int LibaioReservationCap = 1 << 11;   // 2048
+
+        /// <summary>
+        /// Floor for the default libaio <c>io_setup</c> reservation depth (<see cref="ResolveLibaioReservationDepth"/>),
+        /// giving headroom when the throttle share is tiny (high io-contexts). Matches the native default ring depth.
+        /// The per-device AIO-budget ceiling applied afterwards overrides it, since exceeding the budget fails device
+        /// creation while a shallow ring only costs throughput.
+        /// </summary>
+        const int LibaioReservationFloor = 1 << 7;  // 128
+
+        /// <summary>
+        /// Default for <see cref="AioMaxDevices"/>: the number of libaio Native device instances a single machine
+        /// is provisioned to coexist within the global <c>fs.aio-max-nr</c> budget.
+        /// </summary>
+        const int DefaultAioMaxDevices = 1 << 5;    // 32
+
+        /// <summary>
+        /// Target number of libaio Native device instances a single process/machine is provisioned to coexist
+        /// within the global <c>fs.aio-max-nr</c> budget. The default per-device <c>io_setup</c> reservation
+        /// (<c>io-contexts * queue-depth</c>) is hard-capped at <c>fs.aio-max-nr / this</c>
+        /// (<see cref="ResolveLibaioReservationDepth"/>), keeping at least this many devices creatable
+        /// regardless of <c>--device-completion-threads</c> / <c>--device-throttle-limit</c>; see that method
+        /// for the two cases the cap cannot cover. This is a PROCESS-WIDE setting (not per-device) because
+        /// <c>fs.aio-max-nr</c> is a machine-global budget shared by
+        /// every device in every process; set it once at startup (e.g. from <c>--device-aio-max-devices</c>)
+        /// before any device is created. Because it is global, devices created through the raw
+        /// <see cref="Devices.CreateLogDevice"/> path (cluster auxiliary logs, AOF) honor it too, without plumbing
+        /// it through each call site. 32 keeps a stock 65536 budget at 2048 events/device (matching
+        /// <see cref="LibaioReservationCap"/>); a machine that raises <c>fs.aio-max-nr</c> proportionally raises
+        /// the per-device ceiling, so serving devices on a well-provisioned host are never starved. libaio only —
+        /// io_uring has no global budget (per-ring mmap), so this never applies to it.
+        /// </summary>
+        public static int AioMaxDevices = DefaultAioMaxDevices;
+
+        /// <summary>
+        /// Hard cap on per-ring queue depth: io_uring's <c>IORING_MAX_ENTRIES</c> (32768). libaio additionally
+        /// draws <c>io-contexts * queue-depth</c> from the global <c>fs.aio-max-nr</c> budget (distro default
+        /// 65536), guarded separately at device creation.
+        /// </summary>
+        const int MaxQueueDepth = 1 << 15;          // 32768
+
+        /// <summary>
+        /// Default aggregate in-flight read throttle T (software backpressure) used when
+        /// <c>--device-throttle-limit</c> is not set. This is the maximum number of disk-read IOs the
+        /// allocator keeps in flight before it applies backpressure (<see cref="Throttle"/>); its only
+        /// physical footprint is the pinned POH read buffers of the in-flight reads (~T * 4KB). It sizes
+        /// NOTHING in the kernel — that is <see cref="DefaultQueueDepth"/>'s job.
+        ///
+        /// 4096 saturates an 8-drive NVMe RAID-0 at the achievable peak (larger values do not raise it)
+        /// while keeping pinned read-buffer memory bounded (~16MB). High-connection deployments may raise
+        /// <c>--device-throttle-limit</c> up to the kernel capacity <c>io-contexts * queue-depth</c> for
+        /// additional throughput at very high connection counts.
+        /// </summary>
+        const int DefaultThrottleLimit = 1 << 12;   // 4096
+
+        /// <summary>
+        /// Number of per-submitter-thread shards for in-flight tracking. Each submitter thread is assigned one
+        /// shard (round-robin) on its first IO, and every per-IO bookkeeping write (slot assignment, in-flight
+        /// increment/decrement) then lands on that shard's own cache lines. This removes the cache-line
+        /// ping-pong that a single global pending counter plus a shared free-slot queue create when dozens of
+        /// submitter and completion threads touch them on every IO — the dominant cost at high IOPS.
+        /// <para>
+        /// A small fixed count suffices because <see cref="Throttle"/> gates each shard's TOTAL in-flight at
+        /// <see cref="PerThreadLimit"/> (≈ throttle ÷ active shards, capped at <see cref="MaxPerThreadInFlight"/>),
+        /// so a shard's free-list occupancy never approaches <see cref="SlotsPerShard"/> no matter how many
+        /// submitter threads share it — a small shard count neither starves the free-list nor re-introduces
+        /// counter contention. Sized via <see cref="ConcurrencySharding.NumShardCount"/>
+        /// (<see cref="ConcurrencySharding.Compute"/>: 2 × ProcessorCount capped at 32, the cap bounding
+        /// <see cref="MaxResults"/> and the O(shards) <see cref="TotalInFlight"/> scan); see that type for
+        /// the sizing rationale.
+        /// </para>
+        /// </summary>
+        static readonly int NumShards = ConcurrencySharding.NumShardCount;
+
+        /// <summary>
+        /// Number of completion-tracking slots per shard (power of two), i.e. the depth of each shard's
+        /// free-list (<see cref="shardFreeSlots"/>). Sized at 2x <see cref="MaxPerThreadInFlight"/> so a shard's
+        /// list never empties under the throttle: <see cref="Throttle"/> gates a shard's whole in-flight, so a
+        /// shard holds at most <see cref="MaxPerThreadInFlight"/> slots however many threads share it, leaving
+        /// ample free slots even accounting for the brief overshoot where a thread clears the throttle gate and
+        /// submits before a completion lands.
+        /// </summary>
+        const int SlotsPerShard = 256;
+
+        /// <summary>
+        /// Hard cap on a single shard's (submitter thread's) in-flight IOs, enforced by <see cref="Throttle"/>.
+        /// Kept at half of <see cref="SlotsPerShard"/> so each shard's free-list retains 2x headroom over the
+        /// throttle gate, absorbing the brief overshoot where a thread clears the gate and submits before a
+        /// completion lands. Total in-flight across the device is still bounded by the global
+        /// <see cref="StorageDeviceBase.ThrottleLimit"/> — see <see cref="Throttle"/>.
+        /// </summary>
+        const int MaxPerThreadInFlight = SlotsPerShard / 2;
+
+        /// <summary>
+        /// Size of the in-flight completion-tracking pool (the <see cref="results"/> array): one entry per slot
+        /// across all shards. Pure managed memory (no kernel cost). Derived from <see cref="NumShards"/>.
+        /// </summary>
+        static readonly int MaxResults = NumShards * SlotsPerShard;
 
         /// <summary>
         /// Sentinel returned by an int-valued native entry point (currently NativeDevice_QueueRunFor)
@@ -74,24 +186,88 @@ namespace Tsavorite.core
         /// </summary>
         const uint MinSectorSize = IDevice.MinDeviceSectorSize;
 
-        readonly ConcurrentQueue<int> freeResults = new();
         readonly ILogger logger;
         NativeResult[] results;
 
         /// <summary>
-        /// Number of pending reads on device
+        /// Per-shard signed in-flight IO count, sharded by submitter thread; each element (<see cref="ShardCounter"/>)
+        /// is padded to its own cache-line pair so counters never false-share. A submit bumps it +1 via
+        /// <see cref="SubmitToShard"/> and a native call via <see cref="EnterNativeCall"/>;
+        /// the matching completion, submit error/abort unwind, or lease-release drops it −1 via
+        /// <see cref="CompleteShard"/>. It drives <see cref="Throttle"/> and <see cref="Dispose()"/>'s drain-wait,
+        /// and its exact 0↔1 transitions maintain the live <see cref="activeShards"/> occupancy count.
+        /// Completion-slot assignment is handled separately by the per-shard free-lists (<see cref="shardFreeSlots"/>).
         /// </summary>
-        int numPending = 0;
+        ShardCounter[] shardInFlight;
 
         /// <summary>
-        /// Effective in-flight throttle used by <see cref="Throttle"/>, i.e. <c>min(ThrottleLimit, MaxThrottle)</c>
-        /// captured once when the native device is created (the same point the ring depth is fixed), so the hot
-        /// throttle-spin loop does not re-clamp on every call. Defaults to <see cref="MaxThrottle"/>; only consulted
-        /// once reads are in flight, by which point the native device — and this value — have been established.
+        /// One shard's in-flight IO counter, padded to a full cache-line pair (128 bytes) so adjacent shards'
+        /// counters never share a cache line — nor an adjacent-line hardware-prefetch pair. Replaces manual stride
+        /// indexing into a flat <see cref="long"/>[] with a typed, self-describing element (cf. SpscRingState).
         /// </summary>
-        int effectiveThrottleLimit = MaxThrottle;
+        [StructLayout(LayoutKind.Explicit, Size = 2 * CacheLineBytes)]
+        struct ShardCounter
+        {
+            const int CacheLineBytes = 64;
 
-        int resultOffset;
+            /// <summary>Signed in-flight IO count for the shard; mutated via Interlocked, read via Volatile.</summary>
+            [FieldOffset(0)] public long InFlight;
+
+            /// <summary>
+            /// Native-call leases held on the shard: the subset of <see cref="InFlight"/> that represents threads
+            /// executing inside native code right now, rather than IOs awaiting a completion. Maintained by
+            /// <see cref="EnterNativeCall"/> / <see cref="ExitNativeCall"/> and shares this counter's cache line,
+            /// so tracking it costs no additional miss. <see cref="Dispose()"/> drains it separately from
+            /// <see cref="InFlight"/> because only the latter can be stuck forever on a lost completion.
+            /// </summary>
+            [FieldOffset(8)] public long Leases;
+        }
+
+        /// <summary>
+        /// Per-shard free-list of completion-tracking slot offsets into <see cref="results"/>. Each shard owns
+        /// the contiguous block <c>[shard*SlotsPerShard, (shard+1)*SlotsPerShard)</c>; a submit rents a slot from
+        /// its shard's list and the slot is returned only when its IO completes (in <see cref="_callback"/> or a
+        /// submit error path). This "return only after completion" invariant is what makes reuse safe under the
+        /// device's out-of-order completions — a monotonic counter-ring cannot, because a single slow IO can stay
+        /// in flight while newer submits wrap the ring back onto its slot and overwrite the still-pending
+        /// <see cref="NativeResult"/>, delivering a stale/duplicate context on the late completion. Sharding the
+        /// list (rather than one global queue) keeps this off the contended cache lines at high IOPS.
+        /// </summary>
+        ConcurrentQueue<int>[] shardFreeSlots;
+
+        /// <summary>
+        /// Per-device, per-thread shard assignment. The value factory (<see cref="AssignShard"/>) hands out the
+        /// next shard round-robin the first time a thread touches this device.
+        /// </summary>
+        ThreadLocal<int> shardIndex;
+
+        /// <summary>Round-robin sequence used by <see cref="AssignShard"/> to hand out shard indices.</summary>
+        int nextShardSeq;
+
+        /// <summary>
+        /// Live count of shards currently carrying in-flight IO (≈ the number of concurrently-active submitter
+        /// threads), used by <see cref="PerThreadLimit"/> to split the global
+        /// <see cref="StorageDeviceBase.ThrottleLimit"/> into a per-thread in-flight budget so the device-wide
+        /// cap is preserved without a global in-flight counter. Maintained EXACTLY by <see cref="SubmitToShard"/>
+        /// / <see cref="CompleteShard"/>, which bump it when a shard's in-flight transitions 0→1 (occupied) and
+        /// drop it when the shard returns 1→0 (idle) — the transition is detected atomically from the interlocked
+        /// counter's own return value, so it tracks true occupancy at all times and cannot ratchet up as the .NET
+        /// ThreadPool retires and re-injects submitter threads. Because <see cref="Throttle"/> gates each shard's
+        /// whole in-flight, dividing the budget by occupied-shard count (rather than by distinct threads) makes the
+        /// aggregate device cap equal the configured throttle regardless of how many threads share a shard.
+        /// </summary>
+        int activeShards;
+
+        /// <summary>
+        /// Effective aggregate in-flight throttle T used by <see cref="Throttle"/>, captured once when the
+        /// native device is created (the same point ring count N and depth D are fixed): the configured
+        /// <see cref="StorageDeviceBase.ThrottleLimit"/> (or <see cref="DefaultThrottleLimit"/> when unset),
+        /// capped at the kernel capacity <c>N * D</c> so aggregate in-flight can never exceed the rings. The
+        /// hot throttle-spin loop reads this field directly rather than recomputing. Defaults to
+        /// <see cref="DefaultThrottleLimit"/>; only consulted once reads are in flight, by which point the
+        /// native device — and this value — have been established.
+        /// </summary>
+        int effectiveThrottleLimit = DefaultThrottleLimit;
 
         /// <summary>
         /// Configuration captured at construction time; the underlying native device is created
@@ -105,7 +281,19 @@ namespace Tsavorite.core
         readonly bool disableFileBuffering;
         readonly int numCompletionThreadsConfig;
         readonly int numIoContextsConfig;
+        readonly int numQueueDepthConfig;
         readonly IoBackend ioBackendConfig;
+        /// <summary>
+        /// io_uring SQPOLL opt-in (IORING_SETUP_SQPOLL). When true and the backend is io_uring, the
+        /// native rings are created with a kernel submission-poll thread so submissions are syscall-free
+        /// (submit-side offload only; completion draining is unchanged). Ignored for libaio. Off by default.
+        /// </summary>
+        readonly bool uringSqPollConfig;
+        /// <summary>
+        /// SQPOLL poll-thread idle window in milliseconds (sq_thread_idle). Only meaningful when
+        /// <see cref="uringSqPollConfig"/> is true; 0 lets the native layer pick its default.
+        /// </summary>
+        readonly int uringSqPollIdleMsConfig;
 
         /// <summary>
         /// Runtime segment size in bytes that the native shim was asked to use. Populated by
@@ -212,7 +400,10 @@ namespace Tsavorite.core
 
             try
             {
-                return NativeLibrary.Load(resolvedPath);
+                // Primary (Uring-capable) build. LoadWithLibaioShim also repairs a libaio SONAME
+                // mismatch transparently; a missing liburing.so.2 is the one failure it cannot repair
+                // and lets propagate, so we can fall back to the libaio-only build below.
+                return LoadWithLibaioShim(resolvedPath);
             }
             catch (DllNotFoundException ex) when (RuntimeInformation.IsOSPlatform(OSPlatform.Linux)
                                                   && LibaioFallbackLibraryPath != null
@@ -222,10 +413,14 @@ namespace Tsavorite.core
                 // the Libaio backend (the default) keeps working. Selecting IoBackend.Uring at
                 // construction time on the fallback binary throws TsavoriteException with an
                 // install-liburing2 instruction; we never silently downgrade Uring to Libaio.
+                // The fallback ALSO goes through LoadWithLibaioShim, so a host that needs BOTH the
+                // libaio SONAME shim AND the fallback (e.g. Ubuntu 24.04+: libaio.so.1t64 + no
+                // liburing2) is repaired here instead of dead-ending — regardless of whether the
+                // dynamic loader reported the libaio or the liburing miss first.
                 var fallbackPath = ResolveNativeLibraryPath(assembly, LibaioFallbackLibraryPath);
                 try
                 {
-                    return NativeLibrary.Load(fallbackPath);
+                    return LoadWithLibaioShim(fallbackPath);
                 }
                 catch (DllNotFoundException fallbackEx)
                 {
@@ -237,6 +432,23 @@ namespace Tsavorite.core
                         ex);
                 }
             }
+        }
+
+        /// <summary>
+        /// Load a native device build, transparently repairing a libaio SONAME mismatch
+        /// (libaio.so.1 vs the 64-bit-time_t libaio.so.1t64) by dropping a compatibility symlink next
+        /// to the binary and retrying once. A libaio mismatch is the one link failure we can fix in
+        /// place; anything else — notably a missing liburing.so.2 — is allowed to propagate so the
+        /// caller can fall back to the libaio-only build. Shared by BOTH the primary and the fallback
+        /// load so a host that needs the libaio shim AND the fallback (no liburing2) is repaired
+        /// regardless of which unresolved SONAME the dynamic loader reports first.
+        /// </summary>
+        static IntPtr LoadWithLibaioShim(string resolvedPath)
+        {
+            try
+            {
+                return NativeLibrary.Load(resolvedPath);
+            }
             catch (DllNotFoundException ex) when (RuntimeInformation.IsOSPlatform(OSPlatform.Linux)
                                                   && ex.Message.Contains("libaio.so.1", StringComparison.Ordinal))
             {
@@ -246,22 +458,18 @@ namespace Tsavorite.core
                 // "libaio.so.1t64", so binaries built there carry a DT_NEEDED of libaio.so.1t64.
                 // Other glibc distros (Azure Linux, RHEL, Fedora, ...) ship the historical
                 // "libaio.so.1" instead. Whichever SONAME the loader could not resolve, drop a
-                // symlink of that name -> the libaio the host actually provides, next to
-                // libnative_device.so; the native library is built with RPATH=$ORIGIN so it picks
-                // the symlink up.
+                // symlink of that name -> the libaio the host actually provides, next to the native
+                // library; it is built with RPATH=$ORIGIN so it picks the symlink up. The primary and
+                // fallback binaries live in the same directory, so a single symlink serves both.
                 var missingSoname = ex.Message.Contains("libaio.so.1t64", StringComparison.Ordinal)
                     ? "libaio.so.1t64"
                     : "libaio.so.1";
                 if (TryCreateLibaioCompatSymlink(resolvedPath, missingSoname, out var symlinkedPath))
                 {
-                    try
-                    {
-                        return NativeLibrary.Load(resolvedPath);
-                    }
-                    catch (DllNotFoundException)
-                    {
-                        // Fall through to the detailed error below.
-                    }
+                    // Retry once with the symlink in place. If this build ALSO needs a library we
+                    // cannot repair here (e.g. liburing.so.2), that DllNotFoundException propagates so
+                    // the caller can try the libaio-only fallback build.
+                    return NativeLibrary.Load(resolvedPath);
                 }
 
                 throw new DllNotFoundException(BuildLibaioDiagnostic(symlinkedPath, missingSoname, ex), ex);
@@ -540,8 +748,10 @@ namespace Tsavorite.core
             Uring = 2,
         }
 
+        // The native creator takes the full parameter list including the io_uring SQPOLL knobs;
+        // libaio and Windows ignore the SQPOLL arguments.
         [DllImport(NativeLibraryName, EntryPoint = "NativeDevice_CreateWithBackend", CallingConvention = CallingConvention.Cdecl)]
-        static extern IntPtr NativeDevice_CreateWithBackend(string file, bool enablePrivileges, bool unbuffered, bool delete_on_close, int backend, ulong segmentSizeBytes, bool omitSegmentIdFromFilename, int numIoContexts, int maxEvents);
+        static extern IntPtr NativeDevice_CreateWithBackend(string file, bool enablePrivileges, bool unbuffered, bool delete_on_close, int backend, ulong segmentSizeBytes, bool omitSegmentIdFromFilename, int numIoContexts, int maxEvents, int uringSqPoll, int uringSqPollIdleMs);
 
         [DllImport(NativeLibraryName, EntryPoint = "NativeDevice_GetSegmentSize", CallingConvention = CallingConvention.Cdecl)]
         static extern ulong NativeDevice_GetSegmentSize(IntPtr device);
@@ -569,6 +779,9 @@ namespace Tsavorite.core
 
         [DllImport(NativeLibraryName, EntryPoint = "NativeDevice_TryComplete", CallingConvention = CallingConvention.Cdecl)]
         static extern bool NativeDevice_TryComplete(IntPtr device);
+
+        [DllImport(NativeLibraryName, EntryPoint = "NativeDevice_TryCompleteMine", CallingConvention = CallingConvention.Cdecl)]
+        static extern bool NativeDevice_TryCompleteMine(IntPtr device);
 
         [DllImport(NativeLibraryName, EntryPoint = "NativeDevice_QueueRun", CallingConvention = CallingConvention.Cdecl)]
         static extern int NativeDevice_QueueRun(IntPtr device, int timeout_secs);
@@ -631,18 +844,197 @@ namespace Tsavorite.core
         readonly AsyncIOCallback _callbackDelegate;
         CancellationTokenSource completionThreadToken;
         Thread[] completionThreads;
+        int numRingsActual;
 
-        // Instrumentation: peak concurrent in-flight writes seen, and submit/complete counters.
-        // Set TSAVORITE_DEVICE_INSTRUMENT=1 in the environment to enable.
-        static readonly bool s_instrument = Environment.GetEnvironmentVariable("TSAVORITE_DEVICE_INSTRUMENT") == "1";
-        int peakNumPending;
-        long submitCount;
-        long completeCount;
-        long submitNanos;
+        /// <summary>Shard index for the calling thread on this device (assigned on first access).</summary>
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
+        int GetShard() => shardIndex.Value;
+
+        /// <summary>
+        /// <see cref="ThreadLocal{T}"/> value factory: hands out the next shard round-robin. The round-robin
+        /// counter is reduced modulo <see cref="NumShards"/> as <c>uint</c> so that when the signed
+        /// <see cref="nextShardSeq"/> eventually wraps past <see cref="int.MaxValue"/> on a long-lived,
+        /// thread-churning server the index stays in <c>[0, NumShards)</c> (a signed <c>%</c> would yield a
+        /// negative index and an out-of-range shard access). <see cref="NumShards"/> need not be a power of two.
+        /// </summary>
+        int AssignShard()
+            => (int)((uint)(Interlocked.Increment(ref nextShardSeq) - 1) % (uint)NumShards);
+
+        /// <summary>
+        /// Records a submit (or lease) on <paramref name="shard"/>: bumps the shard's in-flight counter and, when
+        /// it transitions 0→1 (the shard becomes occupied), bumps <see cref="activeShards"/>. The 0→1 test reads
+        /// the interlocked increment's own return value, so exactly one caller observes the transition even under
+        /// concurrent submit/complete on the same shard — keeping <see cref="activeShards"/> an exact, always-current
+        /// live-occupancy count (no background reconciliation, no birth-only ratchet under ThreadPool churn).
+        /// </summary>
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
+        void SubmitToShard(int shard)
+        {
+            if (Interlocked.Increment(ref shardInFlight[shard].InFlight) == 1L)
+                Interlocked.Increment(ref activeShards);
+        }
+
+        /// <summary>
+        /// Records a completion (or lease-release / submit-error unwind) on <paramref name="shard"/>: drops the
+        /// shard's in-flight counter and, when it returns to 0 (the shard becomes idle), drops
+        /// <see cref="activeShards"/>. Balances <see cref="SubmitToShard"/>; see it for why the transition is exact.
+        /// Every completion is preceded by its submit, so a shard's in-flight is never negative and
+        /// <see cref="activeShards"/> is never over-decremented.
+        /// </summary>
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
+        void CompleteShard(int shard)
+        {
+            if (Interlocked.Decrement(ref shardInFlight[shard].InFlight) == 0L)
+                Interlocked.Decrement(ref activeShards);
+        }
+
+        /// <summary>
+        /// Rents a free completion-tracking slot offset from the calling submitter's shard. Under the throttle a
+        /// shard never holds more than <see cref="MaxPerThreadInFlight"/> slots at once (&lt; <see cref="SlotsPerShard"/>),
+        /// so the fast <see cref="ConcurrentQueue{T}.TryDequeue"/> path always succeeds; the spin is a safety net for
+        /// the rare unthrottled bulk caller (e.g. page reads on recovery). Completions run on separate drainer
+        /// threads that return slots via <see cref="ReturnSlot"/>, so the spin cannot self-deadlock.
+        /// </summary>
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
+        int RentSlot(int shard)
+        {
+            var freeList = shardFreeSlots[shard];
+            if (freeList.TryDequeue(out int offset))
+                return offset;
+            var spin = new SpinWait();
+            while (!freeList.TryDequeue(out offset))
+                spin.SpinOnce();
+            return offset;
+        }
+
+        /// <summary>
+        /// Returns a completion-tracking slot to its owning shard's free-list. The owning shard is encoded in the
+        /// offset (<c>offset / SlotsPerShard</c>), so a completion on any drainer thread returns the slot to the
+        /// list the submitter will rent from — no cross-shard mixing. Called only after the slot's IO has
+        /// completed (its <see cref="NativeResult"/> has been read), preserving the "reuse only after completion"
+        /// invariant that makes slot reuse safe under out-of-order completions.
+        /// </summary>
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
+        void ReturnSlot(int offset)
+        {
+            // Release the completed slot's captured callback delegate and context object before the slot
+            // is re-enqueued, so neither is kept rooted until the slot is next rented (otherwise up to
+            // MaxResults user contexts stay reachable indefinitely on a mostly-idle device). Every caller
+            // has already consumed the NativeResult first (the `var result = results[offset]` copy in
+            // _callback, and the local callback/context parameters on the error/disposed paths), and clearing
+            // BEFORE the enqueue means a concurrent RentSlot that dequeues this offset and writes its own
+            // NativeResult cannot be clobbered by this clear.
+            results[offset] = default;
+            shardFreeSlots[offset / SlotsPerShard].Enqueue(offset);
+        }
+
+        /// <summary>Current in-flight IO count for a shard.</summary>
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
+        long InFlightInShard(int shard)
+            => Volatile.Read(ref shardInFlight[shard].InFlight);
+
+        /// <summary>Sum of in-flight IOs across all shards. Cold path only (Dispose drain, instrumentation).</summary>
+        long TotalInFlight()
+        {
+            long total = 0;
+            for (int s = 0; s < NumShards; s++)
+                total += Volatile.Read(ref shardInFlight[s].InFlight);
+            return total;
+        }
+
+        /// <summary>
+        /// Marks the calling thread as executing inside a native call on <paramref name="shard"/>. Bumps the shard's
+        /// in-flight counter — so <see cref="Throttle"/> and <see cref="activeShards"/> observe the lease exactly as
+        /// a submit does — and, on the same cache line, the lease counter <see cref="Dispose()"/> drains separately.
+        /// Bumping in-flight first keeps leases ≤ in-flight at every instant, so an in-flight count of zero proves
+        /// no native call is in progress. Caller MUST balance this with <see cref="ExitNativeCall"/> in a finally.
+        /// </summary>
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
+        void EnterNativeCall(int shard)
+        {
+            SubmitToShard(shard);
+            Interlocked.Increment(ref shardInFlight[shard].Leases);
+        }
+
+        /// <summary>
+        /// Balances <see cref="EnterNativeCall"/>. Drops the lease before the in-flight count, preserving the
+        /// leases ≤ in-flight invariant.
+        /// </summary>
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
+        void ExitNativeCall(int shard)
+        {
+            Interlocked.Decrement(ref shardInFlight[shard].Leases);
+            CompleteShard(shard);
+        }
+
+        /// <summary>Sum of native-call leases across all shards. Cold path only (Dispose teardown).</summary>
+        long TotalLeases()
+        {
+            long total = 0;
+            for (int s = 0; s < NumShards; s++)
+                total += Volatile.Read(ref shardInFlight[s].Leases);
+            return total;
+        }
+
+        /// <summary>
+        /// Per-thread in-flight budget = global throttle split across the currently-occupied shards
+        /// (≈ live concurrent submitters, tracked exactly by <see cref="activeShards"/>), clamped to
+        /// <see cref="MaxPerThreadInFlight"/>. Each shard admits against this budget independently, so the
+        /// device-wide in-flight count tracks the configured <see cref="StorageDeviceBase.ThrottleLimit"/>
+        /// only approximately: a shard admits against the divisor in effect at the time, so shards that
+        /// filled while few were occupied keep the larger budget they were granted. Aggregate in-flight is
+        /// therefore bounded absolutely by <see cref="NumShards"/> × <see cref="MaxPerThreadInFlight"/>,
+        /// and a low configured throttle can be exceeded by several times if shards become occupied one at
+        /// a time without completions in between. This is intentional — the throttle is a coarse
+        /// backpressure/memory bound, and exact kernel-queue-capacity safety is enforced downstream by
+        /// the native ring-full retry (a submit that finds the SQ/io_context ring full unwinds to Pending and waits
+        /// for a completion before retrying), not by the precision of this split. Keeping the check per-shard lets
+        /// the hot <see cref="Throttle"/> path read only the calling thread's own cache lines.
+        /// </summary>
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
+        int PerThreadLimit()
+        {
+            int global = Volatile.Read(ref nativeDevice) == IntPtr.Zero
+                ? (ThrottleLimit > 0 ? ThrottleLimit : DefaultThrottleLimit)
+                : effectiveThrottleLimit;
+            int active = Volatile.Read(ref activeShards);
+            if (active < 1) active = 1;
+            int perThread = global / active;
+            if (perThread < 1) perThread = 1;
+            if (perThread > MaxPerThreadInFlight) perThread = MaxPerThreadInFlight;
+            return perThread;
+        }
+
+        /// <summary>
+        /// Leases the native handle for a non-IO native call (TryComplete / Reset / RemoveSegment / GetFileSize)
+        /// so a concurrent <see cref="Dispose"/> cannot free it mid-call. Returns false (without leasing) once
+        /// disposal has begun. On success the caller MUST call <see cref="ReleaseLease"/> in a finally. The lease
+        /// bumps the shard in-flight counter, so Dispose's drain-wait covers leased native calls automatically,
+        /// and the shard lease counter, which gates handle destruction even if that drain hits its deadline.
+        /// </summary>
+        bool TryLease(out int shard)
+        {
+            shard = GetShard();
+            if (Volatile.Read(ref disposedFlag) != 0)
+                return false;
+            EnterNativeCall(shard);
+            // Re-check after publishing the lease: if Dispose set the flag concurrently, its drain-wait either
+            // already observed this lease (and is waiting) or will not — either way we must not touch the handle.
+            if (Volatile.Read(ref disposedFlag) != 0)
+            {
+                ExitNativeCall(shard);
+                return false;
+            }
+            return true;
+        }
+
+        /// <summary>Releases a lease taken by <see cref="TryLease"/>.</summary>
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
+        void ReleaseLease(int shard)
+            => ExitNativeCall(shard);
 
         void _callback(IntPtr context, int errorCode, ulong numBytes)
         {
-            if (s_instrument) Interlocked.Increment(ref completeCount);
             int offset = (int)context;
             var result = results[offset];
             // CRITICAL: this method is invoked via a function pointer from native code (libaio /
@@ -651,7 +1043,7 @@ namespace Tsavorite.core
             // loop and, when it crosses the ABI boundary, causes the .NET runtime to
             // terminate the drainer thread (silently, since it's a background thread). That
             // leaves the device with no completion processor: all subsequent IOs are
-            // submitted but never completed, numPending grows unbounded, device.Throttle()
+            // submitted but never completed, in-flight grows unbounded, device.Throttle()
             // stays true forever, and the next worker thread to call ReadAsync deadlocks
             // spinning in the throttle-wait loop.
             //
@@ -662,98 +1054,174 @@ namespace Tsavorite.core
             // Errors that need surfacing should go through the result.callback's own error
             // channel (numBytes=0 + errorCode), not via a throw.
             //
-            // try/finally also ensures that on a throwing user callback the result slot is
-            // returned AND numPending is decremented. Dispose() spins until numPending == 0,
-            // so decrementing here (after the callback returns) guarantees Dispose waits for
-            // all in-flight user callbacks to finish before destroying the native device
-            // underneath them.
+            // try/finally also ensures that on a throwing user callback the shard's in-flight
+            // counter is still dropped. Dispose() spins until in-flight reaches 0, so dropping
+            // here (after the callback returns) guarantees Dispose waits for all in-flight user
+            // callbacks to finish before destroying the native device underneath them.
             try
             {
-                result.callback((uint)errorCode, (uint)numBytes, result.context);
+                result.callback((uint)errorCode, (uint)numBytes, result.context, ioException: default);
             }
             catch (Exception ex)
             {
-                logger?.LogCritical(ex, "Unhandled exception in user IO completion callback (suppressed to keep drainer alive)");
+                // The logger is host-supplied and can itself throw (for example a provider whose sink was
+                // disposed during shutdown). An exception escaping this handler would defeat the firewall
+                // described above, so the report is guarded too.
+                try
+                {
+                    logger?.LogCritical(ex, "Unhandled exception in user IO completion callback (suppressed to keep drainer alive)");
+                }
+                catch
+                {
+                    // Nothing further can be reported from inside a completion callback.
+                }
             }
             finally
             {
-                freeResults.Enqueue(offset);
-                Interlocked.Decrement(ref numPending);
+                // The owning shard is encoded in the slot offset (offset / SlotsPerShard), not GetShard(): this
+                // completion may run on a drainer thread whose own shard differs from the submitter's.
+                CompleteShard(offset / SlotsPerShard);
+                ReturnSlot(offset);
             }
-        }
-
-        /// <summary>Diagnostic: snapshot and reset per-second submit/complete counters and peak in-flight.
-        /// Set environment variable <c>TSAVORITE_DEVICE_INSTRUMENT=1</c> to enable population.</summary>
-        public (int curPending, int peakPending, long submits, long completes, long submitNs) GetAndResetStats()
-        {
-            var stats = (numPending, peakNumPending, submitCount, completeCount, submitNanos);
-            peakNumPending = numPending;
-            submitCount = 0;
-            completeCount = 0;
-            submitNanos = 0;
-            return stats;
         }
 
         /// <inheritdoc />
         /// <remarks>
-        /// Gates on <see cref="effectiveThrottleLimit"/>, the configured <see cref="StorageDeviceBase.ThrottleLimit"/>
-        /// clamped to <see cref="MaxThrottle"/> and captured once at device creation. A configured throttle above
-        /// that ceiling cannot be honored (the kernel submission ring is capped there — see <see cref="MaxThrottle"/>),
-        /// so gating on the raw value would let the engine drive more in-flight reads than the ring can hold and push
-        /// them into the submit-ring spin. The clamp is precomputed (not recomputed per call) because this runs in the
-        /// engine's throttle-spin loop.
+        /// In-flight is tracked per submitter thread (shard) to avoid the cache-line contention a single global
+        /// counter creates at high IOPS. Each thread throttles on its own shard's in-flight count against a
+        /// per-thread budget (<see cref="PerThreadLimit"/>) derived from the effective aggregate throttle
+        /// (<see cref="StorageDeviceBase.ThrottleLimit"/>, or <see cref="DefaultThrottleLimit"/> when unset,
+        /// capped at the kernel capacity io-contexts * queue-depth) split across the active submitter threads —
+        /// so the device-wide in-flight count closely tracks the effective throttle (within ≈ one IO per occupied
+        /// shard at the boundary; see <see cref="PerThreadLimit"/>), while this hot check only reads the calling
+        /// thread's own cache lines. The throttle is coarse admission backpressure, not a hard kernel-capacity gate:
+        /// the native ring-full retry (submit unwinds to Pending and waits for a completion when the ring is full)
+        /// is what guarantees the SQ/io_context ring never overflows regardless of this split's precision.
         /// <para>
-        /// Before the native device is lazily created (cold start), <see cref="effectiveThrottleLimit"/> still holds
-        /// its <see cref="MaxThrottle"/> seed, which would let a startup burst of concurrent submitters bypass the
-        /// configured throttle and flood the just-sized ring. So until the handle exists we gate on the live clamped
-        /// limit; the predictable branch is paid only on the cold path.
+        /// Before the native device is lazily created (cold start), <see cref="PerThreadLimit"/> gates on the live
+        /// clamped limit rather than the seeded <see cref="effectiveThrottleLimit"/>, so a startup burst of
+        /// concurrent submitters cannot bypass the configured throttle and flood the just-sized ring.
         /// </para>
         /// </remarks>
         public override bool Throttle()
-            => numPending > (Volatile.Read(ref nativeDevice) == IntPtr.Zero
-                ? Math.Min(ThrottleLimit, MaxThrottle)
-                : effectiveThrottleLimit);
+        {
+            int shard = GetShard();
+            return InFlightInShard(shard) > PerThreadLimit();
+        }
 
         /// <summary>
-        /// Computes the per-context native kernel submission-ring depth from <see cref="StorageDeviceBase.ThrottleLimit"/>.
-        /// The rings (one per io_context) must, in aggregate, hold the in-flight burst <see cref="Throttle"/> permits:
-        /// if a ring is smaller than the load it sees, io_submit / io_uring_get_sqe spin in their ring-full backoff while
-        /// holding a native epoch slot, and under enough concurrent submitters that starves the native epoch-slot table
-        /// (the libaio hang this addresses). Submitters spread across the contexts by thread affinity, so each context
-        /// handles ~<c>ThrottleLimit / numIoContexts</c> in steady state; the per-context depth is sized to that share
-        /// (rounded up to a power of two) rather than the full throttle, so the total kernel capacity
-        /// (<c>numIoContexts × depth</c>) stays bounded — libaio's io_setup draws from the shared <c>fs.aio-max-nr</c>
-        /// budget, so applying the full throttle to every context could exhaust it with many completion threads. The
-        /// <see cref="DefaultNativeRingDepth"/> floor adds headroom against uneven distribution (a brief ring-full is a
-        /// non-fatal unwind-and-retry, not a hang); the cap is the kernel-safe maximum (see <see cref="MaxThrottle"/>).
-        /// For the default single context this is <c>max(DefaultNativeRingDepth, NextPowerOf2(ThrottleLimit))</c>, clamped to
-        /// <see cref="MaxThrottle"/>. Read at native-device creation time (first IO), by which point the factory has applied
-        /// the configured throttle. Ignored by the Windows (IOCP) backend.
+        /// Resolves the per-ring native submission depth D (maxEvents passed to io_uring_queue_init /
+        /// libaio io_setup). Returns <c>--device-queue-depth</c> when set (clamped to
+        /// <see cref="MaxQueueDepth"/>), else <see cref="DefaultQueueDepth"/>. This is the ring DEPTH knob —
+        /// orthogonal to the ring COUNT (io-contexts) and the aggregate in-flight throttle. Read at
+        /// native-device creation (first IO). Ignored by the Windows (IOCP) backend.
         /// </summary>
-        int ComputeNativeRingDepth()
+        int ResolveQueueDepth()
         {
-            int throttle = ThrottleLimit;
-            if (throttle <= 0)
-                return DefaultNativeRingDepth;
-            if (throttle > MaxThrottle)
+            int d = numQueueDepthConfig > 0 ? numQueueDepthConfig : DefaultQueueDepth;
+            if (d > MaxQueueDepth)
             {
-                // Don't silently ignore the configured throttle: surface that it exceeds the device's
-                // maximum supported in-flight depth and is being clamped. The ceiling is the kernel-safe
-                // submission-ring depth (io_uring max SQ entries / shared libaio fs.aio-max-nr budget), and
-                // already exceeds practical NVMe queue depths, so raising it is rarely useful.
                 logger?.LogWarning(
-                    "NativeStorageDevice: ThrottleLimit ({throttle}) exceeds the device's maximum in-flight I/O depth ({max}); effective in-flight is capped at that maximum.",
-                    throttle, MaxThrottle);
-                throttle = MaxThrottle;
+                    "NativeStorageDevice: queue-depth ({depth}) exceeds the io_uring maximum ({max}); clamping.",
+                    d, MaxQueueDepth);
+                d = MaxQueueDepth;
             }
-            int contexts = numIoContextsConfig < 1 ? 1 : numIoContextsConfig;
-            int perContext = (throttle + contexts - 1) / contexts;   // ceil(throttle / contexts)
-            int depth = (int)Utility.NextPowerOf2(perContext);
-            if (depth < DefaultNativeRingDepth)
-                depth = DefaultNativeRingDepth;
-            if (depth > MaxThrottle)
-                depth = MaxThrottle;
-            return depth;
+            return d;
+        }
+
+        /// <summary>
+        /// Per-ring libaio <c>io_setup</c> reservation depth when <c>--device-queue-depth</c> is left at the
+        /// default. Unlike io_uring (per-ring mmap, no global budget), libaio permanently reserves
+        /// <c>io-contexts * depth</c> events from the shared <c>fs.aio-max-nr</c> budget at creation, so the
+        /// <see cref="DefaultQueueDepth"/> ceiling (4096) over-reserves: a libaio ring never holds more than the
+        /// aggregate throttle spread across the rings. We size the reservation to that share —
+        /// <c>NextPow2(headroom * ceil(throttle / io-contexts))</c>, floored at <see cref="LibaioReservationFloor"/>,
+        /// capped at <see cref="LibaioReservationCap"/> (a single ring should not hold the full deep queue — see
+        /// that constant) and at the <paramref name="ceilingDepth"/> (the resolved queue-depth) — so the per-device
+        /// reservation is <c>io-contexts * result = min(headroom * throttle, io-contexts * cap)</c>. Multi-ring
+        /// serving devices (io-contexts &gt;= 4) keep <c>io-contexts * result &gt;= throttle</c> by the share math (the
+        /// throttle share is &lt;= the cap), so the full aggregate throttle stays usable (effectiveThrottleLimit is
+        /// NOT reduced =&gt; no IOPS cost); low-ring-count auxiliary devices drop to <c>~= io-contexts * cap</c>,
+        /// letting many coexist in a stock 65536 budget. Finally the WHOLE-device reservation is hard-capped at
+        /// <c>fs.aio-max-nr / AioMaxDevices</c> (default <see cref="DefaultAioMaxDevices"/>) so at least that many
+        /// devices fit the kernel budget; on a stock 65536 budget this bounds each device to 2048 events, while a
+        /// host that sizes fs.aio-max-nr for its workload keeps serving devices at full depth (e.g. 4194304 / 32 =
+        /// 131072 per device, which never binds). That ceiling runs last and overrides the share math above: when
+        /// it binds, effectiveThrottleLimit drops with it (a stock 65536 budget halves the default 4096 throttle at
+        /// every ring count), so size fs.aio-max-nr such that fs.aio-max-nr / AioMaxDevices &gt;= throttle. The cap
+        /// is best-effort in two further respects: depth cannot fall below one event per ring, so a device
+        /// configured with more rings than its per-device share still exceeds it
+        /// (warned); and the budget is the machine total, not what remains after other processes' reservations.
+        /// </summary>
+        int ResolveLibaioReservationDepth(int ringCount, int throttle, int ceilingDepth)
+        {
+            long share = ((long)throttle + ringCount - 1) / ringCount;   // ceil(throttle / ringCount)
+            long depth = Utility.NextPowerOf2(share * LibaioReservationHeadroom);
+            if (depth < LibaioReservationFloor) depth = LibaioReservationFloor;
+            if (depth > LibaioReservationCap) depth = LibaioReservationCap;
+            if (depth > ceilingDepth) depth = ceilingDepth;
+
+            // Hard per-device AIO budget: keep at least AioMaxDevices libaio devices fitting the global
+            // fs.aio-max-nr budget by bounding this device's WHOLE reservation (ringCount * depth), independent
+            // of throttle. Halve the depth (staying a power of two) until it fits; this wins over the soft floor
+            // above. The caller then caps effectiveThrottleLimit at ringCount * depth, so aggregate in-flight
+            // tracks the (possibly reduced) reservation.
+            int maxDevices = AioMaxDevices < 1 ? DefaultAioMaxDevices : AioMaxDevices;
+            long perDeviceBudget = GetAioMaxNr() / maxDevices;
+            while (depth > 1 && (long)ringCount * depth > perDeviceBudget)
+                depth >>= 1;
+
+            // One event per ring is the floor, so a device with more rings than its per-device share cannot be
+            // brought within the bound by depth alone. Surface it: the operator must lower --device-io-contexts
+            // or raise fs.aio-max-nr / --device-aio-max-devices, or io_setup may fail with EAGAIN.
+            if ((long)ringCount * depth > perDeviceBudget)
+            {
+                logger?.LogWarning(
+                    "NativeStorageDevice: libaio reservation ({rings} rings x {depth} events = {total}) exceeds the " +
+                    "per-device share of fs.aio-max-nr ({budget} = {aioMaxNr} / {maxDevices}); lower --device-io-contexts, " +
+                    "raise fs.aio-max-nr, or lower --device-aio-max-devices.",
+                    ringCount, depth, (long)ringCount * depth, perDeviceBudget, GetAioMaxNr(), maxDevices);
+            }
+
+            return (int)depth;
+        }
+
+        /// <summary>
+        /// Best-effort read of the global libaio event budget <c>fs.aio-max-nr</c> (distro default 65536, shared
+        /// across every process on the machine). Returns the stock 65536 default if the /proc entry is unreadable
+        /// (e.g. non-Linux). Never throws. Read at device creation (rare), so not cached.
+        /// </summary>
+        static long GetAioMaxNr()
+        {
+            try
+            {
+                return long.Parse(System.IO.File.ReadAllText("/proc/sys/fs/aio-max-nr").Trim());
+            }
+            catch
+            {
+                return 1 << 16; // stock default fallback (best-effort)
+            }
+        }
+
+        /// <summary>
+        /// Best-effort libaio guard: <c>io_setup</c> draws <c>io-contexts * queue-depth</c> events from the
+        /// global <c>fs.aio-max-nr</c> budget (distro default 65536, shared across every process). If the
+        /// requested total exceeds that budget, warn up front so the operator sees an actionable message
+        /// rather than a cryptic <c>io_setup</c> EAGAIN at device creation. io_uring uses per-ring mmap memory
+        /// only (no global budget), so this applies to libaio only. Never throws (best-effort /proc read).
+        /// </summary>
+        void WarnIfLibaioAioBudgetExceeded(int numContexts, int queueDepth)
+        {
+            if (ioBackendConfig != IoBackend.Libaio && ioBackendConfig != IoBackend.Default)
+                return;
+            long requested = (long)numContexts * queueDepth;
+            long budget = GetAioMaxNr();
+            if (requested > budget)
+            {
+                logger?.LogWarning(
+                    "NativeStorageDevice: libaio io-contexts*queue-depth ({req} = {n}*{d}) exceeds the system fs.aio-max-nr budget ({budget}); io_setup may fail. Lower --device-io-contexts or --device-queue-depth, or raise fs.aio-max-nr.",
+                    requested, numContexts, queueDepth, budget);
+            }
         }
 
         /// <summary>
@@ -791,13 +1259,21 @@ namespace Tsavorite.core
         /// treated as 1.</param>
         /// <param name="ioBackend">IO backend to use (default platform backend, or explicit libaio / io_uring on Linux).</param>
         /// <param name="logger"></param>
+        /// <param name="numIoContexts">Number of independent kernel io_contexts (libaio) / io_uring rings, decoupled from the drainer count. 0 = device default.</param>
+        /// <param name="queueDepth">Per-ring kernel submission depth (maxEvents). 0 = device default.</param>
+        /// <param name="uringSqPoll">io_uring only: enable IORING_SETUP_SQPOLL so a kernel thread polls the submission queue and submissions are syscall-free. Each ring gets its own poll thread. Ignored for libaio / on Windows. Off by default.</param>
+        /// <param name="uringSqPollIdleMs">io_uring SQPOLL poll-thread idle window in milliseconds (sq_thread_idle). Only used when <paramref name="uringSqPoll"/> is true; 0 = native default.</param>
         public NativeStorageDevice(string filename,
                                       bool deleteOnClose = false,
                                       bool disableFileBuffering = true,
                                       long capacity = Devices.CAPACITY_UNSPECIFIED,
                                       int numCompletionThreads = 1,
                                       IoBackend ioBackend = IoBackend.Default,
-                                      ILogger logger = null)
+                                      ILogger logger = null,
+                                      int numIoContexts = 0,
+                                      int queueDepth = 0,
+                                      bool uringSqPoll = false,
+                                      int uringSqPollIdleMs = 0)
                 : base(filename, EnsureParentDirectoryAndProbeSectorSize(filename), capacity)
         {
             Debug.Assert(numCompletionThreads >= 1);
@@ -813,19 +1289,64 @@ namespace Tsavorite.core
             this.deleteOnClose = deleteOnClose;
             this.disableFileBuffering = disableFileBuffering;
             this.numCompletionThreadsConfig = numCompletionThreads < 1 ? 1 : numCompletionThreads;
-            // rings always track numCompletionThreads (1:1 drainer-to-ring binding). Each
-            // drainer blocks on its own ring inside QueueRunFor with a timeout, so a single
-            // drainer cannot cover multiple rings without starving any ring whose submitters
-            // produce completions while the drainer is parked on another ring. With per-thread
-            // submit affinity (pick_ring's thread_local index), every ring eventually receives
-            // submissions, so each ring must have its own drainer. For throughput scaling,
-            // callers should set numCompletionThreads >= expected submitter concurrency.
-            this.numIoContextsConfig = this.numCompletionThreadsConfig;
+            // The number of io_contexts (rings) is decoupled from the number of drainer threads.
+            // Each submitter maps to its own ring via the native pick_context thread-affinity, so
+            // giving the device more rings than concurrent submitters makes io_submit contention-free
+            // (no shared per-context aio ring/completion lock across unrelated submitters) and spreads
+            // completion posting across more rings. A small pool of numCompletionThreads drainers then
+            // range-drains contiguous slices of the rings. Any explicit value is clamped up to
+            // numCompletionThreads so every drainer owns at least one ring.
+            //
+            // Smart default when the caller leaves numIoContexts unset (<= 0): io_uring is ring-STARVED
+            // when rings < submitter concurrency — many submitters serialize on the per-ring submit lock
+            // (~3x slower). So default io_uring to a hardware-aware ring count that covers typical
+            // submitter concurrency (2x cores, capped at 64 to bound ring memory at ~400 KB/ring).
+            // libaio is ring-count-neutral (its kernel io_context mutex is cheap) and its
+            // io-contexts x queue-depth draws from the global fs.aio-max-nr budget, so it keeps the
+            // conservative rings = drainers default.
+            int defaultIoContexts = ioBackend == IoBackend.Uring
+                ? Math.Max(this.numCompletionThreadsConfig, Math.Min(2 * Environment.ProcessorCount, 64))
+                : this.numCompletionThreadsConfig;
+            int requestedIoContexts = numIoContexts <= 0 ? defaultIoContexts : numIoContexts;
+            if (requestedIoContexts < this.numCompletionThreadsConfig)
+                requestedIoContexts = this.numCompletionThreadsConfig;
+            this.numIoContextsConfig = requestedIoContexts;
+            // Per-ring kernel submission depth D (maxEvents). 0 => DefaultQueueDepth at creation.
+            // Orthogonal to ring count (numIoContexts) and aggregate throttle; see ResolveQueueDepth.
+            this.numQueueDepthConfig = queueDepth > 0 ? queueDepth : 0;
             this.ioBackendConfig = ioBackend;
+            this.uringSqPollConfig = uringSqPoll;
+            this.uringSqPollIdleMsConfig = uringSqPollIdleMs > 0 ? uringSqPollIdleMs : 0;
             this.logger = logger;
 
-            ThrottleLimit = 120;
+            // Default aggregate in-flight throttle. Unlike the managed in-box devices (which cap at 120),
+            // the native device is built for deep NVMe queues, so it defaults to DefaultThrottleLimit (4096).
+            // The factory only overrides this when --device-throttle-limit is set (> 0); leaving it here means
+            // PerThreadLimit()/init resolve the 4096 default (their `ThrottleLimit > 0 ? ... : DefaultThrottleLimit`
+            // fallback is otherwise unreachable). No external consumer reads ThrottleLimit — Throttle() uses the
+            // sharded PerThreadLimit() path — so setting it to the intended default here is safe.
+            ThrottleLimit = DefaultThrottleLimit;
             _callbackDelegate = _callback;
+
+            // In-flight accounting is sharded per submitter thread to avoid the global cache-line
+            // contention at high IOPS. The counter array is allocated up front (small,
+            // a few KB) because Throttle() may run before the first IO creates the native device.
+            shardInFlight = new ShardCounter[NumShards];
+            shardIndex = new ThreadLocal<int>(AssignShard);
+
+            // Per-shard free-list of completion slots, each pre-populated with its shard's contiguous block of
+            // slot offsets into results[]. Allocated up front (not lazily per shard) so a completion drainer can
+            // safely return a slot to its owning shard's list without racing that list's construction. See
+            // shardFreeSlots. results[] itself is allocated lazily on first IO (EnsureNativeDeviceCreated).
+            shardFreeSlots = new ConcurrentQueue<int>[NumShards];
+            for (int s = 0; s < NumShards; s++)
+            {
+                var freeList = new ConcurrentQueue<int>();
+                int baseOffset = s * SlotsPerShard;
+                for (int k = 0; k < SlotsPerShard; k++)
+                    freeList.Enqueue(baseOffset + k);
+                shardFreeSlots[s] = freeList;
+            }
         }
 
         /// <inheritdoc />
@@ -902,12 +1423,41 @@ namespace Tsavorite.core
 
                 nativeSegmentSizeBytes = sizeForNative;
 
-                // Capture the effective in-flight throttle once, here, where the ring depth is also fixed —
-                // ThrottleLimit has been applied by the factory before the first IO. Throttle() then reads this
-                // field directly instead of re-clamping on every spin-loop iteration.
-                effectiveThrottleLimit = Math.Min(ThrottleLimit, MaxThrottle);
+                // Capture the effective aggregate in-flight throttle T once, here, where ring count N and
+                // depth D are also fixed — ThrottleLimit has been applied by the factory before the first IO.
+                // Clean split (one duty each): N = io-contexts (ring count), D = queue-depth (per-ring kernel
+                // depth), T = throttle-limit (aggregate software backpressure). T is capped at the kernel
+                // capacity N*D so aggregate in-flight can never exceed the rings (the correctness invariant
+                // that prevents the ring-full submit spin). Throttle() reads effectiveThrottleLimit directly.
+                int ringCount = numIoContextsConfig < 1 ? 1 : numIoContextsConfig;
+                int requestedThrottle = ThrottleLimit > 0 ? ThrottleLimit : DefaultThrottleLimit;
+                int ringDepth = ResolveQueueDepth();
 
-                var newDevice = NativeDevice_CreateWithBackend(filename, false, disableFileBuffering, deleteOnClose, (int)ioBackendConfig, sizeForNative, OmitSegmentIdFromFileName, numIoContextsConfig, ComputeNativeRingDepth());
+                // libaio io_setup PERMANENTLY reserves ringCount*ringDepth events from the GLOBAL fs.aio-max-nr
+                // budget at creation, used or not; the DefaultQueueDepth ceiling (right for io_uring's per-ring
+                // mmap SQ) over-reserves for libaio and, with many coexisting devices (e.g. cluster nodes),
+                // exhausts a stock 65536 budget => io_setup EAGAIN. When queue-depth is left at the default,
+                // size the libaio reservation to the throttle share (ringCount*reservation >= throttle) so the
+                // full aggregate throttle is preserved at no IOPS cost while the per-device reservation drops.
+                // The per-device fs.aio-max-nr ceiling applied inside runs last and can reduce it further.
+                if ((ioBackendConfig == IoBackend.Libaio || ioBackendConfig == IoBackend.Default) && numQueueDepthConfig <= 0)
+                    ringDepth = ResolveLibaioReservationDepth(ringCount, requestedThrottle, ringDepth);
+
+                WarnIfLibaioAioBudgetExceeded(ringCount, ringDepth);
+                long kernelCapacity = (long)ringCount * ringDepth;
+                if (requestedThrottle > kernelCapacity)
+                {
+                    logger?.LogWarning(
+                        "NativeStorageDevice: throttle-limit ({throttle}) exceeds kernel capacity io-contexts*queue-depth ({n}*{d}={cap}); capping aggregate in-flight at that capacity.",
+                        requestedThrottle, ringCount, ringDepth, kernelCapacity);
+                    requestedThrottle = (int)kernelCapacity;
+                }
+                effectiveThrottleLimit = requestedThrottle;
+
+                // SQPOLL is an io_uring-only submit-side optimization; never pass it to libaio (the native
+                // libaio/default handlers accept and ignore it, but keep the managed intent explicit).
+                int uringSqPollArg = (uringSqPollConfig && ioBackendConfig == IoBackend.Uring) ? 1 : 0;
+                IntPtr newDevice = NativeDevice_CreateWithBackend(filename, false, disableFileBuffering, deleteOnClose, (int)ioBackendConfig, sizeForNative, OmitSegmentIdFromFileName, numIoContextsConfig, ringDepth, uringSqPollArg, uringSqPollIdleMsConfig);
                 if (newDevice == IntPtr.Zero)
                 {
                     var nativeMessage = GetNativeLastError();
@@ -926,77 +1476,137 @@ namespace Tsavorite.core
                             : "Verify the native library matches the requested backend."));
                 }
 
-                ulong actualSegmentSize = NativeDevice_GetSegmentSize(newDevice);
-                if (actualSegmentSize != sizeForNative)
+                // Exception-safe initialization: newDevice is created but not yet published to the
+                // nativeDevice field, so any throw between here and the Volatile.Write below would
+                // otherwise (a) leak the native handle — Dispose observes nativeDevice == Zero and skips
+                // NativeDevice_Destroy — and (b) leave partially-started drainer threads in
+                // completionThreads (with null slots) that a later Dispose would NRE on while joining.
+                // The region starts at handle creation so it also covers the ABI-probe P/Invokes below,
+                // which throw EntryPointNotFoundException against an older native library.
+                // On any failure, stop whatever drainers were started, dispose the token, reset the
+                // partial fields, destroy the handle, and rethrow.
+                try
                 {
-                    NativeDevice_Destroy(newDevice);
-                    throw new TsavoriteException(
-                        $"Native device segment size mismatch: requested {sizeForNative}, native returned {actualSegmentSize}. " +
-                        "This indicates an ABI mismatch between the loaded native_device library and the managed wrapper. " +
-                        "Ensure libnative_device.so matches the current build.");
+                    ulong actualSegmentSize = NativeDevice_GetSegmentSize(newDevice);
+                    if (actualSegmentSize != sizeForNative)
+                    {
+                        throw new TsavoriteException(
+                            $"Native device segment size mismatch: requested {sizeForNative}, native returned {actualSegmentSize}. " +
+                            "This indicates an ABI mismatch between the loaded native_device library and the managed wrapper. " +
+                            "Ensure libnative_device.so matches the current build.");
+                    }
+
+                    uint nativeSectorSize = NativeDevice_sector_size(newDevice);
+                    if (nativeSectorSize != SectorSize)
+                    {
+                        // Both sides (managed probe in EnsureParentDirectoryAndProbeSectorSize,
+                        // native probe in NativeDeviceImpl's field initializer) go through the
+                        // same ProbeDioAlignment routine on the same filename with the parent
+                        // directory pre-materialised, so the two values are guaranteed to agree
+                        // on every well-formed host. A drift here is a real ABI / loaded-library
+                        // mismatch — e.g. the shipped libnative_device.so was rebuilt from a
+                        // different branch than the managed wrapper, or the host kernel changed
+                        // STATX_DIOALIGN semantics between the two calls. Hard-fail so it is
+                        // caught at the first I/O rather than silently mis-aligning every write.
+                        throw new TsavoriteException(
+                            $"Native device sector-size mismatch on '{filename}': managed wrapper probed {SectorSize} bytes but the kernel reports {nativeSectorSize} bytes for the actual file. " +
+                            "The most likely cause is a stale libnative_device.so or a managed/native version skew. " +
+                            "Rebuild the native library from this branch (libs/storage/Tsavorite/cc) and reinstall the resulting binary into libs/storage/Tsavorite/cs/src/core/Device/runtimes/<rid>/native/.");
+                    }
+
+                    if (results == null) results = new NativeResult[MaxResults];
+
+                    // NativeDevice_QueueRun doubles as the platform capability probe: a negative result
+                    // means the backend has no drainable completion queue, so no drainer is started. Only
+                    // the Windows IOCP backend answers that way (completions arrive on threadpool threads);
+                    // the Linux backends report the number of completions reaped. A zero timeout never
+                    // blocks — libaio passes a zero io_getevents timeout and io_uring reads the completion
+                    // queue in user space — so neither can answer with a transient error here.
+                    if (NativeDevice_QueueRun(newDevice, 0) >= 0)
+                    {
+                        try
+                        {
+                            _ = NativeDevice_NumIoContexts(newDevice);
+                            _ = NativeDevice_QueueRunFor(newDevice, 0, 0);
+                            _ = NativeDevice_TryCompleteMine(newDevice);
+                        }
+                        catch (EntryPointNotFoundException ex)
+                        {
+                            throw new TsavoriteException(
+                                "Loaded libnative_device.so/dll is missing the sharded-ABI exports " +
+                                "NativeDevice_NumIoContexts / NativeDevice_QueueRunFor / NativeDevice_TryCompleteMine. " +
+                                "The shared library predates the multi-io-context change and must be rebuilt from this branch " +
+                                "(libs/storage/Tsavorite/cc) and the resulting binary installed to " +
+                                "libs/storage/Tsavorite/cs/src/core/Device/runtimes/<rid>/native/.", ex);
+                        }
+
+                        completionThreadToken = new();
+                        int actualIoContexts = NativeDevice_NumIoContexts(newDevice);
+                        if (actualIoContexts < 1) actualIoContexts = 1;
+                        numRingsActual = actualIoContexts;
+                        if (uringSqPollConfig && ioBackendConfig == IoBackend.Uring)
+                            logger?.LogInformation(
+                                "NativeStorageDevice: io_uring SQPOLL enabled (rings={rings}, one kernel submission-poll thread per ring, sq_thread_idle={idle}). Submissions are syscall-free while the poll thread is awake.",
+                                actualIoContexts, uringSqPollIdleMsConfig > 0 ? $"{uringSqPollIdleMsConfig}ms" : "native-default");
+                        // Partition the io_contexts (rings) across a small pool of drainer threads. When
+                        // actualIoContexts == numCompletionThreadsConfig this reduces to a 1:1
+                        // ring-to-drainer binding; when there are more rings than drainers (to de-contend
+                        // io_submit), each drainer range-drains a contiguous slice so every ring is still
+                        // reaped promptly. Rings are split as evenly as possible; the first `remainder`
+                        // drainers get one extra ring.
+                        int numDrainers = numCompletionThreadsConfig;
+                        if (numDrainers > actualIoContexts) numDrainers = actualIoContexts;
+                        completionThreads = new Thread[numDrainers];
+                        int baseCount = actualIoContexts / numDrainers;
+                        int remainder = actualIoContexts % numDrainers;
+                        int nextStart = 0;
+                        for (int i = 0; i < numDrainers; i++)
+                        {
+                            int startCtx = nextStart;
+                            int count = baseCount + (i < remainder ? 1 : 0);
+                            nextStart += count;
+                            var drainer = new Thread(() => CompletionWorker(startCtx, count))
+                            {
+                                IsBackground = true
+                            };
+                            // Publish the slot only once the thread is running: Join() on an unstarted
+                            // thread throws ThreadStateException, which would escape the cleanup below and
+                            // leak the native handle if Start() failed under resource pressure.
+                            drainer.Start();
+                            completionThreads[i] = drainer;
+                        }
+                    }
+
+                    // Publish last: a reader observing nativeDevice != IntPtr.Zero is guaranteed to
+                    // see a fully-initialised handle with completion threads already running.
+                    Volatile.Write(ref nativeDevice, newDevice);
                 }
-
-                uint nativeSectorSize = NativeDevice_sector_size(newDevice);
-                if (nativeSectorSize != SectorSize)
-                {
-                    // Both sides (managed probe in EnsureParentDirectoryAndProbeSectorSize,
-                    // native probe in NativeDeviceImpl's field initializer) go through the
-                    // same ProbeDioAlignment routine on the same filename with the parent
-                    // directory pre-materialised, so the two values are guaranteed to agree
-                    // on every well-formed host. A drift here is a real ABI / loaded-library
-                    // mismatch — e.g. the shipped libnative_device.so was rebuilt from a
-                    // different branch than the managed wrapper, or the host kernel changed
-                    // STATX_DIOALIGN semantics between the two calls. Hard-fail so it is
-                    // caught at the first I/O rather than silently mis-aligning every write.
-                    NativeDevice_Destroy(newDevice);
-                    throw new TsavoriteException(
-                        $"Native device sector-size mismatch on '{filename}': managed wrapper probed {SectorSize} bytes but the kernel reports {nativeSectorSize} bytes for the actual file. " +
-                        "The most likely cause is a stale libnative_device.so or a managed/native version skew. " +
-                        "Rebuild the native library from this branch (libs/storage/Tsavorite/cc) and reinstall the resulting binary into libs/storage/Tsavorite/cs/src/core/Device/runtimes/<rid>/native/.");
-                }
-
-                if (results == null) results = new NativeResult[MaxResults];
-
-                if (NativeDevice_QueueRun(newDevice, 0) >= 0)
+                catch
                 {
                     try
                     {
-                        _ = NativeDevice_NumIoContexts(newDevice);
-                        _ = NativeDevice_QueueRunFor(newDevice, 0, 0);
-                    }
-                    catch (EntryPointNotFoundException ex)
-                    {
-                        NativeDevice_Destroy(newDevice);
-                        throw new TsavoriteException(
-                            "Loaded libnative_device.so/dll is missing the sharded-ABI exports " +
-                            "NativeDevice_NumIoContexts / NativeDevice_QueueRunFor. The shared library " +
-                            "predates the multi-io-context change and must be rebuilt from this branch " +
-                            "(libs/storage/Tsavorite/cc) and the resulting binary installed to " +
-                            "libs/storage/Tsavorite/cs/src/core/Device/runtimes/<rid>/native/.", ex);
-                    }
-
-                    completionThreadToken = new();
-                    int actualIoContexts = NativeDevice_NumIoContexts(newDevice);
-                    if (actualIoContexts < 1) actualIoContexts = 1;
-                    // We pass numCompletionThreadsConfig to the native ctor as num_io_contexts;
-                    // the native side may clamp at 1 if it received 0 or negative, but otherwise
-                    // honors it. So actualIoContexts should equal numCompletionThreadsConfig. Each
-                    // drainer is bound 1:1 to its own ring via QueueRunFor(ctxIdx, ...).
-                    completionThreads = new Thread[actualIoContexts];
-                    for (int i = 0; i < actualIoContexts; i++)
-                    {
-                        int ctxIdx = i;
-                        completionThreads[i] = new Thread(() => CompletionWorker(ctxIdx))
+                        // Stop any drainers that were started. Pre-publish they are spin-yielding on the
+                        // still-null nativeDevice field (NativeDevice_QueueRunFor null-guards and returns -1),
+                        // so cancellation is observed promptly and Join returns quickly; null slots (a thread
+                        // that was never created/started) are skipped.
+                        if (completionThreads != null)
                         {
-                            IsBackground = true
-                        };
-                        completionThreads[i].Start();
+                            completionThreadToken?.Cancel();
+                            foreach (var t in completionThreads) t?.Join();
+                            completionThreads = null;
+                        }
+                        completionThreadToken?.Dispose();
+                        completionThreadToken = null;
+                        numRingsActual = 0;
                     }
+                    finally
+                    {
+                        // Free the handle even if drainer teardown throws: nativeDevice was never published,
+                        // so Dispose() would skip the destroy and leak the fd and its kernel rings.
+                        NativeDevice_Destroy(newDevice);
+                    }
+                    throw;
                 }
-
-                // Publish last: a reader observing nativeDevice != IntPtr.Zero is guaranteed to
-                // see a fully-initialised handle with completion threads already running.
-                Volatile.Write(ref nativeDevice, newDevice);
             }
         }
 
@@ -1009,16 +1619,10 @@ namespace Tsavorite.core
         /// </remarks>
         public override void Reset()
         {
-            if (Volatile.Read(ref disposedFlag) != 0) return;
             // Lease the native handle (same protocol as ReadAsync/WriteAsync) so a concurrent
-            // Dispose() cannot drain numPending to its int.MinValue poison and free the handle
-            // while we are inside the native call. A <= 0 result means Dispose already poisoned;
-            // restore it and no-op.
-            if (Interlocked.Increment(ref numPending) <= 0)
-            {
-                Interlocked.Decrement(ref numPending);
-                return;
-            }
+            // Dispose() cannot free it while we are inside the native call. A false result means
+            // disposal has begun; no-op.
+            if (!TryLease(out int shard)) return;
             try
             {
                 // No-op if the native device has not been created yet (no handles to reset).
@@ -1028,7 +1632,7 @@ namespace Tsavorite.core
             }
             finally
             {
-                Interlocked.Decrement(ref numPending);
+                ReleaseLease(shard);
             }
         }
 
@@ -1081,54 +1685,73 @@ namespace Tsavorite.core
             // operations is negligible vs the syscall itself.
             ThrowIfMisaligned(sourceAddress, readLength, destinationAddress, nameof(ReadAsync));
 
-            int offset;
-            while (!freeResults.TryDequeue(out offset))
+            // Sharded, contention-free slot + in-flight accounting. The slot is rented from this submitter's
+            // shard free-list and returned only when the IO completes (in _callback or an error path below), so
+            // a slow IO's slot is never reused while it is still in flight — the correctness the counter-ring it
+            // replaced could not provide under out-of-order completions. The SubmitToShard bump is the in-flight
+            // "lease" the Dekker-style Dispose fence and Throttle() observe. See RentSlot / shardFreeSlots.
+            int shard = GetShard();
+            int offset = RentSlot(shard);
+            SubmitToShard(shard);
+            // Fence against a concurrent Dispose that began after the EnsureNativeDeviceCreated check above:
+            // if disposal is now visible, balance the submit bump and route the error callback rather than
+            // touching a handle Dispose may be about to free. (Dekker-style: Dispose sets the flag then drains
+            // in-flight, so either it observes this bump and waits, or we observe the flag here and back out.)
+            if (Volatile.Read(ref disposedFlag) != 0)
             {
-                if (resultOffset < MaxResults)
-                {
-                    offset = Interlocked.Increment(ref resultOffset) - 1;
-                    if (offset < MaxResults) break;
-                }
-                Thread.Yield();
+                CompleteShard(shard);
+                ReturnSlot(offset);
+                callback(uint.MaxValue, 0, context, ioException: default);
+                return;
             }
             ref var result = ref results[offset];
             result.context = context;
             result.callback = callback;
 
+            // Second, independently balanced in-flight lease covering the native call itself. The IO's own
+            // bump above is dropped by _callback, which runs on a drainer thread and can fire before this
+            // frame has left native code; without this lease Dispose could observe zero in-flight and free
+            // the device under a submitter still inside it. Same role as TryLease on the non-IO entry points.
+            EnterNativeCall(shard);
             try
             {
-                if (Interlocked.Increment(ref numPending) <= 0)
-                    throw new Exception("Cannot operate on disposed device");
-                int _result = NativeDevice_ReadAsync(nativeDevice, ((ulong)segmentId << segmentSizeBits) | sourceAddress, destinationAddress, readLength, _callbackDelegate, (IntPtr)offset);
+                try
+                {
+                    int _result = NativeDevice_ReadAsync(nativeDevice, ((ulong)segmentId << segmentSizeBits) | sourceAddress, destinationAddress, readLength, _callbackDelegate, (IntPtr)offset);
 
-                if (_result != 0)
-                    throw new IOException($"Error reading from log file (status {_result}){FormatNativeError()}", _result);
+                    if (_result != 0)
+                        throw new IOException($"Error reading from log file (status {_result}){FormatNativeError()}", _result);
+                }
+                catch (IOException e)
+                {
+                    logger?.LogCritical(e, $"{nameof(ReadAsync)}");
+                    try
+                    {
+                        callback((uint)(e.HResult & 0x0000FFFF), 0, context, ioException: e);
+                    }
+                    finally
+                    {
+                        CompleteShard(shard);
+                        ReturnSlot(offset);
+                    }
+                }
+                catch (Exception e)
+                {
+                    logger?.LogCritical(e, $"{nameof(ReadAsync)}");
+                    try
+                    {
+                        callback(uint.MaxValue, 0, context, ioException: e);
+                    }
+                    finally
+                    {
+                        CompleteShard(shard);
+                        ReturnSlot(offset);
+                    }
+                }
             }
-            catch (IOException e)
+            finally
             {
-                logger?.LogCritical(e, $"{nameof(ReadAsync)}");
-                try
-                {
-                    callback((uint)(e.HResult & 0x0000FFFF), 0, context);
-                }
-                finally
-                {
-                    freeResults.Enqueue(offset);
-                    Interlocked.Decrement(ref numPending);
-                }
-            }
-            catch (Exception e)
-            {
-                logger?.LogCritical(e, $"{nameof(ReadAsync)}");
-                try
-                {
-                    callback(uint.MaxValue, 0, context);
-                }
-                finally
-                {
-                    freeResults.Enqueue(offset);
-                    Interlocked.Decrement(ref numPending);
-                }
+                ExitNativeCall(shard);
             }
         }
 
@@ -1150,74 +1773,64 @@ namespace Tsavorite.core
             // whichever upper-layer staging buffer is misaligned.
             ThrowIfMisaligned(destinationAddress, numBytesToWrite, sourceAddress, nameof(WriteAsync));
 
-            int offset;
-            while (!freeResults.TryDequeue(out offset))
+            // Sharded slot + in-flight accounting; see ReadAsync for the full rationale.
+            int shard = GetShard();
+            int offset = RentSlot(shard);
+            SubmitToShard(shard);
+            if (Volatile.Read(ref disposedFlag) != 0)
             {
-                if (resultOffset < MaxResults)
-                {
-                    offset = Interlocked.Increment(ref resultOffset) - 1;
-                    if (offset < MaxResults) break;
-                }
-                Thread.Yield();
+                CompleteShard(shard);
+                ReturnSlot(offset);
+                callback(uint.MaxValue, 0, context, ioException: default);
+                return;
             }
             ref var result = ref results[offset];
             result.context = context;
             result.callback = callback;
 
+            // Native-call lease; see ReadAsync for the rationale.
+            EnterNativeCall(shard);
             try
             {
-                var newPending = Interlocked.Increment(ref numPending);
-                if (newPending <= 0)
-                    throw new Exception("Cannot operate on disposed device");
-                if (s_instrument)
+                try
                 {
-                    Interlocked.Increment(ref submitCount);
-                    var prevPeak = peakNumPending;
-                    while (newPending > prevPeak)
+                    int _result = NativeDevice_WriteAsync(nativeDevice, sourceAddress, ((ulong)segmentId << segmentSizeBits) | destinationAddress, numBytesToWrite, _callbackDelegate, (IntPtr)offset);
+
+                    if (_result != 0)
                     {
-                        var actual = Interlocked.CompareExchange(ref peakNumPending, newPending, prevPeak);
-                        if (actual == prevPeak) break;
-                        prevPeak = actual;
+                        throw new IOException($"Error writing to log file (status {_result}){FormatNativeError()}", _result);
                     }
                 }
-                long ts0 = s_instrument ? Stopwatch.GetTimestamp() : 0;
-                int _result = NativeDevice_WriteAsync(nativeDevice, sourceAddress, ((ulong)segmentId << segmentSizeBits) | destinationAddress, numBytesToWrite, _callbackDelegate, (IntPtr)offset);
-                if (s_instrument)
+                catch (IOException e)
                 {
-                    var elapsed = Stopwatch.GetTimestamp() - ts0;
-                    Interlocked.Add(ref submitNanos, (long)(elapsed * 1_000_000_000.0 / Stopwatch.Frequency));
+                    logger?.LogCritical(e, $"{nameof(WriteAsync)}");
+                    try
+                    {
+                        callback((uint)(e.HResult & 0x0000FFFF), 0, context, ioException: e);
+                    }
+                    finally
+                    {
+                        CompleteShard(shard);
+                        ReturnSlot(offset);
+                    }
                 }
-
-                if (_result != 0)
+                catch (Exception e)
                 {
-                    throw new IOException($"Error writing to log file (status {_result}){FormatNativeError()}", _result);
+                    logger?.LogCritical(e, $"{nameof(WriteAsync)}");
+                    try
+                    {
+                        callback(uint.MaxValue, 0, context, ioException: e);
+                    }
+                    finally
+                    {
+                        CompleteShard(shard);
+                        ReturnSlot(offset);
+                    }
                 }
             }
-            catch (IOException e)
+            finally
             {
-                logger?.LogCritical(e, $"{nameof(WriteAsync)}");
-                try
-                {
-                    callback((uint)(e.HResult & 0x0000FFFF), 0, context);
-                }
-                finally
-                {
-                    freeResults.Enqueue(offset);
-                    Interlocked.Decrement(ref numPending);
-                }
-            }
-            catch (Exception e)
-            {
-                logger?.LogCritical(e, $"{nameof(WriteAsync)}");
-                try
-                {
-                    callback(uint.MaxValue, 0, context);
-                }
-                finally
-                {
-                    freeResults.Enqueue(offset);
-                    Interlocked.Decrement(ref numPending);
-                }
+                ExitNativeCall(shard);
             }
         }
 
@@ -1229,24 +1842,27 @@ namespace Tsavorite.core
         {
             if (Volatile.Read(ref disposedFlag) != 0) return;
             // Lease the native handle so a concurrent Dispose() can't free it mid-call.
-            if (Interlocked.Increment(ref numPending) <= 0)
+            if (TryLease(out int shard))
             {
-                Interlocked.Decrement(ref numPending);
-                return;
-            }
-            try
-            {
-                var dev = Volatile.Read(ref nativeDevice);
-                if (dev != IntPtr.Zero)
+                try
                 {
-                    // Native owns the open handle; let it close+unlink.
-                    NativeDevice_RemoveSegment(dev, (ulong)segment);
-                    return;
+                    var dev = Volatile.Read(ref nativeDevice);
+                    if (dev != IntPtr.Zero)
+                    {
+                        // Native owns the open handle; let it close+unlink.
+                        NativeDevice_RemoveSegment(dev, (ulong)segment);
+                        return;
+                    }
+                }
+                finally
+                {
+                    ReleaseLease(shard);
                 }
             }
-            finally
+            else
             {
-                Interlocked.Decrement(ref numPending);
+                // Disposal began — match the disposed-at-entry behavior above and no-op.
+                return;
             }
             // No native handle yet — delete the on-disk segment file directly so callers
             // observe the same semantics as LocalStorageDevice / RandomAccessLocalStorageDevice
@@ -1269,16 +1885,22 @@ namespace Tsavorite.core
 
         /// <summary>
         /// Close device. Shutdown ordering matters: any in-flight IOs must complete first so the
-        /// numPending CAS terminates; the completion threads must exit BEFORE we destroy the native
+        /// in-flight drain terminates; the completion threads must exit BEFORE we destroy the native
         /// device, otherwise they can dereference a freed io_uring/libaio ring inside
         /// <see cref="NativeDevice_QueueRun"/>.
         /// </summary>
         /// <remarks>
         /// <para>Idempotent — multiple calls are safe; only the first does work.</para>
         /// <para>
-        /// User IO callbacks fire on completion-worker threads. Dispose() cannot run on one of
-        /// those threads, because joining the caller would deadlock — we detect and throw
-        /// <see cref="InvalidOperationException"/> in that case.
+        /// User IO callbacks fire either on a completion-worker (drainer) thread or inline on a
+        /// submitter thread that reaps its own completions via <see cref="TryComplete"/> /
+        /// TryCompleteMine (the default affine inline-drain path). Dispose() must NOT be called from
+        /// within any such callback: the in-flight drain below waits for that very callback's completion
+        /// bump (issued in <c>_callback</c>'s <c>finally</c>), so a self-dispose would spin forever. The
+        /// drainer-thread case is detected and thrown as <see cref="InvalidOperationException"/>; the
+        /// inline-submitter-thread case cannot be cheaply detected on the hot completion path, so it is
+        /// the caller's contract (matching the IDevice lifecycle contract) not to dispose the device
+        /// from inside an IO completion callback — post the disposal to a separate thread instead.
         /// </para>
         /// <para>
         /// Worst-case shutdown stall is bounded by the duration of the longest in-flight user
@@ -1311,19 +1933,39 @@ namespace Tsavorite.core
 
             // Idempotent: second and subsequent calls short-circuit. Setting the flag here gates
             // the late P/Invoke entry points (TryComplete, GetFileSize, Reset, RemoveSegment) on
-            // their first line; the numPending lease they then take closes the race where this
-            // drain poisons and frees the handle between that check and the native call.
+            // their first line; the per-shard lease they then take closes the race where this
+            // drain frees the handle between that check and the native call.
             if (Interlocked.Exchange(ref disposedFlag, 1) != 0)
                 return;
 
-            // Drain in-flight ops by poisoning numPending to int.MinValue once it hits 0. Submit
-            // paths fail their Interlocked.Increment(numPending) <= 0 check and route through the
-            // error callback; the _callback decrement in the success path runs in `finally` after
-            // the user callback, so by the time we observe numPending == 0 all completions are done.
-            while (numPending >= 0)
+            // Drain in-flight ops: wait until every shard's in-flight count returns to zero. disposedFlag was
+            // published above (full barrier); submit/lease paths bump their shard (full barrier) then re-check
+            // the flag, so — Dekker-style — either they observe disposal and back out without touching the
+            // handle, or this drain observes their bump and waits. The in-flight decrement for an accepted IO
+            // runs in _callback's `finally` after the user callback, so once in-flight reaches 0 all completions
+            // (and their user callbacks) have finished.
+            //
+            // Bounded, because in-flight only returns to zero if the kernel completes every accepted IO. A
+            // completion that never arrives (a stalled device or driver, a dropped CQE, an io_uring ring whose
+            // SQPOLL thread has died) would otherwise spin here forever, burning a core and reporting nothing.
+            // The deadline sits orders of magnitude above any legitimate drain, so reaching it means completions
+            // are lost rather than slow. Proceeding is then safe: the drainers are cancelled and joined before
+            // the handle is freed, the separate lease drain below stops this deadline from freeing the handle
+            // under a native call still in progress, and NativeDevice_Destroy cancels or waits for whatever the
+            // kernel still owns.
+            var drainStart = Stopwatch.StartNew();
+            var drainSpin = new SpinWait();
+            while (TotalInFlight() != 0)
             {
-                Interlocked.CompareExchange(ref numPending, int.MinValue, 0);
-                Thread.Yield();
+                if (drainStart.ElapsedMilliseconds >= DisposeDrainTimeoutMs)
+                {
+                    logger?.LogError(
+                        "NativeStorageDevice.Dispose() timed out after {timeoutMs}ms with {inFlight} in-flight IO(s) whose completions "
+                        + "were never delivered by the kernel. Proceeding with teardown; their buffers and contexts are leaked.",
+                        DisposeDrainTimeoutMs, TotalInFlight());
+                    break;
+                }
+                drainSpin.SpinOnce(sleep1Threshold: DisposeDrainSleepThreshold);
             }
 
             // Cancel and Join every completion thread, then destroy the native device.
@@ -1335,14 +1977,14 @@ namespace Tsavorite.core
                 {
                     completionThreadToken.Cancel();
                     // Wake every blocked completion drainer by submitting a no-op IO to each
-                    // io_context. The drainer is otherwise sleeping in NativeDevice_QueueRunFor
-                    // waiting for completion events; the wake-up causes the syscall to return
-                    // promptly so the cancellation token can be observed on the next loop
-                    // iteration. Best-effort: on submit failure the drainer still wakes when
+                    // io_context. A drainer parks in NativeDevice_QueueRunFor on the first ring of
+                    // its range, so wake every ring [0, numRingsActual): waking a ring that no
+                    // drainer is currently parked on is harmless (the no-op event is reaped on the
+                    // next drain pass). Best-effort: on submit failure the drainer still wakes when
                     // its QueueRunFor timeout fires.
-                    for (int i = 0; i < completionThreads.Length; i++)
+                    for (int i = 0; i < numRingsActual; i++)
                         _ = NativeDevice_WakeCompletionWorker(nativeDevice, i);
-                    foreach (var t in completionThreads) t.Join();
+                    foreach (var t in completionThreads) t?.Join();
                     completionThreadToken.Dispose();
                     completionThreads = null;
                 }
@@ -1350,6 +1992,34 @@ namespace Tsavorite.core
                 var dev = Interlocked.Exchange(ref nativeDevice, IntPtr.Zero);
                 if (dev != IntPtr.Zero)
                 {
+                    // Destroying the handle is gated on the lease counter rather than on the in-flight drain
+                    // above. That drain has a deadline because a completion can be lost forever; a lease instead
+                    // means a thread is executing inside native code right now. TryComplete / TryCompleteMine
+                    // hold one across a native call that dispatches user callbacks inline, so a lease is bounded
+                    // only by user code — letting the lost-completion deadline free the handle would pull the
+                    // rings and locks out from under a running native frame. No lease can be newly acquired once
+                    // disposedFlag is published (every lease site re-checks it after publishing), so this waits
+                    // only for calls that were already inside native code, and it is a single read in the normal
+                    // case: leases are a subset of in-flight, so an in-flight drain that completed proves zero.
+                    var leaseStart = Stopwatch.StartNew();
+                    var leaseSpin = new SpinWait();
+                    while (TotalLeases() != 0)
+                    {
+                        if (leaseStart.ElapsedMilliseconds >= DisposeLeaseDrainTimeoutMs)
+                        {
+                            // Leak the native device rather than free it: a native frame still owns its rings
+                            // and locks. A leaked handle at teardown is bounded and diagnosable; freeing memory
+                            // under a running frame is neither.
+                            logger?.LogError(
+                                "NativeStorageDevice.Dispose() timed out after {timeoutMs}ms with {leases} native call(s) still "
+                                + "executing. Leaking the native device instead of destroying it, since freeing it would "
+                                + "invalidate state those calls are still using.",
+                                DisposeLeaseDrainTimeoutMs, TotalLeases());
+                            return;
+                        }
+                        leaseSpin.SpinOnce(sleep1Threshold: DisposeDrainSleepThreshold);
+                    }
+
                     NativeDevice_Destroy(dev);
                     // NativeDevice_Destroy runs log_.Close() under the C ABI firewall; if that threw
                     // it was caught and recorded rather than crashing teardown. Surface it so a
@@ -1364,24 +2034,47 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         public override bool TryComplete()
         {
-            if (Volatile.Read(ref disposedFlag) != 0) return false;
-            // Lease the native handle so a concurrent Dispose() can't free it mid-call. The
-            // disposedFlag check above rejects the common post-dispose case without the interlocked
-            // cost; the lease closes the remaining race where Dispose poisons numPending between
-            // that check and the native call.
-            if (Interlocked.Increment(ref numPending) <= 0)
-            {
-                Interlocked.Decrement(ref numPending);
+            // Lease the native handle so a concurrent Dispose() can't free it mid-call. TryLease
+            // rejects the post-dispose case and closes the race where Dispose frees the handle
+            // between the flag check and the native call.
+            if (!TryLease(out int shard))
                 return false;
-            }
             try
             {
                 var dev = Volatile.Read(ref nativeDevice);
-                return dev != IntPtr.Zero && NativeDevice_TryComplete(dev);
+                if (dev == IntPtr.Zero)
+                    return false;
+                return NativeDevice_TryComplete(dev);
             }
             finally
             {
-                Interlocked.Decrement(ref numPending);
+                ReleaseLease(shard);
+            }
+        }
+
+        /// <summary>
+        /// Drain only the calling thread's affine native context/ring (the one its submits land on),
+        /// instead of walking every context like <see cref="TryComplete"/>. The inline submitter-thread
+        /// completion path (Tsavorite CompletePending / AsyncGetFromDisk throttle-wait) is the primary
+        /// reaper at high IOPS; polling just this thread's own context issues one io_getevents per poll
+        /// rather than one per context, cutting completion-drain syscalls (and the cross-context aio
+        /// ring-lock contention) by roughly the context count. All contexts stay covered because each
+        /// has sharing submitters and/or a dedicated completion (drainer) thread.
+        /// </summary>
+        public override bool TryCompleteMine()
+        {
+            if (!TryLease(out int shard))
+                return false;
+            try
+            {
+                var dev = Volatile.Read(ref nativeDevice);
+                if (dev == IntPtr.Zero)
+                    return false;
+                return NativeDevice_TryCompleteMine(dev);
+            }
+            finally
+            {
+                ReleaseLease(shard);
             }
         }
 
@@ -1390,7 +2083,7 @@ namespace Tsavorite.core
         {
             if (Volatile.Read(ref disposedFlag) != 0) return 0;
             // Lease the native handle so a concurrent Dispose() can't free it mid-call.
-            if (Interlocked.Increment(ref numPending) > 0)
+            if (TryLease(out int shard))
             {
                 try
                 {
@@ -1400,12 +2093,8 @@ namespace Tsavorite.core
                 }
                 finally
                 {
-                    Interlocked.Decrement(ref numPending);
+                    ReleaseLease(shard);
                 }
-            }
-            else
-            {
-                Interlocked.Decrement(ref numPending);
             }
             // No native handle yet (or disposed) — stat the on-disk segment file directly. Matches
             // LocalStorageDevice / RandomAccessLocalStorageDevice semantics where size is
@@ -1547,41 +2236,91 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Drain loop for one completion thread, bound 1:1 to ring shard <paramref name="ctxIdx"/>.
-        /// Blocks in <c>NativeDevice_QueueRunFor</c> with a long timeout. Dispose() wakes blocked
-        /// workers via <c>NativeDevice_WakeCompletionWorker</c> rather than relying on the
-        /// timeout to fire.
+        /// Drain loop for one completion thread. The thread owns the contiguous range of ring
+        /// shards <c>[startCtx, startCtx + ctxCount)</c>. For a single ring it blocks in
+        /// <c>NativeDevice_QueueRunFor</c> with a long timeout (single-ring fast path), and Dispose()
+        /// wakes it via <c>NativeDevice_WakeCompletionWorker</c> rather than relying on the timeout to
+        /// fire. For a range it never blocks on any one ring — blocking would hide completions on the
+        /// siblings for the whole timeout — so it polls every ring non-blocking (timeout 0), yields on a
+        /// brief idle, and sleeps 1 ms only after <see cref="CompletionWorkerIdleSpinBudget"/> consecutive
+        /// idle passes; cancellation is observed within one pass, with no wake dependency.
         /// </summary>
-        void CompletionWorker(int ctxIdx)
+        void CompletionWorker(int startCtx, int ctxCount)
         {
             // Defense-in-depth: catch around the whole drain loop. _callback already swallows
             // all exceptions from the user callback (see its big comment), but if anything
             // else managed-side throws here (e.g. nativeDevice goes IntPtr.Zero mid-call
             // during a race with Dispose, or a P/Invoke marshalling exception), losing the
-            // drainer thread silently is catastrophic: no completions ever fire, numPending
+            // drainer thread silently is catastrophic: no completions ever fire, in-flight
             // grows unbounded, the next submitter spins forever in device.Throttle() and the
             // whole engine deadlocks. So if anything escapes, log it loudly and exit cleanly.
             try
             {
+                // Consecutive idle poll-passes for the multi-ring path below; reset on any drained event.
+                long idleSpins = 0;
                 while (true)
                 {
                     if (completionThreadToken.IsCancellationRequested) break;
-                    int rc = NativeDevice_QueueRunFor(nativeDevice, ctxIdx, CompletionWorkerTimeoutSecs);
-                    if (rc == NativeCABIExceptionSentinel)
+
+                    if (ctxCount <= 1)
                     {
-                        // The native drain threw and was firewalled by the C ABI guard (instead of
-                        // unwinding across P/Invoke and terminating the process). Surface the message
-                        // so it can be reported, then pause briefly to avoid a hot error loop if the
-                        // fault is persistent. The drainer keeps running so Dispose can still proceed.
-                        logger?.LogError("NativeStorageDevice completion drainer (ctxIdx={ctxIdx}) hit a native exception: {error}", ctxIdx, GetNativeLastError());
-                        Thread.Sleep(10);
+                        // Single ring: block directly on it with the timeout (single-ring fast path).
+                        int rc = NativeDevice_QueueRunFor(nativeDevice, startCtx, CompletionWorkerTimeoutSecs);
+                        if (rc == NativeCABIExceptionSentinel)
+                        {
+                            // The native drain threw and was firewalled by the C ABI guard (instead of
+                            // unwinding across P/Invoke and terminating the process). Surface the message
+                            // so it can be reported, then pause briefly to avoid a hot error loop if the
+                            // fault is persistent. The drainer keeps running so Dispose can still proceed.
+                            logger?.LogError("NativeStorageDevice completion drainer (startCtx={startCtx}) hit a native exception: {error}", startCtx, GetNativeLastError());
+                            Thread.Sleep(10);
+                        }
+                        Thread.Yield();
+                        continue;
                     }
-                    Thread.Yield();
+
+                    // Range of rings: poll each one non-blocking (timeout 0) so a completion on any
+                    // ring in the range is reaped promptly. A blocking io_getevents parks on a SINGLE
+                    // context, which would hide completions on the sibling rings for the whole timeout
+                    // — fatal for the low-in-flight write/flush path (a stalled flush completion blocks
+                    // the memory-bounded log). So this path NEVER blocks on one ring: under saturation
+                    // every pass drains events and we re-poll immediately (max throughput, lowest
+                    // latency); on a brief idle we yield; only on sustained idle do we sleep 1ms to
+                    // release the core, and even then the next pass re-polls the ENTIRE range so no ring
+                    // waits more than ~1ms. Dispose is observed within one pass (no Wake dependency here).
+                    int drained = 0;
+                    bool faulted = false;
+                    for (int k = 0; k < ctxCount; k++)
+                    {
+                        int rc = NativeDevice_QueueRunFor(nativeDevice, startCtx + k, 0);
+                        if (rc == NativeCABIExceptionSentinel)
+                            faulted = true;
+                        else if (rc > 0)
+                            drained += rc;
+                    }
+                    if (faulted)
+                    {
+                        logger?.LogError("NativeStorageDevice completion drainer (startCtx={startCtx}, count={ctxCount}) hit a native exception: {error}", startCtx, ctxCount, GetNativeLastError());
+                        Thread.Sleep(10);
+                        idleSpins = 0;
+                    }
+                    else if (drained > 0)
+                    {
+                        idleSpins = 0;      // stay hot: re-poll immediately
+                    }
+                    else if (++idleSpins < CompletionWorkerIdleSpinBudget)
+                    {
+                        Thread.Yield();     // brief idle: stay responsive, keep every ring visible
+                    }
+                    else
+                    {
+                        Thread.Sleep(1);    // sustained idle: release the core (re-polls whole range on wake)
+                    }
                 }
             }
             catch (Exception ex)
             {
-                logger?.LogCritical(ex, "NativeStorageDevice completion drainer (ctxIdx={ctxIdx}) terminated by unhandled exception", ctxIdx);
+                logger?.LogCritical(ex, "NativeStorageDevice completion drainer (startCtx={startCtx}) terminated by unhandled exception", startCtx);
             }
         }
 
@@ -1589,5 +2328,29 @@ namespace Tsavorite.core
         // negligible; Dispose() does not rely on this firing because it submits a synthetic wake-up
         // event via NativeDevice_WakeCompletionWorker to unblock the worker immediately.
         const int CompletionWorkerTimeoutSecs = 1;
+
+        // Multi-ring drainers (numIoContexts > numCompletionThreads) never block in a syscall (that
+        // would hide sibling rings). Instead they poll; after this many consecutive fully-idle passes
+        // they switch from Thread.Yield() to Thread.Sleep(1) to release the core. Under a saturated
+        // read workload the idle branch is never taken, so this only bounds CPU when the device is
+        // quiescent (e.g. between log-flush completions during load).
+        const long CompletionWorkerIdleSpinBudget = 1024;
+
+        // Upper bound on Dispose()'s in-flight drain. A normal drain finishes in microseconds: the
+        // outstanding IOs are already queued in the kernel and the leases held across native calls are
+        // individually bounded. This only fires when completions are permanently lost, so it is set far
+        // above any legitimate drain to keep a degraded-but-live device from tripping it.
+        const int DisposeDrainTimeoutMs = 30_000;
+
+        // Upper bound on Dispose()'s wait for in-progress native calls to return before the handle is destroyed.
+        // Unlike the in-flight drain this cannot be tripped by lost completions — only leases already inside
+        // native code are counted — so it fires only when a user callback dispatched inline by TryComplete /
+        // TryCompleteMine blocks indefinitely. Expiry leaks the handle rather than freeing it.
+        const int DisposeLeaseDrainTimeoutMs = 30_000;
+
+        // Iterations Dispose()'s drain spins before SpinWait starts inserting Thread.Sleep(1). Keeps the
+        // common case (drain completes almost immediately) spin-fast while stopping a drain that runs to
+        // DisposeDrainTimeoutMs from pinning a core.
+        const int DisposeDrainSleepThreshold = 20;
     }
 }

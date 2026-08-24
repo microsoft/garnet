@@ -829,6 +829,63 @@ namespace Garnet.test
         }
 
         [Test]
+        public void ZRangeStoreInvalidParamsReturnErrorAndKeepSessionAlive()
+        {
+            using var lightClientRequest = TestUtils.CreateRequest();
+
+            lightClientRequest.SendCommands("ZADD zrs 1 a 2 b 3 c", "PING");
+            // A pre-existing destination must survive a rejected ZRANGESTORE.
+            lightClientRequest.SendCommands("ZADD zrsdst 9 keep", "PING");
+
+            // Index mode with LIMIT. On unpatched main SortedSetRange writes the
+            // "-ERR syntax error, LIMIT ..." into the range output buffer, which the
+            // store path then parses as an array length, aborting the RESP session
+            // with a protocol error (a missing reply here would hang this request).
+            var response = lightClientRequest.SendCommands("ZRANGESTORE zrsdst zrs 0 -1 LIMIT 0 2", "PING");
+            var expectedResponse = "-ERR syntax error, LIMIT is only supported in combination with either BYSCORE or BYLEX\r\n+PONG\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            // Non-float min/max in BYSCORE mode reaches the same faulty path on main.
+            response = lightClientRequest.SendCommands("ZRANGESTORE zrsdst zrs notafloat 5 BYSCORE", "PING");
+            expectedResponse = "-ERR min or max is not a float\r\n+PONG\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            // The destination is left untouched by the rejected commands.
+            response = lightClientRequest.SendCommands("ZRANGE zrsdst 0 -1", "PING", 2, 1);
+            expectedResponse = "*1\r\n$4\r\nkeep\r\n+PONG\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            // A well-formed ZRANGESTORE still overwrites the destination.
+            response = lightClientRequest.SendCommands("ZRANGESTORE zrsdst zrs 0 -1", "PING");
+            expectedResponse = ":3\r\n+PONG\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            response = lightClientRequest.SendCommands("ZRANGE zrsdst 0 -1", "PING", 4, 1);
+            expectedResponse = "*3\r\n$1\r\na\r\n$1\r\nb\r\n$1\r\nc\r\n+PONG\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            // BYSCORE and BYLEX are independent options, so both range blocks run and the
+            // BYLEX error is written after BYSCORE has already produced an array. Only the
+            // error may reach the client - forwarding both would answer one command with two
+            // RESP replies, which is the desync this test exists to prevent.
+            response = lightClientRequest.SendCommands("ZRANGESTORE zrsdst zrs 1 3 BYSCORE BYLEX", "PING");
+            expectedResponse = "-ERR min or max not valid string range item\r\n+PONG\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            // ... and the destination still survives that one.
+            response = lightClientRequest.SendCommands("ZRANGE zrsdst 0 -1", "PING", 4, 1);
+            expectedResponse = "*3\r\n$1\r\na\r\n$1\r\nb\r\n$1\r\nc\r\n+PONG\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            // A rejected ZRANGESTORE pipelined with another scratch-allocating command
+            // in the same network batch must not corrupt the shared scratch buffer: the
+            // error payload has to coexist with the following ZRANGE's own allocation.
+            response = lightClientRequest.SendCommands("ZRANGESTORE zrsdst zrs 0 -1 LIMIT 0 2", "ZRANGE zrs (1 3 BYSCORE LIMIT 0 2", 1, 3);
+            expectedResponse = "-ERR syntax error, LIMIT is only supported in combination with either BYSCORE or BYLEX\r\n*2\r\n$1\r\nb\r\n$1\r\nc\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+        }
+
+        [Test]
         public void CandDoZIncrby()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
@@ -4574,6 +4631,70 @@ namespace Garnet.test
 
             response = lightClientRequest.SendCommandChunks("ZRANDMEMBER dadi 0 WITHSCORES", bytesSent);
             expectedResponse = "*0\r\n"; // Empty List
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+        }
+
+        [Test]
+        public void CanUseZRandMemberWithOverflowingCount()
+        {
+            using var lightClientRequest = TestUtils.CreateRequest();
+            var response = lightClientRequest.SendCommand("ZADD randzset 1 m1 2 m2 3 m3");
+            var expectedResponse = ":3\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            // A count too large for the packed count field that carries it to the object store is pinned to
+            // the largest representable count, which for a positive count is then saturated to the size of
+            // the sorted set. Pipelining PING checks that each reply is complete and correctly framed.
+
+            // This count used to unpack to 0, for which ZRANDMEMBER wrote no reply at all
+            response = lightClientRequest.SendCommands("ZRANDMEMBER randzset 1073741824", "PING", 4, 1);
+            expectedResponse = "*3\r\n"; // all 3 members
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            // This count used to unpack to -536870912, and the object store then attempted a ~2GB reply
+            response = lightClientRequest.SendCommands("ZRANDMEMBER randzset 536870912", "PING", 4, 1);
+            expectedResponse = "*3\r\n"; // all 3 members
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            // This count used to unpack to -1, and only a single member came back
+            response = lightClientRequest.SendCommands("ZRANDMEMBER randzset 2147483647", "PING", 4, 1);
+            expectedResponse = "*3\r\n"; // all 3 members
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            // The clamp must not disturb the WITHSCORES bit packed next to the count
+            response = lightClientRequest.SendCommands("ZRANDMEMBER randzset 2147483647 WITHSCORES", "PING", 7, 1);
+            expectedResponse = "*6\r\n"; // 3 member/score pairs
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            // int.MaxValue >> 2 is the largest count the packing represents faithfully, so the clamp is a no-op
+            response = lightClientRequest.SendCommands("ZRANDMEMBER randzset 536870911", "PING", 4, 1);
+            expectedResponse = "*3\r\n"; // all 3 members
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            // Counts well inside the representable range are untouched
+            response = lightClientRequest.SendCommands("ZRANDMEMBER randzset 2", "PING", 3, 1);
+            expectedResponse = "*2\r\n"; // 2 distinct members
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            response = lightClientRequest.SendCommands("ZRANDMEMBER randzset 5", "PING", 4, 1);
+            expectedResponse = "*3\r\n"; // saturated to the size of the sorted set
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            response = lightClientRequest.SendCommands("ZRANDMEMBER randzset -5", "PING", 6, 1);
+            expectedResponse = "*5\r\n"; // 5 members, repeats allowed
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            response = lightClientRequest.SendCommands("ZRANDMEMBER randzset 0", "PING", 1, 1);
+            expectedResponse = "*0\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            // Without a count the reply is a single bulk string, not an array
+            response = lightClientRequest.SendCommands("ZRANDMEMBER randzset", "PING", 1, 1);
+            expectedResponse = "$2\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            response = lightClientRequest.SendCommands("ZRANDMEMBER randzset 2 WITHSCORES", "PING", 5, 1);
+            expectedResponse = "*4\r\n"; // 2 member/score pairs
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
 

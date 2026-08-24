@@ -146,6 +146,13 @@ namespace Garnet.server
 
                 if (sbParam.EqualsUpperCaseSpanIgnoringCase(CmdStrings.MATCH))
                 {
+                    // MATCH must be followed by a pattern
+                    if (currTokenIdx >= input.parseState.Count)
+                    {
+                        error = CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR;
+                        return false;
+                    }
+
                     // Read pattern for keys filter
                     var sbPattern = input.parseState.GetArgSliceByRef(currTokenIdx++);
                     pattern = sbPattern.ToPointer();
@@ -153,6 +160,13 @@ namespace Garnet.server
                 }
                 else if (sbParam.EqualsUpperCaseSpanIgnoringCase(CmdStrings.COUNT))
                 {
+                    // COUNT must be followed by a value
+                    if (currTokenIdx >= input.parseState.Count)
+                    {
+                        error = CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR;
+                        return false;
+                    }
+
                     if (!input.parseState.TryGetInt(currTokenIdx++, out countInInput))
                     {
                         error = CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER;

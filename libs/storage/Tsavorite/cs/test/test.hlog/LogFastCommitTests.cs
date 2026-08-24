@@ -93,7 +93,7 @@ namespace Tsavorite.test
         [Test]
         [Category("TsavoriteLog")]
         [Category("Smoke")]
-        public void CommitRecordBoundedGrowthTest([Values] TestUtils.TestDeviceType deviceType)
+        public void CommitRecordBoundedGrowthTest([Values] TestUtils.TestDeviceType deviceType, [Values(1, -1)] int numThreads)
         {
             var cookie = new byte[100];
             new Random().NextBytes(cookie);
@@ -115,14 +115,28 @@ namespace Tsavorite.test
 
             var enqueueDone = new ManualResetEventSlim();
             var commitThreads = new List<Thread>();
+            // Capture any exception thrown by a background commit thread. An unhandled throw on a raw Thread
+            // (e.g. a device write error surfaced as CommitFailureException) would otherwise terminate the whole
+            // test host process; instead we record it and fail this test assertively below.
+            Exception commitException = null;
             // Make sure to not spin up too many commit threads, otherwise we might clog epochs and halt progress
-            for (var i = 0; i < Math.Max(1, Environment.ProcessorCount / 2); i++)
+            var commitThreadCount = numThreads == -1 ? Math.Max(1, Environment.ProcessorCount / 2) : numThreads;
+            for (var i = 0; i < commitThreadCount; i++)
             {
                 commitThreads.Add(new Thread(() =>
                 {
-                    // Otherwise, absolutely clog the commit pipeline
-                    while (!enqueueDone.IsSet)
-                        log.Commit();
+                    try
+                    {
+                        // Otherwise, absolutely clog the commit pipeline
+                        while (!enqueueDone.IsSet)
+                            log.Commit();
+                    }
+                    catch (Exception ex)
+                    {
+                        // Keep the first failure and stop the remaining threads so we fail fast with the root cause.
+                        _ = Interlocked.CompareExchange(ref commitException, ex, null);
+                        enqueueDone.Set();
+                    }
                 }));
             }
 
@@ -134,6 +148,10 @@ namespace Tsavorite.test
 
             foreach (var t in commitThreads)
                 t.Join();
+
+            // A background commit failure must surface as a test failure (with the underlying device exception as
+            // InnerException) rather than as a process-killing unhandled exception.
+            ClassicAssert.IsNull(commitException, $"Commit thread failed: {commitException}");
 
             // TODO: Hardcoded constant --- if this number changes in TsavoriteLogRecoveryInfo, it needs to be updated here too
             var commitRecordSize = 44;

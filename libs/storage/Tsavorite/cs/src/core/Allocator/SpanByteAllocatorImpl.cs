@@ -17,7 +17,7 @@ namespace Tsavorite.core
         public SpanByteAllocatorImpl(AllocatorSettings settings, TStoreFunctions storeFunctions, Func<object, SpanByteAllocator<TStoreFunctions>> wrapperCreator)
             : base(settings, storeFunctions, wrapperCreator, settings.logger)
         {
-            freePagePool = new OverflowPool<PageUnit<Empty>>(4, p => { });
+            freePagePool = new OverflowPool<PageUnit<Empty>>(4, static p => { });
             pageHeaderSize = PageHeader.Size;
         }
 
@@ -56,12 +56,22 @@ namespace Tsavorite.core
             Debug.Assert(index < BufferSize);
             if (pagePointers[index] != default)
             {
-                _ = freePagePool.TryAdd(new()
+                if (useNativeLogPages)
                 {
-                    array = pageArrays[index],
-                    pointer = pagePointers[index],
-                    value = Empty.Default
-                });
+                    // Recycle the direct-VM block via nativeFreePagePool for reuse (evicted/flush-complete, so no
+                    // device IO references it). FreePage zeroed the inline bytes via ClearPage before this call, so
+                    // a later AllocatePinnedPageArray that reuses the block sees a clean page.
+                    FreeNativeLogPage(index);
+                }
+                else
+                {
+                    _ = freePagePool.TryAdd(new()
+                    {
+                        array = pageArrays[index],
+                        pointer = pagePointers[index],
+                        value = Empty.Default
+                    });
+                }
                 pageArrays[index] = default;
                 pagePointers[index] = default;
                 _ = Interlocked.Decrement(ref AllocatedPageCount);
@@ -165,6 +175,7 @@ namespace Tsavorite.core
                 {
                     KeySize = key.KeyBytes.Length,
                     ValueSize = 0,  // No payload for the default value
+                    ExtendedNamespaceSize = RecordNamespace.GetExtendedNamespaceSize(in key),
                     HasETag = false,
                     HasExpiration = false
                 }
@@ -228,8 +239,38 @@ namespace Tsavorite.core
             PageAsyncFlushResult<TContext> asyncResult, IDevice device, IDevice objectLogDevice, long fuzzyStartLogicalAddress)
         {
             VerifyCompatibleSectorSize(device);
+            if (useNativeLogPages)
+            {
+                // Direct-VM backend: an evicted page's slot pointer is cleared (its block may be parked for free), so
+                // do not issue a snapshot write from a stale/zero pointer. Under epoch protection (which pins the page
+                // against eviction while held), skip a page the eviction boundary has already fully passed — recovery
+                // reads such pages from the main log (its recovery start is never below HeadAddress). If the page is
+                // still live, the pointer read here is valid; should the page be evicted after we release the epoch
+                // while the async write is in flight, FreeNativeLogPage parks (does not unmap) its block.
+                var epochTaken = epoch.ResumeIfNotProtected();
+                try
+                {
+                    if (HeadAddress >= GetLogicalAddressOfStartOfPage(flushPage + 1))
+                    {
+                        asyncResult.flushRequestState = FlushRequestState.WriteNotIssued;
+                        return;
+                    }
+                    WriteInlinePageAsync((IntPtr)pagePointers[flushPage % BufferSize], (ulong)(AlignedPageSizeBytes * (flushPage - startPage)),
+                                (uint)AlignedPageSizeBytes, callback, asyncResult, device);
+                    // Main device write submitted: its completion callback owns releasing this page's snapshot-IO
+                    // unit and buffers. (If WriteInlinePageAsync threw, the flag stays false and the issuer releases.)
+                    asyncResult.snapshotDeviceWriteIssued = true;
+                }
+                finally
+                {
+                    if (epochTaken)
+                        epoch.Suspend();
+                }
+                return;
+            }
             WriteInlinePageAsync((IntPtr)pagePointers[flushPage % BufferSize], (ulong)(AlignedPageSizeBytes * (flushPage - startPage)),
                         (uint)AlignedPageSizeBytes, callback, asyncResult, device);
+            asyncResult.snapshotDeviceWriteIssued = true;
         }
 
         protected override void ReadAsync<TContext>(ulong alignedSourceAddress, IntPtr destinationPtr, uint aligned_read_length,

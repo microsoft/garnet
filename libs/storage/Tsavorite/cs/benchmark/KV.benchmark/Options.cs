@@ -32,8 +32,12 @@ namespace Tsavorite.kvbench
         public long Keys { get; set; }
 
         [Option('v', "value-size", Required = false, Default = 100,
-            HelpText = "Value length in bytes. Range: 32..1048576 (must also be <= --max-inline-value-size).")]
+            HelpText = "Value length in bytes. Range: 32..1048576 (must also be <= --max-inline-value-size). In variable mode (--value-size-max > this) it is the MINIMUM per-key size.")]
         public int ValueSize { get; set; }
+
+        [Option("value-size-max", Required = false, Default = "0",
+            HelpText = "When > --value-size, enables VARIABLE per-key value sizes drawn log-uniformly in [--value-size, this] (deterministic per key). Must be <= --max-inline-value-size. 0 = fixed size (every key uses --value-size). Use to spread records across buffer-pool size classes, e.g. --value-size 100 --value-size-max 10m.")]
+        public string ValueSizeMax { get; set; }
 
         [Option("rumd", Separator = ',', Required = false, Default = new[] { 100, 0, 0, 0 },
             HelpText = "#,#,#,#: Percentages of [(r)eads,(u)pserts,r(m)ws,(d)eletes] (summing to 100). When d% > 0, deletes auto-reinsert.")]
@@ -103,13 +107,14 @@ namespace Tsavorite.kvbench
             HelpText = "Device backend: native, randomaccess, filestream, null, localmemory, default.")]
         public string Device { get; set; }
 
-        [Option("device-throttle", Required = false, Default = 0,
-            HelpText = "Max in-flight IOs (device queue depth). 0 = device default (120 for Native; maps to " +
-                       "the LocalMemory SPSC ring otherwise). NOTE: the 120 default under-drives a fast NVMe — " +
-                       "set >=512 to saturate the device queue and reach its IOPS ceiling. Also size --num-keys " +
-                       "so the log spans enough of the device (a small LBA span engages fewer NAND channels and " +
-                       "caps IOPS below the device's large-span ceiling).")]
-        public int DeviceThrottle { get; set; }
+        [Option("device-throttle-limit", Required = false, Default = 0,
+            HelpText = "Aggregate max in-flight IOs (software backpressure). 0 = device default (4096 for Native; 120 for " +
+                       "the managed in-box devices; maps to the LocalMemory SPSC ring otherwise). The Native 4096 default " +
+                       "already saturates a fast NVMe queue; the managed 120 default under-drives one, so raise it (>=512) " +
+                       "to reach the IOPS ceiling on those devices. Also size --num-keys so the log spans enough of the " +
+                       "device (a small LBA span engages fewer NAND channels and caps IOPS below the device's large-span " +
+                       "ceiling). Capped at io-contexts * queue-depth.")]
+        public int DeviceThrottleLimit { get; set; }
 
         [Option("device-io-backend", Required = false, Default = "default",
             HelpText = "Linux native backend: libaio, uring, default (=libaio).")]
@@ -125,12 +130,49 @@ namespace Tsavorite.kvbench
                        "Environment.ProcessorCount for LocalMemory).")]
         public int DeviceCompletionThreads { get; set; }
 
+        [Option("device-io-contexts", Required = false, Default = 0,
+            HelpText = "DeviceType.Native on Linux only: number of independent kernel io_contexts " +
+                       "(libaio) / io_uring rings the device creates, decoupled from the number of " +
+                       "drainer threads (--device-completion-threads). Submitters map to rings via " +
+                       "per-thread affinity, so setting this >= submitter concurrency makes io_submit " +
+                       "contention-free (no shared per-context aio ring/completion lock across unrelated " +
+                       "submitters) and spreads completion posting across more rings; the drainers each " +
+                       "range-drain a contiguous slice of the rings. 0 (default) is backend-specific: io_uring " +
+                       "uses a hardware-aware ring count (min(2*ProcessorCount, 64), floored at the drainer count), " +
+                       "while libaio uses one ring per drainer. Clamped up to --device-completion-threads.")]
+        public int DeviceIoContexts { get; set; }
+
+        [Option("device-queue-depth", Required = false, Default = 0,
+            HelpText = "DeviceType.Native on Linux only: per-ring kernel queue depth (io_uring SQ entries / " +
+                       "libaio io_context nr_events) for each of the --device-io-contexts rings. 0 = default " +
+                       "(4096). Cap 32768 (io_uring hard limit). For libaio, io-contexts * queue-depth is drawn " +
+                       "from the global fs.aio-max-nr budget (warned if exceeded; io_setup then fails if the budget is exhausted).")]
+        public int DeviceQueueDepth { get; set; }
+
+        [Option("device-uring-sqpoll", Required = false, Default = false,
+            HelpText = "DeviceType.Native + --device-io-backend uring only: enable io_uring SQPOLL " +
+                       "(IORING_SETUP_SQPOLL) so a kernel thread polls the submission queue and submissions " +
+                       "are syscall-free. Each ring gets its own poll thread (no IORING_SETUP_ATTACH_WQ) so " +
+                       "submission stays parallel across rings. Ignored for libaio. Off by default (opt-in).")]
+        public bool DeviceUringSqPoll { get; set; }
+
+        [Option("device-uring-sqpoll-idle-ms", Required = false, Default = 0,
+            HelpText = "io_uring SQPOLL poll-thread idle window in milliseconds (sq_thread_idle): how long the " +
+                       "kernel poll thread spins after the last submit before parking. 0 = native default (10s). " +
+                       "Only meaningful with --device-uring-sqpoll.")]
+        public int DeviceUringSqPollIdleMs { get; set; }
+
         [Option("device-inline-completion", Required = false, Default = false,
             HelpText = "DeviceType.LocalMemory only: complete IOs inline on the submitting thread (no " +
                        "completion threads or rings; copy + callback run synchronously). Isolates the " +
                        "per-op work from the cross-thread run-thread->completion-thread handoff. " +
                        "Overrides --device-completion-threads.")]
         public bool DeviceInlineCompletion { get; set; }
+
+        [Option("use-native-allocator", Required = false, Default = false,
+            HelpText = "Route hash index / log pages / frames through a native (off-managed-heap) direct-VM " +
+                       "allocator instead of the GC heap.")]
+        public bool UseNativeAllocator { get; set; }
 
         [Option("data-path", Required = false, Default = null,
             HelpText = "Directory where hlog files live. Default OS temp.")]
@@ -159,6 +201,18 @@ namespace Tsavorite.kvbench
         [Option("dump-distribution", Required = false, Default = false,
             HelpText = "After load: print the hash-table bucket distribution (TsavoriteKV.DumpDistribution()).")]
         public bool DumpDistribution { get; set; }
+
+        [Option("pool-stats", Required = false, Default = false,
+            HelpText = "Instrument the sector-aligned buffer pool: at the start of each measured run window reset per-size-class allocation/reuse counters, sample them every --report-interval-sec (showing new allocations plateau while cache reuse climbs), and print a per-size-class alloc/reuse table afterward. Requires building with -p:BufferPoolStats=true; without it the recording call sites are compiled out (zero Get-path overhead) and a warning is printed.")]
+        public bool PoolStats { get; set; }
+
+        [Option("use-legacy-buffer-pool", Required = false, Default = false,
+            HelpText = "Use the legacy per-level ConcurrentQueue SectorAlignedBufferPool (sets SectorAlignedBufferPool.UseOriginReturn=false) instead of the default origin-return per-thread pool, for A/B throughput comparison.")]
+        public bool UseLegacyBufferPool { get; set; }
+
+        [Option("pool-budget", Required = false, Default = "0",
+            HelpText = "Override the sector-aligned buffer pool's per-pool managed byte budget (SectorAlignedBufferPool.ManagedBudgetBytes; default 1GB) before any pool is created, e.g. 8g. The budget bounds cacheable bytes (25% small classes, 75% large); a budget smaller than the in-flight large-buffer working set forces large reads to allocate-on-Get / drop-on-Return (bounded memory, lower reuse). 0 = leave the default.")]
+        public string PoolBudget { get; set; }
 
         // ===== Output =====
 
@@ -191,6 +245,12 @@ namespace Tsavorite.kvbench
         internal long ResolvedIndexAppliedBytes;
         internal long ResolvedRecordSizeBytes;
         internal long ResolvedMaxInlineValueSizeBytes;
+        /// <summary>True when --value-size-max enables per-key variable value sizes.</summary>
+        internal bool VariableValueSize;
+        /// <summary>Maximum per-key value size in variable mode (0 in fixed mode). Min is <see cref="ValueSize"/>.</summary>
+        internal long ResolvedValueSizeMaxBytes;
+        /// <summary>Override for SectorAlignedBufferPool.ManagedBudgetBytes (0 = leave default).</summary>
+        internal long ResolvedPoolBudgetBytes;
         internal int ReadPct, UpsertPctCumulative, RmwPctCumulative;
         internal bool UseZipf;
         internal Tsavorite.core.DeviceType ResolvedDeviceType;
@@ -271,8 +331,35 @@ namespace Tsavorite.kvbench
             if (ValueSize > ResolvedMaxInlineValueSizeBytes)
                 return $"--value-size ({ValueSize}) exceeds --max-inline-value-size ({ResolvedMaxInlineValueSizeBytes}); values larger than the inline threshold overflow to heap and skew the benchmark.";
 
+            // Variable value sizes (--value-size-max): per-key log-uniform in [ValueSize, max].
+            ResolvedValueSizeMaxBytes = 0;
+            VariableValueSize = false;
+            if (!string.IsNullOrWhiteSpace(ValueSizeMax) && ValueSizeMax != "0")
+            {
+                var vmax = KvSize.ParseSize(ValueSizeMax);
+                if (vmax <= 0)
+                    return $"--value-size-max invalid: {ValueSizeMax}";
+                if (vmax > int.MaxValue)
+                    return $"--value-size-max too large: {ValueSizeMax}";
+                if (vmax < ValueSize)
+                    return $"--value-size-max ({vmax}) must be >= --value-size ({ValueSize})";
+                if (vmax > ResolvedMaxInlineValueSizeBytes)
+                    return $"--value-size-max ({vmax}) exceeds --max-inline-value-size ({ResolvedMaxInlineValueSizeBytes}); values larger than the inline threshold overflow to heap and would not exercise the inline-record read pool.";
+                ResolvedValueSizeMaxBytes = vmax;
+                VariableValueSize = vmax > ValueSize;
+            }
+
             // Estimated record size: 8 RecordInfo + 5 length-byte hdr + 8 key + value, aligned to 8.
-            var rec = 21L + ValueSize;
+            // In variable mode use the log-uniform MEAN value size ((b-a)/ln(b/a)) so auto log-memory
+            // sizing and the displayed dataset estimate reflect the true average, not the tiny minimum.
+            long effValueSize = ValueSize;
+            if (VariableValueSize)
+            {
+                double a = ValueSize, b = ResolvedValueSizeMaxBytes;
+                effValueSize = (long)((b - a) / Math.Log(b / a));
+                if (effValueSize < ValueSize) effValueSize = ValueSize;
+            }
+            var rec = 21L + effValueSize;
             ResolvedRecordSizeBytes = (rec + 7) & ~7L;
 
             // --log-memory auto-default: NextPow2(ceil(keys * record / 0.9)), floored at 2 * page-size.
@@ -297,7 +384,43 @@ namespace Tsavorite.kvbench
             if (ResolvedIndexRequestedBytes < 64) ResolvedIndexRequestedBytes = 64;
             ResolvedIndexAppliedBytes = PreviousPow2(ResolvedIndexRequestedBytes);
 
+            ResolvedPoolBudgetBytes = 0;
+            if (!string.IsNullOrWhiteSpace(PoolBudget) && PoolBudget != "0")
+            {
+                ResolvedPoolBudgetBytes = KvSize.ParseSize(PoolBudget);
+                if (ResolvedPoolBudgetBytes <= 0) return $"--pool-budget invalid: {PoolBudget}";
+            }
+
             return null;
+        }
+
+        /// <summary>
+        /// Deterministic per-key value size. In fixed mode returns <see cref="ValueSize"/> for every key.
+        /// In variable mode returns a log-uniform draw in [ValueSize, ResolvedValueSizeMaxBytes] hashed from
+        /// the key and seed (stable across load/validate/run), rounded down to a multiple of 8 and floored at
+        /// <see cref="ValueSize"/>. Log-uniform spreads keys evenly across the pool's geometric size classes.
+        /// </summary>
+        internal int SizeForKey(long k)
+        {
+            if (!VariableValueSize)
+                return ValueSize;
+
+            // SplitMix64(seed ^ mix ^ key) -> [0,1) via the top 53 bits.
+            ulong x = Seed ^ 0xA5A55A5A12349E37UL ^ (ulong)k;
+            x += 0x9E3779B97F4A7C15UL;
+            ulong z = x;
+            z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9UL;
+            z = (z ^ (z >> 27)) * 0x94D049BB133111EBUL;
+            z ^= z >> 31;
+            double u = (z >> 11) * (1.0 / (1UL << 53));
+
+            double min = ValueSize, max = ResolvedValueSizeMaxBytes;
+            int size = (int)(min * Math.Pow(max / min, u));
+            if (size < ValueSize) size = ValueSize;
+            if (size > ResolvedValueSizeMaxBytes) size = (int)ResolvedValueSizeMaxBytes;
+            size &= ~7;                      // multiple of 8 (record alignment)
+            if (size < ValueSize) size = ValueSize;
+            return size;
         }
 
         internal long ClampToRam(long autoLogMemory)

@@ -87,7 +87,7 @@ namespace Garnet.server
         }
 
         private readonly VectorSetCleanupWorkChannel<object> cleanupTaskChannel;
-        private readonly VectorSetCleanupWorkChannel<(ulong Context, TaskCompletionSource MarkCompleted)> requestCleanupTaskChannel;
+        private readonly VectorSetCleanupWorkChannel<ulong> requestCleanupTaskChannel;
         private readonly VectorSetCleanupWorkChannel<object> requestDropTaskChannel;
         private readonly VectorSetCleanupWorkSet<(ulong Context, nint IndexPtr)> requestedDrops;
         private readonly ConcurrentDictionary<ulong, byte[]> potentiallyDeleted;
@@ -203,8 +203,6 @@ namespace Garnet.server
                 //
                 // The fact that we're in an OnDispose means Reset() isn't running.
 
-                var completions = new List<TaskCompletionSource>();
-
                 try
                 {
                     // TODO: this doesn't work with non-RESP impls... which maybe we don't care about?
@@ -220,14 +218,9 @@ namespace Garnet.server
                     lock (this)
                     {
                         // Read all pending requests so we can do one update
-                        while (requestCleanupTaskChannel.TryRead(out var t))
+                        while (requestCleanupTaskChannel.TryRead(out var context))
                         {
-                            if (t.MarkCompleted != null)
-                            {
-                                completions.Add(t.MarkCompleted);
-                            }
-
-                            var (contextIndex, contextValue) = ContextMetadata.DecomposeContext(t.Context);
+                            var (contextIndex, contextValue) = ContextMetadata.DecomposeContext(context);
                             if (!contextMetadatas[contextIndex].IsCleaningUp(contextIndex != 0, contextValue))
                             {
                                 contextMetadatas[contextIndex].MarkCleaningUp(contextIndex != 0, contextValue);
@@ -246,35 +239,12 @@ namespace Garnet.server
 
                     ExceptionInjectionHelper.TriggerException(ExceptionInjectionType.VectorSet_Interrupt_Delete_3);
 
-                    foreach (var completion in completions)
-                    {
-                        try
-                        {
-                            _ = completion.TrySetResult();
-                        }
-                        catch (Exception innerE)
-                        {
-                            logger?.LogError(innerE, "While completing Vector Set cleanup request");
-                        }
-                    }
-
                     // Pump the cleanup task once we're done
                     _ = cleanupTaskChannel.TryPublish();
                 }
                 catch (Exception e)
                 {
-                    foreach (var completion in completions)
-                    {
-                        try
-                        {
-                            _ = completion.TrySetException(e);
-                        }
-                        catch (Exception innerE)
-                        {
-                            // Best effort
-                            logger?.LogError(innerE, "While cancelling Vector Set cleanup requests");
-                        }
-                    }
+                    logger?.LogError(e, "During request cleanup task");
                 }
                 finally
                 {
@@ -292,13 +262,13 @@ namespace Garnet.server
         {
             while (await cleanupTaskChannel.WaitToReadAsync().ConfigureAwait(false))
             {
+                await cleanupGate.WaitAsync().ConfigureAwait(false);
+
                 // Each item is one outstanding scan
                 if (!cleanupTaskChannel.TryRead(out _))
                 {
                     continue;
                 }
-
-                await cleanupGate.WaitAsync().ConfigureAwait(false);
 
                 try
                 {
@@ -417,12 +387,44 @@ namespace Garnet.server
         public void WaitForDiskANNIndexDrop(ReadOnlySpan<byte> key) => requestedDrops.WaitForCompletion(key);
 
         /// <summary>
-        /// For testing purposes, block until all cleanup requests are processed.
+        /// For use during recovery, wait for any background processing (deletion, cleanup, cleanup requests, etc.) to finish.
         /// </summary>
-        internal void WaitForCleanupRequests()
+        internal void WaitForQuiescence()
         {
-            while (!potentiallyDeleted.IsEmpty || requestCleanupTaskChannel.HasPending || Volatile.Read(ref requestCleanupTaskRunning) || Interlocked.CompareExchange(ref postCheckpointTasksRunning, 0, 0) != 0)
+            while (true)
             {
+                // We care that all these actions are quiet in a row (indicating that work queued before this call has finished)
+                // NOT that they are all quiet at the same time
+
+                var hasPendingDrops = !requestedDrops.IsEmpty;
+                var hasPendingReconciliation = !potentiallyDeleted.IsEmpty;
+                var hasPendingVaddsAwaitingReplay = !replicationBlockEvent.Wait(0);
+                var hasPendingPostCheckpointTask = Interlocked.CompareExchange(ref postCheckpointTasksRunning, 0, 0) != 0;
+
+                // We don't remove from the channel until setting requestCleanupTaskRunning
+                var hasPendingCleanupRequests = Volatile.Read(ref requestCleanupTaskRunning) || requestCleanupTaskChannel.HasPending;
+
+                var hasPendingCleanup = cleanupTaskChannel.HasPending;
+                if (!hasPendingCleanup)
+                {
+                    // Acquire and immediately release to ensure cleanup task itself is quiescent
+                    if (cleanupGate.Wait(0))
+                    {
+                        _ = cleanupGate.Release();
+                    }
+                    else
+                    {
+                        // Cleanup task is (probably) active since gate is held
+                        hasPendingCleanup = true;
+                    }
+                }
+
+                var quiescent = !hasPendingDrops && !hasPendingReconciliation && !hasPendingVaddsAwaitingReplay && !hasPendingPostCheckpointTask && !hasPendingCleanupRequests && !hasPendingCleanup;
+                if (quiescent)
+                {
+                    return;
+                }
+
                 _ = Thread.Yield();
             }
         }
@@ -504,7 +506,7 @@ namespace Garnet.server
                                 if (needsDelete)
                                 {
                                     // No need to wait for marking, since the record is already "deleted"
-                                    if (!self.requestCleanupTaskChannel.TryPublish((context, null)))
+                                    if (!self.requestCleanupTaskChannel.TryPublish(context))
                                     {
                                         self.logger?.LogWarning("Could not request delete of abandoned Vector Set {key}", SpanByte.ToShortString(key));
                                     }

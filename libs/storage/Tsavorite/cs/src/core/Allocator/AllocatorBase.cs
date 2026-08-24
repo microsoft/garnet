@@ -105,6 +105,46 @@ namespace Tsavorite.core
         /// <summary>Array of pages kept to ensure the pinned pages are not garbage collected.</summary>
         protected readonly byte[][] pageArrays;
 
+        /// <summary>Direct-VM ownership of this allocator's circular-buffer pages, indexed by page index, when
+        /// direct-VM log pages are in use; null for the managed backend, which is therefore what
+        /// <see cref="useNativeLogPages"/> tests. A page's block is freed deterministically in <c>ReturnPage</c> when
+        /// the page is evicted (post-flush, epoch-drained via OnPagesClosed — no MAIN-log IO), which bounds the
+        /// footprint; the parallel <see cref="pageArrays"/> entry is null. The outstanding-IO the owner tracks is
+        /// snapshot-checkpoint flush, which reads page pointers directly and is NOT gated by
+        /// <see cref="FlushedUntilAddress"/>, so a page evicted mid-snapshot is parked rather than unmapped. See
+        /// <see cref="DirectVmBlockOwner"/> for the protocol; <see cref="FreeNativeLogPage"/> and
+        /// <see cref="BeginNativeSnapshotFlush"/>/<see cref="EndNativeSnapshotFlush"/> are this allocator's uses of
+        /// it, and <see cref="RecycleOrFreeNativeBlock"/> is its allocator-specific terminal disposition.</summary>
+        readonly DirectVmBlockOwner nativeLog;
+
+        /// <summary>Whether this allocator's circular-buffer pages use the direct-VM backend, captured once at
+        /// construction by whether <see cref="nativeLog"/> was created. Read on the (possibly concurrent)
+        /// page-alloc/return hot paths instead of the process-global
+        /// <see cref="NativeAllocatorInitializer.Enabled"/>. Production sets that global once at startup
+        /// (GarnetServer.Initialize) and never changes it, but test fixtures do flip it between runs in a single
+        /// process, so capturing keeps this allocator on the backend that was in effect when it was built (and
+        /// never dereferences a null owner if the global is flipped afterwards).</summary>
+        protected bool useNativeLogPages => nativeLog is not null;
+
+        /// <summary>Bounded pool of evicted direct-VM page blocks kept for reuse by <see cref="AllocatePinnedPageArray"/>,
+        /// so the common free-head/alloc-tail churn reuses a still-mapped (THP-backed) block instead of
+        /// munmap+mmap+re-fault. A block enters the pool only when no snapshot IO references it (the fast path in
+        /// <see cref="FreeNativeLogPage"/>, or on snapshot completion in <see cref="EndNativeSnapshotFlush"/>), so a
+        /// reused block is never one a snapshot write is still reading; it was zeroed by ClearPage before being
+        /// freed, so no re-zero is needed on reuse. Overflow beyond the cap is munmap'd by the disposer. Null for the
+        /// managed backend. This recycling is what distinguishes the log's terminal disposition from the hash
+        /// index's, which unmaps a superseded table outright.</summary>
+        OverflowPool<DirectVmBlock> nativeFreePagePool;
+
+        /// <summary>Capacity of <see cref="nativeFreePagePool"/>.</summary>
+        const int NativeFreePagePoolSize = 4;
+
+        /// <summary>Set (under the owner's gate) when <see cref="Dispose"/> has disposed
+        /// <see cref="nativeFreePagePool"/>. A block offered for recycling after this must be munmap'd directly
+        /// rather than enqueued into the drained pool, which would silently leak it. See
+        /// <see cref="RecycleOrFreeNativeBlock"/>.</summary>
+        bool nativeFreePoolDisposed;
+
         #endregion
 
         #region Public addresses
@@ -457,17 +497,31 @@ namespace Tsavorite.core
 
         internal virtual bool TryComplete() => device.TryComplete();
 
+        /// <summary>Drain only the calling thread's affine device completion context (see <see cref="IDevice.TryCompleteMine"/>).</summary>
+        internal virtual bool TryCompleteMine() => device.TryCompleteMine();
+
+        /// <summary>
+        /// Mark the allocator disposed and stop the size-tracker resizer, waiting for it to exit, BEFORE tearing down the epoch,
+        /// buffer pool, flush event (and, by the owner, the log device) that it uses; otherwise a still-running resizer can spin
+        /// on or dereference these cleared resources. Setting disposed = true first makes the resizer's eviction spin-waits bail
+        /// out, so this Stop(wait: true) cannot itself hang even if an in-flight eviction target is no longer reachable. The
+        /// device is still alive at this point, so any already-issued resizer flush completes and the resizer terminates promptly.
+        /// <para>
+        /// Idempotent: disposed is already true on a second call, and Stop() compare-exchanges runState from Running, so it takes
+        /// neither the signal path nor the wait loop once the resizer has stopped. A derived Dispose() that tears down its own
+        /// resizer-visible state must call this before doing so, then still call base.Dispose().
+        /// </para>
+        /// </summary>
+        protected void StopSizeTrackerForDispose()
+        {
+            disposed = true;
+            logSizeTracker?.Stop(wait: true);
+        }
+
         /// <summary>Dispose allocator</summary>
         public virtual void Dispose()
         {
-            disposed = true;
-
-            // Stop the size-tracker resizer and wait for it to exit BEFORE tearing down the epoch, buffer pool, flush event
-            // (and, by the owner, the log device) that it uses; otherwise a still-running resizer can spin on or dereference
-            // these cleared resources. Setting disposed = true above makes the resizer's eviction spin-waits bail out, so this
-            // Stop(wait: true) cannot itself hang even if an in-flight eviction target is no longer reachable. The device is
-            // still alive at this point, so any already-issued resizer flush completes and the resizer terminates promptly.
-            logSizeTracker?.Stop(wait: true);
+            StopSizeTrackerForDispose();
 
             if (isEpochOwned)
                 epoch.Dispose();
@@ -479,6 +533,28 @@ namespace Tsavorite.core
 
             onReadOnlyObserver?.OnCompleted();
             onEvictionObserver?.OnCompleted();
+
+            // Direct-VM log-page blocks that are STILL INSTALLED at Dispose, and any parked by an in-flight snapshot
+            // flush that has not completed, are not freed here: a device flush/read may still reference such a page,
+            // and the device is disposed by the owner AFTER this allocator. Hand them to the owner's finalization
+            // registry, which frees them once the store and device are unreachable. Pages that were already evicted
+            // were freed deterministically in ReturnPage (post-flush), so only the live tail pages reach here.
+            if (nativeLog is not null)
+            {
+                nativeLog.HandOffInstalledBlocks();
+                nativeLog.HandOffDeferredBlocks();
+
+                // Pooled blocks are evicted and IO-free (they only enter the pool once no snapshot references them and
+                // after the main-log flush), so they can be unmapped now rather than deferred to finalization; the
+                // pool's disposer munmaps each. Set nativeFreePoolDisposed and dispose under the owner's gate so a
+                // page eviction or snapshot completion racing this teardown (RecycleOrFreeNativeBlock) frees its
+                // block directly instead of enqueuing it into the just-drained pool (which would leak the mapping).
+                lock (nativeLog.Gate)
+                {
+                    nativeFreePoolDisposed = true;
+                    nativeFreePagePool.Dispose();
+                }
+            }
         }
 
         #endregion abstract and virtual methods
@@ -659,6 +735,15 @@ namespace Tsavorite.core
                 pageArrays = new byte[BufferSize][];
                 pagePointersArray = GC.AllocateArray<long>(BufferSize, pinned: true);
                 pagePointers = (long*)Unsafe.AsPointer(ref pagePointersArray[0]);
+
+                // Capture the backend decision once, up front (see useNativeLogPages), by creating the direct-VM
+                // block owner only when direct-VM log pages are in use. Doing this in the constructor (not lazily on
+                // the hot path) avoids a racing ??= publishing two owners.
+                if (NativeAllocatorInitializer.Enabled)
+                {
+                    nativeLog = new DirectVmBlockOwner(BufferSize);
+                    nativeFreePagePool = new OverflowPool<DirectVmBlock>(NativeFreePagePoolSize, static block => DirectVirtualMemory.Free(block));
+                }
             }
         }
 
@@ -673,17 +758,28 @@ namespace Tsavorite.core
             var offset = GetOffsetOnPage(logicalAddress);
             return *(pagePointers + pageIndex) + offset;
         }
-        internal bool IsAllocated(int pageIndex) => pageArrays[pageIndex] is not null;
+        internal bool IsAllocated(int pageIndex) => pagePointers[pageIndex] != 0;
 
         internal virtual void ClearPage(long page, int offset = 0)
         {
-            var pageArray = pageArrays[page % BufferSize];
-
-            // If the offset is 0, we can clear everything in the array including the cache-alignment padding.
-            // Otherwise, we have to adjust the offset for the initial cache alignment.
-            if (offset != 0)
-                offset += (int)(pagePointers[page % BufferSize] - (long)Unsafe.AsPointer(ref pageArray[0]));
-            Array.Clear(pageArray, offset, pageArray.Length - offset);
+            var idx = page % BufferSize;
+            var pageArray = pageArrays[idx];
+            if (pageArray is not null)
+            {
+                // If the offset is 0, we can clear everything in the array including the cache-alignment padding.
+                // Otherwise, we have to adjust the offset for the initial cache alignment.
+                if (offset != 0)
+                    offset += (int)(pagePointers[idx] - (long)Unsafe.AsPointer(ref pageArray[0]));
+                Array.Clear(pageArray, offset, pageArray.Length - offset);
+            }
+            else
+            {
+                // Native-backed page (LogPages full mode): pagePointers[idx] is the aligned page start and the
+                // caller's offset is page-relative, so clear directly from there.
+                var len = AlignedPageSizeBytes - offset;
+                if (len > 0)
+                    DirectVirtualMemory.Clear((nint)(pagePointers[idx] + offset), len);
+            }
         }
 
         [MethodImpl(MethodImplOptions.NoInlining)]
@@ -751,11 +847,117 @@ namespace Tsavorite.core
         protected void AllocatePinnedPageArray(int index)
         {
             var adjustedSize = PageSize + 2 * sectorSize;
+            if (useNativeLogPages)
+            {
+                // Direct-VM (mmap/VirtualAlloc): demand-zero, first-touch-placed pages matching GC.AllocateArray.
+                // Reuse a still-mapped block from the recycle pool when available (the common free-head/alloc-tail
+                // case), avoiding munmap+mmap+re-fault; the block was zeroed by ClearPage before it was pooled, so no
+                // re-zero is needed. Otherwise allocate fresh. Track the block per-slot so ReturnPage can pool/free it
+                // deterministically on eviction (post-flush, epoch-drained, so no in-flight IO). Any block still
+                // installed at Dispose is handed to the nativeLog owner's finalization registry there (it may have an in-flight flush/read).
+                // useNativeLogPages is captured at construction, so this possibly-concurrent path never re-reads the
+                // process-global flag.
+                if (!nativeFreePagePool.TryGet(out var block))
+                    block = DirectVirtualMemory.Allocate(adjustedSize, sectorSize);
+                else
+                    _ = Interlocked.Increment(ref NativeLogPageReuseCount);
+                nativeLog.Blocks[index] = block;
+                pagePointersArray[index] = block.AlignedPtr;
+                pageArrays[index] = null;
+                return;
+            }
             var tmp = GC.AllocateArray<byte>(adjustedSize, true);
             var p = (long)Unsafe.AsPointer(ref tmp[0]);
             pagePointersArray[index] = (p + (sectorSize - 1)) & ~((long)sectorSize - 1);
             pageArrays[index] = tmp;
         }
+
+        /// <summary>
+        /// Free the direct-VM block backing circular-buffer page <paramref name="index"/>, if any. Called from the
+        /// derived allocators' <c>ReturnPage</c> when a page is evicted: at that point the page has been closed by
+        /// OnPagesClosed (post main-log flush, after the epoch drain), so no MAIN-log IO references it. However a
+        /// snapshot-checkpoint write (which reads the page pointer directly and is NOT gated by FlushedUntilAddress)
+        /// may still be in flight, so if a snapshot flush is in progress we park the block and free it when the
+        /// snapshot's writes complete (<see cref="EndNativeSnapshotFlush"/>). No-op for the managed backend.
+        /// </summary>
+        protected void FreeNativeLogPage(int index)
+        {
+            if (nativeLog is null)
+                return;
+            _ = Interlocked.Increment(ref NativeLogPageFreeCount);
+            var block = nativeLog.Blocks[index];
+            nativeLog.Blocks[index] = default;
+
+            // A snapshot write may still reference the page -> park it and reclaim when the snapshot drains.
+            if (nativeLog.TryDeferFree(block))
+            {
+                _ = Interlocked.Increment(ref NativeLogPageDeferredCount);
+                return;
+            }
+
+            // Fast path: no snapshot IO outstanding -> recycle into the pool (reused by a future AllocatePinnedPageArray,
+            // avoiding munmap+mmap+re-fault; the block is IO-free here since the page was closed post main-log flush).
+            // Overflow beyond the pool cap is munmap'd by the pool's disposer.
+            RecycleOrFreeNativeBlock(block);
+        }
+
+        /// <summary>Recycle an evicted, IO-free direct-VM page block into <see cref="nativeFreePagePool"/> for reuse,
+        /// or munmap it directly if the pool is already disposed by teardown. Serialized with the pool's disposal via
+        /// the owner's gate so a block can never be enqueued into an already-drained pool (which would leak
+        /// the mapping). Cold path (page eviction, snapshot completion, teardown) — never the record read/write or
+        /// <see cref="AllocatePinnedPageArray"/> allocation path, which reads the pool lock-free via TryGet.</summary>
+        void RecycleOrFreeNativeBlock(in DirectVmBlock block)
+        {
+            lock (nativeLog.Gate)
+            {
+                if (!nativeFreePoolDisposed)
+                {
+                    // At capacity, TryAdd hands the block to the pool's disposer, which is DirectVirtualMemory.Free
+                    // (see the nativeFreePagePool construction) — so an overflow block is unmapped, never leaked.
+                    _ = nativeFreePagePool.TryAdd(block);
+                    return;
+                }
+            }
+            // Teardown already drained and disposed the pool: free directly rather than leak into a dead pool.
+            DirectVirtualMemory.Free(block);
+        }
+
+        /// <summary>Mark the start of a snapshot-checkpoint flush that issues device writes from native page
+        /// pointers (a producer sentinel held until issuance completes), so evicted pages are parked instead of
+        /// unmapped for the duration. No-op for the managed backend.</summary>
+        void BeginNativeSnapshotFlush()
+        {
+            nativeLog?.BeginIo();
+        }
+
+        /// <summary>Release one unit of outstanding snapshot IO (the producer sentinel when issuance ends, or one
+        /// issued page write when its completion callback fires — including the error path). When the last unit is
+        /// released, free any pages that were evicted while snapshot writes were in flight.</summary>
+        void EndNativeSnapshotFlush()
+        {
+            if (nativeLog is null || !nativeLog.EndIo())
+                return;
+            var toFree = nativeLog.TryDrainDeferred();
+            // Snapshot writes have all completed, so these evicted pages are now IO-free: recycle them into the pool
+            // for reuse (overflow beyond the cap is munmap'd by the pool's disposer) rather than unmapping outright.
+            // RecycleOrFreeNativeBlock serializes with pool teardown so a block completing here concurrently with
+            // Dispose is never lost into a drained pool.
+            if (toFree is not null)
+                foreach (var block in toFree)
+                    RecycleOrFreeNativeBlock(block);
+        }
+
+        /// <summary>Diagnostic counter of direct-VM log-page frees on eviction (see <see cref="FreeNativeLogPage"/>);
+        /// used by tests to assert the native eviction-unmap path is actually exercised.</summary>
+        internal static long NativeLogPageFreeCount;
+
+        /// <summary>Diagnostic counter of direct-VM log-page frees that were deferred because a snapshot flush was in
+        /// progress; used by tests to assert the snapshot-deferral path is actually exercised.</summary>
+        internal static long NativeLogPageDeferredCount;
+
+        /// <summary>Diagnostic counter of direct-VM log-page allocations satisfied by reusing a pooled block instead of
+        /// a fresh mmap (see <see cref="nativeFreePagePool"/>); used by tests to assert the recycle path is exercised.</summary>
+        internal static long NativeLogPageReuseCount;
 
         /// <summary>Initialize allocator</summary>
         [MethodImpl(MethodImplOptions.NoInlining)]
@@ -1147,7 +1349,7 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.NoInlining)]
-        long HandlePageOverflow(ref PageOffset localTailPageOffset, int numSlots)
+        long HandlePageOverflow(ref PageOffset localTailPageOffset, int numSlots, int partialSlots)
         {
             var pageIndex = localTailPageOffset.Page + 1;
 
@@ -1162,9 +1364,31 @@ namespace Tsavorite.core
                 return -1; // RETRY_NOW
             }
 
-            // The single thread that "owns" the page-increment proceeds below. This is the thread for which:
+            // We are the single thread that "owns" the page-increment. This is the thread for which:
             // 1. Old image of offset (pre-Interlocked.Increment) is <= PageSize, and
             // 2. New image of offset (post-Interlocked.Increment) is > PageSize.
+            // We have an implicit latch because other threads exited in TryAllocate, so we can safely proceed.
+
+            // First see if partialSlots is > 0. If so, and the amount remaining on the page would split numSlots
+            // into two parts each of which is >= partialSlots, then we can satisfy the allocation by allocating
+            // the first part on this page and returning to the caller the length of that allocation. The caller
+            // will then allocate the second part on the next page after populating the first part.
+            if (partialSlots > 0)
+            {
+                var remainingOnPage = PageSize - (localTailPageOffset.Offset - numSlots);
+                if (remainingOnPage >= partialSlots && numSlots - remainingOnPage >= partialSlots)
+                {
+                    // Get the logical address using the original offset.
+                    var logicalAddress = GetLogicalAddressOfStartOfPage(localTailPageOffset.Page) | ((long)(localTailPageOffset.Offset - numSlots));
+
+                    // Reset to end of page
+                    localTailPageOffset.Offset = PageSize;
+                    _ = Interlocked.Exchange(ref TailPageOffset.PageAndOffset, localTailPageOffset.PageAndOffset);
+
+                    // We have satisfied the allocation on this page so we do not need to do size tracking, and can simply return the address.
+                    return logicalAddress;
+                }
+            }
 
             // If we need to wait for the flushEvent, we have to RETRY_LATER
             if (NeedToWaitForFlush(pageIndex))
@@ -1194,6 +1418,15 @@ namespace Tsavorite.core
                 return -1; // RETRY_NOW
             }
 
+            // TODO: Here we can "allocate" the last chunk on the page as an invalid record, and enqueue it into the revivification freelist if enabled,
+            // before we proceed to the next page. This will speed up scan by letting it jump to the end of the page rather than relying on the end of
+            // the page to be zero-initialized and traversing it by 8-byte IsNull RecordInfo increments.
+            // NOTE: this filler must be written differently per allocator. The main store uses a RecordInfo/RecordDataHeader invalid record
+            // (KeyLength=0, ValueLength=tail, PreviousAddress=kTempInvalidAddress, Filler unset). TsavoriteLog does NOT use RecordInfo records —
+            // its scan (TsavoriteLogScanIterator.GetNextInternal) already skips a zero-length page tail by jumping to the next page — so for
+            // TsavoriteLog the filler must be an entry-length-prefixed record (or left as a zero tail), not a RecordInfo record. Deferred for now
+            // (only exercised once a partialSlots caller wastes a sub-partialSlots tail; the AOF chunk writer's zero tails are already handled).
+
             // Allocate next page and set new tail
             if (!IsAllocated(pageIndex % BufferSize) || !IsAllocated((pageIndex + 1) % BufferSize))
                 AllocatePagesWithException(pageIndex, localTailPageOffset, numSlots);
@@ -1219,9 +1452,12 @@ namespace Tsavorite.core
 
         /// <summary>Try allocate, no thread spinning allowed</summary>
         /// <param name="numSlots">Number of slots to allocate</param>
+        /// <param name="partialSlots">If nonzero, the number of partial slots to allocate if we are at the end of a page and we would split <paramref name="numSlots"/>
+        ///     into two parts, on this page and on the following page, each of size at least <paramref name="partialSlots"/>. If this condition is met we satisfy the
+        ///     allocation and the caller will also receive the length of the allocation so it can allocate the second part after populating the first.</param>
         /// <returns>The allocated logical address, or 0 in case of inability to allocate</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private long TryAllocate(int numSlots = 1)
+        private long TryAllocate(int numSlots, int partialSlots)
         {
             if (numSlots > PageSize)
                 ThrowTsavoriteException("Entry does not fit on page");
@@ -1250,7 +1486,7 @@ namespace Tsavorite.core
                 // Note that TailPageOffset is now unstable -- there may be a GetTailAddress call spinning for
                 // it to stabilize. Therefore, HandlePageOverflow needs to stabilize TailPageOffset immediately,
                 // before performing any epoch bumps or system calls.
-                return HandlePageOverflow(ref localTailPageOffset, numSlots);
+                return HandlePageOverflow(ref localTailPageOffset, numSlots, partialSlots);
             }
 
             return GetLogicalAddressOfStartOfPage(localTailPageOffset.Page) | ((long)(localTailPageOffset.Offset - numSlots));
@@ -1263,37 +1499,74 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool TryAllocateRetryNow(int numSlots, out long logicalAddress)
         {
-            // Bounded backoff: yield kFlushSpinCount times, then suspend the epoch and wait on flushEvent.
-            // This eliminates CPU burn from all 64 inserter threads spinning while a flush is in flight
-            // (typically ~900us for libaio). We use a short timeout to handle the case where flushEvent was
-            // already Set() and replaced (no further flush coming) but we still need to drain OnPagesClosed.
-            int spins = 0;
+            var spins = 0;
             var localFlushEvent = flushEvent;
-            while ((logicalAddress = TryAllocate(numSlots)) < 0)
+            while ((logicalAddress = TryAllocate(numSlots, partialSlots: 0)) < 0)
             {
                 // -1: RETRY_NOW
-                _ = TryComplete();
-                epoch.ProtectAndDrain();
-                if (++spins < Constants.kFlushSpinCount)
-                {
-                    _ = Thread.Yield();
-                    continue;
-                }
-                try
-                {
-                    epoch.Suspend();
-                    _ = localFlushEvent.Wait(TimeSpan.FromMilliseconds(1));
-                }
-                finally
-                {
-                    epoch.Resume();
-                }
-                localFlushEvent = flushEvent;
-                spins = 0;
+                WaitToRetryNow(ref spins, ref localFlushEvent);
             }
 
             // 0: RETRY_LATER
             return logicalAddress != 0;
+        }
+
+        /// <summary>Try allocate, spin for RETRY_NOW (logicalAddress is less than 0) case</summary>
+        /// <param name="numSlots">Number of slots to allocate</param>
+        /// <param name="partialSlots">If nonzero, the number of partial slots to allocate if we are at the end of a page and we would split <paramref name="numSlots"/>
+        ///     into two parts, on this page and on the following page, each of size at least <paramref name="partialSlots"/>. If this condition is met we satisfy the
+        ///     allocation and the caller will also receive the length of the allocation so it can allocate the second part after populating the first.</param>
+        /// <param name="logicalAddress">Returned address, or RETRY_LATER (if 0) indicator</param>
+        /// <param name="length">Length of the allocation, if successful</param>
+        /// <returns>True if we were able to allocate, else false</returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public bool TryAllocateRetryNow(int numSlots, int partialSlots, out long logicalAddress, out long length)
+        {
+            var spins = 0;
+            var localFlushEvent = flushEvent;
+            while ((logicalAddress = TryAllocate(numSlots, partialSlots)) < 0)
+            {
+                // -1: RETRY_NOW
+                WaitToRetryNow(ref spins, ref localFlushEvent);
+            }
+
+            if (logicalAddress != 0)
+            {
+                // If we are at the end of a page, we may have allocated only a partial amount of the requested numSlots.
+                var offsetOnPage = GetOffsetOnPage(logicalAddress);
+                length = (offsetOnPage + numSlots > PageSize) ? (PageSize - offsetOnPage) : numSlots;
+                return true;
+            }
+
+            // 0: RETRY_LATER
+            length = 0;
+            return logicalAddress != 0;
+        }
+
+        void WaitToRetryNow(ref int spins, ref CompletionEvent localFlushEvent)
+        {
+            // Bounded backoff: yield kFlushSpinCount times, then suspend the epoch and wait on flushEvent.
+            // This eliminates CPU burn from all 64 inserter threads spinning while a flush is in flight
+            // (typically ~900us for libaio). We use a short timeout to handle the case where flushEvent was
+            // already Set() and replaced (no further flush coming) but we still need to drain OnPagesClosed.
+            _ = TryComplete();
+            epoch.ProtectAndDrain();
+            if (++spins < Constants.kFlushSpinCount)
+            {
+                _ = Thread.Yield();
+                return;
+            }
+            try
+            {
+                epoch.Suspend();
+                _ = localFlushEvent.Wait(TimeSpan.FromMilliseconds(1));
+            }
+            finally
+            {
+                epoch.Resume();
+            }
+            localFlushEvent = flushEvent;
+            spins = 0;
         }
 
         /// <summary>
@@ -1306,6 +1579,14 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal long CalculateReadOnlyAddress(long tailAddress, long headAddress)
         {
+            // Defensive clamp: during normal operation HeadAddress is strictly behind TailAddress. If a caller passes an
+            // out-of-range headAddress (e.g. the long.MaxValue "never evict" sentinel that fast-commit recovery leaves in
+            // place, or that a read-only-mode log carries), the page arithmetic below overflows to a negative address.
+            // Clamp so we never return an out-of-range ReadOnlyAddress that would corrupt the log's address invariants
+            // (or, in Debug, trip the asserts below).
+            if (headAddress >= tailAddress)
+                return tailAddress;
+
             // Snap ReadOnlyAddress to the start of the page that this calculation on logMutableFraction ends up in. If this is below HeadAddress,
             // then make it the end of the HeadAddress page. If tailAddress is still on the first page, return HeadAddress.
             if (tailAddress <= PageSize + PageHeader.Size)
@@ -1514,8 +1795,21 @@ namespace Tsavorite.core
             }
             catch (Exception ex)
             {
-                logger?.LogCritical(ex, "OnPagesClosedWorker failed, page closing will not resume. ClosedUntilAddress={ClosedUntilAddress} OngoingCloseUntilAddress={OngoingCloseUntilAddress}", ClosedUntilAddress, OngoingCloseUntilAddress);
-                throw;
+                // Page closing cannot resume after a failure here, so the log would stall silently. Crash instead: a dump is the
+                // only practical way to diagnose this.
+                var exceptionDetails = ex.GetType().FullName ?? ex.GetType().Name;
+                try
+                {
+                    exceptionDetails = ex.ToString() ?? exceptionDetails;
+                }
+                finally
+                {
+                    // Exception.ToString() is virtual; always fail fast even if an application exception throws while formatting itself.
+                    Environment.FailFast(
+                        $"OnPagesClosedWorker failed; allocator state is unrecoverable. ClosedUntilAddress={ClosedUntilAddress}, OngoingCloseUntilAddress={OngoingCloseUntilAddress}"
+                        + $"{Environment.NewLine}Caught exception:{Environment.NewLine}{exceptionDetails}",
+                        ex);
+                }
             }
         }
 
@@ -2008,6 +2302,13 @@ namespace Tsavorite.core
             var completionTcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
             completedTask = completionTcs.Task;
 
+            // Park (do not munmap) any native page evicted while this snapshot's writes are in flight; free them only
+            // once EVERY issued write has called back (see DirectVmBlockOwner). Snapshot IO reads page
+            // pointers directly and is not gated by FlushedUntilAddress, so a page could otherwise be unmapped under
+            // an in-flight snapshot write. BeginNativeSnapshotFlush holds a producer sentinel for the issuance; the
+            // FlushRunner releases it when issuance ends, and each issued write's callback releases its own unit.
+            BeginNativeSnapshotFlush();
+
             // If throttled, convert rest of the method into a truly async task run because issuing IO can take up synchronous time
             if (throttleCheckpointFlushDelayMs >= 0)
                 _ = Task.Run(FlushRunner);
@@ -2056,11 +2357,40 @@ namespace Tsavorite.core
                         };
 
                         // Intended destination is flushPage
-                        WriteAsyncToDeviceForSnapshot(startPage, flushPage, (int)flushSize, AsyncFlushPageForSnapshotCallback, asyncResult, logDevice, objectLogDevice, fuzzyStartLogicalAddress);
+                        // Count this native page write as outstanding snapshot IO BEFORE issuing, so an eviction that
+                        // races the issue parks the page instead of unmapping it. The unit is released exactly once:
+                        // by the write's completion callback iff the write was actually submitted
+                        // (snapshotDeviceWriteIssued), otherwise (WriteNotIssued, or the issue threw before the
+                        // submit) by the issuing thread here. The TryClaimSnapshotUnitRelease guards the exotic
+                        // overlap where a synchronously-invoked callback released and then threw back out of the submit.
+                        BeginNativeSnapshotFlush();
+                        try
+                        {
+                            WriteAsyncToDeviceForSnapshot(startPage, flushPage, (int)flushSize, AsyncFlushPageForSnapshotCallback, asyncResult, logDevice, objectLogDevice, fuzzyStartLogicalAddress);
+                        }
+                        catch (Exception writeEx)
+                        {
+                            // Fault the flush FIRST so a racing callback's Release()->CompleteFlush cannot report
+                            // success for this page before we mark it failed. If the main device write was submitted,
+                            // its callback owns releasing this page's IO unit and buffers — releasing here too would
+                            // underflow the nativeLog owner's outstanding-IO count and could unmap a page under an in-flight write.
+                            // If it was NOT submitted, no callback will fire, so release the unit (exactly once) and
+                            // the buffers here. Then rethrow into the outer catch for logging + SetException.
+                            flushCompletionTracker.SetException(writeEx);
+                            if (!asyncResult.snapshotDeviceWriteIssued)
+                            {
+                                if (asyncResult.TryClaimSnapshotUnitRelease())
+                                    EndNativeSnapshotFlush();
+                                _ = asyncResult.Release();
+                            }
+                            throw;
+                        }
+
+                        var writeIssued = asyncResult.snapshotDeviceWriteIssued;
 
                         // If we did not issue a flush write (due to HeadAddress moving past flushPage), then WriteAsync set isForSnapshot false and we release the asyncResult here;
                         // otherwise, we wait for the completion of the flush (and the callback will release the asyncResult).
-                        if (asyncResult.flushRequestState != FlushRequestState.WriteNotIssued)
+                        if (writeIssued)
                         {
                             if (throttleCheckpointFlushDelayMs >= 0)
                             {
@@ -2070,6 +2400,10 @@ namespace Tsavorite.core
                         }
                         else
                         {
+                            // WriteNotIssued: no callback will fire, so release this page's IO unit (exactly once)
+                            // and the asyncResult buffers here.
+                            if (asyncResult.TryClaimSnapshotUnitRelease())
+                                EndNativeSnapshotFlush();
                             _ = asyncResult.Release();
                             // Release() called CompleteFlush() which released the throttle semaphore.
                             // Drain it so the next real page's WaitOneFlush is not satisfied by this no-op.
@@ -2081,6 +2415,13 @@ namespace Tsavorite.core
                 {
                     logger?.LogError(ex, "{method} failed while flushing snapshot pages from {startPage} to {endPage}", nameof(AsyncFlushPagesForSnapshot), startPage, endPage);
                     flushCompletionTracker.SetException(ex);
+                }
+                finally
+                {
+                    // Release the issuance producer sentinel taken by the outer BeginNativeSnapshotFlush. Any writes
+                    // still in flight keep the nativeLog owner's outstanding-IO count > 0 until their callbacks fire; the last one
+                    // drains the deferred frees — independent of completionTcs faulting early on the error path.
+                    EndNativeSnapshotFlush();
                 }
             }
         }
@@ -2100,7 +2441,7 @@ namespace Tsavorite.core
             {
                 while (device.Throttle())
                 {
-                    _ = device.TryComplete();
+                    _ = device.TryCompleteMine();
                     _ = Thread.Yield();
                     epoch.ProtectAndDrain();
                 }
@@ -2128,7 +2469,7 @@ namespace Tsavorite.core
             completed = new CountdownEvent(1);
 
             int pageIndex = (int)(readPage % frame.frameSize);
-            if (frame.frame[pageIndex] == null)
+            if (!frame.IsAllocated(pageIndex))
                 frame.Allocate(pageIndex);
             else
                 frame.Clear(pageIndex);
@@ -2287,10 +2628,15 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.NoInlining)]
-        private void AsyncGetFromDiskCallback(uint errorCode, uint numBytes, object context)
+        private void AsyncGetFromDiskCallback(uint errorCode, uint numBytes, object context, Exception ioException)
         {
             if (errorCode != 0)
-                logger?.LogError("AsyncGetFromDiskCallback error: {errorCode}", errorCode);
+            {
+                if (ioException is null)
+                    logger?.LogError("AsyncGetFromDiskCallback error: {errorCode}", errorCode);
+                else
+                    logger?.LogError("AsyncGetFromDiskCallback error: {exception}", Utility.GetCallbackExceptionDetail(ioException));
+            }
 
             // The AsyncIOContext is the object-context handed to the device; it comes back here directly.
             var ctx = (AsyncIOContext)context;
@@ -2343,12 +2689,17 @@ namespace Tsavorite.core
         /// <param name="numBytes"></param>
         /// <param name="context"></param>
         [MethodImpl(MethodImplOptions.NoInlining)]
-        private protected void AsyncFlushPageCallback(uint errorCode, uint numBytes, object context)
+        private protected void AsyncFlushPageCallback(uint errorCode, uint numBytes, object context, Exception ioException)
         {
             try
             {
                 if (errorCode != 0)
-                    logger?.LogError("AsyncFlushPageCallback error: {errorCode}", errorCode);
+                {
+                    if (ioException is null)
+                        logger?.LogError("AsyncFlushPageCallback error: {errorCode}", errorCode);
+                    else
+                        logger?.LogError("AsyncFlushPageCallback error: {exception}", Utility.GetCallbackExceptionDetail(ioException));
+                }
 
                 // Set the page status to flushed
                 var result = (PageAsyncFlushResult<Empty>)context;
@@ -2357,8 +2708,9 @@ namespace Tsavorite.core
                 {
                     if (errorCode != 0)
                     {
-                        // Note down error details and trigger handling only when we are certain this is the earliest error among currently issued flushes
-                        errorList.Add(new CommitInfo { FromAddress = result.fromAddress, UntilAddress = result.untilAddress, ErrorCode = errorCode });
+                        // Note down error details and trigger handling only when we are certain this is the earliest error among currently issued flushes.
+                        // Surface the device's underlying exception (plumbed through the completion callback) so an opaque numeric code carries the real fault for diagnosis.
+                        errorList.Add(new CommitInfo { FromAddress = result.fromAddress, UntilAddress = result.untilAddress, ErrorCode = errorCode, Exception = ioException });
                     }
                     else
                     {
@@ -2404,66 +2756,83 @@ namespace Tsavorite.core
         /// <param name="errorCode"></param>
         /// <param name="numBytes"></param>
         /// <param name="context"></param>
-        protected void AsyncFlushPageForSnapshotCallback(uint errorCode, uint numBytes, object context)
+        protected void AsyncFlushPageForSnapshotCallback(uint errorCode, uint numBytes, object context, Exception ioException)
         {
+            var result = (PageAsyncFlushResult<Empty>)context;
             try
             {
-                if (errorCode != 0)
-                {
-                    logger?.LogError("AsyncFlushPageToDeviceCallback error: {errorCode}", errorCode);
-
-                    // Fault the snapshot's flush-completion so the checkpoint fails rather than committing a snapshot with
-                    // an unwritten page; the Release() below still frees buffers and its CompleteFlush becomes a no-op.
-                    ((PageAsyncFlushResult<Empty>)context).flushCompletionTracker?.SetException(
-                        new TsavoriteException($"Snapshot page flush failed with error code {errorCode}"));
-                }
-
-                var result = (PageAsyncFlushResult<Empty>)context;
-                var epochTaken = epoch.ResumeIfNotProtected();
-
                 try
                 {
-                    var startAddress = GetLogicalAddressOfStartOfPage(result.page);
-                    var endAddress = startAddress + PageSize;
-
-                    // First make sure we're not trying to process a logical address that's in a page header.
-                    startAddress += PageHeader.Size;
-
-                    if (result.fromAddress > startAddress)
-                        startAddress = result.fromAddress;
-                    if (result.untilAddress < endAddress)
-                        endAddress = result.untilAddress;
-
-                    var _readOnlyAddress = SafeReadOnlyAddress;
-                    if (_readOnlyAddress > startAddress)
-                        startAddress = _readOnlyAddress;
-                    if (_readOnlyAddress > endAddress)
-                        endAddress = _readOnlyAddress;
-
-                    var flushWidth = (int)(endAddress - startAddress);
-
-                    if (flushWidth > 0)
+                    if (errorCode != 0)
                     {
-                        var physicalAddress = GetPhysicalAddress(startAddress);
-                        var endPhysicalAddress = physicalAddress + flushWidth;
+                        if (ioException is null)
+                            logger?.LogError("AsyncFlushPageToDeviceCallback error: {errorCode}", errorCode);
+                        else
+                            logger?.LogError("AsyncFlushPageToDeviceCallback error: {exception}", Utility.GetCallbackExceptionDetail(ioException));
 
-                        while (physicalAddress < endPhysicalAddress)
+                        // Fault the snapshot's flush-completion so the checkpoint fails rather than committing a snapshot with
+                        // an unwritten page; the Release() below still frees buffers and its CompleteFlush becomes a no-op.
+                        result.flushCompletionTracker?.SetException(
+                            new TsavoriteException($"Snapshot page flush failed with error code {errorCode}"));
+                    }
+
+                    var epochTaken = epoch.ResumeIfNotProtected();
+
+                    try
+                    {
+                        var startAddress = GetLogicalAddressOfStartOfPage(result.page);
+                        var endAddress = startAddress + PageSize;
+
+                        // First make sure we're not trying to process a logical address that's in a page header.
+                        startAddress += PageHeader.Size;
+
+                        if (result.fromAddress > startAddress)
+                            startAddress = result.fromAddress;
+                        if (result.untilAddress < endAddress)
+                            endAddress = result.untilAddress;
+
+                        var _readOnlyAddress = SafeReadOnlyAddress;
+                        if (_readOnlyAddress > startAddress)
+                            startAddress = _readOnlyAddress;
+                        if (_readOnlyAddress > endAddress)
+                            endAddress = _readOnlyAddress;
+
+                        var flushWidth = (int)(endAddress - startAddress);
+
+                        if (flushWidth > 0)
                         {
-                            var logRecord = _wrapper.CreateLogRecord(startAddress);
-                            var alignedRecordSize = logRecord.AllocatedSize;
-                            physicalAddress += alignedRecordSize;
-                            startAddress += alignedRecordSize;
+                            var physicalAddress = GetPhysicalAddress(startAddress);
+                            var endPhysicalAddress = physicalAddress + flushWidth;
+
+                            while (physicalAddress < endPhysicalAddress)
+                            {
+                                var logRecord = _wrapper.CreateLogRecord(startAddress);
+                                var alignedRecordSize = logRecord.AllocatedSize;
+                                physicalAddress += alignedRecordSize;
+                                startAddress += alignedRecordSize;
+                            }
                         }
                     }
+                    finally
+                    {
+                        if (epochTaken)
+                            epoch.Suspend();
+                        _ = result.Release();
+                    }
                 }
-                finally
-                {
-                    if (epochTaken)
-                        epoch.Suspend();
-                    _ = result.Release();
-                }
+                catch when (disposed) { }
             }
-            catch when (disposed) { }
+            finally
+            {
+                // Release this issued page write's unit of outstanding snapshot IO. In an OUTERMOST finally so it
+                // runs on every path (success, error, disposed, or a cleanup exception in the inner finally), since
+                // this callback fires exactly once per issued write. The TryClaim guards the exotic overlap where
+                // this callback ran synchronously during the submit, then threw back out so the issuing thread also
+                // attempts the release. When the last unit is released, pages parked while snapshot writes were in
+                // flight are freed.
+                if (result.TryClaimSnapshotUnitRelease())
+                    EndNativeSnapshotFlush();
+            }
         }
 
         internal string PrettyPrintLogicalAddress(long logicalAddress) => $"{logicalAddress}:{GetPage(logicalAddress)}.{GetOffsetOnPage(logicalAddress)}";

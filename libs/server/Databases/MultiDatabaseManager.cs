@@ -467,8 +467,13 @@ namespace Garnet.server
                 for (var i = 0; i < activeDbIdsMapSize; i++)
                 {
                     var dbId = activeDbIdsMapSnapshot[i];
-                    var offset = ReplayDatabaseAOF(aofProcessor, databasesMapSnapshot[dbId], dbId == 0 ? untilAddress : AppendOnlyFile.InvalidAofAddress);
+                    var db = databasesMapSnapshot[dbId];
+
+                    var offset = ReplayDatabaseAOF(aofProcessor, db, dbId == 0 ? untilAddress : AppendOnlyFile.InvalidAofAddress);
                     if (dbId == 0) replicationOffset = offset;
+
+                    // Wait for Vector Sets to catch up before declaring us "recovered"
+                    db.VectorManager?.WaitForQuiescence();
                 }
             }
             finally
@@ -1063,8 +1068,11 @@ namespace Garnet.server
             for (var i = 0; i < activeDbIdsMapSize; i++)
             {
                 var dbId = activeDbIdsMapSnapshot[i];
-                databasesMapSnapshot[dbId].VectorManager.Initialize();
-                databasesMapSnapshot[dbId].VectorManager.ReconcileRecoveredState();
+                var db = databasesMapSnapshot[dbId];
+
+                db.VectorManager?.Initialize();
+                db.VectorManager?.ReconcileRecoveredState();
+                db.VectorManager?.WaitForQuiescence();
             }
         }
 

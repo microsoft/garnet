@@ -18,9 +18,16 @@ namespace Tsavorite.core
     /// <summary>
     /// Tsavorite Log
     /// </summary>
-    public sealed class TsavoriteLog : IDisposable
+    public sealed partial class TsavoriteLog : IDisposable
     {
         private Exception cannedException = null;
+
+        /// <summary>
+        /// Minimum size in bytes for a partial (chunked) allocation at the end of a page, passed as <c>partialSlots</c> to
+        /// <see cref="TsavoriteLogAllocatorImpl"/> allocation. It is also the threshold above which a key/value/object is
+        /// considered "large" and must be written as multiple chunk records.
+        /// </summary>
+        public const int MinPartialAllocSize = 1 << 20; // 1 MB
 
         readonly TsavoriteLogAllocatorImpl allocator;
         readonly LightEpoch epoch;
@@ -63,6 +70,13 @@ namespace Tsavorite.core
         /// full logical-address range (no read-cache-bit masking), unlike the main-store allocators.
         /// </summary>
         internal long AllocatorGetPage(long logicalAddress) => allocator.GetPage(logicalAddress);
+
+        /// <summary>
+        /// Forwards to the allocator's read-only-address computation; used in tests to verify the out-of-range/sentinel
+        /// HeadAddress clamp (e.g. the fast-commit <c>long.MaxValue</c> "never evict" sentinel) directly, without driving a
+        /// full fast-commit recovery.
+        /// </summary>
+        internal long AllocatorCalculateReadOnlyAddress(long tailAddress, long headAddress) => allocator.CalculateReadOnlyAddress(tailAddress, headAddress);
 
         // Here's a soft begin address that is observed by all access at the TsavoriteLog level but not actually on the
         // allocator. This is to make sure that any potential physical deletes only happen after commit.
@@ -255,7 +269,36 @@ namespace Tsavorite.core
                 {
                     RecoverAsync(-1).AsTask().GetAwaiter().GetResult();
                 }
-                catch { }
+                catch (Exception ex)
+                {
+                    // A non-tolerated recovery failure (TolerateDeviceFailure short-circuits inside recovery and never
+                    // reaches here). Fail fast: silently continuing would present an empty log as if recovery had
+                    // succeeded, hiding real corruption/data loss from the caller. RestoreLatestAsync/
+                    // RestoreSpecificCommitAsync have already rolled the allocator back to a clean, empty state, so a
+                    // caller that catches this and retries never observes a log poisoned with a sentinel HeadAddress.
+                    // This mirrors the async CreateAsync path, which likewise propagates recovery failures.
+                    logger?.LogError(ex, "TsavoriteLog recovery failed during construction");
+
+                    // This partially-constructed instance is about to be abandoned (the constructor throws), so its
+                    // Dispose will never run. Release the resources already allocated above so repeated construction
+                    // failures cannot leak an owned LightEpoch (and its epoch-table slots), the allocator's page
+                    // buffers, the commit queue, or a default commit manager. inflightWord is allocated only after this
+                    // block, so it is not released here. Cleanup is best-effort and must not mask the recovery failure.
+                    try
+                    {
+                        allocator.Dispose();
+                        commitQueue.Dispose();
+                        if (isEpochOwned)
+                            epoch.Dispose();
+                        if (disposeLogCommitManager)
+                            logCommitManager.Dispose();
+                    }
+                    catch (Exception cleanupEx)
+                    {
+                        logger?.LogError(cleanupEx, "Error releasing partially-constructed TsavoriteLog after recovery failure");
+                    }
+                    throw;
+                }
             }
 
             // Claim a LightEpoch user-word slot for our in-flight enqueue publish protocol.
@@ -454,7 +497,9 @@ namespace Tsavorite.core
             // Exceptions are caught and logged — the callback is best-effort (e.g., AOF truncation)
             // and must not propagate into EndInflightEnqueue / producer cleanup paths.
             var isProtected = epoch.ThisInstanceProtected();
-            if (isProtected) epoch.Suspend();
+            if (isProtected)
+                epoch.Suspend();
+
             try
             {
                 cb(oldSafe, newSafe);
@@ -465,7 +510,8 @@ namespace Tsavorite.core
             }
             finally
             {
-                if (isProtected) epoch.Resume();
+                if (isProtected)
+                    epoch.Resume();
             }
         }
         #endregion
@@ -542,7 +588,8 @@ namespace Tsavorite.core
                 }
                 catch
                 {
-                    if (!tolerateDeviceFailure) throw;
+                    if (!tolerateDeviceFailure)
+                        throw;
                 }
 
                 CommittedUntilAddress = committedUntilAddress;
@@ -701,7 +748,6 @@ namespace Tsavorite.core
             while (!UnsafeTryEnqueueRaw(entryBytes, noCommit, out logicalAddress))
                 _ = Thread.Yield();
             return logicalAddress;
-
         }
 
         /// <summary>
@@ -734,6 +780,13 @@ namespace Tsavorite.core
         /// </summary>
         /// <returns></returns>
         public int UnsafeGetLogPageSizeBits() => allocator.LogPageSizeBits;
+
+        /// <summary>
+        /// The allocator's sector-aligned buffer pool, exposed so callers (e.g. the AOF chunked-object write path) can create a
+        /// <see cref="ConditionallyHoistedKey"/> for keys they need to carry into the (struct-field-based) chunked serializer.
+        /// May be null for allocators that never do buffered IO; a pinned key never dereferences it.
+        /// </summary>
+        public SectorAlignedBufferPool BufferPool => allocator.bufferPool;
 
         /// <summary>
         /// Get read only lag address
@@ -808,7 +861,8 @@ namespace Tsavorite.core
             BeginInflightEnqueue();
             try
             {
-                if (commitNum == long.MaxValue) throw new TsavoriteException("Attempting to enqueue into a completed log");
+                if (commitNum == long.MaxValue)
+                    throw new TsavoriteException("Attempting to enqueue into a completed log");
 
                 if (!allocator.TryAllocateRetryNow(allocatedLength, out logicalAddress))
                 {
@@ -826,7 +880,8 @@ namespace Tsavorite.core
                 EndInflightEnqueue();
                 epoch.Suspend();
             }
-            if (autoCommit) Commit();
+            if (autoCommit)
+                Commit();
             return true;
         }
 
@@ -844,9 +899,7 @@ namespace Tsavorite.core
 
             var allocatedLength = 0;
             foreach (var entry in entries)
-            {
                 allocatedLength += Align(entry.SerializedLength) + headerSize;
-            }
 
             ValidateAllocatedLength(allocatedLength);
 
@@ -854,7 +907,8 @@ namespace Tsavorite.core
             BeginInflightEnqueue();
             try
             {
-                if (commitNum == long.MaxValue) throw new TsavoriteException("Attempting to enqueue into a completed log");
+                if (commitNum == long.MaxValue)
+                    throw new TsavoriteException("Attempting to enqueue into a completed log");
 
                 if (!allocator.TryAllocateRetryNow(allocatedLength, out logicalAddress))
                 {
@@ -877,7 +931,8 @@ namespace Tsavorite.core
                 EndInflightEnqueue();
                 epoch.Suspend();
             }
-            if (autoCommit) Commit();
+            if (autoCommit)
+                Commit();
             return true;
         }
 
@@ -919,7 +974,8 @@ namespace Tsavorite.core
                 EndInflightEnqueue();
                 epoch.Suspend();
             }
-            if (autoCommit) Commit();
+            if (autoCommit)
+                Commit();
             return true;
         }
 
@@ -945,7 +1001,8 @@ namespace Tsavorite.core
             BeginInflightEnqueue();
             try
             {
-                if (commitNum == long.MaxValue) throw new TsavoriteException("Attempting to enqueue into a completed log");
+                if (commitNum == long.MaxValue)
+                    throw new TsavoriteException("Attempting to enqueue into a completed log");
 
                 if (!allocator.TryAllocateRetryNow(allocatedLength, out logicalAddress))
                 {
@@ -962,7 +1019,8 @@ namespace Tsavorite.core
                 EndInflightEnqueue();
                 epoch.Suspend();
             }
-            if (autoCommit && !noCommit) Commit();
+            if (autoCommit && !noCommit)
+                Commit();
             return true;
         }
 
@@ -984,7 +1042,8 @@ namespace Tsavorite.core
             BeginInflightEnqueue();
             try
             {
-                if (commitNum == long.MaxValue) throw new TsavoriteException("Attempting to enqueue into a completed log");
+                if (commitNum == long.MaxValue)
+                    throw new TsavoriteException("Attempting to enqueue into a completed log");
 
                 if (!allocator.TryAllocateRetryNow(allocatedLength, out logicalAddress))
                 {
@@ -1003,7 +1062,8 @@ namespace Tsavorite.core
                 EndInflightEnqueue();
                 epoch.Suspend();
             }
-            if (autoCommit) Commit();
+            if (autoCommit)
+                Commit();
             return true;
         }
 
@@ -1034,7 +1094,8 @@ namespace Tsavorite.core
                 EndInflightEnqueue();
                 epoch.Suspend();
             }
-            if (autoCommit) Commit();
+            if (autoCommit)
+                Commit();
         }
 
         /// <summary>
@@ -1351,9 +1412,17 @@ namespace Tsavorite.core
             if (autoCommit) Commit();
         }
 
+        /// <summary>
+        /// Allocator function called by non-Try variants of Enqueue.
+        /// </summary>
+        /// <param name="recordSize">Size of the record to allocate</param>
+        /// <returns>Logical address of the allocated block</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private long AllocateBlock(int recordSize)
         {
+            if (commitNum == long.MaxValue)
+                throw new TsavoriteException("Attempting to enqueue into a completed log");
+
             while (true)
             {
                 var flushEvent = allocator.flushEvent;
@@ -1380,15 +1449,23 @@ namespace Tsavorite.core
             }
         }
 
+        /// <summary>
+        /// Allocator function called by non-Try variants of Enqueue.
+        /// </summary>
+        /// <param name="recordSize">Size of the record to allocate</param>
+        /// <param name="epochAccessor">Accessor to suspend/resume epoch</param>
+        /// <returns>Logical address of the allocated block</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private long AllocateBlock<TEpochAccessor>(int recordSize, TEpochAccessor epochAccessor)
             where TEpochAccessor : IEpochAccessor
         {
+            if (commitNum == long.MaxValue)
+                throw new TsavoriteException("Attempting to enqueue into a completed log");
+
             while (true)
             {
                 var flushEvent = allocator.flushEvent;
-                allocator.TryAllocateRetryNow(recordSize, out var logicalAddress);
-                if (logicalAddress > 0)
+                if (allocator.TryAllocateRetryNow(recordSize, out var logicalAddress))
                     return logicalAddress;
 
                 // logicalAddress less than 0 (RETRY_NOW) should already have been handled
@@ -1438,6 +1515,9 @@ namespace Tsavorite.core
             BeginInflightEnqueue();
             try
             {
+                if (commitNum == long.MaxValue)
+                    throw new TsavoriteException("Attempting to enqueue into a completed log");
+
                 if (!allocator.TryAllocateRetryNow(allocatedLength, out logicalAddress))
                 {
                     if (cannedException != null)
@@ -1458,7 +1538,8 @@ namespace Tsavorite.core
                 EndInflightEnqueue();
                 epoch.Suspend();
             }
-            if (autoCommit) Commit();
+            if (autoCommit)
+                Commit();
             return true;
         }
 
@@ -1484,6 +1565,9 @@ namespace Tsavorite.core
             BeginInflightEnqueue();
             try
             {
+                if (commitNum == long.MaxValue)
+                    throw new TsavoriteException("Attempting to enqueue into a completed log");
+
                 if (!allocator.TryAllocateRetryNow(allocatedLength, out logicalAddress))
                 {
                     if (cannedException != null)
@@ -1506,7 +1590,8 @@ namespace Tsavorite.core
                 EndInflightEnqueue();
                 epoch.Suspend();
             }
-            if (autoCommit) Commit();
+            if (autoCommit)
+                Commit();
             return true;
         }
 
@@ -1529,6 +1614,9 @@ namespace Tsavorite.core
             BeginInflightEnqueue();
             try
             {
+                if (commitNum == long.MaxValue)
+                    throw new TsavoriteException("Attempting to enqueue into a completed log");
+
                 if (!allocator.TryAllocateRetryNow(allocatedLength, out logicalAddress))
                 {
                     if (cannedException != null)
@@ -1547,7 +1635,8 @@ namespace Tsavorite.core
                 EndInflightEnqueue();
                 epoch.Suspend();
             }
-            if (autoCommit) Commit();
+            if (autoCommit)
+                Commit();
             return true;
         }
 
@@ -1559,9 +1648,7 @@ namespace Tsavorite.core
         /// <param name="logicalAddress">Logical address of first added entry</param>
         /// <returns>Whether the append succeeded</returns>
         public bool TryEnqueue(IReadOnlySpanBatch readOnlySpanBatch, out long logicalAddress)
-        {
-            return TryAppend(readOnlySpanBatch, out logicalAddress, out _);
-        }
+            => TryAppend(readOnlySpanBatch, out logicalAddress, out _);
         #endregion
 
         #region EnqueueAsync
@@ -2438,7 +2525,7 @@ namespace Tsavorite.core
         /// </summary>
         int activeSingleIteratorCount;
 
-        public void RemoveIterator(TsavoriteLogScanSingleIterator iterator)
+        public void RemoveSingleIterator(TsavoriteLogScanSingleIterator iterator)
         {
             lock (this)
             {
@@ -2494,6 +2581,8 @@ namespace Tsavorite.core
         /// <returns></returns>
         public async ValueTask<(byte[], int)> ReadAsync(long address, int estimatedLength = 0, CancellationToken token = default)
         {
+            // TODO: If these are used, what address is passed for chunked records? TryEnqueue returns the highest, but we'd have no way to get back to the earlier chunks
+            // (unless we add the first chunk address to the chunk header).
             token.ThrowIfCancellationRequested();
             epoch.Resume();
             if (address >= CommittedUntilAddress || address < BeginAddress)
@@ -2576,10 +2665,7 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private static int Align(int length)
-        {
-            return (length + 3) & ~3;
-        }
+        private static int Align(int length) => (length + 3) & ~3;
 
         /// <summary>
         /// Commit log
@@ -2587,7 +2673,8 @@ namespace Tsavorite.core
         private void CommitCallback(CommitInfo commitInfo)
         {
             // Using count is safe as a fast filtering mechanism to reduce number of invocations despite concurrency
-            if (ongoingCommitRequests.Count == 0 && commitInfo.ErrorCode == 0) return;
+            if (ongoingCommitRequests.Count == 0 && commitInfo.ErrorCode == 0)
+                return;
             commitQueue.AddWorkItem(commitInfo);
         }
 
@@ -2603,9 +2690,7 @@ namespace Tsavorite.core
             try
             {
                 if (!allocator.TryAllocateRetryNow(allocatedLength, out var logicalAddress))
-                {
                     return false;
-                }
 
                 // Finish filling in all fields
                 info.BeginAddress = BeginAddress;
@@ -2623,14 +2708,13 @@ namespace Tsavorite.core
                 EndInflightEnqueue();
                 epoch.Suspend();
             }
+
             // Return the commit tail
             return true;
         }
 
         private bool ShouldCommmitMetadata(ref TsavoriteLogRecoveryInfo info)
-        {
-            return beginAddress > CommittedBeginAddress || info.Cookie != null;
-        }
+            => beginAddress > CommittedBeginAddress || info.Cookie != null;
 
         private void CommitMetadataOnly(ref TsavoriteLogRecoveryInfo info)
         {
@@ -2665,6 +2749,7 @@ namespace Tsavorite.core
             // If not fast committing, set committed state as we commit metadata explicitly only after metadata commit
             if (!fastCommitMode)
                 UpdateCommittedState(recoveryInfo);
+
             // Issue any potential physical deletes due to shifts in begin address
             if (allocator.BeginAddress < recoveryInfo.BeginAddress)
             {
@@ -2685,7 +2770,8 @@ namespace Tsavorite.core
             if (commitInfo.ErrorCode != 0)
             {
                 var exception = new CommitFailureException(new LinkedCommitInfo { CommitInfo = commitInfo },
-                    $"Commit of address range [{commitInfo.FromAddress}-{commitInfo.UntilAddress}] failed with error code {commitInfo.ErrorCode}");
+                    $"Commit of address range [{commitInfo.FromAddress}-{commitInfo.UntilAddress}] failed with error code {commitInfo.ErrorCode}",
+                    commitInfo.Exception);
                 if (tolerateDeviceFailure)
                 {
                     var oldCommitTcs = commitTcs;
@@ -2703,6 +2789,7 @@ namespace Tsavorite.core
                 }
                 return;
             }
+
             // Check for the commit records included in this flush
             coveredCommits.Clear();
             lock (ongoingCommitRequests)
@@ -2718,7 +2805,8 @@ namespace Tsavorite.core
 
             // Nothing was committed --- this was probably an auto-flush. Return now without touching any
             // commit task tracking.
-            if (coveredCommits.Count == 0) return;
+            if (coveredCommits.Count == 0)
+                return;
 
             var latestCommit = coveredCommits[coveredCommits.Count - 1];
             if (fastCommitMode)
@@ -2735,7 +2823,8 @@ namespace Tsavorite.core
             foreach (var recoveryInfo in coveredCommits)
             {
                 // Only write out commit metadata if user cares about this as a distinct recoverable point
-                if (!recoveryInfo.FastForwardAllowed) WriteCommitMetadata(recoveryInfo);
+                if (!recoveryInfo.FastForwardAllowed)
+                    WriteCommitMetadata(recoveryInfo);
                 if (!fastCommitMode)
                 {
                     recoveryInfo.Callback?.Invoke();
@@ -2871,7 +2960,14 @@ namespace Tsavorite.core
                 catch
                 {
                     if (!tolerateDeviceFailure)
+                    {
+                        // Recovery failed after the fast-commit scan set the "shut up safe guards" sentinels
+                        // (CommittedUntilAddress / HeadAddress = long.MaxValue). Roll the allocator back to a clean, empty
+                        // state so a failed recovery never retains a log poisoned with HeadAddress == long.MaxValue, which
+                        // overflows CalculateReadOnlyAddress on the next enqueue.
+                        ResetRecoveryState();
                         throw;
+                    }
                 }
             }
 
@@ -2948,7 +3044,14 @@ namespace Tsavorite.core
                 catch
                 {
                     if (!tolerateDeviceFailure)
+                    {
+                        // Recovery failed after the fast-commit scan set the "shut up safe guards" sentinels
+                        // (CommittedUntilAddress / HeadAddress = long.MaxValue). Roll the allocator back to a clean, empty
+                        // state so a failed recovery never retains a log poisoned with HeadAddress == long.MaxValue, which
+                        // overflows CalculateReadOnlyAddress on the next enqueue.
+                        ResetRecoveryState();
                         throw;
+                    }
                 }
             }
 
@@ -2970,6 +3073,19 @@ namespace Tsavorite.core
             CommittedUntilAddress = info.UntilAddress;
             CommittedBeginAddress = info.BeginAddress;
             AdvanceSafeTailFloor(info.UntilAddress);
+        }
+
+        /// <summary>
+        /// Roll the allocator back to a clean, freshly-initialized (empty) state, undoing the "shut up safe guards"
+        /// sentinels (HeadAddress / CommittedUntilAddress = long.MaxValue) that fast-commit recovery sets before scanning
+        /// the log tail. Mirrors the "unable to recover using any available commit" reset so a failed recovery never
+        /// leaves the log with a sentinel HeadAddress that overflows address arithmetic on the next enqueue.
+        /// </summary>
+        private void ResetRecoveryState()
+        {
+            allocator.Initialize();
+            CommittedUntilAddress = FirstValidAddress;
+            beginAddress = allocator.BeginAddress;
         }
 
         /// <summary>
@@ -3024,13 +3140,16 @@ namespace Tsavorite.core
             return true;
         }
 
-        private unsafe void AsyncGetFromDiskCallback(uint errorCode, uint numBytes, object context)
+        private unsafe void AsyncGetFromDiskCallback(uint errorCode, uint numBytes, object context, Exception ioException)
         {
             var ctx = (SimpleReadContext)context;
 
             if (errorCode != 0)
             {
-                logger?.LogError($"{nameof(AsyncGetFromDiskCallback)} error: {{errorCode}}", errorCode);
+                if (ioException is null)
+                    logger?.LogError($"{nameof(AsyncGetFromDiskCallback)} error: {{errorCode}}", errorCode);
+                else
+                    logger?.LogError($"{nameof(AsyncGetFromDiskCallback)} error: {{exception}}", Utility.GetCallbackExceptionDetail(ioException));
                 ctx.record.Return();
                 ctx.record = null;
                 _ = ctx.completedRead.Release();
@@ -3063,13 +3182,16 @@ namespace Tsavorite.core
             }
         }
 
-        private void AsyncGetHeaderOnlyFromDiskCallback(uint errorCode, uint numBytes, object context)
+        private void AsyncGetHeaderOnlyFromDiskCallback(uint errorCode, uint numBytes, object context, Exception ioException)
         {
             var ctx = (SimpleReadContext)context;
 
             if (errorCode != 0)
             {
-                logger?.LogError($"{nameof(AsyncGetHeaderOnlyFromDiskCallback)} error: {{errorCode}}", errorCode);
+                if (ioException is null)
+                    logger?.LogError($"{nameof(AsyncGetHeaderOnlyFromDiskCallback)} error: {{errorCode}}", errorCode);
+                else
+                    logger?.LogError($"{nameof(AsyncGetHeaderOnlyFromDiskCallback)} error: {{exception}}", Utility.GetCallbackExceptionDetail(ioException));
                 ctx.record.Return();
                 ctx.record = null;
                 _ = ctx.completedRead.Release();

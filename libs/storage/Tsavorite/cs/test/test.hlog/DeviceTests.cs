@@ -92,7 +92,7 @@ namespace Tsavorite.test
             }
         }
 
-        void Callback(uint errorCode, uint numBytes, object context)
+        void Callback(uint errorCode, uint numBytes, object context, Exception ioException)
         {
             semaphore.Release();
         }
@@ -132,7 +132,7 @@ namespace Tsavorite.test
             pbuffer.Return();
         }
 
-        void IOCallback(uint errorCode, uint numBytes, object context)
+        void IOCallback(uint errorCode, uint numBytes, object context, Exception ioException)
         {
             if (errorCode != 0)
                 Assert.Fail($"OverlappedStream GetQueuedCompletionStatus error: {errorCode}");
@@ -576,11 +576,11 @@ namespace Tsavorite.test
             var (rbuf, rptr) = AllocateAlignedBuffer((int)kBlock, _ => 0);
 
             var write = new System.Threading.SemaphoreSlim(0, 1);
-            device.WriteAsync(wptr, 0, kHighOffset, kBlock, (e, n, c) => write.Release(), null);
+            device.WriteAsync(wptr, 0, kHighOffset, kBlock, (e, n, c, _) => write.Release(), null);
             write.Wait();
 
             var read = new System.Threading.SemaphoreSlim(0, 1);
-            device.ReadAsync(0, kHighOffset, rptr, kBlock, (e, n, c) => read.Release(), null);
+            device.ReadAsync(0, kHighOffset, rptr, kBlock, (e, n, c, _) => read.Release(), null);
             read.Wait();
 
             AssertBufferContents(rptr, (int)kBlock, i => (byte)((i * 11 + 3) & 0xFF), $"{kind} unbounded round-trip");
@@ -613,7 +613,7 @@ namespace Tsavorite.test
 
                 var (wbuf, wptr) = AllocateAlignedBuffer((int)kBlock, i => (byte)((i * 7 + 1) & 0xFF));
                 var write = new System.Threading.SemaphoreSlim(0, 1);
-                device.WriteAsync(wptr, 0, 0, kBlock, (e, n, c) => write.Release(), null);
+                device.WriteAsync(wptr, 0, 0, kBlock, (e, n, c, _) => write.Release(), null);
                 write.Wait();
 
                 // The on-disk file must be the bare basename (no `.0` suffix).
@@ -890,7 +890,7 @@ namespace Tsavorite.test
             try
             {
                 ulong unaligned = sector - 1; // smaller than sector, definitely misaligned
-                Assert.Throws<TsavoriteException>(() => device.ReadAsync(0, unaligned, ptr, length, (_, _, _) => { }, null));
+                Assert.Throws<TsavoriteException>(() => device.ReadAsync(0, unaligned, ptr, length, (_, _, _, _) => { }, null));
             }
             finally { GC.KeepAlive(buf); }
         }
@@ -908,7 +908,7 @@ namespace Tsavorite.test
             try
             {
                 uint bad = sector + 1; // not a multiple of sector
-                Assert.Throws<TsavoriteException>(() => device.WriteAsync(ptr, 0, 0, bad, (_, _, _) => { }, null));
+                Assert.Throws<TsavoriteException>(() => device.WriteAsync(ptr, 0, 0, bad, (_, _, _, _) => { }, null));
             }
             finally { GC.KeepAlive(buf); }
         }
@@ -925,7 +925,7 @@ namespace Tsavorite.test
             try
             {
                 IntPtr misalignedPtr = ptr + 1; // misaligned buffer pointer
-                Assert.Throws<TsavoriteException>(() => device.WriteAsync(misalignedPtr, 0, 0, sector, (_, _, _) => { }, null));
+                Assert.Throws<TsavoriteException>(() => device.WriteAsync(misalignedPtr, 0, 0, sector, (_, _, _, _) => { }, null));
             }
             finally { GC.KeepAlive(buf); }
         }
@@ -967,7 +967,7 @@ namespace Tsavorite.test
                 uint observedError = 0;
                 using var done = new SemaphoreSlim(0);
 
-                device.WriteAsync(ptr, 0, 0, sector, (errorCode, _, _) =>
+                device.WriteAsync(ptr, 0, 0, sector, (errorCode, _, _, _) =>
                 {
                     observedError = errorCode;
                     done.Release();
@@ -995,7 +995,7 @@ namespace Tsavorite.test
         //   - multiple completion threads / io_contexts (pick_context / pick_ring sharding);
         //   - multiple devices interleaved across threads (the pick_context/pick_ring owner+bounds
         //     thread-local guard, whose absence is an out-of-bounds shard index);
-        //   - ThrottleLimit -> submission-ring depth sizing, including the clamp above MaxThrottle;
+        //   - ThrottleLimit -> aggregate in-flight cap (capped at io-contexts * queue-depth);
         //   - the late P/Invoke entry points GetFileSize / RemoveSegment / Reset / TryComplete.
         //
         // io_uring cases self-skip when the loaded native library / kernel lacks a working io_uring.
@@ -1024,7 +1024,7 @@ namespace Tsavorite.test
                 var ptr = (IntPtr)(((long)Unsafe.AsPointer(ref buf[0]) + (sz - 1)) & ~(sz - 1));
                 using var sem = new SemaphoreSlim(0);
                 uint err = 0;
-                d.WriteAsync(ptr, 0, 0, sz, (e, _, _) => { err = e; sem.Release(); }, null);
+                d.WriteAsync(ptr, 0, 0, sz, (e, _, _, _) => { err = e; sem.Release(); }, null);
                 bool ok = sem.Wait(TimeSpan.FromSeconds(5)) && err == 0;
                 GC.KeepAlive(buf);
                 return ok;
@@ -1037,10 +1037,15 @@ namespace Tsavorite.test
 
         /// <summary>
         /// Build + Initialize a Native device on the requested backend, completion-thread count and
-        /// throttle limit. Self-skips on non-Linux, or when io_uring is requested but unavailable.
+        /// throttle limit. <paramref name="numIoContexts"/> (kernel io_context / io_uring ring count,
+        /// decoupled from the drainer count), <paramref name="queueDepth"/> (per-ring submission depth)
+        /// and <paramref name="uringSqPoll"/> (io_uring SQPOLL) exercise the corresponding ctor knobs;
+        /// each 0/false selects the device default. Self-skips on non-Linux, or when io_uring is
+        /// requested but unavailable.
         /// </summary>
         static NativeStorageDevice CreateNativeForTest(string path, long segmentSize, NativeBackend backend,
-                                                       int completionThreads = 1, int throttleLimit = 0, bool omitSegmentId = false)
+                                                       int completionThreads = 1, int throttleLimit = 0, bool omitSegmentId = false,
+                                                       int numIoContexts = 0, int queueDepth = 0, bool uringSqPoll = false)
         {
             if (!OperatingSystem.IsLinux())
                 Assert.Ignore("NativeStorageDevice is Linux-only.");
@@ -1053,7 +1058,8 @@ namespace Tsavorite.test
                 NativeBackend.Uring => NativeStorageDevice.IoBackend.Uring,
                 _ => NativeStorageDevice.IoBackend.Default,
             };
-            var d = new NativeStorageDevice(path, deleteOnClose: true, numCompletionThreads: completionThreads, ioBackend: io);
+            var d = new NativeStorageDevice(path, deleteOnClose: true, numCompletionThreads: completionThreads, ioBackend: io,
+                                            numIoContexts: numIoContexts, queueDepth: queueDepth, uringSqPoll: uringSqPoll);
             if (throttleLimit > 0)
                 d.ThrottleLimit = throttleLimit;
             d.Initialize(segmentSize, omitSegmentIdFromFilename: omitSegmentId && segmentSize == -1L);
@@ -1177,7 +1183,7 @@ namespace Tsavorite.test
             var (wb, wpb) = AllocateAlignedBuffer(size, j => (byte)((j ^ 0x5A) & 0xFF));
             using var done = new SemaphoreSlim(0);
             int errors = 0;
-            void Cb(uint e, uint n, object c) { if (e != 0) Interlocked.Increment(ref errors); done.Release(); }
+            void Cb(uint e, uint n, object c, Exception ioException) { if (e != 0) Interlocked.Increment(ref errors); done.Release(); }
 
             var ts = new Thread[threads];
             for (int t = 0; t < threads; t++)
@@ -1249,7 +1255,7 @@ namespace Tsavorite.test
         [Category("IDevice")]
         public unsafe void Native_ThrottleAboveMax_IsClampedAndStillWorks(NativeBackend backend)
         {
-            // A throttle far above the kernel-safe ceiling (MaxThrottle=4096) is clamped (and warned);
+            // A throttle far above the kernel capacity (io-contexts * queue-depth) is capped (and warned);
             // the device must still round-trip correctly.
             using var device = CreateNativeForTest(Path.Join(TestUtils.MethodTestDir, "test.log"), 64 * Mib, backend, throttleLimit: 100_000);
             const int size = 4 * 1024;
@@ -1298,7 +1304,7 @@ namespace Tsavorite.test
 
             using var done = new SemaphoreSlim(0);
             int errors = 0;
-            void Cb(uint e, uint n, object c) { if (e != 0) Interlocked.Increment(ref errors); done.Release(); }
+            void Cb(uint e, uint n, object c, Exception ioException) { if (e != 0) Interlocked.Increment(ref errors); done.Release(); }
 
             var ts = new Thread[threads];
             for (int t = 0; t < threads; t++)
@@ -1328,6 +1334,141 @@ namespace Tsavorite.test
                 AssertBufferContents(rptrs[i], size, off => (byte)((blk * 13 + off) & 0xFF), $"{backend} block {blk}");
             }
             GC.KeepAlive(wbuf); GC.KeepAlive(rroots);
+        }
+
+        // ----- io_context / ring-count / queue-depth / SQPOLL ctor knobs --------------------------
+
+        /// <summary>
+        /// Issues one read per buffer, striped across <paramref name="submitThreads"/> background threads,
+        /// and returns once every read has been submitted (completions are awaited by the caller).
+        /// Native rings/io_contexts are picked per submitting thread, so a single-threaded issue loop puts
+        /// every read on one ring; fanning out is what actually exercises a multi-ring configuration.
+        /// </summary>
+        void SubmitReadsFromThreads(IDevice device, IntPtr[] rptrs, int size, int submitThreads)
+        {
+            var submitters = new Thread[submitThreads];
+            for (int t = 0; t < submitThreads; t++)
+            {
+                int start = t;
+                submitters[t] = new Thread(() =>
+                {
+                    for (int i = start; i < rptrs.Length; i += submitThreads)
+                        device.ReadAsync(0, (ulong)((long)i * size), rptrs[i], (uint)size, IOCallback, null);
+                })
+                { IsBackground = true };
+                submitters[t].Start();
+            }
+            foreach (var s in submitters) s.Join();
+        }
+
+        [Test]
+        [TestCase(NativeBackend.Libaio)]
+        [TestCase(NativeBackend.Uring)]
+        [Category("IDevice")]
+        public unsafe void Native_ExplicitIoContexts_DefaultDepth_MultiRing(NativeBackend backend)
+        {
+            // Decouple ring count from drainer count: 8 io_contexts served by 2 drainers, default
+            // (auto-derived) queue depth. For libaio + default queueDepth this also exercises the
+            // ResolveLibaioReservationDepth branch (the reservation is sized from the throttle share
+            // rather than the io_uring per-ring ceiling). Rings are assigned per submitting thread
+            // (thread-affine), so the reads are issued from 8 concurrent threads to actually fan out
+            // across all 8 rings rather than piling onto the single test thread's ring.
+            const int N = 128, size = 4 * 1024, submitThreads = 8;
+            using var device = CreateNativeForTest(Path.Join(TestUtils.MethodTestDir, "test.log"), 256 * Mib, backend,
+                                                   completionThreads: 2, throttleLimit: 1024, numIoContexts: 8);
+
+            var (wbuf, wptr) = AllocateAlignedBuffer(N * size, j => (byte)(((j / size) * 5 + (j % size)) & 0xFF));
+            device.WriteAsync(wptr, 0, 0, (uint)(N * size), IOCallback, null);
+            semaphore.Wait();
+
+            var rbufs = new byte[N][];
+            var rptrs = new IntPtr[N];
+            for (int i = 0; i < N; i++)
+            {
+                var (rb, rp) = AllocateAlignedBuffer(size, _ => 0);
+                rbufs[i] = rb; rptrs[i] = rp;
+            }
+
+            SubmitReadsFromThreads(device, rptrs, size, submitThreads);
+            for (int i = 0; i < N; i++) semaphore.Wait();
+
+            for (int i = 0; i < N; i++)
+            {
+                int blk = i;
+                AssertBufferContents(rptrs[i], size, off => (byte)((blk * 5 + off) & 0xFF), $"{backend} block {blk}");
+            }
+            GC.KeepAlive(wbuf); GC.KeepAlive(rbufs);
+        }
+
+        [Test]
+        [TestCase(NativeBackend.Libaio)]
+        [TestCase(NativeBackend.Uring)]
+        [Category("IDevice")]
+        public unsafe void Native_ExplicitQueueDepth_RoundTrips(NativeBackend backend)
+        {
+            // Explicit shallow per-ring queue depth (64) across 4 rings, and fire more concurrent reads
+            // (256) than the aggregate ring capacity so the native ring-full backpressure (submit unwinds
+            // to Pending and retries after a completion) is exercised and every read still completes.
+            // Reads are issued from 4 concurrent threads so all 4 shallow rings are driven at once.
+            const int N = 256, size = 4 * 1024, submitThreads = 4;
+            using var device = CreateNativeForTest(Path.Join(TestUtils.MethodTestDir, "test.log"), 256 * Mib, backend,
+                                                   completionThreads: 2, throttleLimit: 256, numIoContexts: 4, queueDepth: 64);
+
+            var (wbuf, wptr) = AllocateAlignedBuffer(N * size, j => (byte)(((j / size) * 3 + (j % size)) & 0xFF));
+            device.WriteAsync(wptr, 0, 0, (uint)(N * size), IOCallback, null);
+            semaphore.Wait();
+
+            var rbufs = new byte[N][];
+            var rptrs = new IntPtr[N];
+            for (int i = 0; i < N; i++)
+            {
+                var (rb, rp) = AllocateAlignedBuffer(size, _ => 0);
+                rbufs[i] = rb; rptrs[i] = rp;
+            }
+
+            SubmitReadsFromThreads(device, rptrs, size, submitThreads);
+            for (int i = 0; i < N; i++) semaphore.Wait();
+
+            for (int i = 0; i < N; i++)
+            {
+                int blk = i;
+                AssertBufferContents(rptrs[i], size, off => (byte)((blk * 3 + off) & 0xFF), $"{backend} block {blk}");
+            }
+            GC.KeepAlive(wbuf); GC.KeepAlive(rbufs);
+        }
+
+        [Test]
+        [Category("IDevice")]
+        public unsafe void Native_Uring_SqPoll_RoundTrips()
+        {
+            // io_uring SQPOLL is Uring-only (libaio/Windows ignore it). Each ring gets its own kernel
+            // poll thread, so the reads are issued from 4 concurrent threads to drive all 4 rings (and
+            // their poll threads) through the SQPOLL submit branch.
+            const int N = 32, size = 4 * 1024, submitThreads = 4;
+            using var device = CreateNativeForTest(Path.Join(TestUtils.MethodTestDir, "test.log"), 128 * Mib, NativeBackend.Uring,
+                                                   completionThreads: 2, throttleLimit: 512, numIoContexts: 4, uringSqPoll: true);
+
+            var (wbuf, wptr) = AllocateAlignedBuffer(N * size, j => (byte)(((j / size) * 9 + (j % size)) & 0xFF));
+            device.WriteAsync(wptr, 0, 0, (uint)(N * size), IOCallback, null);
+            semaphore.Wait();
+
+            var rbufs = new byte[N][];
+            var rptrs = new IntPtr[N];
+            for (int i = 0; i < N; i++)
+            {
+                var (rb, rp) = AllocateAlignedBuffer(size, _ => 0);
+                rbufs[i] = rb; rptrs[i] = rp;
+            }
+
+            SubmitReadsFromThreads(device, rptrs, size, submitThreads);
+            for (int i = 0; i < N; i++) semaphore.Wait();
+
+            for (int i = 0; i < N; i++)
+            {
+                int blk = i;
+                AssertBufferContents(rptrs[i], size, off => (byte)((blk * 9 + off) & 0xFF), $"Uring-SQPOLL block {blk}");
+            }
+            GC.KeepAlive(wbuf); GC.KeepAlive(rbufs);
         }
 
         // ----- late P/Invoke entry points (GetFileSize / Reset / TryComplete / RemoveSegment) -----
