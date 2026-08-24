@@ -236,8 +236,9 @@ namespace Garnet.server
         public int CompactionMaxSegments = 32;
 
         /// <summary>
-        /// Number of log segments the tail must grow before retrying after a compaction cycle that
-        /// reclaimed no space. 0 disables low-yield backoff.
+        /// Number of log segments the tail must grow before retrying after a low-yield compaction
+        /// cycle, i.e. one that reclaims less than <see cref="CompactionLowYieldReclaimPercent"/> of
+        /// the (begin-address) range it scanned. 0 disables low-yield backoff.
         /// Default-enabled (32) so the protection is active even when a host wrapper constructs
         /// GarnetServerOptions without forwarding this knob from configuration.
         /// </summary>

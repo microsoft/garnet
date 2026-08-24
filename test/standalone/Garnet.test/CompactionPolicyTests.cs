@@ -7,7 +7,7 @@ using NUnit.Framework;
 namespace Garnet.test
 {
     [TestFixture]
-    internal class CompactionPolicyTests
+    internal class CompactionPolicyTests : TestBase
     {
         [Test]
         public void LowYieldCycleBacksOffUntilForegroundGrowth()

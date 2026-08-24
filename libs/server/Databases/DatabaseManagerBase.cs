@@ -511,7 +511,7 @@ namespace Garnet.server
                         StoreWrapper.serverOptions.CompactionLowYieldReclaimPercent))
                 {
                     Logger?.LogWarning(
-                        "Compaction reclaimed no space; pausing until tail reaches {retryTailAddress}; DB ID = {id}",
+                        "Compaction was low-yield; pausing until tail reaches {retryTailAddress}; DB ID = {id}",
                         db.CompactionState.RetryAfterTailAddress, db.Id);
                 }
             }

@@ -280,7 +280,7 @@ namespace Garnet
         public int CompactionMaxSegments { get; set; }
 
         [IntRangeValidation(0, int.MaxValue)]
-        [Option("compaction-low-yield-backoff-segments", Required = false, HelpText = "Number of log segments the tail must grow before retrying after a compaction cycle that reclaimed no space. 0 = disabled.")]
+        [Option("compaction-low-yield-backoff-segments", Required = false, HelpText = "Number of log segments the tail must grow before retrying after a low-yield compaction cycle (one that reclaims less than CompactionLowYieldReclaimPercent of the range it scanned). 0 = disabled.")]
         public int CompactionLowYieldBackoffSegments { get; set; }
 
         [OptionValidation]
