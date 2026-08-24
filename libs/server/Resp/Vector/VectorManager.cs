@@ -670,7 +670,7 @@ namespace Garnet.server
         /// <summary>
         /// Request deletion of a Vector Set given the VALUE of the index key.
         /// </summary>
-        internal void RequestDeletion(Span<byte> value)
+        internal void RequestDeletion(ReadOnlySpan<byte> value)
         {
             if (value.Length != IndexSize)
             {
@@ -690,15 +690,10 @@ namespace Garnet.server
                 return;
             }
 
-            var tcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-
-            if (!requestCleanupTaskChannel.TryPublish((context, tcs)))
+            if (!requestCleanupTaskChannel.TryPublish(context))
             {
                 throw new GarnetException("Could not submit request for Vector Set cleanup, aborting delete");
             }
-
-            // Wait until the context is _marked_ for cleanup, but not the actual cleanup
-            AsyncUtils.BlockingWait(tcs.Task);
 
             // Tell DiskANN to clean itself up
             DropIndex(value);
@@ -712,8 +707,6 @@ namespace Garnet.server
         /// There's subtlety here because the DiskANN index might be in use (on the current or other threads)
         /// and we can't allow the index to be recreated until any requested drops are processed.
         /// </summary>
-        /// <param name="key"></param>
-        /// <param name="value"></param>
         internal void RequestDropInMemoryIndex(ReadOnlySpan<byte> key, ReadOnlySpan<byte> value)
         {
             if (value.Length != IndexSize)

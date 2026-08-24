@@ -323,7 +323,10 @@ namespace Garnet.server
                 Debug.Assert(input.WriteDesiredSize <= newValueAligned.Length, "Insufficient space for copy update, this should never happen");
                 Debug.Assert(input.WriteDesiredSize <= oldValueAligned.Length, "Insufficient space for copy update, this should never happen");
 
-                oldValueAligned.CopyTo(newValueAligned);
+                var srcCopy = oldValueAligned[..input.WriteDesiredSize];
+                var dstCopy = newValueAligned[..input.WriteDesiredSize];
+
+                srcCopy.CopyTo(dstCopy);
 
                 unsafe
                 {
