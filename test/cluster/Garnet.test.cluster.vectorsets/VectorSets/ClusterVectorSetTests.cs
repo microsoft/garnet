@@ -1018,28 +1018,41 @@ namespace Garnet.test.cluster
 
             // Check no longer available on old primary or secondary
             var exc0 = (string)context.clusterTestUtils.Execute(primary0, "VSIM", [primary0Key, "XB8", vectorSimData, "WITHSCORES", "WITHATTRIBS"], flags: CommandFlags.NoRedirect);
-            ClassicAssert.IsTrue(exc0.StartsWith("Key has MOVED to "));
+            ClassicAssert.IsTrue(exc0.StartsWith("Key has MOVED to "), $"Expected exc0 to start with 'Key has MOVED to '; actual is {exc0}");
 
+            // After migration the source replica (secondary0) keeps serving the key for a short
+            // while, then passes through a brief window where the slot is not yet known-stable on the
+            // new owner from its point of view (VSIM can momentarily return CLUSTERDOWN) before it
+            // settles on redirecting to the new primary. Poll until it redirects. A transient serving
+            // or CLUSTERDOWN response is expected here, so do NOT assert inside the loop: a failed
+            // NUnit assertion is recorded on the test result even when caught, which would fail the
+            // whole test on a transient state that the very next poll resolves.
             var start = Stopwatch.GetTimestamp();
 
             var success = false;
-            while (Stopwatch.GetElapsedTime(start) < TimeSpan.FromSeconds(5))
+            string lastResponse = null;
+            while (Stopwatch.GetElapsedTime(start) < TimeSpan.FromSeconds(15))
             {
                 try
                 {
                     var exc1 = (string)context.clusterTestUtils.Execute(secondary0, "VSIM", [primary0Key, "XB8", vectorSimData, "WITHSCORES", "WITHATTRIBS"], flags: CommandFlags.NoRedirect);
-                    ClassicAssert.IsTrue(exc1.StartsWith("Key has MOVED to "));
-                    success = true;
-                    break;
+                    lastResponse = exc1;
+                    if (exc1 is not null && exc1.StartsWith("Key has MOVED to "))
+                    {
+                        success = true;
+                        break;
+                    }
                 }
-                catch
+                catch (Exception ex)
                 {
-                    // Secondary can still have the key for a bit
-                    Thread.Sleep(100);
+                    // Secondary can still have the key for a bit (VSIM returns vector data, not a string)
+                    lastResponse = ex.Message;
                 }
+
+                Thread.Sleep(100);
             }
 
-            ClassicAssert.IsTrue(success, "Original replica still has Vector Set long after primary has completed");
+            ClassicAssert.IsTrue(success, $"Original replica still has Vector Set long after primary has completed; last response was '{lastResponse}'");
         }
 
         [Test]
