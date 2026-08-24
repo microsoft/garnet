@@ -3,6 +3,7 @@
 
 using System;
 using System.Buffers;
+using System.Buffers.Binary;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
@@ -171,9 +172,31 @@ namespace Garnet.server
                 AdvanceTo(i);
 
                 ReadOnlySpan<byte> keyBytes = new(currentPtr + 4, currentLen);
-                Debug.Assert((keyBytes.Length % 4) == 0, "Unaligned key provided by DiskANN");
-
                 key = new(NamespaceBytes, keyBytes);
+
+                AssertKeyAlignment(in key);
+
+                [Conditional("DEBUG")]
+                static void AssertKeyAlignment(in VectorElementKey key)
+                {
+                    ulong context;
+                    if(key.NamespaceBytes.Length == 1)
+                    {
+                        context = key.NamespaceBytes[0];
+                    }
+                    else if(key.NamespaceBytes.Length ==4)
+                    {
+                        context = BinaryPrimitives.ReadUInt32LittleEndian(key.NamespaceBytes);
+                    }
+                    else
+                    {
+                        Debug.Fail("Unexpected namespace length");
+                        context = 0;
+                    }
+
+                    var keyLength = key.KeyBytes.Length;
+                    Debug.Assert(((context & (ContextStep - 1)) is DiskANNService.InternalIdMap or DiskANNService.Attributes) || (keyLength % 4) == 0, "Unaligned key provided by DiskANN");
+                }
             }
 
             /// <inheritdoc/>
