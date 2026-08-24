@@ -488,7 +488,7 @@ namespace Garnet.test
                     NativeDiskANNMethods.search_element(
                         Context, rawIndex,
                         (nint)Unsafe.AsPointer(ref MemoryMarshal.GetReference(id)), (nuint)id.Length,
-                        1f, outputDistances.Length, // SearchExplorationFactor must >= Count
+                        1f, (uint)outputDistances.Length, // SearchExplorationFactor must >= Count
                         (nint)Unsafe.AsPointer(ref MemoryMarshal.GetReference(filter)), (nuint)filter.Length,
                         0,
                         (nint)Unsafe.AsPointer(ref MemoryMarshal.GetReference(outputIds)), (nuint)outputIds.Length,

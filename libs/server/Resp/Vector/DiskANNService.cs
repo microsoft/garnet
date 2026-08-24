@@ -203,7 +203,7 @@ namespace Garnet.server
                     (nuint)output_ids_len,
                     (nint)output_distances,
                     (nuint)output_distances_len,
-                    beamWidth,
+                    (uint)beamWidth,
                     continuationAddr
                 );
             }
@@ -283,7 +283,7 @@ namespace Garnet.server
                     (nint)id_data,
                     (nuint)id_len,
                     delta,
-                    searchExplorationFactor,
+                    (uint)searchExplorationFactor,
                     (nint)filter_data,
                     (nuint)filter_len,
                     (nuint)maxFilteringEffort,
@@ -291,7 +291,7 @@ namespace Garnet.server
                     (nuint)output_ids_len,
                     (nint)output_distances,
                     (nuint)output_distances_len,
-                    beamWidth,
+                    (uint)beamWidth,
                     continuationAddr
                 );
             }
