@@ -517,7 +517,7 @@ namespace Garnet.server
             nuint output_ids_len,
             nint output_distances,
             nuint output_distances_len,
-            int beam_width,
+            uint beam_width,
             nint continuation
         );
 
@@ -528,7 +528,7 @@ namespace Garnet.server
             nint id_data,
             nuint id_len,
             float delta,
-            int search_exploration_factor,
+            uint search_exploration_factor,
             nint filter_data,
             nuint filter_len,
             nuint max_filtering_effort,
@@ -536,7 +536,7 @@ namespace Garnet.server
             nuint output_ids_len,
             nint output_distances,
             nuint output_distances_len,
-            int beam_width,
+            uint beam_width,
             nint continuation
         );
 
