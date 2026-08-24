@@ -401,6 +401,9 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc/>
+        public virtual bool TryCompleteMine() => TryComplete();
+
+        /// <inheritdoc/>
         public virtual long GetFileSize(int segment)
         {
             if (segmentSize > 0) return segmentSize;

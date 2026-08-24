@@ -202,6 +202,7 @@ namespace Garnet.server
             if (serverOptions.VectorSetReplayTaskCount < 0 || serverOptions.VectorSetReplayTaskCount > Environment.ProcessorCount)
                 throw new GarnetException($"VectorSetReplayTaskCount should be in range [0,{Environment.ProcessorCount}]!");
             var vectorSetReplayCount = serverOptions.VectorSetReplayTaskCount == 0 ? Environment.ProcessorCount : serverOptions.VectorSetReplayTaskCount;
+
             replicationReplayTasks = new Task[vectorSetReplayCount];
             for (var i = 0; i < replicationReplayTasks.Length; i++)
             {

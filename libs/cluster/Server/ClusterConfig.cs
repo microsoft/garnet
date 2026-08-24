@@ -1185,6 +1185,9 @@ namespace Garnet.cluster
                         // logger?.LogWarning("MergeReset: {senderConfig.LocalNodeIdShort} > {i} > {LocalNodeIdShort}", senderConfig.LocalNodeIdShort, i, LocalNodeIdShort);
                         newSlotMap[i]._workerId = RESERVED_WORKER_ID;
                         newSlotMap[i]._state = SlotState.OFFLINE;
+
+                        // Resetting a slot modifies the map, so the merged config must be kept.
+                        updated = true;
                     }
                     continue;
                 }
@@ -1207,7 +1210,8 @@ namespace Garnet.cluster
 
                 // Update happened only if workerId or state changed
                 // NOTE: this avoids message flooding when sender epoch equals zero
-                updated = newSlotMap[i]._workerId != assignToWorkerId || newSlotMap[i]._state != SlotState.STABLE;
+                // Accumulate across all slots, including resets handled above.
+                updated |= newSlotMap[i]._workerId != assignToWorkerId || newSlotMap[i]._state != SlotState.STABLE;
 
                 // Update ownership of node
                 newSlotMap[i]._workerId = assignToWorkerId;

@@ -48,6 +48,13 @@ namespace Garnet.client
         /// The receiver uses a state machine to track the in-progress stream.
         /// </summary>
         SerializedRangeIndexStream = 4,
+
+        /// <summary>
+        /// One chunk of a serialized <see cref="LogRecord"/> too large for a single send buffer. Written as
+        /// <c>[type][int chunkLength | ChunkedRecordConstants.ContinuationFlag][chunk bytes]</c>; the continuation flag is set on
+        /// every chunk except the last. The receiver accumulates chunks until the final one, then deserializes the reassembled record.
+        /// </summary>
+        ChunkedLogRecord = 5,
     }
 
     public sealed unsafe partial class GarnetClientSession : IServerHook, IMessageConsumer
@@ -156,6 +163,36 @@ namespace Garnet.client
 
             recordSpan.SerializeTo(curr, recordSpanSize);
             curr += recordSpanSize;
+            ++recordCount;
+            task = null;
+            return true;
+        }
+
+        /// <summary>
+        /// Try to write one chunk of a <see cref="MigrationRecordSpanType.ChunkedLogRecord"/> (a record too large for a single
+        /// send buffer) directly to the client buffer, framed as <c>[type][int chunkLength | ContinuationFlag][chunk bytes]</c>.
+        /// <paramref name="moreChunksFollow"/> sets the continuation flag (clear on the last chunk of the record). Like
+        /// <see cref="TryWriteRecordSpan"/>, on insufficient space it flushes and returns false with the send task; the caller
+        /// waits for it and retries the same chunk.
+        /// </summary>
+        public bool TryWriteChunkedRecordSpan(ReadOnlySpan<byte> chunk, bool moreChunksFollow, out Task<string> task)
+        {
+            // [type][int chunkLength|flag][chunk bytes], plus reserve for the batch-trailing \r\n added before sending.
+            var totalLen = 1 + sizeof(int) + chunk.Length + 2;
+            if (totalLen > (int)(end - curr))
+            {
+                task = SendAndResetIterationBuffer();
+                return false;
+            }
+
+            *curr = (byte)MigrationRecordSpanType.ChunkedLogRecord;
+            curr++;
+
+            *(int*)curr = chunk.Length | (moreChunksFollow ? ChunkedRecordConstants.ContinuationFlag : 0);
+            curr += sizeof(int);
+
+            chunk.CopyTo(new Span<byte>(curr, chunk.Length));
+            curr += chunk.Length;
             ++recordCount;
             task = null;
             return true;
