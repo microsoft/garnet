@@ -59,13 +59,26 @@ namespace Garnet.server
             {
                 if (input.Callback != 0)
                 {
-                    var callback = (delegate* unmanaged[Cdecl]<int, nint, nint, nuint, void>)input.Callback;
+                    Debug.Assert(BitConverter.IsLittleEndian, "Code assumes little-endian for everything for now");
+                    var isAttribute = (srcLogRecord.NamespaceBytes[0] & (VectorManager.ContextStep - 1)) == DiskANNService.Attributes;
 
                     var dataPtr = (nint)Unsafe.AsPointer(ref MemoryMarshal.GetReference(value));
                     var dataLen = (nuint)value.Length;
 
                     AssertAlignment(in srcLogRecord, dataPtr);
-                    callback(input.Index, input.CallbackContext, dataPtr, dataLen);
+
+                    if (isAttribute)
+                    {
+                        // Attribute reads _may_ reverse p/invoke back into Garnet for filtering, so DO NOT suppress GC transition
+                        var callback = (delegate* unmanaged[Cdecl]<int, nint, nint, nuint, void>)input.Callback;
+                        callback(input.Index, input.CallbackContext, dataPtr, dataLen);
+                    }
+                    else
+                    {
+                        // All other read types are entirely serviced on the DiskANN side, so suppress GC transition
+                        var callback = (delegate* unmanaged[Cdecl, SuppressGCTransition]<int, nint, nint, nuint, void>)input.Callback;
+                        callback(input.Index, input.CallbackContext, dataPtr, dataLen);
+                    }
 
                     return true;
                 }
