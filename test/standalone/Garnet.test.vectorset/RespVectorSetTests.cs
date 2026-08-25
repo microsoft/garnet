@@ -1904,7 +1904,7 @@ namespace Garnet.test
 
                 ReadOnlySpan<byte> namespaceBytes = stackalloc byte[1] { 8 };
 
-                var key0 = "hello"u8.ToArray();
+                var key0 = "fizz"u8.ToArray();
                 var data =
                     MemoryMarshal.Cast<int, byte>([key0.Length])
                         .ToArray()
@@ -1974,14 +1974,14 @@ namespace Garnet.test
 
                 ReadOnlySpan<byte> namespaceBytes = stackalloc byte[1] { 4 };
 
-                var key0 = "hello"u8.ToArray();
+                var key0 = "hello012"u8.ToArray();
                 var key1 = "fizz"u8.ToArray();
-                var key2 = "the quick brown fox jumps over the lazy dog"u8.ToArray();
+                var key2 = "the quick brown fox jumps over the lazy dog."u8.ToArray();
                 var key3 = "CF29E323-E376-4BC4-AB63-FCFD371EB445"u8.ToArray();
                 var key4 = Array.Empty<byte>();
-                var key5 = new byte[] { 1 };
-                var key6 = new byte[] { 2, 3 };
-                var key7 = new byte[] { 4, 5, 6 };
+                var key5 = new byte[] { 1, 2, 3, 4 };
+                var key6 = new byte[] { 2, 3, 4, 5, 6, 7, 8, 9 };
+                var key7 = new byte[] { 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15 };
                 var data =
                     MemoryMarshal.Cast<int, byte>([key0.Length])
                         .ToArray()
@@ -2107,14 +2107,14 @@ namespace Garnet.test
 
                 ReadOnlySpan<byte> namespaceBytes = stackalloc byte[1] { 2 };
 
-                var key0 = "hello"u8.ToArray();
+                var key0 = "hello012"u8.ToArray();
                 var key1 = "fizz"u8.ToArray();
-                var key2 = "the quick brown fox jumps over the lazy dog"u8.ToArray();
+                var key2 = "the quick brown fox jumps over the lazy dog."u8.ToArray();
                 var key3 = "CF29E323-E376-4BC4-AB63-FCFD371EB445"u8.ToArray();
                 var key4 = Array.Empty<byte>();
-                var key5 = new byte[] { 1 };
-                var key6 = new byte[] { 2, 3 };
-                var key7 = new byte[] { 4, 5, 6 };
+                var key5 = new byte[] { 1, 2, 3, 4 };
+                var key6 = new byte[] { 2, 3, 4, 5, 6, 7, 8, 9 };
+                var key7 = new byte[] { 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15 };
                 var data =
                     MemoryMarshal.Cast<int, byte>([key0.Length])
                         .ToArray()
