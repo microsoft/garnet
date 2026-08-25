@@ -4295,6 +4295,102 @@ namespace Garnet.test
             ClassicAssert.IsNull(res8);
         }
 
+        [Test]
+        public async Task ContinueSearchAsync()
+        {
+            // Super long element names require continuations since our buffers can't hold the whole result
+
+            const string Key = nameof(ContinueSearchAsync);
+            const string ElementPrefix = "VeryVeryLongExternalIdThatWillForceSomeExtraContinueSearchCalls";
+            const int VectorCount = 1_000;
+            const int ResultCount = 50;
+
+            await using var redis = await ConnectionMultiplexer.ConnectAsync(TestUtils.GetConfig());
+            var db = redis.GetDatabase();
+
+            for (var i = 0; i < VectorCount; i++)
+            {
+                var json = $"{{\"PrettyLongFieldName\":{i}, \"AnotherPrettyLongFieldName\":{i}, \"YetAnotherPrettyLongFieldName\":{i}, \"Id\":{i}}}";
+                var addRes = await db.VectorSetAddAsync(Key, VectorSetAddRequest.Member($"{ElementPrefix}_{i}", new float[] { 1, 2, 3 }, json)).ConfigureAwait(false);
+                ClassicAssert.True(addRes);
+            }
+
+            // vector search, no attributes
+            {
+                var uniqueRes = new HashSet<byte[]>(ByteArrayComparer.Instance);
+                var simSearch = VectorSetSimilaritySearchRequest.ByVector(new float[] { 1, 2, 3 });
+                simSearch.Count = ResultCount;
+                using var simRes = await db.VectorSetSimilaritySearchAsync(Key, simSearch).ConfigureAwait(false);
+                ClassicAssert.AreEqual(ResultCount, simRes.Length);
+                foreach (var res in simRes.Span)
+                {
+                    ClassicAssert.IsTrue(((string)res.Member).StartsWith(ElementPrefix));
+                    ClassicAssert.IsTrue(uniqueRes.Add((byte[])res.Member));
+                }
+            }
+
+            // vector search, attributes
+            {
+                var uniqueRes = new HashSet<byte[]>(ByteArrayComparer.Instance);
+                var simSearchWithAttrs = VectorSetSimilaritySearchRequest.ByVector(new float[] { 1, 2, 3 });
+                simSearchWithAttrs.Count = ResultCount;
+                simSearchWithAttrs.WithAttributes = true;
+                using var simWithAttrsRes = await db.VectorSetSimilaritySearchAsync(Key, simSearchWithAttrs).ConfigureAwait(false);
+                ClassicAssert.AreEqual(ResultCount, simWithAttrsRes.Length);
+                foreach (var res in simWithAttrsRes.Span)
+                {
+                    ClassicAssert.IsTrue(((string)res.Member).StartsWith(ElementPrefix));
+
+                    var actualJson = res.AttributesJson;
+                    ClassicAssert.IsNotNull(actualJson);
+                    var id = ((string)res.Member).Substring(ElementPrefix.Length + 1);
+
+                    var expectedJson = $"{{\"PrettyLongFieldName\":{id}, \"AnotherPrettyLongFieldName\":{id}, \"YetAnotherPrettyLongFieldName\":{id}, \"Id\":{id}}}";
+                    ClassicAssert.AreEqual(expectedJson, actualJson);
+
+                    ClassicAssert.IsTrue(uniqueRes.Add((byte[])res.Member));
+                }
+            }
+
+            // element search, no attributes
+            {
+                var uniqueRes = new HashSet<byte[]>(ByteArrayComparer.Instance);
+                var simElementSearch = VectorSetSimilaritySearchRequest.ByMember($"{ElementPrefix}_{0}");
+                simElementSearch.Count = ResultCount;
+                using var simElementRes = await db.VectorSetSimilaritySearchAsync(Key, simElementSearch).ConfigureAwait(false);
+                ClassicAssert.AreEqual(ResultCount, simElementRes.Length);
+                foreach (var res in simElementRes.Span)
+                {
+                    ClassicAssert.IsTrue(((string)res.Member).StartsWith(ElementPrefix));
+
+                    ClassicAssert.IsTrue(uniqueRes.Add((byte[])res.Member));
+                }
+            }
+
+            // element search, attributes
+            {
+                var uniqueRes = new HashSet<byte[]>(ByteArrayComparer.Instance);
+                var simElementSearchWithAttrs = VectorSetSimilaritySearchRequest.ByMember($"{ElementPrefix}_{0}");
+                simElementSearchWithAttrs.Count = ResultCount;
+                simElementSearchWithAttrs.WithAttributes = true;
+                using var simElementWithAttrsRes = await db.VectorSetSimilaritySearchAsync(Key, simElementSearchWithAttrs).ConfigureAwait(false);
+                ClassicAssert.AreEqual(ResultCount, simElementWithAttrsRes.Length);
+                foreach (var res in simElementWithAttrsRes.Span)
+                {
+                    ClassicAssert.IsTrue(((string)res.Member).StartsWith(ElementPrefix));
+
+                    var actualJson = res.AttributesJson;
+                    ClassicAssert.IsNotNull(actualJson);
+                    var id = ((string)res.Member).Substring(ElementPrefix.Length + 1);
+
+                    var expectedJson = $"{{\"PrettyLongFieldName\":{id}, \"AnotherPrettyLongFieldName\":{id}, \"YetAnotherPrettyLongFieldName\":{id}, \"Id\":{id}}}";
+                    ClassicAssert.AreEqual(expectedJson, actualJson);
+
+                    ClassicAssert.IsTrue(uniqueRes.Add((byte[])res.Member));
+                }
+            }
+        }
+
         /// <summary>
         /// Create a new GarnetServer instance with common parameters.
         /// </summary>
