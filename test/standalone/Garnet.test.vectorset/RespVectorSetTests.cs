@@ -4451,6 +4451,72 @@ namespace Garnet.test
             }
         }
 
+        [Test]
+        public async Task VRANDMEMBERAsync()
+        {
+            const string Key = nameof(VRANDMEMBERAsync);
+            const string ElementPrefix = "element_";
+            const int VectorCount = 20;
+
+            await using var redis = await ConnectionMultiplexer.ConnectAsync(TestUtils.GetConfig());
+            var db = redis.GetDatabase();
+
+            var actualMembers = new HashSet<byte[]>(ByteArrayComparer.Instance);
+            for (var i = 0; i < VectorCount; i++)
+            {
+                var elementKey = (RedisValue)$"{ElementPrefix}_{i}";
+                var addRes = await db.VectorSetAddAsync(Key, VectorSetAddRequest.Member(elementKey, new float[] { 1, 2, 3 })).ConfigureAwait(false);
+                ClassicAssert.True(addRes);
+
+                ClassicAssert.True(actualMembers.Add((byte[])elementKey));
+            }
+
+            // one random element
+            var res0 = await db.VectorSetRandomMemberAsync(Key).ConfigureAwait(false);
+            Assert.IsTrue(actualMembers.Contains((byte[])res0));
+
+            // one random element, on null key
+            var res1 = await db.VectorSetRandomMemberAsync("foo").ConfigureAwait(false);
+            Assert.IsTrue(res1.IsNull);
+
+            // N < Count random elements without repeats
+            var res2 = await db.VectorSetRandomMembersAsync(Key, VectorCount / 2).ConfigureAwait(false);
+            Assert.AreEqual(VectorCount / 2, res2.Length);
+            Assert.AreEqual(VectorCount / 2, res2.Select(static t => (byte[])t).Distinct(ByteArrayComparer.Instance).Count());
+            Assert.IsTrue(res2.Select(static t => (byte[])t).All(t => actualMembers.Contains(t)));
+
+            // N = Count random elements without repeats
+            var res3 = await db.VectorSetRandomMembersAsync(Key, VectorCount).ConfigureAwait(false);
+            Assert.AreEqual(VectorCount, res3.Length);
+            Assert.AreEqual(VectorCount, res3.Select(static t => (byte[])t).Distinct(ByteArrayComparer.Instance).Count());
+            Assert.IsTrue(res3.Select(static t => (byte[])t).All(t => actualMembers.Contains(t)));
+
+            // N > Count random elements without repeats
+            var res4 = await db.VectorSetRandomMembersAsync(Key, VectorCount * 2).ConfigureAwait(false);
+            Assert.AreEqual(VectorCount, res4.Length);
+            Assert.AreEqual(VectorCount, res4.Select(static t => (byte[])t).Distinct(ByteArrayComparer.Instance).Count());
+            Assert.IsTrue(res4.Select(static t => (byte[])t).All(t => actualMembers.Contains(t)));
+
+            // N < Count random elements, allow repeats
+            var res5 = await db.VectorSetRandomMembersAsync(Key, -VectorCount / 2).ConfigureAwait(false);
+            Assert.AreEqual(VectorCount / 2, res5.Length);
+            Assert.IsTrue(res5.Select(static t => (byte[])t).All(t => actualMembers.Contains(t)));
+
+            // N = Count random elements, allow repeats
+            var res6 = await db.VectorSetRandomMembersAsync(Key, -VectorCount).ConfigureAwait(false);
+            Assert.AreEqual(VectorCount, res6.Length);
+            Assert.IsTrue(res6.Select(static t => (byte[])t).All(t => actualMembers.Contains(t)));
+
+            // N > Count random elements, allow repeats
+            var res7 = await db.VectorSetRandomMembersAsync(Key, -VectorCount * 2).ConfigureAwait(false);
+            Assert.AreEqual(2 * VectorCount, res7.Length);
+            Assert.IsTrue(res7.Select(static t => (byte[])t).All(t => actualMembers.Contains(t)));
+
+            // N random element, on null key
+            var res8 = await db.VectorSetRandomMembersAsync("foo", VectorCount).ConfigureAwait(false);
+            Assert.AreEqual(0, res8.Length);
+        }
+
         /// <summary>
         /// Create a new GarnetServer instance with common parameters.
         /// </summary>

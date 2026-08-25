@@ -1588,6 +1588,7 @@ namespace Garnet.server
                     }
 
                     remainingCount = newRemainingCount;
+                    remainingIds = remainingIds[validIdsLength..];
 
                     // Grow size of output buffer to hold more results
                     if (remainingIds.Length < (remainingCount * MinimumSpacePerId))

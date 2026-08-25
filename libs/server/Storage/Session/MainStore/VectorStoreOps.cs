@@ -544,7 +544,7 @@ namespace Garnet.server
                     return status;
                 }
 
-                var result = vectorManager.RandomMembers(key, Math.Abs(count), allowDuplicates: count < 0, ref idResults, out actualCount);
+                var result = vectorManager.RandomMembers(indexSpan, Math.Abs(count), allowDuplicates: count < 0, ref idResults, out actualCount);
                 return result == VectorManagerResult.OK ? GarnetStatus.OK : GarnetStatus.NOTFOUND;
             }
         }

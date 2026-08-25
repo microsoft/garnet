@@ -1801,7 +1801,6 @@ namespace Garnet.server
             var idResult = SpanByteAndMemory.FromPinnedSpan(idSpace);
             try
             {
-
                 var res = storageApi.VectorSetRandomMembers(key, count, ref idResult, out var actualCount);
 
                 switch (res)
@@ -1822,17 +1821,37 @@ namespace Garnet.server
 
                     case GarnetStatus.OK:
                         {
-                            WriteArrayLength(actualCount);
-                            var remainingIds = idResult.ReadOnlySpan;
-
-                            while (!remainingIds.IsEmpty)
+                            if (parseState.Count == 1)
                             {
-                                var idLen = BinaryPrimitives.ReadInt32LittleEndian(remainingIds);
-                                var id = remainingIds.Slice(sizeof(int), idLen);
+                                // No COUNT specified, so write a bulk string if we have any results
 
-                                WriteBulkString(id);
+                                if (actualCount == 0)
+                                {
+                                    WriteNull();
+                                }
+                                else
+                                {
+                                    var idLen = BinaryPrimitives.ReadInt32LittleEndian(idResult.ReadOnlySpan);
+                                    var id = idResult.ReadOnlySpan.Slice(sizeof(int), idLen);
 
-                                remainingIds = remainingIds[(sizeof(int) + idLen)..];
+                                    WriteBulkString(id);
+                                }
+                            }
+                            else
+                            {
+                                // With COUNT we always write an array
+                                WriteArrayLength(actualCount);
+                                var remainingIds = idResult.ReadOnlySpan;
+
+                                while (!remainingIds.IsEmpty)
+                                {
+                                    var idLen = BinaryPrimitives.ReadInt32LittleEndian(remainingIds);
+                                    var id = remainingIds.Slice(sizeof(int), idLen);
+
+                                    WriteBulkString(id);
+
+                                    remainingIds = remainingIds[(sizeof(int) + idLen)..];
+                                }
                             }
                         }
                         break;
