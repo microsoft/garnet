@@ -1241,8 +1241,19 @@ namespace Garnet.server
         {
             AssertHaveStorageSession();
             ReadIndex(indexValue, out var context, out _, out _, out _, out _, out _, out _, out _, out _);
-            var found = ReadSizeUnknown(context | DiskANNService.Attributes, element, ref outputAttributes);
-            return found ? VectorManagerResult.OK : VectorManagerResult.MissingElement;
+
+            Span<byte> internalId = stackalloc byte[sizeof(int)];
+            var internalIdBytes = SpanByteAndMemory.FromPinnedSpan(internalId);
+            var foundInternalId = ReadSizeUnknown(context | DiskANNService.InternalIdMap, element, ref internalIdBytes);
+
+            if (!foundInternalId)
+            {
+                internalIdBytes.Dispose();
+                return VectorManagerResult.MissingElement;
+            }
+
+            var foundAttribute = ReadSizeUnknown(context | DiskANNService.Attributes, internalIdBytes.ReadOnlySpan, ref outputAttributes);
+            return foundAttribute ? VectorManagerResult.OK : VectorManagerResult.MissingElement;
         }
 
         /// <summary>
@@ -1262,6 +1273,9 @@ namespace Garnet.server
             Span<byte> attributeFull = stackalloc byte[32];
             var attributeMem = SpanByteAndMemory.FromPinnedSpan(attributeFull);
 
+            Span<byte> internalId = stackalloc byte[sizeof(int)];
+            var internalIdMem = SpanByteAndMemory.FromPinnedSpan(internalId);
+
             try
             {
                 Span<byte> idWithNamespace = stackalloc byte[128];
@@ -1276,10 +1290,10 @@ namespace Garnet.server
                         throw new GarnetException($"Malformed ids, {idLen} + {sizeof(int)} > {remainingIds.Length}");
                     }
 
-                    var id = remainingIds.Slice(sizeof(int), idLen);
+                    var externalId = remainingIds.Slice(sizeof(int), idLen);
 
                     // Make sure we've got enough space to query the element
-                    if (id.Length + 1 > idWithNamespace.Length)
+                    if (externalId.Length + 1 > idWithNamespace.Length)
                     {
                         if (idWithNamespaceArr != null)
                         {
@@ -1287,7 +1301,7 @@ namespace Garnet.server
                             ArrayPool<byte>.Shared.Return(idWithNamespaceArr);
                         }
 
-                        idWithNamespaceArr = ArrayPool<byte>.Shared.Rent(id.Length + 1);
+                        idWithNamespaceArr = ArrayPool<byte>.Shared.Rent(externalId.Length + 1);
                         idPin = GCHandle.Alloc(idWithNamespaceArr, GCHandleType.Pinned);
                         idWithNamespace = idWithNamespaceArr;
                     }
@@ -1301,10 +1315,12 @@ namespace Garnet.server
                         attributeMem.Length = attributeMem.SpanByte.Length;
                     }
 
-                    var found = ReadSizeUnknown(context | DiskANNService.Attributes, id, ref attributeMem);
+                    var foundInternalId = ReadSizeUnknown(context | DiskANNService.InternalIdMap, internalId, ref internalIdMem);
+
+                    var foundAttr = foundInternalId && ReadSizeUnknown(context | DiskANNService.Attributes, internalIdMem.Span, ref attributeMem);
 
                     // Copy attribute into output buffer, length prefixed, resizing as necessary
-                    var neededSpace = 4 + (found ? attributeMem.Length : 0);
+                    var neededSpace = 4 + (foundAttr ? attributeMem.Length : 0);
 
                     var destSpan = attributes.Span[attributesNextIx..];
                     if (destSpan.Length < neededSpace)
@@ -1336,7 +1352,8 @@ namespace Garnet.server
                     ArrayPool<byte>.Shared.Return(idWithNamespaceArr);
                 }
 
-                attributeMem.Memory?.Dispose();
+                attributeMem.Dispose();
+                internalIdMem.Dispose();
             }
         }
 
