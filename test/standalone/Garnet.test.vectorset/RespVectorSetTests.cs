@@ -4391,6 +4391,66 @@ namespace Garnet.test
             }
         }
 
+        [Test]
+        public async Task VLINKSAsync()
+        {
+            const string Key = nameof(VLINKSAsync);
+            const string ElementPrefix = "foo";
+            const int VectorCount = 100;
+
+            await using var redis = await ConnectionMultiplexer.ConnectAsync(TestUtils.GetConfig());
+            var db = redis.GetDatabase();
+
+            for (var i = 0; i < VectorCount; i++)
+            {
+                var json = $"{{\"PrettyLongFieldName\":{i}, \"AnotherPrettyLongFieldName\":{i}, \"YetAnotherPrettyLongFieldName\":{i}, \"Id\":{i}}}";
+                var addRes = await db.VectorSetAddAsync(Key, VectorSetAddRequest.Member($"{ElementPrefix}_{i}", new float[] { 1, 2, 3 }, json)).ConfigureAwait(false);
+                ClassicAssert.True(addRes);
+            }
+
+            using var neighborsRes = await db.VectorSetGetLinksAsync(Key, $"{ElementPrefix}_0").ConfigureAwait(false);
+            ClassicAssert.AreEqual(15, neighborsRes.Length);
+
+            var uniqueRes = new HashSet<byte[]>(ByteArrayComparer.Instance);
+            foreach (var res in neighborsRes.Span)
+            {
+                ClassicAssert.IsTrue(((string)res).StartsWith(ElementPrefix));
+
+                ClassicAssert.IsTrue(uniqueRes.Add((byte[])res));
+            }
+        }
+
+        [Test]
+        public async Task VLINKSContinueSearchAsync()
+        {
+            // Super long element names require continuations since our buffers can't hold the whole result
+
+            const string Key = nameof(VLINKSAsync);
+            const string ElementPrefix = "SuchALongElementPrefixNoSeriouslySoLongYouShouldWorryAboutTheSizeOfYourBuffersForAnyReasonablMYouMightChooseForYourVectorSetAndItWouldBeVerySillyToActuallyUseSuchAPrefixInProductionButItMustWorkOrWeAreViolatingTheBehaviorSpecifiedByRedisFooBarFizzBuzzHelloWorldYadaYadaYada";
+            const int VectorCount = 100;
+
+            await using var redis = await ConnectionMultiplexer.ConnectAsync(TestUtils.GetConfig());
+            var db = redis.GetDatabase();
+
+            for (var i = 0; i < VectorCount; i++)
+            {
+                var json = $"{{\"PrettyLongFieldName\":{i}, \"AnotherPrettyLongFieldName\":{i}, \"YetAnotherPrettyLongFieldName\":{i}, \"Id\":{i}}}";
+                var addRes = await db.VectorSetAddAsync(Key, VectorSetAddRequest.Member($"{ElementPrefix}_{i}", new float[] { 1, 2, 3 }, json)).ConfigureAwait(false);
+                ClassicAssert.True(addRes);
+            }
+
+            using var neighborsRes = await db.VectorSetGetLinksAsync(Key, $"{ElementPrefix}_0").ConfigureAwait(false);
+            ClassicAssert.AreEqual(15, neighborsRes.Length);
+
+            var uniqueRes = new HashSet<byte[]>(ByteArrayComparer.Instance);
+            foreach (var res in neighborsRes.Span)
+            {
+                ClassicAssert.IsTrue(((string)res).StartsWith(ElementPrefix));
+
+                ClassicAssert.IsTrue(uniqueRes.Add((byte[])res));
+            }
+        }
+
         /// <summary>
         /// Create a new GarnetServer instance with common parameters.
         /// </summary>
