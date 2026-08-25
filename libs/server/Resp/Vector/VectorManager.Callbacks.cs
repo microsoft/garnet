@@ -384,6 +384,8 @@ namespace Garnet.server
                 CompletePending(ref status, ref outputSpan, ref ctx);
             }
 
+            RestoreKeyLengthPrefix(keyData, keyLength);
+
             if (status.IsCompletedSuccessfully)
             {
                 return 1;
@@ -405,6 +407,8 @@ namespace Garnet.server
 
             var status = ctx.Delete(keyWithNamespace);
             Debug.Assert(!status.IsPending, "Deletes should never go async");
+
+            RestoreKeyLengthPrefix(keyData, keyLength);
 
             if (status.IsCompletedSuccessfully && status.Found)
             {
@@ -437,6 +441,8 @@ namespace Garnet.server
 
                 CompletePending(ref status, ref ignored, ref ctx);
             }
+
+            RestoreKeyLengthPrefix(keyData, keyLength);
 
             if (status.IsCompletedSuccessfully)
             {
@@ -502,8 +508,6 @@ namespace Garnet.server
 
         /// <summary>
         /// Get a <see cref="SpanByte"/> which covers (keyData, keyLength), but has a namespace component based on <paramref name="context"/>.
-        /// 
-        /// Attempts to do this in place.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static unsafe VectorElementKey MakeVectorElementKey(ulong context, nint keyData, nuint keyLength)
@@ -515,6 +519,20 @@ namespace Garnet.server
             ReadOnlySpan<byte> keyBytes = new((byte*)keyData, (int)keyLength);
 
             return new(nsBytes, keyBytes);
+        }
+
+        /// <summary>
+        /// Undoes clobbering performed by <see cref="MakeVectorElementKey(ulong, nint, nuint)"/>.
+        /// 
+        /// DiskANN requires we leave any passed data how we found it.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal static unsafe void RestoreKeyLengthPrefix(nint keyData, nuint keyLength)
+        {
+            // DiskANN gives us these 4-bytes before every key
+            Span<byte> nsBytes = new(((byte*)keyData) - sizeof(uint), sizeof(uint));
+
+            BinaryPrimitives.WriteInt32LittleEndian(nsBytes, (int)keyLength);
         }
     }
 }
