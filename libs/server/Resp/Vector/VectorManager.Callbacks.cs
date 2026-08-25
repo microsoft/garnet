@@ -20,6 +20,14 @@ namespace Garnet.server
     public sealed partial class VectorManager
     {
         /// <summary>
+        /// Delegate type for calls to <see cref="FilterCallbackManaged(ulong, nint, nuint)"/>.
+        /// 
+        /// Declares Cdecl calling convention for function pointer compatibility.
+        /// </summary>
+        [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+        private delegate byte FilterCallbackDelegate(ulong context, nint attributeData, nuint attributeLength);
+
+        /// <summary>
         /// Per-record overhead (RecordInfo + key + length prefixes) added to the value size when computing the
         /// initial disk-read size, so the whole record lands in one IO. Generous; the read is sector-aligned downstream.
         /// </summary>
@@ -246,8 +254,10 @@ namespace Garnet.server
         private unsafe delegate* unmanaged[Cdecl]<ulong, nint, nuint, nint, nuint, byte> WriteCallbackPtr { get; } = &WriteCallbackUnmanaged;
         private unsafe delegate* unmanaged[Cdecl]<ulong, nint, nuint, byte> DeleteCallbackPtr { get; } = &DeleteCallbackUnmanaged;
         private unsafe delegate* unmanaged[Cdecl]<ulong, nint, nuint, nuint, nint, nint, byte> ReadModifyWriteCallbackPtr { get; } = &ReadModifyWriteCallbackUnmanaged;
-        private unsafe delegate* unmanaged[Cdecl]<ulong, nint, nuint, byte> FilterCallbackPtr { get; } = &FilterCallbackUnmanaged;
         private unsafe delegate* unmanaged[Cdecl]<ulong, nint, nuint, void> LogCallbackPtr { get; } = &LogCallbackUnmanaged;
+
+        private static readonly FilterCallbackDelegate FilterCallbackObject = FilterCallbackManaged;
+        private unsafe delegate* unmanaged[Cdecl]<ulong, nint, nuint, byte> FilterCallbackPtr { get; } = (delegate* unmanaged[Cdecl]<ulong, nint, nuint, byte>)Marshal.GetFunctionPointerForDelegate(FilterCallbackObject);
 
         /// <summary>
         /// Used to thread the active <see cref="StorageSession"/> across p/invoke and reverse p/invoke boundaries into DiskANN.
@@ -454,9 +464,9 @@ namespace Garnet.server
             }
         }
 
-        [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
-        private static unsafe byte FilterCallbackUnmanaged(ulong context, nint valueData, nuint valueLength)
+        private static unsafe byte FilterCallbackManaged(ulong context, nint valueData, nuint valueLength)
         {
+            // Called from Reader methods indirectly, so must support managed callers
             return EvaluateCandidateFilter(context, new ReadOnlySpan<byte>((byte*)valueData, (int)valueLength));
         }
 

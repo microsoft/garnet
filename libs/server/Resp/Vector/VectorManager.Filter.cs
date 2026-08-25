@@ -231,7 +231,7 @@ namespace Garnet.server
 
         /// <summary>
         /// Thread-static state for the inline filter callback.
-        /// Set before the FFI call into Rust, read by <see cref="FilterCallbackUnmanaged"/>.
+        /// Set before the FFI call into Rust, read by <see cref="FilterCallbackManaged"/>.
         /// </summary>
         [ThreadStatic]
 #pragma warning disable CS8500 // InlineFilterState only contains unmanaged types or spans of pinned arrays, this is safe

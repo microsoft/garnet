@@ -59,13 +59,14 @@ namespace Garnet.server
             {
                 if (input.Callback != 0)
                 {
-                    var callback = (delegate* unmanaged[Cdecl, SuppressGCTransition]<int, nint, nint, nuint, void>)input.Callback;
+                    var callback = (delegate* unmanaged[Cdecl]<int, nint, nint, nuint, void>)input.Callback;
 
                     var dataPtr = (nint)Unsafe.AsPointer(ref MemoryMarshal.GetReference(value));
                     var dataLen = (nuint)value.Length;
 
                     AssertAlignment(in srcLogRecord, dataPtr);
                     callback(input.Index, input.CallbackContext, dataPtr, dataLen);
+
                     return true;
                 }
             }
