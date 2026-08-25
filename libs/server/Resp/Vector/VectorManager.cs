@@ -1265,9 +1265,6 @@ namespace Garnet.server
         {
             var remainingIds = ids.ReadOnlySpan;
 
-            GCHandle idPin = default;
-            byte[] idWithNamespaceArr = null;
-
             var attributesNextIx = 0;
 
             Span<byte> attributeFull = stackalloc byte[32];
@@ -1278,33 +1275,17 @@ namespace Garnet.server
 
             try
             {
-                Span<byte> idWithNamespace = stackalloc byte[128];
-
                 // TODO: we could scatter/gather this like MGET - doesn't matter when everything is in memory,
                 //       but if anything is on disk it'd help perf
                 for (var i = 0; i < numIds; i++)
                 {
-                    var idLen = BinaryPrimitives.ReadInt32LittleEndian(remainingIds);
-                    if (idLen + sizeof(int) > remainingIds.Length)
+                    var externalIdLen = BinaryPrimitives.ReadInt32LittleEndian(remainingIds);
+                    if (externalIdLen + sizeof(int) > remainingIds.Length)
                     {
-                        throw new GarnetException($"Malformed ids, {idLen} + {sizeof(int)} > {remainingIds.Length}");
+                        throw new GarnetException($"Malformed ids, {externalIdLen} + {sizeof(int)} > {remainingIds.Length}");
                     }
 
-                    var externalId = remainingIds.Slice(sizeof(int), idLen);
-
-                    // Make sure we've got enough space to query the element
-                    if (externalId.Length + 1 > idWithNamespace.Length)
-                    {
-                        if (idWithNamespaceArr != null)
-                        {
-                            idPin.Free();
-                            ArrayPool<byte>.Shared.Return(idWithNamespaceArr);
-                        }
-
-                        idWithNamespaceArr = ArrayPool<byte>.Shared.Rent(externalId.Length + 1);
-                        idPin = GCHandle.Alloc(idWithNamespaceArr, GCHandleType.Pinned);
-                        idWithNamespace = idWithNamespaceArr;
-                    }
+                    var externalId = remainingIds.Slice(sizeof(int), externalIdLen);
 
                     if (attributeMem.Memory != null)
                     {
@@ -1315,9 +1296,18 @@ namespace Garnet.server
                         attributeMem.Length = attributeMem.SpanByte.Length;
                     }
 
-                    var foundInternalId = ReadSizeUnknown(context | DiskANNService.InternalIdMap, internalId, ref internalIdMem);
+                    var foundInternalId = ReadSizeUnknown(context | DiskANNService.InternalIdMap, externalId, ref internalIdMem);
 
-                    var foundAttr = foundInternalId && ReadSizeUnknown(context | DiskANNService.Attributes, internalIdMem.Span, ref attributeMem);
+                    bool foundAttr;
+                    if (foundInternalId)
+                    {
+                        foundAttr = ReadSizeUnknown(context | DiskANNService.Attributes, internalIdMem.Span, ref attributeMem);
+                    }
+                    else
+                    {
+                        foundAttr = false;
+                        attributeMem.Length = 0;
+                    }
 
                     // Copy attribute into output buffer, length prefixed, resizing as necessary
                     var neededSpace = 4 + (foundAttr ? attributeMem.Length : 0);
@@ -1339,19 +1329,13 @@ namespace Garnet.server
 
                     attributesNextIx += neededSpace;
 
-                    remainingIds = remainingIds[(sizeof(int) + idLen)..];
+                    remainingIds = remainingIds[(sizeof(int) + externalIdLen)..];
                 }
 
                 attributes.Length = attributesNextIx;
             }
             finally
             {
-                if (idWithNamespaceArr != null)
-                {
-                    idPin.Free();
-                    ArrayPool<byte>.Shared.Return(idWithNamespaceArr);
-                }
-
                 attributeMem.Dispose();
                 internalIdMem.Dispose();
             }
