@@ -6,7 +6,8 @@ on:
     branches:
       - main
     paths:
-      - 'charts/*/Chart.yaml'
+      - 'charts/**'
+      - 'Version.props'
 
 permissions:
   contents: write
@@ -48,10 +49,16 @@ jobs:
           tar -xvf "${FILENAME}"
           sudo mv helm-docs /usr/local/bin
 
-      - name: Set helm chart appVersion from Version.props
+      - name: Verify helm chart version matches Version.props
         run: |
-          export VERSION_PROPS=$(awk -F'[<>]' '/VersionPrefix/{print $3}' Version.props | tr -d '\n')
-          sed -i -e 's#Version.props#"'${VERSION_PROPS}'"#g' charts/garnet/Chart.yaml
+          VERSION_PROPS=$(awk -F'[<>]' '/<VersionPrefix>/{print $3}' Version.props | tr -d '\n')
+          CHART_VERSION=$(awk '$1 == "version:" {print $2}' charts/garnet/Chart.yaml)
+          CHART_APP_VERSION=$(awk '$1 == "appVersion:" {print $2}' charts/garnet/Chart.yaml)
+
+          if [[ "${CHART_VERSION}" != "${VERSION_PROPS}" || "${CHART_APP_VERSION}" != "${VERSION_PROPS}" ]]; then
+            echo "Chart version (${CHART_VERSION}) and appVersion (${CHART_APP_VERSION}) must match Version.props (${VERSION_PROPS})"
+            exit 1
+          fi
 
       - name: Helm lint, helm-docs and helm package
         run: |
@@ -64,10 +71,6 @@ jobs:
             helm-docs --document-dependency-values --chart-search-root "${chart}"
             helm package "${chart}" --dependency-update --destination .cr-release-packages
           done
-
-      - name: Discard changes on the charts/garnet/Chart.yaml file
-        run: |
-          git checkout -- charts/garnet/Chart.yaml
 
       - name: Commit and Push to Branch (no PR)
         run: |
