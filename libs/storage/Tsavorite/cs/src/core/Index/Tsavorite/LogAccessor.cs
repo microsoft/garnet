@@ -231,6 +231,14 @@ namespace Tsavorite.core
             => allocatorBase.Scan(store: null, beginAddress, endAddress, scanBufferingMode, includeClosedRecords);
 
         /// <summary>
+        /// Clear checkpoint serialization cached by heap objects in the specified in-memory range.
+        /// </summary>
+        /// <param name="beginAddress">Inclusive beginning address.</param>
+        /// <param name="endAddress">Exclusive ending address.</param>
+        public void ClearSerializedObjectData(long beginAddress, long endAddress)
+            => allocatorBase.ClearSerializedObjectData(beginAddress, endAddress);
+
+        /// <summary>
         /// Push-scan the log given address range; returns all records with address less than endAddress
         /// </summary>
         /// <returns>True if Scan completed; false if Scan ended early due to one of the TScanIterator reader functions returning false</returns>
