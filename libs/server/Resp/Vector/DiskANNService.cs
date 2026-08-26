@@ -410,7 +410,7 @@ namespace Garnet.server
             var output_ids_len = (nuint)outputIds.Length;
 
             var output_distances_data = (nint)Unsafe.AsPointer(ref MemoryMarshal.GetReference(outputDistances));
-            var output_distances_len = (nuint)outputDistances.Length;
+            var output_distances_len = (nuint)outputDistances.Length / sizeof(float);
 
             newContinuation = 0;
             var newContinuationPtr = (nint)Unsafe.AsPointer(ref newContinuation);
