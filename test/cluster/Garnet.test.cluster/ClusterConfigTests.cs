@@ -354,5 +354,153 @@ namespace Garnet.test.cluster
             Assert.That(merged.GetNodeIdFromSlot(StaleSlot), Is.Not.EqualTo(senderId),
                 "stale attribution should be cleared");
         }
+
+        /// <summary>
+        /// Builds a replica whose slot map credits its own primary with <paramref name="slots"/>, which is what a
+        /// replica gossips in a healthy cluster, and returns it alongside the two node-ids involved.
+        /// </summary>
+        private static (ClusterConfig replica, string replicaId, string primaryId) CreateReplicaSender(
+            long primaryEpoch, long replicaEpoch, params int[] slots)
+        {
+            var primaryId = Generator.CreateHexId();
+            var replicaId = Generator.CreateHexId();
+
+            var primary = new ClusterConfig().InitializeLocalWorker(
+                primaryId, "127.0.0.1", ClusterTestContext.Port + 1,
+                primaryEpoch, Garnet.cluster.NodeRole.PRIMARY, null, "");
+            foreach (var slot in slots)
+                primary = primary.UpdateSlotState(slot, ClusterConfig.LOCAL_WORKER_ID, SlotState.STABLE);
+
+            // The replica learns the slots from its primary, so its own map has them STABLE under the primary.
+            var replica = new ClusterConfig()
+                .InitializeLocalWorker(
+                    replicaId, "127.0.0.1", ClusterTestContext.Port + 2,
+                    replicaEpoch, Garnet.cluster.NodeRole.REPLICA, primaryId, "")
+                .Merge(primary, []);
+
+            Assert.That(replica.GetNodeIdFromSlot((ushort)slots[0]), Is.EqualTo(primaryId),
+                "precondition: the replica's map should credit its primary with the slot");
+
+            return (replica, replicaId, primaryId);
+        }
+
+        /// <summary>
+        /// Creates a primary that knows the replica and its primary, with every supplied slot left unowned.
+        /// </summary>
+        private static ClusterConfig CreateReceiverAwareOf(ClusterConfig other, params int[] unownedSlots)
+        {
+            var receiver = new ClusterConfig()
+                .InitializeLocalWorker(
+                    Generator.CreateHexId(), "127.0.0.1", ClusterTestContext.Port + 3,
+                    configEpoch: 1, Garnet.cluster.NodeRole.PRIMARY, null, "")
+                .Merge(other, []);
+
+            // A node that just started with CleanClusterConfig, or one whose stale attribution was reset by
+            // MergeSlotMap, knows the other workers but holds the slot unowned.
+            foreach (var slot in unownedSlots)
+                receiver = receiver.UpdateSlotState(slot, ClusterConfig.RESERVED_WORKER_ID, SlotState.OFFLINE);
+
+            return receiver;
+        }
+
+        /// <summary>
+        /// A replica sender must not be credited with a slot the receiver holds unowned. Doing so is permanent:
+        /// the true owner is afterwards rejected by the config epoch comparison against the bogus owner.
+        /// Also guards the null dereference of workers[RESERVED_WORKER_ID].Nodeid fixed by #1435.
+        /// </summary>
+        [Test, Order(12)]
+        [Category("CLUSTER-CONFIG"), CancelAfter(1000)]
+        public void ClusterConfigMergeSlotMapReplicaSenderCannotClaimUnownedSlotTest()
+        {
+            const int UnownedSlot = 300;
+
+            // The replica's epoch exceeds its primary's, which is what makes a wrong assignment unrecoverable.
+            var (replica, replicaId, primaryId) = CreateReplicaSender(primaryEpoch: 10, replicaEpoch: 30, UnownedSlot);
+            var receiver = CreateReceiverAwareOf(replica, UnownedSlot);
+
+            Assert.That(receiver.GetWorkerIdFromSlot(UnownedSlot), Is.EqualTo(ClusterConfig.RESERVED_WORKER_ID),
+                "precondition: the receiver holds the slot unowned");
+
+            ClusterConfig merged = null;
+            Assert.DoesNotThrow(() => merged = receiver.Merge(replica, []),
+                "workers[RESERVED_WORKER_ID].Nodeid is null, and dereferencing it was the failure fixed by #1435");
+
+            Assert.That(merged.GetNodeIdFromSlot(UnownedSlot), Is.Not.EqualTo(replicaId),
+                "a replica must never be recorded as the owner of a slot");
+            Assert.That(merged.GetWorkerIdFromSlot(UnownedSlot), Is.EqualTo(ClusterConfig.RESERVED_WORKER_ID),
+                "the slot must stay unowned so its real primary can still claim it");
+            Assert.That(merged.GetNodeIdFromSlot(UnownedSlot), Is.Not.EqualTo(primaryId),
+                "the replica's primary has no claim to the slot through a replica's gossip either");
+        }
+
+        /// <summary>
+        /// A replica sender must not take a slot away from a node the receiver already credits with it.
+        /// </summary>
+        [Test, Order(13)]
+        [Category("CLUSTER-CONFIG"), CancelAfter(1000)]
+        public void ClusterConfigMergeSlotMapReplicaSenderCannotStealOwnedSlotTest()
+        {
+            const int OwnedSlot = 400;
+
+            var (replica, replicaId, primaryId) = CreateReplicaSender(primaryEpoch: 10, replicaEpoch: 30, OwnedSlot);
+            var receiver = CreateReceiverAwareOf(replica, OwnedSlot);
+
+            // The receiver correctly credits the real primary with the slot.
+            receiver = receiver.UpdateSlotState(OwnedSlot, receiver.GetWorkerIdFromNodeId(primaryId), SlotState.STABLE);
+
+            var merged = receiver.Merge(replica, []);
+
+            Assert.That(merged.GetNodeIdFromSlot(OwnedSlot), Is.EqualTo(primaryId),
+                "ownership by the real primary must be left untouched by a replica's gossip");
+            Assert.That(merged.GetNodeIdFromSlot(OwnedSlot), Is.Not.EqualTo(replicaId));
+        }
+
+        /// <summary>
+        /// The planned-failover hand-off must keep working: when the receiver still credits the sender with a slot
+        /// and the sender has since been demoted to a replica, the slot moves to the sender's new primary.
+        /// </summary>
+        [Test, Order(14)]
+        [Category("CLUSTER-CONFIG"), CancelAfter(1000)]
+        public void ClusterConfigMergeSlotMapReplicaSenderHandsOffOwnedSlotToPrimaryTest()
+        {
+            const int HandoffSlot = 500;
+
+            var (replica, replicaId, primaryId) = CreateReplicaSender(primaryEpoch: 10, replicaEpoch: 30, HandoffSlot);
+            var receiver = CreateReceiverAwareOf(replica, HandoffSlot);
+
+            // The receiver still believes the demoted sender owns the slot.
+            receiver = receiver.UpdateSlotState(HandoffSlot, receiver.GetWorkerIdFromNodeId(replicaId), SlotState.STABLE);
+
+            var merged = receiver.Merge(replica, []);
+
+            Assert.That(merged.GetNodeIdFromSlot(HandoffSlot), Is.EqualTo(primaryId),
+                "the slot should be handed off to the node that took over from the sender");
+            Assert.That(merged.GetState((ushort)HandoffSlot), Is.EqualTo(SlotState.STABLE));
+        }
+
+        /// <summary>
+        /// The hand-off correction applies to the slot that earned it and must not carry over to later slots in
+        /// the same merge.
+        /// </summary>
+        [Test, Order(15)]
+        [Category("CLUSTER-CONFIG"), CancelAfter(1000)]
+        public void ClusterConfigMergeSlotMapReplicaHandoffDoesNotLeakToLaterSlotsTest()
+        {
+            const int HandoffSlot = 600;  // visited first, takes the hand-off correction
+            const int UnownedSlot = 700;  // visited later, must be left alone
+
+            var (replica, replicaId, primaryId) =
+                CreateReplicaSender(primaryEpoch: 10, replicaEpoch: 30, HandoffSlot, UnownedSlot);
+            var receiver = CreateReceiverAwareOf(replica, HandoffSlot, UnownedSlot);
+
+            receiver = receiver.UpdateSlotState(HandoffSlot, receiver.GetWorkerIdFromNodeId(replicaId), SlotState.STABLE);
+
+            var merged = receiver.Merge(replica, []);
+
+            Assert.That(merged.GetNodeIdFromSlot(HandoffSlot), Is.EqualTo(primaryId),
+                "precondition: the earlier slot takes the hand-off correction");
+            Assert.That(merged.GetWorkerIdFromSlot(UnownedSlot), Is.EqualTo(ClusterConfig.RESERVED_WORKER_ID),
+                "the later unowned slot must not inherit the correction computed for the earlier slot");
+        }
     }
 }
