@@ -1702,7 +1702,15 @@ namespace Garnet.server
         /// </summary>
         internal VectorManagerResult GetNeighbors(ReadOnlySpan<byte> indexSpan, ReadOnlySpan<byte> element, ref SpanByteAndMemory outputIds, ref SpanByteAndMemory outputDistances)
         {
-            ReadIndex(indexSpan, out var context, out _, out _, out _, out _, out _, out _, out _, out var indexPtr);
+            ReadIndex(indexSpan, out var context, out _, out _, out _, out _, out var numLinks, out _, out _, out var indexPtr);
+
+            if (outputDistances.Length < sizeof(float) * numLinks)
+            {
+                var neededBytes = (int)(sizeof(float) * numLinks);
+                var newOutputDistances = MemoryPool<byte>.Shared.Rent(neededBytes);
+                outputDistances.Memory = newOutputDistances;
+                outputDistances.Length = neededBytes;
+            }
 
             var found = Service.SearchNeighbors(context, indexPtr, element, outputIds, outputDistances, out var continuation);
 
