@@ -416,10 +416,10 @@ namespace Garnet.test
         }
 
         /// <summary>
-        /// Tests DUMP on non string type which is currently not supported
+        /// Tests that DUMP and RESTORE round-trip a Set object.
         /// </summary>
         [Test]
-        public void TryDumpKeyNonString()
+        public void DumpRestoreSet()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
@@ -427,9 +427,123 @@ namespace Garnet.test
             db.SetAdd("mykey", "val1");
             db.SetAdd("mykey", "val2");
 
-            var value = db.KeyDump("mykey");
+            var dump = db.KeyDump("mykey");
+            ClassicAssert.IsNotNull(dump);
 
-            ClassicAssert.IsNull(value);
+            db.KeyDelete("mykey");
+            db.KeyRestore("mykey", dump);
+
+            var members = db.SetMembers("mykey").Select(x => x.ToString()).OrderBy(x => x, StringComparer.Ordinal).ToArray();
+            ClassicAssert.AreEqual(new[] { "val1", "val2" }, members);
+        }
+
+        /// <summary>
+        /// Tests that DUMP and RESTORE round-trip a Hash object.
+        /// </summary>
+        [Test]
+        public void DumpRestoreHash()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            db.HashSet("mykey", [new HashEntry("f1", "v1"), new HashEntry("f2", "v2")]);
+
+            var dump = db.KeyDump("mykey");
+            ClassicAssert.IsNotNull(dump);
+
+            db.KeyDelete("mykey");
+            db.KeyRestore("mykey", dump);
+
+            ClassicAssert.AreEqual("v1", db.HashGet("mykey", "f1").ToString());
+            ClassicAssert.AreEqual("v2", db.HashGet("mykey", "f2").ToString());
+        }
+
+        /// <summary>
+        /// Tests that DUMP and RESTORE round-trip a List object.
+        /// </summary>
+        [Test]
+        public void DumpRestoreList()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            db.ListRightPush("mykey", "a");
+            db.ListRightPush("mykey", "b");
+            db.ListRightPush("mykey", "c");
+
+            var dump = db.KeyDump("mykey");
+            ClassicAssert.IsNotNull(dump);
+
+            db.KeyDelete("mykey");
+            db.KeyRestore("mykey", dump);
+
+            var items = db.ListRange("mykey").Select(x => x.ToString()).ToArray();
+            ClassicAssert.AreEqual(new[] { "a", "b", "c" }, items);
+        }
+
+        /// <summary>
+        /// Tests that DUMP and RESTORE round-trip a Sorted Set object.
+        /// </summary>
+        [Test]
+        public void DumpRestoreSortedSet()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            db.SortedSetAdd("mykey", "one", 1);
+            db.SortedSetAdd("mykey", "two", 2);
+
+            var dump = db.KeyDump("mykey");
+            ClassicAssert.IsNotNull(dump);
+
+            db.KeyDelete("mykey");
+            db.KeyRestore("mykey", dump);
+
+            var entries = db.SortedSetRangeByRankWithScores("mykey");
+            ClassicAssert.AreEqual(2, entries.Length);
+            ClassicAssert.AreEqual("one", entries[0].Element.ToString());
+            ClassicAssert.AreEqual(1, entries[0].Score);
+            ClassicAssert.AreEqual("two", entries[1].Element.ToString());
+            ClassicAssert.AreEqual(2, entries[1].Score);
+        }
+
+        /// <summary>
+        /// Tests that RESTORE of an object honors the provided TTL.
+        /// </summary>
+        [Test]
+        public void DumpRestoreObjectWithTtl()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            db.SetAdd("mykey", "val1");
+
+            var dump = db.KeyDump("mykey")!;
+
+            db.KeyDelete("mykey");
+            db.KeyRestore("mykey", dump, TimeSpan.FromHours(3));
+
+            ClassicAssert.IsTrue(db.SetContains("mykey", "val1"));
+
+            var ttl = db.KeyTimeToLive("mykey");
+            ClassicAssert.IsNotNull(ttl);
+            ClassicAssert.IsTrue(ttl.Value.TotalSeconds > 0);
+        }
+
+        /// <summary>
+        /// Tests that RESTORE of an object fails when the target key already exists.
+        /// </summary>
+        [Test]
+        public void RestoreObjectExistingKey()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            db.SetAdd("mykey", "val1");
+
+            var dump = db.KeyDump("mykey")!;
+
+            Assert.Throws<RedisServerException>(() => db.KeyRestore("mykey", dump));
         }
 
         /// <summary>

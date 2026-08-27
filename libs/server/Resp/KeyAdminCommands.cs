@@ -41,14 +41,6 @@ namespace Garnet.server
 
             var valueSpan = value.ReadOnlySpan;
 
-            // Restore is only implemented for string type
-            if (valueSpan[0] != 0x00)
-            {
-                while (!RespWriteUtils.TryWriteError("ERR RESTORE currently only supports string types", ref dcurr, dend))
-                    SendAndReset();
-                return true;
-            }
-
             // check if length of value is at least 10
             if (valueSpan.Length < 10)
             {
@@ -94,6 +86,22 @@ namespace Garnet.server
             // Start from payload start and skip the value type byte
             var val = value.ReadOnlySpan.Slice(payloadStart + 1, length);
 
+            // The first byte of the payload identifies the value type: 0x00 is a string, other values
+            // are Garnet object types (see GarnetObjectType) produced by DUMP of a collection.
+            var valueType = valueSpan[0];
+
+            if (valueType == 0x00)
+                return RestoreString(key, expiry, val, ref storageApi);
+
+            return RestoreObject(key, expiry, valueType, val, ref storageApi);
+        }
+
+        /// <summary>
+        /// Restores a string value produced by DUMP.
+        /// </summary>
+        private bool RestoreString<TGarnetApi>(PinnedSpanByte key, int expiry, ReadOnlySpan<byte> val, ref TGarnetApi storageApi)
+            where TGarnetApi : IGarnetApi
+        {
             var valArgSlice = scratchBufferBuilder.CreateArgSlice(val);
 
             parseState.InitializeWithArgument(valArgSlice);
@@ -127,6 +135,54 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Restores a Garnet object (Set/SortedSet/Hash/List) produced by DUMP.
+        /// </summary>
+        private bool RestoreObject<TGarnetApi>(PinnedSpanByte key, int expiry, byte valueType, ReadOnlySpan<byte> val, ref TGarnetApi storageApi)
+            where TGarnetApi : IGarnetApi
+        {
+            // RESTORE fails if the key already exists (Garnet does not yet support the REPLACE option).
+            if (storageApi.EXISTS(key) == GarnetStatus.OK)
+            {
+                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_BUSSYKEY, ref dcurr, dend))
+                    SendAndReset();
+                return true;
+            }
+
+            // DUMP stores the object type byte as the payload's value-type byte, separate from the
+            // object body, so prepend it back to rebuild the object serializer's input.
+            var serialized = new byte[val.Length + 1];
+            serialized[0] = valueType;
+            val.CopyTo(serialized.AsSpan(1));
+
+            IGarnetObject garnetObject;
+            try
+            {
+                garnetObject = storeWrapper.GarnetObjectSerializer.Deserialize(serialized);
+            }
+            catch (GarnetException)
+            {
+                garnetObject = null;
+            }
+
+            if (garnetObject is null)
+            {
+                while (!RespWriteUtils.TryWriteError("ERR Bad data format", ref dcurr, dend))
+                    SendAndReset();
+                return true;
+            }
+
+            storageApi.SET(key, garnetObject);
+
+            if (expiry > 0)
+                storageApi.EXPIRE(key, TimeSpan.FromSeconds(expiry), out _, ExpireOption.None);
+
+            while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                SendAndReset();
+
+            return true;
+        }
+
+        /// <summary>
         /// DUMP 
         /// </summary>
         bool NetworkDUMP<TGarnetApi>(ref TGarnetApi storageApi)
@@ -141,31 +197,57 @@ namespace Garnet.server
 
             var status = storageApi.GET(key, out PinnedSpanByte value);
 
-            // Non-string values cannot be DUMP'd today, but raising an error is risky so just act like the key doesn't exist
-            if (status is GarnetStatus.NOTFOUND or GarnetStatus.WRONGTYPE)
+            if (status is GarnetStatus.OK)
             {
-                WriteNull();
+                // String value: value type byte 0x00 followed by the raw value.
+                WriteDumpResult(0x00, value.ReadOnlySpan);
                 return true;
             }
 
+            if (status is GarnetStatus.WRONGTYPE)
+            {
+                // The key holds an object (Set/SortedSet/Hash/List): serialize it with Garnet's object serializer.
+                var objectStatus = storageApi.GET(key, out ObjectOutput objectOutput);
+                if (objectStatus is GarnetStatus.OK && objectOutput.GarnetObject is not null)
+                {
+                    GarnetObjectSerializer.Serialize(objectOutput.GarnetObject, out var serialized);
+
+                    // The serializer output starts with the GarnetObjectType byte; use it as the payload's
+                    // value-type byte and store the remaining bytes as the body (mirrors the string layout).
+                    WriteDumpResult(serialized[0], serialized.AsSpan(1));
+                    return true;
+                }
+            }
+
+            // Key does not exist (or the object was concurrently removed): return null, matching the original behavior.
+            WriteNull();
+            return true;
+        }
+
+        /// <summary>
+        /// Writes a DUMP reply as a RESP bulk string with the layout:
+        /// [value type][RESP length-encoded payload length][payload][RDB version][CRC64].
+        /// </summary>
+        private void WriteDumpResult(byte valueType, ReadOnlySpan<byte> payload)
+        {
             Span<byte> encodedLength = stackalloc byte[5];
 
-            if (!RespLengthEncodingUtils.TryWriteLength(value.ReadOnlySpan.Length, encodedLength, out var bytesWritten))
+            if (!RespLengthEncodingUtils.TryWriteLength(payload.Length, encodedLength, out var bytesWritten))
             {
                 while (!RespWriteUtils.TryWriteError("ERR DUMP payload length is invalid", ref dcurr, dend))
                     SendAndReset();
-                return true;
+                return;
             }
 
             encodedLength = encodedLength.Slice(0, bytesWritten);
 
             // Len of the dump (payload type + redis encoded payload len + payload len + rdb version + crc64)
-            var len = 1 + encodedLength.Length + value.ReadOnlySpan.Length + 2 + 8;
+            var len = 1 + encodedLength.Length + payload.Length + 2 + 8;
             Span<byte> lengthInASCIIBytes = stackalloc byte[NumUtils.CountDigits(len)];
             var lengthInASCIIBytesLen = NumUtils.WriteInt64(len, lengthInASCIIBytes);
 
             // Total len (% + length of ascii bytes + CR LF + payload type + redis encoded payload len + payload len + rdb version + crc64 + CR LF)
-            var totalLength = 1 + lengthInASCIIBytesLen + 2 + 1 + encodedLength.Length + value.ReadOnlySpan.Length + 2 + 8 + 2;
+            var totalLength = 1 + lengthInASCIIBytesLen + 2 + 1 + encodedLength.Length + payload.Length + 2 + 8 + 2;
 
             byte[] rentedBuffer = null;
             var buffer = totalLength <= (dend - dcurr)
@@ -182,23 +264,23 @@ namespace Garnet.server
             buffer[offset++] = 0x0A; // LF
 
             // value type byte
-            buffer[offset++] = 0x00;
+            buffer[offset++] = valueType;
 
-            // length of the span
+            // length of the payload
             encodedLength.CopyTo(buffer[offset..]);
             offset += encodedLength.Length;
 
-            // copy value to buffer
-            value.ReadOnlySpan.CopyTo(buffer[offset..]);
-            offset += value.ReadOnlySpan.Length;
+            // copy payload to buffer
+            payload.CopyTo(buffer[offset..]);
+            offset += payload.Length;
 
             // Write RDB version
             buffer[offset++] = (byte)(RDB_VERSION & 0xff);
             buffer[offset++] = (byte)((RDB_VERSION >> 8) & 0xff);
 
-            // Compute and write CRC64 checksum
-            var payloadToHash = buffer.Slice(1 + lengthInASCIIBytes.Length + 2 + 1,
-                encodedLength.Length + value.ReadOnlySpan.Length + 2);
+            // Compute and write CRC64 checksum over the value type byte, encoded length, payload and RDB version
+            var payloadToHash = buffer.Slice(1 + lengthInASCIIBytes.Length + 2,
+                1 + encodedLength.Length + payload.Length + 2);
 
             var crcBytes = Crc64.Hash(payloadToHash);
             crcBytes.CopyTo(buffer[offset..]);
@@ -217,8 +299,6 @@ namespace Garnet.server
             {
                 dcurr += totalLength;
             }
-
-            return true;
         }
 
         /// <summary>
