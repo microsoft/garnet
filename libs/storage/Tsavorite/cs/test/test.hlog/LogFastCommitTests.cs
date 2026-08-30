@@ -68,7 +68,14 @@ namespace Tsavorite.test
             var recoveredLog = new TsavoriteLog(logSettings);
             try
             {
-                _ = Assert.ThrowsAsync<TsavoriteException>(async () => await recoveredLog.RecoverAsync(4).ConfigureAwait(false));
+                // The requested commit must never be satisfied, but which exception reports that is platform
+                // dependent: where the forward scan runs off the end of the written region the read fails and
+                // WaitForFrameLoad rethrows the resulting OperationCanceledException (Windows reports the
+                // over-read as an error, Linux returns a short read), and otherwise the scan completes without
+                // finding commit 4 and the commit-number check rejects it. Both are loud failures; what must hold
+                // on every platform is that recovery does not succeed with an earlier commit's data.
+                var ex = Assert.CatchAsync(async () => await recoveredLog.RecoverAsync(4).ConfigureAwait(false));
+                Assert.That(ex, Is.InstanceOf<TsavoriteException>().Or.InstanceOf<OperationCanceledException>());
                 ClassicAssert.AreNotEqual(commit1Addr, recoveredLog.TailAddress,
                     "Recovery silently fell back to an earlier commit instead of failing the request");
             }
