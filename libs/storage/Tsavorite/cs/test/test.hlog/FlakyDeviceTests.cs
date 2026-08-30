@@ -523,9 +523,11 @@ namespace Tsavorite.test
             // ReadInto clears its buffer before reading, so a commit file that is empty or shorter than its length
             // prefix reads back as a zero length. Accepting that would present an empty commit as a valid one.
             // TestUtils.MethodTestDir is keyed on the method name alone, so give this manager its own directory.
+            // Commit and GetCommitMetadata each open and close their own device, so the commit file must outlive
+            // the device that wrote it.
             var directory = Path.Join(TestUtils.MethodTestDir, Guid.NewGuid().ToString("N"));
             using var manager = new DeviceLogCommitCheckpointManager(
-                new LocalStorageNamedDeviceFactoryCreator(deleteOnClose: true),
+                new LocalStorageNamedDeviceFactoryCreator(),
                 new DefaultCheckpointNamingScheme(directory));
 
             var metadata = new byte[64];
