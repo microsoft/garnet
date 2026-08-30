@@ -2489,7 +2489,7 @@ namespace Tsavorite.core
         /// <param name="recover">Whether to recover named iterator from latest commit (if exists). If false, iterator starts from beginAddress.</param>
         /// <param name="scanBufferingMode">Use single or double buffering</param>
         /// <param name="scanUncommitted">Whether we scan uncommitted data</param>
-        /// <param name="logger"></param>
+        /// <param name="logger">Logger for the iterator; defaults to this log's logger</param>
         /// <returns></returns>
         public TsavoriteLogScanIterator Scan(long beginAddress, long endAddress, bool recover = true, DiskScanBufferingMode scanBufferingMode = DiskScanBufferingMode.DoublePageBuffering, bool scanUncommitted = false, ILogger logger = null)
         {
@@ -2500,7 +2500,7 @@ namespace Tsavorite.core
                     throw new TsavoriteException("Cannot use scanUncommitted with read-only TsavoriteLog");
             }
 
-            var iter = new TsavoriteLogScanIterator(this, allocator, beginAddress, endAddress, getMemory, scanBufferingMode, epoch, headerSize, scanUncommitted, logger: logger);
+            var iter = new TsavoriteLogScanIterator(this, allocator, beginAddress, endAddress, getMemory, scanBufferingMode, epoch, headerSize, scanUncommitted, logger: logger ?? this.logger);
 
             if (Interlocked.Increment(ref logRefCount) == 1)
                 throw new TsavoriteException("Cannot scan disposed log instance");
@@ -2557,7 +2557,7 @@ namespace Tsavorite.core
                     throw new TsavoriteException("Cannot use scanUncommitted with read-only TsavoriteLog");
             }
 
-            var iter = new TsavoriteLogScanSingleIterator(this, allocator, beginAddress, endAddress, getMemory, scanBufferingMode, epoch, headerSize, scanUncommitted, logger: logger);
+            var iter = new TsavoriteLogScanSingleIterator(this, allocator, beginAddress, endAddress, getMemory, scanBufferingMode, epoch, headerSize, scanUncommitted, logger: logger ?? this.logger);
 
             lock (this)
             {
@@ -2913,7 +2913,10 @@ namespace Tsavorite.core
                         break;
                     }
                 }
-                catch { }
+                catch (Exception ex)
+                {
+                    logger?.LogWarning(ex, "Unable to load commit metadata for commit {metadataCommit}, trying the next older commit", metadataCommit);
+                }
             }
 
             // Only in fast commit mode will we potentially need to recover from an entry in the log
@@ -2928,7 +2931,10 @@ namespace Tsavorite.core
                     using var scanIterator = Scan(info.UntilAddress, long.MaxValue, recover: false);
                     _ = scanIterator.ScanForwardForCommit(ref info);
                 }
-                catch { }
+                catch (Exception ex)
+                {
+                    logger?.LogWarning(ex, "Fast-commit scan forward from {untilAddress} failed; recovering from the last commit metadata instead", info.UntilAddress);
+                }
             }
 
             // if until address is 0, that means info is still its default value and we haven't been able to recover
@@ -3002,7 +3008,10 @@ namespace Tsavorite.core
                         break;
                     }
                 }
-                catch { }
+                catch (Exception ex)
+                {
+                    logger?.LogWarning(ex, "Skipping unreadable commit metadata while recovering to commit {requestedCommitNum}. Commit: {metadataCommit}", requestedCommitNum, metadataCommit);
+                }
             }
 
             // Need to potentially scan log for the entry 
@@ -3024,11 +3033,19 @@ namespace Tsavorite.core
                     if (!scanIterator.ScanForwardForCommit(ref info, requestedCommitNum))
                         throw new TsavoriteException("requested commit num is not available");
                 }
-                catch { }
+                catch (Exception ex)
+                {
+                    logger?.LogError(ex, "Failed to scan forward for requested commit {requestedCommitNum} starting from commit {scanStart}", requestedCommitNum, scanStart);
+                    throw;
+                }
             }
 
-            // At this point, we should have found the exact commit num requested
-            Debug.Assert(info.CommitNum == requestedCommitNum, $"info.CommitNum {info.CommitNum} must equal requestedCommitNum {requestedCommitNum}");
+            // The scan above is the only thing that can advance info to the requested commit, so a failure there must
+            // not fall through: info still describes the closest EARLIER commit, and recovering from it would silently
+            // restore the wrong data. Debug.Assert alone is compiled out of release builds, which is where recovery
+            // actually runs.
+            if (info.CommitNum != requestedCommitNum)
+                throw new TsavoriteException($"Requested commit num is not available. Requested: {requestedCommitNum}, recovered: {info.CommitNum}");
             if (!readOnlyMode)
             {
                 var headAddress = info.UntilAddress - allocator.GetOffsetOnPage(info.UntilAddress);

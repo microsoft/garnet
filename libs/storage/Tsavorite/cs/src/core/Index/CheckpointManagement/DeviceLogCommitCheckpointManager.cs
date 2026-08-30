@@ -30,9 +30,10 @@ namespace Tsavorite.core
         /// </summary>
         protected readonly ICheckpointNamingScheme checkpointNamingScheme;
         private readonly SemaphoreSlim semaphore;
-        /// <summary>First non-zero error code from the most recent metadata write via <see cref="IOCallback"/> (0 == success). Read after
-        /// the write's <see cref="semaphore"/> wait in <see cref="WriteInto"/> so a failed checkpoint-metadata write is not silently ignored.</summary>
-        private uint metadataWriteErrorCode;
+        /// <summary>First non-zero error code from the most recent metadata read or write via <see cref="IOCallback"/> (0 == success).
+        /// Read after the operation's <see cref="semaphore"/> wait in <see cref="WriteInto"/> and <see cref="ReadInto"/> so a failed
+        /// checkpoint-metadata I/O is not silently ignored.</summary>
+        private uint metadataIoErrorCode;
 
         private readonly bool removeOutdated;
         private SectorAlignedBufferPool bufferPool;
@@ -156,7 +157,8 @@ namespace Tsavorite.core
             using var device = deviceFactory.Get(checkpointNamingScheme.TsavoriteLogCommitMetadata(commitNum));
 
             ReadInto(device, 0, out byte[] writePad, sizeof(int));
-            int size = BitConverter.ToInt32(writePad, 0);
+            var size = BitConverter.ToInt32(writePad, 0);
+            ThrowIfInvalidMetadataSize(size, checkpointNamingScheme.TsavoriteLogCommitMetadata(commitNum));
 
             byte[] body;
             if (writePad.Length >= size + sizeof(int))
@@ -165,6 +167,24 @@ namespace Tsavorite.core
                 ReadInto(device, 0, out body, size + sizeof(int));
 
             return new Span<byte>(body).Slice(sizeof(int)).ToArray();
+        }
+
+        /// <summary>
+        /// Sanity bound on metadata length. Real checkpoint and log-commit metadata is kilobytes at most, so this is
+        /// orders of magnitude above any legitimate value; its purpose is to turn a corrupt length into a named error
+        /// instead of a multi-gigabyte allocation, and to keep <see cref="ReadInto"/>'s sector rounding well clear of
+        /// the <see cref="int"/> overflow that would make the resulting buffer size negative.
+        /// </summary>
+        private const int MaxMetadataSize = 1 << 26;
+
+        /// <summary>
+        /// Reject a metadata length that a truncated or corrupt metadata file can produce, so the caller sees the file
+        /// it must clean up rather than an overflowed length arriving at an unrelated buffer operation.
+        /// </summary>
+        private static void ThrowIfInvalidMetadataSize(int size, FileDescriptor fileDescriptor)
+        {
+            if (size < 0 || size > MaxMetadataSize)
+                throw new TsavoriteException($"Invalid metadata length {size} in {Path.Combine(fileDescriptor.directoryName ?? string.Empty, fileDescriptor.fileName ?? string.Empty)}; the metadata file is truncated or corrupt");
         }
         #endregion
 
@@ -176,7 +196,7 @@ namespace Tsavorite.core
         /// <inheritdoc />
         public void CommitIndexCheckpoint(Guid indexToken, byte[] commitMetadata)
         {
-            var device = NextIndexCheckpointDevice(indexToken);
+            using var device = NextIndexCheckpointDevice(indexToken);
 
             // Two phase to ensure we write metadata in single Write operation
             using var ms = new MemoryStream();
@@ -185,7 +205,6 @@ namespace Tsavorite.core
             writer.Write(commitMetadata);
 
             WriteInto(device, 0, ms.ToArray(), (int)ms.Position);
-            device.Dispose();
         }
 
         /// <inheritdoc />
@@ -213,24 +232,24 @@ namespace Tsavorite.core
         /// <inheritdoc />
         public byte[] GetIndexCheckpointMetadata(Guid indexToken)
         {
-            var device = deviceFactory.Get(checkpointNamingScheme.IndexCheckpointMetadata(indexToken));
+            using var device = deviceFactory.Get(checkpointNamingScheme.IndexCheckpointMetadata(indexToken));
 
             ReadInto(device, 0, out byte[] writePad, sizeof(int));
-            int size = BitConverter.ToInt32(writePad, 0);
+            var size = BitConverter.ToInt32(writePad, 0);
+            ThrowIfInvalidMetadataSize(size, checkpointNamingScheme.IndexCheckpointMetadata(indexToken));
 
             byte[] body;
             if (writePad.Length >= size + sizeof(int))
                 body = writePad;
             else
                 ReadInto(device, 0, out body, size + sizeof(int));
-            device.Dispose();
             return new Span<byte>(body).Slice(sizeof(int)).ToArray();
         }
 
         /// <inheritdoc />
         public void CommitLogCheckpointMetadata(Guid logToken, byte[] commitMetadata)
         {
-            var device = NextLogCheckpointDevice(logToken);
+            using var device = NextLogCheckpointDevice(logToken);
 
             // Two phase to ensure we write metadata in single Write operation
             using var ms = new MemoryStream();
@@ -239,7 +258,6 @@ namespace Tsavorite.core
             writer.Write(commitMetadata);
 
             WriteInto(device, 0, ms.ToArray(), (int)ms.Position);
-            device.Dispose();
         }
 
         /// <inheritdoc />
@@ -264,17 +282,17 @@ namespace Tsavorite.core
         /// <inheritdoc />
         public virtual byte[] GetLogCheckpointMetadata(Guid logToken)
         {
-            var device = deviceFactory.Get(checkpointNamingScheme.LogCheckpointMetadata(logToken));
+            using var device = deviceFactory.Get(checkpointNamingScheme.LogCheckpointMetadata(logToken));
 
             ReadInto(device, 0, out byte[] writePad, sizeof(int));
             var size = BitConverter.ToInt32(writePad, 0);
+            ThrowIfInvalidMetadataSize(size, checkpointNamingScheme.LogCheckpointMetadata(logToken));
 
             byte[] body;
             if (writePad.Length >= size + sizeof(int))
                 body = writePad;
             else
                 ReadInto(device, 0, out body, size + sizeof(int));
-            device.Dispose();
 
             return body.AsSpan().Slice(sizeof(int), size).ToArray();
         }
@@ -373,7 +391,7 @@ namespace Tsavorite.core
                 }
                 else
                     logger?.LogError("[DeviceLogManager] OverlappedStream GetQueuedCompletionStatus error: {exception}", Utility.GetCallbackExceptionDetail(ioException));
-                metadataWriteErrorCode = errorCode;
+                metadataIoErrorCode = errorCode;
             }
             semaphore.Release();
         }
@@ -400,9 +418,16 @@ namespace Tsavorite.core
 
             try
             {
+                metadataIoErrorCode = 0;
                 device.ReadAsync(address, (IntPtr)pbuffer.aligned_pointer,
                     (uint)numBytesToRead, IOCallback, null);
                 semaphore.Wait();
+
+                // A failed read leaves the buffer holding whatever the pool handed us. Without this check the caller
+                // parses that as metadata, so a transient device error becomes a wrong-but-plausible recovery instead
+                // of a reported failure.
+                if (metadataIoErrorCode != 0)
+                    throw new TsavoriteException($"Checkpoint metadata read failed with error code {metadataIoErrorCode}");
 
                 buffer = new byte[numBytesToRead];
                 fixed (byte* bufferRaw = buffer)
@@ -437,11 +462,11 @@ namespace Tsavorite.core
 
             try
             {
-                metadataWriteErrorCode = 0;
+                metadataIoErrorCode = 0;
                 device.WriteAsync((IntPtr)pbuffer.aligned_pointer, address, (uint)numBytesToWrite, IOCallback, null);
                 semaphore.Wait();
-                if (metadataWriteErrorCode != 0)
-                    throw new TsavoriteException($"Checkpoint metadata write failed with error code {metadataWriteErrorCode}");
+                if (metadataIoErrorCode != 0)
+                    throw new TsavoriteException($"Checkpoint metadata write failed with error code {metadataIoErrorCode}");
             }
             finally
             {

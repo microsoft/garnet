@@ -1542,7 +1542,20 @@ namespace Tsavorite.core
 
                         completionThreadToken = new();
                         int actualIoContexts = NativeDevice_NumIoContexts(newDevice);
-                        if (actualIoContexts < 1) actualIoContexts = 1;
+                        if (actualIoContexts < 1)
+                        {
+                            // Native already guarantees this: a handler that owns no completion queue fails
+                            // its init gate, so Create returns null and we never get here. Reaching this
+                            // point therefore means the loaded shared library does not honour that invariant
+                            // — i.e. a stale/skewed libnative_device.so, the same class of fault the
+                            // sector-size check above catches. Fail rather than clamp to 1, which would
+                            // start a drainer on a ring that does not exist.
+                            throw new TsavoriteException(
+                                $"Native device '{filename}' reported {actualIoContexts} I/O contexts, so no completion could ever be drained. " +
+                                "A successfully created native device always owns at least one. " +
+                                "The most likely cause is a stale libnative_device.so or a managed/native version skew. " +
+                                "Rebuild the native library from this branch (libs/storage/Tsavorite/cc) and reinstall the resulting binary into libs/storage/Tsavorite/cs/src/core/Device/runtimes/<rid>/native/.");
+                        }
                         numRingsActual = actualIoContexts;
                         if (uringSqPollConfig && ioBackendConfig == IoBackend.Uring)
                             logger?.LogInformation(
@@ -1565,7 +1578,7 @@ namespace Tsavorite.core
                             int startCtx = nextStart;
                             int count = baseCount + (i < remainder ? 1 : 0);
                             nextStart += count;
-                            var drainer = new Thread(() => CompletionWorker(startCtx, count))
+                            var drainer = new Thread(() => CompletionWorker(newDevice, startCtx, count))
                             {
                                 IsBackground = true
                             };
@@ -2245,7 +2258,15 @@ namespace Tsavorite.core
         /// brief idle, and sleeps 1 ms only after <see cref="CompletionWorkerIdleSpinBudget"/> consecutive
         /// idle passes; cancellation is observed within one pass, with no wake dependency.
         /// </summary>
-        void CompletionWorker(int startCtx, int ctxCount)
+        /// <param name="device">
+        /// The native handle to drain, passed by value rather than read from <c>nativeDevice</c>: drainers are
+        /// started before that field is published, so reading it here would return <see cref="IntPtr.Zero"/> for
+        /// the first few passes and the wrapper's null guard would report the ring as undrainable. Dispose()
+        /// cancels and joins every drainer before destroying the handle, so it stays valid for this thread's life.
+        /// </param>
+        /// <param name="startCtx">First ring shard owned by this drainer.</param>
+        /// <param name="ctxCount">Number of contiguous ring shards owned by this drainer.</param>
+        void CompletionWorker(IntPtr device, int startCtx, int ctxCount)
         {
             // Defense-in-depth: catch around the whole drain loop. _callback already swallows
             // all exceptions from the user callback (see its big comment), but if anything
@@ -2258,6 +2279,8 @@ namespace Tsavorite.core
             {
                 // Consecutive idle poll-passes for the multi-ring path below; reset on any drained event.
                 long idleSpins = 0;
+                // Consecutive undrainable results; gates the rate-limited broken-drain report.
+                long brokenDrainReports = 0;
                 while (true)
                 {
                     if (completionThreadToken.IsCancellationRequested) break;
@@ -2265,7 +2288,7 @@ namespace Tsavorite.core
                     if (ctxCount <= 1)
                     {
                         // Single ring: block directly on it with the timeout (single-ring fast path).
-                        int rc = NativeDevice_QueueRunFor(nativeDevice, startCtx, CompletionWorkerTimeoutSecs);
+                        int rc = NativeDevice_QueueRunFor(device, startCtx, CompletionWorkerTimeoutSecs);
                         if (rc == NativeCABIExceptionSentinel)
                         {
                             // The native drain threw and was firewalled by the C ABI guard (instead of
@@ -2274,6 +2297,21 @@ namespace Tsavorite.core
                             // fault is persistent. The drainer keeps running so Dispose can still proceed.
                             logger?.LogError("NativeStorageDevice completion drainer (startCtx={startCtx}) hit a native exception: {error}", startCtx, GetNativeLastError());
                             Thread.Sleep(10);
+                        }
+                        else if (rc < 0)
+                        {
+                            // Any other negative result means this ring could not be drained at all: the
+                            // context index is out of range, the context is null, or the handle went away.
+                            // That is NOT an idle drain — it never reaches io_getevents, so yielding here
+                            // burns a core at 100% with no syscalls while completions never fire and the
+                            // submitter waits forever. Report it (rate-limited, since it is typically
+                            // permanent) and back off so a broken drain is distinguishable from an idle one.
+                            ReportBrokenDrain(startCtx, rc, 1, 1, ref brokenDrainReports);
+                            Thread.Sleep(BrokenDrainBackoffMs);
+                        }
+                        else
+                        {
+                            brokenDrainReports = 0;
                         }
                         Thread.Yield();
                         continue;
@@ -2290,13 +2328,16 @@ namespace Tsavorite.core
                     // waits more than ~1ms. Dispose is observed within one pass (no Wake dependency here).
                     int drained = 0;
                     bool faulted = false;
+                    int undrainable = 0;
                     for (int k = 0; k < ctxCount; k++)
                     {
-                        int rc = NativeDevice_QueueRunFor(nativeDevice, startCtx + k, 0);
+                        int rc = NativeDevice_QueueRunFor(device, startCtx + k, 0);
                         if (rc == NativeCABIExceptionSentinel)
                             faulted = true;
                         else if (rc > 0)
                             drained += rc;
+                        else if (rc < 0)
+                            undrainable++;
                     }
                     if (faulted)
                     {
@@ -2304,17 +2345,42 @@ namespace Tsavorite.core
                         Thread.Sleep(10);
                         idleSpins = 0;
                     }
-                    else if (drained > 0)
-                    {
-                        idleSpins = 0;      // stay hot: re-poll immediately
-                    }
-                    else if (++idleSpins < CompletionWorkerIdleSpinBudget)
-                    {
-                        Thread.Yield();     // brief idle: stay responsive, keep every ring visible
-                    }
                     else
                     {
-                        Thread.Sleep(1);    // sustained idle: release the core (re-polls whole range on wake)
+                        if (undrainable > 0)
+                        {
+                            // Even one ring that refuses the drain means every I/O issued to that ring hangs forever,
+                            // so report it rather than letting healthy siblings hide it. The report counter is
+                            // deliberately NOT reset while any ring is broken: a partially broken range still drains
+                            // its healthy rings every pass, which would otherwise restart the rate limiter each time
+                            // and turn this into a per-pass log flood.
+                            ReportBrokenDrain(startCtx, -1, undrainable, ctxCount, ref brokenDrainReports);
+                        }
+                        else if (drained > 0)
+                        {
+                            brokenDrainReports = 0;
+                        }
+
+                        if (undrainable == ctxCount)
+                        {
+                            // No completion can arrive anywhere in this range, so back off rather than spin. Only the
+                            // fully broken case sleeps; stalling a range whose siblings are still delivering
+                            // completions would add latency to healthy I/O.
+                            Thread.Sleep(BrokenDrainBackoffMs);
+                            idleSpins = 0;
+                        }
+                        else if (drained > 0)
+                        {
+                            idleSpins = 0;      // stay hot: re-poll immediately
+                        }
+                        else if (++idleSpins < CompletionWorkerIdleSpinBudget)
+                        {
+                            Thread.Yield();     // brief idle: stay responsive, keep every ring visible
+                        }
+                        else
+                        {
+                            Thread.Sleep(1);    // sustained idle: release the core (re-polls whole range on wake)
+                        }
                     }
                 }
             }
@@ -2328,6 +2394,35 @@ namespace Tsavorite.core
         // negligible; Dispose() does not rely on this firing because it submits a synthetic wake-up
         // event via NativeDevice_WakeCompletionWorker to unblock the worker immediately.
         const int CompletionWorkerTimeoutSecs = 1;
+
+        // Backoff applied when a ring reports itself undrainable. The condition is normally permanent,
+        // so this exists to stop the drainer burning a core, not to wait it out.
+        const int BrokenDrainBackoffMs = 100;
+
+        // Report the first few undrainable passes, then every this many, so a permanent fault stays
+        // visible in a long-running log without flooding it.
+        const int BrokenDrainReportInterval = 600;
+
+        /// <summary>
+        /// Reports rings that cannot be drained at all, rate-limited by <paramref name="reportCount"/>.
+        /// The diagnosis itself comes from the native handler, which knows why the drain was refused;
+        /// this only relays it.
+        /// </summary>
+        /// <param name="startCtx">Index of the first ring owned by the reporting drainer.</param>
+        /// <param name="rc">Native result code returned by the drain call.</param>
+        /// <param name="undrainableRings">How many rings in the drainer's range refused the drain.</param>
+        /// <param name="totalRings">How many rings the drainer owns.</param>
+        /// <param name="reportCount">Running count of consecutive undrainable passes for this drainer.</param>
+        void ReportBrokenDrain(int startCtx, int rc, int undrainableRings, int totalRings, ref long reportCount)
+        {
+            if (reportCount == 0 || reportCount % BrokenDrainReportInterval == 0)
+            {
+                logger?.LogError(
+                    "NativeStorageDevice completion drainer cannot drain {undrainableRings} of {totalRings} ring(s) starting at index {startCtx} (rc={rc}); no completion will ever fire on them and I/O issued to them will never complete. Native detail: {error}",
+                    undrainableRings, totalRings, startCtx, rc, GetNativeLastError());
+            }
+            reportCount++;
+        }
 
         // Multi-ring drainers (numIoContexts > numCompletionThreads) never block in a syscall (that
         // would hide sibling rings). Instead they poll; after this many consecutive fully-idle passes
