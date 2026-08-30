@@ -245,10 +245,9 @@ namespace Tsavorite.core
                 }
                 catch (Exception ex)
                 {
-                    // This shard was never issued, so nothing will signal the count taken for it. Release that count
-                    // and report the failure through the aggregate callback rather than letting the exception unwind:
-                    // shards issued earlier are still writing from sourceAddress, and abandoning the countdown here
-                    // would leave the caller with a failed operation that never completes and a buffer still in use.
+                    // The shard was never issued, so nothing else will signal the count taken for it. Release the
+                    // count and report through the aggregate callback; shards issued earlier are still reading from
+                    // sourceAddress, so the operation must complete rather than unwind.
                     aggregateErrorCode = uint.MaxValue;
                     aggregateException = ex;
                     _ = countdown.Signal();
@@ -320,11 +319,9 @@ namespace Tsavorite.core
                 }
                 catch (Exception ex)
                 {
-                    // This shard was never issued, so nothing will signal the count taken for it. Release that count
-                    // and report the failure through the aggregate callback rather than letting the exception unwind:
-                    // shards issued earlier are still writing into destinationAddress, and abandoning the countdown
-                    // here would leave the caller with a failed operation that never completes and a frame that the
-                    // caller is free to reuse or free while those writes are still in flight.
+                    // The shard was never issued, so nothing else will signal the count taken for it. Release the
+                    // count and report through the aggregate callback; shards issued earlier are still writing into
+                    // destinationAddress, so the operation must complete rather than unwind.
                     aggregateErrorCode = uint.MaxValue;
                     aggregateException = ex;
                     _ = countdown.Signal();

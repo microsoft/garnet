@@ -320,9 +320,8 @@ namespace Tsavorite.core
                 }
                 catch (Exception ex)
                 {
-                    // A checkpoint whose metadata cannot be read is skipped in favor of an older one. Report it: if
-                    // every token fails, recovery reports only that no checkpoint was found, with no indication that
-                    // checkpoints exist but are unreadable.
+                    // A checkpoint whose metadata cannot be read is skipped in favor of an older one. Report it so
+                    // that unreadable checkpoints are distinguishable from an empty checkpoint set.
                     logger?.LogWarning(ex, "Skipping unreadable HybridLog checkpoint: {hybridLogToken}", hybridLogToken);
                     continue;
                 }

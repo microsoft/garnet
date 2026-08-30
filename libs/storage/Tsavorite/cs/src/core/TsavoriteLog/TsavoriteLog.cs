@@ -3036,16 +3036,20 @@ namespace Tsavorite.core
                 catch (Exception ex)
                 {
                     logger?.LogError(ex, "Failed to scan forward for requested commit {requestedCommitNum} starting from commit {scanStart}", requestedCommitNum, scanStart);
+
+                    // Undo the sentinels set above before leaving, as the restore-failure path below does.
+                    ResetRecoveryState();
                     throw;
                 }
             }
 
-            // The scan above is the only thing that can advance info to the requested commit, so a failure there must
-            // not fall through: info still describes the closest EARLIER commit, and recovering from it would silently
-            // restore the wrong data. Debug.Assert alone is compiled out of release builds, which is where recovery
-            // actually runs.
+            // Only the scan above can advance info to the requested commit; otherwise info still describes an
+            // earlier commit and recovering from it would restore the wrong data.
             if (info.CommitNum != requestedCommitNum)
+            {
+                ResetRecoveryState();
                 throw new TsavoriteException($"Requested commit num is not available. Requested: {requestedCommitNum}, recovered: {info.CommitNum}");
+            }
             if (!readOnlyMode)
             {
                 var headAddress = info.UntilAddress - allocator.GetOffsetOnPage(info.UntilAddress);

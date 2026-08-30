@@ -31,13 +31,17 @@ namespace Tsavorite.core
         protected readonly ICheckpointNamingScheme checkpointNamingScheme;
         private readonly SemaphoreSlim semaphore;
         /// <summary>First non-zero error code from the most recent metadata read or write via <see cref="IOCallback"/> (0 == success).
-        /// Read after the operation's <see cref="semaphore"/> wait in <see cref="WriteInto"/> and <see cref="ReadInto"/> so a failed
-        /// checkpoint-metadata I/O is not silently ignored.</summary>
+        /// Read after the operation's <see cref="semaphore"/> wait in <see cref="WriteInto"/> and <see cref="ReadInto"/>.</summary>
         private uint metadataIoErrorCode;
 
+        /// <summary>Bytes transferred by the most recent metadata read or write via <see cref="IOCallback"/>.
+        /// Meaningful only when <see cref="metadataIoErrorCode"/> is 0, as the error paths report 0 regardless of
+        /// what was transferred.</summary>
+        private uint metadataIoBytesTransferred;
+
         /// <summary>
-        /// Windows <c>ERROR_HANDLE_EOF</c>. <see cref="ReadInto"/> rounds its length up to a sector boundary, so reading a
-        /// metadata file shorter than one sector reports this; it means "the file ended", not "the read failed".
+        /// Windows <c>ERROR_HANDLE_EOF</c>. <see cref="ReadInto"/> rounds its length up to a sector boundary, so a metadata
+        /// file shorter than one sector reports this. It means the file ended, not that the read failed.
         /// </summary>
         private const uint ErrorHandleEof = 38;
 
@@ -176,16 +180,14 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Sanity bound on metadata length. Real checkpoint and log-commit metadata is kilobytes at most, so this is
-        /// orders of magnitude above any legitimate value; its purpose is to turn a corrupt length into a named error
-        /// instead of a multi-gigabyte allocation, and to keep <see cref="ReadInto"/>'s sector rounding well clear of
-        /// the <see cref="int"/> overflow that would make the resulting buffer size negative.
+        /// Upper bound on metadata length, orders of magnitude above the kilobytes real checkpoint and log-commit
+        /// metadata occupies. Turns a corrupt length into a named error instead of a huge allocation, and keeps
+        /// <see cref="ReadInto"/>'s sector rounding clear of <see cref="int"/> overflow.
         /// </summary>
         private const int MaxMetadataSize = 1 << 26;
 
         /// <summary>
-        /// Reject a metadata length that a truncated or corrupt metadata file can produce, so the caller sees the file
-        /// it must clean up rather than an overflowed length arriving at an unrelated buffer operation.
+        /// Rejects a metadata length that a truncated or corrupt metadata file can produce, naming the offending file.
         /// </summary>
         private static void ThrowIfInvalidMetadataSize(int size, FileDescriptor fileDescriptor)
         {
@@ -388,6 +390,7 @@ namespace Tsavorite.core
 
         private unsafe void IOCallback(uint errorCode, uint numBytes, object context, Exception ioException)
         {
+            metadataIoBytesTransferred = numBytes;
             if (errorCode != 0)
             {
                 if (ioException is null)
@@ -424,23 +427,27 @@ namespace Tsavorite.core
 
             try
             {
-                // The read is rounded up to a sector, so it routinely asks for more bytes than the metadata file holds
-                // and the tail of the buffer is left holding whatever the pool handed us. Clear it so a short read
-                // yields deterministic zeros rather than another caller's stale metadata.
+                // The read is rounded up to a sector and so routinely asks for more bytes than the metadata file
+                // holds. Clear the pooled buffer so a short read yields zeros rather than stale metadata.
                 new Span<byte>(pbuffer.aligned_pointer, (int)numBytesToRead).Clear();
 
                 metadataIoErrorCode = 0;
+                metadataIoBytesTransferred = 0;
                 device.ReadAsync(address, (IntPtr)pbuffer.aligned_pointer,
                     (uint)numBytesToRead, IOCallback, null);
                 semaphore.Wait();
 
-                // A genuinely failed read leaves no metadata in the buffer. Without this check the caller parses that
-                // as metadata, so a device error becomes a wrong-but-plausible recovery instead of a reported failure.
-                // End-of-file is excluded: the sector rounding above deliberately over-reads, which Windows reports as
-                // ERROR_HANDLE_EOF while Linux simply returns a short read, and in both cases the bytes the caller
-                // needs were transferred.
+                // A failed read leaves no metadata in the buffer, so report it rather than let the caller parse it.
+                // End-of-file is excluded: the sector rounding above over-reads, which Windows reports as
+                // ERROR_HANDLE_EOF and Linux as a short read, and in both cases the requested bytes were transferred.
                 if (metadataIoErrorCode is not 0 and not ErrorHandleEof)
                     throw new TsavoriteException($"Checkpoint metadata read failed with error code {metadataIoErrorCode}");
+
+                // A successful read that stopped short of the requested size means the file holds less metadata than
+                // it declares, so the tail of the buffer is zeros rather than metadata. Devices that report
+                // end-of-file do not carry a usable transfer count, so this only applies to the success path.
+                if (metadataIoErrorCode == 0 && metadataIoBytesTransferred < (uint)size)
+                    throw new TsavoriteException($"Checkpoint metadata read returned {metadataIoBytesTransferred} of {size} bytes; the metadata file is truncated or corrupt");
 
                 buffer = new byte[numBytesToRead];
                 fixed (byte* bufferRaw = buffer)
@@ -476,6 +483,7 @@ namespace Tsavorite.core
             try
             {
                 metadataIoErrorCode = 0;
+                metadataIoBytesTransferred = 0;
                 device.WriteAsync((IntPtr)pbuffer.aligned_pointer, address, (uint)numBytesToWrite, IOCallback, null);
                 semaphore.Wait();
                 if (metadataIoErrorCode != 0)

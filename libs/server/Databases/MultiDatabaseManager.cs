@@ -127,9 +127,8 @@ namespace Garnet.server
                 }
                 catch (Exception ex)
                 {
-                    // Unless FailOnRecoveryError is set the server continues with whatever was recovered, so this must
-                    // be visible at the default log level; otherwise a server that silently discarded its data looks
-                    // healthy.
+                    // Unless FailOnRecoveryError is set the server continues with whatever was recovered, so this
+                    // must be visible at the default log level.
                     Logger?.LogError(ex,
                         "Error during recovery of store; storeVersion = {storeVersion}; objectStoreVersion = {objectStoreVersion}",
                         storeVersion, objectStoreVersion);
@@ -433,9 +432,8 @@ namespace Garnet.server
             }
             catch (Exception ex)
             {
-                // Failing to enumerate the AOF database ids means NO database recovers its AOF, so this is silent
-                // data loss for every database, not a per-database inconvenience. Log it where the default level
-                // can see it, and honor FailOnRecoveryError as the checkpoint path above already does.
+                // Failing to enumerate the AOF database ids means no database recovers its AOF, so log it at the
+                // default level and honor FailOnRecoveryError as the checkpoint path above does.
                 Logger?.LogError(ex,
                     "Error during recovery of database ids; aofParentDir = {aofParentDir}; aofDirBaseName = {aofDirBaseName}",
                     aofParentDir, aofDirBaseName);
