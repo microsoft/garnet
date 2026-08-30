@@ -516,65 +516,30 @@ namespace Tsavorite.test
             }
         }
 
-        /// <summary>Device factory whose devices can be switched to read as though the file were empty.</summary>
-        private sealed class TruncatableDeviceFactoryCreator : INamedDeviceFactoryCreator
-        {
-            private readonly INamedDeviceFactoryCreator inner = new LocalStorageNamedDeviceFactoryCreator(deleteOnClose: true);
-
-            public bool ReadsAreTruncated;
-
-            public INamedDeviceFactory Create(string baseName) => new Factory(this, inner.Create(baseName));
-
-            private sealed class Factory(TruncatableDeviceFactoryCreator owner, INamedDeviceFactory inner) : INamedDeviceFactory
-            {
-                public IDevice Get(FileDescriptor fileInfo) => new TruncatableDevice(owner, inner.Get(fileInfo));
-                public void Delete(FileDescriptor fileInfo) => inner.Delete(fileInfo);
-                public IEnumerable<FileDescriptor> ListContents(string path) => inner.ListContents(path);
-            }
-
-            /// <summary>Reports success without transferring anything, which is what reading an empty file yields.</summary>
-            private sealed class TruncatableDevice(TruncatableDeviceFactoryCreator owner, IDevice inner) : StorageDeviceBase(inner.FileName, inner.SectorSize, inner.SegmentSize)
-            {
-                public override void ReadAsync(int segmentId, ulong sourceAddress, IntPtr destinationAddress, uint readLength, DeviceIOCompletionCallback callback, object context)
-                {
-                    if (owner.ReadsAreTruncated)
-                    {
-                        callback(0, 0, context, ioException: default);
-                        return;
-                    }
-                    inner.ReadAsync(segmentId, sourceAddress, destinationAddress, readLength, callback, context);
-                }
-
-                public override void WriteAsync(IntPtr sourceAddress, int segmentId, ulong destinationAddress, uint numBytesToWrite, DeviceIOCompletionCallback callback, object context)
-                    => inner.WriteAsync(sourceAddress, segmentId, destinationAddress, numBytesToWrite, callback, context);
-
-                public override void RemoveSegment(int segment) => inner.RemoveSegment(segment);
-                public override void RemoveSegmentAsync(int segment, AsyncCallback callback, IAsyncResult result) => inner.RemoveSegmentAsync(segment, callback, result);
-                public override void Dispose() => inner.Dispose();
-            }
-        }
-
         [Test]
         [Category("TsavoriteLog")]
-        public void TruncatedCommitMetadataIsRejected()
+        public void ZeroLengthCommitMetadataIsRejected()
         {
-            // A commit file that is empty or shorter than its length prefix reads back as zeros, which parse as a
-            // zero-length body. Returning that would present an empty commit as a valid one, so it must be reported.
-            var creator = new TruncatableDeviceFactoryCreator();
+            // ReadInto clears its buffer before reading, so a commit file that is empty or shorter than its length
+            // prefix reads back as a zero length. Accepting that would present an empty commit as a valid one.
+            // TestUtils.MethodTestDir is keyed on the method name alone, so give this manager its own directory.
+            var directory = Path.Join(TestUtils.MethodTestDir, Guid.NewGuid().ToString("N"));
             using var manager = new DeviceLogCommitCheckpointManager(
-                creator, new DefaultCheckpointNamingScheme(TestUtils.MethodTestDir));
+                new LocalStorageNamedDeviceFactoryCreator(deleteOnClose: true),
+                new DefaultCheckpointNamingScheme(directory));
 
             var metadata = new byte[64];
             for (var i = 0; i < metadata.Length; i++)
                 metadata[i] = (byte)(i + 1);
             manager.Commit(beginAddress: 0, untilAddress: 64, metadata, commitNum: 0, forceWriteMetadata: true);
 
-            // The reader returns the sector-padded body, so compare the metadata that was written.
+            // The reader returns the sector-padded body, so compare only the metadata that was written.
             var roundTripped = manager.GetCommitMetadata(0);
             CollectionAssert.AreEqual(metadata, roundTripped.AsSpan(0, metadata.Length).ToArray(), "a healthy commit must round-trip");
 
-            creator.ReadsAreTruncated = true;
-            var ex = Assert.Throws<TsavoriteException>(() => manager.GetCommitMetadata(0));
+            manager.Commit(beginAddress: 0, untilAddress: 64, [], commitNum: 1, forceWriteMetadata: true);
+
+            var ex = Assert.Throws<TsavoriteException>(() => manager.GetCommitMetadata(1));
             StringAssert.Contains("truncated or corrupt", ex.Message);
         }
     }
