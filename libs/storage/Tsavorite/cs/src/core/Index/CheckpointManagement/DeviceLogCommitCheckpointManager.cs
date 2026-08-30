@@ -35,6 +35,12 @@ namespace Tsavorite.core
         /// checkpoint-metadata I/O is not silently ignored.</summary>
         private uint metadataIoErrorCode;
 
+        /// <summary>
+        /// Windows <c>ERROR_HANDLE_EOF</c>. <see cref="ReadInto"/> rounds its length up to a sector boundary, so reading a
+        /// metadata file shorter than one sector reports this; it means "the file ended", not "the read failed".
+        /// </summary>
+        private const uint ErrorHandleEof = 38;
+
         private readonly bool removeOutdated;
         private SectorAlignedBufferPool bufferPool;
 
@@ -418,15 +424,22 @@ namespace Tsavorite.core
 
             try
             {
+                // The read is rounded up to a sector, so it routinely asks for more bytes than the metadata file holds
+                // and the tail of the buffer is left holding whatever the pool handed us. Clear it so a short read
+                // yields deterministic zeros rather than another caller's stale metadata.
+                new Span<byte>(pbuffer.aligned_pointer, (int)numBytesToRead).Clear();
+
                 metadataIoErrorCode = 0;
                 device.ReadAsync(address, (IntPtr)pbuffer.aligned_pointer,
                     (uint)numBytesToRead, IOCallback, null);
                 semaphore.Wait();
 
-                // A failed read leaves the buffer holding whatever the pool handed us. Without this check the caller
-                // parses that as metadata, so a transient device error becomes a wrong-but-plausible recovery instead
-                // of a reported failure.
-                if (metadataIoErrorCode != 0)
+                // A genuinely failed read leaves no metadata in the buffer. Without this check the caller parses that
+                // as metadata, so a device error becomes a wrong-but-plausible recovery instead of a reported failure.
+                // End-of-file is excluded: the sector rounding above deliberately over-reads, which Windows reports as
+                // ERROR_HANDLE_EOF while Linux simply returns a short read, and in both cases the bytes the caller
+                // needs were transferred.
+                if (metadataIoErrorCode is not 0 and not ErrorHandleEof)
                     throw new TsavoriteException($"Checkpoint metadata read failed with error code {metadataIoErrorCode}");
 
                 buffer = new byte[numBytesToRead];

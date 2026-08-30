@@ -454,6 +454,9 @@ namespace Tsavorite.test
                 ReadInto(device, 0, out var buffer, size);
                 return buffer;
             }
+
+            public void WriteMetadata(IDevice device, byte[] metadata)
+                => WriteInto(device, 0, metadata, metadata.Length);
         }
 
         [Test]
@@ -481,6 +484,40 @@ namespace Tsavorite.test
                 failing.ReadErrorCode = 22;
                 var ex = Assert.Throws<TsavoriteException>(() => manager.ReadMetadata(failing, sizeof(int)));
                 StringAssert.Contains("22", ex.Message);
+            }
+        }
+
+        [Test]
+        [Category("TsavoriteLog")]
+        public void MetadataReadToleratesEndOfFile()
+        {
+            // ReadInto rounds its length up to a sector, so it routinely asks for more bytes than the metadata file
+            // holds. Windows reports that over-read as ERROR_HANDLE_EOF while Linux returns a short read, so treating
+            // any non-zero error code as fatal breaks every Windows metadata read of a sub-sector file. EOF must be
+            // tolerated, and the bytes that were not transferred must read back as deterministic zeros rather than
+            // whatever the pooled buffer previously held.
+            using var manager = new TestableCheckpointManager(
+                new LocalStorageNamedDeviceFactoryCreator(deleteOnClose: true),
+                new DefaultCheckpointNamingScheme(TestUtils.MethodTestDir));
+
+            var backing = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "metadata-eof.dat"), deleteOnClose: true);
+            var failing = new ErrorCodeOnReadDevice(backing);
+            using (failing)
+            {
+                failing.Initialize(1 << 20);
+
+                // Prime the pooled buffer with non-zero bytes so a stale-buffer regression cannot masquerade as zeros.
+                manager.WriteMetadata(failing, [0x7F, 0x7F, 0x7F, 0x7F]);
+                var primed = manager.ReadMetadata(failing, sizeof(int));
+                ClassicAssert.AreNotEqual(0, BitConverter.ToInt32(primed, 0));
+
+                const uint ErrorHandleEof = 38;
+                failing.ReadErrorCode = ErrorHandleEof;
+
+                byte[] afterEof = null;
+                Assert.DoesNotThrow(() => afterEof = manager.ReadMetadata(failing, sizeof(int)));
+                ClassicAssert.IsNotNull(afterEof);
+                CollectionAssert.AreEqual(new byte[afterEof.Length], afterEof, "untransferred bytes must be zeroed, not stale pool contents");
             }
         }
     }
