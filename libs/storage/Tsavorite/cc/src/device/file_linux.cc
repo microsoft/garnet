@@ -230,9 +230,20 @@ int QueueIoHandler::QueueRun(int timeout_secs) {
 }
 
 int QueueIoHandler::QueueRunFor(int idx, int timeout_secs) {
-    if (idx < 0 || idx >= static_cast<int>(io_objects_.size())) return -1;
+    if (idx < 0 || idx >= static_cast<int>(io_objects_.size())) {
+      // Cold path: a drainer bound to a shard that does not exist can never reap a completion, so
+      // every IO issued to it would hang. Name the condition instead of returning an opaque -1 that
+      // the managed drainer cannot distinguish from an idle pass.
+      native_device::set_last_error(
+          "QueueRunFor: libaio context index %d is out of range (%d context(s) exist).",
+          idx, static_cast<int>(io_objects_.size()));
+      return -1;
+    }
     io_context_t ctx = io_objects_[idx];
-    if (ctx == 0) return -1;
+    if (ctx == 0) {
+      native_device::set_last_error("QueueRunFor: libaio io_context for shard %d is null.", idx);
+      return -1;
+    }
     struct timespec timeout;
     timeout.tv_sec = timeout_secs;
     timeout.tv_nsec = 0;
@@ -258,7 +269,16 @@ int QueueIoHandler::QueueRunFor(int idx, int timeout_secs) {
         }
     } while (n == IO_BATCH_EVENTS);
 
-    return ret ? ret : n;
+    if (ret) return ret;
+    if (n < 0) {
+        // A blocking io_getevents is interrupted whenever a signal lands on the drainer thread (the
+        // .NET runtime signals threads routinely), which is not a drain failure: report it as an idle
+        // pass so the caller simply waits again, matching how the submission path treats -EINTR.
+        if (n == -EINTR) return 0;
+        native_device::set_last_error("io_getevents on libaio shard %d failed: errno %d (%s).",
+                                      idx, -n, std::strerror(-n));
+    }
+    return n;
 }
 
 namespace {
@@ -534,9 +554,17 @@ int UringIoHandler::QueueRun(int timeout_secs) {
 int UringIoHandler::QueueRunFor(int idx, int timeout_secs) {
     // Blocking drain for one ring. The wait phase is lock-free (kernel wakes every blocked
     // thread on a CQE); peek+advance is serialised by cq_lock against the compat scanner.
-    if (idx < 0 || idx >= static_cast<int>(rings_.size())) return -1;
+    if (idx < 0 || idx >= static_cast<int>(rings_.size())) {
+        native_device::set_last_error(
+            "QueueRunFor: io_uring ring index %d is out of range (%d ring(s) exist).",
+            idx, static_cast<int>(rings_.size()));
+        return -1;
+    }
     struct io_uring* ring = rings_[idx];
-    if (ring == nullptr) return -1;
+    if (ring == nullptr) {
+        native_device::set_last_error("QueueRunFor: io_uring ring for shard %d is null.", idx);
+        return -1;
+    }
     SpinLock* cq_lock = cq_locks_[idx];
 
     int ret = 0;

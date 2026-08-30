@@ -84,7 +84,9 @@ namespace Garnet.server
             }
             catch (Exception ex)
             {
-                Logger?.LogInformation(ex, "Error during recovery of store; storeVersion = {storeVersion};", storeVersion);
+                // Unless FailOnRecoveryError is set the server continues with whatever was recovered, so this must be
+                // visible at the default log level; otherwise a server that silently discarded its data looks healthy.
+                Logger?.LogError(ex, "Error during recovery of store; storeVersion = {storeVersion};", storeVersion);
 
                 if (StoreWrapper.serverOptions.FailOnRecoveryError)
                     throw;

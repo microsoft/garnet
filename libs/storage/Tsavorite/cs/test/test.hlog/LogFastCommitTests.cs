@@ -23,6 +23,70 @@ namespace Tsavorite.test
 
         [Test]
         [Category("TsavoriteLog")]
+        public async Task FastCommitRecoverToMissingCommitNumThrows()
+        {
+            // The equivalent non-fast-commit test lives in LogTests and only reaches the early
+            // "!fastCommitMode" guard, so the fast-commit path -- the one Garnet always runs with -- had no
+            // coverage here. On that path the requested commit can only be produced by a forward scan, and a scan
+            // that fails to find it must not fall through: info still describes the closest EARLIER commit, so
+            // recovery would restore the wrong data. Verified as a runtime check rather than a Debug.Assert,
+            // because release builds are where recovery actually runs.
+            var filename = Path.Join(TestUtils.MethodTestDir, "fastCommitMissing.log");
+            device = Devices.CreateLogDevice(filename, deleteOnClose: true);
+            var logSettings = new TsavoriteLogSettings
+            {
+                LogDevice = device,
+                LogChecksum = LogChecksumType.PerEntry,
+                LogCommitManager = manager,
+                FastCommitMode = true,
+                TryRecoverLatest = false,
+                SegmentSizeBits = 26
+            };
+            log = new TsavoriteLog(logSettings);
+
+            var entry = new byte[entryLength];
+            for (var i = 0; i < entryLength; i++)
+                entry[i] = (byte)i;
+
+            for (var i = 0; i < numEntries; i++)
+                _ = log.Enqueue(entry);
+            var cookie1 = new byte[100];
+            new Random().NextBytes(cookie1);
+            ClassicAssert.IsTrue(log.CommitStrongly(out var commit1Addr, out _, true, cookie1, 1));
+
+            for (var i = 0; i < numEntries; i++)
+                _ = log.Enqueue(entry);
+            var cookie6 = new byte[100];
+            new Random().NextBytes(cookie6);
+            ClassicAssert.IsTrue(log.CommitStrongly(out _, out _, true, cookie6, 6));
+
+            log.Dispose();
+            log = null;
+            manager.RemoveAllCommits();
+
+            // Commit 4 never existed. The closest earlier commit is 1, which is what would be silently returned.
+            var recoveredLog = new TsavoriteLog(logSettings);
+            try
+            {
+                _ = Assert.ThrowsAsync<TsavoriteException>(async () => await recoveredLog.RecoverAsync(4).ConfigureAwait(false));
+                ClassicAssert.AreNotEqual(commit1Addr, recoveredLog.TailAddress,
+                    "Recovery silently fell back to an earlier commit instead of failing the request");
+            }
+            finally
+            {
+                recoveredLog.Dispose();
+            }
+
+            // A commit that does exist must still recover normally, so the new check cannot reject valid requests.
+            recoveredLog = new TsavoriteLog(logSettings);
+            await recoveredLog.RecoverAsync(1).ConfigureAwait(false);
+            ClassicAssert.AreEqual(cookie1, recoveredLog.RecoveredCookie);
+            ClassicAssert.AreEqual(commit1Addr, recoveredLog.TailAddress);
+            recoveredLog.Dispose();
+        }
+
+        [Test]
+        [Category("TsavoriteLog")]
         [Category("Smoke")]
         public async Task TsavoriteLogSimpleFastCommitTest([Values] TestUtils.TestDeviceType deviceType)
         {

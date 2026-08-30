@@ -318,8 +318,12 @@ namespace Tsavorite.core
                         current.Dispose();
                     }
                 }
-                catch
+                catch (Exception ex)
                 {
+                    // A checkpoint whose metadata cannot be read is skipped in favor of an older one. Report it: if
+                    // every token fails, recovery reports only that no checkpoint was found, with no indication that
+                    // checkpoints exist but are unreadable.
+                    logger?.LogWarning(ex, "Skipping unreadable HybridLog checkpoint: {hybridLogToken}", hybridLogToken);
                     continue;
                 }
 
@@ -339,8 +343,9 @@ namespace Tsavorite.core
                     recoveredICInfo = new IndexCheckpointInfo();
                     recoveredICInfo.Recover(indexToken, checkpointManager);
                 }
-                catch
+                catch (Exception ex)
                 {
+                    logger?.LogWarning(ex, "Skipping unreadable index checkpoint: {indexToken}", indexToken);
                     continue;
                 }
 
