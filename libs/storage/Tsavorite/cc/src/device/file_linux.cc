@@ -231,9 +231,8 @@ int QueueIoHandler::QueueRun(int timeout_secs) {
 
 int QueueIoHandler::QueueRunFor(int idx, int timeout_secs) {
     if (idx < 0 || idx >= static_cast<int>(io_objects_.size())) {
-      // Cold path: a drainer bound to a shard that does not exist can never reap a completion, so
-      // every IO issued to it would hang. Name the condition instead of returning an opaque -1 that
-      // the managed drainer cannot distinguish from an idle pass.
+      // Cold path: a drainer bound to a shard that does not exist can never reap a completion. Name
+      // the condition so the managed drainer can distinguish it from an idle pass.
       native_device::set_last_error(
           "QueueRunFor: libaio context index %d is out of range (%d context(s) exist).",
           idx, static_cast<int>(io_objects_.size()));
@@ -271,9 +270,8 @@ int QueueIoHandler::QueueRunFor(int idx, int timeout_secs) {
 
     if (ret) return ret;
     if (n < 0) {
-        // A blocking io_getevents is interrupted whenever a signal lands on the drainer thread (the
-        // .NET runtime signals threads routinely), which is not a drain failure: report it as an idle
-        // pass so the caller simply waits again, matching how the submission path treats -EINTR.
+        // A blocking io_getevents is interrupted whenever a signal lands on the drainer thread, which
+        // is not a drain failure. Report it as an idle pass, matching the submission path.
         if (n == -EINTR) return 0;
         native_device::set_last_error("io_getevents on libaio shard %d failed: errno %d (%s).",
                                       idx, -n, std::strerror(-n));

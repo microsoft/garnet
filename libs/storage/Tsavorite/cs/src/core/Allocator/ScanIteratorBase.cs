@@ -222,13 +222,10 @@ namespace Tsavorite.core
                             }
                             catch (Exception ex)
                             {
-                                // BumpCurrentEpoch runs OTHER threads' previously registered drain actions, and can
-                                // throw both before our action is registered (draining to find a free slot) and after
-                                // (it invokes a reclaimed slot's action once ours is installed). The caller cannot tell
-                                // which happened, so the latch makes the repair idempotent: whichever of DoReadPage or
-                                // this handler arrives first owns the frame and the other becomes a no-op. Without it,
-                                // a throw before registration strands pendingDrainCallbacks and leaves the frame
-                                // claimed forever, and an unconditional repair would double-decrement in the other case.
+                                // BumpCurrentEpoch runs other threads' registered drain actions, so it can throw either
+                                // before or after our action is registered, and the caller cannot tell which. The latch
+                                // makes the repair idempotent: whichever of DoReadPage or this handler runs first owns
+                                // the frame, and the other is a no-op.
                                 if (Interlocked.Exchange(ref frameRepairLatch, 1) == 0)
                                 {
                                     FailFrameLoad(nextFrame, pageEndAddress, ex);
@@ -242,8 +239,7 @@ namespace Tsavorite.core
 
                         void DoReadPage(int frameIndex)
                         {
-                            // Claimed by the failure handler above; the frame is already repaired and the callback
-                            // already accounted for, so touching either again would corrupt both.
+                            // The failure handler above already repaired the frame and accounted for the callback.
                             if (Interlocked.Exchange(ref frameRepairLatch, 1) != 0)
                                 return;
 
@@ -255,8 +251,7 @@ namespace Tsavorite.core
                             catch (Exception ex)
                             {
                                 // Publish the terminal state before releasing pendingDrainCallbacks: Dispose treats a
-                                // zero count as "no callback can still touch iterator state", and would otherwise be
-                                // free to dispose the completion event and token source out from under us.
+                                // zero count as license to dispose the completion event and token source.
                                 FailFrameLoad(nextFrame, pageEndAddress, ex);
                                 _ = Interlocked.Decrement(ref pendingDrainCallbacks);
                                 return;
@@ -316,31 +311,24 @@ namespace Tsavorite.core
                 long devicePageOffset = 0, IDevice device = null, IDevice objectLogDevice = null, CancellationTokenSource cts = null);
 
         /// <summary>
-        /// Publish the failure of a page-read that could not be issued at all (the device threw synchronously, so no
-        /// completion callback will ever fire for <paramref name="frame"/>).
+        /// Publish the failure of a page read that could not be issued, so no completion callback will fire for
+        /// <paramref name="frame"/>.
         /// </summary>
         /// <remarks>
-        /// This runs inside the deferred <see cref="LightEpoch.BumpCurrentEpoch(Action)"/> action, so the exception must
-        /// not be rethrown: it would abort an arbitrary thread's drain pass (dropping the remaining drain actions) and
-        /// would never reach the scanning thread. Instead the failure is routed through the same channel a failed I/O
-        /// uses -- cancel the frame's <see cref="loadCTSs"/> -- so <see cref="WaitForFrameLoad"/> skips the page rather
-        /// than waiting forever on a completion event that nothing will signal. <see cref="loadedPages"/> is advanced so
-        /// the claim published into <see cref="nextLoadedPages"/> before the read was issued does not leave
-        /// <see cref="BufferAndLoad"/>'s CAS loop spinning forever on a load that will never be retried.
+        /// Runs inside the deferred <see cref="LightEpoch.BumpCurrentEpoch(Action)"/> action, so nothing may escape: an
+        /// exception here aborts an arbitrary thread's drain pass and never reaches the scanning thread. The failure is
+        /// instead routed through the channel a failed I/O uses -- cancelling the frame's <see cref="loadCTSs"/> -- so
+        /// <see cref="WaitForFrameLoad"/> skips the page, and <see cref="loadedPages"/> is advanced so
+        /// <see cref="BufferAndLoad"/>'s CAS loop does not wait on a load that will never be retried.
         /// </remarks>
         private void FailFrameLoad(long frame, long pageEndAddress, Exception ex)
         {
-            // Repair the frame first and let nothing escape: this runs as a deferred drain action, where an exception
-            // would leave the frame claimed but never loaded, reinstating the unbounded spin this method exists to
-            // prevent. Logging is external code and is therefore done last, inside its own guard.
+            // Repair the frame before logging, which is external code and guarded separately.
             try
             {
-                // Leave the frame in exactly the state a load that fails asynchronously leaves it in: an unset
-                // completion event plus a cancelled token. WaitForFrameLoad then falls through to the wait, which
-                // throws immediately on the cancelled token, and its catch skips the page and makes the frame
-                // reusable. Installing a fresh event rather than reusing the current one keeps that state
-                // unambiguous even if the device threw before assigning the out parameter, which would otherwise
-                // leave the previous page's signalled event in place and present stale frame data as valid.
+                // Leave the frame as an asynchronously failed load does: an unset completion event and a cancelled
+                // token, so WaitForFrameLoad's wait throws immediately and its catch makes the frame reusable. A fresh
+                // event keeps that state unambiguous when the device threw before assigning the out parameter.
                 loadCompletionEvents[frame] = new CountdownEvent(1);
             }
             catch { }
@@ -415,7 +403,7 @@ namespace Tsavorite.core
                 // Exception occurred so skip the page containing the currentAddress, and reinitialize the loaded page and cancellation token for the current frame.
                 // The exception may have been an OperationCanceledException.
                 // A load that fails asynchronously cancels the token without signaling the completion event, so signal
-                // it here to leave the frame reusable for a subsequent page.
+                // it here to leave the frame reusable.
                 SignalFrameLoadCompletion(currentFrame);
                 loadedPages[currentFrame] = -1;
                 loadCTSs[currentFrame] = new CancellationTokenSource();
@@ -438,20 +426,18 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Interval at which an in-progress frame load that has not yet completed is reported, so that a device that
-        /// never delivers its completion callback surfaces as a logged stall rather than a silent, unbounded wait.
+        /// Interval at which an outstanding frame load is reported, so a device that never delivers its completion
+        /// callback surfaces as a logged stall rather than a silent wait.
         /// </summary>
         private const int FrameLoadWaitReportIntervalMs = 15_000;
 
         /// <summary>
         /// Wait for an outstanding page load into <paramref name="currentFrame"/> to complete, reporting periodically
-        /// while the load remains outstanding.
+        /// while it remains outstanding.
         /// </summary>
         /// <remarks>
-        /// A device that loses a completion callback would otherwise park the waiting thread forever with nothing
-        /// logged. Recovery runs this path before the server starts accepting connections, so an unreported stall here
-        /// is indistinguishable from a healthy startup. The wait itself remains unbounded -- a slow device must not be
-        /// treated as a failed one -- but it is no longer silent.
+        /// Recovery runs this path before the server accepts connections, so a stall here is otherwise
+        /// indistinguishable from a healthy startup. The wait stays unbounded, since a slow device is not a failed one.
         /// </remarks>
         private void WaitForFrameLoadCompletion(long currentAddress, long currentFrame)
         {
@@ -474,12 +460,28 @@ namespace Tsavorite.core
             // in AsyncReadPageFromDeviceToFrameCallback when I/O completes, so reaching zero guarantees
             // no outstanding access to our state. The deferred callbacks will be drained by other threads'
             // epoch operations (Resume, Suspend, ProtectAndDrain). Report periodically so a device that never
-            // delivers a completion shows up as a logged stall rather than an unexplained spinning thread.
+            // delivers a completion shows up as a logged stall.
             var reportIntervalTicks = Stopwatch.Frequency * FrameLoadWaitReportIntervalMs / 1000;
             var startTimestamp = Stopwatch.GetTimestamp();
             var nextReportTimestamp = startTimestamp + reportIntervalTicks;
             while (Volatile.Read(ref pendingDrainCallbacks) > 0)
             {
+                // A page read registered on the drain list only runs when some thread drains the epoch. If this
+                // thread holds it, drain here rather than wait for another thread that may not exist. A drain action
+                // registered by other code may throw, which aborts the pass but not this wait; the remaining actions,
+                // including ours, are picked up by the next one.
+                if (epoch is not null && epoch.ThisInstanceProtected())
+                {
+                    try
+                    {
+                        epoch.ProtectAndDrain();
+                    }
+                    catch (Exception ex)
+                    {
+                        logger?.LogWarning(ex, "Draining the epoch while disposing scan iterator failed");
+                    }
+                }
+
                 Thread.Yield();
 
                 var nowTimestamp = Stopwatch.GetTimestamp();

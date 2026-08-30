@@ -208,8 +208,8 @@ namespace Tsavorite.test
 
         private int readOrdinal = -1;
 
-        /// <summary>True once the <see cref="ThrowOnReadOrdinal"/> read has actually thrown, so a test can assert that
-        /// its fault injection really fired rather than silently passing as a no-op.</summary>
+        /// <summary>True once the <see cref="ThrowOnReadOrdinal"/> read has thrown, so a test can assert its fault
+        /// injection fired.</summary>
         public volatile bool ReadFailureInjected;
 
         public SyncThrowOnReadDevice(IDevice underlying) : base(underlying.FileName, underlying.SectorSize, underlying.Capacity)
@@ -293,9 +293,8 @@ namespace Tsavorite.test
     }
 
     /// <summary>
-    /// Completes reads through the IO callback with a non-zero error code rather than throwing. This is the shape a
-    /// real device failure takes, and it is the only way to exercise callers that inspect the callback's error code
-    /// instead of relying on an exception.
+    /// Completes reads through the IO callback with a non-zero error code rather than throwing, exercising callers
+    /// that inspect the callback's error code instead of relying on an exception.
     /// </summary>
     public class ErrorCodeOnReadDevice : StorageDeviceBase
     {
@@ -303,6 +302,10 @@ namespace Tsavorite.test
 
         /// <summary>When non-zero, reads complete with this error code and no data is transferred.</summary>
         public volatile uint ReadErrorCode;
+
+        /// <summary>When non-negative, reads succeed but report only this many bytes transferred, as a device does
+        /// when the file ends before the requested length.</summary>
+        public volatile int ShortReadBytes = -1;
 
         public ErrorCodeOnReadDevice(IDevice underlying) : base(underlying.FileName, underlying.SectorSize, underlying.Capacity)
             => this.underlying = underlying;
@@ -331,6 +334,13 @@ namespace Tsavorite.test
             if (errorCode != 0)
             {
                 callback(errorCode, 0, context, null);
+                return;
+            }
+
+            var shortReadBytes = ShortReadBytes;
+            if (shortReadBytes >= 0)
+            {
+                callback(0, (uint)shortReadBytes, context, null);
                 return;
             }
             underlying.ReadAsync(segmentId, sourceAddress, destinationAddress, readLength, callback, context);

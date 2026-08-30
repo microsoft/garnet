@@ -206,9 +206,8 @@ namespace Tsavorite.test
 
         /// <summary>
         /// A device that throws synchronously from ReadAsync never delivers a completion callback for that read. The
-        /// scan iterator must surface that as a failed page load rather than leaving the frame claimed-but-never-loaded,
-        /// which previously wedged the scanning thread in an unbounded spin (and parked any later waiter forever).
-        /// This is exercised on every recovery of a fast-commit log, which runs before a server accepts connections.
+        /// scan iterator must surface it as a failed page load rather than leaving the frame claimed but never loaded,
+        /// which strands the scanning thread and any later waiter.
         /// </summary>
         [Test]
         [Category("TsavoriteLog")]
@@ -267,8 +266,8 @@ namespace Tsavorite.test
             holderThread.Start();
             ClassicAssert.IsTrue(holderProtected.Wait(TimeSpan.FromSeconds(10)));
 
-            // Scan on a separate thread with a bounded wait: a regression wedges the scanning thread permanently,
-            // which must fail the test rather than hang the run.
+            // Scan on a separate thread with a bounded wait so a stranded scanning thread fails the test
+            // rather than hanging the run.
             Exception firstPass = null, secondPass = null;
             var entriesReadAfterRecovery = 0;
             using var scanDone = new ManualResetEventSlim(false);
@@ -287,9 +286,9 @@ namespace Tsavorite.test
                         firstPass = ex;
                     }
 
-                    // The iterator must remain usable: the failed frames were released, not left claimed forever.
-                    // Pages whose read was already in flight when the device recovered are still skipped, so tolerate
-                    // cancellation while requiring the scan to make forward progress and terminate.
+                    // The iterator must remain usable after the failed frames are released. Pages whose read was
+                    // already in flight when the device recovered are still skipped, so tolerate cancellation while
+                    // requiring the scan to make forward progress and terminate.
                     flakyDevice.ArmReadFailure = false;
                     for (var scanning = true; scanning;)
                     {
@@ -335,10 +334,10 @@ namespace Tsavorite.test
 
         /// <summary>
         /// A page read that fails while it is still only a read-ahead (frame index &gt; 0) is published into
-        /// <c>loadedPages</c> as though it had loaded, so that the claim in <c>nextLoadedPages</c> does not wedge the
-        /// CAS loop. The frame that failed must still refuse to hand back its contents when iteration later reaches it:
-        /// the buffer holds either nothing or the previous page's bytes, so returning entries from it would be silent
-        /// corruption. Requires double-page buffering, which is the only mode that issues read-ahead.
+        /// <c>loadedPages</c> as though it had loaded, so the claim in <c>nextLoadedPages</c> does not stall the CAS
+        /// loop. The failed frame must still refuse to hand back its contents when iteration reaches it: its buffer
+        /// holds either nothing or the previous page's bytes. Requires double-page buffering, the only mode that
+        /// issues read-ahead.
         /// </summary>
         [Test]
         [Category("TsavoriteLog")]
@@ -361,9 +360,8 @@ namespace Tsavorite.test
             const int entryCount = 1000;
             ClassicAssert.GreaterOrEqual(entryLength, sizeof(int), "Entries must be wide enough to carry a unique index");
 
-            // Give every entry a unique, self-identifying payload. Identical payloads plus a count-only assertion
-            // cannot distinguish "page skipped" from "page silently backfilled with records from a different page",
-            // which is exactly the stale-frame failure this test exists to catch.
+            // Give every entry a unique, self-identifying payload so the assertions can distinguish a skipped page
+            // from a page backfilled with records from a different page.
             var payload = new byte[entryLength];
             for (var i = 0; i < entryCount; i++)
             {
@@ -394,9 +392,8 @@ namespace Tsavorite.test
                                 continue;
                             ++entriesRead;
 
-                            // Records may be MISSING when a page cannot be read, but each one delivered must be a
-                            // real record, delivered once, in order. A stale frame violates this by replaying
-                            // indices already seen or by producing indices out of sequence.
+                            // Records may be missing when a page cannot be read, but each one delivered must be a
+                            // real record, delivered once, in order.
                             var index = BitConverter.ToInt32(result, 0);
                             if (length != entryLength || index <= lastIndex || index >= entryCount)
                             {
@@ -436,7 +433,7 @@ namespace Tsavorite.test
             ClassicAssert.IsNull(ordering, ordering);
             ClassicAssert.IsTrue(flakyDevice.ReadFailureInjected, "Fault injection never fired, so this test asserted nothing");
 
-            // The contract under test: entries may be lost when a page cannot be read, but never silently.
+            // Entries may be lost when a page cannot be read, but never silently.
             if (entriesRead < entryCount)
                 ClassicAssert.IsTrue(sawFailure, $"Scan silently returned {entriesRead} of {entryCount} entries after a read-ahead page read failed, with no error surfaced to the caller");
         }
@@ -463,9 +460,8 @@ namespace Tsavorite.test
         [Category("TsavoriteLog")]
         public void MetadataReadFailureIsReportedRatherThanReturningGarbage()
         {
-            // A failed metadata read leaves the pooled buffer holding whatever it previously contained. Returning it
-            // makes the caller parse arbitrary bytes as checkpoint metadata, turning a transient device error into a
-            // wrong-but-plausible recovery. The read must fail loudly instead.
+            // A failed metadata read leaves the pooled buffer holding whatever it previously contained, so returning
+            // it would have the caller parse arbitrary bytes as checkpoint metadata. The read must fail instead.
             using var manager = new TestableCheckpointManager(
                 new LocalStorageNamedDeviceFactoryCreator(deleteOnClose: true),
                 new DefaultCheckpointNamingScheme(TestUtils.MethodTestDir));
@@ -475,9 +471,10 @@ namespace Tsavorite.test
             using (failing)
             {
                 failing.Initialize(1 << 20);
+                manager.WriteMetadata(failing, [1, 2, 3, 4]);
 
-                // Sanity: the same read succeeds while the device is healthy, so the assertion below is about the
-                // error code and not about the device being unusable.
+                // The same read succeeds while the device is healthy, so the assertion below is about the error code
+                // and not about the device being unusable.
                 var healthy = manager.ReadMetadata(failing, sizeof(int));
                 ClassicAssert.IsNotNull(healthy);
 
@@ -492,10 +489,8 @@ namespace Tsavorite.test
         public void MetadataReadToleratesEndOfFile()
         {
             // ReadInto rounds its length up to a sector, so it routinely asks for more bytes than the metadata file
-            // holds. Windows reports that over-read as ERROR_HANDLE_EOF while Linux returns a short read, so treating
-            // any non-zero error code as fatal breaks every Windows metadata read of a sub-sector file. EOF must be
-            // tolerated, and the bytes that were not transferred must read back as deterministic zeros rather than
-            // whatever the pooled buffer previously held.
+            // holds. Windows reports that over-read as ERROR_HANDLE_EOF while Linux returns a short read. EOF must be
+            // tolerated, and the untransferred bytes must read back as zeros rather than stale pooled-buffer content.
             using var manager = new TestableCheckpointManager(
                 new LocalStorageNamedDeviceFactoryCreator(deleteOnClose: true),
                 new DefaultCheckpointNamingScheme(TestUtils.MethodTestDir));
@@ -518,6 +513,38 @@ namespace Tsavorite.test
                 Assert.DoesNotThrow(() => afterEof = manager.ReadMetadata(failing, sizeof(int)));
                 ClassicAssert.IsNotNull(afterEof);
                 CollectionAssert.AreEqual(new byte[afterEof.Length], afterEof, "untransferred bytes must be zeroed, not stale pool contents");
+            }
+        }
+
+        [Test]
+        [Category("TsavoriteLog")]
+        public void MetadataReadRejectsShortRead()
+        {
+            // A device that reports success but transfers fewer bytes than the caller asked for leaves the tail of
+            // the buffer zeroed. Those zeros parse as metadata, so the short read must be reported instead.
+            using var manager = new TestableCheckpointManager(
+                new LocalStorageNamedDeviceFactoryCreator(deleteOnClose: true),
+                new DefaultCheckpointNamingScheme(TestUtils.MethodTestDir));
+
+            var backing = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "metadata-short.dat"), deleteOnClose: true);
+            var truncating = new ErrorCodeOnReadDevice(backing);
+            using (truncating)
+            {
+                truncating.Initialize(1 << 20);
+
+                var metadata = new byte[64];
+                for (var i = 0; i < metadata.Length; i++)
+                    metadata[i] = (byte)(i + 1);
+                manager.WriteMetadata(truncating, metadata);
+
+                // A read that stops short of the requested size but still covers it is the normal sector-rounded case.
+                truncating.ShortReadBytes = metadata.Length;
+                var full = manager.ReadMetadata(truncating, metadata.Length);
+                ClassicAssert.IsNotNull(full);
+
+                truncating.ShortReadBytes = metadata.Length - 1;
+                var ex = Assert.Throws<TsavoriteException>(() => manager.ReadMetadata(truncating, metadata.Length));
+                StringAssert.Contains("truncated or corrupt", ex.Message);
             }
         }
     }
