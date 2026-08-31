@@ -1,7 +1,10 @@
-// Copyright (c) Microsoft Corporation.
+﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
+using System.IO;
+using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using Garnet.common;
 using Garnet.server;
@@ -156,6 +159,113 @@ namespace Garnet.test
                 => new() { KeySize = key.KeyBytes.Length, ValueSize = value.Length, ValueIsObject = false };
             public override RecordFieldInfo GetUpsertFieldInfo<TKey>(TKey key, IHeapObject value, ref IGarnetObject input)
                 => new() { KeySize = key.KeyBytes.Length, ValueSize = ObjectIdMap.ObjectIdSize, ValueIsObject = true };
+        }
+
+        /// <summary>
+        /// Serialization runs on the flush path while readers may concurrently access the same instance, and only
+        /// writers are excluded from a record that is being serialized. Serializing must therefore be a pure read:
+        /// if it deleted expired members it would race those readers and corrupt the collection.
+        /// </summary>
+        [Test]
+        public void SerializeDoesNotMutateSortedSetWithExpiredMembers()
+        {
+            var obj = new SortedSetObject(new BinaryReader(new MemoryStream(BuildSortedSetBytes())));
+
+            ClassicAssert.IsTrue(obj.HasExpirableItems());
+            Thread.Sleep(400);
+
+            var sizeBeforeSerialize = obj.HeapMemorySize;
+
+            using var stream = new MemoryStream();
+            using (var writer = new BinaryWriter(stream, Encoding.UTF8, leaveOpen: true))
+                obj.Serialize(writer);
+
+            ClassicAssert.AreEqual(sizeBeforeSerialize, obj.HeapMemorySize,
+                "Serializing a sorted set must not delete its expired members.");
+            ClassicAssert.IsTrue(obj.HasExpirableItems(),
+                "Serializing a sorted set must not tear down its expiration structures.");
+
+            // The expired member is dropped when the serialized form is read back.
+            var roundTripped = new SortedSetObject(new BinaryReader(new MemoryStream(stream.ToArray()[1..])));
+            ClassicAssert.AreEqual(1, roundTripped.Count());
+        }
+
+        /// <summary>
+        /// Serializing a hash must not delete expired fields, for the same reason as the sorted set case above.
+        /// </summary>
+        [Test]
+        public void SerializeDoesNotMutateHashWithExpiredFields()
+        {
+            var obj = new HashObject(new BinaryReader(new MemoryStream(BuildHashBytes())));
+
+            var sizeAfterLoad = obj.HeapMemorySize;
+            Thread.Sleep(400);
+
+            using var stream = new MemoryStream();
+            using (var writer = new BinaryWriter(stream, Encoding.UTF8, leaveOpen: true))
+                obj.Serialize(writer);
+
+            ClassicAssert.AreEqual(sizeAfterLoad, obj.HeapMemorySize,
+                "Serializing a hash must not delete its expired fields.");
+
+            // The expired field is dropped when the serialized form is read back, so the reloaded object is smaller.
+            var roundTripped = new HashObject(new BinaryReader(new MemoryStream(stream.ToArray()[1..])));
+            ClassicAssert.Less(roundTripped.HeapMemorySize, obj.HeapMemorySize);
+        }
+
+        // One member expiring shortly, one that never expires. Matches the layout read by the deserializing ctor.
+        private const int ExpirationBitMask = 1 << 31;
+
+        private static byte[] BuildSortedSetBytes()
+        {
+            var soonExpiring = DateTimeOffset.UtcNow.Ticks + TimeSpan.FromMilliseconds(200).Ticks;
+
+            using var stream = new MemoryStream();
+            using var writer = new BinaryWriter(stream);
+
+            writer.Write(2);
+
+            var expiring = Encoding.ASCII.GetBytes("expiring");
+            writer.Write(expiring.Length | ExpirationBitMask);
+            writer.Write(expiring);
+            writer.Write(1.0d);
+            writer.Write(soonExpiring);
+
+            var persistent = Encoding.ASCII.GetBytes("persistent");
+            writer.Write(persistent.Length);
+            writer.Write(persistent);
+            writer.Write(2.0d);
+
+            writer.Flush();
+            return stream.ToArray();
+        }
+
+        private static byte[] BuildHashBytes()
+        {
+            var soonExpiring = DateTimeOffset.UtcNow.Ticks + TimeSpan.FromMilliseconds(200).Ticks;
+
+            using var stream = new MemoryStream();
+            using var writer = new BinaryWriter(stream);
+
+            writer.Write(2);
+
+            var expiring = Encoding.ASCII.GetBytes("expiring");
+            writer.Write(expiring.Length | ExpirationBitMask);
+            writer.Write(expiring);
+            var expiringValue = Encoding.ASCII.GetBytes("v1");
+            writer.Write(expiringValue.Length);
+            writer.Write(expiringValue);
+            writer.Write(soonExpiring);
+
+            var persistent = Encoding.ASCII.GetBytes("persistent");
+            writer.Write(persistent.Length);
+            writer.Write(persistent);
+            var persistentValue = Encoding.ASCII.GetBytes("v2");
+            writer.Write(persistentValue.Length);
+            writer.Write(persistentValue);
+
+            writer.Flush();
+            return stream.ToArray();
         }
 
         private void CreateStore()

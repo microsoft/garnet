@@ -1787,5 +1787,181 @@ namespace Garnet.test
         }
 
         #endregion
+
+        /// <summary>
+        /// LMOVE must move each element exactly once even when the source list's record is no longer in the
+        /// mutable region of the log. Mutating the object returned by a read instead of going through RMW
+        /// silently dropped the pop for such records, duplicating elements into the destination.
+        /// </summary>
+        [Test]
+        public void ListMoveOnImmutableSourceRecord()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            const string srcKey = "lmove:src";
+            const string dstKey = "lmove:dst";
+            const int elementCount = 16;
+
+            var expected = new List<string>();
+            for (var i = 0; i < elementCount; i++)
+            {
+                var value = $"element-{i}";
+                expected.Add(value);
+                _ = db.ListRightPush(srcKey, value);
+            }
+
+            // Push the source record out of the mutable region by writing a large amount of unrelated data.
+            var filler = new string('x', 512);
+            for (var i = 0; i < 2000; i++)
+                _ = db.StringSet($"filler:{i}", filler);
+
+            var moved = new List<string>();
+            for (var i = 0; i < elementCount; i++)
+            {
+                var element = db.ListMove(srcKey, dstKey, ListSide.Left, ListSide.Right);
+                ClassicAssert.IsTrue(element.HasValue, $"LMOVE returned nothing on iteration {i}");
+                moved.Add(element.ToString());
+
+                ClassicAssert.AreEqual(elementCount - i - 1, db.ListLength(srcKey),
+                    $"Source length is wrong after {i + 1} moves; the pop was not persisted.");
+            }
+
+            CollectionAssert.AreEqual(expected, moved);
+            CollectionAssert.AreEqual(expected, db.ListRange(dstKey, 0, -1).Select(x => x.ToString()).ToList());
+
+            // Draining the source through LMOVE must remove the key.
+            ClassicAssert.IsFalse(db.KeyExists(srcKey));
+        }
+
+        /// <summary>
+        /// LMOVE must not drop an existing key TTL. A same-key move that rotates a single-element list is a no-op and
+        /// must not empty and recreate the record, which would discard its expiration.
+        /// </summary>
+        [Test]
+        [TestCase("LEFT", "LEFT")]
+        [TestCase("LEFT", "RIGHT")]
+        [TestCase("RIGHT", "LEFT")]
+        [TestCase("RIGHT", "RIGHT")]
+        public void ListMovePreservesKeyExpiration(string srcDirection, string dstDirection)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            foreach (var elementCount in new[] { 1, 3 })
+            {
+                var key = $"lmove:ttl:{srcDirection}:{dstDirection}:{elementCount}";
+                _ = db.KeyDelete(key);
+
+                for (var i = 0; i < elementCount; i++)
+                    _ = db.ListRightPush(key, $"e{i}");
+
+                ClassicAssert.IsTrue(db.KeyExpire(key, TimeSpan.FromMinutes(10)));
+
+                _ = db.Execute("LMOVE", key, key, srcDirection, dstDirection);
+
+                var ttl = db.KeyTimeToLive(key);
+                ClassicAssert.IsNotNull(ttl,
+                    $"LMOVE {srcDirection}->{dstDirection} on a {elementCount}-element list dropped the key TTL.");
+                ClassicAssert.AreEqual(elementCount, db.ListLength(key));
+            }
+        }
+
+        /// <summary>
+        /// Same-key LMOVE is a rotation. It must behave correctly once the record has left the mutable region.
+        /// </summary>
+        [Test]
+        public void ListMoveSameKeyRotationOnImmutableRecord()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            const string key = "lmove:rotate";
+            string[] initial = ["a", "b", "c", "d"];
+            foreach (var value in initial)
+                _ = db.ListRightPush(key, value);
+
+            var filler = new string('x', 512);
+            for (var i = 0; i < 2000; i++)
+                _ = db.StringSet($"filler:{i}", filler);
+
+            // Left -> Right moves the head to the tail.
+            ClassicAssert.AreEqual("a", db.ListMove(key, key, ListSide.Left, ListSide.Right).ToString());
+            CollectionAssert.AreEqual(new[] { "b", "c", "d", "a" },
+                db.ListRange(key, 0, -1).Select(x => x.ToString()).ToArray());
+
+            // Right -> Left moves it back.
+            ClassicAssert.AreEqual("a", db.ListMove(key, key, ListSide.Right, ListSide.Left).ToString());
+            CollectionAssert.AreEqual(initial, db.ListRange(key, 0, -1).Select(x => x.ToString()).ToArray());
+
+            // Popping and pushing at the same end returns that element and leaves the list unchanged.
+            ClassicAssert.AreEqual("a", db.ListMove(key, key, ListSide.Left, ListSide.Left).ToString());
+            CollectionAssert.AreEqual(initial, db.ListRange(key, 0, -1).Select(x => x.ToString()).ToArray());
+
+            ClassicAssert.AreEqual("d", db.ListMove(key, key, ListSide.Right, ListSide.Right).ToString());
+            CollectionAssert.AreEqual(initial, db.ListRange(key, 0, -1).Select(x => x.ToString()).ToArray());
+        }
+
+        /// <summary>
+        /// LMOVE must apply the push through RMW even when the destination record, rather than the source, has left
+        /// the mutable region. Mutating a read-only destination object in place would silently lose the element.
+        /// </summary>
+        [Test]
+        public void ListMoveOnImmutableDestinationRecord()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            const string srcKey = "lmove:immutdst:src";
+            const string dstKey = "lmove:immutdst:dst";
+            _ = db.KeyDelete([srcKey, dstKey]);
+
+            // Populate the destination first, then force it out of the mutable region.
+            _ = db.ListRightPush(dstKey, "d0");
+
+            var filler = new string('x', 512);
+            for (var i = 0; i < 2000; i++)
+                _ = db.StringSet($"lmove:immutdst:filler:{i}", filler);
+
+            // The source is created afterwards, so it is still mutable while the destination is not.
+            _ = db.ListRightPush(srcKey, ["s0", "s1"]);
+
+            ClassicAssert.AreEqual("s1", db.ListMove(srcKey, dstKey, ListSide.Right, ListSide.Right).ToString());
+
+            CollectionAssert.AreEqual(new[] { "d0", "s1" },
+                db.ListRange(dstKey, 0, -1).Select(x => x.ToString()).ToArray());
+            CollectionAssert.AreEqual(new[] { "s0" },
+                db.ListRange(srcKey, 0, -1).Select(x => x.ToString()).ToArray());
+        }
+
+        /// <summary>
+        /// An LMOVE whose destination holds a non-list must fail without removing the element from the source.
+        /// </summary>
+        [Test]
+        public void ListMoveWrongTypeDestinationDoesNotLoseElement()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            const string srcKey = "lmove:wt:src";
+            const string dstKey = "lmove:wt:dst";
+
+            string[] initial = ["a", "b", "c"];
+            foreach (var value in initial)
+                _ = db.ListRightPush(srcKey, value);
+            _ = db.StringSet(dstKey, "not-a-list");
+
+            var filler = new string('x', 512);
+            for (var i = 0; i < 2000; i++)
+                _ = db.StringSet($"filler:{i}", filler);
+
+            var ex = Assert.Throws<RedisServerException>(() =>
+                db.ListMove(srcKey, dstKey, ListSide.Left, ListSide.Right));
+            ClassicAssert.IsTrue(ex.Message.StartsWith("WRONGTYPE"), $"Unexpected error: {ex.Message}");
+
+            ClassicAssert.AreEqual(3, db.ListLength(srcKey));
+            CollectionAssert.AreEqual(initial, db.ListRange(srcKey, 0, -1).Select(x => x.ToString()).ToArray());
+            ClassicAssert.AreEqual("not-a-list", db.StringGet(dstKey).ToString());
+        }
     }
 }

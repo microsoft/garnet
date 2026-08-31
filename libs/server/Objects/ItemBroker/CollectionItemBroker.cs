@@ -383,125 +383,179 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Try to get next available item from list object
+        /// Pops the next available item(s) from the list at <paramref name="asKey"/> using RMW, so that the update is
+        /// applied by Tsavorite rather than by mutating the heap object in place.
         /// </summary>
-        /// <param name="listObj">List object</param>
-        /// <param name="command">RESP command</param>
-        /// <param name="nextItem">Item retrieved</param>
-        /// <returns>True if found available item</returns>
-        private static bool TryGetNextListItem(ListObject listObj, RespCommand command, out byte[] nextItem)
+        private static unsafe bool TryGetNextListResult<TObjectContext>(byte[] key, PinnedSpanByte asKey,
+            PinnedSpanByte dstKey, StorageSession storageSession, RespCommand command, PinnedSpanByte[] cmdArgs,
+            ListObject srcList, int currCount, ref TObjectContext objectContext, out CollectionItemResult result,
+            out byte[] notifyKey)
+            where TObjectContext : ITsavoriteContext<FixedSpanByteKey, ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
         {
-            nextItem = default;
+            result = default;
+            notifyKey = null;
 
-            // If object has no items, return
-            if (listObj.LnkList.Count == 0)
-                return false;
-
-            // Get the next object according to operation type
             switch (command)
             {
-                case RespCommand.BRPOP:
-                    nextItem = listObj.LnkList.Last!.Value;
-                    listObj.LnkList.RemoveLast();
-                    break;
                 case RespCommand.BLPOP:
-                    nextItem = listObj.LnkList.First!.Value;
-                    listObj.LnkList.RemoveFirst();
-                    break;
+                case RespCommand.BRPOP:
+                    {
+                        var status = storageSession.ListPop(asKey,
+                            command == RespCommand.BLPOP ? ListOperation.LPOP : ListOperation.RPOP,
+                            ref objectContext, out var element);
+
+                        if (status != GarnetStatus.OK || !element.IsValid)
+                            return false;
+
+                        result = new CollectionItemResult(key, element.ToArray());
+                        return true;
+                    }
+                case RespCommand.BLMOVE:
+                    {
+                        var srcDirection = (OperationDirection)cmdArgs[1].ReadOnlySpan[0];
+                        var dstDirection = (OperationDirection)cmdArgs[2].ReadOnlySpan[0];
+
+                        if (srcDirection == OperationDirection.Unknown || dstDirection == OperationDirection.Unknown)
+                            return false;
+
+                        // Moving between the same ends of one list, or rotating a single-element list, leaves the
+                        // list unchanged. Returning without the pop/push also avoids emptying the key, which would
+                        // drop its TTL.
+                        if (asKey.ReadOnlySpan.SequenceEqual(dstKey.ReadOnlySpan) &&
+                            (srcDirection == dstDirection || currCount == 1))
+                        {
+                            var unchanged = srcDirection == OperationDirection.Right
+                                ? srcList.LnkList.Last.Value
+                                : srcList.LnkList.First.Value;
+                            result = new CollectionItemResult(key, unchanged.AsSpan().ToArray());
+                            return true;
+                        }
+
+                        var status = storageSession.ListPop(asKey,
+                                srcDirection == OperationDirection.Left ? ListOperation.LPOP : ListOperation.RPOP,
+                                ref objectContext, out var element);
+
+                        if (status != GarnetStatus.OK || !element.IsValid)
+                            return false;
+
+                        // The result outlives the session's scratch buffers, so copy the element onto the heap.
+                        var movedItem = element.ToArray();
+
+                        // The destination type was already validated against the source type by the caller, so the
+                        // push cannot fail on type mismatch here.
+                        // The broker's observer lock is held here, so the push must not notify the broker inline.
+                        // The destination key is reported back instead, and notified once the lock is released.
+                        status = storageSession.ListPush(dstKey, element,
+                            dstDirection == OperationDirection.Left ? ListOperation.LPUSH : ListOperation.RPUSH,
+                            out _, ref objectContext, notifyItemBroker: false);
+
+                        // The destination type was already validated against the source type by the caller, and the
+                        // push creates the destination if it is absent, so the push cannot fail here. If it ever did,
+                        // the element has already been popped and the transaction is committed unconditionally, so
+                        // deliver it to the blocked client rather than discard it.
+                        if (status != GarnetStatus.OK)
+                        {
+                            Debug.Assert(false, "List push to the BLMOVE destination failed after the source pop");
+                            result = new CollectionItemResult(key, movedItem);
+                            return true;
+                        }
+
+                        notifyKey = dstKey.ToArray();
+                        result = new CollectionItemResult(key, movedItem);
+                        return true;
+                    }
+                case RespCommand.BLMPOP:
+                    {
+                        var popDirection = (OperationDirection)cmdArgs[0].ReadOnlySpan[0];
+                        var popCount = Math.Min(*(int*)cmdArgs[1].ToPointer(), currCount);
+
+                        var status = storageSession.ListPop(asKey, popCount,
+                            popDirection == OperationDirection.Left ? ListOperation.LPOP : ListOperation.RPOP,
+                            ref objectContext, out var elements);
+
+                        if (status != GarnetStatus.OK || elements is null || elements.Length == 0)
+                            return false;
+
+                        var items = new byte[elements.Length][];
+                        for (var i = 0; i < elements.Length; i++)
+                            items[i] = elements[i].ToArray();
+
+                        result = new CollectionItemResult(key, items);
+                        return true;
+                    }
                 default:
                     return false;
             }
-
-            listObj.UpdateSize(nextItem, false);
-
-            return true;
-        }
-
-        private static bool TryMoveNextListItem(ListObject srcListObj, ListObject dstListObj,
-            OperationDirection srcDirection, OperationDirection dstDirection, out byte[] nextItem)
-        {
-            nextItem = default;
-
-            // If object has no items, return
-            if (srcListObj.LnkList.Count == 0)
-                return false;
-
-            // Get the next object according to source direction
-            switch (srcDirection)
-            {
-                case OperationDirection.Right:
-                    nextItem = srcListObj.LnkList.Last!.Value;
-                    srcListObj.LnkList.RemoveLast();
-                    break;
-                case OperationDirection.Left:
-                    nextItem = srcListObj.LnkList.First!.Value;
-                    srcListObj.LnkList.RemoveFirst();
-                    break;
-                default:
-                    return false;
-            }
-
-            srcListObj.UpdateSize(nextItem, false);
-
-            // Add the object to the destination according to the destination direction
-            switch (dstDirection)
-            {
-                case OperationDirection.Right:
-                    dstListObj.LnkList.AddLast(nextItem);
-                    break;
-                case OperationDirection.Left:
-                    dstListObj.LnkList.AddFirst(nextItem);
-                    break;
-                default:
-                    return false;
-            }
-
-            dstListObj.UpdateSize(nextItem);
-
-            return true;
         }
 
         /// <summary>
-        /// Try to get next available item from sorted set object based on command type
-        /// BZPOPMIN and BZPOPMAX share same implementation since Dictionary.First() and Last() 
-        /// handle the ordering automatically based on sorted set scores
+        /// Pops the next available item(s) from the sorted set at <paramref name="asKey"/> using RMW, so that the
+        /// update is applied by Tsavorite rather than by mutating the heap object in place.
+        /// BZPOPMIN and BZPOPMAX share the same implementation, differing only in pop order.
         /// </summary>
-        private static unsafe bool TryGetNextSortedSetItem(byte[] key, SortedSetObject sortedSetObj, int count, RespCommand command, PinnedSpanByte[] cmdArgs, out CollectionItemResult result)
+        private static unsafe bool TryGetNextSortedSetResult<TObjectContext>(byte[] key, PinnedSpanByte asKey,
+            StorageSession storageSession, RespCommand command, PinnedSpanByte[] cmdArgs, int currCount,
+            ref TObjectContext objectContext, out CollectionItemResult result)
+            where TObjectContext : ITsavoriteContext<FixedSpanByteKey, ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
         {
             result = default;
 
-            if (count == 0)
-                return false;
+            bool lowScoresFirst;
+            int popCount;
 
             switch (command)
             {
                 case RespCommand.BZPOPMIN:
                 case RespCommand.BZPOPMAX:
-                    var element = sortedSetObj.PopMinOrMax(command == RespCommand.BZPOPMAX);
-                    result = new CollectionItemResult(key, element.Score, element.Element);
-                    return true;
-
+                    lowScoresFirst = command == RespCommand.BZPOPMIN;
+                    popCount = 1;
+                    break;
                 case RespCommand.BZMPOP:
-                    var lowScoresFirst = *(bool*)cmdArgs[0].ToPointer();
-                    var popCount = *(int*)cmdArgs[1].ToPointer();
-                    popCount = Math.Min(popCount, count);
-
-                    var scores = new double[popCount];
-                    var items = new byte[popCount][];
-
-                    for (var i = 0; i < popCount; i++)
-                    {
-                        var popResult = sortedSetObj.PopMinOrMax(!lowScoresFirst);
-                        scores[i] = popResult.Score;
-                        items[i] = popResult.Element;
-                    }
-
-                    result = new CollectionItemResult(key, scores, items);
-                    return true;
-
+                    lowScoresFirst = *(bool*)cmdArgs[0].ToPointer();
+                    popCount = Math.Min(*(int*)cmdArgs[1].ToPointer(), currCount);
+                    break;
                 default:
                     return false;
             }
+
+            var status = storageSession.SortedSetPop(asKey, popCount, lowScoresFirst, out var pairs, ref objectContext);
+
+            if (status != GarnetStatus.OK || pairs is null || pairs.Length == 0)
+                return false;
+
+            if (command == RespCommand.BZMPOP)
+            {
+                var scores = new double[pairs.Length];
+                var items = new byte[pairs.Length][];
+
+                for (var i = 0; i < pairs.Length; i++)
+                {
+                    scores[i] = ParseScoreOrDefault(pairs[i].score);
+                    items[i] = pairs[i].member.ToArray();
+                }
+
+                result = new CollectionItemResult(key, scores, items);
+                return true;
+            }
+
+            result = new CollectionItemResult(key, ParseScoreOrDefault(pairs[0].score), pairs[0].member.ToArray());
+            return true;
+        }
+
+        /// <summary>
+        /// Parses a score emitted by the sorted set pop output.
+        /// The members have already been popped and the transaction is committed unconditionally, so a parse failure
+        /// must still deliver the member to the blocked client rather than discard it. Scores are written by
+        /// <see cref="RespWriteUtils.TryWriteDoubleBulkString"/> using the shortest round-trippable form and NaN is
+        /// rejected at insert time, so this fallback is not expected to be reachable.
+        /// </summary>
+        private static double ParseScoreOrDefault(PinnedSpanByte score)
+        {
+            if (ParseUtils.TryReadDouble(score, out var parsed, canBeInfinite: true))
+                return parsed;
+
+            Debug.Assert(false, "Sorted set score emitted by the object store failed to round-trip");
+            return default;
         }
 
         private unsafe bool TryGetResult(byte[] key, StorageSession storageSession, RespCommand command,
@@ -539,7 +593,9 @@ namespace Garnet.server
             }
 
             var objectTransactionalContext = storageSession.txnManager.ObjectTransactionalContext;
-            var unifiedTransactionalContext = storageSession.txnManager.UnifiedTransactionalContext;
+
+            // Key whose observers must be notified once this operation completes (BLMOVE destination).
+            byte[] notifyKey = null;
 
             try
             {
@@ -578,8 +634,11 @@ namespace Garnet.server
                     }
                 }
 
-                bool isSuccessful;
-                // Get next item based on item type
+                // Get next item based on item type. The objects read above are only inspected for their type and
+                // element count; all mutation is performed through RMW below so that Tsavorite controls whether the
+                // record is updated in place or copied into the mutable region. Mutating the heap object returned by
+                // GET directly would be lost for records that are no longer mutable, and may corrupt records that the
+                // flush path is concurrently serializing.
                 switch (osObject.GarnetObject)
                 {
                     case ListObject listObj:
@@ -587,80 +646,16 @@ namespace Garnet.server
                         if (currCount == 0)
                             return false;
 
-                        switch (command)
-                        {
-                            case RespCommand.BLPOP:
-                            case RespCommand.BRPOP:
-                                isSuccessful = TryGetNextListItem(listObj, command, out var nextItem);
-                                result = new CollectionItemResult(key, nextItem);
-                                break;
-                            case RespCommand.BLMOVE:
-                                ListObject dstList;
-                                var newObj = false;
-                                if (dstObj == null)
-                                {
-                                    dstList = new ListObject();
-                                    newObj = true;
-                                }
-                                else if (dstObj is ListObject tmpDstList)
-                                {
-                                    dstList = tmpDstList;
-                                }
-                                else
-                                    return false;
+                        return TryGetNextListResult(key, asKey, dstKey, storageSession, command, cmdArgs, listObj,
+                            currCount, ref objectTransactionalContext, out result, out notifyKey);
 
-                                isSuccessful = TryMoveNextListItem(listObj, dstList,
-                                    (OperationDirection)cmdArgs[1].ReadOnlySpan[0],
-                                    (OperationDirection)cmdArgs[2].ReadOnlySpan[0], out nextItem);
-                                result = new CollectionItemResult(key, nextItem);
-
-                                if (isSuccessful && newObj)
-                                {
-                                    isSuccessful = storageSession.SET(dstKey, dstList, ref objectTransactionalContext) == GarnetStatus.OK;
-                                }
-
-                                break;
-                            case RespCommand.BLMPOP:
-                                var popDirection = (OperationDirection)cmdArgs[0].ReadOnlySpan[0];
-                                var popCount = *(int*)(cmdArgs[1].ToPointer());
-                                popCount = Math.Min(popCount, listObj.LnkList.Count);
-
-                                var items = new byte[popCount][];
-                                for (var i = 0; i < popCount; i++)
-                                {
-                                    var _ = TryGetNextListItem(listObj,
-                                        popDirection == OperationDirection.Left ? RespCommand.BLPOP : RespCommand.BRPOP,
-                                        out items[i]); // Return can be ignored because it is guaranteed to return true
-                                }
-
-                                result = new CollectionItemResult(key, items);
-                                isSuccessful = true;
-                                break;
-                            default:
-                                return false;
-                        }
-
-                        if (isSuccessful && listObj.LnkList.Count == 0)
-                        {
-                            _ = storageSession.EXPIRE(asKey, TimeSpan.Zero, out _, ExpireOption.None,
-                                ref unifiedTransactionalContext);
-                        }
-
-                        return isSuccessful;
                     case SortedSetObject sortedSetObj:
                         currCount = sortedSetObj.Count();
                         if (currCount == 0)
                             return false;
 
-                        isSuccessful = TryGetNextSortedSetItem(key, sortedSetObj, currCount, command, cmdArgs, out result);
-
-                        if (isSuccessful && sortedSetObj.Count() == 0)
-                        {
-                            _ = storageSession.EXPIRE(asKey, TimeSpan.Zero, out _, ExpireOption.None,
-                                ref unifiedTransactionalContext);
-                        }
-
-                        return isSuccessful;
+                        return TryGetNextSortedSetResult(key, asKey, storageSession, command, cmdArgs, currCount,
+                            ref objectTransactionalContext, out result);
 
                     default:
                         return false;
@@ -671,6 +666,13 @@ namespace Garnet.server
                 storageSession.scratchBufferBuilder.RewindScratchBuffer(asKey);
                 if (createTransaction)
                     storageSession.txnManager.Commit(true);
+
+                // Wake observers blocked on the destination key. The event is enqueued directly rather than going
+                // through HandleCollectionUpdate, because callers of this method hold keysToObserversLock and
+                // re-acquiring it here would deadlock. The broker loop resolves the event asynchronously and
+                // tolerates keys that have no observers.
+                if (notifyKey is not null)
+                    brokerEventsQueue.Enqueue(CollectionItemBrokerEvent.CreateCollectionUpdatedEvent(notifyKey));
             }
         }
 
