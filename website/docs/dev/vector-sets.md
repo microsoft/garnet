@@ -444,6 +444,7 @@ Garnet calls into the following DiskANN functions:
   - `index` is always a pointer created by DiskANN and returned from `create_index`
   - `context` is always the `Context` value created by Garnet and stored in [`Index`](#indexes) for a Vector Set, this implies it is always a non-0 multiple of 8
   - `search_vector`, `search_element`, and `continue_search` all return the number of ids written into `output_ids`, and if there are more values to return they set the `nint` _pointed to by_ `continuation` or `new_continuation`
+    * `continuation`/`new_continuation` must be passed exactly once to `continue_search` to fetch remaining results.  Failing to call `continue_search` can result in a memory leak, and passing more than once can result in a use-after-free.
   - DiskANN guarantees that any keys it provides are aligned in records, i.e. they are multiples of 4-bytes in length
   - Garnet guarantees any values it provides to _`dataCallbacks`_ are 4-byte aligned
     * Importantly Garnet does not guarantee id holding parameters to DiskANN functions are aligned unless otherwise noted

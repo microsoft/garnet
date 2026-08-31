@@ -128,7 +128,8 @@ VADD key [REDUCE dim] (FP32 vector | XB8 vector | VALUES n v1 ... vN) element
 | Form | Description |
 |------|-------------|
 | `FP32 <bytes>` | Raw little-endian `float32` blob. Length must be a multiple of 4. |
-| `XB8 <bytes>` | Raw `uint8` byte blob. Each byte is one dimension. |
+| `XU8 <bytes>` | Raw `uint8` byte blob. Each byte is one dimension. |
+| `XI8 <bytes>` | Raw `int8` byte blob. Each byte is one dimension. |
 | `VALUES n v1 v2 ... vN` | `n` textual floats. |
 
 #### Options
@@ -137,7 +138,7 @@ VADD key [REDUCE dim] (FP32 vector | XB8 vector | VALUES n v1 ... vN) element
 |--------|---------|-------------|
 | `REDUCE dim` | _disabled_ | Project the input vector down to `dim` dimensions. `dim` must be ≤ the input dimensions. Not allowed with `XPREQ8`. Only honored on the first `VADD` (when the index is created). |
 | `CAS` | _off_ | Accepted for parser compatibility with Redis; currently a no-op. |
-| `NOQUANT` \| `XPREQ8` | _required_ | Quantization (see [Quantization](#quantization)). `Q8` and `BIN` are parsed but rejected with `ERR Unsupported quantization type`. |
+| `NOQUANT` \| `BIN` \| `Q8` \| `XNOQUANT_U8` \| `XNOQUANT_I8` \| `XBIN_I8` \| `XBIN_U8` | `Q8` | Quantization (see [Quantization](#quantization)). |
 | `EF n` | `200` | Build-time exploration factor (DiskANN `R` candidate-list size). Must be in `[1, 1000000]`. |
 | `SETATTR attr` | _none_ | Attach an arbitrary byte string to the element (typically a JSON object). Retrieve later with `VGETATTR` or via `WITHATTRIBS` on `VSIM`. |
 | `M n` | `16` | DiskANN max out-degree per node. Must be in `[4, 4096]`. |
@@ -484,13 +485,15 @@ The active quantizer determines how vectors are stored internally and which inpu
 
 | Token | Status | Notes |
 |-------|--------|-------|
-| `NOQUANT` | ✅ Supported | Store input as `float32`. Works with `FP32`, `XB8`, and `VALUES` inputs (uint8 bytes are widened to floats). |
-| `XPREQ8` | ✅ Supported | Garnet extension: stores the input `uint8` bytes verbatim with no further quantization. Requires `XB8` input and is incompatible with `REDUCE`. |
-| `Q8` | ❌ Rejected | Parsed for compatibility; returns `ERR Unsupported quantization type`. |
-| `BIN` | ❌ Rejected | Parsed for compatibility; returns `ERR Unsupported quantization type`. |
+| `NOQUANT` | ✅ Supported | Store input as `float32`, use unquantized forms for graph search. |
+| `Q8` | ✅ Supported | Store input as `float32`, use 8-bit quantized forms for graph search.  |
+| `BIN` | ✅ Supported | Store input as `float32`, use 1-bit quantized forms for graph search. |
+| `XNOQUANT_U8` | ✅ Supported | Garnet extension: stores input as `uint8` bytes with no further quantization. Incompatible with `REDUCE`. |
+| `XNOQUANT_I8` | ✅ Supported | Garnet extension: stores input as `int8` bytes with no further quantization. Incompatible with `REDUCE`. |
+| `XBIN_U8` | ✅ Supported | Garnet extension: stores input `uint8` bytes, uses 1-bit quantized forms for graph search. Incompatible with `REDUCE`. |
+| `XBIN_I8` | ✅ Supported | Garnet extension: stores input `int8` bytes, uses 1-bit quantized forms for graph search. Incompatible with `REDUCE`. |
 
-If no quantizer is specified on the first `VADD`, the default is `Q8`, which currently fails — supply `NOQUANT` (or
-`XPREQ8` for uint8 data) explicitly.
+If no quantizer is specified on the first `VADD`, the default is `Q8`.  Matching input format and storage format improves performance by removing a conversion step in `VADD`.
 
 ## Distance Metrics
 
@@ -527,10 +530,6 @@ reserved for future implementation:
 
 | Command | Intended behavior |
 |---------|--------------------|
-| `VCARD key` | Cardinality (number of elements). Use `VINFO key` and read the `size` field instead. |
-| `VISMEMBER key element` | Test membership. |
-| `VLINKS key element [WITHSCORES]` | Return the neighbours of `element` in the DiskANN graph. |
-| `VRANDMEMBER key [count]` | Return random element IDs. |
 | `VSETATTR key element attr` | Update an element's attribute in place. Today the only way to set/replace an attribute is to re-run `VADD ... SETATTR`. |
 
 Treat these as no-ops in preview builds — do not rely on their return value.
