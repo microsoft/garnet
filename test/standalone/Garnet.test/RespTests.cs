@@ -4964,6 +4964,41 @@ namespace Garnet.test
             Assert.Throws<RedisServerException>(() => db.Execute("GETEX", [key, .. options]));
         }
 
+        /// <summary>
+        /// An out-of-range expiry must be answered by an error and nothing else, and must leave the
+        /// connection usable. Two failure modes are covered:
+        /// - A value large enough that the conversion throws (EX/PX overflow <see cref="TimeSpan"/>,
+        ///   EXAT/PXAT run <see cref="DateTimeOffset.FromUnixTimeSeconds"/> past its year-9999
+        ///   ceiling). That exception used to escape to the session catch-all and tear the
+        ///   connection down - the trailing PING is the tell, a disposed session never answers it.
+        /// - A value in the gap below that ceiling but past DateTimeOffset.MaxValue (the last two
+        ///   cases): the conversion did not throw, but UtcNow.Ticks + delta silently overflowed the
+        ///   long into a negative absolute expiry, so GETEX applied a garbage TTL and replied with
+        ///   the value instead of an error.
+        /// </summary>
+        [Test]
+        [TestCase("EX 99999999999999")]
+        [TestCase("PX 99999999999999999")]
+        [TestCase("EXAT 99999999999999")]
+        [TestCase("PXAT 99999999999999999")]
+        [TestCase("EX 900000000000")]
+        [TestCase("PX 900000000000000")]
+        public void GetExpiryOutOfRangeIsRejectedWithoutKillingSession(string optionAndValue)
+        {
+            using var lightClientRequest = TestUtils.CreateRequest();
+
+            var expectedResponse = "-ERR invalid expire time in 'getex' command\r\n+PONG\r\n";
+
+            lightClientRequest.SendCommand("SET keyA valueA");
+
+            var response = lightClientRequest.SendCommands($"GETEX keyA {optionAndValue}", "PING", 1, 1);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            // The rejected expiry must not have been applied.
+            response = lightClientRequest.SendCommand("TTL keyA");
+            TestUtils.AssertEqualUpToExpectedLength(":-1\r\n", response);
+        }
+
         #endregion
 
         #region GETSET
