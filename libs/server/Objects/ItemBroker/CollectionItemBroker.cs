@@ -296,13 +296,15 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Try to assign item available (if exists) with next ready observer in queue
+        /// Try to assign the items available (if any) in the collection at the given key to the observers waiting on
+        /// it, in queue order, until either no observer remains or the collection can no longer serve one.
         /// </summary>
         /// <param name="key">Key</param>
-        /// <returns>True if successful in assigning item</returns>
+        /// <returns>True if at least one observer was assigned an item</returns>
         private bool TryAssignItemFromKey(byte[] key)
         {
             ConcurrentQueue<CollectionItemObserver> observers;
+            var assignedAny = false;
 
             keysToObserversLock.ReadLock();
             try
@@ -333,13 +335,12 @@ namespace Garnet.server
 
                             // Try to get next available item from object stored in key
                             if (!TryGetResult(key, observer.Session.storageSession, observer.Command, observer.CommandArgs, failOnSrcTypeMismatch: false,
-                                    out var currCount, out var result))
+                                    out _, out var result))
                             {
-                                // If unsuccessful getting next item but there is at least one item in the collection,
-                                // continue to next observer in the queue, otherwise return
-                                if (currCount > 0)
-                                    continue;
-                                return false;
+                                // The collection cannot serve the observer at the head of the queue. Stop here rather
+                                // than skipping it: the queue is FIFO, and leaving it in place while continuing would
+                                // peek the same observer forever.
+                                break;
                             }
 
                             // Dequeue the observer, and set the observer's result
@@ -349,12 +350,16 @@ namespace Garnet.server
 
                             observer.HandleSetResult(result, true);
 
-                            return true;
+                            assignedAny = true;
                         }
                         finally
                         {
                             observer.ObserverStatusLock.WriteUnlock();
                         }
+
+                        // Keep serving: one update event can make several items available (e.g. LPUSH with multiple
+                        // elements), and a no-op BLMOVE leaves the item in place for the next observer. Every
+                        // iteration dequeues an observer or breaks, so the loop terminates.
                     }
                 }
             }
@@ -379,7 +384,7 @@ namespace Garnet.server
                 }
             }
 
-            return false;
+            return assignedAny;
         }
 
         /// <summary>
