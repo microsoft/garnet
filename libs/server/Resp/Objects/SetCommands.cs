@@ -535,8 +535,7 @@ namespace Garnet.server
 
                 if (countParameter == 0)
                 {
-                    while (!RespWriteUtils.TryWriteEmptyArray(ref dcurr, dend))
-                        SendAndReset();
+                    WriteEmptySet();
 
                     return true;
                 }
@@ -558,6 +557,13 @@ namespace Garnet.server
                     ProcessOutput(output.SpanByteAndMemory);
                     break;
                 case GarnetStatus.NOTFOUND:
+                    if (parseState.Count == 2)
+                    {
+                        // SPOP key count replies with an empty set when the key does not exist
+                        WriteEmptySet();
+                        break;
+                    }
+
                     WriteNull();
                     break;
                 case GarnetStatus.WRONGTYPE:
