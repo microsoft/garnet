@@ -1249,6 +1249,101 @@ namespace Garnet.test
         }
 
         /// <summary>
+        /// A single collection update can make several items available. Every waiter that the collection can serve
+        /// must be woken by that update, not just the first one in the queue.
+        /// </summary>
+        [Test]
+        [TestCase("BLPOP")]
+        [TestCase("BRPOP")]
+        public void BlockingPopServesAllWaitersFromSingleMultiItemPush(string blockingCmd)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var key = $"blocking:multiwaiter:{blockingCmd}";
+            _ = db.KeyDelete(key);
+
+            const int waiterCount = 3;
+            var responses = new byte[waiterCount][];
+            var ready = new CountdownEvent(waiterCount);
+
+            var waiters = new Task[waiterCount];
+            for (var i = 0; i < waiterCount; i++)
+            {
+                var idx = i;
+                waiters[idx] = Task.Run(() =>
+                {
+                    using var lcr = TestUtils.CreateRequest();
+                    ready.Signal();
+                    responses[idx] = (byte[])lcr.SendCommand($"{blockingCmd} {key} 30", 3).Clone();
+                });
+            }
+
+            ClassicAssert.IsTrue(ready.Wait(TimeSpan.FromSeconds(10)));
+            Thread.Sleep(1000);
+
+            // One command, one broker event, three items. All three waiters must be served by it.
+            RedisValue[] pushed = ["a", "b", "c"];
+            ClassicAssert.AreEqual(waiterCount, db.ListLeftPush(key, pushed));
+
+            ClassicAssert.IsTrue(Task.WaitAll(waiters, TimeSpan.FromSeconds(15)),
+                $"A single push of {waiterCount} items did not wake all {waiterCount} blocked {blockingCmd} clients.");
+
+            // Each reply is *2\r\n$<keyLen>\r\n<key>\r\n$<valLen>\r\n<value>\r\n
+            var received = responses
+                .Select(r => Encoding.ASCII.GetString(r).TrimEnd('\0').Split("\r\n")[4])
+                .ToArray();
+
+            CollectionAssert.AreEquivalent(new[] { "a", "b", "c" }, received);
+            ClassicAssert.AreEqual(0, db.ListLength(key));
+        }
+
+        /// <summary>
+        /// A same-key BLMOVE that leaves the list unchanged still leaves the item available to the remaining waiters,
+        /// so a single push must serve all of them.
+        /// </summary>
+        [Test]
+        public void BlockingListMoveSameKeyServesAllWaiters()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var key = "blocking:selfmove:multiwaiter";
+            _ = db.KeyDelete(key);
+
+            const int waiterCount = 3;
+            var responses = new byte[waiterCount][];
+            var ready = new CountdownEvent(waiterCount);
+
+            var waiters = new Task[waiterCount];
+            for (var i = 0; i < waiterCount; i++)
+            {
+                var idx = i;
+                waiters[idx] = Task.Run(() =>
+                {
+                    using var lcr = TestUtils.CreateRequest();
+                    ready.Signal();
+                    responses[idx] = (byte[])lcr.SendCommand($"BLMOVE {key} {key} LEFT LEFT 30", 1).Clone();
+                });
+            }
+
+            ClassicAssert.IsTrue(ready.Wait(TimeSpan.FromSeconds(10)));
+            Thread.Sleep(1000);
+
+            ClassicAssert.AreEqual(1, db.ListLeftPush(key, "only"));
+
+            ClassicAssert.IsTrue(Task.WaitAll(waiters, TimeSpan.FromSeconds(15)),
+                $"A no-op BLMOVE served only some of the {waiterCount} blocked clients, though the item stayed available.");
+
+            foreach (var response in responses)
+                TestUtils.AssertEqualUpToExpectedLength("$4\r\nonly\r\n", response);
+
+            // The move is a no-op, so the element must still be there exactly once.
+            ClassicAssert.AreEqual(1, db.ListLength(key));
+            ClassicAssert.AreEqual("only", db.ListGetByIndex(key, 0).ToString());
+        }
+
+        /// <summary>
         /// Blocking pops must persist their update through the store. When the record is no longer in the mutable
         /// region, mutating the retrieved object in place silently loses the pop.
         /// </summary>
