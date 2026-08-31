@@ -458,30 +458,14 @@ namespace Tsavorite.core
             // Wait for all deferred DoReadPage callbacks and their async I/O to complete before freeing
             // resources. The counter is incremented before BumpCurrentEpoch registration and decremented
             // in AsyncReadPageFromDeviceToFrameCallback when I/O completes, so reaching zero guarantees
-            // no outstanding access to our state. The deferred callbacks will be drained by other threads'
-            // epoch operations (Resume, Suspend, ProtectAndDrain). Report periodically so a device that never
-            // delivers a completion shows up as a logged stall.
+            // no outstanding access to our state. BufferAndLoad's CAS loop does not return until the deferred
+            // action has run, so a non-zero count here is I/O still in flight. Report periodically so a device
+            // that never delivers a completion shows up as a logged stall.
             var reportIntervalTicks = Stopwatch.Frequency * FrameLoadWaitReportIntervalMs / 1000;
             var startTimestamp = Stopwatch.GetTimestamp();
             var nextReportTimestamp = startTimestamp + reportIntervalTicks;
             while (Volatile.Read(ref pendingDrainCallbacks) > 0)
             {
-                // A page read registered on the drain list only runs when some thread drains the epoch. If this
-                // thread holds it, drain here rather than wait for another thread that may not exist. A drain action
-                // registered by other code may throw, which aborts the pass but not this wait; the remaining actions,
-                // including ours, are picked up by the next one.
-                if (epoch is not null && epoch.ThisInstanceProtected())
-                {
-                    try
-                    {
-                        epoch.ProtectAndDrain();
-                    }
-                    catch (Exception ex)
-                    {
-                        logger?.LogWarning(ex, "Draining the epoch while disposing scan iterator failed");
-                    }
-                }
-
                 Thread.Yield();
 
                 var nowTimestamp = Stopwatch.GetTimestamp();
