@@ -68,7 +68,7 @@ namespace Garnet.server
         // Byte #31 is used to denote if key has expiration (1) or not (0) 
         private const int ExpirationBitMask = 1 << 31;
 
-        private bool HasExpirableItems
+        internal bool HasExpirableItems
         {
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             get => expirationTimes is not null;

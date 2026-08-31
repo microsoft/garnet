@@ -169,10 +169,9 @@ namespace Garnet.test
         [Test]
         public void SerializeDoesNotMutateSortedSetWithExpiredMembers()
         {
-            var obj = new SortedSetObject(new BinaryReader(new MemoryStream(BuildSortedSetBytes())));
-
-            ClassicAssert.IsTrue(obj.HasExpirableItems());
-            Thread.Sleep(400);
+            var obj = BuildWithExpiredMember(
+                expiresAt => new SortedSetObject(new BinaryReader(new MemoryStream(BuildSortedSetBytes(expiresAt)))),
+                o => o.HasExpirableItems());
 
             var sizeBeforeSerialize = obj.HeapMemorySize;
 
@@ -196,17 +195,20 @@ namespace Garnet.test
         [Test]
         public void SerializeDoesNotMutateHashWithExpiredFields()
         {
-            var obj = new HashObject(new BinaryReader(new MemoryStream(BuildHashBytes())));
+            var obj = BuildWithExpiredMember(
+                expiresAt => new HashObject(new BinaryReader(new MemoryStream(BuildHashBytes(expiresAt)))),
+                o => o.HasExpirableItems);
 
-            var sizeAfterLoad = obj.HeapMemorySize;
-            Thread.Sleep(400);
+            var sizeBeforeSerialize = obj.HeapMemorySize;
 
             using var stream = new MemoryStream();
             using (var writer = new BinaryWriter(stream, Encoding.UTF8, leaveOpen: true))
                 obj.Serialize(writer);
 
-            ClassicAssert.AreEqual(sizeAfterLoad, obj.HeapMemorySize,
+            ClassicAssert.AreEqual(sizeBeforeSerialize, obj.HeapMemorySize,
                 "Serializing a hash must not delete its expired fields.");
+            ClassicAssert.IsTrue(obj.HasExpirableItems,
+                "Serializing a hash must not tear down its expiration structures.");
 
             // The expired field is dropped when the serialized form is read back, so the reloaded object is smaller.
             var roundTripped = new HashObject(new BinaryReader(new MemoryStream(stream.ToArray()[1..])));
@@ -216,10 +218,36 @@ namespace Garnet.test
         // One member expiring shortly, one that never expires. Matches the layout read by the deserializing ctor.
         private const int ExpirationBitMask = 1 << 31;
 
-        private static byte[] BuildSortedSetBytes()
+        /// <summary>
+        /// Builds an object holding one expired member and one that never expires. The deserializing constructor
+        /// drops members that have already expired, so the object must be built while the expiring member is still
+        /// live and only then waited out. A machine that stalls past the window is retried with a wider one rather
+        /// than reported as a failure.
+        /// </summary>
+        /// <param name="construct">Builds the object, given the tick count at which its member expires</param>
+        /// <param name="retainedExpiringMember">Reports whether the expiring member survived construction</param>
+        private static T BuildWithExpiredMember<T>(Func<long, T> construct, Func<T, bool> retainedExpiringMember)
         {
-            var soonExpiring = DateTimeOffset.UtcNow.Ticks + TimeSpan.FromMilliseconds(200).Ticks;
+            for (var attempt = 0; ; attempt++)
+            {
+                var expiresAt = DateTimeOffset.UtcNow.Ticks + TimeSpan.FromMilliseconds(500L << attempt).Ticks;
+                var obj = construct(expiresAt);
 
+                if (retainedExpiringMember(obj))
+                {
+                    while (DateTimeOffset.UtcNow.Ticks <= expiresAt)
+                        Thread.Sleep(20);
+
+                    return obj;
+                }
+
+                ClassicAssert.Less(attempt, 5,
+                    "The expiring member was already expired by the time the object was constructed.");
+            }
+        }
+
+        private static byte[] BuildSortedSetBytes(long expiresAt)
+        {
             using var stream = new MemoryStream();
             using var writer = new BinaryWriter(stream);
 
@@ -229,7 +257,7 @@ namespace Garnet.test
             writer.Write(expiring.Length | ExpirationBitMask);
             writer.Write(expiring);
             writer.Write(1.0d);
-            writer.Write(soonExpiring);
+            writer.Write(expiresAt);
 
             var persistent = Encoding.ASCII.GetBytes("persistent");
             writer.Write(persistent.Length);
@@ -240,10 +268,8 @@ namespace Garnet.test
             return stream.ToArray();
         }
 
-        private static byte[] BuildHashBytes()
+        private static byte[] BuildHashBytes(long expiresAt)
         {
-            var soonExpiring = DateTimeOffset.UtcNow.Ticks + TimeSpan.FromMilliseconds(200).Ticks;
-
             using var stream = new MemoryStream();
             using var writer = new BinaryWriter(stream);
 
@@ -255,7 +281,7 @@ namespace Garnet.test
             var expiringValue = Encoding.ASCII.GetBytes("v1");
             writer.Write(expiringValue.Length);
             writer.Write(expiringValue);
-            writer.Write(soonExpiring);
+            writer.Write(expiresAt);
 
             var persistent = Encoding.ASCII.GetBytes("persistent");
             writer.Write(persistent.Length);
