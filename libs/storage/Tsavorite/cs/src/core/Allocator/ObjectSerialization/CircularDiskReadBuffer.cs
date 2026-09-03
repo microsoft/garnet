@@ -299,7 +299,6 @@ namespace Tsavorite.core
                     buffer.currentPosition += (int)increment;
                     break;
                 }
-                currentIndex++;
                 Debug.Assert(buffer.currentPosition + (int)increment == buffer.endPosition, $"Increment {increment} overflows buffer (curPos {buffer.currentPosition}, endPos {buffer.endPosition}) by more than alignment");
                 if (!MoveToNextBuffer(out buffer))
                     break;
