@@ -301,59 +301,42 @@ namespace Garnet
                         var socketSetFactory = OperatingSystem.IsWindows() ? SocketSetFactory.WindowsRio : OperatingSystem.IsLinux() ? SocketSetFactory.IoUring : SocketSetFactory.Managed;
                         var socketSetOptions = new SocketSetOptions { Factory = socketSetFactory, Shards = Environment.ProcessorCount / 2 };
 
-                        logger?.LogInformation("Using SocketSet: {factory} x{shards}", socketSetOptions.Factory.GetType().Name, socketSetOptions.Shards);
+                        logger?.LogWarning("Using SocketSet: {factory} x{shards}", socketSetOptions.Factory.GetType().Name, socketSetOptions.Shards);
 
                         if (opts.TlsOptions != null)
                         {
                             // Convert certs if needed, and setup TLS options
 
-                            logger?.LogInformation("SocketSet TLS enabled with cert {cert}", opts.TlsOptions.CertFileName);
+                            logger?.LogWarning("SocketSet TLS enabled with cert {cert}", opts.TlsOptions.CertFileName);
 
-                            var serverCert = X509CertificateLoader.LoadPkcs12(File.ReadAllBytes(opts.TlsOptions.CertFileName), "", X509KeyStorageFlags.Exportable);
+                            var serverCert = X509CertificateLoader.LoadPkcs12(File.ReadAllBytes(opts.TlsOptions.CertFileName), opts.TlsOptions.CertPassword ?? "", X509KeyStorageFlags.Exportable);
 
                             // HACK - assume RSA for now
-                            var pubKey = serverCert.GetRSAPublicKey();
-                            var privKey = serverCert.GetRSAPrivateKey();
+                            var pubKey = serverCert.GetECDiffieHellmanPublicKey();
+                            var privKey = serverCert.GetECDiffieHellmanPrivateKey();
 
-                            var pubKeyBytes = pubKey.ExportRSAPublicKeyPem();
-                            var privKeyBytes = privKey.ExportRSAPrivateKeyPem();
+                            var certPem = serverCert.ExportCertificatePem();
+                            var keyPem = privKey.ExportPkcs8PrivateKeyPem();
 
-                            var pubPemPath = Path.GetTempFileName();
-                            var privPemPath = Path.GetTempFileName();
-                            try
+                            bool kernelTLSOffload;
+                            if (OperatingSystem.IsLinux())
                             {
+                                var (res, report) = KtlsProbe.Run();
+                                kernelTLSOffload = res;
 
-                                File.WriteAllBytes(pubPemPath, Encoding.UTF8.GetBytes(pubKeyBytes));
-                                File.WriteAllBytes(privPemPath, Encoding.UTF8.GetBytes(privKeyBytes));
-
-                                logger?.LogInformation("SocketSet TLS .pem files generated {pub} & {priv}", pubPemPath, privPemPath);
-
-                                bool kernelTLSOffload;
-                                if (OperatingSystem.IsLinux())
-                                {
-                                    var (res, report) = KtlsProbe.Run();
-                                    kernelTLSOffload = res;
-
-                                    logger?.LogInformation("KTLS={res}, Report={report}", res, report);
-                                }
-                                else
-                                {
-                                    logger?.LogInformation("KTLS not available");
-
-                                    kernelTLSOffload = false;
-                                }
-
-                                socketSetOptions.Tls = OperatingSystem.IsWindows() ? new SChannelTlsProvider(serverCert) : new OpenSslTlsProvider(pubPemPath, privPemPath, verifyServer: false, kernelOffload: kernelTLSOffload);
-
-                                logger?.LogInformation("SocketSet TLS created: {type}", socketSetOptions.Tls.GetType().Name);
+                                logger?.LogWarning("KTLS={res}, Report={report}", res, report);
                             }
-                            finally
+                            else
                             {
-                                File.Delete(pubPemPath);
-                                File.Delete(privPemPath);
+                                logger?.LogWarning("KTLS not available");
+
+                                kernelTLSOffload = false;
                             }
+
+                            socketSetOptions.Tls = OperatingSystem.IsWindows() ? new SChannelTlsProvider(serverCert) : new OpenSslTlsProvider(certPem, keyPem, verifyServer: false, kernelOffload: kernelTLSOffload);
+
+                            logger?.LogWarning("SocketSet TLS created: {type}", socketSetOptions.Tls.GetType().Name);
                         }
-
 
                         servers[i] = new GarnetServerSocketSet(opts.EndPoints[i], socketSetOptions, logger: logger);
                     }

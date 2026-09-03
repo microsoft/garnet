@@ -26,6 +26,11 @@ namespace Garnet.server.TLS
         string CertFileName { get; }
 
         /// <summary>
+        /// Password, if any, for the certificate.
+        /// </summary>
+        string CertPassword { get; }
+
+        /// <summary>
         /// Update certificate file
         /// </summary>
         /// <param name="certFileName"></param>

@@ -28,12 +28,11 @@ namespace Garnet.server.TLS
         /// </summary>
         public SslClientAuthenticationOptions TlsClientOptions { get; private set; }
 
-        /// <summary>
-        /// Path to certificate file
-        /// </summary>
+        /// <inheritdoc/>
         public string CertFileName { get; private set; }
-        
-        string CertPassword;
+
+        /// <inheritdoc/>
+        public string CertPassword { get; private set; }
 
         readonly string CertSubjectName;
         readonly int CertificateRefreshFrequency;
