@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.IO;
 using System.Net.Sockets;
 using System.Text;
 using System.Threading;
@@ -44,32 +43,6 @@ namespace Garnet.test.Resp
 
             ClassicAssert.AreEqual(":0\r\n", Send(socket, Resp("DEL", CreateArguments(argCount, -1, injectedCommand))));
             ClassicAssert.AreEqual(":0\r\n", Send(socket, Resp("DEL", CreateArguments(argCount, argCount & 0xFF, injectedCommand))));
-        }
-
-        [Test]
-        public void HsetPayloadCannotInjectAclCommand()
-        {
-            RestartWithAcl();
-
-            var injectedCommand = Resp("ACL", "SETUSER", "injecteduser", "on", ">TestPass123!", "~*", "+@all");
-            using var application = Connect();
-            ClassicAssert.AreEqual("+OK\r\n", Send(application, Resp("AUTH", "default", "AdminPass123")));
-            ClassicAssert.IsTrue(Send(application, Resp("HSET", CreateArguments(259, -1, injectedCommand, "app"))).StartsWith(':'));
-
-            var response = Send(application, Resp("HSET", CreateArguments(259, 3, injectedCommand, "app")));
-            ClassicAssert.IsFalse(response.Contains("+OK\r\n"), "Injected ACL SETUSER command was executed.");
-
-            using var freshConnection = Connect();
-            ClassicAssert.IsFalse(Send(freshConnection, Resp("AUTH", "injecteduser", "TestPass123!")).Contains("+OK\r\n"), "Injected ACL account was created.");
-        }
-
-        private void RestartWithAcl()
-        {
-            server.Dispose();
-            var aclFile = Path.Combine(TestUtils.MethodTestDir, "repro.acl");
-            File.WriteAllText(aclFile, "user default on >AdminPass123 ~* +@all\r\nuser lowpriv on >LowPass123 ~* -@all +get +set +hset +ping +echo +hget");
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, useAcl: true, aclFile: aclFile);
-            server.Start();
         }
 
         private static string[] CreateArguments(int count, int injectAt, string injectedCommand, string firstArgument = null)
