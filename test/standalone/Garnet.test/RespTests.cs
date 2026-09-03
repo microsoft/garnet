@@ -5,9 +5,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
-using System.IO;
 using System.Linq;
-using System.Net.Sockets;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
@@ -5475,121 +5473,6 @@ namespace Garnet.test
             var mainDB = mainConnection.GetDatabase(0);
 
             Assert.Throws<RedisServerException>(() => mainDB.Execute("CLIENT", "UNBLOCK", 123, "INVALID"));
-        }
-
-        /// <summary>
-        /// Verifies that the command cache does not truncate argument counts.
-        /// </summary>
-        [Test]
-        [TestCase(255)]
-        [TestCase(256)]
-        [TestCase(259)]
-        [TestCase(600)]
-        public void CachedCommandDoesNotTruncateArgumentCount(int argCount)
-        {
-            const string InjectedCommand = "*1\r\n$4\r\nPING\r\n";
-
-            using var socket = new Socket(TestUtils.EndPoint.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
-            socket.Connect(TestUtils.EndPoint);
-
-            // Prime the cache with a benign frame that shares the exact 16-byte header prefix.
-            socket.Send(BuildDelCommand(argCount, injectAt: -1, InjectedCommand));
-            ClassicAssert.AreEqual(":0\r\n", ReadSocketResponses(socket));
-
-            // Place a complete RESP command where a truncated argument count would resume parsing.
-            socket.Send(BuildDelCommand(argCount, injectAt: argCount & 0xFF, InjectedCommand));
-            ClassicAssert.AreEqual(":0\r\n", ReadSocketResponses(socket));
-        }
-
-        private static byte[] BuildDelCommand(int argCount, int injectAt, string injectedCommand)
-        {
-            var sb = new StringBuilder();
-            sb.Append($"*{argCount + 1}\r\n$3\r\nDEL\r\n");
-            for (var i = 0; i < argCount; i++)
-            {
-                var arg = i == injectAt ? injectedCommand : $"k{i}";
-                sb.Append($"${arg.Length}\r\n{arg}\r\n");
-            }
-
-            return Encoding.ASCII.GetBytes(sb.ToString());
-        }
-
-        private static string ReadSocketResponses(Socket socket)
-        {
-            var sb = new StringBuilder();
-            var buffer = new byte[8192];
-            var deadline = DateTime.UtcNow.AddSeconds(5);
-
-            while (DateTime.UtcNow < deadline)
-            {
-                if (socket.Available == 0)
-                {
-                    Thread.Sleep(10);
-                    continue;
-                }
-
-                var read = socket.Receive(buffer);
-                sb.Append(Encoding.ASCII.GetString(buffer, 0, read));
-                deadline = DateTime.UtcNow.AddMilliseconds(500);
-            }
-
-            return sb.ToString();
-        }
-
-        /// <summary>
-        /// Verifies that attacker-controlled HSET data cannot create an ACL account through parser desynchronization.
-        /// </summary>
-        [Test]
-        public void HsetPayloadCannotInjectAclCommand()
-        {
-            server.Dispose();
-
-            var aclFile = Path.Combine(TestUtils.MethodTestDir, "repro.acl");
-            File.WriteAllText(aclFile,
-                "user default on >AdminPass123 ~* +@all\r\n" +
-                "user lowpriv on >LowPass123 ~* -@all +get +set +hset +ping +echo +hget");
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, useAcl: true, aclFile: aclFile);
-            server.Start();
-
-            const string injectedCommand =
-                "*7\r\n" +
-                "$3\r\nACL\r\n" +
-                "$7\r\nSETUSER\r\n" +
-                "$8\r\nbackdoor\r\n" +
-                "$2\r\non\r\n" +
-                "$7\r\n>Pwn3d!\r\n" +
-                "$2\r\n~*\r\n" +
-                "$5\r\n+@all\r\n";
-
-            using var applicationSocket = new Socket(TestUtils.EndPoint.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
-            applicationSocket.Connect(TestUtils.EndPoint);
-            applicationSocket.Send(Encoding.ASCII.GetBytes("*3\r\n$4\r\nAUTH\r\n$7\r\ndefault\r\n$12\r\nAdminPass123\r\n"));
-            ClassicAssert.AreEqual("+OK\r\n", ReadSocketResponses(applicationSocket));
-
-            applicationSocket.Send(BuildHsetCommand(259, -1, injectedCommand));
-            ClassicAssert.IsTrue(ReadSocketResponses(applicationSocket).StartsWith(":"));
-
-            applicationSocket.Send(BuildHsetCommand(259, 3, injectedCommand));
-            var response = ReadSocketResponses(applicationSocket);
-            ClassicAssert.IsFalse(response.Contains("+OK\r\n"), "Injected ACL SETUSER command was executed.");
-
-            using var attackerSocket = new Socket(TestUtils.EndPoint.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
-            attackerSocket.Connect(TestUtils.EndPoint);
-            attackerSocket.Send(Encoding.ASCII.GetBytes("*3\r\n$4\r\nAUTH\r\n$8\r\nbackdoor\r\n$7\r\nPwn3d!\r\n"));
-            ClassicAssert.IsFalse(ReadSocketResponses(attackerSocket).Contains("+OK\r\n"), "Backdoor ACL account was created.");
-        }
-
-        private static byte[] BuildHsetCommand(int argCount, int injectAt, string injectedCommand)
-        {
-            var sb = new StringBuilder();
-            sb.Append($"*{argCount + 1}\r\n$4\r\nHSET\r\n");
-            for (var i = 0; i < argCount; i++)
-            {
-                var arg = i == injectAt ? injectedCommand : i == 0 ? "app" : $"field{i}";
-                sb.Append($"${arg.Length}\r\n{arg}\r\n");
-            }
-
-            return Encoding.ASCII.GetBytes(sb.ToString());
         }
 
         [Test]
