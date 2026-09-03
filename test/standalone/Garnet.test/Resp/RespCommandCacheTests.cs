@@ -51,7 +51,7 @@ namespace Garnet.test.Resp
         {
             RestartWithAcl();
 
-            var injectedCommand = Resp("ACL", "SETUSER", "backdoor", "on", ">Pwn3d!", "~*", "+@all");
+            var injectedCommand = Resp("ACL", "SETUSER", "injecteduser", "on", ">TestPass123!", "~*", "+@all");
             using var application = Connect();
             ClassicAssert.AreEqual("+OK\r\n", Send(application, Resp("AUTH", "default", "AdminPass123")));
             ClassicAssert.IsTrue(Send(application, Resp("HSET", CreateArguments(259, -1, injectedCommand, "app"))).StartsWith(':'));
@@ -59,8 +59,8 @@ namespace Garnet.test.Resp
             var response = Send(application, Resp("HSET", CreateArguments(259, 3, injectedCommand, "app")));
             ClassicAssert.IsFalse(response.Contains("+OK\r\n"), "Injected ACL SETUSER command was executed.");
 
-            using var attacker = Connect();
-            ClassicAssert.IsFalse(Send(attacker, Resp("AUTH", "backdoor", "Pwn3d!")).Contains("+OK\r\n"), "Backdoor ACL account was created.");
+            using var freshConnection = Connect();
+            ClassicAssert.IsFalse(Send(freshConnection, Resp("AUTH", "injecteduser", "TestPass123!")).Contains("+OK\r\n"), "Injected ACL account was created.");
         }
 
         private void RestartWithAcl()
