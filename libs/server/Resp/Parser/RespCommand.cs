@@ -1218,8 +1218,7 @@ namespace Garnet.server
         [MethodImpl(MethodImplOptions.NoInlining)]
         private void UpdateCommandCache(int cmdStartOffset, RespCommand cmd, int argCount)
         {
-            // The argument count is cached in a byte, so only cache counts that round-trip exactly.
-            // A wider count would be truncated on the cache hit and desynchronize the parser.
+            // Only cache argument counts that fit in a byte.
             if ((uint)argCount > byte.MaxValue) return;
 
             var ptr = recvBufferPtr + cmdStartOffset;
