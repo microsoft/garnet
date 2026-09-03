@@ -9,6 +9,7 @@ using System.Linq;
 using System.Net.Sockets;
 using System.Reflection;
 using System.Runtime.InteropServices;
+using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Threading;
 using Garnet.cluster;
@@ -17,6 +18,9 @@ using Garnet.networking;
 using Garnet.server;
 using Garnet.server.Auth.Settings;
 using Microsoft.Extensions.Logging;
+using SocketSets;
+using SocketSets.Tls.OpenSsl;
+using SocketSets.Tls.SChannel;
 using Tsavorite.core;
 
 namespace Garnet
@@ -291,7 +295,72 @@ namespace Garnet
                         // Delete existing unix socket file, if it exists.
                         File.Delete(opts.UnixSocketPath);
                     }
-                    servers[i] = new GarnetServerTcp(opts.EndPoints[i], 0, opts.TlsOptions, opts.NetworkSendThrottleMax, opts.NetworkConnectionLimit, opts.UnixSocketPath, opts.UnixSocketPermission, logger);
+
+                    if (opts.UseSocketSet)
+                    {
+                        var socketSetFactory = OperatingSystem.IsWindows() ? SocketSetFactory.WindowsRio : OperatingSystem.IsLinux() ? SocketSetFactory.IoUring : SocketSetFactory.Managed;
+                        var socketSetOptions = new SocketSetOptions { Factory = socketSetFactory, Shards = Environment.ProcessorCount / 2 };
+
+                        logger?.LogInformation("Using SocketSet: {factory} x{shards}", socketSetOptions.Factory.GetType().Name, socketSetOptions.Shards);
+
+                        if (opts.TlsOptions != null)
+                        {
+                            // Convert certs if needed, and setup TLS options
+
+                            logger?.LogInformation("SocketSet TLS enabled with cert {cert}", opts.TlsOptions.CertFileName);
+
+                            var serverCert = X509CertificateLoader.LoadPkcs12(File.ReadAllBytes(opts.TlsOptions.CertFileName), "", X509KeyStorageFlags.Exportable);
+
+                            // HACK - assume RSA for now
+                            var pubKey = serverCert.GetRSAPublicKey();
+                            var privKey = serverCert.GetRSAPrivateKey();
+
+                            var pubKeyBytes = pubKey.ExportRSAPublicKeyPem();
+                            var privKeyBytes = privKey.ExportRSAPrivateKeyPem();
+
+                            var pubPemPath = Path.GetTempFileName();
+                            var privPemPath = Path.GetTempFileName();
+                            try
+                            {
+
+                                File.WriteAllBytes(pubPemPath, Encoding.UTF8.GetBytes(pubKeyBytes));
+                                File.WriteAllBytes(privPemPath, Encoding.UTF8.GetBytes(privKeyBytes));
+
+                                logger?.LogInformation("SocketSet TLS .pem files generated {pub} & {priv}", pubPemPath, privPemPath);
+
+                                bool kernelTLSOffload;
+                                if (OperatingSystem.IsLinux())
+                                {
+                                    var (res, report) = KtlsProbe.Run();
+                                    kernelTLSOffload = res;
+
+                                    logger?.LogInformation("KTLS={res}, Report={report}", res, report);
+                                }
+                                else
+                                {
+                                    logger?.LogInformation("KTLS not available");
+
+                                    kernelTLSOffload = false;
+                                }
+
+                                socketSetOptions.Tls = OperatingSystem.IsWindows() ? new SChannelTlsProvider(serverCert) : new OpenSslTlsProvider(pubPemPath, privPemPath, verifyServer: false, kernelOffload: kernelTLSOffload);
+
+                                logger?.LogInformation("SocketSet TLS created: {type}", socketSetOptions.Tls.GetType().Name);
+                            }
+                            finally
+                            {
+                                File.Delete(pubPemPath);
+                                File.Delete(privPemPath);
+                            }
+                        }
+
+
+                        servers[i] = new GarnetServerSocketSet(opts.EndPoints[i], socketSetOptions, logger: logger);
+                    }
+                    else
+                    {
+                        servers[i] = new GarnetServerTcp(opts.EndPoints[i], 0, opts.TlsOptions, opts.NetworkSendThrottleMax, opts.NetworkConnectionLimit, opts.UnixSocketPath, opts.UnixSocketPermission, logger);
+                    }
                 }
             }
 

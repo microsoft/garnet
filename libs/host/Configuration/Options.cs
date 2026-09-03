@@ -717,6 +717,9 @@ namespace Garnet
         [Option("vector-set-quantization-task-count", Required = false, HelpText = "Configure how many quantization tasks are used to optimize Vector Set operations (default: 0 uses the machine CPU count; maximum: the machine CPU count)")]
         public int VectorSetQuantizationTaskCount { get; set; }
 
+        [Option("socket-set", Required = false, HelpText = "If true, uses SocketSet library for networking.  This uses io_uring on Linux with ktls, and RIO on Windows.")]
+        public bool UseSocketSet { get; set; }
+
         /// <summary>
         /// This property contains all arguments that were not parsed by the command line argument parser
         /// </summary>
@@ -1037,6 +1040,7 @@ namespace Garnet
                 VectorSetReplayTaskCount = VectorSetReplayTaskCount,
                 VectorSetQuantizationTaskCount = VectorSetQuantizationTaskCount,
                 EnableRangeIndexPreview = EnableRangeIndexPreview,
+                UseSocketSet = UseSocketSet,
             };
         }
 

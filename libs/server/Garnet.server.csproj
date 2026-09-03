@@ -1,31 +1,32 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
-  <PropertyGroup>
-    <SignAssembly>true</SignAssembly>
-    <AssemblyOriginatorKeyFile>../../Garnet.snk</AssemblyOriginatorKeyFile>
-    <DelaySign>false</DelaySign>
-    <EmbedUntrackedSources>true</EmbedUntrackedSources>
-  </PropertyGroup>
+	<PropertyGroup>
+		<SignAssembly>true</SignAssembly>
+		<AssemblyOriginatorKeyFile>../../Garnet.snk</AssemblyOriginatorKeyFile>
+		<DelaySign>false</DelaySign>
+		<EmbedUntrackedSources>true</EmbedUntrackedSources>
+	</PropertyGroup>
 
-  <ItemGroup>
-    <ProjectReference Include="..\..\libs\storage\Tsavorite\cs\src\core\Tsavorite.core.csproj" />
-    <ProjectReference Include="..\..\metrics\HdrHistogram\HdrHistogram.csproj" />
-    <ProjectReference Include="..\client\Garnet.client.csproj" />
-    <ProjectReference Include="..\common\Garnet.common.csproj" />
-    <ProjectReference Include="..\resources\Garnet.resources.csproj" />
-    <ProjectReference Include="..\..\libs\native\bftree-garnet\BfTreeInterop.csproj" />
-  </ItemGroup>
+	<ItemGroup>
+		<ProjectReference Include="..\..\libs\storage\Tsavorite\cs\src\core\Tsavorite.core.csproj" />
+		<ProjectReference Include="..\..\metrics\HdrHistogram\HdrHistogram.csproj" />
+		<ProjectReference Include="..\client\Garnet.client.csproj" />
+		<ProjectReference Include="..\common\Garnet.common.csproj" />
+		<ProjectReference Include="..\resources\Garnet.resources.csproj" />
+		<ProjectReference Include="..\..\libs\native\bftree-garnet\BfTreeInterop.csproj" />
+	</ItemGroup>
 
-  <ItemGroup>
-    <PackageReference Include="Microsoft.IdentityModel.Validators" />
-    <PackageReference Include="Microsoft.Extensions.Logging" />
-    <PackageReference Include="Microsoft.IdentityModel.Protocols.OpenIdConnect" />
-    <PackageReference Include="System.IdentityModel.Tokens.Jwt" />
-    <PackageReference Include="System.Numerics.Tensors" />
-    <PackageReference Include="KeraLua" />
+	<ItemGroup>
+		<PackageReference Include="Microsoft.IdentityModel.Validators" />
+		<PackageReference Include="Microsoft.Extensions.Logging" />
+		<PackageReference Include="Microsoft.IdentityModel.Protocols.OpenIdConnect" />
+		<PackageReference Include="System.IdentityModel.Tokens.Jwt" />
+		<PackageReference Include="System.Numerics.Tensors" />
+		<PackageReference Include="KeraLua" />
 		<PackageReference Include="diskann-garnet" />
-		<PackageReference Include="Microsoft.VisualStudio.Threading.Analyzers" PrivateAssets="all" IncludeAssets="analyzers"/>
-  </ItemGroup>
+		<PackageReference Include="Microsoft.VisualStudio.Threading.Analyzers" PrivateAssets="all" IncludeAssets="analyzers" />
+		<PackageReference Include="SocketSet"  />
+	</ItemGroup>
 
 	<!-- Define compilation symbol for server project -->
 	<PropertyGroup>

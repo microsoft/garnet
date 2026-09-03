@@ -678,6 +678,13 @@ namespace Garnet.server
         public int VectorSetQuantizationTaskCount = 0;
 
         /// <summary>
+        /// If true, uses SocketSet library for networking.
+        /// 
+        /// This uses io_uring on Linux with ktls, and RIO on Windows.
+        /// </summary>
+        public bool UseSocketSet = false;
+
+        /// <summary>
         /// Get the directory name for database checkpoints
         /// </summary>
         /// <param name="dbId">Database Id</param>

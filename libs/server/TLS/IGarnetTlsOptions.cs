@@ -21,6 +21,11 @@ namespace Garnet.server.TLS
         SslClientAuthenticationOptions TlsClientOptions { get; }
 
         /// <summary>
+        /// File name for certificate.
+        /// </summary>
+        string CertFileName { get; }
+
+        /// <summary>
         /// Update certificate file
         /// </summary>
         /// <param name="certFileName"></param>
