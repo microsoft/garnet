@@ -322,6 +322,31 @@ namespace Tsavorite.core
             return localPage[blockIndex];
         }
 
+        /// <summary>Try to get an element without dereferencing infrastructure removed by a concurrent clear.</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public bool TryGet(int index, out TElement element)
+        {
+            element = default;
+
+            if ((uint)index >= (uint)Count)
+                return false;
+
+            var localBook = Volatile.Read(ref book);
+            if (localBook is null)
+                return false;
+
+            var pageIndex = index >> MultiLevelPageArray.PageSizeBits;
+            if ((uint)pageIndex >= (uint)localBook.Length)
+                return false;
+
+            var localPage = Volatile.Read(ref localBook[pageIndex]);
+            if (localPage is null)
+                return false;
+
+            element = localPage[index & MultiLevelPageArray.BlockIndexMask];
+            return true;
+        }
+
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void Set(int index, TElement element)
         {

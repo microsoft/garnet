@@ -3,6 +3,8 @@
 
 using System;
 using System.IO;
+using System.Threading;
+using System.Threading.Tasks;
 using Garnet.test;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -52,8 +54,89 @@ namespace Tsavorite.test
         private TsavoriteKV<ClassStoreFunctions, ClassAllocator> store;
         private IDevice log, objlog;
         const int TotalRecords = 250;
+        const int OverflowKeyLength = 2048;
 
         TestObjectValueComparerModulo comparer;
+
+        readonly struct OverflowTestKey : IKey
+        {
+            // Large enough to force the key into the object allocator's overflow storage.
+            readonly byte[] bytes;
+
+            internal OverflowTestKey(int key)
+            {
+                bytes = new byte[OverflowKeyLength];
+                _ = BitConverter.TryWriteBytes(bytes, key);
+            }
+
+            public bool IsPinned => false;
+            public bool IsEmpty => false;
+            public ReadOnlySpan<byte> KeyBytes => bytes;
+            public bool HasNamespace => false;
+            public ReadOnlySpan<byte> NamespaceBytes => [];
+        }
+
+        sealed class TrackingHeapObject(bool blockOnClear) : IHeapObject
+        {
+            // Signals that cleanup captured this object and entered its callback.
+            internal readonly ManualResetEventSlim clearEntered = new(false);
+
+            // Keeps cleanup blocked while the test evicts the source record and its object-map page.
+            internal readonly ManualResetEventSlim releaseClear = new(!blockOnClear);
+
+            // Models whether checkpoint serialization is currently cached.
+            int cachedDataPresent = 1;
+
+            // Counts successful cached-data clears.
+            int clearCount;
+
+            internal int ClearCount => Volatile.Read(ref clearCount);
+
+            public long HeapMemorySize => 0;
+            public IHeapObject Clone() => new TrackingHeapObject(blockOnClear: false);
+            public void Dispose() { }
+            public void DoSerialize(BinaryWriter writer) => writer.Write(0);
+            public void Serialize(BinaryWriter writer)
+            {
+                WriteType(writer, isNull: false);
+                DoSerialize(writer);
+            }
+            public void WriteType(BinaryWriter writer, bool isNull) => writer.Write(isNull);
+            public void CacheSerializedObjectData(ref LogRecord dstLogRecord, ref RMWInfo rmwInfo, bool srcIsOnMemoryLog)
+                => Volatile.Write(ref cachedDataPresent, 1);
+            public void ClearSerializedObjectData()
+            {
+                if (Interlocked.Exchange(ref cachedDataPresent, 0) == 0)
+                    return;
+
+                clearEntered.Set();
+                releaseClear.Wait();
+                _ = Interlocked.Increment(ref clearCount);
+            }
+        }
+
+        sealed class TrackingHeapObjectSerializer : BinaryObjectSerializer<IHeapObject>
+        {
+            public override void Deserialize(out IHeapObject obj) => obj = new TrackingHeapObject(blockOnClear: false);
+            public override void Serialize(IHeapObject obj) => writer.Write(0);
+        }
+
+        sealed class BlockingSerializationHeapObject : HeapObjectBase
+        {
+            // Coordinates cleanup with a direct serialization paused in DoSerialize.
+            internal readonly ManualResetEventSlim serializeEntered = new(false);
+            internal readonly ManualResetEventSlim releaseSerialize = new(false);
+
+            public override IHeapObject Clone() => new BlockingSerializationHeapObject();
+            public override void Dispose() { }
+            public override void DoSerialize(BinaryWriter writer)
+            {
+                serializeEntered.Set();
+                releaseSerialize.Wait();
+                writer.Write(0);
+            }
+            public override void WriteType(BinaryWriter writer, bool isNull) => writer.Write(isNull);
+        }
 
         [SetUp]
         public void Setup()
@@ -84,6 +167,97 @@ namespace Tsavorite.test
             objlog = null;
 
             OnTearDown();
+        }
+
+        [Test]
+        [Category("TsavoriteKV")]
+        public async Task SerializedObjectCleanupTest()
+        {
+            log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "SerializedObjectCleanup.log"), deleteOnClose: true);
+            objlog = Devices.CreateLogDevice(Path.Join(MethodTestDir, "SerializedObjectCleanup.obj.log"), deleteOnClose: true);
+            store = new(new()
+            {
+                IndexSize = 1L << 13,
+                LogDevice = log,
+                ObjectLogDevice = objlog,
+                MutableFraction = 0.1,
+                LogMemorySize = 1L << 15,
+                PageSize = MinKvLogPageSize
+            }, StoreFunctions.Create(comparer, () => new TrackingHeapObjectSerializer())
+                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
+            );
+
+            using var session = store.NewSession<OverflowTestKey, TestObjectInput, TestObjectOutput, Empty, TestObjectFunctions>(new TestObjectFunctions());
+            var context = session.BasicContext;
+            var value = new TrackingHeapObject(blockOnClear: true);
+            var valuePastEnd = new TrackingHeapObject(blockOnClear: false);
+            try
+            {
+                // Include the first overflow-key record in the cleanup range and exclude the second.
+                var beginAddress = store.Log.TailAddress;
+                _ = context.Upsert(new OverflowTestKey(1), value, Empty.Default);
+                var endAddress = store.Log.TailAddress;
+                _ = context.Upsert(new OverflowTestKey(2), valuePastEnd, Empty.Default);
+
+                // Confirm this test exercises the key representation that the generic scan failed to remap.
+                var record = store.hlogBase._wrapper.CreateLogRecord(beginAddress);
+                Assert.That(record.DataHeader.KeyIsOverflow, Is.True);
+
+                // Pause after cleanup captures the managed value reference.
+                var cleanupTask = Task.Run(() => store.Log.ClearSerializedObjectData(beginAddress, endAddress));
+                Assert.That(value.clearEntered.Wait(TimeSpan.FromSeconds(5)), Is.True, "Cleanup did not capture the heap value");
+
+                // Eviction must complete while cleanup is blocked, proving the callback does not retain epoch protection.
+                var evictionTask = Task.Run(() => store.Log.FlushAndEvict(wait: true));
+                var completedTask = await Task.WhenAny(evictionTask, Task.Delay(TimeSpan.FromSeconds(5))).ConfigureAwait(false);
+                Assert.That(completedTask, Is.SameAs(evictionTask), "Cleanup retained epoch protection while clearing the heap value");
+                await evictionTask.ConfigureAwait(false);
+
+                // The captured reference remains callable after eviction clears the record's object-map slot.
+                value.releaseClear.Set();
+                await cleanupTask.ConfigureAwait(false);
+
+                // Cleanup affects the included record exactly once and does not cross the exclusive end address.
+                Assert.That(value.ClearCount, Is.EqualTo(1));
+                Assert.That(valuePastEnd.ClearCount, Is.Zero);
+            }
+            finally
+            {
+                value.releaseClear.Set();
+            }
+        }
+
+        [Test]
+        [Category("TsavoriteKV")]
+        public async Task CleanupWithoutCachedDataTest()
+        {
+            var value = new BlockingSerializationHeapObject();
+
+            // Direct serialization enters SERIALIZING without creating cached checkpoint bytes.
+            var serializationTask = Task.Run(() =>
+            {
+                using var stream = new MemoryStream();
+                using var writer = new BinaryWriter(stream);
+                value.Serialize(writer);
+            });
+
+            try
+            {
+                Assert.That(value.serializeEntered.Wait(TimeSpan.FromSeconds(5)), Is.True);
+
+                // With no cached bytes, cleanup must leave the active serialization phase unchanged.
+                value.ClearSerializedObjectData();
+
+                // This transition can only succeed if cleanup incorrectly reset the phase to REST.
+                Assert.That(value.MakeTransition(SerializationPhase.REST, SerializationPhase.SERIALIZED), Is.False,
+                    "Cleanup reset an object that had no cached serialization");
+            }
+            finally
+            {
+                value.releaseSerialize.Set();
+            }
+
+            await serializationTask.ConfigureAwait(false);
         }
 
         internal struct ObjectPushScanTestFunctions : IScanIteratorFunctions
