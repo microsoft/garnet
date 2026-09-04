@@ -4,6 +4,7 @@
 using System;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
+using System.Runtime.ExceptionServices;
 using System.Threading;
 
 namespace Tsavorite.core
@@ -15,6 +16,18 @@ namespace Tsavorite.core
     {
         /// <summary>Runtime-only ordering state installed while a Snapshot checkpoint flushes live pages.</summary>
         private protected SnapshotFlushCoordination snapshotFlushCoordination;
+
+        /// <summary>Bounded Snapshot completion window for this allocator. Object allocators use their object-log
+        /// flush-buffer count. A non-object NullDevice still needs a window to keep its live pages resident until
+        /// Snapshot writes complete; real-device non-object allocators require no coordination.</summary>
+        internal int SnapshotFlushCoordinationWindowSize
+        {
+            get
+            {
+                var windowSize = SnapshotFlushWindowSize;
+                return windowSize > 0 ? windowSize : IsNullDevice ? 1 : 0;
+            }
+        }
 
         /// <summary>Serializes coordination installation/removal with ReadOnly page-flush claims.</summary>
         readonly object snapshotFlushSync = new();
@@ -227,6 +240,17 @@ namespace Tsavorite.core
         /// </summary>
         long lastCompletedSnapshotPage;
 
+        /// <summary>Fixed-size ring of out-of-order Snapshot page completions. A slot contains the completed page
+        /// whose page number maps to that slot, or <see cref="long.MinValue"/> when it has never been used.</summary>
+        readonly long[] completedSnapshotPages;
+        readonly int[] snapshotPageStates;
+
+        const int PageInFlight = 0;
+        const int PageCompleted = 1;
+        const int PageFailed = 2;
+
+        int numInFlightSnapshotPages;
+
         /// <summary>
         /// First Snapshot flush failure. This field releases coordination waiters but is not thrown by them; the same
         /// exception separately faults the checkpoint's <see cref="FlushCompletionTracker"/> task and is surfaced when
@@ -246,6 +270,9 @@ namespace Tsavorite.core
         /// <summary>Number of ReadOnly callers currently waiting on <see cref="sync"/>.</summary>
         int waitingReadOnlyFlushes;
 
+        /// <summary>Number of Snapshot issuer callers waiting for bounded completion-window capacity or final completion.</summary>
+        int waitingSnapshotFlushes;
+
         /// <summary>Endpoint of ReadOnly IO issued before coordination publication.</summary>
         long preCoordinationReadOnlyFlushEndAddress;
 
@@ -253,8 +280,16 @@ namespace Tsavorite.core
         /// Create coordination that initially blocks ReadOnly flushing at and above
         /// <paramref name="provisionalFirstSnapshotPage"/>.
         /// </summary>
-        internal SnapshotFlushCoordination(long provisionalFirstSnapshotPage)
-            => lastCompletedSnapshotPage = provisionalFirstSnapshotPage;
+        internal SnapshotFlushCoordination(long provisionalFirstSnapshotPage, int completionWindowSize = 4)
+        {
+            if (completionWindowSize <= 0)
+                throw new ArgumentOutOfRangeException(nameof(completionWindowSize));
+
+            lastCompletedSnapshotPage = provisionalFirstSnapshotPage;
+            completedSnapshotPages = new long[completionWindowSize];
+            Array.Fill(completedSnapshotPages, long.MinValue);
+            snapshotPageStates = new int[completionWindowSize];
+        }
 
         /// <summary>
         /// ReadOnly pages must be strictly below this exclusive limit. During page-by-page Snapshot flushing it is one
@@ -347,29 +382,160 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void CompletePage(long page)
         {
+            if (!FinishPage(page, PageCompleted))
+                return;
+
             if (Volatile.Read(ref failure) is not null)
                 return;
 
-            var exclusiveCompletedPage = page + 1;
             var current = Volatile.Read(ref lastCompletedSnapshotPage);
-            while (exclusiveCompletedPage > current)
+            if (page != current)
+                return;
+
+            var initial = current;
+            while (Volatile.Read(ref completedSnapshotPages[(int)(current % completedSnapshotPages.Length)]) == current
+                && Volatile.Read(ref snapshotPageStates[(int)(current % snapshotPageStates.Length)]) == PageCompleted)
             {
-                var observed = Interlocked.CompareExchange(ref lastCompletedSnapshotPage, exclusiveCompletedPage, current);
+                var observed = Interlocked.CompareExchange(ref lastCompletedSnapshotPage, current + 1, current);
                 if (observed == current)
-                    break;
+                {
+                    current++;
+                    continue;
+                }
                 current = observed;
             }
 
-            // Snapshot-only operation has no waiters and performs no monitor acquisition or sync-object write.
-            if (exclusiveCompletedPage > current && Volatile.Read(ref waitingReadOnlyFlushes) > 0)
-                PulseReadOnlyWaiters();
+            // Snapshot-only operation with available window capacity has no waiters and performs no monitor acquisition.
+            if (current > initial
+                && (Volatile.Read(ref waitingReadOnlyFlushes) > 0 || Volatile.Read(ref waitingSnapshotFlushes) > 0))
+                PulseProgressWaiters();
+        }
+
+        /// <summary>Record failure of one reserved Snapshot page and release its completion-window slot.</summary>
+        internal void FailPage(long page, Exception exception)
+        {
+            Fail(exception);
+            _ = FinishPage(page, PageFailed);
+        }
+
+        bool FinishPage(long page, int completedState)
+        {
+            var slot = (int)(page % completedSnapshotPages.Length);
+            if (Volatile.Read(ref completedSnapshotPages[slot]) != page)
+                return false;
+            if (Interlocked.CompareExchange(ref snapshotPageStates[slot], completedState, PageInFlight) != PageInFlight)
+                return false;
+
+            if (Interlocked.Decrement(ref numInFlightSnapshotPages) == 0)
+                PulseProgressWaiters();
+            return true;
         }
 
         [MethodImpl(MethodImplOptions.NoInlining)]
-        void PulseReadOnlyWaiters()
+        void PulseProgressWaiters()
         {
             lock (sync)
                 Monitor.PulseAll(sync);
+        }
+
+        /// <summary>Wait until <paramref name="page"/> fits in the fixed-size in-flight completion window.</summary>
+        internal void WaitForWindowCapacity(long page)
+        {
+            ThrowIfFailed();
+            var completedThrough = Volatile.Read(ref lastCompletedSnapshotPage);
+            if (page - completedThrough < completedSnapshotPages.Length)
+                return;
+
+            lock (sync)
+            {
+                waitingSnapshotFlushes++;
+                try
+                {
+                    Interlocked.MemoryBarrier();
+                    while (!completed && failure is null
+                        && page - Volatile.Read(ref lastCompletedSnapshotPage) >= completedSnapshotPages.Length)
+                        Monitor.Wait(sync);
+                    ThrowIfFailed();
+                    if (completed)
+                        throw new TsavoriteException("Snapshot completion window closed before the page could be issued");
+                }
+                finally
+                {
+                    waitingSnapshotFlushes--;
+                }
+            }
+        }
+
+        /// <summary>Reserve a previously admitted page in the in-flight completion window.</summary>
+        internal void ReservePage(long page)
+        {
+            var slot = (int)(page % completedSnapshotPages.Length);
+            Volatile.Write(ref snapshotPageStates[slot], PageInFlight);
+            Volatile.Write(ref completedSnapshotPages[slot], page);
+            _ = Interlocked.Increment(ref numInFlightSnapshotPages);
+        }
+
+        /// <summary>Test/helper convenience that admits and reserves one page.</summary>
+        internal void WaitToIssuePage(long page)
+        {
+            WaitForWindowCapacity(page);
+            ReservePage(page);
+        }
+
+        /// <summary>Wait until every Snapshot page below <paramref name="exclusiveEndPage"/> has completed contiguously.</summary>
+        internal void WaitForAllPages(long exclusiveEndPage)
+        {
+            if (Volatile.Read(ref lastCompletedSnapshotPage) >= exclusiveEndPage)
+                return;
+
+            lock (sync)
+            {
+                waitingSnapshotFlushes++;
+                try
+                {
+                    Interlocked.MemoryBarrier();
+                    while (failure is null && Volatile.Read(ref lastCompletedSnapshotPage) < exclusiveEndPage)
+                    {
+                        if (completed)
+                            throw new TsavoriteException("Snapshot completion window closed before all issued pages completed");
+                        Monitor.Wait(sync);
+                    }
+                    ThrowIfFailed();
+                }
+                finally
+                {
+                    waitingSnapshotFlushes--;
+                }
+            }
+        }
+
+        /// <summary>Wait until every page already issued into the bounded window has completed or failed.</summary>
+        internal void WaitForInFlightPages()
+        {
+            if (Volatile.Read(ref numInFlightSnapshotPages) == 0)
+                return;
+
+            lock (sync)
+            {
+                waitingSnapshotFlushes++;
+                try
+                {
+                    Interlocked.MemoryBarrier();
+                    while (Volatile.Read(ref numInFlightSnapshotPages) > 0)
+                        Monitor.Wait(sync);
+                }
+                finally
+                {
+                    waitingSnapshotFlushes--;
+                }
+            }
+        }
+
+        void ThrowIfFailed()
+        {
+            var exception = Volatile.Read(ref failure);
+            if (exception is not null)
+                ExceptionDispatchInfo.Capture(exception).Throw();
         }
         /// <summary>
         /// Publish the terminal exclusive page and release the final Snapshot page for ReadOnly flushing.

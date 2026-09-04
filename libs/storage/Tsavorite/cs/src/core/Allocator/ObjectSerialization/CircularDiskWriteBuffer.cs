@@ -162,43 +162,60 @@ namespace Tsavorite.core
             // Lock this with a reference until we have set the callback and issue the write. This callback is for the main log page write, and
             // when the countdownCallbackAndContext.Decrement hits 0 again, we're done with this partial flush range and will call the external callback.
             countdownCallbackAndContext.Increment();
-            countdownCallbackAndContext.Set(externalCallback, externalContext, (uint)(directLength + trailingLength));
-
-            // Issue the last ObjectLog write for this partial flush.
-            var buffer = GetCurrentBuffer();
-            Debug.Assert(IsAligned(buffer.flushedUntilPosition, (int)device.SectorSize), $"flushedUntilPosition {buffer.flushedUntilPosition} is not sector-aligned");
-            Debug.Assert(buffer.currentPosition >= buffer.flushedUntilPosition, $"buffer.currentPosition {buffer.currentPosition} must be >= buffer.flushedUntilPosition {buffer.flushedUntilPosition}");
-
-            if (buffer.currentPosition > buffer.flushedUntilPosition)
+            try
             {
-                // We have something to flush. First ensure sector-alignment of the flush; we'll "waste" some space to do so. This is necessary to avoid rewriting sectors,
-                // which can be a problem for some devices due to inefficiencies in rewriting or inability to back up (or both).
-                var sectorEnd = RoundUp(buffer.currentPosition, (int)device.SectorSize);
-                if (sectorEnd > buffer.currentPosition)
+                countdownCallbackAndContext.Set(externalCallback, externalContext, (uint)(directLength + trailingLength));
+
+                // Issue the last ObjectLog write for this partial flush.
+                var buffer = GetCurrentBuffer();
+                Debug.Assert(IsAligned(buffer.flushedUntilPosition, (int)device.SectorSize), $"flushedUntilPosition {buffer.flushedUntilPosition} is not sector-aligned");
+                Debug.Assert(buffer.currentPosition >= buffer.flushedUntilPosition, $"buffer.currentPosition {buffer.currentPosition} must be >= buffer.flushedUntilPosition {buffer.flushedUntilPosition}");
+
+                if (buffer.currentPosition > buffer.flushedUntilPosition)
                 {
-                    // Prepare to flush the final piece to disk by zero-initializing the sector-alignment padding.
-                    new Span<byte>(buffer.memory.GetValidPointer() + buffer.currentPosition, sectorEnd - buffer.currentPosition).Clear();
-                    buffer.currentPosition = sectorEnd;
+                    // We have something to flush. First ensure sector-alignment of the flush; we'll "waste" some space to do so. This is necessary to avoid rewriting sectors,
+                    // which can be a problem for some devices due to inefficiencies in rewriting or inability to back up (or both).
+                    var sectorEnd = RoundUp(buffer.currentPosition, (int)device.SectorSize);
+                    if (sectorEnd > buffer.currentPosition)
+                    {
+                        // Prepare to flush the final piece to disk by zero-initializing the sector-alignment padding.
+                        new Span<byte>(buffer.memory.GetValidPointer() + buffer.currentPosition, sectorEnd - buffer.currentPosition).Clear();
+                        buffer.currentPosition = sectorEnd;
+                    }
+
+                    var writeCallbackContext = CreateDiskWriteCallbackContext();
+                    _ = Interlocked.Increment(ref numInFlightWrites);
+                    try
+                    {
+                        buffer.FlushToDevice(ref filePosition, FlushToDeviceCallback, writeCallbackContext);
+                    }
+                    catch (Exception ex)
+                    {
+                        if (writeCallbackContext.Release(uint.MaxValue, ex) != long.MinValue)
+                            _ = Interlocked.Decrement(ref numInFlightWrites);
+                        throw;
+                    }
                 }
 
-                // Now write the buffer to the device.
-                _ = Interlocked.Increment(ref numInFlightWrites);
-                buffer.FlushToDevice(ref filePosition, FlushToDeviceCallback, CreateDiskWriteCallbackContext());
+                // Update the object log file position for the caller, unless we are using our own.
+                if (!ownFilePosition)
+                    endObjectLogFilePosition = filePosition;
+
+                // Both main-log spans join the same countdown batch, so the external callback runs only after all object-log and main-log writes complete.
+                if (directLength > 0)
+                {
+                    FlushToMainLogDevice(directPtr, directLength, mainLogDevice, directAddress, CreateDiskWriteCallbackContext());
+                }
+                if (trailingLength > 0)
+                {
+                    FlushToMainLogDevice(trailingPtr, trailingLength, mainLogDevice, trailingAddress, CreateDiskWriteCallbackContext());
+                }
             }
-
-            // Update the object log file position for the caller, unless we are using our own.
-            if (!ownFilePosition)
-                endObjectLogFilePosition = filePosition;
-
-            // Both main-log spans join the same countdown batch, so the external callback runs only after all object-log and main-log writes complete.
-            if (directLength > 0)
-                FlushToMainLogDevice(directPtr, directLength, mainLogDevice, directAddress, CreateDiskWriteCallbackContext());
-            if (trailingLength > 0)
-                FlushToMainLogDevice(trailingPtr, trailingLength, mainLogDevice, trailingAddress, CreateDiskWriteCallbackContext());
-
-            // We added a count to countdownCallbackAndContext at the start, and the callback state creation also added a count. Remove the one we added at the start.
-            // If the write in FlushToMainLogDeviced completed fast, this decrement here may be the final one.
-            _ = countdownCallbackAndContext.Decrement();
+            finally
+            {
+                // Always remove the batch sentinel, including when a later write submission throws.
+                _ = countdownCallbackAndContext.Decrement();
+            }
         }
 
         internal DiskWriteCallbackContext CreateDiskWriteCallbackContext() => new(countdownCallbackAndContext);
@@ -211,7 +228,16 @@ namespace Tsavorite.core
             var buffer = GetCurrentBuffer();
             var writeCallbackContext = CreateDiskWriteCallbackContext();
             _ = Interlocked.Increment(ref numInFlightWrites);
-            buffer.FlushToDevice(ref filePosition, FlushToDeviceCallback, writeCallbackContext);
+            try
+            {
+                buffer.FlushToDevice(ref filePosition, FlushToDeviceCallback, writeCallbackContext);
+            }
+            catch (Exception ex)
+            {
+                if (writeCallbackContext.Release(uint.MaxValue, ex) != long.MinValue)
+                    _ = Interlocked.Decrement(ref numInFlightWrites);
+                throw;
+            }
         }
 
         /// <summary>Flush to disk for a span that is not associated with a particular buffer, such as fully-interior spans of a large overflow key or value.</summary>
@@ -222,7 +248,17 @@ namespace Tsavorite.core
             Debug.Assert(IsAligned(filePosition.Offset, (int)device.SectorSize), "filePosition.Offset is not aligned to sector size");
 
             _ = Interlocked.Increment(ref numInFlightWrites);
-            device.WriteAsync((IntPtr)spanPtr, filePosition.SegmentId, filePosition.Offset, (uint)spanLength, FlushToDeviceCallback, writeCallbackContext);
+            try
+            {
+                writeCallbackContext.MarkSnapshotWriteAttempted();
+                device.WriteAsync((IntPtr)spanPtr, filePosition.SegmentId, filePosition.Offset, (uint)spanLength, FlushToDeviceCallback, writeCallbackContext);
+            }
+            catch (Exception ex)
+            {
+                if (writeCallbackContext.Release(uint.MaxValue, ex) != long.MinValue)
+                    _ = Interlocked.Decrement(ref numInFlightWrites);
+                throw;
+            }
             filePosition.Offset += (uint)spanLength;
         }
 
@@ -235,7 +271,17 @@ namespace Tsavorite.core
             Debug.Assert(IsAligned(alignedMainLogFlushAddress, (int)mainLogDevice.SectorSize), "alignedMainLogFlushAddress is not aligned to sector size");
 
             _ = Interlocked.Increment(ref numInFlightWrites);
-            mainLogDevice.WriteAsync((IntPtr)spanPtr, alignedMainLogFlushAddress, (uint)spanLength, FlushToDeviceCallback, writeCallbackContext);
+            try
+            {
+                writeCallbackContext.MarkSnapshotWriteAttempted();
+                mainLogDevice.WriteAsync((IntPtr)spanPtr, alignedMainLogFlushAddress, (uint)spanLength, FlushToDeviceCallback, writeCallbackContext);
+            }
+            catch (Exception ex)
+            {
+                if (writeCallbackContext.Release(uint.MaxValue, ex) != long.MinValue)
+                    _ = Interlocked.Decrement(ref numInFlightWrites);
+                throw;
+            }
         }
 
         private void FlushToDeviceCallback(uint errorCode, uint numBytes, object context, Exception ioException)

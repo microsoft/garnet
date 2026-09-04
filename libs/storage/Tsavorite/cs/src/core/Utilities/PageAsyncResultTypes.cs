@@ -264,6 +264,7 @@ namespace Tsavorite.core
 
         /// <summary>The countdown event if this write is associated with a <see cref="DiskWriteBuffer"/>.</summary>
         private CountdownEvent bufferCountdownEvent;
+        int released;
 
         public override string ToString()
         {
@@ -288,8 +289,20 @@ namespace Tsavorite.core
         /// <summary>This write is associated with a <see cref="DiskWriteBuffer"/> so we need to signal the countdown event for that buffer when we are done.</summary>
         public void SetBufferCountdownEvent(CountdownEvent countdownEvent) => bufferCountdownEvent = countdownEvent;
 
+        /// <summary>Publish that this Snapshot page has reached a write submission whose normal callback or
+        /// synchronous-failure unwind will release the external page context.</summary>
+        internal void MarkSnapshotWriteAttempted()
+        {
+            if (countdownCallbackAndContext?.context is PageAsyncFlushResult<Empty> result
+                && result.flushRequestState == FlushRequestState.Snapshot)
+                result.snapshotDeviceWriteIssued = true;
+        }
+
         public long Release(uint errorCode = 0, Exception ioException = null)
         {
+            if (Interlocked.Exchange(ref released, 1) != 0)
+                return long.MinValue;
+
             refCountedGCHandle?.Release();
             if (gcHandle.IsAllocated)
                 gcHandle.Free();

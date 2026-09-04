@@ -29,10 +29,13 @@ namespace Tsavorite.core
                     store.InitializeHybridLogCheckpoint(store._hybridLogCheckpointToken, next.Version);
                     store._hybridLogCheckpoint.info.useSnapshotFile = 1;
                     ObjectLog_OnPrepare();
-                    var prepareSnapshotStart = store.hlogBase.IsNullDevice ? store.hlogBase.HeadAddress : store.hlogBase.FlushedUntilAddress;
-                    store._hybridLogCheckpoint.snapshotFlushCoordination =
-                        new SnapshotFlushCoordination(store.hlogBase.GetPage(prepareSnapshotStart));
-                    store.hlogBase.PrepareSnapshotFlushCoordination(store._hybridLogCheckpoint.snapshotFlushCoordination);
+                    if (store.hlogBase.SnapshotFlushCoordinationWindowSize > 0)
+                    {
+                        var prepareSnapshotStart = store.hlogBase.IsNullDevice ? store.hlogBase.HeadAddress : store.hlogBase.FlushedUntilAddress;
+                        store._hybridLogCheckpoint.snapshotFlushCoordination =
+                            new SnapshotFlushCoordination(store.hlogBase.GetPage(prepareSnapshotStart), store.hlogBase.SnapshotFlushCoordinationWindowSize);
+                        store.hlogBase.PrepareSnapshotFlushCoordination(store._hybridLogCheckpoint.snapshotFlushCoordination);
+                    }
                     base.GlobalBeforeEnteringState(next, stateMachineDriver);
                     break;
 
@@ -56,29 +59,36 @@ namespace Tsavorite.core
                     {
                         // Nothing to flush because the flushed region already contains everything up to recoveredTailAddress.
                         store._hybridLogCheckpoint.info.snapshotFileLogicalStartAddress = provisionalSnapshotStart;
-                        store._hybridLogCheckpoint.snapshotFlushCoordination.Dispose();
-                        store.hlogBase.ClearSnapshotFlushCoordination(store._hybridLogCheckpoint.snapshotFlushCoordination);
+                        store._hybridLogCheckpoint.snapshotFlushCoordination?.Dispose();
+                        if (store._hybridLogCheckpoint.snapshotFlushCoordination is not null)
+                            store.hlogBase.ClearSnapshotFlushCoordination(store._hybridLogCheckpoint.snapshotFlushCoordination);
                         break;
                     }
 
-                    try
+                    if (store._hybridLogCheckpoint.snapshotFlushCoordination is not null)
                     {
-                        store._hybridLogCheckpoint.info.snapshotFileLogicalStartAddress =
-                            store.hlogBase.InstallSnapshotFlushCoordination(store._hybridLogCheckpoint.snapshotFlushCoordination);
+                        try
+                        {
+                            store._hybridLogCheckpoint.info.snapshotFileLogicalStartAddress =
+                                store.hlogBase.InstallSnapshotFlushCoordination(store._hybridLogCheckpoint.snapshotFlushCoordination);
+                        }
+                        catch (Exception ex)
+                        {
+                            store._hybridLogCheckpoint.snapshotFlushCoordination.Fail(ex);
+                            store.hlogBase.ClearSnapshotFlushCoordination(store._hybridLogCheckpoint.snapshotFlushCoordination);
+                            throw;
+                        }
                     }
-                    catch (Exception ex)
-                    {
-                        store._hybridLogCheckpoint.snapshotFlushCoordination.Fail(ex);
-                        store.hlogBase.ClearSnapshotFlushCoordination(store._hybridLogCheckpoint.snapshotFlushCoordination);
-                        throw;
-                    }
+                    else
+                        store._hybridLogCheckpoint.info.snapshotFileLogicalStartAddress = provisionalSnapshotStart;
 
                     if (store._hybridLogCheckpoint.info.recoveredTailAddress <= store._hybridLogCheckpoint.info.snapshotFileLogicalStartAddress)
                     {
                         // Existing ReadOnly writes completed the range while installation drained. Release threads that
                         // sampled the coordination and remove the now-unneeded gate.
-                        store._hybridLogCheckpoint.snapshotFlushCoordination.Dispose();
-                        store.hlogBase.ClearSnapshotFlushCoordination(store._hybridLogCheckpoint.snapshotFlushCoordination);
+                        store._hybridLogCheckpoint.snapshotFlushCoordination?.Dispose();
+                        if (store._hybridLogCheckpoint.snapshotFlushCoordination is not null)
+                            store.hlogBase.ClearSnapshotFlushCoordination(store._hybridLogCheckpoint.snapshotFlushCoordination);
                         break;
                     }
 
@@ -118,7 +128,8 @@ namespace Tsavorite.core
                     store._hybridLogCheckpoint.snapshotFileDevice = null;
                     store._hybridLogCheckpoint.snapshotFileObjectLogDevice?.Dispose();
                     store._hybridLogCheckpoint.snapshotFileObjectLogDevice = null;
-                    store.hlogBase.ClearSnapshotFlushCoordination(store._hybridLogCheckpoint.snapshotFlushCoordination);
+                    if (store._hybridLogCheckpoint.snapshotFlushCoordination is not null)
+                        store.hlogBase.ClearSnapshotFlushCoordination(store._hybridLogCheckpoint.snapshotFlushCoordination);
                     break;
 
                 default:

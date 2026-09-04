@@ -607,6 +607,9 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc/>
+        internal override int SnapshotFlushWindowSize => numberOfFlushBuffers;
+
+        /// <inheritdoc/>
         internal override CircularDiskReadBuffer CreateCircularReadBuffers(IDevice objectLogDevice, ILogger logger)
             => new(bufferPool, IStreamBuffer.BufferSize, numberOfDeserializationBuffers, objectLogDevice ?? this.objectLogDevice, logger);
 
@@ -782,6 +785,7 @@ namespace Tsavorite.core
             if (device is NullDevice)
             {
                 device.WriteAsync(IntPtr.Zero, 0, 0, numBytesToWrite, callback, asyncResult);
+                asyncResult.snapshotDeviceWriteIssued = true;
                 return;
             }
 

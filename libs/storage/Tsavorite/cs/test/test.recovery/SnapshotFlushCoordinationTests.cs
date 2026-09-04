@@ -18,6 +18,7 @@ namespace Tsavorite.test.recovery
         {
             using var coordination = new SnapshotFlushCoordination(10);
             coordination.Arm(10);
+            coordination.WaitToIssuePage(10);
 
             coordination.WaitUntilReadOnlyMayFlush(9);
 
@@ -66,11 +67,99 @@ namespace Tsavorite.test.recovery
         {
             using var coordination = new SnapshotFlushCoordination(10);
             coordination.Arm(10);
+            coordination.WaitToIssuePage(10);
+            coordination.WaitToIssuePage(11);
 
             coordination.CompletePage(11);
+            ClassicAssert.AreEqual(10, coordination.LastCompletedSnapshotPage);
             coordination.CompletePage(10);
 
             ClassicAssert.AreEqual(12, coordination.LastCompletedSnapshotPage);
+        }
+
+        [Test]
+        public void CompletionWindowBoundsOutstandingPages()
+        {
+            using var coordination = new SnapshotFlushCoordination(10, completionWindowSize: 3);
+            coordination.Arm(10);
+
+            coordination.WaitToIssuePage(10);
+            coordination.WaitToIssuePage(11);
+            coordination.WaitToIssuePage(12);
+
+            var started = new ManualResetEventSlim();
+            var issuer = Task.Run(() =>
+            {
+                started.Set();
+                coordination.WaitToIssuePage(13);
+            });
+
+            ClassicAssert.IsTrue(started.Wait(TimeSpan.FromSeconds(1)));
+            ClassicAssert.IsFalse(issuer.Wait(TimeSpan.FromMilliseconds(100)));
+
+            coordination.CompletePage(11);
+            ClassicAssert.IsFalse(issuer.Wait(TimeSpan.FromMilliseconds(100)));
+            coordination.CompletePage(10);
+
+            ClassicAssert.IsTrue(issuer.Wait(TimeSpan.FromSeconds(1)));
+            ClassicAssert.AreEqual(12, coordination.LastCompletedSnapshotPage);
+        }
+
+        [Test]
+        public void WaitForAllPagesRequiresContiguousCompletion()
+        {
+            using var coordination = new SnapshotFlushCoordination(20, completionWindowSize: 3);
+            coordination.Arm(20);
+            coordination.WaitToIssuePage(20);
+            coordination.WaitToIssuePage(21);
+            coordination.WaitToIssuePage(22);
+
+            var waiter = Task.Run(() => coordination.WaitForAllPages(23));
+            coordination.CompletePage(22);
+            coordination.CompletePage(20);
+            ClassicAssert.IsFalse(waiter.Wait(TimeSpan.FromMilliseconds(100)));
+
+            coordination.CompletePage(21);
+            ClassicAssert.IsTrue(waiter.Wait(TimeSpan.FromSeconds(1)));
+            ClassicAssert.AreEqual(23, coordination.LastCompletedSnapshotPage);
+        }
+
+        [Test]
+        public void CompletionWindowReusesWrappedSlotOnlyAfterFrontierAdvances()
+        {
+            using var coordination = new SnapshotFlushCoordination(10, completionWindowSize: 2);
+            coordination.Arm(10);
+
+            coordination.WaitToIssuePage(10);
+            coordination.WaitToIssuePage(11);
+            coordination.CompletePage(10);
+            coordination.WaitToIssuePage(12);
+
+            coordination.CompletePage(11);
+            ClassicAssert.AreEqual(12, coordination.LastCompletedSnapshotPage,
+                "the stale completion formerly in the wrapped slot must not complete its replacement");
+
+            coordination.CompletePage(12);
+            ClassicAssert.AreEqual(13, coordination.LastCompletedSnapshotPage);
+        }
+
+        [Test]
+        public void FailedPageReleasesWindowAndRethrowsOriginalFailure()
+        {
+            using var coordination = new SnapshotFlushCoordination(10, completionWindowSize: 2);
+            coordination.Arm(10);
+            coordination.WaitToIssuePage(10);
+            coordination.WaitToIssuePage(11);
+            var expected = new TsavoriteException("injected Snapshot page failure");
+
+            coordination.FailPage(10, expected);
+
+            var actual = Assert.Throws<TsavoriteException>(() => coordination.WaitForAllPages(12));
+            Assert.That(actual, Is.SameAs(expected));
+            var drain = Task.Run(coordination.WaitForInFlightPages);
+            ClassicAssert.IsFalse(drain.Wait(TimeSpan.FromMilliseconds(100)));
+            coordination.FailPage(11, expected);
+            ClassicAssert.IsTrue(drain.Wait(TimeSpan.FromSeconds(1)));
         }
 
         [Test]

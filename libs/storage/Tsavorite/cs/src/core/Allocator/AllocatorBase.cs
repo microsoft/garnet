@@ -22,6 +22,9 @@ namespace Tsavorite.core
     {
         /// <summary>Create the circular buffers for <see cref="LogRecord"/> flushing to device. Only implemented by ObjectAllocator.</summary>
         internal virtual CircularDiskWriteBuffer CreateCircularFlushBuffers(IDevice objectLogDevice, ILogger logger) => default;
+        /// <summary>Maximum number of Snapshot page writes to issue concurrently while coordinating with ReadOnly flushing.
+        /// Zero means this allocator does not require Snapshot/ReadOnly page coordination.</summary>
+        internal virtual int SnapshotFlushWindowSize => 0;
         /// <summary>Create the circular flush buffers for object deserialization from device. Only implemented by ObjectAllocator.</summary>
         internal virtual CircularDiskReadBuffer CreateCircularReadBuffers(IDevice objectLogDevice, ILogger logger) => default;
         /// <summary>Create the circular flush buffers for object deserialization from device. Only implemented by ObjectAllocator.</summary>
@@ -2380,8 +2383,18 @@ namespace Tsavorite.core
         {
             logger?.LogTrace("Starting async full log flush with throttling {throttlingEnabled}", throttleCheckpointFlushDelayMs >= 0 ? $"enabled ({throttleCheckpointFlushDelayMs}ms)" : "disabled");
 
-            var completionTcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-            completedTask = completionTcs.Task;
+            var pageCompletionTcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var finalCompletionTcs = coordination is null
+                ? pageCompletionTcs
+                : new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            if (coordination is not null)
+            {
+                // The coordinated path exposes finalCompletionTcs only after the completion window closes. Observe
+                // pageCompletionTcs separately so a page-write fault is not left as an unobserved task exception.
+                _ = pageCompletionTcs.Task.ContinueWith(static task => _ = task.Exception,
+                    CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously | TaskContinuationOptions.OnlyOnFaulted, TaskScheduler.Default);
+            }
+            completedTask = finalCompletionTcs.Task;
 
             // Park (do not munmap) any native page evicted while this snapshot's writes are in flight; free them only
             // once EVERY issued write has called back (see DirectVmBlockOwner). Snapshot IO reads page
@@ -2390,8 +2403,9 @@ namespace Tsavorite.core
             // FlushRunner releases it when issuance ends, and each issued write's callback releases its own unit.
             BeginNativeSnapshotFlush();
 
-            // If throttled, convert rest of the method into a truly async task run because issuing IO can take up synchronous time
-            if (throttleCheckpointFlushDelayMs >= 0)
+            // A coordinated Snapshot may wait for completion-window capacity, so issue it outside the state-machine transition.
+            // An uncoordinated, unthrottled Snapshot only submits IO and retains the original synchronous-issuance fast path.
+            if (throttleCheckpointFlushDelayMs >= 0 || coordination is not null)
                 _ = Task.Run(FlushRunner);
             else
                 FlushRunner();
@@ -2400,7 +2414,8 @@ namespace Tsavorite.core
             {
                 var totalNumPages = (int)(endPage - startPage);
 
-                var flushCompletionTracker = new FlushCompletionTracker(completionTcs, enableThrottling: true, totalNumPages);
+                var throttled = throttleCheckpointFlushDelayMs >= 0;
+                var flushCompletionTracker = new FlushCompletionTracker(pageCompletionTcs, enableThrottling: throttled, totalNumPages);
 
                 try
                 {
@@ -2416,14 +2431,17 @@ namespace Tsavorite.core
                         if (endLogicalAddress < flushEndAddress)
                             flushEndAddress = endLogicalAddress;
                         var flushSize = flushEndAddress - flushStartAddress;
+                        coordination?.WaitForWindowCapacity(flushPage);
                         if (flushSize <= 0)
                         {
+                            coordination?.ReservePage(flushPage);
                             // No data to flush for this page. Signal completion and drain the
                             // throttle semaphore so the next real page's WaitOneFlush is not
                             // satisfied by this page's release.
                             flushCompletionTracker.CompleteFlush();
-                            flushCompletionTracker.WaitOneFlush();
-                            coordination.CompletePage(flushPage);
+                            if (throttled)
+                                flushCompletionTracker.WaitOneFlush();
+                            coordination?.CompletePage(flushPage);
                             continue;
                         }
 
@@ -2449,6 +2467,7 @@ namespace Tsavorite.core
                         BeginNativeSnapshotFlush();
                         try
                         {
+                            coordination?.ReservePage(flushPage);
                             WriteAsyncToDeviceForSnapshot(startPage, flushPage, (int)flushSize, AsyncFlushPageForSnapshotCallback, asyncResult, logDevice, objectLogDevice, fuzzyStartLogicalAddress);
                         }
                         catch (Exception writeEx)
@@ -2462,6 +2481,7 @@ namespace Tsavorite.core
                             flushCompletionTracker.SetException(writeEx);
                             if (!asyncResult.snapshotDeviceWriteIssued)
                             {
+                                coordination?.FailPage(flushPage, writeEx);
                                 if (asyncResult.TryClaimSnapshotUnitRelease())
                                     EndNativeSnapshotFlush();
                                 _ = asyncResult.Release();
@@ -2473,37 +2493,44 @@ namespace Tsavorite.core
 
                         // If we did not issue a flush write (due to HeadAddress moving past flushPage), then WriteAsync set isForSnapshot false and we release the asyncResult here;
                         // otherwise, we wait for the completion of the flush (and the callback will release the asyncResult).
-                        if (writeIssued)
+                        if (writeIssued && throttled)
                         {
-                            // Snapshot page ordering advances only after this page completes, even when checkpoint throttling is disabled.
                             flushCompletionTracker.WaitOneFlush();
-                            if (throttleCheckpointFlushDelayMs >= 0)
-                                Thread.Sleep(throttleCheckpointFlushDelayMs);
+                            Thread.Sleep(throttleCheckpointFlushDelayMs);
                         }
-                        else
+                        else if (!writeIssued)
                         {
                             // WriteNotIssued: no callback will fire, so release this page's IO unit (exactly once)
                             // and the asyncResult buffers here.
                             if (asyncResult.TryClaimSnapshotUnitRelease())
                                 EndNativeSnapshotFlush();
                             _ = asyncResult.Release();
-                            coordination.CompletePage(flushPage);
+                            coordination?.CompletePage(flushPage);
                             // Release() called CompleteFlush() which released the throttle semaphore.
                             // Drain it so the next real page's WaitOneFlush is not satisfied by this no-op.
-                            flushCompletionTracker.WaitOneFlush();
+                            if (throttled)
+                                flushCompletionTracker.WaitOneFlush();
                         }
                     }
-                    coordination.Complete(endPage);
+                    if (coordination is not null)
+                    {
+                        coordination.WaitForAllPages(endPage);
+                        coordination.Complete(endPage);
+                        _ = finalCompletionTcs.TrySetResult(true);
+                    }
                 }
                 catch (Exception ex)
                 {
                     logger?.LogError(ex, "{method} failed while flushing snapshot pages from {startPage} to {endPage}", nameof(AsyncFlushPagesForSnapshot), startPage, endPage);
-                    coordination.Fail(ex);
+                    coordination?.Fail(ex);
                     flushCompletionTracker.SetException(ex);
+                    coordination?.WaitForInFlightPages();
+                    _ = finalCompletionTcs.TrySetException(ex);
                 }
                 finally
                 {
-                    ClearSnapshotFlushCoordination(coordination);
+                    if (coordination is not null)
+                        ClearSnapshotFlushCoordination(coordination);
                     // Release the issuance producer sentinel taken by the outer BeginNativeSnapshotFlush. Any writes
                     // still in flight keep the nativeLog owner's outstanding-IO count > 0 until their callbacks fire; the last one
                     // drains the deferred frees — independent of completionTcs faulting early on the error path.
@@ -2875,16 +2902,28 @@ namespace Tsavorite.core
                     else
                         logger?.LogError("AsyncFlushPageToDeviceCallback error: {exception}", Utility.GetCallbackExceptionDetail(ioException));
 
-                    // Fault the snapshot's flush-completion so the checkpoint fails rather than committing a snapshot with
-                    // an unwritten page; the Release() below still frees buffers and its CompleteFlush becomes a no-op.
+                    // Fault before Release(): the final Release calls CompleteFlush, which must not win the
+                    // TaskCompletionSource race and report a checkpoint with an unwritten page as successful.
                     var exception = new TsavoriteException($"Snapshot page flush failed with error code {errorCode}", ioException);
                     result.snapshotFlushCoordination?.Fail(exception);
                     result.flushCompletionTracker?.SetException(exception);
                 }
 
                 var finalWrite = result.Release() == 0;
-                if (finalWrite && errorCode == 0)
-                    result.snapshotFlushCoordination?.CompletePage(result.page);
+                if (finalWrite)
+                {
+                    // Another span may have recorded an error after this callback's initial sticky-error read.
+                    errorCode = result.RecordError(0);
+                    if (errorCode == 0)
+                        result.snapshotFlushCoordination?.CompletePage(result.page);
+                    else
+                    {
+                        // Fault only after every span in this page batch has completed, so the completion window does not
+                        // release coordination or native-page protection while another span still reads this page.
+                        var exception = new TsavoriteException($"Snapshot page flush failed with error code {errorCode}", ioException);
+                        result.snapshotFlushCoordination?.FailPage(result.page, exception);
+                    }
+                }
             }
             catch when (disposed) { }
             finally
