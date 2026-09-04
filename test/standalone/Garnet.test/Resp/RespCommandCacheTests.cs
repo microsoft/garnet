@@ -82,22 +82,18 @@ namespace Garnet.test.Resp
 
             var response = new StringBuilder();
             var buffer = new byte[8192];
-            var timeout = TimeSpan.FromSeconds(5);
-            while (true)
+            using var cancellationSource = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            try
             {
-                using var cancellationSource = new CancellationTokenSource(timeout);
-                try
+                while (true)
                 {
                     var bytesReceived = await socket.ReceiveAsync(buffer, SocketFlags.None, cancellationSource.Token);
                     if (bytesReceived == 0) break;
                     response.Append(Encoding.ASCII.GetString(buffer, 0, bytesReceived));
-                    timeout = TimeSpan.FromMilliseconds(500);
-                }
-                catch (OperationCanceledException) when (response.Length > 0)
-                {
-                    break;
+                    cancellationSource.CancelAfter(500);
                 }
             }
+            catch (OperationCanceledException) when (response.Length > 0) { }
 
             return response.ToString();
         }
