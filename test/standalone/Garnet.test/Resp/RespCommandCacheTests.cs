@@ -1,6 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System.IO;
 using System.Net.Sockets;
 using System.Text;
 using System.Threading.Tasks;
@@ -37,10 +38,10 @@ namespace Garnet.test.Resp
         [TestCase(600)]
         public async Task CachedCommandDoesNotTruncateArgumentCount(int argCount)
         {
-            using var socket = Connect();
+            using var stream = Connect();
 
-            ClassicAssert.AreEqual(":0\r\n", await SendAsync(socket, Resp("DEL", CreateArguments(argCount))));
-            ClassicAssert.AreEqual(":0\r\n", await SendAsync(socket, Resp("DEL", CreateArguments(argCount, argCount & 0xFF))));
+            ClassicAssert.AreEqual(":0\r\n", await SendAsync(stream, Resp("DEL", CreateArguments(argCount))));
+            ClassicAssert.AreEqual(":0\r\n", await SendAsync(stream, Resp("DEL", CreateArguments(argCount, argCount & 0xFF))));
         }
 
         private static string[] CreateArguments(int count, int pingIndex = -1)
@@ -64,19 +65,28 @@ namespace Garnet.test.Resp
 
         private static void AppendBulkString(StringBuilder builder, string value) => builder.Append('$').Append(value.Length).Append("\r\n").Append(value).Append("\r\n");
 
-        private static Socket Connect()
+        private static NetworkStream Connect()
         {
             var socket = new Socket(TestUtils.EndPoint.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
             socket.Connect(TestUtils.EndPoint);
-            return socket;
+            return new NetworkStream(socket, ownsSocket: true);
         }
 
-        private static async Task<string> SendAsync(Socket socket, string command)
+        private static async Task<string> SendAsync(NetworkStream stream, string command)
         {
-            await socket.SendAsync(Encoding.ASCII.GetBytes(command), SocketFlags.None);
+            const string marker = "$17\r\nresponse-complete\r\n";
+            await stream.WriteAsync(Encoding.ASCII.GetBytes(command + Resp("ECHO", "response-complete")));
+
+            var response = new StringBuilder();
             var buffer = new byte[8192];
-            var bytesReceived = await socket.ReceiveAsync(buffer, SocketFlags.None);
-            return Encoding.ASCII.GetString(buffer, 0, bytesReceived);
+            while (!response.ToString().EndsWith(marker))
+            {
+                var bytesReceived = await stream.ReadAsync(buffer);
+                if (bytesReceived == 0) throw new EndOfStreamException();
+                response.Append(Encoding.ASCII.GetString(buffer, 0, bytesReceived));
+            }
+
+            return response.Remove(response.Length - marker.Length, marker.Length).ToString();
         }
     }
 }
