@@ -410,7 +410,16 @@ namespace Garnet.server
             var server = storeWrapper.Servers;
             bufferPoolStats = new MetricsItem[server.Length];
             for (var i = 0; i < server.Length; i++)
-                bufferPoolStats[i] = new($"server_socket_{i}", ((GarnetServerTcp)server[i]).GetBufferPoolStats());
+            {
+                if (server[i] is GarnetServerTcp tcp)
+                {
+                    bufferPoolStats[i] = new($"server_socket_{i}", tcp.GetBufferPoolStats());
+                }
+                else
+                {
+                    bufferPoolStats[i] = new($"server_socket_{i}", "-");
+                }
+            }
             if (storeWrapper.clusterProvider != null)
                 bufferPoolStats = [.. bufferPoolStats, .. storeWrapper.clusterProvider.GetBufferPoolStats()];
         }

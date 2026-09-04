@@ -336,9 +336,15 @@ namespace Garnet.server
             {
                 foreach (var server in servers)
                 {
-                    if (server is GarnetServerTcp tcpServer && tcpServer.EndPoint is IPEndPoint point)
+                    if (server is GarnetServerTcp tcpServer && tcpServer.EndPoint is IPEndPoint p1)
                     {
-                        localEndPoint = point;
+                        localEndPoint = p1;
+                        break;
+                    }
+
+                    if (server is GarnetServerSocketSet socketSetServer && socketSetServer.EndPoint is IPEndPoint p2)
+                    {
+                        localEndPoint = p2;
                         break;
                     }
                 }

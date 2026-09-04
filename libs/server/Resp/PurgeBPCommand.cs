@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Linq;
 using Garnet.common;
 using Microsoft.Extensions.Logging;
 
@@ -61,8 +62,10 @@ namespace Garnet.server
                         success = ClusterPurgeBufferPool(managerType);
                         break;
                     case ManagerType.ServerListener:
-                        foreach (var server in storeWrapper.Servers)
-                            ((GarnetServerTcp)server).Purge();
+                        foreach (var server in storeWrapper.Servers.OfType<GarnetServerTcp>())
+                        {
+                            server.Purge();
+                        }
                         break;
                     default:
                         success = false;

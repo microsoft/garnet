@@ -374,7 +374,10 @@ namespace Garnet.cluster
                 {
                 retry:
                     await Task.Yield();
-                    var sessions = ((GarnetServerTcp)server).ActiveClusterSessions();
+                    var sessions =
+                            server is GarnetServerTcp tcp ? tcp.ActiveClusterSessions() :
+                                server is GarnetServerSocketSet socketSet ? socketSet.ActiveClusterSessions() :
+                                [];
                     foreach (var s in sessions)
                     {
                         var entryEpoch = s.LocalCurrentEpoch;
