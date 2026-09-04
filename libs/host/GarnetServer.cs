@@ -311,12 +311,29 @@ namespace Garnet
 
                             var serverCert = X509CertificateLoader.LoadPkcs12(File.ReadAllBytes(opts.TlsOptions.CertFileName), opts.TlsOptions.CertPassword ?? "", X509KeyStorageFlags.Exportable);
 
-                            // HACK - assume RSA for now
-                            var pubKey = serverCert.GetECDiffieHellmanPublicKey();
-                            var privKey = serverCert.GetECDiffieHellmanPrivateKey();
+                            string keyPem;
+                            if (serverCert.GetRSAPublicKey() is var rsaKey)
+                            {
+                                keyPem = rsaKey.ExportPkcs8PrivateKeyPem();
+                            }
+                            else if (serverCert.GetECDsaPrivateKey() is var ecdsaKey)
+                            {
+                                keyPem = ecdsaKey.ExportPkcs8PrivateKeyPem();
+                            }
+                            else if (serverCert.GetECDiffieHellmanPrivateKey() is var ecdhKey)
+                            {
+                                keyPem = ecdhKey.ExportPkcs8PrivateKeyPem();
+                            }
+                            else if (serverCert.GetDSAPrivateKey() is var dsaKey)
+                            {
+                                keyPem = dsaKey.ExportPkcs8PrivateKeyPem();
+                            }
+                            else
+                            {
+                                throw new InvalidOperationException($"Could not extract private key from {opts.TlsOptions.CertFileName}: {serverCert}");
+                            }
 
                             var certPem = serverCert.ExportCertificatePem();
-                            var keyPem = privKey.ExportPkcs8PrivateKeyPem();
 
                             bool kernelTLSOffload;
                             if (OperatingSystem.IsLinux())
