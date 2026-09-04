@@ -1,10 +1,8 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System;
 using System.Net.Sockets;
 using System.Text;
-using System.Threading;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 
@@ -38,18 +36,17 @@ namespace Garnet.test.Resp
         [TestCase(600)]
         public void CachedCommandDoesNotTruncateArgumentCount(int argCount)
         {
-            var injectedCommand = Resp("PING");
             using var socket = Connect();
 
-            ClassicAssert.AreEqual(":0\r\n", Send(socket, Resp("DEL", CreateArguments(argCount, -1, injectedCommand))));
-            ClassicAssert.AreEqual(":0\r\n", Send(socket, Resp("DEL", CreateArguments(argCount, argCount & 0xFF, injectedCommand))));
+            ClassicAssert.AreEqual(":0\r\n", Send(socket, Resp("DEL", CreateArguments(argCount))));
+            ClassicAssert.AreEqual(":0\r\n", Send(socket, Resp("DEL", CreateArguments(argCount, argCount & 0xFF))));
         }
 
-        private static string[] CreateArguments(int count, int injectAt, string injectedCommand, string firstArgument = null)
+        private static string[] CreateArguments(int count, int pingIndex = -1)
         {
             var arguments = new string[count];
             for (var i = 0; i < arguments.Length; i++)
-                arguments[i] = i == injectAt ? injectedCommand : i == 0 && firstArgument != null ? firstArgument : $"arg{i}";
+                arguments[i] = i == pingIndex ? Resp("PING") : $"arg{i}";
 
             return arguments;
         }
@@ -78,17 +75,22 @@ namespace Garnet.test.Resp
             socket.Send(Encoding.ASCII.GetBytes(command));
             var response = new StringBuilder();
             var buffer = new byte[8192];
-            var deadline = DateTime.UtcNow.AddSeconds(5);
-            while (DateTime.UtcNow < deadline)
+            socket.ReceiveTimeout = 5000;
+            var receivedResponse = false;
+            while (true)
             {
-                if (socket.Available == 0)
+                try
                 {
-                    Thread.Sleep(10);
-                    continue;
+                    var bytesReceived = socket.Receive(buffer);
+                    if (bytesReceived == 0) break;
+                    response.Append(Encoding.ASCII.GetString(buffer, 0, bytesReceived));
+                    receivedResponse = true;
+                    socket.ReceiveTimeout = 500;
                 }
-
-                response.Append(Encoding.ASCII.GetString(buffer, 0, socket.Receive(buffer)));
-                deadline = DateTime.UtcNow.AddMilliseconds(500);
+                catch (SocketException ex) when (ex.SocketErrorCode == SocketError.TimedOut && receivedResponse)
+                {
+                    break;
+                }
             }
 
             return response.ToString();
