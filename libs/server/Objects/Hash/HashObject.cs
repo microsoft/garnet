@@ -68,7 +68,7 @@ namespace Garnet.server
         // Byte #31 is used to denote if key has expiration (1) or not (0) 
         private const int ExpirationBitMask = 1 << 31;
 
-        private bool HasExpirableItems
+        internal bool HasExpirableItems
         {
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             get => expirationTimes is not null;
@@ -146,18 +146,39 @@ namespace Garnet.server
         public override byte Type => (byte)GarnetObjectType.Hash;
 
         /// <inheritdoc />
+        /// <remarks>
+        /// Serialization must not mutate the object. It runs on the flush path while readers may concurrently access
+        /// the same instance, and only writers are excluded from a record that is being serialized. Expired fields are
+        /// therefore skipped rather than deleted; the mutating paths remove them from the live object.
+        /// </remarks>
         public override void DoSerialize(BinaryWriter writer)
         {
             base.DoSerialize(writer);
 
-            DeleteExpiredItems();
+            // Both passes share a single timestamp so they agree on exactly which fields are expired; otherwise a
+            // field could expire between them and the declared count would not match the entries written.
+            var now = DateTimeOffset.UtcNow.Ticks;
+            var expirations = expirationTimes;
 
-            var count = hash.Count; // Since expired items are already deleted, no need to worry about expiring items
+            var count = hash.Count;
+            if (expirations is not null)
+            {
+                count = 0;
+                foreach (var kvp in hash)
+                {
+                    if (!expirations.TryGetValue(kvp.Key, out var expiration) || expiration >= now)
+                        count++;
+                }
+            }
+
             writer.Write(count);
             foreach (var kvp in hash)
             {
-                if (HasExpirableItems && expirationTimes.TryGetValue(kvp.Key, out var expiration))
+                if (expirations is not null && expirations.TryGetValue(kvp.Key, out var expiration))
                 {
+                    if (expiration < now)
+                        continue;
+
                     writer.Write(kvp.Key.Length | ExpirationBitMask);
                     writer.Write(kvp.Key);
                     writer.Write(kvp.Value.Length);

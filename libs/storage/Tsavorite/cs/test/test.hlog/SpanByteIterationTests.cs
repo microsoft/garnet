@@ -397,6 +397,84 @@ namespace Tsavorite.test
                 "Second IterateLookupSnapshot should emit the same number of records (snapshot is stable across calls)");
         }
 
+        /// <summary>
+        /// Snapshot semantics under a concurrent RCU: a key whose replacement lands *above* the
+        /// captured tail must still be emitted, using its latest in-range (pre-RCU) version.
+        /// <para/>
+        /// This is the whole reason the snapshot variant pins <c>maxAddress</c> to the captured
+        /// tail. Capturing the tail before the RCU is a deterministic stand-in for an RCU that
+        /// commits while a scan is in flight: in both cases the scan must not lose the key just
+        /// because a newer version exists outside the snapshot range. Losing it here would mean
+        /// <c>KEYS</c> dropping a live key, <c>DeleteSlotKeys</c> leaving a key behind in a
+        /// migrating slot, and a streaming snapshot omitting a live key from a checkpoint.
+        /// <para/>
+        /// An RCU seals the source record but leaves its tag chain intact, so the key stays reachable
+        /// from the hash index. The scan must therefore still emit it, even though the only version
+        /// newer than the snapshot lives above the captured tail.
+        /// </summary>
+        [Test]
+        [Category(TsavoriteKVTestCategory)]
+        [Category(SmokeTestCategory)]
+        public unsafe void SpanByteIterateLookupSnapshotEmitsKeyRcudAboveSnapshotTail()
+        {
+            log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "snapshot_rcu_above.log"));
+            store = new(new()
+            {
+                IndexSize = 1L << 26,
+                LogDevice = log,
+                LogMemorySize = 1L << 25,
+                PageSize = 1L << 19,
+                SegmentSize = 1L << 22
+            }, StoreFunctions.Create(SpanByteComparer.Instance, SpanByteRecordTriggers.Instance)
+                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
+            );
+
+            using var session = store.NewSession<TestSpanByteKey, PinnedSpanByte, int[], Empty, VLVectorFunctions>(new VLVectorFunctions());
+            var bContext = session.BasicContext;
+
+            Span<long> keySpan = stackalloc long[1];
+            Span<int> valueSpan = stackalloc int[1];
+            var key = TestSpanByteKey.FromPinnedSpan(MemoryMarshal.Cast<long, byte>(keySpan));
+            var value = MemoryMarshal.Cast<int, byte>(valueSpan);
+
+            const int totalRecords = 200;
+
+            for (var i = 0; i < totalRecords; i++)
+            {
+                keySpan[0] = i;
+                valueSpan[0] = i;
+                _ = bContext.Upsert(key, value);
+            }
+
+            // Make the records read-only so the next upsert must RCU rather than update in place.
+            store.Log.Flush(wait: true);
+
+            // Capture the tail *before* the RCU, so every replacement record lands above it.
+            var capturedTail = store.Log.TailAddress;
+
+            for (var i = 0; i < totalRecords; i++)
+            {
+                keySpan[0] = i;
+                valueSpan[0] = i * 10;
+                _ = bContext.Upsert(key, value);
+            }
+
+            // Same parameter pattern IterateLookupSnapshot uses internally: endAddress == maxAddress == capturedTail.
+            var fns = new SnapshotProbeAllFunctions { observed = new Dictionary<long, int>() };
+            long cursor = 0;
+            _ = session.ScanCursor(ref cursor, count: long.MaxValue, fns, endAddress: capturedTail, maxAddress: capturedTail);
+
+            ClassicAssert.AreEqual(totalRecords, fns.observed.Count,
+                "Snapshot must still emit every key whose RCU replacement landed above the captured tail");
+            for (var i = 0; i < totalRecords; i++)
+            {
+                ClassicAssert.IsTrue(fns.observed.TryGetValue(i, out var emittedValue),
+                    $"Key {i} was dropped by the snapshot scan even though it was live as of the captured tail");
+                ClassicAssert.AreEqual(i, emittedValue,
+                    $"Key {i}: snapshot must expose the pre-RCU (in-range) value");
+            }
+        }
+
         private struct SnapshotProbeAllFunctions : IScanIteratorFunctions
         {
             // NOTE: Must hold a reference type because the struct is boxed when stored in

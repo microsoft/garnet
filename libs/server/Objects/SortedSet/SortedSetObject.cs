@@ -244,18 +244,39 @@ namespace Garnet.server
         /// <summary>
         /// Serialize
         /// </summary>
+        /// <remarks>
+        /// Serialization must not mutate the object. It runs on the flush path while readers may concurrently access
+        /// the same instance, and only writers are excluded from a record that is being serialized. Expired members
+        /// are therefore skipped rather than deleted; the mutating paths remove them from the live object.
+        /// </remarks>
         public override void DoSerialize(BinaryWriter writer)
         {
             base.DoSerialize(writer);
 
-            DeleteExpiredItems();
+            // Both passes share a single timestamp so they agree on exactly which members are expired; otherwise a
+            // member could expire between them and the declared count would not match the entries written.
+            var now = DateTimeOffset.UtcNow.Ticks;
+            var expirations = expirationTimes;
 
-            var count = sortedSetDict.Count; // Since expired items are already deleted, no need to worry about expiring items
+            var count = sortedSetDict.Count;
+            if (expirations is not null)
+            {
+                count = 0;
+                foreach (var kvp in sortedSetDict)
+                {
+                    if (!expirations.TryGetValue(kvp.Key, out var expiration) || expiration >= now)
+                        count++;
+                }
+            }
+
             writer.Write(count);
             foreach (var kvp in sortedSetDict)
             {
-                if (expirationTimes is not null && expirationTimes.TryGetValue(kvp.Key, out var expiration))
+                if (expirations is not null && expirations.TryGetValue(kvp.Key, out var expiration))
                 {
+                    if (expiration < now)
+                        continue;
+
                     writer.Write(kvp.Key.Length | ExpirationBitMask);
                     writer.Write(kvp.Key);
                     writer.Write(kvp.Value);
