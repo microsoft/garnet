@@ -319,14 +319,16 @@ All callbacks take a `ulong context` parameter which identifies the Vector Set i
 
 The most complicated of our callbacks, the signature is:
 ```csharp
-void ReadCallbackUnmanaged(ulong context, uint numKeys, nint keysData, nuint keysLength, nint dataCallback, nint dataCallbackContext)
+void ReadCallbackUnmanaged(ulong context, uint numKeys, uint valueLengthHint, nint keysData, nuint keysLength, nint dataCallback, nint dataCallbackContext)
 ```
 
 `context` identifies which Vector Set is being operated on AND the associated namespace, `numKeys` tells us how many keys have been encoded into `keysData`, `keysData` and `keysLength` define a `Span<byte>` of length prefixied keys, `dataCallback` is a `delegate* unmanaged[Cdecl, SuppressGCTransition]<int, nint, nint, nuint, void>` used to push found keys back into DiskANN, and `dataCallbackContext` is passed back unaltered to `dataCallback`.
 
+`valueLengthHint` is the number of bytes DiskANN expects _each_ record to be if found.  This value is just a hint, it's OK if it's wrong.  It is better to be too large than too small, within reason.
+
 In the `Span<byte>` defined by `keysData` and `keysLength` the keys are length prefixed with a 4-byte little endian `int`.
 
-As we find keys, we invoke `dataCallback(index, dataCallbackContext, keyPointer, keyLength)`.  If a key is not found, its index is simply skipped.  The benefits of this is that we don't copy data out of the Tsavorite log as part of reads, DiskANN is able to do distance calculations and traversal over in-place data.
+As we find keys, we invoke `dataCallback(index, dataCallbackContext, dataPointer, dataLengthLength)`.  Invocations may be out of order, so `index` must be used to correlate data with keys.  If a key is not found, its index is simply skipped.  The benefits of this is that we don't copy data out of the Tsavorite log as part of reads, DiskANN is able to do distance calculations and traversal over in-place data.
 
 > [!NOTE]
 > Each invocation of `dataCallback` is a managed -&gt; native transition, which can add up very quickly.  We've reduced that as much as possible with function points and `SuppressGCTransition`, but that comes with risks.
@@ -383,22 +385,56 @@ Newly allocated values are guaranteed to be all zeros.
 
 The callback returns 1 if the key-value pair was found or created, and 0 if some error occurred.
 
+### Filter Callback
+
+A simple callback providing a way for _Garnet_ to tell DiskANN if an attribute matches the current filter.  Its signature is:
+```csharp
+byte FilterCallbackUnmanaged(ulong context, nint valueData, nuint valueLength)
+```
+
+`context` identifies whcih Vector Set is being operated on (the associated namespace is ignored), and `valueData` and `valueLength` represent a `Span<byte>` of the attribute to check.
+
+The current filter is ambient state that Garnet has already parsed and validated.
+
+If the attribute matches the current filter, 1 is returned and otherwise 0 is returned.
+
+### Log Callback
+
+A simple callback providing a way for DiskANN to log richer error messages into Garnet.  Its signature is:
+```csharp
+void LogCallbackUnmanaged(ulong context, nint logMessage, nuint logMessageLength)
+```
+
+`context` identifies which Vector Set is being operated on AND the associated namespace, and `logMessage` and `logMessageLength` represent a `Span<byte>` of the log message.
+
+The log message is UTF8 encoded text.
+
+This log message is enriched on the Garnet side with:
+ - The context without namespace bits
+ - A text version of the namespace
+ - Our best guess at the Vector Set currently operated on
+ - The number of arguments for the command being processed
+
 ### DiskANN Functions
 
 Garnet calls into the following DiskANN functions:
 
- - [x] `nint create_index(ulong context, uint dimensions, uint reduceDims, VectorQuantType quantType, VectorDistanceMetricType distanceMetric, uint buildExplorationFactor, uint numLinks, nint readCallback, nint writeCallback, nint deleteCallback, nint readModifyWriteCallback, nint filterCallback, out bool quantizationNeeded)`
+ - [x] `nint create_index(ulong context, uint dimensions, uint reduceDims, VectorQuantType quantType, VectorDistanceMetricType distanceMetric, uint buildExplorationFactor, uint numLinks, nint readCallback, nint writeCallback, nint deleteCallback, nint readModifyWriteCallback, nint filterCallback, nint logCallback, out bool quantizationNeeded)`
  - [x] `void drop_index(ulong context, nint index)`
  - [x] `DiskANNInsertResult insert(ulong context, nint index, nint id_data, nuint id_len, nint vector_data, nuint vector_len, nint attribute_data, nuint attribute_len)`
+   * `vector_data` must be aligned for the quantizers underlying type (i.e. 4-byte for NOQUANT, 1-byte for XBIN_U8, etc.)
  - [x] `byte remove(ulong context, nint index, nint id_data, nuint id_len)`
  - [x] `byte set_attribute(ulong context, nint index, nint id_data, nuint id_len, nint attribute_data, nuint attribute_len)`
- - [x] `int search_vector(ulong context, nint index, nint vector_data, nuint vector_len, float delta, int search_exploration_factor, nint filter_data, nuint filter_len, nuint max_filtering_effort, nint output_ids, nuint output_ids_len, nint output_distances, nuint output_distances_len, nint continuation)`
- - [x] `int search_element(ulong context, nint index, nint id_data, nuint id_len, float delta, int search_exploration_factor, nint filter_data, nuint filter_len, nuint max_filtering_effort, nint output_ids, nuint output_ids_len, nint output_distances, nuint output_distances_len, nint continuation)`
+ - [x] `int search_vector(ulong context, nint index, nint vector_data, nuint vector_len, float delta, uint search_exploration_factor, nint filter_data, nuint filter_len, nuint max_filtering_effort, nint output_ids, nuint output_ids_len, nint output_distances, nuint output_distances_len, uint beam_width, nint continuation)`
+   * `vector_data` must be aligned as with `insert(...)`
+ - [x] `int search_element(ulong context, nint index, nint id_data, nuint id_len, float delta, int search_exploration_factor, nint filter_data, nuint filter_len, nuint max_filtering_effort, nint output_ids, nuint output_ids_len, nint output_distances, nuint output_distances_len, uint beam_width, nint continuation)`
+ - [ ] `int search_neighbors(ulong context, nint index, nint id_data, nuint id_len, nint output_ids, nuint output_ids_len, nint output_distances, nuint output_distances_len, nint continuation)`
  - [ ] `int continue_search(ulong context, nint index, nint continuation, nint output_ids, nuint output_ids_len, nint output_distances, nuint output_distances_len, nint new_continuation)`
  - [ ] `ulong card(ulong context, nint index)`
  - [x] `byte check_internal_id_valid(ulong context, nint index, nint internal_id, nuint internal_id_len)`
- - [x] `build_quant_table(ulong context, nint index)`
- - [x] `backfill_quant_vectors(ulong context, nint index, nuint task_index, nuint task_count)`
+ - [x] `void build_quant_table(ulong context, nint index)`
+ - [x] `byte backfill_quant_vectors(ulong context, nint index, nuint task_index, nuint task_count)`
+ - [ ] `byte random_members(ulong context, nint index, uint count, nint output_ids, nuint output_ids_len)`
 
  Some non-obvious subtleties:
   - The number of results _requested_ from `search_vector` and `search_element` is indicated by `output_distances_len`
@@ -408,6 +444,10 @@ Garnet calls into the following DiskANN functions:
   - `index` is always a pointer created by DiskANN and returned from `create_index`
   - `context` is always the `Context` value created by Garnet and stored in [`Index`](#indexes) for a Vector Set, this implies it is always a non-0 multiple of 8
   - `search_vector`, `search_element`, and `continue_search` all return the number of ids written into `output_ids`, and if there are more values to return they set the `nint` _pointed to by_ `continuation` or `new_continuation`
+    * `continuation`/`new_continuation` must be passed exactly once to `continue_search` to fetch remaining results.  Failing to call `continue_search` can result in a memory leak, and passing more than once can result in a use-after-free.
+  - DiskANN guarantees that any keys it provides are aligned in records, i.e. they are multiples of 4-bytes in length
+  - Garnet guarantees any values it provides to _`dataCallbacks`_ are 4-byte aligned
+    * Importantly Garnet does not guarantee id holding parameters to DiskANN functions are aligned unless otherwise noted
 
 ### Vector Filter Expressions (`VSIM ... FILTER`)
 

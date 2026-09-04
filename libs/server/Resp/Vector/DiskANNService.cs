@@ -40,11 +40,12 @@ namespace Garnet.server
             uint buildExplorationFactor,
             uint numLinks,
             VectorDistanceMetricType distanceMetric,
-            delegate* unmanaged[Cdecl]<ulong, uint, nint, nuint, nint, nint, void> readCallback,
+            delegate* unmanaged[Cdecl]<ulong, uint, uint, nint, nuint, nint, nint, void> readCallback,
             delegate* unmanaged[Cdecl]<ulong, nint, nuint, nint, nuint, byte> writeCallback,
             delegate* unmanaged[Cdecl]<ulong, nint, nuint, byte> deleteCallback,
             delegate* unmanaged[Cdecl]<ulong, nint, nuint, nuint, nint, nint, byte> readModifyWriteCallback,
-            delegate* unmanaged[Cdecl]<ulong, uint, byte> filterCallback,
+            delegate* unmanaged[Cdecl]<ulong, nint, nuint, byte> filterCallback,
+            delegate* unmanaged[Cdecl]<ulong, nint, nuint, void> logCallback,
             out bool quantizationRequested
         )
         {
@@ -53,7 +54,7 @@ namespace Garnet.server
 #endif
             unsafe
             {
-                var ret = NativeDiskANNMethods.create_index(context, dimensions, reduceDims, quantType, distanceMetric, buildExplorationFactor, numLinks, (nint)readCallback, (nint)writeCallback, (nint)deleteCallback, (nint)readModifyWriteCallback, (nint)filterCallback, out quantizationRequested);
+                var ret = NativeDiskANNMethods.create_index(context, dimensions, reduceDims, quantType, distanceMetric, buildExplorationFactor, numLinks, (nint)readCallback, (nint)writeCallback, (nint)deleteCallback, (nint)readModifyWriteCallback, (nint)filterCallback, (nint)logCallback, out quantizationRequested);
 
                 Debug.Assert(ret != 0, "create_index failed, returning a null pointer - this shouldn't be possible");
 
@@ -69,14 +70,15 @@ namespace Garnet.server
             uint buildExplorationFactor,
             uint numLinks,
             VectorDistanceMetricType distanceMetricType,
-            delegate* unmanaged[Cdecl]<ulong, uint, nint, nuint, nint, nint, void> readCallback,
+            delegate* unmanaged[Cdecl]<ulong, uint, uint, nint, nuint, nint, nint, void> readCallback,
             delegate* unmanaged[Cdecl]<ulong, nint, nuint, nint, nuint, byte> writeCallback,
             delegate* unmanaged[Cdecl]<ulong, nint, nuint, byte> deleteCallback,
             delegate* unmanaged[Cdecl]<ulong, nint, nuint, nuint, nint, nint, byte> readModifyWriteCallback,
-            delegate* unmanaged[Cdecl]<ulong, uint, byte> filterCallback,
+            delegate* unmanaged[Cdecl]<ulong, nint, nuint, byte> filterCallback,
+            delegate* unmanaged[Cdecl]<ulong, nint, nuint, void> logCallback,
             out bool quantizationRequested
         )
-        => CreateIndex(context, dimensions, reduceDims, quantType, buildExplorationFactor, numLinks, distanceMetricType, readCallback, writeCallback, deleteCallback, readModifyWriteCallback, filterCallback, out quantizationRequested);
+        => CreateIndex(context, dimensions, reduceDims, quantType, buildExplorationFactor, numLinks, distanceMetricType, readCallback, writeCallback, deleteCallback, readModifyWriteCallback, filterCallback, logCallback, out quantizationRequested);
 
         public void DropIndex(ulong context, nint index)
         {
@@ -98,14 +100,23 @@ namespace Garnet.server
             var attributes_len = attributes.Length;
 
             var res = NativeDiskANNMethods.insert(context, index, (nint)id_data, (nuint)id_len, (nint)vector_data, (nuint)vectorElementCount, (nint)attributes_data, (nuint)attributes_len);
-            if (res == NativeDiskANNMethods.DiskANNInsertResult.False)
+            if (res == NativeDiskANNMethods.DiskANNInsertResult.Fail)
             {
                 needsQuantization = false;
                 return false;
             }
+            else if (res == NativeDiskANNMethods.DiskANNInsertResult.Success)
+            {
+                needsQuantization = false;
+                return true;
+            }
+            else
+            {
+                Debug.Assert(res == NativeDiskANNMethods.DiskANNInsertResult.SuccessStartTraining, "Unexpected DiskANNInsertResult");
 
-            needsQuantization = res == NativeDiskANNMethods.DiskANNInsertResult.QuantizationRequested;
-            return true;
+                needsQuantization = true;
+                return true;
+            }
         }
 
         public bool BuildQuantizationTable(ulong context, nint index)
@@ -113,10 +124,8 @@ namespace Garnet.server
             return NativeDiskANNMethods.build_quant_table(context, index) == 1;
         }
 
-        public void BackfillQuantizedVectors(ulong context, nint index, int taskIndex, int taskCount)
-        {
-            NativeDiskANNMethods.backfill_quant_vectors(context, index, (nuint)taskIndex, (nuint)taskCount);
-        }
+        public bool BackfillQuantizedVectors(ulong context, nint index, int taskIndex, int taskCount)
+        => NativeDiskANNMethods.backfill_quant_vectors(context, index, (nuint)taskIndex, (nuint)taskCount) == 1;
 
         public bool Remove(ulong context, nint index, ReadOnlySpan<byte> id)
         {
@@ -137,6 +146,7 @@ namespace Garnet.server
             int maxFilteringEffort,
             SpanByteAndMemory outputIds,
             SpanByteAndMemory outputDistances,
+            int beamWidth,
             out nint continuation
         )
         {
@@ -202,6 +212,7 @@ namespace Garnet.server
                     (nuint)output_ids_len,
                     (nint)output_distances,
                     (nuint)output_distances_len,
+                    (uint)beamWidth,
                     continuationAddr
                 );
             }
@@ -222,6 +233,7 @@ namespace Garnet.server
             int maxFilteringEffort,
             SpanByteAndMemory outputIds,
             SpanByteAndMemory outputDistances,
+            int beamWidth,
             out nint continuation
         )
         {
@@ -280,10 +292,85 @@ namespace Garnet.server
                     (nint)id_data,
                     (nuint)id_len,
                     delta,
-                    searchExplorationFactor,
+                    (uint)searchExplorationFactor,
                     (nint)filter_data,
                     (nuint)filter_len,
                     (nuint)maxFilteringEffort,
+                    (nint)output_ids,
+                    (nuint)output_ids_len,
+                    (nint)output_distances,
+                    (nuint)output_distances_len,
+                    (uint)beamWidth,
+                    continuationAddr
+                );
+            }
+            finally
+            {
+                outputIdsHandle?.Free();
+                outputDistancesHandle?.Free();
+            }
+        }
+
+        public int SearchNeighbors(
+            ulong context,
+            nint index,
+            ReadOnlySpan<byte> id,
+            SpanByteAndMemory outputIds,
+            SpanByteAndMemory outputDistances,
+            out nint continuation
+        )
+        {
+            var id_data = Unsafe.AsPointer(ref MemoryMarshal.GetReference(id));
+            var id_len = id.Length;
+
+            void* output_ids;
+            void* output_distances;
+
+            GCHandle? outputIdsHandle = null;
+            GCHandle? outputDistancesHandle = null;
+            try
+            {
+                if (!outputIds.IsSpanByte)
+                {
+                    var getRes = MemoryMarshal.TryGetArray<byte>(outputIds.Memory.Memory, out var arrSeg);
+                    Debug.Assert(getRes, "Should always be able to get array to pin");
+
+                    outputIdsHandle = GCHandle.Alloc(arrSeg.Array, GCHandleType.Pinned);
+                    output_ids = Unsafe.AsPointer(ref MemoryMarshal.GetArrayDataReference(arrSeg.Array));
+                }
+                else
+                {
+                    outputIdsHandle = null;
+                    output_ids = Unsafe.AsPointer(ref MemoryMarshal.GetReference(outputIds.Span));
+                }
+
+                var output_ids_len = outputIds.Length;
+
+                if (!outputDistances.IsSpanByte)
+                {
+                    var getRes = MemoryMarshal.TryGetArray<byte>(outputDistances.Memory.Memory, out var arrSeg);
+                    Debug.Assert(getRes, "Should always be able to get array to pin");
+
+                    outputDistancesHandle = GCHandle.Alloc(arrSeg.Array, GCHandleType.Pinned);
+                    output_distances = Unsafe.AsPointer(ref MemoryMarshal.GetArrayDataReference(arrSeg.Array));
+                }
+                else
+                {
+                    outputDistancesHandle = null;
+                    output_distances = Unsafe.AsPointer(ref MemoryMarshal.GetReference(outputDistances.Span));
+                }
+
+                var output_distances_len = outputDistances.Length / sizeof(float);
+
+                continuation = 0;
+                ref var continuationRef = ref continuation;
+                var continuationAddr = (nint)Unsafe.AsPointer(ref continuationRef);
+
+                return NativeDiskANNMethods.search_neighbors(
+                    context,
+                    index,
+                    (nint)id_data,
+                    (nuint)id_len,
                     (nint)output_ids,
                     (nuint)output_ids_len,
                     (nint)output_distances,
@@ -298,9 +385,37 @@ namespace Garnet.server
             }
         }
 
-        public int ContinueSearch(ulong context, nint index, nint continuation, Span<byte> outputIds, Span<float> outputDistances, out nint newContinuation)
+        public bool RandomMembers(
+            ulong context,
+            nint index,
+            int count,
+            Span<byte> outputIds
+        )
         {
-            throw new NotImplementedException();
+            var output_ids = Unsafe.AsPointer(ref MemoryMarshal.GetReference(outputIds));
+            var output_ids_len = outputIds.Length;
+
+            return NativeDiskANNMethods.random_members(
+                context,
+                index,
+                (uint)count,
+                (nint)output_ids,
+                (nuint)output_ids_len
+            ) == 1;
+        }
+
+        public int ContinueSearch(ulong context, nint index, nint continuation, Span<byte> outputIds, Span<byte> outputDistances, out nint newContinuation)
+        {
+            var output_ids_data = (nint)Unsafe.AsPointer(ref MemoryMarshal.GetReference(outputIds));
+            var output_ids_len = (nuint)outputIds.Length;
+
+            var output_distances_data = (nint)Unsafe.AsPointer(ref MemoryMarshal.GetReference(outputDistances));
+            var output_distances_len = (nuint)outputDistances.Length / sizeof(float);
+
+            newContinuation = 0;
+            var newContinuationPtr = (nint)Unsafe.AsPointer(ref newContinuation);
+
+            return NativeDiskANNMethods.continue_search(context, index, continuation, output_ids_data, output_ids_len, output_distances_data, output_distances_len, newContinuationPtr);
         }
 
         public bool CheckInternalIdValid(ulong context, nint index, ReadOnlySpan<byte> internalId)
@@ -335,9 +450,9 @@ namespace Garnet.server
     {
         public enum DiskANNInsertResult : byte
         {
-            False = 0,
-            True = 1,
-            QuantizationRequested = 2,
+            Fail = 0,
+            Success = 1,
+            SuccessStartTraining = 2,
         }
 
         const string DISKANN_GARNET = "diskann_garnet";
@@ -356,6 +471,7 @@ namespace Garnet.server
             nint deleteCallback,
             nint readModifyWriteCallback,
             nint filterCallback,
+            nint logCallback,
             [MarshalAs(UnmanagedType.U1)] out bool quantizationNeeded
         );
 
@@ -410,6 +526,7 @@ namespace Garnet.server
             nuint output_ids_len,
             nint output_distances,
             nuint output_distances_len,
+            uint beam_width,
             nint continuation
         );
 
@@ -420,10 +537,24 @@ namespace Garnet.server
             nint id_data,
             nuint id_len,
             float delta,
-            int search_exploration_factor,
+            uint search_exploration_factor,
             nint filter_data,
             nuint filter_len,
             nuint max_filtering_effort,
+            nint output_ids,
+            nuint output_ids_len,
+            nint output_distances,
+            nuint output_distances_len,
+            uint beam_width,
+            nint continuation
+        );
+
+        [LibraryImport(DISKANN_GARNET)]
+        public static partial int search_neighbors(
+            ulong context,
+            nint index,
+            nint id_data,
+            nuint id_len,
             nint output_ids,
             nuint output_ids_len,
             nint output_distances,
@@ -472,11 +603,20 @@ namespace Garnet.server
         );
 
         [LibraryImport(DISKANN_GARNET)]
-        public static partial void backfill_quant_vectors(
+        public static partial byte backfill_quant_vectors(
             ulong context,
             nint index,
             nuint task_index,
             nuint task_count
+        );
+
+        [LibraryImport(DISKANN_GARNET)]
+        public static partial byte random_members(
+            ulong context,
+            nint index,
+            uint count,
+            nint output_ids,
+            nuint output_ids_len
         );
     }
 }

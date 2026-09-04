@@ -1752,7 +1752,7 @@ namespace Garnet.test
                 fixed (int* dataPtr = data)
                 {
                     var keyData = PinnedSpanByte.FromPinnedPointer((byte*)dataPtr, data.Length * sizeof(int));
-                    var batch = new VectorManager.VectorReadBatch(input.Callback, input.CallbackContext, 1, keyData, namespaceBytes);
+                    var batch = new VectorManager.VectorReadBatch(input.Callback, input.CallbackContext, 1, keyData, namespaceBytes, new ReadCopyOptions { CopyFrom = ReadCopyFrom.AllImmutable, CopyTo = ReadCopyTo.MainLog }, 0);
 
                     var iters = 0;
                     for (var i = 0; i < batch.Count; i++)
@@ -1802,7 +1802,7 @@ namespace Garnet.test
                 fixed (int* dataPtr = data)
                 {
                     var keyData = PinnedSpanByte.FromPinnedPointer((byte*)dataPtr, data.Length * sizeof(int));
-                    var batch = new VectorManager.VectorReadBatch(input.Callback, input.CallbackContext, 7, keyData, namespaceBytes);
+                    var batch = new VectorManager.VectorReadBatch(input.Callback, input.CallbackContext, 7, keyData, namespaceBytes, new ReadCopyOptions { CopyFrom = ReadCopyFrom.AllImmutable, CopyTo = ReadCopyTo.MainLog }, 0);
 
                     var iters = 0;
                     for (var i = 0; i < batch.Count; i++)
@@ -1856,7 +1856,7 @@ namespace Garnet.test
                 fixed (int* dataPtr = data)
                 {
                     var keyData = PinnedSpanByte.FromPinnedPointer((byte*)dataPtr, data.Length * sizeof(int));
-                    var batch = new VectorManager.VectorReadBatch(input.Callback, input.CallbackContext, 7, keyData, namespaceBytes);
+                    var batch = new VectorManager.VectorReadBatch(input.Callback, input.CallbackContext, 7, keyData, namespaceBytes, new ReadCopyOptions { CopyFrom = ReadCopyFrom.AllImmutable, CopyTo = ReadCopyTo.MainLog }, 0);
 
                     var rand = new Random(2025_10_06_00);
 
@@ -1904,7 +1904,7 @@ namespace Garnet.test
 
                 ReadOnlySpan<byte> namespaceBytes = stackalloc byte[1] { 8 };
 
-                var key0 = "hello"u8.ToArray();
+                var key0 = "fizz"u8.ToArray();
                 var data =
                     MemoryMarshal.Cast<int, byte>([key0.Length])
                         .ToArray()
@@ -1914,7 +1914,7 @@ namespace Garnet.test
                 fixed (byte* dataPtr = data)
                 {
                     var keyData = PinnedSpanByte.FromPinnedPointer((byte*)dataPtr, data.Length);
-                    var batch = new VectorManager.VectorReadBatch(input.Callback, input.CallbackContext, 1, keyData, namespaceBytes);
+                    var batch = new VectorManager.VectorReadBatch(input.Callback, input.CallbackContext, 1, keyData, namespaceBytes, new ReadCopyOptions { CopyFrom = ReadCopyFrom.AllImmutable, CopyTo = ReadCopyTo.MainLog }, 0);
 
                     var iters = 0;
                     for (var i = 0; i < batch.Count; i++)
@@ -1974,14 +1974,14 @@ namespace Garnet.test
 
                 ReadOnlySpan<byte> namespaceBytes = stackalloc byte[1] { 4 };
 
-                var key0 = "hello"u8.ToArray();
+                var key0 = "hello012"u8.ToArray();
                 var key1 = "fizz"u8.ToArray();
-                var key2 = "the quick brown fox jumps over the lazy dog"u8.ToArray();
+                var key2 = "the quick brown fox jumps over the lazy dog."u8.ToArray();
                 var key3 = "CF29E323-E376-4BC4-AB63-FCFD371EB445"u8.ToArray();
                 var key4 = Array.Empty<byte>();
-                var key5 = new byte[] { 1 };
-                var key6 = new byte[] { 2, 3 };
-                var key7 = new byte[] { 4, 5, 6 };
+                var key5 = new byte[] { 1, 2, 3, 4 };
+                var key6 = new byte[] { 2, 3, 4, 5, 6, 7, 8, 9 };
+                var key7 = new byte[] { 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15 };
                 var data =
                     MemoryMarshal.Cast<int, byte>([key0.Length])
                         .ToArray()
@@ -2033,7 +2033,7 @@ namespace Garnet.test
                 fixed (byte* dataPtr = data)
                 {
                     var keyData = PinnedSpanByte.FromPinnedPointer((byte*)dataPtr, data.Length);
-                    var batch = new VectorManager.VectorReadBatch(input.Callback, input.CallbackContext, 8, keyData, namespaceBytes);
+                    var batch = new VectorManager.VectorReadBatch(input.Callback, input.CallbackContext, 8, keyData, namespaceBytes, new ReadCopyOptions { CopyFrom = ReadCopyFrom.AllImmutable, CopyTo = ReadCopyTo.MainLog }, 0);
 
                     var iters = 0;
                     for (var i = 0; i < batch.Count; i++)
@@ -2107,14 +2107,14 @@ namespace Garnet.test
 
                 ReadOnlySpan<byte> namespaceBytes = stackalloc byte[1] { 2 };
 
-                var key0 = "hello"u8.ToArray();
+                var key0 = "hello012"u8.ToArray();
                 var key1 = "fizz"u8.ToArray();
-                var key2 = "the quick brown fox jumps over the lazy dog"u8.ToArray();
+                var key2 = "the quick brown fox jumps over the lazy dog."u8.ToArray();
                 var key3 = "CF29E323-E376-4BC4-AB63-FCFD371EB445"u8.ToArray();
                 var key4 = Array.Empty<byte>();
-                var key5 = new byte[] { 1 };
-                var key6 = new byte[] { 2, 3 };
-                var key7 = new byte[] { 4, 5, 6 };
+                var key5 = new byte[] { 1, 2, 3, 4 };
+                var key6 = new byte[] { 2, 3, 4, 5, 6, 7, 8, 9 };
+                var key7 = new byte[] { 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15 };
                 var data =
                     MemoryMarshal.Cast<int, byte>([key0.Length])
                         .ToArray()
@@ -2166,7 +2166,7 @@ namespace Garnet.test
                 fixed (byte* dataPtr = data)
                 {
                     var keyData = PinnedSpanByte.FromPinnedPointer((byte*)dataPtr, data.Length);
-                    var batch = new VectorManager.VectorReadBatch(input.Callback, input.CallbackContext, 8, keyData, namespaceBytes);
+                    var batch = new VectorManager.VectorReadBatch(input.Callback, input.CallbackContext, 8, keyData, namespaceBytes, new ReadCopyOptions { CopyFrom = ReadCopyFrom.AllImmutable, CopyTo = ReadCopyTo.MainLog }, 0);
 
                     var rand = new Random(2025_10_06_01);
 
@@ -4209,7 +4209,7 @@ namespace Garnet.test
                         var elementKey = new VectorElementKey(new ReadOnlySpan<byte>(nsPtr, ns.Length), new ReadOnlySpan<byte>(keyPtr, key.Length));
 
                         {
-                            var input = new VectorInput { AlignmentExpected = true };
+                            var input = new VectorInput();
                             var valueSpan = SpanByte.FromPinnedPointer(valuePtr, value.Length);
                             var output = new VectorOutput();
 
@@ -4224,7 +4224,7 @@ namespace Garnet.test
                             Span<byte> buffer = stackalloc byte[256];
                             fixed (byte* bufferPtr = buffer)
                             {
-                                var input = new VectorInput { AlignmentExpected = true, ReadDesiredSize = -1 };
+                                var input = new VectorInput { ReadDesiredSize = -1 };
                                 var output = new VectorOutput(bufferPtr, buffer.Length);
 
                                 var status = context.Read(elementKey, ref input, ref output);
@@ -4293,6 +4293,228 @@ namespace Garnet.test
             ClassicAssert.IsTrue(res7);
             var res8 = await db.VectorSetGetAttributesJsonAsync(Key, Element0).ConfigureAwait(false);
             ClassicAssert.IsNull(res8);
+        }
+
+        [Test]
+        public async Task ContinueSearchAsync()
+        {
+            // Super long element names require continuations since our buffers can't hold the whole result
+
+            const string Key = nameof(ContinueSearchAsync);
+            const string ElementPrefix = "VeryVeryLongExternalIdThatWillForceSomeExtraContinueSearchCalls";
+            const int VectorCount = 1_000;
+            const int ResultCount = 50;
+
+            await using var redis = await ConnectionMultiplexer.ConnectAsync(TestUtils.GetConfig());
+            var db = redis.GetDatabase();
+
+            for (var i = 0; i < VectorCount; i++)
+            {
+                var json = $"{{\"PrettyLongFieldName\":{i}, \"AnotherPrettyLongFieldName\":{i}, \"YetAnotherPrettyLongFieldName\":{i}, \"Id\":{i}}}";
+                var addRes = await db.VectorSetAddAsync(Key, VectorSetAddRequest.Member($"{ElementPrefix}_{i}", new float[] { 1, 2, 3 }, json)).ConfigureAwait(false);
+                ClassicAssert.True(addRes);
+            }
+
+            // vector search, no attributes
+            {
+                var uniqueRes = new HashSet<byte[]>(ByteArrayComparer.Instance);
+                var simSearch = VectorSetSimilaritySearchRequest.ByVector(new float[] { 1, 2, 3 });
+                simSearch.Count = ResultCount;
+                using var simRes = await db.VectorSetSimilaritySearchAsync(Key, simSearch).ConfigureAwait(false);
+                ClassicAssert.AreEqual(ResultCount, simRes.Length);
+                foreach (var res in simRes.Span)
+                {
+                    ClassicAssert.IsTrue(((string)res.Member).StartsWith(ElementPrefix));
+                    ClassicAssert.IsTrue(uniqueRes.Add((byte[])res.Member));
+                }
+            }
+
+            // vector search, attributes
+            {
+                var uniqueRes = new HashSet<byte[]>(ByteArrayComparer.Instance);
+                var simSearchWithAttrs = VectorSetSimilaritySearchRequest.ByVector(new float[] { 1, 2, 3 });
+                simSearchWithAttrs.Count = ResultCount;
+                simSearchWithAttrs.WithAttributes = true;
+                using var simWithAttrsRes = await db.VectorSetSimilaritySearchAsync(Key, simSearchWithAttrs).ConfigureAwait(false);
+                ClassicAssert.AreEqual(ResultCount, simWithAttrsRes.Length);
+                foreach (var res in simWithAttrsRes.Span)
+                {
+                    ClassicAssert.IsTrue(((string)res.Member).StartsWith(ElementPrefix));
+
+                    var actualJson = res.AttributesJson;
+                    ClassicAssert.IsNotNull(actualJson);
+                    var id = ((string)res.Member).Substring(ElementPrefix.Length + 1);
+
+                    var expectedJson = $"{{\"PrettyLongFieldName\":{id}, \"AnotherPrettyLongFieldName\":{id}, \"YetAnotherPrettyLongFieldName\":{id}, \"Id\":{id}}}";
+                    ClassicAssert.AreEqual(expectedJson, actualJson);
+
+                    ClassicAssert.IsTrue(uniqueRes.Add((byte[])res.Member));
+                }
+            }
+
+            // element search, no attributes
+            {
+                var uniqueRes = new HashSet<byte[]>(ByteArrayComparer.Instance);
+                var simElementSearch = VectorSetSimilaritySearchRequest.ByMember($"{ElementPrefix}_{0}");
+                simElementSearch.Count = ResultCount;
+                using var simElementRes = await db.VectorSetSimilaritySearchAsync(Key, simElementSearch).ConfigureAwait(false);
+                ClassicAssert.AreEqual(ResultCount, simElementRes.Length);
+                foreach (var res in simElementRes.Span)
+                {
+                    ClassicAssert.IsTrue(((string)res.Member).StartsWith(ElementPrefix));
+
+                    ClassicAssert.IsTrue(uniqueRes.Add((byte[])res.Member));
+                }
+            }
+
+            // element search, attributes
+            {
+                var uniqueRes = new HashSet<byte[]>(ByteArrayComparer.Instance);
+                var simElementSearchWithAttrs = VectorSetSimilaritySearchRequest.ByMember($"{ElementPrefix}_{0}");
+                simElementSearchWithAttrs.Count = ResultCount;
+                simElementSearchWithAttrs.WithAttributes = true;
+                using var simElementWithAttrsRes = await db.VectorSetSimilaritySearchAsync(Key, simElementSearchWithAttrs).ConfigureAwait(false);
+                ClassicAssert.AreEqual(ResultCount, simElementWithAttrsRes.Length);
+                foreach (var res in simElementWithAttrsRes.Span)
+                {
+                    ClassicAssert.IsTrue(((string)res.Member).StartsWith(ElementPrefix));
+
+                    var actualJson = res.AttributesJson;
+                    ClassicAssert.IsNotNull(actualJson);
+                    var id = ((string)res.Member).Substring(ElementPrefix.Length + 1);
+
+                    var expectedJson = $"{{\"PrettyLongFieldName\":{id}, \"AnotherPrettyLongFieldName\":{id}, \"YetAnotherPrettyLongFieldName\":{id}, \"Id\":{id}}}";
+                    ClassicAssert.AreEqual(expectedJson, actualJson);
+
+                    ClassicAssert.IsTrue(uniqueRes.Add((byte[])res.Member));
+                }
+            }
+        }
+
+        [Test]
+        public async Task VLINKSAsync()
+        {
+            const string Key = nameof(VLINKSAsync);
+            const string ElementPrefix = "foo";
+            const int VectorCount = 100;
+
+            await using var redis = await ConnectionMultiplexer.ConnectAsync(TestUtils.GetConfig());
+            var db = redis.GetDatabase();
+
+            for (var i = 0; i < VectorCount; i++)
+            {
+                var json = $"{{\"PrettyLongFieldName\":{i}, \"AnotherPrettyLongFieldName\":{i}, \"YetAnotherPrettyLongFieldName\":{i}, \"Id\":{i}}}";
+                var addRes = await db.VectorSetAddAsync(Key, VectorSetAddRequest.Member($"{ElementPrefix}_{i}", new float[] { 1, 2, 3 }, json)).ConfigureAwait(false);
+                ClassicAssert.True(addRes);
+            }
+
+            using var neighborsRes = await db.VectorSetGetLinksAsync(Key, $"{ElementPrefix}_0").ConfigureAwait(false);
+            ClassicAssert.AreEqual(15, neighborsRes.Length);
+
+            var uniqueRes = new HashSet<byte[]>(ByteArrayComparer.Instance);
+            foreach (var res in neighborsRes.Span)
+            {
+                ClassicAssert.IsTrue(((string)res).StartsWith(ElementPrefix));
+
+                ClassicAssert.IsTrue(uniqueRes.Add((byte[])res));
+            }
+        }
+
+        [Test]
+        public async Task VLINKSContinueSearchAsync()
+        {
+            // Super long element names require continuations since our buffers can't hold the whole result
+
+            const string Key = nameof(VLINKSAsync);
+            const string ElementPrefix = "SuchALongElementPrefixNoSeriouslySoLongYouShouldWorryAboutTheSizeOfYourBuffersForAnyReasonablMYouMightChooseForYourVectorSetAndItWouldBeVerySillyToActuallyUseSuchAPrefixInProductionButItMustWorkOrWeAreViolatingTheBehaviorSpecifiedByRedisFooBarFizzBuzzHelloWorldYadaYadaYada";
+            const int VectorCount = 100;
+
+            await using var redis = await ConnectionMultiplexer.ConnectAsync(TestUtils.GetConfig());
+            var db = redis.GetDatabase();
+
+            for (var i = 0; i < VectorCount; i++)
+            {
+                var json = $"{{\"PrettyLongFieldName\":{i}, \"AnotherPrettyLongFieldName\":{i}, \"YetAnotherPrettyLongFieldName\":{i}, \"Id\":{i}}}";
+                var addRes = await db.VectorSetAddAsync(Key, VectorSetAddRequest.Member($"{ElementPrefix}_{i}", new float[] { 1, 2, 3 }, json)).ConfigureAwait(false);
+                ClassicAssert.True(addRes);
+            }
+
+            using var neighborsRes = await db.VectorSetGetLinksAsync(Key, $"{ElementPrefix}_0").ConfigureAwait(false);
+            ClassicAssert.AreEqual(15, neighborsRes.Length);
+
+            var uniqueRes = new HashSet<byte[]>(ByteArrayComparer.Instance);
+            foreach (var res in neighborsRes.Span)
+            {
+                ClassicAssert.IsTrue(((string)res).StartsWith(ElementPrefix));
+
+                ClassicAssert.IsTrue(uniqueRes.Add((byte[])res));
+            }
+        }
+
+        [Test]
+        public async Task VRANDMEMBERAsync()
+        {
+            const string Key = nameof(VRANDMEMBERAsync);
+            const string ElementPrefix = "element_";
+            const int VectorCount = 20;
+
+            await using var redis = await ConnectionMultiplexer.ConnectAsync(TestUtils.GetConfig());
+            var db = redis.GetDatabase();
+
+            var actualMembers = new HashSet<byte[]>(ByteArrayComparer.Instance);
+            for (var i = 0; i < VectorCount; i++)
+            {
+                var elementKey = (RedisValue)$"{ElementPrefix}_{i}";
+                var addRes = await db.VectorSetAddAsync(Key, VectorSetAddRequest.Member(elementKey, new float[] { 1, 2, 3 })).ConfigureAwait(false);
+                ClassicAssert.True(addRes);
+
+                ClassicAssert.True(actualMembers.Add((byte[])elementKey));
+            }
+
+            // one random element
+            var res0 = await db.VectorSetRandomMemberAsync(Key).ConfigureAwait(false);
+            Assert.IsTrue(actualMembers.Contains((byte[])res0));
+
+            // one random element, on null key
+            var res1 = await db.VectorSetRandomMemberAsync("foo").ConfigureAwait(false);
+            Assert.IsTrue(res1.IsNull);
+
+            // N < Count random elements without repeats
+            var res2 = await db.VectorSetRandomMembersAsync(Key, VectorCount / 2).ConfigureAwait(false);
+            Assert.AreEqual(VectorCount / 2, res2.Length);
+            Assert.AreEqual(VectorCount / 2, res2.Select(static t => (byte[])t).Distinct(ByteArrayComparer.Instance).Count());
+            Assert.IsTrue(res2.Select(static t => (byte[])t).All(t => actualMembers.Contains(t)));
+
+            // N = Count random elements without repeats
+            var res3 = await db.VectorSetRandomMembersAsync(Key, VectorCount).ConfigureAwait(false);
+            Assert.AreEqual(VectorCount, res3.Length);
+            Assert.AreEqual(VectorCount, res3.Select(static t => (byte[])t).Distinct(ByteArrayComparer.Instance).Count());
+            Assert.IsTrue(res3.Select(static t => (byte[])t).All(t => actualMembers.Contains(t)));
+
+            // N > Count random elements without repeats
+            var res4 = await db.VectorSetRandomMembersAsync(Key, VectorCount * 2).ConfigureAwait(false);
+            Assert.AreEqual(VectorCount, res4.Length);
+            Assert.AreEqual(VectorCount, res4.Select(static t => (byte[])t).Distinct(ByteArrayComparer.Instance).Count());
+            Assert.IsTrue(res4.Select(static t => (byte[])t).All(t => actualMembers.Contains(t)));
+
+            // N < Count random elements, allow repeats
+            var res5 = await db.VectorSetRandomMembersAsync(Key, -VectorCount / 2).ConfigureAwait(false);
+            Assert.AreEqual(VectorCount / 2, res5.Length);
+            Assert.IsTrue(res5.Select(static t => (byte[])t).All(t => actualMembers.Contains(t)));
+
+            // N = Count random elements, allow repeats
+            var res6 = await db.VectorSetRandomMembersAsync(Key, -VectorCount).ConfigureAwait(false);
+            Assert.AreEqual(VectorCount, res6.Length);
+            Assert.IsTrue(res6.Select(static t => (byte[])t).All(t => actualMembers.Contains(t)));
+
+            // N > Count random elements, allow repeats
+            var res7 = await db.VectorSetRandomMembersAsync(Key, -VectorCount * 2).ConfigureAwait(false);
+            Assert.AreEqual(2 * VectorCount, res7.Length);
+            Assert.IsTrue(res7.Select(static t => (byte[])t).All(t => actualMembers.Contains(t)));
+
+            // N random element, on null key
+            var res8 = await db.VectorSetRandomMembersAsync("foo", VectorCount).ConfigureAwait(false);
+            Assert.AreEqual(0, res8.Length);
         }
 
         /// <summary>
