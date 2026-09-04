@@ -212,23 +212,49 @@ namespace Tsavorite.core
                         var readBuffer = objectReadBuffers is not null ? objectReadBuffers[nextFrame] : default;
 
                         var frameIndex = i;
+                        var frameRepairLatch = 0;
                         _ = Interlocked.Increment(ref pendingDrainCallbacks);
                         if (epoch != null)
-                            epoch.BumpCurrentEpoch(() => DoReadPage(frameIndex));
+                        {
+                            try
+                            {
+                                epoch.BumpCurrentEpoch(() => DoReadPage(frameIndex));
+                            }
+                            catch (Exception ex)
+                            {
+                                // BumpCurrentEpoch runs other threads' registered drain actions, so it can throw either
+                                // before or after our action is registered, and the caller cannot tell which. The latch
+                                // makes the repair idempotent: whichever of DoReadPage or this handler runs first owns
+                                // the frame, and the other is a no-op.
+                                if (Interlocked.Exchange(ref frameRepairLatch, 1) == 0)
+                                {
+                                    FailFrameLoad(nextFrame, pageEndAddress, ex);
+                                    _ = Interlocked.Decrement(ref pendingDrainCallbacks);
+                                }
+                                throw;
+                            }
+                        }
                         else
                             DoReadPage(frameIndex);
 
                         void DoReadPage(int frameIndex)
                         {
+                            // The failure handler above already repaired the frame and accounted for the callback.
+                            if (Interlocked.Exchange(ref frameRepairLatch, 1) != 0)
+                                return;
+
                             try
                             {
                                 AsyncReadPageFromDeviceToFrame(readBuffer, readPage: frameIndex + allocator.GetPageOfAddress(currentIterationAddress, logPageSizeBits), untilAddress: endIterationAddress,
                                     context: Empty.Default, out loadCompletionEvents[nextFrame], devicePageOffset: 0, device: null, objectLogDevice: null, loadCTSs[nextFrame]);
                             }
-                            catch
+                            catch (Exception ex)
                             {
+                                // Publish the terminal state before releasing pendingDrainCallbacks: Dispose treats a
+                                // zero count as license to dispose the completion event and token source.
+                                FailFrameLoad(nextFrame, pageEndAddress, ex);
                                 _ = Interlocked.Decrement(ref pendingDrainCallbacks);
-                                throw;
+                                return;
                             }
                             loadedPages[nextFrame] = pageEndAddress;
                         }
@@ -284,6 +310,54 @@ namespace Tsavorite.core
         internal abstract void AsyncReadPageFromDeviceToFrame<TContext>(CircularDiskReadBuffer readBuffers, long readPage, long untilAddress, TContext context, out CountdownEvent completed,
                 long devicePageOffset = 0, IDevice device = null, IDevice objectLogDevice = null, CancellationTokenSource cts = null);
 
+        /// <summary>
+        /// Publish the failure of a page read that could not be issued, so no completion callback will fire for
+        /// <paramref name="frame"/>.
+        /// </summary>
+        /// <remarks>
+        /// Runs inside the deferred <see cref="LightEpoch.BumpCurrentEpoch(Action)"/> action, so nothing may escape: an
+        /// exception here aborts an arbitrary thread's drain pass and never reaches the scanning thread. The failure is
+        /// instead routed through the channel a failed I/O uses -- cancelling the frame's <see cref="loadCTSs"/> -- so
+        /// <see cref="WaitForFrameLoad"/> skips the page, and <see cref="loadedPages"/> is advanced so
+        /// <see cref="BufferAndLoad"/>'s CAS loop does not wait on a load that will never be retried.
+        /// </remarks>
+        private void FailFrameLoad(long frame, long pageEndAddress, Exception ex)
+        {
+            // Repair the frame before logging, which is external code and guarded separately.
+            try
+            {
+                // Leave the frame as an asynchronously failed load does: an unset completion event and a cancelled
+                // token, so WaitForFrameLoad's wait throws immediately and its catch makes the frame reusable. A fresh
+                // event keeps that state unambiguous when the device threw before assigning the out parameter.
+                loadCompletionEvents[frame] = new CountdownEvent(1);
+            }
+            catch { }
+
+            try
+            {
+                loadCTSs[frame]?.Cancel();
+            }
+            catch { }
+
+            loadedPages[frame] = pageEndAddress;
+
+            try
+            {
+                logger?.LogError(ex, "Failed to issue page read from storage during scan, skipping page. Frame: {frame}, pageEndAddress: {pageEndAddress}", frame, AddressString(pageEndAddress));
+            }
+            catch { }
+        }
+
+        /// <summary>
+        /// Mark <paramref name="frame"/> as having no page load in flight.
+        /// </summary>
+        private void SignalFrameLoadCompletion(long frame)
+        {
+            var completionEvent = loadCompletionEvents[frame];
+            if (completionEvent is not null && !completionEvent.IsSet)
+                _ = completionEvent.Signal();
+        }
+
         protected void AsyncReadPageFromDeviceToFrameCallback(uint errorCode, uint numBytes, object context, Exception ioException)
         {
             try
@@ -322,12 +396,15 @@ namespace Tsavorite.core
             try
             {
                 epoch?.Suspend();
-                loadCompletionEvents[currentFrame].Wait(loadCTSs[currentFrame].Token); // Ensure we have completed ongoing load
+                WaitForFrameLoadCompletion(currentAddress, currentFrame); // Ensure we have completed ongoing load
             }
             catch (Exception e)
             {
                 // Exception occurred so skip the page containing the currentAddress, and reinitialize the loaded page and cancellation token for the current frame.
                 // The exception may have been an OperationCanceledException.
+                // A load that fails asynchronously cancels the token without signaling the completion event, so signal
+                // it here to leave the frame reusable.
+                SignalFrameLoadCompletion(currentFrame);
                 loadedPages[currentFrame] = -1;
                 loadCTSs[currentFrame] = new CancellationTokenSource();
                 _ = Utility.MonotonicUpdate(ref nextAddress, GetLogicalAddressOfStartOfPage(1 + allocator.GetPageOfAddress(currentAddress, logPageSizeBits), logPageSizeBits), out _);
@@ -349,6 +426,31 @@ namespace Tsavorite.core
         }
 
         /// <summary>
+        /// Interval at which an outstanding frame load is reported, so a device that never delivers its completion
+        /// callback surfaces as a logged stall rather than a silent wait.
+        /// </summary>
+        private const int FrameLoadWaitReportIntervalMs = 15_000;
+
+        /// <summary>
+        /// Wait for an outstanding page load into <paramref name="currentFrame"/> to complete, reporting periodically
+        /// while it remains outstanding.
+        /// </summary>
+        /// <remarks>
+        /// Recovery runs this path before the server accepts connections, so a stall here is otherwise
+        /// indistinguishable from a healthy startup. The wait stays unbounded, since a slow device is not a failed one.
+        /// </remarks>
+        private void WaitForFrameLoadCompletion(long currentAddress, long currentFrame)
+        {
+            var completionEvent = loadCompletionEvents[currentFrame];
+            var token = loadCTSs[currentFrame].Token;
+            for (var elapsedMs = 0L; !completionEvent.Wait(FrameLoadWaitReportIntervalMs, token); elapsedMs += FrameLoadWaitReportIntervalMs)
+            {
+                logger?.LogWarning("Still waiting for page read from storage to complete after {elapsedSeconds} seconds. CurrentAddress: {currentAddress}, currentFrame: {currentFrame}",
+                    (elapsedMs + FrameLoadWaitReportIntervalMs) / 1000, AddressString(currentAddress), currentFrame);
+            }
+        }
+
+        /// <summary>
         /// Dispose iterator
         /// </summary>
         public virtual void Dispose()
@@ -356,10 +458,23 @@ namespace Tsavorite.core
             // Wait for all deferred DoReadPage callbacks and their async I/O to complete before freeing
             // resources. The counter is incremented before BumpCurrentEpoch registration and decremented
             // in AsyncReadPageFromDeviceToFrameCallback when I/O completes, so reaching zero guarantees
-            // no outstanding access to our state. The deferred callbacks will be drained by other threads'
-            // epoch operations (Resume, Suspend, ProtectAndDrain).
+            // no outstanding access to our state. BufferAndLoad's CAS loop does not return until the deferred
+            // action has run, so a non-zero count here is I/O still in flight. Report periodically so a device
+            // that never delivers a completion shows up as a logged stall.
+            var reportIntervalTicks = Stopwatch.Frequency * FrameLoadWaitReportIntervalMs / 1000;
+            var startTimestamp = Stopwatch.GetTimestamp();
+            var nextReportTimestamp = startTimestamp + reportIntervalTicks;
             while (Volatile.Read(ref pendingDrainCallbacks) > 0)
+            {
                 Thread.Yield();
+
+                var nowTimestamp = Stopwatch.GetTimestamp();
+                if (nowTimestamp < nextReportTimestamp)
+                    continue;
+                nextReportTimestamp = nowTimestamp + reportIntervalTicks;
+                logger?.LogWarning("Still waiting for {pendingDrainCallbacks} pending page read(s) from storage after {elapsedSeconds} seconds while disposing scan iterator",
+                    Volatile.Read(ref pendingDrainCallbacks), (nowTimestamp - startTimestamp) / Stopwatch.Frequency);
+            }
 
             for (var i = 0; i < frameSize; i++)
             {

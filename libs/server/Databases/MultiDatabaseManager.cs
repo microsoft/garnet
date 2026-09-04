@@ -98,7 +98,7 @@ namespace Garnet.server
             }
             catch (Exception ex)
             {
-                Logger?.LogInformation(ex,
+                Logger?.LogError(ex,
                     "Error during recovery of database ids; checkpointParentDir = {checkpointParentDir}; checkpointDirBaseName = {checkpointDirBaseName}",
                     checkpointParentDir, checkpointDirBaseName);
                 if (StoreWrapper.serverOptions.FailOnRecoveryError)
@@ -127,7 +127,9 @@ namespace Garnet.server
                 }
                 catch (Exception ex)
                 {
-                    Logger?.LogInformation(ex,
+                    // Unless FailOnRecoveryError is set the server continues with whatever was recovered, so this
+                    // must be visible at the default log level.
+                    Logger?.LogError(ex,
                         "Error during recovery of store; storeVersion = {storeVersion}; objectStoreVersion = {objectStoreVersion}",
                         storeVersion, objectStoreVersion);
                     if (StoreWrapper.serverOptions.FailOnRecoveryError)
@@ -430,9 +432,13 @@ namespace Garnet.server
             }
             catch (Exception ex)
             {
-                Logger?.LogInformation(ex,
+                // Failing to enumerate the AOF database ids means no database recovers its AOF, so log it at the
+                // default level and honor FailOnRecoveryError as the checkpoint path above does.
+                Logger?.LogError(ex,
                     "Error during recovery of database ids; aofParentDir = {aofParentDir}; aofDirBaseName = {aofDirBaseName}",
                     aofParentDir, aofDirBaseName);
+                if (StoreWrapper.serverOptions.FailOnRecoveryError)
+                    throw;
                 return;
             }
 
