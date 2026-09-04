@@ -312,7 +312,7 @@ namespace Garnet
                             var serverCert = X509CertificateLoader.LoadPkcs12(File.ReadAllBytes(opts.TlsOptions.CertFileName), opts.TlsOptions.CertPassword ?? "", X509KeyStorageFlags.Exportable);
 
                             string keyPem;
-                            if (serverCert.GetRSAPublicKey() is var rsaKey)
+                            if (serverCert.GetRSAPrivateKey() is var rsaKey)
                             {
                                 keyPem = rsaKey.ExportPkcs8PrivateKeyPem();
                             }
