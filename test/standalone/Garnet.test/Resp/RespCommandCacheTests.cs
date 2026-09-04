@@ -1,10 +1,8 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System;
 using System.Net.Sockets;
 using System.Text;
-using System.Threading;
 using System.Threading.Tasks;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -75,27 +73,10 @@ namespace Garnet.test.Resp
 
         private static async Task<string> SendAsync(Socket socket, string command)
         {
-            var request = Encoding.ASCII.GetBytes(command);
-            var bytesSent = 0;
-            while (bytesSent < request.Length)
-                bytesSent += await socket.SendAsync(request.AsMemory(bytesSent), SocketFlags.None);
-
-            var response = new StringBuilder();
+            await socket.SendAsync(Encoding.ASCII.GetBytes(command), SocketFlags.None);
             var buffer = new byte[8192];
-            using var cancellationSource = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-            try
-            {
-                while (true)
-                {
-                    var bytesReceived = await socket.ReceiveAsync(buffer, SocketFlags.None, cancellationSource.Token);
-                    if (bytesReceived == 0) break;
-                    response.Append(Encoding.ASCII.GetString(buffer, 0, bytesReceived));
-                    cancellationSource.CancelAfter(500);
-                }
-            }
-            catch (OperationCanceledException) when (response.Length > 0) { }
-
-            return response.ToString();
+            var bytesReceived = await socket.ReceiveAsync(buffer, SocketFlags.None);
+            return Encoding.ASCII.GetString(buffer, 0, bytesReceived);
         }
     }
 }
