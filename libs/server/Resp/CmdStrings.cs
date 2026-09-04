@@ -221,6 +221,7 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_DISCARD_WO_MULTI => "ERR DISCARD without MULTI"u8;
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_WATCH_IN_MULTI => "ERR WATCH inside MULTI is not allowed"u8;
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_INVALIDEXP_IN_SET => "ERR invalid expire time in 'set' command"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_GENERIC_INVALIDEXP_IN_GETEX => "ERR invalid expire time in 'getex' command"u8;
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_SYNTAX_ERROR => "ERR syntax error"u8;
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_NAN_INFINITY => "ERR value is NaN or Infinity"u8;
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_NAN_INFINITY_INCR => "ERR increment would produce NaN or Infinity"u8;

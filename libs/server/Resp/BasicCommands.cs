@@ -115,21 +115,38 @@ namespace Garnet.server
                     if (parseState.Count < 3 || !parseState.TryGetLong(2, out var expireTime) || expireTime <= 0)
                         return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_OUT_OF_RANGE);
 
+                    // The expiry a GETEX option implies must land within the representable range so
+                    // that (a) the conversion itself does not throw - TimeSpan.From* raises an
+                    // OverflowException and DateTimeOffset.FromUnixTime* an ArgumentOutOfRangeException,
+                    // neither a RespParsingException nor a GarnetException, so it would escape to the
+                    // session catch-all and dispose the connection - and (b) the absolute expiry
+                    // computed below as UtcNow.Ticks + tsExpiry.Ticks does not silently overflow the
+                    // long. Both are bounded by refusing any expiry beyond DateTimeOffset.MaxValue
+                    // (year 9999), reporting an error the way Redis does rather than crashing.
+                    var maxDeltaTicks = DateTimeOffset.MaxValue.Ticks - DateTimeOffset.UtcNow.Ticks;
                     switch (option)
                     {
                         case var _ when option.EqualsUpperCaseSpanIgnoringCase(CmdStrings.EX):
+                            if (expireTime > maxDeltaTicks / TimeSpan.TicksPerSecond)
+                                return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_INVALIDEXP_IN_GETEX);
                             tsExpiry = TimeSpan.FromSeconds(expireTime);
                             break;
 
                         case var _ when option.EqualsUpperCaseSpanIgnoringCase(CmdStrings.PX):
+                            if (expireTime > maxDeltaTicks / TimeSpan.TicksPerMillisecond)
+                                return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_INVALIDEXP_IN_GETEX);
                             tsExpiry = TimeSpan.FromMilliseconds(expireTime);
                             break;
 
                         case var _ when option.EqualsUpperCaseSpanIgnoringCase(CmdStrings.EXAT):
+                            if (expireTime > DateTimeOffset.MaxValue.ToUnixTimeSeconds())
+                                return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_INVALIDEXP_IN_GETEX);
                             tsExpiry = DateTimeOffset.FromUnixTimeSeconds(expireTime) - DateTimeOffset.UtcNow;
                             break;
 
                         case var _ when option.EqualsUpperCaseSpanIgnoringCase(CmdStrings.PXAT):
+                            if (expireTime > DateTimeOffset.MaxValue.ToUnixTimeMilliseconds())
+                                return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_INVALIDEXP_IN_GETEX);
                             tsExpiry = DateTimeOffset.FromUnixTimeMilliseconds(expireTime) - DateTimeOffset.UtcNow;
                             break;
 
