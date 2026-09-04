@@ -271,6 +271,58 @@ namespace Tsavorite.test.Objects
         }
 
         [Test, Category(TsavoriteKVTestCategory), Category(LogRecordCategory), Category(SmokeTestCategory), Category(ObjectIdMapCategory)]
+        //[Repeat(50)]
+        public void LargeObjectDiskWriteReadChunkedValue([Values(
+            IStreamBuffer.BufferSize * 4,                 // exactly 4 buffers: exercises an exact chunk-buffer boundary
+            (IStreamBuffer.BufferSize * 4) + 4096,        // 4 buffers + one 4 KB final page
+            (IStreamBuffer.BufferSize * 4) + 5000,        // 4 buffers + a non-page-aligned tail (exercises the final-page round-up)
+            (IStreamBuffer.BufferSize * 5) + 123456       // 5 buffers + an odd tail
+            )] int baseValueSize)
+        {
+            // Small inline key and a multi-buffer object value: validates continuation headers and read-ahead across exact and
+            // non-page-aligned chunk boundaries without using RDH ValueLength as object-log metadata.
+            using var session = store.NewSession<TestObjectKey, TestLargeObjectInput, TestLargeObjectOutput, Empty, TestLargeObjectFunctions>(new TestLargeObjectFunctions());
+            var bContext = session.BasicContext;
+
+            var input = new TestLargeObjectInput();
+            var output = new TestLargeObjectOutput();
+            const int numRec = 3;
+            for (int ii = 0; ii < numRec; ii++)
+            {
+                var key = new TestObjectKey { key = ii };
+                var value = new TestLargeObjectValue(baseValueSize + (ii * 4096));
+                new Span<byte>(value.value).Fill(0x42);
+                _ = bContext.Upsert(key, ref input, value, ref output);
+            }
+
+            // Test before and after the flush (the chunked encoding only affects the on-disk read).
+            DoRead(onDisk: false);
+            store.Log.FlushAndEvict(wait: true);
+            DoRead(onDisk: true);
+
+            void DoRead(bool onDisk)
+            {
+                TestLargeObjectInput input = new() { wantValueStyle = TestValueStyle.Object };
+                for (int ii = 0; ii < numRec; ii++)
+                {
+                    var output = new TestLargeObjectOutput();
+                    var key = new TestObjectKey { key = ii };
+
+                    var status = bContext.Read(key, ref input, ref output, Empty.Default);
+                    Assert.That(status.IsPending, Is.EqualTo(onDisk), $"IsPending ({status.IsPending}) != onDisk");
+                    if (status.IsPending)
+                        (status, output) = bContext.GetSinglePendingResult();
+                    Assert.That(status.Found, Is.True, $"record# {ii}, onDisk {onDisk}");
+
+                    Assert.That(output.valueObject.value.Length, Is.EqualTo(baseValueSize + (ii * 4096)), $"record# {ii}, onDisk {onDisk}");
+                    var badIndex = new ReadOnlySpan<byte>(output.valueObject.value).IndexOfAnyExcept((byte)0x42);
+                    if (badIndex != -1)
+                        Assert.Fail($"Unexpected byte value at index {badIndex}, onDisk {onDisk}, record# {ii}: {output.valueObject.value[badIndex]}");
+                }
+            }
+        }
+
+        [Test, Category(TsavoriteKVTestCategory), Category(LogRecordCategory), Category(SmokeTestCategory), Category(ObjectIdMapCategory)]
         //[Repeat(300)]
         public void LargeObjectMultiFlushedPages([Values(SerializeKeyValueSize.Thirty, SerializeKeyValueSize.OneK)] SerializeKeyValueSize serializeValueSize)
         {
@@ -632,6 +684,146 @@ namespace Tsavorite.test.Objects
                         Assert.Fail($"len {len}, onDisk {onDisk}: unexpected byte {output.valueArray[badIndex]} at index {badIndex}");
                 }
             }
+        }
+
+        [Test, Category(TsavoriteKVTestCategory), Category(LogRecordCategory), Category(SmokeTestCategory), Category(ObjectIdMapCategory)]
+        public void LargeOverflowValueChunkedTest([Values(
+            (IStreamBuffer.BufferSize * 4) + 5000,        // multi-buffer payload; full length carried in a leading ChunkHeader
+            (IStreamBuffer.BufferSize * 5) + 123456
+            )] int valueLength)
+        {
+            // Recreate the store with MaxInlineValueSize == 0 so the large raw byte value is stored as an overflow value (not an object),
+            // exercising a sentinel overflow-value's leading-ChunkHeader and direct-read path.
+            store?.Dispose();
+            store = new(new()
+            {
+                IndexSize = 1L << 13,
+                LogDevice = log,
+                ObjectLogDevice = objlog,
+                MutableFraction = 0.1,
+                LogMemorySize = LogMemorySize,
+                PageSize = PageSize,
+                MaxInlineValueSize = 0
+            }, StoreFunctions.Create(new TestObjectKey.Comparer(), () => new TestObjectValue.Serializer(), DefaultRecordTriggers.Instance)
+                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
+            );
+
+            using var session = store.NewSession<TestObjectKey, TestLargeObjectInput, TestLargeObjectOutput, Empty, TestLargeObjectFunctions>(new TestLargeObjectFunctions());
+            var bContext = session.BasicContext;
+
+            const int numRec = 2;
+            for (var ii = 0; ii < numRec; ii++)
+            {
+                var key = new TestObjectKey { key = ii };
+                var value = new byte[valueLength + (ii * 4096)];
+                new Span<byte>(value).Fill((byte)(0x30 + ii));
+                _ = bContext.Upsert(key, value.AsSpan(), Empty.Default);
+            }
+
+            DoReads(onDisk: false);
+            store.Log.FlushAndEvict(wait: true);
+            DoReads(onDisk: true);
+
+            void DoReads(bool onDisk)
+            {
+                for (var ii = 0; ii < numRec; ii++)
+                {
+                    var expectedLen = valueLength + (ii * 4096);
+                    var key = new TestObjectKey { key = ii };
+                    TestLargeObjectInput input = new() { wantValueStyle = TestValueStyle.Overflow, expectedSpanLength = expectedLen };
+                    TestLargeObjectOutput output = new();
+
+                    var status = bContext.Read(key, ref input, ref output, Empty.Default);
+                    Assert.That(status.IsPending, Is.EqualTo(onDisk), $"record# {ii}, onDisk {onDisk}");
+                    if (status.IsPending)
+                        (status, output) = bContext.GetSinglePendingResult();
+                    Assert.That(status.Found, Is.True, $"record# {ii}, onDisk {onDisk}");
+
+                    Assert.That(output.valueArray.Length, Is.EqualTo(expectedLen), $"record# {ii}, onDisk {onDisk}");
+                    var badIndex = new ReadOnlySpan<byte>(output.valueArray).IndexOfAnyExcept((byte)(0x30 + ii));
+                    if (badIndex != -1)
+                        Assert.Fail($"record# {ii}, onDisk {onDisk}: unexpected byte {output.valueArray[badIndex]} at index {badIndex}");
+                }
+            }
+        }
+
+        [Test, Category(TsavoriteKVTestCategory), Category(LogRecordCategory), Category(SmokeTestCategory), Category(ObjectIdMapCategory)]
+        public void ObjectChunkZeroLengthFirstChunkTest()
+        {
+            // Drive the object chunk-framing writer to the zero-length-first-chunk boundary: position the chunked object so that, after its
+            // 511-byte headerless prefix, the first 8-aligned ChunkHeader lands at exactly buffer_end - ChunkHeader.TotalSize (RemainingCapacity
+            // == 8) with no data room. The writer must emit a zero-length continuation chunk (filling the buffer) and resume the object data in
+            // the next buffer; the reader must skip the zero-length chunk and reassemble the object.
+            //
+            // Overflow byte-span fillers pack densely in the object log (each contributes ChunkHeader.TotalSize + length bytes, no inter-record
+            // padding), so a precise filler set positions the object's start at buffer_end - (511 + 8). All fillers + the object live on one page
+            // => one object-log partial flush that begins at write-buffer position 0, so the object's start offset equals the filler byte total.
+            store?.Dispose();
+            store = new(new()
+            {
+                IndexSize = 1L << 13,
+                LogDevice = log,
+                ObjectLogDevice = objlog,
+                MutableFraction = 0.1,
+                LogMemorySize = 1L << 20,   // 16 x 64 KB pages
+                PageSize = 1L << 16,        // 64 KB: all ~33 tiny (overflow-value) records fit on one page => one partial flush
+                MaxInlineValueSize = 0      // byte-span values are stored as overflow (clean "ChunkHeader.TotalSize + length" object-log accounting)
+            }, StoreFunctions.Create(new TestObjectKey.Comparer(), () => new TestLargeObjectValue.Serializer(), DefaultRecordTriggers.Instance)
+                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
+            );
+
+            const int prefixLen = RecordDataHeader.kOutOfLineExactSizeCutoff;                 // 511 (== ObjectLogWriter.ObjectHeaderlessPrefixLen)
+            var bufferEnd = IStreamBuffer.BufferSize;                                          // 4 MB (buffer_end for the first buffer of a partial flush)
+            var targetObjectValueStart = bufferEnd - (prefixLen + ChunkHeader.TotalSize);     // object starts here => first header at buffer_end - 8
+
+            // Fillers: fixed 128 KB overflow values (buffered: length == MaxCopySpanLen, not DMA'd; headered: > 511) plus one remainder filler
+            // to reach the target exactly. Each contributes ChunkHeader.TotalSize + length dense object-log bytes.
+            const int fixedFillerLen = 128 * 1024;
+            var fixedContribution = fixedFillerLen + ChunkHeader.TotalSize;
+            var numFixed = (targetObjectValueStart - (prefixLen + 1)) / fixedContribution;    // leave the remainder headered (> 511) and non-empty
+            var fixedTotal = numFixed * fixedContribution;
+            var remainderLen = (targetObjectValueStart - fixedTotal) - ChunkHeader.TotalSize;
+            Assert.That(remainderLen, Is.GreaterThan(prefixLen).And.LessThanOrEqualTo(fixedFillerLen),
+                "remainder filler must be headered (> 511) and buffered (<= 128 KB)");
+            Assert.That(fixedTotal + remainderLen + ChunkHeader.TotalSize, Is.EqualTo(targetObjectValueStart), "filler accounting");
+
+            using var session = store.NewSession<TestObjectKey, TestLargeObjectInput, TestLargeObjectOutput, Empty, TestLargeObjectFunctions>(new TestLargeObjectFunctions());
+            var bContext = session.BasicContext;
+
+            var fillerBuf = new byte[fixedFillerLen];
+            new Span<byte>(fillerBuf).Fill(0x5A);
+            var nextKey = 0;
+            for (var ii = 0; ii < numFixed; ii++)
+                _ = bContext.Upsert(new TestObjectKey { key = nextKey++ }, new ReadOnlySpan<byte>(fillerBuf, 0, fixedFillerLen), Empty.Default);
+            _ = bContext.Upsert(new TestObjectKey { key = nextKey++ }, new ReadOnlySpan<byte>(fillerBuf, 0, remainderLen), Empty.Default);
+
+            // The chunked object: larger than the prefix so a real chunk follows the zero-length first chunk.
+            const int objectValueLen = 512 * 1024;
+            var objectKey = new TestObjectKey { key = nextKey++ };
+            var input = new TestLargeObjectInput();
+            var output = new TestLargeObjectOutput();
+            var objectValue = new TestLargeObjectValue(objectValueLen);
+            new Span<byte>(objectValue.value).Fill(0x42);
+            _ = bContext.Upsert(objectKey, ref input, objectValue, ref output);
+
+            ObjectLogWriterDiagnostics.Reset();
+            store.Log.FlushAndEvict(wait: true);
+
+            Assert.That(ObjectLogWriterDiagnostics.LastFirstObjectHeaderRoom, Is.EqualTo(ChunkHeader.TotalSize),
+                $"first object ChunkHeader should land at buffer_end - {ChunkHeader.TotalSize} (zero-length-chunk boundary)");
+            Assert.That(ObjectLogWriterDiagnostics.ZeroLengthChunkCount, Is.GreaterThanOrEqualTo(1),
+                "a zero-length continuation chunk should have been written at the boundary");
+
+            // Round-trip the object through the zero-length-chunk on-disk path.
+            TestLargeObjectInput readInput = new() { wantValueStyle = TestValueStyle.Object };
+            TestLargeObjectOutput readOutput = new();
+            var status = bContext.Read(objectKey, ref readInput, ref readOutput, Empty.Default);
+            Assert.That(status.IsPending, Is.True, "object should be on disk after FlushAndEvict");
+            (status, readOutput) = bContext.GetSinglePendingResult();
+            Assert.That(status.Found, Is.True);
+            Assert.That(readOutput.valueObject.value.Length, Is.EqualTo(objectValueLen));
+            var badIndex = new ReadOnlySpan<byte>(readOutput.valueObject.value).IndexOfAnyExcept((byte)0x42);
+            Assert.That(badIndex, Is.EqualTo(-1), $"unexpected byte at index {badIndex}");
         }
     }
 }
