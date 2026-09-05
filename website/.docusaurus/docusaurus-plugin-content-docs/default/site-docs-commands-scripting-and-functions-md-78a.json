@@ -1,0 +1,29 @@
+{
+  "id": "commands/scripting-commands",
+  "title": "Scripting and functions",
+  "description": "EVAL",
+  "source": "@site/docs/commands/scripting-and-functions.md",
+  "sourceDirName": "commands",
+  "slug": "/commands/scripting",
+  "permalink": "/garnet/docs/commands/scripting",
+  "draft": false,
+  "unlisted": false,
+  "editUrl": "https://github.com/microsoft/garnet/tree/main/website/docs/commands/scripting-and-functions.md",
+  "tags": [],
+  "version": "current",
+  "frontMatter": {
+    "id": "scripting-commands",
+    "sidebar_label": "Scripting and functions",
+    "title": "Scripting and functions",
+    "slug": "scripting"
+  },
+  "sidebar": "garnetDocSidebar",
+  "previous": {
+    "title": "ACL",
+    "permalink": "/garnet/docs/commands/acl"
+  },
+  "next": {
+    "title": "Garnet-specific Commands",
+    "permalink": "/garnet/docs/commands/garnet-specific-commands"
+  }
+}
