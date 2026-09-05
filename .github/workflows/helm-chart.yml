@@ -6,13 +6,15 @@ on:
     branches:
       - main
     paths:
-      - 'charts/*/Chart.yaml'
+      - 'charts/**/Chart.yaml'
+      - 'charts/**/templates/**'
+      - 'charts/**/values*'
+      - 'charts/**/README.md.gotmpl'
 
 permissions:
-  contents: write
+  contents: read
   packages: write
-  pull-requests: write
-      
+
 jobs:
   helm-chart:
     runs-on: ubuntu-latest
@@ -21,11 +23,6 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
-
-      - name: Configure git
-        run: |
-          git config user.name "${GITHUB_ACTOR}"
-          git config user.email "${GITHUB_ACTOR}@users.noreply.github.com"
 
       - name: Install helm
         uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.0 for security reasons we have pinned the tag (commit SHA) for 3rd party
@@ -48,38 +45,26 @@ jobs:
           tar -xvf "${FILENAME}"
           sudo mv helm-docs /usr/local/bin
 
-      - name: Set helm chart appVersion from Version.props
+      - name: Verify chart metadata
         run: |
-          export VERSION_PROPS=$(awk -F'[<>]' '/VersionPrefix/{print $3}' Version.props | tr -d '\n')
-          sed -i -e 's#Version.props#"'${VERSION_PROPS}'"#g' charts/garnet/Chart.yaml
+          set -euo pipefail
+          VERSION_PROPS=$(awk -F'[<>]' '/<VersionPrefix>/{print $3}' Version.props | tr -d '\n')
+          CHART_APP_VERSION=$(awk '$1 == "appVersion:" {print $2}' charts/garnet/Chart.yaml)
+
+          if [[ "${CHART_APP_VERSION}" != "${VERSION_PROPS}" ]]; then
+            echo "Chart appVersion (${CHART_APP_VERSION}) must match Version.props (${VERSION_PROPS})"
+            exit 1
+          fi
 
       - name: Helm lint, helm-docs and helm package
         run: |
+          set -euo pipefail
           mkdir .cr-release-packages
-          for chart in $(find charts -mindepth 1 -maxdepth 1 -type d); do
-            if [ -z "${chart:-}" ]; then
-              break
-            fi
+          while IFS= read -r -d '' chart; do
             helm lint "${chart}"
             helm-docs --document-dependency-values --chart-search-root "${chart}"
             helm package "${chart}" --dependency-update --destination .cr-release-packages
-          done
-
-      - name: Discard changes on the charts/garnet/Chart.yaml file
-        run: |
-          git checkout -- charts/garnet/Chart.yaml
-
-      - name: Commit and Push to Branch (no PR)
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "${{ github.actor }}@users.noreply.github.com"
-          # Create or switch to the branch
-          git checkout -B helm-docs-gen
-          # Add and commit changes
-          git add charts/garnet/README.md
-          git commit -m "[helm-chart] Update charts/garnet/README.md by helm-docs" || echo "No changes to commit"
-          # Push to remote using GITHUB_TOKEN
-          git push -f origin helm-docs-gen
+          done < <(find charts -mindepth 1 -maxdepth 1 -type d -print0)
 
       - name: Login to GHCR
         env:
