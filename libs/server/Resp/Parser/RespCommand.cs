@@ -1218,6 +1218,9 @@ namespace Garnet.server
         [MethodImpl(MethodImplOptions.NoInlining)]
         private void UpdateCommandCache(int cmdStartOffset, RespCommand cmd, int argCount)
         {
+            // Only cache argument counts that fit in a byte.
+            if ((uint)argCount > byte.MaxValue) return;
+
             var ptr = recvBufferPtr + cmdStartOffset;
             var availableBytes = bytesRead - cmdStartOffset;
 
