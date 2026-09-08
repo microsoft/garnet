@@ -23,9 +23,9 @@ namespace Garnet.server
         bool ReadOnlySession { get; }
 
         /// <summary>
-        /// Whether this session may apply writes to the local node
+        /// Whether this internal session may apply writes while replaying the AOF
         /// </summary>
-        bool ReadWriteSession { get; }
+        bool IsInternalWriteSession { get; }
 
         /// <summary>
         /// If the current session is part of an active replication stream (set on first APPENDLOG, including the init handshake).

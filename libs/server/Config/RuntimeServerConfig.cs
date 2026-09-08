@@ -114,9 +114,8 @@ namespace Garnet.server
             // rejects them because they are constants or physical (require restart). Their CONFIG GET value
             // is computed by the per-option formatter, which reads directly from the startup
             // GarnetServerOptions (the read-only fall-through) — no runtime slot is used.
-            // NOTE: slave-read-only is intentionally NOT here: it is a per-session value (READWRITE/READONLY,
-            // https://redis.io/docs/latest/commands/readwrite/) and is handled directly by the CONFIG GET
-            // handler, which has the calling session in scope.
+            // NOTE: slave-read-only is intentionally not here because it is a fixed compatibility setting
+            // handled directly by CONFIG GET.
             SetReadOnly(ServerConfigType.TIMEOUT, "timeout",
                 ConfigKind.Int32 | ConfigKind.Seconds | ConfigKind.TimeSpan, static _ => "0", ConfigTimeUnit.Seconds);
             SetReadOnly(ServerConfigType.SAVE, "save", ConfigKind.String, static _ => "");

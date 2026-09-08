@@ -38,7 +38,7 @@ namespace Garnet.cluster
         bool internalWriteSession;
 
         public bool ReadOnlySession => readOnlySession;
-        public bool ReadWriteSession => clusterProvider.clusterManager.CurrentConfig.IsPrimary || internalWriteSession;
+        public bool IsInternalWriteSession => internalWriteSession;
 
         public void SetReadOnlySession() => readOnlySession = true;
         public void SetReadWriteSession() => readOnlySession = false;
