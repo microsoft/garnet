@@ -24,6 +24,10 @@ namespace Garnet.cluster
         /// <returns></returns>
         public async Task<(bool Success, ReadOnlyMemory<byte> ErrorMessage)> TryBeginDisklessSyncAsync(SyncMetadata replicaSyncMetadata)
         {
+            // HACK HACK HACK - force on to threadpool
+            await Task.Yield();
+            // END HACK HACK HACK
+
             ReadOnlyMemory<byte> errorMessage = default;
             if (clusterProvider.serverOptions.ReplicaDisklessSync)
             {
@@ -55,23 +59,28 @@ namespace Garnet.cluster
         /// <param name="replicaAofBeginAddress">AOF begin address at replica</param>
         /// <param name="replicaAofTailAddress">AOF tail address at replica</param>
         /// <returns></returns>
-        public Task<(bool Success, ReadOnlyMemory<byte> ErrorMessage)> TryBeginDiskbasedSyncAsync(
+        public async Task<(bool Success, ReadOnlyMemory<byte> ErrorMessage)> TryBeginDiskbasedSyncAsync(
             string replicaNodeId,
             string replicaAssignedPrimaryId,
             CheckpointEntry replicaCheckpointEntry,
             AofAddress replicaAofBeginAddress,
             AofAddress replicaAofTailAddress)
         {
+            // HACK HACK HACK - force on to threadpool
+            await Task.Yield();
+            // END HACK HACK HACK
+
             ReadOnlyMemory<byte> errorMessage = default;
 
             if (!replicaSyncSessionTaskStore.TryAddReplicaSyncSession(replicaNodeId, replicaAssignedPrimaryId, replicaCheckpointEntry, replicaAofBeginAddress, replicaAofTailAddress))
             {
                 errorMessage = CmdStrings.RESP_ERR_CREATE_SYNC_SESSION_ERROR.ToArray();
                 logger?.LogError("{errorMessage}", Encoding.ASCII.GetString(errorMessage.Span));
-                return Task.FromResult((false, errorMessage));
+                //return Task.FromResult((false, errorMessage));
+                return (false, errorMessage);
             }
 
-            return ReplicaSyncSessionBackgroundTaskAsync(replicaNodeId);
+            return await ReplicaSyncSessionBackgroundTaskAsync(replicaNodeId).ConfigureAwait(false);
 
             async Task<(bool Success, ReadOnlyMemory<byte> ErrorMessage)> ReplicaSyncSessionBackgroundTaskAsync(string replicaId)
             {

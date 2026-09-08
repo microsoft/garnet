@@ -26,6 +26,10 @@ namespace Garnet.cluster
             ClusterSession session,
             ReplicateSyncOptions options)
         {
+            // HACK HACK HACK - force on to threadpool
+            await Task.Yield();
+            // END HACK HACK HACK
+
             ReadOnlyMemory<byte> errorMessage = default;
 
             try
