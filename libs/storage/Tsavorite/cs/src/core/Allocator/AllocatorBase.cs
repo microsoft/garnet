@@ -24,7 +24,7 @@ namespace Tsavorite.core
         internal virtual CircularDiskWriteBuffer CreateCircularFlushBuffers(IDevice objectLogDevice, ILogger logger) => default;
         /// <summary>Maximum number of Snapshot page writes to issue concurrently while coordinating with ReadOnly flushing.
         /// Zero means this allocator does not require Snapshot/ReadOnly page coordination.</summary>
-        internal virtual int SnapshotFlushWindowSize => 0;
+        internal int SnapshotFlushWindowSize = 0;
         /// <summary>Create the circular flush buffers for object deserialization from device. Only implemented by ObjectAllocator.</summary>
         internal virtual CircularDiskReadBuffer CreateCircularReadBuffers(IDevice objectLogDevice, ILogger logger) => default;
         /// <summary>Create the circular flush buffers for object deserialization from device. Only implemented by ObjectAllocator.</summary>
@@ -1905,7 +1905,7 @@ namespace Tsavorite.core
             long newHeadAddress;
             bool updated;
             var coordination = IsNullDevice ? Volatile.Read(ref snapshotFlushCoordination) : null;
-            if (coordination is null || coordination.IsTerminal)
+            if (coordination is null || coordination.IsClosed)
             {
                 // Real devices need no Snapshot lock: FlushedUntilAddress already carries the watermark restriction
                 // into this HeadAddress cap. NullDevice uses the lock only while nonterminal coordination is installed.
@@ -2515,14 +2515,14 @@ namespace Tsavorite.core
                     if (coordination is not null)
                     {
                         coordination.WaitForAllPages(endPage);
-                        coordination.Complete(endPage);
+                        coordination.CloseSuccessfully(endPage);
                         _ = finalCompletionTcs.TrySetResult(true);
                     }
                 }
                 catch (Exception ex)
                 {
                     logger?.LogError(ex, "{method} failed while flushing snapshot pages from {startPage} to {endPage}", nameof(AsyncFlushPagesForSnapshot), startPage, endPage);
-                    coordination?.Fail(ex);
+                    coordination?.RecordFailure(ex);
                     flushCompletionTracker.SetException(ex);
                     coordination?.WaitForInFlightPages();
                     _ = finalCompletionTcs.TrySetException(ex);
@@ -2820,38 +2820,25 @@ namespace Tsavorite.core
 
                 if (result.Release() == 0)
                 {
-                    try
+                    if (errorCode != 0)
                     {
-                        if (errorCode != 0)
+                        // Note down error details and trigger handling only when we are certain this is the earliest error among currently issued flushes
+                        // Surface the device's underlying exception so an opaque numeric code carries the real fault for diagnosis.
+                        errorList.Add(new CommitInfo
                         {
-                            // Note down error details and trigger handling only when we are certain this is the earliest error among currently issued flushes
-                            // Surface the device's underlying exception so an opaque numeric code carries the real fault for diagnosis.
-                            errorList.Add(new CommitInfo
-                            {
-                                FromAddress = result.fromAddress,
-                                UntilAddress = result.untilAddress,
-                                ErrorCode = errorCode,
-                                Exception = ioException
-                            });
-                        }
-                        else
-                        {
-                            // There is no failure so update the page's last flushed until address.
-                            _ = MonotonicUpdate(ref PageStatusIndicator[result.page % BufferSize].LastFlushedUntilAddress, result.untilAddress, out _);
-                        }
+                            FromAddress = result.fromAddress,
+                            UntilAddress = result.untilAddress,
+                            ErrorCode = errorCode,
+                            Exception = ioException
+                        });
+                    }
+                    else
+                    {
+                        // There is no failure so update the page's last flushed until address.
+                        _ = MonotonicUpdate(ref PageStatusIndicator[result.page % BufferSize].LastFlushedUntilAddress, result.untilAddress, out _);
+                    }
 
-                        ShiftFlushedUntilAddress();
-                    }
-                    finally
-                    {
-                        // Keep the claim through publication so Snapshot installation cannot capture its start while
-                        // this callback still has a pending FlushedUntilAddress advance.
-                        if (result.hasReadOnlyFlushClaim)
-                        {
-                            result.hasReadOnlyFlushClaim = false;
-                            ReleaseReadOnlyPageFlush();
-                        }
-                    }
+                    ShiftFlushedUntilAddress();
                 }
 
                 // Continue the chained flushes, popping the next request from the queue if it is adjacent.
@@ -2905,7 +2892,7 @@ namespace Tsavorite.core
                     // Fault before Release(): the final Release calls CompleteFlush, which must not win the
                     // TaskCompletionSource race and report a checkpoint with an unwritten page as successful.
                     var exception = new TsavoriteException($"Snapshot page flush failed with error code {errorCode}", ioException);
-                    result.snapshotFlushCoordination?.Fail(exception);
+                    result.snapshotFlushCoordination?.RecordFailure(exception);
                     result.flushCompletionTracker?.SetException(exception);
                 }
 

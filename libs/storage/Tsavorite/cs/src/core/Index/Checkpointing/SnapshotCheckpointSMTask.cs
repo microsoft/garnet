@@ -31,9 +31,8 @@ namespace Tsavorite.core
                     ObjectLog_OnPrepare();
                     if (store.hlogBase.SnapshotFlushCoordinationWindowSize > 0)
                     {
-                        var prepareSnapshotStart = store.hlogBase.IsNullDevice ? store.hlogBase.HeadAddress : store.hlogBase.FlushedUntilAddress;
                         store._hybridLogCheckpoint.snapshotFlushCoordination =
-                            new SnapshotFlushCoordination(store.hlogBase.GetPage(prepareSnapshotStart), store.hlogBase.SnapshotFlushCoordinationWindowSize);
+                            new SnapshotFlushCoordination(store.hlogBase.SnapshotFlushCoordinationWindowSize);
                         store.hlogBase.PrepareSnapshotFlushCoordination(store._hybridLogCheckpoint.snapshotFlushCoordination);
                     }
                     base.GlobalBeforeEnteringState(next, stateMachineDriver);
@@ -74,7 +73,7 @@ namespace Tsavorite.core
                         }
                         catch (Exception ex)
                         {
-                            store._hybridLogCheckpoint.snapshotFlushCoordination.Fail(ex);
+                            store._hybridLogCheckpoint.snapshotFlushCoordination.RecordFailure(ex);
                             store.hlogBase.ClearSnapshotFlushCoordination(store._hybridLogCheckpoint.snapshotFlushCoordination);
                             throw;
                         }

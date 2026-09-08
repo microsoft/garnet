@@ -103,9 +103,10 @@ namespace Tsavorite.test
 
             var startPage = store.hlogBase.GetPage(snapshotStartAddress);
             var endPage = store.hlogBase.GetPage(snapshotEndAddress) + 1;
-            using var coordination = new SnapshotFlushCoordination(startPage);
-            coordination.Arm(startPage);
-            coordination.CompleteInstallation();
+            using var coordination = new SnapshotFlushCoordination();
+            coordination.BeginCutoffCapture(startPage);
+            coordination.PublishReadOnlyFlushCutoff(0);
+            coordination.BeginFlushing();
             store.hlogBase.AsyncFlushPagesForSnapshot(flushBuffers, startPage, endPage, snapshotStartAddress, snapshotEndAddress,
                 long.MaxValue, snapshotLogDevice, snapshotObjectLogDevice, coordination, out var completedTask, throttleCheckpointFlushDelayMs: -1);
 

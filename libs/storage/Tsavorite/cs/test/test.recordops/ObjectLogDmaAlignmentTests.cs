@@ -65,7 +65,6 @@ namespace Tsavorite.test.Objects
                 }
             }
         }
-
         static void AssertAligned(ulong sourceAddress, int bufferHeaderPosition, int sectorSize, int sourceFragment, int headerPadding)
         {
             Assert.That(sourceFragment, Is.InRange(0, sectorSize - 1), "sourceFragment must be in [0, sectorSize)");

@@ -95,6 +95,7 @@ namespace Tsavorite.core
             if (settings.LogSettings.NumberOfFlushBuffers < LogSettings.kMinFlushBuffers || settings.LogSettings.NumberOfFlushBuffers > LogSettings.kMaxFlushBuffers || !IsPowerOfTwo(settings.LogSettings.NumberOfFlushBuffers))
                 throw new TsavoriteException($"{nameof(settings.LogSettings.NumberOfFlushBuffers)} must be between {LogSettings.kMinFlushBuffers} and {LogSettings.kMaxFlushBuffers - 1} and a power of 2");
             numberOfFlushBuffers = settings.LogSettings.NumberOfFlushBuffers;
+            SnapshotFlushWindowSize = numberOfFlushBuffers;
 
             if (settings.LogSettings.NumberOfDeserializationBuffers < LogSettings.kMinDeserializationBuffers || settings.LogSettings.NumberOfDeserializationBuffers > LogSettings.kMaxDeserializationBuffers || !IsPowerOfTwo(settings.LogSettings.NumberOfDeserializationBuffers))
                 throw new TsavoriteException($"{nameof(settings.LogSettings.NumberOfDeserializationBuffers)} must be between {LogSettings.kMinDeserializationBuffers} and {LogSettings.kMaxDeserializationBuffers - 1} and a power of 2");
@@ -607,9 +608,6 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc/>
-        internal override int SnapshotFlushWindowSize => numberOfFlushBuffers;
-
-        /// <inheritdoc/>
         internal override CircularDiskReadBuffer CreateCircularReadBuffers(IDevice objectLogDevice, ILogger logger)
             => new(bufferPool, IStreamBuffer.BufferSize, numberOfDeserializationBuffers, objectLogDevice ?? this.objectLogDevice, logger);
 
@@ -699,51 +697,23 @@ namespace Tsavorite.core
             // never use the PendingFlush chaining path, so once this loop has issued every page's write, no further writes will reference these
             // buffers and it is safe to Dispose below.
             var flushBuffers = CreateCircularFlushBuffers(objectLogDevice: null, logger);
-            var snapshotCoordination = GetActiveSnapshotFlushCoordination();
+            var snapshotCoordination = GetSnapshotFlushCoordinationForReadOnlyRange(untilAddress);
 
             try
             {
                 // Write each page (or partial page) in the range.
                 for (var flushPage = startPage; flushPage < (startPage + numPages); flushPage++)
                 {
-                    var hasReadOnlyFlushClaim = snapshotCoordination is not null
-                        && AcquireReadOnlyPageFlush(snapshotCoordination, flushPage);
-                    var claimTransferred = false;
-                    try
-                    {
-                        // PrepareFlushAsyncResult may publish FlushedUntilAddress without issuing IO (NullDevice, noFlush,
-                        // or a range below BeginAddress), so it must run while this page's claim is held.
-                        if (!PrepareFlushAsyncResult(fromAddress, untilAddress, noFlush, flushPage, out var asyncResult))
-                            continue;
+                    WaitForSnapshotPage(snapshotCoordination, flushPage);
+                    if (!PrepareFlushAsyncResult(fromAddress, untilAddress, noFlush, flushPage, out var asyncResult))
+                        continue;
 
-                        asyncResult.flushBuffers = flushBuffers;
-                        asyncResult.hasReadOnlyFlushClaim = hasReadOnlyFlushClaim;
-                        claimTransferred = hasReadOnlyFlushClaim;
+                    asyncResult.flushBuffers = flushBuffers;
 
-                        // ObjectAllocator does not use PendingFlush chaining; every page in this range is issued here.
-                        Debug.Assert(PendingFlush[GetPageIndexForAddress(asyncResult.fromAddress)].list.Count == 0,
-                            $"Expected PendingFlush count {PendingFlush[GetPageIndexForAddress(asyncResult.fromAddress)].list.Count} to be 0 for ObjectAllocator");
-                        try
-                        {
-                            WriteAsync(flushPage, AsyncFlushPageCallback, asyncResult);
-                        }
-                        catch
-                        {
-                            if (asyncResult.hasReadOnlyFlushClaim)
-                            {
-                                asyncResult.hasReadOnlyFlushClaim = false;
-                                ReleaseReadOnlyPageFlush();
-                            }
-                            throw;
-                        }
-                    }
-                    finally
-                    {
-                        // A real IO transfers the claim to AsyncFlushPageCallback. Skip paths publish address advancement
-                        // synchronously in PrepareFlushAsyncResult, then release here.
-                        if (hasReadOnlyFlushClaim && !claimTransferred)
-                            ReleaseReadOnlyPageFlush();
-                    }
+                    // ObjectAllocator does not use PendingFlush chaining; every page in this range is issued here.
+                    Debug.Assert(PendingFlush[GetPageIndexForAddress(asyncResult.fromAddress)].list.Count == 0,
+                        $"Expected PendingFlush count {PendingFlush[GetPageIndexForAddress(asyncResult.fromAddress)].list.Count} to be 0 for ObjectAllocator");
+                    WriteAsync(flushPage, AsyncFlushPageCallback, asyncResult);
                 }
             }
             finally

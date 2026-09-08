@@ -314,9 +314,6 @@ namespace Tsavorite.core
         internal CircularDiskWriteBuffer objectLogFlushBuffers;
         internal SnapshotFlushCoordination snapshotFlushCoordination;
 
-        /// <summary>Snapshot page-completion watermark used only while the current checkpoint is in WAIT_FLUSH.</summary>
-        internal readonly long LastCompletedSnapshotPage => snapshotFlushCoordination?.LastCompletedSnapshotPage ?? long.MaxValue;
-
         public void Initialize(Guid token, long _version, ICheckpointManager checkpointManager)
         {
             info.Initialize(token, _version);

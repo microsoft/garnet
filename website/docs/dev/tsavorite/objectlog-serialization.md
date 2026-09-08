@@ -226,9 +226,8 @@ The 19-bit page count is exact: it is `ceil((ChunkHeader + alignment padding + p
 configured 512 MB maximum key size with framing and alignment overhead. The reader can allocate/read the complete key
 without a sentinel-driven extension path; `ChunkHeader` still supplies the exact logical payload length.
 
-When `KeyHasExtendedSizeHint` is clear, a checkpoint from the preceding chunk-framing format uses the value-style
-objectId-only page-count/sentinel interpretation. The checkpoint version was advanced when the extended encoding was
-introduced so a binary that does not recognize bit 62 rejects the checkpoint rather than under-reading a large key.
+When `KeyHasExtendedSizeHint` is clear, an earlier record from the in-progress chunk-framing work uses the
+value-style objectId-only page-count/sentinel interpretation. The per-record bit selects that decoder.
 
 For a non-exact overflow or object value:
 
@@ -362,7 +361,7 @@ The object serializer/deserializer sees one dense logical byte stream. `ObjectLo
 
 For a page containing objects, `ObjectAllocatorImpl.WriteAsync()` preserves this issue and completion protocol:
 
-1. determine the record range and whether the live page or a private aligned copy is the main-log write source;
+1. determine the record range in the resident live page;
 2. walk records in address order;
 3. serialize/copy every record's object-log components;
 4. stamp that record's object-log position and objectId hints;
@@ -465,6 +464,10 @@ The main-log write always uses the allocator's live page; objectId hint stamping
 non-destructiveness alone is not sufficient. Recovery has exclusive access. Snapshot/ReadOnly coordination keeps the
 page resident and prevents those modes from stamping the same page concurrently.
 
+The no-copy path also requires `OnDispose` not to tear down flush-critical bytes before the asynchronous page write
+finishes. `OnDispose` implementations must copy off cleanup state and defer clearing those bytes until that write
+finishes.
+
 A front-partial ReadOnly flush starts after a prefix already written by the same monotonic flush sequence. The physical
 write rounds down to the sector boundary and rewrites that prefix from the live page; those records already carry
 main-object-log positions, so no leading-sector read or page image is needed. Complete sectors are written directly.
@@ -474,27 +477,34 @@ boundaries ever become inconsistent; a later ReadOnly flush overwrites it.
 
 ### 5.7 Snapshot and ReadOnly page ordering
 
-At `PREPARE`, `fuzzyRegionStartAddress` captures the exact tail that starts the fuzzy region and Snapshot publishes
-permissive coordination. ReadOnly work during PREPARE/IN_PROGRESS is tracked but not blocked. PREPARE's epoch barrier
-captures the endpoint of any ReadOnly worker that started before coordination publication. At `WAIT_FLUSH`,
-`recoveredTailAddress` captures TailAddress; Snapshot arms the conservative page gate, drains tracked and
-pre-coordination ReadOnly flushes through address publication, then captures `snapshotFileLogicalStartAddress` from
-the stable `FlushedUntilAddress`. Snapshot does not advance `ReadOnlyAddress`.
+At `PREPARE`, `fuzzyRegionStartAddress` captures the exact tail that starts the fuzzy region and Snapshot publishes a
+fresh coordination object in `Open`; ReadOnly remains unrestricted. At `WAIT_FLUSH`, coordination advances
+monotonically through:
 
-`HybridLogCheckpointInfo.LastCompletedSnapshotPage` is a runtime-only contiguous completion watermark. Snapshot issues one
-page write at a time. During `WAIT_FLUSH`, ReadOnly may serialize page `P` only while
-`P < LastCompletedSnapshotPage`. The value is the exclusive page after the most recently completed Snapshot page, so
-ReadOnly waits only when Snapshot is still writing that same page; once Snapshot completes it, ReadOnly proceeds and
-retains eviction priority. After the final page containing captured TailAddress completes, Snapshot publishes the
-exclusive end page so ReadOnly may process the final page. One active-ReadOnly-write
-counter closes the state-transition race: a claim remains active through `LastFlushedUntilAddress` and
-`FlushedUntilAddress` publication, installation waits for all prior claims to drain, and new ReadOnly work claims its
-page before either issuing IO or taking a no-IO address-advancement path. ReadOnly suspends epoch protection while
-waiting on Snapshot progress, then resumes only to preserve the epoch callback's entry/exit contract.
+```text
+Open -> CapturingCutoff -> DrainingCutoff -> Flushing -> Closed
+```
 
-Outside a Snapshot checkpoint, ReadOnly samples coordination once per contiguous flush range and performs no lock,
-counter update, or epoch suspend. With no ReadOnly waiters, each Snapshot page completion advances the watermark with a
-monotonic CAS and does not acquire the progress monitor.
+The ReadOnly worker publishes each contiguous range's exclusive endpoint before sampling coordination.
+`CapturingCutoff` pairs its state publication with that endpoint publication, captures
+`readOnlyFlushCutoffAddress`, and enters `DrainingCutoff`. A range at or below the cutoff proceeds normally because
+Snapshot explicitly waits for its `FlushedUntilAddress` publication. A later range waits until Snapshot drains the
+cutoff cohort, captures stable `snapshotFileLogicalStartAddress`, and enters `Flushing`; it then obeys the page limit.
+The cutoff drain does not hold the allocator installation lock, so an included ReadOnly worker can issue the IO being
+awaited. Snapshot does not advance `ReadOnlyAddress`.
+
+During `Flushing`, a fixed-size ring tracks only the bounded set of concurrently issued object-log Snapshot pages.
+The default window is the object-log flush-buffer count. Callbacks may complete out of order, but
+`readOnlyFlushPageLimit` advances only across the contiguous completed prefix. ReadOnly page `P` may serialize only
+while `P < readOnlyFlushPageLimit`; it waits only if it catches an unfinished Snapshot page. Completing a page
+immediately gives ReadOnly and eviction priority for that page. After every issued page drains, coordination enters
+`Closed` and releases the final page.
+
+Real-device allocators without an object log do not install coordination and retain parallel Snapshot submission.
+A non-object `NullDevice` uses a one-slot window only to cap `HeadAddress`, because it has no durable main-log fallback.
+Outside an actual cutoff or page wait, ReadOnly performs only state, cutoff, and page-limit reads. It suspends epoch
+protection only around a real wait. If Snapshot fails, the failure stops new issuance but coordination remains
+restrictive until every already-issued page write drains and state becomes `Closed`.
 
 For `NullDevice`, Head may advance behind completed Snapshot pages even though no main-log bytes are durable.
 `mainLogRecoveryEndAddress` therefore remains the captured Snapshot start rather than the later HeadAddress; recovery reads
@@ -735,25 +745,26 @@ would shift subsequent positions and is not implemented without a validated v2.1
 
 | Component/path | Per-record allocation | Byte copies before device | Pin/direct IO | Reason |
 |---|---|---|---|---|
-| Exact overflow <=511 | none beyond existing `OverflowByteArray` | payload into reused write ring | no | headerless small payload |
-| Framed overflow <=128 KB | none beyond existing `OverflowByteArray` | header + payload into reused ring | no | copy is bounded; simple buffered path |
-| Framed overflow >128 KB | no payload-sized staging allocation | header/padding/fragments into ring; aligned interior not copied | source array pinned; direct writes split by segment | avoid copying a large payload through the ring |
-| Exact object <=511 | serializer/ring reused | serializer bytes into reused ring | no | headerless object |
-| Framed object >511 | serializer/ring reused | serializer bytes into reused ring | no | headers must be reserved/backfilled as chunks close |
+| Exact overflow at most 511 bytes | none beyond existing `OverflowByteArray` | payload into reused write ring | no | headerless small payload |
+| Framed overflow at most 128 KB | none beyond existing `OverflowByteArray` | header + payload into reused ring | no | copy is bounded; simple buffered path |
+| Framed overflow above 128 KB | no payload-sized staging allocation | header/padding/fragments into ring; aligned interior not copied | source array pinned; direct writes split by segment | avoid copying a large payload through the ring |
+| Exact object at most 511 bytes | serializer/ring reused | serializer bytes into reused ring | no | headerless object |
+| Framed object above 511 bytes | serializer/ring reused | serializer bytes into reused ring | no | headers must be reserved/backfilled as chunks close |
 | Main-log live-page path | at most one pooled trailing-sector buffer | no page copy; only final partial-sector bytes copied | live memory and optional trailing sector held through callbacks | Recovery, Snapshot, and ReadOnly, including front/back-partial ranges |
 
-The object serializer, pinned stream, and circular write buffers are reused; they are not allocated per object.
+The object serializer and pinned stream are reused across objects within one page flush, and the circular write
+buffers are reused across page ranges in the top-level flush.
 
 ### 8.2 Read paths
 
 | Component/path | Final allocation | Intermediate payload allocation | Copies | Pin/direct IO |
 |---|---|---|---|---|
-| Exact overflow <=511 | exact `OverflowByteArray` | none | ring -> final array | no |
-| Framed overflow <=128 KB | exact `OverflowByteArray` | none | ring -> final array | no |
-| Framed overflow >128 KB | exact payload + sector slack in one `OverflowByteArray` | none | buffered prefix -> final; direct remainder has no copy | final array pinned through all reads |
+| Exact overflow at most 511 bytes | exact `OverflowByteArray` | none | ring -> final array | no |
+| Framed overflow at most 128 KB | exact `OverflowByteArray` | none | ring -> final array | no |
+| Framed overflow above 128 KB | exact payload + sector slack in one `OverflowByteArray` | none | buffered prefix -> final; direct remainder has no copy | final array pinned through all reads |
 | Object value | final `IHeapObject` allocated by deserializer | no whole serialized-object array | ring data -> deserializer | no direct object payload read |
 | Recovery Pass1 key hash | one recovered `OverflowByteArray` | none | same overflow path | final key span pinned only while hashing |
-| Snapshot verbatim copy | one pooled 4 MB transfer buffer | none proportional to record | snapshot ring -> transfer buffer -> main write ring | framing-only last-record path tees bytes while parsing |
+| Snapshot verbatim copy | one 4 MB `ArrayPool<byte>` buffer rented per record and returned after its framing walk | none proportional to record | snapshot ring -> discard span while the same consumed bytes are teed to the main write ring | framing-only copy follows the record through its exact terminal boundary |
 
 The large overflow read's sector slack is part of the array allocation but outside its logical `StartOffset..EndOffset`
 payload. It permits leading/trailing sector overlap without writing outside the pinned allocation.
@@ -783,9 +794,9 @@ Indentation is call depth. Component branches and lifetime changes are included 
         - `objectIdMap.GetHeapObject(...)`
       - `ObjectLogWriter.WriteRecordObjects(keyOverflow, valueOverflow, valueObject)`
         - overflow key -> `WriteOverflowComponent()`
-          - <=511 -> headerless
-          - >511 and <=128 KB -> buffered header + payload
-          - >128 KB -> `WriteOverflowDma()` -> pinned direct interior
+          - at most 511 bytes -> headerless
+          - 512 bytes through 128 KB -> buffered header + payload
+          - above 128 KB -> `WriteOverflowDma()` -> pinned direct interior
         - overflow value -> same branches
         - object value -> `DoSerialize()` -> `WriteObjectData()`
           - first 511 bytes headerless
@@ -881,20 +892,45 @@ Indentation is call depth. Component branches and lifetime changes are included 
 
 ### 9.7 Snapshot checkpoint no-copy ordering
 
+- Allocator configuration
+  - `AllocatorBase.SnapshotFlushWindowSize` defaults to zero
+  - `ObjectAllocatorImpl` sets it in its constructor from the configured
+    `LogSettings.NumberOfFlushBuffers`
+  - `SnapshotFlushCoordinationWindowSize` uses that value for ObjectAllocator, one for a non-object
+    `NullDevice` that needs Head/page-residency protection, or zero for a real-device non-object allocator
+- `ObjectAllocatorImpl.OnPagesMarkedReadOnlyWorker()`
+  - select the next contiguous ReadOnly range as
+    `[LastIssuedFlushedUntilAddress, OngoingFlushedUntilAddress)`
+  - publish the range's exclusive end into `LastIssuedFlushedUntilAddress` before issuing its page writes
+  - callbacks advance `FlushedUntilAddress` only after the corresponding main-log and object-log writes are durable
 - `SnapshotCheckpointSMTask.GlobalBeforeEnteringState(PREPARE)`
-  - publish permissive `SnapshotFlushCoordination`
-- `SnapshotCheckpointSMTask.GlobalAfterEnteringState(PREPARE)`
-  - capture the endpoint of ReadOnly work issued before coordination publication
+  - when `SnapshotFlushCoordinationWindowSize` is nonzero, create and publish
+    `SnapshotFlushCoordination` in `Open`
+  - when it is zero, do not create coordination; Snapshot retains parallel uncoordinated page submission
 - `SnapshotCheckpointSMTask.GlobalBeforeEnteringState(WAIT_FLUSH)`
   - capture TailAddress as `recoveredTailAddress`
-  - arm the page watermark
-  - drain pre-coordination and claimed ReadOnly page writes through FUA publication
-  - capture the stable `snapshotFileLogicalStartAddress`
+  - call `InstallSnapshotFlushCoordination(...)`
+    - enter `CapturingCutoff`, then execute a memory barrier paired with the ReadOnly worker's
+      `LastIssuedFlushedUntilAddress` publication
+    - read `GetLastIssuedReadOnlyFlushAddress()`; for ObjectAllocator this returns
+      `LastIssuedFlushedUntilAddress`
+    - store that exclusive address as `readOnlyFlushCutoffAddress` and enter `DrainingCutoff`
+    - classify each ReadOnly range by its already-published exclusive end:
+      - `rangeEnd <= readOnlyFlushCutoffAddress`: the range belongs to the cutoff cohort, so it proceeds without
+        page gating because Snapshot is waiting for it
+      - `rangeEnd > readOnlyFlushCutoffAddress`: the range is not part of the cohort Snapshot is draining, so it
+        waits until coordination enters `Flushing`
+    - release the installation lock and wait until
+      `FlushedUntilAddress >= readOnlyFlushCutoffAddress`; this is the cutoff drain, and it proves every range in
+      the cohort has published durable completion
+    - reacquire the installation lock, capture the resulting `FlushedUntilAddress` as the stable
+      `snapshotFileLogicalStartAddress`, initialize `readOnlyFlushPageLimit` to its page, and enter `Flushing`
   - `AsyncFlushPagesForSnapshot(snapshotFileLogicalStartAddress, recoveredTailAddress, fuzzyRegionStartAddress, ...)`
-    - issue one live Snapshot page at a time
-    - publish `LastCompletedSnapshotPage` after complete page IO
-    - ReadOnly waits only while Snapshot is writing that same page
-    - publish the exclusive end page after the final page completes
+    - issue live Snapshot pages through the bounded completion window
+    - mark out-of-order completions in fixed, reusable slots
+    - advance `readOnlyFlushPageLimit` through the contiguous completed prefix; a post-cutoff ReadOnly range may
+      flush page `P` only when `P < readOnlyFlushPageLimit`
+    - enter `Closed` after every issued page drains
 
 ---
 

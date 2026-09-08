@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.ExceptionServices;
 using System.Threading;
@@ -29,14 +28,8 @@ namespace Tsavorite.core
             }
         }
 
-        /// <summary>Serializes coordination installation/removal with ReadOnly page-flush claims.</summary>
+        /// <summary>Serializes coordination installation/removal with NullDevice HeadAddress publication.</summary>
         readonly object snapshotFlushSync = new();
-
-        /// <summary>
-        /// Number of ReadOnly page flushes that have claimed permission and have not yet published their completion
-        /// through <see cref="FlushedUntilAddress"/>.
-        /// </summary>
-        int activeReadOnlyPageFlushes;
 
         /// <summary>
         /// Exact first Snapshot address. This is also the initial HeadAddress limit when the first Snapshot page begins
@@ -58,9 +51,8 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Arm Snapshot ordering, wait until previously issued and subsequently claimed ReadOnly flushes have published
-        /// their <see cref="FlushedUntilAddress"/> advancement, then return the stable Snapshot start address.
-        /// New ReadOnly claims at or above the provisional Snapshot page block while installation drains.
+        /// Capture the ReadOnly range cutoff, drain that cohort through <see cref="FlushedUntilAddress"/>, then return
+        /// the stable Snapshot start address and enter page-by-page Snapshot flushing.
         /// </summary>
         /// <param name="coordination">Coordination published during PREPARE.</param>
         /// <returns>The stable first logical address that Snapshot must persist.</returns>
@@ -69,21 +61,25 @@ namespace Tsavorite.core
             lock (snapshotFlushSync)
             {
                 Volatile.Write(ref snapshotStartAddress, IsNullDevice ? HeadAddress : FlushedUntilAddress);
-                coordination.Arm(GetPage(Volatile.Read(ref snapshotStartAddress)));
-                // Pair Arm's publication with the ReadOnly worker's interlocked LastIssued publication. Either this
-                // read observes that endpoint, or the worker observes armed and enters the claim path.
+                coordination.BeginCutoffCapture(GetPage(Volatile.Read(ref snapshotStartAddress)));
+                // Pair CapturingCutoff publication with the ReadOnly worker's interlocked LastIssued publication.
+                // Either the cutoff includes the range, or the worker classifies itself as post-cutoff.
                 Interlocked.MemoryBarrier();
-                // A ReadOnly worker publishes this endpoint before sampling the armed state. Therefore a worker that
-                // remains unclaimed is covered here; one that samples armed takes an active claim below.
-                coordination.SetPreCoordinationReadOnlyFlushEnd(GetLastIssuedReadOnlyFlushAddress());
-                while (activeReadOnlyPageFlushes > 0)
-                    Monitor.Wait(snapshotFlushSync);
+                coordination.PublishReadOnlyFlushCutoff(GetLastIssuedReadOnlyFlushAddress());
+            }
 
-                WaitForPreCoordinationReadOnlyFlushes(coordination.PreCoordinationReadOnlyFlushEndAddress);
+            // Do not hold snapshotFlushSync while waiting: a captured ReadOnly worker must be free to issue the IO
+            // whose FlushedUntilAddress publication completes this drain.
+            WaitForReadOnlyFlushCutoff(coordination.ReadOnlyFlushCutoffAddress);
+
+            lock (snapshotFlushSync)
+            {
+                if (!ReferenceEquals(coordination, snapshotFlushCoordination))
+                    throw new TsavoriteException("Snapshot flush coordination was removed during installation");
                 var stableSnapshotStartAddress = IsNullDevice ? HeadAddress : FlushedUntilAddress;
                 Volatile.Write(ref snapshotStartAddress, stableSnapshotStartAddress);
-                coordination.AdvanceInitialPage(GetPage(stableSnapshotStartAddress));
-                coordination.CompleteInstallation();
+                coordination.AdvanceReadOnlyFlushPageLimit(GetPage(stableSnapshotStartAddress));
+                coordination.BeginFlushing();
                 return stableSnapshotStartAddress;
             }
         }
@@ -97,66 +93,45 @@ namespace Tsavorite.core
             lock (snapshotFlushSync)
             {
                 if (ReferenceEquals(snapshotFlushCoordination, coordination))
+                {
+                    coordination.Close();
                     Volatile.Write(ref snapshotFlushCoordination, null);
-                Monitor.PulseAll(snapshotFlushSync);
+                }
             }
         }
 
         /// <summary>
-        /// If no Snapshot checkpoint exists, return immediately without changing epoch state, taking a lock, or updating
-        /// a counter. Otherwise wait until Snapshot has completed far enough for ReadOnly to flush <paramref name="page"/>,
-        /// then claim the page under the installation lock.
+        /// Classify one contiguous ReadOnly range against the Snapshot cutoff. Returns coordination only for a
+        /// post-cutoff range that must obey the page-completion limit.
         /// </summary>
-        /// <returns>Whether a coordination claim was acquired and must later be released.</returns>
+        /// <param name="untilAddress">Exclusive end of the already-published ReadOnly range.</param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private protected bool AcquireReadOnlyPageFlush(SnapshotFlushCoordination coordination, long page)
+        private protected SnapshotFlushCoordination GetSnapshotFlushCoordinationForReadOnlyRange(long untilAddress)
         {
-            if (coordination.IsTerminal)
-                return false;
+            var coordination = Volatile.Read(ref snapshotFlushCoordination);
+            if (coordination is null)
+                return null;
 
-            // Once snapshotFileLogicalStartAddress is stable, no installation drain remains. Far-behind pages take
-            // this lock-free path; only an actual same-page conflict proceeds to the epoch-suspend/wait path below.
-            if (coordination.InstallationCompleted && coordination.ReadOnlyMayFlushFast(page))
-                return false;
-
-            return AcquireReadOnlyPageFlushSlow(coordination, page);
+            var disposition = coordination.GetReadOnlyRangeDisposition(untilAddress);
+            return disposition switch
+            {
+                ReadOnlyRangeDisposition.Uncoordinated => null,
+                ReadOnlyRangeDisposition.CoordinatePages => coordination,
+                _ => GetSnapshotFlushCoordinationForReadOnlyRangeSlow(coordination, untilAddress)
+            };
         }
 
         [MethodImpl(MethodImplOptions.NoInlining)]
-        bool AcquireReadOnlyPageFlushSlow(SnapshotFlushCoordination coordination, long page)
+        SnapshotFlushCoordination GetSnapshotFlushCoordinationForReadOnlyRangeSlow(SnapshotFlushCoordination coordination, long untilAddress)
         {
-            // OnPagesMarkedReadOnly enters as an epoch callback. Waiting while protected could prevent the Snapshot
-            // transition's drain from completing, so temporarily release that hold only on the uncommon coordination path.
+            // The ReadOnly worker enters as an epoch callback. Waiting while protected could prevent the Snapshot
+            // transition's drain from completing, so release that hold only during the brief cutoff handshake.
             var resumeEpoch = epoch.TrySuspend();
             try
             {
-                while (true)
-                {
-                    coordination.WaitUntilReadOnlyMayFlush(page);
-                    if (coordination.InstallationCompleted)
-                        return false;
-
-                    lock (snapshotFlushSync)
-                    {
-                        if (!ReferenceEquals(coordination, snapshotFlushCoordination))
-                        {
-                            coordination = Volatile.Read(ref snapshotFlushCoordination);
-                            if (coordination is null)
-                                return false;
-                            continue;
-                        }
-
-                        if (coordination.IsTerminal)
-                            return false;
-
-                        // The gate may have armed after WaitUntilReadOnlyMayFlush took its permissive fast path.
-                        if (!coordination.ReadOnlyMayFlush(page))
-                            continue;
-
-                        activeReadOnlyPageFlushes++;
-                        return true;
-                    }
-                }
+                return coordination.WaitForReadOnlyRangeDisposition(untilAddress)
+                    ? coordination
+                    : null;
             }
             finally
             {
@@ -166,28 +141,28 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Return the armed coordination to sample once for this contiguous ReadOnly range. If PREPARE/WAIT_FLUSH
-        /// publishes or arms coordination afterward, the range's endpoint was already published through
-        /// LastIssuedFlushedUntilAddress and is drained as pre-coordination work.
+        /// Wait until Snapshot has completed far enough for ReadOnly to flush <paramref name="page"/>.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private protected SnapshotFlushCoordination GetActiveSnapshotFlushCoordination()
+        private protected void WaitForSnapshotPage(SnapshotFlushCoordination coordination, long page)
         {
-            var coordination = Volatile.Read(ref snapshotFlushCoordination);
-            return coordination is not null && coordination.IsArmed && !coordination.IsTerminal ? coordination : null;
+            if (coordination is null || coordination.ReadOnlyMayFlushFast(page))
+                return;
+            WaitForSnapshotPageSlow(coordination, page);
         }
 
-        /// <summary>
-        /// Release one ReadOnly page-flush claim after its callback has published all address advancement. Installation
-        /// waits for this count to reach zero before capturing the stable Snapshot start.
-        /// </summary>
-        private protected void ReleaseReadOnlyPageFlush()
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        void WaitForSnapshotPageSlow(SnapshotFlushCoordination coordination, long page)
         {
-            lock (snapshotFlushSync)
+            var resumeEpoch = epoch.TrySuspend();
+            try
             {
-                Debug.Assert(activeReadOnlyPageFlushes > 0);
-                if (--activeReadOnlyPageFlushes == 0)
-                    Monitor.PulseAll(snapshotFlushSync);
+                coordination.WaitUntilReadOnlyMayFlush(page);
+            }
+            finally
+            {
+                if (resumeEpoch)
+                    epoch.Resume();
             }
         }
 
@@ -205,7 +180,7 @@ namespace Tsavorite.core
                 return desiredHeadAddress;
 
             var startAddress = Volatile.Read(ref snapshotStartAddress);
-            var watermarkPage = coordination.LastCompletedSnapshotPage;
+            var watermarkPage = coordination.ReadOnlyFlushPageLimit;
             var headLimit = watermarkPage <= GetPage(startAddress)
                 ? startAddress
                 : GetFirstValidLogicalAddressOnPage(watermarkPage);
@@ -216,7 +191,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private protected virtual long GetLastIssuedReadOnlyFlushAddress() => FlushedUntilAddress;
 
-        void WaitForPreCoordinationReadOnlyFlushes(long untilAddress)
+        void WaitForReadOnlyFlushCutoff(long untilAddress)
         {
             while (FlushedUntilAddress < untilAddress)
             {
@@ -228,17 +203,42 @@ namespace Tsavorite.core
         }
     }
 
-    /// <summary>Coordinates Snapshot and ReadOnly page flushes with one contiguous Snapshot-completion watermark.</summary>
+    internal enum SnapshotFlushState : byte
+    {
+        /// <summary>Published during PREPARE; ReadOnly ranges proceed without restriction.</summary>
+        Open,
+        /// <summary>WAIT_FLUSH is sampling the last ReadOnly range endpoint.</summary>
+        CapturingCutoff,
+        /// <summary>The cutoff is stable and Snapshot is waiting for its FlushedUntilAddress publication.</summary>
+        DrainingCutoff,
+        /// <summary>The Snapshot start is stable and post-cutoff ReadOnly ranges obey the page limit.</summary>
+        Flushing,
+        /// <summary>All issued Snapshot writes have drained and coordination no longer restricts ReadOnly or Head.</summary>
+        Closed
+    }
+
+    internal enum ReadOnlyRangeDisposition : byte
+    {
+        /// <summary>The range is outside page coordination.</summary>
+        Uncoordinated,
+        /// <summary>The cutoff or stable Snapshot start is not yet available.</summary>
+        WaitForState,
+        /// <summary>The range is post-cutoff and must obey the page-completion limit.</summary>
+        CoordinatePages
+    }
+
+    /// <summary>Coordinates Snapshot and ReadOnly page flushes with a monotonic lifecycle and one contiguous
+    /// Snapshot-completion watermark.</summary>
     internal sealed class SnapshotFlushCoordination : IDisposable
     {
-        /// <summary>Serializes watermark, terminal-state, and waiter transitions.</summary>
+        /// <summary>Serializes lifecycle, watermark, cutoff, and waiter transitions.</summary>
         readonly object sync = new();
 
         /// <summary>
         /// Exclusive upper bound for ReadOnly page flushing: page <c>P</c> may flush only when
-        /// <c>P &lt; lastCompletedSnapshotPage</c>.
+        /// <c>P &lt; readOnlyFlushPageLimit</c>.
         /// </summary>
-        long lastCompletedSnapshotPage;
+        long readOnlyFlushPageLimit;
 
         /// <summary>Fixed-size ring of out-of-order Snapshot page completions. A slot contains the completed page
         /// whose page number maps to that slot, or <see cref="long.MinValue"/> when it has never been used.</summary>
@@ -258,34 +258,24 @@ namespace Tsavorite.core
         /// </summary>
         Exception failure;
 
-        /// <summary>Whether the terminal exclusive-end watermark was published or this coordination was disposed.</summary>
-        bool completed;
-
-        /// <summary>Whether WAIT_FLUSH has armed the watermark and ReadOnly pages may need to wait.</summary>
-        bool armed;
-
-        /// <summary>Whether WAIT_FLUSH finished draining ReadOnly work and captured the stable Snapshot start address.</summary>
-        bool installationCompleted;
+        /// <summary>Monotonic coordination lifecycle; each checkpoint owns a fresh instance.</summary>
+        int state = (int)SnapshotFlushState.Open;
 
         /// <summary>Number of ReadOnly callers currently waiting on <see cref="sync"/>.</summary>
-        int waitingReadOnlyFlushes;
+        int numWaitingReadOnlyFlushes;
 
         /// <summary>Number of Snapshot issuer callers waiting for bounded completion-window capacity or final completion.</summary>
-        int waitingSnapshotFlushes;
+        int numWaitingSnapshotFlushes;
 
-        /// <summary>Endpoint of ReadOnly IO issued before coordination publication.</summary>
-        long preCoordinationReadOnlyFlushEndAddress;
+        /// <summary>Exclusive endpoint of the ReadOnly ranges that Snapshot drains before capturing its stable start.</summary>
+        long readOnlyFlushCutoffAddress;
 
-        /// <summary>
-        /// Create coordination that initially blocks ReadOnly flushing at and above
-        /// <paramref name="provisionalFirstSnapshotPage"/>.
-        /// </summary>
-        internal SnapshotFlushCoordination(long provisionalFirstSnapshotPage, int completionWindowSize = 4)
+        /// <summary>Create coordination with a fixed number of concurrently issued Snapshot pages.</summary>
+        internal SnapshotFlushCoordination(int completionWindowSize = 4)
         {
             if (completionWindowSize <= 0)
                 throw new ArgumentOutOfRangeException(nameof(completionWindowSize));
 
-            lastCompletedSnapshotPage = provisionalFirstSnapshotPage;
             completedSnapshotPages = new long[completionWindowSize];
             Array.Fill(completedSnapshotPages, long.MinValue);
             snapshotPageStates = new int[completionWindowSize];
@@ -296,80 +286,129 @@ namespace Tsavorite.core
         /// page beyond the most recently completed Snapshot page, so ReadOnly waits only for a Snapshot write on the same
         /// page. After the final write it equals the exclusive end page.
         /// </summary>
-        internal long LastCompletedSnapshotPage
+        internal long ReadOnlyFlushPageLimit
         {
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            get => Volatile.Read(ref lastCompletedSnapshotPage);
+            get => Volatile.Read(ref readOnlyFlushPageLimit);
         }
 
-        internal bool IsArmed
+        internal SnapshotFlushState State
         {
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            get => Volatile.Read(ref armed);
+            get => (SnapshotFlushState)Volatile.Read(ref state);
         }
 
-        internal bool IsTerminal
+        internal bool IsClosed
         {
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            get => Volatile.Read(ref completed) || Volatile.Read(ref failure) is not null;
-        }
-
-        internal bool InstallationCompleted
-        {
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            get => Volatile.Read(ref installationCompleted);
+            get => State == SnapshotFlushState.Closed;
         }
 
         internal bool RestrictsHeadAddress
         {
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            get => IsArmed && !IsTerminal;
-        }
-
-        internal long PreCoordinationReadOnlyFlushEndAddress
-        {
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            get => Volatile.Read(ref preCoordinationReadOnlyFlushEndAddress);
-        }
-
-        internal void SetPreCoordinationReadOnlyFlushEnd(long untilAddress)
-        {
-            var current = Volatile.Read(ref preCoordinationReadOnlyFlushEndAddress);
-            while (untilAddress > current)
+            get
             {
-                var observed = Interlocked.CompareExchange(ref preCoordinationReadOnlyFlushEndAddress, untilAddress, current);
-                if (observed == current)
-                    return;
-                current = observed;
+                var current = State;
+                return current is SnapshotFlushState.CapturingCutoff
+                    or SnapshotFlushState.DrainingCutoff
+                    or SnapshotFlushState.Flushing;
             }
         }
 
-        /// <summary>Arm the restrictive page watermark at WAIT_FLUSH.</summary>
-        internal void Arm(long firstSnapshotPage)
+        internal long ReadOnlyFlushCutoffAddress
+        {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            get => Volatile.Read(ref readOnlyFlushCutoffAddress);
+        }
+
+        /// <summary>Enter the short WAIT_FLUSH interval in which the ReadOnly cutoff is sampled.</summary>
+        internal void BeginCutoffCapture(long firstSnapshotPage)
         {
             lock (sync)
             {
-                Volatile.Write(ref lastCompletedSnapshotPage, firstSnapshotPage);
-                Volatile.Write(ref armed, true);
+                if (State != SnapshotFlushState.Open)
+                    throw new TsavoriteException($"Cannot capture Snapshot cutoff from state {State}");
+                Volatile.Write(ref readOnlyFlushPageLimit, firstSnapshotPage);
+                Volatile.Write(ref state, (int)SnapshotFlushState.CapturingCutoff);
                 Monitor.PulseAll(sync);
             }
         }
 
-        /// <summary>Publish that snapshotFileLogicalStartAddress is stable and ReadOnly claims are no longer required.</summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void CompleteInstallation() => Volatile.Write(ref installationCompleted, true);
-
-        /// <summary>
-        /// Advance the provisional limit after pre-existing ReadOnly claims drain and the stable Snapshot start is known.
-        /// This does not represent a completed Snapshot write; pages below the stable start are already main-log durable.
-        /// </summary>
-        internal void AdvanceInitialPage(long firstSnapshotPage)
+        /// <summary>Publish the ReadOnly range cutoff and begin draining that cohort through FlushedUntilAddress.</summary>
+        internal void PublishReadOnlyFlushCutoff(long untilAddress)
         {
             lock (sync)
             {
-                if (failure is not null || firstSnapshotPage <= Volatile.Read(ref lastCompletedSnapshotPage))
+                if (State != SnapshotFlushState.CapturingCutoff)
+                    throw new TsavoriteException($"Cannot publish Snapshot cutoff from state {State}");
+                Volatile.Write(ref readOnlyFlushCutoffAddress, untilAddress);
+                Volatile.Write(ref state, (int)SnapshotFlushState.DrainingCutoff);
+                Monitor.PulseAll(sync);
+            }
+        }
+
+        /// <summary>Publish the stable Snapshot start and begin page-completion coordination.</summary>
+        internal void BeginFlushing()
+        {
+            lock (sync)
+            {
+                ThrowIfFailed();
+                if (State != SnapshotFlushState.DrainingCutoff)
+                    throw new TsavoriteException($"Cannot begin Snapshot flushing from state {State}");
+                Volatile.Write(ref state, (int)SnapshotFlushState.Flushing);
+                Monitor.PulseAll(sync);
+            }
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal ReadOnlyRangeDisposition GetReadOnlyRangeDisposition(long untilAddress)
+        {
+            var current = State;
+            if (current is SnapshotFlushState.Open or SnapshotFlushState.Closed)
+                return ReadOnlyRangeDisposition.Uncoordinated;
+            if (current == SnapshotFlushState.CapturingCutoff)
+                return ReadOnlyRangeDisposition.WaitForState;
+
+            if (untilAddress <= Volatile.Read(ref readOnlyFlushCutoffAddress))
+                return ReadOnlyRangeDisposition.Uncoordinated;
+            return current == SnapshotFlushState.Flushing
+                ? ReadOnlyRangeDisposition.CoordinatePages
+                : ReadOnlyRangeDisposition.WaitForState;
+        }
+
+        /// <summary>Wait through cutoff capture/drain and return whether this post-cutoff range needs page gating.</summary>
+        internal bool WaitForReadOnlyRangeDisposition(long untilAddress)
+        {
+            lock (sync)
+            {
+                numWaitingReadOnlyFlushes++;
+                try
+                {
+                    Interlocked.MemoryBarrier();
+                    ReadOnlyRangeDisposition disposition;
+                    while ((disposition = GetReadOnlyRangeDisposition(untilAddress)) == ReadOnlyRangeDisposition.WaitForState)
+                        Monitor.Wait(sync);
+                    return disposition == ReadOnlyRangeDisposition.CoordinatePages;
+                }
+                finally
+                {
+                    numWaitingReadOnlyFlushes--;
+                }
+            }
+        }
+
+        /// <summary>
+        /// Advance the provisional limit after the cutoff ReadOnly cohort drains and the stable Snapshot start is known.
+        /// This does not represent a completed Snapshot write; pages below the stable start are already main-log durable.
+        /// </summary>
+        internal void AdvanceReadOnlyFlushPageLimit(long firstSnapshotPage)
+        {
+            lock (sync)
+            {
+                if (failure is not null || firstSnapshotPage <= Volatile.Read(ref readOnlyFlushPageLimit))
                     return;
-                Volatile.Write(ref lastCompletedSnapshotPage, firstSnapshotPage);
+                Volatile.Write(ref readOnlyFlushPageLimit, firstSnapshotPage);
                 Monitor.PulseAll(sync);
             }
         }
@@ -388,7 +427,7 @@ namespace Tsavorite.core
             if (Volatile.Read(ref failure) is not null)
                 return;
 
-            var current = Volatile.Read(ref lastCompletedSnapshotPage);
+            var current = Volatile.Read(ref readOnlyFlushPageLimit);
             if (page != current)
                 return;
 
@@ -396,7 +435,7 @@ namespace Tsavorite.core
             while (Volatile.Read(ref completedSnapshotPages[(int)(current % completedSnapshotPages.Length)]) == current
                 && Volatile.Read(ref snapshotPageStates[(int)(current % snapshotPageStates.Length)]) == PageCompleted)
             {
-                var observed = Interlocked.CompareExchange(ref lastCompletedSnapshotPage, current + 1, current);
+                var observed = Interlocked.CompareExchange(ref readOnlyFlushPageLimit, current + 1, current);
                 if (observed == current)
                 {
                     current++;
@@ -407,14 +446,14 @@ namespace Tsavorite.core
 
             // Snapshot-only operation with available window capacity has no waiters and performs no monitor acquisition.
             if (current > initial
-                && (Volatile.Read(ref waitingReadOnlyFlushes) > 0 || Volatile.Read(ref waitingSnapshotFlushes) > 0))
+                && (Volatile.Read(ref numWaitingReadOnlyFlushes) > 0 || Volatile.Read(ref numWaitingSnapshotFlushes) > 0))
                 PulseProgressWaiters();
         }
 
         /// <summary>Record failure of one reserved Snapshot page and release its completion-window slot.</summary>
         internal void FailPage(long page, Exception exception)
         {
-            Fail(exception);
+            RecordFailure(exception);
             _ = FinishPage(page, PageFailed);
         }
 
@@ -442,26 +481,26 @@ namespace Tsavorite.core
         internal void WaitForWindowCapacity(long page)
         {
             ThrowIfFailed();
-            var completedThrough = Volatile.Read(ref lastCompletedSnapshotPage);
+            var completedThrough = Volatile.Read(ref readOnlyFlushPageLimit);
             if (page - completedThrough < completedSnapshotPages.Length)
                 return;
 
             lock (sync)
             {
-                waitingSnapshotFlushes++;
+                numWaitingSnapshotFlushes++;
                 try
                 {
                     Interlocked.MemoryBarrier();
-                    while (!completed && failure is null
-                        && page - Volatile.Read(ref lastCompletedSnapshotPage) >= completedSnapshotPages.Length)
+                    while (State != SnapshotFlushState.Closed && failure is null
+                        && page - Volatile.Read(ref readOnlyFlushPageLimit) >= completedSnapshotPages.Length)
                         Monitor.Wait(sync);
                     ThrowIfFailed();
-                    if (completed)
+                    if (State == SnapshotFlushState.Closed)
                         throw new TsavoriteException("Snapshot completion window closed before the page could be issued");
                 }
                 finally
                 {
-                    waitingSnapshotFlushes--;
+                    numWaitingSnapshotFlushes--;
                 }
             }
         }
@@ -485,18 +524,18 @@ namespace Tsavorite.core
         /// <summary>Wait until every Snapshot page below <paramref name="exclusiveEndPage"/> has completed contiguously.</summary>
         internal void WaitForAllPages(long exclusiveEndPage)
         {
-            if (Volatile.Read(ref lastCompletedSnapshotPage) >= exclusiveEndPage)
+            if (Volatile.Read(ref readOnlyFlushPageLimit) >= exclusiveEndPage)
                 return;
 
             lock (sync)
             {
-                waitingSnapshotFlushes++;
+                numWaitingSnapshotFlushes++;
                 try
                 {
                     Interlocked.MemoryBarrier();
-                    while (failure is null && Volatile.Read(ref lastCompletedSnapshotPage) < exclusiveEndPage)
+                    while (failure is null && Volatile.Read(ref readOnlyFlushPageLimit) < exclusiveEndPage)
                     {
-                        if (completed)
+                        if (State == SnapshotFlushState.Closed)
                             throw new TsavoriteException("Snapshot completion window closed before all issued pages completed");
                         Monitor.Wait(sync);
                     }
@@ -504,7 +543,7 @@ namespace Tsavorite.core
                 }
                 finally
                 {
-                    waitingSnapshotFlushes--;
+                    numWaitingSnapshotFlushes--;
                 }
             }
         }
@@ -517,7 +556,7 @@ namespace Tsavorite.core
 
             lock (sync)
             {
-                waitingSnapshotFlushes++;
+                numWaitingSnapshotFlushes++;
                 try
                 {
                     Interlocked.MemoryBarrier();
@@ -526,12 +565,12 @@ namespace Tsavorite.core
                 }
                 finally
                 {
-                    waitingSnapshotFlushes--;
+                    numWaitingSnapshotFlushes--;
                 }
             }
         }
 
-        void ThrowIfFailed()
+        internal void ThrowIfFailed()
         {
             var exception = Volatile.Read(ref failure);
             if (exception is not null)
@@ -540,21 +579,24 @@ namespace Tsavorite.core
         /// <summary>
         /// Publish the terminal exclusive page and release the final Snapshot page for ReadOnly flushing.
         /// </summary>
-        internal void Complete(long exclusiveEndPage)
+        internal void CloseSuccessfully(long exclusiveEndPage)
         {
             lock (sync)
             {
-                Volatile.Write(ref lastCompletedSnapshotPage, exclusiveEndPage);
-                completed = true;
+                ThrowIfFailed();
+                if (Volatile.Read(ref numInFlightSnapshotPages) != 0)
+                    throw new TsavoriteException("Cannot close Snapshot coordination while page writes remain in flight");
+                Volatile.Write(ref readOnlyFlushPageLimit, exclusiveEndPage);
+                Volatile.Write(ref state, (int)SnapshotFlushState.Closed);
                 Monitor.PulseAll(sync);
             }
         }
 
         /// <summary>
-        /// Record the first Snapshot failure and release coordination waiters. The checkpoint task is faulted separately
-        /// and surfaces this exception from the caller's checkpoint-completion await.
+        /// Record the first Snapshot failure and wake coordination waiters to recheck their conditions. Snapshot
+        /// issuance observes the failure immediately; ReadOnly remains gated until in-flight writes drain and state closes.
         /// </summary>
-        internal void Fail(Exception exception)
+        internal void RecordFailure(Exception exception)
         {
             lock (sync)
             {
@@ -563,20 +605,30 @@ namespace Tsavorite.core
             }
         }
 
+        /// <summary>Close coordination after all issued Snapshot page writes have drained.</summary>
+        internal void Close()
+        {
+            lock (sync)
+            {
+                Volatile.Write(ref state, (int)SnapshotFlushState.Closed);
+                Monitor.PulseAll(sync);
+            }
+        }
+
         /// <summary>
-        /// Block until ReadOnly page <paramref name="page"/> is strictly below the exclusive Snapshot completion limit, or
-        /// until Snapshot completes or fails.
+        /// Block until ReadOnly page <paramref name="page"/> is strictly below the exclusive Snapshot completion limit,
+        /// or until coordination closes after success or failure.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void WaitUntilReadOnlyMayFlush(long page)
         {
-            if (!Volatile.Read(ref armed))
+            if (State != SnapshotFlushState.Flushing)
                 return;
 
             // Snapshot normally stays well ahead of ReadOnly. The watermark is monotonic, so once this acquire read
             // observes page below it, no later transition can make the page unsafe. Avoid the monitor's interlocked
             // acquisition and sync-object cache-line traffic on this common path.
-            if (page < Volatile.Read(ref lastCompletedSnapshotPage))
+            if (page < Volatile.Read(ref readOnlyFlushPageLimit))
                 return;
 
             WaitUntilReadOnlyMayFlushSlow(page);
@@ -589,44 +641,30 @@ namespace Tsavorite.core
             {
                 // Register before rechecking the predicate. A concurrent lock-free CompletePage then either sees this
                 // waiter and pulses after we release sync in Monitor.Wait, or advances first and this recheck avoids waiting.
-                waitingReadOnlyFlushes++;
+                numWaitingReadOnlyFlushes++;
                 try
                 {
                     // Pair waiter registration with CompletePage's interlocked watermark advance. Either CompletePage
                     // observes this waiter and pulses, or this recheck observes the advanced watermark and does not wait.
                     Interlocked.MemoryBarrier();
-                    while (armed && !completed && failure is null && page >= Volatile.Read(ref lastCompletedSnapshotPage))
+                    while (State == SnapshotFlushState.Flushing && page >= Volatile.Read(ref readOnlyFlushPageLimit))
                         Monitor.Wait(sync);
                 }
                 finally
                 {
-                    waitingReadOnlyFlushes--;
+                    numWaitingReadOnlyFlushes--;
                 }
             }
         }
 
-        /// <summary>Recheck page permission while the allocator installation lock is held.</summary>
-        internal bool ReadOnlyMayFlush(long page)
-        {
-            lock (sync)
-                return !armed || completed || failure is not null || page < lastCompletedSnapshotPage;
-        }
-
-        /// <summary>Lock-free permission check used after installation has completed.</summary>
+        /// <summary>Lock-free page permission check used after cutoff classification.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal bool ReadOnlyMayFlushFast(long page)
-            => !Volatile.Read(ref armed)
-            || IsTerminal
-            || page < Volatile.Read(ref lastCompletedSnapshotPage);
+            => State != SnapshotFlushState.Flushing
+            || page < Volatile.Read(ref readOnlyFlushPageLimit);
 
         /// <summary>Release all coordination waiters during checkpoint cleanup.</summary>
         public void Dispose()
-        {
-            lock (sync)
-            {
-                completed = true;
-                Monitor.PulseAll(sync);
-            }
-        }
+            => Close();
     }
 }

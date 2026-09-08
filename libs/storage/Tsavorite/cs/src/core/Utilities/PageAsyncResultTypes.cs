@@ -182,8 +182,6 @@ namespace Tsavorite.core
 
         /// <summary>Runtime-only Snapshot/ReadOnly page-ordering state. Set only for Snapshot page writes.</summary>
         internal SnapshotFlushCoordination snapshotFlushCoordination;
-        /// <summary>Whether this ReadOnly page write holds an allocator flush-ordering claim.</summary>
-        internal bool hasReadOnlyFlushClaim;
 
         /// <summary>If this is set then we are using a different objectLog device from that in the allocator, and do not use the allocator's <see cref="ObjectLogFilePositionInfo"/>.</summary>
         internal ObjectLogFilePositionInfo objectLogFilePositionInfo;
