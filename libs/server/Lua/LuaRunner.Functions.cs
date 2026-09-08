@@ -852,7 +852,7 @@ namespace Garnet.server
                 return LuaWrappedError(1, constStrs.InsufficientLuaStackSpace);
             }
 
-            var res = state.LoadString(buff);
+            var res = state.LoadBuffer(buff, LuaScriptChunkKind.Text);
             if (res != LuaStatus.OK)
             {
                 state.ClearStack();
@@ -3071,8 +3071,8 @@ namespace Garnet.server
         private unsafe int CompileCommon<TResponse>(nint luaState, ref TResponse resp)
             where TResponse : struct, IResponseAdapter
         {
-            // 1 for function, 1 for code string
-            const int NeededStackSpace = 2;
+            // 1 for function, 1 for code string, 1 for mode string
+            const int NeededStackSpace = 3;
 
             Debug.Assert(functionRegistryIndex == -1, "Shouldn't compile multiple times");
 
@@ -3081,7 +3081,16 @@ namespace Garnet.server
             Debug.Assert(state.TryEnsureMinimumStackCapacity(NeededStackSpace), "LUA_MIN_STACK should be high enough that this cannot happen");
 
             _ = state.RawGetInteger(LuaType.Function, (int)LuaRegistry.Index, loadSandboxedRegistryIndex);
-            if (!state.TryPushBuffer(source.Span))
+            var mode = source.Kind switch
+            {
+                LuaScriptChunkKind.Text => "t"u8,
+                LuaScriptChunkKind.GarnetGeneratedBinary => "b"u8,
+                LuaScriptChunkKind.TextOrBinary => "bt"u8,
+                _ => throw new ArgumentOutOfRangeException(nameof(source))
+            };
+
+            if (!state.TryPushBuffer(source.Data.Span) ||
+                !state.TryPushBuffer(mode))
             {
                 while (!RespWriteUtils.TryWriteError(CmdStrings.LUA_out_of_memory, ref resp.BufferCur, resp.BufferEnd))
                     resp.SendAndReset();
@@ -3089,7 +3098,7 @@ namespace Garnet.server
                 return 0;
             }
 
-            var callRes = state.PCall(1, 2);
+            var callRes = state.PCall(2, 2);
 
             // On success the stack will have two things on it:
             //  1. The error (nil if not error)

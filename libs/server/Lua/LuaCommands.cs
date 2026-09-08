@@ -48,7 +48,7 @@ namespace Garnet.server
                 {
                     if (storeWrapper.storeScriptCache.TryGetValue(scriptKey, out var globalScriptHandle))
                     {
-                        if (!sessionScriptCache.TryLoad(this, globalScriptHandle.ScriptData.Span, scriptKey, ref globalScriptHandle, out runner, out _))
+                        if (!sessionScriptCache.TryLoad(this, globalScriptHandle.ScriptData.Span, globalScriptHandle.Chunk.Kind, scriptKey, ref globalScriptHandle, out runner, out _))
                         {
                             // TryLoad will have written an error out, it any
                             //
@@ -118,7 +118,7 @@ namespace Garnet.server
 
             var sessionScriptHandle = globalScriptHandle;
 
-            if (!sessionScriptCache.TryLoad(this, script.ReadOnlySpan, onStackScriptKey, ref sessionScriptHandle, out var runner, out var digestOnHeap))
+            if (!sessionScriptCache.TryLoad(this, script.ReadOnlySpan, LuaScriptChunkKind.Text, onStackScriptKey, ref sessionScriptHandle, out var runner, out var digestOnHeap))
             {
                 // TryLoad will have written any errors out
                 return true;
@@ -278,7 +278,7 @@ namespace Garnet.server
             _ = storeWrapper.storeScriptCache.TryGetValue(onStackScriptHashKey, out var globalScriptHandle);
 
             var sessionScriptHandle = globalScriptHandle;
-            if (sessionScriptCache.TryLoad(this, source.ReadOnlySpan, onStackScriptHashKey, ref sessionScriptHandle, out _, out var digestOnHeap))
+            if (sessionScriptCache.TryLoad(this, source.ReadOnlySpan, LuaScriptChunkKind.Text, onStackScriptHashKey, ref sessionScriptHandle, out _, out var digestOnHeap))
             {
                 // TryLoad will write any errors out
 

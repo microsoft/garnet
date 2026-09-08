@@ -463,42 +463,13 @@ namespace Garnet.server
         /// Maintains <see cref="curStackSize"/> and <see cref="StackTop"/> to minimize p/invoke calls.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal LuaStatus LoadBuffer(ReadOnlySpan<byte> buffer)
+        internal LuaStatus LoadBuffer(ReadOnlySpan<byte> buffer, LuaScriptChunkKind chunkKind)
         {
             AssertLuaStackNotFull(2);
 
             // Note that https://www.lua.org/source/5.4/lauxlib.c.html#luaL_loadbufferx is implemented in terms of
             // a PCall, so we don't have to worry about crashes.
-            var ret = NativeMethods.LoadBuffer(state, buffer);
-
-            if (ret != LuaStatus.OK)
-            {
-                StackTop = NativeMethods.GetTop(state);
-            }
-            else
-            {
-                UpdateStackTop(1);
-            }
-
-            AssertLuaStackExpected();
-
-            return ret;
-        }
-
-        /// <summary>
-        /// This should be used for all LoadStrings into Lua.
-        /// 
-        /// Note that this is different from pushing or loading buffer, as the loaded buffer is compiled but NOT executed.
-        /// 
-        /// Maintains <see cref="curStackSize"/> and <see cref="StackTop"/> to minimize p/invoke calls.
-        /// </summary>
-        internal LuaStatus LoadString(ReadOnlySpan<byte> buffer)
-        {
-            AssertLuaStackNotFull(2);
-
-            // Note that https://www.lua.org/source/5.4/lauxlib.h.html#luaL_loadbuffer is implemented in terms of
-            // a PCall, so we don't have to worry about crashes.
-            var ret = NativeMethods.LoadString(state, buffer);
+            var ret = NativeMethods.LoadBuffer(state, buffer, chunkKind);
 
             if (ret != LuaStatus.OK)
             {

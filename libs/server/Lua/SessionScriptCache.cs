@@ -170,6 +170,7 @@ namespace Garnet.server
         internal bool TryLoad(
             RespServerSession session,
             ReadOnlySpan<byte> source,
+            LuaScriptChunkKind sourceKind,
             ScriptHashKey digest,
             ref LuaScriptHandle luaScriptHandle,
             out LuaRunner runner,
@@ -185,7 +186,9 @@ namespace Garnet.server
 
             try
             {
-                var compiledSource = LuaRunner.CompileSource(source);
+                var compiledSource = sourceKind == LuaScriptChunkKind.Text
+                    ? LuaRunner.CompileSource(source)
+                    : new LuaScriptChunk(source.ToArray(), sourceKind);
 
                 runner = new LuaRunner(memoryManagementMode, memoryLimitBytes, logMode, allowedFunctions, compiledSource, storeWrapper.serverOptions.LuaTransactionMode, processor, scratchBufferNetworkSender, storeWrapper.redisProtocolVersion, logger);
 

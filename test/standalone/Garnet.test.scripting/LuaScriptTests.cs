@@ -1028,6 +1028,85 @@ return redis.status_reply("OK")
         }
 
         [Test]
+        public void EvalRequiresTextSource()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var compiledChunk = LuaRunner.CompileSource("return 1"u8);
+
+            ClassicAssert.AreEqual(LuaScriptChunkKind.GarnetGeneratedBinary, compiledChunk.Kind);
+
+            var exc = ClassicAssert.Throws<RedisServerException>(() => db.Execute("EVAL", [compiledChunk.Data.ToArray(), 0]));
+            StringAssert.Contains("binary chunk", exc.Message);
+        }
+
+        [Test]
+        public void ScriptLoadRequiresTextSource()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var compiledChunk = LuaRunner.CompileSource("return 1"u8);
+            var hashBytes = SHA1.HashData(compiledChunk.Data.Span);
+            var hash = string.Join("", hashBytes.Select(static x => $"{x:x2}"));
+
+            var exc = ClassicAssert.Throws<RedisServerException>(() => db.Execute("SCRIPT", ["LOAD", compiledChunk.Data.ToArray()]));
+            StringAssert.Contains("binary chunk", exc.Message);
+
+            var exists = (RedisResult[])db.Execute("SCRIPT", ["EXISTS", hash]);
+            ClassicAssert.AreEqual(0, (int)exists[0]);
+        }
+
+        [Test]
+        public void ScriptLoadEvalShaAcrossSessions()
+        {
+            using var redis1 = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            using var redis2 = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+
+            var db1 = redis1.GetDatabase(0);
+            var db2 = redis2.GetDatabase(0);
+
+            var hash = (string)db1.Execute("SCRIPT", "LOAD", "return ARGV[1]");
+            var result = (string)db2.Execute("EVALSHA", hash, 0, "value");
+
+            ClassicAssert.AreEqual("value", result);
+        }
+
+        [Test]
+        public void ScriptCacheHandlesSupportTextAndCompiledChunks()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            AddScript("return 1"u8, "return 1"u8, 1);
+
+            var source = "return 2"u8;
+            var compiledChunk = LuaRunner.CompileSource(source);
+            ClassicAssert.AreEqual(LuaScriptChunkKind.GarnetGeneratedBinary, compiledChunk.Kind);
+            AddScript(source, compiledChunk.Data.Span, 2);
+
+            void AddScript(ReadOnlySpan<byte> source, ReadOnlySpan<byte> scriptData, int expected)
+            {
+                var hash = Convert.ToHexString(SHA1.HashData(source)).ToLowerInvariant();
+                var digest = GC.AllocateUninitializedArray<byte>(SessionScriptCache.SHA1Len, pinned: true);
+                _ = Encoding.ASCII.GetBytes(hash, digest);
+
+                ClassicAssert.True(server.Provider.StoreWrapper.storeScriptCache.TryAdd(new ScriptHashKey(digest), new LuaScriptHandle(scriptData.ToArray())));
+                ClassicAssert.AreEqual(expected, (int)db.Execute("EVALSHA", hash, 0));
+            }
+        }
+
+        [Test]
+        public void EvalUsesFullSourceLength()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var source = Encoding.UTF8.GetBytes("return 1\0return 2");
+
+            var exc = ClassicAssert.Throws<RedisServerException>(() => db.Execute("EVAL", [source, 0]));
+            StringAssert.StartsWith("Compilation error:", exc.Message);
+        }
+
+        [Test]
         public void CrossSessionEvalScriptCaching()
         {
             // Somewhat oddly, if we EVAL a script in one session it should be runnable by hash in all sessions

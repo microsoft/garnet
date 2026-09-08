@@ -392,24 +392,19 @@ namespace Garnet.server
         /// 
         /// Provided data is copied, and can be reused once this call returns.
         /// </summary>
-        internal static unsafe LuaStatus LoadBuffer(lua_State luaState, ReadOnlySpan<byte> str)
+        internal static unsafe LuaStatus LoadBuffer(lua_State luaState, ReadOnlySpan<byte> str, LuaScriptChunkKind chunkKind)
         {
-            fixed (byte* ptr = str)
+            ReadOnlySpan<byte> mode = chunkKind switch
             {
-                return luaL_loadbufferx(luaState, (charptr_t)ptr, (size_t)str.Length, (charptr_t)UIntPtr.Zero, (charptr_t)UIntPtr.Zero);
-            }
-        }
+                LuaScriptChunkKind.Text => "t\0"u8,
+                LuaScriptChunkKind.GarnetGeneratedBinary => "b\0"u8,
+                _ => throw new ArgumentOutOfRangeException(nameof(chunkKind))
+            };
 
-        /// <summary>
-        /// Push given span to stack, and compiles it.
-        /// 
-        /// Provided data is copied, and can be reused once this call returns.
-        /// </summary>
-        internal static unsafe LuaStatus LoadString(lua_State luaState, ReadOnlySpan<byte> str)
-        {
             fixed (byte* ptr = str)
+            fixed (byte* modePtr = mode)
             {
-                return luaL_loadstring(luaState, (charptr_t)ptr);
+                return luaL_loadbufferx(luaState, (charptr_t)ptr, (size_t)str.Length, (charptr_t)UIntPtr.Zero, (charptr_t)modePtr);
             }
         }
 
