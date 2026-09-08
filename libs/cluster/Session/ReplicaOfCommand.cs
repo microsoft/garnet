@@ -86,21 +86,23 @@ namespace Garnet.cluster
                 );
 
                 // Cannot avoid blocking here we're on the network thread
-                var (success, errorMessage) =
-                    AsyncUtils.BlockingWait(
+                _ = 
+                //var (success, errorMessage) =
+                //    AsyncUtils.BlockingWait(
                         clusterProvider.serverOptions.ReplicaDisklessSync ?
                             clusterProvider.replicationManager.TryReplicateDisklessSyncAsync(this, syncOpts) :
                             clusterProvider.replicationManager.TryReplicateDiskbasedSyncAsync(this, syncOpts)
-                    );
-
+                    //)
+                    ;
+                
                 clusterProvider.storeWrapper.StartReplicaTasks();
 
-                if (!success)
-                {
-                    while (!RespWriteUtils.TryWriteError(errorMessage.Span, ref dcurr, dend))
-                        SendAndReset();
-                }
-                else
+                //if (!success)
+                //{
+                //    while (!RespWriteUtils.TryWriteError(errorMessage.Span, ref dcurr, dend))
+                //        SendAndReset();
+                //}
+                //else
                 {
                     while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                         SendAndReset();
