@@ -18,7 +18,12 @@ namespace Garnet.server
         string RemoteNodeId { get; }
 
         /// <summary>
-        /// Type of session
+        /// Whether this connection may serve read-only commands from a replica
+        /// </summary>
+        bool ReadOnlySession { get; }
+
+        /// <summary>
+        /// Whether this session may apply writes to the local node
         /// </summary>
         bool ReadWriteSession { get; }
 
@@ -35,14 +40,19 @@ namespace Garnet.server
         IGarnetServer Server { get; set; }
 
         /// <summary>
-        /// Make this cluster session a read-only session
+        /// Allow this connection to serve read-only commands from a replica
         /// </summary>
         void SetReadOnlySession();
 
         /// <summary>
-        /// Make this cluster session a read-write session
+        /// Restore the default behavior of redirecting commands from a replica
         /// </summary>
         void SetReadWriteSession();
+
+        /// <summary>
+        /// Allow the internal AOF replay session to apply writes on a replica
+        /// </summary>
+        void SetInternalWriteSession();
 
         /// <summary>
         /// Local current epoch

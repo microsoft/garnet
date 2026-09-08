@@ -34,15 +34,15 @@ namespace Garnet.cluster
 
         public long LocalCurrentEpoch => _localCurrentEpoch;
 
-        /// <summary>
-        /// Indicates if this is a session that allows for reads and writes
-        /// </summary>
-        bool readWriteSession = false;
+        bool readOnlySession;
+        bool internalWriteSession;
 
-        public bool ReadWriteSession => clusterProvider.clusterManager.CurrentConfig.IsPrimary || readWriteSession;
+        public bool ReadOnlySession => readOnlySession;
+        public bool ReadWriteSession => clusterProvider.clusterManager.CurrentConfig.IsPrimary || internalWriteSession;
 
-        public void SetReadOnlySession() => readWriteSession = false;
-        public void SetReadWriteSession() => readWriteSession = true;
+        public void SetReadOnlySession() => readOnlySession = true;
+        public void SetReadWriteSession() => readOnlySession = false;
+        public void SetInternalWriteSession() => internalWriteSession = true;
 
         /// <inheritdoc/>
         public bool IsReplicating { get; private set; }

@@ -1034,7 +1034,7 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Mark this session as readonly session
+        /// Allow this connection to serve read-only commands from a replica
         /// </summary>
         /// <returns></returns>
         private bool NetworkREADONLY()
@@ -1047,7 +1047,7 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Mark this session as readwrite
+        /// Restore the default behavior of redirecting commands from a replica
         /// </summary>
         /// <returns></returns>
         private bool NetworkREADWRITE()
