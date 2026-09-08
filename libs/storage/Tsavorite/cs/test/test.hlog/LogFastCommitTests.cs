@@ -23,6 +23,72 @@ namespace Tsavorite.test
 
         [Test]
         [Category("TsavoriteLog")]
+        public async Task FastCommitRecoverToMissingCommitNumThrows()
+        {
+            // On the fast-commit path the requested commit can only be produced by a forward scan. A scan that fails
+            // to find it must not fall through, because info still describes the closest earlier commit and recovery
+            // would restore that commit's data instead.
+            var filename = Path.Join(TestUtils.MethodTestDir, "fastCommitMissing.log");
+            device = Devices.CreateLogDevice(filename, deleteOnClose: true);
+            var logSettings = new TsavoriteLogSettings
+            {
+                LogDevice = device,
+                LogChecksum = LogChecksumType.PerEntry,
+                LogCommitManager = manager,
+                FastCommitMode = true,
+                TryRecoverLatest = false,
+                SegmentSizeBits = 26
+            };
+            log = new TsavoriteLog(logSettings);
+
+            var entry = new byte[entryLength];
+            for (var i = 0; i < entryLength; i++)
+                entry[i] = (byte)i;
+
+            for (var i = 0; i < numEntries; i++)
+                _ = log.Enqueue(entry);
+            var cookie1 = new byte[100];
+            new Random().NextBytes(cookie1);
+            ClassicAssert.IsTrue(log.CommitStrongly(out var commit1Addr, out _, true, cookie1, 1));
+
+            for (var i = 0; i < numEntries; i++)
+                _ = log.Enqueue(entry);
+            var cookie6 = new byte[100];
+            new Random().NextBytes(cookie6);
+            ClassicAssert.IsTrue(log.CommitStrongly(out _, out _, true, cookie6, 6));
+
+            log.Dispose();
+            log = null;
+            manager.RemoveAllCommits();
+
+            // Commit 4 never existed; the closest earlier commit is 1.
+            var recoveredLog = new TsavoriteLog(logSettings);
+            try
+            {
+                // Which exception reports the missing commit is platform dependent. Where the forward scan runs off
+                // the end of the written region the read fails and WaitForFrameLoad rethrows the resulting
+                // OperationCanceledException (Windows reports the over-read as an error, Linux returns a short read);
+                // otherwise the scan completes without finding commit 4 and the commit-number check rejects it.
+                var ex = Assert.CatchAsync(async () => await recoveredLog.RecoverAsync(4).ConfigureAwait(false));
+                Assert.That(ex, Is.InstanceOf<TsavoriteException>().Or.InstanceOf<OperationCanceledException>());
+                ClassicAssert.AreNotEqual(commit1Addr, recoveredLog.TailAddress,
+                    "Recovery silently fell back to an earlier commit instead of failing the request");
+            }
+            finally
+            {
+                recoveredLog.Dispose();
+            }
+
+            // A commit that does exist must still recover normally.
+            recoveredLog = new TsavoriteLog(logSettings);
+            await recoveredLog.RecoverAsync(1).ConfigureAwait(false);
+            ClassicAssert.AreEqual(cookie1, recoveredLog.RecoveredCookie);
+            ClassicAssert.AreEqual(commit1Addr, recoveredLog.TailAddress);
+            recoveredLog.Dispose();
+        }
+
+        [Test]
+        [Category("TsavoriteLog")]
         [Category("Smoke")]
         public async Task TsavoriteLogSimpleFastCommitTest([Values] TestUtils.TestDeviceType deviceType)
         {

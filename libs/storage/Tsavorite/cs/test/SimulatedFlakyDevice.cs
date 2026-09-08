@@ -3,6 +3,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Threading;
 using Tsavorite.core;
 
@@ -185,5 +186,167 @@ namespace Tsavorite.test
             underlying.Dispose();
             versionScheme.Dispose();
         }
+    }
+
+    /// <summary>
+    /// Device whose <see cref="ReadAsync"/> throws synchronously once armed, simulating a device that fails before
+    /// the read is ever issued (e.g. native device creation failure, misalignment rejection, or use after dispose).
+    /// No completion callback is delivered for such a read.
+    /// </summary>
+    public class SyncThrowOnReadDevice : StorageDeviceBase
+    {
+        private readonly IDevice underlying;
+
+        /// <summary>When true, reads throw synchronously instead of being issued.</summary>
+        public volatile bool ArmReadFailure;
+
+        /// <summary>
+        /// When non-negative, only the read with this zero-based ordinal throws synchronously; every other read is
+        /// issued normally. Lets a test fail one specific page read (e.g. a read-ahead) rather than all of them.
+        /// </summary>
+        public int ThrowOnReadOrdinal = -1;
+
+        private int readOrdinal = -1;
+
+        /// <summary>True once the <see cref="ThrowOnReadOrdinal"/> read has thrown, so a test can assert its fault
+        /// injection fired.</summary>
+        public volatile bool ReadFailureInjected;
+
+        public SyncThrowOnReadDevice(IDevice underlying) : base(underlying.FileName, underlying.SectorSize, underlying.Capacity)
+            => this.underlying = underlying;
+
+        /// <inheritdoc/>
+        public override void Initialize(long segmentSize, LightEpoch epoch = null, bool omitSegmentIdFromFilename = false)
+        {
+            base.Initialize(segmentSize, epoch, omitSegmentIdFromFilename);
+            underlying.Initialize(segmentSize, epoch, omitSegmentIdFromFilename);
+        }
+
+        /// <inheritdoc/>
+        public override void RemoveSegmentAsync(int segment, AsyncCallback callback, IAsyncResult result)
+            => underlying.RemoveSegmentAsync(segment, callback, result);
+
+        /// <inheritdoc/>
+        public override void WriteAsync(IntPtr sourceAddress, int segmentId, ulong destinationAddress, uint numBytesToWrite,
+            DeviceIOCompletionCallback callback, object context)
+            => underlying.WriteAsync(sourceAddress, segmentId, destinationAddress, numBytesToWrite, callback, context);
+
+        /// <inheritdoc/>
+        public override void ReadAsync(int segmentId, ulong sourceAddress, IntPtr destinationAddress, uint readLength,
+            DeviceIOCompletionCallback callback, object context)
+        {
+            if (ArmReadFailure)
+                throw new IOException("Simulated synchronous device read failure");
+            if (ThrowOnReadOrdinal >= 0 && Interlocked.Increment(ref readOrdinal) == ThrowOnReadOrdinal)
+            {
+                ReadFailureInjected = true;
+                throw new IOException($"Simulated synchronous device read failure on read ordinal {ThrowOnReadOrdinal}");
+            }
+            underlying.ReadAsync(segmentId, sourceAddress, destinationAddress, readLength, callback, context);
+        }
+
+        /// <inheritdoc/>
+        public override void Dispose() => underlying.Dispose();
+    }
+
+    /// <summary>
+    /// Wraps a device and throws synchronously from <see cref="WriteAsync"/> when armed, so a caller that fans one
+    /// logical write out across several shards can be tested for correct cleanup of the shard that was never issued.
+    /// </summary>
+    public class SyncThrowOnWriteDevice : StorageDeviceBase
+    {
+        private readonly IDevice underlying;
+
+        /// <summary>When true, writes throw synchronously instead of being issued.</summary>
+        public volatile bool ArmWriteFailure;
+
+        public SyncThrowOnWriteDevice(IDevice underlying) : base(underlying.FileName, underlying.SectorSize, underlying.Capacity)
+            => this.underlying = underlying;
+
+        /// <inheritdoc/>
+        public override void Initialize(long segmentSize, LightEpoch epoch = null, bool omitSegmentIdFromFilename = false)
+        {
+            base.Initialize(segmentSize, epoch, omitSegmentIdFromFilename);
+            underlying.Initialize(segmentSize, epoch, omitSegmentIdFromFilename);
+        }
+
+        /// <inheritdoc/>
+        public override void RemoveSegmentAsync(int segment, AsyncCallback callback, IAsyncResult result)
+            => underlying.RemoveSegmentAsync(segment, callback, result);
+
+        /// <inheritdoc/>
+        public override void WriteAsync(IntPtr sourceAddress, int segmentId, ulong destinationAddress, uint numBytesToWrite,
+            DeviceIOCompletionCallback callback, object context)
+        {
+            if (ArmWriteFailure)
+                throw new IOException("Simulated synchronous device write failure");
+            underlying.WriteAsync(sourceAddress, segmentId, destinationAddress, numBytesToWrite, callback, context);
+        }
+
+        /// <inheritdoc/>
+        public override void ReadAsync(int segmentId, ulong sourceAddress, IntPtr destinationAddress, uint readLength,
+            DeviceIOCompletionCallback callback, object context)
+            => underlying.ReadAsync(segmentId, sourceAddress, destinationAddress, readLength, callback, context);
+
+        /// <inheritdoc/>
+        public override void Dispose() => underlying.Dispose();
+    }
+
+    /// <summary>
+    /// Completes reads through the IO callback with a non-zero error code rather than throwing, exercising callers
+    /// that inspect the callback's error code instead of relying on an exception.
+    /// </summary>
+    public class ErrorCodeOnReadDevice : StorageDeviceBase
+    {
+        private readonly IDevice underlying;
+
+        /// <summary>When non-zero, reads complete with this error code and no data is transferred.</summary>
+        public volatile uint ReadErrorCode;
+
+        /// <summary>When non-negative, reads succeed but report only this many bytes transferred, as a device does
+        /// when the file ends before the requested length.</summary>
+        public volatile int ShortReadBytes = -1;
+
+        public ErrorCodeOnReadDevice(IDevice underlying) : base(underlying.FileName, underlying.SectorSize, underlying.Capacity)
+            => this.underlying = underlying;
+
+        /// <inheritdoc/>
+        public override void Initialize(long segmentSize, LightEpoch epoch = null, bool omitSegmentIdFromFilename = false)
+        {
+            base.Initialize(segmentSize, epoch, omitSegmentIdFromFilename);
+            underlying.Initialize(segmentSize, epoch, omitSegmentIdFromFilename);
+        }
+
+        /// <inheritdoc/>
+        public override void RemoveSegmentAsync(int segment, AsyncCallback callback, IAsyncResult result)
+            => underlying.RemoveSegmentAsync(segment, callback, result);
+
+        /// <inheritdoc/>
+        public override void WriteAsync(IntPtr sourceAddress, int segmentId, ulong destinationAddress, uint numBytesToWrite,
+            DeviceIOCompletionCallback callback, object context)
+            => underlying.WriteAsync(sourceAddress, segmentId, destinationAddress, numBytesToWrite, callback, context);
+
+        /// <inheritdoc/>
+        public override void ReadAsync(int segmentId, ulong sourceAddress, IntPtr destinationAddress, uint readLength,
+            DeviceIOCompletionCallback callback, object context)
+        {
+            var errorCode = ReadErrorCode;
+            if (errorCode != 0)
+            {
+                callback(errorCode, 0, context, null);
+                return;
+            }
+
+            var shortReadBytes = ShortReadBytes;
+            if (shortReadBytes >= 0)
+            {
+                callback(0, (uint)shortReadBytes, context, null);
+                return;
+            }
+            underlying.ReadAsync(segmentId, sourceAddress, destinationAddress, readLength, callback, context);
+        }
+
+        /// <inheritdoc/>
+        public override void Dispose() => underlying.Dispose();
     }
 }
