@@ -65,9 +65,29 @@ namespace Garnet.cluster
         public long ReplicationOffset;
 
         /// <summary>
-        /// Hostname of this instance
+        /// Hostname associated with this node and used as its default client hostname.
         /// </summary>
         public string hostname;
+
+        /// <summary>
+        /// IP address returned to clients.
+        /// </summary>
+        public string ClientAddress;
+
+        /// <summary>
+        /// Port returned to clients.
+        /// </summary>
+        public int ClientPort;
+
+        /// <summary>
+        /// Hostname returned to clients.
+        /// </summary>
+        public string ClientHostname;
+
+        /// <summary>
+        /// Whether this worker came from a config that supports client endpoint metadata.
+        /// </summary>
+        public bool HasClientEndpointMetadata;
 
         /// <summary>
         /// ToString

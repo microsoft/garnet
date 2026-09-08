@@ -3,6 +3,7 @@
 
 using System;
 using System.Net;
+using Garnet.common;
 using Microsoft.Extensions.Logging;
 
 namespace Garnet.server
@@ -20,18 +21,63 @@ namespace Garnet.server
         public EndPoint[] EndPoints { get; set; } = [new IPEndPoint(IPAddress.Loopback, 6379)];
 
         /// <summary>
-        /// Cluster announce Endpoint
+        /// Endpoint advertised for node-to-node cluster traffic and used for client responses by default.
         /// </summary>
         public EndPoint ClusterAnnounceEndpoint { get; set; }
 
         /// <summary>
-        /// Cluster announce Hostname
+        /// Hostname associated with this node and used for client responses by default.
         /// </summary>
         public string ClusterAnnounceHostname { get; set; }
 
         /// <summary>
+        /// IP address returned in client cluster responses. The node-to-node address is used when unset.
+        /// </summary>
+        public string ClusterClientAnnounceIp
+        {
+            get => clusterClientAnnounceIp;
+            set
+            {
+                if (!ClusterEndpointValidation.IsValidAddress(value))
+                    throw new ArgumentException("Client announce IP must be an IPv4 or IPv6 address without a scope identifier.", nameof(value));
+                clusterClientAnnounceIp = value;
+            }
+        }
+        private string clusterClientAnnounceIp;
+
+        /// <summary>
+        /// Port returned in client cluster responses. The node-to-node port is used when zero.
+        /// </summary>
+        public int ClusterClientAnnouncePort
+        {
+            get => clusterClientAnnouncePort;
+            set
+            {
+                if (!ClusterEndpointValidation.IsValidPort(value))
+                    throw new ArgumentOutOfRangeException(nameof(value), "Client announce port must be between 0 and 65535.");
+                clusterClientAnnouncePort = value;
+            }
+        }
+        private int clusterClientAnnouncePort;
+
+        /// <summary>
+        /// Hostname returned in client cluster responses. The cluster announce hostname is used when unset.
+        /// </summary>
+        public string ClusterClientAnnounceHostname
+        {
+            get => clusterClientAnnounceHostname;
+            set
+            {
+                if (!ClusterEndpointValidation.IsValidHostname(value))
+                    throw new ArgumentException("Client announce hostname must be an ASCII DNS name.", nameof(value));
+                clusterClientAnnounceHostname = value;
+            }
+        }
+        private string clusterClientAnnounceHostname;
+
+        /// <summary>
         /// Cluster Preferred Endpoint Type
-        /// Used in cluster redirection messages, cluster slots 
+        /// Used in cluster redirection messages and client-facing cluster metadata.
         /// </summary>
         public ClusterPreferredEndpointType ClusterPreferredEndpointType { get; set; }
 

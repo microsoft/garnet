@@ -1,11 +1,15 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
+using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Net;
 using System.Text;
 using Garnet.cluster;
 using Garnet.common;
+using Garnet.server;
 using Microsoft.Extensions.Logging;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -131,6 +135,65 @@ namespace Garnet.test.cluster
             ClassicAssert.AreEqual(clusterAnnounceEndpoint.Port, clusterNodesEndpoint.Port);
         }
 
+        [Test, Order(2)]
+        [Category("CLUSTER-CONFIG"), CancelAfter(5000)]
+        public void ClusterClientEndpointRecoverTest()
+        {
+            const string clientAddress = "203.0.113.10";
+            const int clientPort = 17000;
+            const string clientHostname = "node.example.com";
+
+            context.CreateInstances(
+                1,
+                clusterPreferredEndpointType: ClusterPreferredEndpointType.Hostname,
+                clusterClientAnnounceIp: clientAddress,
+                clusterClientAnnouncePortBase: clientPort,
+                clusterClientAnnounceHostname: clientHostname);
+            context.CreateConnection();
+            _ = context.clusterTestUtils.SimpleSetupCluster(logger: context.logger);
+
+            AssertClientEndpoint();
+
+            context.nodes[0].Dispose(false);
+            context.nodes[0] = context.CreateInstance(
+                context.clusterTestUtils.GetEndPoint(0),
+                cleanClusterConfig: false,
+                tryRecover: true,
+                clusterPreferredEndpointType: ClusterPreferredEndpointType.Hostname,
+                clusterClientAnnounceIp: clientAddress,
+                clusterClientAnnouncePort: clientPort,
+                clusterClientAnnounceHostname: clientHostname);
+            context.nodes[0].Start();
+            context.CreateConnection();
+
+            AssertClientEndpoint();
+
+            void AssertClientEndpoint()
+            {
+                var slots = context.clusterTestUtils.ClusterSlots(0, context.logger);
+                var endpoint = slots.SelectMany(slot => slot.nnInfo).Single();
+                ClassicAssert.AreEqual(clientHostname, endpoint.endpoint);
+                ClassicAssert.AreEqual(clientAddress, endpoint.ip);
+                ClassicAssert.AreEqual(clientPort, endpoint.port);
+            }
+        }
+
+        [Test, Order(3)]
+        [TestCase(-1)]
+        [TestCase(int.MaxValue)]
+        public void InvalidReplicationHistoryLengthRecoversTest(int length)
+        {
+            context.CreateInstances(1, enableAOF: true);
+            string checkpointDirectory = context.nodeOptions[0].CheckpointDir;
+            context.ShutdownNode(0, ensureAofFlush: true);
+            string[] files = Directory.GetFiles(checkpointDirectory, "replication.conf*", SearchOption.AllDirectories);
+            Assert.That(files, Has.Length.EqualTo(1));
+            using (FileStream file = File.OpenWrite(files[0]))
+                file.Write(BitConverter.GetBytes(length));
+
+            Assert.DoesNotThrow(() => context.RestartNode(0));
+        }
+
         [Test, Order(3)]
         [Category("CLUSTER-CONFIG"), CancelAfter(1000)]
         public void ClusterAnyIPAnnounce()
@@ -178,6 +241,288 @@ namespace Garnet.test.cluster
             // Round-trip should succeed
             var restored = ClusterConfig.FromByteArray(configBytes);
             Assert.That(restored.LocalNodeId, Is.EqualTo(config.LocalNodeId));
+        }
+
+        [Test]
+        [Category("CLUSTER-CONFIG"), CancelAfter(1000)]
+        public void ClusterClientEndpointRoundTripTest()
+        {
+            const string transportAddress = "127.0.0.1";
+            const int transportPort = 7001;
+            const string clientAddress = "203.0.113.10";
+            const int clientPort = 17001;
+            const string clientHostname = "node.example.com";
+
+            var config = new ClusterConfig().InitializeLocalWorker(
+                Generator.CreateHexId(),
+                transportAddress,
+                transportPort,
+                configEpoch: 1,
+                Garnet.cluster.NodeRole.PRIMARY,
+                null,
+                "internal.example.com",
+                clientAddress,
+                clientPort,
+                clientHostname);
+            config = config.AssignSlots([0], ClusterConfig.LOCAL_WORKER_ID, SlotState.STABLE);
+
+            Assert.That(config.GetWorkerAddress(ClusterConfig.LOCAL_WORKER_ID), Is.EqualTo((transportAddress, transportPort)));
+            Assert.That(config.GetEndpointFromSlot(0, ClusterPreferredEndpointType.Ip), Is.EqualTo((clientAddress, clientPort)));
+            Assert.That(config.GetEndpointFromSlot(0, ClusterPreferredEndpointType.Hostname), Is.EqualTo((clientHostname, clientPort)));
+            Assert.That(config.AskEndpointFromSlot(0, ClusterPreferredEndpointType.Ip), Is.EqualTo((clientAddress, clientPort)));
+            Assert.That(config.AskEndpointFromSlot(0, ClusterPreferredEndpointType.Hostname), Is.EqualTo((clientHostname, clientPort)));
+
+            var restored = ClusterConfig.FromByteArray(config.ToByteArray());
+            Assert.That(restored.GetWorkerAddress(ClusterConfig.LOCAL_WORKER_ID), Is.EqualTo((transportAddress, transportPort)));
+            Assert.That(restored.GetEndpointFromSlot(0, ClusterPreferredEndpointType.Ip), Is.EqualTo((clientAddress, clientPort)));
+            Assert.That(restored.GetEndpointFromSlot(0, ClusterPreferredEndpointType.Hostname), Is.EqualTo((clientHostname, clientPort)));
+            Assert.That(restored.AskEndpointFromSlot(0, ClusterPreferredEndpointType.Ip), Is.EqualTo((clientAddress, clientPort)));
+            Assert.That(restored.AskEndpointFromSlot(0, ClusterPreferredEndpointType.Hostname), Is.EqualTo((clientHostname, clientPort)));
+        }
+
+        [Test]
+        [Category("CLUSTER-CONFIG"), CancelAfter(1000)]
+        public void LegacyClusterConfigUsesTransportEndpointTest()
+        {
+            const string transportAddress = "127.0.0.1";
+            const int transportPort = 7001;
+            var nodeId = Generator.CreateHexId();
+
+            var config = new ClusterConfig().InitializeLocalWorker(
+                nodeId,
+                transportAddress,
+                transportPort,
+                configEpoch: 1,
+                Garnet.cluster.NodeRole.PRIMARY,
+                null,
+                "internal.example.com");
+            config = config.AssignSlots([0], ClusterConfig.LOCAL_WORKER_ID, SlotState.STABLE);
+
+            var legacyBytes = config.ToByteArray();
+            var extendedConfig = new ClusterConfig().InitializeLocalWorker(
+                nodeId,
+                transportAddress,
+                transportPort,
+                configEpoch: 1,
+                Garnet.cluster.NodeRole.PRIMARY,
+                null,
+                "internal.example.com",
+                "203.0.113.10",
+                17001,
+                "node.example.com");
+            extendedConfig = extendedConfig.AssignSlots([0], ClusterConfig.LOCAL_WORKER_ID, SlotState.STABLE);
+            var extendedBytes = extendedConfig.ToByteArray();
+
+            Assert.That(extendedBytes.Length, Is.GreaterThan(legacyBytes.Length));
+            Assert.That(extendedBytes.AsSpan(0, legacyBytes.Length).SequenceEqual(legacyBytes), Is.True);
+
+            var restored = ClusterConfig.FromByteArray(legacyBytes);
+            Assert.That(restored.GetEndpointFromSlot(0, ClusterPreferredEndpointType.Ip), Is.EqualTo((transportAddress, transportPort)));
+            Assert.That(restored.GetEndpointFromSlot(0, ClusterPreferredEndpointType.Hostname), Is.EqualTo(("internal.example.com", transportPort)));
+        }
+
+        [Test]
+        [Category("CLUSTER-CONFIG"), CancelAfter(1000)]
+        public void FutureClientEndpointExtensionFallsBackToTransportEndpointTest()
+        {
+            const string transportAddress = "127.0.0.1";
+            const int transportPort = 7001;
+            var nodeId = Generator.CreateHexId();
+
+            var legacyConfig = new ClusterConfig().InitializeLocalWorker(
+                nodeId,
+                transportAddress,
+                transportPort,
+                configEpoch: 1,
+                Garnet.cluster.NodeRole.PRIMARY,
+                null,
+                "internal.example.com");
+            legacyConfig = legacyConfig.AssignSlots([0], ClusterConfig.LOCAL_WORKER_ID, SlotState.STABLE);
+
+            var extendedConfig = new ClusterConfig().InitializeLocalWorker(
+                nodeId,
+                transportAddress,
+                transportPort,
+                configEpoch: 1,
+                Garnet.cluster.NodeRole.PRIMARY,
+                null,
+                "internal.example.com",
+                "203.0.113.10",
+                17001,
+                "node.example.com");
+            extendedConfig = extendedConfig.AssignSlots([0], ClusterConfig.LOCAL_WORKER_ID, SlotState.STABLE);
+
+            var legacyBytes = legacyConfig.ToByteArray();
+            var futureBytes = extendedConfig.ToByteArray();
+            Assert.That(futureBytes.Length, Is.GreaterThan(legacyBytes.Length));
+            futureBytes[legacyBytes.Length] = 2;
+
+            var restored = ClusterConfig.FromByteArray(futureBytes);
+            Assert.That(restored.GetEndpointFromSlot(0, ClusterPreferredEndpointType.Ip), Is.EqualTo((transportAddress, transportPort)));
+            Assert.That(restored.GetEndpointFromSlot(0, ClusterPreferredEndpointType.Hostname), Is.EqualTo(("internal.example.com", transportPort)));
+        }
+
+        [Test]
+        [Category("CLUSTER-CONFIG"), CancelAfter(1000)]
+        public void TruncatedClientEndpointExtensionThrowsTest()
+        {
+            var config = new ClusterConfig().InitializeLocalWorker(
+                Generator.CreateHexId(),
+                "127.0.0.1",
+                7001,
+                configEpoch: 1,
+                Garnet.cluster.NodeRole.PRIMARY,
+                null,
+                "internal.example.com",
+                "203.0.113.10",
+                17001,
+                "node.example.com");
+
+            var serialized = config.ToByteArray();
+            var truncated = serialized.AsSpan(0, serialized.Length - 1).ToArray();
+
+            Assert.Throws<InvalidDataException>(() => ClusterConfig.FromByteArray(truncated));
+        }
+
+        [Test]
+        [Category("CLUSTER-CONFIG"), CancelAfter(1000)]
+        public void ClientEndpointUpdateAtSameConfigEpochMergesFromOwnerTest()
+        {
+            const string remoteNodeAddress = "127.0.0.2";
+            const int remoteNodePort = 7002;
+            const long configEpoch = 2;
+            var localNodeId = Generator.CreateHexId();
+            var remoteNodeId = Generator.CreateHexId();
+            ConcurrentDictionary<string, long> workerBanList = new();
+
+            var localConfig = new ClusterConfig().InitializeLocalWorker(
+                localNodeId,
+                "127.0.0.1",
+                7001,
+                configEpoch: 1,
+                Garnet.cluster.NodeRole.PRIMARY,
+                null,
+                "local.internal.example.com");
+
+            var remoteConfig = new ClusterConfig().InitializeLocalWorker(
+                remoteNodeId,
+                remoteNodeAddress,
+                remoteNodePort,
+                configEpoch,
+                Garnet.cluster.NodeRole.PRIMARY,
+                null,
+                "remote.internal.example.com",
+                "203.0.113.10",
+                17002,
+                "remote.example.com");
+            remoteConfig = remoteConfig.AssignSlots([0], ClusterConfig.LOCAL_WORKER_ID, SlotState.STABLE);
+
+            localConfig = localConfig.Merge(remoteConfig, workerBanList);
+            Assert.That(localConfig.GetEndpointFromSlot(0, ClusterPreferredEndpointType.Hostname), Is.EqualTo(("remote.example.com", 17002)));
+
+            var updatedRemoteConfig = new ClusterConfig().InitializeLocalWorker(
+                remoteNodeId,
+                remoteNodeAddress,
+                remoteNodePort,
+                configEpoch,
+                Garnet.cluster.NodeRole.PRIMARY,
+                null,
+                "remote.internal.example.com",
+                "203.0.113.11",
+                18002,
+                "updated.example.com");
+            updatedRemoteConfig = updatedRemoteConfig.AssignSlots([0], ClusterConfig.LOCAL_WORKER_ID, SlotState.STABLE);
+
+            localConfig = localConfig.Merge(updatedRemoteConfig, workerBanList);
+
+            Assert.That(localConfig.GetWorkerAddressFromNodeId(remoteNodeId), Is.EqualTo((remoteNodeAddress, remoteNodePort)));
+            Assert.That(localConfig.GetEndpointFromSlot(0, ClusterPreferredEndpointType.Ip), Is.EqualTo(("203.0.113.11", 18002)));
+            Assert.That(localConfig.GetEndpointFromSlot(0, ClusterPreferredEndpointType.Hostname), Is.EqualTo(("updated.example.com", 18002)));
+
+            var clearedRemoteConfig = new ClusterConfig().InitializeLocalWorker(
+                remoteNodeId,
+                remoteNodeAddress,
+                remoteNodePort,
+                configEpoch,
+                Garnet.cluster.NodeRole.PRIMARY,
+                null,
+                "remote.internal.example.com",
+                clientAddress: null,
+                clientPort: 0,
+                clientHostname: null);
+            clearedRemoteConfig = clearedRemoteConfig.AssignSlots([0], ClusterConfig.LOCAL_WORKER_ID, SlotState.STABLE);
+
+            localConfig = localConfig.Merge(clearedRemoteConfig, workerBanList);
+
+            Assert.That(localConfig.GetEndpointFromSlot(0, ClusterPreferredEndpointType.Ip), Is.EqualTo((remoteNodeAddress, remoteNodePort)));
+            Assert.That(localConfig.GetEndpointFromSlot(0, ClusterPreferredEndpointType.Hostname), Is.EqualTo(("remote.internal.example.com", remoteNodePort)));
+        }
+
+        [Test, Order(5)]
+        [TestCase("invalid", 17001, "node.example.com")]
+        [TestCase("203.0.113.10", -1, "node.example.com")]
+        [TestCase("203.0.113.10", 65536, "node.example.com")]
+        [TestCase("203.0.113.10", 17001, "bad\r\nhostname")]
+        public void InvalidSerializedClientEndpointTest(string address, int port, string hostname)
+        {
+            ClusterConfig config = new ClusterConfig().InitializeLocalWorker(
+                Generator.CreateHexId(), "127.0.0.1", 7001, 1, Garnet.cluster.NodeRole.PRIMARY,
+                null, "peer.example.com", address, port, hostname);
+            Assert.Throws<InvalidDataException>(() => ClusterConfig.FromByteArray(config.ToByteArray()));
+        }
+
+        [Test]
+        public void ClientEndpointDoesNotReplacePeerEndpointsTest()
+        {
+            string primaryId = Generator.CreateHexId();
+            string replicaId = Generator.CreateHexId();
+            ClusterConfig primary = new ClusterConfig().InitializeLocalWorker(
+                primaryId, "127.0.0.1", 7001, 1, Garnet.cluster.NodeRole.PRIMARY,
+                null, "primary.peer.example", "203.0.113.1", 65535, "primary.example.com");
+            primary = primary.AssignSlots([0], ClusterConfig.LOCAL_WORKER_ID, SlotState.STABLE);
+            ClusterConfig replica = new ClusterConfig().InitializeLocalWorker(
+                replicaId, "127.0.0.2", 7002, 2, Garnet.cluster.NodeRole.REPLICA,
+                primaryId, "replica.peer.example", "203.0.113.2", 17002, "replica.example.com");
+
+            primary = ClusterConfig.FromByteArray(primary.Merge(replica, []).ToByteArray());
+            replica = ClusterConfig.FromByteArray(replica.Merge(primary, []).ToByteArray());
+            ushort replicaWorkerId = primary.GetWorkerIdFromNodeId(replicaId);
+
+            Assert.That(primary.GetWorkerAddress(replicaWorkerId), Is.EqualTo(("127.0.0.2", 7002)));
+            Assert.That(primary.GetWorkerAddressFromNodeId(replicaId), Is.EqualTo(("127.0.0.2", 7002)));
+            Assert.That(primary.GetReplicaEndpoints(primaryId).Single(), Is.EqualTo(("127.0.0.2", 7002)));
+            Assert.That(primary.GetWorkerInfoForGossip().Single(), Is.EqualTo((replicaId, "127.0.0.2", 7002)));
+            Assert.That(primary.GetWorkerNodeIdFromAddress("203.0.113.2", 17002), Is.Null);
+            Assert.That(primary.GetWorkerNodeIdFromAddressOrHostname("replica.example.com", 17002), Is.Null);
+            Assert.That(primary.GetWorkerNodeIdFromAddressOrHostname("replica.peer.example", 7002), Is.EqualTo(replicaId));
+            Assert.That(replica.GetLocalNodePrimaryAddress(), Is.EqualTo(("127.0.0.1", 7001)));
+            Assert.That(primary.GetClusterInfo(null), Does.Contain("203.0.113.1:65535@17001,primary.example.com"));
+            Assert.That(primary.GetNodeInfo(replicaWorkerId, default), Does.Contain("203.0.113.2:17002@17002,replica.example.com"));
+        }
+
+        [Test]
+        public void OlderRelayPreservesClientEndpointUntilOwnerClearsItTest()
+        {
+            string ownerId = Generator.CreateHexId();
+            ClusterConfig receiver = new ClusterConfig().InitializeLocalWorker(
+                Generator.CreateHexId(), "127.0.0.1", 7001, 1, Garnet.cluster.NodeRole.PRIMARY, null, "");
+            ClusterConfig owner = new ClusterConfig().InitializeLocalWorker(
+                ownerId, "127.0.0.2", 7002, 2, Garnet.cluster.NodeRole.PRIMARY, null, "",
+                "203.0.113.2", 17002, "owner.example.com");
+            owner = owner.AssignSlots([0], ClusterConfig.LOCAL_WORKER_ID, SlotState.STABLE);
+            receiver = receiver.Merge(owner, []);
+
+            ClusterConfig legacyOwner = new ClusterConfig().InitializeLocalWorker(
+                ownerId, "127.0.0.2", 7002, 3, Garnet.cluster.NodeRole.PRIMARY, null, "");
+            legacyOwner = legacyOwner.AssignSlots([0], ClusterConfig.LOCAL_WORKER_ID, SlotState.STABLE);
+            ClusterConfig relay = new ClusterConfig().InitializeLocalWorker(
+                Generator.CreateHexId(), "127.0.0.3", 7003, 4, Garnet.cluster.NodeRole.PRIMARY, null, "");
+            relay = relay.Merge(legacyOwner, []);
+            receiver = receiver.Merge(ClusterConfig.FromByteArray(relay.ToByteArray()), []);
+            Assert.That(receiver.GetEndpointFromSlot(0, ClusterPreferredEndpointType.Ip), Is.EqualTo(("203.0.113.2", 17002)));
+
+            receiver = receiver.Merge(legacyOwner, []);
+            Assert.That(receiver.GetEndpointFromSlot(0, ClusterPreferredEndpointType.Ip), Is.EqualTo(("127.0.0.2", 7002)));
         }
 
         [Test, Order(5)]

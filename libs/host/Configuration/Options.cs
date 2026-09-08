@@ -46,17 +46,29 @@ namespace Garnet
         public string Address { get; set; }
 
         [IntRangeValidation(0, 65535)]
-        [Option("cluster-announce-port", Required = false, HelpText = "Port that this node advertises to other nodes to connect to for gossiping.")]
+        [Option("cluster-announce-port", Required = false, HelpText = "Port that this node advertises for node-to-node cluster traffic. Client responses use this port unless cluster-client-announce-port overrides it.")]
         public int ClusterAnnouncePort { get; set; }
 
         [IpAddressValidation(false)]
-        [Option("cluster-announce-ip", Required = false, HelpText = "IP address that this node advertises to other nodes to connect to for gossiping.")]
+        [Option("cluster-announce-ip", Required = false, HelpText = "IP address that this node advertises for node-to-node cluster traffic. Client responses use this address unless cluster-client-announce-ip overrides it.")]
         public string ClusterAnnounceIp { get; set; }
 
-        [Option("cluster-announce-hostname", Required = false, HelpText = "Hostname that this node advertises to other nodes to connect to for gossiping.")]
+        [Option("cluster-announce-hostname", Required = false, HelpText = "Hostname associated with this node and used in client responses unless cluster-client-announce-hostname overrides it.")]
         public string ClusterAnnounceHostname { get; set; }
 
-        [Option("cluster-preferred-endpoint-type", Required = false, HelpText = "Determines the endpoint type to be advertised to other nodes. (value options: ip, hostname, unknown)")]
+        [ClientEndpointValidation]
+        [Option("cluster-client-announce-ip", Required = false, HelpText = "IP address returned in MOVED, ASK, CLUSTER NODES, CLUSTER SLOTS, and CLUSTER SHARDS. Defaults to the node-to-node cluster address.")]
+        public string ClusterClientAnnounceIp { get; set; }
+
+        [IntRangeValidation(0, 65535)]
+        [Option("cluster-client-announce-port", Required = false, HelpText = "Port returned in MOVED, ASK, CLUSTER NODES, CLUSTER SLOTS, and CLUSTER SHARDS. Zero selects the node-to-node cluster port.")]
+        public int ClusterClientAnnouncePort { get; set; }
+
+        [ClientEndpointValidation(hostname: true)]
+        [Option("cluster-client-announce-hostname", Required = false, HelpText = "ASCII DNS hostname returned in client cluster responses. Defaults to the cluster announce hostname. Select hostname with cluster-preferred-endpoint-type.")]
+        public string ClusterClientAnnounceHostname { get; set; }
+
+        [Option("cluster-preferred-endpoint-type", Required = false, HelpText = "Selects the IP address or hostname returned in MOVED, ASK, CLUSTER SLOTS, and CLUSTER SHARDS responses. (value options: ip, hostname, unknown)")]
         public ClusterPreferredEndpointType ClusterPreferredEndpointType { get; set; }
 
         [MemorySizeValidation]
@@ -888,6 +900,9 @@ namespace Garnet
                 EndPoints = endpoints,
                 ClusterAnnounceEndpoint = clusterAnnounceEndpoint?[0],
                 ClusterAnnounceHostname = ClusterAnnounceHostname,
+                ClusterClientAnnounceIp = ClusterClientAnnounceIp,
+                ClusterClientAnnouncePort = ClusterClientAnnouncePort,
+                ClusterClientAnnounceHostname = ClusterClientAnnounceHostname,
                 ClusterPreferredEndpointType = ClusterPreferredEndpointType,
                 LogMemorySize = LogMemorySize,
                 PageSize = PageSize,

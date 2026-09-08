@@ -389,7 +389,7 @@ namespace Garnet.test.cluster
             while (true)
             {
             retry:
-                var servers = redis.GetServers();
+                IServer[] servers = GetEndpoints().Select(endpoint => redis.GetServer(endpoint)).ToArray();
                 foreach (var server in servers)
                 {
                     int count = expectedConfig.Count;
@@ -497,10 +497,10 @@ namespace Garnet.test.cluster
                 // Wait for new node to know first node
                 while (true)
                 {
-                    var expectedEntry = $" {sendMeetTo.Address}:{sendMeetTo.Port}@";
+                    string expectedNodeId = await GetLocalNodeIdAsync(0).ConfigureAwait(false);
 
                     var knownNodes = await NodesAsync(toMeet, logger).ConfigureAwait(false);
-                    if (knownNodes.Any(x => x.Contains(expectedEntry)))
+                    if (knownNodes.Any(x => x.StartsWith(expectedNodeId + " ", StringComparison.Ordinal)))
                     {
                         break;
                     }
@@ -515,10 +515,10 @@ namespace Garnet.test.cluster
 
                     while (true)
                     {
-                        var expectedEntry = $" {toMeet.Address}:{toMeet.Port}@";
+                        string expectedNodeId = await GetLocalNodeIdAsync(newNode).ConfigureAwait(false);
 
                         var knownNodes = await NodesAsync(otherEndpoint, logger).ConfigureAwait(false);
-                        if (knownNodes.Any(x => x.Contains(expectedEntry)))
+                        if (knownNodes.Any(x => x.StartsWith(expectedNodeId + " ", StringComparison.Ordinal)))
                         {
                             break;
                         }

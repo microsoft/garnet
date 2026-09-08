@@ -16,6 +16,19 @@ using Microsoft.Extensions.Logging;
 
 namespace Garnet
 {
+    [AttributeUsage(AttributeTargets.Property)]
+    internal sealed class ClientEndpointValidationAttribute(bool hostname = false) : ValidationAttribute
+    {
+        protected override ValidationResult IsValid(object value, ValidationContext validationContext)
+        {
+            bool valid = hostname
+                ? ClusterEndpointValidation.IsValidHostname((string)value)
+                : ClusterEndpointValidation.IsValidAddress((string)value);
+            return valid ? ValidationResult.Success :
+                new ValidationResult("Invalid client endpoint advertisement.", [validationContext.MemberName]);
+        }
+    }
+
     /// <summary>
     /// Basic validation logic for Options property
     /// Valid if value is required and has value or if value is not required

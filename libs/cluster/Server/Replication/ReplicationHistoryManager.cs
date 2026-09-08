@@ -118,9 +118,9 @@ namespace Garnet.cluster
 
         private void RecoverReplicationHistory()
         {
-            var replConfig = ClusterUtils.ReadDevice(replicationConfigDevice, replicationConfigDevicePool, logger);
             try
             {
+                byte[] replConfig = ClusterUtils.ReadDevice(replicationConfigDevice, replicationConfigDevicePool, logger);
                 currentReplicationConfig = ReplicationHistory.FromByteArray(replConfig);
             }
             catch (Exception ex) when (ex is InvalidDataException or EndOfStreamException or IOException)

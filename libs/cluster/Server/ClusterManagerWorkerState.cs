@@ -28,12 +28,25 @@ namespace Garnet.cluster
             long configEpoch,
             NodeRole role,
             string replicaOfNodeId,
-            string hostname)
+            string hostname,
+            string clientAddress,
+            int clientPort,
+            string clientHostname)
         {
             while (true)
             {
                 var current = currentConfig;
-                var newConfig = current.InitializeLocalWorker(nodeId, address, port, configEpoch, role, replicaOfNodeId, hostname);
+                var newConfig = current.InitializeLocalWorker(
+                    nodeId,
+                    address,
+                    port,
+                    configEpoch,
+                    role,
+                    replicaOfNodeId,
+                    hostname,
+                    clientAddress,
+                    clientPort,
+                    clientHostname);
                 if (Interlocked.CompareExchange(ref currentConfig, newConfig, current) == current)
                     break;
             }
@@ -122,6 +135,9 @@ namespace Garnet.cluster
                     var address = endpoint.Address.ToString();
                     var port = endpoint.Port;
                     var hostname = serverOptions.ClusterAnnounceHostname;
+                    var clientAddress = serverOptions.ClusterClientAnnounceIp;
+                    var clientPort = serverOptions.ClusterClientAnnouncePort;
+                    var clientHostname = serverOptions.ClusterClientAnnounceHostname;
 
                     var configEpoch = soft ? current.LocalNodeConfigEpoch : 0;
                     var expiry = DateTimeOffset.UtcNow.Ticks + TimeSpan.FromSeconds(expirySeconds).Ticks;
@@ -132,7 +148,10 @@ namespace Garnet.cluster
                         configEpoch: configEpoch,
                         role: NodeRole.PRIMARY,
                         replicaOfNodeId: null,
-                        hostname: string.IsNullOrEmpty(hostname) ? "" : hostname);
+                        hostname: string.IsNullOrEmpty(hostname) ? "" : hostname,
+                        clientAddress: clientAddress,
+                        clientPort: clientPort,
+                        clientHostname: clientHostname);
                     if (Interlocked.CompareExchange(ref currentConfig, newConfig, current) == current)
                         break;
                 }

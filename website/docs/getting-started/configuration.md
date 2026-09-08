@@ -109,6 +109,13 @@ For all available command line settings, run `GarnetServer.exe -h` or `GarnetSer
 | **DisableObjects** | ```--no-obj``` | ```bool``` |  | Disable support for data structure objects. |
 | **EnableCluster** | ```--cluster``` | ```bool``` |  | Enable cluster. |
 | **CleanClusterConfig** | ```--clean-cluster-config``` | ```bool``` |  | Start with clean cluster config. |
+| **ClusterAnnounceIp** | ```--cluster-announce-ip``` | ```string``` | IP Address in v4/v6 format | IP address used for node-to-node cluster traffic and, by default, client responses. |
+| **ClusterAnnouncePort** | ```--cluster-announce-port``` | ```int``` | Integer in range:<br/>[0, 65535] | Port used for node-to-node cluster traffic and, by default, client responses. |
+| **ClusterAnnounceHostname** | ```--cluster-announce-hostname``` | ```string``` |  | Hostname associated with this node and used in client responses by default. |
+| **ClusterClientAnnounceIp** | ```--cluster-client-announce-ip``` | ```string``` | IPv4 or IPv6 literal without brackets or a scope identifier | Client address in MOVED, ASK, CLUSTER NODES, CLUSTER SLOTS, and CLUSTER SHARDS. Null or empty selects the peer address. |
+| **ClusterClientAnnouncePort** | ```--cluster-client-announce-port``` | ```int``` | Integer in range:<br/>[0, 65535] | Client port in MOVED, ASK, CLUSTER NODES, CLUSTER SLOTS, and CLUSTER SHARDS. Zero selects the peer port. |
+| **ClusterClientAnnounceHostname** | ```--cluster-client-announce-hostname``` | ```string``` | ASCII DNS name | Hostname in client cluster responses. Null or empty selects ClusterAnnounceHostname. Select hostname preference for redirects, SLOTS, and SHARDS. |
+| **ClusterPreferredEndpointType** | ```--cluster-preferred-endpoint-type``` | ```ClusterPreferredEndpointType``` | Ip, Hostname, Unknown | Selects the IP address or hostname returned in MOVED, ASK, CLUSTER SLOTS, and CLUSTER SHARDS responses. |
 | **ParallelMigrateTaskCount** | ```--pmt``` | ```int``` | Integer in range:<br/>[0, 16384] | Number of parallel migrate tasks to spawn when SLOTS or SLOTSRANGE option is used. |
 | **FastMigrate** | ```--fast-migrate``` | ```bool``` |  | When migrating slots 1. write directly to network buffer to avoid unnecessary copies, 2. do not wait for ack from target before sending next batch of keys. |
 | **AuthenticationMode** | ```--auth``` | ```GarnetAuthenticationMode``` | NoAuth, Password, Aad, ACL, AclWithAad | Authentication mode of Garnet. This impacts how AUTH command is processed and how clients are authenticated against Garnet. Value options: NoAuth, Password, Aad, ACL |
