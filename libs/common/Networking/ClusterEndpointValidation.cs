@@ -14,29 +14,37 @@ namespace Garnet.common
         /// <summary>
         /// Accepts an unset address or an IPv4 or IPv6 literal without a scope identifier.
         /// </summary>
+        /// <param name="address">Client IP address</param>
+        /// <returns>True if the address is valid or unset</returns>
         public static bool IsValidAddress(string address)
-            => string.IsNullOrEmpty(address) ||
-               (!address.Contains('%') && !address.Contains('[') &&
-                IPAddress.TryParse(address, out IPAddress parsed) &&
-                !parsed.Equals(IPAddress.Any) && !parsed.Equals(IPAddress.IPv6Any));
+        {
+            if (string.IsNullOrEmpty(address))
+                return true;
+
+            return !address.Contains('%') && !address.Contains('[') &&
+                   IPAddress.TryParse(address, out var ipAddress) &&
+                   !ipAddress.Equals(IPAddress.Any) && !ipAddress.Equals(IPAddress.IPv6Any);
+        }
 
         /// <summary>
         /// Accepts an unset hostname or an ASCII DNS name with an optional final dot.
         /// </summary>
+        /// <param name="hostname">Client hostname</param>
+        /// <returns>True if the hostname is valid or unset</returns>
         public static bool IsValidHostname(string hostname)
         {
             if (string.IsNullOrEmpty(hostname))
                 return true;
 
-            ReadOnlySpan<char> name = hostname.AsSpan();
+            var name = hostname.AsSpan();
             if (name[^1] == '.')
                 name = name[..^1];
             if (name.Length is 0 or > 253)
                 return false;
 
-            int labelLength = 0;
-            char previous = '.';
-            foreach (char character in name)
+            var labelLength = 0;
+            var previous = '.';
+            foreach (var character in name)
             {
                 if (character == '.')
                 {
@@ -57,8 +65,10 @@ namespace Garnet.common
         }
 
         /// <summary>
-        /// Zero selects the peer port; otherwise the value must be a valid TCP port.
+        /// Validate a client port, allowing zero to select the peer port.
         /// </summary>
+        /// <param name="port">Client port</param>
+        /// <returns>True if the port is between 0 and 65535</returns>
         public static bool IsValidPort(int port) => port is >= 0 and <= ushort.MaxValue;
     }
 }

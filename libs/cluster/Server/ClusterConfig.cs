@@ -126,7 +126,7 @@ namespace Garnet.cluster
         /// <param name="role">Local worker role.</param>
         /// <param name="replicaOfNodeId">Local worker primary id.</param>
         /// <param name="hostname">Local worker hostname.</param>
-        /// <returns>Instance of local config with updated local worker information.</returns>
+        /// <returns>Instance of local config with updated local worker info.</returns>
         public ClusterConfig InitializeLocalWorker(
             string nodeId,
             string address,
@@ -135,21 +135,11 @@ namespace Garnet.cluster
             NodeRole role,
             string replicaOfNodeId,
             string hostname)
-            => InitializeLocalWorker(
-                nodeId,
-                address,
-                port,
-                configEpoch,
-                role,
-                replicaOfNodeId,
-                hostname,
-                clientAddress: null,
-                clientPort: 0,
-                clientHostname: null,
-                hasClientEndpointMetadata: false);
+            => InitializeLocalWorker(nodeId, address, port, configEpoch, role, replicaOfNodeId, hostname,
+                clientAddress: null, clientPort: 0, clientHostname: null, hasClientEndpointMetadata: false);
 
         /// <summary>
-        /// Initialize local worker with separate client endpoint information.
+        /// Initialize local worker with separate client endpoint info.
         /// </summary>
         /// <param name="nodeId">Local worker node-id.</param>
         /// <param name="address">Local worker IP address.</param>
@@ -161,7 +151,7 @@ namespace Garnet.cluster
         /// <param name="clientAddress">IP address advertised to clients.</param>
         /// <param name="clientPort">Port advertised to clients.</param>
         /// <param name="clientHostname">Hostname advertised to clients.</param>
-        /// <returns>Instance of local config with update local worker info.</returns>
+        /// <returns>Instance of local config with updated local worker info.</returns>
         public ClusterConfig InitializeLocalWorker(
             string nodeId,
             string address,
@@ -173,18 +163,8 @@ namespace Garnet.cluster
             string clientAddress,
             int clientPort,
             string clientHostname)
-            => InitializeLocalWorker(
-                nodeId,
-                address,
-                port,
-                configEpoch,
-                role,
-                replicaOfNodeId,
-                hostname,
-                clientAddress,
-                clientPort,
-                clientHostname,
-                hasClientEndpointMetadata: true);
+            => InitializeLocalWorker(nodeId, address, port, configEpoch, role, replicaOfNodeId, hostname,
+                clientAddress, clientPort, clientHostname, hasClientEndpointMetadata: true);
 
         private ClusterConfig InitializeLocalWorker(
             string nodeId,
@@ -651,7 +631,7 @@ namespace Garnet.cluster
                 .Append(GetClientAddress(workerId)).Append(':').Append(GetClientPort(workerId))
                 .Append('@').Append(workers[workerId].Port + 10000);
 
-            string hostname = GetClientHostname(workerId);
+            var hostname = GetClientHostname(workerId);
             if (!string.IsNullOrEmpty(hostname))
                 nodeInfoStringBuilder.Append(',').Append(hostname);
 
@@ -1272,10 +1252,12 @@ namespace Garnet.cluster
         }
 
         private static bool HasMatchingClientEndpoint(Worker current, Worker incoming)
-            => current.HasClientEndpointMetadata == incoming.HasClientEndpointMetadata &&
-               current.ClientPort == incoming.ClientPort &&
-               string.Equals(current.ClientAddress, incoming.ClientAddress, StringComparison.Ordinal) &&
-               string.Equals(current.ClientHostname, incoming.ClientHostname, StringComparison.Ordinal);
+        {
+            return current.HasClientEndpointMetadata == incoming.HasClientEndpointMetadata &&
+                   current.ClientPort == incoming.ClientPort &&
+                   string.Equals(current.ClientAddress, incoming.ClientAddress, StringComparison.Ordinal) &&
+                   string.Equals(current.ClientHostname, incoming.ClientHostname, StringComparison.Ordinal);
+        }
 
         public ClusterConfig MergeSlotMap(ClusterConfig senderConfig, ILogger logger = null)
         {

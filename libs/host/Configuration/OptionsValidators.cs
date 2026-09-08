@@ -16,19 +16,6 @@ using Microsoft.Extensions.Logging;
 
 namespace Garnet
 {
-    [AttributeUsage(AttributeTargets.Property)]
-    internal sealed class ClientEndpointValidationAttribute(bool hostname = false) : ValidationAttribute
-    {
-        protected override ValidationResult IsValid(object value, ValidationContext validationContext)
-        {
-            bool valid = hostname
-                ? ClusterEndpointValidation.IsValidHostname((string)value)
-                : ClusterEndpointValidation.IsValidAddress((string)value);
-            return valid ? ValidationResult.Success :
-                new ValidationResult("Invalid client endpoint advertisement.", [validationContext.MemberName]);
-        }
-    }
-
     /// <summary>
     /// Basic validation logic for Options property
     /// Valid if value is required and has value or if value is not required
@@ -384,6 +371,44 @@ namespace Garnet
             {
                 var baseError = validationContext.MemberName != null ? base.FormatErrorMessage(validationContext.MemberName) : string.Empty;
                 var errorMessage = $"{baseError} Expected string in IPv4 / IPv6 format (e.g. 127.0.0.1 / 0:0:0:0:0:0:0:1) or 'localhost' or valid hostname. Actual value: {errorHostnameOrAddress}";
+                return new ValidationResult(errorMessage, [validationContext.MemberName]);
+            }
+
+            return ValidationResult.Success;
+        }
+    }
+
+    /// <summary>
+    /// Validation logic for a client IP address or hostname
+    /// </summary>
+    [AttributeUsage(AttributeTargets.Property)]
+    internal sealed class ClientEndpointValidationAttribute : OptionValidationAttribute
+    {
+        private readonly bool _hostname;
+
+        internal ClientEndpointValidationAttribute(bool hostname = false) : base(isRequired: false)
+        {
+            this._hostname = hostname;
+        }
+
+        /// <summary>
+        /// Check client endpoint format without resolving the address or hostname
+        /// </summary>
+        /// <param name="value">Client IP address or hostname</param>
+        /// <param name="validationContext">Validation context</param>
+        /// <returns></returns>
+        protected override ValidationResult IsValid(object value, ValidationContext validationContext)
+        {
+            if (TryInitialValidation<string>(value, validationContext, out var initValidationResult, out var endpoint))
+                return initValidationResult;
+
+            var isValid = this._hostname
+                ? ClusterEndpointValidation.IsValidHostname(endpoint)
+                : ClusterEndpointValidation.IsValidAddress(endpoint);
+            if (!isValid)
+            {
+                var baseError = validationContext.MemberName != null ? base.FormatErrorMessage(validationContext.MemberName) : string.Empty;
+                var errorMessage = $"{baseError} Invalid client endpoint advertisement.";
                 return new ValidationResult(errorMessage, [validationContext.MemberName]);
             }
 

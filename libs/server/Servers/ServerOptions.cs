@@ -21,12 +21,12 @@ namespace Garnet.server
         public EndPoint[] EndPoints { get; set; } = [new IPEndPoint(IPAddress.Loopback, 6379)];
 
         /// <summary>
-        /// Endpoint advertised for node-to-node cluster traffic and used for client responses by default.
+        /// Cluster announce endpoint used for node-to-node traffic and client responses by default.
         /// </summary>
         public EndPoint ClusterAnnounceEndpoint { get; set; }
 
         /// <summary>
-        /// Hostname associated with this node and used for client responses by default.
+        /// Cluster announce hostname used for client responses by default.
         /// </summary>
         public string ClusterAnnounceHostname { get; set; }
 
@@ -43,7 +43,7 @@ namespace Garnet.server
                 clusterClientAnnounceIp = value;
             }
         }
-        private string clusterClientAnnounceIp;
+        string clusterClientAnnounceIp;
 
         /// <summary>
         /// Port returned in client cluster responses. The node-to-node port is used when zero.
@@ -58,7 +58,7 @@ namespace Garnet.server
                 clusterClientAnnouncePort = value;
             }
         }
-        private int clusterClientAnnouncePort;
+        int clusterClientAnnouncePort;
 
         /// <summary>
         /// Hostname returned in client cluster responses. The cluster announce hostname is used when unset.
@@ -73,7 +73,7 @@ namespace Garnet.server
                 clusterClientAnnounceHostname = value;
             }
         }
-        private string clusterClientAnnounceHostname;
+        string clusterClientAnnounceHostname;
 
         /// <summary>
         /// Cluster Preferred Endpoint Type

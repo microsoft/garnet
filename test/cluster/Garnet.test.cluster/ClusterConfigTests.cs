@@ -181,15 +181,18 @@ namespace Garnet.test.cluster
         [Test, Order(3)]
         [TestCase(-1)]
         [TestCase(int.MaxValue)]
+        [Category("CLUSTER-CONFIG")]
         public void InvalidReplicationHistoryLengthRecoversTest(int length)
         {
             context.CreateInstances(1, enableAOF: true);
-            string checkpointDirectory = context.nodeOptions[0].CheckpointDir;
+            var checkpointDirectory = context.nodeOptions[0].CheckpointDir;
             context.ShutdownNode(0, ensureAofFlush: true);
-            string[] files = Directory.GetFiles(checkpointDirectory, "replication.conf*", SearchOption.AllDirectories);
+            var files = Directory.GetFiles(checkpointDirectory, "replication.conf*", SearchOption.AllDirectories);
             Assert.That(files, Has.Length.EqualTo(1));
-            using (FileStream file = File.OpenWrite(files[0]))
+            using (var file = File.OpenWrite(files[0]))
+            {
                 file.Write(BitConverter.GetBytes(length));
+            }
 
             Assert.DoesNotThrow(() => context.RestartNode(0));
         }
@@ -393,7 +396,7 @@ namespace Garnet.test.cluster
             const long configEpoch = 2;
             var localNodeId = Generator.CreateHexId();
             var remoteNodeId = Generator.CreateHexId();
-            ConcurrentDictionary<string, long> workerBanList = new();
+            var workerBanList = new ConcurrentDictionary<string, long>();
 
             var localConfig = new ClusterConfig().InitializeLocalWorker(
                 localNodeId,
@@ -463,30 +466,57 @@ namespace Garnet.test.cluster
         [TestCase("203.0.113.10", -1, "node.example.com")]
         [TestCase("203.0.113.10", 65536, "node.example.com")]
         [TestCase("203.0.113.10", 17001, "bad\r\nhostname")]
+        [Category("CLUSTER-CONFIG")]
         public void InvalidSerializedClientEndpointTest(string address, int port, string hostname)
         {
-            ClusterConfig config = new ClusterConfig().InitializeLocalWorker(
-                Generator.CreateHexId(), "127.0.0.1", 7001, 1, Garnet.cluster.NodeRole.PRIMARY,
-                null, "peer.example.com", address, port, hostname);
+            var config = new ClusterConfig().InitializeLocalWorker(
+                Generator.CreateHexId(),
+                "127.0.0.1",
+                7001,
+                configEpoch: 1,
+                Garnet.cluster.NodeRole.PRIMARY,
+                null,
+                "peer.example.com",
+                address,
+                port,
+                hostname);
+
             Assert.Throws<InvalidDataException>(() => ClusterConfig.FromByteArray(config.ToByteArray()));
         }
 
         [Test]
+        [Category("CLUSTER-CONFIG")]
         public void ClientEndpointDoesNotReplacePeerEndpointsTest()
         {
-            string primaryId = Generator.CreateHexId();
-            string replicaId = Generator.CreateHexId();
-            ClusterConfig primary = new ClusterConfig().InitializeLocalWorker(
-                primaryId, "127.0.0.1", 7001, 1, Garnet.cluster.NodeRole.PRIMARY,
-                null, "primary.peer.example", "203.0.113.1", 65535, "primary.example.com");
+            var primaryId = Generator.CreateHexId();
+            var replicaId = Generator.CreateHexId();
+            var primary = new ClusterConfig().InitializeLocalWorker(
+                primaryId,
+                "127.0.0.1",
+                7001,
+                configEpoch: 1,
+                Garnet.cluster.NodeRole.PRIMARY,
+                null,
+                "primary.peer.example",
+                "203.0.113.1",
+                65535,
+                "primary.example.com");
             primary = primary.AssignSlots([0], ClusterConfig.LOCAL_WORKER_ID, SlotState.STABLE);
-            ClusterConfig replica = new ClusterConfig().InitializeLocalWorker(
-                replicaId, "127.0.0.2", 7002, 2, Garnet.cluster.NodeRole.REPLICA,
-                primaryId, "replica.peer.example", "203.0.113.2", 17002, "replica.example.com");
+            var replica = new ClusterConfig().InitializeLocalWorker(
+                replicaId,
+                "127.0.0.2",
+                7002,
+                configEpoch: 2,
+                Garnet.cluster.NodeRole.REPLICA,
+                primaryId,
+                "replica.peer.example",
+                "203.0.113.2",
+                17002,
+                "replica.example.com");
 
             primary = ClusterConfig.FromByteArray(primary.Merge(replica, []).ToByteArray());
             replica = ClusterConfig.FromByteArray(replica.Merge(primary, []).ToByteArray());
-            ushort replicaWorkerId = primary.GetWorkerIdFromNodeId(replicaId);
+            var replicaWorkerId = primary.GetWorkerIdFromNodeId(replicaId);
 
             Assert.That(primary.GetWorkerAddress(replicaWorkerId), Is.EqualTo(("127.0.0.2", 7002)));
             Assert.That(primary.GetWorkerAddressFromNodeId(replicaId), Is.EqualTo(("127.0.0.2", 7002)));
@@ -501,22 +531,49 @@ namespace Garnet.test.cluster
         }
 
         [Test]
+        [Category("CLUSTER-CONFIG")]
         public void OlderRelayPreservesClientEndpointUntilOwnerClearsItTest()
         {
-            string ownerId = Generator.CreateHexId();
-            ClusterConfig receiver = new ClusterConfig().InitializeLocalWorker(
-                Generator.CreateHexId(), "127.0.0.1", 7001, 1, Garnet.cluster.NodeRole.PRIMARY, null, "");
-            ClusterConfig owner = new ClusterConfig().InitializeLocalWorker(
-                ownerId, "127.0.0.2", 7002, 2, Garnet.cluster.NodeRole.PRIMARY, null, "",
-                "203.0.113.2", 17002, "owner.example.com");
+            var ownerId = Generator.CreateHexId();
+            var receiver = new ClusterConfig().InitializeLocalWorker(
+                Generator.CreateHexId(),
+                "127.0.0.1",
+                7001,
+                configEpoch: 1,
+                Garnet.cluster.NodeRole.PRIMARY,
+                null,
+                "");
+            var owner = new ClusterConfig().InitializeLocalWorker(
+                ownerId,
+                "127.0.0.2",
+                7002,
+                configEpoch: 2,
+                Garnet.cluster.NodeRole.PRIMARY,
+                null,
+                "",
+                "203.0.113.2",
+                17002,
+                "owner.example.com");
             owner = owner.AssignSlots([0], ClusterConfig.LOCAL_WORKER_ID, SlotState.STABLE);
             receiver = receiver.Merge(owner, []);
 
-            ClusterConfig legacyOwner = new ClusterConfig().InitializeLocalWorker(
-                ownerId, "127.0.0.2", 7002, 3, Garnet.cluster.NodeRole.PRIMARY, null, "");
+            var legacyOwner = new ClusterConfig().InitializeLocalWorker(
+                ownerId,
+                "127.0.0.2",
+                7002,
+                configEpoch: 3,
+                Garnet.cluster.NodeRole.PRIMARY,
+                null,
+                "");
             legacyOwner = legacyOwner.AssignSlots([0], ClusterConfig.LOCAL_WORKER_ID, SlotState.STABLE);
-            ClusterConfig relay = new ClusterConfig().InitializeLocalWorker(
-                Generator.CreateHexId(), "127.0.0.3", 7003, 4, Garnet.cluster.NodeRole.PRIMARY, null, "");
+            var relay = new ClusterConfig().InitializeLocalWorker(
+                Generator.CreateHexId(),
+                "127.0.0.3",
+                7003,
+                configEpoch: 4,
+                Garnet.cluster.NodeRole.PRIMARY,
+                null,
+                "");
             relay = relay.Merge(legacyOwner, []);
             receiver = receiver.Merge(ClusterConfig.FromByteArray(relay.ToByteArray()), []);
             Assert.That(receiver.GetEndpointFromSlot(0, ClusterPreferredEndpointType.Ip), Is.EqualTo(("203.0.113.2", 17002)));

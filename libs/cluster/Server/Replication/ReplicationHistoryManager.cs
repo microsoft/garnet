@@ -120,7 +120,7 @@ namespace Garnet.cluster
         {
             try
             {
-                byte[] replConfig = ClusterUtils.ReadDevice(replicationConfigDevice, replicationConfigDevicePool, logger);
+                var replConfig = ClusterUtils.ReadDevice(replicationConfigDevice, replicationConfigDevicePool, logger);
                 currentReplicationConfig = ReplicationHistory.FromByteArray(replConfig);
             }
             catch (Exception ex) when (ex is InvalidDataException or EndOfStreamException or IOException)

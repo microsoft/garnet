@@ -87,7 +87,7 @@ namespace Garnet.cluster
             writer.Write(ClientEndpointExtensionVersion);
             for (int i = 1; i < workers.Length; i++)
             {
-                Worker worker = workers[i];
+                var worker = workers[i];
                 writer.Write(worker.HasClientEndpointMetadata);
                 if (!worker.HasClientEndpointMetadata)
                     continue;
@@ -156,7 +156,8 @@ namespace Garnet.cluster
         /// </summary>
         public static ClusterConfig FromByteArray(byte[] other)
         {
-            ArgumentNullException.ThrowIfNull(other);
+            if (other == null)
+                throw new ArgumentNullException(nameof(other));
 
             try
             {
@@ -210,7 +211,7 @@ namespace Garnet.cluster
             if (ms.Position == ms.Length)
                 return;
 
-            byte extensionVersion = reader.ReadByte();
+            var extensionVersion = reader.ReadByte();
             if (extensionVersion > ClientEndpointExtensionVersion)
             {
                 // Retain the required cluster state during rolling upgrades even when client metadata is newer.

@@ -36,17 +36,8 @@ namespace Garnet.cluster
             while (true)
             {
                 var current = currentConfig;
-                var newConfig = current.InitializeLocalWorker(
-                    nodeId,
-                    address,
-                    port,
-                    configEpoch,
-                    role,
-                    replicaOfNodeId,
-                    hostname,
-                    clientAddress,
-                    clientPort,
-                    clientHostname);
+                var newConfig = current.InitializeLocalWorker(nodeId, address, port, configEpoch, role, replicaOfNodeId, hostname,
+                    clientAddress, clientPort, clientHostname);
                 if (Interlocked.CompareExchange(ref currentConfig, newConfig, current) == current)
                     break;
             }

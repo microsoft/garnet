@@ -46,29 +46,29 @@ namespace Garnet
         public string Address { get; set; }
 
         [IntRangeValidation(0, 65535)]
-        [Option("cluster-announce-port", Required = false, HelpText = "Port that this node advertises for node-to-node cluster traffic. Client responses use this port unless cluster-client-announce-port overrides it.")]
+        [Option("cluster-announce-port", Required = false, HelpText = "Port that this node advertises for node-to-node cluster traffic and, by default, client responses.")]
         public int ClusterAnnouncePort { get; set; }
 
         [IpAddressValidation(false)]
-        [Option("cluster-announce-ip", Required = false, HelpText = "IP address that this node advertises for node-to-node cluster traffic. Client responses use this address unless cluster-client-announce-ip overrides it.")]
+        [Option("cluster-announce-ip", Required = false, HelpText = "IP address that this node advertises for node-to-node cluster traffic and, by default, client responses.")]
         public string ClusterAnnounceIp { get; set; }
 
-        [Option("cluster-announce-hostname", Required = false, HelpText = "Hostname associated with this node and used in client responses unless cluster-client-announce-hostname overrides it.")]
+        [Option("cluster-announce-hostname", Required = false, HelpText = "Hostname of this node, used in client responses by default.")]
         public string ClusterAnnounceHostname { get; set; }
 
         [ClientEndpointValidation]
-        [Option("cluster-client-announce-ip", Required = false, HelpText = "IP address returned in MOVED, ASK, CLUSTER NODES, CLUSTER SLOTS, and CLUSTER SHARDS. Defaults to the node-to-node cluster address.")]
+        [Option("cluster-client-announce-ip", Required = false, HelpText = "IP address that this node advertises to clients (default: cluster announce address).")]
         public string ClusterClientAnnounceIp { get; set; }
 
         [IntRangeValidation(0, 65535)]
-        [Option("cluster-client-announce-port", Required = false, HelpText = "Port returned in MOVED, ASK, CLUSTER NODES, CLUSTER SLOTS, and CLUSTER SHARDS. Zero selects the node-to-node cluster port.")]
+        [Option("cluster-client-announce-port", Required = false, HelpText = "Port that this node advertises to clients (default: 0 uses the cluster announce port).")]
         public int ClusterClientAnnouncePort { get; set; }
 
         [ClientEndpointValidation(hostname: true)]
-        [Option("cluster-client-announce-hostname", Required = false, HelpText = "ASCII DNS hostname returned in client cluster responses. Defaults to the cluster announce hostname. Select hostname with cluster-preferred-endpoint-type.")]
+        [Option("cluster-client-announce-hostname", Required = false, HelpText = "ASCII DNS hostname that this node advertises to clients (default: cluster announce hostname).")]
         public string ClusterClientAnnounceHostname { get; set; }
 
-        [Option("cluster-preferred-endpoint-type", Required = false, HelpText = "Selects the IP address or hostname returned in MOVED, ASK, CLUSTER SLOTS, and CLUSTER SHARDS responses. (value options: ip, hostname, unknown)")]
+        [Option("cluster-preferred-endpoint-type", Required = false, HelpText = "Determines the endpoint type returned in client redirects, CLUSTER SLOTS, and CLUSTER SHARDS. (value options: ip, hostname, unknown)")]
         public ClusterPreferredEndpointType ClusterPreferredEndpointType { get; set; }
 
         [MemorySizeValidation]

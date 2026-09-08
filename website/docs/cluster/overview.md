@@ -52,54 +52,53 @@ For more information about the cluster configuration please see the description 
 
 ### Separate Client Endpoints
 
-By default, Garnet uses each node's cluster announce address and port for node-to-node
-traffic and reuses the cluster announce settings in client responses. Deployments behind
-a load balancer or network address translation can configure a separate endpoint for
-clients:
+Garnet uses the cluster announce address and port for both client and node-to-node traffic
+by default. When running behind a load balancer or network address translation, the following
+options can be used to advertise a different endpoint to clients:
 
-- `--cluster-announce-ip` and `--cluster-announce-port` identify the directly reachable
-  endpoint used for gossip, replication, migration, and other node-to-node traffic.
-- `--cluster-announce-hostname` supplies the default hostname reported to clients.
-- `--cluster-client-announce-ip`, `--cluster-client-announce-port`, and
-  `--cluster-client-announce-hostname` override the endpoint returned in `MOVED`, `ASK`,
-  `CLUSTER NODES`, `CLUSTER SLOTS`, and `CLUSTER SHARDS` responses.
-- `--cluster-preferred-endpoint-type` selects whether client responses prefer the client
-  IP address or hostname.
+- **--cluster-client-announce-ip**: IP address to return to clients. Defaults to the cluster
+  announce address.
+- **--cluster-client-announce-port**: Port to return to clients. Set to 0 to use the cluster
+  announce port.
+- **--cluster-client-announce-hostname**: Hostname to return to clients. Defaults to the cluster
+  announce hostname.
+- **--cluster-preferred-endpoint-type**: Select the IP address or hostname for client redirects,
+  CLUSTER SLOTS, and CLUSTER SHARDS.
 
-Each client setting falls back independently to its corresponding cluster announce
-setting when omitted.
-Null or empty addresses and hostnames select the defaults. Port zero selects the peer
-port; explicit ports must be between 1 and 65535. Client addresses must be IPv4 or IPv6
-literals, without a scope identifier or brackets, and cannot be unspecified addresses.
-Hostnames must be ASCII DNS names with labels of at most 63 characters and at most 253
-characters in total, excluding an optional final dot. Names are not resolved at startup.
-Use ASCII Punycode for internationalized domain names.
+Null or empty addresses and hostnames use their defaults. Client ports must be in the range
+1 to 65535, or 0 to use the default. Client addresses must be IPv4 or IPv6 literals without
+brackets or a scope identifier, and cannot be unspecified addresses. Hostnames must be ASCII
+DNS names with labels of at most 63 characters and at most 253 characters in total, excluding
+an optional final dot. Names are not resolved at startup. Use ASCII Punycode for internationalized
+domain names.
 
-`CLUSTER NODES` reports the client address and port followed by the client hostname
-when one is available. Its existing synthetic bus port remains the peer port plus 10000.
-Cluster administration must use the peer endpoints for `CLUSTER MEET` and migration,
-not addresses parsed from client discovery responses. These settings do not create
-another listener or configure a proxy. Each advertised client endpoint must route to
-the corresponding node.
+These settings apply to MOVED, ASK, CLUSTER NODES, CLUSTER SLOTS, and CLUSTER SHARDS.
+CLUSTER NODES reports the client address and port, followed by the hostname when available.
+Its synthetic bus port remains the cluster announce port plus 10000.
+Gossip, replication, migration, and failover continue using the node-to-node endpoints specified
+by `--cluster-announce-ip` and `--cluster-announce-port`. Use those endpoints for CLUSTER MEET
+and migration, rather than endpoints from client discovery responses.
+The client settings do not create a listener or configure a proxy. Each client endpoint must
+route to the corresponding node.
 
-Client metadata is stored and exchanged as an optional extension after the unchanged
-version 1 cluster configuration. Older nodes ignore the extension and continue using
-peer endpoints. Upgrade all nodes before relying on translated client endpoints.
-Older nodes do not preserve this metadata when they write or forward configuration.
-New nodes preserve known advertisements when an older intermediary omits them.
-Direct gossip from the owning node refreshes or clears its advertisement, including at
-the same configuration epoch after a restart. Startup settings replace the local
-advertisement on recovery, so removing an override restores the default.
+Client metadata is stored and exchanged as an optional extension after the unchanged version 1
+cluster configuration. Older nodes ignore the extension and use node-to-node endpoints.
+Upgrade all nodes before relying on translated client endpoints.
+Older nodes do not preserve client metadata when writing or forwarding configuration. New nodes
+preserve known advertisements when an older intermediary omits them. Direct gossip from the
+owning node refreshes or clears its advertisement, including at the same configuration epoch
+after a restart. Startup settings replace the local advertisement on recovery, so removing an
+override restores the default.
 
-For example, this node listens and communicates with peers on `10.0.0.4:6379`, while
-clients connect through a load balancer using `node.example.com:10000`:
+For example, the following node listens and communicates with peers on `10.0.0.4:6379`,
+while clients connect through a load balancer using `node.example.com:10000`:
 
 ```bash
-GarnetServer --cluster --bind 10.0.0.4 --port 6379 \
-  --cluster-announce-ip 10.0.0.4 --cluster-announce-port 6379 \
-  --cluster-client-announce-hostname node.example.com \
-  --cluster-client-announce-port 10000 \
-  --cluster-preferred-endpoint-type hostname
+	GarnetServer --cluster --bind 10.0.0.4 --port 6379 \
+	    --cluster-announce-ip 10.0.0.4 --cluster-announce-port 6379 \
+	    --cluster-client-announce-hostname node.example.com \
+	    --cluster-client-announce-port 10000 \
+	    --cluster-preferred-endpoint-type hostname
 ```
 
 ## Control Plane
@@ -210,3 +209,4 @@ PS C:\Dev>
 ```
 
 Note that the use of redis-cli is not required; any client compatible with the RESP protocol may be used to execute the aforementioned commands.
+

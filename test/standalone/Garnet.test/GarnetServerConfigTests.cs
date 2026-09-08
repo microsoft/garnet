@@ -1672,9 +1672,9 @@ namespace Garnet.test
         [TestCase("--cluster-client-announce-hostname", "nödé.example.com")]
         public void InvalidClusterClientEndpointTest(string option, string value)
         {
-            bool parsed = ServerSettingsManager.TryParseCommandLineArguments(
-                [option, value], out _, out _, out _, out _, silentMode: true);
-            Assert.That(parsed, Is.False);
+            var args = new[] { option, value };
+            var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out _, out _, out _, out _, silentMode: true);
+            ClassicAssert.IsFalse(parseSuccessful);
         }
 
         [Test]
@@ -1685,28 +1685,28 @@ namespace Garnet.test
         [TestCase("203.0.113.10", 17000, "xn--bcher-kva.example")]
         public void ValidClusterClientEndpointTest(string address, int port, string hostname)
         {
-            ServerOptions options = new()
+            var options = new ServerOptions()
             {
                 ClusterClientAnnounceIp = address,
                 ClusterClientAnnouncePort = port,
                 ClusterClientAnnounceHostname = hostname
             };
-            Assert.That(options.ClusterClientAnnounceIp, Is.EqualTo(address));
-            Assert.That(options.ClusterClientAnnouncePort, Is.EqualTo(port));
-            Assert.That(options.ClusterClientAnnounceHostname, Is.EqualTo(hostname));
+            ClassicAssert.AreEqual(address, options.ClusterClientAnnounceIp);
+            ClassicAssert.AreEqual(port, options.ClusterClientAnnouncePort);
+            ClassicAssert.AreEqual(hostname, options.ClusterClientAnnounceHostname);
         }
 
         [Test]
         public void EmbeddedClusterClientEndpointValidationTest()
         {
-            ServerOptions options = new();
+            var options = new ServerOptions();
             Assert.Throws<ArgumentException>(() => options.ClusterClientAnnounceIp = "node.example.com");
             Assert.Throws<ArgumentOutOfRangeException>(() => options.ClusterClientAnnouncePort = -1);
             Assert.Throws<ArgumentOutOfRangeException>(() => options.ClusterClientAnnouncePort = 65536);
             Assert.Throws<ArgumentException>(() => options.ClusterClientAnnounceHostname = "node\r\ninjected");
             Assert.Throws<ArgumentException>(() => options.ClusterClientAnnounceHostname = new string('a', 64) + ".example");
-            Assert.Throws<ArgumentException>(() => options.ClusterClientAnnounceHostname =
-                string.Join(".", Enumerable.Repeat(new string('a', 63), 4)));
+            var longHostname = string.Join(".", Enumerable.Repeat(new string('a', 63), 4));
+            Assert.Throws<ArgumentException>(() => options.ClusterClientAnnounceHostname = longHostname);
         }
 
         [Test]
