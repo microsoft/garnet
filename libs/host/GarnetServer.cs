@@ -312,19 +312,19 @@ namespace Garnet
                             var serverCert = X509CertificateLoader.LoadPkcs12(File.ReadAllBytes(opts.TlsOptions.CertFileName), opts.TlsOptions.CertPassword ?? "", X509KeyStorageFlags.Exportable);
 
                             string keyPem;
-                            if (serverCert.GetRSAPrivateKey() is var rsaKey)
+                            if (serverCert.GetRSAPrivateKey() is var rsaKey && rsaKey is not null)
                             {
                                 keyPem = rsaKey.ExportPkcs8PrivateKeyPem();
                             }
-                            else if (serverCert.GetECDsaPrivateKey() is var ecdsaKey)
+                            else if (serverCert.GetECDsaPrivateKey() is var ecdsaKey && ecdsaKey is not null)
                             {
                                 keyPem = ecdsaKey.ExportPkcs8PrivateKeyPem();
                             }
-                            else if (serverCert.GetECDiffieHellmanPrivateKey() is var ecdhKey)
+                            else if (serverCert.GetECDiffieHellmanPrivateKey() is var ecdhKey && ecdhKey is not null)
                             {
                                 keyPem = ecdhKey.ExportPkcs8PrivateKeyPem();
                             }
-                            else if (serverCert.GetDSAPrivateKey() is var dsaKey)
+                            else if (serverCert.GetDSAPrivateKey() is var dsaKey && dsaKey is not null)
                             {
                                 keyPem = dsaKey.ExportPkcs8PrivateKeyPem();
                             }
