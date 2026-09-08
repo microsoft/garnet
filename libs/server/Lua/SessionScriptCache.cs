@@ -170,7 +170,6 @@ namespace Garnet.server
         internal bool TryLoad(
             RespServerSession session,
             ReadOnlySpan<byte> source,
-            LuaScriptChunkKind sourceKind,
             ScriptHashKey digest,
             ref LuaScriptHandle luaScriptHandle,
             out LuaRunner runner,
@@ -186,11 +185,9 @@ namespace Garnet.server
 
             try
             {
-                var compiledSource = sourceKind == LuaScriptChunkKind.Text
-                    ? LuaRunner.CompileSource(source)
-                    : new LuaScriptChunk(source.ToArray(), sourceKind);
+                var scriptData = luaScriptHandle?.ScriptData ?? source.ToArray();
 
-                runner = new LuaRunner(memoryManagementMode, memoryLimitBytes, logMode, allowedFunctions, compiledSource, storeWrapper.serverOptions.LuaTransactionMode, processor, scratchBufferNetworkSender, storeWrapper.redisProtocolVersion, logger);
+                runner = new LuaRunner(memoryManagementMode, memoryLimitBytes, logMode, allowedFunctions, scriptData, storeWrapper.serverOptions.LuaTransactionMode, processor, scratchBufferNetworkSender, storeWrapper.redisProtocolVersion, logger);
 
                 // If compilation fails, an error is written out
                 if (runner.CompileForSession(session))
@@ -206,7 +203,7 @@ namespace Garnet.server
                     ScriptHashKey storeKeyDigest = new(into);
                     digestOnHeap = storeKeyDigest;
 
-                    luaScriptHandle ??= new(compiledSource);
+                    luaScriptHandle ??= new(scriptData);
                     scriptCache.Add(storeKeyDigest, (runner, luaScriptHandle));
 
                     // On first script load, register for timeout notifications

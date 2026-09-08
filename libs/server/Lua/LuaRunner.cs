@@ -160,7 +160,7 @@ namespace Garnet.server
 
         readonly LuaLoggingMode logMode;
         readonly HashSet<string> allowedFunctions;
-        readonly LuaScriptChunk source;
+        readonly ReadOnlyMemory<byte> source;
         readonly ScratchBufferNetworkSender scratchBufferNetworkSender;
         readonly RespServerSession respServerSession;
 
@@ -209,22 +209,6 @@ namespace Garnet.server
             LuaLoggingMode logMode,
             HashSet<string> allowedFunctions,
             ReadOnlyMemory<byte> source,
-            bool txnMode = false,
-            RespServerSession respServerSession = null,
-            ScratchBufferNetworkSender scratchBufferNetworkSender = null,
-            string redisVersion = "0.0.0.0",
-            ILogger logger = null
-        )
-            : this(memMode, memLimitBytes, logMode, allowedFunctions, new LuaScriptChunk(source, LuaScriptChunkKind.Text), txnMode, respServerSession, scratchBufferNetworkSender, redisVersion, logger)
-        {
-        }
-
-        internal unsafe LuaRunner(
-            LuaMemoryManagementMode memMode,
-            int? memLimitBytes,
-            LuaLoggingMode logMode,
-            HashSet<string> allowedFunctions,
-            LuaScriptChunk source,
             bool txnMode = false,
             RespServerSession respServerSession = null,
             ScratchBufferNetworkSender scratchBufferNetworkSender = null,
@@ -344,7 +328,7 @@ namespace Garnet.server
                 throw new GarnetException("Insufficient space in Lua VM for redis version number global");
             }
 
-            var loadRes = state.LoadBuffer(PrepareLoaderBlockBytes(allowedFunctions, logger).Span, LuaScriptChunkKind.GarnetGeneratedBinary);
+            var loadRes = state.LoadBinaryBuffer(PrepareLoaderBlockBytes(allowedFunctions, logger).Span);
             if (loadRes != LuaStatus.OK)
             {
                 if (state.StackTop == 1 && state.Type(1) == LuaType.String)

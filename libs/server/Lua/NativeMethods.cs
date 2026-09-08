@@ -46,13 +46,6 @@ namespace Garnet.server
         private static partial LuaStatus luaL_loadbufferx(lua_State luaState, charptr_t buff, size_t sz, charptr_t name, charptr_t mode);
 
         /// <summary>
-        /// see: https://www.lua.org/manual/5.4/manual.html#luaL_loadstring
-        /// </summary>
-        [LibraryImport(LuaLibraryName)]
-        [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
-        private static partial LuaStatus luaL_loadstring(lua_State lua_State, charptr_t buff);
-
-        /// <summary>
         /// see: https://www.lua.org/manual/5.4/manual.html#luaL_newstate
         /// </summary>
         [LibraryImport(LuaLibraryName)]
@@ -388,18 +381,27 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Push given span to stack, compiles it, and executes it.
-        /// 
+        /// Loads Garnet's precompiled loader buffer.
         /// Provided data is copied, and can be reused once this call returns.
         /// </summary>
-        internal static unsafe LuaStatus LoadBuffer(lua_State luaState, ReadOnlySpan<byte> str, LuaScriptChunkKind chunkKind)
+        internal static unsafe LuaStatus LoadBinaryBuffer(lua_State luaState, ReadOnlySpan<byte> str)
         {
-            ReadOnlySpan<byte> mode = chunkKind switch
+            ReadOnlySpan<byte> mode = "b\0"u8;
+
+            fixed (byte* ptr = str)
+            fixed (byte* modePtr = mode)
             {
-                LuaScriptChunkKind.Text => "t\0"u8,
-                LuaScriptChunkKind.GarnetGeneratedBinary => "b\0"u8,
-                _ => throw new ArgumentOutOfRangeException(nameof(chunkKind))
-            };
+                return luaL_loadbufferx(luaState, (charptr_t)ptr, (size_t)str.Length, (charptr_t)UIntPtr.Zero, (charptr_t)modePtr);
+            }
+        }
+
+        /// <summary>
+        /// Loads an exact-length text buffer.
+        /// Provided data is copied, and can be reused once this call returns.
+        /// </summary>
+        internal static unsafe LuaStatus LoadTextBuffer(lua_State luaState, ReadOnlySpan<byte> str)
+        {
+            ReadOnlySpan<byte> mode = "t\0"u8;
 
             fixed (byte* ptr = str)
             fixed (byte* modePtr = mode)

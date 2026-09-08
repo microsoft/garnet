@@ -456,20 +456,38 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// This should be used for all LoadBuffers into Lua.
-        /// 
-        /// Note that this is different from pushing a buffer, as the loaded buffer is compiled and executed.
-        /// 
-        /// Maintains <see cref="curStackSize"/> and <see cref="StackTop"/> to minimize p/invoke calls.
+        /// Loads Garnet's precompiled loader buffer into Lua.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal LuaStatus LoadBuffer(ReadOnlySpan<byte> buffer, LuaScriptChunkKind chunkKind)
+        internal LuaStatus LoadBinaryBuffer(ReadOnlySpan<byte> buffer)
         {
             AssertLuaStackNotFull(2);
 
-            // Note that https://www.lua.org/source/5.4/lauxlib.c.html#luaL_loadbufferx is implemented in terms of
-            // a PCall, so we don't have to worry about crashes.
-            var ret = NativeMethods.LoadBuffer(state, buffer, chunkKind);
+            var ret = NativeMethods.LoadBinaryBuffer(state, buffer);
+
+            if (ret != LuaStatus.OK)
+            {
+                StackTop = NativeMethods.GetTop(state);
+            }
+            else
+            {
+                UpdateStackTop(1);
+            }
+
+            AssertLuaStackExpected();
+
+            return ret;
+        }
+
+        /// <summary>
+        /// Loads an exact-length text buffer into Lua.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal LuaStatus LoadTextBuffer(ReadOnlySpan<byte> buffer)
+        {
+            AssertLuaStackNotFull(2);
+
+            var ret = NativeMethods.LoadTextBuffer(state, buffer);
 
             if (ret != LuaStatus.OK)
             {
