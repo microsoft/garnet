@@ -315,7 +315,12 @@ namespace Tsavorite.core
             // reported. That distinction is what makes this safe for point-in-time consumers (migration, streaming
             // snapshot), which must never lose a key that is live outside the scanned range.
             if (internalStatus == OperationStatus.NOTFOUND)
+            {
+                // Closed records only reach here when the iterator was created with includeClosedRecords, which
+                // ScanCursor does when maxAddress is bounded; otherwise SkipOnScan filters them out.
+                Debug.Assert(srcLogRecord.Info.Invalid, "Expected an invalid record if its key's HashBucket is empty");
                 return Status.CreateFound();
+            }
 
             if (needIO)
             {

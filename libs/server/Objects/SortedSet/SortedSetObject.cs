@@ -143,7 +143,21 @@ namespace Garnet.server
     {
         private readonly SortedSet<(double Score, byte[] Element)> sortedSet;
         private readonly Dictionary<byte[], double> sortedSetDict;
+
+        // Expiration state for members with a TTL. Both structures are null until the first TTL is set, are allocated
+        // together by InitializeExpirationStructures, and are torn back down together by
+        // CleanupExpirationStructuresIfEmpty once no member has a TTL. HasExpirableItems() tests expirationTimes and
+        // guards every access to either of them.
+
+        // The expiration time, in UTC ticks, of each member that has one, and the source of truth for whether a member
+        // is expired. A member absent from this dictionary never expires.
         private Dictionary<byte[], long> expirationTimes;
+
+        // The same expirations ordered soonest-first, so lazy cleanup only has to inspect the head of the queue.
+        // PriorityQueue has no update operation, so resetting a member's TTL enqueues a second entry and leaves the
+        // stale one behind, and removing a member leaves its entry behind entirely. Entries are therefore only hints:
+        // DeleteExpiredItemsWorker re-checks each one against expirationTimes and discards it if the member is gone or
+        // now carries a different expiration.
         private PriorityQueue<byte[], long> expirationQueue;
 
         // Byte #31 is used to denote if key has expiration (1) or not (0)

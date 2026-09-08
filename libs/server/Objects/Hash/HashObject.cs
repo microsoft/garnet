@@ -57,11 +57,28 @@ namespace Garnet.server
     public partial class HashObject : GarnetObjectBase
     {
         readonly Dictionary<byte[], byte[]> hash;
+
+        // Expiration state for fields with a TTL. Both structures are null until the first TTL is set, are allocated
+        // together by InitializeExpirationStructures, and are torn back down together by
+        // CleanupExpirationStructuresIfEmpty once no field has a TTL. HasExpirableItems tests expirationTimes and
+        // guards every access to either of them.
+
+        // The expiration time, in UTC ticks, of each field that has one, and the source of truth for whether a field
+        // is expired. A field absent from this dictionary never expires.
         Dictionary<byte[], long> expirationTimes;
+
+        // The same expirations ordered soonest-first, so lazy cleanup only has to inspect the head of the queue.
+        // PriorityQueue has no update operation, so resetting a field's TTL enqueues a second entry and leaves the
+        // stale one behind, and removing a field leaves its entry behind entirely. Entries are therefore only hints:
+        // DeleteExpiredItemsWorker re-checks each one against expirationTimes and discards it if the field is gone or
+        // now carries a different expiration.
         PriorityQueue<byte[], long> expirationQueue;
 
 #if NET9_0_OR_GREATER
         private readonly Dictionary<byte[], byte[]>.AlternateLookup<ReadOnlySpan<byte>> hashSpanLookup;
+
+        // View of expirationTimes keyed by ReadOnlySpan<byte>, so a lookup does not have to allocate a byte[]. Follows
+        // the lifetime of expirationTimes and is recreated and cleared alongside it.
         Dictionary<byte[], long>.AlternateLookup<ReadOnlySpan<byte>> expirationTimeSpanLookup;
 #endif
 
