@@ -143,6 +143,19 @@ namespace Garnet.cluster
                 this.logger = logger;
             }
 
+            /// <summary>
+            /// Closes the network connection so a task blocked on a send fails fast, without
+            /// disposing the client session the task may still be writing through.
+            /// </summary>
+            public void CloseConnection()
+            {
+                try
+                {
+                    garnetClient?.CloseConnection();
+                }
+                catch { }
+            }
+
             public void Dispose()
             {
                 try
@@ -344,9 +357,12 @@ namespace Garnet.cluster
                 }
                 finally
                 {
+                    // The client is disposed before leaving the monitor so that a drained monitor
+                    // means every client has already been torn down by the one thread that was
+                    // using it, and the send buffer it rented is back in the replication pool.
+                    garnetClient?.Dispose();
                     if (enteredMonitor)
                         _ = aofSyncDriver.activeWorkerMonitor.Exit();
-                    garnetClient?.Dispose();
                 }
 
                 [Conditional("DEBUG")]
