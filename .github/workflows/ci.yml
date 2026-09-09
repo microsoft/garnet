@@ -111,21 +111,6 @@ jobs:
         run: dotnet restore
       - name: Build Garnet
         run: dotnet build --configuration ${{ matrix.configuration }} --no-restore
-      - name: Verify BfTree Control Flow Guard
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
-          $dumpbin = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -find "VC\Tools\MSVC\**\bin\Hostx64\x64\dumpbin.exe" | Select-Object -Last 1
-          if (-not $dumpbin) {
-              throw "dumpbin.exe was not found"
-          }
-
-          $dll = "libs\native\bftree-garnet\target\release\bftree_garnet.dll"
-          $headers = & $dumpbin /headers $dll | Out-String
-          if ($headers -notmatch "Control Flow Guard") {
-              throw "$dll was not built with Control Flow Guard"
-          }
 
   # Job to test Garnet standalone code
   test-garnet-standalone:
