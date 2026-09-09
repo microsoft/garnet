@@ -203,5 +203,346 @@ namespace Tsavorite.test
             }
             recoveredLog.Dispose();
         }
+
+        /// <summary>
+        /// A device that throws synchronously from ReadAsync never delivers a completion callback for that read. The
+        /// scan iterator must surface it as a failed page load rather than leaving the frame claimed but never loaded,
+        /// which strands the scanning thread and any later waiter.
+        /// </summary>
+        [Test]
+        [Category("TsavoriteLog")]
+        public void ScanTerminatesWhenPageReadThrowsSynchronously([Values(DiskScanBufferingMode.SinglePageBuffering, DiskScanBufferingMode.DoublePageBuffering)] DiskScanBufferingMode scanBufferingMode)
+        {
+            var flakyDevice = new SyncThrowOnReadDevice(Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "tsavoritelog.log"), deleteOnClose: true));
+            device = flakyDevice;
+            var epoch = new LightEpoch();
+            log = new TsavoriteLog(new TsavoriteLogSettings
+            {
+                LogDevice = device,
+                LogChecksum = LogChecksumType.PerEntry,
+                LogCommitManager = manager,
+                PageSizeBits = 12,
+                MemorySizeBits = 14,
+                SegmentSizeBits = 20,
+                Epoch = epoch
+            });
+
+            for (var i = 0; i < 1000; i++)
+                _ = log.Enqueue(entry);
+            log.Commit(spinWait: true);
+
+            // The scan must read from disk: everything but the last couple of pages has been evicted from memory.
+            ClassicAssert.Greater(log.TailAddress, 1 << 14);
+
+            // Hold an older epoch on another thread so the iterator's page-read action is deferred through the drain
+            // list and runs on that thread, as it does in a live server. A failure there must not escape into the
+            // unrelated thread's drain pass.
+            using var holderProtected = new ManualResetEventSlim(false);
+            using var holderRelease = new ManualResetEventSlim(false);
+            Exception drainException = null;
+            var holderThread = new Thread(() =>
+            {
+                epoch.Resume();
+                holderProtected.Set();
+                _ = holderRelease.Wait(TimeSpan.FromSeconds(3));
+                try
+                {
+                    for (var i = 0; i < 500 && !holderRelease.IsSet; i++)
+                    {
+                        epoch.ProtectAndDrain();
+                        Thread.Sleep(1);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    drainException = ex;
+                }
+                finally
+                {
+                    epoch.Suspend();
+                }
+            })
+            { IsBackground = true };
+            holderThread.Start();
+            ClassicAssert.IsTrue(holderProtected.Wait(TimeSpan.FromSeconds(10)));
+
+            // Scan on a separate thread with a bounded wait so a stranded scanning thread fails the test
+            // rather than hanging the run.
+            Exception firstPass = null, secondPass = null;
+            var entriesReadAfterRecovery = 0;
+            using var scanDone = new ManualResetEventSlim(false);
+            var scanThread = new Thread(() =>
+            {
+                try
+                {
+                    using var iter = log.Scan(0, log.TailAddress, scanBufferingMode: scanBufferingMode);
+                    try
+                    {
+                        while (iter.GetNext(out _, out _, out _))
+                            ;
+                    }
+                    catch (Exception ex)
+                    {
+                        firstPass = ex;
+                    }
+
+                    // The iterator must remain usable after the failed frames are released. Pages whose read was
+                    // already in flight when the device recovered are still skipped, so tolerate cancellation while
+                    // requiring the scan to make forward progress and terminate.
+                    flakyDevice.ArmReadFailure = false;
+                    for (var scanning = true; scanning;)
+                    {
+                        try
+                        {
+                            scanning = iter.GetNext(out _, out _, out _);
+                            if (scanning)
+                                ++entriesReadAfterRecovery;
+                        }
+                        catch (OperationCanceledException)
+                        {
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    secondPass = ex;
+                }
+                finally
+                {
+                    scanDone.Set();
+                }
+            })
+            { IsBackground = true };
+
+            flakyDevice.ArmReadFailure = true;
+            scanThread.Start();
+
+            var completed = scanDone.Wait(TimeSpan.FromSeconds(30));
+            holderRelease.Set();
+            _ = holderThread.Join(TimeSpan.FromSeconds(10));
+
+            log.Dispose();
+            log = null;
+            epoch.Dispose();
+
+            ClassicAssert.IsTrue(completed, "Scan did not terminate after the device failed the page read");
+            ClassicAssert.IsInstanceOf<OperationCanceledException>(firstPass, $"Expected the failed page read to cancel the scan, got: {firstPass?.ToString() ?? "no exception"}");
+            ClassicAssert.IsNull(secondPass, $"Iterator was left unusable after a failed page read: {secondPass}");
+            ClassicAssert.Greater(entriesReadAfterRecovery, 0, "Iterator made no forward progress after the device recovered");
+            ClassicAssert.IsNull(drainException, $"Page read failure escaped into an unrelated thread's epoch drain: {drainException}");
+        }
+
+        /// <summary>
+        /// A page read that fails while it is still only a read-ahead (frame index &gt; 0) is published into
+        /// <c>loadedPages</c> as though it had loaded, so the claim in <c>nextLoadedPages</c> does not stall the CAS
+        /// loop. The failed frame must still refuse to hand back its contents when iteration reaches it: its buffer
+        /// holds either nothing or the previous page's bytes. Requires double-page buffering, the only mode that
+        /// issues read-ahead.
+        /// </summary>
+        [Test]
+        [Category("TsavoriteLog")]
+        public void ScanDoesNotReturnStaleDataWhenReadAheadPageFails([Values(0, 1, 2, 3, 4, 5, 6, 7)] int failingReadOrdinal)
+        {
+            var flakyDevice = new SyncThrowOnReadDevice(Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "tsavoritelog.log"), deleteOnClose: true));
+            device = flakyDevice;
+            var epoch = new LightEpoch();
+            log = new TsavoriteLog(new TsavoriteLogSettings
+            {
+                LogDevice = device,
+                LogChecksum = LogChecksumType.PerEntry,
+                LogCommitManager = manager,
+                PageSizeBits = 12,
+                MemorySizeBits = 14,
+                SegmentSizeBits = 20,
+                Epoch = epoch
+            });
+
+            const int entryCount = 1000;
+            ClassicAssert.GreaterOrEqual(entryLength, sizeof(int), "Entries must be wide enough to carry a unique index");
+
+            // Give every entry a unique, self-identifying payload so the assertions can distinguish a skipped page
+            // from a page backfilled with records from a different page.
+            var payload = new byte[entryLength];
+            for (var i = 0; i < entryCount; i++)
+            {
+                BitConverter.TryWriteBytes(payload, i);
+                _ = log.Enqueue(payload);
+            }
+            log.Commit(spinWait: true);
+            ClassicAssert.Greater(log.TailAddress, 1 << 14);
+
+            var entriesRead = 0;
+            var sawFailure = false;
+            using var scanDone = new ManualResetEventSlim(false);
+            Exception unexpected = null;
+            string ordering = null;
+
+            var scanThread = new Thread(() =>
+            {
+                try
+                {
+                    var lastIndex = -1;
+                    using var iter = log.Scan(0, log.TailAddress, scanBufferingMode: DiskScanBufferingMode.DoublePageBuffering);
+                    for (var scanning = true; scanning;)
+                    {
+                        try
+                        {
+                            scanning = iter.GetNext(out var result, out var length, out _);
+                            if (!scanning)
+                                continue;
+                            ++entriesRead;
+
+                            // Records may be missing when a page cannot be read, but each one delivered must be a
+                            // real record, delivered once, in order.
+                            var index = BitConverter.ToInt32(result, 0);
+                            if (length != entryLength || index <= lastIndex || index >= entryCount)
+                            {
+                                ordering ??= $"Scan returned index {index} (length {length}) after {lastIndex}, which is duplicate, out of order, or not a valid record; a stale frame was surfaced as valid data";
+                                scanning = false;
+                                continue;
+                            }
+                            lastIndex = index;
+                        }
+                        catch (Exception ex) when (ex is OperationCanceledException or TsavoriteException)
+                        {
+                            sawFailure = true;
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    unexpected = ex;
+                }
+                finally
+                {
+                    scanDone.Set();
+                }
+            })
+            { IsBackground = true };
+
+            flakyDevice.ThrowOnReadOrdinal = failingReadOrdinal;
+            scanThread.Start();
+            var completed = scanDone.Wait(TimeSpan.FromSeconds(30));
+
+            log.Dispose();
+            log = null;
+            epoch.Dispose();
+
+            ClassicAssert.IsTrue(completed, "Scan did not terminate after a read-ahead page read failed");
+            ClassicAssert.IsNull(unexpected, $"Scan threw an unexpected exception: {unexpected}");
+            ClassicAssert.IsNull(ordering, ordering);
+            ClassicAssert.IsTrue(flakyDevice.ReadFailureInjected, "Fault injection never fired, so this test asserted nothing");
+
+            // Entries may be lost when a page cannot be read, but never silently.
+            if (entriesRead < entryCount)
+                ClassicAssert.IsTrue(sawFailure, $"Scan silently returned {entriesRead} of {entryCount} entries after a read-ahead page read failed, with no error surfaced to the caller");
+        }
+
+        /// <summary>
+        /// Exposes the protected metadata read so the failure path can be exercised directly.
+        /// </summary>
+        private sealed class TestableCheckpointManager : DeviceLogCommitCheckpointManager
+        {
+            public TestableCheckpointManager(INamedDeviceFactoryCreator creator, ICheckpointNamingScheme scheme)
+                : base(creator, scheme) { }
+
+            public byte[] ReadMetadata(IDevice device, int size)
+            {
+                ReadInto(device, 0, out var buffer, size);
+                return buffer;
+            }
+
+            public void WriteMetadata(IDevice device, byte[] metadata)
+                => WriteInto(device, 0, metadata, metadata.Length);
+        }
+
+        [Test]
+        [Category("TsavoriteLog")]
+        public void MetadataReadFailureIsReportedRatherThanReturningGarbage()
+        {
+            // A failed metadata read leaves the pooled buffer holding whatever it previously contained, so returning
+            // it would have the caller parse arbitrary bytes as checkpoint metadata. The read must fail instead.
+            using var manager = new TestableCheckpointManager(
+                new LocalStorageNamedDeviceFactoryCreator(deleteOnClose: true),
+                new DefaultCheckpointNamingScheme(TestUtils.MethodTestDir));
+
+            var backing = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "metadata.dat"), deleteOnClose: true);
+            var failing = new ErrorCodeOnReadDevice(backing);
+            using (failing)
+            {
+                failing.Initialize(1 << 20);
+                manager.WriteMetadata(failing, [1, 2, 3, 4]);
+
+                // The same read succeeds while the device is healthy, so the assertion below is about the error code
+                // and not about the device being unusable.
+                var healthy = manager.ReadMetadata(failing, sizeof(int));
+                ClassicAssert.IsNotNull(healthy);
+
+                failing.ReadErrorCode = 22;
+                var ex = Assert.Throws<TsavoriteException>(() => manager.ReadMetadata(failing, sizeof(int)));
+                StringAssert.Contains("22", ex.Message);
+            }
+        }
+
+        [Test]
+        [Category("TsavoriteLog")]
+        public void MetadataReadToleratesEndOfFile()
+        {
+            // ReadInto rounds its length up to a sector, so it routinely asks for more bytes than the metadata file
+            // holds. Windows reports that over-read as ERROR_HANDLE_EOF while Linux returns a short read. EOF must be
+            // tolerated, and the untransferred bytes must read back as zeros rather than stale pooled-buffer content.
+            using var manager = new TestableCheckpointManager(
+                new LocalStorageNamedDeviceFactoryCreator(deleteOnClose: true),
+                new DefaultCheckpointNamingScheme(TestUtils.MethodTestDir));
+
+            var backing = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "metadata-eof.dat"), deleteOnClose: true);
+            var failing = new ErrorCodeOnReadDevice(backing);
+            using (failing)
+            {
+                failing.Initialize(1 << 20);
+
+                // Prime the pooled buffer with non-zero bytes so a stale-buffer regression cannot masquerade as zeros.
+                manager.WriteMetadata(failing, [0x7F, 0x7F, 0x7F, 0x7F]);
+                var primed = manager.ReadMetadata(failing, sizeof(int));
+                ClassicAssert.AreNotEqual(0, BitConverter.ToInt32(primed, 0));
+
+                const uint ErrorHandleEof = 38;
+                failing.ReadErrorCode = ErrorHandleEof;
+
+                byte[] afterEof = null;
+                Assert.DoesNotThrow(() => afterEof = manager.ReadMetadata(failing, sizeof(int)));
+                ClassicAssert.IsNotNull(afterEof);
+                CollectionAssert.AreEqual(new byte[afterEof.Length], afterEof, "untransferred bytes must be zeroed, not stale pool contents");
+            }
+        }
+
+        [Test]
+        [Category("TsavoriteLog")]
+        public void ZeroLengthCommitMetadataIsRejected()
+        {
+            // ReadInto clears its buffer before reading, so a commit file that is empty or shorter than its length
+            // prefix reads back as a zero length. Accepting that would present an empty commit as a valid one.
+            // TestUtils.MethodTestDir is keyed on the method name alone, so give this manager its own directory.
+            // Commit and GetCommitMetadata each open and close their own device, so the commit file must outlive
+            // the device that wrote it.
+            var directory = Path.Join(TestUtils.MethodTestDir, Guid.NewGuid().ToString("N"));
+            using var manager = new DeviceLogCommitCheckpointManager(
+                new LocalStorageNamedDeviceFactoryCreator(),
+                new DefaultCheckpointNamingScheme(directory));
+
+            var metadata = new byte[64];
+            for (var i = 0; i < metadata.Length; i++)
+                metadata[i] = (byte)(i + 1);
+            manager.Commit(beginAddress: 0, untilAddress: 64, metadata, commitNum: 0, forceWriteMetadata: true);
+
+            // The reader returns the sector-padded body, so compare only the metadata that was written.
+            var roundTripped = manager.GetCommitMetadata(0);
+            CollectionAssert.AreEqual(metadata, roundTripped.AsSpan(0, metadata.Length).ToArray(), "a healthy commit must round-trip");
+
+            manager.Commit(beginAddress: 0, untilAddress: 64, [], commitNum: 1, forceWriteMetadata: true);
+
+            var ex = Assert.Throws<TsavoriteException>(() => manager.GetCommitMetadata(1));
+            StringAssert.Contains("truncated or corrupt", ex.Message);
+        }
     }
 }

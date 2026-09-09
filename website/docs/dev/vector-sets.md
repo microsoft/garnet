@@ -135,7 +135,6 @@ Deletion of Vector Sets is detected in the `GarnetTriggers.OnDispose` callback, 
 This takes place in four steps:
   1. The Vector Set context is marked for deletion from `GarnetTriggers.OnDispose`
      * A background task does this, as we do not have a usable storage session in the `GarnetTriggers` callback
-     * We _block_ on that background task, if an error occurs an exception is raised and the delete aborted
   2. `GarnetTriggers.OnDispose` returns, deleting the index key
   3. A background cleanup task scans the Tsavorite log for element keys, [see Cleanup](#cleanup) for more detail
   4. The Vector Set context is marked available

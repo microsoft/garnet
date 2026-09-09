@@ -7,6 +7,7 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Garnet.server;
+using Microsoft.Extensions.Logging;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using StackExchange.Redis;
@@ -144,6 +145,60 @@ namespace Garnet.test
 
             // Wait for save to complete
             while (server.LastSave() == lastSave) Thread.Sleep(10);
+        }
+
+        [Test]
+        public void PostCheckpointCleanupFailureIsLoggedAndContained()
+        {
+            var logger = new CapturingLogger();
+            var exception = new InvalidOperationException("Injected cleanup failure");
+
+            // Post-checkpoint cleanup is best-effort and must not invalidate an otherwise completed checkpoint.
+            Assert.DoesNotThrow(() => DatabaseManagerBase.RunPostCheckpointCleanup(() => throw exception, 17, logger));
+
+            // Preserve the cleanup exception and database ID for diagnosis.
+            var entry = logger.Entries.Single();
+            Assert.That(entry.Level, Is.EqualTo(LogLevel.Warning));
+            Assert.That(entry.Exception, Is.SameAs(exception));
+            Assert.That(entry.Field("id"), Is.EqualTo("17"));
+        }
+
+        [Test]
+        public async Task OverflowKeyCheckpointTest()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
+            var db = redis.GetDatabase(0);
+            const int overflowKeyLength = 2048;
+            const int keyCount = 128;
+            const int mutationsPerKey = 4;
+            var keyPrefix = new string('k', overflowKeyLength);
+
+            // Long keys use overflow storage; list values exercise heap-object checkpoint serialization.
+            for (var i = 0; i < keyCount; i++)
+                _ = db.ListLeftPush($"{keyPrefix}:{i}", "seed");
+
+            // Mutate the lists while the first full checkpoint runs so it preserves old object versions.
+            var logger = new CapturingLogger();
+            var checkpointTask = server.Provider.StoreWrapper.TakeCheckpointAsync(background: false, logger: logger);
+            var writerTask = Task.Run(() =>
+            {
+                for (var i = 0; i < keyCount * mutationsPerKey; i++)
+                    _ = db.ListLeftPush($"{keyPrefix}:{i % keyCount}", i);
+            });
+
+            await writerTask.ConfigureAwait(false);
+            Assert.That(await checkpointTask.ConfigureAwait(false), Is.True);
+
+            // Cleanup previously failed while remapping an overflow key, which discarded this full-checkpoint tail.
+            var firstCheckpointTail = server.Provider.StoreWrapper.DefaultDatabase.LastSaveStoreTailAddress;
+            Assert.That(firstCheckpointTail, Is.GreaterThan(0),
+                () => string.Join(Environment.NewLine, logger.Entries.Select(entry => $"{entry.Level}: {entry.Message}{Environment.NewLine}{entry.Exception}")));
+
+            // With no further writes, log growth is below FullCheckpointLogInterval, so the next checkpoint is
+            // incremental and leaves the last full-checkpoint tail unchanged.
+            Assert.That(await server.Provider.StoreWrapper.TakeCheckpointAsync(background: false).ConfigureAwait(false), Is.True);
+            Assert.That(server.Provider.StoreWrapper.DefaultDatabase.LastSaveStoreTailAddress, Is.EqualTo(firstCheckpointTail),
+                "An incremental checkpoint must not replace the preceding full-checkpoint tail");
         }
 
         [Test]

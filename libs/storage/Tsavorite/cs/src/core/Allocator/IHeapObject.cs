@@ -56,7 +56,8 @@ namespace Tsavorite.core
         void CacheSerializedObjectData(ref LogRecord dstLogRecord, ref RMWInfo rmwInfo, bool srcIsOnMemoryLog);
 
         /// <summary>
-        /// Clear any serialized data from <see cref="CacheSerializedObjectData(ref LogRecord, ref RMWInfo, bool)"/>
+        /// Clear any serialized data from <see cref="CacheSerializedObjectData(ref LogRecord, ref RMWInfo, bool)"/>.
+        /// This must be idempotent and must not change object state when no cached data is present.
         /// </summary>
         void ClearSerializedObjectData();
     }
