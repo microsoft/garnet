@@ -299,7 +299,7 @@ namespace Garnet
                     if (opts.UseSocketSet)
                     {
                         var socketSetFactory = OperatingSystem.IsWindows() ? SocketSetFactory.WindowsRio : OperatingSystem.IsLinux() ? SocketSetFactory.IoUring : SocketSetFactory.Managed;
-                        var socketSetOptions = new SocketSetOptions { Factory = socketSetFactory, Shards = Environment.ProcessorCount / 2 };
+                        var socketSetOptions = new SocketSetOptions { Factory = socketSetFactory, Shards = Environment.ProcessorCount * 2 };
 
                         logger?.LogWarning("Using SocketSet: {factory} x{shards}", socketSetOptions.Factory.GetType().Name, socketSetOptions.Shards);
 
