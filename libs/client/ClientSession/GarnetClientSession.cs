@@ -408,6 +408,15 @@ namespace Garnet.client
         }
 
         /// <summary>
+        /// Closes the underlying connection so a thread blocked on network I/O through this session
+        /// fails fast, without disposing the session itself. The session expects mono-threaded access,
+        /// so a caller that is not the thread using the session must not dispose it: doing so races
+        /// that thread's use of the send buffer it has rented. Closing the connection is safe because
+        /// it only invalidates the socket, leaving the buffer owned by the thread that rented it.
+        /// </summary>
+        public void CloseConnection() => socket?.Dispose();
+
+        /// <summary>
         /// Dispose instance
         /// </summary>
         public void Dispose()

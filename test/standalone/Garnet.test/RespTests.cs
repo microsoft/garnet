@@ -4580,12 +4580,25 @@ namespace Garnet.test
             // Check that we really killed the connection backing a GarnetClient
             static void AssertNotConnected(GarnetClient client)
             {
-                // Force the issue by attempting a command
-                try
+                // IsConnected reads Socket.Connected, which reports the state as of the last completed
+                // I/O. Once the server closes the connection the first send still succeeds locally and
+                // only a following one observes the reset, so a single ping cannot establish that the
+                // connection is gone. Keep issuing pings until the disconnect surfaces; a connection
+                // that was not killed keeps answering them and still fails the assert below.
+                var elapsed = Stopwatch.StartNew();
+                while (client.IsConnected && elapsed.Elapsed < TimeSpan.FromSeconds(10))
                 {
-                    client.Ping(static (_, __) => { });
+                    try
+                    {
+                        client.Ping(static (_, __) => { });
+                    }
+                    catch
+                    {
+                        break;
+                    }
+
+                    Thread.Sleep(10);
                 }
-                catch { }
 
                 ClassicAssert.IsFalse(client.IsConnected);
             }
