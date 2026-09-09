@@ -572,6 +572,12 @@ namespace Garnet.server
                                                       PinnedSpanByte overflowTypeSlice = default)
             where TGarnetApi : IGarnetApi
         {
+            if (secondaryCommandArgs.Count == 0)
+            {
+                WriteEmptyArray();
+                return true;
+            }
+
             var input = new StringInput(cmd);
 
             var startDCurr = dcurr;
