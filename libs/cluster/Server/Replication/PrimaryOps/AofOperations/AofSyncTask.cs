@@ -357,12 +357,24 @@ namespace Garnet.cluster
                 }
                 finally
                 {
-                    // The client is disposed before leaving the monitor so that a drained monitor
-                    // means every client has already been torn down by the one thread that was
-                    // using it, and the send buffer it rented is back in the replication pool.
-                    garnetClient?.Dispose();
-                    if (enteredMonitor)
-                        _ = aofSyncDriver.activeWorkerMonitor.Exit();
+                    try
+                    {
+                        // The client is disposed before leaving the monitor so that a drained monitor
+                        // means every client has already been torn down by the one thread that was
+                        // using it, and the send buffer it rented is back in the replication pool.
+                        garnetClient?.Dispose();
+                    }
+                    catch (Exception ex)
+                    {
+                        // Leaving the monitor is what releases the dispose that is waiting on this
+                        // task, so it has to happen even if tearing the client down fails.
+                        logger?.LogError(ex, "[{sublogIdx}]({method}) failed to dispose client", physicalSublogIdx, nameof(RunAofSyncTaskAsync));
+                    }
+                    finally
+                    {
+                        if (enteredMonitor)
+                            _ = aofSyncDriver.activeWorkerMonitor.Exit();
+                    }
                 }
 
                 [Conditional("DEBUG")]
