@@ -999,7 +999,7 @@ namespace Garnet.server
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.FLUSHDB));
             }
 
-            if (storeWrapper.serverOptions.EnableCluster && storeWrapper.clusterProvider.IsReplica() && !clusterSession.ReadWriteSession)
+            if (storeWrapper.serverOptions.EnableCluster && storeWrapper.clusterProvider.IsReplica() && !clusterSession.IsInternalWriteSession)
             {
                 while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_FLUSHALL_READONLY_REPLICA, ref dcurr, dend))
                     SendAndReset();
@@ -1021,7 +1021,7 @@ namespace Garnet.server
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.FLUSHALL));
             }
 
-            if (storeWrapper.serverOptions.EnableCluster && storeWrapper.clusterProvider.IsReplica() && !clusterSession.ReadWriteSession)
+            if (storeWrapper.serverOptions.EnableCluster && storeWrapper.clusterProvider.IsReplica() && !clusterSession.IsInternalWriteSession)
             {
                 return AbortWithErrorMessage(CmdStrings.RESP_ERR_FLUSHALL_READONLY_REPLICA);
             }
@@ -1034,7 +1034,7 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Mark this session as readonly session
+        /// Allow this connection to serve read-only commands from a replica
         /// </summary>
         /// <returns></returns>
         private bool NetworkREADONLY()
@@ -1047,7 +1047,7 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Mark this session as readwrite
+        /// Restore the default behavior of redirecting commands from a replica
         /// </summary>
         /// <returns></returns>
         private bool NetworkREADWRITE()

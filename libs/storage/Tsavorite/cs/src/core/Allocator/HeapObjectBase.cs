@@ -167,9 +167,9 @@ namespace Tsavorite.core
         /// <inheritdoc />
         public void ClearSerializedObjectData()
         {
-            // Clear the serialized data, so it can be GC'd
-            serializedBytes = null;
-            SerializationPhase = SerializationPhase.REST; // Reset to initial state
+            // Do not disturb an unrelated object that is currently serializing.
+            if (Interlocked.Exchange(ref serializedBytes, null) is not null)
+                SerializationPhase = SerializationPhase.REST;
         }
     }
 }
