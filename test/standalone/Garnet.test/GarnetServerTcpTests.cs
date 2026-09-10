@@ -10,8 +10,14 @@ using NUnit.Framework;
 namespace Garnet.test
 {
     [TestFixture, NonParallelizable]
-    public class GarnetServerTcpTests
+    public class GarnetServerTcpTests : TestBase
     {
+        [TearDown]
+        public void TearDown()
+        {
+            TestUtils.OnTearDown();
+        }
+
         static IPEndPoint GetEndPoint(bool ipv6)
         {
             if (OperatingSystem.IsWindows())
