@@ -58,6 +58,16 @@ namespace Garnet.networking
         protected int networkBytesRead, networkReadHead;
 
         /// <summary>
+        /// Number of consecutive receives that must fit in a smaller buffer before a grown receive buffer is
+        /// released back to the pool. Provides hysteresis so a connection with a bursty-but-recurring large
+        /// payload does not thrash between doubling and shrinking.
+        /// </summary>
+        const int ShrinkHysteresis = 16;
+
+        int networkShrinkCountdown = ShrinkHysteresis;
+        int transportShrinkCountdown = ShrinkHysteresis;
+
+        /// <summary>
         /// Buffer that application reads data from
         /// </summary>
         PoolEntry transportReceiveBufferEntry;
@@ -333,12 +343,61 @@ namespace Garnet.networking
             if (networkBytesRead == networkReceiveBuffer.Length)
             {
                 DoubleNetworkReceiveBuffer();
+                networkShrinkCountdown = ShrinkHysteresis;
             }
-            else if (networkReceiveBuffer.Length > networkBufferSettings.maxReceiveBufferSize && networkBytesRead <= networkBufferSettings.maxReceiveBufferSize)
+            else
             {
-                // If we've exceeded our maximum _and_ didn't need to double to serve the request, shrink back down if possible
-                ShrinkNetworkReceiveBuffer();
+                MaybeShrinkNetworkReceiveBuffer();
             }
+        }
+
+        /// <summary>
+        /// Releases a grown receive buffer once the connection's traffic no longer needs it, so that a single
+        /// large payload does not permanently inflate the per-connection footprint. Buffers larger than
+        /// <see cref="NetworkBufferSettings.maxReceiveBufferSize"/> are released immediately because the pool
+        /// cannot recycle them; smaller ones are released only after <see cref="ShrinkHysteresis"/> consecutive
+        /// receives have fit comfortably in the smaller size.
+        /// </summary>
+        void MaybeShrinkNetworkReceiveBuffer()
+        {
+            var current = networkReceiveBuffer.Length;
+            if (current <= networkBufferSettings.initialReceiveBufferSize)
+                return;
+
+            var target = TargetReceiveBufferSize(networkBytesRead, networkBufferSettings.initialReceiveBufferSize, current);
+            if (target >= current)
+            {
+                networkShrinkCountdown = ShrinkHysteresis;
+                return;
+            }
+
+            if (current > networkBufferSettings.maxReceiveBufferSize)
+            {
+                // Above the pool's largest size class, so this buffer was allocated outside the pool and will be
+                // dropped rather than recycled on return. Give it back without waiting out the hysteresis.
+                ShrinkNetworkReceiveBuffer(target);
+                networkShrinkCountdown = ShrinkHysteresis;
+                return;
+            }
+
+            if (--networkShrinkCountdown > 0)
+                return;
+
+            ShrinkNetworkReceiveBuffer(target);
+            networkShrinkCountdown = ShrinkHysteresis;
+        }
+
+        /// <summary>
+        /// Smallest power-of-two size, at least <paramref name="minSize"/> and at most <paramref name="currentSize"/>,
+        /// that leaves 2x headroom over the bytes currently buffered.
+        /// </summary>
+        static int TargetReceiveBufferSize(int bytesBuffered, int minSize, int currentSize)
+        {
+            var target = (long)minSize;
+            var needed = 2L * bytesBuffered;
+            while (target < currentSize && target < needed)
+                target <<= 1;
+            return (int)Math.Min(target, currentSize);
         }
 
         [MethodImpl(MethodImplOptions.NoInlining)]
@@ -384,6 +443,10 @@ namespace Garnet.networking
                         DoubleTransportReceiveBuffer();
                         retry = true;
                     }
+                    else
+                    {
+                        MaybeShrinkTransportReceiveBuffer();
+                    }
                 }
                 else
                 {
@@ -420,6 +483,10 @@ namespace Garnet.networking
                 {
                     DoubleTransportReceiveBuffer();
                     retry = true;
+                }
+                else
+                {
+                    MaybeShrinkTransportReceiveBuffer();
                 }
                 // If more work, passthrough to the general SslReaderAsync, else this task is done.
                 // NOTE: we must propagate the `retry` flag (which signals "the transport buffer was just doubled,
@@ -476,6 +543,10 @@ namespace Garnet.networking
                         DoubleTransportReceiveBuffer();
                         retry = true;
                     }
+                    else
+                    {
+                        MaybeShrinkTransportReceiveBuffer();
+                    }
                 }
 
                 // Normal exit: hand control back to OnNetworkReceiveWithTLSAsync.
@@ -526,11 +597,12 @@ namespace Garnet.networking
 
         // NoInlining as this should be a rare call if Garnet is properly configured
         [MethodImpl(MethodImplOptions.NoInlining)]
-        unsafe void ShrinkNetworkReceiveBuffer()
+        unsafe void ShrinkNetworkReceiveBuffer(int newSize)
         {
             Debug.Assert(networkReadHead == 0, "Shouldn't call if remaining data not already moved to head of receive buffer");
+            Debug.Assert(networkBytesRead <= newSize, "Shrink target must hold the bytes already buffered");
 
-            var tmp = networkPool.Get(networkBufferSettings.maxReceiveBufferSize, PoolEntryBufferType.ShrinkNetworkReceiveBuffer);
+            var tmp = networkPool.Get(newSize, PoolEntryBufferType.ShrinkNetworkReceiveBuffer);
             if (networkBytesRead > 0)
             {
                 Array.Copy(networkReceiveBuffer, tmp.entry, networkBytesRead);
@@ -564,7 +636,47 @@ namespace Garnet.networking
                 transportReceiveBufferEntry = tmp;
                 transportReceiveBuffer = tmp.entry;
                 transportReceiveBufferPtr = tmp.entryPtr;
+                transportShrinkCountdown = ShrinkHysteresis;
             }
+        }
+
+        /// <summary>
+        /// Mirror of <see cref="MaybeShrinkNetworkReceiveBuffer"/> for the decrypted TLS transport buffer.
+        /// Only safe to call from the reader while it owns the buffer and no <c>ReadAsync</c> is outstanding
+        /// against it, which is exactly where <see cref="DoubleTransportReceiveBuffer"/> is called from.
+        /// </summary>
+        unsafe void MaybeShrinkTransportReceiveBuffer()
+        {
+            if (sslStream == null)
+                return;
+
+            var current = transportReceiveBuffer.Length;
+            if (current <= networkBufferSettings.initialReceiveBufferSize)
+                return;
+
+            Debug.Assert(transportReadHead == 0, "Shouldn't call if remaining data not already moved to head of transport buffer");
+
+            var target = TargetReceiveBufferSize(transportBytesRead, networkBufferSettings.initialReceiveBufferSize, current);
+            if (target >= current)
+            {
+                transportShrinkCountdown = ShrinkHysteresis;
+                return;
+            }
+
+            var aboveMax = current > networkBufferSettings.maxReceiveBufferSize;
+            // Above the pool's largest size class the buffer was allocated outside the pool and is dropped rather
+            // than recycled on return, so release it without waiting out the hysteresis.
+            if (!aboveMax && --transportShrinkCountdown > 0)
+                return;
+
+            var tmp = networkPool.Get(target, PoolEntryBufferType.ShrinkTransportReceiveBuffer);
+            if (transportBytesRead > 0)
+                Array.Copy(transportReceiveBuffer, tmp.entry, transportBytesRead);
+            transportReceiveBufferEntry.Dispose();
+            transportReceiveBufferEntry = tmp;
+            transportReceiveBuffer = tmp.entry;
+            transportReceiveBufferPtr = tmp.entryPtr;
+            transportShrinkCountdown = ShrinkHysteresis;
         }
 
         unsafe void ShiftTransportReceiveBuffer()
