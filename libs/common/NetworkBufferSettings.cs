@@ -86,11 +86,12 @@ namespace Garnet.common
         /// <summary>
         /// Allocate network buffer pool
         /// </summary>
-        /// <param name="maxEntriesPerLevel"></param>
-        /// <param name="ownerType"></param>
-        /// <param name="logger"></param>
+        /// <param name="maxEntriesPerLevel">Per-level ceiling on retained idle entries. Ignored when <paramref name="maxPooledBytes"/> is set.</param>
+        /// <param name="ownerType">Subsystem that owns the pool, for diagnostics.</param>
+        /// <param name="maxPooledBytes">Ceiling on total retained idle bytes across all levels. Zero keeps the per-level bound.</param>
+        /// <param name="logger">Logger.</param>
         /// <returns></returns>
-        public LimitedFixedBufferPool CreateBufferPool(int maxEntriesPerLevel = 16, PoolOwnerType ownerType = PoolOwnerType.Unknown, ILogger logger = null)
+        public LimitedFixedBufferPool CreateBufferPool(int maxEntriesPerLevel = 16, PoolOwnerType ownerType = PoolOwnerType.Unknown, long maxPooledBytes = 0, ILogger logger = null)
         {
             var minSize = Math.Min(Math.Min(sendBufferSize, initialReceiveBufferSize), maxReceiveBufferSize);
             var maxSize = Math.Max(Math.Max(sendBufferSize, initialReceiveBufferSize), maxReceiveBufferSize);
@@ -98,7 +99,16 @@ namespace Garnet.common
             var levels = LimitedFixedBufferPool.GetLevel(minSize, maxSize) + 1;
             Debug.Assert(levels >= 0);
             levels = Math.Max(4, levels);
-            return new LimitedFixedBufferPool(minSize, maxEntriesPerLevel: maxEntriesPerLevel, numLevels: levels, logger: logger, ownerType: ownerType);
+
+            if (maxPooledBytes > 0)
+            {
+                // The byte budget is the real bound; let any single level draw on all of it so that a burst
+                // concentrated on one size class is not throttled while the other levels sit empty.
+                maxEntriesPerLevel = (int)Math.Min(int.MaxValue, Math.Max(1, maxPooledBytes / minSize));
+            }
+
+            return new LimitedFixedBufferPool(minSize, maxEntriesPerLevel: maxEntriesPerLevel, numLevels: levels,
+                ownerType: ownerType, maxPooledBytes: maxPooledBytes, logger: logger);
         }
 
         public void Log(ILogger logger, string category)
