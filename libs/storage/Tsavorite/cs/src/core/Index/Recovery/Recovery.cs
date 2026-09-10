@@ -318,8 +318,11 @@ namespace Tsavorite.core
                         current.Dispose();
                     }
                 }
-                catch
+                catch (Exception ex)
                 {
+                    // A checkpoint whose metadata cannot be read is skipped in favor of an older one. Report it so
+                    // that unreadable checkpoints are distinguishable from an empty checkpoint set.
+                    logger?.LogWarning(ex, "Skipping unreadable HybridLog checkpoint: {hybridLogToken}", hybridLogToken);
                     continue;
                 }
 
@@ -339,8 +342,9 @@ namespace Tsavorite.core
                     recoveredICInfo = new IndexCheckpointInfo();
                     recoveredICInfo.Recover(indexToken, checkpointManager);
                 }
-                catch
+                catch (Exception ex)
                 {
+                    logger?.LogWarning(ex, "Skipping unreadable index checkpoint: {indexToken}", indexToken);
                     continue;
                 }
 

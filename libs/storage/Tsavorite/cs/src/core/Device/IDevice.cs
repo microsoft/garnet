@@ -9,7 +9,10 @@ namespace Tsavorite.core
     /// Delegate for callback on IO completion
     /// </summary>
     /// <param name="errorCode">Numeric error code from the IO completion channel (0 on success).</param>
-    /// <param name="numBytes">Number of bytes transferred.</param>
+    /// <param name="numBytes">
+    /// Number of bytes transferred. Not all <see cref="IDevice"/> implementations populate this: some report 0 on a
+    /// successful transfer. Do not use it to detect short reads.
+    /// </param>
     /// <param name="context">Caller-supplied context object.</param>
     /// <param name="ioException">
     /// The underlying exception behind a failed IO, when the device has one to report; otherwise <see langword="null"/>.

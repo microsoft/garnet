@@ -345,6 +345,16 @@ public:
             init_status_ = FASTER::core::Status::IOError;
             return;
         }
+        // A handler with no usable completion queue accepts submissions that no drainer can reap,
+        // so every IO would hang instead of failing.
+        if (!handler_.initialized()) {
+            native_device::set_last_error(
+                "Native device IO handler reported success but owns no usable completion queue, so no "
+                "IO submitted to it could ever complete. This indicates a handler bug or an unsupported "
+                "backend configuration; try --device-io-backend uring, or --device-type RandomAccess.");
+            init_status_ = FASTER::core::Status::IOError;
+            return;
+        }
         FASTER::core::Status result;
         {
             EpochGuard guard{ epoch_ };

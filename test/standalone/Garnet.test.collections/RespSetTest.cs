@@ -1660,6 +1660,80 @@ namespace Garnet.test
             Assert.Throws<RedisServerException>(() => db.Execute("SMISMEMBER", key));
         }
 
+        [Test]
+        public void SetMoveOnImmutableSourceRecord()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            const string srcKey = "smove:src";
+            const string dstKey = "smove:dst";
+            const int memberCount = 16;
+
+            var expected = new List<string>();
+            for (var i = 0; i < memberCount; i++)
+            {
+                var member = $"member-{i}";
+                expected.Add(member);
+                _ = db.SetAdd(srcKey, member);
+            }
+
+            // Seed the destination so that SMOVE takes the existing-destination path.
+            _ = db.SetAdd(dstKey, "seed");
+
+            // Push both records out of the mutable region by writing a large amount of unrelated data.
+            var filler = new string('x', 512);
+            for (var i = 0; i < 2000; i++)
+                _ = db.StringSet($"filler:{i}", filler);
+
+            for (var i = 0; i < memberCount; i++)
+            {
+                ClassicAssert.IsTrue(db.SetMove(srcKey, dstKey, expected[i]), $"SMOVE failed on iteration {i}");
+
+                ClassicAssert.AreEqual(memberCount - i - 1, db.SetLength(srcKey),
+                    $"Source cardinality is wrong after {i + 1} moves; the removal was not persisted.");
+                ClassicAssert.AreEqual(i + 2, db.SetLength(dstKey),
+                    $"Destination cardinality is wrong after {i + 1} moves; the add was not persisted.");
+            }
+
+            var actual = db.SetMembers(dstKey).Select(x => x.ToString()).OrderBy(x => x).ToList();
+            CollectionAssert.AreEquivalent(expected.Append("seed").ToList(), actual);
+
+            // Draining the source through SMOVE must remove the key.
+            ClassicAssert.IsFalse(db.KeyExists(srcKey));
+
+            // Moving a member that is not in the source is a no-op.
+            ClassicAssert.IsFalse(db.SetMove(dstKey, srcKey, "not-a-member"));
+        }
+
+
+        /// <summary>
+        /// An SMOVE whose destination holds a non-set must fail without removing the member from the source.
+        /// </summary>
+        [Test]
+        public void SetMoveWrongTypeDestinationDoesNotLoseMember()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            const string srcKey = "smove:wt:src";
+            const string dstKey = "smove:wt:dst";
+
+            _ = db.SetAdd(srcKey, ["a", "b", "c"]);
+            _ = db.StringSet(dstKey, "not-a-set");
+
+            var filler = new string('x', 512);
+            for (var i = 0; i < 2000; i++)
+                _ = db.StringSet($"filler:{i}", filler);
+
+            var ex = Assert.Throws<RedisServerException>(() => db.SetMove(srcKey, dstKey, "a"));
+            ClassicAssert.IsTrue(ex.Message.StartsWith("WRONGTYPE"), $"Unexpected error: {ex.Message}");
+
+            // The member must still be in the source.
+            ClassicAssert.AreEqual(3, db.SetLength(srcKey));
+            ClassicAssert.IsTrue(db.SetContains(srcKey, "a"));
+            ClassicAssert.AreEqual("not-a-set", db.StringGet(dstKey).ToString());
+        }
         #endregion
     }
 }

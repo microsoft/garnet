@@ -4,6 +4,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 using Garnet.server;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -164,6 +165,100 @@ namespace Garnet.test
                 if (writer.IsFaulted)
                     throw writer.Exception!.Flatten();
             }
+        }
+
+        /// <summary>
+        /// KEYS must not list a key that has been deleted. A key whose newest record was produced by an
+        /// RCU (for example by EXPIRE, which rewrites the record to add the expiration field) leaves the
+        /// superseded record in the log marked Invalid. Deleting the key removes the newest record from
+        /// the hash chain, so the cursor scan's "is there a newer version?" lookup finds nothing; if the
+        /// scan pushed Invalid records, the stale pre-RCU record would be resurrected and reported by KEYS
+        /// while GET, EXISTS, DBSIZE and SCAN all correctly report the key as absent.
+        /// </summary>
+        [Test]
+        [TestCase(true, Description = "Key expires naturally before being deleted")]
+        [TestCase(false, Description = "Key is still live when deleted")]
+        public void SeKeysDoesNotListDeletedKeyWithSupersededRecord(bool expireBeforeDelete)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var key = new RedisKey("del:superseded");
+            ClassicAssert.IsTrue(db.StringSet(key, "v0"));
+
+            // EXPIRE rewrites the record (RCU) to add the expiration field, so the original record
+            // becomes a superseded, Invalid record that is still physically present in the log.
+            var ttl = expireBeforeDelete ? TimeSpan.FromMilliseconds(50) : TimeSpan.FromSeconds(1000);
+            ClassicAssert.IsTrue(db.KeyExpire(key, ttl));
+
+            if (expireBeforeDelete)
+            {
+                // Wait for the key to lapse so the delete is applied to an already-expired record.
+                var deadline = DateTime.UtcNow.AddSeconds(10);
+                while (db.KeyExists(key) && DateTime.UtcNow < deadline)
+                    Thread.Sleep(10);
+                ClassicAssert.IsFalse(db.KeyExists(key), "Key did not expire within 10s");
+            }
+
+            _ = db.KeyDelete(key);
+
+            var keys = (RedisValue[])db.Execute("KEYS", "del:*");
+            ClassicAssert.IsNotNull(keys);
+
+            // Every keyspace view must agree that the key is gone. Assert.Multiple so a failure in one
+            // view does not mask the state of the others.
+            Assert.Multiple(() =>
+            {
+                CollectionAssert.IsEmpty(keys, "KEYS must not list a deleted key");
+                CollectionAssert.IsEmpty(ScanAll(db), "SCAN must not return a deleted key");
+                ClassicAssert.AreEqual(0, (long)db.Execute("DBSIZE"), "DBSIZE must not count the deleted key");
+                ClassicAssert.IsFalse(db.KeyExists(key), "EXISTS must report the key as absent");
+                ClassicAssert.IsTrue(db.StringGet(key).IsNull, "GET must report the key as absent");
+            });
+        }
+
+        /// <summary>
+        /// Drains a full SCAN cursor loop and returns every key returned across all batches.
+        /// </summary>
+        private static List<string> ScanAll(IDatabase db)
+        {
+            var found = new List<string>();
+            var cursor = "0";
+            do
+            {
+                var batch = (RedisResult[])db.Execute("SCAN", cursor);
+                cursor = (string)batch[0];
+                foreach (var k in (RedisValue[])batch[1])
+                    found.Add(k.ToString());
+            }
+            while (cursor != "0");
+            return found;
+        }
+
+        /// <summary>
+        /// The same resurrection must not occur for object-store keys, whose records are also rewritten
+        /// by EXPIRE.
+        /// </summary>
+        [Test]
+        public void SeKeysDoesNotListDeletedObjectKeyWithSupersededRecord()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var key = new RedisKey("del:objsuperseded");
+            _ = db.ListRightPush(key, "a");
+            ClassicAssert.IsTrue(db.KeyExpire(key, TimeSpan.FromSeconds(1000)));
+            _ = db.KeyDelete(key);
+
+            var keys = (RedisValue[])db.Execute("KEYS", "del:*");
+            ClassicAssert.IsNotNull(keys);
+            Assert.Multiple(() =>
+            {
+                CollectionAssert.IsEmpty(keys, "KEYS must not list a deleted object key");
+                CollectionAssert.IsEmpty(ScanAll(db), "SCAN must not return a deleted object key");
+                ClassicAssert.AreEqual(0, (long)db.Execute("DBSIZE"), "DBSIZE must not count the deleted key");
+                ClassicAssert.IsFalse(db.KeyExists(key), "EXISTS must report the key as absent");
+            });
         }
 
         [Test]

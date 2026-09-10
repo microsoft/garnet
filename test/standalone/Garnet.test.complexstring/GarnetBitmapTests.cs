@@ -1159,6 +1159,44 @@ namespace Garnet.test
             ClassicAssert.AreEqual(new byte[] { 0b0001_1000 }, res);
         }
 
+        [Test]
+        [Category("BITFIELD")]
+        [TestCase("BITFIELD {0}")]
+        [TestCase("BITFIELD_RO {0}")]
+        [TestCase("BITFIELD {0} OVERFLOW SAT")]
+        public void BitFieldWithoutSubcommandsReturnsEmptyArray(string command)
+        {
+            const string Key = nameof(BitFieldWithoutSubcommandsReturnsEmptyArray);
+
+            using var lightClientRequest = TestUtils.CreateRequest();
+
+            var response = lightClientRequest.SendCommands(string.Format(command, Key), "PING");
+            TestUtils.AssertEqualUpToExpectedLength("*0\r\n+PONG\r\n", response);
+        }
+
+        [Test]
+        [Category("BITFIELD")]
+        public async Task BitFieldMaxOffsetGetAsync()
+        {
+            const string Key = nameof(BitFieldMaxOffsetGetAsync);
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase();
+
+            ClassicAssert.IsFalse(await db.StringSetBitAsync(Key, 4294967288, true).ConfigureAwait(false));
+
+            var missingKey = (RedisResult[])(await db.ExecuteAsync("BITFIELD", Key + "missing", "GET", "u1", 4294967295).ConfigureAwait(false));
+            ClassicAssert.AreEqual(0, (long)missingKey[0]);
+
+            var boundary = (RedisResult[])(await db.ExecuteAsync("BITFIELD", Key, "GET", "u1", 4294967295).ConfigureAwait(false));
+            ClassicAssert.AreEqual(0, (long)boundary[0]);
+
+            var readback = (RedisResult[])(await db.ExecuteAsync("BITFIELD", Key, "GET", "u1", 4294967288).ConfigureAwait(false));
+            ClassicAssert.AreEqual(1, (long)readback[0]);
+
+            await db.KeyDeleteAsync(Key).ConfigureAwait(false);
+        }
+
         private static long GetValueFromBitmap(ref byte[] bitmap, long offset, int bitCount, bool signed)
         {
             long startBit = offset;
