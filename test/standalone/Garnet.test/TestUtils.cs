@@ -1,4 +1,4 @@
-// Copyright (c) Microsoft Corporation.
+﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -352,7 +352,9 @@ namespace Garnet.test
             string segmentSize = "1g",
             bool? nativeAllocator = null,
             string bufferPoolMemoryBudget = null,
-            string networkBufferSize = null
+            string networkBufferSize = null,
+            string sessionScratchBufferMaxRetainedSize = null,
+            int? sessionParseStateMaxRetainedArgs = null
         )
         {
             if (useAzureStorage)
@@ -398,6 +400,8 @@ namespace Garnet.test
                 EndPoints = endpoints ?? [EndPoint],
                 DisablePubSub = disablePubSub,
                 NetworkBufferSize = networkBufferSize,
+                SessionScratchBufferMaxRetainedSize = sessionScratchBufferMaxRetainedSize,
+                SessionParseStateMaxRetainedArgs = sessionParseStateMaxRetainedArgs ?? GarnetServerOptions.DefaultSessionParseStateMaxRetainedArgs,
                 Recover = tryRecover,
                 IndexMemorySize = indexSize,
                 UseNativeAllocator = nativeAllocator ?? false,
