@@ -125,5 +125,10 @@ namespace Garnet.common
         /// Vector Set: pause in the index-recreate window before RMW write refreshed index pointer back to the main store.
         /// </summary>
         VectorSet_Pause_Before_Recreate_Rmw,
+        /// <summary>
+        /// Cluster gossip: fail a single round of the main gossip loop, to exercise recovery from a transient
+        /// error raised while connections are initialized or the configuration is broadcast.
+        /// </summary>
+        Cluster_Gossip_Round_Fail,
     }
 }
