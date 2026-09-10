@@ -906,26 +906,43 @@ namespace Tsavorite.core
                             {
                                 if (asyncResult.flushRequestState != FlushRequestState.Recovery)
                                 {
-                                    var recordStartPosition = logWriter.GetNextRecordStartPosition();
-                                    Debug.Assert(asyncResult.flushRequestState != FlushRequestState.ReadOnly || !isFirstRecordOnPage || recordStartPosition.CurrentAddress == objectLogTail.CurrentAddress,
-                                        $"ObjectLogPosition mismatch on first record for ReadOnly flush: rec {recordStartPosition.CurrentAddress}, tail {objectLogTail.CurrentAddress}");
+                                    // Capture the out-of-line components BEFORE consulting the live record's state. The capture roots the
+                                    // byte[]/object while it is still reachable, so the bytes written to the object log stay valid even if a
+                                    // concurrent operation frees the record's objectIdMap slots; and because it does not throw on an
+                                    // already-freed or already-cleared slot, losing the race is observable rather than fatal to the flush thread.
+                                    var captureIsComplete = logRecord.TryGetOutOfLineComponents(out var keyOverflow, out var valueOverflow, out var valueObject);
 
-                                    OverflowByteArray keyOverflow = default, valueOverflow = default;
-                                    IHeapObject valueObject = default;
-                                    if (logRecord.DataHeader.KeyIsOverflow)
-                                        keyOverflow = logRecord.KeyOverflow;
+                                    // Re-read the LIVE RecordInfo after the capture. Elision CASes the record out of its tag chain, then
+                                    // SealAndInvalidate()s it, and only then frees its heap through OnDispose(Elided) -- so a capture that lost
+                                    // its heap surfaces here as an Invalid live record. Skipping such a record is equivalent to it having been
+                                    // Invalid at the Info.Valid test above: the live page already carries the Invalid bit that this flush
+                                    // persists, recovery skips the image, and the superseding record (already CAS'd into the chain) wins.
+                                    if (captureIsComplete && logRecord.Info.Valid)
+                                    {
+                                        var recordStartPosition = logWriter.GetNextRecordStartPosition();
+                                        Debug.Assert(asyncResult.flushRequestState != FlushRequestState.ReadOnly || !isFirstRecordOnPage || recordStartPosition.CurrentAddress == objectLogTail.CurrentAddress,
+                                            $"ObjectLogPosition mismatch on first record for ReadOnly flush: rec {recordStartPosition.CurrentAddress}, tail {objectLogTail.CurrentAddress}");
 
-                                    if (logRecord.DataHeader.ValueIsOverflow)
-                                        valueOverflow = logRecord.ValueOverflow;
-                                    else if (logRecord.DataHeader.ValueIsObject)
-                                        valueObject = logRecord.ValueObject;
+                                        // WriteRecordObjects can do disk IO and must not hold the epoch. The setter writes ObjectLogPosition and stamps
+                                        // key/value read-size hints into the objectId slots in the record image being flushed. In-memory readers mask
+                                        // via ObjectIdMap.GetIndex, so stamping a live page is non-destructive. RDH lengths remain exact.
+                                        var valueObjectLength = logWriter.WriteRecordObjects(in keyOverflow, in valueOverflow, in valueObject);
+                                        logRecord.SetObjectLogPositionAndSizeHints(recordStartPosition, valueObjectLength, in keyOverflow, in valueOverflow,
+                                            logWriter.lastKeyAlignmentPadding, logWriter.lastValueAlignmentPadding, (long)logWriter.lastObjectFirstChunkExtent);
 
-                                    // WriteRecordObjects can do disk IO and must not hold the epoch. The setter writes ObjectLogPosition and stamps
-                                    // key/value read-size hints into the objectId slots in the record image being flushed. In-memory readers mask
-                                    // via ObjectIdMap.GetIndex, so stamping a live page is non-destructive. RDH lengths remain exact.
-                                    var valueObjectLength = logWriter.WriteRecordObjects(in keyOverflow, in valueOverflow, in valueObject);
-                                    logRecord.SetObjectLogPositionAndSizeHints(recordStartPosition, valueObjectLength,
-                                        logWriter.lastKeyAlignmentPadding, logWriter.lastValueAlignmentPadding, (long)logWriter.lastObjectFirstChunkExtent);
+                                        // Only a record that actually wrote to the object log clears this; a skipped record advances no writer
+                                        // position, so the next record with objects still verifies its start position against objectLogTail.
+                                        isFirstRecordOnPage = false;
+                                    }
+                                    else
+                                    {
+                                        // A still-Valid record must keep its overflow heap: the paths that free an overflow key or value
+                                        // (OnDispose with Elided or RevivificationFreeList) are preceded by SealAndInvalidate, and the Deleted path
+                                        // runs only in the mutable region, which SafeReadOnlyAddress excludes from this flush range. A Valid record
+                                        // CAN lose an object value, because a CopyUpdate source clear disposes it without invalidating the record.
+                                        Debug.Assert(!logRecord.Info.Valid || (!logRecord.DataHeader.KeyIsOverflow && !logRecord.DataHeader.ValueIsOverflow),
+                                            "A Valid record lost its captured overflow heap during object-log flush; expected the live record to be Invalid (elided).");
+                                    }
                                 }
                                 else
                                 {
@@ -975,10 +992,9 @@ namespace Tsavorite.core
                                         // recoveryOngoingPageHeader is consumed only by that setter and a page is single-version, so a current-format page
                                         // needs no advance here.
                                     }
-                                }
 
-                                // Do this for both cases so it's clear when debugging
-                                isFirstRecordOnPage = false;
+                                    isFirstRecordOnPage = false;
+                                }
                             }
                         }
                         else

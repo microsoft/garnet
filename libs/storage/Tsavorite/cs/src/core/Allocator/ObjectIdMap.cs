@@ -167,6 +167,20 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal OverflowByteArray GetOverflowByteArray(int objectId) => new(Unsafe.As<byte[]>(objectArray.Get(GetIndex(objectId))));
 
+        /// <summary>Try to get a slot only when it currently contains an overflow byte[]. Unlike <see cref="GetOverflowByteArray(int)"/> this
+        /// tolerates a slot that a concurrent record disposal has already freed (element cleared) or stamped with
+        /// <see cref="InvalidObjectId"/> (which is out of range for the backing array), returning false instead of throwing.</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal bool TryGetOverflowByteArray(int objectId, out OverflowByteArray overflow)
+        {
+            overflow = default;
+            if (!objectArray.TryGet(GetIndex(objectId), out var element) || element is not byte[] array)
+                return false;
+
+            overflow = new(array);
+            return true;
+        }
+
         /// <summary>Sets the slot's object.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void Set(int objectId, IHeapObject element) => objectArray.Set(GetIndex(objectId), element);

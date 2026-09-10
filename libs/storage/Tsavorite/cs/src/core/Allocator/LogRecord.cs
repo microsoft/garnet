@@ -1509,15 +1509,55 @@ namespace Tsavorite.core
             => DataHeaderRef.InitializeForRevivification(ref sizeInfo);
 
         /// <summary>
+        /// Capture this record's out-of-line key/value components for a flush, without throwing if a concurrent operation has already freed or
+        /// cleared their <see cref="ObjectIdMap"/> slots.
+        /// </summary>
+        /// <returns>False if any component that this record's <see cref="RecordDataHeader"/> describes as out-of-line could not be resolved,
+        /// which means a concurrent operation disposed the record's heap; the caller must not flush the record's object data in that case.</returns>
+        /// <remarks>Capturing before consulting the record's <see cref="RecordInfo"/> roots the byte[]/object while it is still reachable, so
+        /// the captured instance stays usable even if the slot is subsequently freed or handed to another record.</remarks>
+        internal readonly bool TryGetOutOfLineComponents(out OverflowByteArray keyOverflow, out OverflowByteArray valueOverflow, out IHeapObject valueObject)
+        {
+            keyOverflow = default;
+            valueOverflow = default;
+            valueObject = default;
+
+            var dataHeader = DataHeader;
+
+            if (dataHeader.KeyIsOverflow)
+            {
+                var (_ /*keyLength*/, keyAddress) = dataHeader.GetKeyFieldInfo(physicalAddress);
+                if (!objectIdMap.TryGetOverflowByteArray(*(int*)keyAddress, out keyOverflow))
+                    return false;
+            }
+
+            if (dataHeader.ValueIsInline)
+                return true;
+
+            var (_ /*valueLength*/, valueAddress) = dataHeader.GetValueFieldInfo(physicalAddress);
+            return dataHeader.ValueIsOverflow
+                ? objectIdMap.TryGetOverflowByteArray(*(int*)valueAddress, out valueOverflow)
+                : objectIdMap.TryGetHeapObject(*(int*)valueAddress, out valueObject);
+        }
+
+        /// <summary>
         /// Writes the object-log start position and stamps key/value initial-read hints into the objectId slots before the main-log page is flushed.
         /// </summary>
         /// <param name="objectLogFilePosition">The starting position of the serialized key and value data in the object log.</param>
         /// <param name="valueObjectLength">The serialized length of the value object if it is an object and not inline or overflow. Overflow
-        ///     fields have their length known from the <see cref="OverflowByteArray.Length"/> property.</param>
+        ///     fields have their length taken from <paramref name="keyOverflow"/> / <paramref name="valueOverflow"/>.</param>
+        /// <param name="keyOverflow">The overflow key the caller already captured and wrote to the object log (used when
+        ///     <see cref="RecordDataHeader.KeyIsOverflow"/>); its <see cref="OverflowByteArray.Length"/> is the authoritative on-disk key length.</param>
+        /// <param name="valueOverflow">The overflow value the caller already captured and wrote to the object log (used when
+        ///     <see cref="RecordDataHeader.ValueIsOverflow"/>); its <see cref="OverflowByteArray.Length"/> is the authoritative on-disk value length.</param>
         /// <remarks>The effective RDH KeyLength/ValueLength properties remain exact inline lengths or the physical objectId-slot size.
         /// For an overflow key, the raw RDH KeyLength bits are also stamped with the high portion of its page-count read hint; because
-        /// KeyIsInline is false, this does not affect physical record sizing. Stamping preserves each objectId slot's low index bits.</remarks>
+        /// KeyIsInline is false, this does not affect physical record sizing. Stamping preserves each objectId slot's low index bits.
+        /// <para>The overflow lengths come from the caller's captured instances -- the same bytes that were written to the object log -- rather
+        /// than from a fresh <see cref="ObjectIdMap"/> lookup. That keeps the stamped hint consistent with the written data and avoids
+        /// re-reading a slot that a concurrent operation may have freed between the object write and here.</para></remarks>
         internal readonly void SetObjectLogPositionAndSizeHints(in ObjectLogFilePositionInfo objectLogFilePosition, ulong valueObjectLength,
+            in OverflowByteArray keyOverflow, in OverflowByteArray valueOverflow,
             int keyAlignmentPadding = 0, int valueAlignmentPadding = 0, long valueObjectFirstChunkExtent = 0)
         {
             if (DataHeader.RecordIsInline)   // ValueIsInline is true; if the record is fully inline, we should not be called here
@@ -1537,7 +1577,7 @@ namespace Tsavorite.core
             if (dataHeader.KeyIsOverflow)
             {
                 var (_, keyAddress) = dataHeader.GetKeyFieldInfo(physicalAddress);
-                var keyLen = objectIdMap.GetOverflowByteArray(*(int*)keyAddress).Length;
+                var keyLen = keyOverflow.Length;
                 var keyExtent = RecordDataHeader.OverflowOnDiskExtent(keyLen, keyAlignmentPadding);
                 var keySizeHint = RecordDataHeader.ComputeOverflowKeySizeHint(keyLen, keyExtent, out var rdhKeyLengthBits, out var keyIsExact);
                 *(int*)keyAddress = ObjectIdMap.StampSizeHint(ObjectIdMap.GetIndex(*(int*)keyAddress), keySizeHint);
@@ -1550,7 +1590,7 @@ namespace Tsavorite.core
             }
 
             // An object's hint covers its headerless prefix and first framed chunk; continuation headers drive later discovery windows.
-            var valLen = dataHeader.ValueIsOverflow ? (long)objectIdMap.GetOverflowByteArray(*(int*)valueAddress).Length : (long)valueObjectLength;
+            var valLen = dataHeader.ValueIsOverflow ? (long)valueOverflow.Length : (long)valueObjectLength;
             if (!dataHeader.ValueIsInline)
             {
                 var initialExtent = dataHeader.ValueIsObject

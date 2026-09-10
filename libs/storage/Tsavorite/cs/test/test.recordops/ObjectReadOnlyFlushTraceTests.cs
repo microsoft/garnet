@@ -210,5 +210,35 @@ namespace Tsavorite.test.Objects
                 Assert.That(readOutput.valueObject.value, Is.EqualTo(expected));
             }
         }
+
+        /// <summary>
+        /// Disposing a record frees its <see cref="ObjectIdMap"/> slot and then stores <see cref="ObjectIdMap.InvalidObjectId"/> into
+        /// the record's field. Because the no-copy object-log flush resolves those slots from the LIVE page, it can observe either
+        /// state while a concurrent Upsert/RMW elides the record; it must therefore be able to detect the loss rather than fault the
+        /// flush thread, which is exactly what the unchecked <see cref="ObjectIdMap.GetOverflowByteArray"/> accessor does.
+        /// </summary>
+        [Test]
+        [Category(TsavoriteKVTestCategory), Category(ObjectIdMapCategory)]
+        public void TryGetOverflowByteArrayToleratesConcurrentSlotRelease()
+        {
+            var objectIdMap = new ObjectIdMap();
+            var objectId = objectIdMap.AllocateAndSet(OverflowByteArray.AllocateData(64));
+
+            Assert.That(objectIdMap.TryGetOverflowByteArray(objectId, out var captured), Is.True);
+            Assert.That(captured.IsEmpty, Is.False);
+            Assert.That(captured.Length, Is.EqualTo(64));
+
+            // The capturing flusher's copy stays usable after the slot is released; a later lookup of the same slot does not.
+            objectIdMap.Free(objectId);
+            Assert.That(captured.Length, Is.EqualTo(64), "a captured overflow must survive release of its slot");
+            Assert.That(objectIdMap.TryGetOverflowByteArray(objectId, out var afterFree), Is.False);
+            Assert.That(afterFree.IsEmpty, Is.True);
+
+            // The record's field is stamped with InvalidObjectId after the slot is freed, which is out of range for the backing array.
+            Assert.That(objectIdMap.TryGetOverflowByteArray(ObjectIdMap.InvalidObjectId, out var afterClear), Is.False);
+            Assert.That(afterClear.IsEmpty, Is.True);
+            Assert.That(() => objectIdMap.GetOverflowByteArray(ObjectIdMap.InvalidObjectId).Length, Throws.Exception,
+                "the unchecked accessor faults on a cleared field, which is why the flush capture must use the Try form");
+        }
     }
 }
