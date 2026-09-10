@@ -393,6 +393,52 @@ namespace Garnet.server
         public string NetworkBufferPoolSize = null;
 
         /// <summary>
+        /// Capacity that each per-session scratch buffer may retain indefinitely. These buffers grow to fit
+        /// the largest request a session has ever served and are pinned, so without a ceiling a single large
+        /// command permanently enlarges the session. A session that keeps needing more than this keeps its
+        /// larger buffer; it is only released after a long stretch of not needing the extra capacity.
+        /// Zero disables shrinking, restoring grow-forever behavior.
+        /// </summary>
+        public string SessionScratchBufferMaxRetainedSize = null;
+
+        /// <summary>
+        /// Resolve the per-session scratch buffer retention ceiling. Zero or unset disables shrinking.
+        /// </summary>
+        public int GetSessionScratchBufferMaxRetainedSize()
+        {
+            if (string.IsNullOrEmpty(SessionScratchBufferMaxRetainedSize))
+                return DefaultSessionScratchBufferMaxRetainedSize;
+            var size = ParseSize(SessionScratchBufferMaxRetainedSize, out _);
+            if (size <= 0 || size >= int.MaxValue) return BufferShrinkPolicy.Unbounded;
+            return (int)size;
+        }
+
+        /// <summary>
+        /// Default ceiling on retained per-session scratch capacity. Chosen well above the size of ordinary
+        /// command arguments so that normal workloads never reach the shrink path at all.
+        /// </summary>
+        public const int DefaultSessionScratchBufferMaxRetainedSize = 64 * 1024;
+
+        /// <summary>
+        /// Argument capacity that each session's RESP parse state may retain indefinitely. The parse state
+        /// root buffer is sized by the argument count a client sends, so without a ceiling one very wide
+        /// command permanently enlarges the session. Zero disables shrinking.
+        /// </summary>
+        public int SessionParseStateMaxRetainedArgs = DefaultSessionParseStateMaxRetainedArgs;
+
+        /// <summary>
+        /// Resolve the per-session parse state retention ceiling, in arguments.
+        /// </summary>
+        public int GetSessionParseStateMaxRetainedArgs()
+            => SessionParseStateMaxRetainedArgs <= 0 ? BufferShrinkPolicy.Unbounded : SessionParseStateMaxRetainedArgs;
+
+        /// <summary>
+        /// Default retained argument capacity, set well above the arity of ordinary commands so that normal
+        /// workloads never reach the shrink path.
+        /// </summary>
+        public const int DefaultSessionParseStateMaxRetainedArgs = 1024;
+
+        /// <summary>
         /// Resolve the configured network buffer settings, falling back to the built-in defaults.
         /// </summary>
         public NetworkBufferSettings GetNetworkBufferSettings()

@@ -175,7 +175,8 @@ namespace Garnet.server
 
             this.respSession = respSession;
 
-            txnScratchBufferAllocator = new ScratchBufferAllocator();
+            txnScratchBufferAllocator = new ScratchBufferAllocator(
+                maxInitialCapacity: storeWrapper.serverOptions.GetSessionScratchBufferMaxRetainedSize());
             watchContainer = new WatchedKeysContainer(initialSliceBufferSize, functionsState.watchVersionMap, txnScratchBufferAllocator);
             keyEntries = new TxnKeyEntries(initialSliceBufferSize, unifiedTransactionalContext);
             this.scratchBufferAllocator = scratchBufferAllocator;

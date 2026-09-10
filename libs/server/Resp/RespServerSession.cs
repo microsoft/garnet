@@ -71,6 +71,12 @@ namespace Garnet.server
         internal readonly ScratchBufferAllocator scratchBufferAllocator;
 
         internal SessionParseState parseState;
+
+        /// <summary>
+        /// Governs release of a <see cref="parseState"/> root buffer that grew to serve one unusually
+        /// wide command. Sized in arguments rather than bytes.
+        /// </summary>
+        BufferShrinkPolicy parseStateShrinkPolicy;
         internal SessionParseState customCommandParseState;
 
         ClusterSlotVerificationInput csvi;
@@ -272,10 +278,15 @@ namespace Garnet.server
             logger?.LogDebug("Starting RespServerSession Id={0}", this.Id);
 
             // Initialize session-local scratch buffer of size 64 bytes, used for constructing arguments in GarnetApi
-            this.scratchBufferBuilder = new ScratchBufferBuilder();
+            this.scratchBufferBuilder = new ScratchBufferBuilder(
+                storeWrapper.serverOptions.GetSessionScratchBufferMaxRetainedSize());
 
             // Initialize session-local scratch allocation of size 64 bytes, used for constructing arguments in GarnetApi
-            this.scratchBufferAllocator = new ScratchBufferAllocator();
+            this.scratchBufferAllocator = new ScratchBufferAllocator(
+                maxInitialCapacity: storeWrapper.serverOptions.GetSessionScratchBufferMaxRetainedSize());
+
+            this.parseStateShrinkPolicy = new BufferShrinkPolicy(
+                storeWrapper.serverOptions.GetSessionParseStateMaxRetainedArgs());
 
             this.storeWrapper = storeWrapper;
             this.subscribeBroker = subscribeBroker;
@@ -576,6 +587,12 @@ namespace Garnet.server
                 clusterSession?.ReleaseCurrentEpoch();
                 scratchBufferBuilder.Reset();
                 scratchBufferAllocator.Reset();
+
+                // Batch boundary: no argument pointers outlive it, so an over-sized parse state root
+                // buffer grown for one unusually wide command can be released here.
+                if (parseStateShrinkPolicy.ShouldShrink(parseState.RootBufferLength, parseState.BatchHighWater))
+                    parseState.ShrinkRootBuffer(parseStateShrinkPolicy.MaxRetainedCapacity);
+                parseState.ResetBatchHighWater();
             }
 
             if (txnSkip)

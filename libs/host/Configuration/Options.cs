@@ -1,4 +1,4 @@
-// Copyright (c) Microsoft Corporation.
+﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -437,6 +437,14 @@ namespace Garnet
         [MemorySizeValidation(false)]
         [Option("network-buffer-pool-size", Required = false, HelpText = "Ceiling on the bytes retained by the shared network buffer pool for reuse across connections.")]
         public string NetworkBufferPoolSize { get; set; }
+
+        [MemorySizeValidation(false)]
+        [Option("session-scratch-buffer-max-retained-size", Required = false, HelpText = "Capacity each per-session scratch buffer may retain indefinitely. These pinned buffers grow to fit the largest request a session has served, so a ceiling stops one large command from permanently enlarging the session. Sessions that keep needing more retain more; 0 disables shrinking.")]
+        public string SessionScratchBufferMaxRetainedSize { get; set; }
+
+        [IntRangeValidation(0, int.MaxValue, isRequired: false)]
+        [Option("session-parse-state-max-retained-args", Required = false, HelpText = "Argument capacity each session's RESP parse state may retain indefinitely. The parse state is sized by the argument count a client sends, so a ceiling stops one very wide command from permanently enlarging the session. 0 disables shrinking.")]
+        public int SessionParseStateMaxRetainedArgs { get; set; }
 
         [OptionValidation]
         [Option("sg-get", Required = false, HelpText = "Whether to use scatter-gather IO for a run of contiguous GET operations - useful to saturate disk random read IO. MGET always uses scatter-gather.")]
@@ -960,6 +968,8 @@ namespace Garnet
                 NetworkBufferSize = NetworkBufferSize,
                 NetworkMaxReceiveBufferSize = NetworkMaxReceiveBufferSize,
                 NetworkBufferPoolSize = NetworkBufferPoolSize,
+                SessionScratchBufferMaxRetainedSize = SessionScratchBufferMaxRetainedSize,
+                SessionParseStateMaxRetainedArgs = SessionParseStateMaxRetainedArgs,
                 TlsOptions = EnableTLS.GetValueOrDefault() ? new GarnetTlsOptions(
                     CertFileName, CertPassword,
                     ClientCertificateRequired.GetValueOrDefault(),
