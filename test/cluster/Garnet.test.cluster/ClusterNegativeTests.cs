@@ -840,6 +840,68 @@ namespace Garnet.test.cluster
             // Verify data is still accessible from the primary
             context.ValidateKVCollectionAgainstReplica(ref context.kvPairs, primaryIndex);
         }
+
+        [Test, Order(17), CancelAfter(testTimeout)]
+        [Category("CLUSTER")]
+        public void ClusterGossipSurvivesFailedRound()
+        {
+            const int nodeCount = 3;
+            List<(int, int)>[] ranges = [[(0, 5460)], [(5461, 10921)], [(10922, 16383)]];
+
+            context.CreateInstances(nodeCount, timeout: timeout);
+            context.CreateConnection();
+
+            // Introduce the nodes to each other. This runs on the meet task rather than the main gossip loop,
+            // so it still completes while the loop below is failing.
+            for (var i = 0; i < nodeCount; i++)
+                context.clusterTestUtils.SetConfigEpoch(i, i + 1, logger: context.logger);
+            for (var i = 1; i < nodeCount; i++)
+            {
+                context.clusterTestUtils.Meet(0, i, logger: context.logger);
+                context.clusterTestUtils.WaitUntilNodeIsKnown(0, i, logger: context.logger);
+            }
+            for (var i = 0; i < nodeCount; i++)
+                context.clusterTestUtils.WaitClusterNodesSync(i, nodeCount, context.logger);
+
+            // Fail a round on every node's gossip loop. Nothing restarts that loop, so a round that is allowed
+            // to terminate it leaves the node silent for the rest of the process.
+            ExceptionInjectionHelper.EnableException(ExceptionInjectionType.Cluster_Gossip_Round_Fail);
+            try
+            {
+                // Longer than the gossip interval, so every node has run at least one failing round.
+                Thread.Sleep(TimeSpan.FromSeconds(7));
+            }
+            finally
+            {
+                ExceptionInjectionHelper.DisableException(ExceptionInjectionType.Cluster_Gossip_Round_Fail);
+            }
+
+            // Nothing is failing any more, so the assignment made now has to reach every node.
+            for (var i = 0; i < nodeCount; i++)
+                _ = context.clusterTestUtils.AddDelSlotsRange(i, ranges[i], addslot: true, logger: context.logger);
+
+            var deadline = DateTime.UtcNow.AddSeconds(30);
+            while (true)
+            {
+                var pending = -1;
+                for (var i = 0; i < nodeCount; i++)
+                {
+                    var slots = context.clusterTestUtils.ClusterSlots(i, context.logger);
+                    if (slots == null || slots.Count != nodeCount)
+                    {
+                        pending = i;
+                        break;
+                    }
+                }
+
+                if (pending < 0)
+                    break;
+
+                ClassicAssert.Less(DateTime.UtcNow, deadline,
+                    $"node {pending} never converged after a gossip round failed");
+                Thread.Sleep(100);
+            }
+        }
 #endif
     }
 }
