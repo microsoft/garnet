@@ -1026,7 +1026,10 @@ namespace Garnet.test
                 SyncTimeout = (int)TimeSpan.FromSeconds(30).TotalMilliseconds,
                 AsyncTimeout = (int)TimeSpan.FromSeconds(30).TotalMilliseconds,
                 AllowAdmin = allowAdmin,
-                ReconnectRetryPolicy = new LinearRetry((int)TimeSpan.FromSeconds(10).TotalMilliseconds),
+                // Gates how often the multiplexer may retry a dropped connection. Tests restart nodes
+                // routinely, and the first command issued afterwards blocks until the next retry is
+                // allowed, so a long interval is dead time added to every such test.
+                ReconnectRetryPolicy = new LinearRetry((int)TimeSpan.FromMilliseconds(250).TotalMilliseconds),
                 ConnectRetry = 5,
                 IncludeDetailInExceptions = true,
                 AbortOnConnectFail = true,
