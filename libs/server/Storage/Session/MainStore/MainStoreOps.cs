@@ -193,7 +193,6 @@ namespace Garnet.server
             var input = new StringInput(RespCommand.GETDEL);
 
             var status = context.RMW((FixedSpanByteKey)key, ref input, ref output);
-            Debug.Assert(output.SpanByteAndMemory.IsSpanByte);
 
             if (status.IsPending)
                 CompletePendingForSession(ref status, ref output, ref context);

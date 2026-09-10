@@ -240,8 +240,7 @@ namespace Garnet.server
                 // Write the keys matching the pattern
                 foreach (var item in keys)
                 {
-                    while (!RespWriteUtils.TryWriteBulkString(item, ref dcurr, dend))
-                        SendAndReset();
+                    WriteBulkString(item);
                 }
             }
             else

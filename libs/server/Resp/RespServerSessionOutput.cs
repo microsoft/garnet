@@ -51,8 +51,16 @@ namespace Garnet.server
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void WriteBulkString(scoped ReadOnlySpan<byte> message)
         {
-            while (!RespWriteUtils.TryWriteBulkString(message, ref dcurr, dend))
-                SendAndReset();
+            if (RespWriteUtils.TryWriteBulkString(message, ref dcurr, dend))
+                return;
+
+            // The buffer was partly full. Flush and retry, which is the common case.
+            SendAndReset();
+            if (RespWriteUtils.TryWriteBulkString(message, ref dcurr, dend))
+                return;
+
+            // The message cannot be written atomically at any buffer fill level, so chunk it.
+            WriteDirectLargeRespString(message);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
