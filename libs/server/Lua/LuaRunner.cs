@@ -328,7 +328,7 @@ namespace Garnet.server
                 throw new GarnetException("Insufficient space in Lua VM for redis version number global");
             }
 
-            var loadRes = state.LoadBuffer(PrepareLoaderBlockBytes(allowedFunctions, logger).Span);
+            var loadRes = state.LoadBinaryBuffer(PrepareLoaderBlockBytes(allowedFunctions, logger).Span);
             if (loadRes != LuaStatus.OK)
             {
                 if (state.StackTop == 1 && state.Type(1) == LuaType.String)

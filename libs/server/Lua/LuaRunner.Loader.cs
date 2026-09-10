@@ -3,7 +3,6 @@
 
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Linq;
 using System.Text;
 using KeraLua;
@@ -315,7 +314,7 @@ end
 recursively_readonly_table(sandbox_env)
 -- responsible for sandboxing user provided code
 function load_sandboxed(source)
-    local rawFunc, err = load(source, nil, nil, sandbox_env)
+    local rawFunc, err = load(source, nil, 't', sandbox_env)
 
     return err, rawFunc
 end
@@ -448,7 +447,7 @@ end
 
                 compilingState.Remove(1);
 
-                if (compilingState.LoadString(Encoding.UTF8.GetBytes(finalLoaderBlock)) != LuaStatus.OK)
+                if (compilingState.LoadTextBuffer(Encoding.UTF8.GetBytes(finalLoaderBlock)) != LuaStatus.OK)
                 {
                     throw new InvalidOperationException("Compiling function should not fail");
                 }
@@ -472,47 +471,6 @@ end
             CachedLoaderBlock = newCache;
 
             return newCache.LoaderBlockBytes;
-        }
-
-        /// <summary>
-        /// Take a chunk of Lua code and convert it to binary ops.
-        /// 
-        /// These ops are faster to load into a runtime than parsing the whole source file again.
-        /// </summary>
-        internal static byte[] CompileSource(ReadOnlySpan<byte> source)
-        {
-            // This is equivalent to calling 
-            //
-            // string.dump(<function equivalent to source>, true)
-            //
-            // Which gives us the opcode version of source on the stack
-
-            using var state = new LuaStateWrapper(LuaMemoryManagementMode.Native, null, null);
-
-            state.GetGlobal(LuaType.Table, "string\0"u8);
-            var pushRes = state.TryPushBuffer("dump"u8);
-            Debug.Assert(pushRes, "Pushing 'dump' should never fail");
-            _ = state.RawGet(LuaType.Function, 1);
-
-            state.Remove(1);
-
-            if (state.LoadString(source) != LuaStatus.OK)
-            {
-                // If we're going to fail, just keep the source as is - a future load attempt will fail it too
-                return source.ToArray();
-            }
-
-            state.PushBoolean(true);
-
-            if (state.PCall(2, 1) != LuaStatus.OK)
-            {
-                // If we're going to fail, just keep the source as is - a future load attempt will fail it too
-                return source.ToArray();
-            }
-
-            state.KnownStringToBuffer(1, out var ops);
-
-            return ops.ToArray();
         }
     }
 }

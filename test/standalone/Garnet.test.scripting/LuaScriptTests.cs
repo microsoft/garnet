@@ -16,6 +16,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Garnet.common;
 using Garnet.server;
+using KeraLua;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using StackExchange.Redis;
@@ -1025,6 +1026,64 @@ return redis.status_reply("OK")
 
             ClassicAssert.True(exc1.Message.StartsWith("NOSCRIPT "));
             ClassicAssert.True(exc2.Message.StartsWith("NOSCRIPT "));
+        }
+
+        [Test]
+        public void ScriptInputsRequireTextSource()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var binaryChunk = CompileChunk("return 1"u8);
+
+            var evalException = ClassicAssert.Throws<RedisServerException>(() => db.Execute("EVAL", [binaryChunk, 0]));
+            StringAssert.Contains("binary chunk", evalException.Message);
+
+            var hash = Convert.ToHexString(SHA1.HashData(binaryChunk)).ToLowerInvariant();
+            var loadException = ClassicAssert.Throws<RedisServerException>(() => db.Execute("SCRIPT", ["LOAD", binaryChunk]));
+            StringAssert.Contains("binary chunk", loadException.Message);
+            var exists = (RedisResult[])db.Execute("SCRIPT", ["EXISTS", hash]);
+            ClassicAssert.AreEqual(0, (int)exists[0]);
+        }
+
+        private static byte[] CompileChunk(ReadOnlySpan<byte> source)
+        {
+            using var state = new LuaStateWrapper(LuaMemoryManagementMode.Native, null, null);
+
+            state.GetGlobal(LuaType.Table, "string\0"u8);
+            ClassicAssert.True(state.TryPushBuffer("dump"u8));
+            _ = state.RawGet(LuaType.Function, 1);
+            state.Remove(1);
+            ClassicAssert.AreEqual(LuaStatus.OK, state.LoadTextBuffer(source));
+            state.PushBoolean(true);
+            ClassicAssert.AreEqual(LuaStatus.OK, state.PCall(2, 1));
+            state.KnownStringToBuffer(1, out var chunk);
+
+            return chunk.ToArray();
+        }
+
+        [Test]
+        public void HostInsertedScriptSource()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var source = "return 2"u8;
+            var hash = Convert.ToHexString(SHA1.HashData(source)).ToLowerInvariant();
+            var digest = GC.AllocateUninitializedArray<byte>(SessionScriptCache.SHA1Len, pinned: true);
+            _ = Encoding.ASCII.GetBytes(hash, digest);
+
+            ClassicAssert.True(server.Provider.StoreWrapper.storeScriptCache.TryAdd(new ScriptHashKey(digest), new LuaScriptHandle(source.ToArray())));
+            ClassicAssert.AreEqual(2, (int)db.Execute("EVALSHA", hash, 0));
+        }
+
+        [Test]
+        public void EvalUsesFullSourceLength()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var source = Encoding.UTF8.GetBytes("return 1\0return 2");
+
+            var exc = ClassicAssert.Throws<RedisServerException>(() => db.Execute("EVAL", [source, 0]));
+            StringAssert.StartsWith("Compilation error:", exc.Message);
         }
 
         [Test]

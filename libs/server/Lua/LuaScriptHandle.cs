@@ -19,10 +19,14 @@ namespace Garnet.server
         public bool IsDisposed { get; private set; }
 
         /// <summary>
-        /// Source (or compiled source) for the associated Lua script.
+        /// Source for the associated Lua script.
         /// </summary>
         public ReadOnlyMemory<byte> ScriptData { get; }
 
+        /// <summary>
+        /// Creates a handle for Lua source.
+        /// </summary>
+        /// <param name="scriptData">Lua source.</param>
         public LuaScriptHandle(ReadOnlyMemory<byte> scriptData)
         {
             ScriptData = scriptData;

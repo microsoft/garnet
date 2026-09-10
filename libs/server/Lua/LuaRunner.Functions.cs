@@ -852,7 +852,7 @@ namespace Garnet.server
                 return LuaWrappedError(1, constStrs.InsufficientLuaStackSpace);
             }
 
-            var res = state.LoadString(buff);
+            var res = state.LoadTextBuffer(buff);
             if (res != LuaStatus.OK)
             {
                 state.ClearStack();
