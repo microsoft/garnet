@@ -688,6 +688,11 @@ namespace Garnet.server
                     }
                 }
             }
+            catch (OperationCanceledException) when (token.IsCancellationRequested)
+            {
+                // Suppress the exception if the task was cancelled because the store wrapper was disposed
+                // or because the node transitioned to a replica and primary-only tasks were suspended
+            }
             catch (Exception ex)
             {
                 logger?.LogError(ex, "CommitTask exception received.");
@@ -712,6 +717,11 @@ namespace Garnet.server
 
                     await Task.Delay(compactionFrequencySecs * 1000, token).ConfigureAwait(false);
                 }
+            }
+            catch (OperationCanceledException) when (token.IsCancellationRequested)
+            {
+                // Suppress the exception if the task was cancelled because the store wrapper was disposed
+                // or because the node transitioned to a replica and primary-only tasks were suspended
             }
             catch (Exception ex)
             {
