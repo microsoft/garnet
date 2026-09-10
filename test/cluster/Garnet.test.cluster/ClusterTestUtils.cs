@@ -181,7 +181,7 @@ namespace Garnet.test.cluster
             try
             {
                 var server = GetServer(endPoint);
-                var resp = server.Execute(cmd, args, flags: flags);
+                var resp = server.Execute(0, cmd, args, flags: flags);
                 return resp;
             }
             catch (Exception ex)
@@ -198,7 +198,7 @@ namespace Garnet.test.cluster
             try
             {
                 var server = GetServer(endPoint);
-                var resp = await server.ExecuteAsync(cmd, args, flags: flags).ConfigureAwait(false);
+                var resp = await server.ExecuteAsync(0, cmd, args, flags: flags).ConfigureAwait(false);
                 return resp;
             }
             catch (Exception ex)
@@ -667,15 +667,15 @@ namespace Garnet.test.cluster
             {
                 var server = GetServer(nodeIndex);
 
-                var txnblockResp = (string)server.Execute("MULTI", new List<object>(), CommandFlags.NoRedirect);
+                var txnblockResp = (string)server.Execute(0, "MULTI", new List<object>(), CommandFlags.NoRedirect);
                 ClassicAssert.AreEqual(txnblockResp, "OK");
                 foreach (var cmd in commands)
                 {
-                    var respCmd = (string)server.Execute(cmd.Item1, cmd.Item2, CommandFlags.NoRedirect);
+                    var respCmd = (string)server.Execute(0, cmd.Item1, cmd.Item2, CommandFlags.NoRedirect);
                     ClassicAssert.AreEqual(respCmd, "QUEUED");
                 }
 
-                result = server.Execute("EXEC", new List<object>(), CommandFlags.NoRedirect);
+                result = server.Execute(0, "EXEC", new List<object>(), CommandFlags.NoRedirect);
             }
             catch (Exception ex)
             {
@@ -2022,7 +2022,7 @@ namespace Garnet.test.cluster
 
             try
             {
-                var resp = server.Execute("migrate", args);
+                var resp = server.Execute(0, "migrate", args);
                 ClassicAssert.AreEqual((string)resp, "OK");
             }
             catch (Exception ex)
@@ -2050,7 +2050,7 @@ namespace Garnet.test.cluster
             var elapsed = Stopwatch.GetTimestamp();
             try
             {
-                var resp = server.Execute("migrate", args);
+                var resp = server.Execute(0, "migrate", args);
                 ClassicAssert.AreEqual((string)resp, "OK");
             }
             catch (Exception ex)
@@ -2631,14 +2631,14 @@ namespace Garnet.test.cluster
                 if (expiry == -1)
                 {
                     ICollection<object> args = [key, value];
-                    var resp = (string)server.Execute("set", args, CommandFlags.NoRedirect);
+                    var resp = (string)server.Execute(0, "set", args, CommandFlags.NoRedirect);
                     ClassicAssert.AreEqual("OK", resp);
                     return ResponseState.OK;
                 }
                 else
                 {
                     ICollection<object> args = [key, expiry, value];
-                    var resp = (string)server.Execute("setex", args, CommandFlags.NoRedirect);
+                    var resp = (string)server.Execute(0, "setex", args, CommandFlags.NoRedirect);
                     ClassicAssert.AreEqual("OK", resp);
                     return ResponseState.OK;
                 }
@@ -2708,7 +2708,7 @@ namespace Garnet.test.cluster
             try
             {
                 ICollection<object> args = new List<object>() { (object)key };
-                result = (string)server.Execute("get", args, CommandFlags.NoRedirect);
+                result = (string)server.Execute(0, "get", args, CommandFlags.NoRedirect);
                 slot = HashSlot(key);
                 responseState = ResponseState.OK;
                 return result;
@@ -2769,7 +2769,7 @@ namespace Garnet.test.cluster
 
             try
             {
-                return (string)server.Execute("mset", args, CommandFlags.NoRedirect);
+                return (string)server.Execute(0, "mset", args, CommandFlags.NoRedirect);
             }
             catch (Exception e)
             {
@@ -2814,7 +2814,7 @@ namespace Garnet.test.cluster
 
             try
             {
-                var result = server.Execute("mget", args, CommandFlags.NoRedirect);
+                var result = server.Execute(0, "mget", args, CommandFlags.NoRedirect);
                 getResult = [.. ((RedisResult[])result).Select(x => (byte[])x)];
                 return "OK";
             }
@@ -2855,7 +2855,7 @@ namespace Garnet.test.cluster
 
                 for (int i = elements.Count - 1; i >= 0; i--) args.Add(elements[i]);
 
-                var result = (int)server.Execute("LPUSH", args);
+                var result = (int)server.Execute(0, "LPUSH", args);
                 ClassicAssert.AreEqual(elements.Count, result);
                 return result;
             }
@@ -2874,7 +2874,7 @@ namespace Garnet.test.cluster
                 var server = GetServer(nodeIndex);
                 var args = new List<object>() { key, "0", "-1" };
 
-                var result = server.Execute("LRANGE", args);
+                var result = server.Execute(0, "LRANGE", args);
                 return [.. ((int[])result)];
             }
             catch (Exception ex)
@@ -2894,7 +2894,7 @@ namespace Garnet.test.cluster
 
                 for (int i = elements.Count - 1; i >= 0; i--) args.Add(elements[i]);
 
-                var result = (int)server.Execute("SADD", args);
+                var result = (int)server.Execute(0, "SADD", args);
                 ClassicAssert.AreEqual(elements.Count, result);
             }
             catch (Exception ex)
@@ -2911,7 +2911,7 @@ namespace Garnet.test.cluster
                 var server = GetServer(nodeIndex);
                 var args = new List<object>() { key };
 
-                var result = server.Execute("SMEMBERS", args);
+                var result = server.Execute(0, "SMEMBERS", args);
                 return [.. ((int[])result)];
             }
             catch (Exception ex)
@@ -3547,7 +3547,7 @@ namespace Garnet.test.cluster
             try
             {
                 var server = redis.GetServer(endPoint);
-                return (int)server.Execute("incrby", key, value);
+                return (int)server.Execute(0, "incrby", [key, value]);
             }
             catch (Exception ex)
             {
@@ -3640,7 +3640,7 @@ namespace Garnet.test.cluster
             try
             {
                 var server = redis.GetServer(endPoint);
-                var count = (int)server.Execute("DBSIZE");
+                var count = (int)server.Execute(0, "DBSIZE", []);
                 return count;
             }
             catch (Exception ex)

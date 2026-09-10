@@ -177,10 +177,10 @@ namespace Garnet.test
             var db = redis.GetDatabase(0);
             var server = redis.GetServers()[0];
 
-            var multiChannelResult = server.Execute("PUBSUB", ["NUMSUB"]);
+            var multiChannelResult = server.Execute(0, "PUBSUB", ["NUMSUB"]);
             ClassicAssert.AreEqual(0, multiChannelResult.Length);
 
-            multiChannelResult = server.Execute("PUBSUB", ["NUMSUB", "messagesA", "messagesB"]);
+            multiChannelResult = server.Execute(0, "PUBSUB", ["NUMSUB", "messagesA", "messagesB"]);
             ClassicAssert.AreEqual(4, multiChannelResult.Length);
             ClassicAssert.AreEqual("messagesA", multiChannelResult[0].ToString());
             ClassicAssert.AreEqual("0", multiChannelResult[1].ToString());
@@ -193,7 +193,7 @@ namespace Garnet.test
             var result = server.SubscriptionSubscriberCount(RedisChannel.Literal("messagesA"));
             ClassicAssert.AreEqual(1, result);
 
-            multiChannelResult = server.Execute("PUBSUB", ["NUMSUB", "messagesA", "messagesB"]);
+            multiChannelResult = server.Execute(0, "PUBSUB", ["NUMSUB", "messagesA", "messagesB"]);
             ClassicAssert.AreEqual(4, multiChannelResult.Length);
             ClassicAssert.AreEqual("messagesA", multiChannelResult[0].ToString());
             ClassicAssert.AreEqual("1", multiChannelResult[1].ToString());
