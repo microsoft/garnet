@@ -1205,8 +1205,6 @@ namespace Garnet.cluster
                     // no such basis, so leave it alone and let its real owner claim it through the primary path
                     // above; a replica must never introduce ownership. Crediting the replica here would be
                     // permanent, because the true owner is afterwards rejected by the config epoch comparison.
-                    // NOTE: this check must precede the node-id comparison, since
-                    // workers[RESERVED_WORKER_ID].Nodeid is null and dereferencing it was the failure fixed by #1435.
                     if (currentOwnerId == RESERVED_WORKER_ID)
                         continue;
 
