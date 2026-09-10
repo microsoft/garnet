@@ -16,9 +16,9 @@ namespace Tsavorite.core
         /// <summary>Runtime-only ordering state installed while a Snapshot checkpoint flushes live pages.</summary>
         private protected SnapshotFlushCoordination snapshotFlushCoordination;
 
-        /// <summary>Bounded Snapshot completion window for this allocator. Object allocators use their object-log
-        /// flush-buffer count. A non-object NullDevice still needs a window to keep its live pages resident until
-        /// Snapshot writes complete; real-device non-object allocators require no coordination.</summary>
+        /// <summary>Bounded Snapshot completion window for this allocator. Object allocators set an independent
+        /// page-concurrency limit. A non-object NullDevice still needs a one-page window to keep its live page
+        /// resident until Snapshot writes it; real-device non-object allocators require no coordination.</summary>
         internal int SnapshotFlushCoordinationWindowSize
         {
             get
@@ -85,11 +85,14 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Remove <paramref name="coordination"/> if it is still installed. A claim that sampled an older coordination
-        /// rechecks under <see cref="snapshotFlushSync"/> and retries against the current state.
+        /// Close and remove <paramref name="coordination"/> if it is installed. A null value is a no-op so callers do
+        /// not need to duplicate null checks on cleanup paths.
         /// </summary>
         internal void ClearSnapshotFlushCoordination(SnapshotFlushCoordination coordination)
         {
+            if (coordination is null)
+                return;
+
             lock (snapshotFlushSync)
             {
                 if (ReferenceEquals(snapshotFlushCoordination, coordination))
@@ -264,7 +267,9 @@ namespace Tsavorite.core
         /// <summary>Number of ReadOnly callers currently waiting on <see cref="sync"/>.</summary>
         int numWaitingReadOnlyFlushes;
 
-        /// <summary>Number of Snapshot issuer callers waiting for bounded completion-window capacity or final completion.</summary>
+        /// <summary>Number of Snapshot issuer callers waiting for bounded completion-window capacity or final completion.
+        /// All mutations occur while holding <see cref="sync"/>; lock-free readers use it only to decide whether a
+        /// progress pulse may be needed.</summary>
         int numWaitingSnapshotFlushes;
 
         /// <summary>Exclusive endpoint of the ReadOnly ranges that Snapshot drains before capturing its stable start.</summary>
@@ -477,7 +482,13 @@ namespace Tsavorite.core
                 Monitor.PulseAll(sync);
         }
 
-        /// <summary>Wait until <paramref name="page"/> fits in the fixed-size in-flight completion window.</summary>
+        /// <summary>
+        /// Wait until <paramref name="page"/> fits in the fixed-size in-flight completion window.
+        /// The fast path returns when <paramref name="page"/> is less than one window length beyond the contiguous
+        /// completion limit; the single Snapshot issuer can then reserve its unique slot without locking. Once the
+        /// window is full, the issuer registers under <see cref="sync"/>, rechecks after a full memory barrier, and
+        /// waits for a completion to advance <see cref="readOnlyFlushPageLimit"/>.
+        /// </summary>
         internal void WaitForWindowCapacity(long page)
         {
             ThrowIfFailed();
@@ -487,6 +498,8 @@ namespace Tsavorite.core
 
             lock (sync)
             {
+                // All counter mutations are serialized by sync, so Interlocked arithmetic is unnecessary. The
+                // barrier publishes registration before the predicate recheck, pairing with the completion CAS/read.
                 numWaitingSnapshotFlushes++;
                 try
                 {
@@ -529,6 +542,7 @@ namespace Tsavorite.core
 
             lock (sync)
             {
+                // Same sync-protected waiter-registration protocol as WaitForWindowCapacity.
                 numWaitingSnapshotFlushes++;
                 try
                 {
@@ -556,6 +570,7 @@ namespace Tsavorite.core
 
             lock (sync)
             {
+                // Same sync-protected waiter-registration protocol as WaitForWindowCapacity.
                 numWaitingSnapshotFlushes++;
                 try
                 {

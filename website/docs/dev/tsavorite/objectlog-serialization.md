@@ -894,8 +894,8 @@ Indentation is call depth. Component branches and lifetime changes are included 
 
 - Allocator configuration
   - `AllocatorBase.SnapshotFlushWindowSize` defaults to zero
-  - `ObjectAllocatorImpl` sets it in its constructor from the configured
-    `LogSettings.NumberOfFlushBuffers`
+  - `ObjectAllocatorImpl` sets it in its constructor to an independent 64-page default, capped by the
+    allocator's resident page count (`BufferSize`); it is not derived from the object-log serialization-buffer count
   - `SnapshotFlushCoordinationWindowSize` uses that value for ObjectAllocator, one for a non-object
     `NullDevice` that needs Head/page-residency protection, or zero for a real-device non-object allocator
 - `ObjectAllocatorImpl.OnPagesMarkedReadOnlyWorker()`

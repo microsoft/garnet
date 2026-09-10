@@ -220,7 +220,7 @@ namespace Tsavorite.core
                 freeBuffer1 = null;
                 freeBuffer2?.Return();
                 freeBuffer2 = null;
-                flushCompletionTracker?.CompleteFlush();
+                flushCompletionTracker?.CompleteOneFlush();
                 flushCompletionTracker = null;
             }
             return result;
@@ -240,6 +240,9 @@ namespace Tsavorite.core
     /// </summary>
     internal sealed class DiskWriteCallbackContext
     {
+        /// <summary>Return value from <see cref="Release(uint, Exception)"/> when another caller already performed the release.</summary>
+        internal const long AlreadyReleased = long.MinValue;
+
         /// <summary>If we had separate Writes for multiple spans of a single array, this is a refcounted wrapper for the <see cref="GCHandle"/>;
         /// it is released after the write and if it is the final release, all spans have been written and the GCHandle is freed (and the object unpinned).</summary>
         public RefCountedPinnedGCHandle refCountedGCHandle { get; private set; }
@@ -299,7 +302,7 @@ namespace Tsavorite.core
         public long Release(uint errorCode = 0, Exception ioException = null)
         {
             if (Interlocked.Exchange(ref released, 1) != 0)
-                return long.MinValue;
+                return AlreadyReleased;
 
             refCountedGCHandle?.Release();
             if (gcHandle.IsAllocated)

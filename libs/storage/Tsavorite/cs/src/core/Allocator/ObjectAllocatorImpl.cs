@@ -68,6 +68,10 @@ namespace Tsavorite.core
         readonly int numberOfFlushBuffers;
         readonly int numberOfDeserializationBuffers;
 
+        /// <summary>Default number of concurrently issued Snapshot pages. This is independent of the object-log
+        /// serialization-buffer count; tune it from checkpoint throughput and foreground-latency measurements.</summary>
+        const int DefaultSnapshotFlushWindowSize = 64;
+
         private readonly IDevice objectLogDevice;
 
         /// <summary>The free pages of the log</summary>
@@ -95,7 +99,7 @@ namespace Tsavorite.core
             if (settings.LogSettings.NumberOfFlushBuffers < LogSettings.kMinFlushBuffers || settings.LogSettings.NumberOfFlushBuffers > LogSettings.kMaxFlushBuffers || !IsPowerOfTwo(settings.LogSettings.NumberOfFlushBuffers))
                 throw new TsavoriteException($"{nameof(settings.LogSettings.NumberOfFlushBuffers)} must be between {LogSettings.kMinFlushBuffers} and {LogSettings.kMaxFlushBuffers - 1} and a power of 2");
             numberOfFlushBuffers = settings.LogSettings.NumberOfFlushBuffers;
-            SnapshotFlushWindowSize = numberOfFlushBuffers;
+            SnapshotFlushWindowSize = Math.Min(DefaultSnapshotFlushWindowSize, BufferSize);
 
             if (settings.LogSettings.NumberOfDeserializationBuffers < LogSettings.kMinDeserializationBuffers || settings.LogSettings.NumberOfDeserializationBuffers > LogSettings.kMaxDeserializationBuffers || !IsPowerOfTwo(settings.LogSettings.NumberOfDeserializationBuffers))
                 throw new TsavoriteException($"{nameof(settings.LogSettings.NumberOfDeserializationBuffers)} must be between {LogSettings.kMinDeserializationBuffers} and {LogSettings.kMaxDeserializationBuffers - 1} and a power of 2");

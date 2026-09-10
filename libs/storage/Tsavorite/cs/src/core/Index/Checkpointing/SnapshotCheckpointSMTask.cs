@@ -59,8 +59,7 @@ namespace Tsavorite.core
                         // Nothing to flush because the flushed region already contains everything up to recoveredTailAddress.
                         store._hybridLogCheckpoint.info.snapshotFileLogicalStartAddress = provisionalSnapshotStart;
                         store._hybridLogCheckpoint.snapshotFlushCoordination?.Dispose();
-                        if (store._hybridLogCheckpoint.snapshotFlushCoordination is not null)
-                            store.hlogBase.ClearSnapshotFlushCoordination(store._hybridLogCheckpoint.snapshotFlushCoordination);
+                        store.hlogBase.ClearSnapshotFlushCoordination(store._hybridLogCheckpoint.snapshotFlushCoordination);
                         break;
                     }
 
@@ -86,8 +85,7 @@ namespace Tsavorite.core
                         // Existing ReadOnly writes completed the range while installation drained. Release threads that
                         // sampled the coordination and remove the now-unneeded gate.
                         store._hybridLogCheckpoint.snapshotFlushCoordination?.Dispose();
-                        if (store._hybridLogCheckpoint.snapshotFlushCoordination is not null)
-                            store.hlogBase.ClearSnapshotFlushCoordination(store._hybridLogCheckpoint.snapshotFlushCoordination);
+                        store.hlogBase.ClearSnapshotFlushCoordination(store._hybridLogCheckpoint.snapshotFlushCoordination);
                         break;
                     }
 
@@ -127,8 +125,7 @@ namespace Tsavorite.core
                     store._hybridLogCheckpoint.snapshotFileDevice = null;
                     store._hybridLogCheckpoint.snapshotFileObjectLogDevice?.Dispose();
                     store._hybridLogCheckpoint.snapshotFileObjectLogDevice = null;
-                    if (store._hybridLogCheckpoint.snapshotFlushCoordination is not null)
-                        store.hlogBase.ClearSnapshotFlushCoordination(store._hybridLogCheckpoint.snapshotFlushCoordination);
+                    store.hlogBase.ClearSnapshotFlushCoordination(store._hybridLogCheckpoint.snapshotFlushCoordination);
                     break;
 
                 default:

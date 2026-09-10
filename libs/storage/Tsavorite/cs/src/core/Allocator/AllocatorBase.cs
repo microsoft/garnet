@@ -2438,9 +2438,8 @@ namespace Tsavorite.core
                             // No data to flush for this page. Signal completion and drain the
                             // throttle semaphore so the next real page's WaitOneFlush is not
                             // satisfied by this page's release.
-                            flushCompletionTracker.CompleteFlush();
-                            if (throttled)
-                                flushCompletionTracker.WaitOneFlush();
+                            flushCompletionTracker.CompleteOneFlush();
+                            flushCompletionTracker.WaitOneFlush();
                             coordination?.CompletePage(flushPage);
                             continue;
                         }
@@ -2472,7 +2471,7 @@ namespace Tsavorite.core
                         }
                         catch (Exception writeEx)
                         {
-                            // Fault the flush FIRST so a racing callback's Release()->CompleteFlush cannot report
+                            // Fault the flush FIRST so a racing callback's Release()->CompleteOneFlush cannot report
                             // success for this page before we mark it failed. If the main device write was submitted,
                             // its callback owns releasing this page's IO unit and buffers — releasing here too would
                             // underflow the nativeLog owner's outstanding-IO count and could unmap a page under an in-flight write.
@@ -2493,10 +2492,11 @@ namespace Tsavorite.core
 
                         // If we did not issue a flush write (due to HeadAddress moving past flushPage), then WriteAsync set isForSnapshot false and we release the asyncResult here;
                         // otherwise, we wait for the completion of the flush (and the callback will release the asyncResult).
-                        if (writeIssued && throttled)
+                        if (writeIssued)
                         {
                             flushCompletionTracker.WaitOneFlush();
-                            Thread.Sleep(throttleCheckpointFlushDelayMs);
+                            if (throttled)
+                                Thread.Sleep(throttleCheckpointFlushDelayMs);
                         }
                         else if (!writeIssued)
                         {
@@ -2506,10 +2506,9 @@ namespace Tsavorite.core
                                 EndNativeSnapshotFlush();
                             _ = asyncResult.Release();
                             coordination?.CompletePage(flushPage);
-                            // Release() called CompleteFlush() which released the throttle semaphore.
+                            // Release() called CompleteOneFlush() which released the throttle semaphore, if present.
                             // Drain it so the next real page's WaitOneFlush is not satisfied by this no-op.
-                            if (throttled)
-                                flushCompletionTracker.WaitOneFlush();
+                            flushCompletionTracker.WaitOneFlush();
                         }
                     }
                     if (coordination is not null)
@@ -2529,8 +2528,7 @@ namespace Tsavorite.core
                 }
                 finally
                 {
-                    if (coordination is not null)
-                        ClearSnapshotFlushCoordination(coordination);
+                    ClearSnapshotFlushCoordination(coordination);
                     // Release the issuance producer sentinel taken by the outer BeginNativeSnapshotFlush. Any writes
                     // still in flight keep the nativeLog owner's outstanding-IO count > 0 until their callbacks fire; the last one
                     // drains the deferred frees — independent of completionTcs faulting early on the error path.
@@ -2889,7 +2887,7 @@ namespace Tsavorite.core
                     else
                         logger?.LogError("AsyncFlushPageToDeviceCallback error: {exception}", Utility.GetCallbackExceptionDetail(ioException));
 
-                    // Fault before Release(): the final Release calls CompleteFlush, which must not win the
+                    // Fault before Release(): the final Release calls CompleteOneFlush, which must not win the
                     // TaskCompletionSource race and report a checkpoint with an unwritten page as successful.
                     var exception = new TsavoriteException($"Snapshot page flush failed with error code {errorCode}", ioException);
                     result.snapshotFlushCoordination?.RecordFailure(exception);

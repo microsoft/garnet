@@ -191,7 +191,7 @@ namespace Tsavorite.core
                     }
                     catch (Exception ex)
                     {
-                        if (writeCallbackContext.Release(uint.MaxValue, ex) != long.MinValue)
+                        if (writeCallbackContext.Release(uint.MaxValue, ex) != DiskWriteCallbackContext.AlreadyReleased)
                             _ = Interlocked.Decrement(ref numInFlightWrites);
                         throw;
                     }
@@ -203,13 +203,9 @@ namespace Tsavorite.core
 
                 // Both main-log spans join the same countdown batch, so the external callback runs only after all object-log and main-log writes complete.
                 if (directLength > 0)
-                {
                     FlushToMainLogDevice(directPtr, directLength, mainLogDevice, directAddress, CreateDiskWriteCallbackContext());
-                }
                 if (trailingLength > 0)
-                {
                     FlushToMainLogDevice(trailingPtr, trailingLength, mainLogDevice, trailingAddress, CreateDiskWriteCallbackContext());
-                }
             }
             finally
             {
@@ -234,7 +230,7 @@ namespace Tsavorite.core
             }
             catch (Exception ex)
             {
-                if (writeCallbackContext.Release(uint.MaxValue, ex) != long.MinValue)
+                if (writeCallbackContext.Release(uint.MaxValue, ex) != DiskWriteCallbackContext.AlreadyReleased)
                     _ = Interlocked.Decrement(ref numInFlightWrites);
                 throw;
             }
@@ -255,7 +251,7 @@ namespace Tsavorite.core
             }
             catch (Exception ex)
             {
-                if (writeCallbackContext.Release(uint.MaxValue, ex) != long.MinValue)
+                if (writeCallbackContext.Release(uint.MaxValue, ex) != DiskWriteCallbackContext.AlreadyReleased)
                     _ = Interlocked.Decrement(ref numInFlightWrites);
                 throw;
             }
@@ -278,7 +274,7 @@ namespace Tsavorite.core
             }
             catch (Exception ex)
             {
-                if (writeCallbackContext.Release(uint.MaxValue, ex) != long.MinValue)
+                if (writeCallbackContext.Release(uint.MaxValue, ex) != DiskWriteCallbackContext.AlreadyReleased)
                     _ = Interlocked.Decrement(ref numInFlightWrites);
                 throw;
             }
