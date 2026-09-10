@@ -191,6 +191,29 @@ namespace Garnet.test
 
 
         /// <summary>
+        /// CLIENT GETNAME writes the name as the first element of the response, so the buffer is
+        /// empty when the over-sized write is attempted. That is the case where flushing cannot make
+        /// progress and the chunking fallback has to be entered directly.
+        /// </summary>
+        [Test]
+        public void ClientGetNameReturnsNameLargerThanSendBuffer()
+        {
+            using var s = Connect();
+            var bigName = new string('n', OversizedElement);
+
+            s.Send(Resp("CLIENT", "SETNAME", bigName));
+            ExpectOk(s);
+
+            s.Send(Resp("CLIENT", "GETNAME"));
+            var reply = ReadUntil(s, bigName);
+
+            StringAssert.DoesNotContain("<connection closed>", reply);
+            StringAssert.DoesNotContain("<socket error", reply);
+            StringAssert.StartsWith($"${OversizedElement}\r\n", reply);
+            StringAssert.Contains(bigName, reply);
+        }
+
+        /// <summary>
         /// SUBSCRIBE echoes the channel name back to the subscriber, so an over-sized channel name
         /// takes the same atomic-write path as an over-sized key.
         /// </summary>

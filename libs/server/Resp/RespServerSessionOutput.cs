@@ -2,7 +2,9 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Buffers;
 using System.Runtime.CompilerServices;
+using System.Text;
 using Garnet.common;
 using Tsavorite.core;
 
@@ -30,8 +32,36 @@ namespace Garnet.server
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void WriteAsciiBulkString(ReadOnlySpan<char> message)
         {
-            while (!RespWriteUtils.TryWriteAsciiBulkString(message, ref dcurr, dend))
+            if (RespWriteUtils.TryWriteAsciiBulkString(message, ref dcurr, dend))
+                return;
+
+            WriteAsciiBulkStringSlow(message);
+        }
+
+        /// <summary>
+        /// Cold path for <see cref="WriteAsciiBulkString"/>: flush what is already buffered and retry,
+        /// then chunk a message that cannot fit an empty buffer.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        private void WriteAsciiBulkStringSlow(ReadOnlySpan<char> message)
+        {
+            if (HasBufferedOutput())
+            {
                 SendAndReset();
+                if (RespWriteUtils.TryWriteAsciiBulkString(message, ref dcurr, dend))
+                    return;
+            }
+
+            var bytes = ArrayPool<byte>.Shared.Rent(Encoding.ASCII.GetByteCount(message));
+            try
+            {
+                var written = Encoding.ASCII.GetBytes(message, bytes);
+                WriteDirectLargeRespString(new ReadOnlySpan<byte>(bytes, 0, written));
+            }
+            finally
+            {
+                ArrayPool<byte>.Shared.Return(bytes);
+            }
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -54,14 +84,33 @@ namespace Garnet.server
             if (RespWriteUtils.TryWriteBulkString(message, ref dcurr, dend))
                 return;
 
-            // The buffer was partly full. Flush and retry, which is the common case.
-            SendAndReset();
-            if (RespWriteUtils.TryWriteBulkString(message, ref dcurr, dend))
-                return;
+            WriteBulkStringSlow(message);
+        }
 
-            // The message cannot be written atomically at any buffer fill level, so chunk it.
+        /// <summary>
+        /// Cold path for <see cref="WriteBulkString"/>: flush what is already buffered and retry, then
+        /// chunk a message that cannot fit an empty buffer. Flushing is conditional because
+        /// <see cref="SendAndReset()"/> throws when there is nothing to send, which is exactly the case
+        /// where the message is over-sized and the buffer is still empty.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        private void WriteBulkStringSlow(scoped ReadOnlySpan<byte> message)
+        {
+            if (HasBufferedOutput())
+            {
+                SendAndReset();
+                if (RespWriteUtils.TryWriteBulkString(message, ref dcurr, dend))
+                    return;
+            }
+
             WriteDirectLargeRespString(message);
         }
+
+        /// <summary>
+        /// Whether any response bytes are pending in the network buffer.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private bool HasBufferedOutput() => dcurr > networkSender.GetResponseObjectHead();
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void WriteDirectLargeRespString(ReadOnlySpan<byte> message)
