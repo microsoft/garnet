@@ -29,6 +29,7 @@ namespace Garnet.cluster
             long previousAddress;
 
             readonly bool timePulseEnabled;
+            readonly bool pulseUsesSequenceNumbers;
             readonly GarnetAppendOnlyFile appendOnlyFile;
             readonly TsavoriteLog physicalSublog;
             readonly long[] pulseTailSnapshot;
@@ -117,6 +118,10 @@ namespace Garnet.cluster
                 timePulseEnabled = clusterProvider.serverOptions.MultiLogEnabled;
                 if (timePulseEnabled)
                 {
+                    // Records carry a generator sequence number only when the log is sharded across
+                    // several physical sublogs; a single physical sublog times its virtual sublogs by
+                    // log address instead, and has no generator to read from.
+                    pulseUsesSequenceNumbers = clusterProvider.serverOptions.AofPhysicalSublogCount > 1;
                     physicalSublog = appendOnlyFile.Log.GetSubLog(physicalSublogIdx);
                     pulseTailSnapshot = new long[clusterProvider.serverOptions.AofPhysicalSublogCount];
                     pulseTailScratch = new long[clusterProvider.serverOptions.AofPhysicalSublogCount];
@@ -295,7 +300,15 @@ namespace Garnet.cluster
                     }
                 }
 
-                var sequenceNumber = appendOnlyFile.GetLargerThanMaximumSequenceNumber();
+                // The pulse has to carry a value in whatever domain the replay side measures virtual
+                // sublog time in. Sharded across several physical sublogs that is a generator sequence
+                // number, because that is what each record carries. On a single physical sublog records
+                // carry no sequence number and replay publishes the log address it has reached, so the
+                // pulse is the observed tail: the address replay itself would publish once it has
+                // consumed everything at or below it.
+                var sequenceNumber = pulseUsesSequenceNumbers
+                    ? appendOnlyFile.GetLargerThanMaximumSequenceNumber()
+                    : pulseTailScratch[physicalSublogIdx];
                 if (iter.NextAddress < physicalSublog.TailAddress)
                 {
                     lastAdvanceTimePulse = now;
