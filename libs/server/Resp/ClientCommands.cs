@@ -546,18 +546,27 @@ namespace Garnet.server
             }
 
             var option = parseState.GetArgSliceByRef(0);
-            var value = parseState.GetString(1);
-            if (option.Span.SequenceEqual(CmdStrings.LIB_NAME) || option.Span.SequenceEqual(CmdStrings.lib_name)) // Can't use EqualsUpperCaseSpanIgnoringCase as `-` is not upper case
+            var isLibName = option.Span.EqualsUpperCaseSpanIgnoringCase(CmdStrings.LIB_NAME, allowNonAlphabeticChars: true);
+            var isLibVer = option.Span.EqualsUpperCaseSpanIgnoringCase(CmdStrings.LIB_VER, allowNonAlphabeticChars: true);
+            if (!isLibName && !isLibVer)
+            {
+                return AbortWithErrorMessage(CmdStrings.RESP_SYNTAX_ERROR);
+            }
+
+            ref var valueSlice = ref parseState.GetArgSliceByRef(1);
+            if (!IsValidClientAttr(valueSlice.ReadOnlySpan))
+            {
+                return AbortWithErrorMessage(CmdStrings.GenericErrInvalidClientAttr, parseState.GetString(0));
+            }
+
+            var value = ParseUtils.ReadString(valueSlice);
+            if (isLibName)
             {
                 this.clientLibName = value;
             }
-            else if (option.Span.SequenceEqual(CmdStrings.LIB_VER) || option.Span.SequenceEqual(CmdStrings.lib_ver))
-            {
-                this.clientLibVersion = value;
-            }
             else
             {
-                return AbortWithErrorMessage(CmdStrings.RESP_SYNTAX_ERROR);
+                this.clientLibVersion = value;
             }
 
             while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
@@ -565,6 +574,9 @@ namespace Garnet.server
 
             return true;
         }
+
+        private static bool IsValidClientAttr(ReadOnlySpan<byte> value)
+            => value.IndexOfAnyExceptInRange((byte)33, (byte)126) < 0;
 
         /// <summary>
         /// CLIENT UNBLOCK
