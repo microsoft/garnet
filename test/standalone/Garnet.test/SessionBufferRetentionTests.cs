@@ -274,5 +274,78 @@ namespace Garnet.test
                     SendAndDrain(s, NarrowCommand(), 1);
             }
         }
+
+        /// <summary>
+        /// A MULTI..EXEC window spans many batch boundaries, so the shrink hook fires between the
+        /// queued commands and their execution. EXEC re-parses the queued commands from the network
+        /// buffer, so a released parse-state root buffer must not affect the result.
+        /// </summary>
+        [Test]
+        public void TransactionSpanningShrinkBoundaryStillExecutes()
+        {
+            StartServer();
+            using var s = Connect();
+
+            SendAndDrain(s, Resp("MULTI"), 1);
+
+            // One wide command inside the transaction grows the root buffer, then enough narrow
+            // batches to drive the shrink policy past its hysteresis while still queuing.
+            s.Send(WideCommand());
+            _ = ReadFully(s, 1);
+            for (var i = 0; i < SmallRounds; i++)
+                SendAndDrain(s, Resp("SET", "txnkey", "txnval"), 1);
+
+            s.Send(Resp("EXEC"));
+            var reply = ReadFully(s, SmallRounds + 2);
+            StringAssert.StartsWith($"*{SmallRounds + 1}\r\n", reply);
+            StringAssert.Contains(":0\r\n", reply);
+
+            SendAndDrain(s, Resp("GET", "txnkey"), 1);
+        }
+
+        /// <summary>
+        /// WATCH copies key bytes into the transaction scratch allocator precisely so they outlive the
+        /// receive buffer. Capping that allocator must not break the version check, so a watched key
+        /// modified by another connection must still abort the transaction after a shrink.
+        /// </summary>
+        [Test]
+        public void WatchedKeysSurviveShrinkAndStillAbort()
+        {
+            StartServer();
+            using var watcher = Connect();
+            using var other = Connect();
+
+            var watched = new string('w', 200 * 1024);
+            SendAndDrain(watcher, Resp("SET", watched, "v0"), 1);
+            SendAndDrain(watcher, Resp("WATCH", watched), 1);
+
+            // Drive both shrink policies past hysteresis while the watch is outstanding.
+            for (var i = 0; i < SmallRounds; i++)
+                SendAndDrain(watcher, NarrowCommand(), 1);
+
+            SendAndDrain(other, Resp("SET", watched, "v1"), 1);
+
+            SendAndDrain(watcher, Resp("MULTI"), 1);
+            SendAndDrain(watcher, Resp("SET", watched, "v2"), 1);
+            watcher.Send(Resp("EXEC"));
+            var reply = ReadFully(watcher, 1);
+            ClassicAssert.AreEqual("*-1\r\n", reply, "watch must still abort the transaction after a shrink");
+        }
+
+        static string ReadFully(Socket s, int expectedLines)
+        {
+            var sb = new StringBuilder();
+            var buf = new byte[256 * 1024];
+            var lines = 0;
+            while (lines < expectedLines)
+            {
+                var n = s.Receive(buf);
+                if (n == 0) throw new Exception("connection closed");
+                for (var i = 0; i < n; i++)
+                    if (buf[i] == (byte)'\n') lines++;
+                sb.Append(Encoding.ASCII.GetString(buf, 0, n));
+            }
+            return sb.ToString();
+        }
     }
 }
