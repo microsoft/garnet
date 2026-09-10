@@ -523,19 +523,6 @@ Vector Set keys are type-safe:
 
 ---
 
-## Not Yet Implemented
-
-These commands are reachable through the parser but currently return `+OK` regardless of arguments. They are
-reserved for future implementation:
-
-| Command | Intended behavior |
-|---------|--------------------|
-| `VSETATTR key element attr` | Update an element's attribute in place. Today the only way to set/replace an attribute is to re-run `VADD ... SETATTR`. |
-
-Treat these as no-ops in preview builds — do not rely on their return value.
-
----
-
 ## Example Session
 
 ```bash

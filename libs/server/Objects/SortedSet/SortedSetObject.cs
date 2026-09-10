@@ -143,7 +143,21 @@ namespace Garnet.server
     {
         private readonly SortedSet<(double Score, byte[] Element)> sortedSet;
         private readonly Dictionary<byte[], double> sortedSetDict;
+
+        // Expiration state for members with a TTL. Both structures are null until the first TTL is set, are allocated
+        // together by InitializeExpirationStructures, and are torn back down together by
+        // CleanupExpirationStructuresIfEmpty once no member has a TTL. HasExpirableItems() tests expirationTimes and
+        // guards every access to either of them.
+
+        // The expiration time, in UTC ticks, of each member that has one, and the source of truth for whether a member
+        // is expired. A member absent from this dictionary never expires.
         private Dictionary<byte[], long> expirationTimes;
+
+        // The same expirations ordered soonest-first, so lazy cleanup only has to inspect the head of the queue.
+        // PriorityQueue has no update operation, so resetting a member's TTL enqueues a second entry and leaves the
+        // stale one behind, and removing a member leaves its entry behind entirely. Entries are therefore only hints:
+        // DeleteExpiredItemsWorker re-checks each one against expirationTimes and discards it if the member is gone or
+        // now carries a different expiration.
         private PriorityQueue<byte[], long> expirationQueue;
 
         // Byte #31 is used to denote if key has expiration (1) or not (0)
@@ -244,18 +258,39 @@ namespace Garnet.server
         /// <summary>
         /// Serialize
         /// </summary>
+        /// <remarks>
+        /// Serialization must not mutate the object. It runs on the flush path while readers may concurrently access
+        /// the same instance, and only writers are excluded from a record that is being serialized. Expired members
+        /// are therefore skipped rather than deleted; the mutating paths remove them from the live object.
+        /// </remarks>
         public override void DoSerialize(BinaryWriter writer)
         {
             base.DoSerialize(writer);
 
-            DeleteExpiredItems();
+            // Both passes share a single timestamp so they agree on exactly which members are expired; otherwise a
+            // member could expire between them and the declared count would not match the entries written.
+            var now = DateTimeOffset.UtcNow.Ticks;
+            var expirations = expirationTimes;
 
-            var count = sortedSetDict.Count; // Since expired items are already deleted, no need to worry about expiring items
+            var count = sortedSetDict.Count;
+            if (expirations is not null)
+            {
+                count = 0;
+                foreach (var kvp in sortedSetDict)
+                {
+                    if (!expirations.TryGetValue(kvp.Key, out var expiration) || expiration >= now)
+                        count++;
+                }
+            }
+
             writer.Write(count);
             foreach (var kvp in sortedSetDict)
             {
-                if (expirationTimes is not null && expirationTimes.TryGetValue(kvp.Key, out var expiration))
+                if (expirations is not null && expirations.TryGetValue(kvp.Key, out var expiration))
                 {
+                    if (expiration < now)
+                        continue;
+
                     writer.Write(kvp.Key.Length | ExpirationBitMask);
                     writer.Write(kvp.Key);
                     writer.Write(kvp.Value);
