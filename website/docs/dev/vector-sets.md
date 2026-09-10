@@ -428,13 +428,13 @@ Garnet calls into the following DiskANN functions:
  - [x] `int search_vector(ulong context, nint index, nint vector_data, nuint vector_len, float delta, uint search_exploration_factor, nint filter_data, nuint filter_len, nuint max_filtering_effort, nint output_ids, nuint output_ids_len, nint output_distances, nuint output_distances_len, uint beam_width, nint continuation)`
    * `vector_data` must be aligned as with `insert(...)`
  - [x] `int search_element(ulong context, nint index, nint id_data, nuint id_len, float delta, int search_exploration_factor, nint filter_data, nuint filter_len, nuint max_filtering_effort, nint output_ids, nuint output_ids_len, nint output_distances, nuint output_distances_len, uint beam_width, nint continuation)`
- - [ ] `int search_neighbors(ulong context, nint index, nint id_data, nuint id_len, nint output_ids, nuint output_ids_len, nint output_distances, nuint output_distances_len, nint continuation)`
- - [ ] `int continue_search(ulong context, nint index, nint continuation, nint output_ids, nuint output_ids_len, nint output_distances, nuint output_distances_len, nint new_continuation)`
- - [ ] `ulong card(ulong context, nint index)`
+ - [x] `int search_neighbors(ulong context, nint index, nint id_data, nuint id_len, nint output_ids, nuint output_ids_len, nint output_distances, nuint output_distances_len, nint continuation)`
+ - [x] `int overflow_results(ulong context, nint index, nint continuation, nint output_ids, nuint output_ids_len, nint output_distances, nuint output_distances_len, nint new_continuation)`
+ - [x] `ulong card(ulong context, nint index)`
  - [x] `byte check_internal_id_valid(ulong context, nint index, nint internal_id, nuint internal_id_len)`
  - [x] `void build_quant_table(ulong context, nint index)`
  - [x] `byte backfill_quant_vectors(ulong context, nint index, nuint task_index, nuint task_count)`
- - [ ] `byte random_members(ulong context, nint index, uint count, nint output_ids, nuint output_ids_len)`
+ - [x] `byte random_members(ulong context, nint index, uint count, nint output_ids, nuint output_ids_len)`
 
  Some non-obvious subtleties:
   - The number of results _requested_ from `search_vector` and `search_element` is indicated by `output_distances_len`
@@ -443,8 +443,8 @@ Garnet calls into the following DiskANN functions:
   - `byte` returning functions are effectively returning booleans, `0 == false` and `1 == true`
   - `index` is always a pointer created by DiskANN and returned from `create_index`
   - `context` is always the `Context` value created by Garnet and stored in [`Index`](#indexes) for a Vector Set, this implies it is always a non-0 multiple of 8
-  - `search_vector`, `search_element`, and `continue_search` all return the number of ids written into `output_ids`, and if there are more values to return they set the `nint` _pointed to by_ `continuation` or `new_continuation`
-    * `continuation`/`new_continuation` must be passed exactly once to `continue_search` to fetch remaining results.  Failing to call `continue_search` can result in a memory leak, and passing more than once can result in a use-after-free.
+  - `search_vector`, `search_element`, and `overflow_results` all return the number of ids written into `output_ids`, and if there are more values to return they set the `nint` _pointed to by_ `continuation` or `new_continuation`
+    * `continuation`/`new_continuation` must be passed exactly once to `overflow_results` to fetch remaining results.  Failing to call `overflow_results` can result in a memory leak, and passing more than once can result in a use-after-free.
   - DiskANN guarantees that any keys it provides are aligned in records, i.e. they are multiples of 4-bytes in length
   - Garnet guarantees any values it provides to _`dataCallbacks`_ are 4-byte aligned
     * Importantly Garnet does not guarantee id holding parameters to DiskANN functions are aligned unless otherwise noted

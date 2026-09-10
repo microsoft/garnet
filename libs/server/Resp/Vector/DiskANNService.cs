@@ -415,7 +415,7 @@ namespace Garnet.server
             newContinuation = 0;
             var newContinuationPtr = (nint)Unsafe.AsPointer(ref newContinuation);
 
-            return NativeDiskANNMethods.continue_search(context, index, continuation, output_ids_data, output_ids_len, output_distances_data, output_distances_len, newContinuationPtr);
+            return NativeDiskANNMethods.overflow_results(context, index, continuation, output_ids_data, output_ids_len, output_distances_data, output_distances_len, newContinuationPtr);
         }
 
         public bool CheckInternalIdValid(ulong context, nint index, ReadOnlySpan<byte> internalId)
@@ -563,7 +563,7 @@ namespace Garnet.server
         );
 
         [LibraryImport(DISKANN_GARNET)]
-        public static partial int continue_search(
+        public static partial int overflow_results(
             ulong context,
             nint index,
             nint continuation,
