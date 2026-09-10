@@ -166,7 +166,11 @@ namespace Tsavorite.test
 
             var filename = Path.Join(TestUtils.MethodTestDir, $"boundedGrowth{deviceType}.log");
             device = TestUtils.CreateTestDevice(deviceType, filename, deleteOnClose: true);
-            var logSettings = new TsavoriteLogSettings { LogDevice = device, LogChecksum = LogChecksumType.PerEntry, LogCommitManager = manager, FastCommitMode = true, SegmentSizeBits = 26 };
+            // This test always starts from an empty log. TryRecoverLatest defaults to true, which would recover from
+            // any commit present in MethodTestDir; that directory is keyed only on the method name, so it is shared by
+            // every parameterization of this test and can still receive a commit from the previous one after setup has
+            // cleaned it. Recovering that commit onto this run's empty device fails to read page 0.
+            var logSettings = new TsavoriteLogSettings { LogDevice = device, LogChecksum = LogChecksumType.PerEntry, LogCommitManager = manager, FastCommitMode = true, TryRecoverLatest = false, SegmentSizeBits = 26 };
             log = new TsavoriteLog(logSettings);
 
             byte[] entry = new byte[entryLength];

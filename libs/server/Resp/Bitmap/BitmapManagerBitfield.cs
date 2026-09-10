@@ -217,7 +217,6 @@ namespace Garnet.server
         private static long GetValue(ref byte* buf, ref byte* curr, byte* cend, byte* vend, long bitmapLength, long offset, byte encoding, bool signed)
         {
             var byteIndexStart = Index(offset);
-            var byteIndexEnd = Index(offset + encoding) + 1;
 
             if (curr < cend) buf[7] = *curr++;
             if (curr < cend) buf[6] = *curr++;
