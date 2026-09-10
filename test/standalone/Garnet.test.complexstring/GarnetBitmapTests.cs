@@ -358,8 +358,12 @@ namespace Garnet.test
         private static unsafe long Count(byte* bitmap, int bitmapLen, int startOffset = 0, int endOffset = -1)
         {
             long count = 0;
-            int start = startOffset < 0 ? (startOffset % bitmapLen) + bitmapLen : startOffset;
-            int end = endOffset < 0 ? (endOffset % bitmapLen) + bitmapLen : endOffset;
+            if (startOffset < 0 && endOffset < 0 && startOffset > endOffset)
+                return 0;
+
+            int start = startOffset < 0 ? Math.Max(bitmapLen + startOffset, 0) : startOffset;
+            int end = endOffset < 0 ? Math.Max(bitmapLen + endOffset, 0) : endOffset;
+            end = Math.Min(end, bitmapLen - 1);
 
             if (start >= bitmapLen) // If startOffset greater that valLen always bitcount zero
                 return 0;
@@ -590,8 +594,9 @@ namespace Garnet.test
         private static unsafe long Bitpos(byte[] bitmap, int startOffset = 0, int endOffset = -1, bool set = true)
         {
             long pos = 0;
-            var start = startOffset < 0 ? (startOffset % bitmap.Length) + bitmap.Length : startOffset;
-            var end = endOffset < 0 ? (endOffset % bitmap.Length) + bitmap.Length : endOffset;
+            var start = startOffset < 0 ? Math.Max(bitmap.Length + startOffset, 0) : startOffset;
+            var end = endOffset < 0 ? Math.Max(bitmap.Length + endOffset, 0) : endOffset;
+            end = Math.Min(end, bitmap.Length - 1);
 
             if (start >= bitmap.Length) // If startOffset greater that valLen alway bitcount zero
                 return -1;
@@ -2402,11 +2407,27 @@ namespace Garnet.test
             var offset = (long)int.MaxValue + 1024;
             var count = (long)db.Execute("BITCOUNT", key, (-offset).ToString(), "-1", "BIT");
 
-            // The out-of-range negative start is clamped to -MaxOffsetForBitmapLength and then
-            // wrapped modulo the bit length (Garnet's negative-offset semantics), landing on bit
-            // index 1; the end (-1) wraps to bit index 7. So bits 1..7 of 0xFF are counted => 7.
-            // (This previously asserted 8 only because of a byte-mask underflow in BitCountDriver.)
-            ClassicAssert.AreEqual(7, count);
+            // Negative offsets before the start of the value clamp to bit index 0.
+            ClassicAssert.AreEqual(8, count);
+        }
+
+        [Test]
+        [Category("BITCOUNT")]
+        public void BitmapBitCountNegativeOffsetClampingTest()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var key = "BitmapBitCountNegativeOffsetClampingTest";
+            _ = db.StringSet(key, new byte[] { 0x80, 0x01 });
+
+            ClassicAssert.AreEqual(1, db.StringBitCount(key, -2, -2, StringIndexType.Byte));
+            ClassicAssert.AreEqual(2, db.StringBitCount(key, -3, -1, StringIndexType.Byte));
+            ClassicAssert.AreEqual(0, db.StringBitCount(key, -1, -2, StringIndexType.Byte));
+
+            ClassicAssert.AreEqual(1, db.StringBitCount(key, -16, -16, StringIndexType.Bit));
+            ClassicAssert.AreEqual(2, db.StringBitCount(key, -17, -1, StringIndexType.Bit));
+            ClassicAssert.AreEqual(0, db.StringBitCount(key, -1, -2, StringIndexType.Bit));
         }
 
         [Test]
@@ -2507,10 +2528,33 @@ namespace Garnet.test
             ClassicAssert.AreEqual(-1, pos);
 
             pos = (long)db.Execute("BITPOS", key, "1", (-maxBitOffset - 1).ToString(), "-1", "BIT");
-            ClassicAssert.AreEqual(-1, pos);
+            ClassicAssert.AreEqual(0, pos);
 
             pos = (long)db.Execute("BITPOS", key, "1", (-maxByteOffset - 1).ToString(), "-1", "BYTE");
+            ClassicAssert.AreEqual(0, pos);
+
+            pos = (long)db.Execute("BITPOS", key, "1", (-maxBitOffset - 2).ToString(), "-1", "BIT");
             ClassicAssert.AreEqual(-1, pos);
+
+            pos = (long)db.Execute("BITPOS", key, "1", (-maxByteOffset - 2).ToString(), "-1", "BYTE");
+            ClassicAssert.AreEqual(-1, pos);
+        }
+
+        [Test]
+        [Category("BITPOS")]
+        public void BitmapBitPosNegativeOffsetClampingTest()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var key = "BitmapBitPosNegativeOffsetClampingTest";
+            _ = db.StringSet(key, new byte[] { 0x80, 0x01 });
+
+            ClassicAssert.AreEqual(0, db.StringBitPosition(key, true, -2, -2, StringIndexType.Byte));
+            ClassicAssert.AreEqual(0, db.StringBitPosition(key, true, -3, -2, StringIndexType.Byte));
+
+            ClassicAssert.AreEqual(0, db.StringBitPosition(key, true, -16, -16, StringIndexType.Bit));
+            ClassicAssert.AreEqual(0, db.StringBitPosition(key, true, -17, -16, StringIndexType.Bit));
         }
 
         /// <summary>
