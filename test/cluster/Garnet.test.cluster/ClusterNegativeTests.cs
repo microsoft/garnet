@@ -471,6 +471,52 @@ namespace Garnet.test.cluster
 
             context.ValidateKVCollectionAgainstReplica(ref context.kvPairs, replicaIndex);
         }
+
+        [Test, Order(6), CancelAfter(testTimeout)]
+        public void ClusterReplicaCheckpointRecoveryFailureAbortsSyncTest()
+        {
+            var primaryIndex = 0;
+            var replicaIndex = 1;
+            var nodes_count = 2;
+            context.CreateInstances(nodes_count, disableObjects: false, enableAOF: true, timeout: timeout);
+            context.CreateConnection();
+
+            _ = context.clusterTestUtils.AddDelSlotsRange(primaryIndex, [(0, 16383)], addslot: true, logger: context.logger);
+            context.clusterTestUtils.SetConfigEpoch(primaryIndex, primaryIndex + 1, logger: context.logger);
+            context.clusterTestUtils.SetConfigEpoch(replicaIndex, replicaIndex + 1, logger: context.logger);
+            context.clusterTestUtils.Meet(primaryIndex, replicaIndex, logger: context.logger);
+
+            var keyLength = 32;
+            var kvpairCount = 32;
+            context.kvPairs = [];
+            context.PopulatePrimary(ref context.kvPairs, keyLength, kvpairCount, primaryIndex, null);
+
+            // Take a checkpoint so the replica performs a disk-based full sync and recovers from the shipped token
+            var primaryLastSaveTime = context.clusterTestUtils.LastSave(primaryIndex, logger: context.logger);
+            context.clusterTestUtils.WaitUntilNextSecond(primaryIndex, primaryLastSaveTime);
+            context.clusterTestUtils.Checkpoint(primaryIndex, logger: context.logger);
+            context.clusterTestUtils.WaitCheckpoint(primaryIndex, primaryLastSaveTime, logger: context.logger);
+
+            try
+            {
+                ExceptionInjectionHelper.EnableException(ExceptionInjectionType.Replication_Fail_Replica_Checkpoint_Recovery);
+
+                var respReplicate = context.clusterTestUtils.ClusterReplicate(replicaNodeIndex: replicaIndex, primaryNodeIndex: primaryIndex, failEx: false, logger: context.logger);
+
+                // Recovery failed before applying any of the checkpoint, so the replica holds none of the primary's
+                // data. Reporting success here is what lets a replica advertise the primary's replication offset
+                // over an empty store, so the sync must fail and carry the underlying error.
+                ClassicAssert.AreEqual(0, context.clusterTestUtils.DBSize(replicaIndex, logger: context.logger),
+                    "recovery must have left the replica store empty for this scenario to be under test");
+
+                Assert.That(respReplicate, Does.Contain(nameof(ExceptionInjectionType.Replication_Fail_Replica_Checkpoint_Recovery)),
+                    "a failed replica checkpoint recovery must abort the sync and surface the underlying error");
+            }
+            finally
+            {
+                ExceptionInjectionHelper.DisableException(ExceptionInjectionType.Replication_Fail_Replica_Checkpoint_Recovery);
+            }
+        }
 #endif
 
         [Test, Order(10), CancelAfter(60_000)]
