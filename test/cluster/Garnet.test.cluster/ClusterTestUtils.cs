@@ -3141,7 +3141,7 @@ namespace Garnet.test.cluster
             var server = redis.GetServer(endPoint);
             try
             {
-                var result = server.InfoRawAsync("persistence").Result;
+                var result = server.InfoRaw("persistence");
                 return ProcessPersistenceInfo(result);
             }
             catch (Exception ex)
@@ -3275,7 +3275,7 @@ namespace Garnet.test.cluster
             try
             {
                 var server = redis.GetServer(endPoint);
-                var result = server.InfoRawAsync("store").Result;
+                var result = server.InfoRaw("store");
                 var data = result.Split('\n');
                 foreach (var line in data)
                 {

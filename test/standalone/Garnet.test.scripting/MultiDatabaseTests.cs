@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Text;
 using System.Threading;
@@ -173,6 +174,7 @@ namespace Garnet.test
         }
 
         [Test]
+        [SuppressMessage("Usage", "SER304:Repeated queued operations may suit the variadic overload", Justification = "Separate ops are intentional")]
         public void MultiDatabaseSimpleTransactionTest()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
@@ -180,8 +182,8 @@ namespace Garnet.test
 
             var tran = db1.CreateTransaction();
 
-            tran.StringSetAsync("db2:key1", "db2:val1");
-            tran.StringSetAsync("db2:key2", "db2:val2");
+            _ = tran.StringSetAsync("db2:key1", "db2:val1");
+            _ = tran.StringSetAsync("db2:key2", "db2:val2");
 
             var committed = tran.Execute();
             ClassicAssert.IsTrue(committed);
