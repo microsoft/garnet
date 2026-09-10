@@ -913,8 +913,8 @@ namespace Garnet.test
 
         /// <summary>
         /// Verifies that read-only parameters exposed through the runtime config table (timeout, save,
-        /// appendonly, databases) reject CONFIG SET, and that CONFIG GET * includes both the read-only
-        /// parameters and the per-session slave-read-only value.
+        /// appendonly, databases) reject CONFIG SET, and that CONFIG GET * includes the fixed
+        /// slave-read-only compatibility setting.
         /// </summary>
         [Test]
         public void ConfigGetAllAndReadOnlyRejectionTest()
@@ -930,7 +930,7 @@ namespace Garnet.test
             var timeout = Assert.Throws<RedisServerException>(() => db.Execute("CONFIG", "SET", "timeout", "10"));
             ClassicAssert.AreEqual("ERR Option 'timeout' is read-only and cannot be set at runtime.", timeout.Message);
 
-            // CONFIG GET * returns a name/value map including read-only and per-session parameters.
+            // CONFIG GET * returns a name/value map including read-only parameters and compatibility settings.
             var all = (RedisResult[])db.Execute("CONFIG", "GET", "*");
             ClassicAssert.IsTrue(all.Length % 2 == 0);
             var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -942,9 +942,9 @@ namespace Garnet.test
             ClassicAssert.IsTrue(map.ContainsKey("save"));
             ClassicAssert.IsTrue(map.ContainsKey("appendonly"));
             ClassicAssert.IsTrue(map.ContainsKey("databases"));
-            // Per-session parameter.
+            // Fixed compatibility setting.
             ClassicAssert.IsTrue(map.ContainsKey("slave-read-only"));
-            ClassicAssert.AreEqual("no", map["slave-read-only"]);
+            ClassicAssert.AreEqual("yes", map["slave-read-only"]);
             // A settable runtime parameter.
             ClassicAssert.IsTrue(map.ContainsKey("replica-sync-delay"));
         }

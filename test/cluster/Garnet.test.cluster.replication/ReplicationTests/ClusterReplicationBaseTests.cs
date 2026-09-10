@@ -291,6 +291,45 @@ namespace Garnet.test.cluster
             ClusterSRPrimaryCheckpointRetrieve(performRMW, disableObjects, false, true);
         }
 
+        [Test, Order(5)]
+        [Category("REPLICATION")]
+        public void ReadWriteSessionDoesNotEnableReplicaWritesAfterFailover()
+        {
+            const int primaryIndex = 0;
+            const int replicaIndex = 1;
+            const string key = "readwrite-failover-key";
+            const string value = "value";
+
+            context.CreateInstances(2, enableAOF: true, useTLS: useTLS, asyncReplay: asyncReplay, sublogCount: sublogCount);
+            context.CreateConnection(useTLS: useTLS);
+            _ = context.clusterTestUtils.SimpleSetupCluster(primary_count: 1, replica_count: 1, logger: context.logger);
+
+            using var session = context.clusterTestUtils.CreateGarnetClientSession(primaryIndex, useTLS: useTLS);
+            session.Connect();
+            ClassicAssert.AreEqual("OK", session.ExecuteAsync("READWRITE").GetAwaiter().GetResult());
+            ClassicAssert.AreEqual("OK", session.ExecuteAsync("SET", key, value).GetAwaiter().GetResult());
+            context.clusterTestUtils.WaitForReplicaAofSync(primaryIndex, replicaIndex, context.logger);
+
+            _ = context.clusterTestUtils.ClusterFailover(replicaIndex, logger: context.logger);
+            context.clusterTestUtils.WaitForNoFailover(replicaIndex, context.logger);
+            context.clusterTestUtils.WaitForFailoverCompleted(replicaIndex, context.logger);
+            context.clusterTestUtils.WaitForReplicaRecovery(primaryIndex, context.logger);
+            context.clusterTestUtils.WaitForReplicaAofSync(replicaIndex, primaryIndex, context.logger);
+
+            var slot = ClusterTestUtils.HashSlot(Encoding.ASCII.GetBytes(key));
+            var exception = Assert.Throws<Exception>(() => session.ExecuteAsync("GET", key).GetAwaiter().GetResult());
+            StringAssert.StartsWith($"MOVED {slot} ", exception.Message);
+
+            exception = Assert.Throws<Exception>(() => session.ExecuteAsync("SET", key, "local-value").GetAwaiter().GetResult());
+            StringAssert.StartsWith($"MOVED {slot} ", exception.Message);
+
+            exception = Assert.Throws<Exception>(() => session.ExecuteAsync("FLUSHALL").GetAwaiter().GetResult());
+            ClassicAssert.AreEqual("ERR You can't write against a read only replica.", exception.Message);
+
+            ClassicAssert.AreEqual("OK", session.ExecuteAsync("READONLY").GetAwaiter().GetResult());
+            ClassicAssert.AreEqual(value, session.ExecuteAsync("GET", key).GetAwaiter().GetResult());
+        }
+
         [Test, Order(6)]
         [Category("REPLICATION")]
         public void ClusterSRPrimaryCheckpointRetrieve([Values] bool performRMW, [Values] bool disableObjects, [Values] bool manySegments)

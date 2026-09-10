@@ -784,7 +784,10 @@ namespace Garnet.test.cluster
         {
             await InitMultiplexerAsync(GetRedisConfig(endpoints), textWriter, logger: logger);
             if (cluster)
+            {
                 this.nodeIds = await GetNodeIdsAsync(logger: logger).ConfigureAwait(false);
+                await EnableReplicaReadsAsync(endpoints, logger).ConfigureAwait(false);
+            }
         }
 
         private async Task InitMultiplexerAsync(ConfigurationOptions redisConfig, TextWriter textWriter, bool failAssert = true, ILogger logger = null)
@@ -855,7 +858,7 @@ namespace Garnet.test.cluster
             return nodeIds;
         }
 
-        public async Task ReconnectAsync(List<int> nodes = null, TextWriter textWriter = null, ILogger logger = null)
+        public async Task ReconnectAsync(List<int> nodes = null, TextWriter textWriter = null, ILogger logger = null, bool cluster = true)
         {
             await CloseConnectionsAsync().ConfigureAwait(false);
             var endPoints = endpoints;
@@ -871,6 +874,18 @@ namespace Garnet.test.cluster
             var connOpts = GetRedisConfig(endPoints);
             await InitMultiplexerAsync(connOpts, textWriter, logger: logger).ConfigureAwait(false);
             nodeIds = await GetNodeIdsAsync(nodes, logger).ConfigureAwait(false);
+            if (cluster)
+                await EnableReplicaReadsAsync(endPoints, logger).ConfigureAwait(false);
+        }
+
+        private async Task EnableReplicaReadsAsync(EndPointCollection endPoints, ILogger logger)
+        {
+            foreach (var endPoint in endPoints)
+            {
+                logger?.LogInformation("({endpoint}) > READONLY", endPoint);
+                var result = await redis.GetServer(endPoint).ExecuteAsync("READONLY", Array.Empty<object>(), CommandFlags.NoRedirect).ConfigureAwait(false);
+                ClassicAssert.AreEqual("OK", (string)result);
+            }
         }
 
         public EndPointCollection GetEndPoints() => endpoints;

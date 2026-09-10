@@ -666,6 +666,8 @@ Simple string reply: OK.
 
 Enables read queries for a connection to a Redis Cluster replica node.
 
+The replica can serve reads for slots owned by its primary, but the returned data may be stale. Write commands continue to redirect to the primary.
+
 #### RESP Reply
 Simple string reply: OK.
 
@@ -680,6 +682,8 @@ Simple string reply: OK.
 ```
 
 Disables read queries for a connection to a Redis Cluster replica node.
+
+This command clears the connection's read-only mode and restores the default behavior of redirecting reads to the primary. It does not enable writes on the replica.
 
 #### RESP Reply
 Simple string reply: OK.

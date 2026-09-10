@@ -685,7 +685,7 @@ namespace Garnet.test
         [TestCase("timeout", "0")]
         [TestCase("save", "")]
         [TestCase("appendonly", "no")]
-        [TestCase("slave-read-only", "no")]
+        [TestCase("slave-read-only", "yes")]
         [TestCase("databases", "16")]
         [TestCase("cluster-node-timeout", "60")]
         public void SimpleConfigGet(string parameter, string parameterValue)
