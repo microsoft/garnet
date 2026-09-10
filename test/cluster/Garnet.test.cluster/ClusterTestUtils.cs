@@ -813,7 +813,8 @@ namespace Garnet.test.cluster
                 disablePubSub: disablePubSub,
                 authUsername: authUsername,
                 authPassword: authPassword,
-                certificates: certificates);
+                certificates: certificates,
+                protocol: RedisProtocol.Resp2);
         }
 
         public void Dispose()
