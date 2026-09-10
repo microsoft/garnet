@@ -291,7 +291,8 @@ namespace Garnet
                         // Delete existing unix socket file, if it exists.
                         File.Delete(opts.UnixSocketPath);
                     }
-                    servers[i] = new GarnetServerTcp(opts.EndPoints[i], 0, opts.TlsOptions, opts.NetworkSendThrottleMax, opts.NetworkConnectionLimit, opts.UnixSocketPath, opts.UnixSocketPermission, logger);
+                    servers[i] = new GarnetServerTcp(opts.EndPoints[i], 0, opts.TlsOptions, opts.NetworkSendThrottleMax, opts.NetworkConnectionLimit, opts.UnixSocketPath, opts.UnixSocketPermission,
+                        opts.GetNetworkBufferSettings(), opts.GetNetworkBufferPoolSize(), logger);
                 }
             }
 

@@ -66,6 +66,8 @@ namespace Garnet.server
         /// <param name="networkConnectionLimit"></param>
         /// <param name="unixSocketPath"></param>
         /// <param name="unixSocketPermission"></param>
+        /// <param name="networkBufferSettings">Send/receive buffer sizing. Defaults to the built-in sizes when null.</param>
+        /// <param name="networkBufferPoolSize">Ceiling on idle bytes retained by the shared buffer pool. Zero uses the pool default.</param>
         /// <param name="logger"></param>
         public GarnetServerTcp(
             EndPoint endpoint,
@@ -75,15 +77,22 @@ namespace Garnet.server
             int networkConnectionLimit = -1,
             string unixSocketPath = null,
             UnixFileMode unixSocketPermission = default,
+            NetworkBufferSettings networkBufferSettings = null,
+            long networkBufferPoolSize = 0,
             ILogger logger = null)
             : base(endpoint, networkBufferSize, logger)
         {
             this.networkConnectionLimit = networkConnectionLimit;
             this.tlsOptions = tlsOptions;
             this.networkSendThrottleMax = networkSendThrottleMax;
-            var serverBufferSize = BufferSizeUtils.ServerBufferSize(new MaxSizeSettings());
-            this.networkBufferSettings = new NetworkBufferSettings(serverBufferSize, serverBufferSize);
-            this.networkPool = networkBufferSettings.CreateBufferPool(ownerType: PoolOwnerType.ServerNetwork, logger: logger);
+            if (networkBufferSettings == null)
+            {
+                var serverBufferSize = BufferSizeUtils.ServerBufferSize(new MaxSizeSettings());
+                networkBufferSettings = new NetworkBufferSettings(serverBufferSize, serverBufferSize);
+            }
+            this.networkBufferSettings = networkBufferSettings;
+            this.networkPool = networkBufferSettings.CreateBufferPool(ownerType: PoolOwnerType.ServerNetwork, maxPooledBytes: networkBufferPoolSize, logger: logger);
+            networkBufferSettings.Log(logger, "GarnetServerTcp");
             this.unixSocketPath = unixSocketPath;
             this.unixSocketPermission = unixSocketPermission;
 

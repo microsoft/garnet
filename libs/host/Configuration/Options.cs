@@ -426,6 +426,18 @@ namespace Garnet
         [Option("network-send-throttle", Required = false, HelpText = "Throttle the maximum outstanding network sends per session.")]
         public int NetworkSendThrottleMax { get; set; }
 
+        [MemorySizeValidation(false)]
+        [Option("network-buffer-size", Required = false, HelpText = "Size of the network send buffer, and initial size of the network receive buffer, held per connection (rounds down to power of 2). Total pinned network memory scales with this value times the connection count, so lower it for deployments with many concurrent connections.")]
+        public string NetworkBufferSize { get; set; }
+
+        [MemorySizeValidation(false)]
+        [Option("network-max-receive-buffer-size", Required = false, HelpText = "Largest receive buffer size recycled by the network buffer pool (rounds down to power of 2). Larger payloads are still served, from a buffer allocated outside the pool and released once consumed.")]
+        public string NetworkMaxReceiveBufferSize { get; set; }
+
+        [MemorySizeValidation(false)]
+        [Option("network-buffer-pool-size", Required = false, HelpText = "Ceiling on the bytes retained by the shared network buffer pool for reuse across connections.")]
+        public string NetworkBufferPoolSize { get; set; }
+
         [OptionValidation]
         [Option("sg-get", Required = false, HelpText = "Whether to use scatter-gather IO for a run of contiguous GET operations - useful to saturate disk random read IO. MGET always uses scatter-gather.")]
         public bool? EnableScatterGatherGet { get; set; }
@@ -945,6 +957,9 @@ namespace Garnet
                 ClusterConfigFlushFrequencyMs = ClusterConfigFlushFrequencyMs,
                 FastCommitThrottleFreq = FastCommitThrottleFreq,
                 NetworkSendThrottleMax = NetworkSendThrottleMax,
+                NetworkBufferSize = NetworkBufferSize,
+                NetworkMaxReceiveBufferSize = NetworkMaxReceiveBufferSize,
+                NetworkBufferPoolSize = NetworkBufferPoolSize,
                 TlsOptions = EnableTLS.GetValueOrDefault() ? new GarnetTlsOptions(
                     CertFileName, CertPassword,
                     ClientCertificateRequired.GetValueOrDefault(),

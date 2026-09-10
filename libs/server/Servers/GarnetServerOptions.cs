@@ -4,6 +4,8 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using Garnet.common;
+using Garnet.networking;
 using Garnet.server.Auth.Settings;
 using Garnet.server.TLS;
 using Microsoft.Extensions.Logging;
@@ -368,6 +370,62 @@ namespace Garnet.server
         /// Throttle the maximum outstanding network sends per session
         /// </summary>
         public int NetworkSendThrottleMax = 8;
+
+        /// <summary>
+        /// Size of the per-connection network send buffer, and the initial size of the per-connection receive
+        /// buffer (rounds down to a power of 2). Every connection holds one of each, so this value multiplied by
+        /// the connection count is the floor of the server's pinned network memory. Lowering it trades a larger
+        /// number of smaller reads and writes for a smaller per-connection footprint.
+        /// </summary>
+        public string NetworkBufferSize = null;
+
+        /// <summary>
+        /// Largest receive buffer size that the network buffer pool can recycle (rounds down to a power of 2).
+        /// A connection whose payload needs more than this still grows past it, but that oversized buffer is
+        /// allocated outside the pool and released as soon as the payload has been consumed.
+        /// </summary>
+        public string NetworkMaxReceiveBufferSize = null;
+
+        /// <summary>
+        /// Ceiling on the bytes that the shared network buffer pool retains on its idle free lists for reuse
+        /// across connections. This bounds pooled memory independently of the connection count.
+        /// </summary>
+        public string NetworkBufferPoolSize = null;
+
+        /// <summary>
+        /// Resolve the configured network buffer settings, falling back to the built-in defaults.
+        /// </summary>
+        public NetworkBufferSettings GetNetworkBufferSettings()
+        {
+            var sendSize = PowerOf2SizeOrDefault(NetworkBufferSize, BufferSizeUtils.ServerBufferSize(new MaxSizeSettings()), nameof(NetworkBufferSize));
+            var maxReceiveSize = PowerOf2SizeOrDefault(NetworkMaxReceiveBufferSize, DefaultMaxReceiveBufferSize, nameof(NetworkMaxReceiveBufferSize));
+            // The pool requires the max receive size to be at least the base size, since it is the top size class.
+            maxReceiveSize = Math.Max(maxReceiveSize, sendSize);
+            return new NetworkBufferSettings(sendSize, sendSize, maxReceiveSize);
+        }
+
+        /// <summary>
+        /// Resolve the ceiling on idle bytes retained by the shared network buffer pool. Zero keeps the
+        /// pool's own per-level default.
+        /// </summary>
+        public long GetNetworkBufferPoolSize()
+            => string.IsNullOrEmpty(NetworkBufferPoolSize) ? 0 : ParseSize(NetworkBufferPoolSize, out _);
+
+        const int DefaultMaxReceiveBufferSize = 1 << 20;
+
+        int PowerOf2SizeOrDefault(string value, int defaultValue, string name)
+        {
+            if (string.IsNullOrEmpty(value)) return defaultValue;
+            var size = ParseSize(value, out _);
+            var adjusted = PreviousPowerOf2(size);
+            if (size != adjusted)
+                logger?.LogInformation("Warning: using lower {name} than specified (power of 2)", name);
+            if (adjusted < 1 << 10)
+                throw new GarnetException($"{name} must be at least 1k");
+            if (adjusted > int.MaxValue)
+                throw new GarnetException($"{name} must not exceed {int.MaxValue}");
+            return (int)adjusted;
+        }
 
         /// <summary>
         /// Whether to use scatter-gather IO for a run of contiguous GET operations - useful to saturate
