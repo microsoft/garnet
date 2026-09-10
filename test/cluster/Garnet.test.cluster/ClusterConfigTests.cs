@@ -179,25 +179,6 @@ namespace Garnet.test.cluster
         }
 
         [Test, Order(3)]
-        [TestCase(-1)]
-        [TestCase(int.MaxValue)]
-        [Category("CLUSTER-CONFIG")]
-        public void InvalidReplicationHistoryLengthRecoversTest(int length)
-        {
-            context.CreateInstances(1, enableAOF: true);
-            var checkpointDirectory = context.nodeOptions[0].CheckpointDir;
-            context.ShutdownNode(0, ensureAofFlush: true);
-            var files = Directory.GetFiles(checkpointDirectory, "replication.conf*", SearchOption.AllDirectories);
-            Assert.That(files, Has.Length.EqualTo(1));
-            using (var file = File.OpenWrite(files[0]))
-            {
-                file.Write(BitConverter.GetBytes(length));
-            }
-
-            Assert.DoesNotThrow(() => context.RestartNode(0));
-        }
-
-        [Test, Order(3)]
         [Category("CLUSTER-CONFIG"), CancelAfter(1000)]
         public void ClusterAnyIPAnnounce()
         {

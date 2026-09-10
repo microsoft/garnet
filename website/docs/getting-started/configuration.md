@@ -74,6 +74,48 @@ Any setting in Garnet can be also configured by specifying a command line argume
 If the setting is also specified in the configuration file, it will be overridden by the value specified in the command line. 
 For all available command line settings, run `GarnetServer.exe -h` or `GarnetServer.exe -help`, or refer to the complete Garnet settings [list](#configurable-settings).
 
+## Separate Client Endpoints
+
+Garnet uses the cluster announce address and port for both client and node-to-node traffic
+by default. When running behind a load balancer or network address translation, use
+`ClusterClientAnnounceIp`, `ClusterClientAnnouncePort`, and `ClusterClientAnnounceHostname`
+to advertise a different endpoint to clients. Their command line equivalents and defaults
+are listed in [Configurable Settings](#configurable-settings).
+
+Null or empty client addresses and hostnames use the cluster announce defaults. Client ports
+must be in the range 1 to 65535, or 0 to use the cluster announce port. Client addresses must
+be IPv4 or IPv6 literals without brackets or a scope identifier, and cannot be unspecified
+addresses. Hostnames must be ASCII domain names with labels of at most 63 characters and
+at most 253 characters in total, excluding an optional final dot. Names are not resolved at
+startup. Use ASCII Punycode for internationalized domain names.
+
+These settings apply to MOVED, ASK, CLUSTER NODES, CLUSTER SLOTS, and CLUSTER SHARDS.
+`ClusterPreferredEndpointType` selects the address or hostname used in redirects,
+CLUSTER SLOTS, and CLUSTER SHARDS. CLUSTER NODES reports the client address and port,
+followed by the hostname when available. Its synthetic bus port remains the cluster
+announce port plus 10000.
+
+Use the node-to-node endpoints specified by `ClusterAnnounceIp` and `ClusterAnnouncePort`
+for CLUSTER MEET and migration, rather than endpoints from client discovery responses.
+The client settings do not create a listener or configure a proxy. Each client endpoint
+must route to the corresponding node.
+
+For example, the following node listens and communicates with peers on `10.0.0.4:6379`,
+while clients connect through a load balancer using `node.example.com:10000`:
+
+```
+GarnetServer --cluster --bind 10.0.0.4 --port 6379 \
+    --cluster-announce-ip 10.0.0.4 --cluster-announce-port 6379 \
+    --cluster-client-announce-hostname node.example.com \
+    --cluster-client-announce-port 10000 \
+    --cluster-preferred-endpoint-type hostname
+```
+
+**Important:** Upgrade all nodes before relying on translated client endpoints. Older nodes
+use node-to-node endpoints in client responses and do not preserve client advertisements.
+Startup settings replace the local client advertisement on recovery, so removing an
+override restores its default.
+
 ## Configurable Settings
 
 | `garnet.conf`<br/>keyword | Command line keyword(s) | Type | Valid Values | Description |

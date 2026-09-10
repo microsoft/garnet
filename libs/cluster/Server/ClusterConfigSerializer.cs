@@ -33,13 +33,13 @@ namespace Garnet.cluster
         /// </summary>
         public byte[] ToByteArray()
         {
-            using var ms = new MemoryStream();
-            using var writer = new BinaryWriter(ms);
+            var ms = new MemoryStream();
+            var writer = new BinaryWriter(ms);
 
             // Write serialization format version
             writer.Write(ClusterConfigVersion);
 
-            SerializeSlotMap(ms, writer);
+            SerializeSlotMap(ref ms, ref writer);
 
             //Serialize worker info
             //4 bytes + 400 * N
@@ -76,7 +76,11 @@ namespace Garnet.cluster
 
             // Keep the required payload as a byte-identical prefix so older nodes can ignore this extension.
             SerializeClientEndpointExtension(writer);
-            return ms.ToArray();
+
+            byte[] byteArray = ms.ToArray();
+            writer.Dispose();
+            ms.Dispose();
+            return byteArray;
         }
 
         private void SerializeClientEndpointExtension(BinaryWriter writer)
@@ -107,7 +111,7 @@ namespace Garnet.cluster
             return false;
         }
 
-        private void SerializeSlotMap(MemoryStream ms, BinaryWriter writer)
+        private void SerializeSlotMap(ref MemoryStream ms, ref BinaryWriter writer)
         {
             //serialize slotMap
             var segmentCountPosition = ms.Position;
@@ -156,54 +160,44 @@ namespace Garnet.cluster
         /// </summary>
         public static ClusterConfig FromByteArray(byte[] other)
         {
-            if (other == null)
-                throw new ArgumentNullException(nameof(other));
+            var ms = new MemoryStream(other);
+            var reader = new BinaryReader(ms);
 
-            try
+            // Read and validate serialization format version
+            if (other.Length < 1)
+                throw new InvalidDataException("Invalid ClusterConfig payload: too short to contain a version");
+            var version = reader.ReadByte();
+            if (version != ClusterConfigVersion)
+                throw new InvalidDataException($"Incompatible ClusterConfig version: expected {ClusterConfigVersion}, got {version}");
+
+            var newSlotMap = DeserializeSlotMap(ref reader);
+
+            int numWorkers = reader.ReadInt32();
+            var newWorkers = new Worker[numWorkers];
+            for (int i = 1; i < numWorkers; i++)
             {
-                using var ms = new MemoryStream(other);
-                using var reader = new BinaryReader(ms);
+                newWorkers[i].Nodeid = reader.ReadString();
+                newWorkers[i].Address = reader.ReadString();
+                newWorkers[i].Port = reader.ReadInt32();
+                newWorkers[i].ConfigEpoch = reader.ReadInt64();
+                newWorkers[i].Role = (NodeRole)reader.ReadByte();
 
-                // Read and validate serialization format version
-                if (other.Length < 1)
-                    throw new InvalidDataException("Invalid ClusterConfig payload: too short to contain a version");
-                var version = reader.ReadByte();
-                if (version != ClusterConfigVersion)
-                    throw new InvalidDataException($"Incompatible ClusterConfig version: expected {ClusterConfigVersion}, got {version}");
+                byte isNull = reader.ReadByte();
+                if (isNull > 0)
+                    newWorkers[i].ReplicaOfNodeId = reader.ReadString();
 
-                var newSlotMap = DeserializeSlotMap(reader);
+                newWorkers[i].ReplicationOffset = reader.ReadInt64();
 
-                int numWorkers = reader.ReadInt32();
-                if (numWorkers is < 2 or > ushort.MaxValue)
-                    throw new InvalidDataException($"Invalid ClusterConfig worker count: {numWorkers}");
-
-                var newWorkers = new Worker[numWorkers];
-                for (int i = 1; i < numWorkers; i++)
-                {
-                    newWorkers[i].Nodeid = reader.ReadString();
-                    newWorkers[i].Address = reader.ReadString();
-                    newWorkers[i].Port = reader.ReadInt32();
-                    newWorkers[i].ConfigEpoch = reader.ReadInt64();
-                    newWorkers[i].Role = (NodeRole)reader.ReadByte();
-
-                    byte isNull = reader.ReadByte();
-                    if (isNull > 0)
-                        newWorkers[i].ReplicaOfNodeId = reader.ReadString();
-
-                    newWorkers[i].ReplicationOffset = reader.ReadInt64();
-
-                    isNull = reader.ReadByte();
-                    if (isNull > 0)
-                        newWorkers[i].hostname = reader.ReadString();
-                }
-
-                DeserializeClientEndpointExtension(ms, reader, newWorkers);
-                return new ClusterConfig(newSlotMap, newWorkers);
+                isNull = reader.ReadByte();
+                if (isNull > 0)
+                    newWorkers[i].hostname = reader.ReadString();
             }
-            catch (EndOfStreamException ex)
-            {
-                throw new InvalidDataException("Invalid ClusterConfig payload: unexpected end of data", ex);
-            }
+
+            DeserializeClientEndpointExtension(ms, reader, newWorkers);
+
+            reader.Dispose();
+            ms.Dispose();
+            return new ClusterConfig(newSlotMap, newWorkers);
         }
 
         private static void DeserializeClientEndpointExtension(MemoryStream ms, BinaryReader reader, Worker[] workers)
@@ -211,34 +205,41 @@ namespace Garnet.cluster
             if (ms.Position == ms.Length)
                 return;
 
-            var extensionVersion = reader.ReadByte();
-            if (extensionVersion > ClientEndpointExtensionVersion)
+            try
             {
-                // Retain the required cluster state during rolling upgrades even when client metadata is newer.
-                ms.Position = ms.Length;
-                return;
+                var extensionVersion = reader.ReadByte();
+                if (extensionVersion > ClientEndpointExtensionVersion)
+                {
+                    // Retain the required cluster state during rolling upgrades even when client metadata is newer.
+                    ms.Position = ms.Length;
+                    return;
+                }
+
+                if (extensionVersion != ClientEndpointExtensionVersion)
+                    throw new InvalidDataException($"Invalid client endpoint extension version: {extensionVersion}");
+
+                for (int i = 1; i < workers.Length; i++)
+                {
+                    workers[i].HasClientEndpointMetadata = reader.ReadBoolean();
+                    if (!workers[i].HasClientEndpointMetadata)
+                        continue;
+
+                    workers[i].ClientAddress = ReadNullableString(reader);
+                    workers[i].ClientPort = reader.ReadInt32();
+                    workers[i].ClientHostname = ReadNullableString(reader);
+                    if (!ClusterEndpointValidation.IsValidAddress(workers[i].ClientAddress) ||
+                        !ClusterEndpointValidation.IsValidPort(workers[i].ClientPort) ||
+                        !ClusterEndpointValidation.IsValidHostname(workers[i].ClientHostname))
+                        throw new InvalidDataException("Invalid client endpoint metadata.");
+                }
+
+                if (ms.Position != ms.Length)
+                    throw new InvalidDataException("Invalid ClusterConfig payload: trailing data after client endpoint extension");
             }
-
-            if (extensionVersion != ClientEndpointExtensionVersion)
-                throw new InvalidDataException($"Invalid client endpoint extension version: {extensionVersion}");
-
-            for (int i = 1; i < workers.Length; i++)
+            catch (EndOfStreamException ex)
             {
-                workers[i].HasClientEndpointMetadata = reader.ReadBoolean();
-                if (!workers[i].HasClientEndpointMetadata)
-                    continue;
-
-                workers[i].ClientAddress = ReadNullableString(reader);
-                workers[i].ClientPort = reader.ReadInt32();
-                workers[i].ClientHostname = ReadNullableString(reader);
-                if (!ClusterEndpointValidation.IsValidAddress(workers[i].ClientAddress) ||
-                    !ClusterEndpointValidation.IsValidPort(workers[i].ClientPort) ||
-                    !ClusterEndpointValidation.IsValidHostname(workers[i].ClientHostname))
-                    throw new InvalidDataException("Invalid client endpoint metadata.");
+                throw new InvalidDataException("Invalid client endpoint extension: unexpected end of data", ex);
             }
-
-            if (ms.Position != ms.Length)
-                throw new InvalidDataException("Invalid ClusterConfig payload: trailing data after client endpoint extension");
         }
 
         private static void WriteNullableString(BinaryWriter writer, string value)
@@ -251,7 +252,7 @@ namespace Garnet.cluster
         private static string ReadNullableString(BinaryReader reader)
             => reader.ReadBoolean() ? reader.ReadString() : null;
 
-        private static HashSlot[] DeserializeSlotMap(BinaryReader reader)
+        private static HashSlot[] DeserializeSlotMap(ref BinaryReader reader)
         {
             var newSlotMap = new HashSlot[16384];
             ushort segmentCount = reader.ReadUInt16();

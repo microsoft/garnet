@@ -126,7 +126,7 @@ namespace Garnet.cluster
         /// <param name="role">Local worker role.</param>
         /// <param name="replicaOfNodeId">Local worker primary id.</param>
         /// <param name="hostname">Local worker hostname.</param>
-        /// <returns>Instance of local config with updated local worker info.</returns>
+        /// <returns>Instance of local config with update local worker info.</returns>
         public ClusterConfig InitializeLocalWorker(
             string nodeId,
             string address,
@@ -534,7 +534,7 @@ namespace Garnet.cluster
         {
             var workerId = GetWorkerIdFromSlot(slot);
 
-            return (GetClientEndpointByPreferredType(workerId, type), GetClientPort(workerId));
+            return (GetEndpointByPreferredType(workerId, type), GetClientPort(workerId));
         }
 
         /// <summary>
@@ -547,10 +547,10 @@ namespace Garnet.cluster
         {
             var workerId = slotMap[slot]._workerId;
 
-            return (GetClientEndpointByPreferredType(workerId, type), GetClientPort(workerId));
+            return (GetEndpointByPreferredType(workerId, type), GetClientPort(workerId));
         }
 
-        private string GetClientEndpointByPreferredType(int workerId, ClusterPreferredEndpointType type)
+        private string GetEndpointByPreferredType(int workerId, ClusterPreferredEndpointType type)
         {
             return type switch
             {
@@ -1213,7 +1213,7 @@ namespace Garnet.cluster
                 }
             }
 
-            Worker[] newWorkers;
+            var newWorkers = workers;
             // Check if we need to add worker to the known workers list
             if (workerId == RESERVED_WORKER_ID)
             {
@@ -1222,11 +1222,6 @@ namespace Garnet.cluster
                 Array.Copy(workers, newWorkers, workers.Length);
                 updateWorker = true;
                 updateClientEndpoint = true;
-            }
-            else
-            {
-                newWorkers = new Worker[workers.Length];
-                Array.Copy(workers, newWorkers, workers.Length);
             }
 
             if (updateWorker)
