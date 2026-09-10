@@ -7,6 +7,7 @@ using System.IO;
 using System.Net;
 using System.Net.Sockets;
 using System.Threading;
+using System.Threading.Tasks;
 using Garnet.common;
 using Garnet.networking;
 using Garnet.server.TLS;
@@ -287,7 +288,14 @@ namespace Garnet.server
                     {
                         IncrementConnectionsReceived();
                         ExceptionInjectionHelper.TriggerException(ExceptionInjectionType.Dispose_After_Handler_Registered_Before_Start);
-                        handler.Start(tlsOptions?.TlsServerOptions, remoteEndpointName);
+
+                        // A TLS handshake takes several network round trips, driven by the peer. Completing it here
+                        // would hold the accept loop for its whole duration, so a peer that connects and negotiates
+                        // slowly - or never - stops this server from accepting any other connection. StartAsync
+                        // performs the socket setup synchronously and leaves only the handshake to the thread pool.
+                        var startTask = handler.StartAsync(tlsOptions?.TlsServerOptions, remoteEndpointName);
+                        if (!startTask.IsCompletedSuccessfully)
+                            _ = ObserveHandlerStartAsync(startTask, handler);
                     }
                     catch (Exception ex)
                     {
@@ -308,6 +316,25 @@ namespace Garnet.server
                 }
             }
             return true;
+        }
+
+        /// <summary>
+        /// Observes the result of an in-flight handler start so a failed handshake is reported and cleaned up
+        /// the same way a synchronous failure is, without keeping the accept loop waiting for it.
+        /// </summary>
+        /// <param name="startTask">Task returned by the handler's asynchronous start.</param>
+        /// <param name="handler">Handler the task belongs to.</param>
+        private async Task ObserveHandlerStartAsync(Task startTask, ServerTcpNetworkHandler handler)
+        {
+            try
+            {
+                await startTask.ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                logger?.LogError(ex, "Error calling Start on network handler");
+                handler.Dispose();
+            }
         }
 
         /// <summary>
