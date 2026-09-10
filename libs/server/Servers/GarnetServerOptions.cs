@@ -400,7 +400,12 @@ namespace Garnet.server
             var sendSize = PowerOf2SizeOrDefault(NetworkBufferSize, BufferSizeUtils.ServerBufferSize(new MaxSizeSettings()), nameof(NetworkBufferSize));
             var maxReceiveSize = PowerOf2SizeOrDefault(NetworkMaxReceiveBufferSize, DefaultMaxReceiveBufferSize, nameof(NetworkMaxReceiveBufferSize));
             // The pool requires the max receive size to be at least the base size, since it is the top size class.
-            maxReceiveSize = Math.Max(maxReceiveSize, sendSize);
+            if (maxReceiveSize < sendSize)
+            {
+                logger?.LogInformation("Warning: raising {max} to {name} ({size}), it cannot be smaller",
+                    nameof(NetworkMaxReceiveBufferSize), nameof(NetworkBufferSize), sendSize);
+                maxReceiveSize = sendSize;
+            }
             return new NetworkBufferSettings(sendSize, sendSize, maxReceiveSize);
         }
 

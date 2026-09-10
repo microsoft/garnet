@@ -170,6 +170,60 @@ namespace Garnet.test
         }
 
         [Test]
+        public void NetworkBufferOptionParsing()
+        {
+            // Defaults from defaults.conf preserve the historical hardcoded sizing.
+            var ok = ServerSettingsManager.TryParseCommandLineArguments([], out var options, out _, out _, out _, silentMode: true);
+            ClassicAssert.IsTrue(ok);
+            ClassicAssert.AreEqual("128k", options.NetworkBufferSize);
+            ClassicAssert.AreEqual("1m", options.NetworkMaxReceiveBufferSize);
+            ClassicAssert.AreEqual("64m", options.NetworkBufferPoolSize);
+
+            var serverOptions = options.GetServerOptions();
+            var settings = serverOptions.GetNetworkBufferSettings();
+            ClassicAssert.AreEqual(1 << 17, settings.sendBufferSize);
+            ClassicAssert.AreEqual(1 << 17, settings.initialReceiveBufferSize);
+            ClassicAssert.AreEqual(1 << 20, settings.maxReceiveBufferSize);
+            ClassicAssert.AreEqual(64L << 20, serverOptions.GetNetworkBufferPoolSize());
+
+            // Overrides round-trip.
+            ok = ServerSettingsManager.TryParseCommandLineArguments(
+                ["--network-buffer-size", "16k", "--network-max-receive-buffer-size", "512k", "--network-buffer-pool-size", "8m"],
+                out options, out _, out _, out _, silentMode: true);
+            ClassicAssert.IsTrue(ok);
+            serverOptions = options.GetServerOptions();
+            settings = serverOptions.GetNetworkBufferSettings();
+            ClassicAssert.AreEqual(1 << 14, settings.sendBufferSize);
+            ClassicAssert.AreEqual(1 << 14, settings.initialReceiveBufferSize);
+            ClassicAssert.AreEqual(1 << 19, settings.maxReceiveBufferSize);
+            ClassicAssert.AreEqual(8L << 20, serverOptions.GetNetworkBufferPoolSize());
+
+            // Non-power-of-2 sizes round down rather than being rejected.
+            ok = ServerSettingsManager.TryParseCommandLineArguments(["--network-buffer-size", "48k"], out options, out _, out _, out _, silentMode: true);
+            ClassicAssert.IsTrue(ok);
+            ClassicAssert.AreEqual(1 << 15, options.GetServerOptions().GetNetworkBufferSettings().sendBufferSize);
+
+            // An inverted pair is corrected: the max receive size can never be below the base size,
+            // otherwise the base size would not be a valid pool size class.
+            ok = ServerSettingsManager.TryParseCommandLineArguments(
+                ["--network-buffer-size", "256k", "--network-max-receive-buffer-size", "64k"],
+                out options, out _, out _, out _, silentMode: true);
+            ClassicAssert.IsTrue(ok);
+            settings = options.GetServerOptions().GetNetworkBufferSettings();
+            ClassicAssert.AreEqual(1 << 18, settings.sendBufferSize);
+            ClassicAssert.AreEqual(1 << 18, settings.maxReceiveBufferSize);
+
+            // The resolved settings must always be usable by a pool built from them.
+            using var pool = settings.CreateBufferPool(ownerType: PoolOwnerType.ServerNetwork);
+            ClassicAssert.IsTrue(pool.Validate(settings));
+
+            // Non-memory-size values are rejected by validation.
+            ok = ServerSettingsManager.TryParseCommandLineArguments(["--network-buffer-size", "notasize"], out _, out var invalidOptions, out _, out _, silentMode: true);
+            ClassicAssert.IsFalse(ok);
+            ClassicAssert.IsTrue(invalidOptions.Contains(nameof(Options.NetworkBufferSize)));
+        }
+
+        [Test]
         public void BufferPoolMemoryBudgetZeroDisablesCaching()
         {
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
