@@ -155,6 +155,7 @@ namespace Tsavorite.core
         internal bool TryGetHeapObject(int objectId, out IHeapObject heapObject)
         {
             heapObject = default;
+            objectId = GetIndex(objectId);
             if (!objectArray.TryGet(objectId, out var element) || element is not IHeapObject candidate)
                 return false;
 
