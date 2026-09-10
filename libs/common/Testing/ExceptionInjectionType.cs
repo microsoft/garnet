@@ -130,5 +130,9 @@ namespace Garnet.common
         /// error raised while connections are initialized or the configuration is broadcast.
         /// </summary>
         Cluster_Gossip_Round_Fail,
+        /// <summary>
+        /// Replica full sync: fail recovery of the checkpoint received from the primary, before any of it is applied.
+        /// </summary>
+        Replication_Fail_Replica_Checkpoint_Recovery,
     }
 }
