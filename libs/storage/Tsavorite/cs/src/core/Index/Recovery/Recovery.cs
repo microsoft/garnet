@@ -157,7 +157,7 @@ namespace Tsavorite.core
         /// <summary>Address of <see cref="HybridLogRecoveryInfo.beginAddressObjectLogSegment"/>; the start of the lowest object log segment
         /// in use by the hybrid log at snapshot PREPARE time</summary>
         public long hybridLogObjectFileStartAddress;
-        /// <summary>The objectLogTail taken at the start of WAIT_FLUSH, corresponding to the hlog's FlushedUntilAddress at that point</summary>
+        /// <summary>The hlogEndObjectLogTail taken at PERSISTENCE_CALLBACK, corresponding to the hlog's FlushedUntilAddress at that point</summary>
         public long hybridLogObjectFileEndAddress;
         /// <summary>The snapshotEndObjectLogTail taken at PERSISTENCE_CALLBACK, which corresponds to the object log position for the final TailAddress
         /// written by the checkpoint. (Start address is always 0.)</summary>
@@ -253,7 +253,7 @@ namespace Tsavorite.core
                 // a main-log Flush. However the snapshot does cause object-log segments for the mutable range to be written.
                 hasSnapshotObjects = hasSnapshotObjects,
                 hybridLogObjectFileStartAddress = hasSnapshotObjects ? (long)current.info.beginAddressObjectLogSegment << current.info.hlogEndObjectLogTail.SegmentSizeBits : 0,
-                hybridLogObjectFileEndAddress = hasSnapshotObjects ? (long)current.info.snapshotStartObjectLogTail.CurrentAddress : 0,
+                hybridLogObjectFileEndAddress = hasSnapshotObjects ? (long)current.info.hlogEndObjectLogTail.CurrentAddress : 0,
                 snapshotObjectFileEndAddress = hasSnapshotObjects ? (long)current.info.snapshotEndObjectLogTail.CurrentAddress : 0,
 
             };
