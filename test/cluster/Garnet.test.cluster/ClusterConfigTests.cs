@@ -354,5 +354,69 @@ namespace Garnet.test.cluster
             Assert.That(merged.GetNodeIdFromSlot(StaleSlot), Is.Not.EqualTo(senderId),
                 "stale attribution should be cleared");
         }
+
+        /// <summary>
+        /// Verifies that gossip from a replica cannot make that replica the owner of a slot the receiver
+        /// has no owner for. A replica only relays its primary's view, so treating it as the claimant hands
+        /// the slot to a node that never owned it, and the real owner can then never take it back.
+        /// </summary>
+        [Test, Order(12)]
+        [Category("CLUSTER-CONFIG"), CancelAfter(1000)]
+        public void ClusterConfigMergeSlotMapIgnoresUnownedSlotFromReplicaTest()
+        {
+            const int Slot = 8192;
+
+            var ownerId = Generator.CreateHexId();         // primary that genuinely owns Slot
+            var otherPrimaryId = Generator.CreateHexId();  // the replica's own primary
+            var replicaId = Generator.CreateHexId();
+
+            // The genuine owner of Slot, with a deliberately low config epoch.
+            var owner = new ClusterConfig()
+                .InitializeLocalWorker(
+                    ownerId, "127.0.0.1", ClusterTestContext.Port + 1,
+                    configEpoch: 2, Garnet.cluster.NodeRole.PRIMARY, null, "")
+                .UpdateSlotState(Slot, ClusterConfig.LOCAL_WORKER_ID, SlotState.STABLE);
+
+            var otherPrimary = new ClusterConfig().InitializeLocalWorker(
+                otherPrimaryId, "127.0.0.1", ClusterTestContext.Port + 2,
+                configEpoch: 3, Garnet.cluster.NodeRole.PRIMARY, null, "");
+
+            // A replica of some other primary. It does not own Slot, it merely relays that the owner does.
+            // Its config epoch is higher than the owner's, as happens after an epoch collision is resolved.
+            var replica = new ClusterConfig()
+                .InitializeLocalWorker(
+                    replicaId, "127.0.0.1", ClusterTestContext.Port + 3,
+                    configEpoch: 5, Garnet.cluster.NodeRole.REPLICA, otherPrimaryId, "")
+                .Merge(otherPrimary, [])
+                .Merge(owner, []);
+
+            Assert.That(replica.GetNodeIdFromSlot(Slot), Is.EqualTo(ownerId),
+                "precondition: the replica relays that the owner owns the slot");
+
+            // Receiver knows the owner as a worker but has not learned who owns Slot yet, which is the
+            // normal state of a freshly met node.
+            var ownerWithoutSlots = new ClusterConfig().InitializeLocalWorker(
+                ownerId, "127.0.0.1", ClusterTestContext.Port + 1,
+                configEpoch: 2, Garnet.cluster.NodeRole.PRIMARY, null, "");
+            var receiver = new ClusterConfig()
+                .InitializeLocalWorker(
+                    Generator.CreateHexId(), "127.0.0.1", ClusterTestContext.Port + 4,
+                    configEpoch: 1, Garnet.cluster.NodeRole.PRIMARY, null, "")
+                .Merge(ownerWithoutSlots, []);
+
+            Assert.That(receiver.GetState((ushort)Slot), Is.Not.EqualTo(SlotState.STABLE),
+                "precondition: the receiver has no owner for the slot");
+
+            var merged = receiver.Merge(replica, []);
+
+            Assert.That(merged.GetNodeIdFromSlot(Slot), Is.Not.EqualTo(replicaId),
+                "a replica must never become the owner of a slot it only relays");
+
+            // The owner must still be able to claim the slot afterwards. Without the guard above the
+            // replica holds it at a higher config epoch and this claim is rejected forever.
+            var claimed = merged.Merge(owner, []);
+            Assert.That(claimed.GetNodeIdFromSlot(Slot), Is.EqualTo(ownerId),
+                "the genuine owner must still be able to claim the slot");
+        }
     }
 }
