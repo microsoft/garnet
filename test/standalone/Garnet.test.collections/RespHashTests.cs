@@ -4,7 +4,6 @@
 using System;
 using System.Linq;
 using System.Text;
-using System.Threading;
 using System.Threading.Tasks;
 using Garnet.server;
 using NUnit.Framework;
@@ -64,10 +63,17 @@ namespace Garnet.test
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
             db.HashSet("user:user1", [new HashEntry("Title", "Tsavorite")]);
-            db.HashFieldExpire("user:user1", ["Title"], TimeSpan.FromMilliseconds(100));
+
+            // Give the field a pending expiration that is not reached while the test runs
+            db.Execute("HPEXPIREAT", "user:user1", MemberExpiry.Pending(), "FIELDS", "1", "Title");
             string r = db.HashGet("user:user1", "Title");
             ClassicAssert.AreEqual("Tsavorite", r);
-            await Task.Delay(200).ConfigureAwait(false);
+
+            // Expire the field
+            var deadline = MemberExpiry.Imminent();
+            db.Execute("HPEXPIREAT", "user:user1", deadline, "FIELDS", "1", "Title");
+            await MemberExpiry.WaitUntilPastAsync(deadline).ConfigureAwait(false);
+
             r = db.HashGet("user:user1", "Title");
             ClassicAssert.IsNull(r);
         }
@@ -164,7 +170,7 @@ namespace Garnet.test
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
             db.HashSet("user:user1", [new HashEntry("Title", "Tsavorite"), new HashEntry("Year", "2021")]);
-            db.HashFieldExpire("user:user1", ["Title"], TimeSpan.FromMilliseconds(100));
+            db.HashFieldExpire("user:user1", ["Title"], TimeSpan.FromMilliseconds(MemberExpiry.PendingTtlMs));
             var result = db.HashDelete(new RedisKey("user:user1"), new RedisValue("Title"));
             ClassicAssert.AreEqual(true, result);
             string resultGet = db.HashGet("user:user1", "Year");
@@ -214,10 +220,17 @@ namespace Garnet.test
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
             db.HashSet("user:user1", [new HashEntry("Title", "Tsavorite"), new HashEntry("Year", "2021"), new HashEntry("Company", "Acme")]);
-            db.HashFieldExpire("user:user1", ["Title"], TimeSpan.FromMilliseconds(100));
+
+            // Give the field a pending expiration that is not reached while the test runs
+            db.Execute("HPEXPIREAT", "user:user1", MemberExpiry.Pending(), "FIELDS", "1", "Title");
             var result = db.HashLength("user:user1");
             ClassicAssert.AreEqual(3, result);
-            await Task.Delay(150).ConfigureAwait(false);
+
+            // Expire the field
+            var deadline = MemberExpiry.Imminent();
+            db.Execute("HPEXPIREAT", "user:user1", deadline, "FIELDS", "1", "Title");
+            await MemberExpiry.WaitUntilPastAsync(deadline).ConfigureAwait(false);
+
             result = db.HashLength("user:user1");
             ClassicAssert.AreEqual(2, result);
             db.HashSet("user:user1", [new HashEntry("Year", "new2021")]);  // Trigger deletion of expired field
@@ -247,14 +260,19 @@ namespace Garnet.test
             HashEntry[] hashEntries =
                 [new HashEntry("Title", "Tsavorite"), new HashEntry("Year", "2021"), new HashEntry("Company", "Acme")];
             db.HashSet("user:user1", hashEntries);
-            db.HashFieldExpire("user:user1", ["Title"], TimeSpan.FromMilliseconds(100));
+
+            // Give the field a pending expiration that is not reached while the test runs
+            db.Execute("HPEXPIREAT", "user:user1", MemberExpiry.Pending(), "FIELDS", "1", "Title");
 
             var result = db.HashGetAll("user:user1");
             ClassicAssert.AreEqual(hashEntries.Length, result.Length);
             ClassicAssert.AreEqual(hashEntries.Length, result.Select(r => r.Name).Distinct().Count());
             ClassicAssert.IsTrue(hashEntries.OrderBy(e => e.Name).SequenceEqual(result.OrderBy(r => r.Name)));
 
-            await Task.Delay(200).ConfigureAwait(false);
+            // Expire the field
+            var deadline = MemberExpiry.Imminent();
+            db.Execute("HPEXPIREAT", "user:user1", deadline, "FIELDS", "1", "Title");
+            await MemberExpiry.WaitUntilPastAsync(deadline).ConfigureAwait(false);
 
             result = db.HashGetAll("user:user1");
             ClassicAssert.AreEqual(hashEntries.Length - 1, result.Length);
@@ -285,12 +303,17 @@ namespace Garnet.test
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
             db.HashSet("user:user1", [new HashEntry("Title", "Tsavorite"), new HashEntry("Year", "2021"), new HashEntry("Company", "Acme")]);
-            db.HashFieldExpire("user:user1", ["Title"], TimeSpan.FromMilliseconds(100));
+
+            // Give the field a pending expiration that is not reached while the test runs
+            db.Execute("HPEXPIREAT", "user:user1", MemberExpiry.Pending(), "FIELDS", "1", "Title");
 
             var result = db.HashExists(new RedisKey("user:user1"), "Title");
             ClassicAssert.IsTrue(result);
 
-            await Task.Delay(200).ConfigureAwait(false);
+            // Expire the field
+            var deadline = MemberExpiry.Imminent();
+            db.Execute("HPEXPIREAT", "user:user1", deadline, "FIELDS", "1", "Title");
+            await MemberExpiry.WaitUntilPastAsync(deadline).ConfigureAwait(false);
 
             result = db.HashExists(new RedisKey("user:user1"), "Title");
             ClassicAssert.IsFalse(result);
@@ -320,12 +343,17 @@ namespace Garnet.test
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
             db.HashSet("user:user1", [new HashEntry("Title", "Tsavorite")]);
-            db.HashFieldExpire("user:user1", ["Title"], TimeSpan.FromMilliseconds(100));
+
+            // Give the field a pending expiration that is not reached while the test runs
+            db.Execute("HPEXPIREAT", "user:user1", MemberExpiry.Pending(), "FIELDS", "1", "Title");
 
             long r = db.HashStringLength("user:user1", "Title");
             ClassicAssert.AreEqual(9, r);
 
-            await Task.Delay(200).ConfigureAwait(false);
+            // Expire the field
+            var deadline = MemberExpiry.Imminent();
+            db.Execute("HPEXPIREAT", "user:user1", deadline, "FIELDS", "1", "Title");
+            await MemberExpiry.WaitUntilPastAsync(deadline).ConfigureAwait(false);
 
             r = db.HashStringLength("user:user1", "Title");
             ClassicAssert.AreEqual(0, r);
@@ -355,14 +383,19 @@ namespace Garnet.test
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
             db.HashSet("user:user1", [new HashEntry("Title", "Tsavorite"), new HashEntry("Year", "2021"), new HashEntry("Company", "Acme")]);
-            db.HashFieldExpire("user:user1", ["Title"], TimeSpan.FromMilliseconds(100));
+
+            // Give the field a pending expiration that is not reached while the test runs
+            db.Execute("HPEXPIREAT", "user:user1", MemberExpiry.Pending(), "FIELDS", "1", "Title");
             var result = db.HashKeys("user:user1");
             ClassicAssert.AreEqual(3, result.Length);
             ClassicAssert.IsTrue(Array.Exists(result, t => t.Equals("Title")));
             ClassicAssert.IsTrue(Array.Exists(result, t => t.Equals("Year")));
             ClassicAssert.IsTrue(Array.Exists(result, t => t.Equals("Company")));
 
-            await Task.Delay(200).ConfigureAwait(false);
+            // Expire the field
+            var deadline = MemberExpiry.Imminent();
+            db.Execute("HPEXPIREAT", "user:user1", deadline, "FIELDS", "1", "Title");
+            await MemberExpiry.WaitUntilPastAsync(deadline).ConfigureAwait(false);
 
             result = db.HashKeys("user:user1");
             ClassicAssert.AreEqual(2, result.Length);
@@ -398,14 +431,19 @@ namespace Garnet.test
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
             db.HashSet("user:user1", [new HashEntry("Title", "Tsavorite"), new HashEntry("Year", "2021"), new HashEntry("Company", "Acme")]);
-            db.HashFieldExpire("user:user1", ["Title"], TimeSpan.FromMilliseconds(100));
+
+            // Give the field a pending expiration that is not reached while the test runs
+            db.Execute("HPEXPIREAT", "user:user1", MemberExpiry.Pending(), "FIELDS", "1", "Title");
             var result = db.HashValues("user:user1");
             ClassicAssert.AreEqual(3, result.Length);
             ClassicAssert.IsTrue(Array.Exists(result, t => t.Equals("Tsavorite")));
             ClassicAssert.IsTrue(Array.Exists(result, t => t.Equals("2021")));
             ClassicAssert.IsTrue(Array.Exists(result, t => t.Equals("Acme")));
 
-            await Task.Delay(200).ConfigureAwait(false);
+            // Expire the field
+            var deadline = MemberExpiry.Imminent();
+            db.Execute("HPEXPIREAT", "user:user1", deadline, "FIELDS", "1", "Title");
+            await MemberExpiry.WaitUntilPastAsync(deadline).ConfigureAwait(false);
 
             result = db.HashValues("user:user1");
             ClassicAssert.AreEqual(2, result.Length);
@@ -445,11 +483,16 @@ namespace Garnet.test
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
             db.HashSet("user:user1", [new HashEntry("Field1", "StringValue"), new HashEntry("Field2", "1")]);
-            db.HashFieldExpire("user:user1", ["Field2"], TimeSpan.FromMilliseconds(100));
+
+            // Give the field a pending expiration that is not reached while the test runs
+            db.Execute("HPEXPIREAT", "user:user1", MemberExpiry.Pending(), "FIELDS", "1", "Field2");
             var result = db.HashIncrement(new RedisKey("user:user1"), new RedisValue("Field2"), -4);
             ClassicAssert.AreEqual(-3, result);
 
-            await Task.Delay(200).ConfigureAwait(false);
+            // Expire the field
+            var deadline = MemberExpiry.Imminent();
+            db.Execute("HPEXPIREAT", "user:user1", deadline, "FIELDS", "1", "Field2");
+            await MemberExpiry.WaitUntilPastAsync(deadline).ConfigureAwait(false);
 
             result = db.HashIncrement(new RedisKey("user:user1"), new RedisValue("Field2"), -4);
             ClassicAssert.AreEqual(-4, result);
@@ -503,11 +546,16 @@ namespace Garnet.test
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
             db.HashSet("user:user1", [new HashEntry("Field1", "1.1111111111")]);
-            db.HashFieldExpire("user:user1", ["Field1"], TimeSpan.FromMilliseconds(100));
+
+            // Give the field a pending expiration that is not reached while the test runs
+            db.Execute("HPEXPIREAT", "user:user1", MemberExpiry.Pending(), "FIELDS", "1", "Field1");
             var result = db.HashIncrement(new RedisKey("user:user1"), new RedisValue("Field1"), 2.2222222222);
             ClassicAssert.AreEqual(3.3333333333, result, 1e-15);
 
-            await Task.Delay(200).ConfigureAwait(false);
+            // Expire the field
+            var deadline = MemberExpiry.Imminent();
+            db.Execute("HPEXPIREAT", "user:user1", deadline, "FIELDS", "1", "Field1");
+            await MemberExpiry.WaitUntilPastAsync(deadline).ConfigureAwait(false);
 
             result = db.HashIncrement(new RedisKey("user:user1"), new RedisValue("Field1"), 2.2222222222);
             ClassicAssert.AreEqual(2.2222222222, result, 1e-15);
@@ -532,10 +580,20 @@ namespace Garnet.test
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
             db.HashSet(new RedisKey("user:user1"), new RedisValue("Field"), new RedisValue("Hello"));
-            db.HashFieldExpire("user:user1", ["Field"], TimeSpan.FromMilliseconds(100));
+
+            // Give the field a pending expiration that is not reached while the test runs
+            var pending = MemberExpiry.Pending();
+            db.Execute("HPEXPIREAT", "user:user1", pending, "FIELDS", "1", "Field");
             db.HashSet(new RedisKey("user:user1"), new RedisValue("Field"), new RedisValue("Hello"), When.NotExists);
 
-            await Task.Delay(200).ConfigureAwait(false);
+            // SetNX on a field that is present is a no-op and leaves the expiration untouched
+            var expireTime = (RedisResult[])db.Execute("HPEXPIRETIME", "user:user1", "FIELDS", "1", "Field");
+            ClassicAssert.AreEqual(pending, (long)expireTime[0]);
+
+            // Expire the field
+            var deadline = MemberExpiry.Imminent();
+            db.Execute("HPEXPIREAT", "user:user1", deadline, "FIELDS", "1", "Field");
+            await MemberExpiry.WaitUntilPastAsync(deadline).ConfigureAwait(false);
 
             string result = db.HashGet("user:user1", "Field");
             ClassicAssert.IsNull(result); // SetNX should not reset the expiration
@@ -618,11 +676,16 @@ namespace Garnet.test
             var hashKey = new RedisKey("user:user1");
             HashEntry[] hashEntries = [new HashEntry("Title", "Tsavorite")];
             db.HashSet(hashKey, hashEntries);
-            db.HashFieldExpire("user:user1", ["Title"], TimeSpan.FromMilliseconds(100));
+
+            // Give the field a pending expiration that is not reached while the test runs
+            db.Execute("HPEXPIREAT", "user:user1", MemberExpiry.Pending(), "FIELDS", "1", "Title");
             string field = db.HashRandomField(hashKey);
             ClassicAssert.AreEqual(field, "Title");
 
-            await Task.Delay(200).ConfigureAwait(false);
+            // Expire the field
+            var deadline = MemberExpiry.Imminent();
+            db.Execute("HPEXPIREAT", "user:user1", deadline, "FIELDS", "1", "Title");
+            await MemberExpiry.WaitUntilPastAsync(deadline).ConfigureAwait(false);
 
             field = db.HashRandomField(hashKey);
             ClassicAssert.IsNull(field);
@@ -637,12 +700,17 @@ namespace Garnet.test
             var hashKey = new RedisKey("user:user1");
             HashEntry[] hashEntries = [new HashEntry("Title", "Tsavorite")];
             db.HashSet(hashKey, hashEntries);
-            db.HashFieldExpire("user:user1", ["Title"], TimeSpan.FromMilliseconds(100));
+
+            // Give the field a pending expiration that is not reached while the test runs
+            db.Execute("HPEXPIREAT", "user:user1", MemberExpiry.Pending(), "FIELDS", "1", "Title");
             var field = db.HashRandomFields(hashKey, 10).Select(x => (string)x).ToArray();
             ClassicAssert.AreEqual(field.Length, 1);
             ClassicAssert.AreEqual("Title", field[0]);
 
-            await Task.Delay(200).ConfigureAwait(false);
+            // Expire the field
+            var deadline = MemberExpiry.Imminent();
+            db.Execute("HPEXPIREAT", "user:user1", deadline, "FIELDS", "1", "Title");
+            await MemberExpiry.WaitUntilPastAsync(deadline).ConfigureAwait(false);
 
             field = db.HashRandomFields(hashKey, 10).Select(x => (string)x).ToArray();
             ClassicAssert.AreEqual(field.Length, 0);
@@ -721,13 +789,18 @@ namespace Garnet.test
             var db = redis.GetDatabase(0);
 
             db.HashSet("user:user789", [new HashEntry("email", "email@example.com"), new HashEntry("email1", "email1@example.com"), new HashEntry("email2", "email2@example.com"), new HashEntry("email3", "email3@example.com"), new HashEntry("age", "25")]);
-            db.HashFieldExpire("user:user789", ["email"], TimeSpan.FromMilliseconds(100));
+
+            // Give the field a pending expiration that is not reached while the test runs
+            db.Execute("HPEXPIREAT", "user:user789", MemberExpiry.Pending(), "FIELDS", "1", "email");
 
             var members = db.HashScan("user:user789", "email*");
             ClassicAssert.IsTrue(((IScanningCursor)members).Cursor == 0);
             ClassicAssert.IsTrue(members.Count() == 4, "HSCAN with MATCH failed.");
 
-            await Task.Delay(200).ConfigureAwait(false);
+            // Expire the field
+            var deadline = MemberExpiry.Imminent();
+            db.Execute("HPEXPIREAT", "user:user789", deadline, "FIELDS", "1", "email");
+            await MemberExpiry.WaitUntilPastAsync(deadline).ConfigureAwait(false);
 
             // HSCAN with match
             members = db.HashScan("user:user789", "email*");
@@ -824,13 +897,18 @@ namespace Garnet.test
             var db = redis.GetDatabase(0);
 
             db.HashSet("user:user789", [new HashEntry("email", "email@example.com"), new HashEntry("email1", "email1@example.com"), new HashEntry("email2", "email2@example.com"), new HashEntry("email3", "email3@example.com"), new HashEntry("age", "25")]);
-            db.HashFieldExpire("user:user789", ["email"], TimeSpan.FromMilliseconds(100));
+
+            // Give the field a pending expiration that is not reached while the test runs
+            db.Execute("HPEXPIREAT", "user:user789", MemberExpiry.Pending(), "FIELDS", "1", "email");
 
             var members = (string[])db.Execute("HMGET", "user:user789", "email", "email1");
             ClassicAssert.AreEqual("email@example.com", members[0]);
             ClassicAssert.AreEqual("email1@example.com", members[1]);
 
-            await Task.Delay(200).ConfigureAwait(false);
+            // Expire the field
+            var deadline = MemberExpiry.Imminent();
+            db.Execute("HPEXPIREAT", "user:user789", deadline, "FIELDS", "1", "email");
+            await MemberExpiry.WaitUntilPastAsync(deadline).ConfigureAwait(false);
 
             members = (string[])db.Execute("HMGET", "user:user789", "email", "email1");
             ClassicAssert.IsNull(members[0]);
@@ -1026,26 +1104,31 @@ namespace Garnet.test
             var db = redis.GetDatabase(0);
             db.HashSet("myhash", [new HashEntry("field1", "hello"), new HashEntry("field2", "world"), new HashEntry("field3", "value3"), new HashEntry("field4", "value4"), new HashEntry("field5", "value5"), new HashEntry("field6", "value6")]);
 
-            var result = db.Execute("HEXPIRE", "myhash", "4", "FIELDS", "3", "field1", "field5", "nonexistfield");
+            var pendingSeconds = MemberExpiry.PendingTtlMs / 1000;
+            var pendingDeadlineMs = MemberExpiry.Pending();
+            var pendingDeadlineSeconds = pendingDeadlineMs / 1000;
+
+            // Pending expirations that are not reached while the test runs
+            var result = db.Execute("HEXPIRE", "myhash", pendingSeconds, "FIELDS", "3", "field1", "field5", "nonexistfield");
             var results = (RedisResult[])result;
             ClassicAssert.AreEqual(3, results.Length);
             ClassicAssert.AreEqual(1, (long)results[0]);
             ClassicAssert.AreEqual(1, (long)results[1]);
             ClassicAssert.AreEqual(-2, (long)results[2]);
 
-            result = db.Execute("HPEXPIRE", "myhash", "4000", "FIELDS", "2", "field2", "nonexistfield");
+            result = db.Execute("HPEXPIRE", "myhash", MemberExpiry.PendingTtlMs, "FIELDS", "2", "field2", "nonexistfield");
             results = (RedisResult[])result;
             ClassicAssert.AreEqual(2, results.Length);
             ClassicAssert.AreEqual(1, (long)results[0]);
             ClassicAssert.AreEqual(-2, (long)results[1]);
 
-            result = db.Execute("HEXPIREAT", "myhash", DateTimeOffset.UtcNow.AddSeconds(4).ToUnixTimeSeconds().ToString(), "FIELDS", "2", "field3", "nonexistfield");
+            result = db.Execute("HEXPIREAT", "myhash", pendingDeadlineSeconds, "FIELDS", "2", "field3", "nonexistfield");
             results = (RedisResult[])result;
             ClassicAssert.AreEqual(2, results.Length);
             ClassicAssert.AreEqual(1, (long)results[0]);
             ClassicAssert.AreEqual(-2, (long)results[1]);
 
-            result = db.Execute("HPEXPIREAT", "myhash", DateTimeOffset.UtcNow.AddSeconds(4).ToUnixTimeMilliseconds().ToString(), "FIELDS", "2", "field4", "nonexistfield");
+            result = db.Execute("HPEXPIREAT", "myhash", pendingDeadlineMs, "FIELDS", "2", "field4", "nonexistfield");
             results = (RedisResult[])result;
             ClassicAssert.AreEqual(2, results.Length);
             ClassicAssert.AreEqual(1, (long)results[0]);
@@ -1053,26 +1136,25 @@ namespace Garnet.test
 
             var ttl = (RedisResult[])db.Execute("HTTL", "myhash", "FIELDS", "2", "field1", "nonexistfield");
             ClassicAssert.AreEqual(2, ttl.Length);
-            ClassicAssert.LessOrEqual((long)ttl[0], 4);
-            ClassicAssert.Greater((long)ttl[0], 1);
+            ClassicAssert.LessOrEqual((long)ttl[0], pendingSeconds);
+            ClassicAssert.Greater((long)ttl[0], 0);
             ClassicAssert.AreEqual(-2, (long)results[1]);
 
             ttl = (RedisResult[])db.Execute("HPTTL", "myhash", "FIELDS", "2", "field1", "nonexistfield");
             ClassicAssert.AreEqual(2, ttl.Length);
-            ClassicAssert.LessOrEqual((long)ttl[0], 4000);
-            ClassicAssert.Greater((long)ttl[0], 1000);
+            ClassicAssert.LessOrEqual((long)ttl[0], MemberExpiry.PendingTtlMs);
+            ClassicAssert.Greater((long)ttl[0], 0);
             ClassicAssert.AreEqual(-2, (long)results[1]);
 
-            ttl = (RedisResult[])db.Execute("HEXPIRETIME", "myhash", "FIELDS", "2", "field1", "nonexistfield");
+            // An absolute deadline is reported back exactly as it was set
+            ttl = (RedisResult[])db.Execute("HEXPIRETIME", "myhash", "FIELDS", "2", "field3", "nonexistfield");
             ClassicAssert.AreEqual(2, ttl.Length);
-            ClassicAssert.LessOrEqual((long)ttl[0], DateTimeOffset.UtcNow.AddSeconds(4).ToUnixTimeSeconds());
-            ClassicAssert.Greater((long)ttl[0], DateTimeOffset.UtcNow.AddSeconds(1).ToUnixTimeSeconds());
+            ClassicAssert.AreEqual(pendingDeadlineSeconds, (long)ttl[0]);
             ClassicAssert.AreEqual(-2, (long)results[1]);
 
-            ttl = (RedisResult[])db.Execute("HPEXPIRETIME", "myhash", "FIELDS", "2", "field1", "nonexistfield");
+            ttl = (RedisResult[])db.Execute("HPEXPIRETIME", "myhash", "FIELDS", "2", "field4", "nonexistfield");
             ClassicAssert.AreEqual(2, ttl.Length);
-            ClassicAssert.LessOrEqual((long)ttl[0], DateTimeOffset.UtcNow.AddSeconds(4).ToUnixTimeMilliseconds());
-            ClassicAssert.Greater((long)ttl[0], DateTimeOffset.UtcNow.AddSeconds(1).ToUnixTimeMilliseconds());
+            ClassicAssert.AreEqual(pendingDeadlineMs, (long)ttl[0]);
             ClassicAssert.AreEqual(-2, (long)results[1]);
 
             results = (RedisResult[])db.Execute("HPERSIST", "myhash", "FIELDS", "3", "field5", "field6", "nonexistfield");
@@ -1081,7 +1163,10 @@ namespace Garnet.test
             ClassicAssert.AreEqual(-1, (long)results[1]); // -1 if the field exists but has no associated expiration set.
             ClassicAssert.AreEqual(-2, (long)results[2]);
 
-            await Task.Delay(4500).ConfigureAwait(false);
+            // Expire the fields that still carry an expiration
+            var deadline = MemberExpiry.Imminent();
+            db.Execute("HPEXPIREAT", "myhash", deadline, "FIELDS", "4", "field1", "field2", "field3", "field4");
+            await MemberExpiry.WaitUntilPastAsync(deadline).ConfigureAwait(false);
 
             var items = db.HashGetAll("myhash");
             ClassicAssert.AreEqual(2, items.Length);
@@ -1114,16 +1199,20 @@ namespace Garnet.test
             string[] smallExpireKeys = ["user:user0", "user:user1"];
             string[] largeExpireKeys = ["user:user2", "user:user3"];
 
+            // Expirations are absolute deadlines, so each phase is reached by waiting for a deadline to
+            // pass rather than by assuming a bound on the time that elapses between commands.
+            var deadline = MemberExpiry.Imminent();
             foreach (var key in smallExpireKeys)
             {
                 db.HashSet(key, [new HashEntry("Field1", "StringValue"), new HashEntry("Field2", "1")]);
-                db.Execute("HEXPIRE", key, "2", "FIELDS", "1", "Field1");
+                db.Execute("HPEXPIREAT", key, deadline, "FIELDS", "1", "Field1");
             }
 
+            // Pending expirations that are not reached while the test runs
             foreach (var key in largeExpireKeys)
             {
                 db.HashSet(key, [new HashEntry("Field1", "StringValue"), new HashEntry("Field2", "1")]);
-                db.Execute("HEXPIRE", key, "4", "FIELDS", "1", "Field1");
+                db.Execute("HPEXPIREAT", key, MemberExpiry.Pending(), "FIELDS", "1", "Field1");
             }
 
             // Create LTM (larger than memory) DB by inserting 1000 keys
@@ -1137,7 +1226,7 @@ namespace Garnet.test
             // Ensure data has spilled to disk
             ClassicAssert.Greater(info.HeadAddress, info.BeginAddress);
 
-            await Task.Delay(2000).ConfigureAwait(false);
+            await MemberExpiry.WaitUntilPastAsync(deadline).ConfigureAwait(false);
 
             var result = db.HashExists(smallExpireKeys[0], "Field1");
             ClassicAssert.IsFalse(result);
@@ -1150,13 +1239,18 @@ namespace Garnet.test
             var ttl = db.HashFieldGetTimeToLive(largeExpireKeys[0], ["Field1"]);
             ClassicAssert.AreEqual(ttl.Length, 1);
             ClassicAssert.Greater(ttl[0], 0);
-            ClassicAssert.LessOrEqual(ttl[0], 2000);
+            ClassicAssert.LessOrEqual(ttl[0], MemberExpiry.PendingTtlMs);
             ttl = db.HashFieldGetTimeToLive(largeExpireKeys[1], ["Field1"]);
             ClassicAssert.AreEqual(ttl.Length, 1);
             ClassicAssert.Greater(ttl[0], 0);
-            ClassicAssert.LessOrEqual(ttl[0], 2000);
+            ClassicAssert.LessOrEqual(ttl[0], MemberExpiry.PendingTtlMs);
 
-            await Task.Delay(2000).ConfigureAwait(false);
+            // Expire the remaining fields. These hashes carry field expirations and have been evicted, so
+            // the expiration is applied by copy-updating the record read back from disk.
+            deadline = MemberExpiry.Imminent();
+            foreach (var key in largeExpireKeys)
+                db.Execute("HPEXPIREAT", key, deadline, "FIELDS", "1", "Field1");
+            await MemberExpiry.WaitUntilPastAsync(deadline).ConfigureAwait(false);
 
             result = db.HashExists(largeExpireKeys[0], "Field1");
             ClassicAssert.IsFalse(result);
@@ -1183,7 +1277,7 @@ namespace Garnet.test
             HashEntry[] values2_1 = [new HashEntry("key2_1", "val2_1"), new HashEntry("key2_2", "val2_2")];
             HashEntry[] values2_2 = [new HashEntry("key2_3", "val2_3"), new HashEntry("key2_4", "val2_4")];
 
-            var expireTime = DateTimeOffset.UtcNow + TimeSpan.FromMinutes(1);
+            var expireTime = DateTimeOffset.FromUnixTimeMilliseconds(MemberExpiry.Pending());
 
             using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
             {
@@ -1195,18 +1289,18 @@ namespace Garnet.test
 
                 // Set 1st hash set, add short expiry to 1 entry
                 db.HashSet(key2, values2_1);
-                db.Execute("HEXPIRE", key2, 1, "FIELDS", 1, "key2_1");
+                var deadline = MemberExpiry.Imminent();
+                db.Execute("HPEXPIREAT", key2, deadline, "FIELDS", 1, "key2_1");
 
                 // Wait for short expiry to pass
-                Thread.Sleep(2000);
+                await MemberExpiry.WaitUntilPastAsync(deadline).ConfigureAwait(false);
 
                 // Add more entries to 1st and 2nd hash sets
                 db.HashSet(key1, values1_2);
                 db.HashSet(key2, values2_2);
 
                 // Add longer expiry to entry in 2nd hash set
-                db.Execute("HPEXPIRE", key2, 15000, "FIELDS", 1, "key2_2");
-                Thread.Sleep(2000);
+                db.Execute("HPEXPIREAT", key2, MemberExpiry.Pending(), "FIELDS", 1, "key2_2");
 
                 // Verify 1st hash set contains all added entries
                 var recoveredValues = db.HashGetAll(key1);
@@ -1228,7 +1322,7 @@ namespace Garnet.test
                 ClassicAssert.IsNotNull(recoveredValuesTtl);
                 ClassicAssert.AreEqual(4, recoveredValuesTtl!.Length);
                 ClassicAssert.AreEqual(-2, (long)recoveredValuesTtl[0]);
-                ClassicAssert.LessOrEqual((long)recoveredValuesTtl[1], 13);
+                ClassicAssert.LessOrEqual((long)recoveredValuesTtl[1], MemberExpiry.PendingTtlMs / 1000);
                 ClassicAssert.Greater((long)recoveredValuesTtl[1], 0);
                 ClassicAssert.AreEqual(-1, (long)recoveredValuesTtl[2]);
                 ClassicAssert.AreEqual(-1, (long)recoveredValuesTtl[3]);
@@ -1264,7 +1358,7 @@ namespace Garnet.test
                 ClassicAssert.IsNotNull(recoveredValuesTtl);
                 ClassicAssert.AreEqual(4, recoveredValuesTtl!.Length);
                 ClassicAssert.AreEqual(-2, (long)recoveredValuesTtl[0]);
-                ClassicAssert.Less((long)recoveredValuesTtl[1], 13000);
+                ClassicAssert.LessOrEqual((long)recoveredValuesTtl[1], MemberExpiry.PendingTtlMs);
                 ClassicAssert.Greater((long)recoveredValuesTtl[1], 0);
                 ClassicAssert.AreEqual(-1, (long)recoveredValuesTtl[2]);
                 ClassicAssert.AreEqual(-1, (long)recoveredValuesTtl[3]);
@@ -1291,13 +1385,18 @@ namespace Garnet.test
             var server = redis.GetServers().First();
             db.HashSet("myhash", [new HashEntry("field1", "hello"), new HashEntry("field2", "world"), new HashEntry("field3", "value3"), new HashEntry("field4", "value4"), new HashEntry("field5", "value5"), new HashEntry("field6", "value6")]);
 
-            var result = db.Execute("HPEXPIRE", "myhash", "500", "FIELDS", "2", "field1", "field2");
+            // Set the pending expirations first: HEXPIRE-family commands purge already-expired fields, so no
+            // mutating command may run between arming field1/field2 and the HCOLLECT that must reclaim them.
+            var result = db.Execute("HPEXPIREAT", "myhash", MemberExpiry.Pending(), "FIELDS", "2", "field3", "field4");
             var results = (RedisResult[])result;
             ClassicAssert.AreEqual(2, results.Length);
             ClassicAssert.AreEqual(1, (long)results[0]);
             ClassicAssert.AreEqual(1, (long)results[1]);
 
-            result = db.Execute("HPEXPIRE", "myhash", "1500", "FIELDS", "2", "field3", "field4");
+            // Expire field1 and field2, leaving field3 and field4 with a pending expiration that is
+            // not reached while the test runs
+            var deadline = MemberExpiry.Imminent();
+            result = db.Execute("HPEXPIREAT", "myhash", deadline, "FIELDS", "2", "field1", "field2");
             results = (RedisResult[])result;
             ClassicAssert.AreEqual(2, results.Length);
             ClassicAssert.AreEqual(1, (long)results[0]);
@@ -1305,7 +1404,7 @@ namespace Garnet.test
 
             var orginalMemory = (long)db.Execute("MEMORY", "USAGE", "myhash");
 
-            await Task.Delay(600).ConfigureAwait(false);
+            await MemberExpiry.WaitUntilPastAsync(deadline).ConfigureAwait(false);
 
             var newMemory = (long)db.Execute("MEMORY", "USAGE", "myhash");
             ClassicAssert.AreEqual(newMemory, orginalMemory);
@@ -1315,9 +1414,13 @@ namespace Garnet.test
 
             newMemory = (long)db.Execute("MEMORY", "USAGE", "myhash");
             ClassicAssert.Less(newMemory, orginalMemory);
-            orginalMemory = newMemory;
 
-            await Task.Delay(1100).ConfigureAwait(false);
+            // Expire field3 and field4. Re-setting a deadline enqueues another expiration entry, so the
+            // baseline for the lazy-expiration comparison is taken after the command.
+            deadline = MemberExpiry.Imminent();
+            db.Execute("HPEXPIREAT", "myhash", deadline, "FIELDS", "2", "field3", "field4");
+            orginalMemory = (long)db.Execute("MEMORY", "USAGE", "myhash");
+            await MemberExpiry.WaitUntilPastAsync(deadline).ConfigureAwait(false);
 
             newMemory = (long)db.Execute("MEMORY", "USAGE", "myhash");
             ClassicAssert.AreEqual(newMemory, orginalMemory);
@@ -1355,10 +1458,10 @@ namespace Garnet.test
 
             (var expireTimeField1, var expireTimeField3, var newExpireTimeField) = command switch
             {
-                "HEXPIRE" => ("2", "6", "4"),
-                "HPEXPIRE" => ("2000", "6000", "4000"),
-                "HEXPIREAT" => (DateTimeOffset.UtcNow.AddSeconds(2).ToUnixTimeSeconds().ToString(), DateTimeOffset.UtcNow.AddSeconds(6).ToUnixTimeSeconds().ToString(), DateTimeOffset.UtcNow.AddSeconds(4).ToUnixTimeSeconds().ToString()),
-                "HPEXPIREAT" => (DateTimeOffset.UtcNow.AddSeconds(2).ToUnixTimeMilliseconds().ToString(), DateTimeOffset.UtcNow.AddSeconds(6).ToUnixTimeMilliseconds().ToString(), DateTimeOffset.UtcNow.AddSeconds(4).ToUnixTimeMilliseconds().ToString()),
+                "HEXPIRE" => ("3600", "10800", "7200"),
+                "HPEXPIRE" => ("3600000", "10800000", "7200000"),
+                "HEXPIREAT" => (DateTimeOffset.UtcNow.AddHours(1).ToUnixTimeSeconds().ToString(), DateTimeOffset.UtcNow.AddHours(3).ToUnixTimeSeconds().ToString(), DateTimeOffset.UtcNow.AddHours(2).ToUnixTimeSeconds().ToString()),
+                "HPEXPIREAT" => (DateTimeOffset.UtcNow.AddHours(1).ToUnixTimeMilliseconds().ToString(), DateTimeOffset.UtcNow.AddHours(3).ToUnixTimeMilliseconds().ToString(), DateTimeOffset.UtcNow.AddHours(2).ToUnixTimeMilliseconds().ToString()),
                 _ => throw new ArgumentException("Invalid command")
             };
 
