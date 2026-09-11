@@ -251,8 +251,15 @@ namespace Garnet.common
         /// write, and it does not retry. An unconditional write loses the race in the wrong direction: a
         /// thread holding a stale count can land *after* a thread that already published the right answer
         /// for a fresher one, replacing it. Exchanging against the observed value makes that interleaving
-        /// fail harmlessly, because the only writer that can beat this one also exchanges, and therefore
-        /// also derived its value from a count no older than this one.
+        /// fail harmlessly.
+        /// </para>
+        /// <para>
+        /// What makes the exchange sufficient is the order of the two reads: the target is read *before*
+        /// the count. A successful exchange therefore proves no other publisher completed between this
+        /// thread's read of the target and its own write, and this thread's count was sampled inside that
+        /// window -- so it is no older than the count behind any value published earlier. Reading the count
+        /// first would weaken this to "the target has not moved", which two threads sampling the same
+        /// target concurrently both satisfy regardless of whose count is fresher.
         /// </para>
         /// <para>
         /// The residual is that a losing exchange here publishes nothing, so if every concurrent publisher
@@ -263,7 +270,12 @@ namespace Garnet.common
         /// </remarks>
         [MethodImpl(MethodImplOptions.NoInlining)]
         void PublishFromFreshestCount()
-            => PublishFrom(Interlocked.Read(ref liveBufferCount), Volatile.Read(ref targetBufferSize));
+        {
+            // Read the target before the count, not after: the exchange is only as strong as the ordering.
+            // See the remark above.
+            var observedTarget = Volatile.Read(ref targetBufferSize);
+            PublishFrom(Interlocked.Read(ref liveBufferCount), observedTarget);
+        }
 
         /// <summary>
         /// Publishes the target implied by <paramref name="count"/>, but only while the published target is
