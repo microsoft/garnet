@@ -387,7 +387,7 @@ namespace Garnet.cluster
             if (gossipMessage.Length > 0)
             {
                 // Validate config version before full deserialization
-                if (!ClusterConfig.TryPeekVersion(gossipMessage, out var version) || version != ClusterConfig.ClusterConfigVersion)
+                if (!ClusterConfig.TryPeekVersion(gossipMessage, out var version) || !ClusterConfig.IsSupportedVersion(version))
                 {
                     logger?.LogWarning("Received gossip with incompatible config version: {version}", version);
                 }

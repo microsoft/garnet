@@ -35,14 +35,24 @@ namespace Garnet.cluster
         public string Nodeid;
 
         /// <summary>
-        /// IP address
+        /// Client IP address
         /// </summary>
         public string Address;
 
         /// <summary>
-        /// Port
+        /// Client port
         /// </summary>
         public int Port;
+
+        /// <summary>
+        /// Cluster IP address stored in version 2 configs; not yet used for routing.
+        /// </summary>
+        public string ClusterAddress;
+
+        /// <summary>
+        /// Cluster port stored in version 2 configs; not yet used for routing.
+        /// </summary>
+        public int ClusterPort;
 
         /// <summary>
         /// Configuration epoch.
