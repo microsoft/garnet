@@ -77,6 +77,19 @@ namespace Garnet.server
             processor.Dispose();
         }
 
+        /// <summary>
+        /// Runs a shrink checkpoint on the script processor's scratch buffer.
+        /// </summary>
+        /// <remarks>
+        /// The processor is a <see cref="RespServerSession"/> that never reads from a network, so it has no
+        /// batch boundary of its own to drive the checkpoint from. Lua resets that buffer many times within a
+        /// single script -- once per string while decoding JSON, for instance -- so the checkpoint cannot be
+        /// driven from those resets either without releasing a buffer the next element re-grows. The owning
+        /// network session calls this from its own checkpoint, which is outside any script execution.
+        /// </remarks>
+        internal void ScratchBufferShrinkCheckpoint()
+            => processor.scratchBufferBuilder.ResetAndCheckpointNow();
+
         public void SetUserHandle(UserHandle userHandle)
         {
             processor.SetUserHandle(userHandle);

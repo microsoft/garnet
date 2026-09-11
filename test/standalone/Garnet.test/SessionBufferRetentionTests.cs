@@ -30,7 +30,7 @@ namespace Garnet.test
         // Comfortably past the shrink hysteresis so the release path is actually reached.
         // Two checkpoint intervals plus margin: a buffer is released at the first checkpoint that observes
         // no growth since the previous one, so reclaim takes up to two intervals.
-        const int SmallRounds = Garnet.server.RespServerSession.ParseStateShrinkCheckInterval * 3;
+        const int SmallRounds = Garnet.server.RespServerSession.SessionShrinkCheckInterval * 3;
 
         GarnetServer server;
 
@@ -155,6 +155,41 @@ namespace Garnet.test
             {
                 foreach (var s in sockets) { try { s.Dispose(); } catch { } }
             }
+        }
+
+        /// <summary>
+        /// The Lua interpreter writes into the scratch buffer of the script cache's <em>inner</em>
+        /// <c>RespServerSession</c>, not the network session's. That inner session never reads from a socket,
+        /// so it has no batch boundary of its own and its checkpoint has to be driven from the outer session's.
+        /// Without that wiring, one <c>cjson.encode</c> of a large value permanently enlarges every session
+        /// that ran a script, which is the same ratchet the cap exists to stop -- just one object further in.
+        /// </summary>
+        [Test]
+        public void LuaScratchBufferDoesNotRetainAfterOneLargeEncode()
+        {
+            const int Conns = 32;
+            const int EncodeSize = 512 * 1024;
+
+            // One cjson.encode of a large string grows the inner builder well past the 16 KB cap.
+            var big = new string('q', EncodeSize);
+            byte[] BigEncode(int _) => Resp("EVAL", "return #cjson.encode(ARGV[1])", "0", big);
+            byte[] SmallEncode(int _) => Resp("EVAL", "return #cjson.encode(ARGV[1])", "0", "x");
+
+            StartServer(scratchCap: "16k", enableLua: true);
+            var bounded = MeasureRetentionPerSession(BigEncode, SmallEncode, Conns, $":{EncodeSize + 2}\r\n");
+
+            server.Dispose();
+            server = null;
+            StartServer(scratchCap: "0", enableLua: true);
+            var unbounded = MeasureRetentionPerSession(BigEncode, SmallEncode, Conns, $":{EncodeSize + 2}\r\n");
+
+            TestContext.Out.WriteLine($"lua scratch retention per session: bounded={bounded / 1024} KB, unbounded={unbounded / 1024} KB");
+
+            // Assert a magnitude, not a direction: the grown buffer rounds up to a power of two at or above
+            // EncodeSize, so a working cap must give back the bulk of it. A bare Assert.Less here would be a
+            // coin flip on a noisy measurement.
+            ClassicAssert.Less(bounded, unbounded - (EncodeSize / 2),
+                $"the Lua script processor's scratch buffer was not released (bounded={bounded}, unbounded={unbounded})");
         }
 
         /// <summary>

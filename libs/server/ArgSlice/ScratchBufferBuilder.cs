@@ -124,6 +124,17 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Resets the buffer and runs a shrink checkpoint immediately, for a builder whose owning session has
+        /// no batch boundary of its own. Used for the Lua script processor's builder, which is driven from the
+        /// outer network session's checkpoint instead.
+        /// </summary>
+        internal void ResetAndCheckpointNow()
+        {
+            Reset();
+            ShrinkCheckpoint();
+        }
+
+        /// <summary>
         /// Releases a buffer that has stayed above <see cref="maxRetainedCapacity"/> without growing since
         /// the previous checkpoint. Cold by construction: reached once per <see cref="ShrinkCheckInterval"/>
         /// batches, and a reset has already invalidated every outstanding slice.
