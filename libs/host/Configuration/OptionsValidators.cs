@@ -379,6 +379,44 @@ namespace Garnet
     }
 
     /// <summary>
+    /// Validation logic for a client IP address or hostname
+    /// </summary>
+    [AttributeUsage(AttributeTargets.Property)]
+    internal sealed class ClientEndpointValidationAttribute : OptionValidationAttribute
+    {
+        private readonly bool _hostname;
+
+        internal ClientEndpointValidationAttribute(bool hostname = false) : base(isRequired: false)
+        {
+            this._hostname = hostname;
+        }
+
+        /// <summary>
+        /// Check client endpoint format without resolving the address or hostname
+        /// </summary>
+        /// <param name="value">Client IP address or hostname</param>
+        /// <param name="validationContext">Validation context</param>
+        /// <returns></returns>
+        protected override ValidationResult IsValid(object value, ValidationContext validationContext)
+        {
+            if (TryInitialValidation<string>(value, validationContext, out var initValidationResult, out var endpoint))
+                return initValidationResult;
+
+            var isValid = this._hostname
+                ? ClusterEndpointValidation.IsValidHostname(endpoint)
+                : ClusterEndpointValidation.IsValidAddress(endpoint);
+            if (!isValid)
+            {
+                var baseError = validationContext.MemberName != null ? base.FormatErrorMessage(validationContext.MemberName) : string.Empty;
+                var errorMessage = $"{baseError} Invalid client endpoint advertisement.";
+                return new ValidationResult(errorMessage, [validationContext.MemberName]);
+            }
+
+            return ValidationResult.Success;
+        }
+    }
+
+    /// <summary>
     /// Validation logic for a string representing a memory size (1k, 1kb, 5M, 5Mb, 10g, 10GB etc.)
     /// </summary>
     [AttributeUsage(AttributeTargets.Property)]

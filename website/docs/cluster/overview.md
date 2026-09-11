@@ -50,6 +50,13 @@ in the cluster.
 
 For more information about the cluster configuration please see the description of *CLUSTER NODES* command.
 
+### Separate Client Endpoints
+
+Garnet can advertise separate client endpoints when running behind a load balancer or
+network address translation. Client discovery and redirects use those endpoints, while
+gossip, replication, migration, and failover continue using the node-to-node endpoints.
+For configuration options and an example, see [Separate Client Endpoints](../getting-started/configuration.md#separate-client-endpoints).
+
 ## Control Plane
 
 It is important to keep in mind that Garnet's cluster mode design is currently _passive_: this means that it does not implement leader election, and simply responds to cluster 

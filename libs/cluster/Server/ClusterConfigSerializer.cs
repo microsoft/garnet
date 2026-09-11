@@ -3,11 +3,14 @@
 
 using System;
 using System.IO;
+using Garnet.common;
 
 namespace Garnet.cluster
 {
     internal sealed partial class ClusterConfig
     {
+        private const byte ClientEndpointExtensionVersion = 1;
+
         /// <summary>
         /// Peek the serialization version from a config byte array without full deserialization.
         /// </summary>
@@ -71,10 +74,41 @@ namespace Garnet.cluster
                     writer.Write(worker.hostname);
             }
 
+            // Keep the required payload as a byte-identical prefix so older nodes can ignore this extension.
+            SerializeClientEndpointExtension(writer);
+
             byte[] byteArray = ms.ToArray();
             writer.Dispose();
             ms.Dispose();
             return byteArray;
+        }
+
+        private void SerializeClientEndpointExtension(BinaryWriter writer)
+        {
+            if (!HasClientEndpointMetadata())
+                return;
+
+            writer.Write(ClientEndpointExtensionVersion);
+            for (int i = 1; i < workers.Length; i++)
+            {
+                var worker = workers[i];
+                writer.Write(worker.HasClientEndpointMetadata);
+                if (!worker.HasClientEndpointMetadata)
+                    continue;
+
+                WriteNullableString(writer, worker.ClientAddress);
+                writer.Write(worker.ClientPort);
+                WriteNullableString(writer, worker.ClientHostname);
+            }
+        }
+
+        private bool HasClientEndpointMetadata()
+        {
+            for (int i = 1; i < workers.Length; i++)
+                if (workers[i].HasClientEndpointMetadata)
+                    return true;
+
+            return false;
         }
 
         private void SerializeSlotMap(ref MemoryStream ms, ref BinaryWriter writer)
@@ -159,10 +193,64 @@ namespace Garnet.cluster
                     newWorkers[i].hostname = reader.ReadString();
             }
 
+            DeserializeClientEndpointExtension(ms, reader, newWorkers);
+
             reader.Dispose();
             ms.Dispose();
             return new ClusterConfig(newSlotMap, newWorkers);
         }
+
+        private static void DeserializeClientEndpointExtension(MemoryStream ms, BinaryReader reader, Worker[] workers)
+        {
+            if (ms.Position == ms.Length)
+                return;
+
+            try
+            {
+                var extensionVersion = reader.ReadByte();
+                if (extensionVersion > ClientEndpointExtensionVersion)
+                {
+                    // Retain the required cluster state during rolling upgrades even when client metadata is newer.
+                    ms.Position = ms.Length;
+                    return;
+                }
+
+                if (extensionVersion != ClientEndpointExtensionVersion)
+                    throw new InvalidDataException($"Invalid client endpoint extension version: {extensionVersion}");
+
+                for (int i = 1; i < workers.Length; i++)
+                {
+                    workers[i].HasClientEndpointMetadata = reader.ReadBoolean();
+                    if (!workers[i].HasClientEndpointMetadata)
+                        continue;
+
+                    workers[i].ClientAddress = ReadNullableString(reader);
+                    workers[i].ClientPort = reader.ReadInt32();
+                    workers[i].ClientHostname = ReadNullableString(reader);
+                    if (!ClusterEndpointValidation.IsValidAddress(workers[i].ClientAddress) ||
+                        !ClusterEndpointValidation.IsValidPort(workers[i].ClientPort) ||
+                        !ClusterEndpointValidation.IsValidHostname(workers[i].ClientHostname))
+                        throw new InvalidDataException("Invalid client endpoint metadata.");
+                }
+
+                if (ms.Position != ms.Length)
+                    throw new InvalidDataException("Invalid ClusterConfig payload: trailing data after client endpoint extension");
+            }
+            catch (EndOfStreamException ex)
+            {
+                throw new InvalidDataException("Invalid client endpoint extension: unexpected end of data", ex);
+            }
+        }
+
+        private static void WriteNullableString(BinaryWriter writer, string value)
+        {
+            writer.Write(value != null);
+            if (value != null)
+                writer.Write(value);
+        }
+
+        private static string ReadNullableString(BinaryReader reader)
+            => reader.ReadBoolean() ? reader.ReadString() : null;
 
         private static HashSlot[] DeserializeSlotMap(ref BinaryReader reader)
         {

@@ -1635,6 +1635,81 @@ namespace Garnet.test
         }
 
         [Test]
+        public void ClusterClientAnnounceEndpointTest()
+        {
+            var args = new[]
+            {
+                "--cluster-client-announce-ip", "203.0.113.10",
+                "--cluster-client-announce-port", "17000",
+                "--cluster-client-announce-hostname", "node.example.com"
+            };
+
+            var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out _, out _, out _);
+            ClassicAssert.IsTrue(parseSuccessful);
+
+            var serverOptions = options.GetServerOptions();
+            ClassicAssert.AreEqual("203.0.113.10", serverOptions.ClusterClientAnnounceIp);
+            ClassicAssert.AreEqual(17000, serverOptions.ClusterClientAnnouncePort);
+            ClassicAssert.AreEqual("node.example.com", serverOptions.ClusterClientAnnounceHostname);
+        }
+
+        [Test]
+        [TestCase("--cluster-client-announce-ip", "not-an-address")]
+        [TestCase("--cluster-client-announce-ip", "0.0.0.0")]
+        [TestCase("--cluster-client-announce-ip", "::")]
+        [TestCase("--cluster-client-announce-ip", "fe80::1%3")]
+        [TestCase("--cluster-client-announce-ip", "[2001:db8::1]")]
+        [TestCase("--cluster-client-announce-port", "-1")]
+        [TestCase("--cluster-client-announce-port", "65536")]
+        [TestCase("--cluster-client-announce-hostname", "node.example.com:1234")]
+        [TestCase("--cluster-client-announce-hostname", "node\r\ninjected")]
+        [TestCase("--cluster-client-announce-hostname", "node name")]
+        [TestCase("--cluster-client-announce-hostname", "node,other")]
+        [TestCase("--cluster-client-announce-hostname", "-node.example.com")]
+        [TestCase("--cluster-client-announce-hostname", "node-.example.com")]
+        [TestCase("--cluster-client-announce-hostname", "node..example.com")]
+        [TestCase("--cluster-client-announce-hostname", ".")]
+        [TestCase("--cluster-client-announce-hostname", "nödé.example.com")]
+        public void InvalidClusterClientEndpointTest(string option, string value)
+        {
+            var args = new[] { option, value };
+            var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out _, out _, out _, out _, silentMode: true);
+            ClassicAssert.IsFalse(parseSuccessful);
+        }
+
+        [Test]
+        [TestCase(null, 0, null)]
+        [TestCase("", 0, "")]
+        [TestCase("203.0.113.10", 1, "localhost")]
+        [TestCase("2001:db8::1", 65535, "node.example.com.")]
+        [TestCase("203.0.113.10", 17000, "xn--bcher-kva.example")]
+        public void ValidClusterClientEndpointTest(string address, int port, string hostname)
+        {
+            var options = new ServerOptions()
+            {
+                ClusterClientAnnounceIp = address,
+                ClusterClientAnnouncePort = port,
+                ClusterClientAnnounceHostname = hostname
+            };
+            ClassicAssert.AreEqual(address, options.ClusterClientAnnounceIp);
+            ClassicAssert.AreEqual(port, options.ClusterClientAnnouncePort);
+            ClassicAssert.AreEqual(hostname, options.ClusterClientAnnounceHostname);
+        }
+
+        [Test]
+        public void EmbeddedClusterClientEndpointValidationTest()
+        {
+            var options = new ServerOptions();
+            Assert.Throws<ArgumentException>(() => options.ClusterClientAnnounceIp = "node.example.com");
+            Assert.Throws<ArgumentOutOfRangeException>(() => options.ClusterClientAnnouncePort = -1);
+            Assert.Throws<ArgumentOutOfRangeException>(() => options.ClusterClientAnnouncePort = 65536);
+            Assert.Throws<ArgumentException>(() => options.ClusterClientAnnounceHostname = "node\r\ninjected");
+            Assert.Throws<ArgumentException>(() => options.ClusterClientAnnounceHostname = new string('a', 64) + ".example");
+            var longHostname = string.Join(".", Enumerable.Repeat(new string('a', 63), 4));
+            Assert.Throws<ArgumentException>(() => options.ClusterClientAnnounceHostname = longHostname);
+        }
+
+        [Test]
         public void RevivificationFlagOrderingIndependence()
         {
             // Specifying --reviv alongside explicit bin sizes and counts should work
