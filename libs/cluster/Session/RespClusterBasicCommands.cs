@@ -423,8 +423,7 @@ namespace Garnet.cluster
             {
                 var configByteArray = current.ToByteArray();
                 clusterProvider.clusterManager.gossipStats.UpdateGossipBytesSend(configByteArray.Length);
-                while (!RespWriteUtils.TryWriteBulkString(configByteArray, ref dcurr, dend))
-                    SendAndReset();
+                WriteLargeBulkString(configByteArray);
                 lastSentConfig = current;
             }
             else
@@ -557,6 +556,41 @@ namespace Garnet.cluster
             {
                 ArrayPool<byte>.Shared.Return(buffer);
             }
+        }
+
+        /// <summary>
+        /// Writes a bulk string that may be larger than the response buffer. Small values take the atomic
+        /// path unchanged; only a value that cannot fit an empty buffer is chunked. Without this an
+        /// over-sized element makes the caller's retry loop unable to progress and kills the session.
+        /// </summary>
+        private void WriteLargeBulkString(ReadOnlySpan<byte> message)
+        {
+            if (RespWriteUtils.TryWriteBulkString(message, ref dcurr, dend))
+                return;
+
+            // Flushing is conditional because SendAndReset throws when there is nothing to send, which is
+            // exactly the case where the message is over-sized and the buffer is still empty.
+            if (dcurr > networkSender.GetResponseObjectHead())
+            {
+                SendAndReset();
+                if (RespWriteUtils.TryWriteBulkString(message, ref dcurr, dend))
+                    return;
+            }
+
+            while (!RespWriteUtils.TryWriteBulkStringLength(message, ref dcurr, dend))
+                SendAndReset();
+
+            var remaining = message;
+            while (!remaining.IsEmpty)
+            {
+                var space = Math.Min((int)(dend - dcurr), remaining.Length);
+                _ = RespWriteUtils.TryWriteDirect(remaining[..space], ref dcurr, dend);
+                SendAndReset();
+                remaining = remaining[space..];
+            }
+
+            while (!RespWriteUtils.TryWriteNewLine(ref dcurr, dend))
+                SendAndReset();
         }
 
         /// <summary>

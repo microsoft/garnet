@@ -129,8 +129,8 @@ namespace Garnet.common
                 // The byte budget is the real bound; let any single level draw on all of it so that a burst
                 // concentrated on one size class is not throttled while the other levels sit empty. The absolute
                 // cap keeps a small size class from hoarding tens of thousands of idle entries when the byte
-                // budget is large relative to it; it sits above the historical value, so it is inert at the
-                // shipped defaults.
+                // budget is large relative to it. At the shipped defaults the 16 KB adaptive floor derives
+                // 4,096 entries per level, so the cap binds and holds it at 1,024.
                 maxEntriesPerLevel = (int)Math.Min(MaxEntriesPerLevelCap, Math.Max(1, maxPooledBytes / minSize));
             }
 
