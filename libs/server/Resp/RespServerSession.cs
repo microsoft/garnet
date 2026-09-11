@@ -412,16 +412,17 @@ namespace Garnet.server
 
             clusterSession?.Dispose();
 
+            // Cancel the async processor before the latency histograms are released below: an in-flight
+            // completion records into those arrays, and they go back to a shared pool.
+            asyncWaiterCancel?.Cancel();
+            asyncWaiter?.Signal();
+
             if (storeWrapper.monitor != null)
                 storeWrapper.monitor.AddMetricsHistorySessionDispose(sessionMetrics, LatencyMetrics, commandStats);
 
             subscribeBroker?.RemoveSubscription(this);
             storeWrapper.itemBroker?.HandleSessionDisposed(this);
             sessionScriptCache?.Dispose();
-
-            // Cancel the async processor, if any
-            asyncWaiterCancel?.Cancel();
-            asyncWaiter?.Signal();
         }
 
         public int StoreSessionID => storageSession.SessionID;

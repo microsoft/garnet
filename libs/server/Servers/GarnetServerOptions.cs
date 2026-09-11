@@ -278,6 +278,18 @@ namespace Garnet.server
         public bool LatencyMonitor = false;
 
         /// <summary>
+        /// Number of significant decimal digits of value resolution kept by the latency histograms.
+        /// Each histogram is sized by this value, so lowering it from 2 to 1 reduces latency-monitor
+        /// memory several-fold at the cost of coarser reported percentiles (10% rather than 1%).
+        /// </summary>
+        public int LatencyMonitorPrecision = DefaultLatencyMonitorPrecision;
+
+        /// <summary>
+        /// Default number of significant decimal digits kept by the latency histograms.
+        /// </summary>
+        public const int DefaultLatencyMonitorPrecision = 2;
+
+        /// <summary>
         /// Enable per-command usage statistics tracking (calls, failures, rejections).
         /// Exposed via INFO COMMANDSTATS.
         /// </summary>

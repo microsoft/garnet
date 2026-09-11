@@ -58,7 +58,7 @@ namespace Garnet.server
             globalSessionMetrics = trackStats ? new GarnetSessionMetrics() : null;
             historySessionMetrics = trackStats ? new GarnetSessionMetrics() : null;
 
-            globalLatencyMetrics = trackLatency ? new() : null;
+            globalLatencyMetrics = trackLatency ? new(monitor.LatencyPrecision) : null;
 
             globalCommandStats = trackCommandStats ? new CommandStats() : null;
             historyCommandStats = trackCommandStats ? new CommandStats() : null;

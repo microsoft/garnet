@@ -343,6 +343,10 @@ namespace Garnet
         [Option("latency-monitor", Required = false, HelpText = "Track latency of various events.")]
         public bool? LatencyMonitor { get; set; }
 
+        [IntRangeValidation(0, 5)]
+        [Option("latency-monitor-precision", Required = false, HelpText = "Significant decimal digits of value resolution kept by the latency histograms (0-5). Lowering this from 2 to 1 reduces latency monitor memory several-fold, at the cost of reporting percentiles to 10% rather than 1% resolution.")]
+        public int LatencyMonitorPrecision { get; set; }
+
         [OptionValidation]
         [Option("commandstats-monitor", Required = false, HelpText = "Track per-command usage statistics (calls, failures, rejections). Exposed via INFO COMMANDSTATS.")]
         public bool? CommandStatsMonitor { get; set; }
@@ -982,6 +986,7 @@ namespace Garnet
                     ServerCertificateRequired.GetValueOrDefault(),
                     logger: logger) : null,
                 LatencyMonitor = LatencyMonitor.GetValueOrDefault(),
+                LatencyMonitorPrecision = LatencyMonitorPrecision,
                 CommandStatsMonitor = CommandStatsMonitor.GetValueOrDefault(),
                 SlowLogThreshold = SlowLogThreshold,
                 SlowLogMaxEntries = SlowLogMaxEntries,

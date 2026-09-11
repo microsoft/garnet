@@ -26,66 +26,79 @@ namespace Garnet.server
             Init();
         }
 
+        int SignificantDigits => monitor.LatencyPrecision;
+
         public void Return()
         {
-            foreach (var cmd in defaultLatencyTypes)
-            {
-                metrics[(int)cmd].Return();
-            }
+            LatencyMetricsEntrySession[] toRelease;
             try
             {
                 disposeLock.WriteLock();
+                toRelease = metrics;
                 metrics = null;
             }
             finally
             {
                 disposeLock.WriteUnlock();
             }
+
+            // Published as unavailable before the arrays go back to the shared pool, so no reader can
+            // still reach them through this session.
+            if (toRelease == null)
+                return;
+
+            foreach (var cmd in defaultLatencyTypes)
+                toRelease[(int)cmd].Return();
         }
 
         private void Init()
         {
             metrics = new LatencyMetricsEntrySession[defaultLatencyTypes.Length];
             foreach (var cmd in defaultLatencyTypes)
-                metrics[(int)cmd] = new LatencyMetricsEntrySession();
+                metrics[(int)cmd] = new LatencyMetricsEntrySession(SignificantDigits);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void Start(LatencyMetricsType cmd)
         {
-            int idx = (int)cmd;
-            metrics[idx].Start();
+            var m = metrics;
+            if (m == null) return;
+            m[(int)cmd].Start();
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public long Get(LatencyMetricsType cmd)
         {
-            int idx = (int)cmd;
-            return metrics[idx].startTimestamp;
+            var m = metrics;
+            return m == null ? 0 : m[(int)cmd].startTimestamp;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void StopAndSwitch(LatencyMetricsType oldCmd, LatencyMetricsType newCmd)
         {
+            var m = metrics;
+            if (m == null) return;
             int old_idx = (int)oldCmd;
             int new_idx = (int)newCmd;
-            metrics[new_idx].startTimestamp = metrics[old_idx].startTimestamp;
-            metrics[old_idx].startTimestamp = 0;
-            metrics[new_idx].RecordValue(Version);
+            m[new_idx].startTimestamp = m[old_idx].startTimestamp;
+            m[old_idx].startTimestamp = 0;
+            m[new_idx].RecordValue(Version);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void Stop(LatencyMetricsType cmd)
         {
-            int idx = (int)cmd;
-            metrics[idx].RecordValue(Version);
+            var m = metrics;
+            if (m == null) return;
+            m[(int)cmd].RecordValue(Version);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void RecordValue(LatencyMetricsType cmd, long value)
         {
-            int idx = (int)cmd;
-            metrics[idx].RecordValue(Version, value);
+            var m = metrics;
+            if (m == null) return;
+            m[(int)cmd].RecordValue(Version, value);
         }
 
         public void ResetAll()
@@ -100,7 +113,7 @@ namespace Garnet.server
             try
             {
                 disposeLock.WriteLock();
-                if (metrics != null)
+                if (metrics != null && metrics[idx].latency != null)
                 {
                     metrics[idx].latency[PriorVersion].Reset();
                 }
