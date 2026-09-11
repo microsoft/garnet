@@ -279,6 +279,47 @@ namespace Garnet.test
         }
 
         /// <summary>
+        /// Pressure must be transient. When a connection spike drains, the target has to climb back to the
+        /// ceiling under its own steam -- nothing outside the budget calls into it. If it does not, the server
+        /// stays permanently degraded: new connections start at the floor, receive buffers shrink after 8
+        /// receives instead of 256, and the pool drops every over-target entry instead of pooling it.
+        /// </summary>
+        [Test]
+        public void TargetRecoversWithoutHelpAfterASpikeDrains()
+        {
+            StartServer(networkBufferMemoryBudget: "512k");
+
+            var spike = new List<Socket>();
+            try
+            {
+                for (var i = 0; i < 60; i++)
+                    spike.Add(Ping(Connect()));
+                ClassicAssert.AreEqual(ReceiveFloor, StatBytes("targetBufferSize"), "the spike did not create pressure");
+            }
+            finally
+            {
+                foreach (var s in spike) s.Dispose();
+            }
+
+            // Reconnect at low concurrency. These are served from the free list the spike left behind, so a
+            // recovery that only runs on the pool's allocate-miss path never happens.
+            using var survivor = Connect();
+            var recovered = 0L;
+            for (var attempt = 0; attempt < 100; attempt++)
+            {
+                Ping(Connect()).Dispose();
+                _ = Ping(survivor);
+                recovered = StatBytes("targetBufferSize");
+                if (recovered == Ceiling) break;
+                Thread.Sleep(20);
+            }
+
+            TestContext.Out.WriteLine($"targetBufferSize after drain={recovered}, liveBufferCount={StatValue("liveBufferCount")}");
+            ClassicAssert.AreEqual(Ceiling, recovered,
+                "the target stayed at the floor after the spike drained, leaving the server permanently degraded");
+        }
+
+        /// <summary>
         /// Send and receive adapt to separate floors, so the drop rule has to compare an entry against the
         /// target for its own direction. Comparing every entry against the receive target would treat a
         /// correctly sized send buffer as over-sized and make send buffers un-poolable for as long as the
@@ -509,6 +550,108 @@ namespace Garnet.test
         }
 
         /// <summary>
+        /// A session aborted by a protocol error is torn down through a different path than a clean
+        /// disconnect. Because the target is <c>budget / liveBufferCount</c>, a count that ratchets up does
+        /// not degrade gracefully -- it collapses every connection to the floor permanently -- so the abort
+        /// path has to return every pool reference it took.
+        /// </summary>
+        /// <remarks>
+        /// Verified to bind: skipping the receive buffer release in <c>NetworkHandler.DisposeImpl</c> makes
+        /// this hang on teardown rather than pass. Note that the response buffer specifically is already
+        /// returned by the batch's <c>finally</c> before any teardown path runs, so it is the receive-side
+        /// references this pins.
+        /// </remarks>
+        [Test]
+        public void AbortedSessionsReleaseTheirPoolReferences()
+        {
+            StartServer();
+
+            const int Rounds = 200;
+
+            // Baseline with one live connection, so the comparison is against a steady state rather than zero.
+            using var keepalive = Ping(Connect());
+            var baseline = StatValue("liveBufferCount");
+
+            for (var i = 0; i < Rounds; i++)
+            {
+                var s = Connect();
+                _ = Ping(s);
+                // Malformed bulk length: the parser throws, the session writes an error and tears itself down
+                // through DisposeNetworkSender rather than the clean path.
+                Send(s, "*1\r\n$x\r\nPING\r\n");
+                try { _ = s.Receive(new byte[256]); } catch (SocketException) { }
+                s.Dispose();
+            }
+
+            // Teardown is asynchronous with respect to the client's close, so allow it to drain.
+            var settled = baseline;
+            for (var i = 0; i < 100; i++)
+            {
+                settled = StatValue("liveBufferCount");
+                if (settled <= baseline) break;
+                Thread.Sleep(50);
+            }
+
+            TestContext.Out.WriteLine($"liveBufferCount baseline={baseline}, after {Rounds} aborted sessions={settled}");
+            ClassicAssert.LessOrEqual(settled, baseline,
+                $"aborted sessions leaked pool references: {settled} live buffers against a baseline of {baseline}");
+        }
+
+        /// <summary>
+        /// A TLS connection carries a fourth buffer the plain path does not: the plaintext send buffer, which is
+        /// allocated once at construction with no grow path. Leaving it at the configured size would make every
+        /// TLS connection over-target under pressure, so the pool would drop it on return and pin a fresh one on
+        /// the next connect -- no send-side budget benefit at all on precisely the transport the incident used.
+        /// </summary>
+        /// <remarks>
+        /// Asserts on the aggregate rather than a per-connection delta because <c>liveBytes</c> is reported
+        /// through <c>Format.MemoryBytes</c>, which rounds up to a whole megabyte. The connection count is
+        /// chosen so the 64 KB per connection at stake is several times that quantum.
+        /// </remarks>
+        [Test]
+        public async Task PressureSizesTheTlsPlaintextSendBufferToo()
+        {
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableTLS: true,
+                networkBufferMemoryBudget: "1m");
+            server.Start();
+
+            const int Connections = 64;
+
+            var clients = new List<GarnetClient>();
+            try
+            {
+                for (var i = 0; i < Connections; i++)
+                {
+                    var c = TestUtils.GetGarnetClient(useTLS: true);
+                    await c.ConnectAsync();
+                    _ = await c.PingAsync();
+                    clients.Add(c);
+                }
+
+                var probe = clients[0];
+                ClassicAssert.AreEqual((long)SendFloor, StatBytes("targetSendBufferSize", probe),
+                    "the send target must have settled at its floor for this test");
+
+                var live = SocketStatBytes("liveBytes", probe);
+                var buffers = StatValue("liveBufferCount", probe);
+                TestContext.Out.WriteLine($"tls liveBytes={live} over {buffers} buffers for {Connections} connections");
+
+                // Four buffers per connection: a 16 KB network receive buffer, a 16 KB plaintext receive
+                // buffer, a 64 KB plaintext send buffer and a 64 KB socket send buffer. Leaving the plaintext
+                // send buffer at the 128 KB ceiling adds 64 KB to each, or 4 MB across this many connections,
+                // which is far outside the megabyte rounding of the reported figure.
+                ClassicAssert.AreEqual(4L * Connections, buffers, "unexpected buffer count per TLS connection");
+                ClassicAssert.LessOrEqual(live, (long)Connections * (2 * ReceiveFloor + 2 * SendFloor + SendFloor / 2),
+                    "the TLS plaintext send buffer did not adapt to the send target");
+            }
+            finally
+            {
+                foreach (var c in clients) c.Dispose();
+            }
+        }
+
+        /// <summary>
         /// Pressure is sticky: the target stays below the ceiling for as long as the connections are live. So
         /// an immediate shrink under pressure would reallocate a pinned buffer on every large request in an
         /// alternating large/small workload -- per-request churn precisely when the server is most loaded.
@@ -546,8 +689,11 @@ namespace Garnet.test
                 var shrinks = StatValue("pressureShrinks") - before;
                 TestContext.Out.WriteLine($"pressure shrinks over {Rounds * Connections} large/small pairs: {shrinks}");
 
-                // One shrink per pair would be per-request reallocation of a pinned buffer.
-                ClassicAssert.Less(shrinks, Rounds * Connections / 2,
+                // A large receive must reset the countdown, so strict alternation should never trip it at all.
+                // The threshold is one shrink per connection rather than zero only to tolerate the initial
+                // settling as the buffers find their size; a rate that scales with the number of rounds means
+                // the shrink decision is reading the post-processing residual instead of the demand.
+                ClassicAssert.LessOrEqual(shrinks, (long)Connections,
                     $"receive buffers churned under sustained pressure: {shrinks} shrinks over {Rounds * Connections} pairs");
             }
             finally
@@ -881,6 +1027,12 @@ namespace Garnet.test
             var value = StatRaw(name);
             return ParseMemoryBytes(value);
         }
+
+        /// <summary>
+        /// Same as <see cref="StatBytes(string)"/>, but over an existing client, for the TLS fixtures.
+        /// </summary>
+        static long StatBytes(string name, GarnetClient client)
+            => ParseMemoryBytes(StatRaw(name, BpStats(client)));
 
         static long ParseMemoryBytes(string value)
         {

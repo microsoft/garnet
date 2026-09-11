@@ -930,8 +930,7 @@ namespace Garnet.server
 
                 if (!stringOutput.HasError)
                 {
-                    while (!RespWriteUtils.TryWriteBulkString(output.ReadOnlySpan, ref dcurr, dend))
-                        SendAndReset();
+                    WriteBulkString(output.ReadOnlySpan);
                 }
                 else
                 {
@@ -1412,8 +1411,7 @@ namespace Garnet.server
 
                 foreach (var flag in flags)
                 {
-                    while (!RespWriteUtils.TryWriteBulkString(Encoding.ASCII.GetBytes(flag), ref dcurr, dend))
-                        SendAndReset();
+                    WriteBulkString(Encoding.ASCII.GetBytes(flag));
                 }
             }
 

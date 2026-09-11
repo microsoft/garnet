@@ -242,16 +242,14 @@ namespace Garnet.server
                     while (!RespWriteUtils.TryWriteArrayLength(2, ref dcurr, dend))
                         SendAndReset();
 
-                    while (!RespWriteUtils.TryWriteBulkString(key.Span, ref dcurr, dend))
-                        SendAndReset();
+                    WriteBulkString(key.Span);
 
                     while (!RespWriteUtils.TryWriteArrayLength(elements.Length, ref dcurr, dend))
                         SendAndReset();
 
                     foreach (var element in elements)
                     {
-                        while (!RespWriteUtils.TryWriteBulkString(element.Span, ref dcurr, dend))
-                            SendAndReset();
+                        WriteBulkString(element.Span);
                     }
 
                     break;
@@ -304,11 +302,9 @@ namespace Garnet.server
                 while (!RespWriteUtils.TryWriteArrayLength(2, ref dcurr, dend))
                     SendAndReset();
 
-                while (!RespWriteUtils.TryWriteBulkString(new Span<byte>(result.Key), ref dcurr, dend))
-                    SendAndReset();
+                WriteBulkString(new Span<byte>(result.Key));
 
-                while (!RespWriteUtils.TryWriteBulkString(new Span<byte>(result.Item), ref dcurr, dend))
-                    SendAndReset();
+                WriteBulkString(new Span<byte>(result.Item));
             }
 
             return true;
@@ -395,8 +391,7 @@ namespace Garnet.server
             }
             else
             {
-                while (!RespWriteUtils.TryWriteBulkString(new Span<byte>(result.Item), ref dcurr, dend))
-                    SendAndReset();
+                WriteBulkString(new Span<byte>(result.Item));
             }
 
             return true;
@@ -724,8 +719,7 @@ namespace Garnet.server
                 case GarnetStatus.OK:
                     if (node != null)
                     {
-                        while (!RespWriteUtils.TryWriteBulkString(node, ref dcurr, dend))
-                            SendAndReset();
+                        WriteBulkString(node);
                     }
                     else
                     {
@@ -764,8 +758,7 @@ namespace Garnet.server
                 case GarnetStatus.OK:
                     if (node != null)
                     {
-                        while (!RespWriteUtils.TryWriteBulkString(node, ref dcurr, dend))
-                            SendAndReset();
+                        WriteBulkString(node);
                     }
                     else
                     {
@@ -935,8 +928,7 @@ namespace Garnet.server
             while (!RespWriteUtils.TryWriteArrayLength(2, ref dcurr, dend))
                 SendAndReset();
 
-            while (!RespWriteUtils.TryWriteBulkString(result.Key, ref dcurr, dend))
-                SendAndReset();
+            WriteBulkString(result.Key);
 
             var elements = result.Items;
             while (!RespWriteUtils.TryWriteArrayLength(elements.Length, ref dcurr, dend))
@@ -944,8 +936,7 @@ namespace Garnet.server
 
             foreach (var element in elements)
             {
-                while (!RespWriteUtils.TryWriteBulkString(element, ref dcurr, dend))
-                    SendAndReset();
+                WriteBulkString(element);
             }
 
             return true;
