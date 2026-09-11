@@ -80,9 +80,11 @@ For all available command line settings, run `GarnetServer.exe -h` or `GarnetSer
 | ----------- | ----------- | ----------- | ----------- | ----------- |
 | **Port** | ```--port``` | ```int``` | Integer in range:<br/>[0, 65535] | Port to run server on |
 | **Address** | ```--bind``` | ```string``` | IP Address in v4/v6 format | Whitespace or comma separated string of IP addresses to bind server to (default: any) |
-| **ClusterAnnouncePort** | ```--cluster-announce-port``` | ```int``` | Integer in range:<br/>[0, 65535] | Port that this node advertises to other nodes to connect to for gossiping. |
-| **ClusterAnnounceIp** | ```--cluster-announce-ip``` | ```string``` | IP Address in v4/v6 format | IP address that this node advertises to other nodes to connect to for gossiping. |
-| **ClusterAnnounceHostname** | ```--cluster-announce-hostname``` | ```string``` |  | Hostname that this node advertises to other nodes to connect to for gossiping. |
+| **ClusterAnnouncePort** | ```--cluster-announce-port``` | ```int``` | Integer in range:<br/>[0, 65535] | Client-advertised port. Zero uses the listen port. Also used by peers unless ClusterPort is set. |
+| **ClusterAnnounceIp** | ```--cluster-announce-ip``` | ```string``` | IP Address in v4/v6 format | Client-advertised IP address. Also used by peers unless ClusterAddress is set. |
+| **ClusterAnnounceHostname** | ```--cluster-announce-hostname``` | ```string``` |  | Client-advertised hostname. |
+| **ClusterAddress** | ```--cluster-address``` | ```string``` | Concrete IP address in v4/v6 format | Peer IP address override. Null uses the client-advertised IP address. Does not change listener bindings. |
+| **ClusterPort** | ```--cluster-port``` | ```int``` | Integer in range:<br/>[0, 65535] | Peer port override. Zero uses the client-advertised port. Does not change listener bindings. |
 | **ClusterPreferredEndpointType** | ```--cluster-preferred-endpoint-type``` | ```ClusterPreferredEndpointType``` | ip, hostname, unknown | Determines the endpoint type to be advertised to other nodes. (value options: ip, hostname, unknown) |
 | **LogMemorySize** | ```-m```<br/>```--memory``` | ```string``` | Memory size | Total main-log memory (inline and heap) to use, in bytes. Does not need to be a power of 2 |
 | **PageSize** | ```-p```<br/>```--page``` | ```string``` | Memory size | Size of each main-log page in bytes (rounds down to power of 2; minimum 512). |

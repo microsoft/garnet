@@ -47,9 +47,9 @@ namespace Garnet.cluster
         public const byte ClusterConfigVersion = 2;
 
         /// <summary>
-        /// Production write version, retained until all nodes can read version 2.
+        /// Production write version.
         /// </summary>
-        public const byte DefaultClusterConfigVersion = 1;
+        public const byte DefaultClusterConfigVersion = 2;
 
         /// <summary>
         /// 
@@ -129,6 +129,8 @@ namespace Garnet.cluster
         /// <param name="role">Local worker role.</param>
         /// <param name="replicaOfNodeId">Local worker primary id.</param>
         /// <param name="hostname">Local worker hostname.</param>
+        /// <param name="clusterAddress">Peer IP address override; otherwise retain the existing peer address or use address.</param>
+        /// <param name="clusterPort">Peer port override; zero retains the existing peer port or uses port.</param>
         /// <returns>Instance of local config with update local worker info.</returns>
         public ClusterConfig InitializeLocalWorker(
             string nodeId,
@@ -137,7 +139,9 @@ namespace Garnet.cluster
             long configEpoch,
             NodeRole role,
             string replicaOfNodeId,
-            string hostname)
+            string hostname,
+            string clusterAddress = null,
+            int clusterPort = 0)
         {
             var newWorkers = new Worker[workers.Length];
             Array.Copy(workers, newWorkers, workers.Length);
@@ -149,11 +153,9 @@ namespace Garnet.cluster
             newWorkers[LOCAL_WORKER_ID].ReplicaOfNodeId = replicaOfNodeId;
             newWorkers[LOCAL_WORKER_ID].ReplicationOffset = 0;
             newWorkers[LOCAL_WORKER_ID].hostname = hostname;
-            if (workers[LOCAL_WORKER_ID].Nodeid == null)
-            {
-                newWorkers[LOCAL_WORKER_ID].ClusterAddress = address;
-                newWorkers[LOCAL_WORKER_ID].ClusterPort = port;
-            }
+            newWorkers[LOCAL_WORKER_ID].ClusterAddress = clusterAddress ?? workers[LOCAL_WORKER_ID].ClusterAddress ?? address;
+            if (clusterPort != 0 || newWorkers[LOCAL_WORKER_ID].ClusterPort == 0)
+                newWorkers[LOCAL_WORKER_ID].ClusterPort = clusterPort != 0 ? clusterPort : port;
             return new ClusterConfig(slotMap, newWorkers);
         }
 
@@ -296,7 +298,7 @@ namespace Garnet.cluster
             {
                 var replicaOf = workers[i].ReplicaOfNodeId;
                 if (replicaOf != null && replicaOf.Equals(workers[LOCAL_WORKER_ID].Nodeid, StringComparison.OrdinalIgnoreCase))
-                    replicas.Add(new(IPAddress.Parse(workers[i].Address), workers[i].Port));
+                    replicas.Add(new(IPAddress.Parse(workers[i].ClusterAddress), workers[i].ClusterPort));
             }
             return replicas;
         }
@@ -313,10 +315,10 @@ namespace Garnet.cluster
             for (ushort i = 2; i < workers.Length; i++)
             {
                 if (workers[i].Role == NodeRole.PRIMARY && !workers[i].Nodeid.Equals(myPrimaryId, StringComparison.OrdinalIgnoreCase))
-                    primaries.Add(new(IPAddress.Parse(workers[i].Address), workers[i].Port));
+                    primaries.Add(new(IPAddress.Parse(workers[i].ClusterAddress), workers[i].ClusterPort));
 
                 if (workers[i].Nodeid.Equals(myPrimaryId, StringComparison.OrdinalIgnoreCase))
-                    primaries.Insert(0, new(IPAddress.Parse(workers[i].Address), workers[i].Port));
+                    primaries.Insert(0, new(IPAddress.Parse(workers[i].ClusterAddress), workers[i].ClusterPort));
             }
             return primaries;
         }
@@ -398,7 +400,7 @@ namespace Garnet.cluster
         public Worker GetWorkerFromNodeId(string nodeId) => workers[GetWorkerIdFromNodeId(nodeId)];
 
         /// <summary>
-        /// Get worker (IP address and port) for node-id.
+        /// Get peer IP address and port for node-id.
         /// </summary>
         /// <param name="nodeId"></param>
         /// <returns>Pair of (string,int) representing worker endpoint.</returns>
@@ -407,7 +409,7 @@ namespace Garnet.cluster
             if (nodeId == null)
                 return (null, -1);
             var workerId = GetWorkerIdFromNodeId(nodeId);
-            return workerId == 0 ? (null, -1) : (workers[workerId].Address, workers[workerId].Port);
+            return workerId == 0 ? (null, -1) : (workers[workerId].ClusterAddress, workers[workerId].ClusterPort);
         }
 
         /// <summary>
@@ -520,7 +522,7 @@ namespace Garnet.cluster
         public IPEndPoint GetEndpointFromNodeId(string nodeid)
         {
             var workerId = GetWorkerIdFromNodeId(nodeid);
-            return new(IPAddress.Parse(workers[workerId].Address), workers[workerId].Port);
+            return new(IPAddress.Parse(workers[workerId].ClusterAddress), workers[workerId].ClusterPort);
         }
         #endregion
 
@@ -567,7 +569,7 @@ namespace Garnet.cluster
             _ = nodeInfoStringBuilder
                 .Append(workers[workerId].Nodeid).Append(' ')
                 .Append(workers[workerId].Address).Append(':').Append(workers[workerId].Port)
-                .Append('@').Append(workers[workerId].Port + 10000);
+                .Append('@').Append(workers[workerId].ClusterPort + 10000);
 
             if (!string.IsNullOrEmpty(workers[workerId].hostname))
                 nodeInfoStringBuilder.Append(',').Append(workers[workerId].hostname);
@@ -793,9 +795,9 @@ namespace Garnet.cluster
 
             foreach (var replicaId in replicaIds)
             {
-                var (replicaIp, replicaPort) = GetWorkerAddressFromNodeId(replicaId);
+                var replica = GetWorkerFromNodeId(replicaId);
                 var replicaHostname = GetHostNameFromNodeId(replicaId);
-                AppendNodeNetworkingInfo(sb, replicaIp, replicaPort, replicaId, replicaHostname, preferredEndpointType);
+                AppendNodeNetworkingInfo(sb, replica.Address, replica.Port, replicaId, replicaHostname, preferredEndpointType);
             }
         }
 
@@ -961,7 +963,7 @@ namespace Garnet.cluster
         {
             allNodeIds = [];
             for (ushort i = 2; i < workers.Length; i++)
-                allNodeIds.Add((workers[i].Nodeid, new IPEndPoint(IPAddress.Parse(workers[i].Address), workers[i].Port)));
+                allNodeIds.Add((workers[i].Nodeid, new IPEndPoint(IPAddress.Parse(workers[i].ClusterAddress), workers[i].ClusterPort)));
         }
 
         /// <summary>
@@ -976,7 +978,7 @@ namespace Garnet.cluster
             {
                 var replicaOf = workers[i].ReplicaOfNodeId;
                 if (primaryId != null && ((replicaOf != null && replicaOf.Equals(primaryId, StringComparison.OrdinalIgnoreCase)) || primaryId.Equals(workers[i].Nodeid)))
-                    shardNodeIds.Add((workers[i].Nodeid, new IPEndPoint(IPAddress.Parse(workers[i].Address), workers[i].Port)));
+                    shardNodeIds.Add((workers[i].Nodeid, new IPEndPoint(IPAddress.Parse(workers[i].ClusterAddress), workers[i].ClusterPort)));
             }
         }
 
@@ -1004,19 +1006,19 @@ namespace Garnet.cluster
             {
                 var replicaOf = workers[i].ReplicaOfNodeId;
                 if (replicaOf != null && replicaOf.Equals(nodeid, StringComparison.OrdinalIgnoreCase))
-                    replicaEndpoints.Add(new(workers[i].Address, workers[i].Port));
+                    replicaEndpoints.Add(new(workers[i].ClusterAddress, workers[i].ClusterPort));
             }
             return replicaEndpoints;
         }
 
         /// <summary>
-        /// Get worker (IP address and port) for workerId
+        /// Get peer IP address and port for workerId.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public (string address, int port) GetWorkerAddress(ushort workerId)
         {
             var w = workers[workerId];
-            return (w.Address, w.Port);
+            return (w.ClusterAddress, w.ClusterPort);
         }
 
         /// <summary>
@@ -1027,7 +1029,7 @@ namespace Garnet.cluster
         {
             List<(string, string, int)> result = [];
             for (var i = 2; i < workers.Length; i++)
-                result.Add((workers[i].Nodeid, workers[i].Address, workers[i].Port));
+                result.Add((workers[i].Nodeid, workers[i].ClusterAddress, workers[i].ClusterPort));
             return result;
         }
 
@@ -1070,7 +1072,7 @@ namespace Garnet.cluster
             for (ushort i = 1; i <= NumWorkers; i++)
             {
                 var w = workers[i];
-                if (w.Address == address && w.Port == port)
+                if (w.ClusterAddress == address && w.ClusterPort == port)
                     return w.Nodeid;
             }
             return null;
@@ -1078,7 +1080,7 @@ namespace Garnet.cluster
 
         /// <summary>
         /// Get worker node-id from address (IP or hostname) and port.
-        /// This method checks both the IP address and hostname fields.
+        /// Checks the peer endpoint and the client IP address or hostname with the client port.
         /// Skips the local worker (index 1) to prevent self-migration.
         /// </summary>
         /// <param name="address">IP address or hostname string.</param>
@@ -1089,7 +1091,8 @@ namespace Garnet.cluster
             for (ushort i = 2; i <= NumWorkers; i++)
             {
                 var w = workers[i];
-                if (w.Port == port && (w.Address == address || w.hostname == address))
+                if ((w.ClusterPort == port && w.ClusterAddress == address) ||
+                    (w.Port == port && (w.Address == address || w.hostname == address)))
                     return w.Nodeid;
             }
             return null;
@@ -1123,13 +1126,13 @@ namespace Garnet.cluster
                 if (workerBanList.ContainsKey(senderConfig.workers[i].Nodeid))
                     continue;
 
-                newConfig = newConfig.MergeWorkerInfo(senderConfig.workers[i]);
+                newConfig = newConfig.MergeWorkerInfo(senderConfig.workers[i], i == LOCAL_WORKER_ID);
             }
 
             return newConfig.MergeSlotMap(senderConfig, logger);
         }
 
-        private ClusterConfig MergeWorkerInfo(Worker worker)
+        private ClusterConfig MergeWorkerInfo(Worker worker, bool isSender)
         {
             ushort workerId = RESERVED_WORKER_ID;
             // Find workerId offset from my local configuration
@@ -1137,20 +1140,39 @@ namespace Garnet.cluster
             {
                 if (workers[i].Nodeid.Equals(worker.Nodeid, StringComparison.OrdinalIgnoreCase))
                 {
-                    // Update only if received config epoch is strictly greater
-                    if (worker.ConfigEpoch <= workers[i].ConfigEpoch) return this;
+                    if (worker.ConfigEpoch < workers[i].ConfigEpoch) return this;
+                    if (worker.ConfigEpoch == workers[i].ConfigEpoch)
+                    {
+                        // Only the owner can refresh endpoints without changing the configuration epoch.
+                        if (!isSender || (worker.Address == workers[i].Address && worker.Port == workers[i].Port &&
+                            worker.ClusterAddress == workers[i].ClusterAddress && worker.ClusterPort == workers[i].ClusterPort &&
+                            worker.hostname == workers[i].hostname))
+                            return this;
+
+                        var updatedWorkers = (Worker[])workers.Clone();
+                        updatedWorkers[i].Address = worker.Address;
+                        updatedWorkers[i].Port = worker.Port;
+                        updatedWorkers[i].ClusterAddress = worker.ClusterAddress;
+                        updatedWorkers[i].ClusterPort = worker.ClusterPort;
+                        updatedWorkers[i].hostname = worker.hostname;
+                        return new ClusterConfig(slotMap, updatedWorkers);
+                    }
                     workerId = (ushort)i;
                     break;
                 }
             }
 
-            var newWorkers = workers;
+            Worker[] newWorkers;
             // Check if we need to add worker to the known workers list
             if (workerId == RESERVED_WORKER_ID)
             {
                 newWorkers = new Worker[workers.Length + 1];
                 workerId = (ushort)workers.Length;
                 Array.Copy(workers, newWorkers, workers.Length);
+            }
+            else
+            {
+                newWorkers = (Worker[])workers.Clone();
             }
 
             // Insert or update worker information

@@ -56,9 +56,43 @@ Garnet reads cluster configuration versions 1 and 2 from disk and gossip. Versio
 `ClusterAddress` and `ClusterPort` in each worker record, alongside the existing client-facing
 `Address` and `Port`. Version 1 reads initialize the cluster fields from `Address` and `Port`.
 
-Production persistence and gossip still write version 1, and routing behavior is unchanged.
-Writing version 2 and using separate cluster endpoints require a follow-up change after all
-nodes support reading version 2.
+Persistence and gossip write version 2. Upgrade every node to a reader-compatible release
+before deploying version 2 writers. Reader-compatible nodes accept versions 1 and 2 but
+still route through `Address` and `Port`. Keep peer and client endpoints equal until every
+node runs a release that uses `ClusterAddress` and `ClusterPort` for peer connections.
+Older version 1-only binaries cannot read version 2 gossip or persisted configuration.
+
+### Separate Peer and Client Endpoints
+
+`--cluster-announce-ip`, `--cluster-announce-port`, and `--cluster-announce-hostname` describe
+the client-facing endpoint. `CLUSTER NODES`, `CLUSTER SLOTS`, `CLUSTER SHARDS`, `MOVED`, and
+`ASK` use these values, subject to `--cluster-preferred-endpoint-type`.
+
+Set `--cluster-address` and `--cluster-port` to override the peer IP address and port.
+Unset peer fields inherit the corresponding client-advertised values. Gossip, replication,
+failover, cluster publish, and migration connections use the peer endpoint. `CLUSTER MEET`
+should target a reachable peer endpoint. `MIGRATE` accepts a known peer endpoint or a
+client-advertised IP address or hostname and port, then connects through the peer endpoint.
+The synthetic bus port in `CLUSTER NODES` is the peer port plus 10000; it is not another
+listener.
+
+For example, a node listening privately on port 6379 can advertise a translated client port:
+
+```text
+--bind 10.0.0.4 --port 6379
+--cluster-announce-ip 203.0.113.4 --cluster-announce-port 17004
+--cluster-announce-hostname cache.example.com --cluster-preferred-endpoint-type hostname
+--cluster-address 10.0.0.4 --cluster-port 6379
+```
+
+These are arguments for one server invocation. Advertised endpoints do not change listener
+bindings or configure forwarding, name resolution, or certificates. Configure those
+separately and validate the chosen client library with the advertised topology.
+
+Startup settings override recovered local endpoints. Removing peer overrides restores
+inheritance from the client endpoint. Direct gossip from a node refreshes its endpoints
+even when its configuration epoch is unchanged; relayed records at that epoch do not
+overwrite those endpoints.
 
 ## Control Plane
 
@@ -168,4 +202,3 @@ PS C:\Dev>
 ```
 
 Note that the use of redis-cli is not required; any client compatible with the RESP protocol may be used to execute the aforementioned commands.
-

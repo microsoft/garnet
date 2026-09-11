@@ -390,29 +390,36 @@ namespace Garnet.cluster
                     var address = a.Item2;
                     var port = a.Item3;
 
-                    // Establish new connection only if it is not in banlist and not in dictionary
-                    if (!workerBanList.ContainsKey(nodeId) && !clusterConnectionStore.GetConnection(nodeId, out var _))
+                    if (workerBanList.ContainsKey(nodeId))
+                        continue;
+
+                    try
                     {
-                        try
+                        var endpoint = new IPEndPoint(IPAddress.Parse(address), port);
+                        if (clusterConnectionStore.GetConnection(nodeId, out var existing))
                         {
-                            var (success, gsn) = await clusterConnectionStore.GetOrAddAsync(clusterProvider, new IPEndPoint(IPAddress.Parse(address), port), tlsOptions, nodeId, logger: logger).ConfigureAwait(false);
-
-                            if (gsn == null)
-                            {
-                                logger?.LogWarning("InitConnections: Could not establish connection to remote node [{nodeId} {address}:{port}] failed", nodeId, address, port);
-
-                                _ = await clusterConnectionStore.TryRemoveConnectionAsync(nodeId).ConfigureAwait(false);
-
+                            if (endpoint.Equals(existing.EndPoint))
                                 continue;
-                            }
-
-                            await gsn.InitializeAsync().ConfigureAwait(false);
-                        }
-                        catch (Exception ex)
-                        {
-                            logger?.LogWarning(ex, "InitConnections: Could not establish connection to remote node [{nodeId} {address}:{port}] failed", nodeId, address, port);
                             _ = await clusterConnectionStore.TryRemoveConnectionAsync(nodeId).ConfigureAwait(false);
                         }
+
+                        var (success, gsn) = await clusterConnectionStore.GetOrAddAsync(clusterProvider, endpoint, tlsOptions, nodeId, logger: logger).ConfigureAwait(false);
+
+                        if (gsn == null)
+                        {
+                            logger?.LogWarning("InitConnections: Could not establish connection to remote node [{nodeId} {address}:{port}] failed", nodeId, address, port);
+
+                            _ = await clusterConnectionStore.TryRemoveConnectionAsync(nodeId).ConfigureAwait(false);
+
+                            continue;
+                        }
+
+                        await gsn.InitializeAsync().ConfigureAwait(false);
+                    }
+                    catch (Exception ex)
+                    {
+                        logger?.LogWarning(ex, "InitConnections: Could not establish connection to remote node [{nodeId} {address}:{port}] failed", nodeId, address, port);
+                        _ = await clusterConnectionStore.TryRemoveConnectionAsync(nodeId).ConfigureAwait(false);
                     }
                 }
 

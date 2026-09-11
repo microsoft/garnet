@@ -46,15 +46,23 @@ namespace Garnet
         public string Address { get; set; }
 
         [IntRangeValidation(0, 65535)]
-        [Option("cluster-announce-port", Required = false, HelpText = "Port that this node advertises to other nodes to connect to for gossiping.")]
+        [Option("cluster-announce-port", Required = false, HelpText = "Client-advertised port. Also used by peers unless cluster-port is set.")]
         public int ClusterAnnouncePort { get; set; }
 
         [IpAddressValidation(false)]
-        [Option("cluster-announce-ip", Required = false, HelpText = "IP address that this node advertises to other nodes to connect to for gossiping.")]
+        [Option("cluster-announce-ip", Required = false, HelpText = "Client-advertised IP address. Also used by peers unless cluster-address is set.")]
         public string ClusterAnnounceIp { get; set; }
 
-        [Option("cluster-announce-hostname", Required = false, HelpText = "Hostname that this node advertises to other nodes to connect to for gossiping.")]
+        [Option("cluster-announce-hostname", Required = false, HelpText = "Client-advertised hostname.")]
         public string ClusterAnnounceHostname { get; set; }
+
+        [ClusterAddressValidation]
+        [Option("cluster-address", Required = false, HelpText = "IP address advertised for peer connections. Defaults to the client-advertised IP address.")]
+        public string ClusterAddress { get; set; }
+
+        [IntRangeValidation(0, 65535)]
+        [Option("cluster-port", Required = false, HelpText = "Port advertised for peer connections. Zero uses the client-advertised port.")]
+        public int ClusterPort { get; set; }
 
         [Option("cluster-preferred-endpoint-type", Required = false, HelpText = "Determines the endpoint type to be advertised to other nodes. (value options: ip, hostname, unknown)")]
         public ClusterPreferredEndpointType ClusterPreferredEndpointType { get; set; }
@@ -797,17 +805,13 @@ namespace Garnet
                 throw new GarnetException($"Invalid endpoint format {Address} {Port}.");
 
             EndPoint[] clusterAnnounceEndpoint = null;
-            if (ClusterAnnounceIp != null)
+            if (ClusterAnnounceIp != null || ClusterAnnouncePort != 0)
             {
                 ClusterAnnouncePort = ClusterAnnouncePort == 0 ? Port : ClusterAnnouncePort;
-                clusterAnnounceEndpoint = Format.TryCreateEndpoint(ClusterAnnounceIp, ClusterAnnouncePort, tryConnect: false, logger: logger);
-                if (clusterAnnounceEndpoint == null || !endpoints.Any(endpoint =>
-                    endpoint is IPEndPoint listenEp && clusterAnnounceEndpoint[0] is IPEndPoint announceEp &&
-                    listenEp.Port == announceEp.Port &&
-                    (listenEp.Address.Equals(announceEp.Address) ||
-                     listenEp.Address.Equals(IPAddress.Any) ||
-                     listenEp.Address.Equals(IPAddress.IPv6Any))))
-                    throw new GarnetException("Cluster announce endpoint does not match list of listen endpoints provided!");
+                var announceIp = ClusterAnnounceIp ?? endpoints.OfType<IPEndPoint>().First().Address.ToString();
+                clusterAnnounceEndpoint = Format.TryCreateEndpoint(announceIp, ClusterAnnouncePort, tryConnect: false, logger: logger);
+                if (clusterAnnounceEndpoint == null)
+                    throw new GarnetException("Invalid cluster announce endpoint!");
             }
 
             if (!string.IsNullOrEmpty(UnixSocketPath))
@@ -888,6 +892,8 @@ namespace Garnet
                 EndPoints = endpoints,
                 ClusterAnnounceEndpoint = clusterAnnounceEndpoint?[0],
                 ClusterAnnounceHostname = ClusterAnnounceHostname,
+                ClusterAddress = ClusterAddress,
+                ClusterPort = ClusterPort,
                 ClusterPreferredEndpointType = ClusterPreferredEndpointType,
                 LogMemorySize = LogMemorySize,
                 PageSize = PageSize,

@@ -45,12 +45,12 @@ namespace Garnet.cluster
         public int Port;
 
         /// <summary>
-        /// Cluster IP address stored in version 2 configs; not yet used for routing.
+        /// IP address used for peer connections.
         /// </summary>
         public string ClusterAddress;
 
         /// <summary>
-        /// Cluster port stored in version 2 configs; not yet used for routing.
+        /// Port used for peer connections.
         /// </summary>
         public int ClusterPort;
 

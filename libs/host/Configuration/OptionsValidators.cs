@@ -6,6 +6,7 @@ using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using System.IO;
 using System.Linq;
+using System.Net;
 using System.Reflection;
 using System.Security;
 using System.Text;
@@ -375,6 +376,26 @@ namespace Garnet
             }
 
             return ValidationResult.Success;
+        }
+    }
+
+    /// <summary>
+    /// Validate a single concrete peer IP address without DNS resolution.
+    /// </summary>
+    [AttributeUsage(AttributeTargets.Property)]
+    internal sealed class ClusterAddressValidationAttribute : OptionValidationAttribute
+    {
+        internal ClusterAddressValidationAttribute() : base(false) { }
+
+        protected override ValidationResult IsValid(object value, ValidationContext validationContext)
+        {
+            if (TryInitialValidation<string>(value, validationContext, out var result, out var address))
+                return result;
+
+            if (IPAddress.TryParse(address, out var ip) && !ip.Equals(IPAddress.Any) && !ip.Equals(IPAddress.IPv6Any))
+                return ValidationResult.Success;
+
+            return new ValidationResult("Cluster address must be a single concrete IP address.", [validationContext.MemberName]);
         }
     }
 

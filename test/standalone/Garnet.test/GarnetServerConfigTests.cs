@@ -92,6 +92,47 @@ namespace Garnet.test
         }
 
         [Test]
+        public void ClusterPeerEndpointOptions()
+        {
+            Assert.That(ServerSettingsManager.TryParseCommandLineArguments([], out var defaults, out _, out _, out _, silentMode: true), Is.True);
+            Assert.That(defaults.ClusterAddress, Is.Null);
+            Assert.That(defaults.ClusterPort, Is.Zero);
+            Assert.That(defaults.GetServerOptions().ClusterAddress, Is.Null);
+            Assert.That(defaults.GetServerOptions().ClusterPort, Is.Zero);
+
+            string[] args = ["--bind", "127.0.0.1", "--port", "6379",
+                "--cluster-announce-ip", "203.0.113.1", "--cluster-announce-port", "17001",
+                "--cluster-announce-hostname", "public.example.com", "--cluster-address", "127.0.0.2", "--cluster-port", "7001"];
+            Assert.That(ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out _, out _, out _, silentMode: true), Is.True);
+            var serverOptions = options.GetServerOptions();
+            Assert.That(serverOptions.EndPoints, Is.EqualTo([new IPEndPoint(IPAddress.Loopback, 6379)]));
+            Assert.That(serverOptions.ClusterAnnounceEndpoint, Is.EqualTo(new IPEndPoint(IPAddress.Parse("203.0.113.1"), 17001)));
+            Assert.That(serverOptions.ClusterAnnounceHostname, Is.EqualTo("public.example.com"));
+            Assert.That(serverOptions.ClusterAddress, Is.EqualTo("127.0.0.2"));
+            Assert.That(serverOptions.ClusterPort, Is.EqualTo(7001));
+        }
+
+        [Test]
+        public void ClusterAnnouncePortWithoutIp()
+        {
+            string[] args = ["--bind", "127.0.0.1", "--cluster-announce-port", "17001"];
+            Assert.That(ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out _, out _, out _, silentMode: true), Is.True);
+            Assert.That(options.GetServerOptions().ClusterAnnounceEndpoint, Is.EqualTo(new IPEndPoint(IPAddress.Loopback, 17001)));
+        }
+
+        [TestCase("--cluster-address", "not-an-ip")]
+        [TestCase("--cluster-address", "localhost")]
+        [TestCase("--cluster-address", "127.0.0.1,127.0.0.2")]
+        [TestCase("--cluster-address", "0.0.0.0")]
+        [TestCase("--cluster-address", "::")]
+        [TestCase("--cluster-port", "-1")]
+        [TestCase("--cluster-port", "65536")]
+        public void InvalidClusterPeerEndpointOptions(string name, string value)
+        {
+            Assert.That(ServerSettingsManager.TryParseCommandLineArguments([name, value], out _, out _, out _, out _, silentMode: true), Is.False);
+        }
+
+        [Test]
         public void RangeIndexPreviewRequiresMinimumAofPageSize()
         {
             // Range index preview needs an AOF page large enough for a migrated stream chunk (>= 512k).

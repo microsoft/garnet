@@ -20,14 +20,24 @@ namespace Garnet.server
         public EndPoint[] EndPoints { get; set; } = [new IPEndPoint(IPAddress.Loopback, 6379)];
 
         /// <summary>
-        /// Cluster announce Endpoint
+        /// Client-advertised endpoint, independent of listen endpoints.
         /// </summary>
         public EndPoint ClusterAnnounceEndpoint { get; set; }
 
         /// <summary>
-        /// Cluster announce Hostname
+        /// Client-advertised hostname.
         /// </summary>
         public string ClusterAnnounceHostname { get; set; }
+
+        /// <summary>
+        /// Peer IP address override. Null uses the client-advertised IP address.
+        /// </summary>
+        public string ClusterAddress { get; set; }
+
+        /// <summary>
+        /// Peer port override. Zero uses the client-advertised port.
+        /// </summary>
+        public int ClusterPort { get; set; }
 
         /// <summary>
         /// Cluster Preferred Endpoint Type

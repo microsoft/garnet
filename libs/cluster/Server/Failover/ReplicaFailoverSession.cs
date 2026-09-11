@@ -238,8 +238,7 @@ namespace Garnet.cluster
                     resp.Dispose();
                 }
 
-                var localAddress = oldConfig.LocalNodeIp;
-                var localPort = oldConfig.LocalNodePort;
+                var (localAddress, localPort) = oldConfig.GetWorkerAddress(ClusterConfig.LOCAL_WORKER_ID);
 
                 // Ask replica to attach and sync
                 var replicaOfResp = await client.ReplicaOf(localAddress, localPort).WaitAsync(failoverTimeout, cts.Token).ConfigureAwait(false);
