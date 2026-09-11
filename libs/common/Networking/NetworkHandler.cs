@@ -80,10 +80,12 @@ namespace Garnet.networking
 
         /// <summary>
         /// Number of consecutive receives that must fit in a smaller buffer before a grown receive buffer is
-        /// released back to the pool. Provides hysteresis so a connection with a bursty-but-recurring large
-        /// payload does not thrash between doubling and shrinking.
+        /// released back to the pool while the process is under no memory pressure. Deliberately generous: a
+        /// connection whose payloads are large but recurring keeps its buffer through the burst and only gives
+        /// it up after a genuinely long quiet stretch. Under pressure the shrink is immediate and this does not
+        /// apply.
         /// </summary>
-        const int ShrinkHysteresis = 16;
+        const int ShrinkHysteresis = 256;
 
         int networkShrinkCountdown = ShrinkHysteresis;
         int transportShrinkCountdown = ShrinkHysteresis;
@@ -374,11 +376,16 @@ namespace Garnet.networking
 
         /// <summary>
         /// Releases a grown receive buffer once the connection's traffic no longer needs it, so that a single
-        /// large payload does not permanently inflate the per-connection footprint. Buffers larger than
-        /// <see cref="NetworkBufferSettings.maxReceiveBufferSize"/> are released immediately because the pool
-        /// cannot recycle them; smaller ones are released only after <see cref="ShrinkHysteresis"/> consecutive
-        /// receives have fit comfortably in the smaller size.
+        /// large payload does not permanently inflate the per-connection footprint.
         /// </summary>
+        /// <remarks>
+        /// Three regimes, checked cheapest first. A buffer larger than
+        /// <see cref="NetworkBufferSettings.maxReceiveBufferSize"/> is released immediately because the pool
+        /// cannot recycle it and it would otherwise be pinned indefinitely by an idle connection. While the
+        /// process-wide budget is binding, shrinking is immediate so the aggregate converges rather than
+        /// waiting out a per-connection countdown. Otherwise the buffer is kept until
+        /// <see cref="ShrinkHysteresis"/> consecutive receives have fit comfortably in the smaller size.
+        /// </remarks>
         void MaybeShrinkNetworkReceiveBuffer()
         {
             var baseSize = BaseReceiveBufferSize;
@@ -399,6 +406,16 @@ namespace Garnet.networking
                 // dropped rather than recycled on return. Give it back without waiting out the hysteresis.
                 ShrinkNetworkReceiveBuffer(target);
                 networkShrinkCountdown = ShrinkHysteresis;
+                networkPool.Budget.RecordIdleShrink();
+                return;
+            }
+
+            var budget = networkPool.Budget;
+            if (budget.IsUnderPressure)
+            {
+                ShrinkNetworkReceiveBuffer(target);
+                networkShrinkCountdown = ShrinkHysteresis;
+                budget.RecordPressureShrink();
                 return;
             }
 
@@ -407,6 +424,7 @@ namespace Garnet.networking
 
             ShrinkNetworkReceiveBuffer(target);
             networkShrinkCountdown = ShrinkHysteresis;
+            budget.RecordIdleShrink();
         }
 
         /// <summary>
@@ -687,9 +705,13 @@ namespace Garnet.networking
             }
 
             var aboveMax = current > networkBufferSettings.maxReceiveBufferSize;
+            var budget = networkPool.Budget;
             // Above the pool's largest size class the buffer was allocated outside the pool and is dropped rather
-            // than recycled on return, so release it without waiting out the hysteresis.
-            if (!aboveMax && --transportShrinkCountdown > 0)
+            // than recycled on return, so release it without waiting out the hysteresis. While the budget is
+            // binding, shrink immediately so the aggregate converges rather than waiting out a per-connection
+            // countdown. See MaybeShrinkNetworkReceiveBuffer for the full policy.
+            var underPressure = budget.IsUnderPressure;
+            if (!aboveMax && !underPressure && --transportShrinkCountdown > 0)
                 return;
 
             var tmp = networkPool.Get(target, PoolEntryBufferType.ShrinkTransportReceiveBuffer);
@@ -700,6 +722,11 @@ namespace Garnet.networking
             transportReceiveBuffer = tmp.entry;
             transportReceiveBufferPtr = tmp.entryPtr;
             transportShrinkCountdown = ShrinkHysteresis;
+
+            if (underPressure && !aboveMax)
+                budget.RecordPressureShrink();
+            else
+                budget.RecordIdleShrink();
         }
 
         unsafe void ShiftTransportReceiveBuffer()

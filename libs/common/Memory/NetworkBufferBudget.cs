@@ -82,6 +82,14 @@ namespace Garnet.common
         public bool IsEnabled => budgetBytes > 0;
 
         /// <summary>
+        /// Whether the budget is actually binding, i.e. the published target has been driven below the
+        /// configured size by the number of live buffers. This is the pressure signal the shrink policy
+        /// gates on: it reads an already-published value rather than a contended byte counter, so it costs
+        /// one predictable branch on the receive path.
+        /// </summary>
+        public bool IsUnderPressure => IsEnabled && TargetBufferSize < ceiling;
+
+        /// <summary>
         /// Configured budget in bytes. Zero when disabled.
         /// </summary>
         public long BudgetBytes => budgetBytes;
