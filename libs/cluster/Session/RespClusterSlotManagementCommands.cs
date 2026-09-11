@@ -381,8 +381,7 @@ namespace Garnet.cluster
                 while (!RespWriteUtils.TryWriteArrayLength(keyCountRet, ref dcurr, dend))
                     SendAndReset();
                 for (var i = 0; i < keyCountRet; i++)
-                    while (!RespWriteUtils.TryWriteBulkString(keys[i], ref dcurr, dend))
-                        SendAndReset();
+                    WriteLargeBulkString(keys[i]);
             }
 
             return true;

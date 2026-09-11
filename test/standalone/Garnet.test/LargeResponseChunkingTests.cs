@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Linq;
 using System.Net.Sockets;
 using System.Text;
 using NUnit.Framework;
@@ -14,20 +15,37 @@ namespace Garnet.test
     /// helper for this case already exists and SCAN uses it, but several commands still write user
     /// data through the atomic path, where an over-sized element fails the whole command and kills
     /// the session. These cover the commands that can return unbounded user data.
+    ///
+    /// Run twice: once with the adaptive budget disabled, so the send buffer is the 128 KB default,
+    /// and once with a budget small enough to pin both directions at their floors. The second arm is
+    /// what proves the atomic-first fallback is genuinely size-independent rather than merely correct
+    /// at the shipped default.
     /// </summary>
-    [TestFixture]
+    [TestFixture("0", null, Description = "default send buffer")]
+    [TestFixture("64k", "16k", Description = "send buffer floored by the budget")]
     public class LargeResponseChunkingTests : TestBase
     {
         // Comfortably larger than the 128 KB default send buffer.
         const int OversizedElement = 200 * 1024;
 
+        readonly string networkBufferMemoryBudget;
+        readonly string networkSendBufferMinSize;
+
         GarnetServer server;
+
+        public LargeResponseChunkingTests(string networkBufferMemoryBudget, string networkSendBufferMinSize)
+        {
+            this.networkBufferMemoryBudget = networkBufferMemoryBudget;
+            this.networkSendBufferMinSize = networkSendBufferMinSize;
+        }
 
         [SetUp]
         public void Setup()
         {
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableLua: true);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableLua: true,
+                networkBufferMemoryBudget: networkBufferMemoryBudget,
+                networkSendBufferMinSize: networkSendBufferMinSize);
             server.Start();
         }
 
@@ -163,6 +181,35 @@ namespace Garnet.test
 
             StringAssert.StartsWith("*2\r\n", reply);
             StringAssert.Contains(bigValue, reply);
+        }
+
+        /// <summary>
+        /// Guards the parameterisation itself. Without this, the budgeted arm could silently stop
+        /// binding and become a duplicate of the default arm, and every oversized test above would
+        /// still pass while proving nothing about a floored buffer.
+        /// </summary>
+        [Test]
+        public void TheConfiguredArmActuallyBindsTheBufferSize()
+        {
+            using var s = Connect();
+            s.Send(Encoding.ASCII.GetBytes("*2\r\n$4\r\nINFO\r\n$7\r\nBPSTATS\r\n"));
+            var buf = new byte[32 * 1024];
+            var reply = Encoding.ASCII.GetString(buf, 0, s.Receive(buf));
+
+            var marker = "targetBufferSize=";
+            var at = reply.IndexOf(marker, StringComparison.Ordinal);
+            ClassicAssert.Greater(at, -1, "targetBufferSize missing from INFO BPSTATS");
+            // Format.MemoryBytes emits e.g. "128KB", so take the whole token and scale by its suffix.
+            var token = new string([.. reply[(at + marker.Length)..].TakeWhile(c => c != ',' && c != '\r')]);
+            var scale = token.EndsWith("KB", StringComparison.Ordinal) ? 1L << 10
+                : token.EndsWith("MB", StringComparison.Ordinal) ? 1L << 20 : 1L;
+            var value = (long)(double.Parse(scale == 1 ? token : token[..^2],
+                System.Globalization.CultureInfo.InvariantCulture) * scale);
+
+            if (networkBufferMemoryBudget == "0")
+                ClassicAssert.AreEqual(128 * 1024, value, "the disabled arm must sit at the configured size");
+            else
+                ClassicAssert.LessOrEqual(value, 64 * 1024, "the budgeted arm must be driven below the configured size");
         }
 
         /// <summary>

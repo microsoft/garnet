@@ -356,6 +356,7 @@ namespace Garnet.test
             string networkBufferSize = null,
             string networkBufferMemoryBudget = null,
             string networkBufferMinSize = null,
+            string networkSendBufferMinSize = null,
             string sessionScratchBufferMaxRetainedSize = null,
             int? sessionParseStateMaxRetainedArgs = null
         )
@@ -405,6 +406,7 @@ namespace Garnet.test
                 NetworkBufferSize = networkBufferSize,
                 NetworkBufferMemoryBudget = networkBufferMemoryBudget,
                 NetworkBufferMinSize = networkBufferMinSize,
+                NetworkSendBufferMinSize = networkSendBufferMinSize,
                 SessionScratchBufferMaxRetainedSize = sessionScratchBufferMaxRetainedSize,
                 SessionParseStateMaxRetainedArgs = sessionParseStateMaxRetainedArgs ?? GarnetServerOptions.DefaultSessionParseStateMaxRetainedArgs,
                 Recover = tryRecover,
