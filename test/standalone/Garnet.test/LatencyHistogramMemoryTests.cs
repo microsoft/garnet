@@ -76,23 +76,40 @@ namespace Garnet.test
         static void OpenSessionWithoutRecording(Socket s)
             => s.Send(Encoding.ASCII.GetBytes("*1\r\n$4\r\nPIN"));
 
-        /// <summary>Number of sessions the server currently has, read over a separate connection.</summary>
-        int ConnectedClients()
+        /// <summary>
+        /// Number of <c>RespServerSession</c> instances the server currently has. Read with CLIENT LIST,
+        /// which enumerates the sessions themselves, rather than with <c>connected_clients</c>, which counts
+        /// accepted network handlers -- a socket that never sends four bytes is counted there but has no
+        /// session, so it cannot tell a measured session from a bare socket.
+        /// </summary>
+        int RespSessionCount()
         {
             using var s = Connect();
-            s.Send(Encoding.ASCII.GetBytes("*2\r\n$4\r\nINFO\r\n$7\r\nCLIENTS\r\n"));
+            s.Send(Encoding.ASCII.GetBytes("*2\r\n$6\r\nCLIENT\r\n$4\r\nLIST\r\n"));
+
             var sb = new StringBuilder();
-            var buf = new byte[16 * 1024];
-            while (!sb.ToString().Contains("connected_clients:"))
+            var buf = new byte[256 * 1024];
+            int declared = -1, headEnd = -1;
+            while (true)
             {
                 var n = s.Receive(buf);
                 if (n == 0) break;
                 sb.Append(Encoding.ASCII.GetString(buf, 0, n));
+
+                var text = sb.ToString();
+                if (declared < 0)
+                {
+                    headEnd = text.IndexOf("\r\n", StringComparison.Ordinal);
+                    if (headEnd < 0 || text[0] != '$') continue;
+                    declared = int.Parse(text[1..headEnd]);
+                }
+                if (text.Length >= headEnd + 2 + declared + 2) break;
             }
-            var text = sb.ToString();
-            var at = text.IndexOf("connected_clients:", StringComparison.Ordinal) + "connected_clients:".Length;
-            var end = text.IndexOfAny(['\r', '\n'], at);
-            return int.Parse(text[at..end]);
+
+            var body = sb.ToString()[(headEnd + 2)..(headEnd + 2 + declared)];
+
+            // Discount this connection's own session, which CLIENT LIST includes.
+            return body.Split('\n', StringSplitOptions.RemoveEmptyEntries).Length - 1;
         }
 
         static long SettledMemory()
@@ -138,7 +155,7 @@ namespace Garnet.test
                 // than of sessions and the arm proves nothing about per-session allocation.
                 var deadline = DateTime.UtcNow.AddSeconds(15);
                 int seen;
-                while ((seen = ConnectedClients()) < Connections && DateTime.UtcNow < deadline)
+                while ((seen = RespSessionCount()) < Connections && DateTime.UtcNow < deadline)
                     Thread.Sleep(50);
                 ClassicAssert.GreaterOrEqual(seen, Connections,
                     $"only {seen} of {Connections} sessions were created, so no per-session cost was measured");
