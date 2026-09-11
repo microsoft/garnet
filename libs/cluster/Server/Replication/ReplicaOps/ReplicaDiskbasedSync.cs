@@ -346,7 +346,7 @@ namespace Garnet.cluster
 
                 // Mark this txn run as a read-write session if we are replaying as a replica
                 // This is necessary to ensure that the stored procedure can perform write operations if needed
-                clusterProvider.replicationManager.aofProcessor.SetReadWriteSession();
+                clusterProvider.replicationManager.aofProcessor.SetInternalWriteSession();
 
                 return this.replicationOffset;
             }

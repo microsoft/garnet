@@ -50,7 +50,7 @@ namespace Garnet.test
         [Test]
         public async Task RevivificationWithRmwWorksAsync()
         {
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
             Func<IDatabase, Task> testRmwWorksViaSETNX = async (db) =>
             {
                 // This should work since the key is tombstoned and we are reusing the tombstone record
@@ -67,7 +67,7 @@ namespace Garnet.test
         [Test]
         public async Task RevivificationWithRmwWorksWhenNeedingShrinkingAndThenExpanding()
         {
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
             Func<IDatabase, Task> testRmwWorksViaSETNX = async (db) =>
             {
                 // This should work since the key is tombstoned and we are reusing the tombstone record
@@ -95,7 +95,7 @@ namespace Garnet.test
         [Test]
         public async Task RevivificationWithRMWWorksViaSetIfGreater()
         {
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
             Func<IDatabase, Task> testRmwWorksViaSetIfGreater = async (db) =>
             {
 
@@ -112,7 +112,7 @@ namespace Garnet.test
         [Test]
         public async Task RevivificationWithRMWWorksViaAppend()
         {
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
             Func<IDatabase, Task> testRmwWorksViaAppend = async (db) =>
             {
                 // new value is below 12 bytes so it should reuse in initial update
@@ -126,7 +126,7 @@ namespace Garnet.test
         [Test]
         public async Task RevivificationWithRMWWorksViaSetBit()
         {
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
             Func<IDatabase, Task> testRmwWorksViaSetBit = async (db) =>
             {
                 // we need something that allocates 12 bytes internally in SETBIT
@@ -140,7 +140,7 @@ namespace Garnet.test
         [Test]
         public async Task RevivificationWithRMWWorksViaBitfield()
         {
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
             Func<IDatabase, Task> testRmwWorksViaBitfield = async (db) =>
             {
                 // we need something that allocates 12 bytes internally in BITFIELD
@@ -179,7 +179,7 @@ namespace Garnet.test
             server.Dispose(false);
             SetupServerWithReviv(false);
 
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
             var db = redis.GetDatabase(0);
 
             await db.ExecuteAsync("SET", "foo", "c", "PX", 500).ConfigureAwait(false);
@@ -213,7 +213,7 @@ namespace Garnet.test
             server.Dispose(false);
             SetupServerWithReviv(inChainOnly: true);
 
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
 
             var db = redis.GetDatabase(0);
 
@@ -253,7 +253,7 @@ namespace Garnet.test
             server.Dispose(false);
             SetupServerWithReviv(inChainOnly: true);
 
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
 
             var db = redis.GetDatabase(0);
 
