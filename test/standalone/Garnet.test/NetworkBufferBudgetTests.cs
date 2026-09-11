@@ -988,6 +988,114 @@ namespace Garnet.test
 
         #endregion
 
+        #region unpressured common case
+
+        /// <summary>
+        /// The central promise of the design: with few connections the budget is slack, so a connection that
+        /// grows its receive buffer must keep it for as long as it stays active, exactly as it does today. The
+        /// control arm is the same workload with the budget disabled entirely; the two must hold the same
+        /// bytes, and the budgeted arm must record no pressure shrink at all.
+        /// </summary>
+        [Test]
+        public void UnpressuredGrownBuffersAreRetainedExactlyAsWithNoBudget()
+        {
+            var budgeted = MeasureUnpressuredGrowth(budget: null);
+            var control = MeasureUnpressuredGrowth(budget: "0");
+
+            ClassicAssert.AreEqual(0, budgeted.PressureShrinks,
+                "the default budget must be slack at this connection count, so no pressure shrink may occur");
+            ClassicAssert.AreEqual(Ceiling, budgeted.Target,
+                "the published target must pin at the configured size while the budget is slack");
+
+            // Grown, and still grown after the small traffic that follows.
+            ClassicAssert.Greater(budgeted.Grown, budgeted.Baseline * 1.5,
+                $"the receive buffers did not grow (baseline={budgeted.Baseline}, grown={budgeted.Grown})");
+            ClassicAssert.Greater(budgeted.Settled, budgeted.Baseline * 1.5,
+                $"a grown buffer was released while the budget was slack (baseline={budgeted.Baseline}, settled={budgeted.Settled})");
+
+            // And byte-for-byte what an unbudgeted server holds, which is the no-regression claim.
+            ClassicAssert.AreEqual(control.Grown, budgeted.Grown,
+                $"demand-driven growth differed from an unbudgeted server (control={control.Grown}, budgeted={budgeted.Grown})");
+            ClassicAssert.AreEqual(control.Settled, budgeted.Settled,
+                $"retention differed from an unbudgeted server (control={control.Settled}, budgeted={budgeted.Settled})");
+        }
+
+        /// <summary>
+        /// Connects a handful of clients, grows each one's receive buffer with a single large request, then
+        /// does a short run of small round trips -- far short of the idle hysteresis.
+        /// </summary>
+        (long Baseline, long Grown, long Settled, long PressureShrinks, long Target) MeasureUnpressuredGrowth(string budget)
+        {
+            server?.Dispose();
+            server = null;
+            StartServer(networkBufferMemoryBudget: budget);
+
+            const int Connections = 8;
+            const int PayloadLength = 400 * 1024;
+            var payload = new string('p', PayloadLength);
+
+            var sockets = new List<Socket>();
+            try
+            {
+                for (var i = 0; i < Connections; i++)
+                    sockets.Add(Ping(Connect()));
+                var baseline = SocketStatBytes("liveBytes");
+
+                foreach (var s in sockets)
+                {
+                    Send(s, $"*3\r\n$3\r\nSET\r\n$3\r\nbig\r\n${PayloadLength}\r\n{payload}\r\n");
+                    ClassicAssert.AreEqual("+OK\r\n", ReadExactly(s, 5));
+                }
+                var grown = SocketStatBytes("liveBytes");
+
+                for (var round = 0; round < 20; round++)
+                    foreach (var s in sockets)
+                        _ = Ping(s);
+
+                return (baseline, grown, SocketStatBytes("liveBytes"), StatValue("pressureShrinks"), StatBytes("targetBufferSize"));
+            }
+            finally
+            {
+                foreach (var s in sockets) s.Dispose();
+            }
+        }
+
+        /// <summary>
+        /// Guards correction C3. Dropping an over-target entry on return must be gated on pressure: while the
+        /// budget is slack, the 256 KB and 512 KB buffers that receive-growth cycles through are legitimate
+        /// pool levels, and discarding them would turn connection churn into repeated pinned allocation of
+        /// arrays that are recyclable today.
+        /// </summary>
+        [Test]
+        public void UnpressuredConnectionChurnKeepsRecyclingGrownBuffers()
+        {
+            StartServer();
+
+            const int Rounds = 20;
+            const int PayloadLength = 300 * 1024;
+            var payload = new string('p', PayloadLength);
+
+            for (var round = 0; round < Rounds; round++)
+            {
+                using var s = Ping(Connect());
+                Send(s, $"*3\r\n$3\r\nSET\r\n$3\r\nbig\r\n${PayloadLength}\r\n{payload}\r\n");
+                ClassicAssert.AreEqual("+OK\r\n", ReadExactly(s, 5));
+            }
+
+            ClassicAssert.AreEqual(0, StatValue("pressureShrinks"), "the default budget must be slack at this connection count");
+            ClassicAssert.AreEqual(0, SocketStatBytes("totalOutOfBoundAllocations"),
+                "every buffer in this workload must stay inside the pool's size classes for the count to be complete");
+
+            // The grown buffers were handed back to the pool rather than dropped, so they are available to the
+            // next connection. Anything at or below the baseline free list would mean they were discarded.
+            var pooled = SocketStatBytes("pooledBytes");
+            TestContext.Out.WriteLine($"pooled bytes after {Rounds} churned connections: {pooled}");
+            ClassicAssert.GreaterOrEqual(pooled, PayloadLength,
+                $"grown buffers were not recycled while the budget was slack (pooledBytes={pooled})");
+        }
+
+        #endregion
+
         #region helpers
 
         void StartServer(string networkBufferMemoryBudget = null, string networkSendBufferMinSize = null)
