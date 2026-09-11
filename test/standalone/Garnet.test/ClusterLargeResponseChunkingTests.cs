@@ -19,7 +19,7 @@ namespace Garnet.test
     /// it, since an adapted buffer widens the window in which an element no longer fits.
     /// </summary>
     [TestFixture("0", null, Description = "default send buffer")]
-    [TestFixture("64k", "16k", Description = "send buffer floored by the budget")]
+    [TestFixture("16k", "16k", Description = "send buffer floored by the budget")]
     public class ClusterLargeResponseChunkingTests : TestBase
     {
         // Comfortably larger than the 128 KB default send buffer.
@@ -192,7 +192,10 @@ namespace Garnet.test
             using var s = Connect();
 
             // Alternating assignment makes every assigned slot its own range, so the line grows by several
-            // characters per range and passes the default send buffer as well as the floored one.
+            // characters per range. This reaches roughly 19 KB, which exceeds the floored fixture's send
+            // buffer but not the 128 KB default -- CLUSTER NODES on a single node cannot be driven past the
+            // default, since the line is bounded by the 16,384 slots a node can hold. So chunking is covered
+            // by the floored arm only, and the default arm covers the atomic path.
             const int Ranges = 4000;
             var args = new string[1 + (2 * Ranges)];
             args[0] = "ADDSLOTSRANGE";
@@ -220,7 +223,7 @@ namespace Garnet.test
             var declared = int.Parse(nodes[1..headEnd]);
             var body = nodes[(headEnd + 2)..];
             ClassicAssert.Greater(declared, 16 * 1024,
-                "the node line did not exceed the floored send buffer, so this no longer covers chunking");
+                "the node line no longer exceeds the floored send buffer, so no fixture arm covers chunking");
             ClassicAssert.AreEqual(declared + 2, body.Length,
                 "the bulk string payload does not match its declared length");
             StringAssert.EndsWith("\r\n", body);

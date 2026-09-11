@@ -87,9 +87,11 @@ namespace Garnet.test
         {
             var budget = new NetworkBufferBudget(1L << 30, Ceiling, ReceiveFloor, SendFloor);
 
-            // What the stale publisher would have observed: few buffers live, so the target is the ceiling.
-            var staleCount = (1L << 30) / Ceiling;
+            // What the stale publisher observed: the ceiling still published, but enough buffers already
+            // live that it intends to step one class down. It must intend to *write* something -- a sample
+            // that lands inside its own hysteresis band returns without publishing and proves nothing.
             var staleTarget = budget.TargetBufferSize;
+            var staleCount = (1L << 30) / (Ceiling / 2);
             ClassicAssert.AreEqual(Ceiling, staleTarget);
 
             // Meanwhile the population grows and a publisher that saw it correctly publishes a lower target.
