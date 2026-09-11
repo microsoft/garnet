@@ -68,7 +68,8 @@ namespace Garnet.cluster
                 }
 
                 var addressStr = Encoding.ASCII.GetString(addressSpan);
-                var primaryId = clusterProvider.clusterManager.CurrentConfig.GetWorkerNodeIdFromAddress(addressStr, port);
+                var primaryId = clusterProvider.clusterManager.CurrentConfig.GetWorkerNodeIdFromAddress(addressStr, port) ??
+                    clusterProvider.clusterManager.CurrentConfig.GetWorkerNodeIdFromAddressOrHostname(addressStr, port);
                 if (primaryId == null)
                 {
                     while (!RespWriteUtils.TryWriteError($"ERR I don't know about node {addressStr}:{port}.", ref dcurr, dend))

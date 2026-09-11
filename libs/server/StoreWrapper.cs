@@ -328,7 +328,24 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Get IP
+        /// Get the peer endpoint without changing listener bindings.
+        /// </summary>
+        public IPEndPoint GetClusterPeerEndpoint()
+        {
+            if (serverOptions.ClusterPort is < 1 or > 65535)
+                throw new GarnetException("Cluster peer port must be between 1 and 65535.");
+
+            var advertisedEndpoint = GetClusterEndpoint();
+            var hasAddressOverride = !string.IsNullOrEmpty(serverOptions.ClusterAddress);
+            var address = hasAddressOverride ? IPAddress.Parse(serverOptions.ClusterAddress) : advertisedEndpoint.Address;
+            var port = serverOptions.ClusterPort ?? advertisedEndpoint.Port;
+            if (hasAddressOverride && (address.Equals(IPAddress.Any) || address.Equals(IPAddress.IPv6Any)))
+                throw new GarnetException("Cluster peer address must be a concrete IP address.");
+            return new IPEndPoint(address, port);
+        }
+
+        /// <summary>
+        /// Get the client-advertised endpoint.
         /// </summary>
         /// <returns></returns>
         public IPEndPoint GetClusterEndpoint()

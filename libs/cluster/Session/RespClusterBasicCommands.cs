@@ -4,6 +4,7 @@
 using System;
 using System.Buffers;
 using System.Diagnostics;
+using System.Net;
 using System.Text;
 using Garnet.common;
 using Garnet.server;
@@ -252,8 +253,11 @@ namespace Garnet.cluster
             var nodeId = parseState.GetString(0);
 
             var current = clusterProvider.clusterManager.CurrentConfig;
-            var endpoint = current.GetEndpointFromNodeId(nodeId);
-            while (!RespWriteUtils.TryWriteAsciiBulkString(endpoint.ToString(), ref dcurr, dend))
+            Worker worker = current.GetWorkerFromNodeId(nodeId);
+            string endpoint = worker.Role == NodeRole.UNASSIGNED
+                ? "unassigned:0"
+                : new IPEndPoint(IPAddress.Parse(worker.Address), worker.Port).ToString();
+            while (!RespWriteUtils.TryWriteAsciiBulkString(endpoint, ref dcurr, dend))
                 SendAndReset();
             return true;
         }

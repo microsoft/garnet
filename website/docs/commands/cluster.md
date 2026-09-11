@@ -291,6 +291,10 @@ By default the nodes do not trust its other and only accept nodes that have been
 The cluster operator is supposed to connect nodes by issuing meet when setting up the cluster.
 However, as indicated above the meet issued does not need to be reciprocal.
 
+The target address and port must be reachable from the executing node, not necessarily from the client.
+Use peer addresses when client addresses are unreachable between nodes.
+Get peer addresses and ports from server configuration; `CLUSTER NODES` returns client addresses and ports.
+
 #### RESP Reply
 Returns +OK on success, otherwise --ERR message if any.
 
