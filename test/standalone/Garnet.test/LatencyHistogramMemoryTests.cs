@@ -292,30 +292,38 @@ namespace Garnet.test
         {
             StartServer(latencyMonitor: true, precision: precision);
             using var s = Connect();
-            Ping(s);
 
             var expected = new LongHistogram(1, TimeStamp.Seconds(100), precision).GetEstimatedFootprintInBytes();
 
-            var sessions = ActiveSessions();
-            CollectionAssert.IsNotEmpty(sessions, "the pinging connection should have a live session");
-
+            // The session records its latency after the reply has been written, so receiving the reply does
+            // not mean the histogram exists yet.
+            var deadline = DateTime.UtcNow.AddSeconds(30);
             var asserted = 0;
-            foreach (var session in sessions)
+            do
             {
-                var metrics = session.LatencyMetrics?.metrics;
-                if (metrics == null) continue;
+                Ping(s);
 
-                foreach (var entry in metrics)
+                var sessions = ActiveSessions();
+                CollectionAssert.IsNotEmpty(sessions, "the pinging connection should have a live session");
+
+                foreach (var session in sessions)
                 {
-                    if (entry.latency == null) continue;
-                    foreach (var histogram in entry.latency)
+                    var metrics = session.LatencyMetrics?.metrics;
+                    if (metrics == null) continue;
+
+                    foreach (var entry in metrics)
                     {
-                        ClassicAssert.AreEqual(expected, histogram.GetEstimatedFootprintInBytes(),
-                            $"session histograms should be sized for precision {precision}");
-                        asserted++;
+                        if (entry.latency == null) continue;
+                        foreach (var histogram in entry.latency)
+                        {
+                            ClassicAssert.AreEqual(expected, histogram.GetEstimatedFootprintInBytes(),
+                                $"session histograms should be sized for precision {precision}");
+                            asserted++;
+                        }
                     }
                 }
             }
+            while (asserted == 0 && DateTime.UtcNow < deadline);
 
             ClassicAssert.Greater(asserted, 0, "a pinging session should have allocated at least one histogram");
         }
