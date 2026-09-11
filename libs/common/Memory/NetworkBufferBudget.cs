@@ -209,7 +209,7 @@ namespace Garnet.common
             // Bounded because this runs on every buffer acquire and release. Under a stampede a later
             // acquire or release republishes anyway; the point of the loop is to close the ordinary
             // two-thread race, not to serialize an arbitrarily long one.
-            for (var attempt = 0; attempt < MaxRecomputeAttempts; attempt++)
+            for (var attempt = 0; attempt < recomputeAttempts; attempt++)
             {
                 var count = Interlocked.Read(ref liveBufferCount);
                 var raw = budgetBytes / Math.Max(1, count);
@@ -232,13 +232,49 @@ namespace Garnet.common
                 if (Interlocked.Read(ref liveBufferCount) == count)
                     return;
             }
+
+            PublishFromFreshestCount();
+        }
+
+        /// <summary>
+        /// Publishes a target derived from the freshest live count, last-writer-wins.
+        /// </summary>
+        /// <remarks>
+        /// Reached only when <see cref="Recompute"/> exhausts its attempts. Abandoning there would leave the
+        /// target at whatever the last contended exchange happened to write, which is derived from a count
+        /// that has since moved -- and since nothing else recomputes, that value stands until the next
+        /// acquire or release. Re-deriving costs one read and cannot be worse: a concurrent publisher that
+        /// overtakes this write is itself publishing from a count at least as fresh. The residual is that
+        /// this is still not atomic with the count, which no lock-free formulation of a published quotient
+        /// can be; convergence comes from every acquire and release republishing.
+        /// </remarks>
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        void PublishFromFreshestCount()
+        {
+            var count = Interlocked.Read(ref liveBufferCount);
+            var raw = budgetBytes / Math.Max(1, count);
+
+            var current = Volatile.Read(ref targetBufferSize);
+            if (raw >= current && raw < 2L * current)
+                return;
+
+            Volatile.Write(ref targetBufferSize, ComputeTarget(raw));
         }
 
         /// <summary>
         /// Attempts <see cref="Recompute"/> makes to publish a target that agrees with the live count before
-        /// leaving it to the next acquire or release.
+        /// falling back to <see cref="PublishFromFreshestCount"/>.
         /// </summary>
         const int MaxRecomputeAttempts = 8;
+
+        /// <summary>
+        /// Per-instance copy of <see cref="MaxRecomputeAttempts"/>. Settable so a test can force the
+        /// exhaustion path, which contention alone cannot reach reliably enough to assert on.
+        /// </summary>
+        int recomputeAttempts = MaxRecomputeAttempts;
+
+        /// <summary>Forces <see cref="Recompute"/> to exhaust its attempts after the given number.</summary>
+        internal int RecomputeAttemptsForTests { set => recomputeAttempts = value; }
 
         /// <summary>
         /// Largest permitted base size for the given per-buffer byte quotient.
