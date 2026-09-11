@@ -69,6 +69,12 @@ namespace Garnet.common
         public int MinAllocationSize => minAllocationSize;
 
         /// <summary>
+        /// Process-wide live-buffer budget this pool participates in. Never null; disabled for pools that
+        /// are not connection-scaled.
+        /// </summary>
+        public NetworkBufferBudget Budget => budget;
+
+        /// <summary>
         /// Bytes currently checked out of this pool by callers.
         /// </summary>
         public long LiveBytes => Interlocked.Read(ref liveBytes);

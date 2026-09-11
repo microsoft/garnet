@@ -143,16 +143,27 @@ namespace Garnet.common
         }
 
         /// <summary>
-        /// Account for a buffer being checked out.
+        /// Account for a buffer being checked out. Inert when the budget is disabled, so pools that do not
+        /// participate cannot accumulate a meaningless count on the shared <see cref="Disabled"/> instance.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void OnBufferAcquired() => Interlocked.Increment(ref liveBufferCount);
+        public void OnBufferAcquired()
+        {
+            if (budgetBytes == 0)
+                return;
+            Interlocked.Increment(ref liveBufferCount);
+        }
 
         /// <summary>
         /// Account for a buffer being handed back, whether it was pooled or dropped.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void OnBufferReleased() => Interlocked.Decrement(ref liveBufferCount);
+        public void OnBufferReleased()
+        {
+            if (budgetBytes == 0)
+                return;
+            Interlocked.Decrement(ref liveBufferCount);
+        }
 
         /// <summary>
         /// Record that a buffer was shrunk because the budget was under pressure.
