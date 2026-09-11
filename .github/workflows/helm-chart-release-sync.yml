@@ -1,0 +1,91 @@
+name: Sync Garnet Helm Chart Release
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - 'Version.props'
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: helm-chart-release-sync
+  cancel-in-progress: true
+
+jobs:
+  release-sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Install helm-docs
+        env:
+          HELM_DOCS_VERSION: "1.14.2"
+          HELM_DOCS_SHA256: "a8cf72ada34fad93285ba2a452b38bdc5bd52cc9a571236244ec31022928d6cc"
+        run: |
+          set -euo pipefail
+          cd /tmp
+          FILENAME="helm-docs_${HELM_DOCS_VERSION}_Linux_x86_64.tar.gz"
+          wget "https://github.com/norwoodj/helm-docs/releases/download/v${HELM_DOCS_VERSION}/${FILENAME}"
+          echo "${HELM_DOCS_SHA256}  ${FILENAME}" | sha256sum -c -
+          tar -xvf "${FILENAME}"
+          sudo mv helm-docs /usr/local/bin
+
+      - name: Install helm
+        uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.0
+
+      - name: Update chart metadata and documentation
+        run: |
+          set -euo pipefail
+          version_props=$(awk -F'[<>]' '/<VersionPrefix>/{print $3}' Version.props | tr -d '\n')
+          chart_app_version=$(awk '$1 == "appVersion:" {print $2}' charts/garnet/Chart.yaml)
+
+          if [[ "${chart_app_version}" == "${version_props}" ]]; then
+            echo "Chart already targets ${version_props}; nothing to synchronize"
+            exit 0
+          fi
+
+          python3 - "${version_props}" <<'PY'
+          import re
+          import sys
+          from pathlib import Path
+
+          path = Path("charts/garnet/Chart.yaml")
+          text = path.read_text()
+          match = re.search(r"(?m)^version:\s*(\d+)\.(\d+)\.(\d+)(?:-[^\s]+)?\s*$", text)
+          if not match:
+              raise SystemExit("Chart.yaml does not contain a supported stable chart version")
+
+          major, minor, patch = (int(part) for part in match.groups())
+          chart_version = f"{major}.{minor}.{patch + 1}"
+          text = re.sub(r"(?m)^version:\s*.*$", f"version: {chart_version}", text, count=1)
+          text = re.sub(r"(?m)^appVersion:\s*.*$", f"appVersion: {sys.argv[1]}", text, count=1)
+          path.write_text(text)
+          print(f"Updated chart to {chart_version} / {sys.argv[1]}")
+          PY
+
+          helm lint charts/garnet
+          helm-docs --document-dependency-values --chart-search-root charts/garnet
+
+      - name: Create or update release synchronization PR
+        uses: peter-evans/create-pull-request@67ccf781d68cd99b580ae25a5c18a1cc84ffff1f # v7.0.8
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          branch: automation/helm-chart-release-sync
+          delete-branch: true
+          title: '[helm-chart] Sync chart with Garnet release'
+          commit-message: '[helm-chart] Sync chart with Garnet release'
+          body: |
+            Updates the Helm chart version, application version, and generated README for the latest Garnet release.
+
+            This PR is generated automatically from `Version.props`.
+          add-paths: |
+            charts/garnet/Chart.yaml
+            charts/garnet/README.md

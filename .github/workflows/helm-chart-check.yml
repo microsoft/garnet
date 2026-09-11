@@ -1,0 +1,114 @@
+name: Check Garnet Helm Chart
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'charts/**'
+      - 'Version.props'
+
+permissions:
+  contents: read
+
+jobs:
+  helm-chart-check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Install helm
+        uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.0
+
+      - name: Install helm-docs
+        env:
+          HELM_DOCS_VERSION: "1.14.2"
+          HELM_DOCS_SHA256: "a8cf72ada34fad93285ba2a452b38bdc5bd52cc9a571236244ec31022928d6cc"
+        run: |
+          set -euo pipefail
+          cd /tmp
+          FILENAME="helm-docs_${HELM_DOCS_VERSION}_Linux_x86_64.tar.gz"
+          wget "https://github.com/norwoodj/helm-docs/releases/download/v${HELM_DOCS_VERSION}/${FILENAME}"
+          echo "${HELM_DOCS_SHA256}  ${FILENAME}" | sha256sum -c -
+          tar -xvf "${FILENAME}"
+          sudo mv helm-docs /usr/local/bin
+
+      - name: Verify chart version was bumped
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          changed_files=$(git diff --name-only "${BASE_SHA}"...HEAD)
+          chart_source_changed=false
+          while IFS= read -r file; do
+            case "${file}" in
+              charts/garnet/Chart.yaml|charts/garnet/values*|charts/garnet/README.md.gotmpl|charts/garnet/templates/*)
+                chart_source_changed=true
+                ;;
+            esac
+          done <<< "${changed_files}"
+
+          if [[ "${chart_source_changed}" != true ]]; then
+            exit 0
+          fi
+
+          base_chart_version=$(git show "${BASE_SHA}:charts/garnet/Chart.yaml" | awk '$1 == "version:" {print $2}')
+          chart_version=$(awk '$1 == "version:" {print $2}' charts/garnet/Chart.yaml)
+          if [[ -z "${base_chart_version}" || -z "${chart_version}" ]]; then
+            echo "Unable to read chart version"
+            exit 1
+          fi
+
+          python3 - "${base_chart_version}" "${chart_version}" <<'PY'
+          import re
+          import sys
+
+          semver = re.compile(r"^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$")
+
+          def key(value):
+              match = semver.fullmatch(value)
+              if not match:
+                  raise SystemExit(f"Invalid chart semver: {value}")
+              return tuple(int(part) for part in match.groups()[:3])
+
+          base, current = sys.argv[1:]
+          if key(current) <= key(base):
+              raise SystemExit(f"Chart version must increase: {base} -> {current}")
+          PY
+
+      - name: Verify application version
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          changed_files=$(git diff --name-only "${BASE_SHA}"...HEAD)
+          chart_source_changed=false
+          while IFS= read -r file; do
+            case "${file}" in
+              charts/garnet/Chart.yaml|charts/garnet/values*|charts/garnet/README.md.gotmpl|charts/garnet/templates/*)
+                chart_source_changed=true
+                ;;
+            esac
+          done <<< "${changed_files}"
+
+          if [[ "${chart_source_changed}" != true ]]; then
+            echo "No chart source changes; application version check is deferred to release synchronization"
+            exit 0
+          fi
+
+          version_props=$(awk -F'[<>]' '/<VersionPrefix>/{print $3}' Version.props | tr -d '\n')
+          chart_app_version=$(awk '$1 == "appVersion:" {print $2}' charts/garnet/Chart.yaml)
+          if [[ "${chart_app_version}" != "${version_props}" ]]; then
+            echo "Chart appVersion (${chart_app_version}) must match Version.props (${version_props})"
+            exit 1
+          fi
+
+      - name: Lint chart and verify generated README
+        run: |
+          set -euo pipefail
+          helm lint charts/garnet
+          helm-docs --document-dependency-values --chart-search-root charts/garnet
+          git diff --exit-code -- charts/garnet/README.md

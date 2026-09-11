@@ -3,6 +3,12 @@
 
 {{ template "chart.badgesSection" . }}
 
+## Versioning
+
+The Helm chart version and Garnet application version are independent. Chart
+changes require a chart version bump; Garnet releases receive a chart patch
+bump so the published chart points to the new application image by default.
+
 {{ template "chart.description" . }}
 
 {{ template "chart.homepageLine" . }}
