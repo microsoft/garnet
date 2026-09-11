@@ -70,6 +70,11 @@ namespace Garnet.server
         public bool StoreIndexMaxedOut;
 
         /// <summary>
+        /// State used to suppress repeated low-yield compaction cycles.
+        /// </summary>
+        internal readonly CompactionState CompactionState = new();
+
+        /// <summary>
         /// Reader-Writer lock for database checkpointing
         /// </summary>
         public SingleWriterMultiReaderLock CheckpointingLock;
