@@ -119,8 +119,7 @@ namespace Garnet.cluster
             }
 
             var clusterInfo = clusterProvider.clusterManager.GetInfo();
-            while (!RespWriteUtils.TryWriteAsciiBulkString(clusterInfo, ref dcurr, dend))
-                SendAndReset();
+            WriteAsciiLargeRespString(clusterInfo);
 
             return true;
         }

@@ -477,4 +477,119 @@ namespace Garnet.test
             StringAssert.Contains(item, reply);
         }
     }
+
+    /// <summary>
+    /// ACL responses echo client-supplied usernames and password hashes back through the atomic path.
+    /// A user name is bounded by nothing, so ACL USERS and ACL LIST can be driven past the send buffer
+    /// by any client permitted to run ACL SETUSER -- which the default user is.
+    /// </summary>
+    [TestFixture("0", null, Description = "default send buffer")]
+    [TestFixture("64k", "16k", Description = "send buffer floored by the budget")]
+    public class AclLargeResponseChunkingTests : TestBase
+    {
+        const int OversizedElement = 200 * 1024;
+
+        readonly string networkBufferMemoryBudget;
+        readonly string networkSendBufferMinSize;
+
+        GarnetServer server;
+
+        public AclLargeResponseChunkingTests(string networkBufferMemoryBudget, string networkSendBufferMinSize)
+        {
+            this.networkBufferMemoryBudget = networkBufferMemoryBudget;
+            this.networkSendBufferMinSize = networkSendBufferMinSize;
+        }
+
+        [SetUp]
+        public void Setup()
+        {
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, useAcl: true,
+                networkBufferMemoryBudget: networkBufferMemoryBudget,
+                networkSendBufferMinSize: networkSendBufferMinSize);
+            server.Start();
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            server?.Dispose();
+            server = null;
+            TestUtils.OnTearDown();
+        }
+
+        static Socket Connect()
+        {
+            var s = new Socket(SocketType.Stream, ProtocolType.Tcp) { NoDelay = true, ReceiveTimeout = 15_000 };
+            s.Connect(TestUtils.EndPoint);
+            return s;
+        }
+
+        static byte[] Resp(params string[] parts)
+        {
+            var sb = new StringBuilder();
+            sb.Append('*').Append(parts.Length).Append("\r\n");
+            foreach (var p in parts)
+                sb.Append('$').Append(p.Length).Append("\r\n").Append(p).Append("\r\n");
+            return Encoding.ASCII.GetBytes(sb.ToString());
+        }
+
+        static string ReadUntil(Socket s, string expected)
+        {
+            var sb = new StringBuilder();
+            var buf = new byte[64 * 1024];
+            while (true)
+            {
+                int n;
+                try
+                {
+                    n = s.Receive(buf);
+                }
+                catch (SocketException e)
+                {
+                    return $"<socket error: {e.SocketErrorCode}> after {sb.Length} bytes";
+                }
+                if (n == 0) return $"<connection closed> after {sb.Length} bytes";
+                sb.Append(Encoding.ASCII.GetString(buf, 0, n));
+                if (sb.Length >= expected.Length && sb.ToString().Contains(expected))
+                    return sb.ToString();
+            }
+        }
+
+        Socket ConnectAndCreateOversizedUser(string bigUser)
+        {
+            var s = Connect();
+            s.Send(Resp("AUTH", "default", ""));
+            _ = ReadUntil(s, "\r\n");
+
+            s.Send(Resp("ACL", "SETUSER", bigUser, "on", "nopass", "+get"));
+            StringAssert.StartsWith("+OK\r\n", ReadUntil(s, "+OK\r\n"));
+            return s;
+        }
+
+        [Test]
+        public void AclUsersReturnsUsernameLargerThanSendBuffer()
+        {
+            var bigUser = new string('u', OversizedElement);
+            using var s = ConnectAndCreateOversizedUser(bigUser);
+
+            s.Send(Resp("ACL", "USERS"));
+            var reply = ReadUntil(s, bigUser);
+
+            StringAssert.Contains($"${OversizedElement}\r\n", reply);
+            StringAssert.Contains(bigUser, reply);
+        }
+
+        [Test]
+        public void AclListReturnsUserDescriptionLargerThanSendBuffer()
+        {
+            var bigUser = new string('v', OversizedElement);
+            using var s = ConnectAndCreateOversizedUser(bigUser);
+
+            s.Send(Resp("ACL", "LIST"));
+            var reply = ReadUntil(s, bigUser);
+
+            StringAssert.Contains($"user {bigUser} on", reply);
+        }
+    }
 }
