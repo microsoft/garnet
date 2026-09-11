@@ -201,7 +201,7 @@ namespace Garnet.test.cluster.MultiLogTests
             context.PopulatePrimary(ref context.kvPairs, keyLength, kvpairCount, 0);
 
             var primaryServer = context.clusterTestUtils.GetServer(primaryNodeIndex);
-            var expectedKeys = (string[])primaryServer.Execute("KEYS", ["*"]);
+            var expectedKeys = (string[])primaryServer.Execute(0, "KEYS", ["*"]);
             await context.nodes[primaryNodeIndex].Store.CommitAOFAsync(default).ConfigureAwait(false);
 
             // Shutdown node
@@ -220,7 +220,7 @@ namespace Garnet.test.cluster.MultiLogTests
             context.CreateConnection(useTLS: useTLS);
 
             primaryServer = context.clusterTestUtils.GetServer(primaryNodeIndex);
-            var keys = (string[])primaryServer.Execute("KEYS", ["*"]);
+            var keys = (string[])primaryServer.Execute(0, "KEYS", ["*"]);
             Array.Sort(keys);
             Array.Sort(expectedKeys);
             ClassicAssert.AreEqual(expectedKeys.Length, keys.Length);

@@ -37,7 +37,7 @@ namespace Garnet.test
         public void ResetStatsTest(RedisProtocol protocol)
         {
             TimeSpan metricsUpdateDelay = TimeSpan.FromSeconds(1.1);
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(protocol: protocol));
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(protocol: protocol, allowAdmin: true));
             var db = redis.GetDatabase(0);
 
             var infoResult = db.Execute("INFO").ToString();
@@ -77,7 +77,7 @@ namespace Garnet.test
         [Test]
         public void UptimeIncreasesAcrossInfoCalls()
         {
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
             var db = redis.GetDatabase(0);
 
             static long ParseUptime(string info) =>
@@ -100,7 +100,7 @@ namespace Garnet.test
         [TestCase("EVERYTHING", RedisProtocol.Resp3)]
         public void InfoSectionOptionsTest(string option, RedisProtocol protocol)
         {
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(protocol: protocol));
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(protocol: protocol, allowAdmin: true));
             var db = redis.GetDatabase(0);
 
             var infoResult = db.Execute("INFO", option).ToString();
@@ -140,7 +140,7 @@ namespace Garnet.test
         [TestCase(RedisProtocol.Resp3)]
         public void InfoDefaultMatchesNoArgsTest(RedisProtocol protocol)
         {
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(protocol: protocol));
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(protocol: protocol, allowAdmin: true));
             var db = redis.GetDatabase(0);
 
             var infoNoArgs = db.Execute("INFO").ToString();
@@ -157,7 +157,7 @@ namespace Garnet.test
         [Test]
         public void InfoAllWithModulesEqualsEverythingTest()
         {
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
             var db = redis.GetDatabase(0);
 
             var infoEverything = db.Execute("INFO", "EVERYTHING").ToString();
@@ -186,7 +186,7 @@ namespace Garnet.test
         public async Task InfoHlogScanTest()
         {
             var metricsUpdateDelay = TimeSpan.FromSeconds(1.1);
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
             var db = redis.GetDatabase(0);
 
             // hydrate
@@ -272,7 +272,7 @@ namespace Garnet.test
         [TestCase(RedisProtocol.Resp3)]
         public void InfoKeyspaceEmptyDatabaseTest(RedisProtocol protocol)
         {
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(protocol: protocol));
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(protocol: protocol, allowAdmin: true));
             var db = redis.GetDatabase(0);
 
             var info = db.Execute("INFO", "KEYSPACE").ToString();
@@ -286,7 +286,7 @@ namespace Garnet.test
         [TestCase(RedisProtocol.Resp3)]
         public void InfoKeyspaceCountsTest(RedisProtocol protocol)
         {
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(protocol: protocol));
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(protocol: protocol, allowAdmin: true));
             var db = redis.GetDatabase(0);
 
             // 3 string keys (2 with a TTL) + 2 list (object) keys (1 with a TTL) => keys=5, expires=3
@@ -313,7 +313,7 @@ namespace Garnet.test
         [Test]
         public void InfoKeyspaceExpiredKeysNotCountedTest()
         {
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
             var db = redis.GetDatabase(0);
 
             db.StringSet("live", "v");
@@ -346,7 +346,7 @@ namespace Garnet.test
         [Test]
         public void InfoKeyspaceMultiDatabaseTest()
         {
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
 
             var db0 = redis.GetDatabase(0);
             var db1 = redis.GetDatabase(1);
