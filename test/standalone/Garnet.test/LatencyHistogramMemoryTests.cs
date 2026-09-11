@@ -224,6 +224,122 @@ namespace Garnet.test
         }
 
         /// <summary>
+        /// The configured precision has to reach the histograms that are actually allocated, not just the
+        /// ones a test constructs by hand. <c>LATENCY HISTOGRAM</c> reports each histogram's footprint, so
+        /// it pins the whole path from the command line through to the allocation.
+        /// </summary>
+        [Test]
+        public void ConfiguredPrecisionSizesTheHistogramsThatAreAllocated(
+            [Values(GarnetServerOptions.DefaultLatencyMonitorPrecision, 1, 0)] int precision)
+        {
+            StartServer(latencyMonitor: true, precision: precision);
+            using var s = Connect();
+
+            var expected = new LongHistogram(1, TimeStamp.Seconds(100), precision).GetEstimatedFootprintInBytes();
+
+            var deadline = DateTime.UtcNow.AddSeconds(30);
+            string reply;
+            do
+            {
+                for (var i = 0; i < 50; i++) Ping(s);
+
+                s.Send(Encoding.ASCII.GetBytes("*2\r\n$7\r\nLATENCY\r\n$9\r\nHISTOGRAM\r\n"));
+                var buf = new byte[256 * 1024];
+                var n = s.Receive(buf);
+                reply = Encoding.ASCII.GetString(buf, 0, n);
+
+                StringAssert.DoesNotContain("-ERR", reply);
+                if (reply.Contains("NET_RS_LAT"))
+                {
+                    var reported = ReportedHistogramSizes(reply);
+                    CollectionAssert.IsNotEmpty(reported, "LATENCY HISTOGRAM should report a size per type");
+                    foreach (var size in reported)
+                        ClassicAssert.AreEqual(expected, size,
+                            $"histograms should be sized for precision {precision}");
+                    return;
+                }
+            }
+            while (DateTime.UtcNow < deadline);
+
+            Assert.Fail($"latency metrics were never reported: {reply}");
+        }
+
+        /// <summary>
+        /// The sizes reported under each "size" field of a LATENCY HISTOGRAM reply.
+        /// </summary>
+        static List<int> ReportedHistogramSizes(string reply)
+        {
+            var sizes = new List<int>();
+            var marker = "\r\n$4\r\nsize\r\n:";
+            for (var i = reply.IndexOf(marker, StringComparison.Ordinal); i >= 0;
+                 i = reply.IndexOf(marker, i + 1, StringComparison.Ordinal))
+            {
+                var from = i + marker.Length;
+                var to = reply.IndexOf("\r\n", from, StringComparison.Ordinal);
+                if (to > from && int.TryParse(reply[from..to], out var size))
+                    sizes.Add(size);
+            }
+            return sizes;
+        }
+
+        /// <summary>
+        /// The reply above reports the monitor's global histograms. The per-session histograms are what
+        /// scale with connection count, so assert their size directly as well.
+        /// </summary>
+        [Test]
+        public void ConfiguredPrecisionSizesTheSessionHistograms(
+            [Values(GarnetServerOptions.DefaultLatencyMonitorPrecision, 1)] int precision)
+        {
+            StartServer(latencyMonitor: true, precision: precision);
+            using var s = Connect();
+            Ping(s);
+
+            var expected = new LongHistogram(1, TimeStamp.Seconds(100), precision).GetEstimatedFootprintInBytes();
+
+            var sessions = ActiveSessions();
+            CollectionAssert.IsNotEmpty(sessions, "the pinging connection should have a live session");
+
+            var asserted = 0;
+            foreach (var session in sessions)
+            {
+                var metrics = session.LatencyMetrics?.metrics;
+                if (metrics == null) continue;
+
+                foreach (var entry in metrics)
+                {
+                    if (entry.latency == null) continue;
+                    foreach (var histogram in entry.latency)
+                    {
+                        ClassicAssert.AreEqual(expected, histogram.GetEstimatedFootprintInBytes(),
+                            $"session histograms should be sized for precision {precision}");
+                        asserted++;
+                    }
+                }
+            }
+
+            ClassicAssert.Greater(asserted, 0, "a pinging session should have allocated at least one histogram");
+        }
+
+        /// <summary>
+        /// The live RESP sessions of the server under test. Reached by reflection because the listeners are
+        /// private to the host, and only the sessions carry the per-connection histograms.
+        /// </summary>
+        List<RespServerSession> ActiveSessions()
+        {
+            var field = typeof(GarnetServer).GetField("servers",
+                System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+            ClassicAssert.IsNotNull(field, "GarnetServer should still hold its listeners in a 'servers' field");
+
+            var listeners = (IGarnetServer[])field.GetValue(server);
+            var sessions = new List<RespServerSession>();
+            foreach (var listener in listeners)
+                foreach (var consumer in ((GarnetServerBase)listener).ActiveConsumers())
+                    if (consumer is RespServerSession resp)
+                        sessions.Add(resp);
+            return sessions;
+        }
+
+        /// <summary>
         /// Sessions are torn down while the monitor may still be reaching them, so releasing the pooled
         /// arrays has to tolerate being called more than once and on an entry that never allocated.
         /// </summary>

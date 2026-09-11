@@ -111,6 +111,29 @@ namespace Garnet.test
         }
 
         [Test]
+        public void LatencyMonitorPrecisionOptionParsing()
+        {
+            // Default: two significant digits, which is what the histograms were always built with.
+            var ok = ServerSettingsManager.TryParseCommandLineArguments([], out var options, out _, out _, out _, silentMode: true);
+            ClassicAssert.IsTrue(ok);
+            ClassicAssert.AreEqual(GarnetServerOptions.DefaultLatencyMonitorPrecision, options.LatencyMonitorPrecision);
+            ClassicAssert.AreEqual(GarnetServerOptions.DefaultLatencyMonitorPrecision,
+                options.GetServerOptions().LatencyMonitorPrecision);
+
+            // Lowering it is what trades resolution for memory.
+            ok = ServerSettingsManager.TryParseCommandLineArguments(["--latency-monitor-precision", "1"], out options, out _, out _, out _, silentMode: true);
+            ClassicAssert.IsTrue(ok);
+            ClassicAssert.AreEqual(1, options.GetServerOptions().LatencyMonitorPrecision);
+
+            // HdrHistogram only accepts 0 through 5.
+            ok = ServerSettingsManager.TryParseCommandLineArguments(["--latency-monitor-precision", "6"], out _, out _, out _, out _, silentMode: true);
+            ClassicAssert.IsFalse(ok, "a precision above 5 must be rejected");
+
+            ok = ServerSettingsManager.TryParseCommandLineArguments(["--latency-monitor-precision", "-1"], out _, out _, out _, out _, silentMode: true);
+            ClassicAssert.IsFalse(ok, "a negative precision must be rejected");
+        }
+
+        [Test]
         public void NativeAllocatorOptionParsing()
         {
             // Default: native allocator off (fully managed).
