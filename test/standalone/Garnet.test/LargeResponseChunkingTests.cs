@@ -603,6 +603,12 @@ namespace Garnet.test
                 var declared = int.Parse(reply[(at + 1)..headEnd]);
                 if (declared < 0)
                 {
+                    // RESP admits exactly one negative length, -1. Accepting any negative would let a
+                    // corrupted header masquerade as a null element, which is the framing damage this
+                    // parser exists to detect.
+                    ClassicAssert.AreEqual(-1, declared,
+                        $"element {i} declares a negative length of {declared}, which is not the RESP null bulk string");
+
                     // A null bulk string carries no payload and no trailing CRLF.
                     items[i] = null;
                     at = headEnd + 2;

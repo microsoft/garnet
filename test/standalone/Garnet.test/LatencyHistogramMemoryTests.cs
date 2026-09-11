@@ -112,10 +112,17 @@ namespace Garnet.test
 
             ClassicAssert.GreaterOrEqual(declared, 0,
                 $"the CLIENT LIST reply ended before its length header: {sb}");
-            ClassicAssert.GreaterOrEqual(sb.Length, headEnd + 2 + declared,
-                $"the CLIENT LIST reply ended {headEnd + 2 + declared - sb.Length} bytes short of its declared length");
+            ClassicAssert.GreaterOrEqual(sb.Length, headEnd + 2 + declared + 2,
+                $"the CLIENT LIST reply ended {headEnd + 2 + declared + 2 - sb.Length} bytes short of its declared length and terminator");
 
             var body = sb.ToString()[(headEnd + 2)..(headEnd + 2 + declared)];
+
+            // The declared payload must be followed by its terminator. Without this the reply is proven only
+            // to be long enough, so a truncated or mis-framed bulk string still reports a session count.
+            var trailer = sb.ToString()[(headEnd + 2 + declared)..(headEnd + 2 + declared + 2)];
+            ClassicAssert.AreEqual("\r\n", trailer,
+                "the CLIENT LIST bulk string is not terminated by CRLF, so the reply is mis-framed: "
+                + $"[{(int)trailer[0]}, {(int)trailer[1]}]");
 
             // Discount this connection's own session, which CLIENT LIST includes.
             return body.Split('\n', StringSplitOptions.RemoveEmptyEntries).Length - 1;

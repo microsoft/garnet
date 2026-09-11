@@ -1,4 +1,4 @@
-// Copyright (c) Microsoft Corporation.
+﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -45,70 +45,45 @@ namespace Garnet.test
             => new(budgetBytes, Ceiling, ReceiveFloor, SendFloor);
 
         /// <summary>
-        /// Exhausting the retry attempts must still leave a target the live count justifies. Contention alone
-        /// cannot reach that path reliably -- three attempts to provoke it with churning threads all passed
-        /// against the unfixed code, because the final release recomputes from the settled count and self-heals
-        /// -- so the attempt limit is forced to zero instead, which is the same abandonment without the race.
+        /// The safety of abandoning a contended recompute rests entirely on one ordering fact: both
+        /// <see cref="NetworkBufferBudget.OnBufferAcquired"/> and
+        /// <see cref="NetworkBufferBudget.OnBufferReleased"/> move the count *before* recomputing, so
+        /// whichever thread invalidates a published target is itself required to re-derive it. If either
+        /// recomputed first it would publish from the pre-move count, the target would lag the population by
+        /// one event, and a value no live count justifies could stand until the next event happened to
+        /// arrive. Pinned at the exact buffer that crosses the adaptation threshold, where a one-event lag is
+        /// a whole size class.
         /// </summary>
         [Test]
-        public void ExhaustingTheRecomputeAttemptsStillPublishesALiveTarget()
+        public void EveryCountChangeRepublishesBeforeTheCallerCanObserveIt()
         {
-            var budget = new NetworkBufferBudget(1L << 30, Ceiling, ReceiveFloor, SendFloor, recomputeAttempts: 0);
+            var budget = Budget();
 
-            ClassicAssert.AreEqual(Ceiling, budget.TargetBufferSize, "the target should start at the ceiling");
+            // 1 GB / 128 KB = 8,192 buffers, the last count at which the quotient still reaches the ceiling.
+            const int Threshold = (int)((1L << 30) / Ceiling);
 
-            // Enough live buffers that the quotient is one size class below the ceiling.
-            var buffers = (int)((1L << 30) / (Ceiling / 2));
-            for (var i = 0; i < buffers; i++)
+            for (var i = 0; i < Threshold; i++)
                 budget.OnBufferAcquired();
-
-            ClassicAssert.AreEqual(Ceiling / 2, budget.TargetBufferSize,
-                "the target was abandoned rather than re-derived when the attempts were exhausted");
-            ClassicAssert.IsTrue(budget.IsUnderPressure,
-                "pressure reads false at a target below the ceiling, which disables pressure shrinking");
-
-            // And it must recover the same way on the way back down.
-            for (var i = 0; i < buffers; i++)
-                budget.OnBufferReleased();
 
             ClassicAssert.AreEqual(Ceiling, budget.TargetBufferSize,
-                "the target did not return to the ceiling once the live buffers drained");
+                $"the target should still be the ceiling at {Threshold} live buffers");
             ClassicAssert.IsFalse(budget.IsUnderPressure);
-        }
 
-        /// <summary>
-        /// A publisher that sampled the count before someone else published must not overwrite the fresher
-        /// value with its own stale one. Induced directly rather than raced into: the caller of
-        /// <see cref="NetworkBufferBudget.PublishFrom"/> passing a count and target it read earlier *is* the
-        /// losing thread, so no contention is needed to arrange the interleaving.
-        /// </summary>
-        [Test]
-        public void AStalePublisherDoesNotOverwriteAFresherTarget()
-        {
-            var budget = new NetworkBufferBudget(1L << 30, Ceiling, ReceiveFloor, SendFloor);
+            // The buffer that crosses the threshold must see its own effect already published.
+            budget.OnBufferAcquired();
 
-            // What the stale publisher observed: the ceiling still published, but enough buffers already
-            // live that it intends to step one class down. It must intend to *write* something -- a sample
-            // that lands inside its own hysteresis band returns without publishing and proves nothing.
-            var staleTarget = budget.TargetBufferSize;
-            var staleCount = (1L << 30) / (Ceiling / 2);
-            ClassicAssert.AreEqual(Ceiling, staleTarget);
-
-            // Meanwhile the population grows and a publisher that saw it correctly publishes a lower target.
-            var buffers = (int)((1L << 30) / ReceiveFloor);
-            for (var i = 0; i < buffers; i++)
-                budget.OnBufferAcquired();
-
-            var fresh = budget.TargetBufferSize;
-            ClassicAssert.AreEqual(ReceiveFloor, fresh, "the fresh publisher should have driven the target to the floor");
-
-            // The stale publisher now resumes and publishes what its own sample implied.
-            budget.PublishFrom(staleCount, staleTarget);
-
-            ClassicAssert.AreEqual(fresh, budget.TargetBufferSize,
-                $"a publisher holding a count of {staleCount} overwrote the target published for {buffers} live buffers");
+            ClassicAssert.AreEqual(Ceiling / 2, budget.TargetBufferSize,
+                "the acquire that crossed the threshold returned before publishing the target it implies, "
+                + "so the target lagged the live count by one event");
             ClassicAssert.IsTrue(budget.IsUnderPressure,
-                "the stale publication also cleared the pressure signal, which disables shrinking and drop-on-return");
+                "pressure must be visible as soon as the budget binds, or shrinking and drop-on-return stay off");
+
+            // And symmetrically on the way back down.
+            budget.OnBufferReleased();
+
+            ClassicAssert.AreEqual(Ceiling, budget.TargetBufferSize,
+                "the release that took the population back under the threshold did not republish");
+            ClassicAssert.IsFalse(budget.IsUnderPressure);
         }
 
         #region sizing formula

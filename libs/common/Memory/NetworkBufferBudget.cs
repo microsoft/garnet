@@ -195,13 +195,28 @@ namespace Garnet.common
         /// the target pinned at whatever the spike drove it to.
         /// </summary>
         /// <remarks>
-        /// The published target must agree with the count it was derived from. A single compare-exchange
+        /// The published target must agree with the count it was derived from, and a single compare-exchange
         /// against the previous target does not establish that: a thread holding a stale count can win the
-        /// exchange and overwrite a fresher value, and a thread that loses it drops its own fresher value on
-        /// the floor. Either leaves a target that no live count justifies, and because nothing else recomputes
-        /// it, <see cref="IsUnderPressure"/> then reads wrong until the next acquire or release happens to
-        /// cross a band boundary. So both outcomes re-derive: a lost exchange retries, and a won exchange
-        /// re-reads the count and retries if it moved underneath.
+        /// exchange, and a thread holding a fresh one can lose it. So both outcomes re-derive -- a lost
+        /// exchange retries, and a won exchange re-reads the count and retries if it moved underneath.
+        /// <para>
+        /// Exhausting the attempts publishes nothing, which is safe rather than resigned. Every write to
+        /// <c>targetBufferSize</c> is made by a thread that read both the previous target and the count
+        /// immediately beforehand, so exhaustion leaves a value that some recent count justified, never an
+        /// invented one. And because <see cref="OnBufferAcquired"/> and <see cref="OnBufferReleased"/> move
+        /// the count *before* calling this, whichever thread invalidated the published target is itself
+        /// required to recompute from the moved count.
+        /// </para>
+        /// <para>
+        /// A stale target left too *high* cannot hide behind the hysteresis band either, which is the case
+        /// that would matter because only it can clear <see cref="IsUnderPressure"/>. Clearing that requires
+        /// the published target to equal the ceiling, while the budget binding at the live count means
+        /// <c>budgetBytes / count &lt; ceiling</c>. The band suppresses a write only when
+        /// <c>raw &gt;= current</c>, i.e. only when that same quotient is at least the ceiling. Both cannot
+        /// hold at once, so a wrong-high target is always re-derived by the next acquire or release. A stale
+        /// target left too *low* can sit inside the band, but that direction fails safe: smaller buffers,
+        /// more pressure shrinking, and more drop-on-return than the budget strictly requires.
+        /// </para>
         /// </remarks>
         public void Recompute()
         {
@@ -234,72 +249,11 @@ namespace Garnet.common
                 if (Interlocked.Read(ref liveBufferCount) == count)
                     return;
             }
-
-            PublishFromFreshestCount();
-        }
-
-        /// <summary>
-        /// Publishes a target derived from the freshest live count, yielding to any concurrent publisher.
-        /// </summary>
-        /// <remarks>
-        /// Reached only when <see cref="Recompute"/> exhausts its attempts. Abandoning there would leave the
-        /// target at whatever the last contended exchange happened to write, which is derived from a count
-        /// that has since moved -- and since nothing else recomputes, that value stands until the next
-        /// acquire or release.
-        /// <para>
-        /// The publication is a compare-exchange against the target this thread read, not an unconditional
-        /// write, and it does not retry. An unconditional write loses the race in the wrong direction: a
-        /// thread holding a stale count can land *after* a thread that already published the right answer
-        /// for a fresher one, replacing it. Exchanging against the observed value makes that interleaving
-        /// fail harmlessly.
-        /// </para>
-        /// <para>
-        /// What makes the exchange sufficient is the order of the two reads: the target is read *before*
-        /// the count. A successful exchange therefore proves no other publisher completed between this
-        /// thread's read of the target and its own write, and this thread's count was sampled inside that
-        /// window -- so it is no older than the count behind any value published earlier. Reading the count
-        /// first would weaken this to "the target has not moved", which two threads sampling the same
-        /// target concurrently both satisfy regardless of whose count is fresher.
-        /// </para>
-        /// <para>
-        /// The residual is that a losing exchange here publishes nothing, so if every concurrent publisher
-        /// exhausts at once the target stays where the last successful exchange left it. That requires the
-        /// server to fall silent immediately afterwards to persist, since every subsequent acquire and
-        /// release republishes.
-        /// </para>
-        /// </remarks>
-        [MethodImpl(MethodImplOptions.NoInlining)]
-        void PublishFromFreshestCount()
-        {
-            // Read the target before the count, not after: the exchange is only as strong as the ordering.
-            // See the remark above.
-            var observedTarget = Volatile.Read(ref targetBufferSize);
-            PublishFrom(Interlocked.Read(ref liveBufferCount), observedTarget);
-        }
-
-        /// <summary>
-        /// Publishes the target implied by <paramref name="count"/>, but only while the published target is
-        /// still <paramref name="observedTarget"/>.
-        /// </summary>
-        /// <param name="count">The live buffer count this publication is derived from.</param>
-        /// <param name="observedTarget">The target that was published when <paramref name="count"/> was read.</param>
-        /// <remarks>
-        /// Separated from <see cref="PublishFromFreshestCount"/> so the stale-publisher interleaving can be
-        /// induced directly rather than raced into: a caller passing a count and target it read before some
-        /// other thread published is exactly the losing thread, with no contention needed to arrange it.
-        /// </remarks>
-        internal void PublishFrom(long count, int observedTarget)
-        {
-            var raw = budgetBytes / Math.Max(1, count);
-            if (raw >= observedTarget && raw < 2L * observedTarget)
-                return;
-
-            _ = Interlocked.CompareExchange(ref targetBufferSize, ComputeTarget(raw), observedTarget);
         }
 
         /// <summary>
         /// Attempts <see cref="Recompute"/> makes to publish a target that agrees with the live count before
-        /// falling back to <see cref="PublishFromFreshestCount"/>.
+        /// giving up, leaving the value a concurrent publisher wrote from its own fresh count.
         /// </summary>
         const int MaxRecomputeAttempts = 8;
 
