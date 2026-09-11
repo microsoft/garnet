@@ -39,8 +39,7 @@ namespace Garnet.cluster
 
             foreach (var replica in replicas)
             {
-                while (!RespWriteUtils.TryWriteAsciiBulkString(replica, ref dcurr, dend))
-                    SendAndReset();
+                WriteAsciiLargeRespString(replica);
             }
 
             return true;
