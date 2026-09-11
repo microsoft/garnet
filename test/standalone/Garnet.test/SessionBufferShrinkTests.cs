@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using Garnet.networking;
 using Garnet.server;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -225,13 +226,27 @@ namespace Garnet.test
         public void ExactSizeClassRequestsAreNotRoundedToTheNextClass()
         {
             for (var size = 64; size <= 1 << 20; size <<= 1)
+            {
                 ClassicAssert.AreEqual(size, ScratchBufferBuilder.CapacityFor(size),
                     $"a request for exactly {size} bytes was rounded away from its size class");
+
+                // The arithmetic helper is not the allocator. Assert the buffer a real expansion produces,
+                // or the allocator can keep doubling exact requests while the helper stays honest.
+                var builder = new ScratchBufferBuilder();
+                _ = builder.CreateArgSlice(size);
+                ClassicAssert.AreEqual(size, builder.ScratchBufferCapacity,
+                    $"allocating exactly {size} bytes produced a {builder.ScratchBufferCapacity} byte buffer");
+            }
 
             ClassicAssert.AreEqual(128, ScratchBufferBuilder.CapacityFor(65),
                 "a request past a size class must still reach the next one");
             ClassicAssert.AreEqual(64, ScratchBufferBuilder.CapacityFor(1),
                 "requests below the minimum must be served at the minimum");
+
+            var past = new ScratchBufferBuilder();
+            _ = past.CreateArgSlice(65);
+            ClassicAssert.AreEqual(128, past.ScratchBufferCapacity,
+                "allocating past a size class must still reach the next one");
         }
 
         /// <summary>
@@ -263,11 +278,16 @@ namespace Garnet.test
             ClassicAssert.Greater(grown, Cap, "the probe did not grow the reply buffer past the cap");
 
             // Reclaim takes up to two checkpoints: the first records the new high, the second observes no
-            // growth since and releases.
+            // growth since and releases. The floor is one response window exactly -- a cap below that is
+            // undone by the first subsequent redis.call, and a cap above it retains pinned memory nobody
+            // asked for, so assert the value rather than merely that it fell.
             sender.ShrinkCheckpoint();
             sender.ShrinkCheckpoint();
 
+            var window = ScratchBufferBuilder.CapacityFor(BufferSizeUtils.ServerBufferSize(new MaxSizeSettings()));
             var afterShrink = sender.ScratchBufferCapacityForTests;
+            ClassicAssert.AreEqual(window, afterShrink,
+                $"the reply buffer settled at {afterShrink} bytes rather than the {window} byte response window");
             ClassicAssert.Less(afterShrink, grown,
                 $"the reply buffer stayed at {afterShrink} bytes after two checkpoints");
 
@@ -278,8 +298,8 @@ namespace Garnet.test
             _ = sender.SendResponse(0, 8);
 
             var afterNextUse = sender.ScratchBufferCapacityForTests;
-            ClassicAssert.LessOrEqual(afterNextUse, afterShrink,
-                $"one small reply regrew the buffer from {afterShrink} to {afterNextUse} bytes, undoing the cap");
+            ClassicAssert.AreEqual(window, afterNextUse,
+                $"one small reply took the buffer from {afterShrink} to {afterNextUse} bytes, against a {window} byte window");
             ClassicAssert.Less(afterNextUse, grown,
                 $"the buffer returned to {afterNextUse} bytes, at or above the {grown} bytes the cap released");
             ClassicAssert.Greater((int)(t - h), 0, "the response window is empty");
