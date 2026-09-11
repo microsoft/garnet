@@ -240,6 +240,7 @@ namespace Garnet.common
         public string GetStats()
             => $"budgetBytes={Format.MemoryBytes(budgetBytes)}," +
                $"targetBufferSize={Format.MemoryBytes(TargetBufferSize)}," +
+               $"targetSendBufferSize={Format.MemoryBytes(TargetSendBufferSize)}," +
                $"liveBufferCount={LiveBufferCount}," +
                $"pressureShrinks={PressureShrinks}," +
                $"idleShrinks={IdleShrinks}";
