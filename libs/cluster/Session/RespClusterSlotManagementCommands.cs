@@ -118,8 +118,7 @@ namespace Garnet.cluster
                 SendAndReset();
             foreach (var replica in banlist)
             {
-                while (!RespWriteUtils.TryWriteAsciiBulkString(replica, ref dcurr, dend))
-                    SendAndReset();
+                WriteAsciiLargeRespString(replica);
             }
 
             return true;

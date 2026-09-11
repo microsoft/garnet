@@ -26,11 +26,16 @@ namespace Garnet.server
         /// <summary>
         /// Create a new dummy network sender with a simple in-memory buffer
         /// </summary>
-        public ScratchBufferNetworkSender()
+        /// <param name="maxRetainedCapacity">
+        /// Capacity above which the response buffer is released at a shrink checkpoint. Unbounded by default;
+        /// the Lua session passes the configured session scratch cap, since a script that reads one large
+        /// value would otherwise pin the reply buffer for the life of the connection.
+        /// </param>
+        public ScratchBufferNetworkSender(int maxRetainedCapacity = int.MaxValue)
         {
             maxSizeSettings = new MaxSizeSettings();
             serverBufferSize = BufferSizeUtils.ServerBufferSize(maxSizeSettings);
-            scratchBufferBuilder = new();
+            scratchBufferBuilder = new(maxRetainedCapacity);
         }
 
         public PinnedSpanByte GetResponse()
@@ -38,6 +43,15 @@ namespace Garnet.server
 
         public void Reset()
             => scratchBufferBuilder.Reset();
+
+        /// <summary>
+        /// Reset the response buffer and release it if it has stayed above the retention cap.
+        /// </summary>
+        internal void ShrinkCheckpoint()
+            => scratchBufferBuilder.ResetAndCheckpointNow();
+
+        /// <summary>Current capacity of the reply buffer.</summary>
+        internal int ScratchBufferCapacityForTests => scratchBufferBuilder.ScratchBufferCapacity;
 
         public MaxSizeSettings GetMaxSizeSettings => maxSizeSettings;
 

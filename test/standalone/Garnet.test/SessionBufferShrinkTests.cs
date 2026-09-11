@@ -216,5 +216,42 @@ namespace Garnet.test
             ClassicAssert.AreEqual(before, parseState.RootBufferLength,
                 "a buffer already within the cap must not be reallocated");
         }
+
+        /// <summary>
+        /// The Lua script cache's dummy network sender owns a second scratch buffer, which the RESP fallback
+        /// path for <c>redis.call</c> writes replies into. It was built uncapped, so one large reply on that
+        /// path pinned it for the life of the connection. The sender has no batch boundary of its own, so the
+        /// owning session drives its checkpoint; this pins that the cap is plumbed and releases.
+        /// </summary>
+        [Test]
+        public unsafe void LuaReplySenderReleasesABufferGrownPastItsCap()
+        {
+            const int Cap = 16 * 1024;
+            const int Big = 512 * 1024;
+
+            var sender = new ScratchBufferNetworkSender(Cap);
+
+            // Drive the buffer past the cap the way a large reply does: take a response window, declare it
+            // written, and repeat until the cumulative offset exceeds Big.
+            var written = 0;
+            while (written < Big)
+            {
+                sender.EnterAndGetResponseObject(out var head, out var tail);
+                var chunk = (int)(tail - head);
+                _ = sender.SendResponse(0, chunk);
+                written += chunk;
+            }
+
+            var grown = sender.ScratchBufferCapacityForTests;
+            ClassicAssert.Greater(grown, Cap, "the probe did not grow the reply buffer past the cap");
+
+            // Reclaim takes up to two checkpoints: the first records the new high, the second observes no
+            // growth since and releases.
+            sender.ShrinkCheckpoint();
+            sender.ShrinkCheckpoint();
+
+            ClassicAssert.LessOrEqual(sender.ScratchBufferCapacityForTests, Cap,
+                $"the reply buffer stayed at {sender.ScratchBufferCapacityForTests} bytes after two checkpoints");
+        }
     }
 }

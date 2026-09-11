@@ -57,7 +57,7 @@ namespace Garnet.server
             this.timeoutManager = timeoutManager;
             this.logger = logger;
 
-            scratchBufferNetworkSender = new ScratchBufferNetworkSender();
+            scratchBufferNetworkSender = new ScratchBufferNetworkSender(storeWrapper.serverOptions.GetSessionScratchBufferMaxRetainedSize());
             // Pass storeWrapper.subscribeBroker so Lua scripts can use publish-side Pub/Sub
             // commands (e.g. redis.call('PUBLISH', ...)) consistently with network sessions.
             // SUBSCRIBE/PSUBSCRIBE remain blocked by the NoScript bitmap.
@@ -78,7 +78,7 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Runs a shrink checkpoint on the script processor's scratch buffer.
+        /// Runs a shrink checkpoint on the script processor's scratch buffers.
         /// </summary>
         /// <remarks>
         /// The processor is a <see cref="RespServerSession"/> that never reads from a network, so it has no
@@ -86,9 +86,15 @@ namespace Garnet.server
         /// single script -- once per string while decoding JSON, for instance -- so the checkpoint cannot be
         /// driven from those resets either without releasing a buffer the next element re-grows. The owning
         /// network session calls this from its own checkpoint, which is outside any script execution.
+        /// Both the buffer that <c>redis.call</c> requests are built in and the one their replies are written
+        /// into are covered: a script reading one large value ratchets the reply buffer just as encoding one
+        /// ratchets the request buffer.
         /// </remarks>
         internal void ScratchBufferShrinkCheckpoint()
-            => processor.scratchBufferBuilder.ResetAndCheckpointNow();
+        {
+            processor.scratchBufferBuilder.ResetAndCheckpointNow();
+            scratchBufferNetworkSender.ShrinkCheckpoint();
+        }
 
         public void SetUserHandle(UserHandle userHandle)
         {
