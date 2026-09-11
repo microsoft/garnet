@@ -40,7 +40,7 @@ namespace Garnet.test
 
             var slice = builder.CreateArgSlice(big);
             ClassicAssert.IsTrue(builder.RewindScratchBuffer(slice));
-            builder.Reset();
+            builder.ResetAtBatchBoundary();
 
             var grown = builder.ScratchBufferCapacity;
             ClassicAssert.GreaterOrEqual(grown, big.Length, "buffer should have grown to fit the request");
@@ -51,7 +51,7 @@ namespace Garnet.test
             {
                 var s = builder.CreateArgSlice(small);
                 ClassicAssert.IsTrue(builder.RewindScratchBuffer(s));
-                builder.Reset();
+                builder.ResetAtBatchBoundary();
             }
 
             ClassicAssert.LessOrEqual(builder.ScratchBufferCapacity, MaxRetained,
@@ -82,7 +82,7 @@ namespace Garnet.test
                 var s = builder.CreateArgSlice(big);
                 ClassicAssert.AreEqual(big.Length, s.Length, $"large request failed at iteration {i}");
                 ClassicAssert.IsTrue(builder.RewindScratchBuffer(s));
-                builder.Reset();
+                builder.ResetAtBatchBoundary();
 
                 var capacity = builder.ScratchBufferCapacity;
                 if (i > 0 && capacity < previous) shrinks++;
@@ -92,6 +92,37 @@ namespace Garnet.test
             // One release per two intervals is the design maximum; allow the boundary case.
             ClassicAssert.LessOrEqual(shrinks, Batches / (2 * Interval) + 1,
                 "buffer churned more often than one release per two checkpoint intervals");
+        }
+
+        /// <summary>
+        /// The checkpoint interval is counted in batches, so only the session's batch boundary may advance
+        /// it. Plain <see cref="ScratchBufferBuilder.Reset"/> is called far more often -- the Lua
+        /// interpreter resets once per string while decoding a JSON document, and once per response through
+        /// <c>ScratchBufferNetworkSender</c> -- and driving the countdown from those would fire checkpoints
+        /// many times inside a single command, releasing a buffer the very next element re-grows.
+        /// </summary>
+        [Test]
+        public unsafe void NonBatchResetsDoNotAdvanceTheShrinkCheckpoint()
+        {
+            var builder = new ScratchBufferBuilder(MaxRetained);
+            var big = new byte[256 * 1024];
+            var small = new byte[64];
+
+            var slice = builder.CreateArgSlice(big);
+            ClassicAssert.IsTrue(builder.RewindScratchBuffer(slice));
+            var grown = builder.ScratchBufferCapacity;
+            ClassicAssert.GreaterOrEqual(grown, big.Length);
+
+            // Far more resets than two checkpoint intervals, none of them at a batch boundary.
+            for (var i = 0; i < Interval * 8; i++)
+            {
+                builder.Reset();
+                var s = builder.CreateArgSlice(small);
+                ClassicAssert.IsTrue(builder.RewindScratchBuffer(s));
+            }
+
+            ClassicAssert.AreEqual(grown, builder.ScratchBufferCapacity,
+                "a mid-command reset advanced the checkpoint countdown, so the interval is not counted in batches");
         }
 
         [Test]
@@ -106,7 +137,7 @@ namespace Garnet.test
             var small = new byte[64];
             for (var i = 0; i < Interval * 8; i++)
             {
-                builder.Reset();
+                builder.ResetAtBatchBoundary();
                 var s = builder.CreateArgSlice(small);
                 ClassicAssert.IsTrue(builder.RewindScratchBuffer(s));
             }
@@ -127,7 +158,7 @@ namespace Garnet.test
             ClassicAssert.IsTrue(builder.RewindScratchBuffer(slice));
 
             for (var i = 0; i < Interval * 4; i++)
-                builder.Reset();
+                builder.ResetAtBatchBoundary();
 
             ClassicAssert.GreaterOrEqual(builder.ScratchBufferCapacity, big.Length);
         }
