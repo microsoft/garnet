@@ -444,10 +444,10 @@ namespace Garnet.networking
                 // consumed, and measuring against it would hold the whole oversized array for a connection that
                 // never speaks again -- which is exactly what this branch exists to prevent.
                 var residual = TargetReceiveBufferSize(networkBytesRead, baseSize, current);
+                networkShrinkCountdown = ShrinkHysteresis;
                 if (residual < current)
                 {
                     ShrinkNetworkReceiveBuffer(residual);
-                    networkShrinkCountdown = ShrinkHysteresis;
                     networkPool.Budget.RecordIdleShrink();
                 }
                 return;
@@ -788,7 +788,10 @@ namespace Garnet.networking
             {
                 target = TargetReceiveBufferSize(transportBytesRead, baseSize, current);
                 if (target >= current)
+                {
+                    transportShrinkCountdown = ShrinkHysteresis;
                     return;
+                }
             }
             else
             {
