@@ -90,8 +90,7 @@ namespace Garnet.server
 
                         foreach (var item in result)
                         {
-                            while (!RespWriteUtils.TryWriteBulkString(item, ref dcurr, dend))
-                                SendAndReset();
+                            WriteBulkString(item);
                         }
                     }
                     else
@@ -253,8 +252,7 @@ namespace Garnet.server
 
                     foreach (var item in result)
                     {
-                        while (!RespWriteUtils.TryWriteBulkString(item, ref dcurr, dend))
-                            SendAndReset();
+                        WriteBulkString(item);
                     }
                     break;
                 case GarnetStatus.WRONGTYPE:
@@ -729,8 +727,7 @@ namespace Garnet.server
 
                         foreach (var item in output)
                         {
-                            while (!RespWriteUtils.TryWriteBulkString(item, ref dcurr, dend))
-                                SendAndReset();
+                            WriteBulkString(item);
                         }
                     }
                     break;

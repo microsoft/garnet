@@ -276,9 +276,6 @@ namespace Garnet.common
 #if DEBUG
             outstandingEntries[entry] = 0;
 #endif
-            // Allocate-miss is the pool's slow path, and the only place where the live buffer population
-            // genuinely grows, so it is where republishing the target costs nothing.
-            budget.Recompute();
             return entry;
         }
 

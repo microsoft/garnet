@@ -264,10 +264,6 @@ namespace Garnet.common
             // Wait for ongoing sends to complete
             while (throttleCount >= 0 && Interlocked.CompareExchange(ref throttleCount, int.MinValue, 0) != 0) Thread.Yield();
 
-            // Return a response object still checked out by an aborted request, so its pool reference is released
-            var pending = Interlocked.Exchange(ref responseObject, null);
-            pending?.Dispose();
-
             // Empty and dispose the stack
             saeaStack.Dispose();
 
