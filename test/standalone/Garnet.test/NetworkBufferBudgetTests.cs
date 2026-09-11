@@ -44,6 +44,39 @@ namespace Garnet.test
         static NetworkBufferBudget Budget(long budgetBytes = 1L << 30)
             => new(budgetBytes, Ceiling, ReceiveFloor, SendFloor);
 
+        /// <summary>
+        /// Exhausting the retry attempts must still leave a target the live count justifies. Contention alone
+        /// cannot reach that path reliably -- three attempts to provoke it with churning threads all passed
+        /// against the unfixed code, because the final release recomputes from the settled count and self-heals
+        /// -- so the attempt limit is forced to zero instead, which is the same abandonment without the race.
+        /// </summary>
+        [Test]
+        public void ExhaustingTheRecomputeAttemptsStillPublishesALiveTarget()
+        {
+            var budget = Budget();
+            budget.RecomputeAttemptsForTests = 0;
+
+            ClassicAssert.AreEqual(Ceiling, budget.TargetBufferSize, "the target should start at the ceiling");
+
+            // Enough live buffers that the quotient is one size class below the ceiling.
+            var buffers = (int)((1L << 30) / (Ceiling / 2));
+            for (var i = 0; i < buffers; i++)
+                budget.OnBufferAcquired();
+
+            ClassicAssert.AreEqual(Ceiling / 2, budget.TargetBufferSize,
+                "the target was abandoned rather than re-derived when the attempts were exhausted");
+            ClassicAssert.IsTrue(budget.IsUnderPressure,
+                "pressure reads false at a target below the ceiling, which disables pressure shrinking");
+
+            // And it must recover the same way on the way back down.
+            for (var i = 0; i < buffers; i++)
+                budget.OnBufferReleased();
+
+            ClassicAssert.AreEqual(Ceiling, budget.TargetBufferSize,
+                "the target did not return to the ceiling once the live buffers drained");
+            ClassicAssert.IsFalse(budget.IsUnderPressure);
+        }
+
         #region sizing formula
 
         /// <summary>
