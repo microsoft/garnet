@@ -431,6 +431,17 @@ namespace Garnet.server
             scratchBufferOffset = (int)(ptr - scratchBufferHead);
         }
 
+        /// <summary>
+        /// Capacity a request for <paramref name="length"/> bytes occupies once rounded to a size class.
+        /// </summary>
+        /// <remarks>
+        /// Rounds to the power of two at or above the request, so a request for exactly a power of two is
+        /// served at that size rather than at twice it. Every caller that must strictly grow already asks
+        /// for one byte more than the current length, so exact rounding still grows them.
+        /// </remarks>
+        internal static int CapacityFor(int length)
+            => length < 64 ? 64 : (int)BitOperations.RoundUpToPowerOf2((uint)length);
+
         void ExpandScratchBufferIfNeeded(int newLength)
         {
             if (scratchBuffer == null || newLength > scratchBuffer.Length - scratchBufferOffset)
@@ -446,8 +457,7 @@ namespace Garnet.server
                 "Use ScratchBufferAllocator for slices that must remain valid across allocations, " +
                 "or use a single CreateArgSlice and partition the buffer manually.");
 #endif
-            if (newLength < 64) newLength = 64;
-            else newLength = (int)BitOperations.RoundUpToPowerOf2((uint)newLength + 1);
+            newLength = CapacityFor(newLength);
 
             var _scratchBuffer = GC.AllocateArray<byte>(newLength, true);
             var _scratchBufferHead = (byte*)Unsafe.AsPointer(ref MemoryMarshal.GetArrayDataReference(_scratchBuffer));

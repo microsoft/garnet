@@ -567,17 +567,62 @@ namespace Garnet.test
             return s;
         }
 
+        /// <summary>
+        /// Reads one complete RESP array by pipelining a PING behind the command under test and reading to
+        /// its reply. RESP replies are ordered, so the sentinel cannot arrive before the array is fully
+        /// written. Parsing the array and then requiring the sentinel to be the very next byte is what makes
+        /// a lost tail, a dropped delimiter or a duplicated chunk observable -- stopping as soon as an
+        /// expected substring appears cannot see any of them.
+        /// </summary>
+        static string[] SendAndParseArrayReply(Socket s, params string[] command)
+        {
+            s.Send(Resp(command));
+            s.Send(Resp("PING"));
+            var reply = ReadUntil(s, "+PONG\r\n");
+
+            ClassicAssert.IsTrue(reply.StartsWith('*'), $"expected an array reply, got: {Head(reply)}");
+            var at = reply.IndexOf("\r\n", StringComparison.Ordinal);
+            var count = int.Parse(reply[1..at]);
+            at += 2;
+
+            var items = new string[count];
+            for (var i = 0; i < count; i++)
+            {
+                ClassicAssert.AreEqual('$', reply[at], $"element {i} is not a bulk string: {Head(reply[at..])}");
+                var headEnd = reply.IndexOf("\r\n", at, StringComparison.Ordinal);
+                var declared = int.Parse(reply[(at + 1)..headEnd]);
+
+                var body = headEnd + 2;
+                ClassicAssert.LessOrEqual(body + declared + 2, reply.Length,
+                    $"element {i} declares {declared} bytes but the reply ends early -- the tail was lost");
+                items[i] = reply[body..(body + declared)];
+                ClassicAssert.AreEqual("\r\n", reply[(body + declared)..(body + declared + 2)],
+                    $"element {i} is not terminated by CRLF at its declared length of {declared}");
+                at = body + declared + 2;
+            }
+
+            // The sentinel must begin exactly where the array ended: one byte either way and the stream is
+            // desynchronised, which is precisely what a chunking defect produces.
+            ClassicAssert.AreEqual("+PONG\r\n", reply[at..],
+                "the array did not end exactly where the pipelined PING reply begins");
+            return items;
+        }
+
+        static string Head(string s) => s[..Math.Min(64, s.Length)];
+
         [Test]
         public void AclUsersReturnsUsernameLargerThanSendBuffer()
         {
             var bigUser = new string('u', OversizedElement);
             using var s = ConnectAndCreateOversizedUser(bigUser);
 
-            s.Send(Resp("ACL", "USERS"));
-            var reply = ReadUntil(s, bigUser);
+            var users = SendAndParseArrayReply(s, "ACL", "USERS");
 
-            StringAssert.Contains($"${OversizedElement}\r\n", reply);
-            StringAssert.Contains(bigUser, reply);
+            CollectionAssert.Contains(users, bigUser);
+
+            // The connection must still be usable, which a desynchronised stream would not be.
+            s.Send(Resp("PING"));
+            StringAssert.StartsWith("+PONG\r\n", ReadUntil(s, "+PONG\r\n"));
         }
 
         [Test]
@@ -586,10 +631,18 @@ namespace Garnet.test
             var bigUser = new string('v', OversizedElement);
             using var s = ConnectAndCreateOversizedUser(bigUser);
 
-            s.Send(Resp("ACL", "LIST"));
-            var reply = ReadUntil(s, bigUser);
+            var lines = SendAndParseArrayReply(s, "ACL", "LIST");
 
-            StringAssert.Contains($"user {bigUser} on", reply);
+            var line = Array.Find(lines, l => l.StartsWith($"user {bigUser} ", StringComparison.Ordinal));
+            ClassicAssert.IsNotNull(line, "no ACL LIST line for the oversized user");
+            ClassicAssert.Greater(line.Length, OversizedElement,
+                "the description is not larger than the username, so this no longer covers the tail");
+
+            // The permission granted at creation must survive to the end of the description.
+            StringAssert.Contains("+get", line);
+
+            s.Send(Resp("PING"));
+            StringAssert.StartsWith("+PONG\r\n", ReadUntil(s, "+PONG\r\n"));
         }
     }
 }

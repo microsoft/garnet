@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
 using Garnet.networking;
 using Tsavorite.core;
 
@@ -35,7 +36,12 @@ namespace Garnet.server
         {
             maxSizeSettings = new MaxSizeSettings();
             serverBufferSize = BufferSizeUtils.ServerBufferSize(maxSizeSettings);
-            scratchBufferBuilder = new(maxRetainedCapacity);
+
+            // Every response window is re-requested at the full server buffer size, so a cap below what one
+            // window occupies cannot bind: the checkpoint would release the buffer and the next redis.call
+            // would immediately reallocate it, churning a pinned array for no saving. Floor the cap at one
+            // window so it releases only the genuinely oversized replies it was added for.
+            scratchBufferBuilder = new(Math.Max(maxRetainedCapacity, ScratchBufferBuilder.CapacityFor(serverBufferSize)));
         }
 
         public PinnedSpanByte GetResponse()

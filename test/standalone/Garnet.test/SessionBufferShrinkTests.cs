@@ -218,6 +218,23 @@ namespace Garnet.test
         }
 
         /// <summary>
+        /// A request for exactly a size class must be served at that size. Rounding one byte past it doubles
+        /// every such allocation permanently -- and the Lua reply window, at exactly 128 KiB, is one.
+        /// </summary>
+        [Test]
+        public void ExactSizeClassRequestsAreNotRoundedToTheNextClass()
+        {
+            for (var size = 64; size <= 1 << 20; size <<= 1)
+                ClassicAssert.AreEqual(size, ScratchBufferBuilder.CapacityFor(size),
+                    $"a request for exactly {size} bytes was rounded away from its size class");
+
+            ClassicAssert.AreEqual(128, ScratchBufferBuilder.CapacityFor(65),
+                "a request past a size class must still reach the next one");
+            ClassicAssert.AreEqual(64, ScratchBufferBuilder.CapacityFor(1),
+                "requests below the minimum must be served at the minimum");
+        }
+
+        /// <summary>
         /// The Lua script cache's dummy network sender owns a second scratch buffer, which the RESP fallback
         /// path for <c>redis.call</c> writes replies into. It was built uncapped, so one large reply on that
         /// path pinned it for the life of the connection. The sender has no batch boundary of its own, so the
@@ -250,8 +267,22 @@ namespace Garnet.test
             sender.ShrinkCheckpoint();
             sender.ShrinkCheckpoint();
 
-            ClassicAssert.LessOrEqual(sender.ScratchBufferCapacityForTests, Cap,
-                $"the reply buffer stayed at {sender.ScratchBufferCapacityForTests} bytes after two checkpoints");
+            var afterShrink = sender.ScratchBufferCapacityForTests;
+            ClassicAssert.Less(afterShrink, grown,
+                $"the reply buffer stayed at {afterShrink} bytes after two checkpoints");
+
+            // The cap must survive the next use. A response window is requested at the full server buffer
+            // size on every call, so a cap below one window is undone by the first subsequent redis.call --
+            // the buffer is released at the checkpoint and immediately reallocated larger than it started.
+            sender.EnterAndGetResponseObject(out var h, out var t);
+            _ = sender.SendResponse(0, 8);
+
+            var afterNextUse = sender.ScratchBufferCapacityForTests;
+            ClassicAssert.LessOrEqual(afterNextUse, afterShrink,
+                $"one small reply regrew the buffer from {afterShrink} to {afterNextUse} bytes, undoing the cap");
+            ClassicAssert.Less(afterNextUse, grown,
+                $"the buffer returned to {afterNextUse} bytes, at or above the {grown} bytes the cap released");
+            ClassicAssert.Greater((int)(t - h), 0, "the response window is empty");
         }
     }
 }
