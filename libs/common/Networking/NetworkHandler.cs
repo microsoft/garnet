@@ -31,6 +31,27 @@ namespace Garnet.networking
         protected readonly NetworkBufferSettings networkBufferSettings;
 
         /// <summary>
+        /// Size a new receive buffer starts at, and the size a grown one shrinks back toward. This is the
+        /// configured <see cref="NetworkBufferSettings.initialReceiveBufferSize"/> until the process-wide
+        /// budget is under pressure, at which point it steps down toward the configured floor so that the
+        /// aggregate across all connections stays near the budget.
+        /// </summary>
+        /// <remarks>
+        /// Only the <em>base</em> size is governed. Demand-driven doubling is never clamped, so a connection
+        /// that needs a large buffer still gets one; pressure changes what a connection starts and settles at,
+        /// never what it is allowed to reach. When the budget is disabled this is exactly the configured size.
+        /// </remarks>
+        protected int BaseReceiveBufferSize
+        {
+            get
+            {
+                var configured = networkBufferSettings.initialReceiveBufferSize;
+                var budget = networkPool.Budget;
+                return budget.IsEnabled ? Math.Min(configured, budget.TargetReceiveBufferSize) : configured;
+            }
+        }
+
+        /// <summary>
         /// Network pool used to allocated send and receive buffers
         /// </summary>
         protected readonly LimitedFixedBufferPool networkPool;
@@ -139,7 +160,7 @@ namespace Garnet.networking
                 expectingData = new SemaphoreSlim(0);
                 cancellationTokenSource = new();
 
-                transportReceiveBufferEntry = this.networkPool.Get(this.networkBufferSettings.initialReceiveBufferSize, PoolEntryBufferType.TransportReceiveBuffer);
+                transportReceiveBufferEntry = this.networkPool.Get(BaseReceiveBufferSize, PoolEntryBufferType.TransportReceiveBuffer);
                 transportReceiveBuffer = transportReceiveBufferEntry.entry;
                 transportReceiveBufferPtr = transportReceiveBufferEntry.entryPtr;
 
@@ -360,11 +381,12 @@ namespace Garnet.networking
         /// </summary>
         void MaybeShrinkNetworkReceiveBuffer()
         {
+            var baseSize = BaseReceiveBufferSize;
             var current = networkReceiveBuffer.Length;
-            if (current <= networkBufferSettings.initialReceiveBufferSize)
+            if (current <= baseSize)
                 return;
 
-            var target = TargetReceiveBufferSize(networkBytesRead, networkBufferSettings.initialReceiveBufferSize, current);
+            var target = TargetReceiveBufferSize(networkBytesRead, baseSize, current);
             if (target >= current)
             {
                 networkShrinkCountdown = ShrinkHysteresis;
@@ -650,13 +672,14 @@ namespace Garnet.networking
             if (sslStream == null)
                 return;
 
+            var baseSize = BaseReceiveBufferSize;
             var current = transportReceiveBuffer.Length;
-            if (current <= networkBufferSettings.initialReceiveBufferSize)
+            if (current <= baseSize)
                 return;
 
             Debug.Assert(transportReadHead == 0, "Shouldn't call if remaining data not already moved to head of transport buffer");
 
-            var target = TargetReceiveBufferSize(transportBytesRead, networkBufferSettings.initialReceiveBufferSize, current);
+            var target = TargetReceiveBufferSize(transportBytesRead, baseSize, current);
             if (target >= current)
             {
                 transportShrinkCountdown = ShrinkHysteresis;
