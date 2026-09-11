@@ -436,7 +436,8 @@ namespace Garnet.server
         public string SessionScratchBufferMaxRetainedSize = null;
 
         /// <summary>
-        /// Resolve the per-session scratch buffer retention ceiling. Zero or unset disables shrinking.
+        /// Resolve the per-session scratch buffer retention ceiling. Zero disables shrinking; unset falls
+        /// back to <see cref="DefaultSessionScratchBufferMaxRetainedSize"/>.
         /// </summary>
         public int GetSessionScratchBufferMaxRetainedSize()
         {

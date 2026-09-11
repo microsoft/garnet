@@ -117,12 +117,17 @@ namespace Garnet.test
             Send(s, "SET", bigKey, "v");
             ReadUntil(s, "+OK\r\n", 1024);
 
+            // Pipelined PING acts as the end-of-reply sentinel. RESP replies are ordered, so +PONG cannot
+            // arrive until the whole GETKEYSINSLOT reply has been written -- reading a byte count instead
+            // would accept a reply that is long enough but truncated or corrupted after the point sampled.
             Send(s, "CLUSTER", "GETKEYSINSLOT", slot, "10");
-            var reply = ReadAtLeast(s, OversizedKey + 2);
+            Send(s, "PING");
+            var reply = ReadUntil(s, "+PONG\r\n", 4 * OversizedKey);
 
-            // The whole key must come back, which is what the atomic path cannot do.
-            StringAssert.Contains($"${OversizedKey}\r\n", reply);
-            ClassicAssert.GreaterOrEqual(reply.Length, OversizedKey, "response was truncated");
+            // Contents, not just the length header: a chunking bug that loses or duplicates a chunk keeps the
+            // header intact and the reply the right order of magnitude while corrupting the key itself.
+            StringAssert.Contains($"*1\r\n${OversizedKey}\r\n{bigKey}\r\n+PONG\r\n", reply,
+                "the key did not come back intact");
         }
 
         /// <summary>
@@ -153,11 +158,24 @@ namespace Garnet.test
             ReadUntil(s, "+OK\r\n", 4096);
 
             Send(s, "CLUSTER", "SLOTS");
-            var reply = ReadAtLeast(s, 128 * 1024);
+            Send(s, "PING");
 
-            ClassicAssert.IsTrue(reply.StartsWith($"*{Ranges}\r\n", StringComparison.Ordinal),
-                $"unexpected CLUSTER SLOTS reply head: {reply[..Math.Min(64, reply.Length)]}");
-            ClassicAssert.GreaterOrEqual(reply.Length, 128 * 1024, "response was truncated");
+            // Read to the sentinel rather than to a byte count. Stopping at 128 KB samples only the part of
+            // the reply that the first chunk boundary has already passed, so a bug that truncates the tail --
+            // the half a chunking fix is most likely to get wrong -- would go unseen.
+            var reply = ReadUntil(s, "+PONG\r\n", 8 * 1024 * 1024);
+            var slots = reply[..reply.IndexOf("+PONG\r\n", StringComparison.Ordinal)];
+
+            ClassicAssert.IsTrue(slots.StartsWith($"*{Ranges}\r\n", StringComparison.Ordinal),
+                $"unexpected CLUSTER SLOTS reply head: {slots[..Math.Min(64, slots.Length)]}");
+            ClassicAssert.Greater(slots.Length, 128 * 1024, "response was truncated");
+
+            // Every range must be present, including the last, which is what proves the tail survived.
+            for (var i = 0; i < Ranges; i++)
+            {
+                var slot = (i * 2).ToString();
+                StringAssert.Contains($":{slot}\r\n:{slot}\r\n", slots, $"slot range {slot} is missing");
+            }
         }
 
         static string[] Prepend(string head, string[] rest)
@@ -166,31 +184,6 @@ namespace Garnet.test
             all[0] = head;
             Array.Copy(rest, 0, all, 1, rest.Length);
             return all;
-        }
-
-        /// <summary>
-        /// Accumulates at least <paramref name="count"/> bytes. A dropped connection is the failure mode
-        /// under test: the session is killed mid-response.
-        /// </summary>
-        static string ReadAtLeast(Socket s, int count)
-        {
-            var sb = new StringBuilder();
-            var buf = new byte[64 * 1024];
-            while (sb.Length < count)
-            {
-                int n;
-                try
-                {
-                    n = s.Receive(buf);
-                }
-                catch (SocketException e)
-                {
-                    throw new Exception($"connection dropped after {sb.Length} of {count} bytes: {e.SocketErrorCode}");
-                }
-                if (n == 0) throw new Exception($"connection closed after {sb.Length} of {count} bytes");
-                sb.Append(Encoding.ASCII.GetString(buf, 0, n));
-            }
-            return sb.ToString();
         }
     }
 }
