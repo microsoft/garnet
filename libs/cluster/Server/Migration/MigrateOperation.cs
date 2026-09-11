@@ -106,7 +106,6 @@ namespace Garnet.cluster
                     var input = new UnifiedInput(RespCommand.MIGRATE);
 
                     VectorInput vectorInput = new();
-                    vectorInput.AlignmentExpected = true; // We're moving DiskANN sourced data, so alignment is expected
                     vectorInput.MaxMigrationHeapAllocationSize = session.NetworkBufferSettings.MaxSendBufferContentSize;
 
                     foreach (var (ns, key, hasNs) in sketch.argSliceVector)
