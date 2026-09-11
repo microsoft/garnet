@@ -2345,14 +2345,14 @@ namespace Garnet.test.cluster
             var primaryServer = connection.GetServer(primary);
             var secondaryServer = connection.GetServer(secondary);
 
-            var addRes = (int)await primaryServer.ExecuteAsync("VADD", [Key, "VALUES", "3", "1", "2", "3", Element]).ConfigureAwait(false);
+            var addRes = (int)await primaryServer.ExecuteAsync(0, "VADD", [Key, "VALUES", "3", "1", "2", "3", Element]).ConfigureAwait(false);
             ClassicAssert.AreEqual(1, addRes);
-            var setRes = (int)await primaryServer.ExecuteAsync("VSETATTR", [Key, Element, "{\"foo\":\"bar\"}"]).ConfigureAwait(false);
+            var setRes = (int)await primaryServer.ExecuteAsync(0, "VSETATTR", [Key, Element, "{\"foo\":\"bar\"}"]).ConfigureAwait(false);
             ClassicAssert.AreEqual(1, setRes);
 
             context.clusterTestUtils.WaitForReplicaAofSync(PrimaryIndex, SecondaryIndex);
 
-            var getRes = (string)await secondaryServer.ExecuteAsync("VGETATTR", [Key, Element]).ConfigureAwait(false);
+            var getRes = (string)await secondaryServer.ExecuteAsync(0, "VGETATTR", [Key, Element]).ConfigureAwait(false);
             ClassicAssert.AreEqual("{\"foo\":\"bar\"}", getRes);
         }
 
