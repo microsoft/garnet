@@ -320,7 +320,7 @@ namespace Garnet.test.cluster
                 void SERedisClusterDown(BaseCommand command)
                 {
                     AssertSlotsNotAssigned(requestNodeIndex);
-                    var ex = Assert.Throws<RedisServerException>(() => context.clusterTestUtils.GetServer(requestNodeIndex).Execute(command.Command, command.GetSingleSlotRequest()),
+                    var ex = Assert.Throws<RedisServerException>(() => context.clusterTestUtils.GetServer(requestNodeIndex).Execute(0, command.Command, command.GetSingleSlotRequest()),
                         $"Expected exception was not thrown. Command: {command.Command} \n{ClusterState()}");
                     ClassicAssert.AreEqual("CLUSTERDOWN Hash slot not served", ex.Message, command.Command);
                 }
@@ -353,7 +353,7 @@ namespace Garnet.test.cluster
 
                 try
                 {
-                    var resp = (string)context.clusterTestUtils.GetServer(requestNodeIndex).Execute("DEL", [.. command.GetSingleSlotKeys], CommandFlags.NoRedirect);
+                    var resp = (string)context.clusterTestUtils.GetServer(requestNodeIndex).Execute(0, "DEL", [.. command.GetSingleSlotKeys], CommandFlags.NoRedirect);
                 }
                 catch (Exception ex)
                 {
@@ -367,11 +367,11 @@ namespace Garnet.test.cluster
                     {
                         if (command.RequiresObjectParameters)
                         {
-                            _ = context.clusterTestUtils.GetServer(requestNodeIndex).Execute(command.Command, command.GetSingleSlotObjectRequest());
+                            _ = context.clusterTestUtils.GetServer(requestNodeIndex).Execute(0, command.Command, command.GetSingleSlotObjectRequest());
                         }
                         else
                         {
-                            _ = context.clusterTestUtils.GetServer(requestNodeIndex).Execute(command.Command, command.GetSingleSlotRequest());
+                            _ = context.clusterTestUtils.GetServer(requestNodeIndex).Execute(0, command.Command, command.GetSingleSlotRequest());
                         }
                     }
                     catch (Exception ex)
@@ -423,7 +423,7 @@ namespace Garnet.test.cluster
                 {
                     if (!command.IsArrayCommand)
                         return;
-                    var ex = Assert.Throws<RedisServerException>(() => context.clusterTestUtils.GetServer(requestNodeIndex).Execute(command.Command, command.GetCrossSlotRequest()),
+                    var ex = Assert.Throws<RedisServerException>(() => context.clusterTestUtils.GetServer(requestNodeIndex).Execute(0, command.Command, command.GetCrossSlotRequest()),
                         $"Expected exception was not thrown. Command: {command.Command} \n{ClusterState()}");
                     ClassicAssert.AreEqual("CROSSSLOT Keys in request do not hash to the same slot", ex.Message, command.Command);
                 }
@@ -460,7 +460,7 @@ namespace Garnet.test.cluster
 
                 void SERedisMOVEDTest(BaseCommand command)
                 {
-                    var ex = Assert.Throws<RedisServerException>(() => context.clusterTestUtils.GetServer(requestNodeIndex).Execute(command.Command, command.GetSingleSlotRequest(), CommandFlags.NoRedirect),
+                    var ex = Assert.Throws<RedisServerException>(() => context.clusterTestUtils.GetServer(requestNodeIndex).Execute(0, command.Command, command.GetSingleSlotRequest(), CommandFlags.NoRedirect),
                         $"Expected exception was not thrown. Command: {command.Command} \n{ClusterState()}");
                     ClassicAssert.IsTrue(ex.Message.StartsWith("Key has MOVED"), command.Command);
                     var tokens = ex.Message.Split(' ');
@@ -511,7 +511,7 @@ namespace Garnet.test.cluster
                     ResetSlot();
                     try
                     {
-                        var resp = (string)context.clusterTestUtils.GetServer(requestNodeIndex).Execute("DEL", [.. command.GetSingleSlotKeys], CommandFlags.NoRedirect);
+                        var resp = (string)context.clusterTestUtils.GetServer(requestNodeIndex).Execute(0, "DEL", [.. command.GetSingleSlotKeys], CommandFlags.NoRedirect);
                     }
                     catch (Exception ex)
                     {
@@ -522,7 +522,7 @@ namespace Garnet.test.cluster
 
                 void SERedisASKTest(BaseCommand command)
                 {
-                    var ex = Assert.Throws<RedisConnectionException>(() => context.clusterTestUtils.GetServer(requestNodeIndex).Execute(command.Command, command.GetSingleSlotRequest(), CommandFlags.NoRedirect),
+                    var ex = Assert.Throws<RedisConnectionException>(() => context.clusterTestUtils.GetServer(requestNodeIndex).Execute(0, command.Command, command.GetSingleSlotRequest(), CommandFlags.NoRedirect),
                         $"Expected exception was not thrown. Command: {command.Command} \n{ClusterState()}");
                     var tokens = ex.Message.Split(' ');
                     ClassicAssert.IsTrue(tokens.Length > 10 && tokens[0].Equals("Endpoint"), command.Command + " => " + ex.Message);
@@ -568,7 +568,7 @@ namespace Garnet.test.cluster
                         var setupParameters = setup.Slice(1).ToArray();
                         try
                         {
-                            _ = context.clusterTestUtils.GetServer(requestNodeIndex).Execute(setup[0], setupParameters, CommandFlags.NoRedirect);
+                            _ = context.clusterTestUtils.GetServer(requestNodeIndex).Execute(0, setup[0], setupParameters, CommandFlags.NoRedirect);
                         }
                         catch (Exception ex)
                         {
@@ -580,7 +580,7 @@ namespace Garnet.test.cluster
                     ConfigureSlotForMigration();
                     try
                     {
-                        var ex = Assert.Throws<RedisServerException>(() => context.clusterTestUtils.GetServer(requestNodeIndex).Execute(command.Command, command.GetSingleSlotRequest(), CommandFlags.NoRedirect),
+                        var ex = Assert.Throws<RedisServerException>(() => context.clusterTestUtils.GetServer(requestNodeIndex).Execute(0, command.Command, command.GetSingleSlotRequest(), CommandFlags.NoRedirect),
                         $"Expected exception was not thrown. Command: {command.Command} \n{ClusterState()}");
                         ClassicAssert.AreEqual("TRYAGAIN Multiple keys request during rehashing of slot", ex.Message, command.Command, $"\n{ClusterState()}");
                     }
@@ -589,7 +589,7 @@ namespace Garnet.test.cluster
                         ResetSlot();
                         try
                         {
-                            _ = context.clusterTestUtils.GetServer(requestNodeIndex).Execute("DEL", [.. command.GetSingleSlotKeys], CommandFlags.NoRedirect);
+                            _ = context.clusterTestUtils.GetServer(requestNodeIndex).Execute(0, "DEL", [.. command.GetSingleSlotKeys], CommandFlags.NoRedirect);
                         }
                         catch (Exception ex)
                         {

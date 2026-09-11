@@ -18,8 +18,7 @@ namespace Garnet.server
             if (parameter.SequenceEqual("*"u8))
                 return ServerConfigType.ALL;
 
-            // slave-read-only is a per-session value (READWRITE/READONLY) and is resolved by the CONFIG GET
-            // handler which has the session in scope; it is not part of the runtime config table.
+            // slave-read-only is a fixed compatibility setting handled directly by CONFIG GET.
             if (parameter.SequenceEqual("SLAVE-READ-ONLY"u8))
                 return ServerConfigType.SLAVE_READ_ONLY;
 
@@ -51,7 +50,7 @@ namespace Garnet.server
                 if (serverConfigType == ServerConfigType.ALL)
                 {
                     parameters = [.. RuntimeServerConfig.RuntimeTypes];
-                    // slave-read-only is session-scoped and not part of the table, so include it explicitly.
+                    // slave-read-only is not part of the runtime table, so include it explicitly.
                     parameters.Add(ServerConfigType.SLAVE_READ_ONLY);
                     returnAll = true;
                     continue;
@@ -74,10 +73,8 @@ namespace Garnet.server
                     string name, value;
                     if (configType == ServerConfigType.SLAVE_READ_ONLY)
                     {
-                        // Per-session value: a session is read-only only when it is on a replica and has not
-                        // opted into writes via READWRITE (see https://redis.io/docs/latest/commands/readwrite/).
                         name = "slave-read-only";
-                        value = clusterSession == null || clusterSession.ReadWriteSession ? "no" : "yes";
+                        value = "yes";
                     }
                     else
                     {

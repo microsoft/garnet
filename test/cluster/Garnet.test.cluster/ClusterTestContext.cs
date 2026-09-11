@@ -941,16 +941,16 @@ namespace Garnet.test.cluster
         {
             try
             {
-                var resp = server.Execute("MULTI");
+                var resp = server.Execute(0, "MULTI", []);
                 ClassicAssert.AreEqual("OK", (string)resp);
 
                 foreach (var key in keys)
                 {
-                    resp = server.Execute("GET", key);
+                    resp = server.Execute(0, "GET", [key]);
                     ClassicAssert.AreEqual("QUEUED", (string)resp);
                 }
 
-                resp = server.Execute("EXEC");
+                resp = server.Execute(0, "EXEC", []);
                 return (string[])resp;
             }
             catch (Exception ex)
@@ -971,7 +971,7 @@ namespace Garnet.test.cluster
                     args[1 + (i * 2)] = keys[i];
                     args[1 + (i * 2) + 1] = values[i];
                 }
-                var resp = server.Execute("BULKINCRBY", args);
+                var resp = server.Execute(0, "BULKINCRBY", args);
                 ClassicAssert.AreEqual("OK", (string)resp);
             }
             catch (Exception ex)
@@ -988,7 +988,7 @@ namespace Garnet.test.cluster
                 args[0] = keys.Length;
                 for (var i = 0; i < keys.Length; i++)
                     args[1 + i] = keys[i];
-                var resp = server.Execute("BULKREAD", args);
+                var resp = server.Execute(0, "BULKREAD", args);
                 var result = (string[])resp;
                 ClassicAssert.AreEqual(keys.Length, result.Length);
                 return result;
