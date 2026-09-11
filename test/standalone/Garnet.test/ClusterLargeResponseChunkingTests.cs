@@ -178,6 +178,57 @@ namespace Garnet.test
             }
         }
 
+        /// <summary>
+        /// CLUSTER NODES writes the whole node table as one ASCII string, and a node's line carries its slot
+        /// ranges, so a fragmented assignment makes a single line exceed the send buffer with no oversized
+        /// key or member anywhere. This is the one reachable caller of the chunking helper among those
+        /// converted in review round 3: CLUSTER INFO is a fixed eleven-line string, CLUSTER REPLICAS elements
+        /// are node lines without slots, and CLUSTER BANLIST entries are a node id plus a number.
+        /// </summary>
+        [Test]
+        public void ClusterNodesReturnsNodeLineLargerThanSendBuffer()
+        {
+            using var s = Connect();
+
+            // Alternating assignment makes every assigned slot its own range, so the line grows by several
+            // characters per range and passes the default send buffer as well as the floored one.
+            const int Ranges = 4000;
+            var args = new string[1 + (2 * Ranges)];
+            args[0] = "ADDSLOTSRANGE";
+            for (var i = 0; i < Ranges; i++)
+            {
+                var slot = i * 2;
+                args[1 + (2 * i)] = slot.ToString();
+                args[2 + (2 * i)] = slot.ToString();
+            }
+
+            Send(s, Prepend("CLUSTER", args));
+            ReadUntil(s, "+OK\r\n", 8192);
+
+            Send(s, "CLUSTER", "NODES");
+            Send(s, "PING");
+            var reply = ReadUntil(s, "+PONG\r\n", 8 * 1024 * 1024);
+            var nodes = reply[..reply.IndexOf("+PONG\r\n", StringComparison.Ordinal)];
+
+            ClassicAssert.IsTrue(nodes.StartsWith('$'),
+                $"unexpected CLUSTER NODES reply head: {nodes[..Math.Min(64, nodes.Length)]}");
+
+            // The declared bulk length must match what actually arrived, which is what a lost or duplicated
+            // chunk breaks while leaving the reply the right order of magnitude.
+            var headEnd = nodes.IndexOf("\r\n", StringComparison.Ordinal);
+            var declared = int.Parse(nodes[1..headEnd]);
+            var body = nodes[(headEnd + 2)..];
+            ClassicAssert.Greater(declared, 16 * 1024,
+                "the node line did not exceed the floored send buffer, so this no longer covers chunking");
+            ClassicAssert.AreEqual(declared + 2, body.Length,
+                "the bulk string payload does not match its declared length");
+            StringAssert.EndsWith("\r\n", body);
+
+            // Every range must be present, including the last, which is what proves the tail survived.
+            for (var i = 0; i < Ranges; i++)
+                StringAssert.Contains($" {i * 2}", body, $"slot {i * 2} is missing from the node line");
+        }
+
         static string[] Prepend(string head, string[] rest)
         {
             var all = new string[rest.Length + 1];
