@@ -239,28 +239,50 @@ namespace Garnet.common
         }
 
         /// <summary>
-        /// Publishes a target derived from the freshest live count, last-writer-wins.
+        /// Publishes a target derived from the freshest live count, yielding to any concurrent publisher.
         /// </summary>
         /// <remarks>
         /// Reached only when <see cref="Recompute"/> exhausts its attempts. Abandoning there would leave the
         /// target at whatever the last contended exchange happened to write, which is derived from a count
         /// that has since moved -- and since nothing else recomputes, that value stands until the next
-        /// acquire or release. Re-deriving costs one read and cannot be worse: a concurrent publisher that
-        /// overtakes this write is itself publishing from a count at least as fresh. The residual is that
-        /// this is still not atomic with the count, which no lock-free formulation of a published quotient
-        /// can be; convergence comes from every acquire and release republishing.
+        /// acquire or release.
+        /// <para>
+        /// The publication is a compare-exchange against the target this thread read, not an unconditional
+        /// write, and it does not retry. An unconditional write loses the race in the wrong direction: a
+        /// thread holding a stale count can land *after* a thread that already published the right answer
+        /// for a fresher one, replacing it. Exchanging against the observed value makes that interleaving
+        /// fail harmlessly, because the only writer that can beat this one also exchanges, and therefore
+        /// also derived its value from a count no older than this one.
+        /// </para>
+        /// <para>
+        /// The residual is that a losing exchange here publishes nothing, so if every concurrent publisher
+        /// exhausts at once the target stays where the last successful exchange left it. That requires the
+        /// server to fall silent immediately afterwards to persist, since every subsequent acquire and
+        /// release republishes.
+        /// </para>
         /// </remarks>
         [MethodImpl(MethodImplOptions.NoInlining)]
         void PublishFromFreshestCount()
-        {
-            var count = Interlocked.Read(ref liveBufferCount);
-            var raw = budgetBytes / Math.Max(1, count);
+            => PublishFrom(Interlocked.Read(ref liveBufferCount), Volatile.Read(ref targetBufferSize));
 
-            var current = Volatile.Read(ref targetBufferSize);
-            if (raw >= current && raw < 2L * current)
+        /// <summary>
+        /// Publishes the target implied by <paramref name="count"/>, but only while the published target is
+        /// still <paramref name="observedTarget"/>.
+        /// </summary>
+        /// <param name="count">The live buffer count this publication is derived from.</param>
+        /// <param name="observedTarget">The target that was published when <paramref name="count"/> was read.</param>
+        /// <remarks>
+        /// Separated from <see cref="PublishFromFreshestCount"/> so the stale-publisher interleaving can be
+        /// induced directly rather than raced into: a caller passing a count and target it read before some
+        /// other thread published is exactly the losing thread, with no contention needed to arrange it.
+        /// </remarks>
+        internal void PublishFrom(long count, int observedTarget)
+        {
+            var raw = budgetBytes / Math.Max(1, count);
+            if (raw >= observedTarget && raw < 2L * observedTarget)
                 return;
 
-            Volatile.Write(ref targetBufferSize, ComputeTarget(raw));
+            _ = Interlocked.CompareExchange(ref targetBufferSize, ComputeTarget(raw), observedTarget);
         }
 
         /// <summary>

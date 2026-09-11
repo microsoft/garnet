@@ -76,6 +76,39 @@ namespace Garnet.test
             ClassicAssert.IsFalse(budget.IsUnderPressure);
         }
 
+        /// <summary>
+        /// A publisher that sampled the count before someone else published must not overwrite the fresher
+        /// value with its own stale one. Induced directly rather than raced into: the caller of
+        /// <see cref="NetworkBufferBudget.PublishFrom"/> passing a count and target it read earlier *is* the
+        /// losing thread, so no contention is needed to arrange the interleaving.
+        /// </summary>
+        [Test]
+        public void AStalePublisherDoesNotOverwriteAFresherTarget()
+        {
+            var budget = new NetworkBufferBudget(1L << 30, Ceiling, ReceiveFloor, SendFloor);
+
+            // What the stale publisher would have observed: few buffers live, so the target is the ceiling.
+            var staleCount = (1L << 30) / Ceiling;
+            var staleTarget = budget.TargetBufferSize;
+            ClassicAssert.AreEqual(Ceiling, staleTarget);
+
+            // Meanwhile the population grows and a publisher that saw it correctly publishes a lower target.
+            var buffers = (int)((1L << 30) / ReceiveFloor);
+            for (var i = 0; i < buffers; i++)
+                budget.OnBufferAcquired();
+
+            var fresh = budget.TargetBufferSize;
+            ClassicAssert.AreEqual(ReceiveFloor, fresh, "the fresh publisher should have driven the target to the floor");
+
+            // The stale publisher now resumes and publishes what its own sample implied.
+            budget.PublishFrom(staleCount, staleTarget);
+
+            ClassicAssert.AreEqual(fresh, budget.TargetBufferSize,
+                $"a publisher holding a count of {staleCount} overwrote the target published for {buffers} live buffers");
+            ClassicAssert.IsTrue(budget.IsUnderPressure,
+                "the stale publication also cleared the pressure signal, which disables shrinking and drop-on-return");
+        }
+
         #region sizing formula
 
         /// <summary>
