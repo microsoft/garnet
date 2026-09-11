@@ -5,6 +5,7 @@ using System;
 using System.Collections.Generic;
 using System.Net.Sockets;
 using System.Text;
+using System.Threading;
 using Garnet.common;
 using Garnet.server;
 using HdrHistogram;
@@ -62,6 +63,38 @@ namespace Garnet.test
             ClassicAssert.AreEqual("+PONG\r\n", Encoding.ASCII.GetString(buf, 0, n));
         }
 
+        /// <summary>
+        /// Brings a RespServerSession into existence without completing a command, so the session and its
+        /// per-session state are allocated but nothing has recorded a latency value yet.
+        /// </summary>
+        /// <remarks>
+        /// A connection that sends nothing at all never reaches TryCreateMessageConsumer, which needs four
+        /// bytes to pick a wire format, so no session is constructed and the measurement says nothing about
+        /// what a session costs. Sending an incomplete command crosses that threshold while leaving the
+        /// command unparsed.
+        /// </remarks>
+        static void OpenSessionWithoutRecording(Socket s)
+            => s.Send(Encoding.ASCII.GetBytes("*1\r\n$4\r\nPIN"));
+
+        /// <summary>Number of sessions the server currently has, read over a separate connection.</summary>
+        int ConnectedClients()
+        {
+            using var s = Connect();
+            s.Send(Encoding.ASCII.GetBytes("*2\r\n$4\r\nINFO\r\n$7\r\nCLIENTS\r\n"));
+            var sb = new StringBuilder();
+            var buf = new byte[16 * 1024];
+            while (!sb.ToString().Contains("connected_clients:"))
+            {
+                var n = s.Receive(buf);
+                if (n == 0) break;
+                sb.Append(Encoding.ASCII.GetString(buf, 0, n));
+            }
+            var text = sb.ToString();
+            var at = text.IndexOf("connected_clients:", StringComparison.Ordinal) + "connected_clients:".Length;
+            var end = text.IndexOfAny(['\r', '\n'], at);
+            return int.Parse(text[at..end]);
+        }
+
         static long SettledMemory()
         {
             for (var i = 0; i < 3; i++)
@@ -90,16 +123,25 @@ namespace Garnet.test
             try
             {
                 sockets.Add(Connect());
-                if (ping) Ping(sockets[0]);
+                if (ping) Ping(sockets[0]); else OpenSessionWithoutRecording(sockets[0]);
 
                 var baseline = SettledMemory();
 
                 for (var i = 1; i < Connections; i++)
                 {
                     var s = Connect();
-                    if (ping) Ping(s);
+                    if (ping) Ping(s); else OpenSessionWithoutRecording(s);
                     sockets.Add(s);
                 }
+
+                // Every connection must have produced a session, or the measurement is of sockets rather
+                // than of sessions and the arm proves nothing about per-session allocation.
+                var deadline = DateTime.UtcNow.AddSeconds(15);
+                int seen;
+                while ((seen = ConnectedClients()) < Connections && DateTime.UtcNow < deadline)
+                    Thread.Sleep(50);
+                ClassicAssert.GreaterOrEqual(seen, Connections,
+                    $"only {seen} of {Connections} sessions were created, so no per-session cost was measured");
 
                 return Math.Max(0, SettledMemory() - baseline) / (Connections - 1);
             }
@@ -115,9 +157,11 @@ namespace Garnet.test
                         .GetEstimatedFootprintInBytes();
 
         /// <summary>
-        /// A connection that never issues a command must not pay for any histogram, which is the point of
-        /// allocating them on first record. Eager allocation charges every connection for all of them at
-        /// accept time, so this fails outright if it comes back.
+        /// A session that exists but has never recorded must not carry the histograms. The assertion is on
+        /// the absolute per-session cost against what all twelve histograms would add: a session also pays
+        /// for its parse state, scratch buffers and network buffers, so the bar is "well under the eager
+        /// cost", not "near zero". Restoring eager allocation adds the full eager figure on top of that
+        /// baseline and puts it over the bar.
         /// </summary>
         [Test]
         public void IdleConnectionsDoNotPayForHistograms()
@@ -127,15 +171,17 @@ namespace Garnet.test
             var eager = EagerCostPerSession();
 
             TestContext.Progress.WriteLine(
-                $"per-connection retained, idle: {idle / 1024}KB (eager allocation would be {eager / 1024}KB)");
+                $"per-session retained without recording: {idle / 1024}KB (eager allocation would add {eager / 1024}KB)");
 
-            ClassicAssert.Less(idle, eager / 4,
-                "an idle connection should not be charged for histograms it never records into");
+            ClassicAssert.Less(idle, eager,
+                "a session that never records should not be charged for all twelve histograms");
         }
 
         /// <summary>
-        /// The flip side: a connection that does record must actually allocate. Without this, quietly
-        /// dropping every recorded value would look like a memory win.
+        /// The flip side, asserted as a magnitude rather than a direction: the gap between a session that
+        /// records and one that does not has to be a real share of the histogram cost. Under eager
+        /// allocation both arms pay the same and the gap collapses, which is what this catches. A bare
+        /// "recording > idle" would not -- the two measurements differ by noise either way.
         /// </summary>
         [Test]
         public void RecordingConnectionsDoAllocateHistograms()
@@ -143,11 +189,13 @@ namespace Garnet.test
             StartServer(latencyMonitor: true);
             var idle = MeasurePerConnection(ping: false);
             var recording = MeasurePerConnection(ping: true);
+            var eager = EagerCostPerSession();
 
             TestContext.Progress.WriteLine(
-                $"per-connection retained: idle={idle / 1024}KB recording={recording / 1024}KB");
+                $"per-session retained: without recording={idle / 1024}KB recording={recording / 1024}KB " +
+                $"(all twelve histograms would be {eager / 1024}KB)");
 
-            ClassicAssert.Greater(recording, idle,
+            ClassicAssert.Greater(recording - idle, eager / 4,
                 "recording a latency value should allocate the histograms it records into");
         }
 

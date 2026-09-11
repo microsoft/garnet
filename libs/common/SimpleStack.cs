@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Runtime.CompilerServices;
 
 namespace Garnet.common
 {
@@ -62,7 +63,16 @@ namespace Garnet.common
             if (count == 0)
                 throw new InvalidOperationException("Stack contains no elements.");
 
-            return buffer[--count];
+            var item = buffer[--count];
+
+            // Clearing the vacated slot matters when T holds a reference: ScratchBufferAllocator stacks its
+            // previous pinned buffers here, and leaving the slot populated keeps every buffer the allocator
+            // has ever outgrown alive for the life of the session, so a reset frees the accounting but not
+            // the memory.
+            if (RuntimeHelpers.IsReferenceOrContainsReferences<T>())
+                buffer[count] = default;
+
+            return item;
         }
 
         /// <summary>
