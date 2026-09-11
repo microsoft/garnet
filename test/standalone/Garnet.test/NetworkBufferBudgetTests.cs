@@ -349,13 +349,17 @@ namespace Garnet.test
                     Ping(Connect()).Dispose();
 
                 var after = WaitForPooledBytes(SendFloor);
-                TestContext.Out.WriteLine($"pooledBytes before={before}, after={after}");
+                var stats = BpStats();
+                var sendSized = PooledCountAtSize(SendFloor, stats);
+                TestContext.Out.WriteLine(
+                    $"pooledBytes before={before}, after={after}, entries at {SendFloor}B={sendSized}");
 
-                // A receive buffer at the 16 KB floor cannot reach this on its own, so the free list can only
-                // hold a send-sized entry if send buffers are still being pooled.
-                ClassicAssert.GreaterOrEqual(after, (long)SendFloor,
+                // Asserted on the size class, not on the byte total: four pooled 16 KB receive buffers also
+                // total 64 KB, so a byte-count assertion is satisfiable without a single send buffer on the
+                // free list and would pass against the defect it is meant to catch.
+                ClassicAssert.GreaterOrEqual(sendSized, 1,
                     $"correctly sized send buffers were dropped rather than pooled under pressure " +
-                    $"(before={before}, after={after})");
+                    $"(pooledBytes before={before}, after={after}, stats={stats})");
             }
             finally
             {
@@ -1263,6 +1267,33 @@ namespace Garnet.test
         /// <summary>
         /// Reads a stat from the listener's own pool section rather than the shared budget section.
         /// </summary>
+        /// <summary>
+        /// Number of idle entries the listener's pool is holding at one specific size class. <c>GetStats</c>
+        /// emits the per-level counts as <c>,count=size</c> pairs after <c>totalBufferCount</c>, which is the
+        /// only way to tell a pooled send buffer from an equivalent number of bytes' worth of receive buffers.
+        /// </summary>
+        static int PooledCountAtSize(int size, string stats)
+        {
+            var section = stats.IndexOf("server_socket_0", StringComparison.Ordinal);
+            ClassicAssert.GreaterOrEqual(section, 0, $"socket section not found in BPSTATS: {stats}");
+
+            var levels = stats.IndexOf("totalBufferCount=", section, StringComparison.Ordinal);
+            ClassicAssert.GreaterOrEqual(levels, 0, $"per-level counts not found in BPSTATS: {stats}");
+
+            var end = stats.IndexOfAny(['\r', '\n'], levels);
+            var line = stats[levels..(end < 0 ? stats.Length : end)];
+
+            var want = Format.MemoryBytes(size);
+            foreach (var pair in line.Split(',', StringSplitOptions.RemoveEmptyEntries))
+            {
+                var eq = pair.IndexOf('=');
+                if (eq < 0 || pair[(eq + 1)..] != want) continue;
+                if (int.TryParse(pair[..eq], out var count)) return count;
+            }
+
+            return 0;
+        }
+
         static long SocketStatBytes(string name) => SocketStatBytes(name, BpStats());
 
         static long SocketStatBytes(string name, GarnetClient client) => SocketStatBytes(name, BpStats(client));

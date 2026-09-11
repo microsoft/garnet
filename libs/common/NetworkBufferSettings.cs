@@ -51,9 +51,10 @@ namespace Garnet.common
         public const int SendBufferOverheadReserve = 256;
 
         /// <summary>
-        /// Absolute ceiling on the per-level idle entry count derived from a byte budget. At the shipped
-        /// defaults the derived value is 512, so this is inert; it only engages when a large byte budget is
-        /// combined with a small minimum size class.
+        /// Absolute ceiling on the per-level idle entry count derived from a byte budget. This binds at the
+        /// shipped defaults: the network buffer memory budget is on, so the smallest size class is the 16 KB
+        /// receive floor and the derived value is 4,096. It bounds the bookkeeping for a level of very small
+        /// buffers; the byte cap is what limits the memory.
         /// </summary>
         const int MaxEntriesPerLevelCap = 1024;
 

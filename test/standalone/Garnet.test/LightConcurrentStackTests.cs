@@ -66,6 +66,54 @@ namespace Garnet.test
             return weak;
         }
 
+        /// <summary>
+        /// The same defect in the non-concurrent stack, which is what <see cref="Garnet.server.ScratchBufferAllocator"/>
+        /// stacks its outgrown pinned buffers on. Its element type is a struct, so the slot cannot simply be
+        /// nulled -- the clear is gated on the struct containing references, and the payload here is held
+        /// through exactly that shape.
+        /// </summary>
+        [Test]
+        public void PoppedSimpleStackEntriesBecomeCollectable()
+        {
+            var stack = new SimpleStack<Boxed>(4);
+
+            var weak = PushPopAndDropSimple(stack);
+
+            GC.Collect(2, GCCollectionMode.Forced, blocking: true, compacting: true);
+            GC.WaitForPendingFinalizers();
+            GC.Collect(2, GCCollectionMode.Forced, blocking: true, compacting: true);
+
+            var alive = weak.IsAlive;
+
+            // As above: without this the stack itself may be collected during the forced collections and the
+            // assertion would hold whether or not the slot was cleared.
+            GC.KeepAlive(stack);
+
+            ClassicAssert.IsFalse(alive,
+                "the popped struct is still in the vacated slot, so the buffer it references stays rooted");
+        }
+
+        /// <summary>
+        /// A struct that holds a reference, mirroring the shape of the scratch buffer the production stack
+        /// carries. Popping returns the struct by value, so the vacated slot is the only remaining root.
+        /// </summary>
+        struct Boxed
+        {
+            public byte[] Data;
+        }
+
+        static WeakReference PushPopAndDropSimple(SimpleStack<Boxed> stack)
+        {
+            var data = new byte[64 * 1024];
+            var weak = new WeakReference(data);
+
+            stack.Push(new Boxed { Data = data });
+            var popped = stack.Pop();
+            ClassicAssert.AreSame(data, popped.Data);
+
+            return weak;
+        }
+
         [Test]
         public void DisposeReleasesEveryRemainingEntry()
         {
