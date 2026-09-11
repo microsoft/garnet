@@ -1096,6 +1096,66 @@ namespace Garnet.test
 
         #endregion
 
+        /// <summary>
+        /// The published target must agree with the live count it was derived from once churn stops.
+        /// The population is parked at 65 buffers and churned across the 64/65 boundary, which is exactly
+        /// where the derived target changes class: 65 buffers imply 64 KB, 64 imply 128 KB.
+        ///
+        /// This pins the invariant, not the retry loop in Recompute. That loop closes a window between
+        /// sampling the count and winning the exchange, and the window was not reachable here: the mutant
+        /// with the retry removed passes this test at 256 oversubscribed threads over 20 repeats, because
+        /// every thread's last operation recomputes from the settled count. It is recorded as a defensive
+        /// fix rather than a measured one. What this test does catch is any future path that moves the live
+        /// count without republishing the target, which would leave the two permanently disagreeing.
+        /// </summary>
+        [Test]
+        [Repeat(5)]
+        public void ConcurrentChurnAcrossASizeClassLeavesAnAgreeingTarget()
+        {
+            const int Threads = 32;
+            const int Pairs = 4_000;
+            const int Parked = 65;
+
+            // 64 * 128 KB of budget: 65 live buffers give a quotient just under 128 KB, so the correct
+            // target is 64 KB, while a stale sample of 64 gives exactly 128 KB.
+            var budget = new NetworkBufferBudget(Ceiling * 64L, Ceiling, ReceiveFloor, SendFloor);
+            for (var i = 0; i < Parked; i++)
+                budget.OnBufferAcquired();
+
+            ClassicAssert.AreEqual(1 << 16, budget.TargetBufferSize, "the parked population did not set up the boundary");
+
+            var start = new ManualResetEventSlim(false);
+            var workers = new Thread[Threads];
+            for (var t = 0; t < Threads; t++)
+            {
+                workers[t] = new Thread(() =>
+                {
+                    start.Wait();
+                    for (var i = 0; i < Pairs; i++)
+                    {
+                        // Dips the count to 64 and back, so both sides of the boundary are sampled
+                        // concurrently by different threads.
+                        budget.OnBufferReleased();
+                        budget.OnBufferAcquired();
+                    }
+                })
+                { IsBackground = true };
+                workers[t].Start();
+            }
+
+            start.Set();
+            foreach (var w in workers)
+                ClassicAssert.IsTrue(w.Join(TimeSpan.FromSeconds(60)), "budget churn worker did not finish");
+
+            ClassicAssert.AreEqual(Parked, budget.LiveBufferCount, "the churn did not conserve the live count");
+
+            // Asserted without a repairing Recompute(): in production nothing calls it except acquire and
+            // release, so the quiescent state has to be right on its own.
+            ClassicAssert.AreEqual(1 << 16, budget.TargetBufferSize,
+                "the target did not agree with the live count once churn stopped");
+            ClassicAssert.IsTrue(budget.IsUnderPressure, "pressure is not reported at a below-ceiling target");
+        }
+
         #region helpers
 
         void StartServer(string networkBufferMemoryBudget = null, string networkSendBufferMinSize = null)

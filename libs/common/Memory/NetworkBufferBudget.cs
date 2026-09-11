@@ -192,28 +192,53 @@ namespace Garnet.common
         /// allocate-miss does, and a drained spike only shrinks it, so recomputing on allocation alone leaves
         /// the target pinned at whatever the spike drove it to.
         /// </summary>
+        /// <remarks>
+        /// The published target must agree with the count it was derived from. A single compare-exchange
+        /// against the previous target does not establish that: a thread holding a stale count can win the
+        /// exchange and overwrite a fresher value, and a thread that loses it drops its own fresher value on
+        /// the floor. Either leaves a target that no live count justifies, and because nothing else recomputes
+        /// it, <see cref="IsUnderPressure"/> then reads wrong until the next acquire or release happens to
+        /// cross a band boundary. So both outcomes re-derive: a lost exchange retries, and a won exchange
+        /// re-reads the count and retries if it moved underneath.
+        /// </remarks>
         public void Recompute()
         {
             if (budgetBytes == 0)
                 return;
 
-            var count = Interlocked.Read(ref liveBufferCount);
-            var raw = budgetBytes / Math.Max(1, count);
+            // Bounded because this runs on every buffer acquire and release. Under a stampede a later
+            // acquire or release republishes anyway; the point of the loop is to close the ordinary
+            // two-thread race, not to serialize an arbitrarily long one.
+            for (var attempt = 0; attempt < MaxRecomputeAttempts; attempt++)
+            {
+                var count = Interlocked.Read(ref liveBufferCount);
+                var raw = budgetBytes / Math.Max(1, count);
 
-            var current = Volatile.Read(ref targetBufferSize);
+                var current = Volatile.Read(ref targetBufferSize);
 
-            // Hysteresis must be at least as wide as the actuation step, which is 2x. Shrink as soon as the
-            // quotient falls below the published target; grow only once it reaches twice that. A narrower
-            // band would oscillate between adjacent size classes indefinitely.
-            if (raw >= current && raw < 2L * current)
-                return;
+                // Hysteresis must be at least as wide as the actuation step, which is 2x. Shrink as soon as
+                // the quotient falls below the published target; grow only once it reaches twice that. A
+                // narrower band would oscillate between adjacent size classes indefinitely.
+                if (raw >= current && raw < 2L * current)
+                    return;
 
-            var next = ComputeTarget(raw);
-            if (next == current)
-                return;
+                var next = ComputeTarget(raw);
+                if (next == current)
+                    return;
 
-            _ = Interlocked.CompareExchange(ref targetBufferSize, next, current);
+                if (Interlocked.CompareExchange(ref targetBufferSize, next, current) != current)
+                    continue;
+
+                if (Interlocked.Read(ref liveBufferCount) == count)
+                    return;
+            }
         }
+
+        /// <summary>
+        /// Attempts <see cref="Recompute"/> makes to publish a target that agrees with the live count before
+        /// leaving it to the next acquire or release.
+        /// </summary>
+        const int MaxRecomputeAttempts = 8;
 
         /// <summary>
         /// Largest permitted base size for the given per-buffer byte quotient.

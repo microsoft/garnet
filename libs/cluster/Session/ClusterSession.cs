@@ -126,6 +126,11 @@ namespace Garnet.cluster
             {
                 dcurr = this.dcurr;
                 dend = this.dend;
+
+                // this.parseState is a copy of the caller's struct, so it holds its own reference to the
+                // session's pinned root buffer. Left populated it survives the owning session's shrink and
+                // keeps whatever the widest cluster command ever saw alive for the life of the connection.
+                this.parseState = default;
             }
         }
 
