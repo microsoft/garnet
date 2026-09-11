@@ -1,4 +1,4 @@
-// Copyright (c) Microsoft Corporation.
+﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -600,7 +600,9 @@ namespace Garnet.test
                 var headEnd = reply.IndexOf("\r\n", at, StringComparison.Ordinal);
                 ClassicAssert.Greater(headEnd, at, $"element {i} has no terminated length header");
 
-                var declared = int.Parse(reply[(at + 1)..headEnd]);
+                // Parsed as long: a declared length near int.MaxValue overflows the int bounds arithmetic
+                // below, turning a named assertion into an ArgumentOutOfRangeException from the slice.
+                var declared = long.Parse(reply[(at + 1)..headEnd]);
                 if (declared < 0)
                 {
                     // RESP admits exactly one negative length, -1. Accepting any negative would let a
@@ -616,12 +618,12 @@ namespace Garnet.test
                 }
 
                 var body = headEnd + 2;
-                ClassicAssert.LessOrEqual(body + declared + 2, reply.Length,
+                ClassicAssert.LessOrEqual(body + declared + 2L, reply.Length,
                     $"element {i} declares {declared} bytes but the reply ends early -- the tail was lost");
-                items[i] = reply[body..(body + declared)];
-                ClassicAssert.AreEqual("\r\n", reply[(body + declared)..(body + declared + 2)],
+                items[i] = reply[body..(body + (int)declared)];
+                ClassicAssert.AreEqual("\r\n", reply[(body + (int)declared)..(body + (int)declared + 2)],
                     $"element {i} is not terminated by CRLF at its declared length of {declared}");
-                at = body + declared + 2;
+                at = body + (int)declared + 2;
             }
 
             // The sentinel must begin exactly where the array ended: one byte either way and the stream is
