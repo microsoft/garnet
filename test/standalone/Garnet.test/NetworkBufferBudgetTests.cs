@@ -53,8 +53,7 @@ namespace Garnet.test
         [Test]
         public void ExhaustingTheRecomputeAttemptsStillPublishesALiveTarget()
         {
-            var budget = Budget();
-            budget.RecomputeAttemptsForTests = 0;
+            var budget = new NetworkBufferBudget(1L << 30, Ceiling, ReceiveFloor, SendFloor, recomputeAttempts: 0);
 
             ClassicAssert.AreEqual(Ceiling, budget.TargetBufferSize, "the target should start at the ceiling");
 
