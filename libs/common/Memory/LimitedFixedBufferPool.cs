@@ -180,6 +180,13 @@ namespace Garnet.common
             budget.OnBufferReleased();
 
             var level = Position(length);
+            // While the budget is binding, an over-sized idle buffer is pinned memory that the live
+            // connections need, so drop it rather than holding it on the free list. Unpressured it is pooled
+            // normally, so repeated short-lived connections handling moderately large payloads keep their
+            // reuse. Same definition of pressure the receive shrink policy uses.
+            if (level >= 0 && budget.IsUnderPressure && length > TargetSizeFor(buffer.source))
+                level = -1;
+
             if (level >= 0)
             {
                 if (pool[level] != null)
@@ -206,6 +213,19 @@ namespace Garnet.common
             Debug.Assert(totalReferences > 0, $"Return with {totalReferences}");
             Interlocked.Decrement(ref totalReferences);
         }
+
+        /// <summary>
+        /// The adapted size an entry of this kind should settle at. Send and receive have separate floors, so
+        /// comparing a send buffer against the receive target would treat a correctly sized send buffer as
+        /// over-sized and make send buffers un-poolable for as long as the budget binds.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        int TargetSizeFor(int source)
+            => (PoolEntryBufferType)(source & 0xFF) switch
+            {
+                PoolEntryBufferType.SaeaSendBuffer or PoolEntryBufferType.TransportSendBuffer => budget.TargetSendBufferSize,
+                _ => budget.TargetBufferSize,
+            };
 
         /// <summary>
         /// Get buffer

@@ -5,6 +5,7 @@ using System;
 using System.Collections.Generic;
 using System.Net.Sockets;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using Garnet.client;
 using Garnet.common;
@@ -275,6 +276,181 @@ namespace Garnet.test
             // higher 64 KB floor, so the per-connection total falls to roughly a third.
             ClassicAssert.Less(budgeted, unbudgeted * 0.5,
                 $"live bytes per connection did not fall under budget pressure: {unbudgeted} -> {budgeted}");
+        }
+
+        /// <summary>
+        /// Send and receive adapt to separate floors, so the drop rule has to compare an entry against the
+        /// target for its own direction. Comparing every entry against the receive target would treat a
+        /// correctly sized send buffer as over-sized and make send buffers un-poolable for as long as the
+        /// budget binds -- a fresh pinned allocation for every connection, under exactly the churn the budget
+        /// exists to survive.
+        /// </summary>
+        [Test]
+        public void CorrectlySizedSendBuffersStayPoolableWhileTheBudgetIsBinding()
+        {
+            StartServer(networkBufferMemoryBudget: "1m");
+
+            var pressure = new List<Socket>();
+            try
+            {
+                for (var i = 0; i < 60; i++)
+                    pressure.Add(Ping(Connect()));
+                ClassicAssert.AreEqual(ReceiveFloor, StatBytes("targetBufferSize"));
+                ClassicAssert.AreEqual(SendFloor, StatBytes("targetSendBufferSize"));
+
+                var before = SocketStatBytes("pooledBytes");
+
+                // Churn connections that are correctly sized from birth: nothing they hold is over-target.
+                // Each one reuses what the last returned, so the free list settles at one connection's worth
+                // rather than accumulating -- which is the point, and is also what makes the size readable.
+                const int Churn = 100;
+                for (var i = 0; i < Churn; i++)
+                    Ping(Connect()).Dispose();
+
+                var after = WaitForPooledBytes(SendFloor);
+                TestContext.Out.WriteLine($"pooledBytes before={before}, after={after}");
+
+                // A receive buffer at the 16 KB floor cannot reach this on its own, so the free list can only
+                // hold a send-sized entry if send buffers are still being pooled.
+                ClassicAssert.GreaterOrEqual(after, (long)SendFloor,
+                    $"correctly sized send buffers were dropped rather than pooled under pressure " +
+                    $"(before={before}, after={after})");
+            }
+            finally
+            {
+                foreach (var s in pressure) s.Dispose();
+            }
+        }
+
+        /// <summary>
+        /// Connection teardown is asynchronous, so the buffers a closed connection releases arrive on the free
+        /// list shortly after the socket is closed.
+        /// </summary>
+        static long WaitForPooledBytes(long atLeast)
+        {
+            var pooled = 0L;
+            for (var attempt = 0; attempt < 100; attempt++)
+            {
+                pooled = SocketStatBytes("pooledBytes");
+                if (pooled >= atLeast) return pooled;
+                Thread.Sleep(50);
+            }
+            return pooled;
+        }
+
+        /// <summary>
+        /// Shrinking a connection's buffer only moves the bytes from <c>liveBytes</c> to the idle free list --
+        /// still pinned, still counted against the process. While the budget is binding those over-target
+        /// buffers must be dropped rather than pooled. Unpressured they are pooled as before, which the control
+        /// arm pins.
+        /// </summary>
+        [Test]
+        public void OverTargetBuffersAreNotPooledWhileTheBudgetIsBinding()
+        {
+            // The two arms release through different hysteresis paths, so each is given enough rounds to get
+            // there: the budgeted arm converges in PressureShrinkHysteresis receives, the control arm has to
+            // wait out the full idle ShrinkHysteresis. Without that the control would only be showing the
+            // growth ladder's returns and the comparison would not be about the drop rule at all.
+            var budgeted = MeasurePooledBytesAfterBurst("1m", rounds: 20);
+            var control = MeasurePooledBytesAfterBurst("0", rounds: 300);
+
+            TestContext.Out.WriteLine($"budgeted pooledBytes={budgeted}, control pooledBytes={control}");
+
+            ClassicAssert.Greater(control, 8L * 1024 * 1024,
+                $"the control arm did not pool the buffers it released, so there is nothing to compare against " +
+                $"(pooledBytes={control})");
+            ClassicAssert.Less(budgeted, control / 4,
+                $"over-target buffers were still pooled while the budget was binding " +
+                $"(budgeted={budgeted}, control={control})");
+        }
+
+        long MeasurePooledBytesAfterBurst(string budget, int rounds)
+        {
+            server?.Dispose();
+            server = null;
+            StartServer(networkBufferMemoryBudget: budget);
+
+            const int Connections = 24;
+            const int PayloadLength = 400 * 1024;
+            var payload = new string('p', PayloadLength);
+
+            var sockets = new List<Socket>();
+            try
+            {
+                for (var i = 0; i < Connections; i++)
+                    sockets.Add(Ping(Connect()));
+
+                foreach (var s in sockets)
+                {
+                    Send(s, $"*3\r\n$3\r\nSET\r\n$3\r\nbig\r\n${PayloadLength}\r\n{payload}\r\n");
+                    ClassicAssert.AreEqual("+OK\r\n", ReadExactly(s, 5));
+                }
+
+                for (var round = 0; round < rounds; round++)
+                    foreach (var s in sockets)
+                        _ = Ping(s);
+
+                return SocketStatBytes("pooledBytes");
+            }
+            finally
+            {
+                foreach (var s in sockets) s.Dispose();
+            }
+        }
+
+        /// <summary>
+        /// Clamping the allocation size only governs <em>new</em> buffers. A connection established before the
+        /// budget started binding keeps its full-size send buffers on its own stack and hands them straight back
+        /// out, so without a pressure-gated return it would never converge. Drives exactly that shape: a first
+        /// group that connects while the budget is slack, then enough connections to make it bind.
+        /// </summary>
+        [Test]
+        public void LiveConnectionsConvergeAfterPressureArrives()
+        {
+            StartServer(networkBufferMemoryBudget: "8m", networkSendBufferMinSize: "16k");
+
+            const int Early = 10;
+            const int Late = 200;
+
+            var early = new List<Socket>();
+            var late = new List<Socket>();
+            try
+            {
+                for (var i = 0; i < Early; i++)
+                    early.Add(Ping(Connect()));
+
+                // These connections must have been given the full configured size, or there is nothing to converge.
+                ClassicAssert.AreEqual(Ceiling, StatBytes("targetBufferSize"));
+                foreach (var s in early)
+                    for (var j = 0; j < 5; j++)
+                        _ = Ping(s);
+
+                for (var i = 0; i < Late; i++)
+                    late.Add(Ping(Connect()));
+
+                ClassicAssert.AreEqual(ReceiveFloor, StatBytes("targetBufferSize"), "the budget must be binding now");
+                var underPressure = SocketStatBytes("liveBytes");
+
+                // Only the early connections do any work from here, so any change is attributable to them.
+                foreach (var s in early)
+                    for (var j = 0; j < 20; j++)
+                        _ = Ping(s);
+
+                var converged = SocketStatBytes("liveBytes");
+                TestContext.Out.WriteLine($"underPressure={underPressure}, converged={converged}, " +
+                    $"delta per early connection={(underPressure - converged) / Early}");
+
+                // Each early connection was holding 128 KB buffers in both directions and should end near 16 KB.
+                // The receive side alone accounts for about half of this; the threshold sits above that, so the
+                // assertion cannot be satisfied without the send-side stack converging too.
+                ClassicAssert.Greater(underPressure - converged, Early * 150L * 1024,
+                    $"live connections did not converge after pressure arrived ({underPressure} -> {converged})");
+            }
+            finally
+            {
+                foreach (var s in early) s.Dispose();
+                foreach (var s in late) s.Dispose();
+            }
         }
 
         /// <summary>
@@ -592,10 +768,12 @@ namespace Garnet.test
 
         #region helpers
 
-        void StartServer(string networkBufferMemoryBudget = null)
+        void StartServer(string networkBufferMemoryBudget = null, string networkSendBufferMinSize = null)
         {
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, networkBufferMemoryBudget: networkBufferMemoryBudget);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir,
+                networkBufferMemoryBudget: networkBufferMemoryBudget,
+                networkSendBufferMinSize: networkSendBufferMinSize);
             server.Start();
         }
 

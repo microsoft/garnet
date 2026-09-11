@@ -32,6 +32,7 @@ namespace Garnet.common
             while (tail > 0)
             {
                 var elem = stack[--tail];
+                stack[tail] = null;
                 elem.Dispose();
             }
             latch.Exit();
@@ -66,6 +67,9 @@ namespace Garnet.common
             }
 
             elem = stack[--tail];
+            // Clear the vacated slot: otherwise the array keeps the popped buffer, and through it the pinned
+            // pool entry, strongly referenced for the lifetime of the connection even after it is disposed.
+            stack[tail] = null;
             latch.Exit();
             return true;
         }
