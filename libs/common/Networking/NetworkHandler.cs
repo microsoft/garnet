@@ -436,20 +436,27 @@ namespace Garnet.networking
             if (current <= baseSize)
                 return;
 
+            if (current > networkBufferSettings.maxReceiveBufferSize)
+            {
+                // Above the pool's largest size class, so this buffer was allocated outside the pool and will be
+                // dropped rather than recycled on return. Give it back without waiting out the hysteresis, and
+                // size it to what is still buffered rather than to the pass's demand: the demand is already
+                // consumed, and measuring against it would hold the whole oversized array for a connection that
+                // never speaks again -- which is exactly what this branch exists to prevent.
+                var residual = TargetReceiveBufferSize(networkBytesRead, baseSize, current);
+                if (residual < current)
+                {
+                    ShrinkNetworkReceiveBuffer(residual);
+                    networkShrinkCountdown = ShrinkHysteresis;
+                    networkPool.Budget.RecordIdleShrink();
+                }
+                return;
+            }
+
             var target = TargetReceiveBufferSize(demand, baseSize, current);
             if (target >= current)
             {
                 networkShrinkCountdown = ShrinkHysteresis;
-                return;
-            }
-
-            if (current > networkBufferSettings.maxReceiveBufferSize)
-            {
-                // Above the pool's largest size class, so this buffer was allocated outside the pool and will be
-                // dropped rather than recycled on return. Give it back without waiting out the hysteresis.
-                ShrinkNetworkReceiveBuffer(target);
-                networkShrinkCountdown = ShrinkHysteresis;
-                networkPool.Budget.RecordIdleShrink();
                 return;
             }
 
@@ -686,6 +693,22 @@ namespace Garnet.networking
             networkReceiveBufferEntry = tmp;
             networkReceiveBuffer = tmp.entry;
             networkReceiveBufferPtr = tmp.entryPtr;
+            RefreshNonTlsTransportAlias();
+        }
+
+        /// <summary>
+        /// Without TLS the transport buffer is the network buffer. The aliases are refreshed at the top of
+        /// every receive, but a resize leaves them pointing at the entry that was just returned to the pool --
+        /// which both keeps the old pinned array rooted until the next receive and leaves a stale pointer into
+        /// memory another connection may already have been handed.
+        /// </summary>
+        unsafe void RefreshNonTlsTransportAlias()
+        {
+            if (sslStream != null)
+                return;
+
+            transportReceiveBuffer = networkReceiveBuffer;
+            transportReceiveBufferPtr = networkReceiveBufferPtr;
         }
 
         // NoInlining as this should be a rare call if Garnet is properly configured
@@ -705,6 +728,7 @@ namespace Garnet.networking
             networkReceiveBufferEntry = tmp;
             networkReceiveBuffer = tmp.entry;
             networkReceiveBufferPtr = tmp.entryPtr;
+            RefreshNonTlsTransportAlias();
         }
 
         unsafe void ShiftNetworkReceiveBuffer()
@@ -754,19 +778,30 @@ namespace Garnet.networking
 
             Debug.Assert(transportReadHead == 0, "Shouldn't call if remaining data not already moved to head of transport buffer");
 
-            var target = TargetReceiveBufferSize(demand, baseSize, current);
-            if (target >= current)
+            var budget = networkPool.Budget;
+            var aboveMax = current > networkBufferSettings.maxReceiveBufferSize;
+            int target;
+
+            // See MaybeShrinkNetworkReceiveBuffer for the policy, including why the above-max branch is
+            // measured against the residual rather than the pass's demand and is checked first.
+            if (aboveMax)
             {
-                transportShrinkCountdown = ShrinkHysteresis;
-                return;
+                target = TargetReceiveBufferSize(transportBytesRead, baseSize, current);
+                if (target >= current)
+                    return;
+            }
+            else
+            {
+                target = TargetReceiveBufferSize(demand, baseSize, current);
+                if (target >= current)
+                {
+                    transportShrinkCountdown = ShrinkHysteresis;
+                    return;
+                }
             }
 
-            var aboveMax = current > networkBufferSettings.maxReceiveBufferSize;
-            var budget = networkPool.Budget;
             var underPressure = budget.IsUnderPressure;
-            // See MaybeShrinkNetworkReceiveBuffer for the policy. Above the pool's largest size class the buffer
-            // was allocated outside the pool and is dropped rather than recycled on return, so release it without
-            // waiting at all.
+            // Clamp rather than reload, so pressure arriving mid-countdown converges promptly.
             if (underPressure && transportShrinkCountdown > PressureShrinkHysteresis)
                 transportShrinkCountdown = PressureShrinkHysteresis;
 

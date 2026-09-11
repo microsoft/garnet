@@ -130,6 +130,39 @@ namespace Garnet.test
             }
         }
 
+        /// <summary>
+        /// Commands built through <c>StartCommand</c>/<c>WriteArgument</c> write straight through a pointer and
+        /// only reach the expansion path when a write does not fit. If those sites do not publish their demand,
+        /// a batch that keeps filling an already-large buffer reports zero usage and the shrink policy releases
+        /// it every time -- churning a pinned array on a session that needs it on every batch.
+        /// </summary>
+        [Test]
+        public unsafe void ScratchBufferBuilderKeepsBufferUnderSustainedCommandConstruction()
+        {
+            var builder = new ScratchBufferBuilder(MaxRetained, Hysteresis);
+            var arg = new byte[128 * 1024];
+            var cmd = "SET"u8;
+
+            // Warm up to the size this workload needs, so every later batch fits without expanding.
+            builder.StartCommand(cmd, 2);
+            builder.WriteArgument(arg);
+            builder.WriteArgument(arg);
+            builder.Reset();
+            var warm = builder.ScratchBufferCapacity;
+            ClassicAssert.GreaterOrEqual(warm, 2 * arg.Length);
+
+            for (var i = 0; i < Hysteresis * 4; i++)
+            {
+                builder.StartCommand(cmd, 2);
+                builder.WriteArgument(arg);
+                builder.WriteArgument(arg);
+                builder.Reset();
+
+                ClassicAssert.AreEqual(warm, builder.ScratchBufferCapacity,
+                    $"buffer churned at iteration {i} despite being filled every batch");
+            }
+        }
+
         [Test]
         public unsafe void ScratchBufferBuilderUnboundedByDefault()
         {
