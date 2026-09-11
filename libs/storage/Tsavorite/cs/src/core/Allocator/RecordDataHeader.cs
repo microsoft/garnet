@@ -26,8 +26,8 @@ namespace Tsavorite.core
     ///         filler are <i>split</i>: the original record retains <see cref="RecordSplitRetainFillerWords"/> * <see cref="Constants.kRecordAlignment"/> = 512 bytes
     ///         of filler and the excess is placed in a new invalid record (see <see cref="SetFiller"/>).</item>
     ///     <item>Bits 14–23: <see cref="KeyLength"/>. The property returns this raw value for inline keys; for overflow keys
-    ///         it returns <see cref="ObjectIdMap.ObjectIdSize"/>. The OverflowByteArray already carries the length, so mirroring it
-    ///         in the header would be extra work with no consumer.</item>
+    ///         it returns <see cref="ObjectIdMap.ObjectIdSize"/> because the physical field is an objectId slot. In a flushed record,
+    ///         the otherwise-unused raw bits hold the high bits of the overflow key's 4 KB-page-count read extent.</item>
     ///     <item>Bits 24–47: <see cref="ValueLength"/>. The property returns this raw value for inline values; for
     ///         overflow/object values it returns <see cref="ObjectIdMap.ObjectIdSize"/>. The OverflowByteArray / IHeapObject
     ///         already carries the length, so mirroring it in the header would be extra work with no consumer.</item>
@@ -35,11 +35,10 @@ namespace Tsavorite.core
     ///     <item>Bits 56–63: Namespace byte (with encoding indicating if there are many extra namespace bytes; if so, they precede
     ///         the Key data bytes). (Byte-aligned at byte 7.)</item>
     /// </list>
-    /// <para>Disk-write paths (<see cref="LogRecord.SetObjectLogRecordStartPositionAndLength"/>) write the low <see cref="kKeyLengthBits"/> /
-    /// <see cref="kValueLengthBits"/> bits of the on-disk overflow/object length into the RDH KeyLength/ValueLength field, with the next
-    /// 32 bits stored in the objectId slot at keyAddress/valueAddress. After read-back (<see cref="LogRecord.OnObjectReadComplete"/>)
-    /// the raw RDH fields are restored to <see cref="ObjectIdMap.ObjectIdSize"/> so the runtime "non-inline → property returns
-    /// ObjectIdSize" invariant holds.</para>
+    /// <para>The effective properties always describe physical fields: an inline byte count or a
+    /// <see cref="ObjectIdMap.ObjectIdSize"/> objectId slot. For an overflow key only, the raw KeyLength bits in a flushed record are
+    /// object-log metadata and do not affect the effective property or record layout. Legacy records use a separate split-length decoder
+    /// selected by their position-word format flag.</para>
     /// <para>RecordLength is no longer stored; it is derived from the header alone:
     /// <c>alignedSum = RoundUp(Constants.FixedHeaderSize + ExtendedNamespaceLength + KeyLength + ValueLength + OptionalSize, kRecordAlignment)</c>;
     /// <c>recordLength = alignedSum + (FillerWords &lt;&lt; 3)</c>. Because everything that defines record length is in this 8-byte
@@ -239,13 +238,10 @@ namespace Tsavorite.core
         // ── Field accessors via ulong word bit manipulation ────────────────────────
 
         /// <summary>The effective KeyLength for record-length calculations.
-        /// <para>For inline keys, returns the raw <see cref="kKeyLengthBits"/>-bit value. For overflow keys, returns <see cref="ObjectIdMap.ObjectIdSize"/>
-        /// (the OverflowByteArray already carries the length, so mirroring the raw value in the header would be additional work with no consumer
-        /// in the in-memory path).</para>
-        /// <para>The setter always writes the raw <see cref="kKeyLengthBits"/>-bit value. The disk-write path uses it to temporarily store the LOW <see cref="kKeyLengthBits"/> bits of
-        /// the on-disk overflow key length (the next 32 bits live in the objectId slot at keyAddress); after read-back,
-        /// <see cref="LogRecord.OnObjectReadComplete"/> restores ObjectIdSize so the runtime invariant holds.</para>
-        /// <para>For disk-serialization paths that need to READ the raw stored value (not the effective length), use <see cref="GetKeyLengthRaw"/>.</para></summary>
+        /// <para>For inline keys, returns the raw <see cref="kKeyLengthBits"/>-bit byte length. For overflow keys, always returns
+        /// <see cref="ObjectIdMap.ObjectIdSize"/> because the physical field is one objectId slot; the raw bits may carry the high portion
+        /// of the key's initial-read page count without changing record layout.</para>
+        /// <para>The setter writes the raw <see cref="kKeyLengthBits"/>-bit field.</para></summary>
         internal int KeyLength
         {
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -258,8 +254,8 @@ namespace Tsavorite.core
             }
         }
 
-        /// <summary>Read the raw value stored in the KeyLength field, without the inline check. Used by disk-serialization paths
-        /// where the field may hold the low <see cref="kKeyLengthBits"/> bits of the on-disk overflow length (not the effective <see cref="KeyLength"/>).</summary>
+        /// <summary>Read the raw field without applying <see cref="KeyIsInline"/>. For a current-format overflow key this is the high
+        /// <see cref="kKeyLengthBits"/> bits of its 4 KB-page-count read extent. Legacy recovery interprets it through its own decoder.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal readonly int GetKeyLengthRaw() => (int)((word >> kKeyLengthShift) & kKeyLengthLowBitsMask);
 
@@ -267,10 +263,7 @@ namespace Tsavorite.core
         /// <para>For inline values, returns the raw <see cref="kValueLengthBits"/>-bit value. For overflow or object values, returns <see cref="ObjectIdMap.ObjectIdSize"/>
         /// (the OverflowByteArray / IHeapObject already carries the length, so mirroring the raw value in the header would be additional work with no
         /// consumer in the in-memory path).</para>
-        /// <para>The setter always writes the raw <see cref="kValueLengthBits"/>-bit value. The disk-write path uses it to temporarily store the LOW <see cref="kValueLengthBits"/> bits of
-        /// the on-disk overflow/object value length (the next 32 bits live in the objectId slot at valueAddress); after read-back,
-        /// <see cref="LogRecord.OnObjectReadComplete"/> restores ObjectIdSize so the runtime invariant holds.</para>
-        /// <para>For disk-serialization paths that need to READ the raw stored value (not the effective length), use <see cref="GetValueLengthRaw"/>.</para></summary>
+        /// <para>The setter always writes the raw <see cref="kValueLengthBits"/>-bit physical slot length.</para></summary>
         internal int ValueLength
         {
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -283,10 +276,102 @@ namespace Tsavorite.core
             }
         }
 
-        /// <summary>Read the raw value stored in the ValueLength field, without the inline check. Used by disk-serialization paths
-        /// where the field may hold the low <see cref="kValueLengthBits"/> bits of the on-disk overflow/object length (not the effective <see cref="ValueLength"/>).</summary>
+        /// <summary>Read the raw physical slot length without the inline check. Legacy v2.1 recovery also uses this as the low
+        /// <see cref="kValueLengthBits"/> bits of the historical split object-log length encoding.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal readonly int GetValueLengthRaw() => (int)((word >> kValueLengthShift) & kValueLengthLowBitsMask);
+
+        /// <summary>Largest out-of-line component encoded headerless with an exact objectId-slot size hint.</summary>
+        internal const int kOutOfLineExactSizeCutoff = ObjectIdMap.MaxObjectIdSizeHint;
+
+        /// <summary>Size of the page unit used by objectId-slot non-exact size hints.</summary>
+        internal const int kFlushPageSize = 1 << 12;
+
+        /// <summary>Number of bits in an overflow key's non-exact page count: the raw RDH KeyLength bits above the objectId hint bits.</summary>
+        internal const int kOverflowKeyPageCountBits = kKeyLengthBits + ObjectIdMap.ObjectIdSizeHintBits;
+
+        /// <summary>Largest exact 4 KB-page count encodable for an overflow key.</summary>
+        internal const int kMaxOverflowKeyPageCount = (1 << kOverflowKeyPageCountBits) - 1;
+
+        /// <summary>The total on-disk extent of an out-of-line overflow key or value: the data length when it fits headerless,
+        /// else a leading <see cref="ChunkHeader"/> + any direct-IO alignment padding + the data.</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal static long OverflowOnDiskExtent(long dataLength, int alignmentPadding)
+            => dataLength <= kOutOfLineExactSizeCutoff ? dataLength : ChunkHeader.TotalSize + alignmentPadding + dataLength;
+
+        /// <summary>Compute the objectId-slot read-size hint (see <see cref="ObjectIdMap.StampSizeHint"/>) for an out-of-line value,
+        /// using the exact byte length (<paramref name="isExact"/> true, no leading ChunkHeader) when <paramref name="dataLength"/>
+        /// fits headerless, else the on-disk extent's
+        /// 4 KB-page count (isExact false, leading ChunkHeader present) clamped to <see cref="ObjectIdMap.MaxObjectIdSizeHint"/> as the sentinel.
+        /// The sentinel means "read a 4 MB discovery window and follow the ChunkHeader chain."</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal static int ComputeObjectIdValueSizeHint(long dataLength, long totalOnDiskExtent, out bool isExact)
+        {
+            Debug.Assert(dataLength >= 0, $"dataLength {dataLength} must be non-negative");
+            if (dataLength <= kOutOfLineExactSizeCutoff)
+            {
+                isExact = true;
+                return (int)dataLength;                                                   // headerless, exact byte size (<= 511)
+            }
+            isExact = false;
+            var pageCount = (int)((totalOnDiskExtent + kFlushPageSize - 1) / kFlushPageSize);
+            return pageCount >= ObjectIdMap.MaxObjectIdSizeHint ? ObjectIdMap.MaxObjectIdSizeHint : pageCount;
+        }
+
+        /// <summary>Encode an overflow key's initial read extent. Headerless keys use an exact byte count in the objectId hint and keep
+        /// <paramref name="rdhKeyLengthBits"/> at the in-memory physical-slot value. Headered keys store the exact rounded-up 4 KB page
+        /// count across the raw RDH KeyLength field (high bits) and objectId hint (low bits), avoiding a sentinel or discovery loop.</summary>
+        /// <param name="dataLength">Logical key payload length.</param>
+        /// <param name="totalOnDiskExtent">Header, direct-IO padding, and payload bytes.</param>
+        /// <param name="rdhKeyLengthBits">Raw value to store in the RDH KeyLength field.</param>
+        /// <param name="isExact">Whether the objectId hint is an exact headerless byte length.</param>
+        /// <returns>The low page-count bits, or exact byte length, to store in the objectId hint.</returns>
+        internal static int ComputeOverflowKeySizeHint(long dataLength, long totalOnDiskExtent, out int rdhKeyLengthBits, out bool isExact)
+        {
+            Debug.Assert(dataLength >= 0, $"dataLength {dataLength} must be non-negative");
+            if (dataLength <= kOutOfLineExactSizeCutoff)
+            {
+                rdhKeyLengthBits = ObjectIdMap.ObjectIdSize;
+                isExact = true;
+                return (int)dataLength;
+            }
+
+            var pageCount = (totalOnDiskExtent + kFlushPageSize - 1) / kFlushPageSize;
+            if ((ulong)pageCount > kMaxOverflowKeyPageCount)
+                throw new TsavoriteException($"Overflow key extent {totalOnDiskExtent} requires {pageCount} pages; maximum is {kMaxOverflowKeyPageCount}");
+
+            rdhKeyLengthBits = (int)(pageCount >> ObjectIdMap.ObjectIdSizeHintBits);
+            isExact = false;
+            return (int)pageCount & ObjectIdMap.ObjectIdSizeHintMask;
+        }
+
+        /// <summary>Decode an overflow key's initial read extent. Exact-size keys use only the objectId hint as a byte length.
+        /// Headered keys with an extended hint combine the raw RDH KeyLength high bits with the objectId hint low bits to recover the exact
+        /// 4 KB page count. Earlier headered keys use the objectId-only page-count/sentinel encoding.</summary>
+        internal static ulong DecodeOverflowKeyInitialReadExtent(int rdhKeyLengthBits, int objectIdSizeHint, bool isExactSize, bool hasExtendedSizeHint = true)
+        {
+            if (isExactSize)
+                return (ulong)(uint)objectIdSizeHint;
+            if (!hasExtendedSizeHint)
+                return DecodeObjectIdValueInitialReadExtent(objectIdSizeHint, isExactSize: false);
+            var pageCount = ((ulong)(uint)rdhKeyLengthBits << ObjectIdMap.ObjectIdSizeHintBits) | (uint)objectIdSizeHint;
+            return pageCount * kFlushPageSize;
+        }
+
+        /// <summary>The initial read-ahead extent (bytes) for
+        /// an out-of-line value derived from its objectId size hint (see <see cref="ObjectIdMap.GetSizeHint"/>) and the record's
+        /// <see cref="ObjectLogFilePositionInfo.kValueIsExactSizeMask"/> flag. Exact flag set -&gt; that many bytes (headerless); else the
+        /// 4 KB-page count * 4 KB, or one 4 MB read buffer when the hint is at the <see cref="ObjectIdMap.MaxObjectIdSizeHint"/> sentinel
+        /// (the reader learns the true length from the ChunkHeader(s) and extends).</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal static ulong DecodeObjectIdValueInitialReadExtent(int sizeHint, bool isExactSize)
+        {
+            if (isExactSize)
+                return (ulong)(uint)sizeHint;                                             // exact bytes (0..511), headerless
+            if (sizeHint >= ObjectIdMap.MaxObjectIdSizeHint)
+                return (ulong)IStreamBuffer.BufferSize;                                   // sentinel -> 4 MB block
+            return (ulong)(uint)sizeHint * kFlushPageSize;                                // page count * 4 KB
+        }
 
         internal readonly int ExtendedNamespaceLength
         {

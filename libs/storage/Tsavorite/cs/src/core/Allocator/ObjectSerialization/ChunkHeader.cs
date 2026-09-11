@@ -8,18 +8,16 @@ namespace Tsavorite.core
     [StructLayout(LayoutKind.Explicit, Size = TotalSize)]
     public struct ChunkHeader
     {
-        public const int TotalSize = (sizeof(int) * 2) + (sizeof(ushort) * 4);
+        public const int TotalSize = sizeof(uint) * 2;
 
-        /// <summary>The length of the current chunk</summary>
+        /// <summary>For overflow, the complete payload length. For an object chunk, the low bits are this chunk's data length and
+        /// <see cref="ChunkedRecordConstants.ContinuationFlag"/> indicates that another header follows after the data.</summary>
         [FieldOffset(0)]
-        internal uint length;
+        internal uint currentLength;
 
-        /// <summary>The length of the following chunk; 0 if we have no further chunks</summary>
+        /// <summary>For overflow, the number of padding bytes between this header and the payload so a large payload can begin at the
+        /// sector residue required for direct IO. Zero for object chunks and buffered overflow writes.</summary>
         [FieldOffset(sizeof(uint))]
-        internal uint nextChunkLength;
-
-        /// <summary>The 0-based sequence number of the current chunk</summary>
-        [FieldOffset(sizeof(uint) * 2)]
-        internal ushort chunkNumber;
+        internal uint alignmentPadding;
     }
 }

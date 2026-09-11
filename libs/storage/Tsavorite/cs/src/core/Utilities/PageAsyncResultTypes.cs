@@ -37,6 +37,14 @@ namespace Tsavorite.core
         /// <summary>The destination pointer being read into.</summary>
         internal IntPtr destinationPtr;
 
+        /// <summary>
+        /// Main-log bytes below a snapshot suffix-merge boundary that share the first sector read from the snapshot file.
+        /// Restored after the device read so only bytes at or above the logical merge boundary replace the recovered main page.
+        /// </summary>
+        internal SectorAlignedMemory preservedPagePrefix;
+        internal IntPtr preservedPagePrefixDestination;
+        internal int preservedPagePrefixLength;
+
         /// <summary>The cancellation token source, if any, for the Read operation</summary>
         internal CancellationTokenSource cts;
 
@@ -63,14 +71,32 @@ namespace Tsavorite.core
             => $"page {page}, recovPhase {recoveryPhase}, devPgOffset {devicePageOffset}, ctx {context}, countdown {handle?.CurrentCount}, destPtr {destinationPtr} (0x{destinationPtr:X}),"
              + $" maxPtr {maxAddressOffsetOnPage}, bytesRead {numBytesRead}, errorCode {errorCode}, ioException {ioException?.GetType().Name}";
 
-        /// <summary>Currently nothing to free.</summary>
-        public void Free()
+        internal unsafe void RestorePreservedPagePrefix()
         {
+            if (preservedPagePrefix is null)
+                return;
+
+            try
+            {
+                preservedPagePrefix.TotalValidSpan.Slice(0, preservedPagePrefixLength)
+                    .CopyTo(new Span<byte>((void*)preservedPagePrefixDestination, preservedPagePrefixLength));
+            }
+            finally
+            {
+                preservedPagePrefix.Return();
+                preservedPagePrefix = null;
+                preservedPagePrefixDestination = IntPtr.Zero;
+                preservedPagePrefixLength = 0;
+            }
         }
+
+        /// <summary>Release temporary read state.</summary>
+        public void Free() => RestorePreservedPagePrefix();
 
         /// <inheritdoc/>
         public void DisposeHandle()
         {
+            RestorePreservedPagePrefix();
             handle?.Dispose();
             handle = null;
             readBuffers?.Dispose();
@@ -95,7 +121,7 @@ namespace Tsavorite.core
         /// initially and thus must check to handle the case where HeadAddress increases out of the range of the flush</summary>
         Snapshot,
 
-        /// <summary>The flush operation did not issue a write, likely because <see cref="Snapshot"/> is true and HeadAddress advanced beyond the page</summary>
+        /// <summary>A native-page Snapshot write was skipped because the page was already below HeadAddress.</summary>
         WriteNotIssued
     }
 
@@ -116,6 +142,7 @@ namespace Tsavorite.core
 
         /// <summary>Count of active pending flush operations; the callback decrements this and when it hits 0, the overall flush operation is complete.</summary>
         public int count;
+        int firstErrorCode;
 
         /// <summary>If true, this is a flush of a partial page.</summary>
         internal bool partial;
@@ -128,6 +155,8 @@ namespace Tsavorite.core
 
         /// <summary>The record buffer, passed through the IO process to retain a reference to it so it will not be GC'd before the Flush write completes.</summary>
         internal SectorAlignedMemory freeBuffer1;
+        /// <summary>Optional second sector buffer for a split partial-page write.</summary>
+        internal SectorAlignedMemory freeBuffer2;
 
         /// <summary>Set once the main snapshot device write for this page has been submitted (so its completion
         /// callback is guaranteed to fire and owns releasing this page's native snapshot-IO unit and buffers).
@@ -151,12 +180,18 @@ namespace Tsavorite.core
 
         internal FlushCompletionTracker flushCompletionTracker;
 
+        /// <summary>Runtime-only Snapshot/ReadOnly page-ordering state. Set only for Snapshot page writes.</summary>
+        internal SnapshotFlushCoordination snapshotFlushCoordination;
+
         /// <summary>If this is set then we are using a different objectLog device from that in the allocator, and do not use the allocator's <see cref="ObjectLogFilePositionInfo"/>.</summary>
         internal ObjectLogFilePositionInfo objectLogFilePositionInfo;
 
         /// <summary>During snapshot recovery, the snapshot object-log device that is the source for copying object bytes into the main object-log
         /// (for records at/above <see cref="recoveryFormerFlushedUntilAddress"/>). Null for non-recovery flushes and for the hybrid-log region.</summary>
         internal IDevice recoverySnapshotObjectLogDevice;
+
+        /// <summary>Exclusive durable end of <see cref="recoverySnapshotObjectLogDevice"/> in that device's logical address space.</summary>
+        internal ObjectLogFilePositionInfo recoverySnapshotObjectLogReadEnd;
 
         /// <summary>During snapshot recovery, the former FlushedUntilAddress (the hybrid-log/snapshot boundary). Records whose logical address is at or
         /// above this are in the snapshot region and their objects must be copied from the snapshot object-log to the main object-log during the flush.</summary>
@@ -183,10 +218,20 @@ namespace Tsavorite.core
             {
                 freeBuffer1?.Return();
                 freeBuffer1 = null;
-                flushCompletionTracker?.CompleteFlush();
+                freeBuffer2?.Return();
+                freeBuffer2 = null;
+                flushCompletionTracker?.CompleteOneFlush();
                 flushCompletionTracker = null;
             }
             return result;
+        }
+
+        /// <summary>Retain the first error reported by any write span in this page batch.</summary>
+        internal uint RecordError(uint errorCode)
+        {
+            if (errorCode != 0)
+                _ = Interlocked.CompareExchange(ref firstErrorCode, unchecked((int)errorCode), 0);
+            return unchecked((uint)Volatile.Read(ref firstErrorCode));
         }
     }
 
@@ -195,6 +240,9 @@ namespace Tsavorite.core
     /// </summary>
     internal sealed class DiskWriteCallbackContext
     {
+        /// <summary>Return value from <see cref="Release(uint, Exception)"/> when another caller already performed the release.</summary>
+        internal const long AlreadyReleased = long.MinValue;
+
         /// <summary>If we had separate Writes for multiple spans of a single array, this is a refcounted wrapper for the <see cref="GCHandle"/>;
         /// it is released after the write and if it is the final release, all spans have been written and the GCHandle is freed (and the object unpinned).</summary>
         public RefCountedPinnedGCHandle refCountedGCHandle { get; private set; }
@@ -217,6 +265,7 @@ namespace Tsavorite.core
 
         /// <summary>The countdown event if this write is associated with a <see cref="DiskWriteBuffer"/>.</summary>
         private CountdownEvent bufferCountdownEvent;
+        int released;
 
         public override string ToString()
         {
@@ -241,8 +290,20 @@ namespace Tsavorite.core
         /// <summary>This write is associated with a <see cref="DiskWriteBuffer"/> so we need to signal the countdown event for that buffer when we are done.</summary>
         public void SetBufferCountdownEvent(CountdownEvent countdownEvent) => bufferCountdownEvent = countdownEvent;
 
+        /// <summary>Publish that this Snapshot page has reached a write submission whose normal callback or
+        /// synchronous-failure unwind will release the external page context.</summary>
+        internal void MarkSnapshotWriteAttempted()
+        {
+            if (countdownCallbackAndContext?.context is PageAsyncFlushResult<Empty> result
+                && result.flushRequestState == FlushRequestState.Snapshot)
+                result.snapshotDeviceWriteIssued = true;
+        }
+
         public long Release(uint errorCode = 0, Exception ioException = null)
         {
+            if (Interlocked.Exchange(ref released, 1) != 0)
+                return AlreadyReleased;
+
             refCountedGCHandle?.Release();
             if (gcHandle.IsAllocated)
                 gcHandle.Free();

@@ -63,7 +63,7 @@ namespace Tsavorite.core
         private bool IsEntryVersionNew(ref HashBucketEntry entry)
         {
             // A version shift can only happen in an address after the checkpoint starts, as v_new threads RCU entries to the tail.
-            if (entry.Address < _hybridLogCheckpoint.info.startLogicalAddress)
+            if (entry.Address < _hybridLogCheckpoint.info.fuzzyRegionStartAddress)
                 return false;
 
             // Read cache entries are not in new version
@@ -98,7 +98,7 @@ namespace Tsavorite.core
         {
             Debug.Assert(!stackCtx.recSrc.HasReadCacheSrc, "Should not call IsFrozen() for readcache records");
             return sessionFunctions.Ctx.IsInV1
-                        && (stackCtx.recSrc.LogicalAddress <= _hybridLogCheckpoint.info.startLogicalAddress     // In checkpoint range
+                        && (stackCtx.recSrc.LogicalAddress <= _hybridLogCheckpoint.info.fuzzyRegionStartAddress // In checkpoint range
                             || !srcRecordInfo.IsInNewVersion);                                                  // In fuzzy region and an old version
         }
 

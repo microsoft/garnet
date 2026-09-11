@@ -24,13 +24,34 @@ namespace Tsavorite.core
         // ── Flag bits in the top 4 bits of word (bits 60-63) ─────────────────────────
 
         /// <summary>Bit position of the <c>ReuseObjectIdForSize</c> flag in <see cref="word"/>.
-        /// When set, the on-disk overflow/object length is encoded as (RDH KeyLength/ValueLength field low bits) + (objectId slot at keyAddress/valueAddress high 32 bits),
-        /// and the object-log stream contains NO length prefix. Set always in current code; reserved for a future variant where the length is communicated differently.</summary>
+        /// When set, the on-disk overflow/object length uses the legacy split encoding: (RDH KeyLength/ValueLength field low bits) +
+        /// (objectId slot at keyAddress/valueAddress high 32 bits), with no length framing in the object-log stream. When clear, the record
+        /// uses the objectId-hint format (the authoritative length comes from the object-log stream framing).
+        /// The flag is the per-record discriminator selecting the legacy read/decode path.</summary>
         internal const int kReuseObjectIdForSizeBit = 63;
         internal const ulong kReuseObjectIdForSizeMask = 1UL << kReuseObjectIdForSizeBit;
 
-        /// <summary>Mask for the 3 reserved flag bits 60-62 (future use).</summary>
-        internal const ulong kReservedFlagsMask = 0x7UL << 60;
+        /// <summary>Bit position of the <c>KeyIsExactSize</c> flag in <see cref="word"/>.
+        /// When set, the out-of-line KEY's exact byte length (&lt;= <see cref="ObjectIdMap.MaxObjectIdSizeHint"/>) is stored in the top
+        /// <see cref="ObjectIdMap.ObjectIdSizeHintBits"/> bits of the objectId slot at keyAddress (no leading ChunkHeader precedes the key
+        /// bytes). When clear, the key is headered; its exact 4 KB-page-count read extent is split between raw RDH KeyLength high bits and
+        /// objectId hint low bits, while its exact logical byte length comes from the object-log stream framing. See
+        /// website/docs/dev/tsavorite/objectlog-serialization.md.</summary>
+        internal const int kKeyIsExactSizeBit = 61;
+        internal const ulong kKeyIsExactSizeMask = 1UL << kKeyIsExactSizeBit;
+
+        /// <summary>Bit position of the <c>ValueIsExactSize</c> flag in <see cref="word"/>.
+        /// When set, the out-of-line VALUE's exact byte length (&lt;= <see cref="ObjectIdMap.MaxObjectIdSizeHint"/>) is stored in the top
+        /// <see cref="ObjectIdMap.ObjectIdSizeHintBits"/> bits of the objectId slot at valueAddress (no leading ChunkHeader precedes the
+        /// value bytes). When clear, the value is headered/chunked and its length comes from the object-log stream framing.</summary>
+        internal const int kValueIsExactSizeBit = 60;
+        internal const ulong kValueIsExactSizeMask = 1UL << kValueIsExactSizeBit;
+
+        /// <summary>Bit position of the <c>KeyHasExtendedSizeHint</c> flag in <see cref="word"/>.
+        /// When set on a headered overflow key, raw RDH KeyLength contains the high 10 bits and the objectId hint contains the low 9 bits
+        /// of the exact 4 KB-page-count read extent. When clear, the key uses the earlier objectId-only page-count/sentinel encoding.</summary>
+        internal const int kKeyHasExtendedSizeHintBit = 62;
+        internal const ulong kKeyHasExtendedSizeHintMask = 1UL << kKeyHasExtendedSizeHintBit;
 
         /// <summary>Object log segment size bits</summary>
         internal int SegmentSizeBits;
@@ -81,6 +102,28 @@ namespace Tsavorite.core
         /// <summary>Read the <c>ReuseObjectIdForSize</c> flag bit on the position word pointed to by <paramref name="wordPtr"/>.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static unsafe bool GetReuseObjectIdForSize(ulong* wordPtr) => (*wordPtr & kReuseObjectIdForSizeMask) != 0;
+
+        /// <summary>Set the <c>KeyIsExactSize</c> flag bit on the position word pointed to by <paramref name="wordPtr"/>.</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static unsafe void SetKeyIsExactSize(ulong* wordPtr) => *wordPtr |= kKeyIsExactSizeMask;
+
+        /// <summary>Read the <c>KeyIsExactSize</c> flag bit on the position word pointed to by <paramref name="wordPtr"/>.</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static unsafe bool GetKeyIsExactSize(ulong* wordPtr) => (*wordPtr & kKeyIsExactSizeMask) != 0;
+
+        /// <summary>Set the <c>KeyHasExtendedSizeHint</c> flag on a headered overflow key.</summary>
+        public static unsafe void SetKeyHasExtendedSizeHint(ulong* wordPtr) => *wordPtr |= kKeyHasExtendedSizeHintMask;
+
+        /// <summary>Read the <c>KeyHasExtendedSizeHint</c> flag from an overflow key.</summary>
+        public static unsafe bool GetKeyHasExtendedSizeHint(ulong* wordPtr) => (*wordPtr & kKeyHasExtendedSizeHintMask) != 0;
+
+        /// <summary>Set the <c>ValueIsExactSize</c> flag bit on the position word pointed to by <paramref name="wordPtr"/>.</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static unsafe void SetValueIsExactSize(ulong* wordPtr) => *wordPtr |= kValueIsExactSizeMask;
+
+        /// <summary>Read the <c>ValueIsExactSize</c> flag bit on the position word pointed to by <paramref name="wordPtr"/>.</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static unsafe bool GetValueIsExactSize(ulong* wordPtr) => (*wordPtr & kValueIsExactSizeMask) != 0;
 
         /// <summary>The offset within the current <see cref="SegmentId"/>.</summary>
         public ulong Offset
@@ -147,7 +190,7 @@ namespace Tsavorite.core
                 throw new InvalidDataException($"Advancing position by {size:N} bytes exceeds maximum object log segment.");
 
             SegmentId = (int)nextSegmentId;
-            Offset += size & (SegmentSize - 1);
+            Offset = size & (SegmentSize - 1);
         }
 
         public void AdvanceToNextSegment()
@@ -163,8 +206,10 @@ namespace Tsavorite.core
 
         public static ulong operator -(ObjectLogFilePositionInfo left, ObjectLogFilePositionInfo right)
         {
-            Debug.Assert(left.SegmentSizeBits == right.SegmentSizeBits, "Segment size bits must match to compute distance");
-            Debug.Assert((left.word & SegmentAndOffsetMask) >= (right.word & SegmentAndOffsetMask), "comparison position must be greater");
+            if (left.SegmentSizeBits != right.SegmentSizeBits)
+                throw new InvalidDataException("Object-log positions must have the same segment size to compute distance.");
+            if (left.CurrentAddress < right.CurrentAddress)
+                throw new InvalidDataException("Object-log positions must be ordered and belong to the same address space to compute distance.");
             var segmentDiff = (ulong)(left.SegmentId - right.SegmentId);
             if (segmentDiff == 0)
                 return left.Offset - right.Offset;

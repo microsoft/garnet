@@ -92,10 +92,10 @@ namespace Tsavorite.test.LargeObjects
 
                     // Sample every 5th item so it's not quite so slow as this test isn't [Explicit]
                     for (int i = 0; i < output.valueObject.value.Length; i += 5)
-                        Assert.That(output.valueObject.value[i], Is.EqualTo((byte)(output.valueObject.value.Length + i)));
+                        Assert.That(output.valueObject.value[i], Is.EqualTo((byte)(output.valueObject.value.Length + i)), $"key {keycnt}, item {i}");
 
                     // Make sure we test the last item.
-                    Assert.That(output.valueObject.value[^1], Is.EqualTo((byte)(output.valueObject.value.Length * 2 - 1)));
+                    Assert.That(output.valueObject.value[^1], Is.EqualTo((byte)(output.valueObject.value.Length * 2 - 1)), $"key {keycnt}, last item");
                 }
             }
 
