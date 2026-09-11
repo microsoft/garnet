@@ -126,6 +126,49 @@ namespace Garnet.test
         }
 
         /// <summary>
+        /// CLUSTER SLOTS serializes the whole topology into one string and writes it atomically. Unlike
+        /// GETKEYSINSLOT the size is not client-supplied per element -- it grows with the number of disjoint
+        /// slot ranges the operator has assigned, so a sufficiently fragmented cluster overruns the buffer
+        /// with no oversized key involved.
+        /// </summary>
+        [Test]
+        public void ClusterSlotsReturnsTopologyLargerThanSendBuffer()
+        {
+            using var s = Connect();
+
+            // Alternate assigned/unassigned so each assigned slot is its own range. Every range costs roughly
+            // 90 bytes of reply, so this is comfortably past the 128 KB default send buffer as well as the
+            // floored one.
+            const int Ranges = 2000;
+            var args = new string[1 + (2 * Ranges)];
+            args[0] = "ADDSLOTSRANGE";
+            for (var i = 0; i < Ranges; i++)
+            {
+                var slot = i * 2;
+                args[1 + (2 * i)] = slot.ToString();
+                args[2 + (2 * i)] = slot.ToString();
+            }
+
+            Send(s, Prepend("CLUSTER", args));
+            ReadUntil(s, "+OK\r\n", 4096);
+
+            Send(s, "CLUSTER", "SLOTS");
+            var reply = ReadAtLeast(s, 128 * 1024);
+
+            ClassicAssert.IsTrue(reply.StartsWith($"*{Ranges}\r\n", StringComparison.Ordinal),
+                $"unexpected CLUSTER SLOTS reply head: {reply[..Math.Min(64, reply.Length)]}");
+            ClassicAssert.GreaterOrEqual(reply.Length, 128 * 1024, "response was truncated");
+        }
+
+        static string[] Prepend(string head, string[] rest)
+        {
+            var all = new string[rest.Length + 1];
+            all[0] = head;
+            Array.Copy(rest, 0, all, 1, rest.Length);
+            return all;
+        }
+
+        /// <summary>
         /// Accumulates at least <paramref name="count"/> bytes. A dropped connection is the failure mode
         /// under test: the session is killed mid-response.
         /// </summary>

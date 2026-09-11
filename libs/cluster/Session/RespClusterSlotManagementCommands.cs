@@ -620,8 +620,7 @@ namespace Garnet.cluster
             }
             var preferredType = clusterProvider.serverOptions.ClusterPreferredEndpointType;
             var slotsInfo = clusterProvider.clusterManager.CurrentConfig.GetSlotsInfo(preferredType);
-            while (!RespWriteUtils.TryWriteAsciiDirect(slotsInfo, ref dcurr, dend))
-                SendAndReset();
+            WriteLargeAsciiDirectString(slotsInfo);
 
             return true;
         }

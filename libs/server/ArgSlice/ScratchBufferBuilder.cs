@@ -333,14 +333,14 @@ namespace Garnet.server
                 ExpandScratchBuffer(scratchBuffer.Length + 1);
                 ptr = scratchBufferHead + scratchBufferOffset;
             }
-            scratchBufferOffset = (int)(ptr - scratchBufferHead);
+            AdvanceOffset((int)(ptr - scratchBufferHead));
 
             while (!RespWriteUtils.TryWriteBulkString(cmd, ref ptr, scratchBufferHead + scratchBuffer.Length))
             {
                 ExpandScratchBuffer(scratchBuffer.Length + 1);
                 ptr = scratchBufferHead + scratchBufferOffset;
             }
-            scratchBufferOffset = (int)(ptr - scratchBufferHead);
+            AdvanceOffset((int)(ptr - scratchBufferHead));
         }
 
         /// <summary>
@@ -356,7 +356,7 @@ namespace Garnet.server
                 ptr = scratchBufferHead + scratchBufferOffset;
             }
 
-            scratchBufferOffset = (int)(ptr - scratchBufferHead);
+            AdvanceOffset((int)(ptr - scratchBufferHead));
         }
 
         /// <summary>
@@ -372,7 +372,20 @@ namespace Garnet.server
                 ptr = scratchBufferHead + scratchBufferOffset;
             }
 
-            scratchBufferOffset = (int)(ptr - scratchBufferHead);
+            AdvanceOffset((int)(ptr - scratchBufferHead));
+        }
+
+        /// <summary>
+        /// Publishes an offset reached by writing straight through a pointer, keeping the batch's demand
+        /// high-water in step. Demand is otherwise only observed in <see cref="ExpandScratchBuffer"/>, which
+        /// runs only when a write does not fit -- so once the buffer is large enough, a batch that keeps
+        /// filling it would report no demand at all and the shrink policy would release it every time.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        void AdvanceOffset(int newOffset)
+        {
+            scratchBufferOffset = newOffset;
+            if (newOffset > batchHighWater) batchHighWater = newOffset;
         }
 
         void ExpandScratchBufferIfNeeded(int newLength)

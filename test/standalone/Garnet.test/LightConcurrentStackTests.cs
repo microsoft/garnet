@@ -34,7 +34,15 @@ namespace Garnet.test
             GC.WaitForPendingFinalizers();
             GC.Collect(2, GCCollectionMode.Forced, blocking: true, compacting: true);
 
-            ClassicAssert.IsFalse(weak.IsAlive,
+            var alive = weak.IsAlive;
+
+            // Without this the JIT may collect the stack itself during the forced collections, in which case
+            // the payload becomes unreachable whether or not the vacated slot was cleared and the assertion
+            // holds for the wrong reason. Verified: with optimization on and the slot clear reverted, this
+            // test passes without the KeepAlive and fails with it.
+            GC.KeepAlive(stack);
+
+            ClassicAssert.IsFalse(alive,
                 "the popped entry is still rooted by the stack, so releasing it frees the accounting but not the memory");
         }
 
