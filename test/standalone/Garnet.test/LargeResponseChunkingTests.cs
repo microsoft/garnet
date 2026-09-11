@@ -618,7 +618,11 @@ namespace Garnet.test
                 }
 
                 var body = headEnd + 2;
-                ClassicAssert.LessOrEqual(body + declared + 2L, reply.Length,
+
+                // Compared by subtraction rather than by summing. A declared length near long.MaxValue makes
+                // body + declared + 2 wrap negative, which passes a LessOrEqual and lets the narrowing cast
+                // below produce a raw ArgumentOutOfRangeException instead of this named assertion.
+                ClassicAssert.LessOrEqual(declared, reply.Length - (long)body - 2L,
                     $"element {i} declares {declared} bytes but the reply ends early -- the tail was lost");
                 items[i] = reply[body..(body + (int)declared)];
                 ClassicAssert.AreEqual("\r\n", reply[(body + (int)declared)..(body + (int)declared + 2)],
