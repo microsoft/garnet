@@ -14,6 +14,7 @@ namespace Garnet.cluster
     internal sealed unsafe partial class ClusterSession : IClusterSession
     {
         public string RemoteNodeId { get; private set; }
+        byte gossipVersion = ClusterConfig.LegacyClusterConfigVersion;
 
         /// <summary>
         /// Implements CLUSTER BUMPEPOCH command
@@ -386,7 +387,7 @@ namespace Garnet.cluster
             if (gossipMessage.Length > 0)
             {
                 // Validate config version before full deserialization
-                if (!ClusterConfig.TryPeekVersion(gossipMessage, out var version) || version != ClusterConfig.ClusterConfigVersion)
+                if (!ClusterConfig.TryPeekVersion(gossipMessage, out var version) || !ClusterConfig.IsSupportedVersion(version))
                 {
                     logger?.LogWarning("Received gossip with incompatible config version: {version}", version);
                 }
@@ -397,6 +398,11 @@ namespace Garnet.cluster
                     // GossipWithMeet messages are only send through a call to CLUSTER MEET at the remote node
                     if (gossipWithMeet || current.IsKnown(other.LocalNodeId))
                     {
+                        if (version != gossipVersion)
+                        {
+                            gossipVersion = version;
+                            lastSentConfig = null;
+                        }
                         // NOTE: release the epoch to avoid deadlock with MIGRATE config suspension
                         ReleaseCurrentEpoch();
                         try
@@ -420,7 +426,7 @@ namespace Garnet.cluster
             // Respond if configuration has changed or gossipWithMeet option is specified
             if (lastSentConfig != current || gossipWithMeet)
             {
-                var configByteArray = current.ToByteArray();
+                var configByteArray = current.ToByteArray(gossipVersion);
                 clusterProvider.clusterManager.gossipStats.UpdateGossipBytesSend(configByteArray.Length);
                 WriteLargeBulkString(configByteArray);
                 lastSentConfig = current;
