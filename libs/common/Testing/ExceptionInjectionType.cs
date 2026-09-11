@@ -125,6 +125,17 @@ namespace Garnet.common
         /// Vector Set: pause in the index-recreate window before RMW write refreshed index pointer back to the main store.
         /// </summary>
         VectorSet_Pause_Before_Recreate_Rmw,
+
+        /// <summary>
+        /// Pause before the RMW that persists a <c>ContextMetadata</c> record.
+        /// </summary>
+        VectorSet_Pause_Before_Context_Metadata_Rmw,
+
+        /// <summary>
+        /// Pause when a checkpoint reaches the end of its fuzzy region, before it captures the
+        /// last address the snapshot covers.
+        /// </summary>
+        Checkpoint_Pause_At_Flush_Begin,
         /// <summary>
         /// Cluster gossip: fail a single round of the main gossip loop, to exercise recovery from a transient
         /// error raised while connections are initialized or the configuration is broadcast.

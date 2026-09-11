@@ -661,6 +661,8 @@ namespace Garnet.server
                     input.CallbackContext = (nint)Unsafe.AsPointer(ref MemoryMarshal.GetReference(dataSpan));
                 }
 
+                ExceptionInjectionHelper.ResetAndWait(ExceptionInjectionType.VectorSet_Pause_Before_Context_Metadata_Rmw);
+
                 var status = ctx.RMW(key, ref input);
 
                 if (status.IsPending)
