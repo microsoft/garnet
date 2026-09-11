@@ -119,6 +119,120 @@ namespace Garnet.test
             StringAssert.Contains(bigKey, reply);
         }
 
+        /// <summary>
+        /// Set-operation results are built as a managed collection and written straight through the atomic
+        /// path, unlike SMEMBERS which routes through the growing memory writer.
+        /// </summary>
+        [Test]
+        public void SetIntersectReturnsMemberLargerThanSendBuffer()
+        {
+            using var s = Connect();
+            var bigMember = new string('i', OversizedElement);
+
+            s.Send(Resp("SADD", "sa", bigMember));
+            StringAssert.StartsWith(":1\r\n", ReadUntil(s, ":1\r\n"));
+            s.Send(Resp("SADD", "sb", bigMember));
+            StringAssert.StartsWith(":1\r\n", ReadUntil(s, ":1\r\n"));
+
+            s.Send(Resp("SINTER", "sa", "sb"));
+            var reply = ReadUntil(s, bigMember);
+
+            StringAssert.StartsWith("*1\r\n", reply);
+            StringAssert.Contains(bigMember, reply);
+        }
+
+        [Test]
+        public void SetUnionReturnsMemberLargerThanSendBuffer()
+        {
+            using var s = Connect();
+            var bigMember = new string('u', OversizedElement);
+
+            s.Send(Resp("SADD", "ua", bigMember));
+            StringAssert.StartsWith(":1\r\n", ReadUntil(s, ":1\r\n"));
+
+            s.Send(Resp("SUNION", "ua", "ub"));
+            var reply = ReadUntil(s, bigMember);
+
+            StringAssert.StartsWith("*1\r\n", reply);
+            StringAssert.Contains(bigMember, reply);
+        }
+
+        /// <summary>
+        /// The blocking pops are the dangerous ones: the element is removed from the list before the reply is
+        /// written, so a failed write loses the item outright rather than merely killing the session.
+        /// </summary>
+        [Test]
+        public void BlockingPopReturnsElementLargerThanSendBufferWithoutLosingIt()
+        {
+            using var s = Connect();
+            var bigElement = new string('b', OversizedElement);
+
+            s.Send(Resp("RPUSH", "blist", bigElement));
+            StringAssert.StartsWith(":1\r\n", ReadUntil(s, ":1\r\n"));
+
+            s.Send(Resp("BLPOP", "blist", "0"));
+            var reply = ReadUntil(s, bigElement);
+
+            StringAssert.StartsWith("*2\r\n", reply);
+            StringAssert.Contains(bigElement, reply);
+
+            // If the write had failed after the destructive pop the element would be gone with no reply.
+            s.Send(Resp("LLEN", "blist"));
+            StringAssert.StartsWith(":0\r\n", ReadUntil(s, ":0\r\n"));
+        }
+
+        [Test]
+        public void BlockingSortedSetPopReturnsMemberLargerThanSendBuffer()
+        {
+            using var s = Connect();
+            var bigMember = new string('z', OversizedElement);
+
+            s.Send(Resp("ZADD", "bzset", "1", bigMember));
+            StringAssert.StartsWith(":1\r\n", ReadUntil(s, ":1\r\n"));
+
+            s.Send(Resp("BZPOPMIN", "bzset", "0"));
+            var reply = ReadUntil(s, bigMember);
+
+            StringAssert.StartsWith("*3\r\n", reply);
+            StringAssert.Contains(bigMember, reply);
+        }
+
+        /// <summary>
+        /// BLMOVE writes the moved element after it has already been removed from the source list.
+        /// </summary>
+        [Test]
+        public void BlockingMoveReturnsElementLargerThanSendBuffer()
+        {
+            using var s = Connect();
+            var bigElement = new string('v', OversizedElement);
+
+            s.Send(Resp("RPUSH", "srclist", bigElement));
+            StringAssert.StartsWith(":1\r\n", ReadUntil(s, ":1\r\n"));
+
+            s.Send(Resp("BLMOVE", "srclist", "dstlist", "LEFT", "RIGHT", "0"));
+            var reply = ReadUntil(s, bigElement);
+
+            StringAssert.Contains(bigElement, reply);
+
+            s.Send(Resp("LLEN", "dstlist"));
+            StringAssert.StartsWith(":1\r\n", ReadUntil(s, ":1\r\n"));
+        }
+
+        [Test]
+        public void SortedSetRandomMemberReturnsMemberLargerThanSendBuffer()
+        {
+            using var s = Connect();
+            var bigMember = new string('r', OversizedElement);
+
+            s.Send(Resp("ZADD", "zrand", "1", bigMember));
+            StringAssert.StartsWith(":1\r\n", ReadUntil(s, ":1\r\n"));
+
+            s.Send(Resp("ZRANDMEMBER", "zrand"));
+            var reply = ReadUntil(s, bigMember);
+
+            StringAssert.Contains(bigMember, reply);
+        }
+
         [Test]
         public void SetMembersReturnsMemberLargerThanSendBuffer()
         {

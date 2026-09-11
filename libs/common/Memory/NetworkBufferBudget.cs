@@ -159,7 +159,8 @@ namespace Garnet.common
         {
             if (budgetBytes == 0)
                 return;
-            Interlocked.Increment(ref liveBufferCount);
+            _ = Interlocked.Increment(ref liveBufferCount);
+            Recompute();
         }
 
         /// <summary>
@@ -170,7 +171,8 @@ namespace Garnet.common
         {
             if (budgetBytes == 0)
                 return;
-            Interlocked.Decrement(ref liveBufferCount);
+            _ = Interlocked.Decrement(ref liveBufferCount);
+            Recompute();
         }
 
         /// <summary>
@@ -184,8 +186,11 @@ namespace Garnet.common
         public void RecordIdleShrink() => Interlocked.Increment(ref idleShrinks);
 
         /// <summary>
-        /// Recompute and publish <see cref="TargetBufferSize"/>. Called from slow paths only: connection
-        /// admission and release, and the pool's allocate-miss path.
+        /// Recompute and publish <see cref="TargetBufferSize"/>. Runs from <see cref="OnBufferAcquired"/> and
+        /// <see cref="OnBufferReleased"/> so the count and the target it derives can never diverge: every path
+        /// that moves the live population republishes. Pooled reuse grows that population just as an
+        /// allocate-miss does, and a drained spike only shrinks it, so recomputing on allocation alone leaves
+        /// the target pinned at whatever the spike drove it to.
         /// </summary>
         public void Recompute()
         {

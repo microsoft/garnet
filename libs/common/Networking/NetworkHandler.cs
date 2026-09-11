@@ -41,6 +41,24 @@ namespace Garnet.networking
         /// that needs a large buffer still gets one; pressure changes what a connection starts and settles at,
         /// never what it is allowed to reach. When the budget is disabled this is exactly the configured size.
         /// </remarks>
+        /// <summary>
+        /// Size for a new TLS plaintext send buffer. Send buffers never grow -- an oversized response is
+        /// chunked through whatever buffer it was given, and <c>GetResponseObjectHead</c>/<c>Tail</c> read the
+        /// length off the entry -- so the size is safe to adapt. It must be adapted: the pool measures a
+        /// returned entry of this type against the send target, so leaving the allocation at the configured
+        /// size would make every TLS connection's buffer over-target under pressure, dropped on return, and
+        /// freshly pinned on the next connect.
+        /// </summary>
+        protected int BaseSendBufferSize
+        {
+            get
+            {
+                var configured = networkBufferSettings.sendBufferSize;
+                var budget = networkPool.Budget;
+                return budget.IsEnabled ? Math.Min(configured, budget.TargetSendBufferSize) : configured;
+            }
+        }
+
         protected int BaseReceiveBufferSize
         {
             get
@@ -176,7 +194,7 @@ namespace Garnet.networking
                 transportReceiveBuffer = transportReceiveBufferEntry.entry;
                 transportReceiveBufferPtr = transportReceiveBufferEntry.entryPtr;
 
-                transportSendBufferEntry = this.networkPool.Get(this.networkBufferSettings.sendBufferSize, PoolEntryBufferType.TransportSendBuffer);
+                transportSendBufferEntry = this.networkPool.Get(BaseSendBufferSize, PoolEntryBufferType.TransportSendBuffer);
                 transportSendBuffer = transportSendBufferEntry.entry;
                 transportSendBufferPtr = transportSendBufferEntry.entryPtr;
             }
@@ -319,11 +337,15 @@ namespace Garnet.networking
             transportReceiveBufferPtr = networkReceiveBufferPtr;
             transportBytesRead = networkBytesRead;
 
+            // Occupancy before processing is the capacity this pass needed. Process consumes and compacts the
+            // buffer in place, so sampling afterwards reads a fully consumed request as a zero-byte one.
+            var demand = networkBytesRead;
+
             // Process non-TLS code on the synchronous thread
             Process();
 
             EndTransformNetworkToTransport();
-            UpdateNetworkBuffers();
+            UpdateNetworkBuffers(demand);
         }
 
         /// <summary>
@@ -338,6 +360,9 @@ namespace Garnet.networking
 
             // Increment network bytes read
             networkBytesRead += bytesTransferred;
+
+            // Occupancy before the reader consumes ciphertext is the capacity this pass needed.
+            var demand = networkBytesRead;
 
             switch (readerStatus)
             {
@@ -363,10 +388,14 @@ namespace Garnet.networking
             }
 
             Debug.Assert(readerStatus != TlsReaderStatus.Active);
-            UpdateNetworkBuffers();
+            UpdateNetworkBuffers(demand);
         }
 
-        void UpdateNetworkBuffers()
+        /// <param name="demand">
+        /// Bytes the receive buffer held for this pass, sampled before any of them were consumed. This is the
+        /// capacity the traffic needed; the unconsumed remainder left afterwards is not.
+        /// </param>
+        void UpdateNetworkBuffers(int demand)
         {
             // Shift network buffer after processing is done
             if (networkReadHead > 0)
@@ -380,7 +409,7 @@ namespace Garnet.networking
             }
             else
             {
-                MaybeShrinkNetworkReceiveBuffer();
+                MaybeShrinkNetworkReceiveBuffer(demand);
             }
         }
 
@@ -396,14 +425,18 @@ namespace Garnet.networking
         /// waiting out a per-connection countdown. Otherwise the buffer is kept until
         /// <see cref="ShrinkHysteresis"/> consecutive receives have fit comfortably in the smaller size.
         /// </remarks>
-        void MaybeShrinkNetworkReceiveBuffer()
+        /// <param name="demand">
+        /// Bytes the buffer held for this pass, sampled before consumed bytes were shifted away. This is the
+        /// capacity the traffic needed; the residual left after processing is not.
+        /// </param>
+        void MaybeShrinkNetworkReceiveBuffer(int demand)
         {
             var baseSize = BaseReceiveBufferSize;
             var current = networkReceiveBuffer.Length;
             if (current <= baseSize)
                 return;
 
-            var target = TargetReceiveBufferSize(networkBytesRead, baseSize, current);
+            var target = TargetReceiveBufferSize(demand, baseSize, current);
             if (target >= current)
             {
                 networkShrinkCountdown = ShrinkHysteresis;
@@ -481,6 +514,9 @@ namespace Garnet.networking
                     // blocking is unavoidable here, but safe since we've checked IsCompletedSuccessfully
                     transportBytesRead += AsyncUtils.BlockingWait(result);
 
+                    // Occupancy before processing is the capacity this pass needed; the residual after it is not.
+                    var transportDemand = transportBytesRead;
+
                     // Read task has control, process the decrypted transport bytes
                     Process();
 
@@ -496,7 +532,7 @@ namespace Garnet.networking
                     }
                     else
                     {
-                        MaybeShrinkTransportReceiveBuffer();
+                        MaybeShrinkTransportReceiveBuffer(transportDemand);
                     }
                 }
                 else
@@ -521,6 +557,9 @@ namespace Garnet.networking
 
                 transportBytesRead += count;
 
+                // Occupancy before processing is the capacity this pass needed; the residual after it is not.
+                var transportDemand = transportBytesRead;
+
                 // Read task has control, process the decrypted transport bytes
                 Process();
 
@@ -537,7 +576,7 @@ namespace Garnet.networking
                 }
                 else
                 {
-                    MaybeShrinkTransportReceiveBuffer();
+                    MaybeShrinkTransportReceiveBuffer(transportDemand);
                 }
                 // If more work, passthrough to the general SslReaderAsync, else this task is done.
                 // NOTE: we must propagate the `retry` flag (which signals "the transport buffer was just doubled,
@@ -580,6 +619,9 @@ namespace Garnet.networking
 
                     transportBytesRead += count;
 
+                    // Occupancy before processing is the capacity this pass needed; the residual after it is not.
+                    var transportDemand = transportBytesRead;
+
                     // Read task has control, process the decrypted transport bytes
                     Process();
 
@@ -596,7 +638,7 @@ namespace Garnet.networking
                     }
                     else
                     {
-                        MaybeShrinkTransportReceiveBuffer();
+                        MaybeShrinkTransportReceiveBuffer(transportDemand);
                     }
                 }
 
@@ -696,7 +738,11 @@ namespace Garnet.networking
         /// Only safe to call from the reader while it owns the buffer and no <c>ReadAsync</c> is outstanding
         /// against it, which is exactly where <see cref="DoubleTransportReceiveBuffer"/> is called from.
         /// </summary>
-        unsafe void MaybeShrinkTransportReceiveBuffer()
+        /// <param name="demand">
+        /// Bytes the buffer held for this pass, sampled before consumed bytes were shifted away. This is the
+        /// capacity the traffic needed; the residual left after processing is not.
+        /// </param>
+        unsafe void MaybeShrinkTransportReceiveBuffer(int demand)
         {
             if (sslStream == null)
                 return;
@@ -708,7 +754,7 @@ namespace Garnet.networking
 
             Debug.Assert(transportReadHead == 0, "Shouldn't call if remaining data not already moved to head of transport buffer");
 
-            var target = TargetReceiveBufferSize(transportBytesRead, baseSize, current);
+            var target = TargetReceiveBufferSize(demand, baseSize, current);
             if (target >= current)
             {
                 transportShrinkCountdown = ShrinkHysteresis;
