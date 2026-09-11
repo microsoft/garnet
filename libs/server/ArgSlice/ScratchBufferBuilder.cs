@@ -52,15 +52,27 @@ namespace Garnet.server
 #endif
 
         /// <summary>
-        /// Largest number of bytes requested since the last <see cref="Reset"/>, used to decide whether
-        /// an over-sized buffer is still earning its keep.
+        /// Capacity retained indefinitely. <see cref="int.MaxValue"/> disables shrinking.
         /// </summary>
-        int batchHighWater;
+        readonly int maxRetainedCapacity;
 
         /// <summary>
-        /// Governs release of a buffer that grew to serve one unusually large request.
+        /// Resets remaining before the next shrink checkpoint. Counting down an integer keeps the reset
+        /// path, which runs on every batch, to one decrement and one predictable branch.
         /// </summary>
-        BufferShrinkPolicy shrinkPolicy;
+        int shrinkCountdown = ShrinkCheckInterval;
+
+        /// <summary>
+        /// Capacity observed at the previous checkpoint. A buffer that has not grown since then is not
+        /// earning its keep, which is the demand signal the policy acts on.
+        /// </summary>
+        int checkpointCapacity;
+
+        /// <summary>
+        /// Resets between shrink checkpoints. An over-sized buffer is released within two intervals,
+        /// while a session that needs the capacity on every batch reallocates at most once per two.
+        /// </summary>
+        internal const int ShrinkCheckInterval = 64;
 
         /// <summary>Current offset in scratch buffer</summary>
         internal int ScratchBufferOffset => scratchBufferOffset;
@@ -74,13 +86,11 @@ namespace Garnet.server
         /// <param name="maxRetainedCapacity">
         /// Capacity retained indefinitely across resets. A buffer that grew beyond this to serve a large
         /// request is released once the session stops needing it, so one large command does not permanently
-        /// enlarge the session. Defaults to <see cref="BufferShrinkPolicy.Unbounded"/> (grow forever).
+        /// enlarge the session. Defaults to <see cref="int.MaxValue"/>, i.e. grow forever.
         /// </param>
-        /// <param name="shrinkHysteresis">Consecutive resets without needing the extra capacity before releasing.</param>
-        public ScratchBufferBuilder(int maxRetainedCapacity = BufferShrinkPolicy.Unbounded,
-            int shrinkHysteresis = BufferShrinkPolicy.DefaultHysteresis)
+        public ScratchBufferBuilder(int maxRetainedCapacity = int.MaxValue)
         {
-            this.shrinkPolicy = new BufferShrinkPolicy(maxRetainedCapacity, shrinkHysteresis);
+            this.maxRetainedCapacity = maxRetainedCapacity <= 0 ? int.MaxValue : maxRetainedCapacity;
         }
 
         /// <summary>
@@ -92,17 +102,35 @@ namespace Garnet.server
 #if DEBUG
             outstandingSlices = 0;
 #endif
-            if (shrinkPolicy.ShouldShrink(scratchBuffer?.Length ?? 0, batchHighWater))
+            if (--shrinkCountdown <= 0)
+                ShrinkCheckpoint();
+        }
+
+        /// <summary>
+        /// Releases a buffer that has stayed above <see cref="maxRetainedCapacity"/> without growing since
+        /// the previous checkpoint. Cold by construction: reached once per <see cref="ShrinkCheckInterval"/>
+        /// resets, and a reset has already invalidated every outstanding slice.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        void ShrinkCheckpoint()
+        {
+            shrinkCountdown = ShrinkCheckInterval;
+            if (maxRetainedCapacity == int.MaxValue)
+                return;
+
+            var capacity = scratchBuffer?.Length ?? 0;
+            if (capacity > maxRetainedCapacity && capacity <= checkpointCapacity)
             {
                 // Reallocate at the baseline rather than releasing outright: callers such as
                 // WriteArgument dereference scratchBufferHead without a null check, relying on the
                 // buffer having been established by an earlier call. Shrinking to a smaller live
                 // buffer keeps that invariant exactly as any expansion would.
-                scratchBuffer = GC.AllocateArray<byte>(shrinkPolicy.MaxRetainedCapacity, pinned: true);
+                scratchBuffer = GC.AllocateArray<byte>(maxRetainedCapacity, pinned: true);
                 scratchBufferHead = (byte*)Unsafe.AsPointer(ref MemoryMarshal.GetArrayDataReference(scratchBuffer));
+                capacity = maxRetainedCapacity;
             }
 
-            batchHighWater = 0;
+            checkpointCapacity = capacity;
         }
 
         /// <summary>
@@ -333,14 +361,14 @@ namespace Garnet.server
                 ExpandScratchBuffer(scratchBuffer.Length + 1);
                 ptr = scratchBufferHead + scratchBufferOffset;
             }
-            AdvanceOffset((int)(ptr - scratchBufferHead));
+            scratchBufferOffset = (int)(ptr - scratchBufferHead);
 
             while (!RespWriteUtils.TryWriteBulkString(cmd, ref ptr, scratchBufferHead + scratchBuffer.Length))
             {
                 ExpandScratchBuffer(scratchBuffer.Length + 1);
                 ptr = scratchBufferHead + scratchBufferOffset;
             }
-            AdvanceOffset((int)(ptr - scratchBufferHead));
+            scratchBufferOffset = (int)(ptr - scratchBufferHead);
         }
 
         /// <summary>
@@ -356,7 +384,7 @@ namespace Garnet.server
                 ptr = scratchBufferHead + scratchBufferOffset;
             }
 
-            AdvanceOffset((int)(ptr - scratchBufferHead));
+            scratchBufferOffset = (int)(ptr - scratchBufferHead);
         }
 
         /// <summary>
@@ -372,29 +400,13 @@ namespace Garnet.server
                 ptr = scratchBufferHead + scratchBufferOffset;
             }
 
-            AdvanceOffset((int)(ptr - scratchBufferHead));
-        }
-
-        /// <summary>
-        /// Publishes an offset reached by writing straight through a pointer, keeping the batch's demand
-        /// high-water in step. Demand is otherwise only observed in <see cref="ExpandScratchBuffer"/>, which
-        /// runs only when a write does not fit -- so once the buffer is large enough, a batch that keeps
-        /// filling it would report no demand at all and the shrink policy would release it every time.
-        /// </summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        void AdvanceOffset(int newOffset)
-        {
-            scratchBufferOffset = newOffset;
-            if (newOffset > batchHighWater) batchHighWater = newOffset;
+            scratchBufferOffset = (int)(ptr - scratchBufferHead);
         }
 
         void ExpandScratchBufferIfNeeded(int newLength)
         {
-            var needed = scratchBufferOffset + newLength;
-            if (needed > batchHighWater) batchHighWater = needed;
-
             if (scratchBuffer == null || newLength > scratchBuffer.Length - scratchBufferOffset)
-                ExpandScratchBuffer(needed);
+                ExpandScratchBuffer(scratchBufferOffset + newLength);
         }
 
         void ExpandScratchBuffer(int newLength, int? copyLengthOverride = null)
@@ -406,8 +418,6 @@ namespace Garnet.server
                 "Use ScratchBufferAllocator for slices that must remain valid across allocations, " +
                 "or use a single CreateArgSlice and partition the buffer manually.");
 #endif
-            if (newLength > batchHighWater) batchHighWater = newLength;
-
             if (newLength < 64) newLength = 64;
             else newLength = (int)BitOperations.RoundUpToPowerOf2((uint)newLength + 1);
 

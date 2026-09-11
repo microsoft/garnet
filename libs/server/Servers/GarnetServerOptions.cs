@@ -428,8 +428,9 @@ namespace Garnet.server
         /// <summary>
         /// Capacity that each per-session scratch buffer may retain indefinitely. These buffers grow to fit
         /// the largest request a session has ever served and are pinned, so without a ceiling a single large
-        /// command permanently enlarges the session. A session that keeps needing more than this keeps its
-        /// larger buffer; it is only released after a long stretch of not needing the extra capacity.
+        /// command permanently enlarges the session. Capacity above the ceiling is released at a periodic
+        /// checkpoint, and only when it did not grow since the previous checkpoint, so a session that keeps
+        /// needing the extra capacity reallocates at most once every few dozen batches.
         /// Zero disables shrinking, restoring grow-forever behavior.
         /// </summary>
         public string SessionScratchBufferMaxRetainedSize = null;
@@ -442,7 +443,7 @@ namespace Garnet.server
             if (string.IsNullOrEmpty(SessionScratchBufferMaxRetainedSize))
                 return DefaultSessionScratchBufferMaxRetainedSize;
             var size = ParseSize(SessionScratchBufferMaxRetainedSize, out _);
-            if (size <= 0 || size >= int.MaxValue) return BufferShrinkPolicy.Unbounded;
+            if (size <= 0 || size >= int.MaxValue) return int.MaxValue;
             return (int)size;
         }
 
@@ -455,7 +456,8 @@ namespace Garnet.server
         /// <summary>
         /// Argument capacity that each session's RESP parse state may retain indefinitely. The parse state
         /// root buffer is sized by the argument count a client sends, so without a ceiling one very wide
-        /// command permanently enlarges the session. Zero disables shrinking.
+        /// command permanently enlarges the session. Capacity above the ceiling is released at a periodic
+        /// batch checkpoint. Zero disables shrinking.
         /// </summary>
         public int SessionParseStateMaxRetainedArgs = DefaultSessionParseStateMaxRetainedArgs;
 
@@ -463,7 +465,7 @@ namespace Garnet.server
         /// Resolve the per-session parse state retention ceiling, in arguments.
         /// </summary>
         public int GetSessionParseStateMaxRetainedArgs()
-            => SessionParseStateMaxRetainedArgs <= 0 ? BufferShrinkPolicy.Unbounded : SessionParseStateMaxRetainedArgs;
+            => SessionParseStateMaxRetainedArgs <= 0 ? int.MaxValue : SessionParseStateMaxRetainedArgs;
 
         /// <summary>
         /// Default retained argument capacity, set well above the arity of ordinary commands so that normal

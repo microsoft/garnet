@@ -455,7 +455,7 @@ namespace Garnet
         public string NetworkSendBufferMinSize { get; set; }
 
         [MemorySizeValidation(false)]
-        [Option("session-scratch-buffer-max-retained-size", Required = false, HelpText = "Capacity each per-session scratch buffer may retain indefinitely. These pinned buffers grow to fit the largest request a session has served, so a ceiling stops one large command from permanently enlarging the session. Sessions that keep needing more retain more; 0 disables shrinking.")]
+        [Option("session-scratch-buffer-max-retained-size", Required = false, HelpText = "Capacity each per-session scratch buffer may retain indefinitely. These pinned buffers grow to fit the largest request a session has served, so a ceiling stops one large command from permanently enlarging the session. Capacity above the ceiling is released at a periodic checkpoint; 0 disables shrinking.")]
         public string SessionScratchBufferMaxRetainedSize { get; set; }
 
         [IntRangeValidation(0, int.MaxValue, isRequired: false)]

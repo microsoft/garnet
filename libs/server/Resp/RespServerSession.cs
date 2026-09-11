@@ -73,10 +73,24 @@ namespace Garnet.server
         internal SessionParseState parseState;
 
         /// <summary>
-        /// Governs release of a <see cref="parseState"/> root buffer that grew to serve one unusually
-        /// wide command. Sized in arguments rather than bytes.
+        /// Root buffer capacity, in arguments, retained indefinitely. <see cref="int.MaxValue"/> disables
+        /// shrinking. Cached from the server options so the batch boundary reads a plain field.
         /// </summary>
-        BufferShrinkPolicy parseStateShrinkPolicy;
+        readonly int parseStateShrinkThreshold;
+
+        /// <summary>
+        /// Batches remaining before the next parse-state shrink checkpoint. Counting down a plain integer
+        /// keeps the batch boundary off <see cref="parseState"/> entirely; the struct is only examined
+        /// inside the cold checkpoint, once every <see cref="ParseStateShrinkCheckInterval"/> batches.
+        /// </summary>
+        int parseStateShrinkCountdown = ParseStateShrinkCheckInterval;
+
+        /// <summary>
+        /// Root buffer capacity observed at the previous checkpoint, used as the demand signal: a buffer
+        /// that has not grown since the last checkpoint is not earning its keep.
+        /// </summary>
+        int parseStateCheckpointLength;
+
         internal SessionParseState customCommandParseState;
 
         ClusterSlotVerificationInput csvi;
@@ -285,8 +299,7 @@ namespace Garnet.server
             this.scratchBufferAllocator = new ScratchBufferAllocator(
                 maxInitialCapacity: storeWrapper.serverOptions.GetSessionScratchBufferMaxRetainedSize());
 
-            this.parseStateShrinkPolicy = new BufferShrinkPolicy(
-                storeWrapper.serverOptions.GetSessionParseStateMaxRetainedArgs());
+            this.parseStateShrinkThreshold = storeWrapper.serverOptions.GetSessionParseStateMaxRetainedArgs();
 
             this.storeWrapper = storeWrapper;
             this.subscribeBroker = subscribeBroker;
@@ -423,6 +436,36 @@ namespace Garnet.server
             subscribeBroker?.RemoveSubscription(this);
             storeWrapper.itemBroker?.HandleSessionDisposed(this);
             sessionScriptCache?.Dispose();
+        }
+
+        /// <summary>
+        /// Batches between parse-state shrink checkpoints. A buffer that grew for one wide command is
+        /// therefore released within two intervals, while a session that needs the capacity on every
+        /// batch reallocates at most once per two intervals.
+        /// </summary>
+        internal const int ParseStateShrinkCheckInterval = 64;
+
+        /// <summary>
+        /// Releases a parse state root buffer that has stayed above its cap without growing since the
+        /// previous checkpoint. Cold by construction: reached once per
+        /// <see cref="ParseStateShrinkCheckInterval"/> batches. Called at the batch boundary, where no
+        /// argument pointers from the completed batch remain live.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        void ParseStateShrinkCheckpoint()
+        {
+            parseStateShrinkCountdown = ParseStateShrinkCheckInterval;
+            if (parseStateShrinkThreshold == int.MaxValue)
+                return;
+
+            var length = parseState.RootBufferLength;
+            if (length > parseStateShrinkThreshold && length <= parseStateCheckpointLength)
+            {
+                parseState.ShrinkRootBuffer(parseStateShrinkThreshold);
+                length = parseState.RootBufferLength;
+            }
+
+            parseStateCheckpointLength = length;
         }
 
         public int StoreSessionID => storageSession.SessionID;
@@ -590,10 +633,11 @@ namespace Garnet.server
                 scratchBufferAllocator.Reset();
 
                 // Batch boundary: no argument pointers outlive it, so an over-sized parse state root
-                // buffer grown for one unusually wide command can be released here.
-                if (parseStateShrinkPolicy.ShouldShrink(parseState.RootBufferLength, parseState.BatchHighWater))
-                    parseState.ShrinkRootBuffer(parseStateShrinkPolicy.MaxRetainedCapacity);
-                parseState.ResetBatchHighWater();
+                // buffer grown for one unusually wide command can be released here. Counting down an
+                // integer keeps this off the parse state itself, which measurably degrades code
+                // generation for this method when read on every batch.
+                if (--parseStateShrinkCountdown <= 0)
+                    ParseStateShrinkCheckpoint();
             }
 
             if (txnSkip)

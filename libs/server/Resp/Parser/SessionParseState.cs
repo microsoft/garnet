@@ -47,20 +47,9 @@ namespace Garnet.server
         PinnedSpanByte[] rootBuffer;
 
         /// <summary>
-        /// Largest argument count requested since the last call to <see cref="ResetBatchHighWater"/>.
-        /// Drives release of a root buffer that grew to serve one unusually wide command.
-        /// </summary>
-        int batchHighWater;
-
-        /// <summary>
         /// Capacity, in arguments, that the root buffer currently holds.
         /// </summary>
         public readonly int RootBufferLength => rootBuffer?.Length ?? 0;
-
-        /// <summary>
-        /// Largest argument count seen since the last call to <see cref="ResetBatchHighWater"/>.
-        /// </summary>
-        public readonly int BatchHighWater => batchHighWater;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private SessionParseState(ref PinnedSpanByte[] rootBuffer, int rootCount, PinnedSpanByte* bufferPtr, int count)
@@ -78,17 +67,9 @@ namespace Garnet.server
         {
             Count = 0;
             rootCount = 0;
-            batchHighWater = 0;
             rootBuffer = GC.AllocateArray<PinnedSpanByte>(MinParams, true);
             bufferPtr = (PinnedSpanByte*)Unsafe.AsPointer(ref rootBuffer[0]);
         }
-
-        /// <summary>
-        /// Clears the per-batch high-water mark. Called at the session's batch boundary, after
-        /// <see cref="ShrinkRootBuffer"/> has had a chance to observe it.
-        /// </summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void ResetBatchHighWater() => batchHighWater = 0;
 
         /// <summary>
         /// Releases an over-sized root buffer back down to <paramref name="retainedCount"/> arguments.
@@ -117,7 +98,6 @@ namespace Garnet.server
         {
             Count = count;
             rootCount = count;
-            if (count > batchHighWater) batchHighWater = count;
 
             if (rootBuffer != null && (count <= MinParams || count <= rootBuffer.Length))
                 return;

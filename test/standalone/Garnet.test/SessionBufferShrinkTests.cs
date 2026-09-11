@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using Garnet.common;
 using Garnet.server;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -15,12 +14,17 @@ namespace Garnet.test
     /// largest request a session has served. Without it, one large or one unusually wide command
     /// permanently enlarges every session that saw it, so memory tracks session count rather than
     /// working set.
+    ///
+    /// The policy is a periodic checkpoint rather than per-batch demand tracking: the reset path runs
+    /// on every batch and is hot enough that reading the buffer state there is measurable, so demand is
+    /// inferred from whether the buffer grew between two checkpoints. A buffer that is needed on every
+    /// batch is therefore released at most once per two intervals rather than never.
     /// </summary>
     [TestFixture]
     public class SessionBufferShrinkTests : TestBase
     {
         const int MaxRetained = 64 * 1024;
-        const int Hysteresis = 8;
+        const int Interval = ScratchBufferBuilder.ShrinkCheckInterval;
 
         [SetUp]
         public void Setup() => TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
@@ -29,64 +33,9 @@ namespace Garnet.test
         public void TearDown() => TestUtils.OnTearDown();
 
         [Test]
-        public void ShrinkPolicyReleasesOnlyAfterSustainedDisuse()
-        {
-            var policy = new BufferShrinkPolicy(MaxRetained, Hysteresis);
-
-            // Within budget: never shrinks, regardless of how long it runs.
-            for (var i = 0; i < Hysteresis * 4; i++)
-                ClassicAssert.IsFalse(policy.ShouldShrink(MaxRetained, 1024));
-
-            // Oversized but genuinely used every batch: keeps its buffer, so a steady large-payload
-            // workload never churns pinned reallocations.
-            for (var i = 0; i < Hysteresis * 4; i++)
-                ClassicAssert.IsFalse(policy.ShouldShrink(1 << 20, MaxRetained + 1));
-
-            // Oversized and unused: released, but only once hysteresis has elapsed.
-            for (var i = 0; i < Hysteresis - 1; i++)
-                ClassicAssert.IsFalse(policy.ShouldShrink(1 << 20, 16), $"shrank early at {i}");
-            ClassicAssert.IsTrue(policy.ShouldShrink(1 << 20, 16));
-        }
-
-        [Test]
-        public void ShrinkPolicyUsageResetsTheIdleCount()
-        {
-            var policy = new BufferShrinkPolicy(MaxRetained, Hysteresis);
-
-            for (var i = 0; i < Hysteresis - 1; i++)
-                ClassicAssert.IsFalse(policy.ShouldShrink(1 << 20, 16));
-
-            // A single batch that needs the capacity restarts the countdown.
-            ClassicAssert.IsFalse(policy.ShouldShrink(1 << 20, MaxRetained + 1));
-
-            for (var i = 0; i < Hysteresis - 1; i++)
-                ClassicAssert.IsFalse(policy.ShouldShrink(1 << 20, 16), $"shrank early at {i}");
-            ClassicAssert.IsTrue(policy.ShouldShrink(1 << 20, 16));
-        }
-
-        [Test]
-        public void ShrinkPolicyDisabledByDefaultAndByZero()
-        {
-            // Both the explicit sentinel and a default-initialized struct must be inert; a
-            // default instance must never be read as "retain nothing".
-            var unbounded = new BufferShrinkPolicy(BufferShrinkPolicy.Unbounded);
-            ClassicAssert.IsFalse(unbounded.IsEnabled);
-
-            var defaulted = default(BufferShrinkPolicy);
-            ClassicAssert.IsFalse(defaulted.IsEnabled);
-            for (var i = 0; i < 1000; i++)
-                ClassicAssert.IsFalse(defaulted.ShouldShrink(1 << 24, 0));
-
-            var zero = new BufferShrinkPolicy(0);
-            ClassicAssert.IsFalse(zero.IsEnabled);
-            for (var i = 0; i < 1000; i++)
-                ClassicAssert.IsFalse(zero.ShouldShrink(1 << 24, 0));
-        }
-
-        [Test]
         public unsafe void ScratchBufferBuilderReleasesAfterOneLargeRequest()
         {
-            var builder = new ScratchBufferBuilder(MaxRetained, Hysteresis);
+            var builder = new ScratchBufferBuilder(MaxRetained);
             var big = new byte[256 * 1024];
 
             var slice = builder.CreateArgSlice(big);
@@ -98,7 +47,7 @@ namespace Garnet.test
 
             // Sustained small work releases the capacity the session no longer needs.
             var small = new byte[64];
-            for (var i = 0; i < Hysteresis; i++)
+            for (var i = 0; i < Interval * 2; i++)
             {
                 var s = builder.CreateArgSlice(small);
                 ClassicAssert.IsTrue(builder.RewindScratchBuffer(s));
@@ -114,53 +63,35 @@ namespace Garnet.test
             ClassicAssert.IsTrue(builder.RewindScratchBuffer(again));
         }
 
-        [Test]
-        public unsafe void ScratchBufferBuilderKeepsBufferUnderSustainedLargeUse()
-        {
-            var builder = new ScratchBufferBuilder(MaxRetained, Hysteresis);
-            var big = new byte[256 * 1024];
-
-            for (var i = 0; i < Hysteresis * 4; i++)
-            {
-                var s = builder.CreateArgSlice(big);
-                ClassicAssert.IsTrue(builder.RewindScratchBuffer(s));
-                builder.Reset();
-                ClassicAssert.GreaterOrEqual(builder.ScratchBufferCapacity, big.Length,
-                    $"buffer churned at iteration {i} despite being needed every batch");
-            }
-        }
-
         /// <summary>
-        /// Commands built through <c>StartCommand</c>/<c>WriteArgument</c> write straight through a pointer and
-        /// only reach the expansion path when a write does not fit. If those sites do not publish their demand,
-        /// a batch that keeps filling an already-large buffer reports zero usage and the shrink policy releases
-        /// it every time -- churning a pinned array on a session that needs it on every batch.
+        /// A session that genuinely needs a large scratch buffer on every batch must not pay a pinned
+        /// reallocation per batch. The checkpoint design permits bounded churn, so this pins the bound
+        /// rather than asserting zero: without it the ratchet-free policy would be free to thrash.
         /// </summary>
         [Test]
-        public unsafe void ScratchBufferBuilderKeepsBufferUnderSustainedCommandConstruction()
+        public unsafe void ScratchBufferBuilderChurnsAtMostOncePerCheckpointUnderSustainedLargeUse()
         {
-            var builder = new ScratchBufferBuilder(MaxRetained, Hysteresis);
-            var arg = new byte[128 * 1024];
-            var cmd = "SET"u8;
+            var builder = new ScratchBufferBuilder(MaxRetained);
+            var big = new byte[256 * 1024];
+            const int Batches = Interval * 8;
 
-            // Warm up to the size this workload needs, so every later batch fits without expanding.
-            builder.StartCommand(cmd, 2);
-            builder.WriteArgument(arg);
-            builder.WriteArgument(arg);
-            builder.Reset();
-            var warm = builder.ScratchBufferCapacity;
-            ClassicAssert.GreaterOrEqual(warm, 2 * arg.Length);
-
-            for (var i = 0; i < Hysteresis * 4; i++)
+            var shrinks = 0;
+            var previous = 0;
+            for (var i = 0; i < Batches; i++)
             {
-                builder.StartCommand(cmd, 2);
-                builder.WriteArgument(arg);
-                builder.WriteArgument(arg);
+                var s = builder.CreateArgSlice(big);
+                ClassicAssert.AreEqual(big.Length, s.Length, $"large request failed at iteration {i}");
+                ClassicAssert.IsTrue(builder.RewindScratchBuffer(s));
                 builder.Reset();
 
-                ClassicAssert.AreEqual(warm, builder.ScratchBufferCapacity,
-                    $"buffer churned at iteration {i} despite being filled every batch");
+                var capacity = builder.ScratchBufferCapacity;
+                if (i > 0 && capacity < previous) shrinks++;
+                previous = capacity;
             }
+
+            // One release per two intervals is the design maximum; allow the boundary case.
+            ClassicAssert.LessOrEqual(shrinks, Batches / (2 * Interval) + 1,
+                "buffer churned more often than one release per two checkpoint intervals");
         }
 
         [Test]
@@ -173,7 +104,7 @@ namespace Garnet.test
             ClassicAssert.IsTrue(builder.RewindScratchBuffer(slice));
 
             var small = new byte[64];
-            for (var i = 0; i < 1000; i++)
+            for (var i = 0; i < Interval * 8; i++)
             {
                 builder.Reset();
                 var s = builder.CreateArgSlice(small);
@@ -185,6 +116,23 @@ namespace Garnet.test
         }
 
         [Test]
+        public unsafe void ScratchBufferBuilderZeroCapIsTreatedAsUnbounded()
+        {
+            // A zero or negative cap must never be read as "retain nothing", which would shrink every
+            // buffer to an unusable size.
+            var builder = new ScratchBufferBuilder(0);
+            var big = new byte[256 * 1024];
+
+            var slice = builder.CreateArgSlice(big);
+            ClassicAssert.IsTrue(builder.RewindScratchBuffer(slice));
+
+            for (var i = 0; i < Interval * 4; i++)
+                builder.Reset();
+
+            ClassicAssert.GreaterOrEqual(builder.ScratchBufferCapacity, big.Length);
+        }
+
+        [Test]
         public unsafe void ParseStateRootBufferShrinksAfterWideCommand()
         {
             var parseState = new SessionParseState();
@@ -192,7 +140,6 @@ namespace Garnet.test
 
             parseState.Initialize(20000);
             ClassicAssert.GreaterOrEqual(parseState.RootBufferLength, 20000);
-            ClassicAssert.AreEqual(20000, parseState.BatchHighWater);
 
             parseState.ShrinkRootBuffer(1024);
             ClassicAssert.AreEqual(1024, parseState.RootBufferLength,
@@ -210,23 +157,6 @@ namespace Garnet.test
         }
 
         [Test]
-        public unsafe void ParseStateHighWaterTracksWidestCommandInBatch()
-        {
-            var parseState = new SessionParseState();
-            parseState.Initialize();
-
-            parseState.Initialize(10);
-            parseState.Initialize(5000);
-            parseState.Initialize(7);
-
-            ClassicAssert.AreEqual(5000, parseState.BatchHighWater,
-                "high-water must reflect the widest command in the batch, not the last one");
-
-            parseState.ResetBatchHighWater();
-            ClassicAssert.AreEqual(0, parseState.BatchHighWater);
-        }
-
-        [Test]
         public unsafe void ParseStateShrinkNeverGoesBelowMinimum()
         {
             var parseState = new SessionParseState();
@@ -241,6 +171,19 @@ namespace Garnet.test
             var arg = PinnedSpanByte.FromPinnedSpan("hi"u8);
             parseState.SetArgument(0, arg);
             ClassicAssert.IsTrue(parseState.GetArgSliceByRef(0).ReadOnlySpan.SequenceEqual("hi"u8));
+        }
+
+        [Test]
+        public unsafe void ParseStateShrinkIsANoOpWhenAlreadyWithinCap()
+        {
+            var parseState = new SessionParseState();
+            parseState.Initialize();
+            parseState.Initialize(16);
+
+            var before = parseState.RootBufferLength;
+            parseState.ShrinkRootBuffer(1024);
+            ClassicAssert.AreEqual(before, parseState.RootBufferLength,
+                "a buffer already within the cap must not be reallocated");
         }
     }
 }

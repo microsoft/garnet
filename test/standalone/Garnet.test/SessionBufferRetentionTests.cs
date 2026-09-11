@@ -28,7 +28,9 @@ namespace Garnet.test
         const int WideCommandArgs = 20_000;
 
         // Comfortably past the shrink hysteresis so the release path is actually reached.
-        const int SmallRounds = (int)(Garnet.common.BufferShrinkPolicy.DefaultHysteresis * 1.5);
+        // Two checkpoint intervals plus margin: a buffer is released at the first checkpoint that observes
+        // no growth since the previous one, so reclaim takes up to two intervals.
+        const int SmallRounds = Garnet.server.RespServerSession.ParseStateShrinkCheckInterval * 3;
 
         GarnetServer server;
 
@@ -176,8 +178,12 @@ namespace Garnet.test
 
             TestContext.Out.WriteLine($"scratch retained/session: unbounded={unbounded / 1024}KB bounded={bounded / 1024}KB");
 
-            // Capping must never make retention worse than leaving it unbounded.
-            ClassicAssert.LessOrEqual(bounded, Math.Max(unbounded, 64 * 1024) * 2,
+            // Every reply was already validated by MeasureRetentionPerSession, so results are correct.
+            // What remains to pin is that the cap does not make retention *worse* - a shrink policy that
+            // churned would show up here as extra retained memory rather than as a wrong answer. The
+            // margin is one cap's worth, which is tight enough to fail on churn and loose enough to
+            // survive the variance of a forced-collection measurement.
+            ClassicAssert.LessOrEqual(bounded, unbounded + (64 * 1024),
                 "capping retained scratch capacity must not increase what a session holds");
         }
 
@@ -197,7 +203,12 @@ namespace Garnet.test
 
             TestContext.Out.WriteLine($"parse state retained/session: unbounded={unbounded / 1024}KB bounded={bounded / 1024}KB");
 
-            ClassicAssert.Less(bounded, unbounded,
+            // Assert a magnitude, not merely a direction. The root buffer holds one PinnedSpanByte
+            // (16 bytes) per argument, so capping 20,000 arguments to 1,024 should return roughly
+            // 300 KB per session; requiring at least half of that keeps the test insensitive to
+            // measurement variance while still failing outright if the release path is neutered.
+            // A bare Less() passed with 413 KB against 407 KB when the shrink was disabled.
+            ClassicAssert.Less(bounded, unbounded - (WideCommandArgs * 8),
                 "capping retained parse state must reduce what a session holds after one wide command");
         }
 
