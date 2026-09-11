@@ -79,11 +79,11 @@ namespace Garnet.server
         readonly int parseStateShrinkThreshold;
 
         /// <summary>
-        /// Batches remaining before the next parse-state shrink checkpoint. Counting down a plain integer
+        /// Batches remaining before the next session shrink checkpoint. Counting down a plain integer
         /// keeps the batch boundary off <see cref="parseState"/> entirely; the struct is only examined
-        /// inside the cold checkpoint, once every <see cref="ParseStateShrinkCheckInterval"/> batches.
+        /// inside the cold checkpoint, once every <see cref="SessionShrinkCheckInterval"/> batches.
         /// </summary>
-        int parseStateShrinkCountdown = ParseStateShrinkCheckInterval;
+        int sessionShrinkCountdown = SessionShrinkCheckInterval;
 
         /// <summary>
         /// Root buffer capacity observed at the previous checkpoint, used as the demand signal: a buffer
@@ -439,22 +439,29 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Batches between parse-state shrink checkpoints. A buffer that grew for one wide command is
+        /// Batches between session shrink checkpoints. A buffer that grew for one wide command is
         /// therefore released within two intervals, while a session that needs the capacity on every
         /// batch reallocates at most once per two intervals.
         /// </summary>
-        internal const int ParseStateShrinkCheckInterval = 64;
+        internal const int SessionShrinkCheckInterval = 64;
 
         /// <summary>
-        /// Releases a parse state root buffer that has stayed above its cap without growing since the
-        /// previous checkpoint. Cold by construction: reached once per
-        /// <see cref="ParseStateShrinkCheckInterval"/> batches. Called at the batch boundary, where no
+        /// Releases per-session buffers that have stayed above their cap without growing since the
+        /// previous checkpoint: the parse state root buffer, and the Lua script processor's scratch buffer,
+        /// which has no batch boundary of its own. Cold by construction: reached once per
+        /// <see cref="SessionShrinkCheckInterval"/> batches. Called at the batch boundary, where no
         /// argument pointers from the completed batch remain live.
         /// </summary>
         [MethodImpl(MethodImplOptions.NoInlining)]
-        void ParseStateShrinkCheckpoint()
+        void SessionShrinkCheckpoint()
         {
-            parseStateShrinkCountdown = ParseStateShrinkCheckInterval;
+            sessionShrinkCountdown = SessionShrinkCheckInterval;
+
+            // Outside any script execution, which is the only point at which the script processor's scratch
+            // buffer is idle. Kept ahead of the parse-state early return so disabling one cap cannot disable
+            // the other.
+            sessionScriptCache?.ScratchBufferShrinkCheckpoint();
+
             if (parseStateShrinkThreshold == int.MaxValue)
                 return;
 
@@ -632,12 +639,12 @@ namespace Garnet.server
                 scratchBufferBuilder.ResetAtBatchBoundary();
                 scratchBufferAllocator.Reset();
 
-                // Batch boundary: no argument pointers outlive it, so an over-sized parse state root
-                // buffer grown for one unusually wide command can be released here. Counting down an
-                // integer keeps this off the parse state itself, which measurably degrades code
-                // generation for this method when read on every batch.
-                if (--parseStateShrinkCountdown <= 0)
-                    ParseStateShrinkCheckpoint();
+                // Batch boundary: no argument pointers outlive it, so over-sized per-session buffers
+                // grown for one unusually wide command can be released here. Counting down an integer
+                // keeps this off the parse state itself, which measurably degrades code generation for
+                // this method when read on every batch.
+                if (--sessionShrinkCountdown <= 0)
+                    SessionShrinkCheckpoint();
             }
 
             if (txnSkip)
