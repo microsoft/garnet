@@ -443,6 +443,18 @@ namespace Garnet
         public string NetworkBufferPoolSize { get; set; }
 
         [MemorySizeValidation(false)]
+        [Option("network-buffer-memory-budget", Required = false, HelpText = "Process-wide budget for the network buffers held by live connections, shared across all listeners. While connections are few this is slack and every connection gets the full --network-buffer-size; once the budget divided by the live buffer count falls below that, the base size for new buffers adapts down toward --network-buffer-min-size so the total stays near the budget. Buffers still grow on demand beyond the base size. 0 disables adaptation, restoring unbounded per-connection sizing.")]
+        public string NetworkBufferMemoryBudget { get; set; }
+
+        [MemorySizeValidation(false)]
+        [Option("network-buffer-min-size", Required = false, HelpText = "Smallest base size a receive buffer may be adapted down to when the network buffer memory budget is under pressure (rounds down to power of 2).")]
+        public string NetworkBufferMinSize { get; set; }
+
+        [MemorySizeValidation(false)]
+        [Option("network-send-buffer-min-size", Required = false, HelpText = "Smallest base size a send buffer may be adapted down to when the network buffer memory budget is under pressure (rounds down to power of 2). Higher than --network-buffer-min-size because an undersized send buffer pushes oversized responses onto a pooled-rental path.")]
+        public string NetworkSendBufferMinSize { get; set; }
+
+        [MemorySizeValidation(false)]
         [Option("session-scratch-buffer-max-retained-size", Required = false, HelpText = "Capacity each per-session scratch buffer may retain indefinitely. These pinned buffers grow to fit the largest request a session has served, so a ceiling stops one large command from permanently enlarging the session. Sessions that keep needing more retain more; 0 disables shrinking.")]
         public string SessionScratchBufferMaxRetainedSize { get; set; }
 
@@ -972,6 +984,9 @@ namespace Garnet
                 NetworkBufferSize = NetworkBufferSize,
                 NetworkMaxReceiveBufferSize = NetworkMaxReceiveBufferSize,
                 NetworkBufferPoolSize = NetworkBufferPoolSize,
+                NetworkBufferMemoryBudget = NetworkBufferMemoryBudget,
+                NetworkBufferMinSize = NetworkBufferMinSize,
+                NetworkSendBufferMinSize = NetworkSendBufferMinSize,
                 SessionScratchBufferMaxRetainedSize = SessionScratchBufferMaxRetainedSize,
                 SessionParseStateMaxRetainedArgs = SessionParseStateMaxRetainedArgs,
                 TlsOptions = EnableTLS.GetValueOrDefault() ? new GarnetTlsOptions(

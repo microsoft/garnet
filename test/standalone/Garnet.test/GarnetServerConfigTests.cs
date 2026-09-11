@@ -247,6 +247,58 @@ namespace Garnet.test
         }
 
         [Test]
+        public void NetworkBufferBudgetOptionParsing()
+        {
+            // Defaults: a 1 GB process-wide budget with a 16 KB receive floor and a higher 64 KB send floor.
+            var ok = ServerSettingsManager.TryParseCommandLineArguments([], out var options, out _, out _, out _, silentMode: true);
+            ClassicAssert.IsTrue(ok);
+            ClassicAssert.AreEqual("1g", options.NetworkBufferMemoryBudget);
+            ClassicAssert.AreEqual("16k", options.NetworkBufferMinSize);
+            ClassicAssert.AreEqual("64k", options.NetworkSendBufferMinSize);
+
+            var budget = options.GetServerOptions().GetNetworkBufferBudget();
+            ClassicAssert.IsTrue(budget.IsEnabled);
+            ClassicAssert.AreEqual(1L << 30, budget.BudgetBytes);
+            // Slack budget: the target must sit at the configured buffer size, so adaptation is inert.
+            ClassicAssert.AreEqual(1 << 17, budget.TargetBufferSize);
+            ClassicAssert.AreEqual(1 << 17, budget.TargetForCount(1));
+            // 1 GB / 128 KB = 8,192 live buffers before the target steps down.
+            ClassicAssert.AreEqual(1 << 17, budget.TargetForCount(8192));
+            ClassicAssert.AreEqual(1 << 16, budget.TargetForCount(8193));
+            ClassicAssert.AreEqual(1 << 14, budget.TargetForCount(1 << 20));
+
+            // Overrides round-trip, including the separate send floor.
+            ok = ServerSettingsManager.TryParseCommandLineArguments(
+                ["--network-buffer-memory-budget", "256m", "--network-buffer-min-size", "32k", "--network-send-buffer-min-size", "128k"],
+                out options, out _, out _, out _, silentMode: true);
+            ClassicAssert.IsTrue(ok);
+            budget = options.GetServerOptions().GetNetworkBufferBudget();
+            ClassicAssert.AreEqual(256L << 20, budget.BudgetBytes);
+            ClassicAssert.AreEqual(1 << 15, budget.TargetForCount(1 << 20));
+
+            // Zero is the escape hatch: adaptation off, configured size restored unconditionally.
+            ok = ServerSettingsManager.TryParseCommandLineArguments(["--network-buffer-memory-budget", "0"], out options, out _, out _, out _, silentMode: true);
+            ClassicAssert.IsTrue(ok);
+            budget = options.GetServerOptions().GetNetworkBufferBudget();
+            ClassicAssert.IsFalse(budget.IsEnabled);
+            ClassicAssert.AreEqual(1 << 17, budget.TargetForCount(1 << 20));
+
+            // A floor above the configured buffer size must not raise the base size; adaptation only lowers.
+            ok = ServerSettingsManager.TryParseCommandLineArguments(
+                ["--network-buffer-size", "16k", "--network-buffer-min-size", "64k"],
+                out options, out _, out _, out _, silentMode: true);
+            ClassicAssert.IsTrue(ok);
+            budget = options.GetServerOptions().GetNetworkBufferBudget();
+            ClassicAssert.AreEqual(1 << 14, budget.TargetReceiveBufferSize);
+            ClassicAssert.AreEqual(1 << 14, budget.TargetSendBufferSize);
+
+            // Non-memory-size values are rejected by validation.
+            ok = ServerSettingsManager.TryParseCommandLineArguments(["--network-buffer-memory-budget", "notasize"], out _, out var invalidOptions, out _, out _, silentMode: true);
+            ClassicAssert.IsFalse(ok);
+            ClassicAssert.IsTrue(invalidOptions.Contains(nameof(Options.NetworkBufferMemoryBudget)));
+        }
+
+        [Test]
         public void BufferPoolMemoryBudgetZeroDisablesCaching()
         {
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);

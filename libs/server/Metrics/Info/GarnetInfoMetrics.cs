@@ -411,6 +411,9 @@ namespace Garnet.server
             bufferPoolStats = new MetricsItem[server.Length];
             for (var i = 0; i < server.Length; i++)
                 bufferPoolStats[i] = new($"server_socket_{i}", ((GarnetServerTcp)server[i]).GetBufferPoolStats());
+            // The budget is shared by every listener, so it is reported once rather than per socket.
+            if (server.Length > 0)
+                bufferPoolStats = [.. bufferPoolStats, new MetricsItem("network_buffer_budget", ((GarnetServerTcp)server[0]).NetworkBufferBudget.GetStats())];
             if (storeWrapper.clusterProvider != null)
                 bufferPoolStats = [.. bufferPoolStats, .. storeWrapper.clusterProvider.GetBufferPoolStats()];
         }

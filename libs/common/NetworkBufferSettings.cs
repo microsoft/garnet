@@ -89,9 +89,10 @@ namespace Garnet.common
         /// <param name="maxEntriesPerLevel">Per-level ceiling on retained idle entries. Ignored when <paramref name="maxPooledBytes"/> is set.</param>
         /// <param name="ownerType">Subsystem that owns the pool, for diagnostics.</param>
         /// <param name="maxPooledBytes">Ceiling on total retained idle bytes across all levels. Zero keeps the per-level bound.</param>
+        /// <param name="budget">Process-wide live-buffer budget this pool participates in. Null means it participates in none.</param>
         /// <param name="logger">Logger.</param>
         /// <returns></returns>
-        public LimitedFixedBufferPool CreateBufferPool(int maxEntriesPerLevel = 16, PoolOwnerType ownerType = PoolOwnerType.Unknown, long maxPooledBytes = 0, ILogger logger = null)
+        public LimitedFixedBufferPool CreateBufferPool(int maxEntriesPerLevel = 16, PoolOwnerType ownerType = PoolOwnerType.Unknown, long maxPooledBytes = 0, NetworkBufferBudget budget = null, ILogger logger = null)
         {
             var minSize = Math.Min(Math.Min(sendBufferSize, initialReceiveBufferSize), maxReceiveBufferSize);
             var maxSize = Math.Max(Math.Max(sendBufferSize, initialReceiveBufferSize), maxReceiveBufferSize);
@@ -108,7 +109,7 @@ namespace Garnet.common
             }
 
             return new LimitedFixedBufferPool(minSize, maxEntriesPerLevel: maxEntriesPerLevel, numLevels: levels,
-                ownerType: ownerType, maxPooledBytes: maxPooledBytes, logger: logger);
+                ownerType: ownerType, maxPooledBytes: maxPooledBytes, budget: budget, logger: logger);
         }
 
         public void Log(ILogger logger, string category)

@@ -24,6 +24,17 @@ namespace Garnet.server
         readonly IGarnetTlsOptions tlsOptions;
         readonly int networkSendThrottleMax;
         readonly NetworkBufferSettings networkBufferSettings;
+
+        /// <summary>
+        /// Process-wide budget for live connection buffers. Shared across all listeners so the ceiling is
+        /// genuinely process-wide rather than per-endpoint.
+        /// </summary>
+        readonly NetworkBufferBudget networkBufferBudget;
+
+        /// <summary>
+        /// Process-wide budget for live connection buffers.
+        /// </summary>
+        public NetworkBufferBudget NetworkBufferBudget => networkBufferBudget;
         readonly LimitedFixedBufferPool networkPool;
         readonly int networkConnectionLimit;
         readonly string unixSocketPath;
@@ -68,6 +79,7 @@ namespace Garnet.server
         /// <param name="unixSocketPermission"></param>
         /// <param name="networkBufferSettings">Send/receive buffer sizing. Defaults to the built-in sizes when null.</param>
         /// <param name="networkBufferPoolSize">Ceiling on idle bytes retained by the shared buffer pool. Zero uses the pool default.</param>
+        /// <param name="networkBufferBudget">Process-wide budget for live connection buffers, shared across listeners. Null disables adaptation.</param>
         /// <param name="logger"></param>
         public GarnetServerTcp(
             EndPoint endpoint,
@@ -79,6 +91,7 @@ namespace Garnet.server
             UnixFileMode unixSocketPermission = default,
             NetworkBufferSettings networkBufferSettings = null,
             long networkBufferPoolSize = 0,
+            NetworkBufferBudget networkBufferBudget = null,
             ILogger logger = null)
             : base(endpoint, networkBufferSize, logger)
         {
@@ -91,7 +104,8 @@ namespace Garnet.server
                 networkBufferSettings = new NetworkBufferSettings(serverBufferSize, serverBufferSize);
             }
             this.networkBufferSettings = networkBufferSettings;
-            this.networkPool = networkBufferSettings.CreateBufferPool(ownerType: PoolOwnerType.ServerNetwork, maxPooledBytes: networkBufferPoolSize, logger: logger);
+            this.networkBufferBudget = networkBufferBudget ?? NetworkBufferBudget.Disabled;
+            this.networkPool = networkBufferSettings.CreateBufferPool(ownerType: PoolOwnerType.ServerNetwork, maxPooledBytes: networkBufferPoolSize, budget: this.networkBufferBudget, logger: logger);
             networkBufferSettings.Log(logger, "GarnetServerTcp");
             this.unixSocketPath = unixSocketPath;
             this.unixSocketPermission = unixSocketPermission;
