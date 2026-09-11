@@ -136,7 +136,8 @@ namespace Garnet.common
         /// <param name="ceiling">Configured base buffer size; the target never exceeds this.</param>
         /// <param name="receiveFloor">Smallest base size for a receive buffer.</param>
         /// <param name="sendFloor">Smallest base size for a send buffer.</param>
-        public NetworkBufferBudget(long budgetBytes, int ceiling, int receiveFloor, int sendFloor)
+        public NetworkBufferBudget(long budgetBytes, int ceiling, int receiveFloor, int sendFloor,
+            int recomputeAttempts = MaxRecomputeAttempts)
         {
             Debug.Assert(BitOperations.IsPow2(ceiling));
             Debug.Assert(BitOperations.IsPow2(receiveFloor));
@@ -148,6 +149,7 @@ namespace Garnet.common
             this.receiveFloor = Math.Min(receiveFloor, ceiling);
             this.sendFloor = Math.Min(sendFloor, ceiling);
             this.targetBufferSize = ceiling;
+            this.recomputeAttempts = recomputeAttempts;
         }
 
         /// <summary>
@@ -268,13 +270,11 @@ namespace Garnet.common
         const int MaxRecomputeAttempts = 8;
 
         /// <summary>
-        /// Per-instance copy of <see cref="MaxRecomputeAttempts"/>. Settable so a test can force the
-        /// exhaustion path, which contention alone cannot reach reliably enough to assert on.
+        /// Per-instance copy of <see cref="MaxRecomputeAttempts"/>. A constructor parameter rather than a
+        /// settable field so this stays immutable on an object every connection reads concurrently; a test
+        /// lowers it to force the exhaustion path, which contention alone cannot reach reliably.
         /// </summary>
-        int recomputeAttempts = MaxRecomputeAttempts;
-
-        /// <summary>Forces <see cref="Recompute"/> to exhaust its attempts after the given number.</summary>
-        internal int RecomputeAttemptsForTests { set => recomputeAttempts = value; }
+        readonly int recomputeAttempts;
 
         /// <summary>
         /// Largest permitted base size for the given per-buffer byte quotient.
