@@ -72,7 +72,7 @@ namespace Garnet.test
         [TestCase("500m", "1500M", "128GB", "44d")]
         public void ConfigSetMemorySizeTest(string smallerSize, string largerSize, string largerThanBufferSize, string malformedSize)
         {
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
             var db = redis.GetDatabase(0);
             var option = "memory";
             var metricName = "Log.AllocatedPageCount";
@@ -182,7 +182,7 @@ namespace Garnet.test
         [TestCase("4Mb", "1024mB", "129MB", "0.3gb")]
         public void ConfigSetIndexSizeTest(string smallerSize, string largerSize, string illegalSize, string malformedSize)
         {
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
             var db = redis.GetDatabase(0);
             var metricType = InfoMetricsType.STORE;
             var option = "index";
@@ -748,7 +748,7 @@ namespace Garnet.test
         [Test]
         public void ConfigGetSetRuntimeOptionsTest()
         {
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
             var db = redis.GetDatabase(0);
 
             static string Get(IDatabase db, string requestName, string expectedEchoName = null)
@@ -864,7 +864,7 @@ namespace Garnet.test
         [Test]
         public void ConfigSetSlowLogThresholdTakesEffectAtRuntime()
         {
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
             var db = redis.GetDatabase(0);
 
             // The server starts with the slow log disabled.
@@ -887,7 +887,7 @@ namespace Garnet.test
         [Test]
         public void ConfigSetRuntimeOptionValidationTest()
         {
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
             var db = redis.GetDatabase(0);
 
             // Out-of-range integer (min is 0).
@@ -919,7 +919,7 @@ namespace Garnet.test
         [Test]
         public void ConfigGetAllAndReadOnlyRejectionTest()
         {
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
             var db = redis.GetDatabase(0);
 
             // CONFIG SET on read-only parameters is rejected.
@@ -956,7 +956,7 @@ namespace Garnet.test
         [Test]
         public void ConfigAofReadOnlyParametersTest()
         {
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
             var db = redis.GetDatabase(0);
 
             string[] readOnly =
@@ -994,7 +994,7 @@ namespace Garnet.test
         [Test]
         public void ConfigAofRuntimeAdjustableParametersTest()
         {
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
             var db = redis.GetDatabase(0);
 
             static string Get(IDatabase db, string name)
@@ -1052,7 +1052,7 @@ namespace Garnet.test
         {
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableAOF: true, commitFrequencyMs: 0);
             server.Start();
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
             var db = redis.GetDatabase(0);
 
             ClassicAssert.AreEqual("0", Get(db, "aof-commit-freq"));
@@ -1076,7 +1076,7 @@ namespace Garnet.test
         {
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableAOF: true, commitFrequencyMs: 100);
             server.Start();
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
             var db = redis.GetDatabase(0);
 
             ClassicAssert.AreEqual("100", Get(db, "aof-commit-freq"));
@@ -1105,7 +1105,7 @@ namespace Garnet.test
         {
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, expiredKeyDeletionScanFrequencySecs: -1);
             server.Start();
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
             var db = redis.GetDatabase(0);
 
             ClassicAssert.AreEqual("-1", Get(db, "expired-key-deletion-scan-freq"));
@@ -1134,7 +1134,7 @@ namespace Garnet.test
         {
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir);
             server.Start();
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
             var db = redis.GetDatabase(0);
 
             ClassicAssert.AreEqual("0", Get(db, "expired-object-collection-freq"));

@@ -92,7 +92,7 @@ namespace Garnet.test.cluster
             while (baselineDeadline.Elapsed < TimeSpan.FromSeconds(15))
             {
                 Assert.DoesNotThrow(
-                    () => pubRedis.GetServer(publisherEndpoint).Execute("PUBLISH", channelName, message),
+                    () => pubRedis.GetServer(publisherEndpoint).Execute(0, "PUBLISH", [channelName, message]),
                     "Baseline publish threw while both nodes were up");
                 if (delivered.Wait(TimeSpan.FromMilliseconds(500)))
                 {
@@ -133,7 +133,7 @@ namespace Garnet.test.cluster
                 // (2) Attempt to forward-publish from the surviving node.
                 try
                 {
-                    _ = pubRedis.GetServer(publisherEndpoint).Execute("PUBLISH", channelName, message);
+                    _ = pubRedis.GetServer(publisherEndpoint).Execute(0, "PUBLISH", [channelName, message]);
                     if (sw.Elapsed >= settle)
                         lateSuccesses++;
                 }

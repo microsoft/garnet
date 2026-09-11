@@ -1192,14 +1192,14 @@ namespace Garnet.test.cluster
             _ = context.clusterTestUtils.SimpleSetupCluster(primary_count, replica_count, logger: context.logger);
 
             var primaryServer = context.clusterTestUtils.GetServer(primaryNodeIndex);
-            _ = primaryServer.Execute("EVAL", "redis.call('SET', KEYS[1], ARGV[1])", "1", "foo", "bar");
-            _ = primaryServer.Execute("EVAL", "redis.call('SET', KEYS[1], ARGV[1])", "1", "fizz", "buzz");
+            _ = primaryServer.Execute(0, "EVAL", ["redis.call('SET', KEYS[1], ARGV[1])", "1", "foo", "bar"]);
+            _ = primaryServer.Execute(0, "EVAL", ["redis.call('SET', KEYS[1], ARGV[1])", "1", "fizz", "buzz"]);
 
             context.clusterTestUtils.WaitForReplicaAofSync(primaryNodeIndex, replicaNodeIndex, context.logger);
 
             var replicaServer = context.clusterTestUtils.GetServer(replicaNodeIndex);
-            var res1 = (string)replicaServer.Execute("EVAL", "return redis.call('GET', KEYS[1])", "1", "foo");
-            var res2 = (string)replicaServer.Execute("EVAL", "return redis.call('GET', KEYS[1])", "1", "fizz");
+            var res1 = (string)replicaServer.Execute(0, "EVAL", ["return redis.call('GET', KEYS[1])", "1", "foo"]);
+            var res2 = (string)replicaServer.Execute(0, "EVAL", ["return redis.call('GET', KEYS[1])", "1", "fizz"]);
 
             ClassicAssert.AreEqual("bar", res1);
             ClassicAssert.AreEqual("buzz", res2);
@@ -1268,14 +1268,14 @@ namespace Garnet.test.cluster
                 ClusterReplicate();
 
             // Validate primary keys
-            var resp = primaryServer.Execute("KEYS", ["*"]);
+            var resp = primaryServer.Execute(0, "KEYS", ["*"]);
             ClassicAssert.AreEqual(expectedKeys, (string[])resp);
             context.clusterTestUtils.WaitForReplicaAofSync(primaryNodeIndex, replicaNodeIndex, context.logger);
             replicaServer = context.clusterTestUtils.GetServer(replicaNodeIndex);
             var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
             while (true)
             {
-                resp = replicaServer.Execute("KEYS", ["*"]);
+                resp = replicaServer.Execute(0, "KEYS", ["*"]);
                 if (expectedKeys.Length == ((string[])resp).Length)
                     break;
                 ClusterTestUtils.BackOff(cts.Token);
@@ -1287,9 +1287,9 @@ namespace Garnet.test.cluster
 
             void ExecuteRateLimit()
             {
-                var resp = primaryServer.Execute("RATELIMIT", [expectedKeys[0], "1000000000", "1000000000"]);
+                var resp = primaryServer.Execute(0, "RATELIMIT", [expectedKeys[0], "1000000000", "1000000000"]);
                 ClassicAssert.AreEqual("ALLOWED", (string)resp);
-                resp = primaryServer.Execute("RATELIMIT", [expectedKeys[1], "1000000000", "1000000000"]);
+                resp = primaryServer.Execute(0, "RATELIMIT", [expectedKeys[1], "1000000000", "1000000000"]);
                 ClassicAssert.AreEqual("ALLOWED", (string)resp);
             }
 
@@ -1519,9 +1519,9 @@ namespace Garnet.test.cluster
                 while (start++ < end)
                 {
                     var key = start.ToString();
-                    var resp = primaryServer.Execute("SET", [key, key]);
+                    var resp = primaryServer.Execute(0, "SET", [key, key]);
                     ClassicAssert.AreEqual("OK", (string)resp);
-                    resp = primaryServer.Execute("GET", key);
+                    resp = primaryServer.Execute(0, "GET", [key]);
                     ClassicAssert.AreEqual(key, (string)resp);
                 }
             }
@@ -1566,8 +1566,8 @@ namespace Garnet.test.cluster
 
             void ValidateKeys()
             {
-                var resp = (string[])primaryServer.Execute("KEYS", ["*"]);
-                var resp2 = (string[])replicaServer.Execute("KEYS", ["*"]);
+                var resp = (string[])primaryServer.Execute(0, "KEYS", ["*"]);
+                var resp2 = (string[])replicaServer.Execute(0, "KEYS", ["*"]);
                 ClassicAssert.AreEqual(resp.Length, resp2.Length);
                 Array.Sort(resp);
                 Array.Sort(resp2);
@@ -1660,17 +1660,17 @@ namespace Garnet.test.cluster
                 while (start++ < end)
                 {
                     var key = start.ToString();
-                    var resp = server.Execute("SET", [key, key]);
+                    var resp = server.Execute(0, "SET", [key, key]);
                     ClassicAssert.AreEqual("OK", (string)resp);
-                    resp = server.Execute("GET", key);
+                    resp = server.Execute(0, "GET", [key]);
                     ClassicAssert.AreEqual(key, (string)resp);
                 }
             }
 
             void ValidateKeys()
             {
-                var resp = (string[])primaryServer.Execute("KEYS", ["*"]);
-                var resp2 = (string[])replicaServer.Execute("KEYS", ["*"]);
+                var resp = (string[])primaryServer.Execute(0, "KEYS", ["*"]);
+                var resp2 = (string[])replicaServer.Execute(0, "KEYS", ["*"]);
                 ClassicAssert.AreEqual(resp.Length, resp2.Length);
                 Array.Sort(resp);
                 Array.Sort(resp2);

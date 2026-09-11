@@ -31,7 +31,7 @@ namespace Garnet.test
         [Test]
         public void TestSlowLogHelp()
         {
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
             var db = redis.GetDatabase(0);
 
             var result = (string[])db.Execute("SLOWLOG", "HELP");
@@ -42,7 +42,7 @@ namespace Garnet.test
         [Test]
         public void TestSlowLogGet()
         {
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
             var db = redis.GetDatabase(0);
             var result = db.Execute("SLOWLOG", "GET");
             ClassicAssert.AreEqual(0, ((string[])result).Length);
@@ -51,7 +51,7 @@ namespace Garnet.test
         [Test]
         public void TestSlowLogGetCount()
         {
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
             var db = redis.GetDatabase(0);
             var result = db.Execute("SLOWLOG", "GET", -1);
             ClassicAssert.AreEqual(0, ((string[])result).Length);
@@ -60,7 +60,7 @@ namespace Garnet.test
         [Test]
         public void TestSlowLogGetWithEntry()
         {
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
             var db = redis.GetDatabase(0);
             var result = db.Execute("SLOWLOG", "GET", -1);
             ClassicAssert.AreEqual(0, ((string[])result).Length);
@@ -92,7 +92,7 @@ namespace Garnet.test
         [Test]
         public void TestSlowLogLen()
         {
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
             var db = redis.GetDatabase(0);
             var result = db.Execute("SLOWLOG", "LEN");
             ClassicAssert.AreEqual(0, (int)result);
@@ -101,7 +101,7 @@ namespace Garnet.test
         [Test]
         public void TestSlowLogReset()
         {
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
             var db = redis.GetDatabase(0);
             var result = db.Execute("SLOWLOG", "RESET");
             ClassicAssert.AreEqual("OK", (string)result);
