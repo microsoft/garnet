@@ -57,8 +57,8 @@ namespace Garnet.server
         readonly int maxRetainedCapacity;
 
         /// <summary>
-        /// Resets remaining before the next shrink checkpoint. Counting down an integer keeps the reset
-        /// path, which runs on every batch, to one decrement and one predictable branch.
+        /// Resets remaining before the next shrink checkpoint. Counting down an integer keeps the batch
+        /// boundary, which runs on every batch, to one decrement and one predictable branch.
         /// </summary>
         int shrinkCountdown = ShrinkCheckInterval;
 
@@ -69,7 +69,8 @@ namespace Garnet.server
         int checkpointCapacity;
 
         /// <summary>
-        /// Resets between shrink checkpoints. An over-sized buffer is released within two intervals,
+        /// Resets between shrink checkpoints, counted in batches rather than resets -- see
+        /// <see cref="ResetAtBatchBoundary"/>. An over-sized buffer is released within two intervals,
         /// while a session that needs the capacity on every batch reallocates at most once per two.
         /// </summary>
         internal const int ShrinkCheckInterval = 64;
@@ -102,6 +103,22 @@ namespace Garnet.server
 #if DEBUG
             outstandingSlices = 0;
 #endif
+        }
+
+        /// <summary>
+        /// Resets the scratch buffer at a session's batch boundary, additionally advancing the shrink
+        /// checkpoint countdown.
+        /// </summary>
+        /// <remarks>
+        /// Distinct from <see cref="Reset()"/> because the countdown's interval is only meaningful if it
+        /// advances once per batch. Several callers reset far more often than that -- notably the Lua
+        /// interpreter, which resets per string while decoding a JSON document -- and driving the countdown
+        /// from those would fire checkpoints many times within a single command, shrinking a buffer the very
+        /// next element re-grows. Only the RESP session's batch boundary calls this.
+        /// </remarks>
+        public void ResetAtBatchBoundary()
+        {
+            Reset();
             if (--shrinkCountdown <= 0)
                 ShrinkCheckpoint();
         }
@@ -109,7 +126,7 @@ namespace Garnet.server
         /// <summary>
         /// Releases a buffer that has stayed above <see cref="maxRetainedCapacity"/> without growing since
         /// the previous checkpoint. Cold by construction: reached once per <see cref="ShrinkCheckInterval"/>
-        /// resets, and a reset has already invalidated every outstanding slice.
+        /// batches, and a reset has already invalidated every outstanding slice.
         /// </summary>
         [MethodImpl(MethodImplOptions.NoInlining)]
         void ShrinkCheckpoint()

@@ -629,7 +629,7 @@ namespace Garnet.server
             {
                 networkSender.ExitAndReturnResponseObject();
                 clusterSession?.ReleaseCurrentEpoch();
-                scratchBufferBuilder.Reset();
+                scratchBufferBuilder.ResetAtBatchBoundary();
                 scratchBufferAllocator.Reset();
 
                 // Batch boundary: no argument pointers outlive it, so an over-sized parse state root
