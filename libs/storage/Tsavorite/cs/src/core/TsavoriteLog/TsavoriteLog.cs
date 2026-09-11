@@ -69,7 +69,7 @@ namespace Tsavorite.core
         /// The allocator page that <paramref name="logicalAddress"/> maps to; used in tests to verify that TsavoriteLog uses the
         /// full logical-address range (no read-cache-bit masking), unlike the main-store allocators.
         /// </summary>
-        internal long AllocatorGetPage(long logicalAddress) => allocator.GetPage(logicalAddress);
+        internal int AllocatorGetPage(long logicalAddress) => allocator.GetPage(logicalAddress);
 
         /// <summary>
         /// Forwards to the allocator's read-only-address computation; used in tests to verify the out-of-range/sentinel
@@ -178,12 +178,12 @@ namespace Tsavorite.core
 
         /// <summary>Last published page for <see cref="SafeTailPageShiftCallback"/>. Written only inside
         /// the callback-dispatch path; read without locks under the monotonic-update invariant.</summary>
-        long lastPublishedSafeTailPage;
+        int lastPublishedSafeTailPage;
 
         /// <summary>Highest page any producer has observed the tail reaching. Producers CAS this when they
         /// cross into a new page and the CAS winner drives a <see cref="RefreshSafeTailAddress"/>. Ensures
         /// the page-shift callback fires even with no active iterators driving scans.</summary>
-        long lastProducerObservedPage;
+        int lastProducerObservedPage;
 
         /// <summary>
         /// Whether we automatically commit as records are inserted
@@ -369,7 +369,7 @@ namespace Tsavorite.core
         {
             if (SafeTailPageShiftCallback == null) return;
             long tail = allocator.GetTailAddress();
-            long newPage = tail >> allocator.LogPageSizeBits;
+            var newPage = allocator.GetPage(tail);
             // Non-volatile read — stale values only cause a redundant CAS attempt, never missed progress
             // (some subsequent producer will observe the shift and take the slow path).
             if (newPage <= lastProducerObservedPage) return;
@@ -377,9 +377,9 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.NoInlining)]
-        void ProducerDriveSafeTailSlow(long newPage)
+        void ProducerDriveSafeTailSlow(int newPage)
         {
-            long prev = Volatile.Read(ref lastProducerObservedPage);
+            var prev = Volatile.Read(ref lastProducerObservedPage);
             if (newPage <= prev) return;
             if (Interlocked.CompareExchange(ref lastProducerObservedPage, newPage, prev) != prev) return;
             _ = RefreshSafeTailAddress();
@@ -486,8 +486,8 @@ namespace Tsavorite.core
         {
             var cb = SafeTailPageShiftCallback;
             if (cb == null) return;
-            long newPage = newSafe >> allocator.LogPageSizeBits;
-            long prev = Volatile.Read(ref lastPublishedSafeTailPage);
+            var newPage = allocator.GetPage(newSafe);
+            var prev = Volatile.Read(ref lastPublishedSafeTailPage);
             if (newPage <= prev) return;
             if (Interlocked.CompareExchange(ref lastPublishedSafeTailPage, newPage, prev) != prev) return;
 
@@ -530,7 +530,7 @@ namespace Tsavorite.core
 
             // Reset monotonic page trackers to the new (lower) address so that the first post-reset
             // enqueue that crosses into a new page re-arms both producer-drive and callback dispatch.
-            var resetPage = beginAddress >> allocator.LogPageSizeBits;
+            var resetPage = allocator.GetPage(beginAddress);
             Volatile.Write(ref lastPublishedSafeTailPage, resetPage);
             Volatile.Write(ref lastProducerObservedPage, resetPage);
 
@@ -597,7 +597,7 @@ namespace Tsavorite.core
 
                 // Align monotonic page trackers to the restored address so that post-recovery producer
                 // drive and page-shift callbacks re-arm correctly (they only advance beyond the initial floor).
-                var resetPage = committedUntilAddress >> allocator.LogPageSizeBits;
+                var resetPage = allocator.GetPage(committedUntilAddress);
                 Volatile.Write(ref lastPublishedSafeTailPage, resetPage);
                 Volatile.Write(ref lastProducerObservedPage, resetPage);
 

@@ -21,7 +21,7 @@ namespace Tsavorite.core
         /// <summary>The first page to recover; this is the page index of the snapshotStartAddress and is the page-offset into
         /// the address range of the snapshot file (i.e. the page at the snapshot file's offset 0). This field is populated
         /// from <see cref="HybridLogRecoveryInfo.snapshotFileLogicalStartAddress"/>.</summary>
-        public long recoveryDevicePageOffset;
+        public int recoveryDevicePageOffset;
         /// <summary>Object log recovery device, obtained from CheckpointManager.</summary>
         public IDevice objectLogRecoveryDevice;
         /// <summary>Exclusive durable end of <see cref="objectLogRecoveryDevice"/> in the snapshot object-log address space.</summary>
@@ -631,7 +631,7 @@ namespace Tsavorite.core
             return true;
         }
 
-        private void ReadPagesWithMemoryConstraint(long endAddress, RecoveryStatus recoveryStatus, long page, long endPage, int numPagesToRead,
+        private void ReadPagesWithMemoryConstraint(long endAddress, RecoveryStatus recoveryStatus, int page, int endPage, int numPagesToRead,
             long mergeFromAddress = -1)
         {
             // Before reading in additional pages, trim memory if needed to make room for the inline page space.
@@ -657,7 +657,7 @@ namespace Tsavorite.core
         /// before <see cref="AllocatorBase{TStoreFunctions, TAllocator}.EvictPageForRecovery"/> frees the page so the async copy cannot
         /// read the page (or its slot, once the read loop reuses it) after it is freed.
         /// </summary>
-        private void FlushIfNeededThenEvictPageForRecovery(RecoveryStatus recoveryStatus, long page)
+        private void FlushIfNeededThenEvictPageForRecovery(RecoveryStatus recoveryStatus, int page)
         {
             var pageIndex = hlogBase.GetPageIndexForPage(page);
             if (recoveryStatus.snapshotScanFromAddress >= 0 && page >= hlogBase.GetPage(recoveryStatus.snapshotScanFromAddress))
@@ -674,7 +674,7 @@ namespace Tsavorite.core
         /// disk-resident (below headAddress), so the page must be durable for them to be read back. Must be called before the page's objects are deserialized,
         /// while its records still carry their snapshot object-log positions.
         /// </summary>
-        private void FlushSnapshotPageForRecovery(RecoveryStatus recoveryStatus, long page)
+        private void FlushSnapshotPageForRecovery(RecoveryStatus recoveryStatus, int page)
         {
             var pageIndex = hlogBase.GetPageIndexForPage(page);
             recoveryStatus.flushStatus[pageIndex] = FlushStatus.Pending;
@@ -685,7 +685,7 @@ namespace Tsavorite.core
             recoveryStatus.snapshotPageFlushedToMain[pageIndex] = true;
         }
 
-        private void TrimLogPages(RecoveryStatus recoveryStatus, long tailPage, int numPagesToRead, long untilAddress)
+        private void TrimLogPages(RecoveryStatus recoveryStatus, int tailPage, int numPagesToRead, long untilAddress)
         {
             if (hlogBase.logSizeTracker is null)
                 return;
@@ -750,13 +750,13 @@ namespace Tsavorite.core
             }
         }
 
-        private async ValueTask<long> ReadPagesForRecoveryAsync(long untilAddress, RecoveryStatus recoveryStatus, long endPage,
-            int numPagesToReadPerIteration, long page, CancellationToken cancellationToken, long mergeFromAddress = -1)
+        private async ValueTask<long> ReadPagesForRecoveryAsync(long untilAddress, RecoveryStatus recoveryStatus, int endPage,
+            int numPagesToReadPerIteration, int page, CancellationToken cancellationToken, long mergeFromAddress = -1)
         {
             var readEndPage = Math.Min(page + numPagesToReadPerIteration, endPage);
             if (page < readEndPage)
             {
-                var numPagesToRead = (int)(readEndPage - page);
+                var numPagesToRead = readEndPage - page;
 
                 // Ensure that page slots that will be read into have been flushed from previous reads. Due to the use of a single read semaphore,
                 // this must be done in batches of all flushes followed by all reads to ensure proper sequencing of reads when
@@ -781,14 +781,14 @@ namespace Tsavorite.core
         private async ValueTask<RecoveryStatus> RecoverHybridLogAsync(long scanFromAddress, long recoverFromAddress, long untilAddress, long nextVersion,
             CheckpointType checkpointType, long headAddress, RecoveryOptions options, CancellationToken cancellationToken)
         {
-            var recoveryStatus = GetPageRangesToRead(scanFromAddress, untilAddress, checkpointType, out long startPage, out long endPage, out int numPagesToReadPerIteration);
+            var recoveryStatus = GetPageRangesToRead(scanFromAddress, untilAddress, checkpointType, out int startPage, out int endPage, out int numPagesToReadPerIteration);
             recoveryStatus.headAddress = headAddress;
 
             // Free any pages still allocated below startPage before reading. The store is freshly constructed for recovery with the allocator's minimum
             // pages allocated at page 0 (Head=Begin=Tail=0); when the checkpoint's BeginAddress is above page 0 those low pages lie below the first page we
             // read (startPage), and the upward-only read/eviction never reaches them. Freeing them up front keeps them out of AllocatedPageCount for the
             // whole budget-checked recovery, instead of carrying the dead pages through every budget check and reclaiming them at the end.
-            for (var deadPage = 0L; deadPage < startPage && deadPage < hlogBase.BufferSize; deadPage++)
+            for (var deadPage = 0; deadPage < startPage && deadPage < hlogBase.BufferSize; deadPage++)
             {
                 if (hlogBase.IsAllocated(hlogBase.GetPageIndexForPage(deadPage)))
                     hlogBase.EvictPageForRecovery(deadPage);
@@ -797,7 +797,7 @@ namespace Tsavorite.core
             if (untilAddress <= scanFromAddress)
                 return recoveryStatus;
 
-            for (long page = startPage; page < endPage; page += numPagesToReadPerIteration)
+            for (int page = startPage; page < endPage; page += numPagesToReadPerIteration)
             {
                 var end = await ReadPagesForRecoveryAsync(untilAddress, recoveryStatus, endPage, numPagesToReadPerIteration, page, cancellationToken).ConfigureAwait(false);
                 for (var p = page; p < end; p++)
@@ -819,7 +819,7 @@ namespace Tsavorite.core
             // (after eviction over the full recovered range) is honored. For FoldOver there is no following snapshot phase.
             if (checkpointType != CheckpointType.Snapshot)
             {
-                RecoveryLoadObjectsPass2(recoveryStatus, recoveryStatus.headAddress, untilAddress, snapshotObjectLogDevice: null, snapshotBoundaryPage: long.MaxValue);
+                RecoveryLoadObjectsPass2(recoveryStatus, recoveryStatus.headAddress, untilAddress, snapshotObjectLogDevice: null, snapshotBoundaryPage: int.MaxValue);
                 TrimResidentPagesToBudget(recoveryStatus, untilAddress);
             }
             return recoveryStatus;
@@ -836,7 +836,7 @@ namespace Tsavorite.core
         /// <param name="numPagesToReadPerIteration">The number of pages to read per iteration</param>
         /// <returns>The allocated <see cref="RecoveryStatus"/> instance.</returns>
         private RecoveryStatus GetPageRangesToRead(long scanFromAddress, long untilAddress, CheckpointType checkpointType,
-            out long startPage, out long endPage, out int numPagesToReadPerIteration)
+            out int startPage, out int endPage, out int numPagesToReadPerIteration)
         {
             startPage = hlogBase.GetPage(scanFromAddress);
             endPage = hlogBase.GetPage(untilAddress);
@@ -844,7 +844,7 @@ namespace Tsavorite.core
                 endPage++;
 
             // Read as many pages as buffer allows, leaving room for at least 1 page for eviction.
-            numPagesToReadPerIteration = Math.Min(hlogBase.BufferSize - 1, (int)(endPage - startPage));
+            numPagesToReadPerIteration = Math.Min(hlogBase.BufferSize - 1, endPage - startPage);
 
             // Never read more pages per batch than the memory budget allows. BufferSize can exceed MaxAllocatedPageCount when the budget is not a
             // power-of-two page count (e.g. a 23k budget => MaxAllocatedPageCount 5, BufferSize 8); reading a full BufferSize-1 batch would fill the
@@ -868,7 +868,7 @@ namespace Tsavorite.core
         /// <param name="page">The page number to process</param>
         /// <param name="pageIndex">The index of <paramref name="page"/> in the allocator's circular page buffer</param>
         private void ProcessReadPageAndFlush(long scanFromAddress, long recoverFromAddress, long untilAddress, long nextVersion, in RecoveryOptions options,
-            RecoveryStatus recoveryStatus, long page, int pageIndex)
+            RecoveryStatus recoveryStatus, int page, int pageIndex)
         {
             if (ProcessReadPage(recoverFromAddress, untilAddress, nextVersion, options, recoveryStatus, page, pageIndex))
             {
@@ -893,7 +893,7 @@ namespace Tsavorite.core
         /// <param name="pageIndex">The index of <paramref name="page"/> in the allocator's circular page buffer</param>
         /// <returns></returns>
         private bool ProcessReadPage(long recoverFromAddress, long untilAddress, long nextVersion, in RecoveryOptions options, RecoveryStatus recoveryStatus,
-            long page, int pageIndex)
+            int page, int pageIndex)
         {
             var startLogicalAddressOfPage = hlogBase.GetLogicalAddressOfStartOfPage(page);    // Do not offset for page header; that's done below and in RecoverFromPage
             var endLogicalAddressOfPage = hlogBase.GetLogicalAddressOfStartOfPage(page + 1);
@@ -925,9 +925,9 @@ namespace Tsavorite.core
             return false;
         }
 
-        private async ValueTask WaitUntilAllPagesHaveBeenFlushedAsync(long startPage, long endPage, RecoveryStatus recoveryStatus, CancellationToken cancellationToken)
+        private async ValueTask WaitUntilAllPagesHaveBeenFlushedAsync(int startPage, int endPage, RecoveryStatus recoveryStatus, CancellationToken cancellationToken)
         {
-            for (long page = startPage; page < endPage; page++)
+            for (int page = startPage; page < endPage; page++)
                 await recoveryStatus.WaitFlushAsync(hlogBase.GetPageIndexForPage(page), cancellationToken).ConfigureAwait(false);
         }
 
@@ -950,8 +950,8 @@ namespace Tsavorite.core
             long nextVersion, Guid guid, long headAddress, RecoveryOptions options,
             CancellationToken cancellationToken)
         {
-            GetSnapshotPageRangesToRead(scanFromAddress, untilAddress, snapshotStartAddress, snapshotEndAddress, snapshotObjectLogReadEnd, guid, out long startPage,
-                out long endPage, out long snapshotEndPage, out var recoveryStatus, out int numPagesToReadPerIteration);
+            GetSnapshotPageRangesToRead(scanFromAddress, untilAddress, snapshotStartAddress, snapshotEndAddress, snapshotObjectLogReadEnd, guid, out int startPage,
+                out int endPage, out int snapshotEndPage, out var recoveryStatus, out int numPagesToReadPerIteration);
 
             // Seed the head from the preceding hybrid-log phase so the snapshot-read loop (TrimLogPages) and the deferred object load
             // evict from, and track, the correct lowest-resident address across the full recovered range.
@@ -985,7 +985,7 @@ namespace Tsavorite.core
             if (storeFunctions.CallOnDiskRead)
                 storeFunctions.OnRecovery(guid);
 
-            for (long page = startPage; page < endPage; page += numPagesToReadPerIteration)
+            for (int page = startPage; page < endPage; page += numPagesToReadPerIteration)
             {
                 var batchEnd = Math.Min(page + numPagesToReadPerIteration, endPage);
                 for (var pendingPage = page; pendingPage < batchEnd; pendingPage++)
@@ -995,7 +995,7 @@ namespace Tsavorite.core
                     cancellationToken, mergeFromAddress: scanFromAddress).ConfigureAwait(false);
                 var end = batchEnd;
 
-                for (long p = page; p < end; p++)
+                for (var p = page; p < end; p++)
                 {
                     int pageIndex = hlogBase.GetPageIndexForPage(p);
                     if (p < snapshotEndPage)
@@ -1047,8 +1047,8 @@ namespace Tsavorite.core
         /// <param name="untilAddress">The end of the range whose objects are to be loaded</param>
         /// <param name="snapshotObjectLogDevice">The snapshot object-log device used for records at or above the exact snapshot boundary whose
         /// positions have not yet been rewritten to the main object log</param>
-        /// <param name="snapshotBoundaryPage">The page containing the hybrid-log/snapshot boundary; long.MaxValue for FoldOver</param>
-        private void RecoveryLoadObjectsPass2(RecoveryStatus recoveryStatus, long fromAddress, long untilAddress, IDevice snapshotObjectLogDevice, long snapshotBoundaryPage)
+        /// <param name="snapshotBoundaryPage">The page containing the hybrid-log/snapshot boundary; int.MaxValue for FoldOver</param>
+        private void RecoveryLoadObjectsPass2(RecoveryStatus recoveryStatus, long fromAddress, long untilAddress, IDevice snapshotObjectLogDevice, int snapshotBoundaryPage)
         {
             if (fromAddress >= untilAddress)
                 return;
@@ -1100,7 +1100,7 @@ namespace Tsavorite.core
                 }
 
                 var remainingBudget = hlogBase.logSizeTracker.RemainingBudget;
-                var pageCutoff = hlogBase.FindHeadAddressCutoffOnPage(page, pageUntilAddress, totalPageObjectSize, (int)(page - hlogBase.GetPage(recoveryStatus.headAddress)), remainingBudget, out var numPagesBelowToEvict);
+                var pageCutoff = hlogBase.FindHeadAddressCutoffOnPage(page, pageUntilAddress, totalPageObjectSize, page - hlogBase.GetPage(recoveryStatus.headAddress), remainingBudget, out var numPagesBelowToEvict);
 
                 // Evict pages below if needed
                 var currentHeadPage = hlogBase.GetPage(recoveryStatus.headAddress);
@@ -1158,7 +1158,7 @@ namespace Tsavorite.core
                     break;
             }
 
-            void LoadPageObjects(long page, long pageFromAddress, long pageUntilAddress)
+            void LoadPageObjects(int page, long pageFromAddress, long pageUntilAddress)
             {
                 var pageIndex = hlogBase.GetPageIndexForPage(page);
                 var readsFromMain = page < snapshotBoundaryPage || recoveryStatus.snapshotPageFlushedToMain[pageIndex];
@@ -1180,7 +1180,7 @@ namespace Tsavorite.core
                         recoveryStatus.objectLogRecoveryReadEnd);
             }
 
-            long CalculatePageObjectSizes(long page, long pageFromAddress, long pageUntilAddress)
+            long CalculatePageObjectSizes(int page, long pageFromAddress, long pageUntilAddress)
             {
                 var pageIndex = hlogBase.GetPageIndexForPage(page);
                 if (page != snapshotBoundaryPage || recoveryStatus.snapshotPageFlushedToMain[pageIndex])
@@ -1205,9 +1205,9 @@ namespace Tsavorite.core
         /// Snapshot pages are made durable on the main log only when (and if) they are evicted, by <see cref="FlushIfNeededThenEvictPageForRecovery"/>.
         /// </summary>
         private void RecoverSnapshotPages(long recoverFromAddress, long untilAddress, long nextVersion, in RecoveryOptions options,
-            RecoveryStatus recoveryStatus, long page, long end)
+            RecoveryStatus recoveryStatus, int page, int end)
         {
-            for (long p = page; p < end; p++)
+            for (var p = page; p < end; p++)
             {
                 int pageIndex = hlogBase.GetPageIndexForPage(p);
 
@@ -1232,7 +1232,7 @@ namespace Tsavorite.core
         /// <param name="numPagesToReadPerIteration">The number of pages to read per iteration</param>
         private void GetSnapshotPageRangesToRead(long scanFromAddress, long untilAddress, long snapshotStartAddress, long snapshotEndAddress,
             ObjectLogFilePositionInfo snapshotObjectLogReadEnd, Guid guid,
-            out long startPage, out long endPage, out long snapshotEndPage, out RecoveryStatus recoveryStatus, out int numPagesToReadPerIteration)
+            out int startPage, out int endPage, out int snapshotEndPage, out RecoveryStatus recoveryStatus, out int numPagesToReadPerIteration)
         {
             // Compute startPage and endPage
             startPage = hlogBase.GetPage(scanFromAddress);
@@ -1259,7 +1259,7 @@ namespace Tsavorite.core
             };
 
             // Read as many pages as buffer allows, leaving room for at least 1 page for eviction.
-            numPagesToReadPerIteration = Math.Min(hlogBase.BufferSize - 1, (int)(endPage - startPage));
+            numPagesToReadPerIteration = Math.Min(hlogBase.BufferSize - 1, endPage - startPage);
 
             // Never read more pages per batch than the memory budget allows (see GetPageRangesToRead for the full rationale): BufferSize can exceed
             // MaxAllocatedPageCount when the budget is not a power-of-two page count, and a full BufferSize-1 batch would fill the circular buffer above
@@ -1268,7 +1268,7 @@ namespace Tsavorite.core
                 numPagesToReadPerIteration = hlogBase.MaxAllocatedPageCount;
         }
 
-        private void ProcessReadSnapshotPage(long recoverFromAddress, long untilAddress, long nextVersion, in RecoveryOptions options, RecoveryStatus recoveryStatus, long page, int pageIndex)
+        private void ProcessReadSnapshotPage(long recoverFromAddress, long untilAddress, long nextVersion, in RecoveryOptions options, RecoveryStatus recoveryStatus, int page, int pageIndex)
         {
             // Page at hand
             var startLogicalAddressOfPage = hlogBase.GetLogicalAddressOfStartOfPage(page);    // Do not offset for page header; that's done below and in RecoverFromPage
@@ -1306,7 +1306,7 @@ namespace Tsavorite.core
         /// <param name="options">Recovery options (headAddress determines if page is in-memory)</param>
         /// <param name="snapshotFromAddress">If > 0, records at or above this address will get OnRecoverySnapshotRead.
         /// Records below this address are main-log records that happened to share the boundary page with the snapshot.</param>
-        private void ClearBitsOnPage(long page, long untilAddress, in RecoveryOptions options, long headAddress, long snapshotFromAddress = 0)
+        private void ClearBitsOnPage(int page, long untilAddress, in RecoveryOptions options, long headAddress, long snapshotFromAddress = 0)
         {
             var startLogicalAddress = hlogBase.GetLogicalAddressOfStartOfPage(page);
             var endLogicalAddress = hlogBase.GetLogicalAddressOfStartOfPage(page + 1);
@@ -1477,9 +1477,9 @@ namespace Tsavorite.core
         /// <param name="numPagesToPreload">Number of pages to preload into memory after recovery</param>
         public void RestoreHybridLog(long beginAddress, long headAddress, long fromAddress, long untilAddress, int numPagesToPreload = -1)
         {
-            if (RestoreHybridLogInitializePages(beginAddress, headAddress, fromAddress, untilAddress, numPagesToPreload, out var recoveryStatus, out long headPage, out long fromPage))
+            if (RestoreHybridLogInitializePages(beginAddress, headAddress, fromAddress, untilAddress, numPagesToPreload, out var recoveryStatus, out int headPage, out int fromPage))
             {
-                for (long page = headPage; page <= fromPage; page++)
+                for (int page = headPage; page <= fromPage; page++)
                     recoveryStatus.WaitRead(GetPageIndexForPage(page));
             }
 
@@ -1497,9 +1497,9 @@ namespace Tsavorite.core
         /// <param name="cancellationToken"></param>
         public async ValueTask RestoreHybridLogAsync(long beginAddress, long headAddress, long fromAddress, long untilAddress, int numPagesToPreload = -1, CancellationToken cancellationToken = default)
         {
-            if (RestoreHybridLogInitializePages(beginAddress, headAddress, fromAddress, untilAddress, numPagesToPreload, out var recoveryStatus, out long headPage, out long fromPage))
+            if (RestoreHybridLogInitializePages(beginAddress, headAddress, fromAddress, untilAddress, numPagesToPreload, out var recoveryStatus, out int headPage, out int fromPage))
             {
-                for (long page = headPage; page <= fromPage; page++)
+                for (int page = headPage; page <= fromPage; page++)
                     await recoveryStatus.WaitReadAsync(GetPageIndexForPage(page), cancellationToken).ConfigureAwait(false);
             }
 
@@ -1507,7 +1507,7 @@ namespace Tsavorite.core
         }
 
         private bool RestoreHybridLogInitializePages(long beginAddress, long headAddress, long fromAddress, long untilAddress, int numPagesToPreload,
-                                                     out RecoveryStatus recoveryStatus, out long headPage, out long fromPage)
+                                                     out RecoveryStatus recoveryStatus, out int headPage, out int fromPage)
         {
             if (numPagesToPreload != -1)
             {

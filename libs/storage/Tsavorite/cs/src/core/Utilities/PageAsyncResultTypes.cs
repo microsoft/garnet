@@ -19,10 +19,10 @@ namespace Tsavorite.core
     public sealed class PageAsyncReadResult<TContext>
     {
         /// <summary>Index of the main-log page being read</summary>
-        internal long page;
+        internal int page;
 
         /// <summary>Recovery device page offset</summary>
-        internal long devicePageOffset;
+        internal int devicePageOffset;
 
         /// <summary>Context state to be passed through the read operation</summary>
         internal TContext context;
@@ -132,7 +132,7 @@ namespace Tsavorite.core
     public sealed class PageAsyncFlushResult<TContext>
     {
         /// <summary>The index of the log Page being written</summary>
-        public long page;
+        public int page;
 
         /// <summary>Context object for the callback</summary>
         public TContext context;

@@ -110,14 +110,14 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly void FreePage(long pageIndex) => _this.FreePage(pageIndex);
+        public readonly void FreePage(int pageIndex) => _this.FreePage(pageIndex);
 
         /// <inheritdoc/>        
         public readonly int OverflowPageCount => _this.OverflowPageCount;
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly long GetPageOfAddress(long logicalAddress, int logPageSizeBits) => LogAddress.GetPageOfAddress(logicalAddress, logPageSizeBits);
+        public readonly int GetPageOfAddress(long logicalAddress, int logPageSizeBits) => LogAddress.GetPageOfAddress(logicalAddress, logPageSizeBits);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -134,7 +134,7 @@ namespace Tsavorite.core
         public readonly ObjectIdMap TransientObjectIdMap => _this.transientObjectIdMap;
 
         /// <inheritdoc/>
-        public readonly ObjectIdMap GetPageObjectIdMap(long pageNumber) => _this.objectPages[_this.GetPageIndexForPage(pageNumber)].objectIdMap;
+        public readonly ObjectIdMap GetPageObjectIdMap(int pageNumber) => _this.objectPages[_this.GetPageIndexForPage(pageNumber)].objectIdMap;
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

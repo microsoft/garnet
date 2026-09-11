@@ -147,7 +147,7 @@ namespace Tsavorite.core
         /// Wait until Snapshot has completed far enough for ReadOnly to flush <paramref name="page"/>.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private protected void WaitForSnapshotPage(SnapshotFlushCoordination coordination, long page)
+        private protected void WaitForSnapshotPage(SnapshotFlushCoordination coordination, int page)
         {
             if (coordination is null || coordination.ReadOnlyMayFlushFast(page))
                 return;
@@ -155,7 +155,7 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.NoInlining)]
-        void WaitForSnapshotPageSlow(SnapshotFlushCoordination coordination, long page)
+        void WaitForSnapshotPageSlow(SnapshotFlushCoordination coordination, int page)
         {
             var resumeEpoch = epoch.TrySuspend();
             try
@@ -241,11 +241,11 @@ namespace Tsavorite.core
         /// Exclusive upper bound for ReadOnly page flushing: page <c>P</c> may flush only when
         /// <c>P &lt; readOnlyFlushPageLimit</c>.
         /// </summary>
-        long readOnlyFlushPageLimit;
+        int readOnlyFlushPageLimit;
 
         /// <summary>Fixed-size ring of out-of-order Snapshot page completions. A slot contains the completed page
-        /// whose page number maps to that slot, or <see cref="long.MinValue"/> when it has never been used.</summary>
-        readonly long[] completedSnapshotPages;
+        /// whose page number maps to that slot, or <see cref="int.MinValue"/> when it has never been used.</summary>
+        readonly int[] completedSnapshotPages;
         readonly int[] snapshotPageStates;
 
         const int PageInFlight = 0;
@@ -281,8 +281,8 @@ namespace Tsavorite.core
             if (completionWindowSize <= 0)
                 throw new ArgumentOutOfRangeException(nameof(completionWindowSize));
 
-            completedSnapshotPages = new long[completionWindowSize];
-            Array.Fill(completedSnapshotPages, long.MinValue);
+            completedSnapshotPages = new int[completionWindowSize];
+            Array.Fill(completedSnapshotPages, int.MinValue);
             snapshotPageStates = new int[completionWindowSize];
         }
 
@@ -291,7 +291,7 @@ namespace Tsavorite.core
         /// page beyond the most recently completed Snapshot page, so ReadOnly waits only for a Snapshot write on the same
         /// page. After the final write it equals the exclusive end page.
         /// </summary>
-        internal long ReadOnlyFlushPageLimit
+        internal int ReadOnlyFlushPageLimit
         {
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             get => Volatile.Read(ref readOnlyFlushPageLimit);
@@ -328,7 +328,7 @@ namespace Tsavorite.core
         }
 
         /// <summary>Enter the short WAIT_FLUSH interval in which the ReadOnly cutoff is sampled.</summary>
-        internal void BeginCutoffCapture(long firstSnapshotPage)
+        internal void BeginCutoffCapture(int firstSnapshotPage)
         {
             lock (sync)
             {
@@ -407,7 +407,7 @@ namespace Tsavorite.core
         /// Advance the provisional limit after the cutoff ReadOnly cohort drains and the stable Snapshot start is known.
         /// This does not represent a completed Snapshot write; pages below the stable start are already main-log durable.
         /// </summary>
-        internal void AdvanceReadOnlyFlushPageLimit(long firstSnapshotPage)
+        internal void AdvanceReadOnlyFlushPageLimit(int firstSnapshotPage)
         {
             lock (sync)
             {
@@ -424,7 +424,7 @@ namespace Tsavorite.core
         /// remains blocked. The watermark is monotonic because callbacks may finish bookkeeping out of order.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void CompletePage(long page)
+        internal void CompletePage(int page)
         {
             if (!FinishPage(page, PageCompleted))
                 return;
@@ -437,8 +437,8 @@ namespace Tsavorite.core
                 return;
 
             var initial = current;
-            while (Volatile.Read(ref completedSnapshotPages[(int)(current % completedSnapshotPages.Length)]) == current
-                && Volatile.Read(ref snapshotPageStates[(int)(current % snapshotPageStates.Length)]) == PageCompleted)
+            while (Volatile.Read(ref completedSnapshotPages[current % completedSnapshotPages.Length]) == current
+                && Volatile.Read(ref snapshotPageStates[current % snapshotPageStates.Length]) == PageCompleted)
             {
                 var observed = Interlocked.CompareExchange(ref readOnlyFlushPageLimit, current + 1, current);
                 if (observed == current)
@@ -464,7 +464,7 @@ namespace Tsavorite.core
 
         bool FinishPage(long page, int completedState)
         {
-            var slot = (int)(page % completedSnapshotPages.Length);
+            var slot = page % completedSnapshotPages.Length;
             if (Volatile.Read(ref completedSnapshotPages[slot]) != page)
                 return false;
             if (Interlocked.CompareExchange(ref snapshotPageStates[slot], completedState, PageInFlight) != PageInFlight)
@@ -489,7 +489,7 @@ namespace Tsavorite.core
         /// window is full, the issuer registers under <see cref="sync"/>, rechecks after a full memory barrier, and
         /// waits for a completion to advance <see cref="readOnlyFlushPageLimit"/>.
         /// </summary>
-        internal void WaitForWindowCapacity(long page)
+        internal void WaitForWindowCapacity(int page)
         {
             ThrowIfFailed();
             var completedThrough = Volatile.Read(ref readOnlyFlushPageLimit);
@@ -519,23 +519,23 @@ namespace Tsavorite.core
         }
 
         /// <summary>Reserve a previously admitted page in the in-flight completion window.</summary>
-        internal void ReservePage(long page)
+        internal void ReservePage(int page)
         {
-            var slot = (int)(page % completedSnapshotPages.Length);
+            var slot = page % completedSnapshotPages.Length;
             Volatile.Write(ref snapshotPageStates[slot], PageInFlight);
             Volatile.Write(ref completedSnapshotPages[slot], page);
             _ = Interlocked.Increment(ref numInFlightSnapshotPages);
         }
 
         /// <summary>Test/helper convenience that admits and reserves one page.</summary>
-        internal void WaitToIssuePage(long page)
+        internal void WaitToIssuePage(int page)
         {
             WaitForWindowCapacity(page);
             ReservePage(page);
         }
 
         /// <summary>Wait until every Snapshot page below <paramref name="exclusiveEndPage"/> has completed contiguously.</summary>
-        internal void WaitForAllPages(long exclusiveEndPage)
+        internal void WaitForAllPages(int exclusiveEndPage)
         {
             if (Volatile.Read(ref readOnlyFlushPageLimit) >= exclusiveEndPage)
                 return;
@@ -594,7 +594,7 @@ namespace Tsavorite.core
         /// <summary>
         /// Publish the terminal exclusive page and release the final Snapshot page for ReadOnly flushing.
         /// </summary>
-        internal void CloseSuccessfully(long exclusiveEndPage)
+        internal void CloseSuccessfully(int exclusiveEndPage)
         {
             lock (sync)
             {
@@ -635,7 +635,7 @@ namespace Tsavorite.core
         /// or until coordination closes after success or failure.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void WaitUntilReadOnlyMayFlush(long page)
+        internal void WaitUntilReadOnlyMayFlush(int page)
         {
             if (State != SnapshotFlushState.Flushing)
                 return;
@@ -650,7 +650,7 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.NoInlining)]
-        void WaitUntilReadOnlyMayFlushSlow(long page)
+        void WaitUntilReadOnlyMayFlushSlow(int page)
         {
             lock (sync)
             {
@@ -674,7 +674,7 @@ namespace Tsavorite.core
 
         /// <summary>Lock-free page permission check used after cutoff classification.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal bool ReadOnlyMayFlushFast(long page)
+        internal bool ReadOnlyMayFlushFast(int page)
             => State != SnapshotFlushState.Flushing
             || page < Volatile.Read(ref readOnlyFlushPageLimit);
 

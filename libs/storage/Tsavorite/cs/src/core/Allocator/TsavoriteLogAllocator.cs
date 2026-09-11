@@ -108,14 +108,14 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly void FreePage(long pageIndex) => _this.FreePage(pageIndex);
+        public readonly void FreePage(int pageIndex) => _this.FreePage(pageIndex);
 
         /// <inheritdoc/>
         public readonly int OverflowPageCount => _this.OverflowPageCount;
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly long GetPageOfAddress(long logicalAddress, int logPageSizeBits) => logicalAddress >> logPageSizeBits;
+        public readonly int GetPageOfAddress(long logicalAddress, int logPageSizeBits) => (int)(logicalAddress >> logPageSizeBits);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -132,7 +132,7 @@ namespace Tsavorite.core
         public readonly ObjectIdMap TransientObjectIdMap => throw new NotImplementedException("Not implemented for TsavoriteLogAllocator");
 
         /// <inheritdoc/>
-        public readonly ObjectIdMap GetPageObjectIdMap(long pageNumber) => throw new NotImplementedException("Not implemented for TsavoriteLogAllocator");
+        public readonly ObjectIdMap GetPageObjectIdMap(int pageNumber) => throw new NotImplementedException("Not implemented for TsavoriteLogAllocator");
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

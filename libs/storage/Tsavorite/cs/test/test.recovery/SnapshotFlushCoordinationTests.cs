@@ -13,7 +13,7 @@ namespace Tsavorite.test.recovery
     [TestFixture]
     public class SnapshotFlushCoordinationTests
     {
-        static void BeginFlushing(SnapshotFlushCoordination coordination, long firstPage, long readOnlyFlushCutoffAddress = 0)
+        static void BeginFlushing(SnapshotFlushCoordination coordination, int firstPage, long readOnlyFlushCutoffAddress = 0)
         {
             coordination.BeginCutoffCapture(firstPage);
             coordination.PublishReadOnlyFlushCutoff(readOnlyFlushCutoffAddress);

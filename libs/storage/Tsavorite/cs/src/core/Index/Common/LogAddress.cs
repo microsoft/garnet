@@ -37,12 +37,14 @@ namespace Tsavorite.core
         public static long AbsoluteAddress(long address) => address & kAbsoluteAddressBitMask;
 
         /// <summary>Utility shared between AllocatorBase and ScanIteratorBase</summary>
+        /// <remarks>Page numbers are <see cref="int"/>: <see cref="PageOffset.Page"/> is an <see cref="int"/> and is the sole
+        ///     source of page allocation, so no allocator can produce a page number beyond <see cref="int.MaxValue"/>.</remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static long GetPageOfAddress(long logicalAddress, int logPageSizeBits) => AbsoluteAddress(logicalAddress) >> logPageSizeBits;
+        internal static int GetPageOfAddress(long logicalAddress, int logPageSizeBits) => (int)(AbsoluteAddress(logicalAddress) >> logPageSizeBits);
 
         /// <summary>Utility shared between AllocatorBase and ScanIteratorBase</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static long GetLogicalAddressOfStartOfPage(long page, int logPageSizeBits) => page << logPageSizeBits;
+        internal static long GetLogicalAddressOfStartOfPage(int page, int logPageSizeBits) => (long)page << logPageSizeBits;
 
         /// <summary>Pretty-print the address</summary>
         public static string AddressString(long address)

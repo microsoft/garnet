@@ -191,11 +191,11 @@ namespace Tsavorite.core
             }
         }
 
-        internal void FreePage(long page)
+        internal void FreePage(int page)
         {
             // If the logSizeTracker is not active, then all pages are used once allocated so there's nothing to add to the overflow pool.
             if (logSizeTracker is not null)
-                ReturnPage((int)(page % BufferSize));
+                ReturnPage(page % BufferSize);
             else
             {
                 objectPages[page % BufferSize].Clear();
@@ -203,7 +203,7 @@ namespace Tsavorite.core
             }
         }
 
-        internal override void ClearPage(long page, int offset = 0)
+        internal override void ClearPage(int page, int offset = 0)
         {
             var index = page % BufferSize;
 
@@ -636,7 +636,7 @@ namespace Tsavorite.core
         internal override ObjectLogFilePositionInfo GetObjectLogTail() => objectLogTail;
 
         /// <inheritdoc/>
-        internal override ObjectLogFilePositionInfo GetLowestObjectLogPositionForPage(long page)
+        internal override ObjectLogFilePositionInfo GetLowestObjectLogPositionForPage(int page)
         {
             var pageIndex = GetPageIndexForPage(page);
             if (!IsAllocated(pageIndex))
@@ -728,10 +728,10 @@ namespace Tsavorite.core
             }
         }
 
-        protected override void WriteAsync<TContext>(long flushPage, DeviceIOCompletionCallback callback, PageAsyncFlushResult<TContext> asyncResult)
-            => WriteAsync(flushPage, (ulong)(AlignedPageSizeBytes * flushPage), (uint)PageSize, callback, asyncResult, device, objectLogDevice);
+        protected override void WriteAsync<TContext>(int flushPage, DeviceIOCompletionCallback callback, PageAsyncFlushResult<TContext> asyncResult)
+            => WriteAsync(flushPage, (ulong)GetFileOffsetOfPage(flushPage), (uint)PageSize, callback, asyncResult, device, objectLogDevice);
 
-        protected override void WriteAsyncToDeviceForSnapshot<TContext>(long startPage, long flushPage, int pageFlushSize, DeviceIOCompletionCallback callback,
+        protected override void WriteAsyncToDeviceForSnapshot<TContext>(int startPage, int flushPage, int pageFlushSize, DeviceIOCompletionCallback callback,
             PageAsyncFlushResult<TContext> asyncResult, IDevice device, IDevice objectLogDevice, long fuzzyStartLogicalAddress)
         {
             VerifyCompatibleSectorSize(device);
@@ -745,11 +745,11 @@ namespace Tsavorite.core
 
             // We are writing to a separate device which starts at startPage. Eventually, startPage becomes the basis of
             // HybridLogRecoveryInfo.snapshotFileLogicalStartAddress, which is the page starting at offset 0 of the snapshot file.
-            WriteAsync(flushPage, (ulong)(AlignedPageSizeBytes * (flushPage - startPage)), (uint)pageFlushSize,
+            WriteAsync(flushPage, (ulong)GetFileOffsetOfPage(flushPage - startPage), (uint)pageFlushSize,
                         callback, asyncResult, device, objectLogDevice, fuzzyStartLogicalAddress);
         }
 
-        private void WriteAsync<TContext>(long flushPage, ulong alignedMainLogFlushPageAddress, uint numBytesToWrite,
+        private void WriteAsync<TContext>(int flushPage, ulong alignedMainLogFlushPageAddress, uint numBytesToWrite,
                         DeviceIOCompletionCallback callback, PageAsyncFlushResult<TContext> asyncResult,
                         IDevice device, IDevice objectLogDevice, long fuzzyStartLogicalAddress = long.MaxValue)
         {
@@ -789,7 +789,7 @@ namespace Tsavorite.core
             {
                 if (asyncResult.flushRequestState != FlushRequestState.Recovery)
                 {
-                    WriteInlinePageAsync((nint)pagePointers[flushPage % BufferSize], (ulong)(AlignedPageSizeBytes * flushPage), (uint)AlignedPageSizeBytes, callback, asyncResult, device);
+                    WriteInlinePageAsync((nint)pagePointers[flushPage % BufferSize], (ulong)GetFileOffsetOfPage(flushPage), (uint)AlignedPageSizeBytes, callback, asyncResult, device);
                     return;
                 }
                 // A recovery flush may be front-partial (starting mid-page at the first record past the PageHeader) but always
@@ -1414,7 +1414,7 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc/>
-        internal override long CalculatePageObjectSizes(long page, long startAddress, long untilAddress)
+        internal override long CalculatePageObjectSizes(int page, long startAddress, long untilAddress)
         {
             var recordAddress = Math.Max(startAddress, GetFirstValidLogicalAddressOnPage(page));
             var endAddress = Math.Min(untilAddress, GetLogicalAddressOfStartOfPage(page + 1));
@@ -1482,7 +1482,7 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc/>
-        internal override void LoadObjectsForRecoveryPass2(long page, long fromAddress, long untilAddress, IDevice objectLogDevice,
+        internal override void LoadObjectsForRecoveryPass2(int page, long fromAddress, long untilAddress, IDevice objectLogDevice,
             ObjectLogFilePositionInfo hardReadEndPosition = default)
         {
             var pageStartAddress = GetFirstValidLogicalAddressOnPage(page);
@@ -1500,7 +1500,7 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc/>
-        internal override long FindHeadAddressCutoffOnPage(long page, long untilAddress, long totalPageObjectSize, int numPagesBelowCurrentPage, long remainingBudget, out int numPagesBelowToEvict)
+        internal override long FindHeadAddressCutoffOnPage(int page, long untilAddress, long totalPageObjectSize, int numPagesBelowCurrentPage, long remainingBudget, out int numPagesBelowToEvict)
         {
             var recordAddress = GetFirstValidLogicalAddressOnPage(page);
             var stopAddress = Math.Min(untilAddress, GetLogicalAddressOfStartOfPage(page + 1));
