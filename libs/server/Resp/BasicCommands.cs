@@ -99,66 +99,85 @@ namespace Garnet.server
         bool NetworkGETEX<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            // Equivalent to DateTimeOffset.MaxValue.ToUnixTimeSeconds()
+            const long MAX_UNIX_TIME_SECONDS = 253_402_300_799L;
+
+            // Equivalent to DateTimeOffset.MaxValue.ToUnixTimeMilliseconds()
+            const long MAX_UNIX_TIME_MILLISECONDS = 253_402_300_799_999L;
+
             if (parseState.Count < 1 || parseState.Count > 3)
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.GETEX));
 
             var key = parseState.GetArgSliceByRef(0);
 
+            DateTimeOffset? now = null;
             TimeSpan? tsExpiry = null;
             if (parseState.Count > 1)
             {
                 var option = parseState.GetArgSliceByRef(1).ReadOnlySpan;
                 if (option.EqualsUpperCaseSpanIgnoringCase(CmdStrings.PERSIST))
+                {
                     tsExpiry = TimeSpan.Zero;
+                }
                 else
                 {
                     if (parseState.Count < 3 || !parseState.TryGetLong(2, out var expireTime) || expireTime <= 0)
                         return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_OUT_OF_RANGE);
 
-                    // The expiry a GETEX option implies must land within the representable range so
-                    // that (a) the conversion itself does not throw - TimeSpan.From* raises an
-                    // OverflowException and DateTimeOffset.FromUnixTime* an ArgumentOutOfRangeException,
-                    // neither a RespParsingException nor a GarnetException, so it would escape to the
-                    // session catch-all and dispose the connection - and (b) the absolute expiry
-                    // computed below as UtcNow.Ticks + tsExpiry.Ticks does not silently overflow the
-                    // long. Both are bounded by refusing any expiry beyond DateTimeOffset.MaxValue
-                    // (year 9999), reporting an error the way Redis does rather than crashing.
-                    var maxDeltaTicks = DateTimeOffset.MaxValue.Ticks - DateTimeOffset.UtcNow.Ticks;
-                    switch (option)
+                    if (option.EqualsUpperCaseSpanIgnoringCase(CmdStrings.EX))
                     {
-                        case var _ when option.EqualsUpperCaseSpanIgnoringCase(CmdStrings.EX):
-                            if (expireTime > maxDeltaTicks / TimeSpan.TicksPerSecond)
-                                return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_INVALIDEXP_IN_GETEX);
-                            tsExpiry = TimeSpan.FromSeconds(expireTime);
-                            break;
+                        if (expireTime > TimeSpan.MaxValue.TotalSeconds)
+                        {
+                            return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_INVALIDEXP_IN_GETEX);
+                        }
 
-                        case var _ when option.EqualsUpperCaseSpanIgnoringCase(CmdStrings.PX):
-                            if (expireTime > maxDeltaTicks / TimeSpan.TicksPerMillisecond)
-                                return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_INVALIDEXP_IN_GETEX);
-                            tsExpiry = TimeSpan.FromMilliseconds(expireTime);
-                            break;
+                        tsExpiry = TimeSpan.FromSeconds(expireTime);
+                    }
+                    else if (option.EqualsUpperCaseSpanIgnoringCase(CmdStrings.PX))
+                    {
+                        if (expireTime > TimeSpan.MaxValue.TotalMilliseconds)
+                        {
+                            return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_INVALIDEXP_IN_GETEX);
+                        }
 
-                        case var _ when option.EqualsUpperCaseSpanIgnoringCase(CmdStrings.EXAT):
-                            if (expireTime > DateTimeOffset.MaxValue.ToUnixTimeSeconds())
-                                return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_INVALIDEXP_IN_GETEX);
-                            tsExpiry = DateTimeOffset.FromUnixTimeSeconds(expireTime) - DateTimeOffset.UtcNow;
-                            break;
+                        tsExpiry = TimeSpan.FromMilliseconds(expireTime);
+                    }
+                    else if (option.EqualsUpperCaseSpanIgnoringCase(CmdStrings.EXAT))
+                    {
+                        if (expireTime > MAX_UNIX_TIME_SECONDS)
+                        {
+                            return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_INVALIDEXP_IN_GETEX);
+                        }
 
-                        case var _ when option.EqualsUpperCaseSpanIgnoringCase(CmdStrings.PXAT):
-                            if (expireTime > DateTimeOffset.MaxValue.ToUnixTimeMilliseconds())
-                                return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_INVALIDEXP_IN_GETEX);
-                            tsExpiry = DateTimeOffset.FromUnixTimeMilliseconds(expireTime) - DateTimeOffset.UtcNow;
-                            break;
+                        tsExpiry = DateTimeOffset.FromUnixTimeSeconds(expireTime) - (now = DateTimeOffset.UtcNow);
+                    }
+                    else if (option.EqualsUpperCaseSpanIgnoringCase(CmdStrings.PXAT))
+                    {
+                        if (expireTime > MAX_UNIX_TIME_MILLISECONDS)
+                        {
+                            return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_INVALIDEXP_IN_GETEX);
+                        }
 
-                        default:
-                            while (!RespWriteUtils.TryWriteError($"ERR Unsupported option {parseState.GetString(1)}", ref dcurr, dend))
-                                SendAndReset();
-                            return true;
+                        tsExpiry = DateTimeOffset.FromUnixTimeMilliseconds(expireTime) - (now = DateTimeOffset.UtcNow);
+                    }
+                    else
+                    {
+                        while (!RespWriteUtils.TryWriteError($"ERR Unsupported option {parseState.GetString(1)}", ref dcurr, dend))
+                        {
+                            SendAndReset();
+                        }
+
+                        return true;
                     }
                 }
             }
 
-            var expiry = (tsExpiry.HasValue && tsExpiry.Value.Ticks > 0) ? DateTimeOffset.UtcNow.Ticks + tsExpiry.Value.Ticks : 0;
+            var expiry = (tsExpiry.HasValue && tsExpiry.Value.Ticks > 0) ? (now ?? DateTimeOffset.UtcNow).Ticks + tsExpiry.Value.Ticks : 0;
+            if (expiry < 0)
+            {
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_OVERFLOWEXP_IN_GETEX);
+            }
+
             var input = new StringInput(RespCommand.GETEX, ref parseState, startIdx: 1, arg1: expiry);
 
             var output = GetStringOutput();
