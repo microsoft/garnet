@@ -22,8 +22,11 @@ namespace Garnet.server
 
         public LatencyMetricsEntry[] metrics;
 
-        public GarnetLatencyMetrics()
+        readonly int significantDigits;
+
+        public GarnetLatencyMetrics(int significantDigits)
         {
+            this.significantDigits = significantDigits;
             Init();
         }
 
@@ -32,7 +35,7 @@ namespace Garnet.server
             Debug.Assert(defaultLatencyTypes.Length == defaultLatencyTypesTicks.Length);
             metrics = new LatencyMetricsEntry[defaultLatencyTypes.Length];
             foreach (var cmd in defaultLatencyTypes)
-                metrics[(int)cmd] = new LatencyMetricsEntry();
+                metrics[(int)cmd] = new LatencyMetricsEntry(significantDigits);
         }
 
         public void Return()
@@ -50,11 +53,12 @@ namespace Garnet.server
         public void Merge(GarnetLatencyMetricsSession lm)
         {
             // Metrics can be null if we are shutting down the server but there are still remaining resp server session being disposed. Early return to handle graceful exit during server disposal.
-            if (lm.metrics == null || metrics == null) return;
+            var sessionMetrics = lm.metrics;
+            if (sessionMetrics == null || metrics == null) return;
             int ver = lm.PriorVersion; // Use prior version for merge
             for (int i = 0; i < metrics.Length; i++)
-                if (lm.metrics[i].latency[ver].TotalCount > 0)
-                    metrics[i].latency.Add(lm.metrics[i].latency[ver]);
+                if (sessionMetrics[i].latency != null && sessionMetrics[i].latency[ver].TotalCount > 0)
+                    metrics[i].latency.Add(sessionMetrics[i].latency[ver]);
         }
 
         public void Reset(LatencyMetricsType cmd)

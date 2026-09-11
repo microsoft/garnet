@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System.Diagnostics;
@@ -17,16 +17,36 @@ namespace Garnet.server
             => value < HISTOGRAM_UPPER_BOUND && value >= HISTOGRAM_LOWER_BOUND;
 
         public long startTimestamp;
-        public readonly LongHistogram[] latency;
 
-        public LatencyMetricsEntrySession()
+        /// <summary>
+        /// Double-buffered histograms, allocated on the first recorded value. A session typically uses
+        /// only some of the latency types, and the buffers are large enough that allocating them at
+        /// connection time makes the cost scale with connection count rather than with load.
+        /// </summary>
+        public LongHistogram[] latency;
+
+        readonly int significantDigits;
+
+        public LatencyMetricsEntrySession(int significantDigits)
         {
-            latency = [new(HISTOGRAM_LOWER_BOUND, HISTOGRAM_UPPER_BOUND, 2), new(HISTOGRAM_LOWER_BOUND, HISTOGRAM_UPPER_BOUND, 2)];
+            this.significantDigits = significantDigits;
+            latency = null;
             startTimestamp = 0;
         }
 
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        void Allocate()
+            => latency =
+            [
+                new(HISTOGRAM_LOWER_BOUND, HISTOGRAM_UPPER_BOUND, significantDigits),
+                new(HISTOGRAM_LOWER_BOUND, HISTOGRAM_UPPER_BOUND, significantDigits)
+            ];
+
         public void Return()
         {
+            if (latency == null)
+                return;
+
             latency[0].Return();
             latency[1].Return();
         }
@@ -42,22 +62,19 @@ namespace Garnet.server
             if (startTimestamp == 0) return;
 
             long elapsed = Stopwatch.GetTimestamp() - startTimestamp;
-            if (IsValidRange(elapsed))
-                latency[ver].RecordValue(elapsed);
-            else
-                latency[ver].RecordValue(HISTOGRAM_UPPER_BOUND);
             startTimestamp = 0;
+
+            if (latency == null) Allocate();
+            latency[ver].RecordValue(IsValidRange(elapsed) ? elapsed : HISTOGRAM_UPPER_BOUND);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void RecordValue(int ver, long elapsed)
         {
             if (elapsed == 0) return;
-            if (IsValidRange(elapsed))
-                latency[ver].RecordValue(elapsed);
-            else
-                latency[ver].RecordValue(HISTOGRAM_UPPER_BOUND);
+
+            if (latency == null) Allocate();
+            latency[ver].RecordValue(IsValidRange(elapsed) ? elapsed : HISTOGRAM_UPPER_BOUND);
         }
     }
-
 }

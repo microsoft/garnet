@@ -49,6 +49,11 @@ namespace Garnet.server
 
         SingleWriterMultiReaderLock rwLock = new();
 
+        /// <summary>
+        /// Significant decimal digits of value resolution kept by the latency histograms.
+        /// </summary>
+        public int LatencyPrecision { get; }
+
         public GarnetServerMonitor(StoreWrapper storeWrapper, GarnetServerOptions opts, IGarnetServer[] servers, ILogger logger = null)
         {
             this.storeWrapper = storeWrapper;
@@ -56,6 +61,7 @@ namespace Garnet.server
             this.servers = servers;
             this.logger = logger;
             monitorSamplingFrequency = TimeSpan.FromSeconds(opts.MetricsSamplingFrequency);
+            LatencyPrecision = opts.LatencyMonitorPrecision;
             monitor_iterations = 0;
 
             instant_input_net_bytes = 0;
