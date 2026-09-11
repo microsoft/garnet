@@ -33,7 +33,7 @@ namespace HdrHistogram
     /// </remarks>
     public class LongHistogram : HistogramBase
     {
-        private readonly long[] _counts;
+        private long[] _counts;
         private long _totalCount;
 
         /// <summary>
@@ -101,10 +101,25 @@ namespace HdrHistogram
         }
 
         /// <summary>
+        /// Whether the counts array has been handed back to the pool, after which the histogram holds no
+        /// data and must not be read or recorded into.
+        /// </summary>
+        public bool IsReturned => _counts == null;
+
+        /// <summary>
         /// Return the histogram long array to the pool for recycling.
         /// </summary>
         public void Return()
-            => ArrayPool<long>.Shared.Return(_counts);
+        {
+            var counts = _counts;
+            if (counts == null)
+                return;
+
+            // Dropped before the array goes back to the shared pool, so a record after this point
+            // throws here instead of silently writing into another session's histogram.
+            _counts = null;
+            ArrayPool<long>.Shared.Return(counts);
+        }
 
         /// <summary>
         /// Gets the total number of recorded values.
@@ -178,7 +193,8 @@ namespace HdrHistogram
         /// </summary>
         protected override void ClearCounts()
         {
-            Array.Clear(_counts, 0, _counts.Length);
+            if (_counts != null)
+                Array.Clear(_counts, 0, _counts.Length);
             _totalCount = 0;
         }
 
