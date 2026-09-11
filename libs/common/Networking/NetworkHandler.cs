@@ -87,6 +87,16 @@ namespace Garnet.networking
         /// </summary>
         const int ShrinkHysteresis = 256;
 
+        /// <summary>
+        /// Hysteresis applied instead of <see cref="ShrinkHysteresis"/> while the process-wide budget is
+        /// binding. Pressure is sticky -- the target stays below the ceiling for as long as the connections are
+        /// live -- so releasing on the first small receive would reallocate a pinned buffer on every large
+        /// request of an alternating workload, precisely when the server is most loaded. A short countdown
+        /// still converges the aggregate quickly while a strictly alternating workload never trips it, because
+        /// each large receive resets the countdown.
+        /// </summary>
+        const int PressureShrinkHysteresis = 8;
+
         int networkShrinkCountdown = ShrinkHysteresis;
         int transportShrinkCountdown = ShrinkHysteresis;
 
@@ -411,20 +421,21 @@ namespace Garnet.networking
             }
 
             var budget = networkPool.Budget;
-            if (budget.IsUnderPressure)
-            {
-                ShrinkNetworkReceiveBuffer(target);
-                networkShrinkCountdown = ShrinkHysteresis;
-                budget.RecordPressureShrink();
-                return;
-            }
+            var underPressure = budget.IsUnderPressure;
+            // Clamp rather than reload, so pressure arriving mid-countdown converges promptly instead of
+            // waiting out however much of the idle countdown was left.
+            if (underPressure && networkShrinkCountdown > PressureShrinkHysteresis)
+                networkShrinkCountdown = PressureShrinkHysteresis;
 
             if (--networkShrinkCountdown > 0)
                 return;
 
             ShrinkNetworkReceiveBuffer(target);
             networkShrinkCountdown = ShrinkHysteresis;
-            budget.RecordIdleShrink();
+            if (underPressure)
+                budget.RecordPressureShrink();
+            else
+                budget.RecordIdleShrink();
         }
 
         /// <summary>
@@ -706,12 +717,14 @@ namespace Garnet.networking
 
             var aboveMax = current > networkBufferSettings.maxReceiveBufferSize;
             var budget = networkPool.Budget;
-            // Above the pool's largest size class the buffer was allocated outside the pool and is dropped rather
-            // than recycled on return, so release it without waiting out the hysteresis. While the budget is
-            // binding, shrink immediately so the aggregate converges rather than waiting out a per-connection
-            // countdown. See MaybeShrinkNetworkReceiveBuffer for the full policy.
             var underPressure = budget.IsUnderPressure;
-            if (!aboveMax && !underPressure && --transportShrinkCountdown > 0)
+            // See MaybeShrinkNetworkReceiveBuffer for the policy. Above the pool's largest size class the buffer
+            // was allocated outside the pool and is dropped rather than recycled on return, so release it without
+            // waiting at all.
+            if (underPressure && transportShrinkCountdown > PressureShrinkHysteresis)
+                transportShrinkCountdown = PressureShrinkHysteresis;
+
+            if (!aboveMax && --transportShrinkCountdown > 0)
                 return;
 
             var tmp = networkPool.Get(target, PoolEntryBufferType.ShrinkTransportReceiveBuffer);

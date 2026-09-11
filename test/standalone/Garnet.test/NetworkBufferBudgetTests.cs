@@ -5,6 +5,8 @@ using System;
 using System.Collections.Generic;
 using System.Net.Sockets;
 using System.Text;
+using System.Threading.Tasks;
+using Garnet.client;
 using Garnet.common;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -17,9 +19,9 @@ namespace Garnet.test
     /// divides by, and the fact that the published target is inert at default settings.
     /// </summary>
     /// <remarks>
-    /// At this stage the target is published but consumed by no allocation site, so these tests pin the
-    /// signal itself. That ordering is deliberate: it makes a drift bug in the live buffer count observable
-    /// on its own, rather than tangled with a clamping bug at an allocation site.
+    /// The sizing tests pin the signal on its own, so that a drift bug in the live buffer count is
+    /// observable separately from a clamping bug at an allocation site. The end-to-end tests then pin what
+    /// the allocation sites and the shrink policy actually do with it.
     /// </remarks>
     [TestFixture]
     public class NetworkBufferBudgetTests : TestBase
@@ -273,6 +275,109 @@ namespace Garnet.test
             // higher 64 KB floor, so the per-connection total falls to roughly a third.
             ClassicAssert.Less(budgeted, unbudgeted * 0.5,
                 $"live bytes per connection did not fall under budget pressure: {unbudgeted} -> {budgeted}");
+        }
+
+        /// <summary>
+        /// The incident is thousands of TLS connections, and a TLS connection shrinks a second, independent
+        /// buffer -- the decrypted transport buffer -- through a separate code path. Without this the pressure
+        /// branch that matters most in production would be unexercised.
+        /// </summary>
+        [Test]
+        public async Task PressureShrinksTheTlsTransportBufferToo()
+        {
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableTLS: true,
+                networkBufferMemoryBudget: "1m");
+            server.Start();
+
+            const int Connections = 16;
+            const int PayloadLength = 400 * 1024;
+            var payload = new string('p', PayloadLength);
+
+            var clients = new List<GarnetClient>();
+            try
+            {
+                for (var i = 0; i < Connections; i++)
+                {
+                    var c = TestUtils.GetGarnetClient(useTLS: true);
+                    await c.ConnectAsync();
+                    _ = await c.PingAsync();
+                    clients.Add(c);
+                }
+
+                var baseline = SocketStatBytes("liveBytes", clients[0]);
+                var before = StatValue("pressureShrinks", clients[0]);
+
+                foreach (var c in clients)
+                    _ = await c.StringSetAsync("big", payload);
+                var burst = SocketStatBytes("liveBytes", clients[0]);
+
+                // Far short of the 256-receive idle hysteresis.
+                for (var round = 0; round < 20; round++)
+                    foreach (var c in clients)
+                        _ = await c.PingAsync();
+
+                var settled = SocketStatBytes("liveBytes", clients[0]);
+                var shrinks = StatValue("pressureShrinks", clients[0]) - before;
+                TestContext.Out.WriteLine($"tls baseline={baseline}, burst={burst}, settled={settled}, pressureShrinks={shrinks}");
+
+                ClassicAssert.Greater(burst, baseline, "the oversized payload should have grown TLS buffers");
+                ClassicAssert.Greater(shrinks, 0, "no pressure shrink was recorded on the TLS path");
+                ClassicAssert.LessOrEqual(settled, baseline * 1.3,
+                    $"grown TLS buffers were not released under pressure (settled={settled}, baseline={baseline})");
+            }
+            finally
+            {
+                foreach (var c in clients) c.Dispose();
+            }
+        }
+
+        /// <summary>
+        /// Pressure is sticky: the target stays below the ceiling for as long as the connections are live. So
+        /// an immediate shrink under pressure would reallocate a pinned buffer on every large request in an
+        /// alternating large/small workload -- per-request churn precisely when the server is most loaded.
+        /// Counts shrink events rather than bytes, since bytes settle either way.
+        /// </summary>
+        [Test]
+        public void AlternatingPayloadsDoNotChurnUnderSustainedPressure()
+        {
+            StartServer(networkBufferMemoryBudget: "1m");
+
+            const int Connections = 16;
+            const int Rounds = 40;
+            const int PayloadLength = 400 * 1024;
+            var payload = new string('p', PayloadLength);
+
+            var sockets = new List<Socket>();
+            try
+            {
+                for (var i = 0; i < Connections; i++)
+                    sockets.Add(Ping(Connect()));
+
+                ClassicAssert.Less(StatBytes("targetBufferSize"), Ceiling, "the budget must be binding for this test");
+                var before = StatValue("pressureShrinks");
+
+                for (var round = 0; round < Rounds; round++)
+                {
+                    foreach (var s in sockets)
+                    {
+                        Send(s, $"*3\r\n$3\r\nSET\r\n$3\r\nbig\r\n${PayloadLength}\r\n{payload}\r\n");
+                        ClassicAssert.AreEqual("+OK\r\n", ReadExactly(s, 5));
+                        _ = Ping(s);
+                    }
+                }
+
+                var shrinks = StatValue("pressureShrinks") - before;
+                TestContext.Out.WriteLine($"pressure shrinks over {Rounds * Connections} large/small pairs: {shrinks}");
+
+                // One shrink per pair would be per-request reallocation of a pinned buffer.
+                ClassicAssert.Less(shrinks, Rounds * Connections / 2,
+                    $"receive buffers churned under sustained pressure: {shrinks} shrinks over {Rounds * Connections} pairs");
+            }
+            finally
+            {
+                foreach (var s in sockets) s.Dispose();
+            }
         }
 
         /// <summary>
@@ -545,9 +650,10 @@ namespace Garnet.test
             return Encoding.ASCII.GetString(buf, 0, n);
         }
 
-        static string StatRaw(string name)
+        static string StatRaw(string name) => StatRaw(name, BpStats());
+
+        static string StatRaw(string name, string stats)
         {
-            var stats = BpStats();
             // Read from the shared budget section, not from a per-socket pool section.
             var section = stats.IndexOf("network_buffer_budget", StringComparison.Ordinal);
             ClassicAssert.GreaterOrEqual(section, 0, $"budget section not found in BPSTATS: {stats}");
@@ -563,11 +669,24 @@ namespace Garnet.test
         static long StatValue(string name) => long.Parse(StatRaw(name));
 
         /// <summary>
+        /// Same as <see cref="StatValue(string)"/>, but over an existing client. Needed on TLS, where opening a
+        /// throwaway plain socket for INFO would not work.
+        /// </summary>
+        static long StatValue(string name, GarnetClient client)
+            => long.Parse(StatRaw(name, BpStats(client)));
+
+        static string BpStats(GarnetClient client)
+            => client.ExecuteForStringResultAsync("INFO", ["BPSTATS"]).GetAwaiter().GetResult();
+
+        /// <summary>
         /// Reads a stat from the listener's own pool section rather than the shared budget section.
         /// </summary>
-        static long SocketStatBytes(string name)
+        static long SocketStatBytes(string name) => SocketStatBytes(name, BpStats());
+
+        static long SocketStatBytes(string name, GarnetClient client) => SocketStatBytes(name, BpStats(client));
+
+        static long SocketStatBytes(string name, string stats)
         {
-            var stats = BpStats();
             var section = stats.IndexOf("server_socket_0", StringComparison.Ordinal);
             ClassicAssert.GreaterOrEqual(section, 0, $"socket section not found in BPSTATS: {stats}");
 
