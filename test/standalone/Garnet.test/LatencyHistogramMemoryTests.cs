@@ -100,11 +100,20 @@ namespace Garnet.test
                 if (declared < 0)
                 {
                     headEnd = text.IndexOf("\r\n", StringComparison.Ordinal);
-                    if (headEnd < 0 || text[0] != '$') continue;
+                    if (headEnd < 0) continue;
+
+                    // Fail on the server's own message rather than spinning until the receive timeout,
+                    // which would report a socket error in place of whatever the server actually said.
+                    ClassicAssert.AreEqual('$', text[0], $"CLIENT LIST did not return a bulk string: {text[..headEnd]}");
                     declared = int.Parse(text[1..headEnd]);
                 }
                 if (text.Length >= headEnd + 2 + declared + 2) break;
             }
+
+            ClassicAssert.GreaterOrEqual(declared, 0,
+                $"the CLIENT LIST reply ended before its length header: {sb}");
+            ClassicAssert.GreaterOrEqual(sb.Length, headEnd + 2 + declared,
+                $"the CLIENT LIST reply ended {headEnd + 2 + declared - sb.Length} bytes short of its declared length");
 
             var body = sb.ToString()[(headEnd + 2)..(headEnd + 2 + declared)];
 

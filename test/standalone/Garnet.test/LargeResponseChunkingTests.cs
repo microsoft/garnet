@@ -582,15 +582,32 @@ namespace Garnet.test
 
             ClassicAssert.IsTrue(reply.StartsWith('*'), $"expected an array reply, got: {Head(reply)}");
             var at = reply.IndexOf("\r\n", StringComparison.Ordinal);
+            ClassicAssert.Greater(at, 0, $"the array header is not terminated: {Head(reply)}");
+
             var count = int.Parse(reply[1..at]);
+            ClassicAssert.GreaterOrEqual(count, 0, "expected an array, got a null array");
             at += 2;
 
             var items = new string[count];
             for (var i = 0; i < count; i++)
             {
+                // Every bound below is asserted before it is used. A malformed or truncated reply is exactly
+                // what this test exists to catch, so it must report as a named failure rather than as an
+                // index-out-of-range from the parser.
+                ClassicAssert.Less(at, reply.Length, $"element {i} begins past the end of the reply");
                 ClassicAssert.AreEqual('$', reply[at], $"element {i} is not a bulk string: {Head(reply[at..])}");
+
                 var headEnd = reply.IndexOf("\r\n", at, StringComparison.Ordinal);
+                ClassicAssert.Greater(headEnd, at, $"element {i} has no terminated length header");
+
                 var declared = int.Parse(reply[(at + 1)..headEnd]);
+                if (declared < 0)
+                {
+                    // A null bulk string carries no payload and no trailing CRLF.
+                    items[i] = null;
+                    at = headEnd + 2;
+                    continue;
+                }
 
                 var body = headEnd + 2;
                 ClassicAssert.LessOrEqual(body + declared + 2, reply.Length,
