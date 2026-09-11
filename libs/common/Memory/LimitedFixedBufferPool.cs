@@ -25,6 +25,12 @@ namespace Garnet.common
         readonly int numLevels, minAllocationSize, maxEntriesPerLevel;
 
         /// <summary>
+        /// Process-wide budget this pool participates in. Never null; <see cref="NetworkBufferBudget.Disabled"/>
+        /// for pools that are not connection-scaled, in which case every budget operation is inert.
+        /// </summary>
+        readonly NetworkBufferBudget budget;
+
+        /// <summary>
         /// Ceiling on the total number of bytes retained on the idle free lists across all levels.
         /// Levels share this budget, so a burst on one size class can use the whole of it rather than
         /// being limited to <see cref="maxEntriesPerLevel"/> entries while other levels sit empty.
@@ -102,8 +108,9 @@ namespace Garnet.common
         /// <param name="numLevels">Number of size classes, each a doubling of <paramref name="minAllocationSize"/>.</param>
         /// <param name="ownerType">Subsystem that owns this pool, for diagnostics.</param>
         /// <param name="maxPooledBytes">Ceiling on total retained idle bytes across all levels. Zero derives it from <paramref name="maxEntriesPerLevel"/>.</param>
+        /// <param name="budget">Process-wide live-buffer budget this pool participates in. Null means it participates in none.</param>
         /// <param name="logger">Logger.</param>
-        public LimitedFixedBufferPool(int minAllocationSize, int maxEntriesPerLevel = 16, int numLevels = 4, PoolOwnerType ownerType = PoolOwnerType.Unknown, long maxPooledBytes = 0, ILogger logger = null)
+        public LimitedFixedBufferPool(int minAllocationSize, int maxEntriesPerLevel = 16, int numLevels = 4, PoolOwnerType ownerType = PoolOwnerType.Unknown, long maxPooledBytes = 0, NetworkBufferBudget budget = null, ILogger logger = null)
         {
             this.minAllocationSize = minAllocationSize;
             this.maxAllocationSize = minAllocationSize << (numLevels - 1);
@@ -111,6 +118,7 @@ namespace Garnet.common
             this.numLevels = numLevels;
             this.logger = logger;
             this.ownerByte = (int)ownerType << 8;
+            this.budget = budget ?? NetworkBufferBudget.Disabled;
             pool = new PoolLevel[numLevels];
 
             if (maxPooledBytes > 0)
@@ -163,6 +171,7 @@ namespace Garnet.common
 #endif
             var length = buffer.entry.Length;
             _ = Interlocked.Add(ref liveBytes, -length);
+            budget.OnBufferReleased();
 
             var level = Position(length);
             if (level >= 0)
@@ -212,6 +221,7 @@ namespace Garnet.common
 
             var live = Interlocked.Add(ref liveBytes, size);
             UpdatePeakLiveBytes(live);
+            budget.OnBufferAcquired();
 
             var level = Position(size);
             if (level == -1) Interlocked.Increment(ref totalOutOfBoundAllocations);
@@ -240,6 +250,9 @@ namespace Garnet.common
 #if DEBUG
             outstandingEntries[entry] = 0;
 #endif
+            // Allocate-miss is the pool's slow path, and the only place where the live buffer population
+            // genuinely grows, so it is where republishing the target costs nothing.
+            budget.Recompute();
             return entry;
         }
 

@@ -282,6 +282,10 @@ namespace Garnet
             if (servers == null)
             {
                 servers = new IGarnetServer[opts.EndPoints.Length];
+                // One budget and one settings instance shared by every listener, so the ceiling is
+                // process-wide rather than per-endpoint.
+                var networkBufferSettings = opts.GetNetworkBufferSettings();
+                var networkBufferBudget = opts.GetNetworkBufferBudget();
                 for (var i = 0; i < servers.Length; i++)
                 {
                     if (opts.EndPoints[i] is UnixDomainSocketEndPoint)
@@ -292,7 +296,7 @@ namespace Garnet
                         File.Delete(opts.UnixSocketPath);
                     }
                     servers[i] = new GarnetServerTcp(opts.EndPoints[i], 0, opts.TlsOptions, opts.NetworkSendThrottleMax, opts.NetworkConnectionLimit, opts.UnixSocketPath, opts.UnixSocketPermission,
-                        opts.GetNetworkBufferSettings(), opts.GetNetworkBufferPoolSize(), logger);
+                        networkBufferSettings, opts.GetNetworkBufferPoolSize(), networkBufferBudget, logger);
                 }
             }
 

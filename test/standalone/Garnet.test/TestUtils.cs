@@ -859,6 +859,8 @@ namespace Garnet.test
             bool? nativeAllocator = null,
             string bufferPoolMemoryBudget = null,
             string networkBufferSize = null,
+            string networkBufferMemoryBudget = null,
+            string networkBufferMinSize = null,
             string sessionScratchBufferMaxRetainedSize = null,
             int? sessionParseStateMaxRetainedArgs = null
         )
@@ -906,6 +908,8 @@ namespace Garnet.test
                 EndPoints = endpoints ?? [EndPoint],
                 DisablePubSub = disablePubSub,
                 NetworkBufferSize = networkBufferSize,
+                NetworkBufferMemoryBudget = networkBufferMemoryBudget,
+                NetworkBufferMinSize = networkBufferMinSize,
                 SessionScratchBufferMaxRetainedSize = sessionScratchBufferMaxRetainedSize,
                 SessionParseStateMaxRetainedArgs = sessionParseStateMaxRetainedArgs ?? GarnetServerOptions.DefaultSessionParseStateMaxRetainedArgs,
                 Recover = tryRecover,
