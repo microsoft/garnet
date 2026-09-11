@@ -30,6 +30,18 @@ namespace Garnet.common
         public readonly int maxReceiveBufferSize;
 
         /// <summary>
+        /// Smallest size class the pool built from these settings can recycle. Zero derives it from the three
+        /// sizes above, which is the historical behaviour.
+        /// </summary>
+        /// <remarks>
+        /// This exists so that the pool's size classes can start below <see cref="initialReceiveBufferSize"/>.
+        /// Without it there is no way to express "recycle buffers down to 16 KB while new connections still
+        /// start at 128 KB", and a buffer adapted below the derived minimum would fall outside every size
+        /// class and be dropped instead of recycled.
+        /// </remarks>
+        public readonly int minAllocationSize;
+
+        /// <summary>
         /// Reserve in the send buffer for per-batch/per-record overhead when computing <see cref="MaxSendBufferContentSize"/>,
         /// the largest single record or record-chunk we write. It must cover the once-per-batch cluster header
         /// (<c>SetClusterMigrateHeader</c> — a 6-element RESP array <c>CLUSTER MIGRATE nodeId replace vector</c> plus the
@@ -37,6 +49,13 @@ namespace Garnet.common
         /// (a type byte + a 4-byte chunk length + the batch trailer). 256 leaves comfortable margin (was 64, which was too small).
         /// </summary>
         public const int SendBufferOverheadReserve = 256;
+
+        /// <summary>
+        /// Absolute ceiling on the per-level idle entry count derived from a byte budget. At the shipped
+        /// defaults the derived value is 512, so this is inert; it only engages when a large byte budget is
+        /// combined with a small minimum size class.
+        /// </summary>
+        const int MaxEntriesPerLevelCap = 1024;
 
         /// <summary>
         /// The largest single record, or record-chunk, that fits in the send buffer once the per-batch header and per-record
@@ -57,11 +76,13 @@ namespace Garnet.common
         /// <param name="sendBufferSize"></param>
         /// <param name="initialReceiveBufferSize"></param>
         /// <param name="maxReceiveBufferSize"></param>
-        public NetworkBufferSettings(int sendBufferSize = 1 << 17, int initialReceiveBufferSize = 1 << 17, int maxReceiveBufferSize = 1 << 20)
+        /// <param name="minAllocationSize">Smallest size class the pool may recycle. Zero derives it from the other three.</param>
+        public NetworkBufferSettings(int sendBufferSize = 1 << 17, int initialReceiveBufferSize = 1 << 17, int maxReceiveBufferSize = 1 << 20, int minAllocationSize = 0)
         {
             this.sendBufferSize = sendBufferSize;
             this.initialReceiveBufferSize = initialReceiveBufferSize;
             this.maxReceiveBufferSize = maxReceiveBufferSize;
+            this.minAllocationSize = minAllocationSize;
         }
 
         /// <summary>
@@ -95,6 +116,8 @@ namespace Garnet.common
         public LimitedFixedBufferPool CreateBufferPool(int maxEntriesPerLevel = 16, PoolOwnerType ownerType = PoolOwnerType.Unknown, long maxPooledBytes = 0, NetworkBufferBudget budget = null, ILogger logger = null)
         {
             var minSize = Math.Min(Math.Min(sendBufferSize, initialReceiveBufferSize), maxReceiveBufferSize);
+            if (minAllocationSize > 0)
+                minSize = Math.Min(minSize, minAllocationSize);
             var maxSize = Math.Max(Math.Max(sendBufferSize, initialReceiveBufferSize), maxReceiveBufferSize);
 
             var levels = LimitedFixedBufferPool.GetLevel(minSize, maxSize) + 1;
@@ -104,8 +127,11 @@ namespace Garnet.common
             if (maxPooledBytes > 0)
             {
                 // The byte budget is the real bound; let any single level draw on all of it so that a burst
-                // concentrated on one size class is not throttled while the other levels sit empty.
-                maxEntriesPerLevel = (int)Math.Min(int.MaxValue, Math.Max(1, maxPooledBytes / minSize));
+                // concentrated on one size class is not throttled while the other levels sit empty. The absolute
+                // cap keeps a small size class from hoarding tens of thousands of idle entries when the byte
+                // budget is large relative to it; it sits above the historical value, so it is inert at the
+                // shipped defaults.
+                maxEntriesPerLevel = (int)Math.Min(MaxEntriesPerLevelCap, Math.Max(1, maxPooledBytes / minSize));
             }
 
             return new LimitedFixedBufferPool(minSize, maxEntriesPerLevel: maxEntriesPerLevel, numLevels: levels,

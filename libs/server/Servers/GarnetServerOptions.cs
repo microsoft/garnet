@@ -485,7 +485,11 @@ namespace Garnet.server
                     nameof(NetworkMaxReceiveBufferSize), nameof(NetworkBufferSize), sendSize);
                 maxReceiveSize = sendSize;
             }
-            return new NetworkBufferSettings(sendSize, sendSize, maxReceiveSize);
+            // The pool must be able to recycle buffers all the way down to the adaptive floor, otherwise a
+            // buffer clamped below the configured size would fall outside every size class and be dropped
+            // instead of pooled. Only applies when the budget is enabled, so other pools keep today's geometry.
+            var minAllocationSize = IsNetworkBufferBudgetEnabled() ? GetNetworkReceiveFloor() : 0;
+            return new NetworkBufferSettings(sendSize, sendSize, maxReceiveSize, minAllocationSize);
         }
 
         /// <summary>
@@ -507,11 +511,24 @@ namespace Garnet.server
 
             var settings = GetNetworkBufferSettings();
             var ceiling = settings.initialReceiveBufferSize;
-            var receiveFloor = PowerOf2SizeOrDefault(NetworkBufferMinSize, DefaultNetworkBufferMinSize, nameof(NetworkBufferMinSize));
+            var receiveFloor = GetNetworkReceiveFloor();
             var sendFloor = PowerOf2SizeOrDefault(NetworkSendBufferMinSize, DefaultNetworkSendBufferMinSize, nameof(NetworkSendBufferMinSize));
 
             return new NetworkBufferBudget(budgetBytes, ceiling, receiveFloor, sendFloor);
         }
+
+        /// <summary>
+        /// Smallest base size a receive buffer may be adapted down to. This is also the pool's smallest size
+        /// class, since a buffer below it could not be recycled.
+        /// </summary>
+        int GetNetworkReceiveFloor()
+            => PowerOf2SizeOrDefault(NetworkBufferMinSize, DefaultNetworkBufferMinSize, nameof(NetworkBufferMinSize));
+
+        /// <summary>
+        /// Whether the adaptive network buffer budget is enabled.
+        /// </summary>
+        bool IsNetworkBufferBudgetEnabled()
+            => (string.IsNullOrEmpty(NetworkBufferMemoryBudget) ? DefaultNetworkBufferMemoryBudget : ParseSize(NetworkBufferMemoryBudget, out _)) > 0;
 
         const long DefaultNetworkBufferMemoryBudget = 1L << 30;
         const int DefaultNetworkBufferMinSize = 1 << 14;

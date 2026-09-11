@@ -258,6 +258,44 @@ namespace Garnet.test
             entry.Dispose();
         }
 
+        /// <summary>
+        /// The falsifying test for the clamp itself. Everything else pins the published signal; this pins that
+        /// an allocation site consumes it, by measuring the bytes the server says its live connections hold.
+        /// </summary>
+        [Test]
+        public void SmallBudgetShrinksTheBytesHeldByLiveConnections()
+        {
+            // Disabled budget first, so the control is today's behaviour on the same build.
+            var unbudgeted = MeasureLiveBytesPerConnection("0");
+            var budgeted = MeasureLiveBytesPerConnection("512k");
+
+            // Receive buffers drop from 128 KB to the 16 KB floor. Send buffers are not yet adapted, so the
+            // per-connection total falls by substantially less than the receive buffer alone does.
+            ClassicAssert.Less(budgeted, unbudgeted * 0.75,
+                $"live bytes per connection did not fall under budget pressure: {unbudgeted} -> {budgeted}");
+        }
+
+        double MeasureLiveBytesPerConnection(string networkBufferMemoryBudget)
+        {
+            server?.Dispose();
+            server = null;
+            StartServer(networkBufferMemoryBudget: networkBufferMemoryBudget);
+
+            const int Count = 50;
+            var connections = new List<Socket>();
+            try
+            {
+                for (var i = 0; i < Count; i++)
+                    connections.Add(Ping(Connect()));
+
+                return (double)SocketStatBytes("liveBytes") / Count;
+            }
+            finally
+            {
+                foreach (var c in connections) c.Dispose();
+            }
+        }
+
         #endregion
 
         #region end to end
@@ -392,9 +430,31 @@ namespace Garnet.test
 
         static long StatValue(string name) => long.Parse(StatRaw(name));
 
+        /// <summary>
+        /// Reads a stat from the listener's own pool section rather than the shared budget section.
+        /// </summary>
+        static long SocketStatBytes(string name)
+        {
+            var stats = BpStats();
+            var section = stats.IndexOf("server_socket_0", StringComparison.Ordinal);
+            ClassicAssert.GreaterOrEqual(section, 0, $"socket section not found in BPSTATS: {stats}");
+
+            var marker = name + "=";
+            var idx = stats.IndexOf(marker, section, StringComparison.Ordinal);
+            ClassicAssert.GreaterOrEqual(idx, 0, $"'{name}' not found in BPSTATS: {stats}");
+            idx += marker.Length;
+            var end = stats.IndexOfAny([',', '\r', '\n'], idx);
+            return ParseMemoryBytes(stats[idx..end]);
+        }
+
         static long StatBytes(string name)
         {
             var value = StatRaw(name);
+            return ParseMemoryBytes(value);
+        }
+
+        static long ParseMemoryBytes(string value)
+        {
             // Format.MemoryBytes emits e.g. "123KB", "1.50MB", "2.00GB".
             var (suffix, scale) = value.EndsWith("KB", StringComparison.Ordinal) ? ("KB", 1L << 10)
                 : value.EndsWith("MB", StringComparison.Ordinal) ? ("MB", 1L << 20)
