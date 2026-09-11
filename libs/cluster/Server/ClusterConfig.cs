@@ -1203,8 +1203,8 @@ namespace Garnet.cluster
                     // Sender is a replica. It may only hand off a slot that this node already credits to the
                     // sender itself, which is the planned-failover case described below. An unowned slot gives
                     // no such basis, so leave it alone and let its real owner claim it through the primary path
-                    // above; a replica must never introduce ownership. Crediting the replica here would be
-                    // permanent, because the true owner is afterwards rejected by the config epoch comparison.
+                    // above; a replica must never introduce ownership. Crediting the replica here would reject
+                    // the true owner's claims for as long as the bogus owner's config epoch remains the higher one.
                     if (currentOwnerId == RESERVED_WORKER_ID)
                         continue;
 

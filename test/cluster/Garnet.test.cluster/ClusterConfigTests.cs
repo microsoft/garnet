@@ -404,8 +404,9 @@ namespace Garnet.test.cluster
         }
 
         /// <summary>
-        /// A replica sender must not be credited with a slot the receiver holds unowned. Doing so is permanent:
-        /// the true owner is afterwards rejected by the config epoch comparison against the bogus owner.
+        /// A replica sender must not be credited with a slot the receiver holds unowned. Doing so blocks the
+        /// true owner, whose claim loses the config epoch comparison against the bogus owner until gossip
+        /// from that owner resets the slot back to unowned.
         /// Also guards the null dereference of workers[RESERVED_WORKER_ID].Nodeid fixed by #1435.
         /// </summary>
         [Test, Order(12)]
