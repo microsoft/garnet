@@ -162,8 +162,10 @@ namespace Garnet.test
             var baseline = StatBytes("liveBytes");
 
             // Larger than the 1 MB max receive buffer size, so the buffer is allocated outside the pool.
+            // Deliberately measured with no further traffic on this connection: the release has to happen on
+            // the receive that consumed the payload, not on the next one. A trailing PING here would let a
+            // buffer that is only released on the following receive pass anyway.
             SendAndDrain(s, BuildSet("oversized", 3 * 1024 * 1024), 1);
-            SendAndDrain(s, Ping(), 1);
             var after = StatBytes("liveBytes");
 
             TestContext.Out.WriteLine($"baseline={baseline / 1024} KB, after={after / 1024} KB");

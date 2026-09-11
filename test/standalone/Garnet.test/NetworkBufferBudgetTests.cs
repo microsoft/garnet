@@ -598,6 +598,82 @@ namespace Garnet.test
         }
 
         /// <summary>
+        /// Without TLS the transport buffer is an alias of the network buffer, refreshed at the top of every
+        /// receive. A resize therefore leaves the alias pointing at the entry that was just handed back to the
+        /// pool, and for a connection that goes quiet straight after a shrink that stale field roots the old
+        /// pinned array indefinitely -- the accounting shows the release, the memory never happens. That is
+        /// exactly the incident's shape: thousands of connections that grew once and then idled.
+        /// </summary>
+        /// <remarks>
+        /// The probe is a GET of a huge non-existent key, so the receive buffer has to grow to hold the command
+        /// while nothing is stored -- a SET would contaminate the measurement with the value itself. Connections
+        /// are driven in lockstep and stopped on the receive that shrinks them, so each one is idle at the
+        /// moment its alias goes stale.
+        /// </remarks>
+        [Test]
+        public void ShrunkReceiveBuffersAreNotRootedByTheStaleTransportAlias()
+        {
+            StartServer(networkBufferMemoryBudget: "1m");
+
+            const int Connections = 64;
+            const int KeyLength = 512 * 1024;
+
+            var sockets = new List<Socket>();
+            for (var i = 0; i < Connections; i++)
+                sockets.Add(Ping(Connect()));
+
+            var baseline = SettledMemory();
+
+            var bigKey = new string('k', KeyLength);
+            foreach (var s in sockets)
+            {
+                Send(s, $"*2\r\n$3\r\nGET\r\n${KeyLength}\r\n{bigKey}\r\n");
+                DrainReplies(s, 1);
+            }
+
+            var grown = StatValue("pressureShrinks");
+
+            // Stop on the round that shrinks them, so every connection is idle with a stale alias.
+            for (var round = 0; round < 64; round++)
+            {
+                foreach (var s in sockets)
+                {
+                    Send(s, "*1\r\n$4\r\nPING\r\n");
+                    DrainReplies(s, 1);
+                }
+                if (StatValue("pressureShrinks") >= grown + Connections) break;
+            }
+
+            var shrinks = StatValue("pressureShrinks") - grown;
+            ClassicAssert.GreaterOrEqual(shrinks, Connections,
+                "the connections never shrank, so the stale alias was never created and this measured nothing");
+
+            var settled = SettledMemory();
+            var retained = settled - baseline;
+
+            TestContext.Out.WriteLine(
+                $"retained {retained / 1024} KB over {Connections} connections => {retained / 1024.0 / Connections:F1} KB/conn");
+            TestContext.Out.WriteLine(BpStats());
+
+            // One stale root per connection would be the pre-shrink buffer, at least 512 KB. Half of that is
+            // comfortably above the noise of the rest of the server and far below the leak.
+            ClassicAssert.Less(retained, (long)Connections * 256 * 1024,
+                $"shrunk receive buffers are still rooted: {retained / 1024} KB retained over {Connections} connections");
+
+            foreach (var s in sockets) s.Dispose();
+        }
+
+        static long SettledMemory()
+        {
+            for (var i = 0; i < 3; i++)
+            {
+                GC.Collect(2, GCCollectionMode.Forced, blocking: true, compacting: true);
+                GC.WaitForPendingFinalizers();
+            }
+            return GC.GetTotalMemory(forceFullCollection: true);
+        }
+
+        /// <summary>
         /// A TLS connection carries a fourth buffer the plain path does not: the plaintext send buffer, which is
         /// allocated once at construction with no grow path. Leaving it at the configured size would make every
         /// TLS connection over-target under pressure, so the pool would drop it on return and pin a fresh one on
@@ -939,6 +1015,20 @@ namespace Garnet.test
             var buf = new byte[64];
             _ = s.Receive(buf);
             return s;
+        }
+
+        /// <summary>Reads until <paramref name="expected"/> complete replies have arrived.</summary>
+        static void DrainReplies(Socket s, int expected)
+        {
+            var buf = new byte[64 * 1024];
+            var seen = 0;
+            while (seen < expected)
+            {
+                var n = s.Receive(buf);
+                if (n == 0) throw new Exception("connection closed");
+                for (var i = 0; i < n; i++)
+                    if (buf[i] == (byte)'\n') seen++;
+            }
         }
 
         static void Send(Socket s, string command)
