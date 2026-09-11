@@ -129,7 +129,7 @@ namespace Garnet.test
             var burstLive = StatBytes("liveBytes");
 
             // Return to small requests; the shrink path applies hysteresis, so allow enough receives to trip it.
-            for (var round = 0; round < 40; round++)
+            for (var round = 0; round < 280; round++)
                 foreach (var s in sockets)
                     SendAndDrain(s, ping, 1);
             var settledLive = StatBytes("liveBytes");

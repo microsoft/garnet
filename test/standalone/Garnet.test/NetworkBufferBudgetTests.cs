@@ -276,6 +276,70 @@ namespace Garnet.test
         }
 
         /// <summary>
+        /// Under pressure a grown buffer must come back without waiting out the long idle hysteresis, or the
+        /// aggregate cannot converge in time to matter. The control arm -- identical workload, budget disabled
+        /// -- must still be holding its grown buffers after the same handful of small receives, which is what
+        /// proves the pressure gate rather than the countdown did the work.
+        /// </summary>
+        [Test]
+        public void PressureShrinksGrownBuffersWithoutWaitingOutTheIdleHysteresis()
+        {
+            var (budgetedSettled, budgetedBaseline, pressureShrinks) = MeasureShrinkAfterBurst("1m");
+            var (controlSettled, controlBaseline, controlPressureShrinks) = MeasureShrinkAfterBurst("0");
+
+            ClassicAssert.Greater(pressureShrinks, 0, "no pressure shrink was recorded under a small budget");
+            ClassicAssert.AreEqual(0, controlPressureShrinks, "an unbudgeted server must never record a pressure shrink");
+
+            // Far fewer than ShrinkHysteresis receives happened, so only the pressure path can have released these.
+            ClassicAssert.LessOrEqual(budgetedSettled, budgetedBaseline * 1.2,
+                $"grown buffers were not released under pressure (settled={budgetedSettled}, baseline={budgetedBaseline})");
+            ClassicAssert.Greater(controlSettled, controlBaseline * 1.5,
+                $"the control arm released its buffers too, so the pressure gate is not what is being measured " +
+                $"(settled={controlSettled}, baseline={controlBaseline})");
+        }
+
+        /// <summary>
+        /// Connects, grows every connection's receive buffer with one large request, then does a handful of
+        /// small round trips -- far short of the idle hysteresis. Returns settled and baseline live bytes
+        /// together with the pressure-shrink count.
+        /// </summary>
+        (long Settled, long Baseline, long PressureShrinks) MeasureShrinkAfterBurst(string budget)
+        {
+            server?.Dispose();
+            server = null;
+            StartServer(networkBufferMemoryBudget: budget);
+
+            const int Connections = 24;
+            const int PayloadLength = 400 * 1024;
+            var payload = new string('p', PayloadLength);
+
+            var sockets = new List<Socket>();
+            try
+            {
+                for (var i = 0; i < Connections; i++)
+                    sockets.Add(Ping(Connect()));
+                var baseline = SocketStatBytes("liveBytes");
+
+                foreach (var s in sockets)
+                {
+                    Send(s, $"*3\r\n$3\r\nSET\r\n$3\r\nbig\r\n${PayloadLength}\r\n{payload}\r\n");
+                    ClassicAssert.AreEqual("+OK\r\n", ReadExactly(s, 5));
+                }
+
+                // Ten rounds, against a 256-receive idle hysteresis.
+                for (var round = 0; round < 10; round++)
+                    foreach (var s in sockets)
+                        _ = Ping(s);
+
+                return (SocketStatBytes("liveBytes"), baseline, StatValue("pressureShrinks"));
+            }
+            finally
+            {
+                foreach (var s in sockets) s.Dispose();
+            }
+        }
+
+        /// <summary>
         /// Adaptation governs the base size only. A response far larger than the adapted send buffer, and a
         /// request far larger than the adapted receive buffer, must still succeed -- the send side by chunking
         /// through the buffer it was given, the receive side by growing on demand.
