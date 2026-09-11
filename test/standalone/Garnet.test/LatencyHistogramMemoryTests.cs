@@ -1,4 +1,4 @@
-// Copyright (c) Microsoft Corporation.
+﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -85,41 +85,61 @@ namespace Garnet.test
         int RespSessionCount()
         {
             using var s = Connect();
-            s.Send(Encoding.ASCII.GetBytes("*2\r\n$6\r\nCLIENT\r\n$4\r\nLIST\r\n"));
 
+            // Pipeline a PING behind it and read to that sentinel rather than to the declared length. RESP
+            // replies are ordered, so the sentinel cannot arrive early -- and reading to it means a reply
+            // that is long enough but mis-framed still terminates the read, so the framing assertions below
+            // are reachable instead of blocking in Receive until the socket timeout.
+            s.Send(Encoding.ASCII.GetBytes("*2\r\n$6\r\nCLIENT\r\n$4\r\nLIST\r\n*1\r\n$4\r\nPING\r\n"));
+
+            const string Sentinel = "+PONG\r\n";
             var sb = new StringBuilder();
             var buf = new byte[256 * 1024];
-            int declared = -1, headEnd = -1;
             while (true)
             {
-                var n = s.Receive(buf);
+                int n;
+                try
+                {
+                    n = s.Receive(buf);
+                }
+                catch (SocketException e)
+                {
+                    // Report what the server actually said rather than letting a socket error stand in for it.
+                    throw new AssertionException(
+                        $"the CLIENT LIST reply never reached its pipelined PING sentinel ({e.SocketErrorCode}); "
+                        + $"received {sb.Length} bytes: {Head(sb.ToString())}");
+                }
+
                 if (n == 0) break;
                 sb.Append(Encoding.ASCII.GetString(buf, 0, n));
-
-                var text = sb.ToString();
-                if (declared < 0)
-                {
-                    headEnd = text.IndexOf("\r\n", StringComparison.Ordinal);
-                    if (headEnd < 0) continue;
-
-                    // Fail on the server's own message rather than spinning until the receive timeout,
-                    // which would report a socket error in place of whatever the server actually said.
-                    ClassicAssert.AreEqual('$', text[0], $"CLIENT LIST did not return a bulk string: {text[..headEnd]}");
-                    declared = int.Parse(text[1..headEnd]);
-                }
-                if (text.Length >= headEnd + 2 + declared + 2) break;
+                if (sb.ToString().EndsWith(Sentinel, StringComparison.Ordinal)) break;
             }
 
-            ClassicAssert.GreaterOrEqual(declared, 0,
-                $"the CLIENT LIST reply ended before its length header: {sb}");
-            ClassicAssert.GreaterOrEqual(sb.Length, headEnd + 2 + declared + 2,
-                $"the CLIENT LIST reply ended {headEnd + 2 + declared + 2 - sb.Length} bytes short of its declared length and terminator");
+            var reply = sb.ToString();
+            ClassicAssert.IsTrue(reply.EndsWith(Sentinel, StringComparison.Ordinal),
+                $"the CLIENT LIST reply ended before its pipelined PING sentinel: {Head(reply)}");
+            reply = reply[..^Sentinel.Length];
 
-            var body = sb.ToString()[(headEnd + 2)..(headEnd + 2 + declared)];
+            var headEnd = reply.IndexOf("\r\n", StringComparison.Ordinal);
+            ClassicAssert.Greater(headEnd, 0, $"the CLIENT LIST reply has no terminated length header: {Head(reply)}");
+
+            ClassicAssert.AreEqual('$', reply[0], $"CLIENT LIST did not return a bulk string: {reply[..headEnd]}");
+            var declared = long.Parse(reply[1..headEnd]);
+
+            // Bounds arithmetic in long: a declared length near int.MaxValue overflows an int sum and turns a
+            // named assertion into an ArgumentOutOfRangeException from the slice below.
+            ClassicAssert.GreaterOrEqual(declared, 0, $"CLIENT LIST declared a negative length of {declared}");
+            ClassicAssert.AreEqual(headEnd + 2L + declared + 2L, reply.Length,
+                $"the CLIENT LIST bulk string declares {declared} bytes but the reply body is "
+                + $"{reply.Length - headEnd - 4} bytes -- the tail was lost or the framing is wrong");
+
+            // The length assertion above proves the declared payload fits, so these offsets are in range.
+            var start = headEnd + 2;
+            var body = reply[start..(start + (int)declared)];
 
             // The declared payload must be followed by its terminator. Without this the reply is proven only
             // to be long enough, so a truncated or mis-framed bulk string still reports a session count.
-            var trailer = sb.ToString()[(headEnd + 2 + declared)..(headEnd + 2 + declared + 2)];
+            var trailer = reply[(start + (int)declared)..];
             ClassicAssert.AreEqual("\r\n", trailer,
                 "the CLIENT LIST bulk string is not terminated by CRLF, so the reply is mis-framed: "
                 + $"[{(int)trailer[0]}, {(int)trailer[1]}]");
@@ -127,6 +147,12 @@ namespace Garnet.test
             // Discount this connection's own session, which CLIENT LIST includes.
             return body.Split('\n', StringSplitOptions.RemoveEmptyEntries).Length - 1;
         }
+
+        /// <summary>
+        /// A bounded, readable prefix of a reply, for failure messages on a reply that may be large.
+        /// </summary>
+        static string Head(string s)
+            => s.Length <= 120 ? s : s[..120] + "...";
 
         static long SettledMemory()
         {

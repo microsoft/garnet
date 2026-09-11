@@ -1,4 +1,4 @@
-// Copyright (c) Microsoft Corporation.
+﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -136,8 +136,7 @@ namespace Garnet.common
         /// <param name="ceiling">Configured base buffer size; the target never exceeds this.</param>
         /// <param name="receiveFloor">Smallest base size for a receive buffer.</param>
         /// <param name="sendFloor">Smallest base size for a send buffer.</param>
-        public NetworkBufferBudget(long budgetBytes, int ceiling, int receiveFloor, int sendFloor,
-            int recomputeAttempts = MaxRecomputeAttempts)
+        public NetworkBufferBudget(long budgetBytes, int ceiling, int receiveFloor, int sendFloor)
         {
             Debug.Assert(BitOperations.IsPow2(ceiling));
             Debug.Assert(BitOperations.IsPow2(receiveFloor));
@@ -149,7 +148,6 @@ namespace Garnet.common
             this.receiveFloor = Math.Min(receiveFloor, ceiling);
             this.sendFloor = Math.Min(sendFloor, ceiling);
             this.targetBufferSize = ceiling;
-            this.recomputeAttempts = recomputeAttempts;
         }
 
         /// <summary>
@@ -226,7 +224,7 @@ namespace Garnet.common
             // Bounded because this runs on every buffer acquire and release. Under a stampede a later
             // acquire or release republishes anyway; the point of the loop is to close the ordinary
             // two-thread race, not to serialize an arbitrarily long one.
-            for (var attempt = 0; attempt < recomputeAttempts; attempt++)
+            for (var attempt = 0; attempt < MaxRecomputeAttempts; attempt++)
             {
                 var count = Interlocked.Read(ref liveBufferCount);
                 var raw = budgetBytes / Math.Max(1, count);
@@ -253,16 +251,11 @@ namespace Garnet.common
 
         /// <summary>
         /// Attempts <see cref="Recompute"/> makes to publish a target that agrees with the live count before
-        /// giving up, leaving the value a concurrent publisher wrote from its own fresh count.
+        /// giving up, leaving the value a concurrent publisher wrote from its own fresh count. A constant
+        /// rather than a constructor parameter: with no fallback behind it, a caller passing zero would
+        /// produce a budget that never publishes at all, and no production path wants a different bound.
         /// </summary>
         const int MaxRecomputeAttempts = 8;
-
-        /// <summary>
-        /// Per-instance copy of <see cref="MaxRecomputeAttempts"/>. A constructor parameter rather than a
-        /// settable field so this stays immutable on an object every connection reads concurrently; a test
-        /// lowers it to force the exhaustion path, which contention alone cannot reach reliably.
-        /// </summary>
-        readonly int recomputeAttempts;
 
         /// <summary>
         /// Largest permitted base size for the given per-buffer byte quotient.
