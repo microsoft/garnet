@@ -269,10 +269,54 @@ namespace Garnet.test
             var unbudgeted = MeasureLiveBytesPerConnection("0");
             var budgeted = MeasureLiveBytesPerConnection("512k");
 
-            // Receive buffers drop from 128 KB to the 16 KB floor. Send buffers are not yet adapted, so the
-            // per-connection total falls by substantially less than the receive buffer alone does.
-            ClassicAssert.Less(budgeted, unbudgeted * 0.75,
+            // Receive buffers drop from 128 KB to their 16 KB floor and send buffers from 128 KB to their
+            // higher 64 KB floor, so the per-connection total falls to roughly a third.
+            ClassicAssert.Less(budgeted, unbudgeted * 0.5,
                 $"live bytes per connection did not fall under budget pressure: {unbudgeted} -> {budgeted}");
+        }
+
+        /// <summary>
+        /// Adaptation governs the base size only. A response far larger than the adapted send buffer, and a
+        /// request far larger than the adapted receive buffer, must still succeed -- the send side by chunking
+        /// through the buffer it was given, the receive side by growing on demand.
+        /// </summary>
+        [Test]
+        public void LargePayloadsStillSucceedWhileTheBudgetIsAtItsFloor()
+        {
+            StartServer(networkBufferMemoryBudget: "512k");
+
+            var connections = new List<Socket>();
+            try
+            {
+                // Drive the target to the floor before the payload connection is opened.
+                for (var i = 0; i < 60; i++)
+                    connections.Add(Ping(Connect()));
+                ClassicAssert.AreEqual(ReceiveFloor, StatBytes("targetBufferSize"));
+
+                using var s = Connect();
+
+                // A 1 MB value is well beyond both floors in both directions.
+                const int ValueLength = 1 << 20;
+                var value = new string('v', ValueLength);
+                Send(s, $"*3\r\n$3\r\nSET\r\n$3\r\nbig\r\n${ValueLength}\r\n{value}\r\n");
+                ClassicAssert.AreEqual("+OK\r\n", ReadExactly(s, 5));
+
+                Send(s, "*2\r\n$3\r\nGET\r\n$3\r\nbig\r\n");
+                var header = $"${ValueLength}\r\n";
+                var reply = ReadExactly(s, header.Length + ValueLength + 2);
+                ClassicAssert.IsTrue(reply.StartsWith(header, StringComparison.Ordinal), "unexpected bulk string header");
+                ClassicAssert.IsTrue(reply.EndsWith("\r\n", StringComparison.Ordinal));
+                ClassicAssert.AreEqual(ValueLength, reply.Length - header.Length - 2);
+
+                // A key longer than the send buffer exercises the chunked write path rather than the growing one.
+                var longKey = new string('k', 200 * 1024);
+                Send(s, $"*3\r\n$3\r\nSET\r\n${longKey.Length}\r\n{longKey}\r\n$1\r\nx\r\n");
+                ClassicAssert.AreEqual("+OK\r\n", ReadExactly(s, 5));
+            }
+            finally
+            {
+                foreach (var c in connections) c.Dispose();
+            }
         }
 
         double MeasureLiveBytesPerConnection(string networkBufferMemoryBudget)
@@ -402,6 +446,30 @@ namespace Garnet.test
             var buf = new byte[64];
             _ = s.Receive(buf);
             return s;
+        }
+
+        static void Send(Socket s, string command)
+        {
+            var bytes = Encoding.ASCII.GetBytes(command);
+            var sent = 0;
+            while (sent < bytes.Length)
+                sent += s.Send(bytes, sent, bytes.Length - sent, SocketFlags.None);
+        }
+
+        /// <summary>
+        /// Reads exactly <paramref name="count"/> bytes, since a large reply arrives in many chunks.
+        /// </summary>
+        static string ReadExactly(Socket s, int count)
+        {
+            var buf = new byte[count];
+            var read = 0;
+            while (read < count)
+            {
+                var n = s.Receive(buf, read, count - read, SocketFlags.None);
+                if (n == 0) throw new Exception("connection closed");
+                read += n;
+            }
+            return Encoding.ASCII.GetString(buf, 0, count);
         }
 
         static string BpStats()
