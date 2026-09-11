@@ -405,6 +405,27 @@ namespace Garnet.server
         public string NetworkBufferPoolSize = null;
 
         /// <summary>
+        /// Process-wide budget for the network buffers held by live connections, shared across all listeners.
+        /// While connections are few this is slack and every connection gets the full <see cref="NetworkBufferSize"/>;
+        /// once the budget divided by the live buffer count falls below that, the base size for new buffers adapts
+        /// down toward <see cref="NetworkBufferMinSize"/> so the total stays near the budget. Buffers still grow on
+        /// demand beyond the base size. Zero disables adaptation, restoring unbounded per-connection sizing.
+        /// </summary>
+        public string NetworkBufferMemoryBudget = null;
+
+        /// <summary>
+        /// Smallest base size a receive buffer may be adapted down to when the budget is under pressure.
+        /// </summary>
+        public string NetworkBufferMinSize = null;
+
+        /// <summary>
+        /// Smallest base size a send buffer may be adapted down to when the budget is under pressure. Higher than
+        /// <see cref="NetworkBufferMinSize"/> because an undersized send buffer pushes oversized responses onto a
+        /// pooled-rental path.
+        /// </summary>
+        public string NetworkSendBufferMinSize = null;
+
+        /// <summary>
         /// Capacity that each per-session scratch buffer may retain indefinitely. These buffers grow to fit
         /// the largest request a session has ever served and are pinned, so without a ceiling a single large
         /// command permanently enlarges the session. A session that keeps needing more than this keeps its
@@ -473,6 +494,28 @@ namespace Garnet.server
         /// </summary>
         public long GetNetworkBufferPoolSize()
             => string.IsNullOrEmpty(NetworkBufferPoolSize) ? 0 : ParseSize(NetworkBufferPoolSize, out _);
+
+        /// <summary>
+        /// Build the process-wide network buffer budget. One instance is shared by every listener, so the
+        /// ceiling is genuinely process-wide rather than per-endpoint.
+        /// </summary>
+        public NetworkBufferBudget GetNetworkBufferBudget()
+        {
+            var budgetBytes = string.IsNullOrEmpty(NetworkBufferMemoryBudget) ? DefaultNetworkBufferMemoryBudget : ParseSize(NetworkBufferMemoryBudget, out _);
+            if (budgetBytes <= 0)
+                return NetworkBufferBudget.Disabled;
+
+            var settings = GetNetworkBufferSettings();
+            var ceiling = settings.initialReceiveBufferSize;
+            var receiveFloor = PowerOf2SizeOrDefault(NetworkBufferMinSize, DefaultNetworkBufferMinSize, nameof(NetworkBufferMinSize));
+            var sendFloor = PowerOf2SizeOrDefault(NetworkSendBufferMinSize, DefaultNetworkSendBufferMinSize, nameof(NetworkSendBufferMinSize));
+
+            return new NetworkBufferBudget(budgetBytes, ceiling, receiveFloor, sendFloor);
+        }
+
+        const long DefaultNetworkBufferMemoryBudget = 1L << 30;
+        const int DefaultNetworkBufferMinSize = 1 << 14;
+        const int DefaultNetworkSendBufferMinSize = 1 << 16;
 
         const int DefaultMaxReceiveBufferSize = 1 << 20;
 
