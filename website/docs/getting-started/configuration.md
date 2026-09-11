@@ -80,9 +80,11 @@ For all available command line settings, run `GarnetServer.exe -h` or `GarnetSer
 | ----------- | ----------- | ----------- | ----------- | ----------- |
 | **Port** | ```--port``` | ```int``` | Integer in range:<br/>[0, 65535] | Port to run server on |
 | **Address** | ```--bind``` | ```string``` | IP Address in v4/v6 format | Whitespace or comma separated string of IP addresses to bind server to (default: any) |
-| **ClusterAnnouncePort** | ```--cluster-announce-port``` | ```int``` | Integer in range:<br/>[0, 65535] | Port that this node advertises to other nodes to connect to for gossiping. |
-| **ClusterAnnounceIp** | ```--cluster-announce-ip``` | ```string``` | IP Address in v4/v6 format | IP address that this node advertises to other nodes to connect to for gossiping. |
-| **ClusterAnnounceHostname** | ```--cluster-announce-hostname``` | ```string``` |  | Hostname that this node advertises to other nodes to connect to for gossiping. |
+| **ClusterAnnouncePort** | ```--cluster-announce-port``` | ```int``` | Integer in range:<br/>[0, 65535] | Client-advertised port. Zero uses the listen port. Also used by peers unless ClusterPort is set. |
+| **ClusterAnnounceIp** | ```--cluster-announce-ip``` | ```string``` | IP Address in v4/v6 format | Client-advertised IP address. Also used by peers unless ClusterAddress is set. |
+| **ClusterAnnounceHostname** | ```--cluster-announce-hostname``` | ```string``` |  | Client-advertised hostname. |
+| **ClusterAddress** | ```--cluster-address``` | ```string``` | Concrete IP address in v4/v6 format | Peer IP address override. Null uses the client-advertised IP address. Does not change listener bindings. |
+| **ClusterPort** | ```--cluster-port``` | ```int``` | Integer in range:<br/>[0, 65535] | Peer port override. Zero uses the client-advertised port. Does not change listener bindings. |
 | **ClusterPreferredEndpointType** | ```--cluster-preferred-endpoint-type``` | ```ClusterPreferredEndpointType``` | ip, hostname, unknown | Determines the endpoint type to be advertised to other nodes. (value options: ip, hostname, unknown) |
 | **LogMemorySize** | ```-m```<br/>```--memory``` | ```string``` | Memory size | Total main-log memory (inline and heap) to use, in bytes. Does not need to be a power of 2 |
 | **PageSize** | ```-p```<br/>```--page``` | ```string``` | Memory size | Size of each main-log page in bytes (rounds down to power of 2; minimum 512). |
@@ -281,6 +283,50 @@ to recover, and the incomplete recovery is logged as an error.
 In cluster mode a primary refuses under the same conditions. A replica reports the same error but continues,
 because a full sync from its primary will reconcile it. Cluster startup never purges checkpoint artifacts
 when no valid checkpoint could be selected.
+
+---
+
+## Separate peer and client endpoints
+
+`--cluster-announce-ip`, `--cluster-announce-port`, and `--cluster-announce-hostname`
+describe the client-facing endpoint. Client discovery and `MOVED` and `ASK` redirections use
+these values, subject to `--cluster-preferred-endpoint-type`.
+
+Set `--cluster-address` and `--cluster-port` to override the peer address and port.
+Each unset peer setting inherits the corresponding client-advertised value. Gossip,
+replication, failover, cluster publish, and migration connections use the peer endpoint.
+`CLUSTER MEET` must target a reachable peer endpoint. `MIGRATE` accepts a known peer endpoint
+or client-advertised address or hostname and port, then connects through the peer endpoint.
+The synthetic bus port in `CLUSTER NODES` remains the client-advertised port plus 10000.
+Garnet does not open a listener on that port.
+
+For example, these arguments advertise a translated client endpoint for a private listener:
+
+```text
+--bind 10.0.0.4 --port 6379
+--cluster-announce-ip 203.0.113.4 --cluster-announce-port 17004
+--cluster-announce-hostname cache.example.com --cluster-preferred-endpoint-type hostname
+--cluster-address 10.0.0.4 --cluster-port 6379
+```
+
+Advertised endpoints do not change listener bindings or configure forwarding, name resolution,
+or certificates. Configure those separately. Startup settings replace recovered local
+endpoints. Removing a peer override restores inheritance from the client endpoint.
+
+### Upgrade compatibility
+
+:::warning
+
+Separate peer endpoints use cluster configuration format version two for gossip and persisted
+configuration. Existing clusters must first upgrade every node to the preceding compatibility
+release, which can read both formats while continuing to send version one. Keep the existing
+endpoints during that upgrade. After every node runs the compatibility release, upgrade to the
+release with separate peer endpoints and configure the new settings.
+
+Older releases that only support format version one cannot read a rewritten `nodes.conf`.
+A node that has persisted format version two cannot be rolled back to one of those releases.
+
+:::
 
 ---
 
