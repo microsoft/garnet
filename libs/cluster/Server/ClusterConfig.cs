@@ -54,7 +54,7 @@ namespace Garnet.cluster
         /// <summary>
         /// Format used when initiating gossip, MEET, and failover exchanges.
         /// </summary>
-        public const byte OutboundGossipVersion = MinimumSupportedClusterConfigVersion;
+        public const byte OutboundGossipVersion = MaximumSupportedClusterConfigVersion;
 
         /// <summary>
         /// 
@@ -134,6 +134,8 @@ namespace Garnet.cluster
         /// <param name="role">Local worker role.</param>
         /// <param name="replicaOfNodeId">Local worker primary id.</param>
         /// <param name="hostname">Local worker hostname.</param>
+        /// <param name="clusterAddress">Peer IP address override; otherwise use address.</param>
+        /// <param name="clusterPort">Peer port override; zero uses port.</param>
         /// <returns>Instance of local config with update local worker info.</returns>
         public ClusterConfig InitializeLocalWorker(
             string nodeId,
@@ -142,7 +144,9 @@ namespace Garnet.cluster
             long configEpoch,
             NodeRole role,
             string replicaOfNodeId,
-            string hostname)
+            string hostname,
+            string clusterAddress = null,
+            int clusterPort = 0)
         {
             var newWorkers = new Worker[workers.Length];
             Array.Copy(workers, newWorkers, workers.Length);
@@ -154,8 +158,8 @@ namespace Garnet.cluster
             newWorkers[LOCAL_WORKER_ID].ReplicaOfNodeId = replicaOfNodeId;
             newWorkers[LOCAL_WORKER_ID].ReplicationOffset = 0;
             newWorkers[LOCAL_WORKER_ID].hostname = hostname;
-            newWorkers[LOCAL_WORKER_ID].ClusterAddress = address;
-            newWorkers[LOCAL_WORKER_ID].ClusterPort = port;
+            newWorkers[LOCAL_WORKER_ID].ClusterAddress = clusterAddress ?? address;
+            newWorkers[LOCAL_WORKER_ID].ClusterPort = clusterPort != 0 ? clusterPort : port;
             return new ClusterConfig(slotMap, newWorkers);
         }
 
