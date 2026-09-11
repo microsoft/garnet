@@ -26,11 +26,20 @@ namespace Garnet.common
         /// </summary>
         /// <param name="eventHandler">Event handler</param>
         /// <param name="networkBufferSettings"></param>
+        /// <param name="networkPool"></param>
         public GarnetSaeaBuffer(EventHandler<SocketAsyncEventArgs> eventHandler, NetworkBufferSettings networkBufferSettings, LimitedFixedBufferPool networkPool)
         {
             socketEventAsyncArgs = new SocketAsyncEventArgs();
 
-            buffer = networkPool.Get(networkBufferSettings.sendBufferSize, PoolEntryBufferType.SaeaSendBuffer);
+            // Send buffers do not grow, so an oversized response is chunked through the buffer it was given
+            // rather than needing one large enough to hold it. That makes the size safe to adapt, and every
+            // consumer reads the length off the entry rather than off the configured setting.
+            var budget = networkPool.Budget;
+            var size = budget.IsEnabled
+                ? Math.Min(networkBufferSettings.sendBufferSize, budget.TargetSendBufferSize)
+                : networkBufferSettings.sendBufferSize;
+
+            buffer = networkPool.Get(size, PoolEntryBufferType.SaeaSendBuffer);
             socketEventAsyncArgs.SetBuffer(buffer.entry, 0, buffer.entry.Length);
             socketEventAsyncArgs.Completed += eventHandler;
         }
