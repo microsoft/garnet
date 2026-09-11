@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Linq;
 using System.Net.Sockets;
 using System.Text;
 using NUnit.Framework;
@@ -224,9 +225,22 @@ namespace Garnet.test
                 "the bulk string payload does not match its declared length");
             StringAssert.EndsWith("\r\n", body);
 
-            // Every range must be present, including the last, which is what proves the tail survived.
-            for (var i = 0; i < Ranges; i++)
-                StringAssert.Contains($" {i * 2}", body, $"slot {i * 2} is missing from the node line");
+            // Compare the slot set exactly. A substring search would be near-vacuous here, because " 2"
+            // matches inside " 20" and " 200" -- with 4,000 alternating slots almost any surviving prefix
+            // of the line would satisfy it, which is the opposite of what this test is for.
+            var myself = Array.Find(body.Split('\n'), l => l.Contains(" myself,", StringComparison.Ordinal));
+            ClassicAssert.IsNotNull(myself, "no myself line in the CLUSTER NODES reply");
+
+            // <id> <addr> <flags> <master> <ping> <pong> <epoch> <link-state> <slot>...
+            const int FixedFields = 8;
+            var fields = myself.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            var slots = fields[FixedFields..].Select(int.Parse).ToHashSet();
+
+            var expected = Enumerable.Range(0, Ranges).Select(i => i * 2).ToHashSet();
+            ClassicAssert.AreEqual(Ranges, slots.Count,
+                $"the node line carries {slots.Count} slots, not the {Ranges} assigned");
+            ClassicAssert.IsTrue(slots.SetEquals(expected),
+                "the slots in the node line are not the slots that were assigned");
         }
 
         static string[] Prepend(string head, string[] rest)
