@@ -61,6 +61,8 @@ namespace Garnet.server
             {
                 if (replicaRecover)
                 {
+                    ExceptionInjectionHelper.TriggerException(ExceptionInjectionType.Replication_Fail_Replica_Checkpoint_Recovery);
+
                     // Note: Since replicaRecover only pertains to cluster-mode, we can use the default store pointers (since multi-db mode is disabled in cluster-mode)
                     if (metadata!.storeIndexToken != default && metadata.storeHlogToken != default)
                     {
@@ -88,7 +90,10 @@ namespace Garnet.server
                 // be visible at the default log level.
                 Logger?.LogError(ex, "Error during recovery of store; storeVersion = {storeVersion};", storeVersion);
 
-                if (StoreWrapper.serverOptions.FailOnRecoveryError)
+                // A replica that continues here would hold an incomplete store while still advertising the
+                // replication offset the primary sent it, diverging from the primary with nothing to signal it.
+                // Fail the sync instead, independently of FailOnRecoveryError, which governs standalone startup.
+                if (replicaRecover || StoreWrapper.serverOptions.FailOnRecoveryError)
                     throw;
             }
 

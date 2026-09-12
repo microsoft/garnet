@@ -16,7 +16,6 @@ using System.Threading.Tasks;
 using Garnet.client;
 using Garnet.common;
 using Garnet.server;
-using Garnet.server.TLS;
 using GarnetClusterManagement;
 using Microsoft.Extensions.Logging;
 using NUnit.Framework;
@@ -408,12 +407,36 @@ namespace Garnet.test.cluster
 
                     if (count > 0)
                     {
-                        await BackOffAsync(cancellationToken: context.cts.Token).ConfigureAwait(false);
+                        var msg = context.cts.IsCancellationRequested
+                            ? DescribeSyncMismatch(server.EndPoint, expectedConfig, nodes)
+                            : null;
+                        await BackOffAsync(cancellationToken: context.cts.Token, msg: msg).ConfigureAwait(false);
                         goto retry;
                     }
                 }
                 break;
             }
+        }
+
+        /// <summary>
+        /// Describes which of the expected nodes a server has not yet agreed on, so a cluster that never
+        /// converges reports what it was waiting for instead of only that it ran out of time.
+        /// </summary>
+        /// <param name="endPoint">Server whose view was inspected.</param>
+        /// <param name="expectedConfig">Expected cluster configuration, keyed by node id.</param>
+        /// <param name="nodes">Nodes the server reported, or null if it reported none.</param>
+        private static string DescribeSyncMismatch(EndPoint endPoint, Dictionary<string, string> expectedConfig, IEnumerable<ClusterNode> nodes)
+        {
+            var sb = new StringBuilder($"Cluster did not converge; {endPoint} disagrees on:");
+            foreach (var (nodeId, raw) in expectedConfig)
+            {
+                var node = nodes?.FirstOrDefault(n => n.NodeId == nodeId);
+                if (node == null)
+                    sb.Append($"\n  {nodeId}: not known to this node. Expected: {raw.Trim()}");
+                else if (!NodesEqual(new ClientClusterNode(raw.Trim()), node))
+                    sb.Append($"\n  {nodeId}: expected [{raw.Trim()}] actual [{node.Raw?.Trim()}]");
+            }
+            return sb.ToString();
         }
 
         public (List<ShardInfo>, List<ushort>) SimpleSetupCluster(
@@ -906,7 +929,7 @@ namespace Garnet.test.cluster
                 {
                     sslOptions = new SslClientAuthenticationOptions
                     {
-                        ClientCertificates = [CertificateUtils.GetMachineCertificateByFile(certFile, certPassword)],
+                        ClientCertificates = [TestUtils.GetClientCertificate()],
                         TargetHost = "GarnetTest",
                         AllowRenegotiation = false,
                         RemoteCertificateValidationCallback = TestUtils.ValidateServerCertificate,
@@ -928,7 +951,7 @@ namespace Garnet.test.cluster
             {
                 sslOptions = new SslClientAuthenticationOptions
                 {
-                    ClientCertificates = [CertificateUtils.GetMachineCertificateByFile(certFile, certPassword)],
+                    ClientCertificates = [TestUtils.GetClientCertificate()],
                     TargetHost = "GarnetTest",
                     AllowRenegotiation = false,
                     RemoteCertificateValidationCallback = TestUtils.ValidateServerCertificate,

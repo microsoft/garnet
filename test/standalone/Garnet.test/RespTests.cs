@@ -4580,12 +4580,25 @@ namespace Garnet.test
             // Check that we really killed the connection backing a GarnetClient
             static void AssertNotConnected(GarnetClient client)
             {
-                // Force the issue by attempting a command
-                try
+                // IsConnected reads Socket.Connected, which reports the state as of the last completed
+                // I/O. Once the server closes the connection the first send still succeeds locally and
+                // only a following one observes the reset, so a single ping cannot establish that the
+                // connection is gone. Keep issuing pings until the disconnect surfaces; a connection
+                // that was not killed keeps answering them and still fails the assert below.
+                var elapsed = Stopwatch.StartNew();
+                while (client.IsConnected && elapsed.Elapsed < TimeSpan.FromSeconds(10))
                 {
-                    client.Ping(static (_, __) => { });
+                    try
+                    {
+                        client.Ping(static (_, __) => { });
+                    }
+                    catch
+                    {
+                        break;
+                    }
+
+                    Thread.Sleep(10);
                 }
-                catch { }
 
                 ClassicAssert.IsFalse(client.IsConnected);
             }
@@ -5474,18 +5487,23 @@ namespace Garnet.test
             // Wait for client to enter blocking state
             await Task.Delay(1000).ConfigureAwait(false);
 
-            // Start parallel unblock and add tasks
-            var unblockTasks = new List<Task<int>>();
+            // Start parallel unblock and add tasks.
+            // These use the asynchronous StackExchange.Redis APIs deliberately: the synchronous overloads block a
+            // thread pool thread for the duration of the round trip, and issuing numberOfItems + 3 of them at once
+            // exhausts the pool on a 2-core machine. The pool then injects replacement threads at roughly one per
+            // second, so the commands reach the server several seconds late - after the blocking command has already
+            // timed out - and the concurrency this test exists to exercise never actually happens.
+            var unblockTasks = new List<Task<RedisResult>>();
             var addTasks = new List<Task>();
             for (int i = 0; i < numberOfItems; i++)
             {
                 var _i = i;
-                addTasks.Add(Task.Run(() => redis.GetDatabase(0).ListLeftPush(key, $"{value}{_i}")));
+                addTasks.Add(db.ListLeftPushAsync(key, $"{value}{_i}"));
             }
 
             for (int i = 0; i < 3; i++)
             {
-                unblockTasks.Add(Task.Run(() => (int)redis.GetDatabase(0).Execute("CLIENT", "UNBLOCK", clientId, "ERROR")));
+                unblockTasks.Add(db.ExecuteAsync("CLIENT", "UNBLOCK", clientId, "ERROR"));
             }
 
             await Task.WhenAll(unblockTasks).ConfigureAwait(false);
@@ -5500,11 +5518,11 @@ namespace Garnet.test
             if (numberOfItemsReturned == 0)
             {
                 ClassicAssert.IsTrue(blockingResult.StartsWith("-UNBLOCKED"));
-                ClassicAssert.IsTrue(unblockTasks.Any(x => x.Result == 1));
+                ClassicAssert.IsTrue(unblockTasks.Any(x => (int)x.Result == 1));
             }
             else
             {
-                ClassicAssert.IsTrue(unblockTasks.All(x => x.Result == 0));
+                ClassicAssert.IsTrue(unblockTasks.All(x => (int)x.Result == 0));
             }
         }
 

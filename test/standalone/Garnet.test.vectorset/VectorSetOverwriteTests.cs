@@ -136,12 +136,11 @@ namespace Garnet.test
         }
 
         [Test]
-        public async Task SETAsync()
+        public Task SETAsync()
         {
-            await TestVectorSetOverwrittenCommandAsync(RunCommandPlainAsync).ConfigureAwait(false);
-            await TestVectorSetOverwrittenCommandAsync(RunCommandEXAsync).ConfigureAwait(false);
+            return TestVectorSetOverwrittenCommandAsync(RunCommandAsync);
 
-            static async Task RunCommandPlainAsync(IDatabaseAsync executeDB, IDatabaseAsync readDB, RedisKey againstKey)
+            static async Task RunCommandAsync(IDatabaseAsync executeDB, IDatabaseAsync readDB, RedisKey againstKey)
             {
                 var res = await executeDB.StringSetAsync(againstKey, "foo").ConfigureAwait(false);
                 ClassicAssert.IsTrue(res);
@@ -149,8 +148,14 @@ namespace Garnet.test
                 var finalValue = await readDB.StringGetAsync(againstKey).ConfigureAwait(false);
                 ClassicAssert.AreEqual("foo", finalValue);
             }
+        }
 
-            static async Task RunCommandEXAsync(IDatabaseAsync executeDB, IDatabaseAsync readDB, RedisKey againstKey)
+        [Test]
+        public Task SETKeepTtlAsync()
+        {
+            return TestVectorSetOverwrittenCommandAsync(RunCommandAsync);
+
+            static async Task RunCommandAsync(IDatabaseAsync executeDB, IDatabaseAsync readDB, RedisKey againstKey)
             {
                 var res = (string)await executeDB.ExecuteAsync("SET", againstKey, "foo", "KEEPTTL").ConfigureAwait(false);
                 ClassicAssert.AreEqual("OK", res);

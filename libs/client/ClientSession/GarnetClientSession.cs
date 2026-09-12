@@ -42,6 +42,13 @@ namespace Garnet.client
         static readonly Exception disposeException = new GarnetClientDisposedException();
 
         Socket socket;
+
+        /// <summary>
+        /// Set by <see cref="CloseConnection"/> and never cleared, so a close is sticky: it also lets
+        /// <see cref="ThrowIfCloseRequested"/> observe a close that lands while the connection is still
+        /// being established, which would otherwise leave that thread awaiting a reply that never comes.
+        /// </summary>
+        int closeRequested;
         int disposed;
 
         // Send        
@@ -147,6 +154,7 @@ namespace Garnet.client
         public unsafe void Connect(CancellationToken token = default)
         {
             socket = ConnectSendSocket();
+            ThrowIfCloseRequested();
             networkHandler = new GarnetClientSessionTcpNetworkHandler(
                 this,
                 socket,
@@ -199,6 +207,7 @@ namespace Garnet.client
         public async Task ConnectAsync(int timeoutMs = 0, CancellationToken token = default)
         {
             socket = await ConnectSendSocketAsync(timeoutMs, token).ConfigureAwait(false);
+            ThrowIfCloseRequested();
             networkHandler = new GarnetClientSessionTcpNetworkHandler(
                 this,
                 socket,
@@ -405,6 +414,44 @@ namespace Garnet.client
             }
             catch { }
             return ConnectAsync(timeoutMs, token);
+        }
+
+        /// <summary>
+        /// Closes the underlying connection so a thread blocked on network I/O through this session
+        /// fails fast, without disposing the session itself. The session expects mono-threaded access,
+        /// so a caller that is not the thread using the session must not dispose it: doing so races
+        /// that thread's use of the send buffer it has rented. Closing the connection is safe because
+        /// it only invalidates the socket, leaving the buffer owned by the thread that rented it.
+        ///
+        /// The session is not reusable afterwards: the request is sticky, so a later
+        /// <see cref="ReconnectAsync"/> or <see cref="Connect"/> throws.
+        /// </summary>
+        public void CloseConnection()
+        {
+            _ = Interlocked.Exchange(ref closeRequested, 1);
+            Volatile.Read(ref socket)?.Dispose();
+        }
+
+        /// <summary>
+        /// A close that lands while the connection is still being established would otherwise be lost:
+        /// the socket is not yet published for <see cref="CloseConnection"/> to find, and the exchanges
+        /// that follow await a reply with no cancellation token, so the connecting thread would park
+        /// indefinitely on a peer that is shutting down. Checking here after the socket is published
+        /// means either the closer observes the socket or the connecting thread observes the request.
+        /// </summary>
+        void ThrowIfCloseRequested()
+        {
+            // Publishing the socket and reading the request are a store followed by a load of a
+            // different location, so without a StoreLoad fence both sides can miss: this thread's
+            // store is still buffered while it reads a stale request, and the closer reads a stale
+            // socket. The closer's Interlocked.Exchange fences its own side; this fences ours.
+            Interlocked.MemoryBarrier();
+
+            if (Volatile.Read(ref closeRequested) == 0)
+                return;
+
+            socket?.Dispose();
+            throw new ObjectDisposedException(nameof(GarnetClientSession), "Connection was closed while connecting");
         }
 
         /// <summary>

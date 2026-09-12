@@ -156,6 +156,8 @@ namespace Garnet.server
             this.expirationQueue = expirationQueue;
 #if NET9_0_OR_GREATER
             hashSpanLookup = hash.GetAlternateLookup<ReadOnlySpan<byte>>();
+            if (expirationTimes is not null)
+                expirationTimeSpanLookup = expirationTimes.GetAlternateLookup<ReadOnlySpan<byte>>();
 #endif
         }
 

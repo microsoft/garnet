@@ -448,6 +448,10 @@ namespace Garnet.server
                 manager.recoveredIndexes.Clear();
                 manager.recoveredMetadata.Clear();
 
+                // Migration remappings name contexts in the array just replaced, so a surviving entry would
+                // steer the rest of that migration into a context this flush has already handed back
+                manager.ClearMigratedContextRemap();
+
                 // Allow Vector Set operations again
                 manager.vectorSetLocks.ReleaseLock(lockToken);
 
@@ -656,6 +660,8 @@ namespace Garnet.server
                 {
                     input.CallbackContext = (nint)Unsafe.AsPointer(ref MemoryMarshal.GetReference(dataSpan));
                 }
+
+                ExceptionInjectionHelper.ResetAndWait(ExceptionInjectionType.VectorSet_Pause_Before_Context_Metadata_Rmw);
 
                 var status = ctx.RMW(key, ref input);
 

@@ -121,12 +121,20 @@ namespace Garnet.cluster
             // Cancel cts
             cts?.Cancel();
 
-            // Dispose sync tasks
+            // Break the connections so a task blocked on a send fails fast. The client sessions are
+            // deliberately not disposed here: they expect mono-threaded access, and a task may still
+            // be writing through one. Disposing it from this thread races that write and can strand
+            // the send buffer the task rented, which leaves the replication buffer pool's dispose
+            // spinning forever and the whole server stuck in shutdown holding its port.
+            foreach (var aofSyncTask in aofSyncTasks)
+                aofSyncTask?.CloseConnection();
+
+            // Wait for tasks to exit; each disposes its own client before leaving the monitor
+            activeWorkerMonitor.Dispose();
+
+            // Dispose sync tasks, now that no task is running
             foreach (var aofSyncTask in aofSyncTasks)
                 aofSyncTask?.Dispose();
-
-            // Wait for tasks to exit
-            activeWorkerMonitor.Dispose();
 
             // Finally, dispose the cts
             cts?.Dispose();

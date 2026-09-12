@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using Garnet.common;
 using Tsavorite.core;
 
 namespace Garnet.server
@@ -180,6 +181,7 @@ namespace Garnet.server
                 case CheckpointTrigger.FlushBegin:
                     rangeIndexManager?.SnapshotAllTreesForCheckpoint(checkpointToken);
                     rangeIndexManager?.ClearCheckpointBarrier();
+                    ExceptionInjectionHelper.ResetAndWait(ExceptionInjectionType.Checkpoint_Pause_At_Flush_Begin);
                     break;
                 case CheckpointTrigger.CheckpointCompleted:
                     vectorManager?.CheckpointCompleted();

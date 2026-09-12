@@ -4,6 +4,9 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Net;
+using System.Net.Security;
+using System.Net.Sockets;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -522,6 +525,32 @@ namespace Garnet.test
             expectedResponse = "*100\r\n$2\r\n10\r\n$2\r\n20\r\n$2\r\n30\r\n$2\r\n40\r\n$2\r\n50\r\n$2\r\n60\r\n$2\r\n70\r\n$2\r\n80\r\n$2\r\n90\r\n$3\r\n100\r\n$3\r\n110\r\n$3\r\n120\r\n$3\r\n130\r\n$3\r\n140\r\n$3\r\n150\r\n$3\r\n160\r\n$3\r\n170\r\n$3\r\n180\r\n$3\r\n190\r\n$3\r\n200\r\n$3\r\n210\r\n$3\r\n220\r\n$3\r\n230\r\n$3\r\n240\r\n$3\r\n250\r\n$3\r\n260\r\n$3\r\n270\r\n$3\r\n280\r\n$3\r\n290\r\n$3\r\n300\r\n$3\r\n310\r\n$3\r\n320\r\n$3\r\n330\r\n$3\r\n340\r\n$3\r\n350\r\n$3\r\n360\r\n$3\r\n370\r\n$3\r\n380\r\n$3\r\n390\r\n$3\r\n400\r\n$3\r\n410\r\n$3\r\n420\r\n$3\r\n430\r\n$3\r\n440\r\n$3\r\n450\r\n$3\r\n460\r\n$3\r\n470\r\n$3\r\n480\r\n$3\r\n490\r\n$3\r\n500\r\n$3\r\n510\r\n$3\r\n520\r\n$3\r\n530\r\n$3\r\n540\r\n$3\r\n550\r\n$3\r\n560\r\n$3\r\n570\r\n$3\r\n580\r\n$3\r\n590\r\n$3\r\n600\r\n$3\r\n610\r\n$3\r\n620\r\n$3\r\n630\r\n$3\r\n640\r\n$3\r\n650\r\n$3\r\n660\r\n$3\r\n670\r\n$3\r\n680\r\n$3\r\n690\r\n$3\r\n700\r\n$3\r\n710\r\n$3\r\n720\r\n$3\r\n730\r\n$3\r\n740\r\n$3\r\n750\r\n$3\r\n760\r\n$3\r\n770\r\n$3\r\n780\r\n$3\r\n790\r\n$3\r\n800\r\n$3\r\n810\r\n$3\r\n820\r\n$3\r\n830\r\n$3\r\n840\r\n$3\r\n850\r\n$3\r\n860\r\n$3\r\n870\r\n$3\r\n880\r\n$3\r\n890\r\n$3\r\n900\r\n$3\r\n910\r\n$3\r\n920\r\n$3\r\n930\r\n$3\r\n940\r\n$3\r\n950\r\n$3\r\n960\r\n$3\r\n970\r\n$3\r\n980\r\n$3\r\n990\r\n$4\r\n1000\r\n";
             response = lightClientRequest.Execute($"MGET{sb}", expectedResponse.Length, bytesSent);
             ClassicAssert.AreEqual(expectedResponse, response);
+        }
+
+        [Test]
+        public async Task PeerThatNeverNegotiatesDoesNotBlockOtherConnections()
+        {
+            // A TLS handshake is driven by the peer and takes several network round trips. If the server
+            // completes it on the accept loop, a peer that connects without negotiating holds that loop and
+            // no other connection is ever accepted.
+            var endpoint = new IPEndPoint(IPAddress.Loopback, TestUtils.TestPort);
+
+            ClassicAssert.IsTrue(await TryHandshakeAsync(endpoint), "TLS handshake failed before opening the silent connection");
+
+            using var silent = new TcpClient();
+            await silent.ConnectAsync(endpoint);
+
+            ClassicAssert.IsTrue(await TryHandshakeAsync(endpoint), "TLS handshake did not complete while a peer that never negotiates was connected");
+        }
+
+        static async Task<bool> TryHandshakeAsync(IPEndPoint endpoint)
+        {
+            using var client = new TcpClient();
+            await client.ConnectAsync(endpoint);
+            using var sslStream = new SslStream(client.GetStream(), leaveInnerStreamOpen: false, (_, _, _, _) => true);
+            var handshake = sslStream.AuthenticateAsClientAsync("GarnetTest");
+            return await Task.WhenAny(handshake, Task.Delay(TimeSpan.FromSeconds(15))).ConfigureAwait(false) == handshake
+                && handshake.IsCompletedSuccessfully;
         }
     }
 }
