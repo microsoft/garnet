@@ -31,16 +31,17 @@ namespace Garnet.networking
         protected readonly NetworkBufferSettings networkBufferSettings;
 
         /// <summary>
-        /// Size a new receive buffer starts at, and the size a grown one shrinks back toward. This is the
-        /// configured <see cref="NetworkBufferSettings.initialReceiveBufferSize"/> until the process-wide
-        /// budget is under pressure, at which point it steps down toward the configured floor so that the
-        /// aggregate across all connections stays near the budget.
+        /// Process-wide buffer budget this connection's pool participates in. Cached rather than reached
+        /// through <see cref="networkPool"/> because <see cref="BaseReceiveBufferSize"/> is read on every
+        /// receive, and the pool indirection costs two dependent loads there.
         /// </summary>
-        /// <remarks>
-        /// Only the <em>base</em> size is governed. Demand-driven doubling is never clamped, so a connection
-        /// that needs a large buffer still gets one; pressure changes what a connection starts and settles at,
-        /// never what it is allowed to reach. When the budget is disabled this is exactly the configured size.
-        /// </remarks>
+        readonly NetworkBufferBudget budget;
+
+        /// <summary>
+        /// Configured base sizes, cached off <see cref="networkBufferSettings"/> for the same reason.
+        /// </summary>
+        readonly int configuredReceiveBufferSize, configuredSendBufferSize;
+
         /// <summary>
         /// Size for a new TLS plaintext send buffer. Send buffers never grow -- an oversized response is
         /// chunked through whatever buffer it was given, and <c>GetResponseObjectHead</c>/<c>Tail</c> read the
@@ -51,22 +52,25 @@ namespace Garnet.networking
         /// </summary>
         protected int BaseSendBufferSize
         {
-            get
-            {
-                var configured = networkBufferSettings.sendBufferSize;
-                var budget = networkPool.Budget;
-                return budget.IsEnabled ? Math.Min(configured, budget.TargetSendBufferSize) : configured;
-            }
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            get => budget.ClampSendBufferSize(configuredSendBufferSize);
         }
 
+        /// <summary>
+        /// Size a new receive buffer starts at, and the size a grown one shrinks back toward. This is the
+        /// configured <see cref="NetworkBufferSettings.initialReceiveBufferSize"/> until the process-wide
+        /// budget is under pressure, at which point it steps down toward the configured floor so that the
+        /// aggregate across all connections stays near the budget.
+        /// </summary>
+        /// <remarks>
+        /// Only the <em>base</em> size is governed. Demand-driven doubling is never clamped, so a connection
+        /// that needs a large buffer still gets one; pressure changes what a connection starts and settles at,
+        /// never what it is allowed to reach. When the budget is disabled this is exactly the configured size.
+        /// </remarks>
         protected int BaseReceiveBufferSize
         {
-            get
-            {
-                var configured = networkBufferSettings.initialReceiveBufferSize;
-                var budget = networkPool.Budget;
-                return budget.IsEnabled ? Math.Min(configured, budget.TargetReceiveBufferSize) : configured;
-            }
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            get => budget.ClampReceiveBufferSize(configuredReceiveBufferSize);
         }
 
         /// <summary>
@@ -172,6 +176,9 @@ namespace Garnet.networking
             this.readerStatus = TlsReaderStatus.Rest;
             this.networkBufferSettings = networkBufferSettings;
             this.networkPool = networkPool;
+            this.budget = networkPool.Budget;
+            this.configuredReceiveBufferSize = networkBufferSettings.initialReceiveBufferSize;
+            this.configuredSendBufferSize = networkBufferSettings.sendBufferSize;
 
             if (!useTLS)
             {
@@ -407,8 +414,11 @@ namespace Garnet.networking
                 DoubleNetworkReceiveBuffer();
                 networkShrinkCountdown = ShrinkHysteresis;
             }
-            else
+            else if (networkReceiveBuffer.Length > BaseReceiveBufferSize)
             {
+                // Guarded here rather than inside the callee so that the overwhelmingly common case -- a
+                // buffer still at its base size, which is every pass on a connection that has never grown --
+                // costs one comparison and makes no call at all.
                 MaybeShrinkNetworkReceiveBuffer(demand);
             }
         }
@@ -429,6 +439,7 @@ namespace Garnet.networking
         /// Bytes the buffer held for this pass, sampled before consumed bytes were shifted away. This is the
         /// capacity the traffic needed; the residual left after processing is not.
         /// </param>
+        [MethodImpl(MethodImplOptions.NoInlining)]
         void MaybeShrinkNetworkReceiveBuffer(int demand)
         {
             var baseSize = BaseReceiveBufferSize;
@@ -448,7 +459,7 @@ namespace Garnet.networking
                 if (residual < current)
                 {
                     ShrinkNetworkReceiveBuffer(residual);
-                    networkPool.Budget.RecordIdleShrink();
+                    budget.RecordIdleShrink();
                 }
                 return;
             }
@@ -460,7 +471,6 @@ namespace Garnet.networking
                 return;
             }
 
-            var budget = networkPool.Budget;
             var underPressure = budget.IsUnderPressure;
             // Clamp rather than reload, so pressure arriving mid-countdown converges promptly instead of
             // waiting out however much of the idle countdown was left.
@@ -778,7 +788,6 @@ namespace Garnet.networking
 
             Debug.Assert(transportReadHead == 0, "Shouldn't call if remaining data not already moved to head of transport buffer");
 
-            var budget = networkPool.Budget;
             var aboveMax = current > networkBufferSettings.maxReceiveBufferSize;
             int target;
 

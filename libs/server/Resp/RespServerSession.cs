@@ -1,4 +1,4 @@
-// Copyright (c) Microsoft Corporation.
+﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -447,8 +447,9 @@ namespace Garnet.server
 
         /// <summary>
         /// Releases per-session buffers that have stayed above their cap without growing since the
-        /// previous checkpoint: the parse state root buffer, and the Lua script processor's scratch buffer,
-        /// which has no batch boundary of its own. Cold by construction: reached once per
+        /// previous checkpoint: the parse state root buffer, the session scratch buffer, and the Lua script
+        /// processor's scratch buffer. One countdown drives all of them, so the batch boundary pays a single
+        /// decrement regardless of how many buffers are capped. Cold by construction: reached once per
         /// <see cref="SessionShrinkCheckInterval"/> batches. Called at the batch boundary, where no
         /// argument pointers from the completed batch remain live.
         /// </summary>
@@ -457,9 +458,11 @@ namespace Garnet.server
         {
             sessionShrinkCountdown = SessionShrinkCheckInterval;
 
-            // Outside any script execution, which is the only point at which the script processor's scratch
-            // buffer is idle. Kept ahead of the parse-state early return so disabling one cap cannot disable
-            // the other.
+            // Kept ahead of the parse-state early return so disabling one cap cannot disable the others.
+            // The batch boundary has already reset this builder, so no slice from the completed batch is
+            // live. The script processor's builder is checkpointed here rather than from its own resets,
+            // which run per string while decoding a JSON document.
+            scratchBufferBuilder.ShrinkCheckpoint();
             sessionScriptCache?.ScratchBufferShrinkCheckpoint();
 
             if (parseStateShrinkThreshold == int.MaxValue)
@@ -636,7 +639,7 @@ namespace Garnet.server
             {
                 networkSender.ExitAndReturnResponseObject();
                 clusterSession?.ReleaseCurrentEpoch();
-                scratchBufferBuilder.ResetAtBatchBoundary();
+                scratchBufferBuilder.Reset();
                 scratchBufferAllocator.Reset();
 
                 // Batch boundary: no argument pointers outlive it, so over-sized per-session buffers

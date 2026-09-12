@@ -1,4 +1,4 @@
-// Copyright (c) Microsoft Corporation.
+﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -25,10 +25,35 @@ namespace Garnet.test
     public class SessionBufferShrinkTests : TestBase
     {
         const int MaxRetained = 64 * 1024;
-        const int Interval = ScratchBufferBuilder.ShrinkCheckInterval;
+        const int Interval = RespServerSession.SessionShrinkCheckInterval;
+
+        /// <summary>
+        /// Batches remaining before the next checkpoint, mirroring the session's own countdown.
+        /// </summary>
+        int countdown;
+
+        /// <summary>
+        /// Drives one batch boundary exactly as <c>RespServerSession.TryConsumeMessages</c> does: reset
+        /// unconditionally, and checkpoint once per <see cref="Interval"/> batches. The session owns the
+        /// interval so that one countdown covers every capped buffer it holds, which is why this mirror
+        /// rather than the builder itself decides when to checkpoint.
+        /// </summary>
+        void BatchBoundary(ScratchBufferBuilder builder)
+        {
+            builder.Reset();
+            if (--countdown <= 0)
+            {
+                countdown = Interval;
+                builder.ShrinkCheckpoint();
+            }
+        }
 
         [SetUp]
-        public void Setup() => TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
+        public void Setup()
+        {
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
+            countdown = Interval;
+        }
 
         [TearDown]
         public void TearDown() => TestUtils.OnTearDown();
@@ -41,7 +66,7 @@ namespace Garnet.test
 
             var slice = builder.CreateArgSlice(big);
             ClassicAssert.IsTrue(builder.RewindScratchBuffer(slice));
-            builder.ResetAtBatchBoundary();
+            BatchBoundary(builder);
 
             var grown = builder.ScratchBufferCapacity;
             ClassicAssert.GreaterOrEqual(grown, big.Length, "buffer should have grown to fit the request");
@@ -52,7 +77,7 @@ namespace Garnet.test
             {
                 var s = builder.CreateArgSlice(small);
                 ClassicAssert.IsTrue(builder.RewindScratchBuffer(s));
-                builder.ResetAtBatchBoundary();
+                BatchBoundary(builder);
             }
 
             ClassicAssert.LessOrEqual(builder.ScratchBufferCapacity, MaxRetained,
@@ -83,7 +108,7 @@ namespace Garnet.test
                 var s = builder.CreateArgSlice(big);
                 ClassicAssert.AreEqual(big.Length, s.Length, $"large request failed at iteration {i}");
                 ClassicAssert.IsTrue(builder.RewindScratchBuffer(s));
-                builder.ResetAtBatchBoundary();
+                BatchBoundary(builder);
 
                 var capacity = builder.ScratchBufferCapacity;
                 if (i > 0 && capacity < previous) shrinks++;
@@ -123,7 +148,7 @@ namespace Garnet.test
             }
 
             ClassicAssert.AreEqual(grown, builder.ScratchBufferCapacity,
-                "a mid-command reset advanced the checkpoint countdown, so the interval is not counted in batches");
+                "a plain reset released the buffer, so a mid-command reset can shrink a buffer the next element re-grows");
         }
 
         [Test]
@@ -138,7 +163,7 @@ namespace Garnet.test
             var small = new byte[64];
             for (var i = 0; i < Interval * 8; i++)
             {
-                builder.ResetAtBatchBoundary();
+                BatchBoundary(builder);
                 var s = builder.CreateArgSlice(small);
                 ClassicAssert.IsTrue(builder.RewindScratchBuffer(s));
             }
@@ -159,7 +184,7 @@ namespace Garnet.test
             ClassicAssert.IsTrue(builder.RewindScratchBuffer(slice));
 
             for (var i = 0; i < Interval * 4; i++)
-                builder.ResetAtBatchBoundary();
+                BatchBoundary(builder);
 
             ClassicAssert.GreaterOrEqual(builder.ScratchBufferCapacity, big.Length);
         }
