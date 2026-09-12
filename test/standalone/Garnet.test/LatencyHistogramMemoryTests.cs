@@ -38,12 +38,13 @@ namespace Garnet.test
             TestUtils.OnTearDown();
         }
 
-        void StartServer(bool latencyMonitor, int precision = GarnetServerOptions.DefaultLatencyMonitorPrecision)
+        void StartServer(bool latencyMonitor, int precision = GarnetServerOptions.DefaultLatencyMonitorPrecision,
+            int samplingFreq = 1)
         {
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir,
                 latencyMonitor: latencyMonitor,
-                metricsSamplingFreq: latencyMonitor ? 1 : -1,
+                metricsSamplingFreq: latencyMonitor ? samplingFreq : -1,
                 latencyMonitorPrecision: precision);
             server.Start();
         }
@@ -559,9 +560,15 @@ namespace Garnet.test
         {
             // The hysteresis exists so that a session whose request rate is slower than the
             // monitor's sweep does not lose and re-allocate its histograms between requests.
-            // Its margin is what this pins: the sampling frequency is one second, so a request
-            // every 1.5 seconds leaves isolated empty windows but never a run of them.
-            StartServer(latencyMonitor: true);
+            // Its margin is what this pins: a request every three seconds against a two-second
+            // sweep leaves isolated empty windows but never a run of them.
+            //
+            // This test is wall-clock sensitive. Releasing needs four consecutive empty windows,
+            // so on a loaded machine a stall of more than about five seconds beyond the request
+            // interval will fail it. A failure here is far more likely to be scheduling than a
+            // reclaim defect; the sampling frequency is deliberately slower than the rest of the
+            // fixture's to widen that tolerance.
+            StartServer(latencyMonitor: true, samplingFreq: 2);
 
             using var socket = Connect();
             Ping(socket);
@@ -569,10 +576,10 @@ namespace Garnet.test
             var allocated = WaitForHistograms(n => n > 0, seconds: 15);
             ClassicAssert.Greater(allocated, 0, "a pinging session should have allocated histograms");
 
-            var deadline = DateTime.UtcNow.AddSeconds(12);
+            var deadline = DateTime.UtcNow.AddSeconds(24);
             while (DateTime.UtcNow < deadline)
             {
-                Thread.Sleep(1500);
+                Thread.Sleep(3000);
                 ClassicAssert.Greater(AllocatedHistogramTypes(), 0,
                     "a session that is still issuing requests, only more slowly than the monitor sweeps, "
                     + "had its histograms reclaimed -- the release threshold leaves no hysteresis margin");
