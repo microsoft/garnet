@@ -1,4 +1,4 @@
-// Copyright (c) Microsoft Corporation.
+﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -388,6 +388,12 @@ namespace Garnet.server
         /// buffer (rounds down to a power of 2). Every connection holds one of each, so this value multiplied by
         /// the connection count is the floor of the server's pinned network memory. Lowering it trades a larger
         /// number of smaller reads and writes for a smaller per-connection footprint.
+        /// <para>
+        /// The name is direction-agnostic because the value is, and it matches the pre-existing
+        /// <see cref="GarnetServerBase.NetworkBufferSize"/>. The direction-specific bounds around it are
+        /// <see cref="NetworkReceiveBufferMaxSize"/>, <see cref="NetworkReceiveBufferMinSize"/> and
+        /// <see cref="NetworkSendBufferMinSize"/>.
+        /// </para>
         /// </summary>
         public string NetworkBufferSize = null;
 
@@ -396,11 +402,13 @@ namespace Garnet.server
         /// A connection whose payload needs more than this still grows past it, but that oversized buffer is
         /// allocated outside the pool and released as soon as the payload has been consumed.
         /// </summary>
-        public string NetworkMaxReceiveBufferSize = null;
+        public string NetworkReceiveBufferMaxSize = null;
 
         /// <summary>
         /// Ceiling on the bytes that the shared network buffer pool retains on its idle free lists for reuse
-        /// across connections. This bounds pooled memory independently of the connection count.
+        /// across connections. This bounds pooled memory independently of the connection count. Not exposed on
+        /// the command line; the standalone server sets it from <c>Options.GetServerOptions()</c>, and leaving it
+        /// unset lets the pool derive its ceiling from the per-level entry bound.
         /// </summary>
         public string NetworkBufferPoolSize = null;
 
@@ -408,7 +416,7 @@ namespace Garnet.server
         /// Process-wide budget for the network buffers held by live connections, shared across all listeners.
         /// While connections are few this is slack and every connection gets the full <see cref="NetworkBufferSize"/>;
         /// once the budget divided by the live buffer count falls below that, the base size for new buffers adapts
-        /// down toward <see cref="NetworkBufferMinSize"/> so the total stays near the budget. Buffers still grow on
+        /// down toward <see cref="NetworkReceiveBufferMinSize"/> so the total stays near the budget. Buffers still grow on
         /// demand beyond the base size. Zero disables adaptation, restoring unbounded per-connection sizing.
         /// </summary>
         public string NetworkBufferMemoryBudget = null;
@@ -416,11 +424,11 @@ namespace Garnet.server
         /// <summary>
         /// Smallest base size a receive buffer may be adapted down to when the budget is under pressure.
         /// </summary>
-        public string NetworkBufferMinSize = null;
+        public string NetworkReceiveBufferMinSize = null;
 
         /// <summary>
         /// Smallest base size a send buffer may be adapted down to when the budget is under pressure. Higher than
-        /// <see cref="NetworkBufferMinSize"/> because an undersized send buffer pushes oversized responses onto a
+        /// <see cref="NetworkReceiveBufferMinSize"/> because an undersized send buffer pushes oversized responses onto a
         /// pooled-rental path.
         /// </summary>
         public string NetworkSendBufferMinSize = null;
@@ -480,12 +488,12 @@ namespace Garnet.server
         public NetworkBufferSettings GetNetworkBufferSettings()
         {
             var sendSize = PowerOf2SizeOrDefault(NetworkBufferSize, BufferSizeUtils.ServerBufferSize(new MaxSizeSettings()), nameof(NetworkBufferSize));
-            var maxReceiveSize = PowerOf2SizeOrDefault(NetworkMaxReceiveBufferSize, DefaultMaxReceiveBufferSize, nameof(NetworkMaxReceiveBufferSize));
+            var maxReceiveSize = PowerOf2SizeOrDefault(NetworkReceiveBufferMaxSize, DefaultMaxReceiveBufferSize, nameof(NetworkReceiveBufferMaxSize));
             // The pool requires the max receive size to be at least the base size, since it is the top size class.
             if (maxReceiveSize < sendSize)
             {
                 logger?.LogInformation("Warning: raising {max} to {name} ({size}), it cannot be smaller",
-                    nameof(NetworkMaxReceiveBufferSize), nameof(NetworkBufferSize), sendSize);
+                    nameof(NetworkReceiveBufferMaxSize), nameof(NetworkBufferSize), sendSize);
                 maxReceiveSize = sendSize;
             }
             // The pool must be able to recycle buffers all the way down to the adaptive floor, otherwise a
@@ -496,8 +504,8 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Resolve the ceiling on idle bytes retained by the shared network buffer pool. Zero keeps the
-        /// pool's own per-level default.
+        /// Resolve the ceiling on idle bytes retained by the shared network buffer pool. Zero lets the pool
+        /// derive the ceiling from its per-level entry bound instead.
         /// </summary>
         public long GetNetworkBufferPoolSize()
             => string.IsNullOrEmpty(NetworkBufferPoolSize) ? 0 : ParseSize(NetworkBufferPoolSize, out _);
@@ -525,7 +533,7 @@ namespace Garnet.server
         /// class, since a buffer below it could not be recycled.
         /// </summary>
         int GetNetworkReceiveFloor()
-            => PowerOf2SizeOrDefault(NetworkBufferMinSize, DefaultNetworkBufferMinSize, nameof(NetworkBufferMinSize));
+            => PowerOf2SizeOrDefault(NetworkReceiveBufferMinSize, DefaultNetworkReceiveBufferMinSize, nameof(NetworkReceiveBufferMinSize));
 
         /// <summary>
         /// Whether the adaptive network buffer budget is enabled.
@@ -534,7 +542,7 @@ namespace Garnet.server
             => (string.IsNullOrEmpty(NetworkBufferMemoryBudget) ? DefaultNetworkBufferMemoryBudget : ParseSize(NetworkBufferMemoryBudget, out _)) > 0;
 
         const long DefaultNetworkBufferMemoryBudget = 1L << 30;
-        const int DefaultNetworkBufferMinSize = 1 << 14;
+        const int DefaultNetworkReceiveBufferMinSize = 1 << 14;
         const int DefaultNetworkSendBufferMinSize = 1 << 16;
 
         const int DefaultMaxReceiveBufferSize = 1 << 20;
