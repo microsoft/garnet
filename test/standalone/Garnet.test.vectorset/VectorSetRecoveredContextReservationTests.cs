@@ -4,6 +4,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using Garnet.server;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using StackExchange.Redis;
@@ -119,6 +120,74 @@ namespace Garnet.test
                     recoveredMembers,
                     Enumerable.Range(0, Elements).Select(static i => $"recovered_{i}").ToArray(),
                     "the recovered Vector Set returned elements belonging to the Vector Set created after recovery");
+            }
+        }
+
+        /// <summary>
+        /// A cluster node with AOF enabled reconciles twice while starting up, once from
+        /// RecoverCheckpointAndAOFAsync and again from StoreWrapper, and the first pass consumes the
+        /// recovered metadata. The second pass therefore rebuilds the reservations from the index records
+        /// alone, and a context that is in use without an index record - a Vector Set that was deleted but
+        /// whose data has not finished being cleaned up - must still be marked for cleanup rather than
+        /// silently dropped, or it is handed to the next Vector Set while its old data is still present.
+        /// </summary>
+        [Test]
+        public async Task ReconcileWithoutRecoveredMetadataStillMarksUnbackedContextsAsync()
+        {
+            const string Live = "live-vs";
+            const int Elements = 50;
+            const int Dim = 32;
+            const int UnbackedContexts = 4;
+
+            StartServer(tryRecover: false);
+
+            var vectorManager = server.Provider.StoreWrapper.DefaultDatabase.VectorManager;
+
+            // Reservations with no index record of their own, which is what a Vector Set whose data is still
+            // being cleaned up looks like
+            vectorManager.AllocateTestContexts(UnbackedContexts);
+
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))
+            {
+                var db = redis.GetDatabase(0);
+
+                for (var i = 0; i < Elements; i++)
+                {
+                    ClassicAssert.AreEqual(1, (int)db.Execute("VADD", BuildVaddArgs(Live, Dim, i, $"element_{i}")));
+                }
+            }
+
+            var unbacked = new List<ulong>();
+            for (var context = VectorManager.ContextStep; context <= UnbackedContexts * VectorManager.ContextStep; context += VectorManager.ContextStep)
+            {
+                vectorManager.GetContextState(context, out var isInUse, out _, out _);
+                if (isInUse)
+                {
+                    unbacked.Add(context);
+                }
+            }
+
+            ClassicAssert.AreEqual(UnbackedContexts, unbacked.Count, "expected every allocated context to be reserved");
+
+            // Hold cleanup so the reconcile's decision stays observable instead of being processed away
+            await vectorManager.PauseCleanupAsync();
+            try
+            {
+                // recoveredMetadata is empty here, exactly as it is on the second reconcile of a startup
+                vectorManager.ReconcileRecoveredState();
+
+                foreach (var context in unbacked)
+                {
+                    vectorManager.GetContextState(context, out var isInUse, out var isCleaningUp, out _);
+
+                    ClassicAssert.IsTrue(
+                        isInUse && isCleaningUp,
+                        $"context {context} was dropped rather than marked for cleanup, so it can be reused while its data is still present");
+                }
+            }
+            finally
+            {
+                vectorManager.ResumeCleanup();
             }
         }
 

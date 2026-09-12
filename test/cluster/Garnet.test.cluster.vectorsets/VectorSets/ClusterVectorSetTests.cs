@@ -1031,7 +1031,7 @@ namespace Garnet.test.cluster
 
             var success = false;
             string lastResponse = null;
-            while (Stopwatch.GetElapsedTime(start) < TimeSpan.FromSeconds(15))
+            while (Stopwatch.GetElapsedTime(start) < TimeSpan.FromSeconds(5))
             {
                 try
                 {
@@ -1337,14 +1337,14 @@ namespace Garnet.test.cluster
                 ClassicAssert.IsTrue(exc0.StartsWith("Key has MOVED to "));
             }
 
-            // Same convergence window the single-slot variant of this test uses: the source replica keeps
-            // serving the migrated keys for a while, then passes through a window where the slot is not yet
-            // known-stable from its point of view, before it settles on redirecting to the new primary.
+            // Every path through this loop has to sleep. Polling without one spins a core flat out for the
+            // whole window, and on a two-core runner that starves the cluster nodes this is waiting on, so
+            // the convergence it is polling for cannot happen until the window has already elapsed.
             var start = Stopwatch.GetTimestamp();
 
             var success = false;
             string lastResponse = null;
-            while (Stopwatch.GetElapsedTime(start) < TimeSpan.FromSeconds(15))
+            while (Stopwatch.GetElapsedTime(start) < TimeSpan.FromSeconds(5))
             {
                 try
                 {
@@ -1394,7 +1394,7 @@ namespace Garnet.test.cluster
             // result even for a poll that the very next one resolves.
             List<(string Key, byte[] Data, byte[][] Reply)> replicated = [];
 
-            while (Stopwatch.GetElapsedTime(start) < TimeSpan.FromSeconds(15))
+            while (Stopwatch.GetElapsedTime(start) < TimeSpan.FromSeconds(5))
             {
                 success = true;
                 replicated.Clear();
