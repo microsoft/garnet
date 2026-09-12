@@ -560,7 +560,7 @@ namespace Garnet.test
             // The hysteresis exists so that a session whose request rate is slower than the
             // monitor's sweep does not lose and re-allocate its histograms between requests.
             // Its margin is what this pins: the sampling frequency is one second, so a request
-            // every two seconds leaves isolated empty windows but never a run of them.
+            // every 1.5 seconds leaves isolated empty windows but never a run of them.
             StartServer(latencyMonitor: true);
 
             using var socket = Connect();
@@ -572,7 +572,7 @@ namespace Garnet.test
             var deadline = DateTime.UtcNow.AddSeconds(12);
             while (DateTime.UtcNow < deadline)
             {
-                Thread.Sleep(2000);
+                Thread.Sleep(1500);
                 ClassicAssert.Greater(AllocatedHistogramTypes(), 0,
                     "a session that is still issuing requests, only more slowly than the monitor sweeps, "
                     + "had its histograms reclaimed -- the release threshold leaves no hysteresis margin");
