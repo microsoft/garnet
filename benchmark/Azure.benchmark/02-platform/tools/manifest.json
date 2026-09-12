@@ -1,0 +1,169 @@
+{
+  "repos": [
+    {
+      "name": "garnet",
+      "url": "https://github.com/microsoft/garnet.git",
+      "path": "/home/guser/garnet",
+      "branch": [
+        "main",
+        "main"
+      ]
+    },
+    {
+      "name": "valkey",
+      "url": "https://github.com/valkey-io/valkey.git",
+      "path": "/home/guser/valkey",
+      "branch": "9.0"
+    },
+    {
+      "name": "dragonfly",
+      "url": "https://github.com/dragonflydb/dragonfly.git",
+      "path": "/home/guser/dragonfly",
+      "branch": "main"
+    },
+    {
+      "name": "redis",
+      "url": "https://github.com/redis/redis.git",
+      "path": "/home/guser/redis",
+      "branch": "unstable"
+    },
+    {
+      "name": "memtier",
+      "url": "https://github.com/redis/memtier_benchmark",
+      "path": "/home/guser/memtier",
+      "branch": "master"
+    }
+  ],
+  "scripts": [
+    {
+      "src": "bootstrap/config.env",
+      "dst": "/opt/deploy-actions/config.env",
+      "mode": "644"
+    },
+    {
+      "src": "bootstrap/install-dotnet.ps1",
+      "dst": "/opt/deploy-actions/install-dotnet.ps1",
+      "mode": "755"
+    },
+    {
+      "src": "bootstrap/setup-network.ps1",
+      "dst": "/opt/deploy-actions/setup-network.ps1",
+      "mode": "755"
+    },
+    {
+      "src": "bootstrap/setup-ssh-keys.ps1",
+      "dst": "/opt/deploy-actions/setup-ssh-keys.ps1",
+      "mode": "755"
+    },
+    {
+      "src": "bootstrap/clone-repos.ps1",
+      "dst": "/opt/deploy-actions/clone-repos.ps1",
+      "mode": "755"
+    },
+    {
+      "src": "bootstrap/build.ps1",
+      "dst": "/opt/deploy-actions/build.ps1",
+      "mode": "755"
+    },
+    {
+      "src": "bootstrap/setup-cluster-dir.ps1",
+      "dst": "/opt/deploy-actions/setup-cluster-dir.ps1",
+      "mode": "755"
+    },
+    {
+      "src": "bootstrap/setup-ramdisk.ps1",
+      "dst": "/opt/deploy-actions/setup-ramdisk.ps1",
+      "mode": "755"
+    },
+    {
+      "src": "bootstrap/setup-nvme.ps1",
+      "dst": "/opt/deploy-actions/setup-nvme.ps1",
+      "mode": "755"
+    },
+    {
+      "src": "cluster/mcluster.ps1",
+      "dst": "/usr/local/bin/mcluster.ps1",
+      "mode": "755"
+    },
+    {
+      "src": "cluster/simple-setup.ps1",
+      "dst": "/usr/local/bin/simple-setup.ps1",
+      "mode": "755"
+    },
+    {
+      "src": "bench/memtier-bench.ps1",
+      "dst": "/usr/local/bin/memtier-bench.ps1",
+      "mode": "755"
+    },
+    {
+      "src": "cluster/cluster-deploy.ps1",
+      "dst": "/usr/local/bin/cluster-deploy.ps1",
+      "mode": "755"
+    },
+    {
+      "src": "bootstrap/list-ips.ps1",
+      "dst": "/usr/local/bin/list-ips.ps1",
+      "mode": "755"
+    }
+  ],
+  "runcmd": [
+    {
+      "run": "install-dotnet.ps1",
+      "sudo": true,
+      "args": ""
+    },
+    {
+      "run": "clone-repos.ps1",
+      "sudo": false,
+      "args": ""
+    },
+    {
+      "run": "build.ps1",
+      "sudo": true,
+      "args": "memtier"
+    },
+    {
+      "run": "setup-network.ps1",
+      "sudo": false,
+      "args": "garnet"
+    },
+    {
+      "run": "setup-ssh-keys.ps1",
+      "sudo": false,
+      "args": "",
+      "background": true
+    },
+    {
+      "run": "setup-cluster-dir.ps1",
+      "sudo": false,
+      "args": "valkey"
+    },
+    {
+      "run": "setup-cluster-dir.ps1",
+      "sudo": false,
+      "args": "garnet"
+    },
+    {
+      "run": "setup-ramdisk.ps1",
+      "sudo": true,
+      "args": ""
+    },
+    {
+      "run": "build.ps1",
+      "sudo": true,
+      "args": "valkey"
+    },
+    {
+      "run": "build.ps1",
+      "sudo": true,
+      "args": "garnet",
+      "branch": 0
+    },
+    {
+      "run": "build.ps1",
+      "sudo": true,
+      "args": "resp-bench",
+      "branch": 1
+    }
+  ]
+}

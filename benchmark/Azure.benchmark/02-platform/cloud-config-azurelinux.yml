@@ -1,0 +1,44 @@
+#cloud-config
+write_files:
+  - path: /etc/profile.d/aliases.sh
+    permissions: '0644'
+    content: |
+      alias ll='ls -la'
+  - path: /etc/profile.d/dotnet-tools.sh
+    permissions: '0644'
+    content: |
+      export PATH="$PATH:$HOME/.dotnet/tools"
+  - path: /opt/deploy-actions/keyvault.env
+    permissions: '0644'
+    content: |
+      VAULT_NAME=__KEYVAULT_NAME__
+
+runcmd:
+  # Install all build dependencies
+  - sudo tdnf install -y git vim tar gzip wget curl grep sed make cmake gcc gcc-c++ binutils glibc-devel pkg-config net-tools autoconf automake libtool openssl-devel zlib-devel util-linux-devel icu libxml2-devel jemalloc-devel liburing liburing-devel libaio libaio-devel libevent-devel glibc-devel
+  - sudo tdnf install -y kernel-headers glibc-devel gcc-c++
+  - sudo tdnf install -y tcpdump pciutils jq iperf3 ethtool powershell
+
+  # Fetch the tools bundle (tools.tar.gz) from the shared storage account via the
+  # policy-bound SAS URL stored in Key Vault (read with the VMSS managed identity),
+  # then extract it to /home/guser/tools and run the installer. Retries while the
+  # Key Vault access policy propagates.
+  - |
+    for i in $(seq 1 12); do
+      TOKEN=$(curl -s -H Metadata:true "http://169.254.169.254/metadata/identity/oauth2/token?api-version=2018-02-01&resource=https://vault.azure.net" | jq -r '.access_token // empty')
+      if [ -n "$TOKEN" ]; then
+        AUTHSCHEME=Bearer
+        SASURL=$(curl -s -H "Authorization: $AUTHSCHEME $TOKEN" "https://__KEYVAULT_NAME__.vault.azure.net/secrets/__TOOLS_SAS_SECRET__?api-version=7.4" | jq -r '.value // empty')
+        if [ -n "$SASURL" ] && curl -fsSL "$SASURL" -o /tmp/tools.tar.gz; then
+          echo "tools bundle fetched"; break
+        fi
+      fi
+      echo "tools fetch attempt $i failed; retrying in 15s..."; sleep 15
+    done
+  - mkdir -p /home/guser/tools
+  - tar -xzf /tmp/tools.tar.gz -C /home/guser
+  - chown -R guser:guser /home/guser/tools
+  - sudo pwsh /home/guser/tools/update.ps1 -Run
+
+  # Install dotnet-stack global tool for guser (PATH persisted via /etc/profile.d/dotnet-tools.sh)
+  - sudo -u guser dotnet tool install --global dotnet-stack

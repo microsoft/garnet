@@ -1,0 +1,17 @@
+# Generated files (compiled from bicep build).
+# These are `az bicep build` / ARM outputs and must never be tracked — the
+# .bicep source is the single source of truth. Hand-authored *-parameters.json
+# and manifest.json files are NOT generated and remain tracked.
+02-platform/vmss.json
+01-resources/storage/storage.json
+01-resources/security/keyvault.json
+01-resources/network/network.json
+
+# Machine-local VMSS peer inventory
+.peer-cache/
+
+# Benchmark results
+03-workload/results/
+
+# SSH public keys
+01-resources/security/*.pub

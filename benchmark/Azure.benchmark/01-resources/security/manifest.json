@@ -1,0 +1,7 @@
+{
+  "basePath": "%USERPROFILE%\\.ssh",
+  "userKeys": [
+    "__SSH_USER_KEY__"
+  ],
+  "vmKeys": "id_ed25519_vmss"
+}
