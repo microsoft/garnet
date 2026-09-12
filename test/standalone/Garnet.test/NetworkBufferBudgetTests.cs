@@ -27,7 +27,7 @@ namespace Garnet.test
     [TestFixture]
     public class NetworkBufferBudgetTests : TestBase
     {
-        const int Ceiling = 1 << 17;      // 128 KB, the shipped --network-buffer-size
+        const int Ceiling = 1 << 17;      // 128 KB, the shipped NetworkBufferSize default
         const int ReceiveFloor = 1 << 14; // 16 KB
         const int SendFloor = 1 << 16;    // 64 KB
 

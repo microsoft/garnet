@@ -431,36 +431,8 @@ namespace Garnet
         public int NetworkSendThrottleMax { get; set; }
 
         [MemorySizeValidation(false)]
-        [Option("network-buffer-size", Required = false, HelpText = "Size of the network send buffer, and initial size of the network receive buffer, held per connection (rounds down to power of 2). Total pinned network memory scales with this value times the connection count, so lower it for deployments with many concurrent connections.")]
-        public string NetworkBufferSize { get; set; }
-
-        [MemorySizeValidation(false)]
-        [Option("network-max-receive-buffer-size", Required = false, HelpText = "Largest receive buffer size recycled by the network buffer pool (rounds down to power of 2). Larger payloads are still served, from a buffer allocated outside the pool and released once consumed.")]
-        public string NetworkMaxReceiveBufferSize { get; set; }
-
-        [MemorySizeValidation(false)]
-        [Option("network-buffer-pool-size", Required = false, HelpText = "Ceiling on the bytes retained by the shared network buffer pool for reuse across connections.")]
-        public string NetworkBufferPoolSize { get; set; }
-
-        [MemorySizeValidation(false)]
-        [Option("network-buffer-memory-budget", Required = false, HelpText = "Process-wide budget for the network buffers held by live connections, shared across all listeners. While connections are few this is slack and every connection gets the full --network-buffer-size; once the budget divided by the live buffer count falls below that, the base size for new buffers adapts down toward --network-buffer-min-size so the total stays near the budget. Buffers still grow on demand beyond the base size. 0 disables adaptation, restoring unbounded per-connection sizing.")]
+        [Option("network-buffer-memory-budget", Required = false, HelpText = "Process-wide budget for the network buffers held by live client connections, shared across all listeners. While connections are few this is slack and each connection gets the full 128k send and receive buffers; once the budget divided by the live buffer count falls below that, the base size for new buffers adapts down toward a 16k floor so the total stays near the budget. Buffers still grow on demand beyond their base size, so large requests are unaffected. Set to 0 to disable adaptation, leaving per-connection buffers unbounded. E.g. 1g, 512m.")]
         public string NetworkBufferMemoryBudget { get; set; }
-
-        [MemorySizeValidation(false)]
-        [Option("network-buffer-min-size", Required = false, HelpText = "Smallest base size a receive buffer may be adapted down to when the network buffer memory budget is under pressure (rounds down to power of 2).")]
-        public string NetworkBufferMinSize { get; set; }
-
-        [MemorySizeValidation(false)]
-        [Option("network-send-buffer-min-size", Required = false, HelpText = "Smallest base size a send buffer may be adapted down to when the network buffer memory budget is under pressure (rounds down to power of 2). Higher than --network-buffer-min-size because an undersized send buffer pushes oversized responses onto a pooled-rental path.")]
-        public string NetworkSendBufferMinSize { get; set; }
-
-        [MemorySizeValidation(false)]
-        [Option("session-scratch-buffer-max-retained-size", Required = false, HelpText = "Capacity each per-session scratch buffer may retain indefinitely. These pinned buffers grow to fit the largest request a session has served, so a ceiling stops one large command from permanently enlarging the session. Capacity above the ceiling is released at a periodic checkpoint; 0 disables shrinking.")]
-        public string SessionScratchBufferMaxRetainedSize { get; set; }
-
-        [IntRangeValidation(0, int.MaxValue, isRequired: false)]
-        [Option("session-parse-state-max-retained-args", Required = false, HelpText = "Argument capacity each session's RESP parse state may retain indefinitely. The parse state is sized by the argument count a client sends, so a ceiling stops one very wide command from permanently enlarging the session. 0 disables shrinking.")]
-        public int SessionParseStateMaxRetainedArgs { get; set; }
 
         [OptionValidation]
         [Option("sg-get", Required = false, HelpText = "Whether to use scatter-gather IO for a run of contiguous GET operations - useful to saturate disk random read IO. MGET always uses scatter-gather.")]
@@ -981,14 +953,12 @@ namespace Garnet
                 ClusterConfigFlushFrequencyMs = ClusterConfigFlushFrequencyMs,
                 FastCommitThrottleFreq = FastCommitThrottleFreq,
                 NetworkSendThrottleMax = NetworkSendThrottleMax,
-                NetworkBufferSize = NetworkBufferSize,
-                NetworkMaxReceiveBufferSize = NetworkMaxReceiveBufferSize,
-                NetworkBufferPoolSize = NetworkBufferPoolSize,
                 NetworkBufferMemoryBudget = NetworkBufferMemoryBudget,
-                NetworkBufferMinSize = NetworkBufferMinSize,
-                NetworkSendBufferMinSize = NetworkSendBufferMinSize,
-                SessionScratchBufferMaxRetainedSize = SessionScratchBufferMaxRetainedSize,
-                SessionParseStateMaxRetainedArgs = SessionParseStateMaxRetainedArgs,
+
+                // Not operator-settable, but the standalone server has always run a 64 MB idle pool ceiling.
+                // Left unset, the pool derives a smaller ceiling from its per-level entry bound, so this is
+                // assigned here rather than defaulted in GarnetServerOptions, which embedded hosts share.
+                NetworkBufferPoolSize = "64m",
                 TlsOptions = EnableTLS.GetValueOrDefault() ? new GarnetTlsOptions(
                     CertFileName, CertPassword,
                     ClientCertificateRequired.GetValueOrDefault(),

@@ -1,4 +1,4 @@
-// Copyright (c) Microsoft Corporation.
+﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -193,57 +193,48 @@ namespace Garnet.test
         }
 
         [Test]
-        public void NetworkBufferOptionParsing()
+        public void NetworkBufferSizingDefaultsToTheHistoricalConstants()
         {
-            // Defaults from defaults.conf preserve the historical hardcoded sizing.
+            // These sizes are not operator-settable; they resolve from GarnetServerOptions, which embedded
+            // hosts and tests configure directly. Their unset defaults must reproduce the sizing the server
+            // hardcoded before this configuration surface existed.
             var ok = ServerSettingsManager.TryParseCommandLineArguments([], out var options, out _, out _, out _, silentMode: true);
             ClassicAssert.IsTrue(ok);
-            ClassicAssert.AreEqual("128k", options.NetworkBufferSize);
-            ClassicAssert.AreEqual("1m", options.NetworkMaxReceiveBufferSize);
-            ClassicAssert.AreEqual("64m", options.NetworkBufferPoolSize);
 
             var serverOptions = options.GetServerOptions();
             var settings = serverOptions.GetNetworkBufferSettings();
             ClassicAssert.AreEqual(1 << 17, settings.sendBufferSize);
             ClassicAssert.AreEqual(1 << 17, settings.initialReceiveBufferSize);
             ClassicAssert.AreEqual(1 << 20, settings.maxReceiveBufferSize);
+
+            // The idle free list stays bounded without anyone having to ask for it. A zero here would mean
+            // "no byte cap", so this pins the default rather than merely exercising the getter.
             ClassicAssert.AreEqual(64L << 20, serverOptions.GetNetworkBufferPoolSize());
 
-            // Overrides round-trip.
-            ok = ServerSettingsManager.TryParseCommandLineArguments(
-                ["--network-buffer-size", "16k", "--network-max-receive-buffer-size", "512k", "--network-buffer-pool-size", "8m"],
-                out options, out _, out _, out _, silentMode: true);
-            ClassicAssert.IsTrue(ok);
-            serverOptions = options.GetServerOptions();
+            // Programmatic overrides round-trip, including the power-of-2 round-down.
+            serverOptions.NetworkBufferSize = "16k";
+            serverOptions.NetworkReceiveBufferMaxSize = "512k";
+            serverOptions.NetworkBufferPoolSize = "8m";
             settings = serverOptions.GetNetworkBufferSettings();
             ClassicAssert.AreEqual(1 << 14, settings.sendBufferSize);
             ClassicAssert.AreEqual(1 << 14, settings.initialReceiveBufferSize);
             ClassicAssert.AreEqual(1 << 19, settings.maxReceiveBufferSize);
             ClassicAssert.AreEqual(8L << 20, serverOptions.GetNetworkBufferPoolSize());
 
-            // Non-power-of-2 sizes round down rather than being rejected.
-            ok = ServerSettingsManager.TryParseCommandLineArguments(["--network-buffer-size", "48k"], out options, out _, out _, out _, silentMode: true);
-            ClassicAssert.IsTrue(ok);
-            ClassicAssert.AreEqual(1 << 15, options.GetServerOptions().GetNetworkBufferSettings().sendBufferSize);
+            serverOptions.NetworkBufferSize = "48k";
+            ClassicAssert.AreEqual(1 << 15, serverOptions.GetNetworkBufferSettings().sendBufferSize);
 
             // An inverted pair is corrected: the max receive size can never be below the base size,
             // otherwise the base size would not be a valid pool size class.
-            ok = ServerSettingsManager.TryParseCommandLineArguments(
-                ["--network-buffer-size", "256k", "--network-max-receive-buffer-size", "64k"],
-                out options, out _, out _, out _, silentMode: true);
-            ClassicAssert.IsTrue(ok);
-            settings = options.GetServerOptions().GetNetworkBufferSettings();
+            serverOptions.NetworkBufferSize = "256k";
+            serverOptions.NetworkReceiveBufferMaxSize = "64k";
+            settings = serverOptions.GetNetworkBufferSettings();
             ClassicAssert.AreEqual(1 << 18, settings.sendBufferSize);
             ClassicAssert.AreEqual(1 << 18, settings.maxReceiveBufferSize);
 
             // The resolved settings must always be usable by a pool built from them.
             using var pool = settings.CreateBufferPool(ownerType: PoolOwnerType.ServerNetwork);
             ClassicAssert.IsTrue(pool.Validate(settings));
-
-            // Non-memory-size values are rejected by validation.
-            ok = ServerSettingsManager.TryParseCommandLineArguments(["--network-buffer-size", "notasize"], out _, out var invalidOptions, out _, out _, silentMode: true);
-            ClassicAssert.IsFalse(ok);
-            ClassicAssert.IsTrue(invalidOptions.Contains(nameof(Options.NetworkBufferSize)));
         }
 
         [Test]
@@ -253,8 +244,6 @@ namespace Garnet.test
             var ok = ServerSettingsManager.TryParseCommandLineArguments([], out var options, out _, out _, out _, silentMode: true);
             ClassicAssert.IsTrue(ok);
             ClassicAssert.AreEqual("1g", options.NetworkBufferMemoryBudget);
-            ClassicAssert.AreEqual("16k", options.NetworkBufferMinSize);
-            ClassicAssert.AreEqual("64k", options.NetworkSendBufferMinSize);
 
             var budget = options.GetServerOptions().GetNetworkBufferBudget();
             ClassicAssert.IsTrue(budget.IsEnabled);
@@ -267,14 +256,19 @@ namespace Garnet.test
             ClassicAssert.AreEqual(1 << 16, budget.TargetForCount(8193));
             ClassicAssert.AreEqual(1 << 14, budget.TargetForCount(1 << 20));
 
-            // Overrides round-trip, including the separate send floor.
+            // The budget round-trips from the command line; the floors, which are not operator-settable,
+            // round-trip from GarnetServerOptions.
             ok = ServerSettingsManager.TryParseCommandLineArguments(
-                ["--network-buffer-memory-budget", "256m", "--network-buffer-min-size", "32k", "--network-send-buffer-min-size", "128k"],
-                out options, out _, out _, out _, silentMode: true);
+                ["--network-buffer-memory-budget", "256m"], out options, out _, out _, out _, silentMode: true);
             ClassicAssert.IsTrue(ok);
-            budget = options.GetServerOptions().GetNetworkBufferBudget();
+            var serverOptions = options.GetServerOptions();
+            serverOptions.NetworkReceiveBufferMinSize = "32k";
+            serverOptions.NetworkSendBufferMinSize = "128k";
+            budget = serverOptions.GetNetworkBufferBudget();
             ClassicAssert.AreEqual(256L << 20, budget.BudgetBytes);
             ClassicAssert.AreEqual(1 << 15, budget.TargetForCount(1 << 20));
+            // The send floor is the higher of the two, and applies on top of the receive target.
+            ClassicAssert.AreEqual(1 << 17, budget.TargetSendBufferSize);
 
             // Zero is the escape hatch: adaptation off, configured size restored unconditionally.
             ok = ServerSettingsManager.TryParseCommandLineArguments(["--network-buffer-memory-budget", "0"], out options, out _, out _, out _, silentMode: true);
@@ -284,11 +278,12 @@ namespace Garnet.test
             ClassicAssert.AreEqual(1 << 17, budget.TargetForCount(1 << 20));
 
             // A floor above the configured buffer size must not raise the base size; adaptation only lowers.
-            ok = ServerSettingsManager.TryParseCommandLineArguments(
-                ["--network-buffer-size", "16k", "--network-buffer-min-size", "64k"],
-                out options, out _, out _, out _, silentMode: true);
+            ok = ServerSettingsManager.TryParseCommandLineArguments([], out options, out _, out _, out _, silentMode: true);
             ClassicAssert.IsTrue(ok);
-            budget = options.GetServerOptions().GetNetworkBufferBudget();
+            serverOptions = options.GetServerOptions();
+            serverOptions.NetworkBufferSize = "16k";
+            serverOptions.NetworkReceiveBufferMinSize = "64k";
+            budget = serverOptions.GetNetworkBufferBudget();
             ClassicAssert.AreEqual(1 << 14, budget.TargetReceiveBufferSize);
             ClassicAssert.AreEqual(1 << 14, budget.TargetSendBufferSize);
 
