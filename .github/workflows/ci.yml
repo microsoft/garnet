@@ -13,11 +13,6 @@ on:
 env:
   DOTNET_SKIP_FIRST_TIME_EXPERIENCE: 1
   DOTNET_NOLOGO: true
-  # vstest.console waits this many seconds for the testhost process it just launched to connect back
-  # to it. The default of 90 is occasionally not enough on a loaded two-core runner, and when it
-  # elapses the job fails without having run a single test. This governs process startup only; a test
-  # that hangs is still caught by --blame-hang-timeout.
-  VSTEST_CONNECTION_TIMEOUT: 180
 
 permissions:
   contents: read

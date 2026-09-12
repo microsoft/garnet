@@ -175,6 +175,17 @@ namespace Garnet.server
         private readonly Dictionary<ulong, ulong> migratedContextRemap = new();
 
         /// <summary>
+        /// The local contexts already claimed as the target of a remapping in <see cref="migratedContextRemap"/>.
+        /// 
+        /// A claimed context is marked migrating, and a later incoming context whose own value happens to equal
+        /// that target would otherwise read that mark as its own interrupted migration and adopt the context
+        /// directly, leaving two migrated Vector Sets sharing one context.
+        /// 
+        /// Guarded by <c>lock (this)</c>, like the rest of the context metadata.
+        /// </summary>
+        private readonly HashSet<ulong> migratedContextTargets = [];
+
+        /// <summary>
         /// Discard every in-flight migration remapping.
         /// 
         /// Callers must already hold <c>lock (this)</c>, which is what guards the map.
@@ -184,6 +195,7 @@ namespace Garnet.server
             Debug.Assert(Monitor.IsEntered(this), "Migration remap is guarded by lock (this)");
 
             migratedContextRemap.Clear();
+            migratedContextTargets.Clear();
         }
 
         /// <summary>
@@ -214,10 +226,13 @@ namespace Garnet.server
                 // so it cannot be adopted as-is
                 var contextKnownLocally = contextIndex < contextMetadatas.Length;
 
-                if (contextKnownLocally && contextMetadatas[contextIndex].IsMigrating(contextIndex != 0, contextValue))
+                if (contextKnownLocally
+                    && !migratedContextTargets.Contains(migratedContext)
+                    && contextMetadatas[contextIndex].IsMigrating(contextIndex != 0, contextValue))
                 {
                     // Already reserved for a migration, which is how a migration that was interrupted and resumed looks
                     migratedContextRemap[migratedContext] = migratedContext;
+                    _ = migratedContextTargets.Add(migratedContext);
 
                     return migratedContext;
                 }
@@ -238,6 +253,7 @@ namespace Garnet.server
                 contextMetadatas[contextIndex].MarkMigrating(contextIndex != 0, contextValue);
 
                 migratedContextRemap[migratedContext] = localContext;
+                _ = migratedContextTargets.Add(localContext);
 
                 _ = dirtyContextMetadatas.Add(contextIndex);
             }
@@ -245,6 +261,16 @@ namespace Garnet.server
             UpdateContextMetadata(ref currentSession.vectorBasicContext);
 
             return localContext;
+        }
+
+        /// <summary>
+        /// For testing purposes, resolve a context the way an incoming migrated record would.
+        /// </summary>
+        public ulong ResolveMigratedContextForTest(ulong migratedContext)
+        {
+            using var session = (RespServerSession)getTempSession();
+
+            return ResolveMigratedContext(session.storageSession, migratedContext);
         }
 
         /// <summary>

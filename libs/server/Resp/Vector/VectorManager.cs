@@ -335,13 +335,23 @@ namespace Garnet.server
 
                 if (maxIndex >= 0)
                 {
+                    var priorMetadatas = contextMetadatas;
+
                     contextMetadatas = new ContextMetadata[maxIndex + 1];
 
                     for (var i = 0; i < contextMetadatas.Length; i++)
                     {
                         if (!recoveredMetadata.TryGetValue(i, out contextMetadatas[i]) || contextMetadatas[i].IsEmpty)
                         {
-                            contextMetadatas[i] = new();
+                            // Nothing was recovered for this index, so keep whatever is already in memory rather
+                            // than defaulting it. A cluster node with AOF enabled reconciles twice while starting
+                            // up - once from RecoverCheckpointAndAOFAsync and again from StoreWrapper - and the
+                            // first pass consumes recoveredMetadata, so the second has only the index records to
+                            // go on. Defaulting here would drop a reservation that has no index record instead of
+                            // marking it for cleanup below, leaving that context free to hand to the next Vector
+                            // Set while the data behind it is still present, and would reset the persisted
+                            // version so that later metadata writes are cancelled as stale.
+                            contextMetadatas[i] = i < priorMetadatas.Length ? priorMetadatas[i] : new();
                         }
                     }
                 }
