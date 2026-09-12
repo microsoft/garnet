@@ -25,13 +25,58 @@ namespace Garnet.server
         /// </summary>
         public LongHistogram[] latency;
 
+        /// <summary>
+        /// Consecutive monitor windows in which this type recorded nothing. Read and written only by the
+        /// monitor thread, so it adds nothing to the record path.
+        /// </summary>
+        int emptyWindows;
+
         readonly int significantDigits;
 
         public LatencyMetricsEntrySession(int significantDigits)
         {
             this.significantDigits = significantDigits;
             latency = null;
+            emptyWindows = 0;
             startTimestamp = 0;
+        }
+
+        /// <summary>
+        /// Releases the histograms of a type that has recorded nothing for <paramref name="threshold"/>
+        /// consecutive monitor windows, so a connection that was active and then went quiet stops paying
+        /// for them. Returns true if this call released them.
+        /// </summary>
+        /// <param name="threshold">Consecutive empty windows required before releasing.</param>
+        /// <remarks>
+        /// The reference is dropped rather than handed back to <c>ArrayPool&lt;long&gt;.Shared</c>, and that
+        /// is load-bearing. <see cref="RecordValue(int)"/> is deliberately unsynchronised: it tests
+        /// <see cref="latency"/> for null and then dereferences it, so a caller can already hold the array
+        /// when this runs. Returning the arrays would let another session rent them and receive that write,
+        /// or would null <c>_counts</c> under a live writer. Dropping leaves the racing writer holding the
+        /// only reference to the graph, so its write is unobservable and the collector reclaims it
+        /// afterwards -- costing at most one sample from a window that recorded none.
+        /// <para>
+        /// Both buffers are tested because one is being written while the other is merged, and a session
+        /// that resumed part way through the window has values in only one of them.
+        /// </para>
+        /// </remarks>
+        public bool ReclaimIfQuiesced(int threshold)
+        {
+            if (latency == null)
+                return false;
+
+            if (latency[0].TotalCount > 0 || latency[1].TotalCount > 0)
+            {
+                emptyWindows = 0;
+                return false;
+            }
+
+            if (++emptyWindows < threshold)
+                return false;
+
+            emptyWindows = 0;
+            latency = null;
+            return true;
         }
 
         [MethodImpl(MethodImplOptions.NoInlining)]

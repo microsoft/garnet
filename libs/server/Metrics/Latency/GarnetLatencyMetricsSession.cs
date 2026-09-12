@@ -107,6 +107,41 @@ namespace Garnet.server
                 Reset(cmd);
         }
 
+        /// <summary>
+        /// Releases the histograms of every type that has recorded nothing for <paramref name="threshold"/>
+        /// consecutive monitor windows. Returns the number of types released.
+        /// </summary>
+        /// <param name="threshold">Consecutive empty windows required before releasing a type.</param>
+        /// <remarks>
+        /// Called from the monitor sweep, which visits every session on a timer and so reaches connections
+        /// that are quiet -- the state this reclaims. Takes the dispose lock so a session being torn down
+        /// concurrently cannot have its metrics array replaced part way through; the lock does not, and is
+        /// not intended to, exclude the record path, which
+        /// <see cref="LatencyMetricsEntrySession.ReclaimIfQuiesced"/> is safe against by construction.
+        /// </remarks>
+        public int ReclaimQuiescedHistograms(int threshold)
+        {
+            var released = 0;
+            try
+            {
+                disposeLock.WriteLock();
+                if (metrics == null)
+                    return 0;
+
+                foreach (var cmd in defaultLatencyTypes)
+                {
+                    if (metrics[(int)cmd].ReclaimIfQuiesced(threshold))
+                        released++;
+                }
+            }
+            finally
+            {
+                disposeLock.WriteUnlock();
+            }
+
+            return released;
+        }
+
         public void Reset(LatencyMetricsType cmd)
         {
             int idx = (int)cmd;
