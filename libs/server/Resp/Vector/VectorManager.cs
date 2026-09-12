@@ -171,7 +171,19 @@ namespace Garnet.server
 
         private readonly int dbId;
 
+        /// <summary>
+        /// Context of each Vector Set index record found during recovery, mapped to the hash slot of the key
+        /// that owns it. <see cref="ReconcileRecoveredState"/> restores the reservation for each of these
+        /// contexts, and needs the hash slot recorded here because the record itself is not retained.
+        /// </summary>
         private ConcurrentDictionary<ulong, ushort> recoveredIndexes;
+
+        /// <summary>
+        /// Newest context metadata recovered for each index into <c>contextMetadatas</c>. A snapshot holds
+        /// every version of a record written in the range it covers, so the same index is presented more than
+        /// once; entries are kept by <c>ContextMetadata.Version</c> and trimmed by
+        /// <see cref="ReconcileRecoveredState"/>.
+        /// </summary>
         private ConcurrentDictionary<int, ContextMetadata> recoveredMetadata;
 
         public VectorManager(int dbId, GarnetServerOptions serverOptions, Func<IMessageConsumer> getTempSession, ILoggerFactory loggerFactory)
