@@ -43,6 +43,11 @@ namespace Garnet.client
 
         Socket socket;
 
+        /// <summary>
+        /// Set by <see cref="CloseConnection"/> and never cleared, so a close is sticky: it also lets
+        /// <see cref="ThrowIfCloseRequested"/> observe a close that lands while the connection is still
+        /// being established, which would otherwise leave that thread awaiting a reply that never comes.
+        /// </summary>
         int closeRequested;
         int disposed;
 

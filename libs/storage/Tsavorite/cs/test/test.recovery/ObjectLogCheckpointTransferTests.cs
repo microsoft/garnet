@@ -48,9 +48,10 @@ namespace Tsavorite.test.recovery.objects
         [TearDown]
         public void TearDown() => TestUtils.OnTearDown();
 
-        // flushMainLogDuringCheckpoint models a concurrent main-log flush (as issued by LogSizeTracker eviction) that
-        // starts after the checkpoint has captured its snapshot-start object-log position: it advances both
-        // FlushedUntilAddress and the main object-log tail before the checkpoint records them at PERSISTENCE_CALLBACK.
+        // flushMainLogDuringCheckpoint models a concurrent main-log ReadOnly flush - the shift of
+        // ReadOnlyAddress that flushes the pages it makes immutable - starting after the checkpoint has
+        // captured its snapshot-start object-log position: it advances both FlushedUntilAddress and the
+        // main object-log tail before the checkpoint records them at PERSISTENCE_CALLBACK.
         [Test]
         [Category("TsavoriteKV"), Category("CheckpointRestore")]
         public async Task TransferredSnapshotCheckpointRecoversAllObjects([Values] bool flushMainLogDuringCheckpoint)
