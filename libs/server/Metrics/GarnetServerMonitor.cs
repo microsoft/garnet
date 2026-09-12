@@ -54,6 +54,13 @@ namespace Garnet.server
         /// </summary>
         public int LatencyPrecision { get; }
 
+        /// <summary>
+        /// Consecutive monitor windows a session must record nothing in before its histograms for that
+        /// latency type are released. Hysteresis, so a connection sending occasional traffic that straddles
+        /// a window boundary does not repeatedly release and re-allocate.
+        /// </summary>
+        internal const int QuiescedWindowsBeforeRelease = 4;
+
         public GarnetServerMonitor(StoreWrapper storeWrapper, GarnetServerOptions opts, IGarnetServer[] servers, ILogger logger = null)
         {
             this.storeWrapper = storeWrapper;
@@ -159,16 +166,23 @@ namespace Garnet.server
                 // Accumulate latency metrics if latency monitor is enabled
                 if (opts.LatencyMonitor)
                 {
+                    var latencyMetrics = session.GetLatencyMetrics();
                     rwLock.WriteLock();
                     try
                     {
                         // Add accumulated latency metrics for this iteration
-                        globalMetrics.globalLatencyMetrics.Merge(session.GetLatencyMetrics());
+                        globalMetrics.globalLatencyMetrics.Merge(latencyMetrics);
                     }
                     finally
                     {
                         rwLock.WriteUnlock();
                     }
+
+                    // Released after the merge, so the window being released has already been accounted
+                    // for globally. A quiesced session gains nothing by holding them: the histograms are
+                    // cleared every window regardless, so retaining them buys no future work and costs a
+                    // full counts-array clear per window.
+                    latencyMetrics?.ReclaimQuiescedHistograms(QuiescedWindowsBeforeRelease);
                 }
             }
 

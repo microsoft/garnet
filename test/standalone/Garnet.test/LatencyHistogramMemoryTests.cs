@@ -445,5 +445,207 @@ namespace Garnet.test
             var n = survivor.Receive(buf);
             StringAssert.DoesNotContain("-ERR", Encoding.ASCII.GetString(buf, 0, n));
         }
+
+        /// <summary>
+        /// Latency types across all live sessions that currently hold histograms.
+        /// </summary>
+        /// <remarks>
+        /// Asserted on directly rather than inferred from process memory. Whether a histogram is held is
+        /// the property under test, and reading it from the sessions cannot be satisfied by unrelated
+        /// allocation noise the way a memory delta can.
+        /// </remarks>
+        int AllocatedHistogramTypes()
+        {
+            var count = 0;
+            foreach (var session in ActiveSessions())
+            {
+                var m = session.LatencyMetrics?.metrics;
+                if (m == null) continue;
+                foreach (var cmd in Enum.GetValues<LatencyMetricsType>())
+                    if (m[(int)cmd].latency != null) count++;
+            }
+            return count;
+        }
+
+        /// <summary>
+        /// Waits for <paramref name="predicate"/> to hold over the allocated histogram count, returning the
+        /// last value observed.
+        /// </summary>
+        int WaitForHistograms(Func<int, bool> predicate, int seconds = 40)
+        {
+            var deadline = DateTime.UtcNow.AddSeconds(seconds);
+            int seen;
+            while (!predicate(seen = AllocatedHistogramTypes()) && DateTime.UtcNow < deadline)
+                Thread.Sleep(100);
+            return seen;
+        }
+
+        /// <summary>
+        /// A connection that was active and then goes quiet must give its histograms back. This is the
+        /// incident's shape -- thousands of connections that do some work and then idle while staying open
+        /// -- and lazy allocation alone does not cover it, because it only defers the first allocation.
+        /// </summary>
+        [Test]
+        public void QuiescedSessionsReleaseTheirHistograms()
+        {
+            StartServer(latencyMonitor: true);
+
+            var sockets = new List<Socket>();
+            try
+            {
+                for (var i = 0; i < Connections; i++)
+                {
+                    var s = Connect();
+                    Ping(s);
+                    sockets.Add(s);
+                }
+
+                // Recording must have happened, or the release has nothing to release and the test would
+                // pass against an implementation that never reclaims anything.
+                var allocated = WaitForHistograms(n => n > 0, seconds: 15);
+                ClassicAssert.GreaterOrEqual(allocated, Connections,
+                    $"only {allocated} histogram types were allocated across {Connections} pinging sessions, " +
+                    "so there was nothing to reclaim");
+
+                var before = SettledMemory();
+
+                // The connections stay open and simply stop sending.
+                var remaining = WaitForHistograms(n => n == 0);
+                ClassicAssert.AreEqual(0, remaining,
+                    $"{remaining} histogram types were still held after the sessions went quiet, so a " +
+                    "connection that stops sending keeps paying for histograms it is not recording into");
+
+                // The structural release above is the discriminating assertion; this one confirms the
+                // memory actually comes back rather than the reference merely being cleared.
+                var after = SettledMemory();
+                ClassicAssert.Less(after, before,
+                    $"histograms were released but retained memory did not fall ({before} -> {after})");
+            }
+            finally
+            {
+                foreach (var s in sockets) { try { s.Dispose(); } catch { } }
+            }
+        }
+
+        /// <summary>
+        /// The control for <see cref="QuiescedSessionsReleaseTheirHistograms"/>: a session that keeps
+        /// recording must keep its histograms across many windows, or the reclaim is stealing them from
+        /// active connections and charging every window an allocation.
+        /// </summary>
+        [Test]
+        public void ActiveSessionsKeepTheirHistograms()
+        {
+            StartServer(latencyMonitor: true);
+
+            using var socket = Connect();
+            Ping(socket);
+
+            var allocated = WaitForHistograms(n => n > 0, seconds: 15);
+            ClassicAssert.Greater(allocated, 0, "a pinging session should have allocated histograms");
+
+            // Well past the release threshold, but never quiet for a whole window.
+            var deadline = DateTime.UtcNow.AddSeconds(3 * GarnetServerMonitor.QuiescedWindowsBeforeRelease);
+            while (DateTime.UtcNow < deadline)
+            {
+                Ping(socket);
+                ClassicAssert.Greater(AllocatedHistogramTypes(), 0,
+                    "a session that is still recording had its histograms reclaimed");
+                Thread.Sleep(100);
+            }
+        }
+
+        /// <summary>
+        /// A session that goes quiet and then resumes must record normally again, since the release drops
+        /// the histograms rather than marking the type unusable.
+        /// </summary>
+        [Test]
+        public void AResumedSessionRecordsAgainAfterRelease()
+        {
+            StartServer(latencyMonitor: true);
+
+            using var socket = Connect();
+            Ping(socket);
+
+            ClassicAssert.AreEqual(0, WaitForHistograms(n => n == 0),
+                "the quiet session did not release its histograms, so the resume is untested");
+
+            Ping(socket);
+
+            var reallocated = WaitForHistograms(n => n > 0, seconds: 15);
+            ClassicAssert.Greater(reallocated, 0,
+                "a session that resumed after releasing its histograms did not record again");
+
+            socket.Send(Encoding.ASCII.GetBytes("*2\r\n$7\r\nLATENCY\r\n$9\r\nHISTOGRAM\r\n"));
+            var buf = new byte[64 * 1024];
+            var n = socket.Receive(buf);
+            StringAssert.DoesNotContain("-ERR", Encoding.ASCII.GetString(buf, 0, n));
+        }
+
+        /// <summary>
+        /// The release waits for consecutive empty windows, so a session whose traffic straddles a window
+        /// boundary is not released and re-allocated repeatedly. Driven directly, because inducing an exact
+        /// sequence of empty and non-empty windows through a live server is timing-dependent.
+        /// </summary>
+        [Test]
+        public void ReclaimWaitsForConsecutiveEmptyWindows()
+        {
+            const int Threshold = 4;
+            var entry = new LatencyMetricsEntrySession(GarnetServerOptions.DefaultLatencyMonitorPrecision);
+
+            entry.RecordValue(0, 1234);
+            ClassicAssert.IsNotNull(entry.latency, "recording a value should have allocated the histograms");
+
+            for (var i = 0; i < Threshold - 1; i++)
+                ClassicAssert.IsFalse(entry.ReclaimIfQuiesced(Threshold),
+                    $"the histograms were released after only {i + 1} empty windows");
+
+            // A recorded value resets the run, so the next empty window starts counting from zero again.
+            entry.RecordValue(0, 1234);
+            ClassicAssert.IsFalse(entry.ReclaimIfQuiesced(Threshold),
+                "a window that recorded a value should have reset the empty-window run");
+
+            entry.latency[0].Reset();
+            entry.latency[1].Reset();
+
+            for (var i = 0; i < Threshold - 1; i++)
+                ClassicAssert.IsFalse(entry.ReclaimIfQuiesced(Threshold),
+                    "the run was not restarted by the recorded value");
+
+            ClassicAssert.IsTrue(entry.ReclaimIfQuiesced(Threshold),
+                $"the histograms were not released after {Threshold} consecutive empty windows");
+            ClassicAssert.IsNull(entry.latency, "the released histograms should no longer be referenced");
+        }
+
+        /// <summary>
+        /// A released histogram must not be handed back to the shared pool. The record path is
+        /// unsynchronised, so a caller can still hold the array; returning it would let another session
+        /// rent the array that caller is about to write into.
+        /// </summary>
+        [Test]
+        public void ReleasingAQuiescedHistogramDoesNotReturnItToThePool()
+        {
+            var entry = new LatencyMetricsEntrySession(GarnetServerOptions.DefaultLatencyMonitorPrecision);
+            entry.RecordValue(0, 1234);
+
+            // The reference a racing writer would already be holding.
+            var held = entry.latency;
+
+            // Clear the recorded value so the windows that follow are empty ones.
+            held[0].Reset();
+            held[1].Reset();
+
+            for (var i = 0; i < 4; i++) entry.ReclaimIfQuiesced(4);
+            ClassicAssert.IsNull(entry.latency, "the histograms should have been released");
+
+            ClassicAssert.IsFalse(held[0].IsReturned,
+                "the released histogram was returned to the shared pool, so a concurrent recorder could " +
+                "write into an array another session has since rented");
+            ClassicAssert.IsFalse(held[1].IsReturned,
+                "the released histogram was returned to the shared pool, so a concurrent recorder could " +
+                "write into an array another session has since rented");
+
+            // The write a racing recorder would make lands in a graph nobody else can reach.
+            Assert.DoesNotThrow(() => held[0].RecordValue(1234));
+        }
     }
 }
