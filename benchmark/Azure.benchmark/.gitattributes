@@ -1,0 +1,8 @@
+# Scripts and configs delivered to and executed on Linux VMSS instances must
+# keep LF line endings; a CR in a shebang (env pwsh\r) breaks execution.
+*.ps1  text eol=lf
+*.sh   text eol=lf
+*.env  text eol=lf
+*.yml  text eol=lf
+*.yaml text eol=lf
+*.json text eol=lf

@@ -1,0 +1,8 @@
+{
+  "basePath": "%USERPROFILE%\\.ssh",
+  "userKeys": [
+    "id_ed12182024_desktop",
+    "id_ed121824_notebook"
+  ],
+  "vmKeys": "id_ed25519_vmss"
+}

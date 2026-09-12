@@ -1,0 +1,13 @@
+# Generated files (compiled from bicep build)
+02-platform/vmss.json
+02-platform/vmss-parameters.json
+01-resources/storage/storage.json
+
+# Machine-local VMSS peer inventory
+.peer-cache/
+
+# Benchmark results
+03-workload/results/
+
+# SSH public keys
+01-resources/security/*.pub
