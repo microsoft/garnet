@@ -16,7 +16,6 @@ using System.Threading.Tasks;
 using Garnet.client;
 using Garnet.common;
 using Garnet.server;
-using Garnet.server.TLS;
 using GarnetClusterManagement;
 using Microsoft.Extensions.Logging;
 using NUnit.Framework;
@@ -930,7 +929,7 @@ namespace Garnet.test.cluster
                 {
                     sslOptions = new SslClientAuthenticationOptions
                     {
-                        ClientCertificates = [CertificateUtils.GetMachineCertificateByFile(certFile, certPassword)],
+                        ClientCertificates = [TestUtils.GetClientCertificate()],
                         TargetHost = "GarnetTest",
                         AllowRenegotiation = false,
                         RemoteCertificateValidationCallback = TestUtils.ValidateServerCertificate,
@@ -952,7 +951,7 @@ namespace Garnet.test.cluster
             {
                 sslOptions = new SslClientAuthenticationOptions
                 {
-                    ClientCertificates = [CertificateUtils.GetMachineCertificateByFile(certFile, certPassword)],
+                    ClientCertificates = [TestUtils.GetClientCertificate()],
                     TargetHost = "GarnetTest",
                     AllowRenegotiation = false,
                     RemoteCertificateValidationCallback = TestUtils.ValidateServerCertificate,
