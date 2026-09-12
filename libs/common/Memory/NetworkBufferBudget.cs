@@ -110,6 +110,33 @@ namespace Garnet.common
         public int TargetSendBufferSize => Math.Max(sendFloor, TargetBufferSize);
 
         /// <summary>
+        /// Clamps a configured receive size to the published target.
+        /// </summary>
+        /// <remarks>
+        /// Exists so the receive path, which reads this on every pass, resolves the clamp in one inlined
+        /// call over three field loads rather than walking pool to budget and back out through two
+        /// properties. The disabled test is first and reads the same field the constructor fixes for the
+        /// lifetime of the object, so it is perfectly predicted.
+        /// </remarks>
+        /// <param name="configured">Configured base size for the buffer.</param>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public int ClampReceiveBufferSize(int configured)
+            => budgetBytes == 0
+                ? configured
+                : Math.Min(configured, Math.Max(receiveFloor, Volatile.Read(ref targetBufferSize)));
+
+        /// <summary>
+        /// Clamps a configured send size to the published target. See
+        /// <see cref="ClampReceiveBufferSize(int)"/>.
+        /// </summary>
+        /// <param name="configured">Configured base size for the buffer.</param>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public int ClampSendBufferSize(int configured)
+            => budgetBytes == 0
+                ? configured
+                : Math.Min(configured, Math.Max(sendFloor, Volatile.Read(ref targetBufferSize)));
+
+        /// <summary>
         /// Outstanding buffers checked out of the budgeted pools.
         /// </summary>
         public long LiveBufferCount => Interlocked.Read(ref liveBufferCount);
