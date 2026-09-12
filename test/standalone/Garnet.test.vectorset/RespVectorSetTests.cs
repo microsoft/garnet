@@ -3402,6 +3402,11 @@ namespace Garnet.test
                 var store = server.Provider.StoreWrapper;
                 var vectorManager = store.DefaultDatabase.VectorManager;
 
+                // A context released by a delete or an overwrite is only marked for cleanup on a background
+                // task, so it still reads as live until that task runs. Settle that work before sampling the
+                // slot, otherwise the released context is counted alongside the live one.
+                vectorManager.WaitForQuiescence();
+
                 unsafe
                 {
                     fixed (byte* indexKeyPtr = Encoding.ASCII.GetBytes(indexKey))
