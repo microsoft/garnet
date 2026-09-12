@@ -1,0 +1,28 @@
+{
+  "id": "dev/transactions",
+  "title": "Transactions",
+  "description": "Garnet supports two types of transactions:",
+  "source": "@site/docs/dev/transactions.md",
+  "sourceDirName": "dev",
+  "slug": "/dev/transactions",
+  "permalink": "/garnet/docs/dev/transactions",
+  "draft": false,
+  "unlisted": false,
+  "editUrl": "https://github.com/microsoft/garnet/tree/main/website/docs/dev/transactions.md",
+  "tags": [],
+  "version": "current",
+  "frontMatter": {
+    "id": "transactions",
+    "sidebar_label": "Transactions",
+    "title": "Transactions"
+  },
+  "sidebar": "garnetDocSidebar",
+  "previous": {
+    "title": "EpochProtection",
+    "permalink": "/garnet/docs/dev/tsavorite/epoch"
+  },
+  "next": {
+    "title": "Custom Commands",
+    "permalink": "/garnet/docs/dev/custom-commands"
+  }
+}

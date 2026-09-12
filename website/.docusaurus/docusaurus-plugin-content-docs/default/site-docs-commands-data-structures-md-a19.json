@@ -1,0 +1,28 @@
+{
+  "id": "commands/data-structures",
+  "title": "Data Structures",
+  "description": "Hash",
+  "source": "@site/docs/commands/data-structures.md",
+  "sourceDirName": "commands",
+  "slug": "/commands/data-structures",
+  "permalink": "/garnet/docs/commands/data-structures",
+  "draft": false,
+  "unlisted": false,
+  "editUrl": "https://github.com/microsoft/garnet/tree/main/website/docs/commands/data-structures.md",
+  "tags": [],
+  "version": "current",
+  "frontMatter": {
+    "id": "data-structures",
+    "sidebar_label": "Data Structures",
+    "title": "Data Structures"
+  },
+  "sidebar": "garnetDocSidebar",
+  "previous": {
+    "title": "Analytics",
+    "permalink": "/garnet/docs/commands/analytics"
+  },
+  "next": {
+    "title": "Server Management",
+    "permalink": "/garnet/docs/commands/server"
+  }
+}

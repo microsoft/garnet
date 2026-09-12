@@ -1,0 +1,28 @@
+{
+  "id": "dev/code-structure",
+  "title": "Code Structure",
+  "description": "In the following list, we describe the C\\# projects part of the Garnet Visual Studio solution as well as the folder containing them:",
+  "source": "@site/docs/dev/code-structure.md",
+  "sourceDirName": "dev",
+  "slug": "/dev/code-structure",
+  "permalink": "/garnet/docs/dev/code-structure",
+  "draft": false,
+  "unlisted": false,
+  "editUrl": "https://github.com/microsoft/garnet/tree/main/website/docs/dev/code-structure.md",
+  "tags": [],
+  "version": "current",
+  "frontMatter": {
+    "id": "code-structure",
+    "sidebar_label": "Code Structure",
+    "title": "Code Structure"
+  },
+  "sidebar": "garnetDocSidebar",
+  "previous": {
+    "title": "Onboarding",
+    "permalink": "/garnet/docs/dev/onboarding"
+  },
+  "next": {
+    "title": "Configuration",
+    "permalink": "/garnet/docs/dev/configuration"
+  }
+}

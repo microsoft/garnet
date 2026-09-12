@@ -1,0 +1,28 @@
+{
+  "id": "extensions/objects",
+  "title": "Objects",
+  "description": "Garnet offers different ways to extend its functionality, one of them by adding your own implementation of a Custom Object; similar to what a Set, List or a Sorted Set offers but using your own type of object and custom commmands functionality with the C# language.",
+  "source": "@site/docs/extensions/objects.md",
+  "sourceDirName": "extensions",
+  "slug": "/extensions/objects",
+  "permalink": "/garnet/docs/extensions/objects",
+  "draft": false,
+  "unlisted": false,
+  "editUrl": "https://github.com/microsoft/garnet/tree/main/website/docs/extensions/objects.md",
+  "tags": [],
+  "version": "current",
+  "frontMatter": {
+    "id": "objects",
+    "sidebar_label": "Objects",
+    "title": "Objects"
+  },
+  "sidebar": "garnetDocSidebar",
+  "previous": {
+    "title": "Raw Strings",
+    "permalink": "/garnet/docs/extensions/raw-strings"
+  },
+  "next": {
+    "title": "Transactions",
+    "permalink": "/garnet/docs/extensions/transactions"
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "id": "welcome/features",
+  "title": "Summary of Garnet Features",
+  "description": "Core API",
+  "source": "@site/docs/welcome/features.md",
+  "sourceDirName": "welcome",
+  "slug": "/welcome/features",
+  "permalink": "/garnet/docs/welcome/features",
+  "draft": false,
+  "unlisted": false,
+  "editUrl": "https://github.com/microsoft/garnet/tree/main/website/docs/welcome/features.md",
+  "tags": [],
+  "version": "current",
+  "frontMatter": {
+    "id": "features",
+    "sidebar_label": "Features",
+    "title": "Summary of Garnet Features"
+  },
+  "sidebar": "garnetDocSidebar",
+  "previous": {
+    "title": "News",
+    "permalink": "/garnet/docs/welcome/news"
+  },
+  "next": {
+    "title": "Releases",
+    "permalink": "/garnet/docs/welcome/releases"
+  }
+}

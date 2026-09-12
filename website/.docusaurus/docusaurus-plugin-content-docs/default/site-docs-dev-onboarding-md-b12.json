@@ -1,0 +1,28 @@
+{
+  "id": "dev/onboarding",
+  "title": "Onboarding",
+  "description": "Welcome to Garnet! In this page, you will find the main steps to set up your work environment for developing in Garnet.",
+  "source": "@site/docs/dev/onboarding.md",
+  "sourceDirName": "dev",
+  "slug": "/dev/onboarding",
+  "permalink": "/garnet/docs/dev/onboarding",
+  "draft": false,
+  "unlisted": false,
+  "editUrl": "https://github.com/microsoft/garnet/tree/main/website/docs/dev/onboarding.md",
+  "tags": [],
+  "version": "current",
+  "frontMatter": {
+    "id": "onboarding",
+    "sidebar_label": "Onboarding",
+    "title": "Onboarding"
+  },
+  "sidebar": "garnetDocSidebar",
+  "previous": {
+    "title": "Key Migration",
+    "permalink": "/garnet/docs/cluster/key-migration"
+  },
+  "next": {
+    "title": "Code Structure",
+    "permalink": "/garnet/docs/dev/code-structure"
+  }
+}

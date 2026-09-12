@@ -1,0 +1,29 @@
+{
+  "id": "commands/garnet-specific-commands",
+  "title": "Garnet-specific Commands",
+  "description": "Apart from Garnet's server extensions, we support many API calls that are not available",
+  "source": "@site/docs/commands/garnet-specific.md",
+  "sourceDirName": "commands",
+  "slug": "/commands/garnet-specific-commands",
+  "permalink": "/garnet/docs/commands/garnet-specific-commands",
+  "draft": false,
+  "unlisted": false,
+  "editUrl": "https://github.com/microsoft/garnet/tree/main/website/docs/commands/garnet-specific.md",
+  "tags": [],
+  "version": "current",
+  "frontMatter": {
+    "id": "garnet-specific-commands",
+    "sidebar_label": "Garnet-specific Commands",
+    "title": "Garnet-specific Commands",
+    "slug": "garnet-specific-commands"
+  },
+  "sidebar": "garnetDocSidebar",
+  "previous": {
+    "title": "Scripting and functions",
+    "permalink": "/garnet/docs/commands/scripting"
+  },
+  "next": {
+    "title": "JSON Module",
+    "permalink": "/garnet/docs/commands/json"
+  }
+}

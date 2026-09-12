@@ -1,0 +1,28 @@
+{
+  "id": "extensions/procedure",
+  "title": "Procedures",
+  "description": "Custom procedures allow adding a new non-transactional procedure and registering it with Garnet. This registered procedure can then be invoked from any Garnet client to perform a multi-command non-transactional operation on the Garnet server.",
+  "source": "@site/docs/extensions/procedure.md",
+  "sourceDirName": "extensions",
+  "slug": "/extensions/procedure",
+  "permalink": "/garnet/docs/extensions/procedure",
+  "draft": false,
+  "unlisted": false,
+  "editUrl": "https://github.com/microsoft/garnet/tree/main/website/docs/extensions/procedure.md",
+  "tags": [],
+  "version": "current",
+  "frontMatter": {
+    "id": "procedure",
+    "sidebar_label": "Procedures",
+    "title": "Procedures"
+  },
+  "sidebar": "garnetDocSidebar",
+  "previous": {
+    "title": "Transactions",
+    "permalink": "/garnet/docs/extensions/transactions"
+  },
+  "next": {
+    "title": "Modules",
+    "permalink": "/garnet/docs/extensions/module"
+  }
+}
