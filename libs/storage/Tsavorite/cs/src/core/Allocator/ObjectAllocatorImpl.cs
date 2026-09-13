@@ -839,7 +839,8 @@ namespace Tsavorite.core
             //
             // A front-partial ReadOnly flush starts after bytes that this flush sequence has already made durable. Rounding its device write
             // down to a sector boundary is therefore safe: the live prefix already has main-object-log metadata and is simply rewritten.
-            // Only the sector after the logical end needs isolation; that sector is copied to a small buffer and its non-durable suffix zeroed.
+            // The write likewise rounds UP at the logical end, carrying live bytes above the endpoint to disk verbatim; see the write span
+            // comment below for why those bytes are never read back.
             //
             // Correctness also relies on the OnDispose contract
             //    that a record stays READABLE (byte-consistent) throughout a flush -- OnDispose implementations copy off whatever they need for cleanup
@@ -1011,43 +1012,28 @@ namespace Tsavorite.core
 
                 // Object serialization and metadata stamping are complete. Write the live page.
                 {
+                    // Write whole sectors straight out of the live page: [alignedStartOffset, RoundUp(endOffset)).
+                    // Bytes above the logical endpoint go to disk verbatim rather than zeroed, because they are never read back:
+                    //   - a later flush of this page starts at its own rounded-down offset and rewrites the sector from the live page;
+                    //   - recovery bounds its record walk by maxAddressOffsetOnPage, which is the UNROUNDED endpoint, so records above
+                    //     the endpoint are never parsed and their object-log position words are never interpreted; and
+                    //   - the hybrid-log/snapshot boundary is applied at exact address granularity (RecoveryLoadObjectsPass2 splits the
+                    //     boundary page at snapshotScanFromAddress), so a snapshot object-log position cannot be read as a main-log one.
+                    // PageSize >= sectorSize and AlignedPageSizeBytes == RoundUp(PageSize, sectorSize), so the span stays within the page.
                     var sectorSize = (int)device.SectorSize;
-                    var directEndOffset = RoundDown(endOffset, sectorSize);
-                    var directPtr = (byte*)logPagePointer + alignedStartOffset;
-                    var directLength = directEndOffset - alignedStartOffset;
-                    var directAddress = alignedMainLogFlushPageAddress + (uint)alignedStartOffset;
-
-                    byte* trailingPtr = null;
-                    var trailingLength = 0;
-                    ulong trailingAddress = 0;
-                    if (endOffset != directEndOffset)
-                    {
-                        // Preserve live bytes through the logical endpoint and clear the remainder of the sector. This makes
-                        // metadata above the durable boundary unmistakably unset if recovery ever observes a boundary mismatch.
-                        var trailingBuffer = bufferPool.Get(sectorSize);
-                        asyncResult.freeBuffer1 = trailingBuffer;
-                        trailingBuffer.TotalValidSpan.Slice(0, sectorSize).Clear();
-                        new ReadOnlySpan<byte>((byte*)logPagePointer + directEndOffset, endOffset - directEndOffset)
-                            .CopyTo(trailingBuffer.TotalValidSpan);
-                        trailingPtr = trailingBuffer.GetValidPointer();
-                        trailingLength = sectorSize;
-                        trailingAddress = alignedMainLogFlushPageAddress + (uint)directEndOffset;
-                    }
+                    var writePtr = (byte*)logPagePointer + alignedStartOffset;
+                    var writeLength = RoundUp(endOffset, sectorSize) - alignedStartOffset;
+                    var writeAddress = alignedMainLogFlushPageAddress + (uint)alignedStartOffset;
+                    Debug.Assert(writeLength > 0, $"Flush of page {flushPage} produced an empty write span");
 
                     if (logWriter is not null)
                     {
-                        logWriter.OnSplitPartialFlushComplete(directPtr, directLength, directAddress, trailingPtr, trailingLength,
-                            trailingAddress, device, callback, asyncResult, ref objectLogTail);
+                        logWriter.OnPartialFlushComplete(writePtr, writeLength, device, writeAddress, callback, asyncResult, ref objectLogTail);
                     }
                     else
                     {
-                        var writeCount = (directLength > 0 ? 1 : 0) + (trailingLength > 0 ? 1 : 0);
-                        Debug.Assert(writeCount > 0);
-                        asyncResult.count = writeCount;
-                        if (directLength > 0)
-                            device.WriteAsync((IntPtr)directPtr, directAddress, (uint)directLength, callback, asyncResult);
-                        if (trailingLength > 0)
-                            device.WriteAsync((IntPtr)trailingPtr, trailingAddress, (uint)trailingLength, callback, asyncResult);
+                        asyncResult.count = 1;
+                        device.WriteAsync((IntPtr)writePtr, writeAddress, (uint)writeLength, callback, asyncResult);
                     }
 
                     // Main device write submitted: its completion callback owns releasing this page's native

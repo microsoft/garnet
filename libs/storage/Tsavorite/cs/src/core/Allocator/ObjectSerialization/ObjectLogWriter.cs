@@ -122,13 +122,6 @@ namespace Tsavorite.core
             => flushBuffers.OnPartialFlushComplete(mainLogPageSpanPtr, mainLogPageSpanLength, mainLogDevice, alignedMainLogFlushAddress,
                 externalCallback, externalContext, ref endFilePosition);
 
-        /// <summary>Finish object-log writes, then write the direct and optional zero-padded trailing main-log spans as one completion batch.</summary>
-        internal void OnSplitPartialFlushComplete(byte* directPtr, int directLength, ulong directAddress,
-                byte* trailingPtr, int trailingLength, ulong trailingAddress,
-                IDevice mainLogDevice, DeviceIOCompletionCallback externalCallback, object externalContext, ref ObjectLogFilePositionInfo endFilePosition)
-            => flushBuffers.OnSplitPartialFlushComplete(directPtr, directLength, directAddress, trailingPtr, trailingLength,
-                trailingAddress, mainLogDevice, externalCallback, externalContext, ref endFilePosition);
-
         /// <summary>
         /// Write Overflow and Object Keys and values in a <see cref="LogRecord"/> to the device.
         /// </summary>
