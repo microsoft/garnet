@@ -95,8 +95,8 @@ namespace Tsavorite.test.recovery.objects
             // PageSize is a power of two and at least the sector size, so AlignedPageSizeBytes == PageSize.
             const long pageSize = MinKvLogPageSize;
             var startPage = info.snapshotFileLogicalStartAddress / pageSize;
-            var lastPage = info.snapshotFinalLogicalAddress / pageSize;
-            var endOffset = info.snapshotFinalLogicalAddress % pageSize;
+            var lastPage = info.recoveredTailAddress / pageSize;
+            var endOffset = info.recoveredTailAddress % pageSize;
             var expectedLength = ((lastPage - startPage) * pageSize) + RoundUpTo(endOffset, sectorSize);
 
             var snapshotLength = new FileInfo(FindSnapshotFile()).Length;
@@ -137,7 +137,7 @@ namespace Tsavorite.test.recovery.objects
                         _ = bContext.Upsert(new TestObjectKey { key = i }, new TestObjectValue { value = i });
 
                     // Nudge the tail off a sector boundary so the checkpoint's end address is genuinely mid-sector. No
-                    // concurrent writer runs, so snapshotFinalLogicalAddress is this TailAddress.
+                    // concurrent writer runs, so recoveredTailAddress is this TailAddress.
                     var extraKey = NumRecords;
                     while (store.Log.TailAddress % sectorSize == 0)
                         _ = bContext.Upsert(new TestObjectKey { key = extraKey++ }, new TestObjectValue { value = extraKey });
@@ -159,7 +159,7 @@ namespace Tsavorite.test.recovery.objects
                     new LocalStorageNamedDeviceFactoryCreator(),
                     new DefaultCheckpointNamingScheme(new DirectoryInfo(Path.Combine(MethodTestDir, "check-points")).FullName)));
 
-            var boundaryOffsetInSector = checkpointInfo.snapshotFinalLogicalAddress % sectorSize;
+            var boundaryOffsetInSector = checkpointInfo.recoveredTailAddress % sectorSize;
             Assert.That(boundaryOffsetInSector, Is.Not.Zero,
                 "the checkpoint boundary must fall mid-sector for this test to exercise the boundary sector");
 

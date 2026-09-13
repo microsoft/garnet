@@ -243,7 +243,7 @@ namespace Tsavorite.core
                 // being recorded before the flush starts ensures there is no gap.
                 hybridLogFileStartAddress = hlogBase.GetLogicalAddressOfStartOfPage(hlogBase.GetPage(current.info.beginAddress)),
                 hybridLogFileEndAddress = current.info.mainLogRecoveryEndAddress,
-                snapshotFileEndAddress = current.info.snapshotFinalLogicalAddress - snapshotDeviceOffset,
+                snapshotFileEndAddress = current.info.recoveredTailAddress - snapshotDeviceOffset,
 
                 // Object log file info:
                 //   - The object log address range is from:
@@ -498,7 +498,7 @@ namespace Tsavorite.core
                 // recovered range (both the hybrid-log and snapshot regions), honoring the final headAddress.
                 finalHeadAddress = await RecoverHybridLogFromSnapshotFileAsync(scanFromAddress: recoveredHLCInfo.info.mainLogRecoveryEndAddress,
                         recoverFromAddress, untilAddress: recoveredHLCInfo.info.recoveredTailAddress,
-                        snapshotStartAddress: recoveredHLCInfo.info.snapshotFileLogicalStartAddress, snapshotEndAddress: recoveredHLCInfo.info.snapshotFinalLogicalAddress,
+                        snapshotStartAddress: recoveredHLCInfo.info.snapshotFileLogicalStartAddress, snapshotEndAddress: recoveredHLCInfo.info.recoveredTailAddress,
                         snapshotObjectLogReadEnd: recoveredHLCInfo.info.snapshotEndObjectLogTail,
                         recoveredHLCInfo.info.nextVersion, recoveredHLCInfo.info.guid, headAddress: recoveryStatus.headAddress,
                         options, cancellationToken).ConfigureAwait(false);

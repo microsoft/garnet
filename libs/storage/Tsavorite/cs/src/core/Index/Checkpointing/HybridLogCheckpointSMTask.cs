@@ -37,6 +37,8 @@ namespace Tsavorite.core
                     lastVersion = store._hybridLogCheckpoint.info.version = next.Version;
                     store._hybridLogCheckpoint.info.fuzzyRegionStartAddress = store.hlogBase.GetTailAddress();
                     store._hybridLogCheckpoint.info.beginAddress = store.hlogBase.BeginAddress;
+                    store._hybridLogCheckpoint.info.pageSize = store.hlogBase.PageSize;
+                    store._hybridLogCheckpoint.info.segmentSize = store.hlogBase.GetMainLogSegmentSize();
                     break;
 
                 case Phase.IN_PROGRESS:
