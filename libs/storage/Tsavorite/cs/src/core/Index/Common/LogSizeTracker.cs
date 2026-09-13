@@ -206,7 +206,7 @@ namespace Tsavorite.core
             Debug.Assert(newTargetSize > highDelta);
             Debug.Assert(newTargetSize > lowDelta);
 
-            if (newTargetSize < logAccessor.allocatorBase.PageSize * MinTargetPageCount)
+            if (newTargetSize < (long)logAccessor.allocatorBase.PageSize * MinTargetPageCount)
                 throw new TsavoriteException($"Target size must be at least {MinTargetPageCount} pages");
 
             var shrink = newTargetSize < TargetSize;

@@ -709,7 +709,7 @@ namespace Tsavorite.core
             while (totalPagesNeeded > 1
                 && headPage < tailPage
                 && (totalPagesNeeded > hlogBase.BufferSize
-                    || hlogBase.logSizeTracker.RemainingBudget < numPagesToRead * hlogBase.PageSize)
+                    || hlogBase.logSizeTracker.RemainingBudget < (long)numPagesToRead * hlogBase.PageSize)
                 && recoveryStatus.headAddress < maxHeadAddress)
             {
                 var pageIndex = hlogBase.GetPageIndexForPage(headPage);

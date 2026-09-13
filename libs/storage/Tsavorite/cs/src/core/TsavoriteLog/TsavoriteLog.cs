@@ -793,7 +793,7 @@ namespace Tsavorite.core
         /// </summary>
         public long UnsafeGetReadOnlyAddressAbove(long newTailAddress, int numPagesAbove)
         {
-            var readOnlyAddress = allocator.CalculateReadOnlyAddress(newTailAddress, allocator.HeadAddress) + numPagesAbove * allocator.PageSize;
+            var readOnlyAddress = allocator.CalculateReadOnlyAddress(newTailAddress, allocator.HeadAddress) + (long)numPagesAbove * allocator.PageSize;
             if (readOnlyAddress > newTailAddress)
                 readOnlyAddress = newTailAddress;
             return readOnlyAddress;
