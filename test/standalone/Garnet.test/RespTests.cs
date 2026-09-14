@@ -4964,6 +4964,60 @@ namespace Garnet.test
             Assert.Throws<RedisServerException>(() => db.Execute("GETEX", [key, .. options]));
         }
 
+        [Test]
+        public void GetExpiryOutOfRangeIsRejectedWithoutKillingSession()
+        {
+            const string Key = nameof(GetExpiryOutOfRangeIsRejectedWithoutKillingSession);
+
+            var faulted = false;
+
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
+            {
+                redis.ConnectionFailed += delegate { faulted = true; };
+
+                var db = redis.GetDatabase();
+
+                ClassicAssert.True(db.StringSet(Key, "Value"));
+
+                // seconds too far in the future
+                var exc0 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("GETEX", Key, "EX", long.MaxValue.ToString()));
+                ClassicAssert.AreEqual("ERR invalid expire time in 'getex' command", exc0.Message);
+
+                // milliseconds too far in the future
+                var exc1 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("GETEX", Key, "PX", long.MaxValue.ToString()));
+                ClassicAssert.AreEqual("ERR invalid expire time in 'getex' command", exc1.Message);
+
+                // unix time too far in the future
+                var exc2 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("GETEX", Key, "EXAT", long.MaxValue.ToString()));
+                ClassicAssert.AreEqual("ERR invalid expire time in 'getex' command", exc2.Message);
+
+                // unix time ms too far in the future
+                var exc3 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("GETEX", Key, "PXAT", long.MaxValue.ToString()));
+                ClassicAssert.AreEqual("ERR invalid expire time in 'getex' command", exc3.Message);
+
+                var ticksSpace = long.MaxValue - DateTime.UtcNow.Ticks;
+                var overflowSeconds = (ticksSpace / TimeSpan.TicksPerSecond) + 1;
+                var overflowMilliseconds = (ticksSpace / TimeSpan.TicksPerMillisecond) + 1;
+
+                // seconds overflow
+                var exc4 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("GETEX", Key, "EX", overflowSeconds.ToString()));
+                ClassicAssert.AreEqual("ERR expire time overflows date in 'getex' command", exc4.Message);
+
+                // milliseconds overflow
+                var exc5 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("GETEX", Key, "PX", overflowMilliseconds.ToString()));
+                ClassicAssert.AreEqual("ERR expire time overflows date in 'getex' command", exc5.Message);
+
+                // TTL unchanged and key undeleted
+                var ttl = db.KeyTimeToLive(Key);
+                ClassicAssert.IsNull(ttl);
+
+                ClassicAssert.IsTrue(db.KeyExists(Key));
+            }
+
+            // Connection never faulted during operation
+            ClassicAssert.IsFalse(faulted);
+        }
+
         #endregion
 
         #region GETSET
