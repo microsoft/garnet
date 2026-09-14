@@ -4,6 +4,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Net;
 using System.Net.Sockets;
 using System.Text;
 using System.Threading;
@@ -13,67 +14,89 @@ using NUnit.Framework.Legacy;
 namespace Garnet.test
 {
     /// <summary>
-    /// Covers what a client is told when the configured connection limit refuses it, and the
-    /// rejected_connections metric that makes the refusal observable.
+    /// Covers connection admission control: what a refused client is told, the rejected_connections
+    /// metric that makes a refusal observable, the process-wide ceiling shared across listeners,
+    /// and CONFIG SET maxclients.
     ///
-    /// The assertions deliberately read the bytes the server sends rather than merely observing
-    /// that the connection failed. Before this behaviour existed the socket was disposed silently,
-    /// so a test that only asserted "connecting fails" passed against the defect it was meant to
-    /// catch.
+    /// The assertions read the bytes the server sends rather than merely observing that connecting
+    /// failed. A test that only asserted "connecting fails" would pass against the silent drop this
+    /// replaces, which is the defect these tests exist to catch.
     /// </summary>
     [TestFixture]
     public class ConnectionLimitTests : TestBase
     {
-        const int ConnectionLimit = 4;
+        /// <summary>
+        /// Small enough to fill quickly. One slot is held by the probe connection the INFO and
+        /// CONFIG assertions run over, so tests fill <see cref="LimitLessProbe"/> further sockets
+        /// to reach the ceiling.
+        /// </summary>
+        const int Limit = 4;
 
-        /// <summary>The wire text Redis uses, so client error handling applies unchanged.</summary>
+        const int LimitLessProbe = Limit - 1;
+
+        /// <summary>The wire text Redis uses, so existing client error handling applies unchanged.</summary>
         const string MaxClientsError = "-ERR max number of clients reached\r\n";
 
+        /// <summary>
+        /// rejected_connections is published by the monitor's sampling loop rather than read live,
+        /// and the loop only exists when a metrics frequency is configured. Without this every read
+        /// would return "0" and every assertion below would be vacuous.
+        /// </summary>
+        const int MetricsSamplingFreq = 1;
+
         GarnetServer server;
+
+        /// <summary>
+        /// A connection held open for the whole test, so INFO and CONFIG can be issued after the
+        /// server is full. A probe that connected on demand would itself be refused.
+        /// </summary>
+        Socket probe;
 
         [SetUp]
         public void Setup()
         {
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, networkConnectionLimit: ConnectionLimit);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir,
+                networkConnectionLimit: Limit, metricsSamplingFreq: MetricsSamplingFreq);
             server.Start();
+
+            probe = OpenAcceptedConnection();
         }
 
         [TearDown]
         public void TearDown()
         {
+            probe?.Dispose();
             server.Dispose();
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
             TestUtils.OnTearDown();
         }
 
+        #region connection helpers
+
         /// <summary>
-        /// Opens a raw socket and issues one PING, so the server creates a real RespServerSession.
-        /// A bare socket is not enough: TryCreateMessageConsumer needs four bytes before a session
-        /// exists, so connections that never write would not count against the limit.
+        /// Opens a socket and completes one PING, so the connection is established before the
+        /// caller opens the next. The limit counts live handlers, so a racing accept would make the
+        /// fill count unreliable.
         /// </summary>
-        static Socket OpenAcceptedConnection()
+        static Socket OpenAcceptedConnection(EndPoint endPoint = null)
         {
             var socket = new Socket(SocketType.Stream, ProtocolType.Tcp);
-            socket.Connect(TestUtils.EndPoint);
+            socket.Connect(endPoint ?? TestUtils.EndPoint);
+            socket.ReceiveTimeout = 10_000;
             socket.Send("PING\r\n"u8.ToArray());
 
             var buffer = new byte[64];
             var read = socket.Receive(buffer);
-            ClassicAssert.Greater(read, 0, "an accepted connection should have answered PING");
-            ClassicAssert.AreEqual("+PONG\r\n", Encoding.ASCII.GetString(buffer, 0, read));
+            ClassicAssert.AreEqual("+PONG\r\n", Encoding.ASCII.GetString(buffer, 0, read),
+                "an accepted connection should have answered PING");
             return socket;
         }
 
-        /// <summary>
-        /// Fills the server to its connection limit, returning the sockets so the caller can hold
-        /// them open. Waits for each to be genuinely established before opening the next, since the
-        /// limit counts live handlers and a racing accept would make the fill count unreliable.
-        /// </summary>
-        static List<Socket> FillToLimit()
+        static List<Socket> FillRemainingSlots()
         {
             var accepted = new List<Socket>();
-            for (var i = 0; i < ConnectionLimit; i++)
+            for (var i = 0; i < LimitLessProbe; i++)
                 accepted.Add(OpenAcceptedConnection());
             return accepted;
         }
@@ -85,12 +108,15 @@ namespace Garnet.test
         }
 
         /// <summary>
-        /// Reads until the peer closes, so the assertion cannot pass on a partial read that happens
-        /// to arrive before the tail. Returns everything received.
+        /// Connects and reads until the peer closes, returning everything received. Reading to the
+        /// close rather than taking the first packet means a truncated or missing tail cannot pass.
         /// </summary>
-        static string ReadToClose(Socket socket)
+        static string ConnectAndReadToClose(EndPoint endPoint = null)
         {
-            socket.ReceiveTimeout = 5000;
+            using var socket = new Socket(SocketType.Stream, ProtocolType.Tcp);
+            socket.Connect(endPoint ?? TestUtils.EndPoint);
+            socket.ReceiveTimeout = 10_000;
+
             var received = new List<byte>();
             var buffer = new byte[256];
             while (true)
@@ -102,7 +128,7 @@ namespace Garnet.test
                 }
                 catch (SocketException)
                 {
-                    // Peer reset rather than closing gracefully; report what arrived, if anything.
+                    // Peer reset rather than closing gracefully; report whatever arrived first.
                     break;
                 }
 
@@ -113,22 +139,104 @@ namespace Garnet.test
             return Encoding.ASCII.GetString(received.ToArray());
         }
 
+        #endregion
+
+        #region probe exchange
+
         /// <summary>
-        /// The load-bearing assertion: a refused client is TOLD why. Asserting only that the
-        /// connection closed would pass against a silent drop, which is the behaviour this fixes.
+        /// Issues one command on the persistent probe and returns its reply.
+        ///
+        /// A PING is pipelined behind the command and the read runs until "+PONG\r\n" arrives.
+        /// RESP replies are ordered, so the sentinel cannot arrive before the preceding reply is
+        /// complete -- which makes this correct for a bulk string of any length without the probe
+        /// having to parse RESP framing itself.
+        ///
+        /// Commands are sent as RESP arrays: Garnet's inline parsing handles single-token commands
+        /// but not multi-token ones, so an inline "CONFIG GET maxclients" produces no reply at all.
+        /// </summary>
+        string Exchange(params string[] command)
+        {
+            var request = new StringBuilder();
+            request.Append('*').Append(command.Length).Append("\r\n");
+            foreach (var token in command)
+                request.Append('$').Append(token.Length).Append("\r\n").Append(token).Append("\r\n");
+            request.Append("*1\r\n$4\r\nPING\r\n");
+
+            probe.Send(Encoding.ASCII.GetBytes(request.ToString()));
+
+            const string Sentinel = "+PONG\r\n";
+            var received = new List<byte>();
+            var buffer = new byte[8192];
+
+            while (true)
+            {
+                int read;
+                try
+                {
+                    read = probe.Receive(buffer);
+                }
+                catch (SocketException e)
+                {
+                    Assert.Fail($"the probe connection failed while reading the reply to '{string.Join(' ', command)}': {e.Message}");
+                    return null;
+                }
+
+                ClassicAssert.Greater(read, 0, $"the server closed the probe connection during '{string.Join(' ', command)}'");
+                received.AddRange(new ArraySegment<byte>(buffer, 0, read));
+
+                var text = Encoding.ASCII.GetString(received.ToArray());
+                if (text.EndsWith(Sentinel, StringComparison.Ordinal))
+                    return text[..^Sentinel.Length];
+            }
+        }
+
+        long ReadRejectedConnections()
+        {
+            var info = Exchange("INFO", "STATS");
+            foreach (var line in info.Split("\r\n", StringSplitOptions.RemoveEmptyEntries))
+            {
+                if (!line.StartsWith("rejected_connections:", StringComparison.Ordinal)) continue;
+                return long.Parse(line["rejected_connections:".Length..]);
+            }
+
+            Assert.Fail("INFO STATS did not report rejected_connections");
+            return -1;
+        }
+
+        /// <summary>
+        /// Polls until rejected_connections reaches <paramref name="expected"/>, because the
+        /// monitor publishes it on a sampling interval rather than at the moment of the refusal.
+        ///
+        /// The failure message names the expected count and the last value seen, so a build that
+        /// stops counting rejections fails with a diagnosis rather than with "expected 0, was 0".
+        /// </summary>
+        void WaitForRejectedConnections(long expected)
+        {
+            var sw = Stopwatch.StartNew();
+            long last = -1;
+            while (sw.Elapsed < TimeSpan.FromSeconds(30))
+            {
+                last = ReadRejectedConnections();
+                if (last == expected) return;
+                Thread.Sleep(100);
+            }
+
+            Assert.Fail($"rejected_connections never reached {expected}; last read {last}");
+        }
+
+        #endregion
+
+        /// <summary>
+        /// The load-bearing assertion: a refused client is told why. Asserting only that the
+        /// connection closed would pass against a silent drop.
         /// </summary>
         [Test]
         public void RejectedConnectionReceivesAnErrorRatherThanASilentClose()
         {
-            var accepted = FillToLimit();
+            var accepted = FillRemainingSlots();
             try
             {
-                using var refused = new Socket(SocketType.Stream, ProtocolType.Tcp);
-                refused.Connect(TestUtils.EndPoint);
-
-                var reply = ReadToClose(refused);
-
-                ClassicAssert.AreEqual(MaxClientsError, reply,
+                ClassicAssert.AreEqual(MaxClientsError, ConnectAndReadToClose(),
                     "a connection refused by the limit must receive the RESP error before the close, " +
                     "not an unexplained reset");
             }
@@ -139,19 +247,18 @@ namespace Garnet.test
         }
 
         /// <summary>
-        /// The error must arrive without the client sending anything. A refused connection never
-        /// gets a session, so there is no command for the server to respond to -- the write has to
-        /// be unsolicited, at accept time.
+        /// The error must arrive unsolicited. A refused connection never gets a session, so there
+        /// is no command for the server to reply to -- the write has to happen at accept time.
         /// </summary>
         [Test]
         public void TheErrorArrivesWithoutTheClientSendingAnything()
         {
-            var accepted = FillToLimit();
+            var accepted = FillRemainingSlots();
             try
             {
                 using var refused = new Socket(SocketType.Stream, ProtocolType.Tcp);
                 refused.Connect(TestUtils.EndPoint);
-                refused.ReceiveTimeout = 5000;
+                refused.ReceiveTimeout = 10_000;
 
                 var buffer = new byte[128];
                 var read = refused.Receive(buffer);
@@ -165,32 +272,31 @@ namespace Garnet.test
         }
 
         /// <summary>
-        /// Pins the counter, and pins that it counts rejections specifically: the accepted
-        /// connections that filled the server must not be counted, nor must the normal churn of
-        /// connecting and disconnecting.
+        /// Pins the counter, and pins that it counts rejections specifically rather than accepts:
+        /// the connections that filled the server must leave it at zero, and a later accepted
+        /// connection must not advance it.
         /// </summary>
         [Test]
         public void RejectedConnectionsAreCountedInInfoStats()
         {
-            ClassicAssert.AreEqual(0, ReadRejectedConnections(),
-                "no connection has been refused yet");
-
-            var accepted = FillToLimit();
+            var accepted = FillRemainingSlots();
             try
             {
-                ClassicAssert.AreEqual(0, ReadRejectedConnections(),
-                    "connections that were accepted must not count as rejected");
-
                 const int Refusals = 3;
                 for (var i = 0; i < Refusals; i++)
-                {
-                    using var refused = new Socket(SocketType.Stream, ProtocolType.Tcp);
-                    refused.Connect(TestUtils.EndPoint);
-                    _ = ReadToClose(refused);
-                }
+                    _ = ConnectAndReadToClose();
 
+                WaitForRejectedConnections(Refusals);
+
+                // Free a slot and use it, to show the counter tracks refusals and not churn.
+                accepted[0].Dispose();
+                accepted.RemoveAt(0);
+                WaitForAcceptance().Dispose();
+
+                // Two sampling intervals, so a build that miscounted accepts has had time to show it.
+                Thread.Sleep(MetricsSamplingFreq * 2000);
                 ClassicAssert.AreEqual(Refusals, ReadRejectedConnections(),
-                    "every refused connection must be counted exactly once");
+                    "accepted connections must not be counted as rejected");
             }
             finally
             {
@@ -199,52 +305,71 @@ namespace Garnet.test
         }
 
         /// <summary>
-        /// Once connections drain, the server accepts again and the counter stays put -- it is a
-        /// cumulative total, not a gauge of the current state.
+        /// Lowering maxclients below the live population refuses the next connection, and raising
+        /// it admits again. This is the only assertion that pins the CONFIG SET update action
+        /// reaching the accept path -- a startup-configured limit would pass without it.
         /// </summary>
         [Test]
-        public void TheCounterIsCumulativeAndTheServerRecoversWhenConnectionsDrain()
+        public void MaxClientsSetAtRuntimeTakesEffectOnTheAcceptPath()
         {
-            var accepted = FillToLimit();
+            ClassicAssert.AreEqual($"*2\r\n$10\r\nmaxclients\r\n${Limit.ToString().Length}\r\n{Limit}\r\n",
+                Exchange("CONFIG", "GET", "maxclients"),
+                "CONFIG GET should report the startup limit before anything changes it");
 
-            using (var refused = new Socket(SocketType.Stream, ProtocolType.Tcp))
-            {
-                refused.Connect(TestUtils.EndPoint);
-                _ = ReadToClose(refused);
-            }
+            // The probe plus one more, then lower the ceiling onto exactly that population.
+            using var held = OpenAcceptedConnection();
 
-            ClassicAssert.AreEqual(1, ReadRejectedConnections());
+            ClassicAssert.AreEqual("+OK\r\n", Exchange("CONFIG", "SET", "maxclients", "2"));
+            ClassicAssert.AreEqual("*2\r\n$10\r\nmaxclients\r\n$1\r\n2\r\n", Exchange("CONFIG", "GET", "maxclients"));
 
-            DisposeAll(accepted);
+            ClassicAssert.AreEqual(MaxClientsError, ConnectAndReadToClose(),
+                "lowering maxclients onto the live population must refuse the next connection");
 
-            // The limit counts live handlers, so capacity returns once the server observes the
-            // closes. Poll rather than sleep a fixed interval.
-            var reconnected = WaitForAcceptance();
+            // Existing connections are untouched by the lowering, as in Redis. ECHO rather than
+            // PING, because Exchange's sentinel is a PING reply and a command whose own reply is
+            // also "+PONG\r\n" would let the read stop one reply early.
+            ClassicAssert.AreEqual("$5\r\nalive\r\n", Exchange("ECHO", "alive"),
+                "lowering maxclients must not disconnect established clients");
+
+            ClassicAssert.AreEqual("+OK\r\n", Exchange("CONFIG", "SET", "maxclients", "10"));
+            WaitForAcceptance().Dispose();
+        }
+
+        /// <summary>
+        /// -1 restores unlimited admission at runtime.
+        /// </summary>
+        [Test]
+        public void MaxClientsCanBeSetToUnlimitedAtRuntime()
+        {
+            var accepted = FillRemainingSlots();
             try
             {
-                ClassicAssert.AreEqual(1, ReadRejectedConnections(),
-                    "a successful connection must not change the rejected count");
+                ClassicAssert.AreEqual(MaxClientsError, ConnectAndReadToClose());
+
+                ClassicAssert.AreEqual("+OK\r\n", Exchange("CONFIG", "SET", "maxclients", "-1"));
+                OpenAcceptedConnection().Dispose();
             }
             finally
             {
-                reconnected.Dispose();
+                DisposeAll(accepted);
             }
         }
 
         /// <summary>
-        /// Polls until the server has capacity again, returning the established socket.
+        /// Polls until the server has capacity, returning the established socket. Capacity returns
+        /// when the server observes the closes, which is not synchronous with the client's dispose.
         /// </summary>
         static Socket WaitForAcceptance()
         {
             var sw = Stopwatch.StartNew();
-            while (sw.Elapsed < TimeSpan.FromSeconds(20))
+            while (sw.Elapsed < TimeSpan.FromSeconds(30))
             {
                 var socket = new Socket(SocketType.Stream, ProtocolType.Tcp);
                 try
                 {
                     socket.Connect(TestUtils.EndPoint);
-                    socket.Send("PING\r\n"u8.ToArray());
                     socket.ReceiveTimeout = 1000;
+                    socket.Send("PING\r\n"u8.ToArray());
 
                     var buffer = new byte[64];
                     var read = socket.Receive(buffer);
@@ -257,54 +382,86 @@ namespace Garnet.test
                 Thread.Sleep(50);
             }
 
-            Assert.Fail("the server never regained capacity after its connections drained");
+            Assert.Fail("the server never regained capacity");
             return null;
+        }
+    }
+
+    /// <summary>
+    /// The ceiling is one process-wide budget, not one per listener. Its own fixture because it
+    /// needs a second endpoint.
+    /// </summary>
+    [TestFixture]
+    public class ConnectionLimitAcrossListenersTests : TestBase
+    {
+        const int Limit = 3;
+
+        const string MaxClientsError = "-ERR max number of clients reached\r\n";
+
+        GarnetServer server;
+        EndPoint first;
+        EndPoint second;
+
+        [SetUp]
+        public void Setup()
+        {
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
+
+            first = TestUtils.EndPoint;
+            second = new IPEndPoint(IPAddress.Loopback, TestUtils.TestPort + 1);
+
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir,
+                endpoints: [first, second], networkConnectionLimit: Limit);
+            server.Start();
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            server.Dispose();
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
+            TestUtils.OnTearDown();
         }
 
         /// <summary>
-        /// Reads rejected_connections out of INFO STATS. Uses its own connection, which is one of
-        /// the limited slots, so callers must leave room for it.
+        /// Filling one listener to the ceiling must refuse the other listener too. With a
+        /// per-listener limit each endpoint would have its own ceiling and this would be accepted,
+        /// giving a process that admits N times the configured maximum.
         /// </summary>
-        static long ReadRejectedConnections()
+        [Test]
+        public void TheCeilingIsSharedAcrossListenersRatherThanGrantedToEachOne()
         {
-            using var socket = new Socket(SocketType.Stream, ProtocolType.Tcp);
-            socket.Connect(TestUtils.EndPoint);
-            socket.ReceiveTimeout = 5000;
-            socket.Send("INFO STATS\r\n"u8.ToArray());
-
-            var received = new List<byte>();
-            var buffer = new byte[8192];
-
-            // INFO is a single bulk string; read until its declared length has arrived.
-            while (true)
+            var accepted = new List<Socket>();
+            try
             {
-                var read = socket.Receive(buffer);
-                ClassicAssert.Greater(read, 0, "INFO STATS returned no data -- is the probe itself being refused?");
-                received.AddRange(new ArraySegment<byte>(buffer, 0, read));
+                for (var i = 0; i < Limit; i++)
+                {
+                    var socket = new Socket(SocketType.Stream, ProtocolType.Tcp);
+                    socket.Connect(first);
+                    socket.ReceiveTimeout = 10_000;
+                    socket.Send("PING\r\n"u8.ToArray());
 
-                var text = Encoding.ASCII.GetString(received.ToArray());
-                if (text.StartsWith('-'))
-                    Assert.Fail($"INFO STATS failed: {text.Trim()}");
+                    var buffer = new byte[64];
+                    var read = socket.Receive(buffer);
+                    ClassicAssert.AreEqual("+PONG\r\n", Encoding.ASCII.GetString(buffer, 0, read));
+                    accepted.Add(socket);
+                }
 
-                var headerEnd = text.IndexOf("\r\n", StringComparison.Ordinal);
-                if (headerEnd < 0) continue;
+                using var refused = new Socket(SocketType.Stream, ProtocolType.Tcp);
+                refused.Connect(second);
+                refused.ReceiveTimeout = 10_000;
 
-                var declared = int.Parse(text.AsSpan(1, headerEnd - 1));
-                if (received.Count >= headerEnd + 2 + declared + 2)
-                    return ParseRejected(text);
+                var reply = new byte[128];
+                var got = refused.Receive(reply);
+
+                ClassicAssert.AreEqual(MaxClientsError, Encoding.ASCII.GetString(reply, 0, got),
+                    $"the second listener admitted a connection while the process already held {Limit}, " +
+                    "so the ceiling is being granted per listener rather than shared");
             }
-        }
-
-        static long ParseRejected(string info)
-        {
-            foreach (var line in info.Split("\r\n", StringSplitOptions.RemoveEmptyEntries))
+            finally
             {
-                if (!line.StartsWith("rejected_connections:", StringComparison.Ordinal)) continue;
-                return long.Parse(line["rejected_connections:".Length..]);
+                foreach (var socket in accepted) socket.Dispose();
             }
-
-            Assert.Fail("INFO STATS did not report rejected_connections");
-            return -1;
         }
     }
 }

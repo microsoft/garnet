@@ -238,6 +238,29 @@ namespace Garnet.test
         }
 
         [Test]
+        public void MaxClientsDefaultsToTheRedisValueOnBothOptionSurfaces()
+        {
+            // There are two option surfaces and only one of them parses defaults.conf. TestUtils and
+            // embedded hosts build GarnetServerOptions directly, so a default set only on the command
+            // line would give CLI hosts 10000 and everyone else unlimited -- the exact divergence that
+            // bit the network buffer pool size. Both paths are pinned here.
+            ClassicAssert.AreEqual(10000, GarnetServerOptions.DefaultNetworkConnectionLimit);
+            ClassicAssert.AreEqual(10000, new GarnetServerOptions().NetworkConnectionLimit,
+                "an embedded or test host that configures nothing must get the Redis default");
+
+            var ok = ServerSettingsManager.TryParseCommandLineArguments([], out var options, out _, out _, out _, silentMode: true);
+            ClassicAssert.IsTrue(ok);
+            ClassicAssert.AreEqual(10000, options.GetServerOptions().NetworkConnectionLimit,
+                "defaults.conf must resolve to the same ceiling as GarnetServerOptions");
+
+            ok = ServerSettingsManager.TryParseCommandLineArguments(["--network-connection-limit", "-1"],
+                out options, out _, out _, out _, silentMode: true);
+            ClassicAssert.IsTrue(ok);
+            ClassicAssert.AreEqual(-1, options.GetServerOptions().NetworkConnectionLimit,
+                "-1 must still be accepted, since it is the documented way to run unlimited");
+        }
+
+        [Test]
         public void NetworkBufferBudgetOptionParsing()
         {
             // Defaults: a 1 GB process-wide budget with a 16 KB receive floor and a higher 64 KB send floor.
