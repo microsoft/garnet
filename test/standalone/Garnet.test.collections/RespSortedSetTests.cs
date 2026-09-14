@@ -5348,6 +5348,41 @@ namespace Garnet.test
         }
 
         [Test]
+        public void CanDoSortedSetCommandsWithBadNumKeysLC()
+        {
+            using var lightClientRequest = TestUtils.CreateRequest();
+
+            // Same overflow as CanDoZInterStoreWithBadNumKeysLC, for the sibling commands.
+            var expectedResponse = $"-{Encoding.ASCII.GetString(CmdStrings.RESP_SYNTAX_ERROR)}\r\n+PONG\r\n";
+
+            var commands = new[]
+            {
+                "ZMPOP 2147483647 zset1 MIN",
+                "ZUNION 2147483647 zset1",
+                "ZUNIONSTORE dest 2147483647 zset1",
+                "ZINTER 2147483647 zset1",
+                "ZINTERCARD 2147483647 zset1",
+                "ZMPOP 2147483646 zset1 MIN",
+                "ZUNION 2147483646 zset1",
+                "ZUNIONSTORE dest 2147483646 zset1",
+                "ZINTER 2147483646 zset1",
+                "ZINTERCARD 2147483646 zset1",
+            };
+
+            foreach (var command in commands)
+            {
+                var response = lightClientRequest.SendCommands(command, "PING");
+                TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+            }
+
+            // COMMAND GETKEYS applies keynum key-specs before the command handlers run,
+            // so an inflated numkeys must be clamped there too instead of walking the
+            // parse state out of bounds.
+            var getKeysResponse = lightClientRequest.SendCommands("COMMAND GETKEYS ZUNION 2147483647 zset1", "PING");
+            TestUtils.AssertEqualUpToExpectedLength("*1\r\n$5\r\nzset1\r\n+PONG\r\n", getKeysResponse);
+        }
+
+        [Test]
         public void ZInterResultOrder()
         {
             using var lightClientRequest = TestUtils.CreateRequest();
