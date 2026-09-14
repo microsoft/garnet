@@ -197,6 +197,11 @@ namespace Tsavorite.core
         /// above this are in the snapshot region and their objects must be copied from the snapshot object-log to the main object-log during the flush.</summary>
         internal long recoveryFormerFlushedUntilAddress;
 
+        /// <summary>The checkpoint metadata version this recovery flush is rewriting (<see cref="HybridLogRecoveryInfo.hybridLogRecoveryVersion"/>). Selects
+        /// the object-log record decode (downlevel v2.1 vs current chunk-framed) for the records being flushed, instead of a per-record position-word flag.
+        /// Defaults to the current version so non-recovery flushes never take a downlevel path.</summary>
+        internal int checkpointVersion = HybridLogRecoveryInfo.CheckpointVersion;
+
         /// <inheritdoc/>
         public override string ToString()
         {

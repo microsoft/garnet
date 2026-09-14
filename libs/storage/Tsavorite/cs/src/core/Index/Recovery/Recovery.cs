@@ -30,6 +30,11 @@ namespace Tsavorite.core
         /// <summary>The current head address; updated as pages are evicted during recovery.</summary>
         public long headAddress;
 
+        /// <summary>The checkpoint metadata version being recovered (<see cref="HybridLogRecoveryInfo.hybridLogRecoveryVersion"/>). Selects the
+        /// object-log record decode (downlevel v2.1 vs current chunk-framed) for pass-2 object loads and recovery flushes. Defaults to the current
+        /// version so any path that does not set it never takes a downlevel decode.</summary>
+        public int checkpointVersion = HybridLogRecoveryInfo.CheckpointVersion;
+
         /// <summary>For snapshot recovery, the hybrid-log/snapshot boundary (the snapshot phase's scanFromAddress). Pages at or
         /// above its page are snapshot-region pages that were read from the snapshot file and are not yet durable on the main log,
         /// so they must be flushed before eviction. -1 during hybrid-log recovery, where all read pages are already durable.</summary>
@@ -141,10 +146,15 @@ namespace Tsavorite.core
         internal readonly long fuzzyRegionStartAddress;
         internal readonly bool undoNextVersion;
 
-        internal RecoveryOptions(long fuzzyRegionStartAddress, bool undoNextVersion)
+        /// <summary>The checkpoint metadata version being recovered (<see cref="HybridLogRecoveryInfo.hybridLogRecoveryVersion"/>). Selects the
+        /// object-log record decode (downlevel v2.1 vs current chunk-framed) instead of a per-record position-word flag.</summary>
+        internal readonly int checkpointVersion;
+
+        internal RecoveryOptions(long fuzzyRegionStartAddress, bool undoNextVersion, int checkpointVersion)
         {
             this.fuzzyRegionStartAddress = fuzzyRegionStartAddress;
             this.undoNextVersion = undoNextVersion;
+            this.checkpointVersion = checkpointVersion;
         }
     }
 
@@ -467,7 +477,8 @@ namespace Tsavorite.core
 
             if (!SetRecoveryPageRanges(recoveredHLCInfo, numPagesToPreload, recoverFromAddress, out long tailAddress, out long headAddress, out long scanFromAddress))
                 return -1;
-            RecoveryOptions options = new(fuzzyRegionStartAddress: recoveredHLCInfo.info.fuzzyRegionStartAddress, undoNextVersion);
+            RecoveryOptions options = new(fuzzyRegionStartAddress: recoveredHLCInfo.info.fuzzyRegionStartAddress, undoNextVersion,
+                checkpointVersion: recoveredHLCInfo.info.hybridLogRecoveryVersion);
 
             // Make index consistent for version v
             long readOnlyAddress;
@@ -684,7 +695,7 @@ namespace Tsavorite.core
             var pageIndex = hlogBase.GetPageIndexForPage(page);
             recoveryStatus.flushStatus[pageIndex] = FlushStatus.Pending;
             hlogBase.AsyncFlushPagesForRecovery(recoveryStatus.snapshotScanFromAddress, page, 1, AsyncFlushPageCallbackForRecovery,
-                recoveryStatus, recoveryStatus.objectLogRecoveryDevice, formerFlushedUntilAddress: recoveryStatus.snapshotScanFromAddress,
+                recoveryStatus, recoveryStatus.checkpointVersion, recoveryStatus.objectLogRecoveryDevice, formerFlushedUntilAddress: recoveryStatus.snapshotScanFromAddress,
                 snapshotObjectLogReadEndWord: recoveryStatus.objectLogRecoveryReadEnd.word);
             recoveryStatus.WaitFlush(pageIndex);
             recoveryStatus.snapshotPageFlushedToMain[pageIndex] = true;
@@ -788,6 +799,7 @@ namespace Tsavorite.core
         {
             var recoveryStatus = GetPageRangesToRead(scanFromAddress, untilAddress, checkpointType, out int startPage, out int endPage, out int numPagesToReadPerIteration);
             recoveryStatus.headAddress = headAddress;
+            recoveryStatus.checkpointVersion = options.checkpointVersion;
 
             // Free any pages still allocated below startPage before reading. The store is freshly constructed for recovery with the allocator's minimum
             // pages allocated at page 0 (Head=Begin=Tail=0); when the checkpoint's BeginAddress is above page 0 those low pages lie below the first page we
@@ -878,7 +890,7 @@ namespace Tsavorite.core
             if (ProcessReadPage(recoverFromAddress, untilAddress, nextVersion, options, recoveryStatus, page, pageIndex))
             {
                 // Page was modified due to undoFutureVersion. Flush it to disk; the callback issues the after-capacity read request if necessary.
-                hlogBase.AsyncFlushPagesForRecovery(scanFromAddress, page, 1, AsyncFlushPageCallbackForRecovery, recoveryStatus);
+                hlogBase.AsyncFlushPagesForRecovery(scanFromAddress, page, 1, AsyncFlushPageCallbackForRecovery, recoveryStatus, options.checkpointVersion);
                 return;
             }
 
@@ -961,6 +973,7 @@ namespace Tsavorite.core
             // Seed the head from the preceding hybrid-log phase so the snapshot-read loop (TrimLogPages) and the deferred object load
             // evict from, and track, the correct lowest-resident address across the full recovered range.
             recoveryStatus.headAddress = headAddress;
+            recoveryStatus.checkpointVersion = options.checkpointVersion;
 
             // Mark this as snapshot recovery: eviction (read-time and load-time) must flush a snapshot-region page to the main log before freeing
             // it (FlushIfNeededThenEvictPageForRecovery), since it was read from the snapshot file and is not otherwise durable. scanFromAddress is
@@ -1105,7 +1118,7 @@ namespace Tsavorite.core
                 }
 
                 var remainingBudget = hlogBase.logSizeTracker.RemainingBudget;
-                var pageCutoff = hlogBase.FindHeadAddressCutoffOnPage(page, pageUntilAddress, totalPageObjectSize, page - hlogBase.GetPage(recoveryStatus.headAddress), remainingBudget, out var numPagesBelowToEvict);
+                var pageCutoff = hlogBase.FindHeadAddressCutoffOnPage(page, pageUntilAddress, totalPageObjectSize, page - hlogBase.GetPage(recoveryStatus.headAddress), remainingBudget, recoveryStatus.checkpointVersion, out var numPagesBelowToEvict);
 
                 // Evict pages below if needed
                 var currentHeadPage = hlogBase.GetPage(recoveryStatus.headAddress);
@@ -1169,36 +1182,36 @@ namespace Tsavorite.core
                 var readsFromMain = page < snapshotBoundaryPage || recoveryStatus.snapshotPageFlushedToMain[pageIndex];
                 if (readsFromMain)
                 {
-                    hlogBase.LoadObjectsForRecoveryPass2(page, pageFromAddress, pageUntilAddress, objectLogDevice: null);
+                    hlogBase.LoadObjectsForRecoveryPass2(page, pageFromAddress, pageUntilAddress, objectLogDevice: null, recoveryStatus.checkpointVersion);
                     return;
                 }
 
                 var boundaryAddress = recoveryStatus.snapshotScanFromAddress;
                 if (page == snapshotBoundaryPage && pageFromAddress < boundaryAddress)
                 {
-                    hlogBase.LoadObjectsForRecoveryPass2(page, pageFromAddress, Math.Min(pageUntilAddress, boundaryAddress), objectLogDevice: null);
+                    hlogBase.LoadObjectsForRecoveryPass2(page, pageFromAddress, Math.Min(pageUntilAddress, boundaryAddress), objectLogDevice: null, recoveryStatus.checkpointVersion);
                     pageFromAddress = boundaryAddress;
                 }
 
                 if (pageFromAddress < pageUntilAddress)
                     hlogBase.LoadObjectsForRecoveryPass2(page, pageFromAddress, pageUntilAddress, snapshotObjectLogDevice,
-                        recoveryStatus.objectLogRecoveryReadEnd);
+                        recoveryStatus.checkpointVersion, recoveryStatus.objectLogRecoveryReadEnd);
             }
 
             long CalculatePageObjectSizes(int page, long pageFromAddress, long pageUntilAddress)
             {
                 var pageIndex = hlogBase.GetPageIndexForPage(page);
                 if (page != snapshotBoundaryPage || recoveryStatus.snapshotPageFlushedToMain[pageIndex])
-                    return hlogBase.CalculatePageObjectSizes(page, pageFromAddress, pageUntilAddress);
+                    return hlogBase.CalculatePageObjectSizes(page, pageFromAddress, pageUntilAddress, recoveryStatus.checkpointVersion);
 
                 // Main- and snapshot-object-log positions are unrelated address spaces. Size each side independently
                 // so neither the budget estimate nor its final-record hint treats the first record across the boundary as a successor.
                 var boundaryAddress = recoveryStatus.snapshotScanFromAddress;
                 var mainSize = pageFromAddress < boundaryAddress
-                    ? hlogBase.CalculatePageObjectSizes(page, pageFromAddress, Math.Min(pageUntilAddress, boundaryAddress))
+                    ? hlogBase.CalculatePageObjectSizes(page, pageFromAddress, Math.Min(pageUntilAddress, boundaryAddress), recoveryStatus.checkpointVersion)
                     : 0;
                 var snapshotSize = pageUntilAddress > boundaryAddress
-                    ? hlogBase.CalculatePageObjectSizes(page, Math.Max(pageFromAddress, boundaryAddress), pageUntilAddress)
+                    ? hlogBase.CalculatePageObjectSizes(page, Math.Max(pageFromAddress, boundaryAddress), pageUntilAddress, recoveryStatus.checkpointVersion)
                     : 0;
                 return checked(mainSize + snapshotSize);
             }
@@ -1417,7 +1430,7 @@ namespace Tsavorite.core
                     // hash directly from the record image.
                     var keyHashCode = logRecord.DataHeader.KeyIsInline
                         ? storeFunctions.GetKeyHashCode64(logRecord)
-                        : hlogBase.ComputeRecoveryOverflowKeyHash(in logRecord, ref isolatedKeyReadBuffers, objectLogRecoveryDevice, objectLogRecoveryReadEnd);
+                        : hlogBase.ComputeRecoveryOverflowKeyHash(in logRecord, ref isolatedKeyReadBuffers, objectLogRecoveryDevice, options.checkpointVersion, objectLogRecoveryReadEnd);
                     HashEntryInfo hei = new(keyHashCode);
                     FindOrCreateTag(ref hei, hlogBase.BeginAddress);
 

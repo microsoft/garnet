@@ -24,10 +24,12 @@ namespace Tsavorite.core
         // ── Flag bits in the top 4 bits of word (bits 60-63) ─────────────────────────
 
         /// <summary>Bit position of the <c>ReuseObjectIdForSize</c> flag in <see cref="word"/>.
-        /// When set, the on-disk overflow/object length uses the legacy split encoding: (RDH KeyLength/ValueLength field low bits) +
-        /// (objectId slot at keyAddress/valueAddress high 32 bits), with no length framing in the object-log stream. When clear, the record
-        /// uses the objectId-hint format (the authoritative length comes from the object-log stream framing).
-        /// The flag is the per-record discriminator selecting the legacy read/decode path.</summary>
+        /// v7 records set it to mark the downlevel split length encoding: (RDH KeyLength/ValueLength field low bits) +
+        /// (objectId slot at keyAddress/valueAddress high 32 bits), with no length framing in the object-log stream. Current records leave it
+        /// clear and use the objectId-hint format (the authoritative length comes from the object-log stream framing).
+        /// The object-log decode is no longer selected from this flag: recovery selects the downlevel-vs-current decode from the checkpoint
+        /// metadata version (<see cref="HybridLogRecoveryInfo.UsesDownlevelObjectLog(int)"/>). The bit is retained (v7 files on disk still have
+        /// it set) but is otherwise free for future use; new records must not depend on its legacy meaning.</summary>
         internal const int kReuseObjectIdForSizeBit = 63;
         internal const ulong kReuseObjectIdForSizeMask = 1UL << kReuseObjectIdForSizeBit;
 

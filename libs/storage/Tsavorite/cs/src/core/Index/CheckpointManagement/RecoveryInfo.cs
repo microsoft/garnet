@@ -26,6 +26,17 @@ namespace Tsavorite.core
         /// <summary>Oldest checkpoint version this build can recover. Version 7 checkpoints remain readable.</summary>
         public const int MinRecoverableCheckpointVersion = 7;
 
+        /// <summary>First checkpoint version whose object log uses the chunk-framed length-hint encoding. Versions below this wrote the
+        /// object log in the downlevel v2.1 dense/split-length encoding (see <see cref="LogRecord.GetObjectLogRecordStartPositionAndLengths_v21"/>).
+        /// Recovery selects the object-log decode from the checkpoint's metadata version (threaded via <see cref="RecoveryOptions"/> and
+        /// <see cref="PageAsyncFlushResult{TContext}"/>), not from a per-record position-word flag.</summary>
+        internal const int ChunkFramedObjectLogCheckpointVersion = 8;
+
+        /// <summary>Whether a checkpoint of <paramref name="checkpointVersion"/> wrote its object log in the downlevel v2.1
+        /// dense/split-length encoding rather than the current chunk-framed length-hint encoding.</summary>
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
+        internal static bool UsesDownlevelObjectLog(int checkpointVersion) => checkpointVersion < ChunkFramedObjectLogCheckpointVersion;
+
         /// <summary>
         /// HybridLogRecoveryVersion 
         /// </summary>

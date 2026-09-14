@@ -11,9 +11,10 @@ namespace Tsavorite.core
     /// <para>In this encoding the on-disk overflow/object length is split across two locations: the low
     /// <see cref="RecordDataHeader.kKeyLengthBits"/> / <see cref="RecordDataHeader.kValueLengthBits"/> bits live in the RDH
     /// KeyLength/ValueLength field, and the next 32 bits are in the objectId slot at keyAddress/valueAddress. The object-log stream
-    /// carries no length framing. The record's ObjectLogPosition word has the
-    /// <see cref="ObjectLogFilePositionInfo.kReuseObjectIdForSizeBit"/> flag SET; that flag is the per-record discriminator that selects
-    /// this decode on read (only reachable while recovering a downlevel checkpoint).</para>
+    /// carries no length framing. v7 records set the record's ObjectLogPosition
+    /// <see cref="ObjectLogFilePositionInfo.kReuseObjectIdForSizeBit"/> flag, but recovery no longer reads it: this decode is selected
+    /// from the checkpoint metadata version (<see cref="HybridLogRecoveryInfo.UsesDownlevelObjectLog(int)"/>, threaded via
+    /// <see cref="RecoveryOptions"/> and <see cref="PageAsyncFlushResult{TContext}"/>), reachable only while recovering a downlevel checkpoint.</para>
     /// </summary>
     public unsafe partial struct LogRecord : ISourceLogRecord
     {

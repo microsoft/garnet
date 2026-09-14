@@ -124,7 +124,7 @@ namespace Tsavorite.core
         /// <param name="segmentSizeBits">Number of bits in segment size</param>
         /// <returns>False if requestedKey is set and we read an Overflow key and it did not match; otherwise true</returns>
         [MethodImpl(MethodImplOptions.NoInlining)]
-        public bool ReadRecordObjects<TKey>(ref LogRecord logRecord, TKey requestedKey, int segmentSizeBits)
+        public bool ReadRecordObjects<TKey>(ref LogRecord logRecord, TKey requestedKey, int segmentSizeBits, int checkpointVersion)
             where TKey : IKey
 #if NET9_0_OR_GREATER
                 , allows ref struct
@@ -135,9 +135,9 @@ namespace Tsavorite.core
                 throw new TsavoriteException("ReadBuffers are required to ReadRecordObjects");
 
             // GetObjectLogRecordStartPositionAndLengths returns initial read extents from objectId hints for a current record, or exact
-            // lengths from the split RDH+objectId-slot encoding for a legacy record.
-            var positionWord = logRecord.GetObjectLogRecordStartPositionAndLengths(out var keyLength, out var valueLength);
-            var isLegacy = logRecord.HasReuseObjectIdForSize;
+            // lengths from the split RDH+objectId-slot encoding for a downlevel (v2.1) record.
+            var positionWord = logRecord.GetObjectLogRecordStartPositionAndLengths(out var keyLength, out var valueLength, checkpointVersion);
+            var isLegacy = HybridLogRecoveryInfo.UsesDownlevelObjectLog(checkpointVersion);
             recordStartPosition = new ObjectLogFilePositionInfo(positionWord, segmentSizeBits);
             var initialLength = logRecord.DataHeader.KeyIsOverflow ? (ulong)keyLength : valueLength;
             var initialEnd = recordStartPosition;
@@ -213,16 +213,16 @@ namespace Tsavorite.core
         /// <summary>Recovery Pass 1 (index build) helper: read ONLY this record's overflow key from the object log and return its hash code,
         /// without reading the value or touching the transient <see cref="ObjectIdMap"/> (which is not populated until Pass 2, so
         /// <see cref="LogRecord.Key"/> cannot resolve an overflow key during Pass 1). Mirrors the overflow-key branch of
-        /// <see cref="ReadRecordObjects{TKey}(ref LogRecord, TKey, int)"/>: the key bytes are read into a temporary pinned buffer and hashed via
+        /// <see cref="ReadRecordObjects{TKey}(ref LogRecord, TKey, int, int)"/>: the key bytes are read into a temporary pinned buffer and hashed via
         /// the store's comparer (which hashes key bytes only). The caller must have set up the read-ahead via <see cref="OnBeginReadRecords"/> at
         /// the record's object-log start position, and the record must have an overflow key.</summary>
-        internal long ReadOverflowKeyHashCodeForRecovery(in LogRecord logRecord, int segmentSizeBits)
+        internal long ReadOverflowKeyHashCodeForRecovery(in LogRecord logRecord, int segmentSizeBits, int checkpointVersion)
         {
             Debug.Assert(logRecord.DataHeader.KeyIsOverflow, "Record must have an overflow key");
             if (readBuffers is null)
                 throw new TsavoriteException("ReadBuffers are required to ReadOverflowKeyHashCodeForRecovery");
 
-            var positionWord = logRecord.GetObjectLogRecordStartPositionAndLengths(out var keyLength, out _);
+            var positionWord = logRecord.GetObjectLogRecordStartPositionAndLengths(out var keyLength, out _, checkpointVersion);
             recordStartPosition = new ObjectLogFilePositionInfo(positionWord, segmentSizeBits);
             if (!readBuffers.OnBeginRecord(recordStartPosition))
                 throw new TsavoriteException("ReadOverflowKeyHashCodeForRecovery found no data available in ReadBuffers");
@@ -231,8 +231,9 @@ namespace Tsavorite.core
             recordStreamConsumed = 0;
             objectRecordStartOffsetLow3 = (int)(recordStartPosition.Offset & 7);
 
-            var keyIsExactSize = logRecord.HasReuseObjectIdForSize || logRecord.KeyIsExactSize;
-            var exactKeyLength = logRecord.HasReuseObjectIdForSize ? keyLength : logRecord.KeyObjectIdSizeHint;
+            var isLegacy = HybridLogRecoveryInfo.UsesDownlevelObjectLog(checkpointVersion);
+            var keyIsExactSize = isLegacy || logRecord.KeyIsExactSize;
+            var exactKeyLength = isLegacy ? keyLength : logRecord.KeyObjectIdSizeHint;
             var overflow = ReadOverflow(keyIsExactSize, exactKeyLength);
             fixed (byte* keyPtr = overflow.Span)
             {

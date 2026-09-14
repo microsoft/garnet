@@ -653,14 +653,14 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         internal override long ComputeRecoveryOverflowKeyHash(in LogRecord logRecord, ref CircularDiskReadBuffer readBuffers, IDevice objectLogDevice,
-            ObjectLogFilePositionInfo hardReadEndPosition = default)
+            int checkpointVersion, ObjectLogFilePositionInfo hardReadEndPosition = default)
         {
             // The transient objectIdMap is not populated during recovery Pass 1 (index build), so LogRecord.Key cannot resolve an overflow
             // key. Read just this record's overflow key bytes from the object log — the main object log for FoldOver/hybrid-log pages, or the
             // snapshot object log (passed as objectLogDevice) for snapshot pages — and hash them. Overflow keys are rare and Recovery is a rare
             // startup operation, so the extra per-record IO is acceptable. objectLogTail.SegmentSizeBits is the static object-log segment size
             // (set at construction from config), valid for decoding both the main and snapshot object-log positions.
-            var startPosition = new ObjectLogFilePositionInfo(logRecord.GetObjectLogRecordStartPositionAndLengths(out var keyLength, out _), objectLogTail.SegmentSizeBits);
+            var startPosition = new ObjectLogFilePositionInfo(logRecord.GetObjectLogRecordStartPositionAndLengths(out var keyLength, out _, checkpointVersion), objectLogTail.SegmentSizeBits);
             //
             // The key is read through the streaming ring rather than as one direct read into a caller-allocated buffer, even though the
             // record bounds the key's whole on-disk extent. For a headered key that bound is an exact 4 KB page count covering
@@ -687,7 +687,7 @@ namespace Tsavorite.core
             logReader.OnBeginReadRecords(startPosition, (ulong)keyLength, GetObjectLogReadHardEnd(readBuffers, hardReadEndPosition));
             try
             {
-                return logReader.ReadOverflowKeyHashCodeForRecovery(in logRecord, objectLogTail.SegmentSizeBits);
+                return logReader.ReadOverflowKeyHashCodeForRecovery(in logRecord, objectLogTail.SegmentSizeBits, checkpointVersion);
             }
             finally
             {
@@ -992,7 +992,7 @@ namespace Tsavorite.core
                                         // can be evicted, then repoint the disk-image record to that main object-log position. The objects are NOT
                                         // deserialized at this point, so read the position/lengths from the record's on-disk encoding (not from objectIdMap),
                                         // and repoint (which preserves the record's unchanged lengths and format flag) rather than SetRecoveredObjectLogRecordStartPosition.
-                                        var snapshotPositionWord = logRecord.GetObjectLogRecordStartPositionAndLengths(out var copyKeyLength, out var copyValueLength);
+                                        var snapshotPositionWord = logRecord.GetObjectLogRecordStartPositionAndLengths(out var copyKeyLength, out var copyValueLength, asyncResult.checkpointVersion);
 
                                         // Demand-load the snapshot object reader on the first valid record with objects, so pages with few or no object
                                         // records avoid an up-front full-page pre-pass. Each record extends demand from its own hints and framing.
@@ -1013,9 +1013,9 @@ namespace Tsavorite.core
                                     }
                                     else
                                     {
-                                        if (logRecord.HasReuseObjectIdForSize)
+                                        if (HybridLogRecoveryInfo.UsesDownlevelObjectLog(asyncResult.checkpointVersion))
                                         {
-                                            // Legacy hybrid-log-region record: up-convert its split length/position encoding into the current
+                                            // Downlevel (v2.1) hybrid-log-region record: up-convert its split length/position encoding into the current
                                             // hint format (or fail fast for a large overflow/object that would need a not-yet-supported leading
                                             // ChunkHeader insertion), advancing the running page position.
                                             var objectLengths = logRecord.SetRecoveredObjectLogRecordStartPosition(recoveryOngoingPageHeader);
@@ -1263,7 +1263,8 @@ namespace Tsavorite.core
             if (diskLogRecord.DataHeader.RecordIsInline)
                 return true;
 
-            var startPosition = new ObjectLogFilePositionInfo(ctx.diskLogRecord.logRecord.GetObjectLogRecordStartPositionAndLengths(out var keyLength, out var valueLength), objectLogTail.SegmentSizeBits);
+            // This is a runtime pending read of the live log, which is written in the current object-log format, so decode as current.
+            var startPosition = new ObjectLogFilePositionInfo(ctx.diskLogRecord.logRecord.GetObjectLogRecordStartPositionAndLengths(out var keyLength, out var valueLength, HybridLogRecoveryInfo.CheckpointVersion), objectLogTail.SegmentSizeBits);
             var totalBytesToRead = (ulong)keyLength + valueLength;
 
             // 'using' is OK here as we complete the object reads before returning.
@@ -1271,7 +1272,7 @@ namespace Tsavorite.core
 
             var logReader = new ObjectLogReader<TStoreFunctions>(readBuffers, storeFunctions);
             logReader.OnBeginReadRecords(startPosition, totalBytesToRead, GetObjectLogReadHardEnd(readBuffers));
-            if (logReader.ReadRecordObjects(ref diskLogRecord.logRecord, ctx.requestKey, startPosition.SegmentSizeBits))
+            if (logReader.ReadRecordObjects(ref diskLogRecord.logRecord, ctx.requestKey, startPosition.SegmentSizeBits, HybridLogRecoveryInfo.CheckpointVersion))
             {
                 // Success. The deserialized heap object's Dispose() will be invoked when the DiskLogRecord
                 // is disposed (ObjectIdMap.Free → IHeapObject.Dispose), unless the object is transferred out
@@ -1334,7 +1335,9 @@ namespace Tsavorite.core
             if (result.recoveryPhase != RecoveryPhase.Pass1)
             {
                 var objectIdMapToUse = result.recoveryPhase != RecoveryPhase.None ? objectPages[result.page % BufferSize].objectIdMap : transientObjectIdMap;
-                DeserializeObjectsOnPage((long)result.destinationPtr, result.maxAddressOffsetOnPage, objectIdMapToUse, result.readBuffers);
+                // This callback is used for runtime reads and the RecoveryPhase.None post-recovery head read, which read the live current-format log
+                // (RecoveryPhase.Pass1 skips object deserialization above, and Pass2 is loaded via LoadObjectsForRecoveryPass2), so decode as current.
+                DeserializeObjectsOnPage((long)result.destinationPtr, result.maxAddressOffsetOnPage, objectIdMapToUse, result.readBuffers, HybridLogRecoveryInfo.CheckpointVersion);
             }
 
             // Call the "real" page read callback
@@ -1350,10 +1353,11 @@ namespace Tsavorite.core
         /// <param name="maxAddressOffsetOnPage">Maximum offset on the page (PageSize or less for partial pages)</param>
         /// <param name="objectIdMap">The ObjectIdMap to use for deserialized objects</param>
         /// <param name="readBuffers">The circular read buffers for object log reading</param>
+        /// <param name="checkpointVersion">The checkpoint metadata version whose object-log encoding is being decoded; current-format for a runtime read.</param>
         /// <param name="hardReadEndPosition">Exclusive durable endpoint in the selected object-log address space</param>
         /// <param name="minAddressOffsetOnPage">First record offset to scan; callers use this to split a page at an object-log address-space boundary</param>
         private void DeserializeObjectsOnPage(long pageStartPhysicalAddress, long maxAddressOffsetOnPage, ObjectIdMap objectIdMap,
-            CircularDiskReadBuffer readBuffers, ObjectLogFilePositionInfo hardReadEndPosition = default,
+            CircularDiskReadBuffer readBuffers, int checkpointVersion, ObjectLogFilePositionInfo hardReadEndPosition = default,
             long minAddressOffsetOnPage = PageHeader.Size)
         {
             ObjectLogFilePositionInfo startPosition = new(), initialEndPosition = new();
@@ -1372,7 +1376,7 @@ namespace Tsavorite.core
                 if (logRecord.DataHeader.RecordHasObjects && logRecord.Info.Valid)
                 {
                     var position = new ObjectLogFilePositionInfo(
-                        logRecord.GetObjectLogRecordStartPositionAndLengths(out var keyLength, out var valueLength),
+                        logRecord.GetObjectLogRecordStartPositionAndLengths(out var keyLength, out var valueLength, checkpointVersion),
                         objectLogTail.SegmentSizeBits);
                     if (!startPosition.IsSet)
                         startPosition = position;
@@ -1410,7 +1414,7 @@ namespace Tsavorite.core
 
                     if (logRecord.DataHeader.RecordHasObjects && logRecord.Info.Valid)
                     {
-                        _ = logReader.ReadRecordObjects(ref logRecord, default(EmptyKey), startPosition.SegmentSizeBits);
+                        _ = logReader.ReadRecordObjects(ref logRecord, default(EmptyKey), startPosition.SegmentSizeBits, checkpointVersion);
                         TrackRecoveredObjectRecord(in logRecord);
                     }
                 }
@@ -1438,7 +1442,7 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc/>
-        internal override long CalculatePageObjectSizes(int page, long startAddress, long untilAddress)
+        internal override long CalculatePageObjectSizes(int page, long startAddress, long untilAddress, int checkpointVersion)
         {
             var recordAddress = Math.Max(startAddress, GetFirstValidLogicalAddressOnPage(page));
             var endAddress = Math.Min(untilAddress, GetLogicalAddressOfStartOfPage(page + 1));
@@ -1464,7 +1468,7 @@ namespace Tsavorite.core
 
                 if (logRecord.Info.Valid && logRecord.DataHeader.RecordHasObjects)
                 {
-                    endPosition = new(logRecord.GetObjectLogRecordStartPositionAndLengths(out endKeyLength, out endValueLength), objectLogTail.SegmentSizeBits);
+                    endPosition = new(logRecord.GetObjectLogRecordStartPositionAndLengths(out endKeyLength, out endValueLength, checkpointVersion), objectLogTail.SegmentSizeBits);
                     if (!startPosition.IsSet)
                         startPosition = endPosition;
                 }
@@ -1506,7 +1510,7 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc/>
-        internal override void LoadObjectsForRecoveryPass2(int page, long fromAddress, long untilAddress, IDevice objectLogDevice,
+        internal override void LoadObjectsForRecoveryPass2(int page, long fromAddress, long untilAddress, IDevice objectLogDevice, int checkpointVersion,
             ObjectLogFilePositionInfo hardReadEndPosition = default)
         {
             var pageStartAddress = GetFirstValidLogicalAddressOnPage(page);
@@ -1520,11 +1524,11 @@ namespace Tsavorite.core
             var minOffset = address - GetLogicalAddressOfStartOfPage(page);
             var objectIdMapToUse = objectPages[page % BufferSize].objectIdMap;
             using var readBuffers = CreateCircularReadBuffers(objectLogDevice, logger);
-            DeserializeObjectsOnPage(pagePhysicalAddress, maxOffset, objectIdMapToUse, readBuffers, hardReadEndPosition, minOffset);
+            DeserializeObjectsOnPage(pagePhysicalAddress, maxOffset, objectIdMapToUse, readBuffers, checkpointVersion, hardReadEndPosition, minOffset);
         }
 
         /// <inheritdoc/>
-        internal override long FindHeadAddressCutoffOnPage(int page, long untilAddress, long totalPageObjectSize, int numPagesBelowCurrentPage, long remainingBudget, out int numPagesBelowToEvict)
+        internal override long FindHeadAddressCutoffOnPage(int page, long untilAddress, long totalPageObjectSize, int numPagesBelowCurrentPage, long remainingBudget, int checkpointVersion, out int numPagesBelowToEvict)
         {
             var recordAddress = GetFirstValidLogicalAddressOnPage(page);
             var stopAddress = Math.Min(untilAddress, GetLogicalAddressOfStartOfPage(page + 1));
@@ -1563,7 +1567,7 @@ namespace Tsavorite.core
                 {
                     // Disk-image record (recovery, before object deserialization): use the format-aware decode for a best-guess per-record
                     // object size (exact below the field sentinel). The objectId slots hold stale ids, so the legacy decode is not usable here.
-                    _ = logRecord.GetObjectLogRecordStartPositionAndLengths(out var keyLength, out var valueLength);
+                    _ = logRecord.GetObjectLogRecordStartPositionAndLengths(out var keyLength, out var valueLength, checkpointVersion);
                     overBudgetAmount -= keyLength + (long)valueLength;
                     if (overBudgetAmount <= 0)
                         return recordAddress;
