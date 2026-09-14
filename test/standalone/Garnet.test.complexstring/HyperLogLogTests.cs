@@ -1474,9 +1474,9 @@ namespace Garnet.test
         }
 
         [Test]
-        public void ImmutableRegionValidation()
+        public void PFADDImmutableRegionValidation()
         {
-            const string Key = nameof(ImmutableRegionValidation);
+            const string Key = nameof(PFADDImmutableRegionValidation);
 
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
             var db = redis.GetDatabase(0);
@@ -1499,6 +1499,41 @@ namespace Garnet.test
 
             var actualBytes = (byte[])db.StringGet(Key);
             ClassicAssert.IsTrue(forgedBytes.SequenceEqual(actualBytes));
+        }
+
+
+
+        [Test]
+        public void PFMERGEImmutableRegionValidation()
+        {
+            const string Key0 = nameof(PFMERGEImmutableRegionValidation) + "_0";
+            const string Key1 = nameof(PFMERGEImmutableRegionValidation) + "_1";
+            const string Key2 = nameof(PFMERGEImmutableRegionValidation) + "_2";
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
+            var db = redis.GetDatabase(0);
+
+            // Something that looks like a HyperLogLog, but isn't
+            var forgedBytes = new byte[18];
+            forgedBytes[3] = 0;
+            BinaryPrimitives.WriteUInt16LittleEndian(forgedBytes.AsSpan()[16..], 3000);
+
+            ClassicAssert.True(db.StringSet(Key0, forgedBytes));
+            ClassicAssert.True(db.StringSet(Key1, forgedBytes));
+
+            var exc0 = ClassicAssert.Throws<RedisServerException>(() => db.HyperLogLogMerge(Key2, Key0, Key1));
+            ClassicAssert.True(exc0.Message.StartsWith("WRONGTYPE "));
+
+            // Force into mutable region
+            _ = db.Execute("DEBUG", "FLUSHANDEVICT");
+
+            var exc1 = ClassicAssert.Throws<RedisServerException>(() => db.HyperLogLogMerge(Key2, Key0, Key1));
+            ClassicAssert.True(exc1.Message.StartsWith("WRONGTYPE "));
+
+            var actualBytes0 = (byte[])db.StringGet(Key0);
+            var actualBytes1 = (byte[])db.StringGet(Key1);
+            ClassicAssert.IsTrue(forgedBytes.SequenceEqual(actualBytes0));
+            ClassicAssert.IsTrue(forgedBytes.SequenceEqual(actualBytes1));
         }
     }
 }
