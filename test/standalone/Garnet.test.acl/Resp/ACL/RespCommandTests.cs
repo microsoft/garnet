@@ -890,6 +890,18 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
+        public Task ClientPauseACLsAsync()
+            => CheckCommandsAsync("CLIENT PAUSE", [client => client.ExecuteForStringResultAsync("CLIENT", ["PAUSE", "0"])]);
+
+        [Test]
+        public Task ClientUnpauseACLsAsync()
+            => CheckCommandsAsync("CLIENT UNPAUSE", [client => client.ExecuteForStringResultAsync("CLIENT", ["UNPAUSE"])]);
+
+        [Test]
+        public Task ShutdownACLsAsync()
+            => CheckCommandsAsync("SHUTDOWN", [client => client.ExecuteForStringResultAsync("SHUTDOWN", ["NOSAVE", "NOW"])], skipPermitted: true);
+
+        [Test]
         public async Task ClientUnblockACLsAsync()
         {
             await CheckCommandsAsync(

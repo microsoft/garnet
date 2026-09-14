@@ -278,6 +278,7 @@ namespace Garnet.server
             this.scratchBufferAllocator = new ScratchBufferAllocator();
 
             this.storeWrapper = storeWrapper;
+            pauseParticipant = storeWrapper.clientPause.Register();
             this.subscribeBroker = subscribeBroker;
             this._authenticator = authenticator ?? storeWrapper.serverOptions.AuthSettings?.CreateAuthenticator(this.storeWrapper) ?? new GarnetNoAuthAuthenticator();
 
@@ -384,6 +385,7 @@ namespace Garnet.server
         public override void Dispose()
         {
             logger?.LogDebug("Disposing RespServerSession Id={id}", this.Id);
+            pauseParticipant?.Dispose();
 
             if (recvBufferPtr != null)
             {
@@ -574,8 +576,10 @@ namespace Garnet.server
             {
                 networkSender.ExitAndReturnResponseObject();
                 clusterSession?.ReleaseCurrentEpoch();
+                pauseParticipant?.Exit();
                 scratchBufferBuilder.Reset();
                 scratchBufferAllocator.Reset();
+                if (shutdownRequested) storeWrapper.ShutdownRequested?.Invoke();
             }
 
             if (txnSkip)
@@ -652,6 +656,7 @@ namespace Garnet.server
 
                     if (CheckACLPermissions(cmd) && (noScriptPassed = CheckScriptPermissions(cmd)))
                     {
+                        EnterClientCommand(cmd);
                         // In RESP2, only a small set of commands are allowed while in subscription mode.
                         // RESP3 uses distinct push types for subscription messages, so all commands are valid.
                         if (isSubscriptionSession && respProtocolVersion == 2 && !cmd.IsAllowedInSubscriptionMode())
@@ -720,8 +725,12 @@ namespace Garnet.server
                     containsSlowCommand = true;
                 }
 
+                if (txnManager.state != TxnState.Running) pauseParticipant?.Exit();
+
                 // Advance read head variables to process the next command
                 _origReadHead = readHead = endReadHead;
+
+                if (shutdownRequested) break;
 
                 // Handle metrics and special cases
                 if (LatencyMetrics != null) opCount++;
@@ -1080,6 +1089,9 @@ namespace Garnet.server
                 RespCommand.CLIENT_SETNAME => NetworkCLIENTSETNAME(),
                 RespCommand.CLIENT_SETINFO => NetworkCLIENTSETINFO(),
                 RespCommand.CLIENT_UNBLOCK => NetworkCLIENTUNBLOCK(),
+                RespCommand.CLIENT_PAUSE => NetworkCLIENTPAUSE(),
+                RespCommand.CLIENT_UNPAUSE => NetworkCLIENTUNPAUSE(),
+                RespCommand.SHUTDOWN => NetworkSHUTDOWN(),
                 RespCommand.COMMAND => NetworkCOMMAND(),
                 RespCommand.COMMAND_COUNT => NetworkCOMMAND_COUNT(),
                 RespCommand.COMMAND_DOCS => NetworkCOMMAND_DOCS(),
@@ -1317,7 +1329,11 @@ namespace Garnet.server
         /// Subsequent calls will return false.
         /// </summary>
         public bool TryKill()
-        => networkSender.TryClose();
+        {
+            var closed = networkSender.TryClose();
+            if (closed) pauseParticipant?.Dispose();
+            return closed;
+        }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private unsafe bool Write(ref Status s, ref byte* dst, int length)

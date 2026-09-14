@@ -273,6 +273,7 @@ namespace Garnet.server
             Add("TIME", RespCommand.TIME);
             Add("ROLE", RespCommand.ROLE);
             Add("SAVE", RespCommand.SAVE);
+            Add("SHUTDOWN", RespCommand.SHUTDOWN);
             Add("LASTSAVE", RespCommand.LASTSAVE);
             Add("BGSAVE", RespCommand.BGSAVE);
             Add("COMMITAOF", RespCommand.COMMITAOF);
@@ -380,6 +381,8 @@ namespace Garnet.server
             ("SETNAME", RespCommand.CLIENT_SETNAME),
             ("SETINFO", RespCommand.CLIENT_SETINFO),
             ("UNBLOCK", RespCommand.CLIENT_UNBLOCK),
+            ("PAUSE", RespCommand.CLIENT_PAUSE),
+            ("UNPAUSE", RespCommand.CLIENT_UNPAUSE),
         ];
 
         private static readonly (string Name, RespCommand Command)[] AclSubcommands =

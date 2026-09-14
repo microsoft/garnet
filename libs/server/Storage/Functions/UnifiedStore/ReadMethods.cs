@@ -21,7 +21,8 @@ namespace Garnet.server
         {
             if (CheckExpiry(in srcLogRecord))
             {
-                readInfo.Action = ReadAction.Expire;
+                if (!functionsState.storeWrapper.clientPause.IsWritePaused)
+                    readInfo.Action = ReadAction.Expire;
                 return false;
             }
 

@@ -25,7 +25,8 @@ namespace Garnet.server
             if (srcLogRecord.DataHeader.HasExpiration && srcLogRecord.Expiration < DateTimeOffset.Now.UtcTicks)
             {
                 // Do not set 'value = null' or otherwise mark this; Reads should not update the database. We rely on consistently checking for expiration everywhere.
-                readInfo.Action = ReadAction.Expire;
+                if (!functionsState.storeWrapper.clientPause.IsWritePaused)
+                    readInfo.Action = ReadAction.Expire;
                 return false;
             }
 
