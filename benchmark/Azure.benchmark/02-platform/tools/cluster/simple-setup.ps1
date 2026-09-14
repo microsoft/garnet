@@ -7,12 +7,11 @@ param (
 	[int]$replicas=0,
 	[switch]$redis,
 	[switch]$tls,
-	[string]$password="empty",
 	[switch]$Help
 )
 
 if ($Help -or (-not $addr -and -not $redis)) {
-    Write-Host "Usage: simple-setup.ps1 [-addr <ip>] [-port <n>] [-count <n>] [-shards <n>] [-replicas <n>] [-redis] [-tls] [-password <pass>]"
+    Write-Host "Usage: simple-setup.ps1 [-addr <ip>] [-port <n>] [-count <n>] [-shards <n>] [-replicas <n>] [-redis] [-tls]"
     Write-Host ""
     Write-Host "Set up a redis/valkey/garnet cluster by assigning slots and issuing CLUSTER MEET."
     Write-Host ""
@@ -24,7 +23,6 @@ if ($Help -or (-not $addr -and -not $redis)) {
     Write-Host "  -replicas   Number of replicas (default: 0)"
     Write-Host "  -redis      Use redis-cli --cluster create instead of manual setup"
     Write-Host "  -tls        Enable TLS connections"
-    Write-Host "  -password   Password for AUTH (default: none)"
     Write-Host "  -Help       Show this help message"
     return
 }
@@ -51,16 +49,12 @@ else{
 
 Write-Host "Address:${address}, Port:$port, Count:$count, Shards:$shards"
 
-function getCommand($port, $password, $tls, $redisCommand) {
+function getCommand($port, $tls, $redisCommand) {
 	$cli = "redis-cli -h ${address} -p ${port}"
 	if($tls){
 		$cli += " --tls --insecure"
 	}
 
-	if($password -ne "empty"){
-		$cli+=" -a ${password}"
-	}
-	
 	$cli += " $redisCommand"
 	
 	return $cli
@@ -72,8 +66,8 @@ function invokeCommand($cli){
 	return $result
 }
 
-function issueCommand($port, $password, $tls, $redisCommand){
-	$cli = getCommand $port $password $tls $redisCommand
+function issueCommand($port, $tls, $redisCommand){
+	$cli = getCommand $port $tls $redisCommand
 	$result = invokeCommand $cli
 	$isError = $result -like "ERR*"
 	
@@ -82,10 +76,10 @@ function issueCommand($port, $password, $tls, $redisCommand){
 	return $result
 }
 
-function getEndpoint($port, $password, $tls){
+function getEndpoint($port, $tls){
 	Write-Host "[Get Source Endpoint]" -ForegroundColor Yellow
-	$result = issueCommand $port $password $tls "cluster myid"	
-	$endpoint = issueCommand $port $password $tls "cluster endpoint ${result}"	
+	$result = issueCommand $port $tls "cluster myid"	
+	$endpoint = issueCommand $port $tls "cluster endpoint ${result}"	
 	return $endpoint
 }
 
@@ -105,7 +99,7 @@ if($redis){
 	for($p=$port;$p -lt $port + $count;$p++)
 	{	
 		$epoch = $p - $port + 1	
-		$result = issueCommand $p $password $tls "cluster set-config-epoch $epoch"
+		$result = issueCommand $p $tls "cluster set-config-epoch $epoch"
 	}
 
 	######################
@@ -124,14 +118,14 @@ if($redis){
 			$e = $slots - 1
 		}	
 
-		$result = issueCommand $p $password $tls "cluster addslotsrange $s $e"		
+		$result = issueCommand $p $tls "cluster addslotsrange $s $e"		
 		$p++
 	}
 
 	###################
 	#### Find Port ####
 	###################
-	$result=getEndpoint $port $password $tls
+	$result=getEndpoint $port $tls
 
 	######################
 	#### Cluster Meet ####
@@ -143,19 +137,19 @@ if($redis){
 	for($p=$port + 1;$p -lt $port + $count;$p++)
 	{	
 		# Get target endpoint
-		$result=getEndpoint $p $password $tls
+		$result=getEndpoint $p $tls
 		
 		# Execute Meet
 		$targetAddr=$result.Substring(0,$result.lastIndexOf(':'))
 		$targetPort = $result.Split(":")[-1]
-		$result = issueCommand $port $password $tls "cluster meet ${targetAddr} ${targetPort}"
+		$result = issueCommand $port $tls "cluster meet ${targetAddr} ${targetPort}"
 	}
 	
 	Start-Sleep -Seconds 2
 	Write-Host "<<<< Cluster Config >>>>" -ForegroundColor Yellow
 	for($p=$port;$p -lt $port + $count;$p++)
 	{
-		$cli = getCommand $p $password $tls "cluster nodes"
+		$cli = getCommand $p $tls "cluster nodes"
 		$result = ($cli) -join " "
 		Write-Host "[" $cli "]" -ForegroundColor Cyan
 		Invoke-Expression $result

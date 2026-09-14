@@ -69,7 +69,7 @@ noted here for reviewers.
 | # | Severity | Location | Note |
 |---|----------|----------|------|
 | 1 | LOW | `02-platform/tools/bootstrap/setup-ssh-keys.ps1`, most bench/cluster scripts | `StrictHostKeyChecking no` / `UserKnownHostsFile=/dev/null` disables SSH host-key verification. Scoped to the private `10.5.x` benchmark VNet (NSG permits SSH only from corpnet). Consider `accept-new` outside benchmarks. |
-| 2 | LOW | `02-platform/tools/config/valkey/*.conf` | `protected-mode no` with no `requirepass`, bound to the private data-plane interface. Assumes a firewalled network; must not be used with a public bind. |
+| 2 | LOW | `02-platform/tools/config/valkey/*.conf` | `protected-mode no` with no `requirepass`, bound to the private data-plane interface. These are **illustrative benchmark configs, not production-endorsed settings** — they intentionally trade auth for measurement simplicity on an isolated, firewalled harness and must not be used with a public bind. |
 
 ## Guidance for `*-parameters.json`
 
