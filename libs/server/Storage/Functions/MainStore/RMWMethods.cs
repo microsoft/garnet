@@ -1223,6 +1223,12 @@ namespace Garnet.server
                     newValue = dstLogRecord.ValueSpan;
                     if (srcLogRecord.IsPinnedValue)
                     {
+                        if (!HyperLogLog.DefaultHLL.IsValidHYLL(srcLogRecord.PinnedValuePointer, srcLogRecord.ValueSpan.Length))
+                        {
+                            rmwInfo.Action = RMWAction.WrongType;
+                            return false;
+                        }
+
                         oldValuePtr = srcLogRecord.PinnedValuePointer;
                         if (dstLogRecord.IsPinnedValue)
                         {
@@ -1253,6 +1259,12 @@ namespace Garnet.server
                     {
                         fixed (byte* oldPtr = srcLogRecord.ValueSpan)
                         {
+                            if (!HyperLogLog.DefaultHLL.IsValidHYLL(oldPtr, srcLogRecord.ValueSpan.Length))
+                            {
+                                rmwInfo.Action = RMWAction.WrongType;
+                                return false;
+                            }
+
                             oldValuePtr = oldPtr;
                             if (dstLogRecord.IsPinnedValue)
                             {

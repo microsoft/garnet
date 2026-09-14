@@ -181,29 +181,22 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Check if header is correctly formatted.
-        /// </summary>
-        /// <param name="ptr"></param>
-        /// <returns></returns>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool IsValidHYLL(byte* ptr) => (IsSparse(ptr) || IsDense(ptr)) && IsHYLL(ptr);
-
-        /// <summary>
         /// Check if value is of type HLL
         /// </summary>
         /// <param name="ptr"></param>
         /// <param name="length"></param>
         /// <returns></returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool IsValidHYLL(byte* ptr, int length) => IsHYLL(ptr) && IsValidHLLLength(ptr, length);
+        public bool IsValidHYLL(byte* ptr, int length) => IsHYLL(ptr, length) && IsValidHLLLength(ptr, length);
 
         /// <summary>
         /// Check if tag is correctly set.
         /// </summary>
         /// <param name="ptr"></param>
+        /// /// <param name="length"></param>
         /// <returns></returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private bool IsHYLL(byte* ptr) => *(int*)(ptr + 4) == (int)0x48594C4C;
+        private bool IsHYLL(byte* ptr, int length) => length >= (4 + sizeof(int)) && *(int*)(ptr + 4) == (int)0x48594C4C;
 
         private bool IsValidHLLLength(byte* ptr, int length)
         {

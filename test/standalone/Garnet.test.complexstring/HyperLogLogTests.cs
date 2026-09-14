@@ -1474,17 +1474,20 @@ namespace Garnet.test
         }
 
         [Test]
-        public void PFADDImmutableRegionValidation()
+        [TestCase(18)]
+        [TestCase(8 * 1_024 * 1_024)]
+        public void PFADDImmutableRegionValidation(int bufferSize)
         {
             const string Key = nameof(PFADDImmutableRegionValidation);
+
+            var forgedBytes = new byte[bufferSize];
+            forgedBytes[3] = 0;
+            BinaryPrimitives.WriteUInt16LittleEndian(forgedBytes.AsSpan()[16..], 3000);
 
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
             var db = redis.GetDatabase(0);
 
-            // Something that looks like a HyperLogLog, but isn't
-            var forgedBytes = new byte[18];
-            forgedBytes[3] = 0;
-            BinaryPrimitives.WriteUInt16LittleEndian(forgedBytes.AsSpan()[16..], 3000);
+            redis.GetServers()[0].FlushAllDatabases();
 
             ClassicAssert.True(db.StringSet(Key, forgedBytes));
 
@@ -1501,10 +1504,10 @@ namespace Garnet.test
             ClassicAssert.IsTrue(forgedBytes.SequenceEqual(actualBytes));
         }
 
-
-
         [Test]
-        public void PFMERGEImmutableRegionValidation()
+        [TestCase(18)]
+        [TestCase(8 * 1_024 * 1_024)]
+        public void PFMERGEImmutableRegionValidation(int bufferSize)
         {
             const string Key0 = nameof(PFMERGEImmutableRegionValidation) + "_0";
             const string Key1 = nameof(PFMERGEImmutableRegionValidation) + "_1";
@@ -1514,7 +1517,7 @@ namespace Garnet.test
             var db = redis.GetDatabase(0);
 
             // Something that looks like a HyperLogLog, but isn't
-            var forgedBytes = new byte[18];
+            var forgedBytes = new byte[bufferSize];
             forgedBytes[3] = 0;
             BinaryPrimitives.WriteUInt16LittleEndian(forgedBytes.AsSpan()[16..], 3000);
 
