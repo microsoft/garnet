@@ -356,9 +356,19 @@ namespace Garnet.server
         public int ThreadPoolMaxIOCompletionThreads = 0;
 
         /// <summary>
-        /// Maximum client connection limit
+        /// Default maximum number of simultaneous client connections, matching the Redis
+        /// <c>maxclients</c> default.
         /// </summary>
-        public int NetworkConnectionLimit = -1;
+        public const int DefaultNetworkConnectionLimit = 10000;
+
+        /// <summary>
+        /// Maximum number of simultaneous client connections across all listeners, or -1 for
+        /// unlimited. Settable at runtime through <c>CONFIG SET maxclients</c>.
+        ///
+        /// Every inbound connection counts, including replicas and cluster peers, which is also how
+        /// Redis accounts for them.
+        /// </summary>
+        public int NetworkConnectionLimit = DefaultNetworkConnectionLimit;
 
         /// <summary>
         /// Instance of interface to create named device factories

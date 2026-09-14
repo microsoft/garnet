@@ -399,7 +399,7 @@ namespace Garnet
         public int ThreadPoolMaxIOCompletionThreads { get; set; }
 
         [IntRangeValidation(-1, int.MaxValue)]
-        [Option("network-connection-limit", Required = false, HelpText = "Maximum number of simultaneously active network connections.")]
+        [Option("network-connection-limit", Required = false, HelpText = "Maximum number of simultaneously active network connections across all listeners, or -1 for unlimited. Equivalent to the Redis maxclients parameter, and settable at runtime with CONFIG SET maxclients.")]
         public int NetworkConnectionLimit { get; set; }
 
         [OptionValidation]
