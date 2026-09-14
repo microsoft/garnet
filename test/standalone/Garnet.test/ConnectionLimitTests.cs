@@ -8,6 +8,8 @@ using System.Net;
 using System.Net.Sockets;
 using System.Text;
 using System.Threading;
+using System.Threading.Tasks;
+using Garnet.client;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 
@@ -487,6 +489,66 @@ namespace Garnet.test
             }
         }
 
+        /// <summary>
+        /// <c>CONFIG SET maxclients</c> must reach the shared limit in a host that has more than one
+        /// listener. The update walks the server's listeners, so a host whose listener collection is
+        /// empty -- or whose entries fail the cast -- would return +OK and change nothing, which no
+        /// single-endpoint test can distinguish from working.
+        ///
+        /// Raising rather than lowering, so the assertion is an admission that was previously
+        /// refused. A lowering test could be satisfied by the connections already being at the
+        /// ceiling.
+        /// </summary>
+        [Test]
+        public void MaxClientsReachesTheSharedLimitFromAMultiListenerHost()
+        {
+            var accepted = new List<Socket>();
+
+            try
+            {
+                // Held first, so it survives the server reaching its ceiling below. A connection
+                // opened once the ceiling is reached would itself be refused.
+                var admin = OpenAcceptedConnection(first);
+                accepted.Add(admin);
+
+                for (var i = 0; i < Limit - 1; i++)
+                    accepted.Add(OpenAcceptedConnection(i % 2 == 0 ? second : first));
+
+                using (var refused = new Socket(SocketType.Stream, ProtocolType.Tcp))
+                {
+                    refused.Connect(second);
+                    refused.ReceiveTimeout = 10_000;
+
+                    var reply = new byte[128];
+                    var got = refused.Receive(reply);
+                    ClassicAssert.AreEqual(MaxClientsError, Encoding.ASCII.GetString(reply, 0, got),
+                        "the process should be at its ceiling before the limit is raised");
+                }
+
+                ClassicAssert.AreEqual("+OK\r\n", ConfigSetMaxClients(admin, Limit + 4));
+
+                // Both listeners must honour the raised value, since they share one limit object.
+                // A CONFIG SET that reached no listener would leave these refused.
+                accepted.Add(OpenAcceptedConnection(second));
+                accepted.Add(OpenAcceptedConnection(first));
+            }
+            finally
+            {
+                foreach (var socket in accepted) socket.Dispose();
+            }
+        }
+
+        static string ConfigSetMaxClients(Socket socket, int value)
+        {
+            var text = value.ToString();
+            var command = $"*4\r\n$6\r\nCONFIG\r\n$3\r\nSET\r\n$10\r\nmaxclients\r\n${text.Length}\r\n{text}\r\n";
+            socket.Send(Encoding.ASCII.GetBytes(command));
+
+            var buffer = new byte[256];
+            var read = socket.Receive(buffer);
+            return Encoding.ASCII.GetString(buffer, 0, read);
+        }
+
         static Socket OpenAcceptedConnection(EndPoint endPoint)
         {
             var socket = new Socket(SocketType.Stream, ProtocolType.Tcp);
@@ -499,6 +561,101 @@ namespace Garnet.test
             ClassicAssert.AreEqual("+PONG\r\n", Encoding.ASCII.GetString(buffer, 0, read),
                 $"the listener at {endPoint} should have accepted this connection");
             return socket;
+        }
+    }
+
+    /// <summary>
+    /// Under TLS a refused client cannot be told why -- the peer has sent a ClientHello and is
+    /// waiting for a ServerHello, so a RESP error there would be a protocol violation surfacing as a
+    /// handshake failure and pointing the operator at certificates rather than at capacity. So for
+    /// TLS the rejected_connections counter is the entire signal, and the incident that motivated
+    /// this work was thousands of TLS connections.
+    ///
+    /// Rejection happens at accept time, before any handshake, which is what makes this testable
+    /// with bare sockets against a TLS listener.
+    /// </summary>
+    [TestFixture]
+    public class ConnectionLimitTlsTests : TestBase
+    {
+        const int Limit = 4;
+        const int MetricsSamplingFreq = 1;
+
+        GarnetServer server;
+
+        [SetUp]
+        public void Setup()
+        {
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableTLS: true,
+                networkConnectionLimit: Limit, metricsSamplingFreq: MetricsSamplingFreq);
+            server.Start();
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            server.Dispose();
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
+            TestUtils.OnTearDown();
+        }
+
+        [Test]
+        public async Task TlsRejectionsAreCountedEvenThoughTheClientCannotBeTold()
+        {
+            var clients = new List<GarnetClient>();
+            try
+            {
+                // Fillers must be real TLS clients rather than bare sockets: the handshake runs on
+                // the accept path, so a connection that never handshakes stalls the accept loop and
+                // is never admitted at all.
+                for (var i = 0; i < Limit; i++)
+                {
+                    var client = TestUtils.GetGarnetClient(useTLS: true);
+                    await client.ConnectAsync();
+                    _ = await client.PingAsync();
+                    clients.Add(client);
+                }
+
+                using (var refused = new Socket(SocketType.Stream, ProtocolType.Tcp))
+                {
+                    refused.Connect(TestUtils.EndPoint);
+                    refused.ReceiveTimeout = 30_000;
+
+                    var buffer = new byte[128];
+                    var read = refused.Receive(buffer);
+                    ClassicAssert.AreEqual(0, read,
+                        "a TLS listener must close a refused connection without writing a RESP error, " +
+                        "which would be a protocol violation mid-handshake");
+                }
+
+                await WaitForRejectedConnections(clients[0], 1);
+            }
+            finally
+            {
+                foreach (var client in clients) client.Dispose();
+            }
+        }
+
+        static async Task WaitForRejectedConnections(GarnetClient client, long expected)
+        {
+            var deadline = Stopwatch.StartNew();
+            long last = -1;
+
+            while (deadline.Elapsed < TimeSpan.FromSeconds(30))
+            {
+                var stats = await client.ExecuteForStringResultAsync("INFO", ["STATS"]);
+                foreach (var line in stats.Split('\n'))
+                {
+                    if (!line.StartsWith("rejected_connections:", StringComparison.Ordinal)) continue;
+                    last = long.Parse(line["rejected_connections:".Length..].Trim());
+                    break;
+                }
+
+                if (last >= expected) return;
+                await Task.Delay(200);
+            }
+
+            Assert.Fail($"rejected_connections never reached {expected}; last read {last}");
         }
     }
 }
