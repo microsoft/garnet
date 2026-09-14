@@ -29,6 +29,7 @@ namespace Garnet.cluster
             long previousAddress;
 
             readonly bool timePulseEnabled;
+            readonly bool pulseUsesSequenceNumbers;
             readonly GarnetAppendOnlyFile appendOnlyFile;
             readonly TsavoriteLog physicalSublog;
             readonly long[] pulseTailSnapshot;
@@ -117,6 +118,10 @@ namespace Garnet.cluster
                 timePulseEnabled = clusterProvider.serverOptions.MultiLogEnabled;
                 if (timePulseEnabled)
                 {
+                    // Records carry a generator sequence number only when the log is sharded across
+                    // several physical sublogs; a single physical sublog times its virtual sublogs by
+                    // log address instead, and has no generator to read from.
+                    pulseUsesSequenceNumbers = clusterProvider.serverOptions.AofPhysicalSublogCount > 1;
                     physicalSublog = appendOnlyFile.Log.GetSubLog(physicalSublogIdx);
                     pulseTailSnapshot = new long[clusterProvider.serverOptions.AofPhysicalSublogCount];
                     pulseTailScratch = new long[clusterProvider.serverOptions.AofPhysicalSublogCount];
@@ -141,6 +146,19 @@ namespace Garnet.cluster
                             clientName: $"AofSyncTask-{physicalSublogIdx}:({currentConfig.LocalNodeEndpoint})",
                             logger: logger);
                 this.logger = logger;
+            }
+
+            /// <summary>
+            /// Closes the network connection so a task blocked on a send fails fast, without
+            /// disposing the client session the task may still be writing through.
+            /// </summary>
+            public void CloseConnection()
+            {
+                try
+                {
+                    garnetClient?.CloseConnection();
+                }
+                catch { }
             }
 
             public void Dispose()
@@ -282,7 +300,15 @@ namespace Garnet.cluster
                     }
                 }
 
-                var sequenceNumber = appendOnlyFile.GetLargerThanMaximumSequenceNumber();
+                // The pulse has to carry a value in whatever domain the replay side measures virtual
+                // sublog time in. Sharded across several physical sublogs that is a generator sequence
+                // number, because that is what each record carries. On a single physical sublog records
+                // carry no sequence number and replay publishes the log address it has reached, so the
+                // pulse is the observed tail: the address replay itself would publish once it has
+                // consumed everything at or below it.
+                var sequenceNumber = pulseUsesSequenceNumbers
+                    ? appendOnlyFile.GetLargerThanMaximumSequenceNumber()
+                    : pulseTailScratch[physicalSublogIdx];
                 if (iter.NextAddress < physicalSublog.TailAddress)
                 {
                     lastAdvanceTimePulse = now;
@@ -344,9 +370,24 @@ namespace Garnet.cluster
                 }
                 finally
                 {
-                    if (enteredMonitor)
-                        _ = aofSyncDriver.activeWorkerMonitor.Exit();
-                    garnetClient?.Dispose();
+                    try
+                    {
+                        // The client is disposed before leaving the monitor so that a drained monitor
+                        // means every client has already been torn down by the one thread that was
+                        // using it, and the send buffer it rented is back in the replication pool.
+                        garnetClient?.Dispose();
+                    }
+                    catch (Exception ex)
+                    {
+                        // Leaving the monitor is what releases the dispose that is waiting on this
+                        // task, so it has to happen even if tearing the client down fails.
+                        logger?.LogError(ex, "[{sublogIdx}]({method}) failed to dispose client", physicalSublogIdx, nameof(RunAofSyncTaskAsync));
+                    }
+                    finally
+                    {
+                        if (enteredMonitor)
+                            _ = aofSyncDriver.activeWorkerMonitor.Exit();
+                    }
                 }
 
                 [Conditional("DEBUG")]

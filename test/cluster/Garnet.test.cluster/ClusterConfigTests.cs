@@ -1,5 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
+using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net;
@@ -353,6 +355,263 @@ namespace Garnet.test.cluster
                 "the reset must survive the no-change assignment at the higher slot index");
             Assert.That(merged.GetNodeIdFromSlot(StaleSlot), Is.Not.EqualTo(senderId),
                 "stale attribution should be cleared");
+        }
+
+        /// <summary>
+        /// Verifies that gossip from a replica cannot make that replica the owner of a slot the receiver
+        /// has no owner for. A replica only relays its primary's view, so treating it as the claimant hands
+        /// the slot to a node that never owned it, and the real owner can then never take it back.
+        /// </summary>
+        [Test, Order(12)]
+        [Category("CLUSTER-CONFIG"), CancelAfter(1000)]
+        public void ClusterConfigMergeSlotMapIgnoresUnownedSlotFromReplicaTest()
+        {
+            const int Slot = 8192;
+
+            var ownerId = Generator.CreateHexId();         // primary that genuinely owns Slot
+            var otherPrimaryId = Generator.CreateHexId();  // the replica's own primary
+            var replicaId = Generator.CreateHexId();
+
+            // The genuine owner of Slot, with a deliberately low config epoch.
+            var owner = new ClusterConfig()
+                .InitializeLocalWorker(
+                    ownerId, "127.0.0.1", ClusterTestContext.Port + 1,
+                    configEpoch: 2, Garnet.cluster.NodeRole.PRIMARY, null, "")
+                .UpdateSlotState(Slot, ClusterConfig.LOCAL_WORKER_ID, SlotState.STABLE);
+
+            var otherPrimary = new ClusterConfig().InitializeLocalWorker(
+                otherPrimaryId, "127.0.0.1", ClusterTestContext.Port + 2,
+                configEpoch: 3, Garnet.cluster.NodeRole.PRIMARY, null, "");
+
+            // A replica of some other primary. It does not own Slot, it merely relays that the owner does.
+            // Its config epoch is higher than the owner's, as happens after an epoch collision is resolved.
+            var replica = new ClusterConfig()
+                .InitializeLocalWorker(
+                    replicaId, "127.0.0.1", ClusterTestContext.Port + 3,
+                    configEpoch: 5, Garnet.cluster.NodeRole.REPLICA, otherPrimaryId, "")
+                .Merge(otherPrimary, [])
+                .Merge(owner, []);
+
+            Assert.That(replica.GetNodeIdFromSlot(Slot), Is.EqualTo(ownerId),
+                "precondition: the replica relays that the owner owns the slot");
+
+            // Receiver knows the owner as a worker but has not learned who owns Slot yet, which is the
+            // normal state of a freshly met node.
+            var ownerWithoutSlots = new ClusterConfig().InitializeLocalWorker(
+                ownerId, "127.0.0.1", ClusterTestContext.Port + 1,
+                configEpoch: 2, Garnet.cluster.NodeRole.PRIMARY, null, "");
+            var receiver = new ClusterConfig()
+                .InitializeLocalWorker(
+                    Generator.CreateHexId(), "127.0.0.1", ClusterTestContext.Port + 4,
+                    configEpoch: 1, Garnet.cluster.NodeRole.PRIMARY, null, "")
+                .Merge(ownerWithoutSlots, []);
+
+            Assert.That(receiver.GetState((ushort)Slot), Is.Not.EqualTo(SlotState.STABLE),
+                "precondition: the receiver has no owner for the slot");
+
+            var merged = receiver.Merge(replica, []);
+
+            Assert.That(merged.GetNodeIdFromSlot(Slot), Is.Not.EqualTo(replicaId),
+                "a replica must never become the owner of a slot it only relays");
+
+            // The owner must still be able to claim the slot afterwards. Without the guard above the
+            // replica holds it at a higher config epoch and this claim is rejected forever.
+            var claimed = merged.Merge(owner, []);
+            Assert.That(claimed.GetNodeIdFromSlot(Slot), Is.EqualTo(ownerId),
+                "the genuine owner must still be able to claim the slot");
+        }
+
+        /// <summary>
+        /// Models one node of a gossiping cluster: its published configuration plus the two caches that
+        /// decide whether a configuration is actually put on the wire.
+        /// </summary>
+        private sealed class GossipNode
+        {
+            public string NodeId;
+
+            /// <summary>
+            /// ClusterManager.currentConfig.
+            /// </summary>
+            public ClusterConfig Config;
+
+            /// <summary>
+            /// GarnetServerNode.lastConfig, one per outgoing gossip connection.
+            /// </summary>
+            public readonly Dictionary<string, ClusterConfig> LastConfigSentTo = [];
+
+            /// <summary>
+            /// ClusterCommands.lastSentConfig, one per inbound gossip session.
+            /// </summary>
+            public readonly Dictionary<string, ClusterConfig> LastConfigRepliedTo = [];
+        }
+
+        private static readonly ConcurrentDictionary<string, long> EmptyBanList = new();
+
+        /// <summary>
+        /// Models ClusterManager.TryMerge.
+        /// </summary>
+        private static void GossipTryMerge(GossipNode node, ClusterConfig senderConfig)
+        {
+            var currentCopy = node.Config.Copy();
+            var next = currentCopy.Merge(senderConfig, EmptyBanList).HandleConfigEpochCollision(senderConfig);
+            if (currentCopy != next)
+                node.Config = next;
+        }
+
+        /// <summary>
+        /// Models one gossip exchange: GarnetServerNode.TryGossip sends a configuration only when the local
+        /// configuration object changed since the last send on that connection, the receiver merges it and
+        /// replies with its own pre-merge configuration under the same rule, and the sender merges the reply.
+        /// </summary>
+        private static void GossipExchange(GossipNode from, GossipNode to, bool withMeet = false)
+        {
+            byte[] request;
+            if (!from.LastConfigSentTo.TryGetValue(to.NodeId, out var lastSent) || lastSent != from.Config)
+            {
+                from.LastConfigSentTo[to.NodeId] = from.Config;
+                request = from.Config.ToByteArray();
+            }
+            else
+            {
+                request = [];
+            }
+
+            var receiverConfig = to.Config;
+            if (request.Length > 0)
+            {
+                var senderConfig = ClusterConfig.FromByteArray(request);
+                if (withMeet || receiverConfig.IsKnown(senderConfig.LocalNodeId))
+                    GossipTryMerge(to, senderConfig);
+            }
+
+            byte[] reply;
+            if (withMeet || !to.LastConfigRepliedTo.TryGetValue(from.NodeId, out var lastReplied) || lastReplied != receiverConfig)
+            {
+                to.LastConfigRepliedTo[from.NodeId] = receiverConfig;
+                reply = receiverConfig.ToByteArray();
+            }
+            else
+            {
+                reply = [];
+            }
+
+            if (reply.Length > 0)
+            {
+                var replyConfig = ClusterConfig.FromByteArray(reply);
+
+                // A MEET response is merged unconditionally, the peer is trusted because an admin issued the meet.
+                if (withMeet || from.Config.IsKnown(replyConfig.LocalNodeId))
+                    GossipTryMerge(from, replyConfig);
+            }
+        }
+
+        /// <summary>
+        /// Replays what SimpleSetupCluster does: assign slots to the two primaries, set config epochs, then
+        /// issue every CLUSTER MEET from the first node.
+        /// </summary>
+        private static List<GossipNode> BuildGossipCluster()
+        {
+            var nodes = new List<GossipNode>();
+            for (var i = 0; i < 4; i++)
+            {
+                var nodeId = Generator.CreateHexId();
+                nodes.Add(new GossipNode
+                {
+                    NodeId = nodeId,
+                    Config = new ClusterConfig().InitializeLocalWorker(
+                        nodeId, "127.0.0.1", ClusterTestContext.Port + i, configEpoch: 0,
+                        Garnet.cluster.NodeRole.PRIMARY, null, "")
+                });
+            }
+
+            nodes[0].Config = nodes[0].Config.AssignSlots([.. Enumerable.Range(0, 8192)], ClusterConfig.LOCAL_WORKER_ID, SlotState.STABLE);
+            nodes[1].Config = nodes[1].Config.AssignSlots([.. Enumerable.Range(8192, 8192)], ClusterConfig.LOCAL_WORKER_ID, SlotState.STABLE);
+
+            for (var i = 0; i < nodes.Count; i++)
+                nodes[i].Config = nodes[i].Config.SetLocalWorkerConfigEpoch(i + 1);
+
+            for (var i = 1; i < nodes.Count; i++)
+                GossipExchange(nodes[0], nodes[i], withMeet: true);
+
+            return nodes;
+        }
+
+        /// <summary>
+        /// The state WaitForSyncAsync waits for: every node agrees that the two primaries own their halves of
+        /// the slot space and that the two replicas own nothing and are flagged as replicas.
+        /// </summary>
+        private static bool GossipClusterConverged(List<GossipNode> nodes)
+        {
+            foreach (var node in nodes)
+            {
+                for (var slot = 0; slot < 8192; slot++)
+                    if (node.Config.GetNodeIdFromSlot((ushort)slot) != nodes[0].NodeId) return false;
+
+                for (var slot = 8192; slot < 16384; slot++)
+                    if (node.Config.GetNodeIdFromSlot((ushort)slot) != nodes[1].NodeId) return false;
+
+                if (node.Config.GetNodeRoleFromNodeId(nodes[2].NodeId) != Garnet.cluster.NodeRole.REPLICA) return false;
+                if (node.Config.GetNodeRoleFromNodeId(nodes[3].NodeId) != Garnet.cluster.NodeRole.REPLICA) return false;
+            }
+            return true;
+        }
+
+        private static string DescribeGossipCluster(List<GossipNode> nodes)
+        {
+            var sb = new StringBuilder();
+            foreach (var node in nodes)
+            {
+                var info = node.Config.GetClusterInfo(null);
+                for (var i = 0; i < nodes.Count; i++)
+                    info = info.Replace(nodes[i].NodeId, $"n{i}");
+                sb.Append(info).Append('\n');
+            }
+            return sb.ToString();
+        }
+
+        /// <summary>
+        /// Drives the real merge code through the cluster layout SimpleSetupCluster builds, over many gossip
+        /// orderings. A configuration is only put on the wire when the sender's configuration object changed
+        /// since its last send on that connection, so a view that a merge refuses to take is never offered
+        /// again and any divergence the merge rules allow is permanent rather than transient.
+        /// </summary>
+        [Test, Order(13)]
+        [Category("CLUSTER-CONFIG"), CancelAfter(60_000)]
+        public void ClusterConfigGossipConvergesForEveryOrderingTest()
+        {
+            const int Trials = 200;
+            const int RoundsPerTrial = 60;
+
+            var pairs = new List<(int From, int To)>();
+            for (var from = 0; from < 4; from++)
+                for (var to = 0; to < 4; to++)
+                    if (from != to) pairs.Add((from, to));
+
+            var random = new Random(12345);
+            for (var trial = 0; trial < Trials; trial++)
+            {
+                var nodes = BuildGossipCluster();
+
+                // CLUSTER REPLICATE bumps the local config epoch so the role change can propagate. Gossip runs
+                // between the two calls because the test waits for the first primary to see its replica.
+                nodes[2].Config = nodes[2].Config.MakeReplicaOf(nodes[0].NodeId).BumpLocalNodeConfigEpoch();
+                var interleaved = random.Next(0, 8);
+                for (var i = 0; i < interleaved; i++)
+                {
+                    var (from, to) = pairs[random.Next(pairs.Count)];
+                    GossipExchange(nodes[from], nodes[to]);
+                }
+                nodes[3].Config = nodes[3].Config.MakeReplicaOf(nodes[1].NodeId).BumpLocalNodeConfigEpoch();
+
+                for (var round = 0; round < RoundsPerTrial && !GossipClusterConverged(nodes); round++)
+                {
+                    foreach (var (from, to) in pairs.OrderBy(_ => random.Next()))
+                        GossipExchange(nodes[from], nodes[to]);
+                }
+
+                Assert.That(GossipClusterConverged(nodes), Is.True,
+                    $"cluster did not converge after {RoundsPerTrial} gossip rounds in trial {trial}:\n{DescribeGossipCluster(nodes)}");
+            }
         }
     }
 }

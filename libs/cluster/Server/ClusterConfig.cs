@@ -1207,6 +1207,14 @@ namespace Garnet.cluster
                         continue;
                     assignToWorkerId = GetWorkerIdFromNodeId(senderConfig.LocalNodePrimaryId);
                 }
+                else
+                {
+                    // Sender is a replica and no owner is recorded locally for this slot. A replica is never the
+                    // claimant of a slot, so assigning it here would hand ownership to a node that never owned it.
+                    // Once that node's config epoch overtakes the real owner's, the owner can no longer reclaim the
+                    // slot, so leave it unowned and let the owning primary claim it.
+                    continue;
+                }
 
                 // Update happened only if workerId or state changed
                 // NOTE: this avoids message flooding when sender epoch equals zero
