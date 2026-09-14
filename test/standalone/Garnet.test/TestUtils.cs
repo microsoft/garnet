@@ -860,7 +860,7 @@ namespace Garnet.test
             string bufferPoolMemoryBudget = null,
             string networkBufferSize = null,
             string networkBufferMemoryBudget = null,
-            int networkConnectionLimit = -1,
+            int networkConnectionLimit = GarnetServerOptions.DefaultNetworkConnectionLimit,
             string networkReceiveBufferMinSize = null,
             string networkSendBufferMinSize = null,
             string sessionScratchBufferMaxRetainedSize = null,

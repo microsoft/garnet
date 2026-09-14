@@ -37,7 +37,6 @@ namespace Garnet.server
         /// </summary>
         public NetworkBufferBudget NetworkBufferBudget => networkBufferBudget;
         readonly LimitedFixedBufferPool networkPool;
-        readonly int networkConnectionLimit;
         readonly string unixSocketPath;
         readonly UnixFileMode unixSocketPermission;
 
@@ -75,7 +74,7 @@ namespace Garnet.server
         /// <param name="networkBufferSize"></param>
         /// <param name="tlsOptions"></param>
         /// <param name="networkSendThrottleMax"></param>
-        /// <param name="networkConnectionLimit"></param>
+        /// <param name="connectionLimit">Process-wide connection admission control, shared across listeners. Null enforces no limit.</param>
         /// <param name="unixSocketPath"></param>
         /// <param name="unixSocketPermission"></param>
         /// <param name="networkBufferSettings">Send/receive buffer sizing. Defaults to the built-in sizes when null.</param>
@@ -87,7 +86,7 @@ namespace Garnet.server
             int networkBufferSize = default,
             IGarnetTlsOptions tlsOptions = null,
             int networkSendThrottleMax = 8,
-            int networkConnectionLimit = -1,
+            ConnectionLimit connectionLimit = null,
             string unixSocketPath = null,
             UnixFileMode unixSocketPermission = default,
             NetworkBufferSettings networkBufferSettings = null,
@@ -96,7 +95,11 @@ namespace Garnet.server
             ILogger logger = null)
             : base(endpoint, networkBufferSize, logger)
         {
-            this.networkConnectionLimit = networkConnectionLimit;
+            // A listener given no shared limit gets its own, so it still honours CONFIG SET and so
+            // that no process-wide static accumulates references to every listener ever created.
+            ConnectionLimit = connectionLimit ?? new ConnectionLimit(ConnectionLimit.Unlimited);
+            ConnectionLimit.Register(this);
+
             this.tlsOptions = tlsOptions;
             this.networkSendThrottleMax = networkSendThrottleMax;
             if (networkBufferSettings == null)
@@ -261,7 +264,7 @@ namespace Garnet.server
             if (activeHandlerCount >= 0)
             {
                 var currentActiveHandlerCount = Interlocked.Increment(ref activeHandlerCount);
-                if (currentActiveHandlerCount > 0 && (networkConnectionLimit == -1 || currentActiveHandlerCount <= networkConnectionLimit))
+                if (currentActiveHandlerCount > 0 && ConnectionLimit.IsWithinLimit())
                 {
                     string remoteEndpointName = null;
                     try

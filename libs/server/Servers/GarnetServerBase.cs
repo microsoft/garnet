@@ -15,7 +15,7 @@ namespace Garnet.server
     /// <summary>
     /// Garnet server - common base class
     /// </summary>
-    public abstract class GarnetServerBase : IGarnetServer
+    public abstract class GarnetServerBase : IGarnetServer, IConnectionSource
     {
         /// <summary>
         /// Active network handlers
@@ -109,6 +109,27 @@ namespace Garnet.server
         /// Get the number of connections rejected because the connection limit was reached.
         /// </summary>
         public long TotalConnectionsRejected => totalConnectionsRejected;
+
+        /// <summary>
+        /// Process-wide connection admission control consulted on every accept, and the object a
+        /// <c>CONFIG SET maxclients</c> writes through. Never null; a listener with no shared limit
+        /// owns an unlimited one.
+        /// </summary>
+        public ConnectionLimit ConnectionLimit { get; protected set; } = new(ConnectionLimit.Unlimited);
+
+        /// <summary>
+        /// Live connections held by this listener, contributed to the process-wide connection
+        /// limit. Clamped at zero because a disposed listener parks the count at int.MinValue as a
+        /// sentinel, which must not subtract from its peers' populations.
+        /// </summary>
+        public int LiveConnectionCount
+        {
+            get
+            {
+                var count = Volatile.Read(ref activeHandlerCount);
+                return count > 0 ? count : 0;
+            }
+        }
 
         /// <summary>
         /// Reset connections received counter. Multiplier for accounting for pub/sub
