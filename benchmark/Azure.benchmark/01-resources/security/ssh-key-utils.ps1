@@ -2,10 +2,22 @@ function Get-SshKeyManifest {
     param([string]$ManifestPath)
 
     if (-not (Test-Path -LiteralPath $ManifestPath -PathType Leaf)) {
+        # manifest.json is git-ignored (per-user). Seed it from the tracked
+        # template on first use, then ask the user to fill in their key names.
+        $templatePath = Join-Path (Split-Path -Parent $ManifestPath) 'manifest.template.json'
+        if (Test-Path -LiteralPath $templatePath -PathType Leaf) {
+            Copy-Item -LiteralPath $templatePath -Destination $ManifestPath
+            throw "Created '$ManifestPath' from manifest.template.json. Edit its 'userKeys' and 'vmKeys' entries with your SSH key names, then re-run."
+        }
         throw "SSH manifest not found: $ManifestPath"
     }
 
-    $manifest = Get-Content -LiteralPath $ManifestPath -Raw | ConvertFrom-Json
+    $raw = Get-Content -LiteralPath $ManifestPath -Raw
+    if ($raw -match '__SSH_USER_KEY__|__SSH_VM_KEY__') {
+        throw "SSH manifest '$ManifestPath' still contains placeholder values. Edit its 'userKeys' and 'vmKeys' entries with your SSH key names."
+    }
+
+    $manifest = $raw | ConvertFrom-Json
     if (-not $manifest.basePath -or -not $manifest.userKeys -or -not $manifest.vmKeys) {
         throw "SSH manifest must define basePath, userKeys, and vmKeys."
     }

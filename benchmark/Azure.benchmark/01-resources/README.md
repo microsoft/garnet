@@ -21,7 +21,9 @@ One-time deployment of the shared Azure resources the benchmarking environment d
 | `storage/storage.bicep` | Storage account + blob container template (deterministic name, `app=azurebench` tag for discovery) |
 | `security/keyvault.bicep` | Key Vault deployment template |
 | `security/keyvault.json` | Key Vault deployment parameters |
-| `security/manifest.json` | SSH key declarations (`basePath`, `userKeys`, `vmKeys`) |
+| `security/manifest.template.json` | Tracked template for the SSH key manifest |
+| `security/initialize-manifest.ps1` | Helper that creates `manifest.json` from the template and fills in your key names |
+| `security/manifest.json` | SSH key declarations (`basePath`, `userKeys`, `vmKeys`); per-user, git-ignored, seeded from the template |
 | `security/*.pub` | Personal + VMSS public keys (git-ignored) |
 
 ## Usage
@@ -60,7 +62,21 @@ Both server and client VMSS share the accelerated networking subnet. Peer discov
 
 ## Configure SSH Keys and Key Vault
 
-Edit `security/manifest.json` to declare your SSH key names and base path:
+`security/manifest.json` declares your SSH key names and base path. It is
+**git-ignored** (per-user); the tracked `security/manifest.template.json` is its
+source. Run the helper to create and fill it interactively:
+
+```powershell
+pwsh .\security\initialize-manifest.ps1
+```
+
+Or copy the template and edit it by hand (or just run `deploy-common-resources.ps1`,
+which seeds `manifest.json` from the template on first run and stops so you can
+fill it in):
+
+```powershell
+Copy-Item security\manifest.template.json security\manifest.json
+```
 
 ```json
 {

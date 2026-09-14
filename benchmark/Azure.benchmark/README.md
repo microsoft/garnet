@@ -19,26 +19,28 @@ The repo is organized into three layers, each with its own README containing the
 - SSH key pair for **intra-VMSS** access (VM-to-VM within a scale set, e.g. `id_ed25519_vmss`)
 - SSH key pair(s) for **inter-VMSS** access (your desktop → VMs, e.g. `id_ed25519_user`)
 
-## First-time setup: initialize placeholders
+## First-time setup: SSH key manifest
 
-This suite ships with neutral placeholder tokens instead of any personal or
-account-specific values, so nothing tied to a specific person or subscription is
-committed to the public repository. **Run this once, right after cloning** (before
-the Quick Start below), to substitute the placeholders with values for your
-environment:
+The only per-user configuration is your SSH key manifest,
+`01-resources/security/manifest.json`. It is **git-ignored** so your personal key
+names are never committed; the tracked `manifest.template.json` is its source.
+
+Before your first deploy, create it with the helper (prompts for your key names):
 
 ```powershell
-pwsh .\initialize-placeholders.ps1
+pwsh .\01-resources\security\initialize-manifest.ps1
 ```
 
-You are prompted for:
+Or copy the template and edit it by hand:
 
-- **Personal SSH key** — your key name for desktop → VM SSH.
-- **VMSS inter-node SSH key** — key for VM-to-VM SSH (default `id_ed25519_vmss`).
+```powershell
+Copy-Item .\01-resources\security\manifest.template.json .\01-resources\security\manifest.json
+# then edit userKeys / vmKeys — see 01-resources/README.md
+```
 
-Provide values non-interactively with `-SshUserKey` and `-SshVmKey`, or run
-`.\initialize-placeholders.ps1 -Check` to verify that no placeholders remain. Review the
-changes with `git diff` before committing.
+If you skip this, `deploy-common-resources.ps1` seeds `manifest.json` from the
+template on first run and stops so you can fill it in. Deploy scripts refuse to
+run while the manifest still contains placeholder values.
 
 ## Quick Start
 

@@ -35,14 +35,14 @@ copy-paste-risky configuration defaults, not exploitable vulnerabilities.
    tag, and the `Owner` resource tag was dropped — so no owner-derived names or tags
    remain to genericize.
 
-3. **Genericized personal SSH key names.** Personal device key names in
-   `security/manifest.json` and the docs were replaced with the `__SSH_USER_KEY__`
-   placeholder.
+3. **Removed personal SSH key names from source control.** The SSH key manifest
+   `security/manifest.json` is now **git-ignored** (per-user). A tracked
+   `security/manifest.template.json` holds neutral `__SSH_USER_KEY__` /
+   `__SSH_VM_KEY__` placeholders; `Get-SshKeyManifest` seeds `manifest.json` from it
+   on first run and refuses to proceed while placeholders remain, so no personal key
+   names are ever committed.
 
-4. **Added `initialize-placeholders.ps1`.** Run it once after cloning to fill the
-   placeholders interactively (`-Check` reports any un-filled tokens for CI).
-
-5. **Removed private-repo / GitHub-PAT support.** The `clone-repos.ps1` PAT-fetch
+4. **Removed private-repo / GitHub-PAT support.** The `clone-repos.ps1` PAT-fetch
    and `x-access-token:<PAT>@` URL-rewrite paths existed only to clone Garnet while
    it was private. All benchmarked repos are now public, so this dead path was
    removed along with its docs (`New-GitHubPat.ps1` helper, `ghclone`, `private`
@@ -53,12 +53,15 @@ copy-paste-risky configuration defaults, not exploitable vulnerabilities.
 
 ## Placeholders that MUST be filled before deploying
 
-Run `initialize-placeholders.ps1` (or edit manually). Do not commit filled-in
-personal values back to the public repo.
+Run `security/initialize-manifest.ps1` to create `security/manifest.json` from the
+template and fill in your SSH key names (or copy the template by hand, or let
+`deploy-common-resources.ps1` seed it on first run). `manifest.json` is git-ignored,
+so filled-in personal values are never committed.
 
 | Placeholder        | Meaning                                                        |
 |--------------------|----------------------------------------------------------------|
 | `__SSH_USER_KEY__` | Your personal SSH public key name in the manifest `basePath`.   |
+| `__SSH_VM_KEY__`   | The VMSS inter-node SSH key name (default `id_ed25519_vmss`).    |
 
 ## Residual low-severity items (documented, not exploitable)
 

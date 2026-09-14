@@ -825,12 +825,8 @@ if ($Action -eq 'list') {
 if ($Action -eq 'push-keys') {
     $securityDir = Join-Path $scriptDir '..\01-resources\security'
     $mfPath = Join-Path $securityDir 'manifest.json'
-    if (-not (Test-Path $mfPath)) {
-        Write-Error "manifest.json not found: $mfPath"
-        exit 1
-    }
-    $mf = Get-Content $mfPath -Raw | ConvertFrom-Json
-    $keyNames = @(@($mf.userKeys) + @($mf.vmKeys) | Where-Object { $_ })
+    $mf = Get-SshKeyManifest -ManifestPath $mfPath
+    $keyNames = @(@($mf.UserKeys) + @($mf.VmKeys) | Where-Object { $_ })
 
     $pubKeys = @()
     foreach ($name in $keyNames) {
