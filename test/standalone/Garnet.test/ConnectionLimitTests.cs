@@ -336,7 +336,8 @@ namespace Garnet.test
         }
 
         /// <summary>
-        /// -1 restores unlimited admission at runtime.
+        /// -1 restores unlimited admission at runtime. Asserts several connections past the old
+        /// ceiling, since admitting exactly one more is also what raising the limit by one would do.
         /// </summary>
         [Test]
         public void MaxClientsCanBeSetToUnlimitedAtRuntime()
@@ -347,12 +348,34 @@ namespace Garnet.test
                 ClassicAssert.AreEqual(MaxClientsError, ConnectAndReadToClose());
 
                 ClassicAssert.AreEqual("+OK\r\n", Exchange("CONFIG", "SET", "maxclients", "-1"));
-                OpenAcceptedConnection().Dispose();
+
+                for (var i = 0; i < Limit + 2; i++)
+                    accepted.Add(OpenAcceptedConnection());
             }
             finally
             {
                 DisposeAll(accepted);
             }
+        }
+
+        /// <summary>
+        /// Capacity returns when the refused-then-drained server observes the closes, and the
+        /// counter does not unwind with it -- it is a cumulative total, not a gauge.
+        /// </summary>
+        [Test]
+        public void TheServerRecoversWhenConnectionsDrainAndTheCounterDoesNotUnwind()
+        {
+            var accepted = FillRemainingSlots();
+            _ = ConnectAndReadToClose();
+            WaitForRejectedConnections(1);
+
+            DisposeAll(accepted);
+
+            using var reconnected = WaitForAcceptance();
+
+            Thread.Sleep(MetricsSamplingFreq * 2000);
+            ClassicAssert.AreEqual(1, ReadRejectedConnections(),
+                "rejected_connections is cumulative, so draining and reconnecting must not reduce it");
         }
 
         /// <summary>
@@ -427,25 +450,25 @@ namespace Garnet.test
         /// Filling one listener to the ceiling must refuse the other listener too. With a
         /// per-listener limit each endpoint would have its own ceiling and this would be accepted,
         /// giving a process that admits N times the configured maximum.
+        ///
+        /// The second listener is made to accept one connection first. Without that, a refusal
+        /// there is equally consistent with the second listener having reached a ceiling of its
+        /// own, and the test would pass against the defect it exists to catch.
         /// </summary>
         [Test]
         public void TheCeilingIsSharedAcrossListenersRatherThanGrantedToEachOne()
         {
-            var accepted = new List<Socket>();
+            var accepted = new List<Socket>
+            {
+                // Establishes that the second listener admits connections in its own right, so the
+                // refusal below can only be the shared sum.
+                OpenAcceptedConnection(second)
+            };
+
             try
             {
-                for (var i = 0; i < Limit; i++)
-                {
-                    var socket = new Socket(SocketType.Stream, ProtocolType.Tcp);
-                    socket.Connect(first);
-                    socket.ReceiveTimeout = 10_000;
-                    socket.Send("PING\r\n"u8.ToArray());
-
-                    var buffer = new byte[64];
-                    var read = socket.Receive(buffer);
-                    ClassicAssert.AreEqual("+PONG\r\n", Encoding.ASCII.GetString(buffer, 0, read));
-                    accepted.Add(socket);
-                }
+                for (var i = 0; i < Limit - 1; i++)
+                    accepted.Add(OpenAcceptedConnection(first));
 
                 using var refused = new Socket(SocketType.Stream, ProtocolType.Tcp);
                 refused.Connect(second);
@@ -462,6 +485,20 @@ namespace Garnet.test
             {
                 foreach (var socket in accepted) socket.Dispose();
             }
+        }
+
+        static Socket OpenAcceptedConnection(EndPoint endPoint)
+        {
+            var socket = new Socket(SocketType.Stream, ProtocolType.Tcp);
+            socket.Connect(endPoint);
+            socket.ReceiveTimeout = 10_000;
+            socket.Send("PING\r\n"u8.ToArray());
+
+            var buffer = new byte[64];
+            var read = socket.Receive(buffer);
+            ClassicAssert.AreEqual("+PONG\r\n", Encoding.ASCII.GetString(buffer, 0, read),
+                $"the listener at {endPoint} should have accepted this connection");
+            return socket;
         }
     }
 }
