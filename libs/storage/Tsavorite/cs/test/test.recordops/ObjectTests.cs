@@ -809,10 +809,14 @@ namespace Tsavorite.test.Objects
             ObjectLogWriterDiagnostics.Reset();
             store.Log.FlushAndEvict(wait: true);
 
+#if DEBUG
+            // ObjectLogWriterDiagnostics is [Conditional("DEBUG")], so these counters are only recorded in a Debug build.
+            // The on-disk round-trip below is the part that must hold in every configuration.
             Assert.That(ObjectLogWriterDiagnostics.LastFirstObjectHeaderRoom, Is.EqualTo(ChunkHeader.TotalSize),
                 $"first object ChunkHeader should land at buffer_end - {ChunkHeader.TotalSize} (zero-length-chunk boundary)");
             Assert.That(ObjectLogWriterDiagnostics.ZeroLengthChunkCount, Is.GreaterThanOrEqualTo(1),
                 "a zero-length continuation chunk should have been written at the boundary");
+#endif
 
             // Round-trip the object through the zero-length-chunk on-disk path.
             TestLargeObjectInput readInput = new() { wantValueStyle = TestValueStyle.Object };

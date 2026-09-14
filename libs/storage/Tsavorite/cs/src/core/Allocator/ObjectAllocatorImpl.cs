@@ -1033,7 +1033,7 @@ namespace Tsavorite.core
                 // Object serialization and metadata stamping are complete. Write the live page.
                 {
                     // Write whole sectors straight out of the live page: [alignedStartOffset, RoundUp(endOffset)).
-                    // Bytes above the logical endpoint go to disk verbatim rather than zeroed, because they are never read back:
+                    // Bytes above the logical endpoint go to disk verbatim, because they are never read back:
                     //   - a later flush of this page starts at its own rounded-down offset and rewrites the sector from the live page;
                     //   - recovery bounds its record walk by maxAddressOffsetOnPage, which is the UNROUNDED endpoint, so records above
                     //     the endpoint are never parsed and their object-log position words are never interpreted; and

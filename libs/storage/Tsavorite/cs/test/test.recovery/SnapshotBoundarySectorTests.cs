@@ -20,7 +20,7 @@ namespace Tsavorite.test.recovery.objects
     /// Covers the sector containing a Snapshot checkpoint's end boundary, when that boundary falls mid-sector.
     ///
     /// A no-copy flush writes whole sectors straight out of the live allocator page, so the bytes between the checkpoint
-    /// boundary and the end of its sector reach disk verbatim rather than zeroed. These tests pin the invariants that make
+    /// boundary and the end of its sector reach disk verbatim. These tests pin the invariants that make
     /// that safe, so a regression surfaces here instead of as a silent misread:
     ///
     /// <list type="bullet">
@@ -38,7 +38,7 @@ namespace Tsavorite.test.recovery.objects
         const int NumRecords = 2000;
 
         // A byte pattern that is emphatically not zero, so a walk that runs past the boundary reads a bogus
-        // RecordInfo/object-log position instead of an "unmistakably unset" one.
+        // RecordInfo/object-log position rather than one that could pass as unset.
         const byte JunkPattern = 0xCC;
 
         [SetUp]
@@ -57,7 +57,7 @@ namespace Tsavorite.test.recovery.objects
             var snapshotFile = FindSnapshotFile();
             var originalLength = new FileInfo(snapshotFile).Length;
 
-            // Stamp the post-boundary remainder of the boundary sector. This is exactly the region the flush used to zero.
+            // Stamp the post-boundary remainder of the boundary sector, which recovery must never parse.
             using (var stream = new FileStream(snapshotFile, FileMode.Open, FileAccess.Write, FileShare.None))
             {
                 stream.Seek(-junkLength, SeekOrigin.End);

@@ -546,7 +546,7 @@ namespace Tsavorite.core
             }
 
             objectHeadered = true;
-            ObjectLogWriterDiagnostics.LastFirstObjectHeaderRoom = writeBuffer.RemainingCapacity;   // test instrumentation
+            ObjectLogWriterDiagnostics.OnFirstObjectHeaderPlaced(writeBuffer.RemainingCapacity);
             PokeObjectChunkPlaceholder();
         }
 
@@ -572,8 +572,7 @@ namespace Tsavorite.core
         {
             var chunkDataLen = writeBuffer.currentPosition - (currentChunkHeaderBufferPos + ChunkHeader.TotalSize);
             Debug.Assert(chunkDataLen >= 0, $"chunk data length {chunkDataLen} must be non-negative");
-            if (chunkDataLen == 0)
-                ++ObjectLogWriterDiagnostics.ZeroLengthChunkCount;   // test instrumentation (boundary-filler zero-length chunk)
+            ObjectLogWriterDiagnostics.OnChunkBackfilled(chunkDataLen);
             var currentLength = (uint)chunkDataLen;
             if (hasContinuation)
                 currentLength |= unchecked((uint)ChunkedRecordConstants.ContinuationFlag);
@@ -600,8 +599,8 @@ namespace Tsavorite.core
     }
 
     /// <summary>Test-only instrumentation for the object chunk-framing writer, exercised by the zero-length-chunk boundary test. Non-generic so a
-    /// test can observe it independent of the store-functions type. Not used by production logic. NUnit runs these fixtures sequentially, so the
-    /// static fields are set/read around a single flush without contention.</summary>
+    /// test can observe it independent of the store-functions type. Every entry point is <see cref="ConditionalAttribute"/> on DEBUG, so a Release
+    /// build compiles out the calls and their arguments entirely and the writer carries no production cost -- not even a flag test.</summary>
     internal static class ObjectLogWriterDiagnostics
     {
         /// <summary>The write-buffer bytes remaining when the first post-prefix object <see cref="ChunkHeader"/> was placed for the most recent
@@ -611,6 +610,20 @@ namespace Tsavorite.core
         /// <summary>Count of zero-length object chunks written (a boundary filler emitted when a <see cref="ChunkHeader"/> lands at buffer_end-8).</summary>
         internal static long ZeroLengthChunkCount;
 
+        /// <summary>Record the buffer room remaining as the first post-prefix object <see cref="ChunkHeader"/> is placed.</summary>
+        [Conditional("DEBUG")]
+        internal static void OnFirstObjectHeaderPlaced(int remainingCapacity) => LastFirstObjectHeaderRoom = remainingCapacity;
+
+        /// <summary>Count a back-filled chunk whose data length is zero. Interlocked because concurrent flushes share these statics.</summary>
+        [Conditional("DEBUG")]
+        internal static void OnChunkBackfilled(int chunkDataLength)
+        {
+            if (chunkDataLength == 0)
+                _ = Interlocked.Increment(ref ZeroLengthChunkCount);
+        }
+
+        /// <summary>Clear the counters before the flush a test is about to observe.</summary>
+        [Conditional("DEBUG")]
         internal static void Reset()
         {
             LastFirstObjectHeaderRoom = -1;
