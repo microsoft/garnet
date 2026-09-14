@@ -224,6 +224,7 @@ namespace Garnet.server
 
                     garnetServer.ResetConnectionsReceived();
                     garnetServer.ResetConnectionsDiposed();
+                    garnetServer.ResetConnectionsRejected();
                 }
 
                 storeWrapper.clusterProvider?.ResetGossipStats();
@@ -303,6 +304,7 @@ namespace Garnet.server
                     var total_connections_received = 0L;
                     var total_connections_disposed = 0L;
                     var total_connections_active = 0L;
+                    var rejected_connections = 0L;
 
                     // Reset stats accumulator in preparation for scanning and accumulating current iteration stas
                     ResetAndAddGlobalHistory();
@@ -314,6 +316,7 @@ namespace Garnet.server
                         total_connections_received += garnetServer.TotalConnectionsReceived;
                         total_connections_disposed += garnetServer.TotalConnectionsDisposed;
                         total_connections_active += garnetServer.get_conn_active();
+                        rejected_connections += garnetServer.TotalConnectionsRejected;
 
                         // Accumulate stats for the specified for this iteration
                         AddCurrentServerStats(server);
@@ -323,6 +326,7 @@ namespace Garnet.server
                     globalMetrics.total_connections_received = total_connections_received;
                     globalMetrics.total_connections_disposed = total_connections_disposed;
                     globalMetrics.total_connections_active = total_connections_active;
+                    globalMetrics.rejected_connections = rejected_connections;
 
                     // Cleanup if INFO RESET has been issued
                     CleanupGlobalStats();
