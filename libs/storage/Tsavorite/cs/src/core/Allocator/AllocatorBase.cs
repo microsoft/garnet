@@ -49,7 +49,7 @@ namespace Tsavorite.core
         /// <summary>Compute the hash code of a record's overflow key during recovery Pass 1 (index build) by reading the key bytes from
         /// the object log, since the objectIdMap is not yet populated so <see cref="LogRecord.Key"/> cannot resolve it. Only implemented
         /// by the object allocator; other allocators never have overflow keys, so this is never called for them.</summary>
-        internal virtual long ComputeRecoveryOverflowKeyHash(in LogRecord logRecord, IDevice objectLogDevice,
+        internal virtual long ComputeRecoveryOverflowKeyHash(in LogRecord logRecord, ref CircularDiskReadBuffer readBuffers, IDevice objectLogDevice,
             ObjectLogFilePositionInfo hardReadEndPosition = default)
             => throw new TsavoriteException("Overflow keys are only supported by the object allocator");
     }

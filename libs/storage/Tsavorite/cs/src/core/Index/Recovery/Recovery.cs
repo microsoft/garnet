@@ -43,6 +43,10 @@ namespace Tsavorite.core
         /// the live records. Such a page must subsequently deserialize from the main object log.</summary>
         public bool[] snapshotPageFlushedToMain;
 
+        /// <summary>Read buffers reused across every isolated overflow-key read of this recovery, so the pooled object-log read buffer is
+        /// rented once rather than per record. Bound to one device; replaced when the main/snapshot object log alternates.</summary>
+        public CircularDiskReadBuffer IsolatedKeyReadBuffers;
+
         /// <summary>Signals completion of an in-progress page read.</summary>
         private readonly SemaphoreSlim readSemaphore = new(0);
         /// <summary>Signals completion of an in-progress page flush.</summary>
@@ -126,6 +130,7 @@ namespace Tsavorite.core
         {
             recoveryDevice.Dispose();
             objectLogRecoveryDevice?.Dispose();
+            IsolatedKeyReadBuffers?.Dispose();
             readSemaphore.Dispose();
             flushSemaphore.Dispose();
         }
@@ -914,7 +919,7 @@ namespace Tsavorite.core
                 pageUntilAddressOffset = hlogBase.GetOffsetOnPage(untilAddress);
 
             if (RecoverFromPage(recoverFromAddress, pageFromAddressOffset, pageUntilAddressOffset, startLogicalAddressOfPage, startPhysicalAddressOfPage,
-                options, isSnapshotPage: false, objectLogRecoveryDevice: null, objectLogRecoveryReadEnd: default))
+                options, isSnapshotPage: false, ref recoveryStatus.IsolatedKeyReadBuffers, objectLogRecoveryDevice: null, objectLogRecoveryReadEnd: default))
             {
                 // The current page was modified due to undoFutureVersion; caller will flush it to storage and issue a read request if necessary.
                 recoveryStatus.readStatus[pageIndex] = ReadStatus.Pending;
@@ -1295,7 +1300,7 @@ namespace Tsavorite.core
                     pageUntilAddressOffset = hlogBase.GetOffsetOnPage(untilAddress);
 
                 _ = RecoverFromPage(recoverFromAddress, pageFromAddressOffset, pageUntilAddressOffset, startLogicalAddressOfPage, startPhysicalAddressOfPage,
-                    options, isSnapshotPage: true, recoveryStatus.objectLogRecoveryDevice, recoveryStatus.objectLogRecoveryReadEnd);
+                    options, isSnapshotPage: true, ref recoveryStatus.IsolatedKeyReadBuffers, recoveryStatus.objectLogRecoveryDevice, recoveryStatus.objectLogRecoveryReadEnd);
             }
 
             recoveryStatus.flushStatus[pageIndex] = FlushStatus.Done;
@@ -1375,7 +1380,8 @@ namespace Tsavorite.core
         /// <returns>True if we touched the page (and thus it needs to be flushed), else false</returns>
         private unsafe bool RecoverFromPage(long recoverFromAddress, long pageFromAddressOffset, long pageUntilAddressOffset,
                                      long pageStartLogicalAddress, long pageStartPhysicalAddress, in RecoveryOptions options,
-                                     bool isSnapshotPage, IDevice objectLogRecoveryDevice, ObjectLogFilePositionInfo objectLogRecoveryReadEnd)
+                                     bool isSnapshotPage, ref CircularDiskReadBuffer isolatedKeyReadBuffers,
+                                     IDevice objectLogRecoveryDevice, ObjectLogFilePositionInfo objectLogRecoveryReadEnd)
         {
             Debug.Assert(pageFromAddressOffset >= hlogBase.pageHeaderSize, $"fromLogicalAddressInPage {pageFromAddressOffset} must be >= hlogBase.pageHeaderSize {hlogBase.pageHeaderSize} (which may be 0)");
             Debug.Assert(pageUntilAddressOffset <= hlogBase.GetPageSize(), $"pageSize {pageUntilAddressOffset} must be <= PageSize {hlogBase.GetPageSize()}");
@@ -1411,7 +1417,7 @@ namespace Tsavorite.core
                     // hash directly from the record image.
                     var keyHashCode = logRecord.DataHeader.KeyIsInline
                         ? storeFunctions.GetKeyHashCode64(logRecord)
-                        : hlogBase.ComputeRecoveryOverflowKeyHash(in logRecord, objectLogRecoveryDevice, objectLogRecoveryReadEnd);
+                        : hlogBase.ComputeRecoveryOverflowKeyHash(in logRecord, ref isolatedKeyReadBuffers, objectLogRecoveryDevice, objectLogRecoveryReadEnd);
                     HashEntryInfo hei = new(keyHashCode);
                     FindOrCreateTag(ref hei, hlogBase.BeginAddress);
 

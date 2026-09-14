@@ -652,7 +652,7 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc/>
-        internal override long ComputeRecoveryOverflowKeyHash(in LogRecord logRecord, IDevice objectLogDevice,
+        internal override long ComputeRecoveryOverflowKeyHash(in LogRecord logRecord, ref CircularDiskReadBuffer readBuffers, IDevice objectLogDevice,
             ObjectLogFilePositionInfo hardReadEndPosition = default)
         {
             // The transient objectIdMap is not populated during recovery Pass 1 (index build), so LogRecord.Key cannot resolve an overflow
@@ -661,7 +661,27 @@ namespace Tsavorite.core
             // startup operation, so the extra per-record IO is acceptable. objectLogTail.SegmentSizeBits is the static object-log segment size
             // (set at construction from config), valid for decoding both the main and snapshot object-log positions.
             var startPosition = new ObjectLogFilePositionInfo(logRecord.GetObjectLogRecordStartPositionAndLengths(out var keyLength, out _), objectLogTail.SegmentSizeBits);
-            using var readBuffers = CreateCircularReadBuffers(objectLogDevice, logger);
+            //
+            // The key is read through the streaming ring rather than as one direct read into a caller-allocated buffer, even though the
+            // record bounds the key's whole on-disk extent. For a headered key that bound is an exact 4 KB page count covering
+            // ChunkHeader + alignment padding + payload, so it rounds up past the last record's written extent. A FoldOver Pass 1 reads
+            // the main object log before objectLogTail is set, so GetObjectLogReadHardEnd yields no durable end to clamp the request
+            // against, and the segment file reports no written extent to clamp against either. ReadDirect requires its exact byte count
+            // and would fault on the resulting short read at end of file. The ring requests the same extent but tracks the bytes actually
+            // available, so the rounding slack is harmless.
+            //
+            // The ring is owned by the caller (RecoveryStatus) and reused across every isolated key read, so its pooled 4 MB buffer is
+            // rented from the depot once per recovery rather than per overflow-key record. A ring is bound to one device, so switching
+            // between the main and snapshot object logs replaces it; recovery processes the hybrid-log and snapshot regions in phases,
+            // so that happens at most a few times.
+            var device = objectLogDevice ?? this.objectLogDevice;
+            if (readBuffers is not null && !readBuffers.UsesDevice(device))
+            {
+                readBuffers.Dispose();
+                readBuffers = null;
+            }
+            readBuffers ??= CreateCircularReadBuffers(device, logger);
+
             readBuffers.nextFileReadPosition = startPosition;
             var logReader = new ObjectLogReader<TStoreFunctions>(readBuffers, storeFunctions);
             logReader.OnBeginReadRecords(startPosition, (ulong)keyLength, GetObjectLogReadHardEnd(readBuffers, hardReadEndPosition));
