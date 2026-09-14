@@ -14,6 +14,8 @@
                          (`<owner>-garnet-kv`) names.
       __SSH_USER_KEY__   Name of your personal SSH public key in the manifest
                          basePath (normally %USERPROFILE%\.ssh), e.g. id_ed25519_user.
+      __SSH_VM_KEY__     Name of the VMSS inter-node SSH key in the manifest
+                         basePath, used for VM-to-VM SSH (default id_ed25519_vmss).
 
     The script rewrites files in place. Run inside a clean git working tree so the
     changes are easy to review with `git diff` before committing.
@@ -23,6 +25,9 @@
 
 .PARAMETER SshUserKey
     Value for __SSH_USER_KEY__. If omitted, you are prompted.
+
+.PARAMETER SshVmKey
+    Value for __SSH_VM_KEY__. If omitted, you are prompted (default id_ed25519_vmss).
 
 .PARAMETER Check
     Dry run: report every file that still contains a placeholder and exit without
@@ -38,6 +43,7 @@
 param(
     [string]$Owner,
     [string]$SshUserKey,
+    [string]$SshVmKey,
     [switch]$Check
 )
 
@@ -60,7 +66,7 @@ function Get-CandidateFiles {
     }
 }
 
-$placeholders = @('__OWNER__', '__SSH_USER_KEY__')
+$placeholders = @('__OWNER__', '__SSH_USER_KEY__', '__SSH_VM_KEY__')
 
 if ($Check) {
     $hits = @()
@@ -92,6 +98,11 @@ if (-not $SshUserKey) {
     $answer = Read-Host "Personal SSH public key name in your manifest basePath [$suggest]"
     $SshUserKey = if ([string]::IsNullOrWhiteSpace($answer)) { $suggest } else { $answer }
 }
+if (-not $SshVmKey) {
+    $suggestVm = 'id_ed25519_vmss'
+    $answerVm = Read-Host "VMSS inter-node SSH key name in your manifest basePath [$suggestVm]"
+    $SshVmKey = if ([string]::IsNullOrWhiteSpace($answerVm)) { $suggestVm } else { $answerVm }
+}
 
 if ([string]::IsNullOrWhiteSpace($Owner)) {
     throw "Owner is required."
@@ -103,6 +114,7 @@ if ($Owner -notmatch '^[a-z0-9][a-z0-9-]{1,40}$') {
 $replacements = @{
     '__OWNER__'        = $Owner
     '__SSH_USER_KEY__' = $SshUserKey
+    '__SSH_VM_KEY__'   = $SshVmKey
 }
 
 $changed = 0
@@ -124,5 +136,6 @@ Write-Host ""
 Write-Host "Done. $changed file(s) updated." -ForegroundColor Green
 Write-Host "  Owner        -> $Owner"
 Write-Host "  SSH user key -> $SshUserKey"
+Write-Host "  SSH VM key   -> $SshVmKey"
 Write-Host ""
 Write-Host "Review the changes with 'git diff' before committing." -ForegroundColor Cyan
