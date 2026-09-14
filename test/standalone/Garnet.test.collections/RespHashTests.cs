@@ -860,8 +860,8 @@ namespace Garnet.test
 
             var result1 = db.HashGetAllAsync(hashkey);
 
-            ClassicAssert.IsEmpty(redis.Wait(result0));
-            var result = redis.Wait(result1).ToStringDictionary();
+            ClassicAssert.IsEmpty(await result0.ConfigureAwait(false));
+            var result = (await result1.ConfigureAwait(false)).ToStringDictionary();
             ClassicAssert.AreEqual(2, result.Count);
             ClassicAssert.AreEqual("abc", result["foo"]);
             ClassicAssert.AreEqual("def", result["bar"]);

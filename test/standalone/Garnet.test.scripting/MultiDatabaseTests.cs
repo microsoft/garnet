@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Text;
 using System.Threading;
@@ -173,6 +174,7 @@ namespace Garnet.test
         }
 
         [Test]
+        [SuppressMessage("Usage", "SER304:Repeated queued operations may suit the variadic overload", Justification = "Separate ops are intentional")]
         public void MultiDatabaseSimpleTransactionTest()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
@@ -180,8 +182,8 @@ namespace Garnet.test
 
             var tran = db1.CreateTransaction();
 
-            tran.StringSetAsync("db2:key1", "db2:val1");
-            tran.StringSetAsync("db2:key2", "db2:val2");
+            _ = tran.StringSetAsync("db2:key1", "db2:val1");
+            _ = tran.StringSetAsync("db2:key2", "db2:val2");
 
             var committed = tran.Execute();
             ClassicAssert.IsTrue(committed);
@@ -397,7 +399,7 @@ namespace Garnet.test
             var db2data = new RedisValue[] { "db2:a", "db2:b", "db2:c", "db2:d" };
             var db12data = new RedisValue[] { "db12:a", "db12:b", "db12:c", "db12:d" };
 
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
 
             var db1 = redis.GetDatabase(0);
             var result = db1.StringSet(db1Key1, "db1:val1");
@@ -1332,7 +1334,7 @@ namespace Garnet.test
         [Test]
         public void MultiDatabaseSaveInProgressTest()
         {
-            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))
             {
                 var db1 = redis.GetDatabase(0);
                 var db2 = redis.GetDatabase(1);
@@ -1411,7 +1413,7 @@ namespace Garnet.test
         [Test]
         public void MultiDatabaseGeneralSaveBlocksGeneralSaveTest()
         {
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
             var db0 = redis.GetDatabase(0);
             var db1 = redis.GetDatabase(1);
 
@@ -1479,7 +1481,7 @@ namespace Garnet.test
             long expectedLastSave;
             long actualLastSave;
 
-            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))
             {
                 // Add object & raw string data to DB 0
                 var db1 = redis.GetDatabase(0);
@@ -1521,7 +1523,7 @@ namespace Garnet.test
                 actualLastSave = lastSave;
 
                 // Verify DB 0 was not saved
-                lastSaveStr = db1.Execute("LASTSAVE").ToString();
+                lastSaveStr = db1.Execute("LASTSAVE", "0").ToString();
                 parsed = long.TryParse(lastSaveStr, out lastSave);
                 ClassicAssert.IsTrue(parsed);
                 ClassicAssert.AreEqual(0, lastSave);
@@ -1532,7 +1534,7 @@ namespace Garnet.test
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true);
             server.Start();
 
-            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))
             {
                 var lastSave = 0L;
                 string lastSaveStr;
@@ -1577,7 +1579,7 @@ namespace Garnet.test
                 var cts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
                 while (!cts.IsCancellationRequested)
                 {
-                    lastSaveStr = db1.Execute("LASTSAVE").ToString();
+                    lastSaveStr = db1.Execute("LASTSAVE", "0").ToString();
                     parsed = long.TryParse(lastSaveStr, out lastSave);
                     ClassicAssert.IsTrue(parsed);
                     if (lastSave != 0)

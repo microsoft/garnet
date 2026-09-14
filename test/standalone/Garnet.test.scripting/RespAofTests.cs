@@ -3,6 +3,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -158,6 +159,7 @@ namespace Garnet.test
         }
 
         [Test]
+        [SuppressMessage("Usage", "SER304:Repeated queued operations may suit the variadic overload", Justification = "Separate ops are intentional")]
         public void AofTransactionStoreAutoCommitCommitWaitRecoverTest()
         {
             server.Dispose(false);
@@ -168,8 +170,8 @@ namespace Garnet.test
             {
                 var db = redis.GetDatabase(0);
                 var transaction = db.CreateTransaction();
-                transaction.StringSetAsync("SeAofUpsertRecoverTestKey1", "SeAofUpsertRecoverTestValue1");
-                transaction.StringSetAsync("SeAofUpsertRecoverTestKey2", "SeAofUpsertRecoverTestValue2");
+                _ = transaction.StringSetAsync("SeAofUpsertRecoverTestKey1", "SeAofUpsertRecoverTestValue1");
+                _ = transaction.StringSetAsync("SeAofUpsertRecoverTestKey2", "SeAofUpsertRecoverTestValue2");
 
                 ClassicAssert.IsTrue(transaction.Execute());
             }

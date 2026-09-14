@@ -18,9 +18,14 @@ namespace Garnet.server
         string RemoteNodeId { get; }
 
         /// <summary>
-        /// Type of session
+        /// Whether this connection may serve read-only commands from a replica
         /// </summary>
-        bool ReadWriteSession { get; }
+        bool ReadOnlySession { get; }
+
+        /// <summary>
+        /// Whether this internal session may apply writes while replaying the AOF
+        /// </summary>
+        bool IsInternalWriteSession { get; }
 
         /// <summary>
         /// If the current session is part of an active replication stream (set on first APPENDLOG, including the init handshake).
@@ -35,14 +40,19 @@ namespace Garnet.server
         IGarnetServer Server { get; set; }
 
         /// <summary>
-        /// Make this cluster session a read-only session
+        /// Allow this connection to serve read-only commands from a replica
         /// </summary>
         void SetReadOnlySession();
 
         /// <summary>
-        /// Make this cluster session a read-write session
+        /// Restore the default behavior of redirecting commands from a replica
         /// </summary>
         void SetReadWriteSession();
+
+        /// <summary>
+        /// Allow the internal AOF replay session to apply writes on a replica
+        /// </summary>
+        void SetInternalWriteSession();
 
         /// <summary>
         /// Local current epoch

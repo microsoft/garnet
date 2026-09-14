@@ -44,7 +44,7 @@ namespace Garnet.test
             // When CommandStatsMonitor is off, INFO COMMANDSTATS should return a disabled message
             StartServer(commandStatsMonitor: false);
 
-            using ConnectionMultiplexer redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            using ConnectionMultiplexer redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
             IDatabase db = redis.GetDatabase(0);
 
             db.StringSet("key1", "value1");
@@ -59,7 +59,7 @@ namespace Garnet.test
         {
             StartServer();
 
-            using ConnectionMultiplexer redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            using ConnectionMultiplexer redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
             IDatabase db = redis.GetDatabase(0);
 
             int setCount = 10;
@@ -92,7 +92,7 @@ namespace Garnet.test
         {
             StartServer();
 
-            using ConnectionMultiplexer redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            using ConnectionMultiplexer redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
             IDatabase db = redis.GetDatabase(0);
 
             // SETRANGE with a non-integer offset triggers AbortWithErrorMessage,
@@ -121,7 +121,7 @@ namespace Garnet.test
         {
             StartServer();
 
-            using ConnectionMultiplexer redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            using ConnectionMultiplexer redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
             IDatabase db = redis.GetDatabase(0);
 
             for (int i = 0; i < 100; i++)
@@ -147,7 +147,7 @@ namespace Garnet.test
         {
             StartServer();
 
-            using ConnectionMultiplexer redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            using ConnectionMultiplexer redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
             IDatabase db = redis.GetDatabase(0);
 
             // Execute various commands
@@ -172,7 +172,7 @@ namespace Garnet.test
             // Use periodic sampling to cover the MetricsSamplingFrequency > 0 aggregation path
             StartServer(metricsSamplingFreq: 1);
 
-            using ConnectionMultiplexer redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            using ConnectionMultiplexer redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
             IDatabase db = redis.GetDatabase(0);
 
             // Execute 5 successful SETs
@@ -201,7 +201,7 @@ namespace Garnet.test
         {
             StartServer();
 
-            using ConnectionMultiplexer redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            using ConnectionMultiplexer redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
             IDatabase db = redis.GetDatabase(0);
 
             string infoResult = db.Execute("INFO", "SERVER").ToString();
@@ -214,7 +214,7 @@ namespace Garnet.test
         {
             StartServer();
 
-            using ConnectionMultiplexer redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            using ConnectionMultiplexer redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
             IDatabase db = redis.GetDatabase(0);
 
             db.StringSet("k", "v");

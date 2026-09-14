@@ -1060,5 +1060,41 @@ ClusterRedirectTests.TestFlags testFlags)
             connections.ToList().ForEach(x => x.Dispose());
             context.logger.LogDebug("1. ClusterUnknownEndpointPreferredTests done");
         }
+
+        [Test, Order(6)]
+        [Category("CLUSTER")]
+        public void ClusterReplicaReadModeTests()
+        {
+            const int primaryIndex = 0;
+            const int replicaIndex = 1;
+            const string key = "replica-read-mode-key";
+            const string value = "value";
+
+            context.CreateInstances(2, enableAOF: true);
+            context.CreateConnection();
+            _ = context.clusterTestUtils.SimpleSetupCluster(primary_count: 1, replica_count: 1, logger: context.logger);
+
+            var keyBytes = Encoding.ASCII.GetBytes(key);
+            var slot = ClusterTestUtils.HashSlot(keyBytes);
+            var response = context.clusterTestUtils.SetKey(primaryIndex, keyBytes, Encoding.ASCII.GetBytes(value), out _, out _, logger: context.logger);
+            ClassicAssert.AreEqual(ResponseState.OK, response);
+            context.clusterTestUtils.WaitForReplicaAofSync(primaryIndex, replicaIndex, context.logger);
+
+            using var replicaClient = context.clusterTestUtils.CreateGarnetClientSession(replicaIndex);
+            replicaClient.Connect();
+
+            var exception = Assert.Throws<Exception>(() => replicaClient.ExecuteAsync("GET", key).GetAwaiter().GetResult());
+            StringAssert.StartsWith($"MOVED {slot} ", exception.Message);
+
+            ClassicAssert.AreEqual("OK", replicaClient.ExecuteAsync("READONLY").GetAwaiter().GetResult());
+            ClassicAssert.AreEqual(value, replicaClient.ExecuteAsync("GET", key).GetAwaiter().GetResult());
+
+            exception = Assert.Throws<Exception>(() => replicaClient.ExecuteAsync("SET", key, "local-value").GetAwaiter().GetResult());
+            StringAssert.StartsWith($"MOVED {slot} ", exception.Message);
+
+            ClassicAssert.AreEqual("OK", replicaClient.ExecuteAsync("READWRITE").GetAwaiter().GetResult());
+            exception = Assert.Throws<Exception>(() => replicaClient.ExecuteAsync("GET", key).GetAwaiter().GetResult());
+            StringAssert.StartsWith($"MOVED {slot} ", exception.Message);
+        }
     }
 }

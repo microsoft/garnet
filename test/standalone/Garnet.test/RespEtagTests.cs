@@ -820,7 +820,7 @@ namespace Garnet.test
         [Test]
         public void SetExpiryForEtagSetData()
         {
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
             var db = redis.GetDatabase(0);
 
             string origValue = "abcdefghij";

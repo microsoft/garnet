@@ -93,14 +93,14 @@ namespace Garnet.server
         RangeIndexManager activeRangeIndexManager;
 
         /// <summary>
-        /// Set ReadWriteSession on the cluster session (NOTE: used for replaying stored procedures only)
+        /// Allow the cluster session to apply writes while replaying stored procedures
         /// </summary>
-        public void SetReadWriteSession()
+        public void SetInternalWriteSession()
         {
             for (var i = 0; i < storeWrapper.serverOptions.AofVirtualSublogCount; i++)
             {
                 var respServerSession = aofReplayCoordinator.GetReplayContext(i).respServerSession;
-                respServerSession.clusterSession.SetReadWriteSession();
+                respServerSession.clusterSession.SetInternalWriteSession();
             }
         }
 
