@@ -286,6 +286,7 @@ namespace Garnet
                 // process-wide rather than per-endpoint.
                 var networkBufferSettings = opts.GetNetworkBufferSettings();
                 var networkBufferBudget = opts.GetNetworkBufferBudget();
+                var connectionLimit = new ConnectionLimit(opts.NetworkConnectionLimit);
                 for (var i = 0; i < servers.Length; i++)
                 {
                     if (opts.EndPoints[i] is UnixDomainSocketEndPoint)
@@ -295,7 +296,7 @@ namespace Garnet
                         // Delete existing unix socket file, if it exists.
                         File.Delete(opts.UnixSocketPath);
                     }
-                    servers[i] = new GarnetServerTcp(opts.EndPoints[i], 0, opts.TlsOptions, opts.NetworkSendThrottleMax, opts.NetworkConnectionLimit, opts.UnixSocketPath, opts.UnixSocketPermission,
+                    servers[i] = new GarnetServerTcp(opts.EndPoints[i], 0, opts.TlsOptions, opts.NetworkSendThrottleMax, connectionLimit, opts.UnixSocketPath, opts.UnixSocketPermission,
                         networkBufferSettings, opts.GetNetworkBufferPoolSize(), networkBufferBudget, logger);
                 }
             }
