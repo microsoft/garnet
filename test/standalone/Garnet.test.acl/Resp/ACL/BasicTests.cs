@@ -215,6 +215,51 @@ namespace Garnet.test.Resp.ACL
             ClassicAssert.IsTrue(exc.Message.StartsWith("NOPERM"), $"Expected NOPERM for denied CLIENT SETINFO, got: {exc.Message}");
         }
 
+        [Test]
+        public void ClientSetInfoRejectsInvalidAttributeValue()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
+            var db = redis.GetDatabase(0);
+
+            var exc = Assert.Throws<RedisServerException>(() => db.Execute("CLIENT", "SETINFO", "LIB-NAME", "foo\nbar"));
+            ClassicAssert.IsTrue(exc.Message.StartsWith("ERR LIB-NAME cannot contain spaces"), $"Expected invalid client attribute error, got: {exc.Message}");
+
+            exc = Assert.Throws<RedisServerException>(() => db.Execute("CLIENT", "SETINFO", "LIB-VER", "1.0 2.0"));
+            ClassicAssert.IsTrue(exc.Message.StartsWith("ERR LIB-VER cannot contain spaces"), $"Expected invalid client attribute error, got: {exc.Message}");
+
+            exc = Assert.Throws<RedisServerException>(() => db.Execute("CLIENT", "SETINFO", "CRLF-INJ\r\n-ERR injected", "a b"));
+            ClassicAssert.IsTrue(exc.Message.StartsWith("ERR syntax error"), $"Expected syntax error for unknown attribute, got: {exc.Message}");
+
+            exc = Assert.Throws<RedisServerException>(() => db.Execute("CLIENT", "SETINFO", "LIB-VER", "\u007f"));
+            ClassicAssert.IsTrue(exc.Message.StartsWith("ERR LIB-VER cannot contain spaces"), $"Expected DEL to be rejected, got: {exc.Message}");
+
+            db.Execute("CLIENT", "SETINFO", "LIB-NAME", "a!~b");
+            var clientInfo = (string)db.Execute("CLIENT", "INFO");
+            ClassicAssert.IsTrue(clientInfo.Contains("lib-name=a!~b"), $"Expected boundary bytes 33-126 to be accepted, CLIENT INFO: {clientInfo}");
+
+            db.Execute("CLIENT", "SETINFO", "LIB-NAME", "my-lib");
+            db.Execute("CLIENT", "SETINFO", "LIB-VER", "1.2.3");
+            clientInfo = (string)db.Execute("CLIENT", "INFO");
+            ClassicAssert.IsTrue(clientInfo.Contains("lib-name=my-lib"), $"Expected lib-name=my-lib in CLIENT INFO, got: {clientInfo}");
+            ClassicAssert.IsTrue(clientInfo.Contains("lib-ver=1.2.3"), $"Expected lib-ver=1.2.3 in CLIENT INFO, got: {clientInfo}");
+
+            db.Execute("CLIENT", "SETINFO", "lib-ver", "9.9.9");
+            clientInfo = (string)db.Execute("CLIENT", "INFO");
+            ClassicAssert.IsTrue(clientInfo.Contains("lib-ver=9.9.9"), $"Expected case-insensitive attribute matching, CLIENT INFO: {clientInfo}");
+
+            exc = Assert.Throws<RedisServerException>(() => db.Execute("CLIENT", "SETINFO", "LIB-NAME", "bad\nvalue"));
+            ClassicAssert.IsTrue(exc.Message.StartsWith("ERR LIB-NAME cannot contain spaces"), $"Expected invalid client attribute error, got: {exc.Message}");
+            clientInfo = (string)db.Execute("CLIENT", "INFO");
+            ClassicAssert.IsTrue(clientInfo.Contains("lib-name=my-lib"), $"Failed SETINFO must not overwrite the stored value, CLIENT INFO: {clientInfo}");
+
+            db.Execute("CLIENT", "SETINFO", "LIB-NAME", "");
+            clientInfo = (string)db.Execute("CLIENT", "INFO");
+            ClassicAssert.IsTrue(clientInfo.Contains(" lib-name= "), $"Expected empty lib-name to clear the attribute, CLIENT INFO: {clientInfo}");
+
+            var clientList = (string)db.Execute("CLIENT", "LIST");
+            ClassicAssert.IsFalse(clientList.Contains("\r"), $"CLIENT LIST must stay line-clean, got: {clientList}");
+        }
+
         private static ConfigurationOptions GetLimitedUserConfig()
             => TestUtils.GetConfig(disablePubSub: true, authUsername: TestUserA, authPassword: DummyPassword);
 
