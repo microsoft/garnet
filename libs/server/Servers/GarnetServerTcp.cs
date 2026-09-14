@@ -335,7 +335,7 @@ namespace Garnet.server
                 else
                 {
                     _ = Interlocked.Decrement(ref activeHandlerCount);
-                    e.AcceptSocket.Dispose();
+                    RejectConnection(e.AcceptSocket);
                 }
             }
             return true;
@@ -358,6 +358,50 @@ namespace Garnet.server
                 logger?.LogError(ex, "Error calling Start on network handler");
                 handler.Dispose();
             }
+        }
+
+        /// <summary>
+        /// RESP error returned to a client refused because the connection limit was reached.
+        /// Matches the Redis wire text so existing client error handling applies unchanged.
+        /// </summary>
+        static readonly byte[] MaxClientsReachedError = "-ERR max number of clients reached\r\n"u8.ToArray();
+
+        /// <summary>
+        /// Refuse a connection that exceeded the configured connection limit, telling the client
+        /// why before closing so the failure is diagnosable rather than an unexplained reset.
+        /// </summary>
+        /// <param name="socket">The accepted socket to refuse and dispose.</param>
+        void RejectConnection(Socket socket)
+        {
+            IncrementConnectionsRejected();
+
+            // Only plaintext clients can be told. Under TLS the peer has sent a ClientHello and is
+            // waiting for a ServerHello, so writing a RESP error would be a protocol violation and
+            // would surface as a handshake failure -- pointing the operator at certificates rather
+            // than at capacity. For TLS the rejected_connections metric is the whole remedy.
+            if (tlsOptions == null)
+            {
+                try
+                {
+                    // Best effort, and deliberately non-blocking: reaching the limit means the
+                    // server is already under connection pressure, so a blocking write here would
+                    // serialize refusals on the accept path and amplify the overload. The payload
+                    // is a few dozen bytes into an empty send buffer, so it fits in practice; if it
+                    // ever does not, dropping it is better than stalling the accept loop.
+                    socket.Blocking = false;
+                    _ = socket.Send(MaxClientsReachedError);
+                }
+                catch (SocketException ex)
+                {
+                    // Includes WouldBlock, and a peer that reset between accept and here.
+                    logger?.LogDebug("Could not send connection-limit error to client (SocketErrorCode: {errorCode})", ex.SocketErrorCode);
+                }
+                catch (ObjectDisposedException) { }
+            }
+
+            // Graceful close: no linger is configured anywhere, so the kernel flushes anything
+            // queued above before the FIN. An abortive close would discard the error.
+            socket.Dispose();
         }
 
         /// <summary>
