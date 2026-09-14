@@ -144,9 +144,7 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> WITHDIST => "WITHDIST"u8;
         public static ReadOnlySpan<byte> WITHHASH => "WITHHASH"u8;
         public static ReadOnlySpan<byte> LIB_NAME => "LIB-NAME"u8;
-        public static ReadOnlySpan<byte> lib_name => "lib-name"u8;
         public static ReadOnlySpan<byte> LIB_VER => "LIB-VER"u8;
-        public static ReadOnlySpan<byte> lib_ver => "lib-ver"u8;
         public static ReadOnlySpan<byte> RIGHT => "RIGHT"u8;
         public static ReadOnlySpan<byte> LEFT => "LEFT"u8;
         public static ReadOnlySpan<byte> BYLEX => "BYLEX"u8;
@@ -323,6 +321,7 @@ namespace Garnet.server
         /// Response string templates
         /// </summary>
         public const string GenericErrWrongNumArgs = "ERR wrong number of arguments for '{0}' command";
+        public const string GenericErrInvalidClientAttr = "ERR {0} cannot contain spaces, newlines or special characters.";
         public const string GenericErrUnknownOptionConfigSet = "ERR Unknown option or number of arguments for CONFIG SET - '{0}'";
         public const string GenericErrUnknownOption = "ERR Unknown option or number of arguments for '{0}' command";
         public const string GenericErrUnsupportedOption = "ERR Unsupported option {0}";

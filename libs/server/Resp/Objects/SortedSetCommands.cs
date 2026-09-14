@@ -431,7 +431,7 @@ namespace Garnet.server
             }
 
             // Validate we have enough arguments (no of keys + (MIN or MAX))
-            if (parseState.Count < numKeys + 2)
+            if (parseState.Count - 2 < numKeys)
             {
                 return AbortWithErrorMessage(CmdStrings.RESP_SYNTAX_ERROR);
             }
@@ -1068,7 +1068,7 @@ namespace Garnet.server
                 return AbortWithErrorMessage(CmdStrings.GenericErrAtLeastOneKey, nameof(RespCommand.ZINTER));
             }
 
-            if (parseState.Count < nKeys + 1)
+            if (parseState.Count - 1 < nKeys)
             {
                 return AbortWithErrorMessage(CmdStrings.RESP_SYNTAX_ERROR);
             }
@@ -1191,7 +1191,7 @@ namespace Garnet.server
                 return AbortWithErrorMessage(CmdStrings.GenericErrAtLeastOneKey, nameof(RespCommand.ZINTERCARD));
             }
 
-            if (parseState.Count < nKeys + 1)
+            if (parseState.Count - 1 < nKeys)
             {
                 return AbortWithErrorMessage(CmdStrings.RESP_SYNTAX_ERROR);
             }
@@ -1363,7 +1363,7 @@ namespace Garnet.server
                 return AbortWithErrorMessage(CmdStrings.GenericErrAtLeastOneKey, nameof(RespCommand.ZUNION));
             }
 
-            if (parseState.Count < nKeys + 1)
+            if (parseState.Count - 1 < nKeys)
             {
                 return AbortWithErrorMessage(CmdStrings.RESP_SYNTAX_ERROR);
             }
@@ -1493,7 +1493,7 @@ namespace Garnet.server
                 return AbortWithErrorMessage(CmdStrings.GenericErrAtLeastOneKey, nameof(RespCommand.ZUNIONSTORE));
             }
 
-            if (parseState.Count < nKeys + 2)
+            if (parseState.Count - 2 < nKeys)
             {
                 return AbortWithErrorMessage(CmdStrings.RESP_SYNTAX_ERROR);
             }
