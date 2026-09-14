@@ -13,15 +13,15 @@ namespace Tsavorite.core
     /// </summary>
     public struct HybridLogRecoveryInfo
     {
-        /// <summary>Current checkpoint version written by this build. v9 carries the hybrid-log <see cref="pageSize"/> and
-        /// <see cref="segmentSize"/> in metadata; v8 is the object-log chunk-framing format ("v2.2") whose fifth address slot
-        /// held a duplicate of <see cref="recoveredTailAddress"/>; v7 is the
-        /// downlevel split/objectId-slot object-log encoding ("v2.1", read via <see cref="LogRecord.GetObjectLogRecordStartPositionAndLengths_v21"/>).</summary>
-        public const int CheckpointVersion = 9;
+        /// <summary>Current checkpoint version written by this build. v8 is the object-log chunk-framing format ("v2.2"), and carries the
+        /// hybrid-log <see cref="pageSize"/> and <see cref="segmentSize"/> in metadata. v7 is the only released downlevel version: it uses the
+        /// split/objectId-slot object-log encoding ("v2.1", read via <see cref="LogRecord.GetObjectLogRecordStartPositionAndLengths_v21"/>)
+        /// and duplicates <see cref="recoveredTailAddress"/> in the fifth address slot.</summary>
+        public const int CheckpointVersion = 8;
 
-        /// <summary>First version whose metadata carries <see cref="pageSize"/>/<see cref="segmentSize"/> instead of the
-        /// legacy duplicated snapshot-end address.</summary>
-        internal const int LogGeometryCheckpointVersion = 9;
+        /// <summary>First version whose metadata carries <see cref="pageSize"/>/<see cref="segmentSize"/> instead of duplicating
+        /// <see cref="recoveredTailAddress"/> in the fifth address slot.</summary>
+        internal const int LogGeometryCheckpointVersion = 8;
 
         /// <summary>Oldest checkpoint version this build can recover. Version 7 checkpoints remain readable.</summary>
         public const int MinRecoverableCheckpointVersion = 7;
@@ -63,8 +63,8 @@ namespace Tsavorite.core
         /// </summary>
         public long recoveredTailAddress;
         /// <summary>
-        /// Hybrid-log page size, in bytes, of the store that wrote this checkpoint. Zero for downlevel (pre-v9) checkpoints,
-        /// whose metadata carried a duplicate of <see cref="recoveredTailAddress"/> in this slot instead.
+        /// Hybrid-log page size, in bytes, of the store that wrote this checkpoint. Zero for a v7 checkpoint, whose metadata carried a
+        /// duplicate of <see cref="recoveredTailAddress"/> in this slot instead.
         /// </summary>
         public long pageSize;
         /// <summary>
@@ -105,8 +105,8 @@ namespace Tsavorite.core
         public byte[] cookie;
 
         /// <summary>
-        /// Hybrid-log segment size, in bytes, of the store that wrote this checkpoint. Appended in v9; zero for downlevel
-        /// (pre-v9) checkpoints, whose metadata did not record it.
+        /// Hybrid-log segment size, in bytes, of the store that wrote this checkpoint. Appended in v8; zero for a v7 checkpoint, whose
+        /// metadata did not record it.
         /// </summary>
         public long segmentSize;
 
@@ -180,7 +180,7 @@ namespace Tsavorite.core
             value = reader.ReadLine();
             recoveredTailAddress = long.Parse(value);
 
-            // Fifth address slot. Before v9 this held a duplicate of recoveredTailAddress; v9 repurposed it as pageSize.
+            // Fifth address slot. In v7 this held a duplicate of recoveredTailAddress; v8 repurposed it as pageSize.
             // Retain the raw value so a downlevel checksum validates against exactly the bytes that were written.
             value = reader.ReadLine();
             var addressSlotValue = long.Parse(value);
@@ -199,7 +199,7 @@ namespace Tsavorite.core
             snapshotStartObjectLogTail.Deserialize(reader);
             snapshotEndObjectLogTail.Deserialize(reader);
 
-            // Appended in v9; downlevel metadata ends the scalar fields at the object-log tails.
+            // Appended in v8; v7 metadata ends the scalar fields at the object-log tails.
             segmentSize = 0;
             if (cversion >= LogGeometryCheckpointVersion)
             {
@@ -271,7 +271,7 @@ namespace Tsavorite.core
 
             var writesLogGeometry = targetVersion >= LogGeometryCheckpointVersion;
 
-            // Pre-v9 metadata duplicated recoveredTailAddress into the fifth address slot and had no trailing value.
+            // Pre-v8 metadata duplicated recoveredTailAddress into the fifth address slot and had no trailing value.
             var addressSlotValue = writesLogGeometry ? pageSize : recoveredTailAddress;
             var trailingValue = writesLogGeometry ? segmentSize : 0;
 
@@ -318,8 +318,8 @@ namespace Tsavorite.core
 
         /// <summary>
         /// Checksum over the fixed scalar fields. The fifth address slot and the appended trailing value are passed in so a
-        /// downlevel checkpoint validates against the raw values it actually serialized: pre-v9 metadata wrote a duplicate
-        /// of <see cref="recoveredTailAddress"/> in the slot and had no trailing value, which reduces this to the v8 formula.
+        /// downlevel checkpoint validates against the raw values it actually serialized: v7 metadata wrote a duplicate
+        /// of <see cref="recoveredTailAddress"/> in the slot and had no trailing value, which reduces this to the v7 formula.
         /// </summary>
         private readonly long ChecksumCore(long addressSlotValue, long trailingValue)
         {

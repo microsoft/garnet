@@ -13,7 +13,7 @@ namespace Tsavorite.test.recovery
     /// <summary>
     /// Checkpoint-metadata format compatibility.
     ///
-    /// v9 repurposed the fifth address slot -- which through v8 held a duplicate of <c>recoveredTailAddress</c> -- as the
+    /// v8 repurposes the fifth address slot -- which in v7 held a duplicate of <c>recoveredTailAddress</c> -- as the
     /// hybrid-log <c>pageSize</c>, and appended <c>segmentSize</c> after the object-log tails. These tests round-trip real
     /// metadata produced by the same serializer at each supported version, so a downlevel checkpoint stays readable and its
     /// checksum keeps validating against exactly the bytes that were written.
@@ -85,14 +85,14 @@ namespace Tsavorite.test.recovery
                 Assert.That(lines[0].Trim(), Is.EqualTo(HybridLogRecoveryInfo.CheckpointVersion.ToString()));
                 Assert.That(lines[AddressSlotLineIndex - 1].Trim(), Is.EqualTo(info.recoveredTailAddress.ToString()));
                 Assert.That(lines[AddressSlotLineIndex].Trim(), Is.EqualTo(info.pageSize.ToString()),
-                    "v9 must write pageSize into the slot that previously duplicated recoveredTailAddress");
+                    "v8 must write pageSize into the slot that v7 used to duplicate recoveredTailAddress");
             });
         }
 
         [Test]
         [Category("CheckpointRestore")]
-        public void DownlevelVersionsDuplicateTailAddressInAddressSlot(
-            [Values(7, 8)] int targetVersion)
+        public void DownlevelVersionDuplicatesTailAddressInAddressSlot(
+            [Values(7)] int targetVersion)
         {
             var info = MakeInfo();
             var lines = Lines(info.ToByteArray(targetVersion));
@@ -101,14 +101,14 @@ namespace Tsavorite.test.recovery
             {
                 Assert.That(lines[0].Trim(), Is.EqualTo(targetVersion.ToString()));
                 Assert.That(lines[AddressSlotLineIndex].Trim(), Is.EqualTo(info.recoveredTailAddress.ToString()),
-                    "downlevel metadata must duplicate recoveredTailAddress in the address slot, not write pageSize");
+                    "v7 metadata must duplicate recoveredTailAddress in the address slot, not write pageSize");
             });
         }
 
         [Test]
         [Category("CheckpointRestore")]
-        public void DownlevelVersionsRecoverWithoutLogGeometry(
-            [Values(7, 8)] int targetVersion)
+        public void DownlevelVersionRecoversWithoutLogGeometry(
+            [Values(7)] int targetVersion)
         {
             var info = MakeInfo();
             var read = RoundTrip(info.ToByteArray(targetVersion));
@@ -136,13 +136,13 @@ namespace Tsavorite.test.recovery
         public void DownlevelMetadataOmitsAppendedSegmentSize()
         {
             var info = MakeInfo();
-            Assert.That(Lines(info.ToByteArray(8)), Has.Length.EqualTo(Lines(info.ToByteArray(9)).Length - 1),
-                "v9 appends exactly one line (segmentSize) relative to v8");
+            Assert.That(Lines(info.ToByteArray(7)), Has.Length.EqualTo(Lines(info.ToByteArray(8)).Length - 1),
+                "v8 appends exactly one line (segmentSize) relative to v7");
         }
 
         [Test]
         [Category("CheckpointRestore")]
-        public void TamperedAddressSlotFailsChecksum([Values(7, 8, 9)] int targetVersion)
+        public void TamperedAddressSlotFailsChecksum([Values(7, 8)] int targetVersion)
         {
             var info = MakeInfo();
             var lines = Lines(info.ToByteArray(targetVersion));
@@ -182,7 +182,7 @@ namespace Tsavorite.test.recovery
 
         [Test]
         [Category("CheckpointRestore")]
-        public void CookieSurvivesEveryVersion([Values(7, 8, 9)] int targetVersion)
+        public void CookieSurvivesEveryVersion([Values(7, 8)] int targetVersion)
         {
             var info = MakeInfo();
             info.cookie = [1, 2, 3, 250];
