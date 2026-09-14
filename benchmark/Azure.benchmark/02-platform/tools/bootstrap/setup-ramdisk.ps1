@@ -54,14 +54,24 @@ if ($LASTEXITCODE -ne 0) { throw "Failed to mount tmpfs at $MountPath" }
 # Set ownership
 & chown -R "${DEPLOY_USER}:${DEPLOY_USER}" $MountPath
 
-# Add to fstab for persistence across reboots (idempotent)
+# Add to fstab for persistence across reboots (idempotent: replace any existing
+# entry for this mount point so a resize updates the persisted size instead of
+# leaving a stale line behind).
 $uid = (& id -u $DEPLOY_USER).Trim()
 $gid = (& id -g $DEPLOY_USER).Trim()
 $fstabEntry = "tmpfs ${MountPath} tmpfs size=${ramdiskMb}m,uid=${uid},gid=${gid} 0 0"
-$fstab = Get-Content /etc/fstab -Raw -ErrorAction SilentlyContinue
-if ($fstab -notmatch [regex]::Escape($MountPath)) {
-    Add-Content -Path /etc/fstab -Value $fstabEntry
-    Write-Host "  Added fstab entry for persistence"
-}
+$fstabLines = @(Get-Content /etc/fstab -ErrorAction SilentlyContinue)
+# Drop any non-comment line whose mount-point field (2nd column) equals $MountPath.
+$kept = @($fstabLines | Where-Object {
+    $_ -match '^\s*#' -or (($_ -split '\s+' | Where-Object { $_ }))[1] -ne $MountPath
+})
+$replaced = $kept.Count -ne $fstabLines.Count
+$newFstab = @($kept) + $fstabEntry
+$tmpFstab = "/etc/fstab.$PID.tmp"
+Set-Content -Path $tmpFstab -Value $newFstab
+& chmod 644 $tmpFstab
+& mv -f $tmpFstab /etc/fstab
+if ($replaced) { Write-Host "  Updated fstab entry for persistence" }
+else { Write-Host "  Added fstab entry for persistence" }
 
 Write-Host "==== Ramdisk ready at ${MountPath} (${ramdiskMb} MB) ===="
