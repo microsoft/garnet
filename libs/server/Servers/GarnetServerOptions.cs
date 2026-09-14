@@ -365,8 +365,22 @@ namespace Garnet.server
         /// Maximum number of simultaneous client connections across all listeners, or -1 for
         /// unlimited. Settable at runtime through <c>CONFIG SET maxclients</c>.
         ///
-        /// Every inbound connection counts, including replicas and cluster peers, which is also how
-        /// Redis accounts for them.
+        /// Three semantics worth stating, because each is a question an operator will ask:
+        ///
+        /// Every inbound connection counts, including replicas and cluster peers. That matches
+        /// Redis, whose accept path compares against the client list plus
+        /// <c>getClusterConnectionsCount()</c>, and where a replica link starts life as an ordinary
+        /// client. So a cluster's effective client headroom is the limit less its peer links.
+        ///
+        /// Lowering the limit below the live population does not disconnect anyone. It is admission
+        /// control, evaluated once per accept, so the population drains naturally rather than being
+        /// culled. <c>CLIENT KILL</c> remains the way to shed established connections.
+        ///
+        /// The value is not clamped to the process file-descriptor limit. Redis lowers
+        /// <c>maxclients</c> at startup when <c>ulimit -n</c> cannot support it; Garnet does not,
+        /// because the accepting socket is what fails and it fails per connection rather than
+        /// silently reconfiguring the server out from under the operator. Set <c>ulimit -n</c> to
+        /// comfortably exceed this value.
         /// </summary>
         public int NetworkConnectionLimit = DefaultNetworkConnectionLimit;
 

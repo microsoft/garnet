@@ -3,7 +3,6 @@
 
 using System;
 using System.Collections.Generic;
-using System.Threading;
 
 namespace Garnet.server
 {
@@ -31,7 +30,7 @@ namespace Garnet.server
         // Copy-on-write: listeners register during startup, before any accept can run, while
         // IsWithinLimit reads on IOCP threads. Publishing a fresh array under a lock keeps readers
         // lock-free without exposing a partially-built list.
-        readonly Lock registrationLock = new();
+        readonly object registrationLock = new();
         volatile IConnectionSource[] sources = [];
 
         /// <summary>
