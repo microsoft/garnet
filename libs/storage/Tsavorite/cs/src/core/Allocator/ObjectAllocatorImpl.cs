@@ -792,31 +792,10 @@ namespace Tsavorite.core
             var isFirstRecordOnPage = startOffset <= PageHeader.Size;
 
             // Write the object log position into the header if this is the first record on the page. If there are no records on the page, we will
-            // call through to WriteInlinePageAsync so we want the header updated regardless of whether we have objects (this may be a page with no
+            // write the page's inline span directly, so we want the header updated regardless of whether we have objects (this may be a page with no
             // objects after some pages with objects, and so we want Truncate() to know it has to preserve those object log segments).
             if (isFirstRecordOnPage)
                 ((PageHeader*)logPagePointer)->SetLowestObjectLogPosition(objectLogTail);
-
-            // A ReadOnly flush of a page whose records are entirely inline (no Overflow keys/values and no Object values, i.e. the page's
-            // objectIdMap is empty) has nothing to serialize to the object log, so take the cheaper WriteInlinePageAsync path and skip renting
-            // an object-log write buffer. Recovery reuses on-disk metadata; Snapshot still participates in its page-ordering and fuzzy rules.
-            var objectIdMap = objectPages[flushPage % BufferSize].objectIdMap;
-            var pageHasNoObjectsToFlush = asyncResult.flushRequestState == FlushRequestState.ReadOnly && objectIdMap.Count == 0;
-
-            // Short circuit if we are not using flushBuffers and not in recovery (e.g. using ObjectAllocator for string-only purposes), or if a
-            // ReadOnly flush of this page has no out-of-line data to write to the object log.
-            if (asyncResult.flushBuffers is null || pageHasNoObjectsToFlush)
-            {
-                if (asyncResult.flushRequestState != FlushRequestState.Recovery)
-                {
-                    WriteInlinePageAsync((nint)pagePointers[flushPage % BufferSize], (ulong)GetFileOffsetOfPage(flushPage), (uint)AlignedPageSizeBytes, callback, asyncResult, device);
-                    return;
-                }
-                // A recovery flush may be front-partial (starting mid-page at the first record past the PageHeader) but always
-                // extends to the end of the page.
-                Debug.Assert(asyncResult.untilAddress == GetLogicalAddressOfStartOfPage(flushPage + 1),
-                    $"Recovery flush should extend to the end of page {flushPage}");
-            }
 
             Debug.Assert(asyncResult.page == flushPage, $"asyncResult.page {asyncResult.page} should equal flushPage {flushPage}");
 
@@ -851,6 +830,32 @@ namespace Tsavorite.core
             }
 
             var alignedStartOffset = RoundDown(startOffset, (int)device.SectorSize);
+
+            // A page whose records are entirely inline (no Overflow keys/values and no Object values, i.e. the page's objectIdMap is empty) has
+            // nothing to serialize to the object log, so write its inline span directly and skip renting an object-log write buffer and walking
+            // every record. This also covers using ObjectAllocator for string-only purposes, where there are no flushBuffers at all. The span and
+            // destination are the ones the serializing path computes below, so a Snapshot lands at its own device's page offset and stops at the
+            // checkpoint boundary; Snapshot page ordering and fuzzy rules still apply through its coordination callbacks. Recovery reuses on-disk
+            // metadata and falls through to stamp records.
+            var objectIdMap = objectPages[flushPage % BufferSize].objectIdMap;
+            var pageHasNoObjectsToFlush = objectIdMap.Count == 0
+                && asyncResult.flushRequestState is FlushRequestState.ReadOnly or FlushRequestState.Snapshot;
+            if (asyncResult.flushBuffers is null || pageHasNoObjectsToFlush)
+            {
+                if (asyncResult.flushRequestState != FlushRequestState.Recovery)
+                {
+                    var inlineWriteLength = RoundUp(endOffset, (int)device.SectorSize) - alignedStartOffset;
+                    asyncResult.count = 1;
+                    device.WriteAsync((nint)(logPagePointer + alignedStartOffset), alignedMainLogFlushPageAddress + (uint)alignedStartOffset,
+                        (uint)inlineWriteLength, callback, asyncResult);
+                    asyncResult.snapshotDeviceWriteIssued = true;
+                    return;
+                }
+                // A recovery flush may be front-partial (starting mid-page at the first record past the PageHeader) but always
+                // extends to the end of the page.
+                Debug.Assert(asyncResult.untilAddress == GetLogicalAddressOfStartOfPage(flushPage + 1),
+                    $"Recovery flush should extend to the end of page {flushPage}");
+            }
 
             // All object-log flush modes stamp and write the live page. Recovery has exclusive access. Snapshot writes one page at a time
             // and keeps ReadOnly one page behind its completion watermark; ReadOnly subsequently resolves objects through objectIdMap and
