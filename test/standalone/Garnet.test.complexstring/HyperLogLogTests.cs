@@ -1472,5 +1472,33 @@ namespace Garnet.test
                 db.HyperLogLogMerge(corruptedKey, corruptedKey, validKey));
             StringAssert.Contains("WRONGTYPE", pfmergeEx2!.Message, "PFMERGE should reject corrupted HLL as destination");
         }
+
+        [Test]
+        public void ImmutableRegionValidation()
+        {
+            const string Key = nameof(ImmutableRegionValidation);
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
+            var db = redis.GetDatabase(0);
+
+            // Something that looks like a HyperLogLog, but isn't
+            var forgedBytes = new byte[18];
+            forgedBytes[3] = 0;
+            BinaryPrimitives.WriteUInt16LittleEndian(forgedBytes.AsSpan()[16..], 3000);
+
+            ClassicAssert.True(db.StringSet(Key, forgedBytes));
+
+            var exc0 = ClassicAssert.Throws<RedisServerException>(() => db.HyperLogLogAdd(Key, "foo"));
+            ClassicAssert.True(exc0.Message.StartsWith("WRONGTYPE "));
+
+            // Force into mutable region
+            _ = db.Execute("DEBUG", "FLUSHANDEVICT");
+
+            var exc1 = ClassicAssert.Throws<RedisServerException>(() => db.HyperLogLogAdd(Key, "bar"));
+            ClassicAssert.True(exc1.Message.StartsWith("WRONGTYPE "));
+
+            var actualBytes = (byte[])db.StringGet(Key);
+            ClassicAssert.IsTrue(forgedBytes.SequenceEqual(actualBytes));
+        }
     }
 }
