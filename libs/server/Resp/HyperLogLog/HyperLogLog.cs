@@ -193,7 +193,7 @@ namespace Garnet.server
         /// Check if tag is correctly set.
         /// </summary>
         /// <param name="ptr"></param>
-        /// /// <param name="length"></param>
+        /// <param name="length"></param>
         /// <returns></returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private bool IsHYLL(byte* ptr, int length) => length >= (4 + sizeof(int)) && *(int*)(ptr + 4) == (int)0x48594C4C;

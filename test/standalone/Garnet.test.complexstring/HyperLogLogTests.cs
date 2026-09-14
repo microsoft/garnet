@@ -1494,7 +1494,7 @@ namespace Garnet.test
             var exc0 = ClassicAssert.Throws<RedisServerException>(() => db.HyperLogLogAdd(Key, "foo"));
             ClassicAssert.True(exc0.Message.StartsWith("WRONGTYPE "));
 
-            // Force into mutable region
+            // Force into immutable region
             _ = db.Execute("DEBUG", "FLUSHANDEVICT");
 
             var exc1 = ClassicAssert.Throws<RedisServerException>(() => db.HyperLogLogAdd(Key, "bar"));
@@ -1527,7 +1527,7 @@ namespace Garnet.test
             var exc0 = ClassicAssert.Throws<RedisServerException>(() => db.HyperLogLogMerge(Key2, Key0, Key1));
             ClassicAssert.True(exc0.Message.StartsWith("WRONGTYPE "));
 
-            // Force into mutable region
+            // Force into immutable region
             _ = db.Execute("DEBUG", "FLUSHANDEVICT");
 
             var exc1 = ClassicAssert.Throws<RedisServerException>(() => db.HyperLogLogMerge(Key2, Key0, Key1));
