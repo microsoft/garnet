@@ -59,9 +59,11 @@ and hints into the resident page. The object-log writes are issued before the hy
 completion batch prevents `FlushedUntilAddress` from advancing until both are durable.
 
 Current-format ReadOnly, Snapshot, and recovery flushes write the resident page directly rather than allocating and
-copying a full page image. A partial write may use one pooled trailing-sector buffer to preserve bytes through the
-logical endpoint and zero the non-durable suffix. ReadOnly releases epoch protection while object serialization and
-device IO run.
+copying a full page image. A write covers whole sectors, `[alignedStartOffset, RoundUp(endOffset, sectorSize))`; bytes
+above the logical endpoint reach disk verbatim, and recovery never parses them because it bounds its record walk by the
+unrounded endpoint. A ReadOnly or Snapshot page whose `objectIdMap` is empty has no out-of-line data, so it writes that
+span directly without renting an object-log ring or walking its records. ReadOnly releases epoch protection while object
+serialization and device IO run.
 
 Object-log Snapshot writes use a fixed-size completion window, normally the object-log flush-buffer count. Several
 pages may be in flight, but `SnapshotFlushCoordination` advances the ReadOnly page limit only through the contiguous

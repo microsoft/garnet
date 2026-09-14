@@ -455,10 +455,9 @@ the 4 MB buffer or segment boundary because both are multiples of 8.
 ### 5.6 Buffer and callback lifetime
 
 `CircularDiskWriteBuffer` owns pooled `DiskWriteBuffer` instances. It tracks each buffer's completion plus a global
-in-flight count. `OnSplitPartialFlushComplete()` sector-pads and flushes the last object-log buffer, then schedules the
-direct and optional trailing main-log spans in the same completion batch. Disposal returns buffers only after their
-writes complete. `PageAsyncFlushResult.RecordError()` retains the first error even when split writes complete out of
-order.
+in-flight count. `OnPartialFlushComplete()` sector-pads and flushes the last object-log buffer, then schedules the
+main-log span in the same completion batch. Disposal returns buffers only after their writes complete.
+`PageAsyncFlushResult.RecordError()` retains the first error even when batched writes complete out of order.
 
 The main-log write always uses the allocator's live page; objectId hint stamping is index-preserving, but metadata
 non-destructiveness alone is not sufficient. Recovery has exclusive access. Snapshot/ReadOnly coordination keeps the
@@ -750,7 +749,8 @@ would shift subsequent positions and is not implemented without a validated v2.1
 | Framed overflow above 128 KB | no payload-sized staging allocation | header/padding/fragments into ring; aligned interior not copied | source array pinned; direct writes split by segment | avoid copying a large payload through the ring |
 | Exact object at most 511 bytes | serializer/ring reused | serializer bytes into reused ring | no | headerless object |
 | Framed object above 511 bytes | serializer/ring reused | serializer bytes into reused ring | no | headers must be reserved/backfilled as chunks close |
-| Main-log live-page path | at most one pooled trailing-sector buffer | no page copy; only final partial-sector bytes copied | live memory and optional trailing sector held through callbacks | Recovery, Snapshot, and ReadOnly, including front/back-partial ranges |
+| Main-log live-page path | none | no page copy; whole sectors written from the live page | live memory held through callbacks | Recovery, Snapshot, and ReadOnly, including front/back-partial ranges |
+| All-inline page (empty `objectIdMap`) | none | no object-log writer or ring rented; record walk skipped | live memory held through callbacks | ReadOnly and Snapshot pages with no out-of-line data |
 
 The object serializer and pinned stream are reused across objects within one page flush, and the circular write
 buffers are reused across page ranges in the top-level flush.
@@ -810,10 +810,10 @@ Indentation is call depth. Component branches and lifetime changes are included 
         - stamp overflow-key page-count high bits into raw RDH KeyLength
         - set `KeyHasExtendedSizeHint` for a headered overflow key
         - set `KeyIsExactSize` / `ValueIsExactSize` as applicable
-    - `ObjectLogWriter.OnSplitPartialFlushComplete()`
-      - `CircularDiskWriteBuffer.OnSplitPartialFlushComplete()`
+    - `ObjectLogWriter.OnPartialFlushComplete()`
+      - `CircularDiskWriteBuffer.OnPartialFlushComplete()`
         - sector-pad and flush final object-log buffer
-        - submit direct complete-sector and optional zero-padded trailing-sector main-log writes
+        - submit the whole-sector main-log write, spanning `[alignedStartOffset, RoundUp(endOffset, sectorSize))`
         - final callback after all writes complete
 
 ### 9.2 Single-record pending disk read
@@ -958,8 +958,11 @@ keys, overflow/object values, direct-IO thresholds, 4 MB discovery boundaries, a
 ## 11. Version and format separation
 
 The current object-log format is checkpoint version 8. It uses chunk framing and carries extended overflow-key page
-hints across raw RDH KeyLength and the objectId hint, marked by `KeyHasExtendedSizeHint`. Version 7 is recoverable
-through the per-record bit-63 legacy discriminator and its dedicated decoder.
+hints across raw RDH KeyLength and the objectId hint, marked by `KeyHasExtendedSizeHint`. Version 8 metadata also
+carries the writing store's hybrid-log `pageSize` in the fifth address slot and appends its `segmentSize`. Version 7 is
+the only released downlevel format: it is recoverable through the per-record bit-63 legacy discriminator and its
+dedicated decoder, and its metadata duplicates `recoveredTailAddress` in that fifth slot and has no `segmentSize`, so
+both normalize to zero when read.
 
 The following formats are separate and must not borrow each other's length semantics:
 

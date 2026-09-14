@@ -835,13 +835,26 @@ namespace Tsavorite.core
             // nothing to serialize to the object log, so write its inline span directly and skip renting an object-log write buffer and walking
             // every record. This also covers using ObjectAllocator for string-only purposes, where there are no flushBuffers at all. The span and
             // destination are the ones the serializing path computes below, so a Snapshot lands at its own device's page offset and stops at the
-            // checkpoint boundary; Snapshot page ordering and fuzzy rules still apply through its coordination callbacks. Recovery reuses on-disk
-            // metadata and falls through to stamp records.
+            // checkpoint boundary; Snapshot page ordering and fuzzy rules still apply through its coordination callbacks.
+            //
+            // The test is objectIdMap.Count, which is page-scoped, so a sub-range flush of a page that has objects outside that range still
+            // serializes. Narrowing it to the range would mean either deferring the writer until the walk below reaches its first out-of-line
+            // record, or pre-walking the range to look for one. Neither is worth it: normal ReadOnly shifts are page-aligned
+            // (CalculateReadOnlyAddress rounds down to PageSize), so sub-range flushes are boundary events -- the trailing page of an explicit
+            // Flush, a checkpoint-driven shift, or a truncation -- at most one page each. A pre-walk is the worse of the two, because its
+            // skip rules (Invalid, and fuzzy v+1 for Snapshot) would have to stay in agreement with the walk below forever: if it ever became
+            // the more restrictive of the two it would take this inline path for a record the walk would have serialized, writing an unstamped
+            // objectId slot and no object bytes.
             var objectIdMap = objectPages[flushPage % BufferSize].objectIdMap;
             var pageHasNoObjectsToFlush = objectIdMap.Count == 0
                 && asyncResult.flushRequestState is FlushRequestState.ReadOnly or FlushRequestState.Snapshot;
             if (asyncResult.flushBuffers is null || pageHasNoObjectsToFlush)
             {
+                // Recovery never takes the inline path, for two independent reasons. Its objectIdMap is empty because records read from disk
+                // still carry object-log positions in their objectId slots rather than map indices, so Count is not a test for "no out-of-line
+                // data" here and would report zero for a page full of overflow keys and objects. And a recovery flush exists to stamp records:
+                // snapshot-region records copy their object bytes into the main object log and are repointed, and legacy records are
+                // up-converted, so there is no case with nothing to do.
                 if (asyncResult.flushRequestState != FlushRequestState.Recovery)
                 {
                     var inlineWriteLength = RoundUp(endOffset, (int)device.SectorSize) - alignedStartOffset;
