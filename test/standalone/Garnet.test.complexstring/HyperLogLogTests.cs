@@ -1472,5 +1472,71 @@ namespace Garnet.test
                 db.HyperLogLogMerge(corruptedKey, corruptedKey, validKey));
             StringAssert.Contains("WRONGTYPE", pfmergeEx2!.Message, "PFMERGE should reject corrupted HLL as destination");
         }
+
+        [Test]
+        [TestCase(18)]
+        [TestCase(8 * 1_024 * 1_024)]
+        public void PFADDImmutableRegionValidation(int bufferSize)
+        {
+            const string Key = nameof(PFADDImmutableRegionValidation);
+
+            var forgedBytes = new byte[bufferSize];
+            forgedBytes[3] = 0;
+            BinaryPrimitives.WriteUInt16LittleEndian(forgedBytes.AsSpan()[16..], 3000);
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
+            var db = redis.GetDatabase(0);
+
+            redis.GetServers()[0].FlushAllDatabases();
+
+            ClassicAssert.True(db.StringSet(Key, forgedBytes));
+
+            var exc0 = ClassicAssert.Throws<RedisServerException>(() => db.HyperLogLogAdd(Key, "foo"));
+            ClassicAssert.True(exc0.Message.StartsWith("WRONGTYPE "));
+
+            // Force into immutable region
+            _ = db.Execute("DEBUG", "FLUSHANDEVICT");
+
+            var exc1 = ClassicAssert.Throws<RedisServerException>(() => db.HyperLogLogAdd(Key, "bar"));
+            ClassicAssert.True(exc1.Message.StartsWith("WRONGTYPE "));
+
+            var actualBytes = (byte[])db.StringGet(Key);
+            ClassicAssert.IsTrue(forgedBytes.SequenceEqual(actualBytes));
+        }
+
+        [Test]
+        [TestCase(18)]
+        [TestCase(8 * 1_024 * 1_024)]
+        public void PFMERGEImmutableRegionValidation(int bufferSize)
+        {
+            const string Key0 = nameof(PFMERGEImmutableRegionValidation) + "_0";
+            const string Key1 = nameof(PFMERGEImmutableRegionValidation) + "_1";
+            const string Key2 = nameof(PFMERGEImmutableRegionValidation) + "_2";
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
+            var db = redis.GetDatabase(0);
+
+            // Something that looks like a HyperLogLog, but isn't
+            var forgedBytes = new byte[bufferSize];
+            forgedBytes[3] = 0;
+            BinaryPrimitives.WriteUInt16LittleEndian(forgedBytes.AsSpan()[16..], 3000);
+
+            ClassicAssert.True(db.StringSet(Key0, forgedBytes));
+            ClassicAssert.True(db.StringSet(Key1, forgedBytes));
+
+            var exc0 = ClassicAssert.Throws<RedisServerException>(() => db.HyperLogLogMerge(Key2, Key0, Key1));
+            ClassicAssert.True(exc0.Message.StartsWith("WRONGTYPE "));
+
+            // Force into immutable region
+            _ = db.Execute("DEBUG", "FLUSHANDEVICT");
+
+            var exc1 = ClassicAssert.Throws<RedisServerException>(() => db.HyperLogLogMerge(Key2, Key0, Key1));
+            ClassicAssert.True(exc1.Message.StartsWith("WRONGTYPE "));
+
+            var actualBytes0 = (byte[])db.StringGet(Key0);
+            var actualBytes1 = (byte[])db.StringGet(Key1);
+            ClassicAssert.IsTrue(forgedBytes.SequenceEqual(actualBytes0));
+            ClassicAssert.IsTrue(forgedBytes.SequenceEqual(actualBytes1));
+        }
     }
 }
