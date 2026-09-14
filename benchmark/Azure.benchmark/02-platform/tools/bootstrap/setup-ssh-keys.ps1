@@ -108,4 +108,4 @@ for ($attempt = 1; $attempt -le $maxRetries; $attempt++) {
 }
 
 Write-Host "ERROR: Could not fetch SSH key after $maxRetries attempts. Run post-deploy.ps1 manually."
-exit 0
+exit 1

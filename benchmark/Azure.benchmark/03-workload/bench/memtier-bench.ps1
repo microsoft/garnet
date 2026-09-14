@@ -258,6 +258,8 @@ if (-not $SkipLoad) {
         $loadResults | Where-Object { -not $_.Success } | ForEach-Object {
             Write-Host "    $($_.Host) [$($_.Duration)]" -ForegroundColor Red
         }
+        Write-Host "Aborting: $loadFailed load job(s) failed; a partial keyspace would invalidate benchmark results." -ForegroundColor Red
+        exit 1
     }
     Write-Host ""
 } else {

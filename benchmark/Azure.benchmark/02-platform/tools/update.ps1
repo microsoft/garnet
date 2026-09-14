@@ -224,7 +224,7 @@ if ($Run -or $RunOnly) {
         } else {
             bash -c $runCmd
             if ($LASTEXITCODE -ne 0) {
-                Write-Host "  FAILED: $runCmd" -ForegroundColor Red
+                throw "runcmd step failed (exit $LASTEXITCODE): $runCmd"
             }
         }
     }

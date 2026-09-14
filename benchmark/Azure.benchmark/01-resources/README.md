@@ -53,8 +53,8 @@ The VNet contains these subnets:
 
 | Subnet | Prefix | Purpose |
 |--------|--------|---------|
-| `garnet-subnet` | 10.5.0.0/24 | Management — public IPs, SSH access from corpnet |
-| `garnet-acc-subnet` | 10.5.1.0/24 | Data plane — accelerated networking for all VMSS |
+| `garnet-subnet` | 10.5.0.0/17 | Management — public IPs, SSH access from corpnet |
+| `garnet-acc-subnet` | 10.5.128.0/17 | Data plane — accelerated networking for all VMSS |
 
 Both server and client VMSS share the accelerated networking subnet. Peer discovery uses hostname prefixes to distinguish VMSS membership.
 

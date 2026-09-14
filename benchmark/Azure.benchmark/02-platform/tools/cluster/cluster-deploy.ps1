@@ -712,9 +712,9 @@ function New-Cluster {
     if ($stateLine -match "cluster_state:ok" -and $slotsOk -eq 16384) {
         Write-Host "  Cluster formed successfully ✓" -ForegroundColor Green
     } elseif ($stateLine -match "cluster_state:ok") {
-        Write-Host "  WARNING: Cluster state ok but only $slotsOk/16384 slots assigned" -ForegroundColor Red
+        throw "Cluster formation failed: state ok but only $slotsOk/16384 slots assigned"
     } else {
-        Write-Host "  WARNING: Cluster state is not 'ok'" -ForegroundColor Red
+        throw "Cluster formation failed: cluster_state is not 'ok' ($stateLine)"
     }
 }
 
