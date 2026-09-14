@@ -191,6 +191,7 @@ namespace Garnet.server
                     new("total_connections_active", metricsDisabled ? "0" : globalMetrics.total_connections_active.ToString()),
                     new("total_connections_received", metricsDisabled ? "0" : globalMetrics.total_connections_received.ToString()),
                     new("total_connections_disposed", metricsDisabled ? "0" : globalMetrics.total_connections_disposed.ToString()),
+                    new("rejected_connections", metricsDisabled ? "0" : globalMetrics.rejected_connections.ToString()),
                     new("total_commands_processed", metricsDisabled ? "0" : globalMetrics.globalSessionMetrics.get_total_commands_processed().ToString()),
                     new("instantaneous_ops_per_sec", metricsDisabled ? "0" : globalMetrics.instantaneous_cmd_per_sec.ToString()),
                     new("total_net_input_bytes", metricsDisabled ? "0" : globalMetrics.globalSessionMetrics.get_total_net_input_bytes().ToString()),

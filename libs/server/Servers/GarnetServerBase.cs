@@ -57,12 +57,21 @@ namespace Garnet.server
 
         long totalConnectionsReceived = 0;
         long totalConnectionsDisposed = 0;
+        long totalConnectionsRejected = 0;
 
         /// <summary>
         /// Add to total_connections_received
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void IncrementConnectionsReceived() => Interlocked.Increment(ref totalConnectionsReceived);
+
+        /// <summary>
+        /// Add to rejected_connections. Counts connections refused because the configured
+        /// connection limit was already reached, and nothing else: a socket that dies during
+        /// setup, or a handler that fails to construct, is not a rejection.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void IncrementConnectionsRejected() => Interlocked.Increment(ref totalConnectionsRejected);
 
         /// <summary>
         /// Add to total_connections_disposed
@@ -97,6 +106,11 @@ namespace Garnet.server
         public long TotalConnectionsDisposed => totalConnectionsDisposed;
 
         /// <summary>
+        /// Get the number of connections rejected because the connection limit was reached.
+        /// </summary>
+        public long TotalConnectionsRejected => totalConnectionsRejected;
+
+        /// <summary>
         /// Reset connections received counter. Multiplier for accounting for pub/sub
         /// </summary>
         public void ResetConnectionsReceived() => Interlocked.Exchange(ref totalConnectionsReceived, activeHandlers.Count);
@@ -105,6 +119,13 @@ namespace Garnet.server
         /// Reset connections disposed counter
         /// </summary>
         public void ResetConnectionsDiposed() => Interlocked.Exchange(ref totalConnectionsDisposed, 0);
+
+        /// <summary>
+        /// Reset connections rejected counter. Unlike the received counter, which resets to the
+        /// live handler count so that received minus disposed stays equal to connected_clients,
+        /// rejections track no live population and so reset to zero.
+        /// </summary>
+        public void ResetConnectionsRejected() => Interlocked.Exchange(ref totalConnectionsRejected, 0);
 
         public GarnetServerBase(EndPoint endpoint, int networkBufferSize, ILogger logger = null)
         {
