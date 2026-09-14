@@ -41,6 +41,15 @@ copy-paste-risky configuration defaults, not exploitable vulnerabilities.
 4. **Added `initialize-placeholders.ps1`.** Run it once after cloning to fill the
    placeholders interactively (`-Check` reports any un-filled tokens for CI).
 
+5. **Removed private-repo / GitHub-PAT support.** The `clone-repos.ps1` PAT-fetch
+   and `x-access-token:<PAT>@` URL-rewrite paths existed only to clone Garnet while
+   it was private. All benchmarked repos are now public, so this dead path was
+   removed along with its docs (`New-GitHubPat.ps1` helper, `ghclone`, `private`
+   visibility). This also eliminates the credential-in-URL / credential-in-`.git/config`
+   exposure flagged in review. The Key Vault still stores the VMSS SSH private key
+   (`vmss-ssh-private`) and the tools SAS URL (`tools-sas-url`); those are unrelated
+   and unchanged.
+
 ## Placeholders that MUST be filled before deploying
 
 Run `initialize-placeholders.ps1` (or edit manually). Do not commit filled-in

@@ -141,11 +141,6 @@ az deployment group create `
   --parameters keyVaultName=__OWNER__-garnet-kv location=southcentralus
 ```
 
-After creation, upload a GitHub PAT (helper `New-GitHubPat.ps1` is not tracked in this repo):
-```powershell
-.\New-GitHubPat.ps1 -RepoOwner __OWNER__ -RepoName "garnet,Scripts" -KeyVaultName __OWNER__-garnet-kv
-```
-
 ### Deploy VMSS — image variants
 
 #### Linux (Ubuntu 24.04)
@@ -218,27 +213,24 @@ az deployment group create `
 
 ### Adding/Removing Repos to Clone
 
-Edit the repo list in the appropriate cloud-config file in this folder:
+Edit the `repos` array in `tools/manifest.json`. Each entry is cloned (public,
+unauthenticated) by `tools/bootstrap/clone-repos.ps1` during bootstrap:
 
-- **Ubuntu:** `cloud-config.yml`
-- **Azure Linux:** `cloud-config-azurelinux.yml`
-
-Find the `/tmp/repos.txt` section under `write_files`:
-
-```yaml
-  - path: /tmp/repos.txt
-    permissions: '0644'
-    content: |
-      public|https://github.com/org/public-repo.git|/home/guser/public-repo
-      private|https://github.com/org/private-repo.git|/home/guser/private-repo
+```json
+{
+  "name": "garnet",
+  "url": "https://github.com/microsoft/garnet.git",
+  "path": "/home/guser/garnet",
+  "branch": "main"
+}
 ```
 
-Each line has the format `visibility|clone-url|target-path`:
+- `name` — display name used in logging
+- `url` — public HTTPS clone URL
+- `path` — absolute target directory on the VM
+- `branch` — branch to check out (a string, or an array whose first element is used)
 
-- `public` — cloned without authentication
-- `private` — cloned using the PAT from Key Vault
-
-After editing, redeploy the VMSS to pick up changes (cloud-config is baked into the deployment as base64).
+After editing, re-publish the tools tarball / redeploy so the VMs pick up the change.
 
 ### Updating .NET SDK Versions
 
@@ -260,8 +252,7 @@ After deployment, these scripts are available on each VM for manual re-execution
 | Command | Description |
 |---------|-------------|
 | `install-dotnet` | Re-run .NET SDK installation |
-| `setup-repos [vault-name] [secret-name]` | Re-run repo cloning |
-| `ghclone <vault-name> <repo-url> [path]` | Clone a single private repo using Key Vault PAT |
+| `setup-repos` | Re-run repo cloning |
 
 ### Connecting to VMs
 
@@ -285,4 +276,3 @@ az ssh vm --resource-group __OWNER__-garnet --name <vmss-name> --prefer-private-
 | `01-resources/security/keyvault.bicep` | Key Vault deployment (one-time) |
 | `02-platform/cloud-config.yml` | Cloud-init for Ubuntu |
 | `02-platform/cloud-config-azurelinux.yml` | Cloud-init for Azure Linux (tdnf) |
-| `New-GitHubPat.ps1` | PAT creation + Key Vault upload helper (not tracked in this repo) |

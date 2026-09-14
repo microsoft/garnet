@@ -156,7 +156,7 @@ param computerName string = vmssName
 @secure()
 param adminPassword string = ''
 
-@description('Key Vault name for storing VMSS SSH private key and GitHub PAT. Leave empty to skip.')
+@description('Key Vault name for storing the VMSS SSH private key. Leave empty to skip.')
 param keyVaultName string = 'garnet-kv'
 
 @description('Storage account name for tools tarball delivery. Leave empty to skip the RBAC grant.')
