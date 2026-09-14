@@ -26,7 +26,7 @@
     refresh-sas - Regenerate the tools tarball SAS and refresh the 'tools-sas-url' Key Vault secret (renews expiry)
 
 .EXAMPLE
-    # Deploy shared resources using default resource group (__OWNER__-garnet)
+    # Deploy shared resources using default resource group (<owner>-garnet)
     .\deploy-common-resources.ps1
 
     # Deploy shared resources to a specific resource group
@@ -70,7 +70,7 @@ if ($Help) {
     Write-Host "Deploys shared resource-group infrastructure (NSG, VNet, Proximity Group, Storage account, Key Vault) and generates vmss-parameters.json."
     Write-Host ""
     Write-Host "Parameters:"
-    Write-Host "  -rg <name>              Resource group name (default: __OWNER__-garnet)"
+    Write-Host "  -rg <name>              Resource group name (default: <owner>-garnet)"
     Write-Host "  -Region <name>          Azure region (default: resource group location)"
     Write-Host "  -Action <action>        Action to perform (default: deploy)"
     Write-Host "                          deploy  - Deploy shared resources (network, storage, Key Vault + keys, tools SAS)"

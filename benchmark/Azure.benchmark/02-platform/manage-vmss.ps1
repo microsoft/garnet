@@ -45,25 +45,25 @@
 
 .EXAMPLE
     # List VMSS and prompt for selection, then refresh all repos
-    .\manage-vmss.ps1 -rg __OWNER__-garnet
+    .\manage-vmss.ps1 -rg <owner>-garnet
 
     # Refresh specific VMSS
-    .\manage-vmss.ps1 -rg __OWNER__-garnet -VmssName server
+    .\manage-vmss.ps1 -rg <owner>-garnet -VmssName server
 
     # Rebuild garnet on multiple VMSS
-    .\manage-vmss.ps1 -rg __OWNER__-garnet -VmssName server,client -Action rebuild -System garnet
+    .\manage-vmss.ps1 -rg <owner>-garnet -VmssName server,client -Action rebuild -System garnet
 
     # Verbose output (show per-instance command output)
-    .\manage-vmss.ps1 -rg __OWNER__-garnet -VmssName server -Action rebuild -System garnet -Verbose
+    .\manage-vmss.ps1 -rg <owner>-garnet -VmssName server -Action rebuild -System garnet -Verbose
 
     # Power on a VMSS
-    .\manage-vmss.ps1 -rg __OWNER__-garnet -VmssName server -Action start
+    .\manage-vmss.ps1 -rg <owner>-garnet -VmssName server -Action start
 
     # Deallocate (stop billing for) a VMSS
-    .\manage-vmss.ps1 -rg __OWNER__-garnet -VmssName server -Action stop
+    .\manage-vmss.ps1 -rg <owner>-garnet -VmssName server -Action stop
 
     # Restart only the failed instances in a VMSS
-    .\manage-vmss.ps1 -rg __OWNER__-garnet -VmssName server -Action restart
+    .\manage-vmss.ps1 -rg <owner>-garnet -VmssName server -Action restart
 #>
 
 param(
@@ -149,17 +149,17 @@ if ($Help -or -not $rg) {
     Write-Host "  -Help               Show this help message"
     Write-Host ""
     Write-Host "Examples:"
-    Write-Host "  .\manage-vmss.ps1 -rg __OWNER__-garnet"
-    Write-Host "  .\manage-vmss.ps1 -rg __OWNER__-garnet -VmssName server -Action rebuild -System garnet"
-    Write-Host "  .\manage-vmss.ps1 -rg __OWNER__-garnet -VmssName server,client -Action refresh"
-    Write-Host "  .\manage-vmss.ps1 -rg __OWNER__-garnet -VmssName server -Action start"
-    Write-Host "  .\manage-vmss.ps1 -rg __OWNER__-garnet -VmssName server -Action stop"
-    Write-Host "  .\manage-vmss.ps1 -rg __OWNER__-garnet -VmssName server -Action restart"
-    Write-Host "  .\manage-vmss.ps1 -rg __OWNER__-garnet -VmssName server -Action ping"
-    Write-Host "  .\manage-vmss.ps1 -rg __OWNER__-garnet -VmssName server -Action rebuild -System garnet -Ref a1b2c3d"
-    Write-Host "  .\manage-vmss.ps1 -rg __OWNER__-garnet -Action create"
-    Write-Host "  .\manage-vmss.ps1 -rg __OWNER__-garnet -Action publish-tools"
-    Write-Host "  .\manage-vmss.ps1 -rg __OWNER__-garnet -VmssName server -Action push-keys"
+    Write-Host "  .\manage-vmss.ps1 -rg <owner>-garnet"
+    Write-Host "  .\manage-vmss.ps1 -rg <owner>-garnet -VmssName server -Action rebuild -System garnet"
+    Write-Host "  .\manage-vmss.ps1 -rg <owner>-garnet -VmssName server,client -Action refresh"
+    Write-Host "  .\manage-vmss.ps1 -rg <owner>-garnet -VmssName server -Action start"
+    Write-Host "  .\manage-vmss.ps1 -rg <owner>-garnet -VmssName server -Action stop"
+    Write-Host "  .\manage-vmss.ps1 -rg <owner>-garnet -VmssName server -Action restart"
+    Write-Host "  .\manage-vmss.ps1 -rg <owner>-garnet -VmssName server -Action ping"
+    Write-Host "  .\manage-vmss.ps1 -rg <owner>-garnet -VmssName server -Action rebuild -System garnet -Ref a1b2c3d"
+    Write-Host "  .\manage-vmss.ps1 -rg <owner>-garnet -Action create"
+    Write-Host "  .\manage-vmss.ps1 -rg <owner>-garnet -Action publish-tools"
+    Write-Host "  .\manage-vmss.ps1 -rg <owner>-garnet -VmssName server -Action push-keys"
     Write-Host ""
     Write-Host "For detailed help: Get-Help .\manage-vmss.ps1 -Detailed"
     Write-Host ""

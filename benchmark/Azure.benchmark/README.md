@@ -15,9 +15,9 @@ The repo is organized into three layers, each with its own README containing the
 
 - Azure CLI (`az`) logged in
 - PowerShell 7+
-- A resource group (default: `__OWNER__-garnet`)
-- SSH key pair for **intra-VMSS** access (VM-to-VM within a scale set, e.g. `__SSH_VM_KEY__`)
-- SSH key pair(s) for **inter-VMSS** access (your desktop → VMs, e.g. `__SSH_USER_KEY__`)
+- A resource group (default: `<owner>-garnet`)
+- SSH key pair for **intra-VMSS** access (VM-to-VM within a scale set, e.g. `id_ed25519_vmss`)
+- SSH key pair(s) for **inter-VMSS** access (your desktop → VMs, e.g. `id_ed25519_user`)
 
 ## First-time setup: initialize placeholders
 
@@ -33,10 +33,10 @@ pwsh .\initialize-placeholders.ps1
 
 You are prompted for:
 
-- **Owner** (`__OWNER__`) — alias used for resource tags and to derive the default
+- **Owner** — alias used for resource tags and to derive the default
   resource group (`<owner>-garnet`) and Key Vault (`<owner>-garnet-kv`) names.
-- **Personal SSH key** (`__SSH_USER_KEY__`) — your key name for desktop → VM SSH.
-- **VMSS inter-node SSH key** (`__SSH_VM_KEY__`) — key for VM-to-VM SSH (default `id_ed25519_vmss`).
+- **Personal SSH key** — your key name for desktop → VM SSH.
+- **VMSS inter-node SSH key** — key for VM-to-VM SSH (default `id_ed25519_vmss`).
 
 Provide values non-interactively with `-Owner`, `-SshUserKey`, and `-SshVmKey`, or run
 `.\initialize-placeholders.ps1 -Check` to verify that no placeholders remain. Review the

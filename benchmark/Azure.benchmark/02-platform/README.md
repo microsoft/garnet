@@ -80,34 +80,34 @@ pwsh .\02-platform\manage-vmss.ps1 --help
 
 ```powershell
 # List VMSS in resource group and prompt for selection, then refresh all repos
-.\02-platform\manage-vmss.ps1 -rg __OWNER__-garnet
+.\02-platform\manage-vmss.ps1 -rg <owner>-garnet
 
 # Refresh repos on specific VMSS
-.\02-platform\manage-vmss.ps1 -rg __OWNER__-garnet -VmssName server
+.\02-platform\manage-vmss.ps1 -rg <owner>-garnet -VmssName server
 
 # Rebuild garnet on multiple VMSS (pulls main, builds, installs to /usr/local/bin)
-.\02-platform\manage-vmss.ps1 -rg __OWNER__-garnet -VmssName server,client -Action rebuild -System garnet
+.\02-platform\manage-vmss.ps1 -rg <owner>-garnet -VmssName server,client -Action rebuild -System garnet
 
 # Rebuild valkey with specific version (uses args from manifest.json: "valkey 9.0")
-.\02-platform\manage-vmss.ps1 -rg __OWNER__-garnet -VmssName server -Action rebuild -System valkey
+.\02-platform\manage-vmss.ps1 -rg <owner>-garnet -VmssName server -Action rebuild -System valkey
 
 # Run full deployment workflow from scratch on all VMSS
-.\02-platform\manage-vmss.ps1 -rg __OWNER__-garnet -VmssName all -Action deploy
+.\02-platform\manage-vmss.ps1 -rg <owner>-garnet -VmssName all -Action deploy
 
 # Update scripts only (no rebuild)
-.\02-platform\manage-vmss.ps1 -rg __OWNER__-garnet -VmssName server -Action install
+.\02-platform\manage-vmss.ps1 -rg <owner>-garnet -VmssName server -Action install
 
 # Power on a VMSS
-.\02-platform\manage-vmss.ps1 -rg __OWNER__-garnet -VmssName server -Action start
+.\02-platform\manage-vmss.ps1 -rg <owner>-garnet -VmssName server -Action start
 
 # Deallocate a VMSS (stops compute billing)
-.\02-platform\manage-vmss.ps1 -rg __OWNER__-garnet -VmssName server -Action stop
+.\02-platform\manage-vmss.ps1 -rg <owner>-garnet -VmssName server -Action stop
 
 # Restart only the failed instances across all VMSS
-.\02-platform\manage-vmss.ps1 -rg __OWNER__-garnet -VmssName all -Action restart
+.\02-platform\manage-vmss.ps1 -rg <owner>-garnet -VmssName all -Action restart
 
 # Package tools/ and upload it to blob storage (run before -Action create)
-.\02-platform\manage-vmss.ps1 -rg __OWNER__-garnet -Action publish-tools
+.\02-platform\manage-vmss.ps1 -rg <owner>-garnet -Action publish-tools
 ```
 
 **Notes:**
@@ -136,9 +136,9 @@ Higher-level flows use `01-resources/deploy-common-resources.ps1` (which creates
 
 ```powershell
 az deployment group create `
-  --resource-group __OWNER__-garnet `
+  --resource-group <owner>-garnet `
   --template-file 01-resources\security\keyvault.bicep `
-  --parameters keyVaultName=__OWNER__-garnet-kv location=southcentralus
+  --parameters keyVaultName=<owner>-garnet-kv location=southcentralus
 ```
 
 ### Deploy VMSS — image variants
@@ -147,7 +147,7 @@ az deployment group create `
 
 ```powershell
 az deployment group create `
-  --resource-group __OWNER__-garnet `
+  --resource-group <owner>-garnet `
   --template-file 02-platform\vmss.bicep `
   --parameters @02-platform\vmss-parameters.json `
   --parameters vmssName=myUbuntuVmss `
@@ -155,7 +155,7 @@ az deployment group create `
                operatingSystem=linux `
                vmSKU=Standard_F64s_v2 `
                osDiskType=Premium_LRS `
-               keyVaultName=__OWNER__-garnet-kv `
+               keyVaultName=<owner>-garnet-kv `
                linuxImage="{'publisher':'Canonical','offer':'ubuntu-24_04-lts','sku':'server','version':'latest'}"
 ```
 
@@ -163,7 +163,7 @@ az deployment group create `
 
 ```powershell
 az deployment group create `
-  --resource-group __OWNER__-garnet `
+  --resource-group <owner>-garnet `
   --template-file 02-platform\vmss.bicep `
   --parameters @02-platform\vmss-parameters.json `
   --parameters vmssName=myAzLinuxVmss `
@@ -171,7 +171,7 @@ az deployment group create `
                operatingSystem=linux `
                vmSKU=Standard_F64s_v2 `
                osDiskType=Premium_LRS `
-               keyVaultName=__OWNER__-garnet-kv `
+               keyVaultName=<owner>-garnet-kv `
                linuxImage="{'publisher':'microsoftcblmariner','offer':'azure-linux-3','sku':'azure-linux-3-gen2','version':'latest'}"
 ```
 
@@ -179,7 +179,7 @@ az deployment group create `
 
 ```powershell
 az deployment group create `
-  --resource-group __OWNER__-garnet `
+  --resource-group <owner>-garnet `
   --template-file 02-platform\vmss.bicep `
   --parameters @02-platform\vmss-parameters.json `
   --parameters vmssName=myArmVmss `
@@ -187,7 +187,7 @@ az deployment group create `
                operatingSystem=linux `
                vmSKU=Standard_B16ps_v2 `
                osDiskType=Premium_LRS `
-               keyVaultName=__OWNER__-garnet-kv `
+               keyVaultName=<owner>-garnet-kv `
                linuxImage="{'publisher':'microsoftcblmariner','offer':'azure-linux-3','sku':'azure-linux-3-arm64','version':'latest'}"
 ```
 
@@ -195,7 +195,7 @@ az deployment group create `
 
 ```powershell
 az deployment group create `
-  --resource-group __OWNER__-garnet `
+  --resource-group <owner>-garnet `
   --template-file 02-platform\vmss.bicep `
   --parameters @02-platform\vmss-parameters.json `
   --parameters vmssName=myWinVmss `
@@ -204,7 +204,7 @@ az deployment group create `
                vmSKU=Standard_D4s_v3 `
                osDiskType=Premium_LRS `
                adminPassword='YourSecurePass123!' `
-               keyVaultName=__OWNER__-garnet-kv
+               keyVaultName=<owner>-garnet-kv
 ```
 
 > **Note:** `adminPassword` is only required for Windows (not fully supported). Linux uses SSH keys.
@@ -261,7 +261,7 @@ After deployment, these scripts are available on each VM for manual re-execution
 ssh guser@<public-ip>
 
 # Linux (Azure AD)
-az ssh vm --resource-group __OWNER__-garnet --name <vmss-name> --prefer-private-ip
+az ssh vm --resource-group <owner>-garnet --name <vmss-name> --prefer-private-ip
 ```
 
 - **Windows (RDP):** connect via RDP to the public IP with `guser` / your admin password.

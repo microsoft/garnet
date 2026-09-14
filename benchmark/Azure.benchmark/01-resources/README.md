@@ -65,8 +65,8 @@ Edit `security/manifest.json` to declare your SSH key names and base path:
 ```json
 {
     "basePath": "%USERPROFILE%\\.ssh",
-    "userKeys": ["__SSH_USER_KEY__"],
-    "vmKeys": "__SSH_VM_KEY__"
+    "userKeys": ["id_ed25519_user"],
+    "vmKeys": "id_ed25519_vmss"
 }
 ```
 
