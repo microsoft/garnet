@@ -172,7 +172,7 @@ For all available command line settings, run `GarnetServer.exe -h` or `GarnetSer
 | **ThreadPoolMaxThreads** | ```--maxthreads``` | ```int``` | Integer in range:<br/>[0, MaxValue] | Maximum worker threads in thread pool, 0 uses the system default. |
 | **ThreadPoolMinIOCompletionThreads** | ```--miniothreads``` | ```int``` | Integer in range:<br/>[0, MaxValue] | Minimum IO completion threads in thread pool, 0 uses the system default. |
 | **ThreadPoolMaxIOCompletionThreads** | ```--maxiothreads``` | ```int``` | Integer in range:<br/>[0, MaxValue] | Maximum IO completion threads in thread pool, 0 uses the system default. |
-| **NetworkConnectionLimit** | ```--network-connection-limit``` | ```int``` | Integer in range:<br/>[-1, MaxValue] | Maximum number of simultaneously active network connections. |
+| **NetworkConnectionLimit** | ```--network-connection-limit``` | ```int``` | Integer in range:<br/>[-1, MaxValue] | Maximum number of simultaneously active network connections across all listeners, or -1 for unlimited. Equivalent to the Redis `maxclients` parameter, and settable at runtime with `CONFIG SET maxclients`. Replica and cluster peer links count against it, as they do in Redis. Lowering it refuses new connections rather than disconnecting established ones. |
 | **UseAzureStorage** | ```--use-azure-storage``` | ```bool``` |  | Use Azure Page Blobs for storage instead of local storage. |
 | **AzureStorageServiceUri** | ```--storage-service-uri``` | ```string``` |  | The URI to use when establishing connection to Azure Blobs Storage. |
 | **AzureStorageManagedIdentity** | ```--storage-managed-identity``` | ```string``` |  | The managed identity to use when establishing connection to Azure Blobs Storage. |
