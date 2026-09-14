@@ -343,9 +343,10 @@ if ($isVerbose) {
     $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
     $benchProgress = [hashtable]::Synchronized(@{ done = 0; failed = 0 })
 
-    $benchJob = $sshHosts | ForEach-Object -Parallel {
-        $host_ = $_
-        $logFile = "$using:runDir\$($host_ -replace '\.', '-').log"
+    $benchJob = 0..($instances - 1) | ForEach-Object -Parallel {
+        $idx = $_
+        $host_ = ($using:sshHosts)[$idx]
+        $logFile = "$using:runDir\$($host_ -replace '\.', '-')-$idx.log"
         $sw = [System.Diagnostics.Stopwatch]::StartNew()
         $success = $false
         $outputText = ""

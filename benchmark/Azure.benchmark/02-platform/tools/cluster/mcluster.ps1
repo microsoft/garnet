@@ -316,6 +316,49 @@ function Stop-System {
     }
 }
 
+function Confirm-Stopped {
+    param([string]$Sys, [int]$TimeoutSec = 15)
+    $patterns = @()
+    if ($Sys -eq "garnet" -or [string]::IsNullOrEmpty($Sys)) { $patterns += "GarnetServer" }
+    if ($Sys -eq "valkey" -or [string]::IsNullOrEmpty($Sys)) { $patterns += "valkey-server" }
+    foreach ($pat in $patterns) {
+        $deadline = (Get-Date).AddSeconds($TimeoutSec)
+        $procIds = @()
+        do {
+            $raw = bash -c "pgrep -f $pat" 2>$null
+            $procIds = if ($raw) { $raw.Trim() -split "`n" | Where-Object { $_ } } else { @() }
+            if ($procIds.Count -eq 0) { break }
+            Start-Sleep -Milliseconds 500
+        } while ((Get-Date) -lt $deadline)
+
+        if ($procIds.Count -gt 0) {
+            Write-Host "  $pat still running after ${TimeoutSec}s; sending SIGKILL..." -ForegroundColor Yellow
+            foreach ($p in $procIds) { bash -c "kill -9 $p" 2>$null }
+            Start-Sleep -Milliseconds 500
+            $raw = bash -c "pgrep -f $pat" 2>$null
+            $procIds = if ($raw) { $raw.Trim() -split "`n" | Where-Object { $_ } } else { @() }
+            if ($procIds.Count -gt 0) {
+                throw "Failed to stop all $pat processes; aborting clean to avoid deleting data under a live process."
+            }
+        }
+        Write-Host "  ${pat}: confirmed stopped" -ForegroundColor DarkGray
+    }
+}
+
+# Stop all instances of the given system (or both when unspecified) and confirm
+# termination before any data is removed, so a live process can never keep
+# running against deleted files.
+function Stop-And-Confirm {
+    param([string]$Sys)
+    if ([string]::IsNullOrEmpty($Sys)) {
+        Stop-System -Sys "valkey" -Count 0
+        Stop-System -Sys "garnet" -Count 0
+    } else {
+        Stop-System -Sys $Sys -Count 0
+    }
+    Confirm-Stopped -Sys $Sys
+}
+
 # Main logic
 switch ($Action) {
     "start" {
@@ -332,6 +375,8 @@ switch ($Action) {
         Write-Host ""
 
         if ($Clean) {
+            Write-Host "Stopping $System instances before clean..."
+            Stop-And-Confirm -Sys $System
             Write-Host "Cleaning $System cluster directory..."
             Clean-System -Sys $System
         }
@@ -356,6 +401,8 @@ switch ($Action) {
     }
 
     "clean" {
+        Write-Host "Stopping instances before clean..."
+        Stop-And-Confirm -Sys $System
         Write-Host "Cleaning cluster directories..."
         Clean-System -Sys $System
         Write-Host "Done." -ForegroundColor Green
@@ -387,6 +434,8 @@ switch ($Action) {
         if ($Nodes -le 0) { throw "Usage: mcluster.ps1 -Action stage -System <system> (-Conf <path> | -ConfContent <b64>) -Nodes <n>" }
 
         if ($Clean) {
+            Write-Host "Stopping $System instances before clean..."
+            Stop-And-Confirm -Sys $System
             Write-Host "Cleaning $System cluster directory..."
             Clean-System -Sys $System
         }
