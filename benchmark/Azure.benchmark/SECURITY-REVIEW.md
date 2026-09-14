@@ -29,10 +29,11 @@ copy-paste-risky configuration defaults, not exploitable vulnerabilities.
    `tenantId` was the runtime expression `[subscription().tenantId]` — but generated
    artifacts should not be tracked regardless.
 
-2. **Genericized the personal alias.** Every occurrence of the author's alias was
-   replaced with the `__OWNER__` placeholder, which composes into the default
-   resource group (`__OWNER__-garnet`), Key Vault (`__OWNER__-garnet-kv`) and the
-   `Owner` resource tag.
+2. **Removed the personal alias.** The author's alias no longer appears anywhere.
+   The resource group name is supplied by the user (prompted if omitted), the Key
+   Vault is timestamp-named (`kv-<timestamp>`) and discovered by its `app=azurebench`
+   tag, and the `Owner` resource tag was dropped — so no owner-derived names or tags
+   remain to genericize.
 
 3. **Genericized personal SSH key names.** Personal device key names in
    `security/manifest.json` and the docs were replaced with the `__SSH_USER_KEY__`
@@ -57,7 +58,6 @@ personal values back to the public repo.
 
 | Placeholder        | Meaning                                                        |
 |--------------------|----------------------------------------------------------------|
-| `__OWNER__`        | Owner/alias tag; derives the default RG and Key Vault names.    |
 | `__SSH_USER_KEY__` | Your personal SSH public key name in the manifest `basePath`.   |
 
 ## Residual low-severity items (documented, not exploitable)

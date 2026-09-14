@@ -15,7 +15,7 @@ The repo is organized into three layers, each with its own README containing the
 
 - Azure CLI (`az`) logged in
 - PowerShell 7+
-- A resource group (default: `<owner>-garnet`)
+- A resource group (you provide its name, or the script offers to create one)
 - SSH key pair for **intra-VMSS** access (VM-to-VM within a scale set, e.g. `id_ed25519_vmss`)
 - SSH key pair(s) for **inter-VMSS** access (your desktop → VMs, e.g. `id_ed25519_user`)
 
@@ -33,12 +33,10 @@ pwsh .\initialize-placeholders.ps1
 
 You are prompted for:
 
-- **Owner** — alias used for resource tags and to derive the default
-  resource group (`<owner>-garnet`) and Key Vault (`<owner>-garnet-kv`) names.
 - **Personal SSH key** — your key name for desktop → VM SSH.
 - **VMSS inter-node SSH key** — key for VM-to-VM SSH (default `id_ed25519_vmss`).
 
-Provide values non-interactively with `-Owner`, `-SshUserKey`, and `-SshVmKey`, or run
+Provide values non-interactively with `-SshUserKey` and `-SshVmKey`, or run
 `.\initialize-placeholders.ps1 -Check` to verify that no placeholders remain. Review the
 changes with `git diff` before committing.
 

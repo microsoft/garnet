@@ -9,9 +9,6 @@
     after cloning, to substitute the placeholders with values for your environment.
 
     Supported placeholders:
-      __OWNER__          Owner/alias used for resource tags and to derive the
-                         default resource group (`<owner>-garnet`) and Key Vault
-                         (`<owner>-garnet-kv`) names.
       __SSH_USER_KEY__   Name of your personal SSH public key in the manifest
                          basePath (normally %USERPROFILE%\.ssh), e.g. id_ed25519_user.
       __SSH_VM_KEY__     Name of the VMSS inter-node SSH key in the manifest
@@ -19,9 +16,6 @@
 
     The script rewrites files in place. Run inside a clean git working tree so the
     changes are easy to review with `git diff` before committing.
-
-.PARAMETER Owner
-    Value for __OWNER__. If omitted, you are prompted.
 
 .PARAMETER SshUserKey
     Value for __SSH_USER_KEY__. If omitted, you are prompted.
@@ -34,14 +28,13 @@
     writing anything. Useful in CI to fail if a tree was committed un-initialized.
 
 .EXAMPLE
-    .\initialize-placeholders.ps1 -Owner alice -SshUserKey id_ed25519_alice
+    .\initialize-placeholders.ps1 -SshUserKey id_ed25519_alice
 
 .EXAMPLE
     .\initialize-placeholders.ps1 -Check
 #>
 [CmdletBinding()]
 param(
-    [string]$Owner,
     [string]$SshUserKey,
     [string]$SshVmKey,
     [switch]$Check
@@ -66,7 +59,7 @@ function Get-CandidateFiles {
     }
 }
 
-$placeholders = @('__OWNER__', '__SSH_USER_KEY__', '__SSH_VM_KEY__')
+$placeholders = @('__SSH_USER_KEY__', '__SSH_VM_KEY__')
 
 if ($Check) {
     $hits = @()
@@ -90,9 +83,6 @@ if ($Check) {
     exit 1
 }
 
-if (-not $Owner) {
-    $Owner = Read-Host "Owner alias (resource tag; derives '<owner>-garnet' RG and '<owner>-garnet-kv' vault)"
-}
 if (-not $SshUserKey) {
     $suggest = 'id_ed25519_user'
     $answer = Read-Host "Personal SSH public key name in your manifest basePath [$suggest]"
@@ -104,15 +94,7 @@ if (-not $SshVmKey) {
     $SshVmKey = if ([string]::IsNullOrWhiteSpace($answerVm)) { $suggestVm } else { $answerVm }
 }
 
-if ([string]::IsNullOrWhiteSpace($Owner)) {
-    throw "Owner is required."
-}
-if ($Owner -notmatch '^[a-z0-9][a-z0-9-]{1,40}$') {
-    throw "Owner '$Owner' is invalid. Use lowercase letters, digits and hyphens (Azure resource-name safe)."
-}
-
 $replacements = @{
-    '__OWNER__'        = $Owner
     '__SSH_USER_KEY__' = $SshUserKey
     '__SSH_VM_KEY__'   = $SshVmKey
 }
@@ -134,7 +116,6 @@ foreach ($file in Get-CandidateFiles) {
 
 Write-Host ""
 Write-Host "Done. $changed file(s) updated." -ForegroundColor Green
-Write-Host "  Owner        -> $Owner"
 Write-Host "  SSH user key -> $SshUserKey"
 Write-Host "  SSH VM key   -> $SshVmKey"
 Write-Host ""

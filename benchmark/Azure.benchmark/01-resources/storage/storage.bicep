@@ -24,7 +24,6 @@ param containerName string = 'tools'
 var tagsProfile = {
   app: 'azurebench'
   Environment: '/NonProd'
-  Owner: '__OWNER__'
 }
 
 resource storageAccount 'Microsoft.Storage/storageAccounts@2023-01-01' = {

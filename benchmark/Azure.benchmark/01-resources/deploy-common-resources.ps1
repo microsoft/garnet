@@ -18,7 +18,7 @@
     SSH key definitions are read from security/manifest.json (basePath, userKeys, vmKeys).
 
 .PARAMETER rg
-    Azure resource group name.
+    Azure resource group name. Required; you are prompted if omitted.
 
 .PARAMETER Action
     deploy      - Deploy shared resources (network, storage, Key Vault + keys, tools SAS) and generate vmss-parameters.json (default)
@@ -26,7 +26,7 @@
     refresh-sas - Regenerate the tools tarball SAS and refresh the 'tools-sas-url' Key Vault secret (renews expiry)
 
 .EXAMPLE
-    # Deploy shared resources using default resource group (<owner>-garnet)
+    # Deploy shared resources (prompts for the resource group name)
     .\deploy-common-resources.ps1
 
     # Deploy shared resources to a specific resource group
@@ -41,7 +41,7 @@
 
 param(
     [Alias('ResourceGroup')]
-    [string]$rg = '__OWNER__-garnet',
+    [string]$rg = '',
 
     [Alias('Location')]
     [string]$Region = '',
@@ -70,7 +70,7 @@ if ($Help) {
     Write-Host "Deploys shared resource-group infrastructure (NSG, VNet, Proximity Group, Storage account, Key Vault) and generates vmss-parameters.json."
     Write-Host ""
     Write-Host "Parameters:"
-    Write-Host "  -rg <name>              Resource group name (default: <owner>-garnet)"
+    Write-Host "  -rg <name>              Resource group name (required; prompted if omitted)"
     Write-Host "  -Region <name>          Azure region (default: resource group location)"
     Write-Host "  -Action <action>        Action to perform (default: deploy)"
     Write-Host "                          deploy  - Deploy shared resources (network, storage, Key Vault + keys, tools SAS)"
@@ -92,6 +92,15 @@ if ($Help) {
 }
 
 $ErrorActionPreference = 'Stop'
+
+if ([string]::IsNullOrWhiteSpace($rg)) {
+    $rg = Read-Host "Resource group name"
+    if ([string]::IsNullOrWhiteSpace($rg)) {
+        Write-Error "Resource group name is required."
+        exit 1
+    }
+}
+
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $networkDir = Join-Path $scriptDir 'network'
 $storageDir = Join-Path $scriptDir 'storage'

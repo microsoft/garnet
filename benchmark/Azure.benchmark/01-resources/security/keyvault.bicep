@@ -5,7 +5,6 @@ param deployerPrincipalId string
 
 var tagsProfile = {
   Environment: '/NonProd'
-  Owner: '__OWNER__'
   app: 'azurebench'
 }
 

@@ -295,7 +295,6 @@ resource vnet 'Microsoft.Network/virtualNetworks@2023-04-01' existing = {
 
 var tagsProfile = {
   Environment: '/NonProd'
-  Owner: '__OWNER__'
   Root: vmssName
 }
 
