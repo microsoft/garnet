@@ -456,8 +456,9 @@ namespace Garnet.server
 
         private void HashTimeToLive(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion)
         {
-            DeleteExpiredItems();
-
+            // This is a read operation, so it must not mutate the object: it runs under a shared lock and may execute
+            // while the flush path is serializing this same instance. Expired fields are reported as absent by
+            // ContainsKey (via GetExpiration) without being removed; the mutating paths purge them from the live object.
             var isMilliseconds = input.arg1 == 1;
             var isTimestamp = input.arg2 == 1;
             var numFields = input.parseState.Count;
