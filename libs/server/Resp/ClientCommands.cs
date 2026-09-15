@@ -25,6 +25,10 @@ namespace Garnet.server
                 or RespCommand.CustomTxn or RespCommand.CustomRawStringCmd or RespCommand.CustomObjCmd
                 or RespCommand.CustomProcedure or RespCommand.EXPDELSCAN;
 
+        private static bool IsInternodeStoreMutation(RespCommand cmd)
+            => cmd is RespCommand.CLUSTER_MIGRATE or RespCommand.CLUSTER_FLUSHALL
+                or RespCommand.CLUSTER_DELKEYSINSLOT or RespCommand.CLUSTER_DELKEYSINSLOTRANGE;
+
         private void EnterClientCommand(RespCommand cmd)
         {
             // Script commands and a running transaction share their outer command's admission.
@@ -36,8 +40,9 @@ namespace Garnet.server
                 pauseTransactionWrites |= write;
                 write = cmd == RespCommand.EXEC && pauseTransactionWrites;
             }
-            if (cmd is RespCommand.CLIENT_PAUSE or RespCommand.CLIENT_UNPAUSE or RespCommand.SHUTDOWN
-                || cmd.IsClusterSubCommand() || clusterSession?.RemoteNodeId != null) return;
+            if (cmd is RespCommand.CLIENT_PAUSE or RespCommand.CLIENT_UNPAUSE or RespCommand.SHUTDOWN) return;
+            if (IsInternodeStoreMutation(cmd)) write = true;
+            else if (cmd.IsClusterSubCommand() || clusterSession?.RemoteNodeId != null) return;
 
             while (!pauseParticipant.TryEnter(write))
             {

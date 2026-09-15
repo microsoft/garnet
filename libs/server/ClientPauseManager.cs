@@ -136,6 +136,12 @@ namespace Garnet.server
             }
 
             internal void Exit() => Interlocked.Exchange(ref active, 0);
+
+            internal void Abort()
+            {
+                lock (owner.sync) { disposed = true; Monitor.PulseAll(owner.sync); }
+            }
+
             public void Dispose()
             {
                 lock (owner.sync) { disposed = true; Exit(); owner.participants.TryRemove(this, out _); owner.UpdateMode(); }

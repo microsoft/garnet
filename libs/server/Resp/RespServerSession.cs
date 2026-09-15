@@ -1331,7 +1331,7 @@ namespace Garnet.server
         public bool TryKill()
         {
             var closed = networkSender.TryClose();
-            if (closed) pauseParticipant?.Dispose();
+            if (closed) pauseParticipant?.Abort();
             return closed;
         }
 
