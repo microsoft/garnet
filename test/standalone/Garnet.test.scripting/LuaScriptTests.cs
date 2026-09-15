@@ -1088,7 +1088,7 @@ return redis.status_reply("OK")
             {
                 var hash = string.Join("", hashBytes.Select(static x => x.ToString("X2")));
 
-                var exists = (RedisValue[])server.Execute("SCRIPT", "EXISTS", hash, "foo", "bar");
+                var exists = (RedisValue[])server.Execute(0, "SCRIPT", ["EXISTS", hash, "foo", "bar"]);
 
                 ClassicAssert.AreEqual(3, exists.Length);
                 ClassicAssert.AreEqual(1, (long)exists[0]);
@@ -1100,7 +1100,7 @@ return redis.status_reply("OK")
             {
                 var hash = string.Join("", hashBytes.Select(static x => x.ToString("x2")));
 
-                var exists = (RedisValue[])server.Execute("SCRIPT", "EXISTS", hash, "foo", "bar");
+                var exists = (RedisValue[])server.Execute(0, "SCRIPT", ["EXISTS", hash, "foo", "bar"]);
 
                 ClassicAssert.AreEqual(3, exists.Length);
                 ClassicAssert.AreEqual(1, (long)exists[0]);

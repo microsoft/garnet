@@ -144,9 +144,7 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> WITHDIST => "WITHDIST"u8;
         public static ReadOnlySpan<byte> WITHHASH => "WITHHASH"u8;
         public static ReadOnlySpan<byte> LIB_NAME => "LIB-NAME"u8;
-        public static ReadOnlySpan<byte> lib_name => "lib-name"u8;
         public static ReadOnlySpan<byte> LIB_VER => "LIB-VER"u8;
-        public static ReadOnlySpan<byte> lib_ver => "lib-ver"u8;
         public static ReadOnlySpan<byte> RIGHT => "RIGHT"u8;
         public static ReadOnlySpan<byte> LEFT => "LEFT"u8;
         public static ReadOnlySpan<byte> BYLEX => "BYLEX"u8;
@@ -221,6 +219,8 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_DISCARD_WO_MULTI => "ERR DISCARD without MULTI"u8;
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_WATCH_IN_MULTI => "ERR WATCH inside MULTI is not allowed"u8;
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_INVALIDEXP_IN_SET => "ERR invalid expire time in 'set' command"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_GENERIC_INVALIDEXP_IN_GETEX => "ERR invalid expire time in 'getex' command"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_OVERFLOWEXP_IN_GETEX => "ERR expire time overflows date in 'getex' command"u8;
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_SYNTAX_ERROR => "ERR syntax error"u8;
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_NAN_INFINITY => "ERR value is NaN or Infinity"u8;
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_NAN_INFINITY_INCR => "ERR increment would produce NaN or Infinity"u8;
@@ -321,6 +321,7 @@ namespace Garnet.server
         /// Response string templates
         /// </summary>
         public const string GenericErrWrongNumArgs = "ERR wrong number of arguments for '{0}' command";
+        public const string GenericErrInvalidClientAttr = "ERR {0} cannot contain spaces, newlines or special characters.";
         public const string GenericErrUnknownOptionConfigSet = "ERR Unknown option or number of arguments for CONFIG SET - '{0}'";
         public const string GenericErrUnknownOption = "ERR Unknown option or number of arguments for '{0}' command";
         public const string GenericErrUnsupportedOption = "ERR Unsupported option {0}";

@@ -1214,15 +1214,21 @@ namespace Garnet.server
 
                 case RespCommand.PFADD:
                     var updated = false;
-                    newValue = dstLogRecord.ValueSpan;
-
-                    if (!dstLogRecord.TryCopyOptionals(in srcLogRecord, in sizeInfo))
-                        return false;
 
                     // Some duplicate code to avoid "fixed" when possible
-                    newValue = dstLogRecord.ValueSpan;
                     if (srcLogRecord.IsPinnedValue)
                     {
+                        if (!HyperLogLog.DefaultHLL.IsValidHYLL(srcLogRecord.PinnedValuePointer, srcLogRecord.ValueSpan.Length))
+                        {
+                            rmwInfo.Action = RMWAction.WrongType;
+                            return false;
+                        }
+
+                        if (!dstLogRecord.TryCopyOptionals(in srcLogRecord, in sizeInfo))
+                            return false;
+
+                        newValue = dstLogRecord.ValueSpan;
+
                         oldValuePtr = srcLogRecord.PinnedValuePointer;
                         if (dstLogRecord.IsPinnedValue)
                         {
@@ -1253,6 +1259,17 @@ namespace Garnet.server
                     {
                         fixed (byte* oldPtr = srcLogRecord.ValueSpan)
                         {
+                            if (!HyperLogLog.DefaultHLL.IsValidHYLL(oldPtr, srcLogRecord.ValueSpan.Length))
+                            {
+                                rmwInfo.Action = RMWAction.WrongType;
+                                return false;
+                            }
+
+                            if (!dstLogRecord.TryCopyOptionals(in srcLogRecord, in sizeInfo))
+                                return false;
+
+                            newValue = dstLogRecord.ValueSpan;
+
                             oldValuePtr = oldPtr;
                             if (dstLogRecord.IsPinnedValue)
                             {

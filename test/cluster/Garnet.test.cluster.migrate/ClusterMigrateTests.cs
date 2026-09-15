@@ -647,7 +647,7 @@ namespace Garnet.test.cluster
 
             try
             {
-                var result = (string)server.Execute("zadd", args);
+                var result = (string)server.Execute(0, "zadd", args);
                 data.Sort((x, y) => x.Item1.CompareTo(y.Item1));
                 return (result, data);
             }
@@ -672,7 +672,7 @@ namespace Garnet.test.cluster
 
             try
             {
-                var result = server.Execute("zcount", args, CommandFlags.NoRedirect);
+                var result = server.Execute(0, "zcount", args, CommandFlags.NoRedirect);
                 count = int.Parse((string)result);
                 address = ((IPEndPoint)server.EndPoint).Address.ToString();
                 port = ((IPEndPoint)server.EndPoint).Port;
@@ -725,7 +725,7 @@ namespace Garnet.test.cluster
             ];
             try
             {
-                var result = server.Execute("zrange", args, CommandFlags.NoRedirect);
+                var result = server.Execute(0, "zrange", args, CommandFlags.NoRedirect);
                 address = ((IPEndPoint)server.EndPoint).Address.ToString();
                 port = ((IPEndPoint)server.EndPoint).Port;
                 slot = ClusterTestUtils.HashSlot(key);
@@ -2183,9 +2183,9 @@ namespace Garnet.test.cluster
 
             foreach (var value in values)
             {
-                var result = (string)sourceServer.Execute("set", key, value);
+                var result = (string)sourceServer.Execute(0, "set", [key, value]);
                 ClassicAssert.AreEqual("OK", result);
-                result = (string)sourceServer.Execute("get", key);
+                result = (string)sourceServer.Execute(0, "get", [key]);
                 ClassicAssert.AreEqual(Encoding.ASCII.GetString(value), result);
             }
 
@@ -2204,9 +2204,9 @@ namespace Garnet.test.cluster
                 values = context.GenerateIncreasingSizeValues(6, 7);
                 foreach (var value in values)
                 {
-                    var result = (string)sourceServer.Execute("set", key, value);
+                    var result = (string)sourceServer.Execute(0, "set", [key, value]);
                     ClassicAssert.AreEqual("OK", result);
-                    result = (string)sourceServer.Execute("get", key);
+                    result = (string)sourceServer.Execute(0, "get", [key]);
                     ClassicAssert.AreEqual(Encoding.ASCII.GetString(value), result);
                 }
 
@@ -2223,7 +2223,7 @@ namespace Garnet.test.cluster
 
             foreach (var value in values)
             {
-                var result = (string)targetServer.Execute("get", key);
+                var result = (string)targetServer.Execute(0, "get", [key]);
                 ClassicAssert.AreEqual(Encoding.ASCII.GetString(value), result);
             }
         }
@@ -2255,9 +2255,9 @@ namespace Garnet.test.cluster
             var value = "12345";
             var value2 = "67890";
             var slot = HashSlotUtils.HashSlot(Encoding.ASCII.GetBytes(key));
-            var resp = sourceServer.Execute("set", key, value);
+            var resp = sourceServer.Execute(0, "set", [key, value]);
             ClassicAssert.AreEqual("OK", (string)resp);
-            resp = sourceServer.Execute("get", key);
+            resp = sourceServer.Execute(0, "get", [key]);
             ClassicAssert.AreEqual(value, (string)resp);
 
             try
@@ -2273,7 +2273,7 @@ namespace Garnet.test.cluster
                 }
 
                 // At this point we should have switched to MIGRATING state but not yet started migration, hence we can still operate on the key
-                _ = sourceServer.Execute("DELRMW", [key, value2]);
+                _ = sourceServer.Execute(0, "DELRMW", [key, value2]);
 
                 // Re-enable to signal migration to continue
                 ExceptionInjectionHelper.EnableException(ExceptionInjectionType.Migration_Slot_End_Scan_Range_Acquisition);
@@ -2286,7 +2286,7 @@ namespace Garnet.test.cluster
                 ExceptionInjectionHelper.DisableException(ExceptionInjectionType.Migration_Slot_End_Scan_Range_Acquisition);
             }
 
-            resp = targetServer.Execute("get", key);
+            resp = targetServer.Execute(0, "get", [key]);
             ClassicAssert.AreEqual(value2, (string)resp);
         }
 #endif
@@ -2337,7 +2337,7 @@ namespace Garnet.test.cluster
 
             try
             {
-                var resp = server.Execute("migrate", args);
+                var resp = server.Execute(0, "migrate", args);
                 ClassicAssert.AreEqual("OK", (string)resp);
             }
             catch (Exception ex)
@@ -2405,7 +2405,7 @@ namespace Garnet.test.cluster
 
             try
             {
-                var resp = server.Execute("migrate", args);
+                var resp = server.Execute(0, "migrate", args);
                 Assert.Fail($"Migration with invalid hostname '{invalidHostname}' should fail");
             }
             catch (RedisServerException ex)
@@ -2595,10 +2595,10 @@ namespace Garnet.test.cluster
             context.clusterTestUtils.RandomBytesRestrictedToSlot(ref keepObjectKey, keepSlot);
 
             var server = context.clusterTestUtils.GetServer(0);
-            _ = server.Execute("SET", delStringKey, "raw-del");
-            _ = server.Execute("SADD", delObjectKey, "del-m1", "del-m2", "del-m3");
-            _ = server.Execute("SET", keepStringKey, "raw-keep");
-            _ = server.Execute("SADD", keepObjectKey, "keep-m1", "keep-m2", "keep-m3");
+            _ = server.Execute(0, "SET", [delStringKey, "raw-del"]);
+            _ = server.Execute(0, "SADD", [delObjectKey, "del-m1", "del-m2", "del-m3"]);
+            _ = server.Execute(0, "SET", [keepStringKey, "raw-keep"]);
+            _ = server.Execute(0, "SADD", [keepObjectKey, "keep-m1", "keep-m2", "keep-m3"]);
 
             // Both slots should each contain their two keys before deletion.
             ClassicAssert.AreEqual(2, context.clusterTestUtils.CountKeysInSlot(0, delSlot, context.logger),
@@ -2620,17 +2620,17 @@ namespace Garnet.test.cluster
                 "Keys in keepSlot must NOT be collateral-deleted by DELKEYSINSLOT on delSlot");
 
             // Direct GET / EXISTS confirm the delSlot keys are gone.
-            var delStringRes = server.Execute("GET", delStringKey);
+            var delStringRes = server.Execute(0, "GET", [delStringKey]);
             ClassicAssert.IsTrue(delStringRes.IsNull, "delSlot string key should no longer exist after DELKEYSINSLOT");
-            var delObjectRes = (long)server.Execute("EXISTS", delObjectKey);
+            var delObjectRes = (long)server.Execute(0, "EXISTS", [delObjectKey]);
             ClassicAssert.AreEqual(0, delObjectRes, "delSlot object key should no longer exist after DELKEYSINSLOT");
 
             // Direct GET / EXISTS confirm the keepSlot keys still exist with their original payloads.
-            var keepStringRes = (string)server.Execute("GET", keepStringKey);
+            var keepStringRes = (string)server.Execute(0, "GET", [keepStringKey]);
             ClassicAssert.AreEqual("raw-keep", keepStringRes, "keepSlot string key value should be unchanged");
-            var keepObjectExists = (long)server.Execute("EXISTS", keepObjectKey);
+            var keepObjectExists = (long)server.Execute(0, "EXISTS", [keepObjectKey]);
             ClassicAssert.AreEqual(1, keepObjectExists, "keepSlot object key should still exist after DELKEYSINSLOT");
-            var keepObjectCard = (long)server.Execute("SCARD", keepObjectKey);
+            var keepObjectCard = (long)server.Execute(0, "SCARD", [keepObjectKey]);
             ClassicAssert.AreEqual(3, keepObjectCard, "keepSlot object key should still contain all 3 members");
         }
     }
