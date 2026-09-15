@@ -130,9 +130,7 @@ namespace Garnet.server
                 // This may strike you as odd, but it is how Redis behaves
                 if (digestOnHeap == null)
                 {
-                    var newAlloc = GC.AllocateUninitializedArray<byte>(SessionScriptCache.SHA1Len, pinned: true);
-                    digest.CopyTo(newAlloc);
-                    if (!storeWrapper.storeScriptCache.TryAdd(new(newAlloc), sessionScriptHandle))
+                    if (!storeWrapper.storeScriptCache.TryAdd(ScriptHashKey.CopyFrom(digest), sessionScriptHandle))
                     {
                         // Some other session loaded the script, toss our new handle
                         //
@@ -287,9 +285,7 @@ namespace Garnet.server
                 {
                     if (digestOnHeap == null)
                     {
-                        var newAlloc = GC.AllocateUninitializedArray<byte>(SessionScriptCache.SHA1Len, pinned: true);
-                        digest.CopyTo(newAlloc);
-                        if (!storeWrapper.storeScriptCache.TryAdd(new(newAlloc), sessionScriptHandle))
+                        if (!storeWrapper.storeScriptCache.TryAdd(ScriptHashKey.CopyFrom(digest), sessionScriptHandle))
                         {
                             // Some other caller added the script already, our new handle is dead
                             // but we'll load it from the shared cache on next invocation

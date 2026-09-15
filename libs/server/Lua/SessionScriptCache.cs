@@ -275,10 +275,7 @@ namespace Garnet.server
                     // There's an implicit assumption that all callers are using unmanaged memory.
                     // If that becomes untrue, there's an optimization opportunity to re-use the 
                     // managed memory here.
-                    var into = GC.AllocateUninitializedArray<byte>(SHA1Len, pinned: true);
-                    digest.CopyTo(into);
-
-                    ScriptHashKey storeKeyDigest = new(into);
+                    var storeKeyDigest = ScriptHashKey.CopyFrom(digest);
                     digestOnHeap = storeKeyDigest;
 
                     luaScriptHandle ??= new(compiledSource);

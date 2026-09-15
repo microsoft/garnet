@@ -1536,11 +1536,10 @@ return retArray";
             var db = redis.GetDatabase();
             var source = "return 2"u8;
             var hash = Convert.ToHexString(SHA1.HashData(source)).ToLowerInvariant();
-            var digest = GC.AllocateUninitializedArray<byte>(SessionScriptCache.SHA1Len, pinned: true);
-            _ = Encoding.ASCII.GetBytes(hash, digest);
+            var scriptKey = ScriptHashKey.CopyFrom(Encoding.ASCII.GetBytes(hash));
 
             // The public handle constructor accepts source text, not trusted precompiled bytecode.
-            ClassicAssert.IsTrue(server.Provider.StoreWrapper.storeScriptCache.TryAdd(new ScriptHashKey(digest), new LuaScriptHandle(source.ToArray())));
+            ClassicAssert.IsTrue(server.Provider.StoreWrapper.storeScriptCache.TryAdd(scriptKey, new LuaScriptHandle(source.ToArray())));
             ClassicAssert.AreEqual(2, (int)db.Execute("EVALSHA", hash, 0));
         }
 
