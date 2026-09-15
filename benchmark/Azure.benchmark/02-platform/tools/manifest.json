@@ -124,7 +124,7 @@
     },
     {
       "run": "setup-network.ps1",
-      "sudo": false,
+      "sudo": true,
       "args": "garnet"
     },
     {

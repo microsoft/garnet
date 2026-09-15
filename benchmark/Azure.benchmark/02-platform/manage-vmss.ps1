@@ -89,6 +89,9 @@ param(
 
     [string]$DeploymentName,
 
+    [ValidateSet('server', 'client')]
+    [string]$DeploymentRole,
+
     [string]$ToolsPath,
 
     [string]$ContainerName = 'tools',
@@ -138,6 +141,7 @@ if ($Help -or -not $rg) {
     Write-Host "  -ParametersFile <p> Bicep parameters file for -Action create (default: vmss-parameters.json)"
     Write-Host "  -TemplateFile <p>   Bicep template for -Action create (default: vmss.bicep)"
     Write-Host "  -DeploymentName <n> Deployment name for -Action create (default: timestamp yyyy-MM-dd-HH-mm)"
+    Write-Host "  -DeploymentRole <r> VMSS role for -Action create: server or client (required)"
     Write-Host "  -ToolsPath <p>      tools/ directory to package for -Action publish-tools (default: .\tools)"
     Write-Host "  -ContainerName <c>  Blob container for -Action publish-tools (default: tools)"
     Write-Host "  -ToolsBlobName <n>  Blob name for -Action publish-tools (default: tools.tar.gz)"
@@ -157,7 +161,7 @@ if ($Help -or -not $rg) {
     Write-Host "  .\manage-vmss.ps1 -rg <owner>-garnet -VmssName server -Action restart"
     Write-Host "  .\manage-vmss.ps1 -rg <owner>-garnet -VmssName server -Action ping"
     Write-Host "  .\manage-vmss.ps1 -rg <owner>-garnet -VmssName server -Action rebuild -System garnet -Ref a1b2c3d"
-    Write-Host "  .\manage-vmss.ps1 -rg <owner>-garnet -Action create"
+    Write-Host "  .\manage-vmss.ps1 -rg <owner>-garnet -Action create -DeploymentRole server"
     Write-Host "  .\manage-vmss.ps1 -rg <owner>-garnet -Action publish-tools"
     Write-Host "  .\manage-vmss.ps1 -rg <owner>-garnet -VmssName server -Action push-keys"
     Write-Host ""
@@ -315,6 +319,66 @@ function Test-StagedInfrastructure {
     }
 }
 
+function Test-ToolsDelivery {
+    param(
+        [string]$ResourceGroup,
+        [string]$StorageAccount,
+        [string]$VaultName,
+        [string]$Container,
+        [string]$BlobName,
+        [string]$SasSecretName = 'tools-sas-url'
+    )
+
+    $accountKey = az storage account keys list --account-name $StorageAccount `
+        --resource-group $ResourceGroup --query '[0].value' -o tsv 2>$null
+    if ($LASTEXITCODE -ne 0 -or -not $accountKey) {
+        return [pscustomobject]@{
+            IsValid = $false
+            Error   = "Unable to verify '$Container/$BlobName' because a key for storage account '$StorageAccount' could not be retrieved."
+        }
+    }
+
+    $blobExists = az storage blob exists --account-name $StorageAccount --account-key $accountKey `
+        --container-name $Container --name $BlobName --query exists -o tsv 2>$null
+    if ($LASTEXITCODE -ne 0 -or $blobExists -ne 'true') {
+        return [pscustomobject]@{
+            IsValid = $false
+            Error   = "Tools blob '$Container/$BlobName' does not exist in storage account '$StorageAccount'. Run manage-vmss.ps1 -rg $ResourceGroup -Action publish-tools before creating a VMSS."
+        }
+    }
+
+    $secretJson = az keyvault secret show --vault-name $VaultName --name $SasSecretName `
+        --query '{enabled:attributes.enabled,value:value}' -o json 2>$null
+    if ($LASTEXITCODE -ne 0 -or -not $secretJson) {
+        return [pscustomobject]@{
+            IsValid = $false
+            Error   = "Key Vault secret '$SasSecretName' is missing. Run 01-resources/deploy-common-resources.ps1 -rg $ResourceGroup -Action refresh-sas."
+        }
+    }
+
+    try {
+        $secret = $secretJson | ConvertFrom-Json
+        if ($secret.enabled -eq $false -or [string]::IsNullOrWhiteSpace([string]$secret.value)) {
+            throw "Secret is disabled or empty."
+        }
+        $response = Invoke-WebRequest -Uri $secret.value -Method Head -SkipHttpErrorCheck -TimeoutSec 30
+    } catch {
+        return [pscustomobject]@{
+            IsValid = $false
+            Error   = "Tools SAS URL validation failed. Run 01-resources/deploy-common-resources.ps1 -rg $ResourceGroup -Action refresh-sas. $($_.Exception.Message)"
+        }
+    }
+
+    if ($response.StatusCode -lt 200 -or $response.StatusCode -ge 300) {
+        return [pscustomobject]@{
+            IsValid = $false
+            Error   = "Tools SAS URL returned HTTP $($response.StatusCode). Run 01-resources/deploy-common-resources.ps1 -rg $ResourceGroup -Action refresh-sas."
+        }
+    }
+
+    return [pscustomobject]@{ IsValid = $true; Error = $null }
+}
+
 # --- Load shared utilities ---
 . "$scriptDir\..\03-workload\bench\utils.ps1"
 
@@ -361,6 +425,11 @@ function Get-VmssPowerStates {
 # granted Key Vault (secret get) and Storage Blob Data Reader access during deployment.
 # vmssName/instanceCount/etc. come from the parameters file or are prompted by az.
 if ($Action -eq 'create') {
+    if (-not $DeploymentRole) {
+        Write-CreateError "-DeploymentRole is required for VMSS creation. Specify 'server' or 'client'."
+        exit 1
+    }
+
     $templatePath = if ([System.IO.Path]::IsPathRooted($TemplateFile)) {
         $TemplateFile
     } else {
@@ -448,19 +517,20 @@ if ($Action -eq 'create') {
         exit 1
     }
 
-    # Inline-discover the shared storage account (app=azurebench tag). Only needed when
-    # granting the VMSS identity blob access, which requires the deployer to have
-    # Owner / User Access Administrator (roleAssignments/write). Opt in via
-    # -GrantStorageAccess; otherwise the RBAC grant is skipped so the deployment
-    # succeeds without elevated rights.
-    $st = $null
-    if ($GrantStorageAccess) {
-        $st = az storage account list --resource-group $rg --query "[?tags.app=='azurebench'].name" -o tsv 2>$null |
-            Where-Object { $_ } | Select-Object -First 1
-        if (-not $st) {
-            Write-Error "No storage account found in '$rg'. Run 01-resources/deploy-common-resources.ps1 first."
-            exit 1
-        }
+    # The storage account is always required for tools bootstrap, independently of
+    # whether the optional VMSS Blob Data Reader role assignment is requested.
+    $st = az storage account list --resource-group $rg --query "[?tags.app=='azurebench'].name" -o tsv 2>$null |
+        Where-Object { $_ } | Select-Object -First 1
+    if (-not $st) {
+        Write-Error "No storage account found in '$rg'. Run 01-resources/deploy-common-resources.ps1 first."
+        exit 1
+    }
+
+    $toolsDelivery = Test-ToolsDelivery -ResourceGroup $rg -StorageAccount $st `
+        -VaultName $kv -Container $ContainerName -BlobName $ToolsBlobName
+    if (-not $toolsDelivery.IsValid) {
+        Write-CreateError $toolsDelivery.Error
+        exit 1
     }
 
     if (-not $DeploymentName) { $DeploymentName = Get-Date -Format 'yyyy-MM-dd-HH-mm' }
@@ -504,13 +574,15 @@ if ($Action -eq 'create') {
     $sshPayload | ConvertTo-Json -Depth 5 | Set-Content -Path $sshParamsFile -Encoding utf8
 
     Write-Host "  Key Vault       : $kv"
+    Write-Host "  Tools bundle    : $st/$ContainerName/$ToolsBlobName (SAS validated)"
     if ($GrantStorageAccess) {
-        Write-Host "  Storage account : $st (Blob Data Reader RBAC grant)"
+        Write-Host "  Storage RBAC    : Blob Data Reader grant enabled"
     } else {
-        Write-Host "  Storage account : RBAC grant skipped (use -GrantStorageAccess; needs Owner/User Access Administrator)" -ForegroundColor Yellow
+        Write-Host "  Storage RBAC    : skipped (use -GrantStorageAccess; needs Owner/User Access Administrator)" -ForegroundColor Yellow
     }
     Write-Host "  SSH keys        : $sshKeyCount ($($keySync.ResolvedNames -join ', '))"
     Write-Host "  SSH key source  : $($sshManifest.BasePath) (synced to security cache)"
+    Write-Host "  Deployment role : $DeploymentRole"
     Write-Host "  Template        : $TemplateFile"
     Write-Host "  Parameters      : $ParametersFile"
     Write-Host "  Deployment name : $DeploymentName"
@@ -522,9 +594,9 @@ if ($Action -eq 'create') {
         '--name', $DeploymentName,
         '--template-file', $templatePath,
         '--parameters', "@$paramsPath",
-        '--parameters', "keyVaultName=$kv"
+        '--parameters', "keyVaultName=$kv", "deploymentRole=$DeploymentRole"
     )
-    if ($st) { $deployArgs += "storageAccountName=$st" }
+    if ($GrantStorageAccess) { $deployArgs += "storageAccountName=$st" }
     if ($sshParamsFile) { $deployArgs += @('--parameters', "@$sshParamsFile") }
 
     try {
@@ -1224,7 +1296,7 @@ exit $LASTEXITCODE
 
     $bootstrap = $bootstrap.Replace('__USER__', $User).Replace('__MODE__', $Mode)
     $encoded = [Convert]::ToBase64String([System.Text.Encoding]::Unicode.GetBytes($bootstrap))
-    return "pwsh -NoProfile -EncodedCommand $encoded"
+    return "pwsh -NoProfile -OutputFormat Text -EncodedCommand $encoded"
 }
 
 function Get-SshCommand {
@@ -1395,9 +1467,36 @@ foreach ($vmss in $targetVmss) {
 
         try {
             $dnsCmd = "sudo systemctl restart systemd-resolved 2>/dev/null; "
-            $output = ssh -i $using:sshKey $using:sshOpts "${using:SshUser}@${ip}" "$dnsCmd$($using:sshCommand)" 2>&1
-            $exitCode = $LASTEXITCODE
-            $outputText = $output -join "`n"
+            $startInfo = [System.Diagnostics.ProcessStartInfo]::new()
+            $startInfo.FileName = 'ssh'
+            $startInfo.UseShellExecute = $false
+            $startInfo.RedirectStandardOutput = $true
+            $startInfo.RedirectStandardError = $true
+            $startInfo.ArgumentList.Add('-i')
+            $startInfo.ArgumentList.Add($using:sshKey)
+            foreach ($option in $using:sshOpts) {
+                $startInfo.ArgumentList.Add($option)
+            }
+            $startInfo.ArgumentList.Add("${using:SshUser}@${ip}")
+            $startInfo.ArgumentList.Add("$dnsCmd$($using:sshCommand)")
+
+            $process = [System.Diagnostics.Process]::new()
+            $process.StartInfo = $startInfo
+            if (-not $process.Start()) {
+                throw 'Failed to start ssh.'
+            }
+
+            $stdoutTask = $process.StandardOutput.ReadToEndAsync()
+            $stderrTask = $process.StandardError.ReadToEndAsync()
+            $process.WaitForExit()
+            $stdout = $stdoutTask.GetAwaiter().GetResult().TrimEnd()
+            $stderr = $stderrTask.GetAwaiter().GetResult().TrimEnd()
+            $exitCode = $process.ExitCode
+            $process.Dispose()
+
+            $outputText = @($stdout, $stderr) |
+                Where-Object { $_ } |
+                Join-String -Separator "`n"
             $success = ($exitCode -eq 0)
         } catch {
             $outputText = $_.Exception.Message

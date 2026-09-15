@@ -9,9 +9,16 @@ param vnetName string
 param vmssName string
 param instanceCount int
 
-// Server and client VMSS share accSubnet for their eth1 (data-plane) NICs; they are
-// kept separate at runtime by cluster-deploy.ps1, which filters discovered peers by
-// VMSS hostname prefix. (Subnet-level role separation is intentionally not modeled.)
+@description('Deployment role used for role-specific bootstrap and secret distribution.')
+@allowed([
+  'server'
+  'client'
+])
+param deploymentRole string
+
+// Server and client VMSS share accSubnet for their eth1 (data-plane) NICs.
+// deploymentRole is forwarded independently of vmssName so role-specific
+// bootstrap and secret distribution never depend on naming conventions.
 
 @allowed([
   'linux'
@@ -262,11 +269,11 @@ var storageProfileConfig = {
 /////////////// LINUX CONFIG OPTIONS ///////////////////
 var isAzureLinux = linuxImage.publisher == 'microsoftcblmariner'
 
-// Load cloud-config templates and inject keyVaultName + tools SAS secret name
+// Load cloud-config templates and inject non-secret deployment metadata.
 var cloudInitAzureLinuxRaw = loadTextContent('cloud-config-azurelinux.yml')
 var cloudInitUbuntuRaw = loadTextContent('cloud-config.yml')
-var cloudInitAzureLinuxFinal = replace(replace(cloudInitAzureLinuxRaw, '__KEYVAULT_NAME__', keyVaultName), '__TOOLS_SAS_SECRET__', toolsSasSecretName)
-var cloudInitUbuntuFinal = replace(replace(cloudInitUbuntuRaw, '__KEYVAULT_NAME__', keyVaultName), '__TOOLS_SAS_SECRET__', toolsSasSecretName)
+var cloudInitAzureLinuxFinal = replace(replace(replace(cloudInitAzureLinuxRaw, '__KEYVAULT_NAME__', keyVaultName), '__TOOLS_SAS_SECRET__', toolsSasSecretName), '__DEPLOYMENT_ROLE__', deploymentRole)
+var cloudInitUbuntuFinal = replace(replace(replace(cloudInitUbuntuRaw, '__KEYVAULT_NAME__', keyVaultName), '__TOOLS_SAS_SECRET__', toolsSasSecretName), '__DEPLOYMENT_ROLE__', deploymentRole)
 
 var cloudInitUbuntu = base64(cloudInitUbuntuFinal)
 var cloudInitAzureLinux = base64(cloudInitAzureLinuxFinal)
@@ -296,6 +303,7 @@ resource vnet 'Microsoft.Network/virtualNetworks@2023-04-01' existing = {
 var tagsProfile = {
   Environment: '/NonProd'
   Root: vmssName
+  deploymentRole: deploymentRole
 }
 
 var networkProfileConfig = {
@@ -569,6 +577,7 @@ resource kvAccessPolicy 'Microsoft.KeyVault/vaults/accessPolicies@2023-07-01' = 
 }
 
 output vmssResourceId string = operatingSystem == 'linux' ? linuxVmss.id : windowsVmss.id
+output deploymentRole string = deploymentRole
 
 // Grant the VMSS managed identity read access to the tools tarball blob so it can
 // pull tools.tar.gz from the shared storage account at provisioning/update time.

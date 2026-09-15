@@ -69,18 +69,20 @@ pwsh .\02-platform\manage-vmss.ps1 `
 pwsh .\02-platform\manage-vmss.ps1 `
   --rg testrg `
   --action create `
+  --deploymentrole server `
   --deploymentname server-deployment
 
 pwsh .\02-platform\manage-vmss.ps1 `
   --rg testrg `
   --action create `
+  --deploymentrole client `
   --deploymentname client-deployment
 
 # Alternatively, deploy the VMSS directly through Azure CLI:
 az deployment group create --resource-group <rg> --template-file 02-platform\vmss.bicep `
-  --parameters @02-platform\vmss-parameters.json --parameters vmssName=<server-name> instanceCount=<n>
+  --parameters @02-platform\vmss-parameters.json --parameters vmssName=<server-name> deploymentRole=server instanceCount=<n>
 az deployment group create --resource-group <rg> --template-file 02-platform\vmss.bicep `
-  --parameters @02-platform\vmss-parameters.json --parameters vmssName=<client-name> instanceCount=<n>
+  --parameters @02-platform\vmss-parameters.json --parameters vmssName=<client-name> deploymentRole=client instanceCount=<n>
 
 # 4. Set up and start Garnet on the server VMs
 # serverhost identifies the coordinator VM. This example starts one Garnet

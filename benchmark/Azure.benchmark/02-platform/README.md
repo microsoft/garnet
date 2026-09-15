@@ -19,14 +19,18 @@ Workstation-side assets that deploy and manage the VMSS compute platform. Run th
 # generated infrastructure parameters, inline-discovers Key Vault + storage, and
 # resolves SSH keys from the security manifest's basePath (normally ~/.ssh). If the generated parameters file is
 # absent on this machine, create offers to stage it from the target resource group.
-.\02-platform\manage-vmss.ps1 -rg <rg> -Action create
+.\02-platform\manage-vmss.ps1 -rg <rg> -Action create -DeploymentRole server
+
+# Creation stops before ARM deployment unless `tools/tools.tar.gz` exists and
+# the `tools-sas-url` Key Vault secret can download it. Use `-Action publish-tools`
+# for a missing blob or refresh the SAS through deploy-common-resources.ps1.
 
 # Deploy a VMSS directly with az (manual KV/storage names)
 az deployment group create `
   --resource-group <rg> `
   --template-file 02-platform\vmss.bicep `
   --parameters @02-platform\vmss-parameters.json `
-  --parameters vmssName=server instanceCount=<n>
+  --parameters vmssName=server deploymentRole=server instanceCount=<n>
 
 # Manage a running VMSS
 .\02-platform\manage-vmss.ps1 -rg <rg> -VmssName server -Action refresh
@@ -47,7 +51,7 @@ az deployment group create `
 > ```powershell
 > az deployment group create --resource-group garnet-bench-eastcan `
 >   --template-file 02-platform\vmss.bicep --parameters @02-platform\vmss-parameters.json `
->   --parameters vmssName=server instanceCount=<n> zoneStrategy=none
+>   --parameters vmssName=server deploymentRole=server instanceCount=<n> zoneStrategy=none
 > ```
 >
 > **Disabling the PPG:** If no proximity placement group exists in the region (or you want the platform to spread instances for better allocation success), add `enableProximityPlacement=false`. The PPG is also skipped automatically when `proximityId` is empty. A PPG is a single-region resource, so its region must match the VMSS region.
@@ -151,6 +155,7 @@ az deployment group create `
   --template-file 02-platform\vmss.bicep `
   --parameters @02-platform\vmss-parameters.json `
   --parameters vmssName=myUbuntuVmss `
+               deploymentRole=server `
                instanceCount=2 `
                operatingSystem=linux `
                vmSKU=Standard_F64s_v2 `
@@ -167,6 +172,7 @@ az deployment group create `
   --template-file 02-platform\vmss.bicep `
   --parameters @02-platform\vmss-parameters.json `
   --parameters vmssName=myAzLinuxVmss `
+               deploymentRole=server `
                instanceCount=2 `
                operatingSystem=linux `
                vmSKU=Standard_F64s_v2 `
@@ -183,6 +189,7 @@ az deployment group create `
   --template-file 02-platform\vmss.bicep `
   --parameters @02-platform\vmss-parameters.json `
   --parameters vmssName=myArmVmss `
+               deploymentRole=server `
                instanceCount=2 `
                operatingSystem=linux `
                vmSKU=Standard_B16ps_v2 `
@@ -199,6 +206,7 @@ az deployment group create `
   --template-file 02-platform\vmss.bicep `
   --parameters @02-platform\vmss-parameters.json `
   --parameters vmssName=myWinVmss `
+               deploymentRole=server `
                instanceCount=2 `
                operatingSystem=windows `
                vmSKU=Standard_D4s_v3 `
@@ -208,6 +216,7 @@ az deployment group create `
 ```
 
 > **Note:** `adminPassword` is only required for Windows (not fully supported). Linux uses SSH keys.
+> **Note:** `deploymentRole` is required and must be `server` or `client`. It is forwarded to VMSS tags and, for Linux, `/opt/deploy-actions/deployment.env`; it is not inferred from `vmssName`.
 > **Note:** `keyVaultName` is optional. Omit it to skip Key Vault role assignment and private repo cloning.
 > **Note:** `storageAccountName` is optional. When set, the deployment grants the VMSS managed identity the **Storage Blob Data Reader** role on that account (a role assignment, so the deployer needs **Owner** / **User Access Administrator**). Omit it to skip the grant. `-Action create` only supplies it when you pass `-GrantStorageAccess`.
 

@@ -12,6 +12,10 @@ write_files:
     permissions: '0644'
     content: |
       VAULT_NAME=__KEYVAULT_NAME__
+  - path: /opt/deploy-actions/deployment.env
+    permissions: '0644'
+    content: |
+      DEPLOYMENT_ROLE=__DEPLOYMENT_ROLE__
 
 runcmd:
   # Install all build dependencies
