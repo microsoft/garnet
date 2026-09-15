@@ -758,11 +758,11 @@ namespace Garnet.test
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
 
-            void AssertLargeTtl(string key, long maximumTtlMilliseconds)
+            void AssertLargeTtl(string key, long expectedTtlMilliseconds)
             {
                 var ttl = (long)db.Execute("PTTL", key);
-                ClassicAssert.Greater(ttl, int.MaxValue);
-                ClassicAssert.LessOrEqual(ttl, maximumTtlMilliseconds);
+                ClassicAssert.Greater(ttl, expectedTtlMilliseconds - 10_000);
+                ClassicAssert.LessOrEqual(ttl, expectedTtlMilliseconds);
             }
 
             var result = db.Execute("SET", "set-px", "value", "PX", LargeMilliseconds);
