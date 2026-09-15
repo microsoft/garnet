@@ -173,7 +173,137 @@ namespace Tsavorite.test.recovery
             return token;
         }
 
-        // Rewrite the checkpoint's metadata and main-log records in place so the checkpoint reads as version 7.
+        // Inline-key + overflow-value store (raw byte[] values forced out of line into the object log).
+        static TsavoriteKV<ObjStoreFunctions, ObjAllocator> CreateOverflowValueStore(IDevice log, IDevice objlog, string checkpointDir, long memorySize)
+            => new(new()
+            {
+                IndexSize = 1L << 20,
+                LogDevice = log,
+                ObjectLogDevice = objlog,
+                MutableFraction = 0.9,
+                PageSize = MinKvLogPageSize,
+                LogMemorySize = memorySize,
+                SegmentSize = 1L << 20,
+                ObjectLogSegmentSize = 1L << 22,
+                MaxInlineValueSize = 0,
+                CheckpointDir = checkpointDir,
+            }, StoreFunctions.Create(new TestObjectKey.Comparer(), () => new TestLargeObjectValue.Serializer(), DefaultRecordTriggers.Instance),
+               (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions));
+
+        // Overflow-key + inline-value store: SpanByte keys forced out of line, values small enough to stay inline in the record.
+        static TsavoriteKV<SbKeyStoreFunctions, SbKeyAllocator> CreateOverflowKeyInlineValueStore(IDevice log, IDevice objlog, string checkpointDir, long memorySize)
+            => new(new()
+            {
+                IndexSize = 1L << 20,
+                LogDevice = log,
+                ObjectLogDevice = objlog,
+                MutableFraction = 0.9,
+                PageSize = MinKvLogPageSize,
+                LogMemorySize = memorySize,
+                SegmentSize = 1L << 20,
+                ObjectLogSegmentSize = 1L << 22,
+                MaxInlineKeySize = OverflowKeyInlineCutoff,
+                MaxInlineValueSize = 256,
+                CheckpointDir = checkpointDir,
+            }, StoreFunctions.Create(new SpanByteComparer(), () => new TestLargeObjectValue.Serializer(), DefaultRecordTriggers.Instance),
+               (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions));
+
+        // Build a FoldOver checkpoint of overflow-key + inline-value records, transformed to v7 (keeps the current object log; the
+        // headerless overflow-key bytes are already dense). The value is inline, so only the key is out of line.
+        Guid BuildV7OverflowKeyInlineValueFixture(int numRecords, int keySize, int valueSize)
+        {
+            var checkpointDir = Path.Combine(MethodTestDir, CheckpointDirName);
+            Guid token;
+
+            IDevice log = Devices.CreateLogDevice(Path.Combine(MethodTestDir, MainLogName), deleteOnClose: false);
+            IDevice objlog = Devices.CreateLogDevice(Path.Combine(MethodTestDir, ObjectLogName), deleteOnClose: false);
+            try
+            {
+                using var store = CreateOverflowKeyInlineValueStore(log, objlog, checkpointDir, 1L << 20);
+                using (var session = store.NewSession<TestSpanByteKey, TestLargeObjectInput, TestLargeObjectOutput, Empty, TestLargeObjectFunctions>(new TestLargeObjectFunctions()))
+                {
+                    var bContext = session.BasicContext;
+                    for (var rec = 0; rec < numRecords; rec++)
+                        _ = bContext.Upsert(TestSpanByteKey.FromArray(MakeKey(rec, keySize)), MakePayload(rec, valueSize).AsSpan(), Empty.Default);
+                }
+                ClassicAssert.IsTrue(store.TryInitiateHybridLogCheckpoint(out token, CheckpointType.FoldOver), "failed to initiate FoldOver checkpoint");
+                store.CompleteCheckpointAsync().AsTask().GetAwaiter().GetResult();
+            }
+            finally
+            {
+                log.Dispose();
+                objlog.Dispose();
+            }
+
+            TransformCheckpointToV7(checkpointDir, MethodTestDir, token);
+            return token;
+        }
+
+        // Build a FoldOver checkpoint of object-value records, transformed to a DENSE v7 object log so LARGE values (headered in the
+        // current format, dense in v7) are exercised.
+        Guid BuildV7DenseObjectValueFixture(int numRecords, int valueSize)
+        {
+            var checkpointDir = Path.Combine(MethodTestDir, CheckpointDirName);
+            Guid token;
+
+            IDevice log = Devices.CreateLogDevice(Path.Combine(MethodTestDir, MainLogName), deleteOnClose: false);
+            IDevice objlog = Devices.CreateLogDevice(Path.Combine(MethodTestDir, ObjectLogName), deleteOnClose: false);
+            try
+            {
+                using var store = CreateObjectStore(log, objlog, checkpointDir, 1L << 20);
+                using (var session = store.NewSession<TestObjectKey, TestLargeObjectInput, TestLargeObjectOutput, Empty, TestLargeObjectFunctions>(new TestLargeObjectFunctions()))
+                {
+                    var bContext = session.BasicContext;
+                    for (var key = 0; key < numRecords; key++)
+                        _ = bContext.Upsert(new TestObjectKey { key = key }, new TestLargeObjectValue() { value = MakePayload(key, valueSize) });
+                }
+                ClassicAssert.IsTrue(store.TryInitiateHybridLogCheckpoint(out token, CheckpointType.FoldOver), "failed to initiate FoldOver checkpoint");
+                store.CompleteCheckpointAsync().AsTask().GetAwaiter().GetResult();
+            }
+            finally
+            {
+                log.Dispose();
+                objlog.Dispose();
+            }
+
+            // Record i (page order) is key i; its dense object-log bytes are the serialized object value.
+            TransformCheckpointToV7Dense(checkpointDir, MethodTestDir, token, i => (null, SerializeLargeObject(MakePayload(i, valueSize))));
+            return token;
+        }
+
+        // Build a FoldOver checkpoint of inline-key + overflow-value records, transformed to a DENSE v7 object log so LARGE overflow
+        // values are exercised.
+        Guid BuildV7DenseOverflowValueFixture(int numRecords, int valueSize)
+        {
+            var checkpointDir = Path.Combine(MethodTestDir, CheckpointDirName);
+            Guid token;
+
+            IDevice log = Devices.CreateLogDevice(Path.Combine(MethodTestDir, MainLogName), deleteOnClose: false);
+            IDevice objlog = Devices.CreateLogDevice(Path.Combine(MethodTestDir, ObjectLogName), deleteOnClose: false);
+            try
+            {
+                using var store = CreateOverflowValueStore(log, objlog, checkpointDir, 1L << 20);
+                using (var session = store.NewSession<TestObjectKey, TestLargeObjectInput, TestLargeObjectOutput, Empty, TestLargeObjectFunctions>(new TestLargeObjectFunctions()))
+                {
+                    var bContext = session.BasicContext;
+                    for (var key = 0; key < numRecords; key++)
+                        _ = bContext.Upsert(new TestObjectKey { key = key }, MakePayload(key, valueSize).AsSpan(), Empty.Default);
+                }
+                ClassicAssert.IsTrue(store.TryInitiateHybridLogCheckpoint(out token, CheckpointType.FoldOver), "failed to initiate FoldOver checkpoint");
+                store.CompleteCheckpointAsync().AsTask().GetAwaiter().GetResult();
+            }
+            finally
+            {
+                log.Dispose();
+                objlog.Dispose();
+            }
+
+            TransformCheckpointToV7Dense(checkpointDir, MethodTestDir, token, i => (null, MakePayload(i, valueSize)));
+            return token;
+        }
+
+        // Rewrite the checkpoint's metadata and main-log records in place so the checkpoint reads as version 7 (keeps the current
+        // object log; only valid for headerless records whose current object bytes are already dense).
         static unsafe void TransformCheckpointToV7(string checkpointDir, string logDir, Guid token)
         {
             var namingScheme = new DefaultCheckpointNamingScheme(new DirectoryInfo(checkpointDir).FullName);
@@ -257,6 +387,130 @@ namespace Tsavorite.test.recovery
             return candidates[0];
         }
 
+        // The dense v7 object log starts at a nonzero offset so no record's object-log position word is 0 (a zero word reads as "unset").
+        const long DenseObjectLogStart = 512;
+
+        // General v7 transform that WRITES its own dense (headerless) object log, so records of ANY size can be synthesized in the v7
+        // encoding (unlike TransformCheckpointToV7, which keeps the current object log and therefore only works for headerless records
+        // whose current bytes are already dense). getRecordBytes(i) supplies the raw object-log bytes for the i-th out-of-line record in
+        // page order: the overflow key bytes (or null for an inline key) and the value bytes — the raw overflow byte[] for an overflow
+        // value, or the serialized-object bytes for an object value (or null for an inline value).
+        static unsafe void TransformCheckpointToV7Dense(string checkpointDir, string logDir, Guid token, Func<int, (byte[] keyBytes, byte[] valueBytes)> getRecordBytes)
+        {
+            var namingScheme = new DefaultCheckpointNamingScheme(new DirectoryInfo(checkpointDir).FullName);
+            using var checkpointManager = new DeviceLogCommitCheckpointManager(new LocalStorageNamedDeviceFactoryCreator(), namingScheme, removeOutdated: false);
+
+            var info = new HybridLogRecoveryInfo();
+            info.Recover(token, checkpointManager);
+            ClassicAssert.AreEqual(HybridLogRecoveryInfo.CheckpointVersion, info.hybridLogRecoveryVersion, "expected a current-format checkpoint before transform");
+            ClassicAssert.AreEqual(0, info.useSnapshotFile, "expected a FoldOver checkpoint");
+            var beginAddress = info.beginAddress;
+            var tailAddress = info.recoveredTailAddress;
+            ClassicAssert.LessOrEqual(tailAddress, (long)MinKvLogPageSize, "v7 fixture must fit on a single main-log page (single-page transform)");
+            var segmentSizeBits = info.hlogEndObjectLogTail.SegmentSizeBits;
+
+            var mainLogSegment = FindLogSegmentZero(logDir, MainLogName);
+            var pageBytes = File.ReadAllBytes(mainLogSegment);
+
+            using var denseObjectLog = new MemoryStream();
+            denseObjectLog.Write(new byte[DenseObjectLogStart], 0, (int)DenseObjectLogStart);
+
+            fixed (byte* pagePtr = pageBytes)
+            {
+                var pageBase = (long)pagePtr;
+                var offset = beginAddress;
+                var recordIndex = 0;
+                while (offset < tailAddress)
+                {
+                    var logRecord = new LogRecord(pageBase + offset);
+                    if (logRecord.Info.IsNull)
+                    {
+                        offset += RecordInfo.Size;
+                        continue;
+                    }
+                    var allocatedSize = logRecord.AllocatedSize;
+                    if (logRecord.Info.Valid && !logRecord.DataHeader.RecordIsInline)
+                    {
+                        var dataHeader = logRecord.DataHeader;
+                        var (keyBytes, valueBytes) = getRecordBytes(recordIndex);
+                        var denseStart = denseObjectLog.Position;
+
+                        var keyLen = 0;
+                        if (dataHeader.KeyIsOverflow)
+                        {
+                            ClassicAssert.IsNotNull(keyBytes, $"record {recordIndex} has an overflow key but no key bytes were supplied");
+                            denseObjectLog.Write(keyBytes, 0, keyBytes.Length);
+                            keyLen = keyBytes.Length;
+                        }
+                        var valLen = 0;
+                        if (!dataHeader.ValueIsInline)
+                        {
+                            ClassicAssert.IsNotNull(valueBytes, $"record {recordIndex} has a non-inline value but no value bytes were supplied");
+                            denseObjectLog.Write(valueBytes, 0, valueBytes.Length);
+                            valLen = valueBytes.Length;
+                        }
+
+                        StampRecordDenseV7(pageBase + offset, (ulong)denseStart, keyLen, valLen);
+                        if (recordIndex == 0)
+                            ((PageHeader*)pagePtr)->objectLogLowestPositionWord = (ulong)denseStart;
+                        ++recordIndex;
+                    }
+                    offset += allocatedSize;
+                }
+            }
+            File.WriteAllBytes(mainLogSegment, pageBytes);
+
+            // Write the dense object log, zero-padded up to a device sector so a sector-aligned read of the last record does not hit EOF.
+            var objectLogSegment = FindLogSegmentZero(logDir, ObjectLogName);
+            var denseEnd = denseObjectLog.Position;
+            var denseBytes = denseObjectLog.ToArray();
+            const int sector = 4096;
+            var paddedLength = (int)(((denseBytes.Length + sector - 1) / sector) * sector);
+            if (paddedLength != denseBytes.Length)
+                Array.Resize(ref denseBytes, paddedLength);
+            File.WriteAllBytes(objectLogSegment, denseBytes);
+
+            // Point the object-log tail fields at the dense end and re-serialize the metadata at target version 7.
+            info.hlogEndObjectLogTail = new ObjectLogFilePositionInfo((ulong)denseEnd, segmentSizeBits);
+            info.snapshotStartObjectLogTail = info.hlogEndObjectLogTail;
+            info.snapshotEndObjectLogTail = info.hlogEndObjectLogTail;
+            info.beginAddressObjectLogSegment = 0;
+            checkpointManager.CommitLogCheckpointMetadata(token, info.ToByteArray(targetVersion: 7));
+        }
+
+        // Stamp a record into the v7 split-length encoding pointing at a dense object-log position (segment 0, offset denseOffset).
+        static unsafe void StampRecordDenseV7(long physicalAddress, ulong denseOffset, int keyLen, int valLen)
+        {
+            var logRecord = new LogRecord(physicalAddress);
+            var dataHeader = logRecord.DataHeader;
+            var (_, keyAddress) = dataHeader.GetKeyFieldInfo(physicalAddress);
+            var (_, valueAddress) = dataHeader.GetValueFieldInfo(physicalAddress);
+            var objectLogPositionPtr = (ulong*)logRecord.GetObjectLogPositionAddress(logRecord.GetOptionalStartAddress());
+
+            if (dataHeader.KeyIsOverflow)
+            {
+                *(int*)keyAddress = (int)((uint)keyLen >> RecordDataHeader.kKeyLengthBits);
+                dataHeader.KeyLength = keyLen & (int)RecordDataHeader.kKeyLengthLowBitsMask;
+            }
+            if (!dataHeader.ValueIsInline)
+            {
+                *(int*)valueAddress = (int)((uint)valLen >> RecordDataHeader.kValueLengthBits);
+                dataHeader.ValueLength = (int)((uint)valLen & (uint)RecordDataHeader.kValueLengthLowBitsMask);
+            }
+            logRecord.SetDataHeader(dataHeader);
+
+            *objectLogPositionPtr = (denseOffset & ObjectLogFilePositionInfo.SegmentAndOffsetMask) | ObjectLogFilePositionInfo.kReuseObjectIdForSizeMask;
+        }
+
+        // The bytes TestLargeObjectValue.Serializer writes: a 4-byte little-endian length followed by the payload.
+        static byte[] SerializeLargeObject(byte[] payload)
+        {
+            var bytes = new byte[sizeof(int) + payload.Length];
+            BitConverter.TryWriteBytes(bytes, payload.Length);
+            payload.CopyTo(bytes, sizeof(int));
+            return bytes;
+        }
+
         [Test]
         [Category("TsavoriteKV"), Category("CheckpointRestore"), Category("Smoke")]
         public async Task RecoverV7ObjectValueFoldOver([Values(8, 32)] int numRecords, [Values(1, 100, 507)] int valueSize)
@@ -285,6 +539,85 @@ namespace Tsavorite.test.recovery
                     }
                     ClassicAssert.IsTrue(status.Found, $"key {key} not found after v7 recovery");
                     VerifyPayload(key, valueSize, output.valueObject?.value);
+                }
+            }
+            finally
+            {
+                log.Dispose();
+                objlog.Dispose();
+            }
+        }
+
+        [Test]
+        [Category("TsavoriteKV"), Category("CheckpointRestore")]
+        public async Task RecoverV7LargeObjectValueFoldOver([Values(513, 1024, 4096, 20000)] int valueSize)
+        {
+            // valueSize > 507 makes the serialized object exceed the 511-byte exact-size cutoff, so the current format would frame it with a
+            // leading ChunkHeader. v7 stored it dense; the dense fixture writer reproduces that. Verifies the current reader decodes a large
+            // v7 (headerless/dense) object value.
+            const int numRecords = 6;
+            var token = BuildV7DenseObjectValueFixture(numRecords, valueSize);
+
+            var checkpointDir = Path.Combine(MethodTestDir, CheckpointDirName);
+            IDevice log = Devices.CreateLogDevice(Path.Combine(MethodTestDir, MainLogName), deleteOnClose: false);
+            IDevice objlog = Devices.CreateLogDevice(Path.Combine(MethodTestDir, ObjectLogName), deleteOnClose: false);
+            try
+            {
+                using var store = CreateObjectStore(log, objlog, checkpointDir, 1L << 20);
+                _ = await store.RecoverAsync(default, token).ConfigureAwait(false);
+
+                using var session = store.NewSession<TestObjectKey, TestLargeObjectInput, TestLargeObjectOutput, Empty, TestLargeObjectFunctions>(new TestLargeObjectFunctions());
+                var bContext = session.BasicContext;
+                for (var key = 0; key < numRecords; key++)
+                {
+                    TestLargeObjectInput input = new() { wantValueStyle = TestValueStyle.Object };
+                    TestLargeObjectOutput output = new();
+                    var status = bContext.Read(new TestObjectKey { key = key }, ref input, ref output);
+                    if (status.IsPending)
+                    {
+                        ClassicAssert.IsTrue(bContext.CompletePendingWithOutputs(out var completed, wait: true));
+                        (status, output) = GetSinglePendingResult(completed);
+                    }
+                    ClassicAssert.IsTrue(status.Found, $"key {key} not found after large v7 recovery (size {valueSize})");
+                    VerifyPayload(key, valueSize, output.valueObject?.value);
+                }
+            }
+            finally
+            {
+                log.Dispose();
+                objlog.Dispose();
+            }
+        }
+
+        [Test]
+        [Category("TsavoriteKV"), Category("CheckpointRestore")]
+        public async Task RecoverV7LargeOverflowValueFoldOver([Values(512, 1024, 4096, 20000)] int valueSize)
+        {
+            const int numRecords = 6;
+            var token = BuildV7DenseOverflowValueFixture(numRecords, valueSize);
+
+            var checkpointDir = Path.Combine(MethodTestDir, CheckpointDirName);
+            IDevice log = Devices.CreateLogDevice(Path.Combine(MethodTestDir, MainLogName), deleteOnClose: false);
+            IDevice objlog = Devices.CreateLogDevice(Path.Combine(MethodTestDir, ObjectLogName), deleteOnClose: false);
+            try
+            {
+                using var store = CreateOverflowValueStore(log, objlog, checkpointDir, 1L << 20);
+                _ = await store.RecoverAsync(default, token).ConfigureAwait(false);
+
+                using var session = store.NewSession<TestObjectKey, TestLargeObjectInput, TestLargeObjectOutput, Empty, TestLargeObjectFunctions>(new TestLargeObjectFunctions());
+                var bContext = session.BasicContext;
+                for (var key = 0; key < numRecords; key++)
+                {
+                    TestLargeObjectInput input = new() { wantValueStyle = TestValueStyle.Overflow, expectedSpanLength = valueSize };
+                    TestLargeObjectOutput output = new();
+                    var status = bContext.Read(new TestObjectKey { key = key }, ref input, ref output, Empty.Default);
+                    if (status.IsPending)
+                    {
+                        ClassicAssert.IsTrue(bContext.CompletePendingWithOutputs(out var completed, wait: true));
+                        (status, output) = GetSinglePendingResult(completed);
+                    }
+                    ClassicAssert.IsTrue(status.Found, $"key {key} not found after large v7 overflow-value recovery (size {valueSize})");
+                    VerifyPayload(key, valueSize, output.valueArray);
                 }
             }
             finally
@@ -369,6 +702,44 @@ namespace Tsavorite.test.recovery
                         (status, output) = GetSinglePendingResult(completed);
                     }
                     ClassicAssert.IsTrue(status.Found, $"record {rec} (keySize {keySize}) not found — overflow key failed to round-trip through v7 recovery");
+                    VerifyPayload(rec, valueSize, output.valueArray);
+                }
+            }
+            finally
+            {
+                log.Dispose();
+                objlog.Dispose();
+            }
+        }
+
+        [Test]
+        [Category("TsavoriteKV"), Category("CheckpointRestore")]
+        public async Task RecoverV7OverflowKeyInlineValueFoldOver([Values(8, 16)] int numRecords, [Values(50, 300)] int keySize)
+        {
+            const int valueSize = 40;
+            var token = BuildV7OverflowKeyInlineValueFixture(numRecords, keySize, valueSize);
+
+            var checkpointDir = Path.Combine(MethodTestDir, CheckpointDirName);
+            IDevice log = Devices.CreateLogDevice(Path.Combine(MethodTestDir, MainLogName), deleteOnClose: false);
+            IDevice objlog = Devices.CreateLogDevice(Path.Combine(MethodTestDir, ObjectLogName), deleteOnClose: false);
+            try
+            {
+                using var store = CreateOverflowKeyInlineValueStore(log, objlog, checkpointDir, 1L << 20);
+                _ = await store.RecoverAsync(default, token).ConfigureAwait(false);
+
+                using var session = store.NewSession<TestSpanByteKey, TestLargeObjectInput, TestLargeObjectOutput, Empty, TestLargeObjectFunctions>(new TestLargeObjectFunctions());
+                var bContext = session.BasicContext;
+                for (var rec = 0; rec < numRecords; rec++)
+                {
+                    TestLargeObjectInput input = new() { wantValueStyle = TestValueStyle.Inline, expectedSpanLength = valueSize };
+                    TestLargeObjectOutput output = new();
+                    var status = bContext.Read(TestSpanByteKey.FromArray(MakeKey(rec, keySize)), ref input, ref output, Empty.Default);
+                    if (status.IsPending)
+                    {
+                        ClassicAssert.IsTrue(bContext.CompletePendingWithOutputs(out var completed, wait: true));
+                        (status, output) = GetSinglePendingResult(completed);
+                    }
+                    ClassicAssert.IsTrue(status.Found, $"record {rec} (keySize {keySize}) not found — overflow key + inline value failed to round-trip through v7 recovery");
                     VerifyPayload(rec, valueSize, output.valueArray);
                 }
             }
