@@ -102,6 +102,8 @@ Port=7000
 Threads=16
 Runtime=60
 ClusterBench=true
+Tls=false                  # set true for a TLS-enabled Garnet cluster
+TlsHost=azurebench-server  # server certificate DNS identity
 
 # Optional workload tuning
 # Op=SET                # operation type (GET, SET, MGET, MSET)
@@ -123,6 +125,8 @@ SSH keys are resolved automatically from `01-resources/security/manifest.json` (
 .\03-workload\bench\resp-bench.ps1 -Detail                            # show per-instance results
 .\03-workload\bench\resp-bench.ps1 -Background                        # spawn Windows Terminal panes
 .\03-workload\bench\resp-bench.ps1 -ConfigFile .\custom.conf -Detail  # custom config
+.\03-workload\bench\resp-bench.ps1 -ConfigFile .\03-workload\bench\bench-tls.conf -Detail
+.\03-workload\bench\resp-bench.ps1 -Tls -Detail                       # force TLS for this run
 ```
 
 | Flag | Behavior |
@@ -130,8 +134,18 @@ SSH keys are resolved automatically from `01-resources/security/manifest.json` (
 | *(none)* | Inline parallel execution, prints TOTAL only |
 | `-Detail` | Adds per-instance breakdown to aggregation output |
 | `-Background` | Spawns Windows Terminal tabs/panes (2 per tab) for visual inspection |
+| `-Tls` | Enables TLS, overriding `Tls=false` or an omitted `Tls` config key |
 
 Before running benchmarks, the script probes the server and displays system info (name, version, OS, CPU count, port, uptime).
+
+TLS runs require client VMs deployed with `deploymentRole=client`. The driver
+validates `/opt/azurebench/tls/client.pfx`, `client.password`, `ca.crt`, and
+`metadata.json` before starting. Resp.benchmark reads the PFX password from the
+protected password file, validates the server certificate against `ca.crt`, and
+requires its identity to match `TlsHost`. Auxiliary `INFO`, `CLUSTER NODES`, and
+`DBSIZE` probes use `redis-cli-tls` with the same CA and SNI. The default Garnet
+TLS configuration performs server-auth TLS; it does not require the client
+certificate at the server.
 
 The script:
 1. SSHs into each client VM and runs `Resp.benchmark` with the configured parameters

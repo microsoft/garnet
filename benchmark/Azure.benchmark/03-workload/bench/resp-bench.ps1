@@ -23,11 +23,12 @@ param(
     [switch]$Background,
     [switch]$Detail,
     [switch]$Monitor,
+    [switch]$Tls,
     [switch]$Help
 )
 
 if ($Help) {
-    Write-Host "Usage: resp-bench.ps1 [-ConfigFile <path>] [-Detail] [-Monitor] [-Background] [-Verbose]"
+    Write-Host "Usage: resp-bench.ps1 [-ConfigFile <path>] [-Detail] [-Monitor] [-Background] [-Tls] [-Verbose]"
     Write-Host ""
     Write-Host "Reads parameters from a key=value config file and runs"
     Write-Host "Resp.benchmark on remote VMs via SSH."
@@ -63,6 +64,8 @@ if ($Help) {
     Write-Host "  Broadcast        - Enable broadcast mode (true/false)"
     Write-Host "  ClusterBench     - Enable cluster bench mode (true/false)"
     Write-Host "  Pool             - Enable connection pooling (true/false, default: true)"
+    Write-Host "  Tls              - Enable TLS using client material in /opt/azurebench/tls"
+    Write-Host "  TlsHost          - Expected TLS server identity (default: azurebench-server)"
     Write-Host "  ExtraArgs        - Additional arguments to pass"
     return
 }
@@ -139,6 +142,24 @@ $broadcast    = $config["Broadcast"]    ?? ""
 $clusterBench = $config["ClusterBench"] ?? "true"
 $pool         = $config["Pool"]         ?? "true"
 $extraArgs    = $config["ExtraArgs"]    ?? ""
+$tlsValue     = if ($Tls) { "true" } else { $config["Tls"] ?? "false" }
+$tlsHost      = $config["TlsHost"] ?? "azurebench-server"
+
+if ($tlsValue -notin @("true", "false")) {
+    Write-Error "Tls must be 'true' or 'false', got '$tlsValue'."
+    exit 1
+}
+$tlsEnabled = $tlsValue -eq "true"
+
+if ($tlsEnabled -and $tlsHost -notmatch '^[a-zA-Z0-9](?:[a-zA-Z0-9.-]*[a-zA-Z0-9])?$') {
+    Write-Error "TlsHost is not a valid DNS name: '$tlsHost'."
+    exit 1
+}
+
+if ($tlsEnabled -and $extraArgs -match '(?i)(^|\s)--(?:tls|tlshost|cert-file-name|cert-password(?:-file)?|issuer-certificate-path)(?:\s|=|$)') {
+    Write-Error "ExtraArgs must not override TLS options. Use Tls and TlsHost in the config file."
+    exit 1
+}
 
 # --- Derive host list from base + count ---
 $sshHosts = @()
@@ -204,6 +225,12 @@ if ($clusterBench -eq "true") {
 if ($pool -eq "true") {
     $benchCmd += " --pool"
 }
+if ($tlsEnabled) {
+    $benchCmd += " --tls --tlshost $tlsHost"
+    $benchCmd += " --cert-file-name /opt/azurebench/tls/client.pfx"
+    $benchCmd += " --cert-password-file /opt/azurebench/tls/client.password"
+    $benchCmd += " --issuer-certificate-path /opt/azurebench/tls/ca.crt"
+}
 if ($extraArgs) {
     $benchCmd += " $extraArgs"
 }
@@ -211,9 +238,56 @@ if ($extraArgs) {
 # --- Probe server info ---
 $probeOpts = @('-n', '-o', 'ConnectTimeout=10', '-o', 'StrictHostKeyChecking=no', '-o', 'BatchMode=yes')
 $probeHost = $sshHosts | Select-Object -First 1
+
+if ($tlsEnabled) {
+    $tlsPreflightScript = @"
+`$ErrorActionPreference = 'Stop'
+`$deploymentFile = '/opt/deploy-actions/deployment.env'
+if (-not (Test-Path `$deploymentFile)) { throw "Deployment role file not found: `$deploymentFile" }
+`$roleLine = Select-String -Path `$deploymentFile -Pattern '^DEPLOYMENT_ROLE=' | Select-Object -First 1
+`$role = if (`$roleLine) { (`$roleLine.Line -replace '^DEPLOYMENT_ROLE=', '').Trim('"') } else { '' }
+if (`$role -ne 'client') { throw "Resp.benchmark TLS requires DEPLOYMENT_ROLE=client; this node is '`$role'." }
+foreach (`$path in @('/opt/azurebench/tls/client.pfx', '/opt/azurebench/tls/client.password', '/opt/azurebench/tls/ca.crt', '/opt/azurebench/tls/metadata.json')) {
+    if (-not (Test-Path `$path -PathType Leaf)) { throw "Required TLS file not found: `$path" }
+}
+`$metadata = Get-Content /opt/azurebench/tls/metadata.json -Raw | ConvertFrom-Json
+if (`$metadata.status -ne 'complete') { throw 'TLS metadata is incomplete.' }
+if (`$metadata.targetHost -ne '$tlsHost') { throw "TLS metadata target '`$(`$metadata.targetHost)' does not match '$tlsHost'." }
+if (-not (Get-Command Resp.benchmark -ErrorAction SilentlyContinue)) { throw 'Resp.benchmark is not installed.' }
+if (-not (Get-Command redis-cli-tls -ErrorAction SilentlyContinue)) { throw 'redis-cli-tls is not installed.' }
+`$respHelp = Resp.benchmark --help 2>&1 | Out-String
+if (`$respHelp -notmatch '--cert-password-file' -or `$respHelp -notmatch '--issuer-certificate-path') {
+    throw 'Resp.benchmark does not support AzureBench TLS options; redeploy the client tools.'
+}
+"@
+    $tlsPreflightEncoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($tlsPreflightScript))
+    Write-Host "Validating TLS clients..." -ForegroundColor DarkGray
+    foreach ($clientHost in ($sshHosts | Select-Object -Unique)) {
+        $preflightOutput = ssh -i $sshKey @probeOpts "${sshUser}@${clientHost}" "pwsh -NoProfile -NonInteractive -EncodedCommand $tlsPreflightEncoded" 2>&1
+        if ($LASTEXITCODE -ne 0) {
+            Write-Error "TLS preflight failed on '$clientHost': $($preflightOutput -join [Environment]::NewLine)"
+            exit 1
+        }
+    }
+}
+
+$redisProbeCommand = if ($tlsEnabled) {
+    "redis-cli-tls --tls --cacert /opt/azurebench/tls/ca.crt --sni $tlsHost"
+} else {
+    "redis-cli"
+}
+
+if ($tlsEnabled) {
+    $pingOutput = ssh -i $sshKey @probeOpts "${sshUser}@${probeHost}" "$redisProbeCommand -h $benchHost -p $benchPort ping" 2>&1
+    if ($LASTEXITCODE -ne 0 -or ($pingOutput | ForEach-Object { "$_".Trim() }) -notcontains 'PONG') {
+        Write-Error "TLS connection validation failed for ${benchHost}:${benchPort}: $($pingOutput -join [Environment]::NewLine)"
+        exit 1
+    }
+}
+
 Write-Host "Probing server info (${benchHost}:${benchPort})..." -ForegroundColor DarkGray
-$serverInfoRaw = ssh -i $sshKey @probeOpts "${sshUser}@${probeHost}" "redis-cli -h $benchHost -p $benchPort info server 2>/dev/null" 2>&1
-$serverReplRaw = ssh -i $sshKey @probeOpts "${sshUser}@${probeHost}" "redis-cli -h $benchHost -p $benchPort info replication 2>/dev/null" 2>&1
+$serverInfoRaw = ssh -i $sshKey @probeOpts "${sshUser}@${probeHost}" "$redisProbeCommand -h $benchHost -p $benchPort info server 2>/dev/null" 2>&1
+$serverReplRaw = ssh -i $sshKey @probeOpts "${sshUser}@${probeHost}" "$redisProbeCommand -h $benchHost -p $benchPort info replication 2>/dev/null" 2>&1
 $serverCpuRaw = ssh -i $sshKey @probeOpts "${sshUser}@${probeHost}" "ssh -o StrictHostKeyChecking=no ${sshUser}@${benchHost} nproc 2>/dev/null" 2>&1
 $serverCpuCount = ($serverCpuRaw | ForEach-Object { "$_".Trim() } | Where-Object { $_ -match '^\d+$' } | Select-Object -Last 1)
 
@@ -274,6 +348,7 @@ $totalWorkers = $workersPerInstance * $instances
 Write-Host "=== Instance Configuration ===" -ForegroundColor Cyan
 Write-Host "  SSH Key    : $sshKey"
 Write-Host "  SSH User   : $sshUser"
+Write-Host "  TLS        : $(if ($tlsEnabled) { "enabled ($tlsHost)" } else { "disabled" })"
 Write-Host "  Instances  : $instances ($multiplier x $uniqueHosts hosts)"
 Write-Host "  Workers    : $totalWorkers total ($workersPerInstance per instance x $instances instances)"
 Write-Host "===============================" -ForegroundColor Cyan
@@ -505,7 +580,7 @@ $dbSizeTotal = 0
 $shardResults = @()
 
 if ($clusterBench -eq "true") {
-    $clusterNodesRaw = ssh -i $sshKey @probeOpts "${sshUser}@${probeHost}" "redis-cli -h $benchHost -p $benchPort cluster nodes 2>/dev/null" 2>&1
+    $clusterNodesRaw = ssh -i $sshKey @probeOpts "${sshUser}@${probeHost}" "$redisProbeCommand -h $benchHost -p $benchPort cluster nodes 2>/dev/null" 2>&1
     $shardEndpoints = @()
     foreach ($line in $clusterNodesRaw) {
         $lineStr = "$line".Trim()
@@ -521,7 +596,7 @@ if ($clusterBench -eq "true") {
 
 if ($shardEndpoints.Count -gt 0) {
     $dbSizeCmds = ($shardEndpoints | ForEach-Object {
-        "echo `"SHARD $($_.Host):$($_.Port)`" && redis-cli -h $($_.Host) -p $($_.Port) dbsize 2>/dev/null"
+        "echo `"SHARD $($_.Host):$($_.Port)`" && $redisProbeCommand -h $($_.Host) -p $($_.Port) dbsize 2>/dev/null"
     }) -join " && "
     $dbSizeRaw = ssh -i $sshKey @probeOpts "${sshUser}@${probeHost}" "$dbSizeCmds" 2>&1
 
