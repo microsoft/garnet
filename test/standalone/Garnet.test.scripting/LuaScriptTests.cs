@@ -1508,14 +1508,17 @@ return retArray";
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase();
 
+            // Generate valid bytecode matching the server's exact Lua version.
             var binaryChunk = (byte[])db.ScriptEvaluate(Script);
             ClassicAssert.GreaterOrEqual(binaryChunk.Length, 4);
             CollectionAssert.AreEqual(new byte[] { 0x1B, (byte)'L', (byte)'u', (byte)'a' }, binaryChunk.AsSpan(0, 4).ToArray());
 
+            // EVAL must not execute arbitrary bytecode supplied as the script body.
             var exception = ClassicAssert.Throws<RedisServerException>(() => db.Execute("EVAL", [binaryChunk, 1, Key]));
             StringAssert.Contains("binary chunk", exception.Message);
             ClassicAssert.IsFalse(db.KeyExists(Key));
 
+            // SCRIPT LOAD must reject the same bytes without adding them to the global cache.
             var hash = Convert.ToHexString(SHA1.HashData(binaryChunk)).ToLowerInvariant();
             exception = ClassicAssert.Throws<RedisServerException>(() => db.Execute("SCRIPT", ["LOAD", binaryChunk]));
             StringAssert.Contains("binary chunk", exception.Message);
@@ -1534,6 +1537,7 @@ return retArray";
             var digest = GC.AllocateUninitializedArray<byte>(SessionScriptCache.SHA1Len, pinned: true);
             _ = Encoding.ASCII.GetBytes(hash, digest);
 
+            // The public handle constructor accepts source text, not trusted precompiled bytecode.
             ClassicAssert.IsTrue(server.Provider.StoreWrapper.storeScriptCache.TryAdd(new ScriptHashKey(digest), new LuaScriptHandle(source.ToArray())));
             ClassicAssert.AreEqual(2, (int)db.Execute("EVALSHA", hash, 0));
         }
@@ -1545,6 +1549,7 @@ return retArray";
             var db = redis.GetDatabase();
             var source = Encoding.UTF8.GetBytes("return 1\0return 2");
 
+            // Exact-length loading must parse bytes after the NUL instead of truncating the script.
             var exception = ClassicAssert.Throws<RedisServerException>(() => db.Execute("EVAL", [source, 0]));
             StringAssert.StartsWith("Compilation error:", exception.Message);
         }
