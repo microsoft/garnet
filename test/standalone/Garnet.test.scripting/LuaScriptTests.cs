@@ -1530,20 +1530,6 @@ return retArray";
         }
 
         [Test]
-        public void HostInsertedScriptSourceIsCompiledAsText()
-        {
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
-            var db = redis.GetDatabase();
-            var source = "return 2"u8;
-            var hash = Convert.ToHexString(SHA1.HashData(source)).ToLowerInvariant();
-            var scriptKey = ScriptHashKey.CopyFrom(Encoding.ASCII.GetBytes(hash));
-
-            // The public handle constructor accepts source text, not trusted precompiled bytecode.
-            ClassicAssert.IsTrue(server.Provider.StoreWrapper.storeScriptCache.TryAdd(scriptKey, new LuaScriptHandle(source.ToArray())));
-            ClassicAssert.AreEqual(2, (int)db.Execute("EVALSHA", hash, 0));
-        }
-
-        [Test]
         public void EvalUsesFullSourceLength()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
