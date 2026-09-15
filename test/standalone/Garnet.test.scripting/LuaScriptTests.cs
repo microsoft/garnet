@@ -1503,13 +1503,14 @@ return retArray";
         public void ScriptInputsRejectPrecompiledLuaBytecode()
         {
             const string Key = "binary-chunk-key";
-            const string Script = "return string.dump(function() return redis.call('SET', KEYS[1], 'binary-chunk-executed') end, true)";
 
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase();
 
             // Generate valid bytecode matching the server's exact Lua version.
-            var binaryChunk = (byte[])db.ScriptEvaluate(Script);
+            ClassicAssert.IsTrue(LuaRunner.TryCompileSource("return redis.call('SET', KEYS[1], 'binary-chunk-executed')"u8, out var compiledScript, out var compileError));
+            ClassicAssert.IsNull(compileError);
+            var binaryChunk = compiledScript.Data.ToArray();
             ClassicAssert.GreaterOrEqual(binaryChunk.Length, 4);
             CollectionAssert.AreEqual(new byte[] { 0x1B, (byte)'L', (byte)'u', (byte)'a' }, binaryChunk.AsSpan(0, 4).ToArray());
 
