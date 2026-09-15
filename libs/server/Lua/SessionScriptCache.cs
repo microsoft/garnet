@@ -167,7 +167,7 @@ namespace Garnet.server
         /// 
         /// If necessary, <paramref name="digestOnHeap"/> will be set so the allocation can be reused.
         /// </summary>
-        internal bool TryLoad(
+        internal bool TryLoadSource(
             RespServerSession session,
             ReadOnlySpan<byte> source,
             ScriptHashKey digest,
@@ -183,10 +183,88 @@ namespace Garnet.server
                 return true;
             }
 
+            if (luaScriptHandle != null)
+                return TryLoadCached(session, digest, ref luaScriptHandle, out runner, out digestOnHeap);
+
+            return TryCompileAndLoad(session, source, digest, ref luaScriptHandle, out runner, out digestOnHeap);
+        }
+
+        /// <summary>
+        /// Load a script previously stored in the global cache.
+        /// </summary>
+        internal bool TryLoadCached(
+            RespServerSession session,
+            ScriptHashKey digest,
+            ref LuaScriptHandle luaScriptHandle,
+            out LuaRunner runner,
+            out ScriptHashKey? digestOnHeap
+        )
+        {
+            if (TryGetFromDigest(digest, out runner, out var existingLuaScriptHandle))
+            {
+                luaScriptHandle = existingLuaScriptHandle;
+                digestOnHeap = null;
+                return true;
+            }
+
+            if (luaScriptHandle.Chunk.Kind == LuaScriptChunkKind.GarnetGeneratedBinary)
+                return TryLoadCompiled(session, luaScriptHandle.Chunk, digest, ref luaScriptHandle, out runner, out digestOnHeap);
+
+            return TryCompileAndLoad(session, luaScriptHandle.ScriptData.Span, digest, ref luaScriptHandle, out runner, out digestOnHeap);
+        }
+
+        private bool TryCompileAndLoad(
+            RespServerSession session,
+            ReadOnlySpan<byte> source,
+            ScriptHashKey digest,
+            ref LuaScriptHandle luaScriptHandle,
+            out LuaRunner runner,
+            out ScriptHashKey? digestOnHeap
+        )
+        {
+            LuaScriptChunk compiledSource;
+            string error;
             try
             {
-                var compiledSource = LuaRunner.CompileSource(source);
+                if (LuaRunner.TryCompileSource(source, out compiledSource, out error))
+                    return TryLoadCompiled(session, compiledSource, digest, ref luaScriptHandle, out runner, out digestOnHeap);
+            }
+            catch (Exception ex)
+            {
+                logger?.LogError(ex, "During Lua script compilation, an unexpected exception");
+                runner = null;
+                digestOnHeap = null;
+                luaScriptHandle = null;
+                return false;
+            }
 
+            session.WriteLuaCompilationError(error);
+            runner = null;
+            digestOnHeap = null;
+            return false;
+        }
+
+        /// <summary>
+        /// Load internally compiled script bytecode into the cache.
+        /// </summary>
+        private bool TryLoadCompiled(
+            RespServerSession session,
+            LuaScriptChunk compiledSource,
+            ScriptHashKey digest,
+            ref LuaScriptHandle luaScriptHandle,
+            out LuaRunner runner,
+            out ScriptHashKey? digestOnHeap
+        )
+        {
+            if (TryGetFromDigest(digest, out runner, out var existingLuaScriptHandle))
+            {
+                luaScriptHandle = existingLuaScriptHandle;
+                digestOnHeap = null;
+                return true;
+            }
+
+            try
+            {
                 runner = new LuaRunner(memoryManagementMode, memoryLimitBytes, logMode, allowedFunctions, compiledSource, storeWrapper.serverOptions.LuaTransactionMode, processor, scratchBufferNetworkSender, storeWrapper.redisProtocolVersion, logger);
 
                 // If compilation fails, an error is written out
