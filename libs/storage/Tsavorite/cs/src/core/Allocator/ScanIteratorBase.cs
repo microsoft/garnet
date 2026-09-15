@@ -169,7 +169,7 @@ namespace Tsavorite.core
         /// <param name="endIterationAddress">Address to stop the scan at</param>
         /// <returns>True we had to await the event here; </returns>
         /// <returns></returns>
-        protected bool BufferAndLoad(long currentIterationAddress, long currentPage, long currentFrame, long headAddress, long endIterationAddress)
+        protected bool BufferAndLoad(long currentIterationAddress, int currentPage, long currentFrame, long headAddress, long endIterationAddress)
         {
             for (var i = 0; i < frameSize; i++)
             {
@@ -276,7 +276,7 @@ namespace Tsavorite.core
         /// <summary>
         /// Whether we need to buffer new page from disk
         /// </summary>
-        protected bool NeedBufferAndLoad(long currentAddress, long currentPage, long currentFrame, long headAddress, long endAddress)
+        protected bool NeedBufferAndLoad(long currentAddress, int currentPage, long currentFrame, long headAddress, long endAddress)
         {
             for (var i = 0; i < frameSize; i++)
             {
@@ -307,8 +307,8 @@ namespace Tsavorite.core
             return false;
         }
 
-        internal abstract void AsyncReadPageFromDeviceToFrame<TContext>(CircularDiskReadBuffer readBuffers, long readPage, long untilAddress, TContext context, out CountdownEvent completed,
-                long devicePageOffset = 0, IDevice device = null, IDevice objectLogDevice = null, CancellationTokenSource cts = null);
+        internal abstract void AsyncReadPageFromDeviceToFrame<TContext>(CircularDiskReadBuffer readBuffers, int readPage, long untilAddress, TContext context, out CountdownEvent completed,
+                int devicePageOffset = 0, IDevice device = null, IDevice objectLogDevice = null, CancellationTokenSource cts = null);
 
         /// <summary>
         /// Publish the failure of a page read that could not be issued, so no completion callback will fire for

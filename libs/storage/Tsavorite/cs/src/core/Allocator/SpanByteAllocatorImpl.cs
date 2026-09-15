@@ -78,13 +78,13 @@ namespace Tsavorite.core
             }
         }
 
-        internal void FreePage(long page)
+        internal void FreePage(int page)
         {
             ClearPage(page, 0);
 
             // If the logSizeTracker is not active, then all pages are used once allocated so there's nothing to add to the overflow pool.
             if (logSizeTracker is not null)
-                ReturnPage((int)(page % BufferSize));
+                ReturnPage(page % BufferSize);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -231,11 +231,11 @@ namespace Tsavorite.core
             }
         }
 
-        protected override void WriteAsync<TContext>(long flushPage, DeviceIOCompletionCallback callback, PageAsyncFlushResult<TContext> asyncResult)
-            => WriteInlinePageAsync((IntPtr)pagePointers[flushPage % BufferSize], (ulong)(AlignedPageSizeBytes * flushPage),
+        protected override void WriteAsync<TContext>(int flushPage, DeviceIOCompletionCallback callback, PageAsyncFlushResult<TContext> asyncResult)
+            => WriteInlinePageAsync((IntPtr)pagePointers[flushPage % BufferSize], (ulong)GetFileOffsetOfPage(flushPage),
                     (uint)AlignedPageSizeBytes, callback, asyncResult, device);
 
-        protected override void WriteAsyncToDeviceForSnapshot<TContext>(long startPage, long flushPage, int pageSize, DeviceIOCompletionCallback callback,
+        protected override void WriteAsyncToDeviceForSnapshot<TContext>(int startPage, int flushPage, int pageSize, DeviceIOCompletionCallback callback,
             PageAsyncFlushResult<TContext> asyncResult, IDevice device, IDevice objectLogDevice, long fuzzyStartLogicalAddress)
         {
             VerifyCompatibleSectorSize(device);
@@ -255,7 +255,7 @@ namespace Tsavorite.core
                         asyncResult.flushRequestState = FlushRequestState.WriteNotIssued;
                         return;
                     }
-                    WriteInlinePageAsync((IntPtr)pagePointers[flushPage % BufferSize], (ulong)(AlignedPageSizeBytes * (flushPage - startPage)),
+                    WriteInlinePageAsync((IntPtr)pagePointers[flushPage % BufferSize], (ulong)GetFileOffsetOfPage(flushPage - startPage),
                                 (uint)AlignedPageSizeBytes, callback, asyncResult, device);
                     // Main device write submitted: its completion callback owns releasing this page's snapshot-IO
                     // unit and buffers. (If WriteInlinePageAsync threw, the flag stays false and the issuer releases.)
@@ -268,7 +268,7 @@ namespace Tsavorite.core
                 }
                 return;
             }
-            WriteInlinePageAsync((IntPtr)pagePointers[flushPage % BufferSize], (ulong)(AlignedPageSizeBytes * (flushPage - startPage)),
+            WriteInlinePageAsync((IntPtr)pagePointers[flushPage % BufferSize], (ulong)GetFileOffsetOfPage(flushPage - startPage),
                         (uint)AlignedPageSizeBytes, callback, asyncResult, device);
             asyncResult.snapshotDeviceWriteIssued = true;
         }

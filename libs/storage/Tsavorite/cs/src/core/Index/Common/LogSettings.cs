@@ -54,18 +54,11 @@ namespace Tsavorite.core
         /// <summary>Minimum number of bits for the size of an overflow (int inline) key or value</summary>
         public const int kLowestMaxInlineSizeBits = 6;                                  // 64B
 
-        /// <summary>Maximum inline key size that fits in the RDH KeyLength field.
-        /// <para>Set to one less than the field's max value (`(1 &lt;&lt; <see cref="RecordDataHeader.kKeyLengthBits"/>) - 1`), so inline keys occupy
-        /// 0..MaxInlineKeySizeLimit. For overflow keys (R11), the low <see cref="RecordDataHeader.kKeyLengthBits"/> bits of the on-disk length
-        /// are stored in the RDH field and can be any value 0..fieldMask; the dependency `MaxInlineKeySizeLimit == fieldMask - 1`
-        /// ensures the masked-low-N-bits encoding has a consistent contract with the inline-size validation in KVSettings.</para></summary>
+        /// <summary>Maximum configured inline key size accepted by the RDH KeyLength field. Overflow keys are distinguished by
+        /// KeyIsInline, so their raw field may independently use the full bit range for object-log read metadata.</summary>
         public const int MaxInlineKeySizeLimit = (1 << RecordDataHeader.kKeyLengthBits) - 2;
 
-        /// <summary>Maximum inline value size that fits in the RDH ValueLength field.
-        /// <para>Set to one less than the field's max value (`(1 &lt;&lt; <see cref="RecordDataHeader.kValueLengthBits"/>) - 1`), so inline values
-        /// occupy 0..MaxInlineValueSizeLimit. For overflow / object values (R11), the low <see cref="RecordDataHeader.kValueLengthBits"/> bits
-        /// of the on-disk length are stored in the RDH field and can be any value 0..fieldMask; the dependency `MaxInlineValueSizeLimit ==
-        /// fieldMask - 1` ensures the masked-low-N-bits encoding has a consistent contract with the inline-size validation in KVSettings.</para></summary>
+        /// <summary>Maximum configured inline value size accepted by the RDH ValueLength field.</summary>
         public const int MaxInlineValueSizeLimit = (1 << RecordDataHeader.kValueLengthBits) - 2;
 
         /// <summary>Minimum allowed <see cref="MaxInlineKeySize"/> / <see cref="MaxInlineValueSize"/>.</summary>
