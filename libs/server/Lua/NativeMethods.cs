@@ -403,7 +403,7 @@ namespace Garnet.server
         /// </summary>
         internal static unsafe LuaStatus LoadTextBuffer(lua_State luaState, ReadOnlySpan<byte> str)
         {
-            // Text-only mode rejects customer-supplied precompiled bytecode.
+            // Text-only mode rejects externally supplied precompiled bytecode.
             ReadOnlySpan<byte> mode = "t\0"u8;
             fixed (byte* ptr = str)
             fixed (byte* modePtr = mode)

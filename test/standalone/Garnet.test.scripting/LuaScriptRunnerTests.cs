@@ -163,7 +163,7 @@ namespace Garnet.test
             ClassicAssert.GreaterOrEqual(compiledSource.Data.Length, 4);
             CollectionAssert.AreEqual(new byte[] { 0x1B, (byte)'L', (byte)'u', (byte)'a' }, compiledSource.Data.Span[..4].ToArray());
 
-            // Customer-provided bytecode must not be accepted as source or returned as trusted output.
+            // Externally provided bytecode must not be accepted as source or returned as trusted output.
             ClassicAssert.IsFalse(LuaRunner.TryCompileSource(compiledSource.Data.Span, out var rejectedBinary, out var binaryError));
             ClassicAssert.AreEqual(default(LuaScriptChunk), rejectedBinary);
             StringAssert.Contains("binary chunk", binaryError);
