@@ -1198,8 +1198,16 @@ namespace Garnet.cluster
                     if (senderConfig.LocalNodeConfigEpoch != 0 && workers[currentOwnerId].ConfigEpoch >= senderConfig.LocalNodeConfigEpoch)
                         continue;
                 }
-                else if (currentOwnerId != RESERVED_WORKER_ID) // Possibly multiple replicas may enter this but only the old primary should succeed in the event of a planned failover.
+                else
                 {
+                    // Sender is a replica. It may only hand off a slot that this node already credits to the
+                    // sender itself, which is the planned-failover case described below. An unowned slot gives
+                    // no such basis, so leave it alone and let its real owner claim it through the primary path
+                    // above; a replica must never introduce ownership. Crediting the replica here would reject
+                    // the true owner's claims for as long as the bogus owner's config epoch remains the higher one.
+                    if (currentOwnerId == RESERVED_WORKER_ID)
+                        continue;
+
                     // This should guarantee that only the old primary should proceed with re-assigning the slots to the replica that is taking over
                     // Scenario 4 nodes A,B,C,D for which B,C are replicas of A and B takes over from A,
                     // then due to delay D will receive a gossip from A,B,C in any order.
