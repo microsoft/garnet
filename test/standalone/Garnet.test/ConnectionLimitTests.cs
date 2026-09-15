@@ -605,9 +605,10 @@ namespace Garnet.test
             var clients = new List<GarnetClient>();
             try
             {
-                // Fillers must be real TLS clients rather than bare sockets: the handshake runs on
-                // the accept path, so a connection that never handshakes stalls the accept loop and
-                // is never admitted at all.
+                // Fillers are real TLS clients rather than bare sockets so that the test asserts on
+                // admitted connections. Bare silent sockets would also occupy slots -- the handshake
+                // has no timeout, so they hold them indefinitely -- but nothing would distinguish an
+                // occupied slot from a connection still waiting to be accepted.
                 for (var i = 0; i < Limit; i++)
                 {
                     var client = TestUtils.GetGarnetClient(useTLS: true);

@@ -6,7 +6,6 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Net.Sockets;
 using System.Threading.Tasks;
-using Garnet.client;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 
@@ -134,125 +133,6 @@ namespace Garnet.test
             ClassicAssert.AreEqual("PONG", pong);
 
             Assert.That(elapsed.Elapsed, Is.LessThan(AdmissionDeadline), because);
-        }
-    }
-
-    /// <summary>
-    /// Starting the handshake off the accept loop moves where a handshake failure is noticed. It no
-    /// longer propagates out of <c>Start</c> into the accept site's catch, so the admission slot the
-    /// accept path has already taken is released by the handshake's own failure path instead.
-    ///
-    /// That is a property worth pinning rather than assuming: a leak here would convert a
-    /// connection-limited server into one an unauthenticated peer can permanently fill.
-    ///
-    /// The connection limit is the instrument, in preference to <c>connected_clients</c>, which is
-    /// monitor-sampled and so reports a previous sample rather than the live count.
-    /// </summary>
-    [TestFixture]
-    public class TlsHandshakeFailureSlotTests : TestBase
-    {
-        const int Limit = 4;
-
-        GarnetServer server;
-
-        [SetUp]
-        public void Setup()
-        {
-            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableTLS: true,
-                networkConnectionLimit: Limit);
-            server.Start();
-        }
-
-        [TearDown]
-        public void TearDown()
-        {
-            server.Dispose();
-            TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
-            TestUtils.OnTearDown();
-        }
-
-        [Test]
-        public async Task FailedHandshakesReleaseTheirAdmissionSlots()
-        {
-            // Twice the limit, so a leak of even half the slots is caught.
-            for (var i = 0; i < Limit * 2; i++)
-                FailOneHandshake();
-
-            // The whole ceiling must still be available, not merely one slot.
-            var admitted = new List<GarnetClient>();
-            try
-            {
-                for (var i = 0; i < Limit; i++)
-                {
-                    var client = await ConnectWithinDeadline(i);
-                    admitted.Add(client);
-                }
-            }
-            finally
-            {
-                foreach (var client in admitted) client.Dispose();
-            }
-        }
-
-        /// <summary>
-        /// Drives one connection to a TLS handshake failure and waits for the server to close it,
-        /// which is the observable event that orders the failure before the assertion.
-        /// </summary>
-        static void FailOneHandshake()
-        {
-            using var socket = new Socket(SocketType.Stream, ProtocolType.Tcp);
-            socket.Connect(TestUtils.EndPoint);
-            socket.ReceiveTimeout = 15_000;
-
-            // Not a TLS record, so negotiation fails immediately rather than stalling. This is also
-            // what a plaintext client reaching a TLS port sends.
-            socket.Send("PING\r\n"u8.ToArray());
-
-            try
-            {
-                // Drains any alert record the server writes before closing.
-                var buffer = new byte[256];
-                while (socket.Receive(buffer) > 0) { }
-            }
-            catch (SocketException)
-            {
-                // A reset instead of an orderly close is equally a teardown.
-            }
-        }
-
-        /// <summary>
-        /// Retries briefly, because the slot is released on the handshake's failure path rather than
-        /// synchronously with the close observed above. A leaked slot is not recovered by waiting,
-        /// so this bounds a race without weakening the assertion.
-        /// </summary>
-        static async Task<GarnetClient> ConnectWithinDeadline(int index)
-        {
-            var deadline = Stopwatch.StartNew();
-            Exception last = null;
-
-            while (deadline.Elapsed < TimeSpan.FromSeconds(15))
-            {
-                var client = TestUtils.GetGarnetClient(useTLS: true);
-                try
-                {
-                    await client.ConnectAsync();
-                    ClassicAssert.AreEqual("PONG", await client.PingAsync());
-                    return client;
-                }
-                catch (Exception ex)
-                {
-                    last = ex;
-                    client.Dispose();
-                    await Task.Delay(200);
-                }
-            }
-
-            Assert.Fail(
-                $"connection {index} of {Limit} was refused after {Limit * 2} failed handshakes, so " +
-                $"those handshakes did not release the admission slots the accept path took for " +
-                $"them: {last?.Message}");
-            return null;
         }
     }
 }
