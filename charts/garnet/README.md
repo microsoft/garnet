@@ -1,6 +1,12 @@
 # garnet
 
-![Version: 0.2.2](https://img.shields.io/badge/Version-0.2.2-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 1.0.65](https://img.shields.io/badge/AppVersion-1.0.65-informational?style=flat-square)
+![Version: 0.2.3](https://img.shields.io/badge/Version-0.2.3-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 2.1.5](https://img.shields.io/badge/AppVersion-2.1.5-informational?style=flat-square)
+
+## Versioning
+
+The Helm chart version and Garnet application version are independent. Chart
+changes require a chart version bump; Garnet releases receive a chart patch
+bump so the published chart points to the new application image by default.
 
 A Helm chart for Microsoft Garnet
 
@@ -35,9 +41,7 @@ helm delete garnet
 | config.existingSecret | string | `""` | Garnet secret (if you want to use an existing secret). This secret must contains a key called 'garnet.conf'. |
 | config.garnetConf | string | `""` | The garnet.conf data content. |
 | containers.args | list | `[]` | Containers args |
-| containers.livenessProbe | object | `{}` | Containers livenessProbe |
 | containers.port | int | `6379` | Containers port |
-| containers.readinessProbe | object | `{}` | Containers livenessProbe |
 | dnsConfig | object | `{}` | DNS config |
 | dnsPolicy | string | `"ClusterFirst"` | DNS policy |
 | extraVolumeMounts | list | `[]` | Extra Volume Mounts |
@@ -49,21 +53,25 @@ helm delete garnet
 | image.tag | string | `""` | Overrides the image tag whose default is the chart appVersion. |
 | imagePullSecrets | list | `[]` | Image pull secrets |
 | initContainers | list | `[]` | Init containers |
+| livenessProbe | object | `{}` | Containers livenessProbe |
 | nameOverride | string | `""` | Chart name override |
 | nodeSelector | object | `{}` | Node Selector labels |
 | persistence.enabled | bool | `false` | persistence enabled |
 | persistence.storageDir | string | `""` | The Storage directory for tiered records (hybrid log), if storage tiering (--storage-tier) is enabled. Default: "/data" |
 | podAnnotations | object | `{}` | Pod annotations |
 | podSecurityContext | object | `{}` | Pod Security Context |
+| readinessProbe | object | `{}` | Containers livenessProbe |
 | resources | object | `{}` | Resources |
 | securityContext | object | `{}` | Security Context |
 | service.annotations | object | `{}` | Service annotations |
+| service.ipFamilies | list | `["IPv4"]` | Service ipFamilies |
+| service.ipFamilyPolicy | string | `"SingleStack"` | Service ipFamilyPolicy SingleStack|PreferDualStack|RequireDualStack |
 | service.port | int | `6379` | Service port |
 | service.type | string | `"ClusterIP"` | Service type |
 | serviceAccount.annotations | object | `{}` | Annotations to add to the service account |
+| serviceAccount.automount | bool | `false` | Automatically mount the service account token |
 | serviceAccount.create | bool | `false` | Specifies whether a service account should be created |
 | serviceAccount.name | string | `""` | The name of the service account to use. If not set and create is true, a name is generated using the fullname template |
-| serviceAccount.token | bool | `false` | Creates the token object |
 | statefulSet.annotations | object | `{}` | StatefulSet annotations |
 | statefulSet.replicas | int | `1` | StatefulSet replicas |
 | statefulSet.revisionHistoryLimit | int | `1` | StatefulSet revisionHistoryLimit |
