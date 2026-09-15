@@ -195,7 +195,7 @@ namespace Garnet.cluster
                     var returnedConfigArray = resp.Span.ToArray();
 
                     // Validate config version before full deserialization
-                    if (!ClusterConfig.TryPeekVersion(returnedConfigArray, out var version) || version != ClusterConfig.ClusterConfigVersion)
+                    if (!ClusterConfig.TryPeekVersion(returnedConfigArray, out var version) || !ClusterConfig.IsSupportedVersion(version))
                     {
                         logger?.LogWarning("Received gossip response with incompatible config version: {version}", version);
                         return;
