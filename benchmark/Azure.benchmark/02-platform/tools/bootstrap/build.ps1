@@ -80,9 +80,30 @@ function Build-ValkeyRedis([string]$dir) {
     }
     if ($LASTEXITCODE -ne 0) { throw "make failed" }
 
-    Write-Host "==== Installing $System ===="
-    & sudo make install
-    if ($LASTEXITCODE -ne 0) { throw "make install failed" }
+    if ($Tls -eq 'tls') {
+        $serverSource = @('./src/valkey-server', './src/redis-server') |
+            Where-Object { Test-Path $_ } |
+            Select-Object -First 1
+        $cliSource = @('./src/valkey-cli', './src/redis-cli') |
+            Where-Object { Test-Path $_ } |
+            Select-Object -First 1
+        if (-not $serverSource -or -not $cliSource) {
+            throw "TLS build did not produce the expected server and CLI binaries."
+        }
+
+        $serverTarget = "$INSTALL_DIR/$System-server-tls"
+        $cliTarget = "$INSTALL_DIR/$System-cli-tls"
+        Write-Host "==== Installing TLS binaries as $serverTarget and $cliTarget ===="
+        & sudo install -m 0755 $serverSource $serverTarget
+        if ($LASTEXITCODE -ne 0) { throw "Failed to install $serverTarget" }
+        & sudo install -m 0755 $cliSource $cliTarget
+        if ($LASTEXITCODE -ne 0) { throw "Failed to install $cliTarget" }
+    }
+    else {
+        Write-Host "==== Installing $System ===="
+        & sudo make install
+        if ($LASTEXITCODE -ne 0) { throw "make install failed" }
+    }
 
     Write-Host "==== Build complete ===="
     # Print the built server version. Valkey produces valkey-server (older

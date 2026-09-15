@@ -128,6 +128,19 @@ if ($Fetch) {
     tar -xzf $tarball -C $extractDir
     if ($LASTEXITCODE -ne 0) { throw "ERROR: -Fetch failed to unpack the tools tarball" }
     Write-Host "Tools tarball unpacked to $extractDir." -ForegroundColor Green
+
+    # This process is still executing the pre-fetch version of update.ps1.
+    # Re-exec the downloaded version so manifest/schema changes in the new bundle
+    # take effect immediately instead of one deployment later.
+    $nextArgs = if ($RunOnly) {
+        @('-RunOnly')
+    } elseif ($Run) {
+        @('-Run')
+    } else {
+        @('-Copy')
+    }
+    & "$ScriptDir/update.ps1" @nextArgs
+    exit $LASTEXITCODE
 }
 
 if (-not (Test-Path $Manifest)) {
@@ -205,6 +218,9 @@ if ($Run -or $RunOnly) {
             }
 
             if ($resolvedBranch) { $cmdArgs = "$buildSystem $resolvedBranch" }
+            if ($cmd.PSObject.Properties['tls'] -and $cmd.tls) {
+                $cmdArgs = "$cmdArgs tls"
+            }
         }
 
         # Resolve script path from the scripts section by matching filename

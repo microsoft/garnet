@@ -156,6 +156,12 @@
     {
       "run": "build.ps1",
       "sudo": true,
+      "args": "valkey",
+      "tls": true
+    },
+    {
+      "run": "build.ps1",
+      "sudo": true,
       "args": "garnet",
       "branch": 0
     },
