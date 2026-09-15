@@ -32,22 +32,6 @@ namespace Garnet.server
             arrRef = pohArr;
         }
 
-        internal static ScriptHashKey CopyFrom(ReadOnlySpan<byte> hash)
-        {
-            Debug.Assert(hash.Length == SessionScriptCache.SHA1Len, "Only one valid length for script hash keys");
-
-            var pinnedHash = GC.AllocateUninitializedArray<byte>(SessionScriptCache.SHA1Len, pinned: true);
-            hash.CopyTo(pinnedHash);
-            return new(pinnedHash);
-        }
-
-        internal static ScriptHashKey CopyFrom(ScriptHashKey hash)
-        {
-            var pinnedHash = GC.AllocateUninitializedArray<byte>(SessionScriptCache.SHA1Len, pinned: true);
-            hash.CopyTo(pinnedHash);
-            return new(pinnedHash);
-        }
-
         /// <summary>
         /// Copy key data.
         /// </summary>
