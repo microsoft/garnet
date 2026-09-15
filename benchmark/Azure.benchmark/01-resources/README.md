@@ -20,6 +20,7 @@ One-time deployment of the shared Azure resources the benchmarking environment d
 | `network/network-parameters.json` | Network deployment parameters |
 | `storage/storage.bicep` | Storage account + blob container template (deterministic name, `app=azurebench` tag for discovery) |
 | `security/keyvault.bicep` | Key Vault deployment template |
+| `security/tls-certificate-utils.ps1` | Generates the benchmark CA/server/client certificates and idempotently uploads them to Key Vault |
 | `security/keyvault.json` | Key Vault deployment parameters |
 | `security/manifest.template.json` | Tracked template for the SSH key manifest |
 | `security/initialize-manifest.ps1` | Helper that creates `manifest.json` from the template and fills in your key names |
@@ -39,13 +40,15 @@ One-time deployment of the shared Azure resources the benchmarking environment d
 .\01-resources\deploy-common-resources.ps1
 ```
 
-Creates NSG, VNet, a proximity placement group, a storage account, and a Key Vault (copying the manifest public keys into `security/` and uploading the VMSS private key as secret `vmss-ssh-private`). It also publishes a read-only, policy-bound **SAS URL** for the tools tarball blob into the Key Vault (secret `tools-sas-url`) so the VMSS can pull `tools.tar.gz` at boot **without a Storage Blob Data Reader role assignment** (no RBAC required — see [Tools tarball delivery](#tools-tarball-delivery-sas)). Auto-generates `vmss-parameters.json` (written to `02-platform/`) with resource IDs. The storage account and Key Vault names are discovered later by their `app=azurebench` tag / resource-group lookup, so they are **not** written to `vmss-parameters.json`.
+Creates NSG, VNet, a proximity placement group, a storage account, and a Key Vault (copying the manifest public keys into `security/` and uploading the VMSS private key as secret `vmss-ssh-private`). It also generates a private benchmark CA plus role-specific server/client certificates and uploads the complete set to Key Vault. Existing enabled certificate secrets with matching, unexpired metadata are reused; missing, disabled, mismatched, or near-expiry sets are regenerated as one consistent bundle. Local certificate files are written under the git-ignored `security/tls/` directory. Use `-RotateTlsCertificates` to force rotation.
+
+The deployment also publishes a read-only, policy-bound **SAS URL** for the tools tarball blob into the Key Vault (secret `tools-sas-url`) so the VMSS can pull `tools.tar.gz` at boot **without a Storage Blob Data Reader role assignment** (no RBAC required — see [Tools tarball delivery](#tools-tarball-delivery-sas)). Auto-generates `vmss-parameters.json` (written to `02-platform/`) with resource IDs. The storage account and Key Vault names are discovered later by their `app=azurebench` tag / resource-group lookup, so they are **not** written to `vmss-parameters.json`.
 
 ### Actions
 
 | Action | Command | Description |
 |--------|---------|-------------|
-| `deploy` (default) | `.\01-resources\deploy-common-resources.ps1` | Deploys shared resources (network, storage, Key Vault + keys, tools SAS) and generates `vmss-parameters.json`. **Idempotent** — checks the resource group and skips any resource (network, storage, Key Vault, or existing SAS secret) that already exists, with an informational message |
+| `deploy` (default) | `.\01-resources\deploy-common-resources.ps1` | Deploys shared resources (network, storage, Key Vault + SSH/TLS material, tools SAS) and generates `vmss-parameters.json`. **Idempotent** — checks the resource group and reuses a complete, enabled, matching TLS certificate set until it approaches expiry |
 | `stage` | `.\01-resources\deploy-common-resources.ps1 -Action stage -rg <rg>` | Queries existing network resources, copies the manifest-declared public keys from `basePath` (normally `%USERPROFILE%\.ssh`) into the git-ignored `security/` cache, and generates `vmss-parameters.json` (no Azure deployment) |
 | `refresh-sas` | `.\01-resources\deploy-common-resources.ps1 -Action refresh-sas -rg <rg>` | Regenerates the tools tarball SAS and refreshes the `tools-sas-url` Key Vault secret (renews the stored access policy expiry). Run before expiry or after rotating the storage account key |
 

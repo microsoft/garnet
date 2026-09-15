@@ -6,7 +6,8 @@
     Step 1: Deploys network/network.bicep to create the shared network resources.
     Step 2: Deploys storage/storage.bicep to create the shared storage account (blob container for tools tarball delivery).
     Step 3: Deploys security/keyvault.bicep to create the shared Key Vault, copies public keys from the manifest basePath
-            into security/, and uploads the inter-node VMSS private key as secret 'vmss-ssh-private'.
+            into security/, uploads the inter-node VMSS private key as secret 'vmss-ssh-private', and ensures a
+            CA-signed server/client TLS certificate set exists in Key Vault.
     Step 4: Publishes a read-only, policy-bound SAS URL for the tools tarball blob into the Key Vault (secret 'tools-sas-url')
             so the VMSS can pull tools.tar.gz at boot without a Storage Blob Data Reader role assignment (no RBAC required).
     Step 5: Reads network deployment outputs and generates vmss-parameters.json for subsequent VMSS deployments.
@@ -21,7 +22,7 @@
     Azure resource group name. Required; you are prompted if omitted.
 
 .PARAMETER Action
-    deploy      - Deploy shared resources (network, storage, Key Vault + keys, tools SAS) and generate vmss-parameters.json (default)
+    deploy      - Deploy shared resources (network, storage, Key Vault + SSH/TLS material, tools SAS) and generate vmss-parameters.json (default)
     stage       - Query existing network resources in the resource group and generate vmss-parameters.json (no deployment)
     refresh-sas - Regenerate the tools tarball SAS and refresh the 'tools-sas-url' Key Vault secret (renews expiry)
 
@@ -61,6 +62,14 @@ param(
 
     [int]$SasExpiryDays = 365,
 
+    [string]$TlsTargetHost = 'azurebench-server',
+
+    [int]$TlsValidityDays = 365,
+
+    [int]$TlsRenewBeforeDays = 30,
+
+    [switch]$RotateTlsCertificates,
+
     [switch]$Help
 )
 
@@ -73,11 +82,15 @@ if ($Help) {
     Write-Host "  -rg <name>              Resource group name (required; prompted if omitted)"
     Write-Host "  -Region <name>          Azure region (default: resource group location)"
     Write-Host "  -Action <action>        Action to perform (default: deploy)"
-    Write-Host "                          deploy  - Deploy shared resources (network, storage, Key Vault + keys, tools SAS)"
+    Write-Host "                          deploy  - Deploy shared resources (network, storage, Key Vault + SSH/TLS material, tools SAS)"
     Write-Host "                                    and generate parameters (idempotent: skips resources that already exist)"
     Write-Host "                          stage   - Query existing network resources and generate parameters (no deployment)"
     Write-Host "                          refresh-sas - Regenerate the tools tarball SAS and refresh the 'tools-sas-url' Key Vault secret"
     Write-Host "  -SasExpiryDays <n>      Stored access policy / SAS expiry in days (default: 365)"
+    Write-Host "  -TlsTargetHost <name>   DNS identity placed in the server certificate (default: azurebench-server)"
+    Write-Host "  -TlsValidityDays <n>    TLS certificate lifetime in days (default: 365)"
+    Write-Host "  -TlsRenewBeforeDays <n> Regenerate certificates this many days before expiry (default: 30)"
+    Write-Host "  -RotateTlsCertificates  Force a new CA, server certificate, and client certificate"
     Write-Host "  -DeploymentName <name>  Deployment name (default: network-deploy)"
     Write-Host "  -Help                   Show this help message"
     Write-Host ""
@@ -109,6 +122,7 @@ $vmssParamsFile = Join-Path $repoRoot '02-platform\vmss-parameters.json'
 $securityDir = Join-Path $scriptDir 'security'
 $manifestFile = Join-Path $securityDir 'manifest.json'
 . (Join-Path $securityDir 'ssh-key-utils.ps1')
+. (Join-Path $securityDir 'tls-certificate-utils.ps1')
 
 function Write-VmssParams {
     param(
@@ -609,6 +623,14 @@ $keySync = Sync-SshPublicKeys -Manifest $manifest -SecurityDir $securityDir
 Write-Host "  Resolved   : $($keySync.ResolvedNames -join ', ')"
 $kvName = Deploy-KeyVault -ResourceGroup $rg -Region $Region -SecurityDir $securityDir
 Set-VmssPrivateKeySecret -Manifest $manifest -VaultName $kvName
+try {
+    Ensure-TlsCertificates -VaultName $kvName -OutputDirectory (Join-Path $securityDir 'tls') `
+        -TargetHost $TlsTargetHost -ValidityDays $TlsValidityDays `
+        -RenewBeforeDays $TlsRenewBeforeDays -Rotate:$RotateTlsCertificates | Out-Null
+} catch {
+    Write-Error "TLS certificate provisioning failed: $($_.Exception.Message)"
+    exit 1
+}
 
 # --- Tools tarball SAS (stored in Key Vault for no-RBAC blob delivery) ---
 Publish-ToolsSas -ResourceGroup $rg -StorageAccount $storageName -VaultName $kvName `

@@ -24,3 +24,6 @@
 
 # SSH public keys
 01-resources/security/*.pub
+
+# Locally generated TLS certificate material
+01-resources/security/tls/
