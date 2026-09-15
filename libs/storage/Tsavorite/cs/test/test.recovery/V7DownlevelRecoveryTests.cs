@@ -296,6 +296,51 @@ namespace Tsavorite.test.recovery
 
         [Test]
         [Category("TsavoriteKV"), Category("CheckpointRestore")]
+        public async Task RecoverV7ObjectValueFoldOverLowMem()
+        {
+            // Recover a v7 checkpoint into a store under a tight memory budget so recovery evicts records to the main log. A record evicted
+            // during a downlevel recovery is NOT up-converted, so it stays on the main log in the v7 encoding; the later runtime read of it
+            // must still decode correctly (the per-record ReuseObjectIdForSize flag selects the v7 decode even though the store is now current).
+            const int numRecords = 40;
+            const int valueSize = 400;
+            var token = BuildV7FoldOverFixture(numRecords, valueSize);
+
+            var checkpointDir = Path.Combine(MethodTestDir, CheckpointDirName);
+            IDevice log = Devices.CreateLogDevice(Path.Combine(MethodTestDir, MainLogName), deleteOnClose: false);
+            IDevice objlog = Devices.CreateLogDevice(Path.Combine(MethodTestDir, ObjectLogName), deleteOnClose: false);
+            try
+            {
+                using var store = CreateObjectStore(log, objlog, checkpointDir, 1L << 20);
+                var target = 4L * MinKvLogPageSize;
+                var tracker = new LogSizeTracker<ObjStoreFunctions, ObjAllocator>(store.Log, target, target / 8, target / 16, logger: null);
+                store.Log.SetLogSizeTracker(tracker);
+                _ = await store.RecoverAsync(default, token).ConfigureAwait(false);
+
+                using var session = store.NewSession<TestObjectKey, TestLargeObjectInput, TestLargeObjectOutput, Empty, TestLargeObjectFunctions>(new TestLargeObjectFunctions());
+                var bContext = session.BasicContext;
+                for (var key = 0; key < numRecords; key++)
+                {
+                    TestLargeObjectInput input = new() { wantValueStyle = TestValueStyle.Object };
+                    TestLargeObjectOutput output = new();
+                    var status = bContext.Read(new TestObjectKey { key = key }, ref input, ref output);
+                    if (status.IsPending)
+                    {
+                        ClassicAssert.IsTrue(bContext.CompletePendingWithOutputs(out var completed, wait: true));
+                        (status, output) = GetSinglePendingResult(completed);
+                    }
+                    ClassicAssert.IsTrue(status.Found, $"key {key} not found after low-mem v7 recovery");
+                    VerifyPayload(key, valueSize, output.valueObject?.value);
+                }
+            }
+            finally
+            {
+                log.Dispose();
+                objlog.Dispose();
+            }
+        }
+
+        [Test]
+        [Category("TsavoriteKV"), Category("CheckpointRestore")]
         public async Task RecoverV7OverflowKeyFoldOver([Values(8, 16)] int numRecords, [Values(50, 300)] int keySize)
         {
             const int valueSize = 50;

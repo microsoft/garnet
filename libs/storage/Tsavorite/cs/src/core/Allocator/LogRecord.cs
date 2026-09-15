@@ -1716,12 +1716,15 @@ namespace Tsavorite.core
         /// </summary>
         /// <param name="keyLength">Outputs the key initial-read extent.</param>
         /// <param name="valueObjectLength">Outputs the value initial-read extent.</param>
-        /// <param name="checkpointVersion">The checkpoint metadata version whose object-log encoding is being decoded; current-format for a
-        /// live record. Selects the downlevel v2.1 split-length decode versus the current chunk-framed length-hint decode.</param>
+        /// <param name="checkpointVersion">The checkpoint metadata version whose object-log encoding is being decoded; the current version for a
+        /// live read. Recovery passes the recovered checkpoint version to select the downlevel v2.1 decode without consulting a per-record flag.</param>
         /// <returns>The object log position word for this record, with flag bits masked off (segment+offset only).</returns>
+        /// <remarks>The per-record <see cref="HasReuseObjectIdForSize"/> flag is honored in addition to the version so that a live (current-version)
+        /// read of a downlevel record still decodes correctly: recovering a v7 checkpoint under memory pressure can evict a v7 record to the main
+        /// log without up-converting it, and a later runtime read of that record arrives here with the current version but the flag set.</remarks>
         internal readonly ulong GetObjectLogRecordStartPositionAndLengths(out int keyLength, out ulong valueObjectLength, int checkpointVersion)
         {
-            if (HybridLogRecoveryInfo.UsesDownlevelObjectLog(checkpointVersion))
+            if (IsDownlevelObjectLogRecord(checkpointVersion))
                 return GetObjectLogRecordStartPositionAndLengths_v21(out keyLength, out valueObjectLength);
 
             var dataHeader = DataHeader;
@@ -1815,10 +1818,19 @@ namespace Tsavorite.core
 
         /// <summary>Whether the <c>ReuseObjectIdForSize</c> flag is set on this record's ObjectLogPosition slot. v7 records set it to mark the
         /// downlevel split length encoding (RDH KeyLength/ValueLength low bits + objectId slot high 32 bits, no object-log stream length framing).
-        /// The object-log decode is no longer selected from this flag — recovery uses the checkpoint metadata version
-        /// (<see cref="HybridLogRecoveryInfo.UsesDownlevelObjectLog(int)"/>) — so the flag is retained only for on-disk inspection/diagnostics.</summary>
+        /// Recovery selects the decode from the checkpoint metadata version rather than this flag, but a live read still honors it per record
+        /// (see <see cref="IsDownlevelObjectLogRecord(int)"/>) so a downlevel record left on the main log by a memory-pressured downlevel recovery
+        /// is decoded correctly.</summary>
         internal readonly bool HasReuseObjectIdForSize
             => ObjectLogFilePositionInfo.GetReuseObjectIdForSize((ulong*)GetObjectLogPositionAddress(GetOptionalStartAddress()));
+
+        /// <summary>Whether this record's object log uses the downlevel (v2.1) split-length encoding. True when the checkpoint being recovered
+        /// predates the chunk-framed format (<see cref="HybridLogRecoveryInfo.UsesDownlevelObjectLog(int)"/>), OR when the per-record
+        /// <see cref="HasReuseObjectIdForSize"/> flag is set. The flag catches a live (current-version) read of a downlevel record that a
+        /// memory-pressured downlevel recovery evicted to the main log without up-converting; a page can mix such records with up-converted
+        /// ones, so the decode must be selected per record.</summary>
+        internal readonly bool IsDownlevelObjectLogRecord(int checkpointVersion)
+            => HybridLogRecoveryInfo.UsesDownlevelObjectLog(checkpointVersion) || HasReuseObjectIdForSize;
 
         /// <summary>Set the <c>ReuseObjectIdForSize</c> flag on this record's ObjectLogPosition slot, marking the downlevel split length
         /// encoding. No production writer sets this flag; it is retained for tests that synthesize v7 record images.</summary>

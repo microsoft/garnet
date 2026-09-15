@@ -137,7 +137,7 @@ namespace Tsavorite.core
             // GetObjectLogRecordStartPositionAndLengths returns initial read extents from objectId hints for a current record, or exact
             // lengths from the split RDH+objectId-slot encoding for a downlevel (v2.1) record.
             var positionWord = logRecord.GetObjectLogRecordStartPositionAndLengths(out var keyLength, out var valueLength, checkpointVersion);
-            var isLegacy = HybridLogRecoveryInfo.UsesDownlevelObjectLog(checkpointVersion);
+            var isLegacy = logRecord.IsDownlevelObjectLogRecord(checkpointVersion);
             recordStartPosition = new ObjectLogFilePositionInfo(positionWord, segmentSizeBits);
             var initialLength = logRecord.DataHeader.KeyIsOverflow ? (ulong)keyLength : valueLength;
             var initialEnd = recordStartPosition;
@@ -231,7 +231,7 @@ namespace Tsavorite.core
             recordStreamConsumed = 0;
             objectRecordStartOffsetLow3 = (int)(recordStartPosition.Offset & 7);
 
-            var isLegacy = HybridLogRecoveryInfo.UsesDownlevelObjectLog(checkpointVersion);
+            var isLegacy = logRecord.IsDownlevelObjectLogRecord(checkpointVersion);
             var keyIsExactSize = isLegacy || logRecord.KeyIsExactSize;
             var exactKeyLength = isLegacy ? keyLength : logRecord.KeyObjectIdSizeHint;
             var overflow = ReadOverflow(keyIsExactSize, exactKeyLength);

@@ -12,9 +12,11 @@ namespace Tsavorite.core
     /// <see cref="RecordDataHeader.kKeyLengthBits"/> / <see cref="RecordDataHeader.kValueLengthBits"/> bits live in the RDH
     /// KeyLength/ValueLength field, and the next 32 bits are in the objectId slot at keyAddress/valueAddress. The object-log stream
     /// carries no length framing. v7 records set the record's ObjectLogPosition
-    /// <see cref="ObjectLogFilePositionInfo.kReuseObjectIdForSizeBit"/> flag, but recovery no longer reads it: this decode is selected
-    /// from the checkpoint metadata version (<see cref="HybridLogRecoveryInfo.UsesDownlevelObjectLog(int)"/>, threaded via
-    /// <see cref="RecoveryOptions"/> and <see cref="PageAsyncFlushResult{TContext}"/>), reachable only while recovering a downlevel checkpoint.</para>
+    /// <see cref="ObjectLogFilePositionInfo.kReuseObjectIdForSizeBit"/> flag. Recovery selects this decode from the checkpoint metadata
+    /// version (<see cref="HybridLogRecoveryInfo.UsesDownlevelObjectLog(int)"/>, threaded via <see cref="RecoveryOptions"/> and
+    /// <see cref="PageAsyncFlushResult{TContext}"/>) rather than the flag; a live read additionally honors the per-record flag
+    /// (<see cref="LogRecord.IsDownlevelObjectLogRecord(int)"/>) so a v7 record left on the main log by a memory-pressured downlevel
+    /// recovery still decodes correctly.</para>
     /// </summary>
     public unsafe partial struct LogRecord : ISourceLogRecord
     {
