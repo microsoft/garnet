@@ -7,6 +7,7 @@ using System.IO;
 using System.Net;
 using System.Net.Sockets;
 using System.Threading;
+using System.Threading.Tasks;
 using Garnet.common;
 using Garnet.networking;
 using Garnet.server.TLS;
@@ -313,7 +314,19 @@ namespace Garnet.server
                     {
                         IncrementConnectionsReceived();
                         ExceptionInjectionHelper.TriggerException(ExceptionInjectionType.Dispose_After_Handler_Registered_Before_Start);
-                        handler.Start(tlsOptions?.TlsServerOptions, remoteEndpointName);
+
+                        // Start the handler without waiting for the TLS handshake to complete.
+                        // StartAsync issues the socket receive synchronously, and that receive is
+                        // what drives the handshake, so waiting here would block this thread on work
+                        // another thread performs. Because a single accept event args is reused and
+                        // the next AcceptAsync is only issued once this returns, blocking would let
+                        // one peer that connects and never sends a ClientHello stall every
+                        // subsequent connection to this listener.
+                        var started = handler.StartAsync(tlsOptions?.TlsServerOptions, remoteEndpointName);
+
+                        // Completes synchronously without TLS, so the non-TLS path adds nothing.
+                        if (!started.IsCompletedSuccessfully)
+                            _ = ObserveHandlerStartAsync(started, handler, logger);
                     }
                     catch (Exception ex)
                     {
@@ -337,11 +350,36 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Observe the outcome of a handler start that did not complete synchronously, which on the
+        /// server path means a TLS handshake still in flight. The accept loop has already moved on,
+        /// so this is the only place a handshake failure can be noticed: without it the exception
+        /// would be unobserved and the handler would be left registered.
+        /// </summary>
+        /// <param name="started">The task returned by the handler's asynchronous start.</param>
+        /// <param name="handler">The handler to dispose if the start fails.</param>
+        /// <param name="logger">Logger, may be null.</param>
+        static async Task ObserveHandlerStartAsync(Task started, ServerTcpNetworkHandler handler, ILogger logger)
+        {
+            try
+            {
+                await started.ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                // Logged at debug rather than error: a failed handshake is a client-caused event on
+                // a public endpoint, so at error level a scanner could flood the log.
+                logger?.LogDebug(ex, "TLS handshake did not complete for an accepted connection");
+
+                // Idempotent, and the handshake's own failure path disposes as well.
+                handler.Dispose();
+            }
+        }
+
+        /// <summary>
         /// RESP error returned to a client refused because the connection limit was reached.
         /// Matches the Redis wire text so existing client error handling applies unchanged.
         /// </summary>
         static readonly byte[] MaxClientsReachedError = "-ERR max number of clients reached\r\n"u8.ToArray();
-
         /// <summary>
         /// Refuse a connection that exceeded the configured connection limit, telling the client
         /// why before closing so the failure is diagnosable rather than an unexplained reset.
