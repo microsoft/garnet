@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using Garnet.common;
 using Garnet.server;
 
 namespace Garnet
@@ -22,7 +23,7 @@ namespace Garnet
                 // Start the server
                 server.Start();
 
-                Thread.Sleep(Timeout.Infinite);
+                AsyncUtils.BlockingWait(server.ShutdownCompletion);
             }
             catch (Exception ex)
             {

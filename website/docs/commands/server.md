@@ -456,3 +456,21 @@ MONITOR is a debugging command that streams back every command processed by the 
 Non-standard return value. Dumps the received commands in an infinite flow.
 
 ---
+
+### SHUTDOWN
+
+#### Syntax
+
+```bash
+SHUTDOWN [NOSAVE | SAVE] [NOW] [FORCE] [ABORT]
+```
+
+Stops the server after allowing replicas to catch up and completing configured persistence. `NOSAVE` skips a checkpoint, while `SAVE` forces one. `NOW` skips the replica synchronization wait, `FORCE` continues after a persistence error, and `ABORT` cancels a shutdown before persistence begins.
+
+The connection issuing a successful shutdown is closed without a response.
+
+#### Resp Reply
+
+No reply is returned on success. Errors are returned for invalid options or an unsuccessful shutdown.
+
+---

@@ -11,6 +11,7 @@ using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
+using System.Threading.Tasks;
 using Garnet.cluster;
 using Garnet.common;
 using Garnet.networking;
@@ -49,6 +50,14 @@ namespace Garnet
         private readonly ILoggerFactory loggerFactory;
         private readonly bool cleanupDir;
         private bool disposeLoggerFactory;
+        private int disposeStarted;
+        private int shutdownRequested;
+        private readonly TaskCompletionSource shutdownCompletion = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        /// <summary>
+        /// Completes when the server has stopped and released its resources.
+        /// </summary>
+        public Task ShutdownCompletion => shutdownCompletion.Task;
         protected readonly LightEpoch storeEpoch, pubSubEpoch;
 
         /// <summary>
@@ -299,6 +308,11 @@ namespace Garnet
                 createDatabaseDelegate: createDatabaseDelegate,
                 clusterFactory: clusterFactory,
                 loggerFactory: loggerFactory);
+            storeWrapper.ShutdownRequested = () =>
+            {
+                if (Interlocked.Exchange(ref shutdownRequested, 1) == 0)
+                    _ = Task.Run(() => Dispose(false));
+            };
 
             if (logger != null)
             {
@@ -550,20 +564,32 @@ namespace Garnet
         /// <param name="deleteDir">Whether to delete logs and checkpoints</param>
         public void Dispose(bool deleteDir = true)
         {
-            InternalDispose();
-            if (deleteDir)
+            if (Interlocked.CompareExchange(ref disposeStarted, 1, 0) != 0)
+                return;
+            try
             {
-                logFactory?.Delete(new FileDescriptor { directoryName = "" });
-                if (opts.CheckpointDir != opts.LogDir && !string.IsNullOrEmpty(opts.CheckpointDir))
+                InternalDispose();
+                if (deleteDir && Volatile.Read(ref shutdownRequested) == 0)
                 {
-                    var checkpointDeviceFactory = opts.DeviceFactoryCreator.Create(opts.CheckpointDir);
-                    checkpointDeviceFactory.Delete(new FileDescriptor { directoryName = "" });
+                    logFactory?.Delete(new FileDescriptor { directoryName = "" });
+                    if (opts.CheckpointDir != opts.LogDir && !string.IsNullOrEmpty(opts.CheckpointDir))
+                    {
+                        var checkpointDeviceFactory = opts.DeviceFactoryCreator.Create(opts.CheckpointDir);
+                        checkpointDeviceFactory.Delete(new FileDescriptor { directoryName = "" });
+                    }
                 }
+                shutdownCompletion.TrySetResult();
+            }
+            catch (Exception ex)
+            {
+                shutdownCompletion.TrySetException(ex);
+                throw;
             }
         }
 
         private void InternalDispose()
         {
+            storeWrapper?.StopClientPause();
             // Phase 1: Stop listening on all servers to free ports immediately.
             for (var i = 0; i < servers.Length; i++)
                 servers[i]?.Close();

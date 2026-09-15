@@ -157,6 +157,21 @@ namespace Garnet.server
         private IDatabaseManager databaseManager;
         SingleWriterMultiReaderLock databaseManagerLock;
 
+        internal readonly ClientPauseManager clientPause = new();
+        internal readonly object shutdownLock = new();
+        internal CancellationTokenSource shutdownCancellation;
+        internal bool shutdownFinalizing;
+
+        /// <summary>
+        /// Requests that the owning host close this server after a successful SHUTDOWN.
+        /// </summary>
+        public Action ShutdownRequested { get; set; }
+
+        /// <summary>
+        /// Release paused clients before the host drains network handlers.
+        /// </summary>
+        public void StopClientPause() => clientPause.Stop();
+
         internal readonly CollectionItemBroker itemBroker;
         internal readonly CustomCommandManager customCommandManager;
         internal readonly GarnetServerMonitor monitor;
@@ -243,7 +258,7 @@ namespace Garnet.server
             this.slowLogContainer = new SlowLogContainer(serverOptions.SlowLogMaxEntries);
 
             if (!serverOptions.DisableObjects)
-                this.itemBroker = new CollectionItemBroker();
+                this.itemBroker = new CollectionItemBroker(clientPause);
 
             // Initialize store scripting cache
             if (serverOptions.EnableLua)
@@ -734,7 +749,11 @@ namespace Garnet.server
                 {
                     if (token.IsCancellationRequested) return;
 
-                    databaseManager.ExecuteObjectCollection();
+                    using (var activity = clientPause.Register())
+                    {
+                        if (activity.TryEnter(true))
+                            databaseManager.ExecuteObjectCollection();
+                    }
 
                     await Task.Delay(TimeSpan.FromSeconds(objectCollectFrequencySecs), token).ConfigureAwait(false);
                 }
@@ -758,7 +777,11 @@ namespace Garnet.server
                 {
                     if (token.IsCancellationRequested) return;
 
-                    databaseManager.ExpiredKeyDeletionScan();
+                    using (var activity = clientPause.Register())
+                    {
+                        if (activity.TryEnter(true))
+                            databaseManager.ExpiredKeyDeletionScan();
+                    }
 
                     await Task.Delay(TimeSpan.FromSeconds(expiredKeyDeletionScanFrequencySecs), token).ConfigureAwait(false);
                 }
@@ -908,6 +931,7 @@ namespace Garnet.server
         /// </summary>
         public void Dispose()
         {
+            clientPause.Stop();
             if (disposed)
                 return;
             disposed = true;

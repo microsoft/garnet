@@ -73,14 +73,14 @@ Legend: ➕ = supported, ➖ = not supported.
 |  | [LIST](client.md#client-list) | ➕ |  |
 |  | NO-EVICT | ➖ |  |
 |  | NO-TOUCH | ➖ |  |
-|  | PAUSE | ➖ |  |
+|  | [PAUSE](client.md#client-pause) | ➕ |  |
 |  | REPLY | ➖ |  |
 |  | [SETINFO](client.md#client-setinfo) | ➕ |  |
 |  | [SETNAME](client.md#client-setname) | ➕ |  |
 |  | TRACKING | ➖ |  |
 |  | TRACKINGINFO | ➖ |  |
 |  | [UNBLOCK](client.md#client-unblock) | ➕ |  |
-|  | UNPAUSE | ➖ |  |
+|  | [UNPAUSE](client.md#client-unpause) | ➕ |  |
 | <span id="cluster">**CLUSTER**</span> | [ADDSLOTS](cluster.md#cluster-addslots) | ➕ |  |
 |  | [ADDSLOTSRANGE](cluster.md#cluster-addslotsrange) | ➕ |  |
 |  | [ASKING](cluster.md#asking) | ➕ |  |
@@ -294,7 +294,7 @@ Legend: ➕ = supported, ➖ = not supported.
 |  | RESTORE-ASKING | ➖ |  |
 |  | [ROLE](server.md#role) | ➕ |  |
 |  | [SAVE](checkpoint.md#save) | ➕ |  |
-|  | SHUTDOWN | ➖ |  |
+|  | [SHUTDOWN](server.md#shutdown) | ➕ |  |
 |  | [SLAVEOF](server.md#slaveof) | ➕ | (Deprecated) |
 |  | [SWAPDB](server.md#swapdb) | ➕ |  |
 |  | SYNC | ➖ |  |

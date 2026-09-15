@@ -563,6 +563,13 @@
         ]
       },
       {
+        "Command": "CLIENT_PAUSE",
+        "Name": "CLIENT|PAUSE",
+        "Arity": -3,
+        "Flags": "Admin, Loading, NoScript, Stale",
+        "AclCategories": "Admin, Connection, Dangerous, Slow"
+      },
+      {
         "Command": "CLIENT_SETINFO",
         "Name": "CLIENT|SETINFO",
         "Arity": 4,
@@ -588,6 +595,13 @@
         "Command": "CLIENT_UNBLOCK",
         "Name": "CLIENT|UNBLOCK",
         "Arity": -3,
+        "Flags": "Admin, Loading, NoScript, Stale",
+        "AclCategories": "Admin, Connection, Dangerous, Slow"
+      },
+      {
+        "Command": "CLIENT_UNPAUSE",
+        "Name": "CLIENT|UNPAUSE",
+        "Arity": 2,
         "Flags": "Admin, Loading, NoScript, Stale",
         "AclCategories": "Admin, Connection, Dangerous, Slow"
       }
@@ -4809,6 +4823,13 @@
       }
     ],
     "StoreType": "Main"
+  },
+  {
+    "Command": "SHUTDOWN",
+    "Name": "SHUTDOWN",
+    "Arity": -1,
+    "Flags": "Admin, Loading, NoMulti, NoScript, Stale, AllowBusy",
+    "AclCategories": "Admin, Dangerous, Slow"
   },
   {
     "Command": "SINTER",

@@ -58,6 +58,8 @@ namespace Garnet.server
         // Integer to indicate main loop status
         int mainLoopTaskStatus = MAIN_LOOP_NOT_STARTED;
 
+        readonly ClientPauseManager.Participant pauseParticipant;
+
         // Constants denoting status of main loop
         private const int MAIN_LOOP_NOT_STARTED = 0;
         private const int MAIN_LOOP_STARTED = 1;
@@ -69,6 +71,9 @@ namespace Garnet.server
         public CollectionItemBroker()
         {
         }
+
+        internal CollectionItemBroker(ClientPauseManager pauseManager)
+            => pauseParticipant = pauseManager.Register();
 
         /// <summary>
         /// Tries to get the observer associated with the given session ID.
@@ -708,7 +713,15 @@ namespace Garnet.server
                         }
                     }
 
-                    HandleBrokerEvent(ref nextEvent);
+                    pauseParticipant?.Enter(true);
+                    try
+                    {
+                        HandleBrokerEvent(ref nextEvent);
+                    }
+                    finally
+                    {
+                        pauseParticipant?.Exit();
+                    }
 
                     // Check if keysToObservers requires cleaning
                     if (keysToObserversTimeLastClean + keysToObserversTimeBetweenCleans < DateTime.Now.Ticks)
@@ -749,6 +762,7 @@ namespace Garnet.server
         /// <inheritdoc />
         public void Dispose()
         {
+            pauseParticipant?.Dispose();
             cts.Cancel();
             foreach (var observer in sessionIdToObserver.Values)
             {

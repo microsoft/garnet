@@ -169,3 +169,35 @@ Integer reply:
 * 0 if the client wasn't blocked
 
 ---
+
+### CLIENT PAUSE
+
+#### Syntax
+
+```bash
+    CLIENT PAUSE <timeout> [WRITE | ALL]
+```
+
+Pauses command processing for clients for the specified timeout in milliseconds. `ALL` is the default and pauses reads and writes; `WRITE` pauses writes while allowing reads. The command returns `OK` immediately, and `CLIENT UNPAUSE` can resume clients before the timeout expires.
+
+#### Resp Reply
+
+Simple string reply: OK.
+
+---
+
+### CLIENT UNPAUSE
+
+#### Syntax
+
+```bash
+    CLIENT UNPAUSE
+```
+
+Resumes clients paused by CLIENT PAUSE.
+
+#### Resp Reply
+
+Simple string reply: OK.
+
+---

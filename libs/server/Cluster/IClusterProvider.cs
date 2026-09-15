@@ -3,6 +3,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Threading;
 using System.Threading.Tasks;
 using Garnet.common;
 using Garnet.networking;
@@ -17,6 +18,11 @@ namespace Garnet.server
     /// </summary>
     public interface IClusterProvider : IDisposable
     {
+        /// <summary>
+        /// Give replicas a bounded opportunity to apply outstanding writes before shutdown.
+        /// </summary>
+        void WaitForReplicaSync(TimeSpan timeout, CancellationToken cancellationToken);
+
         /// <summary>
         /// Create cluster session
         /// </summary>

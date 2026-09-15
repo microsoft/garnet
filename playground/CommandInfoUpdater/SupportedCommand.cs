@@ -54,6 +54,8 @@ namespace CommandInfoUpdater
                 new("CLIENT|SETNAME", RespCommand.CLIENT_SETNAME),
                 new("CLIENT|SETINFO", RespCommand.CLIENT_SETINFO),
                 new("CLIENT|UNBLOCK", RespCommand.CLIENT_UNBLOCK),
+                new("CLIENT|PAUSE", RespCommand.CLIENT_PAUSE),
+                new("CLIENT|UNPAUSE", RespCommand.CLIENT_UNPAUSE),
             ]),
             new("CLUSTER", RespCommand.CLUSTER, StoreType.None,
             [
@@ -281,6 +283,7 @@ namespace CommandInfoUpdater
             new("SADD", RespCommand.SADD, StoreType.Object),
             new("SCARD", RespCommand.SCARD, StoreType.Object),
             new("SAVE", RespCommand.SAVE),
+            new("SHUTDOWN", RespCommand.SHUTDOWN),
             new("SCAN", RespCommand.SCAN, StoreType.All),
             new("SDIFF", RespCommand.SDIFF, StoreType.Object),
             new("SDIFFSTORE", RespCommand.SDIFFSTORE, StoreType.Object),
