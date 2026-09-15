@@ -48,9 +48,9 @@ namespace Garnet.server
                 {
                     if (storeWrapper.storeScriptCache.TryGetValue(scriptKey, out var globalScriptHandle))
                     {
-                        if (!sessionScriptCache.TryLoad(this, globalScriptHandle.ScriptData.Span, scriptKey, ref globalScriptHandle, out runner, out _))
+                        if (!sessionScriptCache.TryLoadCached(this, scriptKey, ref globalScriptHandle, out runner, out _))
                         {
-                            // TryLoad will have written an error out, it any
+                            // TryLoadCached will have written an error out, if any
                             //
                             // Note we DON'T dispose the script handle because this is just the session cache
                             _ = storeWrapper.storeScriptCache.TryRemove(scriptKey, out _);
@@ -118,9 +118,9 @@ namespace Garnet.server
 
             var sessionScriptHandle = globalScriptHandle;
 
-            if (!sessionScriptCache.TryLoad(this, script.ReadOnlySpan, onStackScriptKey, ref sessionScriptHandle, out var runner, out var digestOnHeap))
+            if (!sessionScriptCache.TryLoadSource(this, script.ReadOnlySpan, onStackScriptKey, ref sessionScriptHandle, out var runner, out var digestOnHeap))
             {
-                // TryLoad will have written any errors out
+                // TryLoadSource will have written any errors out
                 return true;
             }
             else if (sessionScriptHandle != globalScriptHandle)
@@ -278,9 +278,9 @@ namespace Garnet.server
             _ = storeWrapper.storeScriptCache.TryGetValue(onStackScriptHashKey, out var globalScriptHandle);
 
             var sessionScriptHandle = globalScriptHandle;
-            if (sessionScriptCache.TryLoad(this, source.ReadOnlySpan, onStackScriptHashKey, ref sessionScriptHandle, out _, out var digestOnHeap))
+            if (sessionScriptCache.TryLoadSource(this, source.ReadOnlySpan, onStackScriptHashKey, ref sessionScriptHandle, out _, out var digestOnHeap))
             {
-                // TryLoad will write any errors out
+                // TryLoadSource will write any errors out
 
                 // Add script to the global store dictionary if not already in there
                 if (globalScriptHandle != sessionScriptHandle)
@@ -330,6 +330,12 @@ namespace Garnet.server
             }
 
             return true;
+        }
+
+        internal void WriteLuaCompilationError(string error)
+        {
+            while (!RespWriteUtils.TryWriteError($"Compilation error: {error}", ref dcurr, dend))
+                SendAndReset();
         }
 
         /// <summary>

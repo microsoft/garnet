@@ -5,6 +5,14 @@ using System;
 
 namespace Garnet.server
 {
+    internal enum LuaScriptChunkKind : byte
+    {
+        Text,
+        GarnetGeneratedBinary
+    }
+
+    internal readonly record struct LuaScriptChunk(ReadOnlyMemory<byte> Data, LuaScriptChunkKind Kind);
+
     /// <summary>
     /// Used to track the lifetime a shared Lua script, which may end up backing multiple <see cref="LuaRunner"/>s.
     /// </summary>
@@ -19,13 +27,24 @@ namespace Garnet.server
         public bool IsDisposed { get; private set; }
 
         /// <summary>
-        /// Source (or compiled source) for the associated Lua script.
+        /// Source or internally compiled data for the associated Lua script.
         /// </summary>
-        public ReadOnlyMemory<byte> ScriptData { get; }
+        public ReadOnlyMemory<byte> ScriptData => Chunk.Data;
 
+        internal LuaScriptChunk Chunk { get; }
+
+        /// <summary>
+        /// Creates a handle for Lua source text.
+        /// </summary>
+        /// <param name="scriptData">Lua source text.</param>
         public LuaScriptHandle(ReadOnlyMemory<byte> scriptData)
+            : this(new LuaScriptChunk(scriptData, LuaScriptChunkKind.Text))
         {
-            ScriptData = scriptData;
+        }
+
+        internal LuaScriptHandle(LuaScriptChunk chunk)
+        {
+            Chunk = chunk;
         }
 
         /// <inheritdoc/>

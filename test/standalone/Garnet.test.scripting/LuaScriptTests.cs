@@ -1499,6 +1499,56 @@ return retArray";
             ClassicAssert.AreEqual("hello lua", success);
         }
 
+        [Test]
+        public void ScriptInputsRejectPrecompiledLuaBytecode()
+        {
+            const string Key = "binary-chunk-key";
+            const string Script = "return string.dump(function() return redis.call('SET', KEYS[1], 'binary-chunk-executed') end, true)";
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase();
+
+            var binaryChunk = (byte[])db.ScriptEvaluate(Script);
+            ClassicAssert.GreaterOrEqual(binaryChunk.Length, 4);
+            CollectionAssert.AreEqual(new byte[] { 0x1B, (byte)'L', (byte)'u', (byte)'a' }, binaryChunk.AsSpan(0, 4).ToArray());
+
+            var exception = ClassicAssert.Throws<RedisServerException>(() => db.Execute("EVAL", [binaryChunk, 1, Key]));
+            StringAssert.Contains("binary chunk", exception.Message);
+            ClassicAssert.IsFalse(db.KeyExists(Key));
+
+            var hash = Convert.ToHexString(SHA1.HashData(binaryChunk)).ToLowerInvariant();
+            exception = ClassicAssert.Throws<RedisServerException>(() => db.Execute("SCRIPT", ["LOAD", binaryChunk]));
+            StringAssert.Contains("binary chunk", exception.Message);
+
+            var exists = (RedisResult[])db.Execute("SCRIPT", ["EXISTS", hash]);
+            ClassicAssert.AreEqual(0, (int)exists[0]);
+        }
+
+        [Test]
+        public void HostInsertedScriptSourceIsCompiledAsText()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase();
+            var source = "return 2"u8;
+            var hash = Convert.ToHexString(SHA1.HashData(source)).ToLowerInvariant();
+            var digest = GC.AllocateUninitializedArray<byte>(SessionScriptCache.SHA1Len, pinned: true);
+            _ = Encoding.ASCII.GetBytes(hash, digest);
+
+            ClassicAssert.IsTrue(server.Provider.StoreWrapper.storeScriptCache.TryAdd(new ScriptHashKey(digest), new LuaScriptHandle(source.ToArray())));
+            ClassicAssert.AreEqual(2, (int)db.Execute("EVALSHA", hash, 0));
+        }
+
+        [Test]
+        public void EvalUsesFullSourceLength()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase();
+            var source = Encoding.UTF8.GetBytes("return 1\0return 2");
+
+            var exception = ClassicAssert.Throws<RedisServerException>(() => db.Execute("EVAL", [source, 0]));
+            StringAssert.StartsWith("Compilation error:", exception.Message);
+        }
+
         [TestCase(2)]
         [TestCase(3)]
         public void LuaToResp2Conversions(int redisSetRespVersion)

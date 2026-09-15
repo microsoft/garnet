@@ -314,8 +314,8 @@ end
 -- force new 'global' environment to be readonly
 recursively_readonly_table(sandbox_env)
 -- responsible for sandboxing user provided code
-function load_sandboxed(source)
-    local rawFunc, err = load(source, nil, nil, sandbox_env)
+function load_sandboxed(source, mode)
+    local rawFunc, err = load(source, nil, mode, sandbox_env)
 
     return err, rawFunc
 end
@@ -448,7 +448,7 @@ end
 
                 compilingState.Remove(1);
 
-                if (compilingState.LoadString(Encoding.UTF8.GetBytes(finalLoaderBlock)) != LuaStatus.OK)
+                if (compilingState.LoadTextBuffer(Encoding.UTF8.GetBytes(finalLoaderBlock)) != LuaStatus.OK)
                 {
                     throw new InvalidOperationException("Compiling function should not fail");
                 }
@@ -479,7 +479,7 @@ end
         /// 
         /// These ops are faster to load into a runtime than parsing the whole source file again.
         /// </summary>
-        internal static byte[] CompileSource(ReadOnlySpan<byte> source)
+        internal static bool TryCompileSource(ReadOnlySpan<byte> source, out LuaScriptChunk compiledSource, out string error)
         {
             // This is equivalent to calling 
             //
@@ -496,23 +496,39 @@ end
 
             state.Remove(1);
 
-            if (state.LoadString(source) != LuaStatus.OK)
+            if (state.LoadTextBuffer(source) != LuaStatus.OK)
             {
-                // If we're going to fail, just keep the source as is - a future load attempt will fail it too
-                return source.ToArray();
+                compiledSource = default;
+                error = GetError(state);
+                return false;
             }
 
             state.PushBoolean(true);
 
             if (state.PCall(2, 1) != LuaStatus.OK)
             {
-                // If we're going to fail, just keep the source as is - a future load attempt will fail it too
-                return source.ToArray();
+                compiledSource = default;
+                error = GetError(state);
+                return false;
             }
 
             state.KnownStringToBuffer(1, out var ops);
 
-            return ops.ToArray();
+            compiledSource = new(ops.ToArray(), LuaScriptChunkKind.GarnetGeneratedBinary);
+            error = null;
+            return true;
+
+            static string GetError(LuaStateWrapper state)
+            {
+                var errorIndex = state.StackTop;
+                if (errorIndex >= 1 && state.Type(errorIndex) == LuaType.String)
+                {
+                    state.KnownStringToBuffer(errorIndex, out var errorBuffer);
+                    return Encoding.UTF8.GetString(errorBuffer);
+                }
+
+                return "cause unknown";
+            }
         }
     }
 }

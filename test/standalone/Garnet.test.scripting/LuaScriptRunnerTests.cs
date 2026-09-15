@@ -154,6 +154,25 @@ namespace Garnet.test
         }
 
         [Test]
+        public void TryCompileSourceRejectsBinaryAndInvalidInput()
+        {
+            ClassicAssert.IsTrue(LuaRunner.TryCompileSource("return 1"u8, out var compiledSource, out var compileError));
+            ClassicAssert.IsNull(compileError);
+            ClassicAssert.AreEqual(LuaScriptChunkKind.GarnetGeneratedBinary, compiledSource.Kind);
+            ClassicAssert.GreaterOrEqual(compiledSource.Data.Length, 4);
+            CollectionAssert.AreEqual(new byte[] { 0x1B, (byte)'L', (byte)'u', (byte)'a' }, compiledSource.Data.Span[..4].ToArray());
+
+            ClassicAssert.IsFalse(LuaRunner.TryCompileSource(compiledSource.Data.Span, out var rejectedBinary, out var binaryError));
+            ClassicAssert.AreEqual(default(LuaScriptChunk), rejectedBinary);
+            StringAssert.Contains("binary chunk", binaryError);
+
+            var invalidSource = "return )"u8;
+            ClassicAssert.IsFalse(LuaRunner.TryCompileSource(invalidSource, out var rejectedSource, out var sourceError));
+            ClassicAssert.AreEqual(default(LuaScriptChunk), rejectedSource);
+            ClassicAssert.IsNotEmpty(sourceError);
+        }
+
+        [Test]
         public void CanRunScript()
         {
             string[] keys = null;
