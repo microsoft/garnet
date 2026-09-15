@@ -20,7 +20,7 @@ namespace Garnet.cluster
                 body = writePad;
             else
                 ReadInto(device, pool, 0, out body, size + sizeof(int), logger);
-            return new Span<byte>(body)[sizeof(int)..].ToArray();
+            return new Span<byte>(body, sizeof(int), size).ToArray();
         }
 
         /// <summary>

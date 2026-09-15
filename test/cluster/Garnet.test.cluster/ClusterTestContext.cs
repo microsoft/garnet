@@ -288,6 +288,9 @@ namespace Garnet.test.cluster
         /// <param name="expiredObjectCollectionFrequencySecs"></param>
         /// <param name="clusterPreferredEndpointType"></param>
         /// <param name="useClusterAnnounceHostname"></param>
+        /// <param name="clusterClientAnnounceIp"></param>
+        /// <param name="clusterClientAnnouncePortBase"></param>
+        /// <param name="clusterClientAnnounceHostname"></param>
         /// <param name="vectorSetReplayTaskCount"></param>
         /// <param name="threadPoolMinIOCompletionThreads"></param>
         public void CreateInstances(
@@ -340,6 +343,9 @@ namespace Garnet.test.cluster
             int expiredObjectCollectionFrequencySecs = 0,
             ClusterPreferredEndpointType clusterPreferredEndpointType = ClusterPreferredEndpointType.Ip,
             bool useClusterAnnounceHostname = false,
+            string clusterClientAnnounceIp = null,
+            int clusterClientAnnouncePortBase = 0,
+            string clusterClientAnnounceHostname = null,
             int vectorSetReplayTaskCount = 0,
             int threadPoolMinIOCompletionThreads = 0,
             bool enableRangeIndexPreview = false)
@@ -401,6 +407,9 @@ namespace Garnet.test.cluster
                 expiredObjectCollectionFrequencySecs: expiredObjectCollectionFrequencySecs,
                 clusterPreferredEndpointType: clusterPreferredEndpointType,
                 clusterAnnounceHostname: useClusterAnnounceHostname ? "localhost" : null,
+                clusterClientAnnounceIp: clusterClientAnnounceIp,
+                clusterClientAnnouncePortBase: clusterClientAnnouncePortBase,
+                clusterClientAnnounceHostname: clusterClientAnnounceHostname,
                 vectorSetReplayTaskCount: vectorSetReplayTaskCount,
                 threadPoolMinIOCompletionThreads: threadPoolMinIOCompletionThreads,
                 enableRangeIndexPreview: enableRangeIndexPreview);
@@ -461,6 +470,11 @@ namespace Garnet.test.cluster
         /// <param name="certificates"></param>
         /// <param name="clusterCreds"></param>
         /// <param name="threadPoolMinIOCompletionThreads"></param>
+        /// <param name="clusterPreferredEndpointType"></param>
+        /// <param name="clusterAnnounceHostname"></param>
+        /// <param name="clusterClientAnnounceIp"></param>
+        /// <param name="clusterClientAnnouncePort"></param>
+        /// <param name="clusterClientAnnounceHostname"></param>
         /// <returns></returns>
         public GarnetServer CreateInstance(
             EndPoint endpoint,
@@ -492,7 +506,12 @@ namespace Garnet.test.cluster
             X509CertificateCollection certificates = null,
             ServerCredential clusterCreds = new ServerCredential(),
             int threadPoolMinIOCompletionThreads = 0,
-            bool enableRangeIndexPreview = false)
+            bool enableRangeIndexPreview = false,
+            ClusterPreferredEndpointType clusterPreferredEndpointType = ClusterPreferredEndpointType.Ip,
+            string clusterAnnounceHostname = null,
+            string clusterClientAnnounceIp = null,
+            int clusterClientAnnouncePort = 0,
+            string clusterClientAnnounceHostname = null)
         {
             var opts = TestUtils.GetGarnetServerOptions(
                 TestFolder,
@@ -526,6 +545,11 @@ namespace Garnet.test.cluster
                 authPassword: clusterCreds.password,
                 certificates: certificates,
                 clusterAnnounceEndpoint: clusterAnnounceEndpoint,
+                clusterPreferredEndpointType: clusterPreferredEndpointType,
+                clusterAnnounceHostname: clusterAnnounceHostname,
+                clusterClientAnnounceIp: clusterClientAnnounceIp,
+                clusterClientAnnouncePort: clusterClientAnnouncePort,
+                clusterClientAnnounceHostname: clusterClientAnnounceHostname,
                 vectorSetReplayTaskCount: vectorSetReplayTaskCount,
                 threadPoolMinIOCompletionThreads: threadPoolMinIOCompletionThreads,
                 enableRangeIndexPreview: enableRangeIndexPreview,

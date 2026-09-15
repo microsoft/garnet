@@ -46,17 +46,29 @@ namespace Garnet
         public string Address { get; set; }
 
         [IntRangeValidation(0, 65535)]
-        [Option("cluster-announce-port", Required = false, HelpText = "Port that this node advertises to other nodes to connect to for gossiping.")]
+        [Option("cluster-announce-port", Required = false, HelpText = "Port that this node advertises for node-to-node cluster traffic and, by default, client responses.")]
         public int ClusterAnnouncePort { get; set; }
 
         [IpAddressValidation(false)]
-        [Option("cluster-announce-ip", Required = false, HelpText = "IP address that this node advertises to other nodes to connect to for gossiping.")]
+        [Option("cluster-announce-ip", Required = false, HelpText = "IP address that this node advertises for node-to-node cluster traffic and, by default, client responses.")]
         public string ClusterAnnounceIp { get; set; }
 
-        [Option("cluster-announce-hostname", Required = false, HelpText = "Hostname that this node advertises to other nodes to connect to for gossiping.")]
+        [Option("cluster-announce-hostname", Required = false, HelpText = "Hostname of this node, used in client responses by default.")]
         public string ClusterAnnounceHostname { get; set; }
 
-        [Option("cluster-preferred-endpoint-type", Required = false, HelpText = "Determines the endpoint type to be advertised to other nodes. (value options: ip, hostname, unknown)")]
+        [ClientEndpointValidation]
+        [Option("cluster-client-announce-ip", Required = false, HelpText = "IP address that this node advertises to clients (default: cluster announce address).")]
+        public string ClusterClientAnnounceIp { get; set; }
+
+        [IntRangeValidation(0, 65535)]
+        [Option("cluster-client-announce-port", Required = false, HelpText = "Port that this node advertises to clients (default: 0 uses the cluster announce port).")]
+        public int ClusterClientAnnouncePort { get; set; }
+
+        [ClientEndpointValidation(hostname: true)]
+        [Option("cluster-client-announce-hostname", Required = false, HelpText = "ASCII DNS hostname that this node advertises to clients (default: cluster announce hostname).")]
+        public string ClusterClientAnnounceHostname { get; set; }
+
+        [Option("cluster-preferred-endpoint-type", Required = false, HelpText = "Determines the endpoint type returned in client redirects, CLUSTER SLOTS, and CLUSTER SHARDS. (value options: ip, hostname, unknown)")]
         public ClusterPreferredEndpointType ClusterPreferredEndpointType { get; set; }
 
         [MemorySizeValidation]
@@ -888,6 +900,9 @@ namespace Garnet
                 EndPoints = endpoints,
                 ClusterAnnounceEndpoint = clusterAnnounceEndpoint?[0],
                 ClusterAnnounceHostname = ClusterAnnounceHostname,
+                ClusterClientAnnounceIp = ClusterClientAnnounceIp,
+                ClusterClientAnnouncePort = ClusterClientAnnouncePort,
+                ClusterClientAnnounceHostname = ClusterClientAnnounceHostname,
                 ClusterPreferredEndpointType = ClusterPreferredEndpointType,
                 LogMemorySize = LogMemorySize,
                 PageSize = PageSize,
