@@ -45,6 +45,8 @@ if ($Help) {
     Write-Host "  Ratio            - SET:GET ratio (default: 1:9)"
     Write-Host "  KeyPattern       - Key pattern (default: R:R)"
     Write-Host "  Cluster          - Enable cluster mode (true/false)"
+    Write-Host "  Tls              - Enable TLS with CA validation (true/false)"
+    Write-Host "  TlsHost          - Expected TLS server identity (default: azurebench-server)"
     Write-Host "  SkipLoad         - Skip load phase (true/false)"
     Write-Host ""
     Write-Host "Flags:"
@@ -121,10 +123,39 @@ $testTime        = $config["TestTime"]        ?? "15"
 $ratio           = $config["Ratio"]           ?? "1:9"
 $keyPattern      = $config["KeyPattern"]      ?? "R:R"
 $clusterMode     = $config["Cluster"]         ?? "false"
+$tlsValue        = $config["Tls"]             ?? "false"
+$tlsHost         = $config["TlsHost"]         ?? "azurebench-server"
 
 if ($config["SkipLoad"] -eq "true") { $SkipLoad = $true }
 
+if ($clusterMode -notin @("true", "false")) {
+    Write-Error "Cluster must be 'true' or 'false', got '$clusterMode'."
+    exit 1
+}
+if ($tlsValue -notin @("true", "false")) {
+    Write-Error "Tls must be 'true' or 'false', got '$tlsValue'."
+    exit 1
+}
+$tlsEnabled = $tlsValue -eq "true"
+if ($tlsEnabled -and $tlsHost -notmatch '^[a-zA-Z0-9](?:[a-zA-Z0-9.-]*[a-zA-Z0-9])?$') {
+    Write-Error "TlsHost is not a valid DNS name: '$tlsHost'."
+    exit 1
+}
+if ($tlsEnabled -and $benchHost -notmatch '^[a-zA-Z0-9](?:[a-zA-Z0-9.:-]*[a-zA-Z0-9])?$') {
+    Write-Error "Server is not a valid host or IP address: '$benchHost'."
+    exit 1
+}
+if ($tlsEnabled -and $benchPort -notmatch '^\d+$') {
+    Write-Error "Port must be numeric for TLS runs, got '$benchPort'."
+    exit 1
+}
+
 $clusterFlag = if ($clusterMode -eq "true") { "--cluster-mode" } else { "" }
+$tlsFlags = if ($tlsEnabled) {
+    "--tls --cacert=/opt/azurebench/tls/ca.crt --sni=$tlsHost"
+} else {
+    ""
+}
 
 # --- Derive host list from base + count ---
 $sshHosts = @()
@@ -165,9 +196,53 @@ if ($sshHostBase -match '^\[(.+)\]$') {
 # --- Build memtier commands ---
 $loadCmd = "memtier_benchmark -s $benchHost --port=$benchPort --ratio=1:0 --pipeline=$pipeline --data-size=$dataSize --clients=$clients --threads=$threads --key-minimum=1 --key-maximum=$dbSize --key-pattern=P:P --run-count=1 --hide-histogram --requests=allkeys"
 if ($clusterFlag) { $loadCmd += " $clusterFlag" }
+if ($tlsFlags) { $loadCmd += " $tlsFlags" }
 
 $benchCmd = "memtier_benchmark -s $benchHost --port=$benchPort --ratio=$ratio --pipeline=$pipeline --data-size=$dataSize --clients=$clients --threads=$threads --test-time=$testTime --run-count=1 --hide-histogram --key-minimum=1 --key-maximum=$dbSize --key-pattern=$keyPattern"
 if ($clusterFlag) { $benchCmd += " $clusterFlag" }
+if ($tlsFlags) { $benchCmd += " $tlsFlags" }
+
+# --- SSH options ---
+# UserKnownHostsFile=NUL prevents parallel ssh sessions from racing on a shared
+# known_hosts file (rename to .old fails under contention, causing false failures).
+$sshOpts = @('-o', 'StrictHostKeyChecking=no', '-o', 'BatchMode=yes', '-o', 'UserKnownHostsFile=NUL')
+
+if ($tlsEnabled) {
+    $tlsPreflightScript = @"
+`$ErrorActionPreference = 'Stop'
+`$deploymentFile = '/opt/deploy-actions/deployment.env'
+if (-not (Test-Path `$deploymentFile)) { throw "Deployment role file not found: `$deploymentFile" }
+`$roleLine = Select-String -Path `$deploymentFile -Pattern '^DEPLOYMENT_ROLE=' | Select-Object -First 1
+`$role = if (`$roleLine) { (`$roleLine.Line -replace '^DEPLOYMENT_ROLE=', '').Trim('"') } else { '' }
+if (`$role -ne 'client') { throw "memtier TLS requires DEPLOYMENT_ROLE=client; this node is '`$role'." }
+foreach (`$path in @('/opt/azurebench/tls/ca.crt', '/opt/azurebench/tls/metadata.json')) {
+    if (-not (Test-Path `$path -PathType Leaf)) { throw "Required TLS file not found: `$path" }
+}
+`$metadata = Get-Content /opt/azurebench/tls/metadata.json -Raw | ConvertFrom-Json
+if (`$metadata.status -ne 'complete') { throw 'TLS metadata is incomplete.' }
+if (`$metadata.targetHost -ne '$tlsHost') { throw "TLS metadata target '`$(`$metadata.targetHost)' does not match '$tlsHost'." }
+`$memtier = Get-Command memtier_benchmark -ErrorAction SilentlyContinue
+if (-not `$memtier) { throw 'memtier_benchmark is not installed.' }
+if (-not (Get-Command openssl -ErrorAction SilentlyContinue)) { throw 'openssl is not installed.' }
+`$memtierHelp = memtier_benchmark --help 2>&1 | Out-String
+foreach (`$option in @('--tls', '--cacert', '--sni')) {
+    if (`$memtierHelp -notmatch [regex]::Escape(`$option)) { throw "memtier_benchmark does not support `$option; rebuild the client tools." }
+}
+`$verification = '' | openssl s_client -connect '${benchHost}:${benchPort}' -servername '$tlsHost' -CAfile /opt/azurebench/tls/ca.crt -verify_hostname '$tlsHost' -verify_return_error 2>&1
+if (`$LASTEXITCODE -ne 0 -or (`$verification -join "`n") -notmatch 'Verification: OK') {
+    throw "TLS identity validation failed for ${benchHost}:${benchPort}: `$(`$verification -join [Environment]::NewLine)"
+}
+"@
+    $tlsPreflightEncoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($tlsPreflightScript))
+    Write-Host "Validating TLS clients..." -ForegroundColor DarkGray
+    foreach ($clientHost in ($sshHosts | Select-Object -Unique)) {
+        $preflightOutput = ssh -n -i $sshKey $sshOpts "${sshUser}@${clientHost}" "pwsh -NoProfile -NonInteractive -EncodedCommand $tlsPreflightEncoded" 2>&1
+        if ($LASTEXITCODE -ne 0) {
+            Write-Error "TLS preflight failed on '$clientHost': $($preflightOutput -join [Environment]::NewLine)"
+            exit 1
+        }
+    }
+}
 
 # --- Print summary ---
 $instances = $sshHosts.Count
@@ -192,13 +267,9 @@ Write-Host "  TestTime     : $testTime"
 Write-Host "  Ratio        : $ratio"
 Write-Host "  KeyPattern   : $keyPattern"
 Write-Host "  Cluster      : $clusterMode"
+Write-Host "  TLS          : $(if ($tlsEnabled) { "enabled ($tlsHost)" } else { "disabled" })"
 Write-Host "================================" -ForegroundColor Cyan
 Write-Host ""
-
-# --- SSH options ---
-# UserKnownHostsFile=NUL prevents parallel ssh sessions from racing on a shared
-# known_hosts file (rename to .old fails under contention, causing false failures).
-$sshOpts = @('-o', 'StrictHostKeyChecking=no', '-o', 'BatchMode=yes', '-o', 'UserKnownHostsFile=NUL')
 
 # --- Results directory ---
 $resultsDir = "$PSScriptRoot\..\results"
@@ -457,7 +528,7 @@ Write-Host ""
 $summaryFile = "$runDir\summary.txt"
 @"
 memtier-benchmark summary ($runTimestamp)
-pipeline: $pipeline, threads: $threads, clients: $clients, dataSize: $dataSize, dbSize: $dbSize, testTime: $testTime, ratio: $ratio
+pipeline: $pipeline, threads: $threads, clients: $clients, dataSize: $dataSize, dbSize: $dbSize, testTime: $testTime, ratio: $ratio, tls: $tlsEnabled, tlsHost: $tlsHost
 Total ops/sec: $($totalOps.ToString('N2'))
 Total KB/sec: $($totalKbSec.ToString('N2'))
 Avg latency: $($avgLatency.ToString('N3'))

@@ -19,12 +19,14 @@ param(
     [int]$DataSize = 8,
     [int]$TestTime = 15,
     [switch]$Cluster,
+    [switch]$Tls,
+    [string]$TlsHost = 'azurebench-server',
     [switch]$SkipLoad,
     [switch]$Help
 )
 
 if ($Help -or (-not $Address -and -not $Port)) {
-    Write-Host "Usage: memtier-bench.ps1 -Address <ip> -Port <n> [-Threads <n>] [-Clients <n>] [-Pipeline <n>] [-DbSize <n>] [-DataSize <n>] [-TestTime <n>] [-Cluster] [-SkipLoad]"
+    Write-Host "Usage: memtier-bench.ps1 -Address <ip> -Port <n> [-Threads <n>] [-Clients <n>] [-Pipeline <n>] [-DbSize <n>] [-DataSize <n>] [-TestTime <n>] [-Cluster] [-Tls] [-TlsHost <name>] [-SkipLoad]"
     Write-Host ""
     Write-Host "Runs memtier_benchmark with load and benchmark phases."
     Write-Host ""
@@ -38,6 +40,8 @@ if ($Help -or (-not $Address -and -not $Port)) {
     Write-Host "  -DataSize   Value size in bytes (default: 8)"
     Write-Host "  -TestTime   Benchmark duration in seconds (default: 15)"
     Write-Host "  -Cluster    Enable cluster mode"
+    Write-Host "  -Tls        Enable TLS with CA validation"
+    Write-Host "  -TlsHost    Expected TLS server identity (default: azurebench-server)"
     Write-Host "  -SkipLoad   Skip the key loading phase"
     Write-Host "  -Help       Show this help message"
     return
@@ -49,6 +53,46 @@ if (-not $Address -or -not $Port) {
 
 $ErrorActionPreference = "Stop"
 $clusterFlag = if ($Cluster) { "--cluster-mode" } else { "" }
+$tlsArgs = @()
+
+if ($Tls) {
+    if ($TlsHost -notmatch '^[a-zA-Z0-9](?:[a-zA-Z0-9.-]*[a-zA-Z0-9])?$') {
+        throw "TlsHost is not a valid DNS name: '$TlsHost'."
+    }
+    if ($Address -notmatch '^[a-zA-Z0-9](?:[a-zA-Z0-9.:-]*[a-zA-Z0-9])?$') {
+        throw "Address is not a valid host or IP address: '$Address'."
+    }
+    $deploymentFile = '/opt/deploy-actions/deployment.env'
+    if (-not (Test-Path $deploymentFile)) { throw "Deployment role file not found: $deploymentFile" }
+    $roleLine = Select-String -Path $deploymentFile -Pattern '^DEPLOYMENT_ROLE=' | Select-Object -First 1
+    $role = if ($roleLine) { ($roleLine.Line -replace '^DEPLOYMENT_ROLE=', '').Trim('"') } else { '' }
+    if ($role -ne 'client') { throw "memtier TLS requires DEPLOYMENT_ROLE=client; this node is '$role'." }
+
+    foreach ($path in @('/opt/azurebench/tls/ca.crt', '/opt/azurebench/tls/metadata.json')) {
+        if (-not (Test-Path $path -PathType Leaf)) { throw "Required TLS file not found: $path" }
+    }
+    $metadata = Get-Content /opt/azurebench/tls/metadata.json -Raw | ConvertFrom-Json
+    if ($metadata.status -ne 'complete') { throw 'TLS metadata is incomplete.' }
+    if ($metadata.targetHost -ne $TlsHost) {
+        throw "TLS metadata target '$($metadata.targetHost)' does not match '$TlsHost'."
+    }
+
+    $memtierHelp = memtier_benchmark --help 2>&1 | Out-String
+    foreach ($option in @('--tls', '--cacert', '--sni')) {
+        if ($memtierHelp -notmatch [regex]::Escape($option)) {
+            throw "memtier_benchmark does not support $option; rebuild it with TLS support."
+        }
+    }
+    if (-not (Get-Command openssl -ErrorAction SilentlyContinue)) {
+        throw 'openssl is not installed.'
+    }
+    $verification = '' | openssl s_client -connect "${Address}:${Port}" -servername $TlsHost `
+        -CAfile /opt/azurebench/tls/ca.crt -verify_hostname $TlsHost -verify_return_error 2>&1
+    if ($LASTEXITCODE -ne 0 -or ($verification -join "`n") -notmatch 'Verification: OK') {
+        throw "TLS identity validation failed for ${Address}:${Port}: $($verification -join [Environment]::NewLine)"
+    }
+    $tlsArgs = @('--tls', '--cacert=/opt/azurebench/tls/ca.crt', "--sni=$TlsHost")
+}
 
 # Print parameters for this run
 Write-Host "==== Parameters ====" -ForegroundColor Yellow
@@ -62,6 +106,7 @@ Write-Host "  DataSize:   $DataSize"
 Write-Host "  TestTime:   $TestTime"
 Write-Host "  SkipLoad:   $SkipLoad"
 Write-Host "  Cluster:    $Cluster"
+Write-Host "  TLS:        $(if ($Tls) { "enabled ($TlsHost)" } else { "disabled" })"
 Write-Host ""
 
 # Phase 1: Load keys
@@ -72,6 +117,7 @@ if (-not $SkipLoad) {
         "--key-minimum=1", "--key-maximum=$DbSize", "--key-pattern=P:P",
         "--run-count=1", "--hide-histogram", "--requests=allkeys")
     if ($Cluster) { $loadArgs += "--cluster-mode" }
+    $loadArgs += $tlsArgs
     & memtier_benchmark @loadArgs
     if ($LASTEXITCODE -ne 0) { throw "Load phase failed" }
 } else {
@@ -89,6 +135,7 @@ for ($i = $Threads; $i -le $Threads; $i *= 2) {
         "--test-time=$TestTime", "--run-count=1", "--hide-histogram",
         "--key-minimum=1", "--key-maximum=$DbSize", "--key-pattern=R:R")
     if ($Cluster) { $benchArgs += "--cluster-mode" }
+    $benchArgs += $tlsArgs
 
     # Stream output live and capture for summary
     $outputFile = "/tmp/memtier-last-run.txt"

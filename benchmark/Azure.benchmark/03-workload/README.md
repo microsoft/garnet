@@ -12,7 +12,7 @@ storage cluster and executing client benchmarks over SSH. Run this layer **after
 | `bench/resp-bench.ps1` | Launches [Resp.benchmark](https://github.com/microsoft/garnet) across client VMs via SSH |
 | `bench/memtier-bench.ps1` | Drives `memtier_benchmark` across client VMs via SSH |
 | `bench/utils.ps1` | Shared helper functions for the benchmark drivers |
-| `bench/*.conf` | Key-value configs for SSH targets, benchmark parameters, and workload tuning (`bench.conf`, `memtier.conf`, `read.conf`, `write.conf`) |
+| `bench/*.conf` | Key-value configs for SSH targets, benchmark parameters, and workload tuning, including separate `bench-tls.conf` and `memtier-tls.conf` TLS configurations |
 | `bench/EXPERIMENTAL_SETUP.md` | Notes on the benchmarking methodology |
 | `analysis/*.py` | Python post-processing / plotting of collected results |
 | `results/` | Auto-generated per-run output (git-ignored) |
@@ -162,6 +162,21 @@ The script:
 ```
 
 `bench/memtier-bench.ps1` drives `memtier_benchmark` with an analogous config/flag surface; `analysis/*.py` post-process the collected `results/` output.
+
+For a TLS-enabled Garnet cluster, use the dedicated memtier configuration:
+
+```powershell
+.\03-workload\bench\memtier-bench.ps1 -ConfigFile .\03-workload\bench\memtier-tls.conf
+```
+
+The client VMs must use `deploymentRole=client` and contain
+`/opt/azurebench/tls/ca.crt` plus matching `metadata.json`. The same
+`memtier_benchmark` binary handles plaintext and TLS; it is built with OpenSSL
+support and uses `--tls`, `--cacert`, and `--sni`. Because memtier sends SNI
+but does not itself enforce certificate-name matching, the drivers first use
+`openssl s_client -verify_hostname` to validate the endpoint against both the CA and
+`TlsHost`. The current Garnet configuration uses server-auth TLS, so memtier
+does not send a client certificate and never uses `--tls-skip-verify`.
 
 ## Notes on paths after the refactor
 
