@@ -1,0 +1,28 @@
+{
+  "id": "dev/contributing",
+  "title": "Contributing",
+  "description": "This project welcomes contributions and suggestions.  Most contributions require you to agree to a",
+  "source": "@site/docs/dev/contributing.md",
+  "sourceDirName": "dev",
+  "slug": "/dev/contributing",
+  "permalink": "/garnet/docs/dev/contributing",
+  "draft": false,
+  "unlisted": false,
+  "editUrl": "https://github.com/microsoft/garnet/tree/main/website/docs/dev/contributing.md",
+  "tags": [],
+  "version": "current",
+  "frontMatter": {
+    "id": "contributing",
+    "sidebar_label": "Contributing",
+    "title": "Contributing"
+  },
+  "sidebar": "garnetDocSidebar",
+  "previous": {
+    "title": "Migration",
+    "permalink": "/garnet/docs/dev/cluster/slot-migration"
+  },
+  "next": {
+    "title": "Overview",
+    "permalink": "/garnet/docs/azure/overview"
+  }
+}

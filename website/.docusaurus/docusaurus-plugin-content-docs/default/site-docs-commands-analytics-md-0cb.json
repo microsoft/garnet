@@ -1,0 +1,29 @@
+{
+  "id": "commands/analytics-commands",
+  "title": "Analytics",
+  "description": "BITMAP",
+  "source": "@site/docs/commands/analytics.md",
+  "sourceDirName": "commands",
+  "slug": "/commands/analytics",
+  "permalink": "/garnet/docs/commands/analytics",
+  "draft": false,
+  "unlisted": false,
+  "editUrl": "https://github.com/microsoft/garnet/tree/main/website/docs/commands/analytics.md",
+  "tags": [],
+  "version": "current",
+  "frontMatter": {
+    "id": "analytics-commands",
+    "sidebar_label": "Analytics",
+    "title": "Analytics",
+    "slug": "analytics"
+  },
+  "sidebar": "garnetDocSidebar",
+  "previous": {
+    "title": "Generic",
+    "permalink": "/garnet/docs/commands/generic"
+  },
+  "next": {
+    "title": "Data Structures",
+    "permalink": "/garnet/docs/commands/data-structures"
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "id": "commands/server-commands",
+  "title": "Server Management",
+  "description": "COMMAND",
+  "source": "@site/docs/commands/server.md",
+  "sourceDirName": "commands",
+  "slug": "/commands/server",
+  "permalink": "/garnet/docs/commands/server",
+  "draft": false,
+  "unlisted": false,
+  "editUrl": "https://github.com/microsoft/garnet/tree/main/website/docs/commands/server.md",
+  "tags": [],
+  "version": "current",
+  "frontMatter": {
+    "id": "server-commands",
+    "sidebar_label": "Server Management",
+    "title": "Server Management",
+    "slug": "server"
+  },
+  "sidebar": "garnetDocSidebar",
+  "previous": {
+    "title": "Data Structures",
+    "permalink": "/garnet/docs/commands/data-structures"
+  },
+  "next": {
+    "title": "Client Management",
+    "permalink": "/garnet/docs/commands/client"
+  }
+}
