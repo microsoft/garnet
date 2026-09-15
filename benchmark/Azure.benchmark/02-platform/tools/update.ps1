@@ -132,14 +132,13 @@ if ($Fetch) {
     # This process is still executing the pre-fetch version of update.ps1.
     # Re-exec the downloaded version so manifest/schema changes in the new bundle
     # take effect immediately instead of one deployment later.
-    $nextArgs = if ($RunOnly) {
-        @('-RunOnly')
+    if ($RunOnly) {
+        & pwsh -NoProfile -File "$ScriptDir/update.ps1" -RunOnly
     } elseif ($Run) {
-        @('-Run')
+        & pwsh -NoProfile -File "$ScriptDir/update.ps1" -Run
     } else {
-        @('-Copy')
+        & pwsh -NoProfile -File "$ScriptDir/update.ps1" -Copy
     }
-    & "$ScriptDir/update.ps1" @nextArgs
     exit $LASTEXITCODE
 }
 

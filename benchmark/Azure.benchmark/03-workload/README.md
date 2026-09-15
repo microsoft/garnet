@@ -39,6 +39,10 @@ Start or stop the storage cluster on server VMs. Reads connection info from `ben
 # Start garnet with replication (no cluster mode)
 .\03-workload\cluster.ps1 -Action start -System garnet -Conf .\02-platform\tools\config\garnet\garnet-cache-replication.conf -InstancePerVm 1 -VmCount <server-vm-count> -NoCluster
 
+# Start Garnet with TLS. Server-role VMs retrieve the server PFX/password and CA
+# certificate from Key Vault; certificate secrets are not stored in this config.
+.\03-workload\cluster.ps1 -Action start -System garnet -Tls -Conf .\02-platform\tools\config\garnet\garnet-cache-tls.conf -InstancePerVm 1 -VmCount <server-vm-count> -Clean
+
 # Stop the cluster
 .\03-workload\cluster.ps1 -Action stop -System valkey -InstancePerVm 2 -VmCount <server-vm-count>
 ```
@@ -60,6 +64,12 @@ their non-primary (`eth1`) addresses, then saves the result locally. Set
 pushed to the coordinator, which validates VMSS identity, subnet membership, count,
 and SSH connectivity before caching and using it. If the coordinator rejects a local
 cache, `cluster.ps1` regenerates it through Azure once and retries.
+
+For `-System garnet -Tls`, each server refreshes role-specific certificate material
+from Key Vault into `/opt/azurebench/tls`, generates a mode-`0600` per-instance
+Garnet configuration, and validates peer certificates against the generated CA using
+the stable `azurebench-server` target name. Client certificates are not required by
+this server-start mode.
 
 Use `-VmssName` and `-ResourceGroup` to select the VMSS explicitly. `-VmssName` can
 normally be inferred from a host such as `vm0.ds8server.<region>.cloudapp.azure.com`;

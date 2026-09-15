@@ -30,6 +30,7 @@ param(
     [int]$Replicas = 0,
     [switch]$Clean,
     [switch]$NoCluster,
+    [switch]$Tls,
     [switch]$CreateManual,
     [string]$ConfigFile = "$PSScriptRoot\bench\bench.conf",
     [string]$ServerHost,
@@ -62,6 +63,7 @@ if ($Help -or -not $Action) {
     Write-Host "  -Replicas    Number of replicas per primary (default: 0)"
     Write-Host "  -Clean       Remove cluster directory before starting"
     Write-Host "  -NoCluster   Disable cluster mode (skip setup step)"
+    Write-Host "  -Tls         Enable Garnet TLS with server-role Key Vault certificate material"
     Write-Host "  -CreateManual Form the cluster manually (MEET + ADDSLOTSRANGE + REPLICATE) instead of '--cluster create'"
     Write-Host "  -ConfigFile  Path to bench.conf for SSH host/key resolution (default: bench.conf)"
     Write-Host "  -ServerHost  Override server SSH host (default: from bench.conf Host field)"
@@ -78,6 +80,7 @@ $ErrorActionPreference = "Stop"
 
 # --- Validate params ---
 if (-not $System) { Write-Error "-System is required"; exit 1 }
+if ($Tls -and $System -ne 'garnet') { Write-Error "-Tls is currently supported only for Garnet"; exit 1 }
 if (($Action -eq "start" -or $Action -eq "restart") -and -not $Conf) {
     Write-Error "-Conf is required for '$Action'"; exit 1
 }
@@ -368,6 +371,7 @@ Write-Host "  Resource group: $($peerCache.Manifest.resourceGroup)"
 if ($Replicas -gt 0) { Write-Host "  Replicas:  $Replicas" }
 if ($Clean)     { Write-Host "  Clean:     True" }
 if ($NoCluster) { Write-Host "  NoCluster: True" }
+if ($Tls)       { Write-Host "  TLS:       True" }
 if ($CreateManual) { Write-Host "  CreateManual: True" }
 Write-Host ""
 
@@ -380,6 +384,7 @@ $doStart = {
     $startCmd += " -ConfContent $confContent -ConfName $confName"
     if ($Clean) { $startCmd += " -Clean" }
     if ($NoCluster) { $startCmd += " -NoCluster" }
+    if ($Tls) { $startCmd += " -Tls" }
     Invoke-Remote -Cmd $startCmd -Label "start"
 
     # Step 2: Form cluster (skip if NoCluster)
@@ -389,6 +394,7 @@ $doStart = {
         if ($MaxScan -gt 0) { $setupCmd += " -MaxScan $MaxScan" }
         if ($Replicas -gt 0) { $setupCmd += " -Replicas $Replicas" }
         if ($CreateManual) { $setupCmd += " -CreateManual" }
+        if ($Tls) { $setupCmd += " -Tls" }
         Invoke-Remote -Cmd $setupCmd -Label "setup"
     }
 }

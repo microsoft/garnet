@@ -73,7 +73,7 @@ pwsh .\02-platform\manage-vmss.ps1 --help
 | `refresh` (default) | Git pull all repos (garnet, valkey, dragonfly, redis, memtier, AzureBench) |
 | `create` | Provision the VMSS from `vmss.bicep`. Confirms the active tenant/subscription/resource group, offers to generate a missing machine-local `vmss-parameters.json` through `01-resources/deploy-common-resources.ps1 -Action stage`, and validates its NSG, VNet, subnets, PPG, locations, subscription, and resource group before deployment. Staging also copies manifest-declared public keys from the local `basePath` (normally `%USERPROFILE%\.ssh`) into the git-ignored security cache. Explicit `-ParametersFile` inputs are never overwritten. Create re-syncs those keys before deployment, inline-discovers the Key Vault, and grants the VMSS managed identity secret-get access. Add `-GrantStorageAccess` to also grant Storage Blob Data Reader (requires **Owner** / **User Access Administrator**). Remaining VM inputs are prompted by az |
 | `rebuild` | Git pull + rebuild specified system (requires `-System` parameter) |
-| `deploy` | Fetch the tools bundle and run the full deployment workflow, including ordinary Valkey plus TLS-enabled `valkey-server-tls` and `valkey-cli-tls` binaries |
+| `deploy` | Fetch the tools bundle and run the full deployment workflow, including ordinary Valkey, TLS-enabled `valkey-server-tls`/`valkey-cli-tls`, and `redis-server-tls`/`redis-cli-tls` |
 | `install` | Git pull AzureBench + copy scripts to system paths only |
 | `start` | Power on all VMSS instances (`az vmss start`) |
 | `stop` | Deallocate all VMSS instances, stopping compute billing (`az vmss deallocate`) |
@@ -101,6 +101,7 @@ pwsh .\02-platform\manage-vmss.ps1 --help
 # The Valkey builds are installed side by side:
 # /usr/local/bin/valkey-server, /usr/local/bin/valkey-cli
 # /usr/local/bin/valkey-server-tls, /usr/local/bin/valkey-cli-tls
+# /usr/local/bin/redis-server-tls, /usr/local/bin/redis-cli-tls
 
 # Update scripts only (no rebuild)
 .\02-platform\manage-vmss.ps1 -rg <owner>-garnet -VmssName server -Action install

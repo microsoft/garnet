@@ -11,6 +11,7 @@
     build.ps1 valkey
     build.ps1 valkey 9.0
     build.ps1 valkey 9.0 tls
+    build.ps1 redis unstable tls
     build.ps1 garnet main
     build.ps1 resp-bench
     build.ps1 memtier

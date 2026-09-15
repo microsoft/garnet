@@ -96,6 +96,9 @@ pwsh .\03-workload\cluster.ps1 `
   --action start `
   --conf 02-platform/tools/config/garnet/garnet-cache.conf
 
+# To start Garnet with TLS instead, add --tls and use:
+# --conf 02-platform/tools/config/garnet/garnet-cache-tls.conf
+
 # 5. Run benchmark from client VMs -> see 03-workload/README.md
 pwsh .\03-workload\bench\resp-bench.ps1 `
   --configfile .\03-workload\bench\bench.conf

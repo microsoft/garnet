@@ -51,6 +51,11 @@
       "mode": "755"
     },
     {
+      "src": "bootstrap/setup-tls.ps1",
+      "dst": "/opt/deploy-actions/setup-tls.ps1",
+      "mode": "755"
+    },
+    {
       "src": "bootstrap/setup-ssh-keys.ps1",
       "dst": "/opt/deploy-actions/setup-ssh-keys.ps1",
       "mode": "755"
@@ -128,6 +133,11 @@
       "args": "garnet"
     },
     {
+      "run": "setup-tls.ps1",
+      "sudo": true,
+      "args": ""
+    },
+    {
       "run": "setup-ssh-keys.ps1",
       "sudo": false,
       "args": "",
@@ -157,6 +167,12 @@
       "run": "build.ps1",
       "sudo": true,
       "args": "valkey",
+      "tls": true
+    },
+    {
+      "run": "build.ps1",
+      "sudo": true,
+      "args": "redis",
       "tls": true
     },
     {

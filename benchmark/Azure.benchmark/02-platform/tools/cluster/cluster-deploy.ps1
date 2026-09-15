@@ -28,6 +28,7 @@ param(
     [switch]$Clean,
     [int]$Replicas = 0,
     [switch]$NoCluster,
+    [switch]$Tls,
     [switch]$CreateManual,
     [string]$User = "guser",
     [int]$Port = 7000,
@@ -60,6 +61,7 @@ if ($Help -or -not $Action) {
     Write-Host "  -Clean          Clean cluster directories before starting"
     Write-Host "  -Replicas       Number of replicas per primary (default: 0)"
     Write-Host "  -NoCluster      Disable cluster mode in configs"
+    Write-Host "  -Tls            Use Garnet TLS for startup and cluster administration"
     Write-Host "  -CreateManual   Form the cluster manually (MEET + ADDSLOTSRANGE + REPLICATE) instead of '--cluster create'"
     Write-Host "  -User           SSH user (default: guser)"
     Write-Host "  -Port           Base port (default: 7000)"
@@ -657,12 +659,18 @@ function New-ClusterManual {
 }
 
 function New-Cluster {
-    param([string[]]$Endpoints, [int]$ReplicaCount, [string]$Sys, [switch]$Manual)
+    param([string[]]$Endpoints, [int]$ReplicaCount, [string]$Sys, [switch]$Manual, [switch]$UseTls)
     Write-Host ""
     $mode = if ($Manual) { "MANUAL" } else { "auto" }
     Write-Host "Forming cluster [$mode] ($($Endpoints.Count) nodes, $ReplicaCount replica(s) per primary)..." -ForegroundColor Yellow
 
-    $cli = if ($Sys -eq "valkey") { "valkey-cli" } else { "redis-cli" }
+    if ($UseTls) {
+        $metadata = Get-Content '/opt/azurebench/tls/metadata.json' -Raw | ConvertFrom-Json
+        if (-not $metadata.targetHost) { throw 'TLS target host is missing from certificate metadata.' }
+        $cli = "valkey-cli-tls --tls --cacert /opt/azurebench/tls/ca.crt --sni $($metadata.targetHost)"
+    } else {
+        $cli = if ($Sys -eq "valkey") { "valkey-cli" } else { "redis-cli" }
+    }
 
     if ($Manual) {
         New-ClusterManual -Endpoints $Endpoints -ReplicaCount $ReplicaCount -Cli $cli
@@ -678,7 +686,7 @@ function New-Cluster {
     $firstEp = $Endpoints[0] -split ':'
     Write-Host ""
     Write-Host "Verifying cluster state..." -ForegroundColor Yellow
-    $verifyCmd = if ($Sys -eq "valkey") { "valkey-cli" } else { "redis-cli" }
+    $verifyCmd = $cli
     $clusterInfo = bash -c "$verifyCmd -h $($firstEp[0]) -p $($firstEp[1]) CLUSTER INFO" 2>&1
     $stateLine = $clusterInfo | Where-Object { $_ -match "cluster_state" }
     $slotsLine = $clusterInfo | Where-Object { $_ -match "cluster_slots_ok" }
@@ -906,6 +914,7 @@ switch ($Action) {
 
     "start" {
         if (-not $System) { throw "ERROR: -System is required for start." }
+        if ($Tls -and $System -ne 'garnet') { throw "ERROR: -Tls is currently supported only for Garnet." }
         if (-not $Conf -and -not $ConfContent) { throw "ERROR: -Conf or -ConfContent is required for start." }
         if ($Conf -and $ConfContent) { throw "ERROR: -Conf and -ConfContent are mutually exclusive; specify only one." }
         if (-not $InstancePerVm) { throw "ERROR: -InstancePerVm is required for start." }
@@ -922,6 +931,7 @@ switch ($Action) {
         Write-Host "  Port:          $Port"
         Write-Host "  Clean:         $Clean"
         Write-Host "  NoCluster:     $NoCluster"
+        Write-Host "  TLS:           $Tls"
         Write-Host ""
 
         # Build mcluster arguments
@@ -930,6 +940,7 @@ switch ($Action) {
         elseif ($Conf) { $mclusterArgs += " -Conf $Conf" }
         if ($Clean) { $mclusterArgs += " -Clean" }
         if ($NoCluster) { $mclusterArgs += " -NoCluster" }
+        if ($Tls) { $mclusterArgs += " -Tls" }
 
         # Run on all peers
         $failures = Invoke-ParallelMcluster -Ips $ips -SshUser $User -MclusterArgs $mclusterArgs -OwnIp $ownIp -BasePort $Port -InstancesPerVm $InstancePerVm
@@ -942,6 +953,7 @@ switch ($Action) {
 
     "setup" {
         if (-not $System) { throw "ERROR: -System is required for setup." }
+        if ($Tls -and $System -ne 'garnet') { throw "ERROR: -Tls is currently supported only for Garnet." }
         if (-not $InstancePerVm) { throw "ERROR: -InstancePerVm is required for setup." }
 
         $peerInfo = Resolve-Peers -VmCount $VmCount -User $User -SshTimeout $SshTimeout -MaxScan $MaxScan
@@ -981,7 +993,7 @@ switch ($Action) {
             Write-Host ""
             Write-Host "NOTE: -NoCluster specified, skipping cluster formation." -ForegroundColor Yellow
         } else {
-            New-Cluster -Endpoints $endpoints -ReplicaCount $Replicas -Sys $System -Manual:$CreateManual
+            New-Cluster -Endpoints $endpoints -ReplicaCount $Replicas -Sys $System -Manual:$CreateManual -UseTls:$Tls
         }
     }
 

@@ -24,6 +24,7 @@ param(
     [string]$ConfName,
     [int]$Nodes = 0,
     [switch]$NoCluster,
+    [switch]$Tls,
     [switch]$Clean,
     [switch]$Help
 )
@@ -47,6 +48,7 @@ if ($Help -or -not $Action) {
     Write-Host "  -ConfName    Leaf filename to use when writing -ConfContent (default: shipped.conf)"
     Write-Host "  -Nodes       Number of instances to manage"
     Write-Host "  -NoCluster   Disable cluster mode in generated configs"
+    Write-Host "  -Tls         Enable Garnet TLS using role-specific Key Vault material"
     Write-Host "  -Clean       Remove cluster directory before starting"
     Write-Host "  -Help        Show this help message"
     return
@@ -73,6 +75,35 @@ if (-not $NVME_DIR) { $NVME_DIR = "/mnt/nvme" }
 
 $RepoDir = "$HOME/tools"
 $ClusterMode = if ($NoCluster) { "false" } else { "true" }
+if ($Tls -and $System -ne 'garnet') { throw '-Tls is currently supported only for Garnet.' }
+
+function Get-GarnetTlsSettings {
+    $deploymentFile = '/opt/deploy-actions/deployment.env'
+    $role = if (Test-Path $deploymentFile) {
+        (Select-String -Path $deploymentFile -Pattern '^DEPLOYMENT_ROLE=' | Select-Object -First 1).Line -replace '^DEPLOYMENT_ROLE=', ''
+    }
+    if ($role -ne 'server') {
+        throw "Garnet TLS servers require DEPLOYMENT_ROLE=server; this node is '$role'."
+    }
+
+    sudo /opt/deploy-actions/setup-tls.ps1
+    if ($LASTEXITCODE -ne 0) { throw 'TLS material setup failed.' }
+
+    $tlsDir = '/opt/azurebench/tls'
+    $metadata = Get-Content "$tlsDir/metadata.json" -Raw | ConvertFrom-Json
+    $password = (Get-Content "$tlsDir/server.password" -Raw).Trim()
+    foreach ($path in @("$tlsDir/server.pfx", "$tlsDir/ca.crt")) {
+        if (-not (Test-Path $path -PathType Leaf)) { throw "Required TLS file is missing: $path" }
+    }
+    if (-not $password -or -not $metadata.targetHost) { throw 'TLS password or target host is missing.' }
+
+    return @{
+        CertFileName          = "$tlsDir/server.pfx"
+        CertPassword          = $password
+        IssuerCertificatePath = "$tlsDir/ca.crt"
+        TargetHost            = [string]$metadata.targetHost
+    }
+}
 
 function Pull-Configs {
     if (Test-Path "$RepoDir/.git") {
@@ -117,6 +148,11 @@ function Resolve-Config {
 
     # Check if the configuration uses ramdisk and ensure directories exist
     $sourceContent = Get-Content $sourceFile -Raw
+    $configEnablesTls = $sourceContent -match '"EnableTLS"\s*:\s*true'
+    if ($Sys -eq 'garnet' -and $configEnablesTls -and -not $Tls) {
+        throw "Configuration enables TLS; pass -Tls so certificate material is provisioned."
+    }
+    $tlsSettings = if ($Sys -eq 'garnet' -and $Tls) { Get-GarnetTlsSettings } else { $null }
     $usesRamdisk = $sourceContent -match '/mnt/ramdisk|RAMDISK'
     $ramdiskDir = "$RAMDISK_DIR/$($Sys)-cluster"
 
@@ -161,7 +197,29 @@ function Resolve-Config {
 
         if ($Sys -eq "garnet") {
             $content = $content -replace '"EnableCluster":\s*true', "`"EnableCluster`": $ClusterMode"
+            if ($Tls) {
+                try {
+                    $garnetConfig = $content | ConvertFrom-Json
+                } catch {
+                    throw "Garnet TLS configuration is not valid JSON: $($_.Exception.Message)"
+                }
+                $tlsProperties = [ordered]@{
+                    EnableTLS                     = $true
+                    CertFileName                  = $tlsSettings.CertFileName
+                    CertPassword                  = $tlsSettings.CertPassword
+                    CertificateRefreshFrequency   = 0
+                    ClientCertificateRequired     = $false
+                    ServerCertificateRequired     = $true
+                    IssuerCertificatePath         = $tlsSettings.IssuerCertificatePath
+                    ClusterTlsClientTargetHost    = $tlsSettings.TargetHost
+                }
+                foreach ($entry in $tlsProperties.GetEnumerator()) {
+                    $garnetConfig | Add-Member -NotePropertyName $entry.Key -NotePropertyValue $entry.Value -Force
+                }
+                $content = $garnetConfig | ConvertTo-Json -Depth 20
+            }
             Set-Content -Path "$portDir/garnet.conf" -Value $content -NoNewline
+            if ($Tls) { chmod 0600 "$portDir/garnet.conf" }
         } else {
             # Handle cluster-enabled for valkey
             if ($content -match '(?m)^cluster-enabled') {
@@ -174,7 +232,7 @@ function Resolve-Config {
             Set-Content -Path "$portDir/valkey.conf" -Value $content -NoNewline
         }
     }
-    Write-Host "Resolved $Count config(s) from $(Split-Path $sourceFile -Leaf) (cluster=$ClusterMode) -> $clusterDir/" -ForegroundColor Green
+    Write-Host "Resolved $Count config(s) from $(Split-Path $sourceFile -Leaf) (cluster=$ClusterMode, tls=$Tls) -> $clusterDir/" -ForegroundColor Green
 }
 
 function Start-Valkey {
