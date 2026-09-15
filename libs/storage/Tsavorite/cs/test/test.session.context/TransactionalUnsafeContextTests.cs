@@ -375,17 +375,21 @@ namespace Tsavorite.test.TransactionalUnsafeContext
 
             var keyVec = new FixedLengthTransactionalKeyStruct[1];
 
+            // Locals in an async method can be moved by the GC, so keys and values must live in pinned storage
+            var randLongs = GC.AllocateArray<long>(1, pinned: true);
+            var valueLongs = GC.AllocateArray<long>(1, pinned: true);
+
             try
             {
                 for (int c = 0; c < NumRecs; c++)
                 {
-                    long rand = rng.Next(RandRange);
-                    keyVec[0] = new(SpanByte.FromPinnedVariable(ref rand), LockType.Exclusive, luContext);
+                    randLongs[0] = rng.Next(RandRange);
+                    keyVec[0] = new(SpanByte.FromPinnedVariable(ref randLongs[0]), LockType.Exclusive, luContext);
                     luContext.Lock(keyVec);
                     AssertBucketLockCount(ref keyVec[0], 1, 0);
 
-                    var value = keyVec[0].Key.KeyBytes.AsRef<long>() + NumRecords;
-                    _ = luContext.Upsert(keyVec[0].Key, SpanByte.FromPinnedVariable(ref value), Empty.Default);
+                    valueLongs[0] = keyVec[0].Key.KeyBytes.AsRef<long>() + NumRecords;
+                    _ = luContext.Upsert(keyVec[0].Key, SpanByte.FromPinnedVariable(ref valueLongs[0]), Empty.Default);
                     luContext.Unlock(keyVec);
                     AssertBucketLockCount(ref keyVec[0], 0, 0);
                 }
@@ -397,8 +401,8 @@ namespace Tsavorite.test.TransactionalUnsafeContext
 
                 for (int c = 0; c < NumRecs; c++)
                 {
-                    long rand = rng.Next(RandRange);
-                    keyVec[0] = new(SpanByte.FromPinnedVariable(ref rand), LockType.Shared, luContext);
+                    randLongs[0] = rng.Next(RandRange);
+                    keyVec[0] = new(SpanByte.FromPinnedVariable(ref randLongs[0]), LockType.Shared, luContext);
                     var value = keyVec[0].Key.KeyBytes.AsRef<long>() + NumRecords;
                     long output = 0;
 
