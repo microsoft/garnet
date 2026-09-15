@@ -1518,6 +1518,7 @@ return retArray";
             var exception = ClassicAssert.Throws<RedisServerException>(() => db.Execute("EVAL", [binaryChunk, 1, Key]));
             StringAssert.Contains("binary chunk", exception.Message);
             ClassicAssert.IsFalse(db.KeyExists(Key));
+            ClassicAssert.AreNotEqual("binary-chunk-executed", (string)db.StringGet(Key));
 
             // SCRIPT LOAD must reject the same bytes without adding them to the global cache.
             var hash = Convert.ToHexString(SHA1.HashData(binaryChunk)).ToLowerInvariant();
