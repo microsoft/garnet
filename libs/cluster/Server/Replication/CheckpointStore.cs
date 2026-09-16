@@ -181,9 +181,8 @@ namespace Garnet.cluster
                     break;
                 clusterProvider.ReplicationLogCheckpointManager.DeleteLogCheckpoint(curr.metadata.storeHlogToken);
 
-                if (!CanDeleteToken(curr, CheckpointFileType.STORE_INDEX))
-                    break;
-                clusterProvider.ReplicationLogCheckpointManager.DeleteIndexCheckpoint(curr.metadata.storeIndexToken);
+                if (CanDeleteToken(curr, CheckpointFileType.STORE_INDEX))
+                    clusterProvider.ReplicationLogCheckpointManager.DeleteIndexCheckpoint(curr.metadata.storeIndexToken);
 
                 logger?.LogCheckpointEntry(LogLevel.Warning, "Deleting outdated checkpoint", curr);
 

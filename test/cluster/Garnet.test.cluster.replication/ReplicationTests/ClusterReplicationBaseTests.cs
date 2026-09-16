@@ -813,6 +813,44 @@ namespace Garnet.test.cluster
             context.clusterTestUtils.WaitForReplicaAofSync(primaryIndex: primaryIndex, secondaryIndex: replicaIndex, logger: context.logger);
         }
 
+        [Test]
+        [Category("REPLICATION")]
+        public void ClusterCheckpointCleanupRetiresEntriesWithSharedIndex()
+        {
+            context.CreateInstances(1, enableAOF: true, DisableStorageTier: true, useTLS: useTLS, sublogCount: sublogCount);
+            context.CreateConnection(useTLS: useTLS);
+            ClassicAssert.AreEqual("OK", context.clusterTestUtils.AddDelSlotsRange(0, [(0, 16383)], true, context.logger));
+            ClassicAssert.IsTrue(context.clusterTestUtils.GetDatabase().StringSet("checkpoint-key", "value"));
+
+            var checkpointRoot = Path.Combine(context.nodeOptions[0].CheckpointDir, "Store", "checkpoints");
+            var logRoot = Path.Combine(checkpointRoot, "cpr-checkpoints");
+            var indexRoot = Path.Combine(checkpointRoot, "index-checkpoints");
+            string previousLogDirectory = null;
+            string sharedIndexDirectory = null;
+
+            for (var checkpoint = 0; checkpoint < 3; checkpoint++)
+            {
+                context.clusterTestUtils.Checkpoint(0, context.logger);
+
+                var logDirectories = Directory.GetDirectories(logRoot);
+                ClassicAssert.AreEqual(1, logDirectories.Length, "Only the latest log checkpoint should remain");
+                var logDirectory = logDirectories[0];
+                ClassicAssert.IsTrue(new FileInfo(Path.Combine(logDirectory, "info.dat.0")).Length > 0,
+                    "The retained checkpoint metadata must be readable");
+
+                if (previousLogDirectory != null)
+                    ClassicAssert.IsFalse(Directory.Exists(previousLogDirectory), "The previous log checkpoint should be removed");
+
+                var indexDirectories = Directory.GetDirectories(indexRoot);
+                ClassicAssert.AreEqual(1, indexDirectories.Length, "Log-only checkpoints should retain the shared index");
+                if (sharedIndexDirectory != null)
+                    ClassicAssert.AreEqual(sharedIndexDirectory, indexDirectories[0]);
+
+                previousLogDirectory = logDirectory;
+                sharedIndexDirectory = indexDirectories[0];
+            }
+        }
+
         [Test, Order(14)]
         [Category("REPLICATION")]
         public void ClusterMainMemoryReplicationAttachReplicas()
