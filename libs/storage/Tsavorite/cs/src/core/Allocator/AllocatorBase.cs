@@ -797,11 +797,49 @@ namespace Tsavorite.core
             }
         }
 
+        /// <summary>
+        /// Verify that this store's log geometry matches the geometry recorded in the checkpoint being recovered. A mismatch
+        /// resolves main-log addresses and object-log positions differently than they were written, silently reading the wrong
+        /// bytes, so it must fail recovery rather than proceed.
+        /// </summary>
+        /// <remarks>
+        /// Checkpoints below <see cref="HybridLogRecoveryInfo.LogGeometryCheckpointVersion"/> record no geometry (all three values
+        /// are zero), so nothing can be verified for them. That is unavoidable: <c>ObjectLogSegmentSize</c> in particular is the bit
+        /// position at which <see cref="ObjectLogFilePositionInfo"/> splits its packed segment/offset word, and it is taken solely
+        /// from settings at construction, so a downlevel recovery with the wrong value misresolves every object-log position with
+        /// nothing to detect it. The assumed values are logged so an operator can confirm them against the original configuration.
+        /// </remarks>
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        private void VerifyLogGeometry(HybridLogRecoveryInfo info)
+        {
+            // Allocators with no object log report -1; the checkpoint records 0 for "not applicable".
+            var actualObjectLogSegmentSize = GetObjectLogSegmentSize();
+            if (actualObjectLogSegmentSize < 0)
+                actualObjectLogSegmentSize = 0;
+
+            if (info.hybridLogRecoveryVersion < HybridLogRecoveryInfo.LogGeometryCheckpointVersion)
+            {
+                logger?.LogInformation("Checkpoint version {cversion} records no log geometry; recovering with the configured PageSize {pageSize}, "
+                    + "SegmentSize {segmentSize}, ObjectLogSegmentSize {objectLogSegmentSize}. These must match the store that wrote the checkpoint.",
+                    info.hybridLogRecoveryVersion, PageSize, SegmentSize, actualObjectLogSegmentSize);
+                return;
+            }
+
+            if (info.pageSize != PageSize)
+                throw new TsavoriteException($"Recovery PageSize mismatch: checkpoint was written with {info.pageSize} but this store is configured with {PageSize}");
+            if (info.segmentSize != SegmentSize)
+                throw new TsavoriteException($"Recovery SegmentSize mismatch: checkpoint was written with {info.segmentSize} but this store is configured with {SegmentSize}");
+            if (info.objectLogSegmentSize != actualObjectLogSegmentSize)
+                throw new TsavoriteException($"Recovery ObjectLogSegmentSize mismatch: checkpoint was written with {info.objectLogSegmentSize} but this store is configured with {actualObjectLogSegmentSize}");
+        }
+
         [MethodImpl(MethodImplOptions.NoInlining)]
         internal void VerifyRecoveryInfo(HybridLogCheckpointInfo recoveredHLCInfo, bool trimLog = false)
         {
             // Note: trimLog is unused right now. Can be used to trim the log to the minimum
             // segment range necessary for recovery to given checkpoint
+
+            VerifyLogGeometry(recoveredHLCInfo.info);
 
             var diskBeginAddress = recoveredHLCInfo.info.beginAddress;
             var diskFlushedUntilAddress = recoveredHLCInfo.info.useSnapshotFile == 0
