@@ -22,6 +22,24 @@ namespace Garnet.server
         public bool DisableObjects = false;
 
         /// <summary>
+        /// Up-convert a store written by an earlier release. A downlevel object log stores records headerless above the size that
+        /// now requires a chunk header, so recovery reads the original object log and rewrites it in current format to a separate
+        /// device, which then replaces it. Resolved from the <c>--upgrade</c> switch.
+        /// </summary>
+        /// <remarks>
+        /// Meaningful only when recovering a store that has an object log; a store with no object log needs no conversion, and any
+        /// checkpoint it subsequently takes is stamped with the current version regardless.
+        /// </remarks>
+        public bool Upgrade = false;
+
+        /// <summary>Base file name of the store's object log.</summary>
+        public const string ObjectLogFileName = "hlog_objs";
+
+        /// <summary>Base file name receiving the up-converted object log during <see cref="Upgrade"/>. Replaces
+        /// <see cref="ObjectLogFileName"/> once conversion completes.</summary>
+        public const string UpgradeObjectLogFileName = "hlog_objs_upgrade";
+
+        /// <summary>
         /// Whether large memory surfaces (log pages / hash index / recovery frames) use a native
         /// (off-managed-heap) allocator. Resolved from the <c>--use-native-allocator</c> switch and installed at
         /// startup via <see cref="NativeAllocatorInitializer"/>. The direct-VM backend calls the OS virtual-memory
@@ -877,6 +895,14 @@ namespace Garnet.server
                 }
             }
 
+            if (Upgrade)
+            {
+                if (!Recover)
+                    throw new Exception("Upgrade specified without Recover; there is nothing to up-convert unless an existing checkpoint is recovered");
+                if (!EnableStorageTier)
+                    throw new Exception("Upgrade specified without enabling tiered storage (UseStorage); there is no object log to up-convert");
+            }
+
             if (EnableStorageTier)
             {
                 if (LogDir is null or "")
@@ -886,7 +912,11 @@ namespace Garnet.server
                 // These must match GetInitializedSegmentFileDevice.GetStoreHLogDevice
                 kvSettings.LogDevice = logFactory.Get(new FileDescriptor("Store", "hlog"));
                 if (!DisableObjects)
-                    kvSettings.ObjectLogDevice = logFactory.Get(new FileDescriptor("Store", "hlog_objs"));
+                {
+                    kvSettings.ObjectLogDevice = logFactory.Get(new FileDescriptor("Store", ObjectLogFileName));
+                    if (Upgrade)
+                        kvSettings.UpgradeObjectLogDevice = logFactory.Get(new FileDescriptor("Store", UpgradeObjectLogFileName));
+                }
             }
             else
             {

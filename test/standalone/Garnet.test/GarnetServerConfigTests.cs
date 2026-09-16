@@ -127,6 +127,73 @@ namespace Garnet.test
         }
 
         [Test]
+        public void UpgradeOptionParsing()
+        {
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
+            try
+            {
+                // Default: no up-conversion.
+                var ok = ServerSettingsManager.TryParseCommandLineArguments([], out var options, out _, out _, out _, silentMode: true);
+                ClassicAssert.IsTrue(ok);
+                ClassicAssert.IsFalse(options.Upgrade.GetValueOrDefault());
+                ClassicAssert.IsFalse(options.GetServerOptions().Upgrade);
+
+                ok = ServerSettingsManager.TryParseCommandLineArguments(["--upgrade", "true", "--recover", "true", "--storage-tier", "true", "--logdir", TestUtils.MethodTestDir], out options, out _, out _, out _, silentMode: true);
+                ClassicAssert.IsTrue(ok);
+                ClassicAssert.IsTrue(options.Upgrade.GetValueOrDefault());
+
+                var serverOptions = options.GetServerOptions();
+                ClassicAssert.IsTrue(serverOptions.Upgrade);
+
+                // The upgrade device is created alongside the object log it will replace.
+                using var kvSettings = serverOptions.GetSettings(null, null, null, out _);
+                ClassicAssert.IsNotNull(kvSettings.ObjectLogDevice);
+                ClassicAssert.IsNotNull(kvSettings.UpgradeObjectLogDevice);
+                ClassicAssert.AreNotEqual(kvSettings.ObjectLogDevice.FileName, kvSettings.UpgradeObjectLogDevice.FileName);
+            }
+            finally
+            {
+                TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
+            }
+        }
+
+        [Test]
+        public void UpgradeWithoutObjectLogCreatesNoUpgradeDevice()
+        {
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
+            try
+            {
+                // With no object log there is nothing to up-convert, so no device is created.
+                var ok = ServerSettingsManager.TryParseCommandLineArguments(["--upgrade", "true", "--recover", "true", "--storage-tier", "true", "--no-obj", "true", "--logdir", TestUtils.MethodTestDir], out var options, out _, out _, out _, silentMode: true);
+                ClassicAssert.IsTrue(ok);
+
+                using var kvSettings = options.GetServerOptions().GetSettings(null, null, null, out _);
+                ClassicAssert.IsNull(kvSettings.ObjectLogDevice);
+                ClassicAssert.IsNull(kvSettings.UpgradeObjectLogDevice);
+            }
+            finally
+            {
+                TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
+            }
+        }
+
+        [Test]
+        public void UpgradeRequiresRecoverAndStorageTier()
+        {
+            // Recovering is what surfaces the downlevel checkpoint; without it there is nothing to convert.
+            var ok = ServerSettingsManager.TryParseCommandLineArguments(["--upgrade", "true", "--storage-tier", "true", "--logdir", TestUtils.MethodTestDir], out var options, out _, out _, out _, silentMode: true);
+            ClassicAssert.IsTrue(ok);
+            var ex = Assert.Throws<Exception>(() => options.GetServerOptions().GetSettings(null, null, null, out _));
+            ClassicAssert.IsTrue(ex.Message.Contains("Recover"), $"unexpected message: {ex.Message}");
+
+            // Without tiered storage there is no object log on disk at all.
+            ok = ServerSettingsManager.TryParseCommandLineArguments(["--upgrade", "true", "--recover", "true"], out options, out _, out _, out _, silentMode: true);
+            ClassicAssert.IsTrue(ok);
+            ex = Assert.Throws<Exception>(() => options.GetServerOptions().GetSettings(null, null, null, out _));
+            ClassicAssert.IsTrue(ex.Message.Contains("tiered storage"), $"unexpected message: {ex.Message}");
+        }
+
+        [Test]
         public void UseLegacyBufferPoolOptionParsing()
         {
             // Default: origin-return pool is used (legacy flag off).

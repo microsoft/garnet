@@ -140,6 +140,10 @@ namespace Garnet
         public bool? Recover { get; set; }
 
         [OptionValidation]
+        [Option("upgrade", Required = false, HelpText = "Up-convert a store written by an earlier release, then exit. The object log is rewritten in current format alongside the original, which is retained under a versioned name, and a fresh checkpoint is taken. Requires --recover and tiered storage; has no effect on a store with no object log.")]
+        public bool? Upgrade { get; set; }
+
+        [OptionValidation]
         [Option("no-pubsub", Required = false, HelpText = "Disable pub/sub feature on server.")]
         public bool? DisablePubSub { get; set; }
 
@@ -909,6 +913,7 @@ namespace Garnet
                 LogDir = logDir,
                 CheckpointDir = checkpointDir,
                 Recover = Recover.GetValueOrDefault(),
+                Upgrade = Upgrade.GetValueOrDefault(),
                 DisablePubSub = DisablePubSub.GetValueOrDefault(),
                 PubSubPageSize = PubSubPageSize,
                 DisableObjects = DisableObjects.GetValueOrDefault(),
