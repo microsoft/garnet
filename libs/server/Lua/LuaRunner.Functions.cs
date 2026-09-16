@@ -852,7 +852,7 @@ namespace Garnet.server
                 return LuaWrappedError(1, constStrs.InsufficientLuaStackSpace);
             }
 
-            var res = state.LoadString(buff);
+            var res = state.LoadTextBuffer(buff);
             if (res != LuaStatus.OK)
             {
                 state.ClearStack();
@@ -3071,8 +3071,8 @@ namespace Garnet.server
         private unsafe int CompileCommon<TResponse>(nint luaState, ref TResponse resp)
             where TResponse : struct, IResponseAdapter
         {
-            // 1 for function, 1 for code string
-            const int NeededStackSpace = 2;
+            // 1 for function, 1 for code string, 1 for load mode
+            const int NeededStackSpace = 3;
 
             Debug.Assert(functionRegistryIndex == -1, "Shouldn't compile multiple times");
 
@@ -3081,15 +3081,19 @@ namespace Garnet.server
             Debug.Assert(state.TryEnsureMinimumStackCapacity(NeededStackSpace), "LUA_MIN_STACK should be high enough that this cannot happen");
 
             _ = state.RawGetInteger(LuaType.Function, (int)LuaRegistry.Index, loadSandboxedRegistryIndex);
-            if (!state.TryPushBuffer(source.Span))
+            if (!state.TryPushBuffer(source.Data.Span))
             {
-                while (!RespWriteUtils.TryWriteError(CmdStrings.LUA_out_of_memory, ref resp.BufferCur, resp.BufferEnd))
-                    resp.SendAndReset();
-
+                WriteOutOfMemoryError(ref resp);
                 return 0;
             }
 
-            var callRes = state.PCall(1, 2);
+            if (!state.TryPushBuffer(source.Kind == LuaScriptChunkKind.GarnetGeneratedBinary ? "b"u8 : "t"u8))
+            {
+                WriteOutOfMemoryError(ref resp);
+                return 0;
+            }
+
+            var callRes = state.PCall(2, 2);
 
             // On success the stack will have two things on it:
             //  1. The error (nil if not error)
@@ -3104,9 +3108,7 @@ namespace Garnet.server
                 if (!state.TryRef(out functionRegistryIndex))
                 {
                     // Uh-oh, couldn't save the function under the registry
-                    while (!RespWriteUtils.TryWriteError(CmdStrings.LUA_out_of_memory, ref resp.BufferCur, resp.BufferEnd))
-                        resp.SendAndReset();
-
+                    WriteOutOfMemoryError(ref resp);
                     return 0;
                 }
             }
@@ -3129,6 +3131,12 @@ namespace Garnet.server
             }
 
             return 0;
+        }
+
+        private static unsafe void WriteOutOfMemoryError<TResponse>(ref TResponse resp) where TResponse : struct, IResponseAdapter
+        {
+            while (!RespWriteUtils.TryWriteError(CmdStrings.LUA_out_of_memory, ref resp.BufferCur, resp.BufferEnd))
+                resp.SendAndReset();
         }
 
         /// <summary>
