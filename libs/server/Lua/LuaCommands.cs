@@ -48,9 +48,9 @@ namespace Garnet.server
                 {
                     if (storeWrapper.storeScriptCache.TryGetValue(scriptKey, out var globalScriptHandle))
                     {
-                        if (!sessionScriptCache.TryLoadCached(this, scriptKey, globalScriptHandle, out runner))
+                        if (!sessionScriptCache.TryGetOrCreateRunnerFromCachedScript(this, scriptKey, globalScriptHandle, out runner))
                         {
-                            // TryLoadCached will have written an error out, if any
+                            // The loading error was already written, if any
                             //
                             // Note we DON'T dispose the script handle because this is just the session cache
                             _ = storeWrapper.storeScriptCache.TryRemove(scriptKey, out _);
@@ -114,7 +114,7 @@ namespace Garnet.server
             sessionScriptCache.GetScriptDigest(script.ReadOnlySpan, digest);
 
             var onStackScriptKey = new ScriptHashKey(digest);
-            if (!TryLoadScriptForSession(script.ReadOnlySpan, digest, onStackScriptKey, out var runner))
+            if (!TryGetOrCreateScriptRunner(script.ReadOnlySpan, digest, onStackScriptKey, out var runner))
                 return true; // The loading error was written to the response.
 
             if (runner == null)
@@ -240,7 +240,7 @@ namespace Garnet.server
             sessionScriptCache.GetScriptDigest(source.Span, digest);
 
             var onStackScriptHashKey = new ScriptHashKey(digest);
-            if (TryLoadScriptForSession(source.ReadOnlySpan, digest, onStackScriptHashKey, out _))
+            if (TryGetOrCreateScriptRunner(source.ReadOnlySpan, digest, onStackScriptHashKey, out _))
             {
                 while (!RespWriteUtils.TryWriteBulkString(digest, ref dcurr, dend))
                     SendAndReset();
@@ -249,12 +249,12 @@ namespace Garnet.server
             return true;
         }
 
-        private bool TryLoadScriptForSession(ReadOnlySpan<byte> source, ReadOnlySpan<byte> digest, ScriptHashKey scriptKey, out LuaRunner runner)
+        private bool TryGetOrCreateScriptRunner(ReadOnlySpan<byte> source, ReadOnlySpan<byte> digest, ScriptHashKey scriptKey, out LuaRunner runner)
         {
             if (storeWrapper.storeScriptCache.TryGetValue(scriptKey, out var globalScriptHandle))
-                return sessionScriptCache.TryLoadCached(this, scriptKey, globalScriptHandle, out runner);
+                return sessionScriptCache.TryGetOrCreateRunnerFromCachedScript(this, scriptKey, globalScriptHandle, out runner);
 
-            if (!sessionScriptCache.TryLoadSource(this, source, scriptKey, out var sessionScriptHandle, out runner, out var digestOnHeap))
+            if (!sessionScriptCache.TryGetOrCreateRunnerFromSource(this, source, scriptKey, out var sessionScriptHandle, out runner, out var digestOnHeap))
                 return false;
 
             ScriptHashKey globalScriptKey;
