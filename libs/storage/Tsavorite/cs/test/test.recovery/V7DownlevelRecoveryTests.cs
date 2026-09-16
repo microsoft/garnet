@@ -669,9 +669,9 @@ namespace Tsavorite.test.recovery
         [Category("TsavoriteKV"), Category("CheckpointRestore")]
         public async Task RecoverV7ObjectValueFoldOverLowMem()
         {
-            // Recover a v7 checkpoint into a store under a tight memory budget so recovery evicts records to the main log. A record evicted
-            // during a downlevel recovery is NOT up-converted, so it stays on the main log in the v7 encoding; the later runtime read of it
-            // must still decode correctly (the per-record ReuseObjectIdForSize flag selects the v7 decode even though the store is now current).
+            // Recover a v7 checkpoint into a store under a tight memory budget so recovery evicts records to the main log. Up-conversion runs
+            // ahead of eviction, so an evicted record has already been rewritten to reference the up-converted object log; the later runtime
+            // read of it must fetch those objects from disk and decode them in the current format.
             const int numRecords = 40;
             const int valueSize = 400;
             var token = BuildV7FoldOverFixture(numRecords, valueSize);
@@ -701,6 +701,54 @@ namespace Tsavorite.test.recovery
                         (status, output) = GetSinglePendingResult(completed);
                     }
                     ClassicAssert.IsTrue(status.Found, $"key {key} not found after low-mem v7 recovery");
+                    VerifyPayload(key, valueSize, output.valueObject?.value);
+                }
+            }
+            finally
+            {
+                log.Dispose();
+                objlog.Dispose();
+                upgradeObjlog.Dispose();
+            }
+        }
+
+        [Test]
+        [Category("TsavoriteKV"), Category("CheckpointRestore")]
+        public async Task RecoverV7LargeObjectValueFoldOverLowMem([Values(1024, 20000)] int valueSize)
+        {
+            // The decisive up-conversion test: values above the exact-size cutoff are stored dense (headerless) by v7 but require a leading
+            // ChunkHeader in the current format, so conversion must re-serialize them to the upgrade object log at new positions. The tight
+            // memory budget evicts every record during recovery, so the read-back below must fetch the converted objects from that device.
+            const int numRecords = 40;
+            var token = BuildV7DenseObjectValueFixture(numRecords, valueSize);
+
+            var checkpointDir = Path.Combine(MethodTestDir, CheckpointDirName);
+            IDevice log = Devices.CreateLogDevice(Path.Combine(MethodTestDir, MainLogName), deleteOnClose: false);
+            IDevice objlog = Devices.CreateLogDevice(Path.Combine(MethodTestDir, ObjectLogName), deleteOnClose: false);
+            IDevice upgradeObjlog = CreateUpgradeObjectLog();
+            try
+            {
+                using var store = CreateObjectStore(log, objlog, checkpointDir, 1L << 20, upgradeObjlog);
+                var target = 4L * MinKvLogPageSize;
+                var tracker = new LogSizeTracker<ObjStoreFunctions, ObjAllocator>(store.Log, target, target / 8, target / 16, logger: null);
+                store.Log.SetLogSizeTracker(tracker);
+                _ = await store.RecoverAsync(default, token).ConfigureAwait(false);
+
+                ClassicAssert.Greater(upgradeObjlog.GetFileSize(0), 0L, "up-conversion wrote nothing to the upgrade object log");
+
+                using var session = store.NewSession<TestObjectKey, TestLargeObjectInput, TestLargeObjectOutput, Empty, TestLargeObjectFunctions>(new TestLargeObjectFunctions());
+                var bContext = session.BasicContext;
+                for (var key = 0; key < numRecords; key++)
+                {
+                    TestLargeObjectInput input = new() { wantValueStyle = TestValueStyle.Object };
+                    TestLargeObjectOutput output = new();
+                    var status = bContext.Read(new TestObjectKey { key = key }, ref input, ref output);
+                    if (status.IsPending)
+                    {
+                        ClassicAssert.IsTrue(bContext.CompletePendingWithOutputs(out var completed, wait: true));
+                        (status, output) = GetSinglePendingResult(completed);
+                    }
+                    ClassicAssert.IsTrue(status.Found, $"key {key} not found after low-mem large v7 recovery (size {valueSize})");
                     VerifyPayload(key, valueSize, output.valueObject?.value);
                 }
             }
@@ -792,6 +840,91 @@ namespace Tsavorite.test.recovery
                 objlog.Dispose();
                 upgradeObjlog.Dispose();
             }
+        }
+
+        [Test]
+        [Category("TsavoriteKV"), Category("CheckpointRestore")]
+        public async Task RecoverV7UpConvertsMainLogOnDisk([Values(400, 20000)] int valueSize)
+        {
+            // Proves the up-conversion actually rewrote the log rather than leaving the records readable only through the downlevel
+            // decode path. After recovery flushes every page, no main-log record may still carry the v7 ReuseObjectIdForSize flag
+            // (bit 63): the current format never sets it, so any record left set is one the conversion pass missed.
+            const int numRecords = 12;
+            var token = BuildV7DenseObjectValueFixture(numRecords, valueSize);
+
+            var checkpointDir = Path.Combine(MethodTestDir, CheckpointDirName);
+            IDevice log = Devices.CreateLogDevice(Path.Combine(MethodTestDir, MainLogName), deleteOnClose: false);
+            IDevice objlog = Devices.CreateLogDevice(Path.Combine(MethodTestDir, ObjectLogName), deleteOnClose: false);
+            IDevice upgradeObjlog = CreateUpgradeObjectLog();
+            try
+            {
+                using (var store = CreateObjectStore(log, objlog, checkpointDir, 1L << 20, upgradeObjlog))
+                {
+                    _ = await store.RecoverAsync(default, token).ConfigureAwait(false);
+
+                    using var session = store.NewSession<TestObjectKey, TestLargeObjectInput, TestLargeObjectOutput, Empty, TestLargeObjectFunctions>(new TestLargeObjectFunctions());
+                    var bContext = session.BasicContext;
+                    for (var key = 0; key < numRecords; key++)
+                    {
+                        TestLargeObjectInput input = new() { wantValueStyle = TestValueStyle.Object };
+                        TestLargeObjectOutput output = new();
+                        var status = bContext.Read(new TestObjectKey { key = key }, ref input, ref output);
+                        if (status.IsPending)
+                        {
+                            ClassicAssert.IsTrue(bContext.CompletePendingWithOutputs(out var completed, wait: true));
+                            (status, output) = GetSinglePendingResult(completed);
+                        }
+                        ClassicAssert.IsTrue(status.Found, $"key {key} not found after v7 up-conversion (size {valueSize})");
+                        VerifyPayload(key, valueSize, output.valueObject?.value);
+                    }
+
+                    store.Log.FlushAndEvict(wait: true);
+                }
+            }
+            finally
+            {
+                log.Dispose();
+                objlog.Dispose();
+                upgradeObjlog.Dispose();
+            }
+
+            // The devices are closed, so the main-log segment file can be read directly.
+            AssertMainLogHasNoDownlevelRecords(token, numRecords);
+        }
+
+        /// <summary>Scan the on-disk main log and assert every out-of-line record is in the current object-log format.</summary>
+        static unsafe void AssertMainLogHasNoDownlevelRecords(Guid token, int expectedObjectRecords)
+        {
+            var namingScheme = new DefaultCheckpointNamingScheme(new DirectoryInfo(Path.Combine(MethodTestDir, CheckpointDirName)).FullName);
+            using var checkpointManager = new DeviceLogCommitCheckpointManager(new LocalStorageNamedDeviceFactoryCreator(), namingScheme, removeOutdated: false);
+            var info = new HybridLogRecoveryInfo();
+            info.Recover(token, checkpointManager);
+
+            var pageBytes = File.ReadAllBytes(FindLogSegmentZero(MethodTestDir, MainLogName));
+            var objectRecordCount = 0;
+            fixed (byte* pagePtr = pageBytes)
+            {
+                var pageBase = (long)pagePtr;
+                var offset = info.beginAddress;
+                while (offset < info.recoveredTailAddress)
+                {
+                    var logRecord = new LogRecord(pageBase + offset);
+                    if (logRecord.Info.IsNull)
+                    {
+                        offset += RecordInfo.Size;
+                        continue;
+                    }
+                    if (logRecord.Info.Valid && !logRecord.DataHeader.RecordIsInline)
+                    {
+                        var word = *(ulong*)logRecord.GetObjectLogPositionAddress(logRecord.GetOptionalStartAddress());
+                        ClassicAssert.AreEqual(0UL, word & ObjectLogFilePositionInfo.kReuseObjectIdForSizeMask,
+                            $"record at {offset} was not up-converted: ReuseObjectIdForSize (bit 63) is still set");
+                        ++objectRecordCount;
+                    }
+                    offset += logRecord.AllocatedSize;
+                }
+            }
+            ClassicAssert.AreEqual(expectedObjectRecords, objectRecordCount, "expected one out-of-line object record per key");
         }
 
         [Test]

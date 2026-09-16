@@ -72,11 +72,27 @@ namespace Tsavorite.core
         /// serialization-buffer count; tune it from checkpoint throughput and foreground-latency measurements.</summary>
         const int DefaultSnapshotFlushWindowSize = 64;
 
-        private readonly IDevice objectLogDevice;
+        /// <summary>The object log the allocator reads and writes. While a downlevel checkpoint is being up-converted this remains the
+        /// downlevel (read-source) device, and is repointed to <see cref="upgradeObjectLogDevice"/> by <see cref="CompleteObjectLogUpgrade"/>
+        /// once every page has been converted.</summary>
+        private IDevice objectLogDevice;
 
         /// <summary>Device receiving up-converted object bytes while recovering a downlevel checkpoint; null otherwise.
         /// <see cref="objectLogDevice"/> is the read source for that conversion.</summary>
         private readonly IDevice upgradeObjectLogDevice;
+
+        /// <summary>Append position on <see cref="upgradeObjectLogDevice"/> while up-converting a downlevel checkpoint. This is kept
+        /// separate from <see cref="objectLogTail"/> -- which continues to bound reads of the downlevel <see cref="objectLogDevice"/>
+        /// throughout the conversion -- so a read bound is never applied to the write device or vice versa. The two are swapped by
+        /// <see cref="CompleteObjectLogUpgrade"/>.</summary>
+        private ObjectLogFilePositionInfo upgradeObjectLogTail;
+
+        /// <summary>Whether a downlevel object-log up-conversion is in progress; set for the duration of the ascending conversion pass.</summary>
+        private bool isUpgradingObjectLog;
+
+        /// <summary>Whether a downlevel object-log up-conversion has completed, so the live object log is <see cref="upgradeObjectLogDevice"/>
+        /// and the live tail comes from <see cref="upgradeObjectLogTail"/> rather than from the checkpoint's downlevel tail.</summary>
+        private bool objectLogWasUpgraded;
 
         /// <summary>The free pages of the log</summary>
         private readonly OverflowPool<PageUnit<ObjectPage>> freePagePool;
@@ -610,7 +626,8 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         internal override CircularDiskWriteBuffer CreateCircularFlushBuffers(IDevice objectLogDevice, ILogger logger)
         {
-            var localObjectLogDevice = objectLogDevice ?? this.objectLogDevice;
+            // While up-converting, a flush appends current-format bytes to the upgrade device; the downlevel device stays the read source.
+            var localObjectLogDevice = objectLogDevice ?? (isUpgradingObjectLog ? upgradeObjectLogDevice : this.objectLogDevice);
             return localObjectLogDevice is not null
                 ? new(bufferPool, IStreamBuffer.BufferSize, numberOfFlushBuffers, localObjectLogDevice, logger)
                 : null;
@@ -653,7 +670,37 @@ namespace Tsavorite.core
         internal override void SetObjectLogTail(ObjectLogFilePositionInfo tail)
         {
             Debug.Assert(!objectLogTail.HasData, $"SetObjectLogTail should be called only when we have not already set objectLogTail, such as in Recovery");
-            objectLogTail = tail;
+
+            // A completed up-conversion replaced the object log, so the checkpoint's downlevel tail no longer describes the live device.
+            // The position the conversion appended to is the live tail.
+            objectLogTail = objectLogWasUpgraded ? upgradeObjectLogTail : tail;
+        }
+
+        /// <inheritdoc/>
+        internal override void BeginObjectLogUpgrade()
+        {
+            Debug.Assert(upgradeObjectLogDevice is not null, $"{nameof(BeginObjectLogUpgrade)} requires an upgrade object-log device");
+            Debug.Assert(!isUpgradingObjectLog, $"{nameof(BeginObjectLogUpgrade)} should be called only once");
+
+            // The upgrade device is a new, empty file, so conversion appends from its start. objectLogTail is left alone: it holds the
+            // downlevel tail from the checkpoint metadata and continues to bound reads of the downlevel device during conversion.
+            upgradeObjectLogTail = new(0, objectLogTail.SegmentSizeBits);
+            isUpgradingObjectLog = true;
+        }
+
+        /// <inheritdoc/>
+        internal override bool IsUpgradingObjectLog => isUpgradingObjectLog;
+
+        /// <inheritdoc/>
+        internal override void CompleteObjectLogUpgrade()
+        {
+            Debug.Assert(isUpgradingObjectLog, $"{nameof(CompleteObjectLogUpgrade)} requires {nameof(BeginObjectLogUpgrade)}");
+
+            // Every page has been converted, so the up-converted device becomes the live object log. The live tail is adopted from
+            // upgradeObjectLogTail by SetObjectLogTail, which recovery calls once the hybrid-log phase completes.
+            objectLogDevice = upgradeObjectLogDevice;
+            objectLogWasUpgraded = true;
+            isUpgradingObjectLog = false;
         }
 
         /// <inheritdoc/>
@@ -919,10 +966,14 @@ namespace Tsavorite.core
                 // Record traversal and metadata stamping are page-relative. The page remains resident until this flush's callback completes.
                 var recordsBasePtr = (byte*)logPagePointer;
 
+                // While up-converting a downlevel object log the writer appends to the upgrade device and advances that device's own
+                // tail; objectLogTail is left holding the downlevel tail, which continues to bound reads of the downlevel device.
+                ref var flushObjectLogTail = ref isUpgradingObjectLog ? ref upgradeObjectLogTail : ref objectLogTail;
+
                 if (asyncResult.flushBuffers is not null)
                 {
                     logWriter = new(device, asyncResult.flushBuffers, storeFunctions);
-                    _ = logWriter.OnBeginPartialFlush(objectLogTail);
+                    _ = logWriter.OnBeginPartialFlush(flushObjectLogTail);
                 }
 
                 // Include page header when calculating end address. Using page-relative addressing makes both paths look identical.
@@ -1026,11 +1077,33 @@ namespace Tsavorite.core
                                     {
                                         if (HybridLogRecoveryInfo.UsesDownlevelObjectLog(asyncResult.checkpointVersion))
                                         {
-                                            // Downlevel (v2.1) hybrid-log-region record: up-convert its split length/position encoding into the current
-                                            // hint format (or fail fast for a large overflow/object that would need a not-yet-supported leading
-                                            // ChunkHeader insertion), advancing the running page position.
-                                            var objectLengths = logRecord.SetRecoveredObjectLogRecordStartPosition(recoveryOngoingPageHeader);
-                                            recoveryOngoingPageHeader.Advance(objectLengths);
+                                            if (isUpgradingObjectLog)
+                                            {
+                                                // Up-converting a downlevel object log. The ascending conversion pass has already deserialized this
+                                                // page's objects, so re-serialize them through the current-format writer -- which frames anything past
+                                                // the headerless maximum with a ChunkHeader -- appending to the upgrade device. Only the object-log
+                                                // extent changes; the record's inline image keeps its size and is rewritten in place on the main log.
+                                                if (!logRecord.TryGetOutOfLineComponents(out var keyOverflow, out var valueOverflow, out var valueObject))
+                                                    throw new TsavoriteException($"Object-log upgrade could not capture the out-of-line components of the record at {logicalAddress}");
+
+                                                var recordStartPosition = logWriter.GetNextRecordStartPosition();
+                                                var valueObjectLength = logWriter.WriteRecordObjects(in keyOverflow, in valueOverflow, in valueObject);
+                                                logRecord.SetObjectLogPositionAndSizeHints(recordStartPosition, valueObjectLength, in keyOverflow, in valueOverflow,
+                                                    logWriter.lastKeyAlignmentPadding, logWriter.lastValueAlignmentPadding, (long)logWriter.lastObjectFirstChunkExtent);
+
+                                                // In-place main-log rewrite is only sound while the inline image is size-stable. Fail loudly rather
+                                                // than write a page whose records no longer line up with the addresses recovery assigned them.
+                                                if (logRecord.AllocatedSize != logRecordSize)
+                                                    throw new TsavoriteException($"Object-log upgrade changed the inline size of the record at {logicalAddress} from {logRecordSize} to {logRecord.AllocatedSize}");
+                                            }
+                                            else
+                                            {
+                                                // Downlevel (v2.1) hybrid-log-region record: up-convert its split length/position encoding into the current
+                                                // hint format (or fail fast for a large overflow/object that would need a not-yet-supported leading
+                                                // ChunkHeader insertion), advancing the running page position.
+                                                var objectLengths = logRecord.SetRecoveredObjectLogRecordStartPosition(recoveryOngoingPageHeader);
+                                                recoveryOngoingPageHeader.Advance(objectLengths);
+                                            }
                                         }
                                         // else: current-format hybrid-log-region record. Its object bytes are already durable in the main object-log and its
                                         // record (object-log position + objectId size hints) is already correct; the only recovery
@@ -1077,7 +1150,7 @@ namespace Tsavorite.core
 
                     if (logWriter is not null)
                     {
-                        logWriter.OnPartialFlushComplete(writePtr, writeLength, device, writeAddress, callback, asyncResult, ref objectLogTail);
+                        logWriter.OnPartialFlushComplete(writePtr, writeLength, device, writeAddress, callback, asyncResult, ref flushObjectLogTail);
                     }
                     else
                     {

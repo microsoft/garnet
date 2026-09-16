@@ -36,6 +36,16 @@ namespace Tsavorite.core
         internal virtual ObjectLogFilePositionInfo GetObjectLogTail() => new();  // This marks it as "unset"
         /// <summary>Set the ObjectLog tail position, if this is ObjectAllocator.</summary>
         internal virtual void SetObjectLogTail(ObjectLogFilePositionInfo tail) { }
+
+        /// <summary>Begin up-converting a downlevel object log: subsequent recovery flushes append current-format object bytes to the
+        /// upgrade device while reads continue to resolve against the downlevel device.</summary>
+        internal virtual void BeginObjectLogUpgrade() { }
+
+        /// <summary>Whether a downlevel object-log up-conversion is in progress.</summary>
+        internal virtual bool IsUpgradingObjectLog => false;
+
+        /// <summary>Finish up-converting a downlevel object log, making the upgrade device the live object log.</summary>
+        internal virtual void CompleteObjectLogUpgrade() { }
         /// <summary>Calculate the total serialized object size on a loaded page. Only implemented by ObjectAllocator.</summary>
         internal virtual long CalculatePageObjectSizes(int page, long startAddress, long untilAddress, int checkpointVersion) => 0;
         /// <summary>Load objects for records on an already-loaded page for recovery pass 2.</summary>
@@ -2394,7 +2404,8 @@ namespace Tsavorite.core
             Debug.Assert(scanFromAddress < GetLogicalAddressOfStartOfPage(flushPageStart + 1), $"scanFromAddress ({scanFromAddress}) must be on flushPageStart ({flushPageStart})");
 
             // When copying snapshot object bytes into the main object-log, we need write buffers on the main object-log device (as for a normal flush).
-            var copyObjects = snapshotObjectLogDevice is not null;
+            // An object-log up-conversion likewise writes object bytes, re-serializing each record in current format onto the upgrade device.
+            var copyObjects = snapshotObjectLogDevice is not null || IsUpgradingObjectLog;
             for (var flushPage = flushPageStart; flushPage < (flushPageStart + numPages); flushPage++)
             {
                 var pageStartAddress = GetLogicalAddressOfStartOfPage(flushPage);
