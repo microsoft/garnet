@@ -420,7 +420,7 @@ namespace Garnet.test.cluster
 
         /// <summary>
         /// Describes which of the expected nodes a server has not yet agreed on, so a cluster that never
-        /// converges reports what it was waiting for instead of only that it ran out of time.
+        /// converges reports what it was waiting for.
         /// </summary>
         /// <param name="endPoint">Server whose view was inspected.</param>
         /// <param name="expectedConfig">Expected cluster configuration, keyed by node id.</param>

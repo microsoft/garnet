@@ -84,7 +84,7 @@ namespace Garnet.test
         /// Releasing only the waiters that are already parked leaves the same hang one moment later:
         /// disposal closes listeners before it drains handlers, so a request that is already in flight can
         /// reach a still-armed injection point after shutdown has begun and park there instead. Nothing
-        /// re-enables it, so it strands its pooled buffer exactly as before.
+        /// re-enables it, so it strands its pooled buffer the same way.
         /// </summary>
         [Test]
         public void ArrivingAtAnInjectionPointDuringShutdownDoesNotPark()
