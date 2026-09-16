@@ -1115,23 +1115,16 @@ namespace Tsavorite.core
                                     }
                                     else
                                     {
+                                        // A downlevel record reaching here was not up-converted. Recovery begins the up-conversion whenever a
+                                        // downlevel checkpoint has an object log, and converts every page before it can be evicted or flushed,
+                                        // so this cannot happen; fail loudly rather than persist a page in a format later releases cannot decode.
                                         if (HybridLogRecoveryInfo.UsesDownlevelObjectLog(asyncResult.checkpointVersion))
-                                        {
-                                            // Downlevel (v2.1) hybrid-log-region record: up-convert its split length/position encoding into the current
-                                            // hint format (or fail fast for a large overflow/object that would need a not-yet-supported leading
-                                            // ChunkHeader insertion), advancing the running page position.
-                                            var objectLengths = logRecord.SetRecoveredObjectLogRecordStartPosition(recoveryOngoingPageHeader);
-                                            recoveryOngoingPageHeader.Advance(objectLengths);
-                                        }
-                                        // else: current-format hybrid-log-region record. Its object bytes are already durable in the main object-log and its
+                                            throw new TsavoriteException($"Downlevel record at {logicalAddress} reached the recovery flush without being up-converted");
+
+                                        // Current-format hybrid-log-region record. Its object bytes are already durable in the main object-log and its
                                         // record (object-log position + objectId size hints) is already correct; the only recovery
                                         // mutation for this page -- SetInvalid on undone v+1 records -- was applied to the live page by RecoverFromPage
-                                        // and is already present on the live page. So persist the record VERBATIM. Calling
-                                        // SetRecoveredObjectLogRecordStartPosition here would misread the (un-deserialized, Pass1) position slot as a
-                                        // deserialized length and stamp a garbage position + length hint into the page -- masked in the
-                                        // recovering run (which reads the live page) but corrupting any later recovery that reads the page from disk.
-                                        // recoveryOngoingPageHeader is consumed only by that setter and a page is single-version, so a current-format page
-                                        // needs no advance here.
+                                        // and is already present on the live page. So persist the record VERBATIM.
                                     }
 
                                     isFirstRecordOnPage = false;

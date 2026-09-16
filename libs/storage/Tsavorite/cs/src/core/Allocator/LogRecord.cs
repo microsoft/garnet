@@ -1717,11 +1717,8 @@ namespace Tsavorite.core
         /// <param name="keyLength">Outputs the key initial-read extent.</param>
         /// <param name="valueObjectLength">Outputs the value initial-read extent.</param>
         /// <param name="checkpointVersion">The checkpoint metadata version whose object-log encoding is being decoded; the current version for a
-        /// live read. Recovery passes the recovered checkpoint version to select the downlevel v2.1 decode without consulting a per-record flag.</param>
+        /// live read. Recovery passes the recovered checkpoint version to select the downlevel v2.1 decode.</param>
         /// <returns>The object log position word for this record, with flag bits masked off (segment+offset only).</returns>
-        /// <remarks>The per-record <see cref="HasReuseObjectIdForSize"/> flag is honored in addition to the version so that a live (current-version)
-        /// read of a downlevel record still decodes correctly: recovering a v7 checkpoint under memory pressure can evict a v7 record to the main
-        /// log without up-converting it, and a later runtime read of that record arrives here with the current version but the flag set.</remarks>
         internal readonly ulong GetObjectLogRecordStartPositionAndLengths(out int keyLength, out ulong valueObjectLength, int checkpointVersion)
         {
             if (IsDownlevelObjectLogRecord(checkpointVersion))
@@ -1755,82 +1752,11 @@ namespace Tsavorite.core
             return word & ObjectLogFilePositionInfo.SegmentAndOffsetMask;
         }
 
-        /// <summary>
-        /// Up-converts a downlevel (v2.1) hybrid-log-region record to the current object-log encoding during the recovery flush. All objects
-        /// have already been deserialized and their lengths are known: Overflow is in the Key or Value field, and Object is in the
-        /// ObjectLogPosition field. So we set up the pagePositionInfo for this record directly rather than re-serializing, which also keeps the
-        /// objectLogTail consistent. Writes the current objectId-hint format. The caller invokes this only for a downlevel source (selected by
-        /// the checkpoint metadata version); a current-format record is written verbatim and never passes through here.
-        /// </summary>
-        /// <param name="pagePositionInfo">The cumulative position on the page (starting from the PageHeader)</param>
-        /// <returns>The total "serialized" lengths from this LogRecord; will be 0 for inline records. Caller will adjust for
-        ///     segment boundaries.</returns>
-        internal readonly ulong SetRecoveredObjectLogRecordStartPosition(ObjectLogFilePositionInfo pagePositionInfo)
-        {
-            if (DataHeader.RecordIsInline)
-            {
-                Debug.Fail("Cannot call SetRecoveredObjectLogRecordStartPosition for an inline record");
-                return 0;
-            }
-
-            var dataHeader = DataHeader;
-            var (valueLength, valueAddress) = dataHeader.GetValueFieldInfo(physicalAddress);
-            var objectLogPositionPtr = (ulong*)GetObjectLogPositionAddress(valueAddress + valueLength);
-
-            // For ValueObject, the deserialized length was stored at objectLogPositionPtr by SetDeserializedValueObject.
-            var valueObjectLength = *objectLogPositionPtr;
-
-            ulong keyLen = 0;
-            if (dataHeader.KeyIsOverflow)
-            {
-                var (_ /*kLen*/, keyAddress) = dataHeader.GetKeyFieldInfo(physicalAddress);
-                keyLen = (ulong)objectIdMap.GetOverflowByteArray(*(int*)keyAddress).Length;
-            }
-            var valLen = dataHeader.ValueIsOverflow ? (ulong)objectIdMap.GetOverflowByteArray(*(int*)valueAddress).Length
-                       : (dataHeader.ValueIsObject ? valueObjectLength : 0UL);
-
-            // Converting a downlevel (v2.1) source to the current format is only byte-safe when the current encoding is
-            // headerless: a v2.1 object-log stream carries no ChunkHeaders, so its bytes match the current headerless (small overflow) and
-            // chunked-object (dense, no per-chunk header) encodings and can be repointed as-is. But a large overflow key (>= the 1023
-            // key or overflow value (> kOutOfLineExactSizeCutoff) that the current format encodes WITH a leading ChunkHeader
-            // has no such header in the downlevel bytes; setting the hint-with-header encoding here would make the reader consume 8 bytes
-            // of the value as a bogus header. Re-serializing to insert the header during recovery (which grows the object log and shifts
-            // following positions) is not yet implemented, so fail fast rather than silently corrupt. This method is only reached for a
-            // downlevel source, so the guard is unconditional.
-            if (keyLen > ObjectIdMap.MaxObjectIdSizeHint
-                    || ((dataHeader.ValueIsOverflow || dataHeader.ValueIsObject) && valLen > (ulong)RecordDataHeader.kOutOfLineExactSizeCutoff))
-            {
-                throw new TsavoriteException(
-                    "Recovering a legacy checkpoint record whose large overflow key/value or object requires a leading ChunkHeader is not yet supported by the recovery reposition path (the legacy object log has no header, and header insertion during recovery is not implemented).");
-            }
-
-            // This guarded conversion only supports components that remain headerless in the current format.
-            *objectLogPositionPtr = pagePositionInfo.word;
-            if (dataHeader.KeyIsOverflow)
-            {
-                var (_, keyAddress) = dataHeader.GetKeyFieldInfo(physicalAddress);
-                StampSizeHint((long)keyLen, (long)keyLen, (int*)keyAddress, objectLogPositionPtr, isKey: true);
-            }
-            if (!dataHeader.ValueIsInline)
-                StampSizeHint((long)valLen, (long)valLen, (int*)valueAddress, objectLogPositionPtr, isKey: false);
-            return keyLen + valLen;
-        }
-
-        /// <summary>Whether the <c>ReuseObjectIdForSize</c> flag is set on this record's ObjectLogPosition slot. v7 records set it to mark the
-        /// downlevel split length encoding (RDH KeyLength/ValueLength low bits + objectId slot high 32 bits, no object-log stream length framing).
-        /// Recovery selects the decode from the checkpoint metadata version rather than this flag, but a live read still honors it per record
-        /// (see <see cref="IsDownlevelObjectLogRecord(int)"/>) so a downlevel record left on the main log by a memory-pressured downlevel recovery
-        /// is decoded correctly.</summary>
-        internal readonly bool HasReuseObjectIdForSize
-            => ObjectLogFilePositionInfo.GetReuseObjectIdForSize((ulong*)GetObjectLogPositionAddress(GetOptionalStartAddress()));
-
-        /// <summary>Whether this record's object log uses the downlevel (v2.1) split-length encoding. True when the checkpoint being recovered
-        /// predates the chunk-framed format (<see cref="HybridLogRecoveryInfo.UsesDownlevelObjectLog(int)"/>), OR when the per-record
-        /// <see cref="HasReuseObjectIdForSize"/> flag is set. The flag catches a live (current-version) read of a downlevel record that a
-        /// memory-pressured downlevel recovery evicted to the main log without up-converting; a page can mix such records with up-converted
-        /// ones, so the decode must be selected per record.</summary>
+        /// <summary>Whether this record's object log uses the downlevel (v2.1) split-length encoding. Recovery selects the decode from the
+        /// checkpoint metadata version (<see cref="HybridLogRecoveryInfo.UsesDownlevelObjectLog(int)"/>); a live read never sees a downlevel
+        /// record, because recovering a downlevel checkpoint up-converts every record before any page can be evicted.</summary>
         internal readonly bool IsDownlevelObjectLogRecord(int checkpointVersion)
-            => HybridLogRecoveryInfo.UsesDownlevelObjectLog(checkpointVersion) || HasReuseObjectIdForSize;
+            => HybridLogRecoveryInfo.UsesDownlevelObjectLog(checkpointVersion);
 
         /// <summary>Set the <c>ReuseObjectIdForSize</c> flag on this record's ObjectLogPosition slot, marking the downlevel split length
         /// encoding. No production writer sets this flag; it is retained for tests that synthesize v7 record images.</summary>

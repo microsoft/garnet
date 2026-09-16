@@ -18,21 +18,19 @@ namespace Tsavorite.test.recovery.objects
     /// <summary>
     /// Regression tests for the Pass1 recovery undo-reflush of a FoldOver checkpoint's fuzzy boundary page.
     ///
-    /// The bug (fixed in <c>ObjectAllocatorImpl.WriteAsync</c>'s hybrid-log-region recovery branch): a FoldOver checkpoint
-    /// keeps its whole fuzzy region in the main log (no snapshot file), so on recovery the fuzzy v+1 records are undone by
-    /// <c>RecoverHybridLogAsync</c> -> <c>ProcessReadPageAndFlush</c> -> <c>AsyncFlushPagesForRecovery</c> and any page
-    /// carrying an undone (touched) record is re-flushed. For the still-valid object records on that boundary page, the
-    /// recovery flush used to call <c>SetRecoveredObjectLogRecordStartPosition</c>, which reads the record's object-log
-    /// position slot AS A LENGTH. But Pass1 never deserializes (it only SetInvalid + rehashes), so the slot still holds the
-    /// original POSITION; consuming it as a length advanced the running page position and stamped garbage positions/length
-    /// hints into the on-disk record image. The recovering run reads the correct live in-memory page (so the corruption is
-    /// MASKED that run), but a later recovery that reads the page from disk gets the garbage — a cross-restart corruption.
-    /// The fix writes a v2.2 record VERBATIM here (its object bytes are already durable in the main object-log and its
-    /// position/hints are already correct; only the SetInvalid captured by the flush copy is needed).
+    /// A FoldOver checkpoint keeps its whole fuzzy region in the main log (no snapshot file), so on recovery the fuzzy v+1
+    /// records are undone by <c>RecoverHybridLogAsync</c> -> <c>ProcessReadPageAndFlush</c> -> <c>AsyncFlushPagesForRecovery</c>
+    /// and any page carrying an undone (touched) record is re-flushed. Pass1 never deserializes (it only SetInvalid +
+    /// rehashes), so a still-valid object record on that boundary page still holds its original object-log POSITION in the
+    /// position slot. The recovery flush must therefore write a current-format record VERBATIM: its object bytes are already
+    /// durable in the main object-log and its position/hints are already correct, so only the SetInvalid captured by the flush
+    /// copy is needed. Reinterpreting the position slot as a deserialized length would stamp garbage positions and length hints
+    /// into the on-disk record image -- masked in the recovering run, which reads the live in-memory page, but read back by any
+    /// later recovery that loads the page from disk.
     ///
     /// <see cref="FoldOverFuzzyUndoReflushSurvivesSecondRecovery"/> recovers TWICE from the same FoldOver token/log and
     /// asserts the keepers survive the second recovery; <see cref="FoldOverNoFuzzyDoubleRecoveryControl"/> is the no-fuzzy
-    /// control that isolates the corruption to the undo-reflush (it always passed, before and after the fix).
+    /// control that isolates the corruption to the undo-reflush.
     /// </summary>
     [TestFixture]
     public class ObjectRecoveryUndoReflushTests : TestBase

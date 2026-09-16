@@ -27,10 +27,10 @@ namespace Tsavorite.core
         /// v7 records set it to mark the downlevel split length encoding: (RDH KeyLength/ValueLength field low bits) +
         /// (objectId slot at keyAddress/valueAddress high 32 bits), with no length framing in the object-log stream. Current records leave it
         /// clear and use the objectId-hint format (the authoritative length comes from the object-log stream framing).
-        /// The object-log decode is no longer selected from this flag DURING RECOVERY: recovery selects the downlevel-vs-current decode from the
-        /// checkpoint metadata version (<see cref="HybridLogRecoveryInfo.UsesDownlevelObjectLog(int)"/>). A live read still honors the flag per
-        /// record (<see cref="LogRecord.IsDownlevelObjectLogRecord(int)"/>) because a memory-pressured downlevel recovery can leave a v7 record on
-        /// the main log without up-converting it. The bit therefore still carries its downlevel meaning and is not yet free for reuse.</summary>
+        /// Nothing in production reads this bit: recovery selects the downlevel-vs-current decode from the checkpoint metadata version
+        /// (<see cref="HybridLogRecoveryInfo.UsesDownlevelObjectLog(int)"/>), and recovering a downlevel checkpoint up-converts every record --
+        /// clearing the bit -- before any page can be evicted, so a live read never encounters a downlevel record. The bit is therefore free for
+        /// reuse; it is read and written only by tests that synthesize v7 record images.</summary>
         internal const int kReuseObjectIdForSizeBit = 63;
         internal const ulong kReuseObjectIdForSizeMask = 1UL << kReuseObjectIdForSizeBit;
 
