@@ -313,6 +313,18 @@ namespace Garnet.server
         READWRITE,
         REPLICAOF,
         SECONDARYOF,
+        // REPLCONF <key> <value> ... is a Redis primary/replica handshake command used by
+        // Sentinel and standard replication. It accepts an arbitrary number of key/value
+        // pairs and must reply +OK to any (including unknown) key for forward compatibility
+        // with future Redis versions and Sentinel extensions.
+        REPLCONF,
+        // PSYNC <replid> <offset> is the standard Redis primary/replica handshake
+        // command that Redis Sentinel and stock Redis replicas speak. Phase 1
+        // accepts both PSYNC ? -1 (full sync) and PSYNC <replid> <offset> (partial
+        // resync request), replies +FULLRESYNC <replid> 0, and ships a valid
+        // 56-byte empty-database RDB body so stock replicas can complete the
+        // handshake. See PsyncCommands.cs for the wire-level details.
+        PSYNC,
 
         INFO,
         TIME,

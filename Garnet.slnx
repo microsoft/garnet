@@ -85,6 +85,7 @@
     <Project Path="test/standalone/Garnet.test.complexstring/Garnet.test.complexstring.csproj" />
     <Project Path="test/standalone/Garnet.test.extensions/Garnet.test.extensions.csproj" />
     <Project Path="test/standalone/Garnet.test.rangeindex/Garnet.test.rangeindex.csproj" />
+    <Project Path="test/standalone/Garnet.test.sentinel/Garnet.test.sentinel.csproj" />
     <Project Path="test/standalone/Garnet.test.scripting/Garnet.test.scripting.csproj" />
     <Project Path="test/standalone/Garnet.test.vectorset/Garnet.test.vectorset.csproj" />
     <Project Path="test/cluster/Garnet.test.cluster/Garnet.test.cluster.csproj" />

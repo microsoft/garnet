@@ -1088,6 +1088,15 @@ namespace Garnet.server
                 RespCommand.COMMAND_GETKEYSANDFLAGS => NetworkCOMMAND_GETKEYSANDFLAGS(),
                 RespCommand.ECHO => NetworkECHO(),
                 RespCommand.HELLO => NetworkHELLO(),
+                // REPLCONF <key> <value> ... is a primary/replica handshake command used
+                // by Sentinel and standard replication. See ReplConfCommands.cs for the
+                // argument-parsing rules and forward-compatibility behaviour.
+                RespCommand.REPLCONF => NetworkREPLCONF(),
+                // PSYNC is the standard Redis primary/replica handshake. Stock Redis
+                // replicas send PSYNC ? -1 to a primary when they first attach; we
+                // accept any PSYNC and reply +FULLRESYNC <replid> 0 + an empty-DB
+                // RDB body. See PsyncCommands.cs for the wire-level details.
+                RespCommand.PSYNC => NetworkPSYNC(),
                 RespCommand.TIME => NetworkTIME(),
                 RespCommand.FLUSHALL => NetworkFLUSHALL(),
                 RespCommand.FLUSHDB => NetworkFLUSHDB(),

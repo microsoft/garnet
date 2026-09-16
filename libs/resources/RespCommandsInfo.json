@@ -4597,6 +4597,20 @@
     "AclCategories": "Admin, Dangerous, Slow"
   },
   {
+    "Command": "REPLCONF",
+    "Name": "REPLCONF",
+    "Arity": -1,
+    "Flags": "Admin, Loading, NoScript, Stale",
+    "AclCategories": "Admin, Dangerous, Slow"
+  },
+  {
+    "Command": "PSYNC",
+    "Name": "PSYNC",
+    "Arity": 3,
+    "Flags": "Admin, NoAsyncLoading, NoScript, Stale",
+    "AclCategories": "Admin, Dangerous, Slow"
+  },
+  {
     "Command": "SELECT",
     "Name": "SELECT",
     "Arity": 2,

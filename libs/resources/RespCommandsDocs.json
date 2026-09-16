@@ -7123,6 +7123,64 @@
     ]
   },
   {
+    "Command": "REPLCONF",
+    "Name": "REPLCONF",
+    "Summary": "Configures a Redis server as a replica of another, or promotes it to a primary.",
+    "Group": "Server",
+    "Complexity": "O(1)",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "ARGS",
+        "DisplayText": "args",
+        "Type": "Block",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "KEY",
+            "DisplayText": "key",
+            "Type": "String"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "VALUE",
+            "DisplayText": "value",
+            "Type": "String"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "Command": "PSYNC",
+    "Name": "PSYNC",
+    "Summary": "Synchronously replicates data from a primary to a replica, or vice versa.",
+    "Group": "Server",
+    "Complexity": "O(N) where N is the amount of data replicated",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "ARGS",
+        "DisplayText": "args",
+        "Type": "Block",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "REPLICATIONID",
+            "DisplayText": "replicationid",
+            "Type": "String"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "OFFSET",
+            "DisplayText": "offset",
+            "Type": "Integer"
+          }
+        ]
+      }
+    ]
+  },
+  {
     "Command": "SELECT",
     "Name": "SELECT",
     "Summary": "Changes the selected database.",
