@@ -127,11 +127,15 @@ namespace Tsavorite.core
         volatile int waiterCount = 0;
 
         /// <summary>
-        /// Number of <see cref="waiterSemaphore"/> signals that have been issued but not yet consumed by a
-        /// waiter. <see cref="SignalWaiter"/> only issues a signal while this is below <see cref="waiterCount"/>,
-        /// which bounds the semaphore's count by the number of waiters. Without that bound the count grows by
-        /// one per epoch release for as long as any waiter exists, and eventually overflows
-        /// <see cref="SemaphoreSlim"/>'s maximum.
+        /// Reservations taken by <see cref="SignalWaiter"/> for <see cref="waiterSemaphore"/> signals that
+        /// have been issued but not yet consumed by a waiter. A reservation is only taken while this is below
+        /// <see cref="waiterCount"/>, so it never exceeds the peak number of concurrent waiters. The bound is
+        /// against the peak rather than the instantaneous count, because a waiter can claim a slot and leave
+        /// while a reservation taken for it is still in flight, briefly leaving a signal outstanding with no
+        /// waiter present. A leftover signal is consumed by the next waiter, which decrements this and
+        /// re-probes the table, so leftovers drain instead of accumulating. Any such bound is enough: without
+        /// one the count grows by one per epoch release for as long as any waiter exists, and eventually
+        /// exceeds <see cref="SemaphoreSlim"/>'s maximum.
         /// </summary>
         volatile int pendingWaiterSignals = 0;
 
@@ -568,8 +572,12 @@ namespace Tsavorite.core
         ///
         /// The increment is what reserves the right to signal, so it always precedes its
         /// <see cref="SemaphoreSlim.Release()"/> and the matching decrement always follows a successful wait.
-        /// The semaphore's count is therefore never above <see cref="pendingWaiterSignals"/>, which this loop
-        /// holds at or below <see cref="waiterCount"/>.
+        /// The semaphore's count is therefore never above <see cref="pendingWaiterSignals"/>, and a
+        /// reservation is only taken while that is below <see cref="waiterCount"/>, so both are capped by the
+        /// peak number of concurrent waiters. The cap is against the peak rather than the instantaneous count:
+        /// a waiter can claim the freed slot on its re-probe and decrement <see cref="waiterCount"/> while a
+        /// reservation taken for it is still in flight, leaving a signal outstanding with no waiter present.
+        /// The next waiter consumes that signal, decrements, and re-probes, so leftovers drain.
         ///
         /// Suppressing a signal cannot lose a wakeup. A waiter only blocks when the semaphore's count is zero,
         /// and a signal is only suppressed when a wake is already queued for every waiter, so at least one is
