@@ -463,6 +463,8 @@ namespace Garnet.server
         {
             AssertLuaStackNotFull(2);
 
+            // luaL_loadbufferx uses Lua's protected parser and returns failures as status values with an error on the stack.
+            // See https://www.lua.org/source/5.4/lauxlib.c.html#luaL_loadbufferx.
             var ret = NativeMethods.LoadBinaryBuffer(state, buffer);
 
             if (ret != LuaStatus.OK)
@@ -489,6 +491,8 @@ namespace Garnet.server
             AssertLuaStackNotFull(2);
 
             // Text-only mode rejects binary chunks at the untrusted input boundary.
+            // luaL_loadbufferx uses Lua's protected parser and returns failures as status values with an error on the stack.
+            // See https://www.lua.org/source/5.4/lauxlib.c.html#luaL_loadbufferx.
             var ret = NativeMethods.LoadTextBuffer(state, buffer);
 
             if (ret != LuaStatus.OK)
