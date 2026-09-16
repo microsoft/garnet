@@ -136,6 +136,15 @@ namespace Tsavorite.core
         /// re-probes the table, so leftovers drain instead of accumulating. Any such bound is enough: without
         /// one the count grows by one per epoch release for as long as any waiter exists, and eventually
         /// exceeds <see cref="SemaphoreSlim"/>'s maximum.
+        ///
+        /// The counter is explicit rather than a comparison of <see cref="SemaphoreSlim.CurrentCount"/> against
+        /// <see cref="waiterCount"/> at signal time. Such a comparison is not atomic with the
+        /// <see cref="SemaphoreSlim.Release()"/> that would follow it, so concurrent releasers observe the same
+        /// below-threshold count and each signal on it, which is the common case under the contention that makes
+        /// the bound matter. The resulting surplus also persists, since the count only falls when a waiter
+        /// consumes a signal, so it carries from one contention burst into the next. Taking the reservation by
+        /// CAS instead makes the increment itself the permission to signal, and the reservation is returned when
+        /// the signal is consumed.
         /// </summary>
         volatile int pendingWaiterSignals = 0;
 

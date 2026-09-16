@@ -43,6 +43,8 @@ The table has a fixed number of slots, so more threads can want protection than 
 
 -	Suppressing a signal cannot strand a waiter: a signal is only withheld when every current waiter already has a wake pending, and a woken waiter re-probes the entire table before blocking again.
 
+-	The counter is explicit rather than a check of the semaphore's `CurrentCount` against `waiterCount` at signal time. That check is a read-then-act: it is not atomic with the `Release` that follows it, so concurrent releasers all observe the same below-threshold count and all signal — the common case under exactly the contention that makes the bound matter. The surplus then persists, because `CurrentCount` only falls when a waiter consumes a signal, so it carries from one contention burst into the next. Reserving by CAS makes the increment itself the permission to signal, which is a hard bound, and returning the reservation on consumption keeps residue from accumulating across bursts.
+
 -	`Dispose` cancels the shared `CancellationTokenSource` so parked threads unwind as `ObjectDisposedException`, and sets the MSB of `waiterCount` to keep new waiters out.
 
 -	Oversubscribing the table degrades into waiting, not failure. Sustained concurrency well above `N` shows up as added latency on `Resume`, so `N = max(128, ProcessorCount * 2)` is a throughput consideration rather than a hard limit on the number of threads that may use a `LightEpoch`.
