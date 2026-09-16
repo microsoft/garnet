@@ -499,7 +499,7 @@ end
             if (state.LoadTextBuffer(source) != LuaStatus.OK)
             {
                 compiledSource = default;
-                error = GetError(state);
+                error = GetErrorFromStackTop(state);
                 return false;
             }
 
@@ -508,7 +508,7 @@ end
             if (state.PCall(2, 1) != LuaStatus.OK)
             {
                 compiledSource = default;
-                error = GetError(state);
+                error = GetErrorFromStackTop(state);
                 return false;
             }
 
@@ -518,7 +518,7 @@ end
             error = null;
             return true;
 
-            static string GetError(LuaStateWrapper state)
+            static string GetErrorFromStackTop(LuaStateWrapper state)
             {
                 var errorIndex = state.StackTop;
                 if (errorIndex >= 1 && state.Type(errorIndex) == LuaType.String)
