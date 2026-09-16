@@ -37,5 +37,12 @@ namespace Tsavorite.core
             foreach (var task in tasks)
                 task.GlobalAfterEnteringState(next, stateMachineDriver);
         }
+
+        /// <inheritdoc />
+        public void OnAbort(StateMachineDriver stateMachineDriver)
+        {
+            foreach (var task in tasks)
+                task.OnAbort(stateMachineDriver);
+        }
     }
 }

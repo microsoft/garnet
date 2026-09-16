@@ -115,5 +115,14 @@ namespace Tsavorite.core
                     break;
             }
         }
+
+        /// <inheritdoc />
+        public virtual void OnAbort(StateMachineDriver stateMachineDriver)
+        {
+            // Mirrors the Phase.REST handling above, which an aborted state machine never reaches, and matches the
+            // cleanup CompleteCheckpointAsync performs when it observes a failed checkpoint. Disposing releases any
+            // snapshot devices and flush buffers already created, and clears the checkpoint so the next one can run.
+            store._hybridLogCheckpoint.Dispose();
+        }
     }
 }

@@ -187,7 +187,7 @@ namespace Garnet.test
             });
 
             await writerTask.ConfigureAwait(false);
-            Assert.That(await checkpointTask.ConfigureAwait(false), Is.True);
+            Assert.That(await checkpointTask.ConfigureAwait(false), Is.EqualTo(CheckpointStatus.Success));
 
             // Cleanup previously failed while remapping an overflow key, which discarded this full-checkpoint tail.
             var firstCheckpointTail = server.Provider.StoreWrapper.DefaultDatabase.LastSaveStoreTailAddress;
@@ -196,7 +196,7 @@ namespace Garnet.test
 
             // With no further writes, log growth is below FullCheckpointLogInterval, so the next checkpoint is
             // incremental and leaves the last full-checkpoint tail unchanged.
-            Assert.That(await server.Provider.StoreWrapper.TakeCheckpointAsync(background: false).ConfigureAwait(false), Is.True);
+            Assert.That(await server.Provider.StoreWrapper.TakeCheckpointAsync(background: false).ConfigureAwait(false), Is.EqualTo(CheckpointStatus.Success));
             Assert.That(server.Provider.StoreWrapper.DefaultDatabase.LastSaveStoreTailAddress, Is.EqualTo(firstCheckpointTail),
                 "An incremental checkpoint must not replace the preceding full-checkpoint tail");
         }
