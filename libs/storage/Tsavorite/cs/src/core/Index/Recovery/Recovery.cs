@@ -797,7 +797,7 @@ namespace Tsavorite.core
         private async ValueTask<RecoveryStatus> RecoverHybridLogAsync(long scanFromAddress, long recoverFromAddress, long untilAddress, long nextVersion,
             CheckpointType checkpointType, long headAddress, RecoveryOptions options, CancellationToken cancellationToken)
         {
-            var recoveryStatus = GetPageRangesToRead(scanFromAddress, untilAddress, checkpointType, out int startPage, out int endPage, out int numPagesToReadPerIteration);
+            var recoveryStatus = GetPageRangesToRead(scanFromAddress, untilAddress, out int startPage, out int endPage, out int numPagesToReadPerIteration);
             recoveryStatus.headAddress = headAddress;
             recoveryStatus.checkpointVersion = options.checkpointVersion;
 
@@ -847,12 +847,11 @@ namespace Tsavorite.core
         /// </summary>
         /// <param name="scanFromAddress">The address to start scanning from; the lowest address at which we will bring pages into the circular buffer (may be in the middle of a page)</param>
         /// <param name="untilAddress">The last address to scan; this is initially the tailAddress at the time of checkpoint flush, </param>
-        /// <param name="checkpointType">The <see cref="CheckpointType"/></param>
         /// <param name="startPage">The first page to read</param>
         /// <param name="endPage">The last page to read</param>
         /// <param name="numPagesToReadPerIteration">The number of pages to read per iteration</param>
         /// <returns>The allocated <see cref="RecoveryStatus"/> instance.</returns>
-        private RecoveryStatus GetPageRangesToRead(long scanFromAddress, long untilAddress, CheckpointType checkpointType,
+        private RecoveryStatus GetPageRangesToRead(long scanFromAddress, long untilAddress,
             out int startPage, out int endPage, out int numPagesToReadPerIteration)
         {
             startPage = hlogBase.GetPage(scanFromAddress);
