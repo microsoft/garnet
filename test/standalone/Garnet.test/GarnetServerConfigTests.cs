@@ -194,19 +194,6 @@ namespace Garnet.test
         }
 
         [Test]
-        public void UpgradeRejectsEnabledAof()
-        {
-            // An upgrade run recovers, checkpoints, and exits; an AOF around that would be re-stamped at a version a later
-            // normal recovery discards.
-            var ok = ServerSettingsManager.TryParseCommandLineArguments(
-                ["--upgrade", "true", "--recover", "true", "--storage-tier", "true", "--aof", "true", "--logdir", TestUtils.MethodTestDir],
-                out var options, out _, out _, out _, silentMode: true);
-            ClassicAssert.IsTrue(ok);
-            var ex = Assert.Throws<Exception>(() => options.GetServerOptions().GetSettings(null, null, null, out _));
-            ClassicAssert.IsTrue(ex.Message.Contains("append-only file"), $"unexpected message: {ex.Message}");
-        }
-
-        [Test]
         public void UpgradeRejectsLeftoverUpgradeObjectLog()
         {
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);

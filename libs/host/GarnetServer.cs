@@ -592,16 +592,14 @@ namespace Garnet
 
             var wasUpgraded = storeWrapper.store.Log.ObjectLogWasUpgraded;
             if (!wasUpgraded)
-            {
                 logger?.LogInformation("Upgrade: the recovered checkpoint is already in the current format; nothing to up-convert.");
-            }
-            else
-            {
-                // The converted object bytes are only reachable through a checkpoint stamped with the current format version: the
-                // recovered metadata still describes the downlevel object log that is about to be retired.
-                if (!storeWrapper.TakeCheckpointAsync(background: false, logger: logger).GetAwaiter().GetResult())
-                    throw new GarnetException("Upgrade: could not take the checkpoint that records the up-converted object log");
-            }
+
+            // The converted object bytes are only reachable through a checkpoint stamped with the current format version: the recovered
+            // metadata still describes the downlevel object log that is about to be retired. This also captures any records the
+            // append-only-file replay applied on top of the recovered checkpoint. A run that converted nothing takes no checkpoint, so
+            // an already-current store is left as it was found.
+            if (wasUpgraded && !storeWrapper.TakeCheckpointAsync(background: false, logger: logger).GetAwaiter().GetResult())
+                throw new GarnetException("Upgrade: could not take the checkpoint that records the up-converted object log");
 #pragma warning restore VSTHRD002
 
             // Close the store before renaming, so no device holds either object-log file.

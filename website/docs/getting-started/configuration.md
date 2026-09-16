@@ -104,7 +104,7 @@ For all available command line settings, run `GarnetServer.exe -h` or `GarnetSer
 | **LogDir** | ```-l```<br/>```--logdir``` | ```string``` |  | Storage directory for tiered records (hybrid log), if storage tiering (--storage-tier) is enabled. Uses current directory if unspecified. |
 | **CheckpointDir** | ```-c```<br/>```--checkpointdir``` | ```string``` |  | Storage directory for checkpoints. Uses logdir if unspecified. |
 | **Recover** | ```-r```<br/>```--recover``` | ```bool``` |  | Recover from latest checkpoint and log, if present. |
-| **Upgrade** | ```--upgrade``` | ```bool``` |  | Up-convert a store written by an earlier release, then exit. The object log is rewritten in current format alongside the original, which is retained under a versioned name, and a fresh checkpoint is taken. Requires --recover and tiered storage, and is refused while the append-only file is enabled; has no effect on a store with no object log or one already in the current format. |
+| **Upgrade** | ```--upgrade``` | ```bool``` |  | Up-convert a store written by an earlier release, then exit. The object log is rewritten in current format alongside the original, which is retained under a versioned name, and a fresh checkpoint is taken. Requires --recover and tiered storage; an enabled append-only file is replayed and folded into that checkpoint. Has no effect on a store with no object log or one already in the current format. |
 | **DisablePubSub** | ```--no-pubsub``` | ```bool``` |  | Disable pub/sub feature on server. |
 | **PubSubPageSize** | ```--pubsub-pagesize``` | ```string``` | Memory size | Page size of log used for pub/sub (rounds down to power of 2) |
 | **DisableObjects** | ```--no-obj``` | ```bool``` |  | Disable support for data structure objects. |
@@ -266,9 +266,11 @@ server normally afterwards; do not pass `--upgrade` again.**
 Notes:
 
 * `--recover` and tiered storage are required — there is nothing to convert without an existing checkpoint on disk.
-* The append-only file must be disabled for the run. Drain or disable it first, then re-enable it afterwards.
-* A store with no object log (`--no-obj`), or one already in the current format, is left untouched; any later
-  checkpoint is written in the current format regardless.
+* The append-only file may stay enabled. The run replays it as part of recovery and folds those records into the
+  checkpoint it takes, so nothing written after the last checkpoint is lost. Records already covered by that
+  checkpoint are skipped by later starts, as usual.
+* A store with no object log (`--no-obj`), or one already in the current format, is left untouched — such a run
+  takes no checkpoint and renames nothing; any later checkpoint is written in the current format regardless.
 * The original object log is retained, not deleted. Remove it once the upgraded store has started successfully.
 * The rename is journaled by `Store/hlog_objs.upgrade-marker`. If the process is interrupted mid-rename the marker
   remains, an ordinary start refuses to open the store, and re-running `--upgrade` finishes the rename.

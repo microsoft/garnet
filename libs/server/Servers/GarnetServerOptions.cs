@@ -901,12 +901,6 @@ namespace Garnet.server
                     throw new Exception("Upgrade specified without Recover; there is nothing to up-convert unless an existing checkpoint is recovered");
                 if (!EnableStorageTier)
                     throw new Exception("Upgrade specified without enabling tiered storage (UseStorage); there is no object log to up-convert");
-
-                // An upgrade run recovers, checkpoints, and exits without serving. Replaying and then re-committing an AOF around that
-                // would re-stamp its records at a version the next normal recovery discards, so require the AOF to be disabled and let
-                // the operator drain it first.
-                if (EnableAOF)
-                    throw new Exception("Upgrade specified with the append-only file enabled; restart with AOF disabled to up-convert, then re-enable it");
             }
 
             if (EnableStorageTier)
