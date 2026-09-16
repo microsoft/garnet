@@ -172,7 +172,7 @@ namespace Garnet.test
             var invalidSource = "return )"u8;
             ClassicAssert.IsFalse(LuaRunner.TryCompileSource(invalidSource, out var rejectedSource, out var sourceError));
             ClassicAssert.AreEqual(default(LuaScriptChunk), rejectedSource);
-            ClassicAssert.IsNotEmpty(sourceError);
+            StringAssert.Contains("unexpected symbol", sourceError);
         }
 
         [Test]
