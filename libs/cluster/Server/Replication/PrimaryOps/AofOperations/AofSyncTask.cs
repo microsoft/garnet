@@ -29,7 +29,6 @@ namespace Garnet.cluster
             long previousAddress;
 
             readonly bool timePulseEnabled;
-            readonly bool pulseUsesSequenceNumbers;
             readonly GarnetAppendOnlyFile appendOnlyFile;
             readonly TsavoriteLog physicalSublog;
             readonly long[] pulseTailSnapshot;
@@ -115,13 +114,12 @@ namespace Garnet.cluster
                 this.remoteNodeId = remoteNodeId;
                 this.cts = cts;
                 appendOnlyFile = clusterProvider.storeWrapper.appendOnlyFile;
-                timePulseEnabled = clusterProvider.serverOptions.MultiLogEnabled;
+                // Only a log sharded across several physical sublogs needs the pulse. On a single
+                // physical sublog every replay task rendezvouses on the same batch and publishes the
+                // same log address, so no virtual sublog can lag behind another for a pulse to relieve.
+                timePulseEnabled = clusterProvider.serverOptions.AofPhysicalSublogCount > 1;
                 if (timePulseEnabled)
                 {
-                    // Records carry a generator sequence number only when the log is sharded across
-                    // several physical sublogs; a single physical sublog times its virtual sublogs by
-                    // log address instead, and has no generator to read from.
-                    pulseUsesSequenceNumbers = clusterProvider.serverOptions.AofPhysicalSublogCount > 1;
                     physicalSublog = appendOnlyFile.Log.GetSubLog(physicalSublogIdx);
                     pulseTailSnapshot = new long[clusterProvider.serverOptions.AofPhysicalSublogCount];
                     pulseTailScratch = new long[clusterProvider.serverOptions.AofPhysicalSublogCount];
@@ -300,15 +298,7 @@ namespace Garnet.cluster
                     }
                 }
 
-                // The pulse has to carry a value in whatever domain the replay side measures virtual
-                // sublog time in. Sharded across several physical sublogs that is a generator sequence
-                // number, because that is what each record carries. On a single physical sublog records
-                // carry no sequence number and replay publishes the log address it has reached, so the
-                // pulse is the observed tail: the address replay itself would publish once it has
-                // consumed everything at or below it.
-                var sequenceNumber = pulseUsesSequenceNumbers
-                    ? appendOnlyFile.GetLargerThanMaximumSequenceNumber()
-                    : pulseTailScratch[physicalSublogIdx];
+                var sequenceNumber = appendOnlyFile.GetLargerThanMaximumSequenceNumber();
                 if (iter.NextAddress < physicalSublog.TailAddress)
                 {
                     lastAdvanceTimePulse = now;
