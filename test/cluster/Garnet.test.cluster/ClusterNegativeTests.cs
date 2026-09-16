@@ -616,13 +616,13 @@ namespace Garnet.test.cluster
 
             ClassicAssert.AreNotEqual(primaryEndpoint, replicaEndpoint, "Should have different endpoints for nodes");
 
-            using var primaryConnection = ConnectionMultiplexer.Connect($"{primaryEndpoint.Address}:{primaryEndpoint.Port},user={UserName},password={Password}");
+            using var primaryConnection = ConnectionMultiplexer.Connect($"{primaryEndpoint.Address}:{primaryEndpoint.Port},user={UserName},password={Password},allowAdmin=true");
             var primaryServer = primaryConnection.GetServer(primaryEndpoint);
 
             ClassicAssert.AreEqual("OK", (string)primaryServer.Execute("CLUSTER", ["ADDSLOTSRANGE", "0", "16383"], flags: CommandFlags.NoRedirect));
             ClassicAssert.AreEqual("OK", (string)primaryServer.Execute("CLUSTER", ["MEET", replicaEndpoint.Address.ToString(), replicaEndpoint.Port.ToString()], flags: CommandFlags.NoRedirect));
 
-            using var replicaConnection = ConnectionMultiplexer.Connect($"{replicaEndpoint.Address}:{replicaEndpoint.Port},user={UserName},password={Password}");
+            using var replicaConnection = ConnectionMultiplexer.Connect($"{replicaEndpoint.Address}:{replicaEndpoint.Port},user={UserName},password={Password},allowAdmin=true");
             var replicaServer = replicaConnection.GetServer(replicaEndpoint);
 
             // Try to replicate from a server that doesn't exist

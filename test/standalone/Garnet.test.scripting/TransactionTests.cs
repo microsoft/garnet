@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Threading.Tasks;
 using Garnet.server;
@@ -40,6 +41,7 @@ namespace Garnet.test
         }
 
         [Test]
+        [SuppressMessage("Usage", "SER304:Repeated queued operations may suit the variadic overload", Justification = "Separate ops are intentional")]
         public void TxnSetTest()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
@@ -49,8 +51,8 @@ namespace Garnet.test
             string value1 = "abcdefg1";
             string value2 = "abcdefg2";
 
-            tran.StringSetAsync("mykey1", value1);
-            tran.StringSetAsync("mykey2", value2);
+            _ = tran.StringSetAsync("mykey1", value1);
+            _ = tran.StringSetAsync("mykey2", value2);
             bool committed = tran.Execute();
 
             string string1 = db.StringGet("mykey1");
@@ -82,6 +84,7 @@ namespace Garnet.test
         }
 
         [Test]
+        [SuppressMessage("Usage", "SER304:Repeated queued operations may suit the variadic overload", Justification = "Separate ops are intentional")]
         public void TxnGetTest()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());

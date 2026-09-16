@@ -65,7 +65,8 @@ namespace Garnet.server
         {
             long count = 0;
 
-            NormalizeBitCountOffsets(ref startOffset, ref endOffset, offsetType);
+            if (startOffset < 0 && endOffset < 0 && startOffset > endOffset)
+                return 0;
 
             // BYTE indexing
             if (offsetType == 0x0)

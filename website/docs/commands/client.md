@@ -89,7 +89,10 @@ Currently the supported attributes are:
 
 #### Resp Reply
 
-Simple string reply: OK if the section value was successfully set.
+One of the following:
+
+* Simple string reply: OK if the section value was successfully set.
+* Simple error reply: `ERR <attr> cannot contain spaces, newlines or special characters.` if the value contains spaces, newlines or special characters; `ERR syntax error` if the attribute is not recognized.
 
 ---
 

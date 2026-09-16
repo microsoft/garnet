@@ -339,8 +339,8 @@ namespace Garnet.test.cluster
             byte[] key = new byte[16];
             context.clusterTestUtils.RandomBytesRestrictedToSlot(ref key, node.Slots.First().From);
 
-            context.clusterTestUtils.GetServer(0).Execute("SET", key, "1234");
-            string res = context.clusterTestUtils.GetServer(0).Execute("GET", key).ToString();
+            context.clusterTestUtils.GetServer(0).Execute(0, "SET", [key, "1234"]);
+            string res = context.clusterTestUtils.GetServer(0).Execute(0, "GET", [key]).ToString();
             ClassicAssert.AreEqual("1234", res);
 
             VerifyClusterResetFails(true);
@@ -382,7 +382,7 @@ namespace Garnet.test.cluster
         }
 
         [Test, Order(4)]
-        public void ClusterResetAfterFLushAllTest()
+        public void ClusterResetAfterFlushAllTest()
         {
             var node_count = 4;
             context.CreateInstances(node_count);
@@ -999,17 +999,17 @@ namespace Garnet.test.cluster
             var value = "myvalue";
 
             // Set value
-            var result = (string)context.clusterTestUtils.GetServer(primaryIndex).Execute("SET", key, value);
+            var result = (string)context.clusterTestUtils.GetServer(primaryIndex).Execute(0, "SET", [key, value]);
             ClassicAssert.AreEqual("OK", result);
 
             // Get value
-            result = (string)context.clusterTestUtils.GetServer(primaryIndex).Execute("GET", key);
+            result = (string)context.clusterTestUtils.GetServer(primaryIndex).Execute(0, "GET", [key]);
             ClassicAssert.AreEqual(value, result);
 
             // Get value from replica
             while (true)
             {
-                result = (string)context.clusterTestUtils.GetServer(replicaIndex).Execute("GET", key);
+                result = (string)context.clusterTestUtils.GetServer(replicaIndex).Execute(0, "GET", [key]);
                 if (result == value)
                     break;
             }
@@ -1023,13 +1023,13 @@ namespace Garnet.test.cluster
             Assert.DoesNotThrow(() => context.clusterTestUtils.GetServer(primaryIndex).FlushAllDatabases());
 
             // Get value
-            result = (string)context.clusterTestUtils.GetServer(primaryIndex).Execute("GET", key);
+            result = (string)context.clusterTestUtils.GetServer(primaryIndex).Execute(0, "GET", [key]);
             ClassicAssert.IsNull(result);
 
             // Get value from replica
             while (true)
             {
-                result = (string)context.clusterTestUtils.GetServer(replicaIndex).Execute("GET", key);
+                result = (string)context.clusterTestUtils.GetServer(replicaIndex).Execute(0, "GET", [key]);
                 if (result == null)
                     break;
             }
@@ -1130,13 +1130,13 @@ namespace Garnet.test.cluster
             {
                 db.HashSet(key, elements);
 
-                var result = primaryServer.Execute("HPEXPIRE", key, "500", "FIELDS", "2", "field1", "field2");
+                var result = primaryServer.Execute(0, "HPEXPIRE", [key, "500", "FIELDS", "2", "field1", "field2"]);
                 var results = (RedisResult[])result;
                 ClassicAssert.AreEqual(2, results.Length);
                 ClassicAssert.AreEqual(1, (long)results[0]);
                 ClassicAssert.AreEqual(1, (long)results[1]);
 
-                result = primaryServer.Execute("HPEXPIRE", key, "500", "FIELDS", "2", "field3", "field4");
+                result = primaryServer.Execute(0, "HPEXPIRE", [key, "500", "FIELDS", "2", "field3", "field4"]);
                 results = (RedisResult[])result;
                 ClassicAssert.AreEqual(2, results.Length);
                 ClassicAssert.AreEqual(1, (long)results[0]);
@@ -1149,7 +1149,7 @@ namespace Garnet.test.cluster
                 var expectedFieldsAndValues = elements.AsSpan().Slice(4).ToArray()
                     .SelectMany(e => new[] { e.Name.ToString(), e.Value.ToString() })
                     .ToArray();
-                var fields = (string[])primaryServer.Execute("HGETALL", [key]);
+                var fields = (string[])primaryServer.Execute(0, "HGETALL", [key]);
                 ClassicAssert.AreEqual(4, fields.Length);
                 ClassicAssert.AreEqual(expectedFieldsAndValues, fields);
 
@@ -1157,7 +1157,7 @@ namespace Garnet.test.cluster
                 context.clusterTestUtils.WaitForReplicaAofSync(primaryNodeIndex, replicaNodeIndex, context.logger, cancellationToken);
 
                 // Check if replica is caught up
-                fields = (string[])replicaServer.Execute("HGETALL", [key]);
+                fields = (string[])replicaServer.Execute(0, "HGETALL", [key]);
                 ClassicAssert.AreEqual(4, fields.Length);
                 ClassicAssert.AreEqual(expectedFieldsAndValues, fields);
             }
@@ -1166,10 +1166,10 @@ namespace Garnet.test.cluster
             {
                 if (useManualCollect)
                 {
-                    Assert.Throws<RedisServerException>(() => replicaServer.Execute("HCOLLECT", ["*"], CommandFlags.NoRedirect),
+                    Assert.Throws<RedisServerException>(() => replicaServer.Execute(0, "HCOLLECT", ["*"], CommandFlags.NoRedirect),
                         $"Expected exception was not thrown");
 
-                    resp = (string)primaryServer.Execute("HCOLLECT", ["*"]);
+                    resp = (string)primaryServer.Execute(0, "HCOLLECT", ["*"]);
                     ClassicAssert.AreEqual("OK", resp);
                 }
             }

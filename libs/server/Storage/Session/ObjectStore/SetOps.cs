@@ -275,16 +275,19 @@ namespace Garnet.server
             }
 
             var objectTransactionalContext = txnManager.ObjectTransactionalContext;
-            var unifiedTransactionalContext = txnManager.UnifiedTransactionalContext;
 
             try
             {
+                // Inspect the source key to validate its type. The set is only read here; all mutation goes through
+                // RMW below so that Tsavorite controls whether the record is updated in place or copied to the
+                // mutable region. Mutating the heap object returned by GET directly would be lost for records that
+                // are no longer mutable, and may corrupt records being serialized by the flush path.
                 var srcGetStatus = GET(sourceKey, out var srcObject, ref objectTransactionalContext);
 
                 if (srcGetStatus == GarnetStatus.NOTFOUND)
                     return GarnetStatus.NOTFOUND;
 
-                if (srcObject.GarnetObject is not SetObject srcSetObject)
+                if (srcGetStatus == GarnetStatus.WRONGTYPE || srcObject.GarnetObject is not SetObject)
                     return GarnetStatus.WRONGTYPE;
 
                 // If the keys are the same, no operation is performed.
@@ -292,46 +295,30 @@ namespace Garnet.server
                 if (sameKey)
                     return GarnetStatus.OK;
 
+                // Validate the destination type before removing from the source so that a WRONGTYPE destination
+                // does not lose the member.
                 var dstGetStatus = GET(destinationKey, out var dstObject, ref objectTransactionalContext);
 
-                SetObject dstSetObject;
-                if (dstGetStatus == GarnetStatus.OK)
-                {
-                    if (dstObject.GarnetObject is not SetObject tmpDstSetObject)
-                        return GarnetStatus.WRONGTYPE;
+                if (dstGetStatus == GarnetStatus.WRONGTYPE ||
+                    (dstGetStatus == GarnetStatus.OK && dstObject.GarnetObject is not SetObject))
+                    return GarnetStatus.WRONGTYPE;
 
-                    dstSetObject = tmpDstSetObject;
-                }
-                else
-                {
-                    dstSetObject = new SetObject();
-                }
+                // Remove from the source. This also removes the key if the set becomes empty.
+                var removeStatus = SetRemove(sourceKey, member, out var removedCount, ref objectTransactionalContext);
 
-                var arrMember = member.ToArray();
+                if (removeStatus == GarnetStatus.WRONGTYPE)
+                    return GarnetStatus.WRONGTYPE;
 
-                var removed = srcSetObject.Set.Remove(arrMember);
-                if (!removed) return GarnetStatus.OK;
+                if (removeStatus != GarnetStatus.OK || removedCount == 0)
+                    return GarnetStatus.OK;
 
-                srcSetObject.UpdateSize(arrMember, false);
+                // Add to the destination, creating it if it does not exist.
+                var addStatus = SetAdd(destinationKey, member, out _, ref objectTransactionalContext);
 
-                if (srcSetObject.Set.Count == 0)
-                {
-                    _ = EXPIRE(sourceKey, TimeSpan.Zero, out _, ExpireOption.None, ref unifiedTransactionalContext);
-                }
+                if (addStatus == GarnetStatus.WRONGTYPE)
+                    return GarnetStatus.WRONGTYPE;
 
-                _ = dstSetObject.Set.Add(arrMember);
-                dstSetObject.UpdateSize(arrMember);
-
-                if (dstGetStatus == GarnetStatus.NOTFOUND)
-                {
-                    var setStatus = SET(destinationKey, dstSetObject, ref objectTransactionalContext);
-                    if (setStatus == GarnetStatus.OK)
-                        smoveResult = 1;
-                }
-                else
-                {
-                    smoveResult = 1;
-                }
+                smoveResult = 1;
             }
             finally
             {

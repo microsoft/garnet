@@ -640,7 +640,7 @@ namespace Garnet.test
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
-            Assert.Throws<RedisServerException>(() => db.Execute("TIME HELLO").ToString());
+            Assert.Throws<RedisServerException>(() => db.Execute("TIME", "HELLO").ToString());
         }
 
         [Test]
@@ -685,12 +685,12 @@ namespace Garnet.test
         [TestCase("timeout", "0")]
         [TestCase("save", "")]
         [TestCase("appendonly", "no")]
-        [TestCase("slave-read-only", "no")]
+        [TestCase("slave-read-only", "yes")]
         [TestCase("databases", "16")]
         [TestCase("cluster-node-timeout", "60")]
         public void SimpleConfigGet(string parameter, string parameterValue)
         {
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
             var db = redis.GetDatabase(0);
 
             var result = (string[])db.Execute("CONFIG", "GET", parameter);
@@ -706,7 +706,7 @@ namespace Garnet.test
         [Test]
         public void ConfigWrongNumberOfArguments()
         {
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
             var db = redis.GetDatabase(0);
             var ex = Assert.Throws<RedisServerException>(() => db.Execute("CONFIG"));
             var expectedMessage = string.Format(CmdStrings.GenericErrWrongNumArgs,
@@ -717,7 +717,7 @@ namespace Garnet.test
         [Test]
         public void ConfigGetWrongNumberOfArguments()
         {
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
             var db = redis.GetDatabase(0);
             var ex = Assert.Throws<RedisServerException>(() => db.Execute("CONFIG", "GET"));
             var expectedMessage = Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrWrongNumArgs,

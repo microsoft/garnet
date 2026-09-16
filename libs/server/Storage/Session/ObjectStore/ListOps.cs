@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Diagnostics;
 using System.Linq;
 using Garnet.common;
 using Tsavorite.core;
@@ -58,8 +59,12 @@ namespace Garnet.server
         /// <param name="lop"></param>
         /// <param name="itemsDoneCount"></param>
         /// <param name="objectContext"></param>
+        /// <param name="notifyItemBroker">
+        /// When false, the collection item broker is not notified of the update. Callers that already run inside the
+        /// broker must pass false, since notifying re-enters the broker's observer lock and would deadlock.
+        /// </param>
         /// <returns></returns>
-        public unsafe GarnetStatus ListPush<TObjectContext>(PinnedSpanByte key, PinnedSpanByte element, ListOperation lop, out int itemsDoneCount, ref TObjectContext objectContext)
+        public unsafe GarnetStatus ListPush<TObjectContext>(PinnedSpanByte key, PinnedSpanByte element, ListOperation lop, out int itemsDoneCount, ref TObjectContext objectContext, bool notifyItemBroker = true)
            where TObjectContext : ITsavoriteContext<FixedSpanByteKey, ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
         {
             itemsDoneCount = 0;
@@ -75,7 +80,8 @@ namespace Garnet.server
             var status = RMWObjectStoreOperation(key.ReadOnlySpan, ref input, ref objectContext, ref output);
             itemsDoneCount = output.result1;
 
-            itemBroker?.HandleCollectionUpdate(key.ToArray());
+            if (notifyItemBroker)
+                itemBroker?.HandleCollectionUpdate(key.ToArray());
             return status;
         }
 
@@ -226,100 +232,63 @@ namespace Garnet.server
             }
 
             var objectContext = txnManager.ObjectTransactionalContext;
-            var unifiedContext = txnManager.UnifiedTransactionalContext;
 
             try
             {
-                // Get the source key
-                var statusOp = GET(sourceKey, out var sourceList, ref objectTransactionalContext);
+                // Inspect the source key to validate its type and that it is non-empty. The list is only read here;
+                // all mutation goes through RMW below so that Tsavorite controls whether the record is updated
+                // in place or copied to the mutable region. Mutating the heap object returned by GET directly would
+                // corrupt records that are already read-only and may be concurrently serialized by the flush path.
+                var statusOp = GET(sourceKey, out var sourceList, ref objectContext);
 
                 if (statusOp == GarnetStatus.NOTFOUND)
+                    return GarnetStatus.OK;
+
+                if (statusOp == GarnetStatus.WRONGTYPE || sourceList.GarnetObject is not ListObject srcListObject)
+                    return GarnetStatus.WRONGTYPE;
+
+                if (srcListObject.LnkList.Count == 0)
+                    return GarnetStatus.OK;
+
+                if (sameKey && (sourceDirection == destinationDirection || srcListObject.LnkList.Count == 1))
                 {
+                    // Popping and pushing at the same end of the same list leaves it unchanged, as does rotating a
+                    // single-element list. Returning here also avoids emptying the key, which would drop its TTL.
+                    element = (sourceDirection == OperationDirection.Right
+                        ? srcListObject.LnkList.Last.Value
+                        : srcListObject.LnkList.First.Value).ToArray();
                     return GarnetStatus.OK;
                 }
-                else if (statusOp == GarnetStatus.WRONGTYPE)
+
+                if (!sameKey)
                 {
-                    return GarnetStatus.WRONGTYPE;
-                }
-                else if (statusOp == GarnetStatus.OK)
-                {
-                    if (sourceList.GarnetObject is not ListObject srcListObject)
+                    // Validate the destination type before popping so that a WRONGTYPE destination does not lose the element.
+                    statusOp = GET(destinationKey, out var destinationList, ref objectContext);
+
+                    if (statusOp == GarnetStatus.WRONGTYPE ||
+                        (statusOp == GarnetStatus.OK && destinationList.GarnetObject is not ListObject))
                         return GarnetStatus.WRONGTYPE;
-
-                    if (srcListObject.LnkList.Count == 0)
-                        return GarnetStatus.OK;
-
-                    ListObject dstListObject = default;
-                    if (!sameKey)
-                    {
-                        // Read destination key
-                        statusOp = GET(destinationKey, out var destinationList, ref objectContext);
-
-                        if (statusOp == GarnetStatus.NOTFOUND)
-                        {
-                            destinationList.GarnetObject = new ListObject();
-                        }
-
-                        if (statusOp == GarnetStatus.WRONGTYPE || destinationList.GarnetObject is not ListObject listObject)
-                            return GarnetStatus.WRONGTYPE;
-
-                        dstListObject = listObject;
-                    }
-                    else // sameKey
-                    {
-                        if (sourceDirection == destinationDirection)
-                        {
-                            element = (sourceDirection == OperationDirection.Right) ?
-                                        srcListObject.LnkList.Last.Value : srcListObject.LnkList.First.Value;
-                            return GarnetStatus.OK;
-                        }
-                    }
-
-                    // Right pop (removelast) from source
-                    if (sourceDirection == OperationDirection.Right)
-                    {
-                        element = srcListObject.LnkList.Last.Value;
-                        srcListObject.LnkList.RemoveLast();
-                    }
-                    else
-                    {
-                        // Left pop (removefirst) from source
-                        element = srcListObject.LnkList.First.Value;
-                        srcListObject.LnkList.RemoveFirst();
-                    }
-                    srcListObject.UpdateSize(element, false);
-
-                    IGarnetObject newListValue = null;
-                    if (!sameKey)
-                    {
-                        if (srcListObject.LnkList.Count == 0)
-                        {
-                            _ = EXPIRE(sourceKey, TimeSpan.Zero, out _, ExpireOption.None, ref unifiedContext);
-                        }
-
-                        // Left push (addfirst) to destination
-                        if (destinationDirection == OperationDirection.Left)
-                            _ = dstListObject.LnkList.AddFirst(element);
-                        else
-                            _ = dstListObject.LnkList.AddLast(element);
-
-                        dstListObject.UpdateSize(element);
-                        newListValue = new ListObject(dstListObject.LnkList, dstListObject.HeapMemorySize);
-
-                        // Upsert
-                        _ = SET(destinationKey, newListValue, ref objectContext);
-                    }
-                    else
-                    {
-                        // When the source and the destination key is the same the operation is done only in the sourceList
-                        if (destinationDirection == OperationDirection.Left)
-                            _ = srcListObject.LnkList.AddFirst(element);
-                        else if (destinationDirection == OperationDirection.Right)
-                            _ = srcListObject.LnkList.AddLast(element);
-                        newListValue = srcListObject;
-                        ((ListObject)newListValue).UpdateSize(element);
-                    }
                 }
+
+                // Pop from the source. This also removes the key if the list becomes empty.
+                var popOp = sourceDirection == OperationDirection.Right ? ListOperation.RPOP : ListOperation.LPOP;
+                statusOp = ListPop(sourceKey, popOp, ref objectContext, out var poppedElement);
+
+                if (statusOp != GarnetStatus.OK || !poppedElement.IsValid)
+                    return statusOp == GarnetStatus.WRONGTYPE ? GarnetStatus.WRONGTYPE : GarnetStatus.OK;
+
+                // Push to the destination.
+                var pushOp = destinationDirection == OperationDirection.Left ? ListOperation.LPUSH : ListOperation.RPUSH;
+                // The broker is notified below, after the transaction commits, rather than from within the push.
+                statusOp = ListPush(destinationKey, poppedElement, pushOp, out _, ref objectContext, notifyItemBroker: false);
+
+                // The destination type was validated above and the push creates the destination if it is absent, so
+                // the push cannot fail on type mismatch. If it ever did, the element has already been popped and the
+                // transaction commits unconditionally, so report it to the caller rather than discard it.
+                if (statusOp == GarnetStatus.WRONGTYPE)
+                    Debug.Assert(false, "List push to the LMOVE destination failed after the source pop");
+
+                element = poppedElement.ToArray();
             }
             finally
             {
