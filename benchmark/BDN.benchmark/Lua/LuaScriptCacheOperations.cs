@@ -51,20 +51,28 @@ namespace BDN.benchmark.Lua
 
             outerHitDigest = GC.AllocateUninitializedArray<byte>(SessionScriptCache.SHA1Len, pinned: true);
             sessionScriptCache.GetScriptDigest("return 1"u8, outerHitDigest);
-            if (!storeWrapper.storeScriptCache.TryAdd(new(outerHitDigest), new("return 1"u8.ToArray())))
+            if (!storeWrapper.storeScriptCache.TryAdd(new(outerHitDigest), CompileScript("return 1"u8)))
             {
                 throw new InvalidOperationException("Should have been able to load into global cache");
             }
 
             innerHitDigest = GC.AllocateUninitializedArray<byte>(SessionScriptCache.SHA1Len, pinned: true);
             sessionScriptCache.GetScriptDigest("return 1 + 1"u8, innerHitDigest);
-            if (!storeWrapper.storeScriptCache.TryAdd(new(innerHitDigest), new("return 1 + 1"u8.ToArray())))
+            if (!storeWrapper.storeScriptCache.TryAdd(new(innerHitDigest), CompileScript("return 1 + 1"u8)))
             {
                 throw new InvalidOperationException("Should have been able to load into global cache");
             }
 
             missDigest = GC.AllocateUninitializedArray<byte>(SessionScriptCache.SHA1Len, pinned: true);
             sessionScriptCache.GetScriptDigest("foobar"u8, missDigest);
+
+            static LuaScriptHandle CompileScript(ReadOnlySpan<byte> source)
+            {
+                if (!LuaRunner.TryCompileSource(source, out var generatedBytecode, out var error))
+                    throw new InvalidOperationException(error);
+
+                return new(generatedBytecode.Data);
+            }
         }
 
         [GlobalCleanup]
@@ -81,8 +89,7 @@ namespace BDN.benchmark.Lua
             sessionScriptCache.Clear();
 
             // Make outer hit available for every iteration
-            LuaScriptHandle scriptHandle = null;
-            if (!sessionScriptCache.TryLoad(session, "return 1"u8, new(outerHitDigest), ref scriptHandle, out _, out _))
+            if (!sessionScriptCache.TryGetOrCreateRunnerFromSource(session, "return 1"u8, new(outerHitDigest), out _, out _, out _))
             {
                 throw new InvalidOperationException("Should have been able to load");
             }
@@ -147,10 +154,9 @@ namespace BDN.benchmark.Lua
             {
                 if (storeWrapper.storeScriptCache.TryGetValue(digestKey, out var scriptHandle))
                 {
-                    LuaScriptHandle newScriptHandle = null;
-                    if (!sessionScriptCache.TryLoad(session, scriptHandle.ScriptData.Span, digestKey, ref newScriptHandle, out runner, out _))
+                    if (!sessionScriptCache.TryGetOrCreateRunnerFromCachedScript(session, digestKey, scriptHandle, out runner))
                     {
-                        // TryLoad will have written an error out, it any
+                        // The loading error was already written, if any
 
                         _ = storeWrapper.storeScriptCache.TryRemove(digestKey, out _);
                     }
