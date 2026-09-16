@@ -16,6 +16,76 @@ namespace Garnet.server
     /// </summary>
     internal sealed unsafe partial class RespServerSession : ServerSessionBase
     {
+        internal readonly ClientPauseManager.Participant pauseParticipant;
+        bool pauseTransactionWrites;
+
+        private static bool IsPauseWrite(RespCommand cmd)
+            => cmd.IsWriteOnly() || cmd is RespCommand.EVAL or RespCommand.EVALSHA or RespCommand.PUBLISH
+                or RespCommand.SPUBLISH or RespCommand.PFCOUNT or RespCommand.RUNTXP
+                or RespCommand.CustomTxn or RespCommand.CustomRawStringCmd or RespCommand.CustomObjCmd
+                or RespCommand.CustomProcedure or RespCommand.EXPDELSCAN;
+
+        private static bool IsInternodeStoreMutation(RespCommand cmd)
+            => cmd is RespCommand.CLUSTER_MIGRATE or RespCommand.CLUSTER_FLUSHALL
+                or RespCommand.CLUSTER_DELKEYSINSLOT or RespCommand.CLUSTER_DELKEYSINSLOTRANGE;
+
+        private void EnterClientCommand(RespCommand cmd)
+        {
+            // Script commands and a running transaction share their outer command's admission.
+            if (noScriptBitmap != null || txnManager.state == TxnState.Running) return;
+            if (cmd == RespCommand.MULTI) pauseTransactionWrites = false;
+            var write = IsPauseWrite(cmd);
+            if (txnManager.state == TxnState.Started)
+            {
+                pauseTransactionWrites |= write;
+                write = cmd == RespCommand.EXEC && pauseTransactionWrites;
+            }
+            if (cmd is RespCommand.CLIENT_PAUSE or RespCommand.CLIENT_UNPAUSE or RespCommand.SHUTDOWN) return;
+            if (IsInternodeStoreMutation(cmd)) write = true;
+            else if (cmd.IsClusterSubCommand() || clusterSession?.RemoteNodeId != null) return;
+
+            while (!pauseParticipant.TryEnter(write))
+            {
+                if (dcurr > networkSender.GetResponseObjectHead()) SendAndReset();
+                clusterSession?.ReleaseCurrentEpoch();
+                try { pauseParticipant.Wait(write); }
+                finally { clusterSession?.AcquireCurrentEpoch(); }
+            }
+            // Blocking collection mutations run on the broker, which participates separately.
+            if (cmd is RespCommand.BLPOP or RespCommand.BRPOP or RespCommand.BLMPOP or RespCommand.BLMOVE
+                or RespCommand.BRPOPLPUSH or RespCommand.BZPOPMIN or RespCommand.BZPOPMAX or RespCommand.BZMPOP)
+                pauseParticipant.Exit();
+        }
+
+        private bool NetworkCLIENTPAUSE()
+        {
+            if (parseState.Count is not (1 or 2))
+                return AbortWithWrongNumberOfArguments("client|pause");
+            if (!parseState.TryGetLong(0, out var timeout) || timeout < 0 || timeout > long.MaxValue - Environment.TickCount64)
+                return AbortWithErrorMessage("ERR timeout is not an integer or out of range"u8);
+            var all = true;
+            if (parseState.Count == 2)
+            {
+                var mode = parseState.GetArgSliceByRef(1).Span;
+                if (mode.EqualsUpperCaseSpanIgnoringCase("WRITE"u8)) all = false;
+                else if (!mode.EqualsUpperCaseSpanIgnoringCase("ALL"u8))
+                    return AbortWithErrorMessage("ERR CLIENT PAUSE mode must be WRITE or ALL"u8);
+            }
+            clusterSession?.ReleaseCurrentEpoch();
+            try { storeWrapper.clientPause.Pause(timeout, all, this); }
+            finally { clusterSession?.AcquireCurrentEpoch(); }
+            while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend)) SendAndReset();
+            return true;
+        }
+
+        private bool NetworkCLIENTUNPAUSE()
+        {
+            if (parseState.Count != 0) return AbortWithWrongNumberOfArguments("client|unpause");
+            storeWrapper.clientPause.Unpause();
+            while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend)) SendAndReset();
+            return true;
+        }
+
         /// <summary>
         /// CLIENT LIST
         /// </summary>

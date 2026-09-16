@@ -297,6 +297,8 @@ namespace Garnet.server
         CLIENT_SETNAME,
         CLIENT_SETINFO,
         CLIENT_UNBLOCK,
+        CLIENT_PAUSE,
+        CLIENT_UNPAUSE,
 
         MONITOR,
         MODULE,
@@ -318,6 +320,7 @@ namespace Garnet.server
         TIME,
         ROLE,
         SAVE,
+        SHUTDOWN,
         EXPDELSCAN,
         LASTSAVE,
         BGSAVE,
@@ -483,6 +486,8 @@ namespace Garnet.server
             RespCommand.CLIENT_SETNAME,
             RespCommand.CLIENT_SETINFO,
             RespCommand.CLIENT_UNBLOCK,
+            RespCommand.CLIENT_PAUSE,
+            RespCommand.CLIENT_UNPAUSE,
             // Command
             RespCommand.COMMAND,
             RespCommand.COMMAND_COUNT,

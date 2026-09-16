@@ -1136,6 +1136,43 @@
         ]
       },
       {
+        "Command": "CLIENT_PAUSE",
+        "Name": "CLIENT|PAUSE",
+        "Summary": "Suspends client command processing for the specified number of milliseconds.",
+        "Group": "Connection",
+        "Complexity": "O(N) where N is the number of active clients.",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "TIMEOUT",
+            "DisplayText": "timeout",
+            "Type": "Integer"
+          },
+          {
+            "TypeDiscriminator": "RespCommandContainerArgument",
+            "Name": "MODE",
+            "Type": "OneOf",
+            "ArgumentFlags": "Optional",
+            "Arguments": [
+              {
+                "TypeDiscriminator": "RespCommandBasicArgument",
+                "Name": "WRITE",
+                "DisplayText": "write",
+                "Type": "PureToken",
+                "Token": "WRITE"
+              },
+              {
+                "TypeDiscriminator": "RespCommandBasicArgument",
+                "Name": "ALL",
+                "DisplayText": "all",
+                "Type": "PureToken",
+                "Token": "ALL"
+              }
+            ]
+          }
+        ]
+      },
+      {
         "Command": "CLIENT_SETINFO",
         "Name": "CLIENT|SETINFO",
         "Summary": "Sets information specific to the client or connection.",
@@ -1216,6 +1253,13 @@
             ]
           }
         ]
+      },
+      {
+        "Command": "CLIENT_UNPAUSE",
+        "Name": "CLIENT|UNPAUSE",
+        "Summary": "Resumes clients suspended by CLIENT PAUSE.",
+        "Group": "Connection",
+        "Complexity": "O(N) where N is the number of paused clients."
       }
     ]
   },
@@ -7507,6 +7551,61 @@
             "Token": "PX"
           }
         ]
+      }
+    ]
+  },
+  {
+    "Command": "SHUTDOWN",
+    "Name": "SHUTDOWN",
+    "Summary": "Shuts down the server after completing persistence and replica synchronization.",
+    "Group": "Server",
+    "Complexity": "O(N) when saving, where N is the number of keys, otherwise O(1).",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "SAVE-SELECTOR",
+        "Type": "OneOf",
+        "ArgumentFlags": "Optional",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "NOSAVE",
+            "DisplayText": "nosave",
+            "Type": "PureToken",
+            "Token": "NOSAVE"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "SAVE",
+            "DisplayText": "save",
+            "Type": "PureToken",
+            "Token": "SAVE"
+          }
+        ]
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "NOW",
+        "DisplayText": "now",
+        "Type": "PureToken",
+        "Token": "NOW",
+        "ArgumentFlags": "Optional"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "FORCE",
+        "DisplayText": "force",
+        "Type": "PureToken",
+        "Token": "FORCE",
+        "ArgumentFlags": "Optional"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "ABORT",
+        "DisplayText": "abort",
+        "Type": "PureToken",
+        "Token": "ABORT",
+        "ArgumentFlags": "Optional"
       }
     ]
   },
