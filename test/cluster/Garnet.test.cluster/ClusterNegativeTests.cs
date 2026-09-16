@@ -641,6 +641,20 @@ namespace Garnet.test.cluster
             }
         }
 
+        /// <summary>
+        /// Build a single-endpoint configuration matching the servers these tests create.
+        /// </summary>
+        /// <param name="endPoint">Endpoint to connect to.</param>
+        /// <param name="user">ACL user to authenticate as.</param>
+        /// <param name="password">Password for <paramref name="user"/>.</param>
+        static ConfigurationOptions GetNegativeTestConfig(IPEndPoint endPoint, string user, string password)
+            => TestUtils.GetConfig(
+                new EndPointCollection { endPoint },
+                allowAdmin: true,
+                disablePubSub: true,
+                authUsername: user,
+                authPassword: password);
+
         [Test, Order(13)]
         [Category("REPLICATION")]
         public void ClusterReplicateFails()
@@ -662,13 +676,17 @@ namespace Garnet.test.cluster
 
             ClassicAssert.AreNotEqual(primaryEndpoint, replicaEndpoint, "Should have different endpoints for nodes");
 
-            using var primaryConnection = ConnectionMultiplexer.Connect($"{primaryEndpoint.Address}:{primaryEndpoint.Port},user={UserName},password={Password},allowAdmin=true");
+            // Connect through the shared harness configuration rather than a hand-built connection
+            // string: it trims the command map to match the pub/sub-disabled servers created above,
+            // applies the suite's connect retry policy, and enables exception detail and client names
+            // so a connect failure identifies the test and endpoint.
+            using var primaryConnection = ConnectionMultiplexer.Connect(GetNegativeTestConfig(primaryEndpoint, UserName, Password));
             var primaryServer = primaryConnection.GetServer(primaryEndpoint);
 
             ClassicAssert.AreEqual("OK", (string)primaryServer.Execute("CLUSTER", ["ADDSLOTSRANGE", "0", "16383"], flags: CommandFlags.NoRedirect));
             ClassicAssert.AreEqual("OK", (string)primaryServer.Execute("CLUSTER", ["MEET", replicaEndpoint.Address.ToString(), replicaEndpoint.Port.ToString()], flags: CommandFlags.NoRedirect));
 
-            using var replicaConnection = ConnectionMultiplexer.Connect($"{replicaEndpoint.Address}:{replicaEndpoint.Port},user={UserName},password={Password},allowAdmin=true");
+            using var replicaConnection = ConnectionMultiplexer.Connect(GetNegativeTestConfig(replicaEndpoint, UserName, Password));
             var replicaServer = replicaConnection.GetServer(replicaEndpoint);
 
             // Try to replicate from a server that doesn't exist
