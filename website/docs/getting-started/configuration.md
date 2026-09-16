@@ -104,6 +104,7 @@ For all available command line settings, run `GarnetServer.exe -h` or `GarnetSer
 | **LogDir** | ```-l```<br/>```--logdir``` | ```string``` |  | Storage directory for tiered records (hybrid log), if storage tiering (--storage-tier) is enabled. Uses current directory if unspecified. |
 | **CheckpointDir** | ```-c```<br/>```--checkpointdir``` | ```string``` |  | Storage directory for checkpoints. Uses logdir if unspecified. |
 | **Recover** | ```-r```<br/>```--recover``` | ```bool``` |  | Recover from latest checkpoint and log, if present. |
+| **Upgrade** | ```--upgrade``` | ```bool``` |  | Up-convert a store written by an earlier release, then exit. The object log is rewritten in current format alongside the original, which is retained under a versioned name, and a fresh checkpoint is taken. Requires --recover and tiered storage, and is refused while the append-only file is enabled; has no effect on a store with no object log or one already in the current format. |
 | **DisablePubSub** | ```--no-pubsub``` | ```bool``` |  | Disable pub/sub feature on server. |
 | **PubSubPageSize** | ```--pubsub-pagesize``` | ```string``` | Memory size | Page size of log used for pub/sub (rounds down to power of 2) |
 | **DisableObjects** | ```--no-obj``` | ```bool``` |  | Disable support for data structure objects. |
@@ -244,6 +245,33 @@ For all available command line settings, run `GarnetServer.exe -h` or `GarnetSer
 | **VectorSetQuantizationTaskCount** | ```--vector-set-quantization-task-count``` | ```int``` | Integer in range:<br/>[0, MaxValue] | Configure how many quantization tasks are used to optimize Vector Set operations (default: 0 uses the machine CPU count; maximum: the machine CPU count) |
 
 [^1]: A string representing a memory size. Can either be a number of bytes, or follow this pattern: 1k, 1kb, 5M, 5Mb, 10g, 10GB etc.
+
+---
+
+## Upgrading a store written by an earlier release
+
+An on-disk store keeps its object log in the format of the release that wrote it. A newer release can read it,
+but only by taking the older decode path, which prevents the object log from evolving. `--upgrade` converts the
+store once, off-line, so later releases read it natively.
+
+```bash
+garnet --upgrade --recover --storage-tier --logdir /var/lib/garnet
+```
+
+The process recovers the store, rewrites the main log in place, writes the object log in the current format to
+`Store/hlog_objs_upgrade`, takes a checkpoint, and exits without accepting connections. It then renames the
+original object log to `Store/hlog_objs_pre_upgrade_<timestamp>` and the converted one into its place. **Start the
+server normally afterwards; do not pass `--upgrade` again.**
+
+Notes:
+
+* `--recover` and tiered storage are required — there is nothing to convert without an existing checkpoint on disk.
+* The append-only file must be disabled for the run. Drain or disable it first, then re-enable it afterwards.
+* A store with no object log (`--no-obj`), or one already in the current format, is left untouched; any later
+  checkpoint is written in the current format regardless.
+* The original object log is retained, not deleted. Remove it once the upgraded store has started successfully.
+* The rename is journaled by `Store/hlog_objs.upgrade-marker`. If the process is interrupted mid-rename the marker
+  remains, an ordinary start refuses to open the store, and re-running `--upgrade` finishes the rename.
 
 ---
 
