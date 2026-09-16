@@ -127,6 +127,15 @@ namespace Tsavorite.core
         volatile int waiterCount = 0;
 
         /// <summary>
+        /// Number of <see cref="waiterSemaphore"/> signals that have been issued but not yet consumed by a
+        /// waiter. <see cref="SignalWaiter"/> only issues a signal while this is below <see cref="waiterCount"/>,
+        /// which bounds the semaphore's count by the number of waiters. Without that bound the count grows by
+        /// one per epoch release for as long as any waiter exists, and eventually overflows
+        /// <see cref="SemaphoreSlim"/>'s maximum.
+        /// </summary>
+        volatile int pendingWaiterSignals = 0;
+
+        /// <summary>
         /// Flag (MSB) used to mark the epoch as disposed in <see cref="waiterCount"/>.
         /// </summary>
         const int kDisposedFlag = unchecked((int)0x80000000);
@@ -550,7 +559,42 @@ namespace Tsavorite.core
 
             entry = kInvalidIndex;
             if (waiterCount > 0)
-                waiterSemaphore.Release();
+                SignalWaiter();
+        }
+
+        /// <summary>
+        /// Wake one thread waiting in <see cref="ReserveEntryWait"/> for the slot just freed, unless every
+        /// current waiter already has a wake pending.
+        ///
+        /// The increment is what reserves the right to signal, so it always precedes its
+        /// <see cref="SemaphoreSlim.Release()"/> and the matching decrement always follows a successful wait.
+        /// The semaphore's count is therefore never above <see cref="pendingWaiterSignals"/>, which this loop
+        /// holds at or below <see cref="waiterCount"/>.
+        ///
+        /// Suppressing a signal cannot lose a wakeup. A waiter only blocks when the semaphore's count is zero,
+        /// and a signal is only suppressed when a wake is already queued for every waiter, so at least one is
+        /// inbound. Waiters are released in FIFO order and re-probe the whole table before blocking again, so
+        /// whichever one wakes finds this slot (or a later one). The read of <see cref="pendingWaiterSignals"/>
+        /// here follows the release-store that published the slot as free, so a waiter woken by an
+        /// already-outstanding signal sees it.
+        ///
+        /// During <see cref="Dispose"/> the MSB of <see cref="waiterCount"/> makes it negative, so no signal is
+        /// issued; waiters unwind through <see cref="cts"/> instead.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        void SignalWaiter()
+        {
+            var pending = pendingWaiterSignals;
+            while (pending < waiterCount)
+            {
+                var prev = Interlocked.CompareExchange(ref pendingWaiterSignals, pending + 1, pending);
+                if (prev == pending)
+                {
+                    waiterSemaphore.Release();
+                    return;
+                }
+                pending = prev;
+            }
         }
 
         /// <summary>
@@ -644,6 +688,10 @@ namespace Tsavorite.core
 
                     // No slot available, wait for a signal from Release()
                     waiterSemaphore.Wait(cts.Token);
+
+                    // A signal was consumed, so release the reservation SignalWaiter() took for it. Only
+                    // reached when the wait succeeded; a cancelled wait consumes nothing.
+                    _ = Interlocked.Decrement(ref pendingWaiterSignals);
                 }
             }
             catch (OperationCanceledException)

@@ -722,24 +722,32 @@ namespace Garnet.server
         async Task ObjectCollectTaskAsync(int objectCollectFrequencySecs, CancellationToken token = default)
         {
             Debug.Assert(objectCollectFrequencySecs > 0);
+
+            if (serverOptions.DisableObjects)
+            {
+                logger?.LogWarning("ExpiredObjectCollectionFrequencySecs option is configured but Object store is disabled. Stopping the background hash collect task.");
+                return;
+            }
+
             try
             {
-                if (serverOptions.DisableObjects)
+                while (!token.IsCancellationRequested)
                 {
-                    logger?.LogWarning("ExpiredObjectCollectionFrequencySecs option is configured but Object store is disabled. Stopping the background hash collect task.");
-                    return;
-                }
-
-                while (true)
-                {
-                    if (token.IsCancellationRequested) return;
-
-                    databaseManager.ExecuteObjectCollection();
+                    // A failed cycle must not take the task down with it; retry on the next interval so a
+                    // transient fault cannot disable object collection for the lifetime of the process.
+                    try
+                    {
+                        databaseManager.ExecuteObjectCollection();
+                    }
+                    catch (Exception ex) when (!token.IsCancellationRequested)
+                    {
+                        logger?.LogError(ex, "Unknown exception received for background hash collect task. Retrying on the next cycle.");
+                    }
 
                     await Task.Delay(TimeSpan.FromSeconds(objectCollectFrequencySecs), token).ConfigureAwait(false);
                 }
             }
-            catch (TaskCanceledException) when (token.IsCancellationRequested)
+            catch (OperationCanceledException) when (token.IsCancellationRequested)
             {
                 // Suppress the exception if the task was cancelled because of store wrapper disposal
             }
@@ -754,16 +762,23 @@ namespace Garnet.server
             Debug.Assert(expiredKeyDeletionScanFrequencySecs > 0);
             try
             {
-                while (true)
+                while (!token.IsCancellationRequested)
                 {
-                    if (token.IsCancellationRequested) return;
-
-                    databaseManager.ExpiredKeyDeletionScan();
+                    // A failed cycle must not take the task down with it; retry on the next interval so a
+                    // transient fault cannot disable expired key deletion for the lifetime of the process.
+                    try
+                    {
+                        databaseManager.ExpiredKeyDeletionScan();
+                    }
+                    catch (Exception ex) when (!token.IsCancellationRequested)
+                    {
+                        logger?.LogError(ex, "Unknown exception received for background expired key deletion scan task. Retrying on the next cycle.");
+                    }
 
                     await Task.Delay(TimeSpan.FromSeconds(expiredKeyDeletionScanFrequencySecs), token).ConfigureAwait(false);
                 }
             }
-            catch (TaskCanceledException) when (token.IsCancellationRequested)
+            catch (OperationCanceledException) when (token.IsCancellationRequested)
             {
                 // Suppress the exception if the task was cancelled because of store wrapper disposal
             }
