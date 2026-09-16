@@ -203,12 +203,34 @@ namespace Garnet.server
         /// <summary>
         /// Creates a new runner with the source of the script
         /// </summary>
-        public unsafe LuaRunner(LuaMemoryManagementMode memMode, int? memLimitBytes, LuaLoggingMode logMode, HashSet<string> allowedFunctions, ReadOnlyMemory<byte> source, bool txnMode = false, RespServerSession respServerSession = null, ScratchBufferNetworkSender scratchBufferNetworkSender = null, string redisVersion = "0.0.0.0", ILogger logger = null)
+        public unsafe LuaRunner(
+            LuaMemoryManagementMode memMode,
+            int? memLimitBytes,
+            LuaLoggingMode logMode,
+            HashSet<string> allowedFunctions,
+            ReadOnlyMemory<byte> source,
+            bool txnMode = false,
+            RespServerSession respServerSession = null,
+            ScratchBufferNetworkSender scratchBufferNetworkSender = null,
+            string redisVersion = "0.0.0.0",
+            ILogger logger = null
+        )
             : this(memMode, memLimitBytes, logMode, allowedFunctions, new LuaScriptChunk(source, LuaScriptChunkKind.Text), txnMode, respServerSession, scratchBufferNetworkSender, redisVersion, logger)
         {
         }
 
-        internal unsafe LuaRunner(LuaMemoryManagementMode memMode, int? memLimitBytes, LuaLoggingMode logMode, HashSet<string> allowedFunctions, LuaScriptChunk source, bool txnMode = false, RespServerSession respServerSession = null, ScratchBufferNetworkSender scratchBufferNetworkSender = null, string redisVersion = "0.0.0.0", ILogger logger = null)
+        internal unsafe LuaRunner(
+            LuaMemoryManagementMode memMode,
+            int? memLimitBytes,
+            LuaLoggingMode logMode,
+            HashSet<string> allowedFunctions,
+            LuaScriptChunk source,
+            bool txnMode = false,
+            RespServerSession respServerSession = null,
+            ScratchBufferNetworkSender scratchBufferNetworkSender = null,
+            string redisVersion = "0.0.0.0",
+            ILogger logger = null
+        )
         {
             // KEYS and ARGV are always access by index, and to avoid allocation concerns
             // we also want to track their 'array'-bits sizes
