@@ -38,7 +38,7 @@ namespace Garnet.server
         /// </summary>
         /// <param name="scriptData">Lua source text.</param>
         /// <returns>A handle containing Lua source text.</returns>
-        public static LuaScriptHandle FromSource(ReadOnlyMemory<byte> scriptData) => new(new LuaScriptChunk(scriptData, LuaScriptChunkKind.Text));
+        public static LuaScriptHandle FromTextSource(ReadOnlyMemory<byte> scriptData) => new(new LuaScriptChunk(scriptData, LuaScriptChunkKind.Text));
 
         internal LuaScriptHandle(LuaScriptChunk chunk) => Chunk = chunk;
 
