@@ -672,6 +672,9 @@ namespace Garnet.test.cluster
             // Enable when old primary becomes replica
             context.clusterTestUtils.WaitForReplicaRecovery(primaryIndex, logger: context.logger);
 
+            // The promoted node has to be usable as a primary by this client before writes are sent to it
+            context.clusterTestUtils.WaitForPrimaryRole(replicaIndex, context.logger);
+
             // Check if allowed to write to new Primary
             if (!performRMW)
                 context.PopulatePrimary(ref context.kvPairs, keyLength, kvpairCount, replicaIndex, slotMap: slotMap);
@@ -743,6 +746,9 @@ namespace Garnet.test.cluster
             // Wait for both nodes to enter no failover
             context.clusterTestUtils.WaitForNoFailover(1, context.logger);
             context.clusterTestUtils.WaitForNoFailover(2, context.logger);
+
+            // Node 1 has to be usable as a primary by this client before writes are sent to it
+            context.clusterTestUtils.WaitForPrimaryRole(1, context.logger);
 
             // Wait for replica to recover
             context.clusterTestUtils.WaitForReplicaRecovery(2, context.logger);

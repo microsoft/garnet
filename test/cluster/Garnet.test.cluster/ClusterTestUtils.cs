@@ -3456,13 +3456,23 @@ namespace Garnet.test.cluster
             }
         }
 
+        /// <summary>
+        /// Waits until the node reports the primary role and the multiplexer has observed it.
+        /// The multiplexer caches a per-endpoint replica flag and rejects a primary-only command
+        /// before it leaves the client, refreshing that flag only on its periodic configuration
+        /// check, so a promotion is not usable until the topology has been re-read.
+        /// </summary>
         public void WaitForPrimaryRole(int nodeIndex, ILogger logger = null)
         {
+            var endPoint = GetEndPoint(nodeIndex);
             while (true)
             {
-                var role = RoleCommand(nodeIndex, logger);
-                if (role.Value.Equals("master")) break;
-                BackOff(cancellationToken: context.cts.Token);
+                if (RoleCommand(endPoint, logger).Value.Equals("master"))
+                {
+                    if (!redis.GetServer(endPoint).IsReplica) break;
+                    _ = redis.Configure();
+                }
+                BackOff(cancellationToken: context.cts.Token, msg: nameof(WaitForPrimaryRole));
             }
         }
 

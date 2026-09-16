@@ -909,18 +909,7 @@ namespace Garnet.test.cluster
             _ = clusterTestUtils.ClusterFailover(replicaNodeIndex, "ABORT", logger);
             _ = clusterTestUtils.ClusterFailover(replicaNodeIndex, logger: logger);
 
-            var retryCount = 0;
-            while (true)
-            {
-                var role = clusterTestUtils.GetReplicationRole(replicaNodeIndex, logger: logger);
-                if (role.Equals("master")) break;
-                if (retryCount++ > 10000)
-                {
-                    logger?.LogError("CLUSTER FAILOVER retry count reached");
-                    Assert.Fail();
-                }
-                Thread.Sleep(1000);
-            }
+            clusterTestUtils.WaitForPrimaryRole(replicaNodeIndex, logger);
         }
 
         /// <summary>Opens a connection, assigns all slots to primaryIndex, and introduces every other created node.</summary>
