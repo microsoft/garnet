@@ -2305,6 +2305,10 @@ namespace Garnet.test.cluster
         public string ClusterReplicate(int replicaNodeIndex, int primaryNodeIndex, bool async = false, bool failEx = true, ILogger logger = null)
         {
             var primaryId = ClusterMyId(primaryNodeIndex, logger: logger);
+            // CLUSTER REPLICATE resolves the primary's node id against the replica's own configuration.
+            // MEET only makes the node it is sent to aware of its target; the reverse direction arrives
+            // through the gossip handshake that follows, so wait for it before issuing the command.
+            WaitUntilNodeIdIsKnown(replicaNodeIndex, primaryId, logger: logger);
             return ClusterReplicate(replicaNodeIndex, primaryId, async: async, failEx: failEx, logger: logger);
         }
 
