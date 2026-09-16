@@ -14,9 +14,9 @@ namespace Tsavorite.test.recovery
     /// Checkpoint-metadata format compatibility.
     ///
     /// v8 repurposes the fifth address slot -- which in v7 held a duplicate of <c>recoveredTailAddress</c> -- as the
-    /// hybrid-log <c>pageSize</c>, and appended <c>segmentSize</c> after the object-log tails. These tests round-trip real
-    /// metadata produced by the same serializer at each supported version, so a downlevel checkpoint stays readable and its
-    /// checksum keeps validating against exactly the bytes that were written.
+    /// hybrid-log <c>pageSize</c>, and appended <c>segmentSize</c> and <c>objectLogSegmentSize</c> after the object-log
+    /// tails. These tests round-trip real metadata produced by the same serializer at each supported version, so a
+    /// downlevel checkpoint stays readable and its checksum keeps validating against exactly the bytes that were written.
     /// </summary>
     [TestFixture]
     public class CheckpointMetadataVersionTests
@@ -39,6 +39,7 @@ namespace Tsavorite.test.recovery
             info.beginAddress = 0x1000;
             info.pageSize = 1 << 22;
             info.segmentSize = 1L << 30;
+            info.objectLogSegmentSize = 1L << 26;
             return info;
         }
 
@@ -66,6 +67,7 @@ namespace Tsavorite.test.recovery
                 Assert.That(read.hybridLogRecoveryVersion, Is.EqualTo(HybridLogRecoveryInfo.CheckpointVersion));
                 Assert.That(read.pageSize, Is.EqualTo(info.pageSize));
                 Assert.That(read.segmentSize, Is.EqualTo(info.segmentSize));
+                Assert.That(read.objectLogSegmentSize, Is.EqualTo(info.objectLogSegmentSize));
                 Assert.That(read.recoveredTailAddress, Is.EqualTo(info.recoveredTailAddress));
                 Assert.That(read.mainLogRecoveryEndAddress, Is.EqualTo(info.mainLogRecoveryEndAddress));
                 Assert.That(read.snapshotFileLogicalStartAddress, Is.EqualTo(info.snapshotFileLogicalStartAddress));
@@ -121,6 +123,7 @@ namespace Tsavorite.test.recovery
                 // inheriting the legacy address that occupied the slot.
                 Assert.That(read.pageSize, Is.Zero);
                 Assert.That(read.segmentSize, Is.Zero);
+                Assert.That(read.objectLogSegmentSize, Is.Zero);
 
                 Assert.That(read.recoveredTailAddress, Is.EqualTo(info.recoveredTailAddress));
                 Assert.That(read.mainLogRecoveryEndAddress, Is.EqualTo(info.mainLogRecoveryEndAddress));
@@ -133,11 +136,11 @@ namespace Tsavorite.test.recovery
 
         [Test]
         [Category("CheckpointRestore")]
-        public void DownlevelMetadataOmitsAppendedSegmentSize()
+        public void DownlevelMetadataOmitsAppendedLogGeometry()
         {
             var info = MakeInfo();
-            Assert.That(Lines(info.ToByteArray(7)), Has.Length.EqualTo(Lines(info.ToByteArray(8)).Length - 1),
-                "v8 appends exactly one line (segmentSize) relative to v7");
+            Assert.That(Lines(info.ToByteArray(7)), Has.Length.EqualTo(Lines(info.ToByteArray(8)).Length - 2),
+                "v8 appends exactly two lines (segmentSize, objectLogSegmentSize) relative to v7");
         }
 
         [Test]
@@ -159,13 +162,41 @@ namespace Tsavorite.test.recovery
             var info = MakeInfo();
             var lines = Lines(info.ToByteArray());
 
-            // segmentSize is the last scalar line, immediately before the cookie-size line.
+            // segmentSize is followed by objectLogSegmentSize, then the cookie-size line.
             var segmentSizeIndex = Array.FindLastIndex(lines, l => l.Trim() == info.segmentSize.ToString());
             Assert.That(segmentSizeIndex, Is.GreaterThan(AddressSlotLineIndex));
             lines[segmentSizeIndex] = (info.segmentSize * 2).ToString();
 
             var tampered = Encoding.UTF8.GetBytes(string.Join("\r\n", lines));
             _ = Assert.Throws<TsavoriteException>(() => _ = RoundTrip(tampered));
+        }
+
+        [Test]
+        [Category("CheckpointRestore")]
+        public void TamperedObjectLogSegmentSizeFailsChecksum()
+        {
+            var info = MakeInfo();
+            var lines = Lines(info.ToByteArray());
+
+            var index = Array.FindLastIndex(lines, l => l.Trim() == info.objectLogSegmentSize.ToString());
+            Assert.That(index, Is.GreaterThan(AddressSlotLineIndex));
+            lines[index] = (info.objectLogSegmentSize * 2).ToString();
+
+            var tampered = Encoding.UTF8.GetBytes(string.Join("\r\n", lines));
+            _ = Assert.Throws<TsavoriteException>(() => _ = RoundTrip(tampered));
+        }
+
+        [Test]
+        [Category("CheckpointRestore")]
+        public void AppendedLogGeometryIsOrderedSegmentSizeThenObjectLogSegmentSize()
+        {
+            var info = MakeInfo();
+            var lines = Lines(info.ToByteArray());
+
+            var segmentSizeIndex = Array.FindLastIndex(lines, l => l.Trim() == info.segmentSize.ToString());
+            var objectLogSegmentSizeIndex = Array.FindLastIndex(lines, l => l.Trim() == info.objectLogSegmentSize.ToString());
+            Assert.That(objectLogSegmentSizeIndex, Is.EqualTo(segmentSizeIndex + 1),
+                "objectLogSegmentSize must be serialized immediately after segmentSize");
         }
 
         [Test]

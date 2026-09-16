@@ -122,6 +122,13 @@ namespace Tsavorite.core
         public long segmentSize;
 
         /// <summary>
+        /// Object-log segment size, in bytes, of the store that wrote this checkpoint. Appended in v8; zero for a v7 checkpoint, whose
+        /// metadata did not record it. This is the split point for <see cref="ObjectLogFilePositionInfo"/>'s packed segment/offset word,
+        /// so recovering with a different value resolves every object-log position to a different segment and offset.
+        /// </summary>
+        public long objectLogSegmentSize;
+
+        /// <summary>
         /// If struct deserialized succesfully
         /// </summary>
         public bool Deserialized { get; private set; }
@@ -143,6 +150,7 @@ namespace Tsavorite.core
             recoveredTailAddress = 0;
             pageSize = 0;
             segmentSize = 0;
+            objectLogSegmentSize = 0;
             headAddress = 0;
 
             hlogEndObjectLogTail = new();       // Marks as "unset"
@@ -212,10 +220,14 @@ namespace Tsavorite.core
 
             // Appended in v8; v7 metadata ends the scalar fields at the object-log tails.
             segmentSize = 0;
+            objectLogSegmentSize = 0;
             if (cversion >= LogGeometryCheckpointVersion)
             {
                 value = reader.ReadLine();
                 segmentSize = long.Parse(value);
+
+                value = reader.ReadLine();
+                objectLogSegmentSize = long.Parse(value);
             }
 
             // Read user cookie
@@ -231,7 +243,7 @@ namespace Tsavorite.core
                 }
             }
 
-            if (checksum != ChecksumCore(addressSlotValue, segmentSize))
+            if (checksum != ChecksumCore(addressSlotValue, segmentSize, objectLogSegmentSize))
                 throw new TsavoriteException("Invalid checksum for checkpoint");
 
             Deserialized = true;
@@ -282,16 +294,17 @@ namespace Tsavorite.core
 
             var writesLogGeometry = targetVersion >= LogGeometryCheckpointVersion;
 
-            // Pre-v8 metadata duplicated recoveredTailAddress into the fifth address slot and had no trailing value.
+            // Pre-v8 metadata duplicated recoveredTailAddress into the fifth address slot and had no trailing values.
             var addressSlotValue = writesLogGeometry ? pageSize : recoveredTailAddress;
-            var trailingValue = writesLogGeometry ? segmentSize : 0;
+            var trailingSegmentSize = writesLogGeometry ? segmentSize : 0;
+            var trailingObjectLogSegmentSize = writesLogGeometry ? objectLogSegmentSize : 0;
 
             using (MemoryStream ms = new())
             {
                 using (StreamWriter writer = new(ms))
                 {
                     writer.WriteLine(targetVersion); // checkpoint version
-                    writer.WriteLine(ChecksumCore(addressSlotValue, trailingValue));
+                    writer.WriteLine(ChecksumCore(addressSlotValue, trailingSegmentSize, trailingObjectLogSegmentSize));
 
                     writer.WriteLine(guid);
                     writer.WriteLine(useSnapshotFile);
@@ -312,7 +325,10 @@ namespace Tsavorite.core
                     snapshotEndObjectLogTail.Serialize(writer);
 
                     if (writesLogGeometry)
+                    {
                         writer.WriteLine(segmentSize);
+                        writer.WriteLine(objectLogSegmentSize);
+                    }
 
                     // Write user cookie
                     var cookieSize = cookie == null ? 0 : cookie.Length;
@@ -328,18 +344,18 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Checksum over the fixed scalar fields. The fifth address slot and the appended trailing value are passed in so a
+        /// Checksum over the fixed scalar fields. The fifth address slot and the appended trailing values are passed in so a
         /// downlevel checkpoint validates against the raw values it actually serialized: v7 metadata wrote a duplicate
-        /// of <see cref="recoveredTailAddress"/> in the slot and had no trailing value, which reduces this to the v7 formula.
+        /// of <see cref="recoveredTailAddress"/> in the slot and had no trailing values, which reduces this to the v7 formula.
         /// </summary>
-        private readonly long ChecksumCore(long addressSlotValue, long trailingValue)
+        private readonly long ChecksumCore(long addressSlotValue, long trailingSegmentSize, long trailingObjectLogSegmentSize)
         {
             var bytes = guid.ToByteArray();
             var long1 = BitConverter.ToInt64(bytes, 0);
             var long2 = BitConverter.ToInt64(bytes, 8);
             return long1 ^ long2 ^ version ^ mainLogRecoveryEndAddress ^ snapshotFileLogicalStartAddress ^ fuzzyRegionStartAddress ^ recoveredTailAddress ^ addressSlotValue
                 ^ headAddress ^ beginAddress ^ beginAddressObjectLogSegment ^ (long)hlogEndObjectLogTail.word ^ (long)snapshotStartObjectLogTail.word ^ (long)snapshotEndObjectLogTail.word
-                ^ trailingValue;
+                ^ trailingSegmentSize ^ trailingObjectLogSegmentSize;
         }
 
         /// <summary>
@@ -357,6 +373,7 @@ namespace Tsavorite.core
             logger?.LogInformation("Recovered tail address: {recoveredTailAddress}", recoveredTailAddress);
             logger?.LogInformation("Page Size: {pageSize}", pageSize);
             logger?.LogInformation("Segment Size: {segmentSize}", segmentSize);
+            logger?.LogInformation("Object Log Segment Size: {objectLogSegmentSize}", objectLogSegmentSize);
             logger?.LogInformation("Head Address: {headAddress}", headAddress);
             logger?.LogInformation("Begin Address: {beginAddress}", beginAddress);
             logger?.LogInformation("Begin object log segment: {beginObjLogSegment}", beginAddressObjectLogSegment);

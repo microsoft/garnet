@@ -39,6 +39,10 @@ namespace Tsavorite.core
                     store._hybridLogCheckpoint.info.beginAddress = store.hlogBase.BeginAddress;
                     store._hybridLogCheckpoint.info.pageSize = store.hlogBase.PageSize;
                     store._hybridLogCheckpoint.info.segmentSize = store.hlogBase.GetMainLogSegmentSize();
+
+                    // Allocators without an object log return -1; record 0 there, matching "not applicable" in the metadata.
+                    var objectLogSegmentSize = store.hlogBase.GetObjectLogSegmentSize();
+                    store._hybridLogCheckpoint.info.objectLogSegmentSize = objectLogSegmentSize > 0 ? objectLogSegmentSize : 0;
                     break;
 
                 case Phase.IN_PROGRESS:
