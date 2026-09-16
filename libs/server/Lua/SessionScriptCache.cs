@@ -183,9 +183,10 @@ namespace Garnet.server
                 return true;
             }
 
-            return luaScriptHandle != null
-                ? TryLoadCached(session, digest, ref luaScriptHandle, out runner, out digestOnHeap)
-                : TryCompileAndLoad(session, source, digest, ref luaScriptHandle, out runner, out digestOnHeap);
+            if (luaScriptHandle != null)
+                return TryLoadCached(session, digest, ref luaScriptHandle, out runner, out digestOnHeap);
+
+            return TryCompileAndLoad(session, source, digest, ref luaScriptHandle, out runner, out digestOnHeap);
         }
 
         /// <summary>
