@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 using Garnet.common;
@@ -65,8 +66,7 @@ namespace Garnet.cluster
         {
             this.clusterProvider = clusterProvider;
             this.serverOptions = clusterProvider.serverOptions;
-            var clusterFolder = "/cluster";
-            var clusterDataPath = serverOptions.CheckpointDir + clusterFolder;
+            var clusterDataPath = Path.Combine(serverOptions.CheckpointDir ?? string.Empty, "cluster");
             var deviceFactory = serverOptions.GetInitializedDeviceFactory(clusterDataPath);
 
 
