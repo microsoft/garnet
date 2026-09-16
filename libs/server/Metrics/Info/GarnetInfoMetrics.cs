@@ -208,9 +208,6 @@ namespace Garnet.server
                     new("total_number_resp_server_session_exceptions", metricsDisabled ? "0" : globalMetrics.globalSessionMetrics.get_total_number_resp_server_session_exceptions().ToString()),
                     new("total_transaction_commands_received", metricsDisabled ? "0" : globalMetrics.globalSessionMetrics.get_total_transaction_commands_received().ToString()),
                     new("total_transaction_commands_execution_failed", metricsDisabled ? "0" : globalMetrics.globalSessionMetrics.get_total_transaction_commands_execution_failed().ToString()),
-                    // Process-wide and not monitor-sampled, so unlike the rows above it stays accurate
-                    // when no monitor is configured. See RespMemoryWriter.TotalOutputRentals.
-                    new("total_output_buffer_rentals", RespMemoryWriter.TotalOutputRentals.ToString()),
                 ];
 
             if (clusterEnabled)
@@ -420,6 +417,9 @@ namespace Garnet.server
                 bufferPoolStats = [.. bufferPoolStats, new MetricsItem("network_buffer_budget", ((GarnetServerTcp)server[0]).NetworkBufferBudget.GetStats())];
             if (storeWrapper.clusterProvider != null)
                 bufferPoolStats = [.. bufferPoolStats, .. storeWrapper.clusterProvider.GetBufferPoolStats()];
+            // Reported here rather than under STATS because, like the rest of this section, it is read
+            // live from the source rather than sampled by the monitor. See RespMemoryWriter.TotalOutputRentals.
+            bufferPoolStats = [.. bufferPoolStats, new MetricsItem("total_output_buffer_rentals", RespMemoryWriter.TotalOutputRentals.ToString())];
         }
 
         private void PopulateCheckpointInfo(StoreWrapper storeWrapper)

@@ -9,11 +9,12 @@ using StackExchange.Redis;
 namespace Garnet.test
 {
     /// <summary>
-    /// Pins <c>total_output_buffer_rentals</c>, the INFO counter that makes response-size overflow
-    /// observable rather than inferred.
+    /// Pins <c>total_output_buffer_rentals</c>, the <c>INFO BPSTATS</c> counter that makes
+    /// response-size overflow observable rather than inferred.
     /// <para>
     /// The fixture configures no metrics monitor, so a non-zero reading here also demonstrates that
-    /// this row is not gated on monitor sampling the way the rest of INFO STATS is.
+    /// the counter is read live from its source rather than sampled, which is what the rest of the
+    /// buffer pool section does and what STATS deliberately does not.
     /// </para>
     /// </summary>
     [TestFixture]
@@ -41,10 +42,10 @@ namespace Garnet.test
 
         static long Rentals(ConnectionMultiplexer redis)
         {
-            var info = redis.GetServer(TestUtils.EndPoint).Info("stats");
+            var info = redis.GetServer(TestUtils.EndPoint).Info("bpstats");
             var row = info.SelectMany(g => g)
                           .FirstOrDefault(kv => kv.Key == "total_output_buffer_rentals");
-            ClassicAssert.IsNotNull(row.Key, "INFO STATS did not carry total_output_buffer_rentals");
+            ClassicAssert.IsNotNull(row.Key, "INFO BPSTATS did not carry total_output_buffer_rentals");
             return long.Parse(row.Value);
         }
 
