@@ -22,6 +22,26 @@ namespace Garnet.server
         public HashSet<string> AllowedFunctions = [];
 
         /// <summary>
+        /// Default for <see cref="ScriptCacheSize"/>.
+        /// </summary>
+        public const int DefaultScriptCacheSize = 64;
+
+        /// <summary>
+        /// Largest number of compiled scripts each session retains, or 0 for no limit.
+        /// </summary>
+        /// <remarks>
+        /// Each cached script holds a whole Lua VM, so an unbounded per-session cache lets a session
+        /// that runs many distinct scripts accumulate VMs for its lifetime. This is a session-local
+        /// cache in front of the global script cache: evicting an entry costs a recompile on the next
+        /// use of that script, never a NOSCRIPT error.
+        ///
+        /// Deliberately not exposed as a command line option. The default is generous enough that a
+        /// typical application never reaches it, and no measurement exists to justify a safe range
+        /// for operators to tune within.
+        /// </remarks>
+        public int ScriptCacheSize = DefaultScriptCacheSize;
+
+        /// <summary>
         /// Construct options with default options.
         /// </summary>
         public LuaOptions(ILogger logger = null)
