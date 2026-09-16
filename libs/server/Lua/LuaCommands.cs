@@ -114,52 +114,8 @@ namespace Garnet.server
             sessionScriptCache.GetScriptDigest(script.ReadOnlySpan, digest);
 
             var onStackScriptKey = new ScriptHashKey(digest);
-            _ = storeWrapper.storeScriptCache.TryGetValue(onStackScriptKey, out var globalScriptHandle);
-
-            LuaRunner runner;
-            LuaScriptHandle sessionScriptHandle;
-            ScriptHashKey? digestOnHeap;
-            if (globalScriptHandle != null)
-            {
-                sessionScriptHandle = globalScriptHandle;
-                digestOnHeap = null;
-                if (!sessionScriptCache.TryLoadCached(this, onStackScriptKey, globalScriptHandle, out runner))
-                    return true;
-            }
-            else if (!sessionScriptCache.TryLoadSource(this, script.ReadOnlySpan, onStackScriptKey, out sessionScriptHandle, out runner, out digestOnHeap))
-            {
-                // TryLoadSource will have written any errors out
+            if (!TryLoadScriptForSession(script.ReadOnlySpan, digest, onStackScriptKey, out var runner))
                 return true;
-            }
-
-            if (globalScriptHandle == null)
-            {
-                // Add script to the store dictionary IF we didn't already have it cached
-                //
-                // This may strike you as odd, but it is how Redis behaves
-                if (digestOnHeap == null)
-                {
-                    var newAlloc = GC.AllocateUninitializedArray<byte>(SessionScriptCache.SHA1Len, pinned: true);
-                    digest.CopyTo(newAlloc);
-                    if (!storeWrapper.storeScriptCache.TryAdd(new(newAlloc), sessionScriptHandle))
-                    {
-                        // Some other session loaded the script, toss our new handle
-                        //
-                        // Next time this script is run, it'll be pulled from the global cache
-                        sessionScriptHandle.Dispose();
-                    }
-                }
-                else
-                {
-                    if (!storeWrapper.storeScriptCache.TryAdd(digestOnHeap.Value, sessionScriptHandle))
-                    {
-                        // Some other session loaded the script, toss our new handle
-                        //
-                        // Next time this script is run, it'll be pulled from the global cache
-                        sessionScriptHandle.Dispose();
-                    }
-                }
-            }
 
             if (runner == null)
             {
@@ -284,52 +240,37 @@ namespace Garnet.server
             sessionScriptCache.GetScriptDigest(source.Span, digest);
 
             var onStackScriptHashKey = new ScriptHashKey(digest);
-            _ = storeWrapper.storeScriptCache.TryGetValue(onStackScriptHashKey, out var globalScriptHandle);
-
-            LuaScriptHandle sessionScriptHandle;
-            ScriptHashKey? digestOnHeap;
-            var loaded = false;
-            if (globalScriptHandle != null)
+            if (TryLoadScriptForSession(source.ReadOnlySpan, digest, onStackScriptHashKey, out _))
             {
-                sessionScriptHandle = globalScriptHandle;
-                digestOnHeap = null;
-                loaded = sessionScriptCache.TryLoadCached(this, onStackScriptHashKey, globalScriptHandle, out _);
-            }
-            else
-            {
-                loaded = sessionScriptCache.TryLoadSource(this, source.ReadOnlySpan, onStackScriptHashKey, out sessionScriptHandle, out _, out digestOnHeap);
-            }
-
-            if (loaded)
-            {
-                // Add script to the global store dictionary if not already in there
-                if (globalScriptHandle == null)
-                {
-                    if (digestOnHeap == null)
-                    {
-                        var newAlloc = GC.AllocateUninitializedArray<byte>(SessionScriptCache.SHA1Len, pinned: true);
-                        digest.CopyTo(newAlloc);
-                        if (!storeWrapper.storeScriptCache.TryAdd(new(newAlloc), sessionScriptHandle))
-                        {
-                            // Some other caller added the script already, our new handle is dead
-                            // but we'll load it from the shared cache on next invocation
-                            sessionScriptHandle.Dispose();
-                        }
-                    }
-                    else
-                    {
-                        if (!storeWrapper.storeScriptCache.TryAdd(digestOnHeap.Value, sessionScriptHandle))
-                        {
-                            // Some other caller added the script already, our new handle is dead
-                            // but we'll load it from the shared cache on next invocation
-                            sessionScriptHandle.Dispose();
-                        }
-                    }
-                }
-
                 while (!RespWriteUtils.TryWriteBulkString(digest, ref dcurr, dend))
                     SendAndReset();
             }
+
+            return true;
+        }
+
+        private bool TryLoadScriptForSession(ReadOnlySpan<byte> source, ReadOnlySpan<byte> digest, ScriptHashKey scriptKey, out LuaRunner runner)
+        {
+            if (storeWrapper.storeScriptCache.TryGetValue(scriptKey, out var globalScriptHandle))
+                return sessionScriptCache.TryLoadCached(this, scriptKey, globalScriptHandle, out runner);
+
+            if (!sessionScriptCache.TryLoadSource(this, source, scriptKey, out var sessionScriptHandle, out runner, out var digestOnHeap))
+                return false;
+
+            ScriptHashKey globalScriptKey;
+            if (digestOnHeap != null)
+            {
+                globalScriptKey = digestOnHeap.Value;
+            }
+            else
+            {
+                var digestCopy = GC.AllocateUninitializedArray<byte>(SessionScriptCache.SHA1Len, pinned: true);
+                digest.CopyTo(digestCopy);
+                globalScriptKey = new(digestCopy);
+            }
+
+            if (!storeWrapper.storeScriptCache.TryAdd(globalScriptKey, sessionScriptHandle))
+                sessionScriptHandle.Dispose();
 
             return true;
         }
