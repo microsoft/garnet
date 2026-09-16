@@ -811,18 +811,19 @@ namespace Tsavorite.core
                     hlogBase.EvictPageForRecovery(deadPage);
             }
 
-            if (untilAddress <= scanFromAddress)
-                return recoveryStatus;
-
             // A downlevel object log must be up-converted into the upgrade device before any page can be evicted, because an evicted page keeps
             // the object-log positions stamped on it. Recovery has already failed if a downlevel checkpoint has an object log but no upgrade
-            // device, so an object log here means the upgrade device is present. Snapshot recovery does not yet convert; its downlevel records
-            // still take the in-place encoding up-convert, which fails fast on anything needing a ChunkHeader.
-            var upgradeObjectLog = checkpointType != CheckpointType.Snapshot
-                && HybridLogRecoveryInfo.UsesDownlevelObjectLog(options.checkpointVersion)
-                && hlogBase.HasObjectLogDevice;
+            // device, so an object log here means the upgrade device is present. This is started even when this phase has no pages to read,
+            // because a snapshot recovery whose hybrid-log region is empty still has a snapshot region to convert.
+            var upgradeObjectLog = HybridLogRecoveryInfo.UsesDownlevelObjectLog(options.checkpointVersion) && hlogBase.HasObjectLogDevice;
             if (upgradeObjectLog)
                 hlogBase.BeginObjectLogUpgrade();
+
+            if (untilAddress <= scanFromAddress)
+            {
+                CompleteObjectLogUpgradeIfDone(recoveryStatus, untilAddress, upgradeObjectLog, checkpointType);
+                return recoveryStatus;
+            }
 
             for (int page = startPage; page < endPage; page += numPagesToReadPerIteration)
             {
@@ -850,9 +851,7 @@ namespace Tsavorite.core
 
             if (upgradeObjectLog)
             {
-                // Every page now points into the upgrade device, so it becomes the live object log and its append position the live tail.
-                hlogBase.CompleteObjectLogUpgrade();
-                TrimResidentPagesToBudget(recoveryStatus, untilAddress);
+                CompleteObjectLogUpgradeIfDone(recoveryStatus, untilAddress, upgradeObjectLog, checkpointType);
                 return recoveryStatus;
             }
 
@@ -865,6 +864,20 @@ namespace Tsavorite.core
                 TrimResidentPagesToBudget(recoveryStatus, untilAddress);
             }
             return recoveryStatus;
+        }
+
+        /// <summary>
+        /// Close out a downlevel object-log up-conversion at the end of the hybrid-log recovery phase. Snapshot recovery has a second
+        /// region to convert, so its conversion stays open until <see cref="RecoverHybridLogFromSnapshotFileAsync"/> finishes; leaving it
+        /// open keeps the snapshot-region flushes appending to the upgrade device and re-stamping each page header. FoldOver has no second
+        /// region, so every page now points into the upgrade device and it becomes the live object log.
+        /// </summary>
+        private void CompleteObjectLogUpgradeIfDone(RecoveryStatus recoveryStatus, long untilAddress, bool upgradeObjectLog, CheckpointType checkpointType)
+        {
+            if (!upgradeObjectLog || checkpointType == CheckpointType.Snapshot)
+                return;
+            hlogBase.CompleteObjectLogUpgrade();
+            TrimResidentPagesToBudget(recoveryStatus, untilAddress);
         }
 
         /// <summary>
@@ -1054,6 +1067,10 @@ namespace Tsavorite.core
             recoveryStatus.snapshotScanFromAddress = scanFromAddress;
             var snapshotBoundaryPage = hlogBase.GetPage(scanFromAddress);
 
+            // The hybrid-log phase leaves a downlevel up-conversion open when there is a snapshot region to convert as well, so that the
+            // snapshot-region flushes keep appending to the upgrade device and re-stamping each page header.
+            var upgradeObjectLog = hlogBase.IsUpgradingObjectLog;
+
             // Snapshot recovery overlays the snapshot image only at/above scanFromAddress, which is the recovered
             // mainLogRecoveryEndAddress. Usually the preceding main-log recovery leaves this boundary page resident. An
             // index checkpoint may make that replay unnecessary, however, so load the durable main prefix on demand
@@ -1107,24 +1124,96 @@ namespace Tsavorite.core
                 }
 
                 RecoverSnapshotPages(Math.Max(recoverFromAddress, scanFromAddress), untilAddress, nextVersion, in options, recoveryStatus, page, end);
+
+                if (upgradeObjectLog)
+                {
+                    // Convert this batch before the next batch's read can evict any of it; an evicted page would keep its snapshot
+                    // object-log positions, which resolve against the wrong file once the upgrade device becomes live.
+                    for (var p = page; p < end; p++)
+                        UpgradeSnapshotObjectLogPageForRecovery(recoveryStatus, scanFromAddress, untilAddress, p, in options);
+                }
             }
 
             await WaitUntilAllPagesHaveBeenFlushedAsync(startPage, endPage, recoveryStatus, cancellationToken).ConfigureAwait(false);
 
-            // Deferred object load: a single top-down pass over the full recovered range [headAddress, untilAddress), evicting bottom-up to honor the
-            // memory budget and flushing any evicted snapshot page to the main log first. Records on snapshot-region pages (snapshotBoundaryPage and above)
-            // still carry their snapshot object-log positions, so their objects are read from the snapshot object-log device; hybrid-log-region pages (below
-            // the boundary) reference the main object-log (null device). The device is selected per page inside the pass. This leaves a clean, unbroken set
-            // of resident pages down to headAddress with their objects loaded.
-            RecoveryLoadObjectsPass2(recoveryStatus, recoveryStatus.headAddress, untilAddress, recoveryStatus.objectLogRecoveryDevice, snapshotBoundaryPage);
+            if (upgradeObjectLog)
+            {
+                // Both regions are converted, so the upgrade device becomes the live object log and its append position the live tail.
+                // The conversion pass has already loaded each page's objects from the current-format bytes it wrote, so the deferred
+                // object load has nothing left to do.
+                hlogBase.CompleteObjectLogUpgrade();
+                TrimResidentPagesToBudget(recoveryStatus, untilAddress);
+            }
+            else
+            {
+                // Deferred object load: a single top-down pass over the full recovered range [headAddress, untilAddress), evicting bottom-up to honor the
+                // memory budget and flushing any evicted snapshot page to the main log first. Records on snapshot-region pages (snapshotBoundaryPage and above)
+                // still carry their snapshot object-log positions, so their objects are read from the snapshot object-log device; hybrid-log-region pages (below
+                // the boundary) reference the main object-log (null device). The device is selected per page inside the pass. This leaves a clean, unbroken set
+                // of resident pages down to headAddress with their objects loaded.
+                RecoveryLoadObjectsPass2(recoveryStatus, recoveryStatus.headAddress, untilAddress, recoveryStatus.objectLogRecoveryDevice, snapshotBoundaryPage);
 
-            // Bring AllocatedPageCount within the hard MaxAllocatedPageCount cap for object-free pages (see TrimResidentPagesToBudget): the per-batch
-            // read-time trim targets the delta-padded highTargetSize and does not run after the final batch, so an inline store can settle one page over.
-            TrimResidentPagesToBudget(recoveryStatus, untilAddress);
+                // Bring AllocatedPageCount within the hard MaxAllocatedPageCount cap for object-free pages (see TrimResidentPagesToBudget): the per-batch
+                // read-time trim targets the delta-padded highTargetSize and does not run after the final batch, so an inline store can settle one page over.
+                TrimResidentPagesToBudget(recoveryStatus, untilAddress);
+            }
 
             var finalHeadAddress = recoveryStatus.headAddress;
             recoveryStatus.Dispose();
             return finalHeadAddress;
+        }
+
+        /// <summary>
+        /// Up-convert one snapshot-region page of a downlevel checkpoint. The page's objects are deserialized from the downlevel SNAPSHOT
+        /// object log and the page is then flushed to the main log, re-serializing those objects in current format onto the upgrade device.
+        /// This replaces the verbatim snapshot-to-main object copy, whose downlevel bytes lack the ChunkHeader framing the current format
+        /// requires. Pages are converted one at a time and awaited, in ascending main-log order, which is what the next-record extent hints
+        /// stamped during conversion assume.
+        /// </summary>
+        /// <param name="recoveryStatus">The <see cref="RecoveryStatus"/> instance</param>
+        /// <param name="scanFromAddress">The hybrid-log/snapshot boundary; the lowest address of the snapshot region</param>
+        /// <param name="untilAddress">The highest address being recovered</param>
+        /// <param name="page">The page to convert</param>
+        /// <param name="options">The recovery options</param>
+        private void UpgradeSnapshotObjectLogPageForRecovery(RecoveryStatus recoveryStatus, long scanFromAddress, long untilAddress, int page, in RecoveryOptions options)
+        {
+            var pageIndex = hlogBase.GetPageIndexForPage(page);
+            var pageFromAddress = Math.Max(scanFromAddress, hlogBase.GetFirstValidLogicalAddressOnPage(page));
+            var pageUntilAddress = Math.Min(untilAddress, hlogBase.GetLogicalAddressOfStartOfPage(page + 1));
+            if (pageFromAddress >= pageUntilAddress || !hlogBase.IsAllocated(pageIndex))
+            {
+                recoveryStatus.flushStatus[pageIndex] = FlushStatus.Done;
+                return;
+            }
+
+            // Deserialize from the downlevel snapshot object log, bounded by its own durable end; that address space is unrelated to the
+            // main object log's, so it must be passed explicitly rather than inferred from the allocator's device.
+            hlogBase.LoadObjectsForRecoveryPass2(page, pageFromAddress, pageUntilAddress, recoveryStatus.objectLogRecoveryDevice,
+                recoveryStatus.checkpointVersion, recoveryStatus.objectLogRecoveryReadEnd);
+
+            // Flush without the snapshot device: the objects are resident now, so they are re-serialized from the page rather than copied.
+            recoveryStatus.flushStatus[pageIndex] = FlushStatus.Pending;
+            hlogBase.AsyncFlushPagesForRecovery(scanFromAddress, page, 1, AsyncFlushPageCallbackForRecovery, recoveryStatus, options.checkpointVersion);
+            recoveryStatus.WaitFlush(pageIndex);
+
+            // The page's records now carry main-object-log positions, so any later load for this page reads from the main (upgrade) device.
+            recoveryStatus.snapshotPageFlushedToMain[pageIndex] = true;
+
+            // Converted pages are durable and carry current-format positions, so they are safe to evict. Reclaim from the bottom up while
+            // over budget, keeping the deserialized objects this pass materializes from accumulating across the whole recovered range.
+            if (hlogBase.logSizeTracker is null)
+                return;
+            var maxHeadAddress = untilAddress - LogSizeTracker.MinEvictionHeadAddressLag;
+            while (hlogBase.logSizeTracker.IsOverBudget && recoveryStatus.headAddress < maxHeadAddress)
+            {
+                var currentHeadPage = hlogBase.GetPage(recoveryStatus.headAddress);
+                if (currentHeadPage >= page)
+                    break;
+
+                if (hlogBase.IsAllocated(hlogBase.GetPageIndexForPage(currentHeadPage)))
+                    FlushIfNeededThenEvictPageForRecovery(recoveryStatus, currentHeadPage);
+                recoveryStatus.headAddress = hlogBase.GetFirstValidLogicalAddressOnPage(currentHeadPage + 1);
+            }
         }
 
         /// <summary>

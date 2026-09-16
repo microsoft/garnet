@@ -704,6 +704,12 @@ namespace Tsavorite.core
             objectLogWasUpgraded = true;
             isUpgradingObjectLog = false;
 
+            // Snapshot recovery sets the tail between its two conversion phases (so the snapshot phase appends after the hybrid-log
+            // objects), leaving it holding the downlevel tail; re-adopt the converted position here. FoldOver leaves the tail unset
+            // through conversion, and SetObjectLogTail adopts the converted position when recovery calls it afterward.
+            if (objectLogTail.HasData)
+                objectLogTail = upgradeObjectLogTail;
+
             // lowestObjectLogSegmentInUse needs no reset: conversion appends from segment 0 of the new device, and the field is only ever
             // raised by object-log truncation, which cannot run during the recovery read phase.
             Debug.Assert(lowestObjectLogSegmentInUse == 0, "Object-log truncation should not have run during up-conversion");
@@ -1060,7 +1066,28 @@ namespace Tsavorite.core
                                 }
                                 else
                                 {
-                                    if (isSnapshotRecoveryCopy && logicalAddress >= formerFlushedUntilAddress)
+                                    if (isUpgradingObjectLog)
+                                    {
+                                        // Up-converting a downlevel object log. The ascending conversion pass has already deserialized this
+                                        // page's objects -- from the main object log for hybrid-log-region pages, from the snapshot object log
+                                        // for snapshot-region pages -- so re-serialize them through the current-format writer, which frames
+                                        // anything past the headerless maximum with a ChunkHeader, appending to the upgrade device. This
+                                        // supersedes the snapshot-region verbatim copy, whose downlevel bytes lack that framing. Only the
+                                        // object-log extent changes; the record's inline image keeps its size and is rewritten in place.
+                                        if (!logRecord.TryGetOutOfLineComponents(out var keyOverflow, out var valueOverflow, out var valueObject))
+                                            throw new TsavoriteException($"Object-log upgrade could not capture the out-of-line components of the record at {logicalAddress}");
+
+                                        var recordStartPosition = logWriter.GetNextRecordStartPosition();
+                                        var valueObjectLength = logWriter.WriteRecordObjects(in keyOverflow, in valueOverflow, in valueObject);
+                                        logRecord.SetObjectLogPositionAndSizeHints(recordStartPosition, valueObjectLength, in keyOverflow, in valueOverflow,
+                                            logWriter.lastKeyAlignmentPadding, logWriter.lastValueAlignmentPadding, (long)logWriter.lastObjectFirstChunkExtent);
+
+                                        // In-place main-log rewrite is only sound while the inline image is size-stable. Fail loudly rather
+                                        // than write a page whose records no longer line up with the addresses recovery assigned them.
+                                        if (logRecord.AllocatedSize != logRecordSize)
+                                            throw new TsavoriteException($"Object-log upgrade changed the inline size of the record at {logicalAddress} from {logRecordSize} to {logRecord.AllocatedSize}");
+                                    }
+                                    else if (isSnapshotRecoveryCopy && logicalAddress >= formerFlushedUntilAddress)
                                     {
                                         // Snapshot-region recovery flush: the record's objects live only in the snapshot object-log. Copy their bytes
                                         // into the main object-log (appended at the current objectLogTail via logWriter) so the page becomes durable and
@@ -1090,33 +1117,11 @@ namespace Tsavorite.core
                                     {
                                         if (HybridLogRecoveryInfo.UsesDownlevelObjectLog(asyncResult.checkpointVersion))
                                         {
-                                            if (isUpgradingObjectLog)
-                                            {
-                                                // Up-converting a downlevel object log. The ascending conversion pass has already deserialized this
-                                                // page's objects, so re-serialize them through the current-format writer -- which frames anything past
-                                                // the headerless maximum with a ChunkHeader -- appending to the upgrade device. Only the object-log
-                                                // extent changes; the record's inline image keeps its size and is rewritten in place on the main log.
-                                                if (!logRecord.TryGetOutOfLineComponents(out var keyOverflow, out var valueOverflow, out var valueObject))
-                                                    throw new TsavoriteException($"Object-log upgrade could not capture the out-of-line components of the record at {logicalAddress}");
-
-                                                var recordStartPosition = logWriter.GetNextRecordStartPosition();
-                                                var valueObjectLength = logWriter.WriteRecordObjects(in keyOverflow, in valueOverflow, in valueObject);
-                                                logRecord.SetObjectLogPositionAndSizeHints(recordStartPosition, valueObjectLength, in keyOverflow, in valueOverflow,
-                                                    logWriter.lastKeyAlignmentPadding, logWriter.lastValueAlignmentPadding, (long)logWriter.lastObjectFirstChunkExtent);
-
-                                                // In-place main-log rewrite is only sound while the inline image is size-stable. Fail loudly rather
-                                                // than write a page whose records no longer line up with the addresses recovery assigned them.
-                                                if (logRecord.AllocatedSize != logRecordSize)
-                                                    throw new TsavoriteException($"Object-log upgrade changed the inline size of the record at {logicalAddress} from {logRecordSize} to {logRecord.AllocatedSize}");
-                                            }
-                                            else
-                                            {
-                                                // Downlevel (v2.1) hybrid-log-region record: up-convert its split length/position encoding into the current
-                                                // hint format (or fail fast for a large overflow/object that would need a not-yet-supported leading
-                                                // ChunkHeader insertion), advancing the running page position.
-                                                var objectLengths = logRecord.SetRecoveredObjectLogRecordStartPosition(recoveryOngoingPageHeader);
-                                                recoveryOngoingPageHeader.Advance(objectLengths);
-                                            }
+                                            // Downlevel (v2.1) hybrid-log-region record: up-convert its split length/position encoding into the current
+                                            // hint format (or fail fast for a large overflow/object that would need a not-yet-supported leading
+                                            // ChunkHeader insertion), advancing the running page position.
+                                            var objectLengths = logRecord.SetRecoveredObjectLogRecordStartPosition(recoveryOngoingPageHeader);
+                                            recoveryOngoingPageHeader.Advance(objectLengths);
                                         }
                                         // else: current-format hybrid-log-region record. Its object bytes are already durable in the main object-log and its
                                         // record (object-log position + objectId size hints) is already correct; the only recovery

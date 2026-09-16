@@ -377,6 +377,208 @@ namespace Tsavorite.test.recovery
             *objectLogPositionPtr = (positionWord & ObjectLogFilePositionInfo.SegmentAndOffsetMask) | ObjectLogFilePositionInfo.kReuseObjectIdForSizeMask;
         }
 
+        // Build a Snapshot checkpoint of inline-key + object-value records, transformed to a DENSE v7 snapshot object log so the
+        // snapshot-region up-conversion is exercised. The store's memory is large enough that nothing is flushed before the checkpoint,
+        // so the whole log is the snapshot region and there is no hybrid-log region to transform.
+        Guid BuildV7DenseSnapshotFixture(int numRecords, int valueSize)
+        {
+            var checkpointDir = Path.Combine(MethodTestDir, CheckpointDirName);
+            Guid token;
+
+            IDevice log = Devices.CreateLogDevice(Path.Combine(MethodTestDir, MainLogName), deleteOnClose: false);
+            IDevice objlog = Devices.CreateLogDevice(Path.Combine(MethodTestDir, ObjectLogName), deleteOnClose: false);
+            try
+            {
+                using var store = CreateObjectStore(log, objlog, checkpointDir, 1L << 20);
+                using (var session = store.NewSession<TestObjectKey, TestLargeObjectInput, TestLargeObjectOutput, Empty, TestLargeObjectFunctions>(new TestLargeObjectFunctions()))
+                {
+                    var bContext = session.BasicContext;
+                    for (var key = 0; key < numRecords; key++)
+                        _ = bContext.Upsert(new TestObjectKey { key = key }, new TestLargeObjectValue() { value = MakePayload(key, valueSize) });
+                }
+                ClassicAssert.IsTrue(store.TryInitiateHybridLogCheckpoint(out token, CheckpointType.Snapshot), "failed to initiate Snapshot checkpoint");
+                store.CompleteCheckpointAsync().AsTask().GetAwaiter().GetResult();
+            }
+            finally
+            {
+                log.Dispose();
+                objlog.Dispose();
+            }
+
+            TransformSnapshotCheckpointToV7Dense(checkpointDir, token, i => (null, SerializeLargeObject(MakePayload(i, valueSize))));
+            return token;
+        }
+
+        // Build a Snapshot checkpoint whose recovered range spans BOTH regions: a hybrid-log region already flushed to the main log and a
+        // snapshot region still in the mutable region. Each region's objects are transformed to their own dense v7 object log, so recovery
+        // must convert across the hybrid-log/snapshot boundary and hand the upgrade tail from one phase to the next.
+        Guid BuildV7DenseMixedSnapshotFixture(int numRecords, int valueSize)
+        {
+            var checkpointDir = Path.Combine(MethodTestDir, CheckpointDirName);
+            Guid token;
+
+            IDevice log = Devices.CreateLogDevice(Path.Combine(MethodTestDir, MainLogName), deleteOnClose: false);
+            IDevice objlog = Devices.CreateLogDevice(Path.Combine(MethodTestDir, ObjectLogName), deleteOnClose: false);
+            try
+            {
+                // A memory budget well below the data size forces pages out to the main log before the checkpoint, leaving a non-empty
+                // hybrid-log region below the mutable region the snapshot captures.
+                using var store = CreateObjectStore(log, objlog, checkpointDir, 1L << 15);
+                using (var session = store.NewSession<TestObjectKey, TestLargeObjectInput, TestLargeObjectOutput, Empty, TestLargeObjectFunctions>(new TestLargeObjectFunctions()))
+                {
+                    var bContext = session.BasicContext;
+                    for (var key = 0; key < numRecords; key++)
+                        _ = bContext.Upsert(new TestObjectKey { key = key }, new TestLargeObjectValue() { value = MakePayload(key, valueSize) });
+                }
+                ClassicAssert.IsTrue(store.TryInitiateHybridLogCheckpoint(out token, CheckpointType.Snapshot), "failed to initiate Snapshot checkpoint");
+                store.CompleteCheckpointAsync().AsTask().GetAwaiter().GetResult();
+            }
+            finally
+            {
+                log.Dispose();
+                objlog.Dispose();
+            }
+
+            TransformSnapshotCheckpointToV7Dense(checkpointDir, MethodTestDir, token, i => (null, SerializeLargeObject(MakePayload(i, valueSize))));
+            return token;
+        }
+
+        // Rewrite a Snapshot checkpoint's snapshot-file records into the v7 split-length encoding pointing at a freshly written DENSE
+        // snapshot object log, and re-serialize the metadata at version 7. Only valid when the snapshot covers the whole recovered range
+        // (no hybrid-log region), which BuildV7DenseSnapshotFixture arranges by keeping everything in the mutable region.
+        static unsafe void TransformSnapshotCheckpointToV7Dense(string checkpointDir, Guid token, Func<int, (byte[] keyBytes, byte[] valueBytes)> getRecordBytes)
+            => TransformSnapshotCheckpointToV7Dense(checkpointDir, logDir: null, token, getRecordBytes);
+
+        // Rewrite a Snapshot checkpoint to the DENSE v7 encoding. The recovered range spans two regions with unrelated object-log address
+        // spaces: the hybrid-log region [beginAddress, mainLogRecoveryEndAddress) on the main log, whose objects go to a dense MAIN object
+        // log, and the snapshot region above it in the snapshot file, whose objects go to a dense SNAPSHOT object log. Records are indexed
+        // in page order across both regions. Pass a null logDir when the hybrid-log region is expected to be empty.
+        static unsafe void TransformSnapshotCheckpointToV7Dense(string checkpointDir, string logDir, Guid token, Func<int, (byte[] keyBytes, byte[] valueBytes)> getRecordBytes)
+        {
+            var namingScheme = new DefaultCheckpointNamingScheme(new DirectoryInfo(checkpointDir).FullName);
+            using var checkpointManager = new DeviceLogCommitCheckpointManager(new LocalStorageNamedDeviceFactoryCreator(), namingScheme, removeOutdated: false);
+
+            var info = new HybridLogRecoveryInfo();
+            info.Recover(token, checkpointManager);
+            ClassicAssert.AreEqual(HybridLogRecoveryInfo.CheckpointVersion, info.hybridLogRecoveryVersion, "expected a current-format checkpoint before transform");
+            ClassicAssert.AreEqual(1, info.useSnapshotFile, "expected a Snapshot checkpoint");
+            if (logDir is null)
+            {
+                ClassicAssert.AreEqual(info.beginAddress, info.mainLogRecoveryEndAddress,
+                    "v7 snapshot fixture expects the whole log in the snapshot region (nothing flushed to the main log before the checkpoint)");
+            }
+            else
+            {
+                ClassicAssert.Greater(info.mainLogRecoveryEndAddress, info.beginAddress, "mixed v7 snapshot fixture expects a non-empty hybrid-log region");
+                ClassicAssert.Greater(info.recoveredTailAddress, info.mainLogRecoveryEndAddress, "mixed v7 snapshot fixture expects a non-empty snapshot region");
+            }
+            var segmentSizeBits = info.snapshotEndObjectLogTail.SegmentSizeBits;
+            var recordIndex = 0;
+
+            // Region 1: the hybrid-log region, read from the main log with objects in the main object log.
+            using var denseMainObjectLog = new MemoryStream();
+            if (logDir is not null)
+            {
+                denseMainObjectLog.Write(new byte[DenseObjectLogStart], 0, (int)DenseObjectLogStart);
+                var mainLogSegment = FindLogSegmentZero(logDir, MainLogName);
+                var mainLogBytes = File.ReadAllBytes(mainLogSegment);
+                fixed (byte* mainPtr = mainLogBytes)
+                    recordIndex = StampRegionAsDenseV7((long)mainPtr, info.beginAddress, info.mainLogRecoveryEndAddress, denseMainObjectLog, recordIndex, getRecordBytes);
+                ClassicAssert.Greater(recordIndex, 0, "expected at least one out-of-line record in the hybrid-log region");
+                File.WriteAllBytes(mainLogSegment, mainLogBytes);
+                WriteDenseObjectLogFile(FindLogSegmentZero(logDir, ObjectLogName), denseMainObjectLog);
+            }
+
+            // Region 2: the snapshot region. Snapshot-file offset 0 is the start of the page containing snapshotFileLogicalStartAddress,
+            // so bias the pinned image by that page's logical start to index it with logical addresses.
+            var snapshotStartPageAddress = info.snapshotFileLogicalStartAddress & ~((long)MinKvLogPageSize - 1);
+            var snapshotSegment = FindSnapshotSegmentZero(checkpointDir, token, "snapshot.dat");
+            var snapshotBytes = File.ReadAllBytes(snapshotSegment);
+
+            using var denseSnapshotObjectLog = new MemoryStream();
+            denseSnapshotObjectLog.Write(new byte[DenseObjectLogStart], 0, (int)DenseObjectLogStart);
+
+            fixed (byte* snapshotPtr = snapshotBytes)
+            {
+                recordIndex = StampRegionAsDenseV7((long)snapshotPtr - snapshotStartPageAddress, info.mainLogRecoveryEndAddress,
+                    info.recoveredTailAddress, denseSnapshotObjectLog, recordIndex, getRecordBytes);
+            }
+            ClassicAssert.Greater(recordIndex, 0, "expected at least one out-of-line record in the snapshot region");
+            File.WriteAllBytes(snapshotSegment, snapshotBytes);
+
+            var snapshotDenseEnd = denseSnapshotObjectLog.Position;
+            WriteDenseObjectLogFile(FindSnapshotSegmentZero(checkpointDir, token, "snapshot.obj.dat"), denseSnapshotObjectLog);
+
+            info.hlogEndObjectLogTail = new ObjectLogFilePositionInfo((ulong)denseMainObjectLog.Position, segmentSizeBits);
+            info.snapshotStartObjectLogTail = new ObjectLogFilePositionInfo(DenseObjectLogStart, segmentSizeBits);
+            info.snapshotEndObjectLogTail = new ObjectLogFilePositionInfo((ulong)snapshotDenseEnd, segmentSizeBits);
+            info.beginAddressObjectLogSegment = 0;
+            checkpointManager.CommitLogCheckpointMetadata(token, info.ToByteArray(targetVersion: 7));
+        }
+
+        // Stamp every out-of-line record in [fromAddress, untilAddress) of a pinned log image into the v7 split-length encoding, appending
+        // its object bytes to denseObjectLog and stamping each page's header with where that page's objects begin.
+        static unsafe int StampRegionAsDenseV7(long pageBase, long fromAddress, long untilAddress, MemoryStream denseObjectLog,
+            int recordIndex, Func<int, (byte[] keyBytes, byte[] valueBytes)> getRecordBytes)
+        {
+            var stampedPage = -1L;
+            foreach (var offset in GetOnDiskRecordOffsets(pageBase, fromAddress, untilAddress))
+            {
+                var logRecord = new LogRecord(pageBase + offset);
+                if (!logRecord.Info.Valid || logRecord.DataHeader.RecordIsInline)
+                    continue;
+
+                var dataHeader = logRecord.DataHeader;
+                var (keyBytes, valueBytes) = getRecordBytes(recordIndex);
+                var denseStart = denseObjectLog.Position;
+
+                var keyLen = 0;
+                if (dataHeader.KeyIsOverflow)
+                {
+                    ClassicAssert.IsNotNull(keyBytes, $"record {recordIndex} has an overflow key but no key bytes were supplied");
+                    denseObjectLog.Write(keyBytes, 0, keyBytes.Length);
+                    keyLen = keyBytes.Length;
+                }
+                var valLen = 0;
+                if (!dataHeader.ValueIsInline)
+                {
+                    ClassicAssert.IsNotNull(valueBytes, $"record {recordIndex} has a non-inline value but no value bytes were supplied");
+                    denseObjectLog.Write(valueBytes, 0, valueBytes.Length);
+                    valLen = valueBytes.Length;
+                }
+
+                StampRecordDenseV7(pageBase + offset, (ulong)denseStart, keyLen, valLen);
+
+                var page = offset / MinKvLogPageSize;
+                if (page != stampedPage)
+                {
+                    stampedPage = page;
+                    ((PageHeader*)(pageBase + page * MinKvLogPageSize))->objectLogLowestPositionWord = (ulong)denseStart;
+                }
+                ++recordIndex;
+            }
+            return recordIndex;
+        }
+
+        // Write a dense object log, zero-padded up to a device sector so a sector-aligned read of the last record does not hit EOF.
+        static void WriteDenseObjectLogFile(string path, MemoryStream denseObjectLog)
+        {
+            var denseBytes = denseObjectLog.ToArray();
+            const int sector = 4096;
+            var paddedLength = (int)(((denseBytes.Length + sector - 1) / sector) * sector);
+            if (paddedLength != denseBytes.Length)
+                Array.Resize(ref denseBytes, paddedLength);
+            File.WriteAllBytes(path, denseBytes);
+        }
+
+        static string FindSnapshotSegmentZero(string checkpointDir, Guid token, string fileName)
+        {
+            var dir = Path.Combine(checkpointDir, "cpr-checkpoints", token.ToString());
+            var candidates = Directory.GetFiles(dir, fileName + ".*").OrderBy(f => f, StringComparer.Ordinal).ToArray();
+            ClassicAssert.IsNotEmpty(candidates, $"no {fileName} segment file in {dir}");
+            return candidates[0];
+        }
+
         // Collect the offsets of the on-disk main-log records in a pinned segment-0 image, skipping each page's PageHeader and the
         // end-of-page filler. Logical address equals file offset on segment 0.
         static unsafe List<long> GetOnDiskRecordOffsets(long pageBase, long beginAddress, long tailAddress)
@@ -628,6 +830,185 @@ namespace Tsavorite.test.recovery
                         (status, output) = GetSinglePendingResult(completed);
                     }
                     ClassicAssert.IsTrue(status.Found, $"key {key} not found after large v7 recovery (size {valueSize})");
+                    VerifyPayload(key, valueSize, output.valueObject?.value);
+                }
+            }
+            finally
+            {
+                log.Dispose();
+                objlog.Dispose();
+                upgradeObjlog.Dispose();
+            }
+        }
+
+        [Test]
+        [Category("TsavoriteKV"), Category("CheckpointRestore")]
+        public async Task RecoverV7ObjectValueSnapshot([Values(100, 507, 1024, 20000)] int valueSize)
+        {
+            // Snapshot recovery reads the records from the snapshot file and their objects from the SNAPSHOT object log, then makes them
+            // durable on the main log. For a downlevel checkpoint those snapshot object bytes are dense, so the up-conversion must
+            // deserialize and re-serialize them onto the upgrade device rather than copy them verbatim.
+            const int numRecords = 8;
+            var token = BuildV7DenseSnapshotFixture(numRecords, valueSize);
+
+            var checkpointDir = Path.Combine(MethodTestDir, CheckpointDirName);
+            IDevice log = Devices.CreateLogDevice(Path.Combine(MethodTestDir, MainLogName), deleteOnClose: false);
+            IDevice objlog = Devices.CreateLogDevice(Path.Combine(MethodTestDir, ObjectLogName), deleteOnClose: false);
+            IDevice upgradeObjlog = CreateUpgradeObjectLog();
+            try
+            {
+                using var store = CreateObjectStore(log, objlog, checkpointDir, 1L << 20, upgradeObjlog);
+                _ = await store.RecoverAsync(default, token).ConfigureAwait(false);
+
+                using var session = store.NewSession<TestObjectKey, TestLargeObjectInput, TestLargeObjectOutput, Empty, TestLargeObjectFunctions>(new TestLargeObjectFunctions());
+                var bContext = session.BasicContext;
+                for (var key = 0; key < numRecords; key++)
+                {
+                    TestLargeObjectInput input = new() { wantValueStyle = TestValueStyle.Object };
+                    TestLargeObjectOutput output = new();
+                    var status = bContext.Read(new TestObjectKey { key = key }, ref input, ref output);
+                    if (status.IsPending)
+                    {
+                        ClassicAssert.IsTrue(bContext.CompletePendingWithOutputs(out var completed, wait: true));
+                        (status, output) = GetSinglePendingResult(completed);
+                    }
+                    ClassicAssert.IsTrue(status.Found, $"key {key} not found after v7 snapshot recovery (size {valueSize})");
+                    VerifyPayload(key, valueSize, output.valueObject?.value);
+                }
+            }
+            finally
+            {
+                log.Dispose();
+                objlog.Dispose();
+                upgradeObjlog.Dispose();
+            }
+        }
+
+        [Test]
+        [Category("TsavoriteKV"), Category("CheckpointRestore")]
+        public async Task RecoverV7SnapshotUpConvertsMainLogOnDisk([Values(400, 20000)] int valueSize)
+        {
+            // The snapshot region's records must reach the main log in current format. Flush and evict everything after recovery, then
+            // inspect the main-log image directly: a record still carrying the v7 ReuseObjectIdForSize flag (bit 63) was copied verbatim
+            // from the downlevel snapshot object log instead of being re-serialized.
+            const int numRecords = 150;
+            var token = BuildV7DenseSnapshotFixture(numRecords, valueSize);
+
+            var checkpointDir = Path.Combine(MethodTestDir, CheckpointDirName);
+            IDevice log = Devices.CreateLogDevice(Path.Combine(MethodTestDir, MainLogName), deleteOnClose: false);
+            IDevice objlog = Devices.CreateLogDevice(Path.Combine(MethodTestDir, ObjectLogName), deleteOnClose: false);
+            IDevice upgradeObjlog = CreateUpgradeObjectLog();
+            try
+            {
+                using var store = CreateObjectStore(log, objlog, checkpointDir, 1L << 20, upgradeObjlog);
+                _ = await store.RecoverAsync(default, token).ConfigureAwait(false);
+
+                using (var session = store.NewSession<TestObjectKey, TestLargeObjectInput, TestLargeObjectOutput, Empty, TestLargeObjectFunctions>(new TestLargeObjectFunctions()))
+                {
+                    var bContext = session.BasicContext;
+                    for (var key = 0; key < numRecords; key++)
+                    {
+                        TestLargeObjectInput input = new() { wantValueStyle = TestValueStyle.Object };
+                        TestLargeObjectOutput output = new();
+                        var status = bContext.Read(new TestObjectKey { key = key }, ref input, ref output);
+                        if (status.IsPending)
+                        {
+                            ClassicAssert.IsTrue(bContext.CompletePendingWithOutputs(out var completed, wait: true));
+                            (status, output) = GetSinglePendingResult(completed);
+                        }
+                        ClassicAssert.IsTrue(status.Found, $"key {key} not found after v7 snapshot recovery (size {valueSize})");
+                        VerifyPayload(key, valueSize, output.valueObject?.value);
+                    }
+                }
+
+                // No FlushAndEvict: recovery's conversion pass has already written every snapshot page to the main log, and the snapshot
+                // region is left mutable, so a post-recovery flush would re-serialize the objects at fresh positions and hide what the
+                // conversion produced.
+            }
+            finally
+            {
+                log.Dispose();
+                objlog.Dispose();
+                upgradeObjlog.Dispose();
+            }
+
+            AssertMainLogHasNoDownlevelRecords(token, numRecords);
+        }
+
+        [Test]
+        [Category("TsavoriteKV"), Category("CheckpointRestore")]
+        public async Task RecoverV7ObjectValueSnapshotLowMem([Values(1024, 20000)] int valueSize)
+        {
+            // A small memory budget forces snapshot pages to be evicted during recovery, so their objects must already be durable in the
+            // main (upgrade) object log in current format for the disk reads below to decode them.
+            const int numRecords = 40;
+            var token = BuildV7DenseSnapshotFixture(numRecords, valueSize);
+
+            var checkpointDir = Path.Combine(MethodTestDir, CheckpointDirName);
+            IDevice log = Devices.CreateLogDevice(Path.Combine(MethodTestDir, MainLogName), deleteOnClose: false);
+            IDevice objlog = Devices.CreateLogDevice(Path.Combine(MethodTestDir, ObjectLogName), deleteOnClose: false);
+            IDevice upgradeObjlog = CreateUpgradeObjectLog();
+            try
+            {
+                using var store = CreateObjectStore(log, objlog, checkpointDir, 1L << 15, upgradeObjlog);
+                _ = await store.RecoverAsync(default, token).ConfigureAwait(false);
+
+                using var session = store.NewSession<TestObjectKey, TestLargeObjectInput, TestLargeObjectOutput, Empty, TestLargeObjectFunctions>(new TestLargeObjectFunctions());
+                var bContext = session.BasicContext;
+                for (var key = 0; key < numRecords; key++)
+                {
+                    TestLargeObjectInput input = new() { wantValueStyle = TestValueStyle.Object };
+                    TestLargeObjectOutput output = new();
+                    var status = bContext.Read(new TestObjectKey { key = key }, ref input, ref output);
+                    if (status.IsPending)
+                    {
+                        ClassicAssert.IsTrue(bContext.CompletePendingWithOutputs(out var completed, wait: true));
+                        (status, output) = GetSinglePendingResult(completed);
+                    }
+                    ClassicAssert.IsTrue(status.Found, $"key {key} not found after low-memory v7 snapshot recovery (size {valueSize})");
+                    VerifyPayload(key, valueSize, output.valueObject?.value);
+                }
+            }
+            finally
+            {
+                log.Dispose();
+                objlog.Dispose();
+                upgradeObjlog.Dispose();
+            }
+        }
+
+        [Test]
+        [Category("TsavoriteKV"), Category("CheckpointRestore")]
+        public async Task RecoverV7ObjectValueMixedSnapshot([Values(100, 1024)] int valueSize)
+        {
+            // Both regions are downlevel: the hybrid-log region's objects are in the main object log and the snapshot region's are in the
+            // snapshot object log. The conversion must span the boundary, appending both regions in order to the one upgrade device.
+            // Enough records to push the log past the store's memory budget, so part of it is flushed to the main log before the checkpoint.
+            const int numRecords = 2000;
+            var token = BuildV7DenseMixedSnapshotFixture(numRecords, valueSize);
+
+            var checkpointDir = Path.Combine(MethodTestDir, CheckpointDirName);
+            IDevice log = Devices.CreateLogDevice(Path.Combine(MethodTestDir, MainLogName), deleteOnClose: false);
+            IDevice objlog = Devices.CreateLogDevice(Path.Combine(MethodTestDir, ObjectLogName), deleteOnClose: false);
+            IDevice upgradeObjlog = CreateUpgradeObjectLog();
+            try
+            {
+                using var store = CreateObjectStore(log, objlog, checkpointDir, 1L << 20, upgradeObjlog);
+                _ = await store.RecoverAsync(default, token).ConfigureAwait(false);
+
+                using var session = store.NewSession<TestObjectKey, TestLargeObjectInput, TestLargeObjectOutput, Empty, TestLargeObjectFunctions>(new TestLargeObjectFunctions());
+                var bContext = session.BasicContext;
+                for (var key = 0; key < numRecords; key++)
+                {
+                    TestLargeObjectInput input = new() { wantValueStyle = TestValueStyle.Object };
+                    TestLargeObjectOutput output = new();
+                    var status = bContext.Read(new TestObjectKey { key = key }, ref input, ref output);
+                    if (status.IsPending)
+                    {
+                        ClassicAssert.IsTrue(bContext.CompletePendingWithOutputs(out var completed, wait: true));
+                        (status, output) = GetSinglePendingResult(completed);
+                    }
+                    ClassicAssert.IsTrue(status.Found, $"key {key} not found after mixed v7 snapshot recovery (size {valueSize})");
                     VerifyPayload(key, valueSize, output.valueObject?.value);
                 }
             }
