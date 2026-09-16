@@ -48,7 +48,7 @@ namespace Garnet.server
                 {
                     if (storeWrapper.storeScriptCache.TryGetValue(scriptKey, out var globalScriptHandle))
                     {
-                        if (!sessionScriptCache.TryLoadCached(this, scriptKey, ref globalScriptHandle, out runner, out _))
+                        if (!sessionScriptCache.TryLoadCached(this, scriptKey, globalScriptHandle, out runner))
                         {
                             // TryLoadCached will have written an error out, if any
                             //
@@ -116,14 +116,23 @@ namespace Garnet.server
             var onStackScriptKey = new ScriptHashKey(digest);
             _ = storeWrapper.storeScriptCache.TryGetValue(onStackScriptKey, out var globalScriptHandle);
 
-            var sessionScriptHandle = globalScriptHandle;
-
-            if (!sessionScriptCache.TryLoadSource(this, script.ReadOnlySpan, onStackScriptKey, ref sessionScriptHandle, out var runner, out var digestOnHeap))
+            LuaRunner runner;
+            LuaScriptHandle sessionScriptHandle;
+            ScriptHashKey? digestOnHeap;
+            if (globalScriptHandle != null)
+            {
+                sessionScriptHandle = globalScriptHandle;
+                digestOnHeap = null;
+                if (!sessionScriptCache.TryLoadCached(this, onStackScriptKey, globalScriptHandle, out runner))
+                    return true;
+            }
+            else if (!sessionScriptCache.TryLoadSource(this, script.ReadOnlySpan, onStackScriptKey, out sessionScriptHandle, out runner, out digestOnHeap))
             {
                 // TryLoadSource will have written any errors out
                 return true;
             }
-            else if (sessionScriptHandle != globalScriptHandle)
+
+            if (globalScriptHandle == null)
             {
                 // Add script to the store dictionary IF we didn't already have it cached
                 //
@@ -277,13 +286,24 @@ namespace Garnet.server
             var onStackScriptHashKey = new ScriptHashKey(digest);
             _ = storeWrapper.storeScriptCache.TryGetValue(onStackScriptHashKey, out var globalScriptHandle);
 
-            var sessionScriptHandle = globalScriptHandle;
-            if (sessionScriptCache.TryLoadSource(this, source.ReadOnlySpan, onStackScriptHashKey, ref sessionScriptHandle, out _, out var digestOnHeap))
+            LuaScriptHandle sessionScriptHandle;
+            ScriptHashKey? digestOnHeap;
+            var loaded = false;
+            if (globalScriptHandle != null)
             {
-                // TryLoadSource will write any errors out
+                sessionScriptHandle = globalScriptHandle;
+                digestOnHeap = null;
+                loaded = sessionScriptCache.TryLoadCached(this, onStackScriptHashKey, globalScriptHandle, out _);
+            }
+            else
+            {
+                loaded = sessionScriptCache.TryLoadSource(this, source.ReadOnlySpan, onStackScriptHashKey, out sessionScriptHandle, out _, out digestOnHeap);
+            }
 
+            if (loaded)
+            {
                 // Add script to the global store dictionary if not already in there
-                if (globalScriptHandle != sessionScriptHandle)
+                if (globalScriptHandle == null)
                 {
                     if (digestOnHeap == null)
                     {

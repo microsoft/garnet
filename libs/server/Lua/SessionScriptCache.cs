@@ -163,7 +163,7 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Load script into the cache.
+        /// Compile Lua source text and load it into the session cache.
         /// 
         /// If necessary, <paramref name="digestOnHeap"/> will be set so the allocation can be reused.
         /// </summary>
@@ -171,7 +171,7 @@ namespace Garnet.server
             RespServerSession session,
             ReadOnlySpan<byte> source,
             ScriptHashKey digest,
-            ref LuaScriptHandle luaScriptHandle,
+            out LuaScriptHandle luaScriptHandle,
             out LuaRunner runner,
             out ScriptHashKey? digestOnHeap
         )
@@ -183,27 +183,21 @@ namespace Garnet.server
                 return true;
             }
 
-            if (luaScriptHandle != null)
-                return TryLoadCached(session, digest, ref luaScriptHandle, out runner, out digestOnHeap);
-
+            luaScriptHandle = null;
             return TryCompileAndLoad(session, source, digest, ref luaScriptHandle, out runner, out digestOnHeap);
         }
 
         /// <summary>
         /// Load a script previously stored in the global cache.
         /// </summary>
-        internal bool TryLoadCached(RespServerSession session, ScriptHashKey digest, ref LuaScriptHandle luaScriptHandle, out LuaRunner runner, out ScriptHashKey? digestOnHeap)
+        internal bool TryLoadCached(RespServerSession session, ScriptHashKey digest, LuaScriptHandle cachedScriptHandle, out LuaRunner runner)
         {
-            if (TryGetFromDigest(digest, out runner, out var existingLuaScriptHandle))
-            {
-                luaScriptHandle = existingLuaScriptHandle;
-                digestOnHeap = null;
+            if (TryGetFromDigest(digest, out runner, out _))
                 return true;
-            }
 
-            return luaScriptHandle.Chunk.Kind == LuaScriptChunkKind.GarnetGeneratedBinary
-                ? TryLoadCompiled(session, luaScriptHandle.Chunk, digest, ref luaScriptHandle, out runner, out digestOnHeap)
-                : TryCompileAndLoad(session, luaScriptHandle.ScriptData.Span, digest, ref luaScriptHandle, out runner, out digestOnHeap);
+            return cachedScriptHandle.Chunk.Kind == LuaScriptChunkKind.GarnetGeneratedBinary
+                ? TryLoadCompiled(session, cachedScriptHandle.Chunk, digest, ref cachedScriptHandle, out runner, out _)
+                : TryCompileAndLoad(session, cachedScriptHandle.ScriptData.Span, digest, ref cachedScriptHandle, out runner, out _);
         }
 
         private bool TryCompileAndLoad(RespServerSession session, ReadOnlySpan<byte> source, ScriptHashKey digest, ref LuaScriptHandle luaScriptHandle, out LuaRunner runner, out ScriptHashKey? digestOnHeap)
