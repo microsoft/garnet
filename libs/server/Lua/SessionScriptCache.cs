@@ -195,28 +195,15 @@ namespace Garnet.server
             if (TryGetFromDigest(digest, out runner, out _))
                 return true;
 
-            return cachedScriptHandle.Chunk.Kind == LuaScriptChunkKind.GarnetGeneratedBinary
-                ? TryGetOrCreateRunnerFromGeneratedBytecode(session, cachedScriptHandle.Chunk, digest, ref cachedScriptHandle, out runner, out _)
-                : TryCompileSourceAndCreateRunner(session, cachedScriptHandle.ScriptData.Span, digest, ref cachedScriptHandle, out runner, out _);
+            return TryGetOrCreateRunnerFromGeneratedBytecode(session, cachedScriptHandle.Chunk, digest, ref cachedScriptHandle, out runner, out _);
         }
 
         private bool TryCompileSourceAndCreateRunner(RespServerSession session, ReadOnlySpan<byte> source, ScriptHashKey digest, ref LuaScriptHandle luaScriptHandle, out LuaRunner runner, out ScriptHashKey? digestOnHeap)
         {
             LuaScriptChunk generatedBytecode;
             string error;
-            try
-            {
-                if (LuaRunner.TryCompileSource(source, out generatedBytecode, out error))
-                    return TryGetOrCreateRunnerFromGeneratedBytecode(session, generatedBytecode, digest, ref luaScriptHandle, out runner, out digestOnHeap);
-            }
-            catch (Exception ex)
-            {
-                logger?.LogError(ex, "During Lua script compilation, an unexpected exception");
-                runner = null;
-                digestOnHeap = null;
-                luaScriptHandle = null;
-                return false;
-            }
+            if (LuaRunner.TryCompileSource(source, out generatedBytecode, out error))
+                return TryGetOrCreateRunnerFromGeneratedBytecode(session, generatedBytecode, digest, ref luaScriptHandle, out runner, out digestOnHeap);
 
             session.WriteLuaCompilationError(error);
             runner = null;
@@ -236,6 +223,7 @@ namespace Garnet.server
                 return true;
             }
 
+            runner = null;
             try
             {
                 runner = new LuaRunner(memoryManagementMode, memoryLimitBytes, logMode, allowedFunctions, generatedBytecode, storeWrapper.serverOptions.LuaTransactionMode, processor, scratchBufferNetworkSender, storeWrapper.redisProtocolVersion, logger);
@@ -254,7 +242,7 @@ namespace Garnet.server
                     ScriptHashKey storeKeyDigest = new(into);
                     digestOnHeap = storeKeyDigest;
 
-                    luaScriptHandle ??= new(generatedBytecode);
+                    luaScriptHandle ??= new(generatedBytecode.Data);
                     scriptCache.Add(storeKeyDigest, (runner, luaScriptHandle));
 
                     // On first script load, register for timeout notifications
@@ -273,13 +261,13 @@ namespace Garnet.server
                     return false;
                 }
             }
-            catch (Exception ex)
+            catch
             {
-                logger?.LogError(ex, "During Lua script loading, an unexpected exception");
-
+                runner?.Dispose();
+                runner = null;
                 digestOnHeap = null;
                 luaScriptHandle = null;
-                return false;
+                throw;
             }
 
             return true;

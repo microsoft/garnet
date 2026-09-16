@@ -48,12 +48,20 @@ namespace Garnet.server
                 {
                     if (storeWrapper.storeScriptCache.TryGetValue(scriptKey, out var globalScriptHandle))
                     {
-                        if (!sessionScriptCache.TryGetOrCreateRunnerFromCachedScript(this, scriptKey, globalScriptHandle, out runner))
+                        try
                         {
-                            // The loading error was already written, if any
-                            //
-                            // Note we DON'T dispose the script handle because this is just the session cache
-                            _ = storeWrapper.storeScriptCache.TryRemove(scriptKey, out _);
+                            if (!sessionScriptCache.TryGetOrCreateRunnerFromCachedScript(this, scriptKey, globalScriptHandle, out runner))
+                            {
+                                // The loading error was already written, if any
+                                //
+                                // Note we DON'T dispose the script handle because this is just the session cache
+                                _ = storeWrapper.storeScriptCache.TryRemove(scriptKey, out _);
+                                return true;
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            WriteLuaInternalError(ex);
                             return true;
                         }
                     }
@@ -114,8 +122,17 @@ namespace Garnet.server
             sessionScriptCache.GetScriptDigest(script.ReadOnlySpan, digest);
 
             var onStackScriptKey = new ScriptHashKey(digest);
-            if (!TryGetOrCreateScriptRunner(script.ReadOnlySpan, digest, onStackScriptKey, out var runner))
-                return true; // The loading error was written to the response.
+            LuaRunner runner;
+            try
+            {
+                if (!TryGetOrCreateScriptRunner(script.ReadOnlySpan, digest, onStackScriptKey, out runner))
+                    return true; // The loading error was written to the response.
+            }
+            catch (Exception ex)
+            {
+                WriteLuaInternalError(ex);
+                return true;
+            }
 
             if (runner == null)
             {
@@ -240,10 +257,17 @@ namespace Garnet.server
             sessionScriptCache.GetScriptDigest(source.Span, digest);
 
             var onStackScriptHashKey = new ScriptHashKey(digest);
-            if (TryGetOrCreateScriptRunner(source.ReadOnlySpan, digest, onStackScriptHashKey, out _))
+            try
             {
-                while (!RespWriteUtils.TryWriteBulkString(digest, ref dcurr, dend))
-                    SendAndReset();
+                if (TryGetOrCreateScriptRunner(source.ReadOnlySpan, digest, onStackScriptHashKey, out _))
+                {
+                    while (!RespWriteUtils.TryWriteBulkString(digest, ref dcurr, dend))
+                        SendAndReset();
+                }
+            }
+            catch (Exception ex)
+            {
+                WriteLuaInternalError(ex);
             }
 
             return true;
@@ -296,6 +320,13 @@ namespace Garnet.server
         internal void WriteLuaCompilationError(string error)
         {
             while (!RespWriteUtils.TryWriteError($"Compilation error: {error}", ref dcurr, dend))
+                SendAndReset();
+        }
+
+        private void WriteLuaInternalError(Exception ex)
+        {
+            logger?.LogError(ex, "Unexpected error while preparing Lua script");
+            while (!RespWriteUtils.TryWriteError("ERR Internal Lua error"u8, ref dcurr, dend))
                 SendAndReset();
         }
 

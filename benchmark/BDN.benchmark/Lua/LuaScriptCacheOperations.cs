@@ -51,20 +51,28 @@ namespace BDN.benchmark.Lua
 
             outerHitDigest = GC.AllocateUninitializedArray<byte>(SessionScriptCache.SHA1Len, pinned: true);
             sessionScriptCache.GetScriptDigest("return 1"u8, outerHitDigest);
-            if (!storeWrapper.storeScriptCache.TryAdd(new(outerHitDigest), LuaScriptHandle.FromTextSource("return 1"u8.ToArray())))
+            if (!storeWrapper.storeScriptCache.TryAdd(new(outerHitDigest), CompileScript("return 1"u8)))
             {
                 throw new InvalidOperationException("Should have been able to load into global cache");
             }
 
             innerHitDigest = GC.AllocateUninitializedArray<byte>(SessionScriptCache.SHA1Len, pinned: true);
             sessionScriptCache.GetScriptDigest("return 1 + 1"u8, innerHitDigest);
-            if (!storeWrapper.storeScriptCache.TryAdd(new(innerHitDigest), LuaScriptHandle.FromTextSource("return 1 + 1"u8.ToArray())))
+            if (!storeWrapper.storeScriptCache.TryAdd(new(innerHitDigest), CompileScript("return 1 + 1"u8)))
             {
                 throw new InvalidOperationException("Should have been able to load into global cache");
             }
 
             missDigest = GC.AllocateUninitializedArray<byte>(SessionScriptCache.SHA1Len, pinned: true);
             sessionScriptCache.GetScriptDigest("foobar"u8, missDigest);
+
+            static LuaScriptHandle CompileScript(ReadOnlySpan<byte> source)
+            {
+                if (!LuaRunner.TryCompileSource(source, out var generatedBytecode, out var error))
+                    throw new InvalidOperationException(error);
+
+                return new(generatedBytecode.Data);
+            }
         }
 
         [GlobalCleanup]
