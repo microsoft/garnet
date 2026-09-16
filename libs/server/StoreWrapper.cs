@@ -699,19 +699,30 @@ namespace Garnet.server
             Debug.Assert(compactionFrequencySecs > 0);
             try
             {
-                while (true)
+                while (!token.IsCancellationRequested)
                 {
-                    if (token.IsCancellationRequested) return;
+                    // A failed cycle must not take the task down with it; retry on the next interval so a
+                    // transient fault cannot disable compaction for the lifetime of the process.
+                    try
+                    {
+                        await databaseManager.DoCompactionAsync(token, logger).ConfigureAwait(false);
 
-                    await databaseManager.DoCompactionAsync(token, logger).ConfigureAwait(false);
-
-                    if (!runtimeConfig.GetBool(ServerConfigType.COMPACTION_FORCE_DELETE))
-                        logger?.LogInformation("NOTE: Take a checkpoint (SAVE/BGSAVE) in order to actually delete the older data segments (files) from disk");
-                    else
-                        logger?.LogInformation("NOTE: Compaction will delete files, make sure checkpoint/recovery is not being used");
+                        if (!runtimeConfig.GetBool(ServerConfigType.COMPACTION_FORCE_DELETE))
+                            logger?.LogInformation("NOTE: Take a checkpoint (SAVE/BGSAVE) in order to actually delete the older data segments (files) from disk");
+                        else
+                            logger?.LogInformation("NOTE: Compaction will delete files, make sure checkpoint/recovery is not being used");
+                    }
+                    catch (Exception ex) when (!token.IsCancellationRequested)
+                    {
+                        logger?.LogError(ex, "CompactionTask exception received. Retrying on the next cycle.");
+                    }
 
                     await Task.Delay(compactionFrequencySecs * 1000, token).ConfigureAwait(false);
                 }
+            }
+            catch (OperationCanceledException) when (token.IsCancellationRequested)
+            {
+                // Suppress the exception if the task was cancelled because of store wrapper disposal
             }
             catch (Exception ex)
             {
