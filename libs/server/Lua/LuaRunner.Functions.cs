@@ -3083,17 +3083,13 @@ namespace Garnet.server
             _ = state.RawGetInteger(LuaType.Function, (int)LuaRegistry.Index, loadSandboxedRegistryIndex);
             if (!state.TryPushBuffer(source.Data.Span))
             {
-                while (!RespWriteUtils.TryWriteError(CmdStrings.LUA_out_of_memory, ref resp.BufferCur, resp.BufferEnd))
-                    resp.SendAndReset();
-
+                WriteOutOfMemoryError(ref resp);
                 return 0;
             }
 
             if (!state.TryPushBuffer(source.Kind == LuaScriptChunkKind.GarnetGeneratedBinary ? "b"u8 : "t"u8))
             {
-                while (!RespWriteUtils.TryWriteError(CmdStrings.LUA_out_of_memory, ref resp.BufferCur, resp.BufferEnd))
-                    resp.SendAndReset();
-
+                WriteOutOfMemoryError(ref resp);
                 return 0;
             }
 
@@ -3112,9 +3108,7 @@ namespace Garnet.server
                 if (!state.TryRef(out functionRegistryIndex))
                 {
                     // Uh-oh, couldn't save the function under the registry
-                    while (!RespWriteUtils.TryWriteError(CmdStrings.LUA_out_of_memory, ref resp.BufferCur, resp.BufferEnd))
-                        resp.SendAndReset();
-
+                    WriteOutOfMemoryError(ref resp);
                     return 0;
                 }
             }
@@ -3137,6 +3131,12 @@ namespace Garnet.server
             }
 
             return 0;
+        }
+
+        private static unsafe void WriteOutOfMemoryError<TResponse>(ref TResponse resp) where TResponse : struct, IResponseAdapter
+        {
+            while (!RespWriteUtils.TryWriteError(CmdStrings.LUA_out_of_memory, ref resp.BufferCur, resp.BufferEnd))
+                resp.SendAndReset();
         }
 
         /// <summary>
