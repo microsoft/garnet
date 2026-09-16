@@ -208,6 +208,9 @@ namespace Garnet.server
                     new("total_number_resp_server_session_exceptions", metricsDisabled ? "0" : globalMetrics.globalSessionMetrics.get_total_number_resp_server_session_exceptions().ToString()),
                     new("total_transaction_commands_received", metricsDisabled ? "0" : globalMetrics.globalSessionMetrics.get_total_transaction_commands_received().ToString()),
                     new("total_transaction_commands_execution_failed", metricsDisabled ? "0" : globalMetrics.globalSessionMetrics.get_total_transaction_commands_execution_failed().ToString()),
+                    // Process-wide and not monitor-sampled, so unlike the rows above it stays accurate
+                    // when no monitor is configured. See RespMemoryWriter.TotalOutputRentals.
+                    new("total_output_buffer_rentals", RespMemoryWriter.TotalOutputRentals.ToString()),
                 ];
 
             if (clusterEnabled)
