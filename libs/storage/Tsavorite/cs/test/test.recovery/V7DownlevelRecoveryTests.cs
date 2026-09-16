@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
@@ -324,27 +325,18 @@ namespace Tsavorite.test.recovery
 
             var beginAddress = info.beginAddress;
             var tailAddress = info.recoveredTailAddress;
-            ClassicAssert.LessOrEqual(tailAddress, (long)MinKvLogPageSize, "v7 fixture must fit on a single main-log page (single-page transform)");
 
-            // Rewrite the main-log page records (all on page 0 for this small fixture) into the v7 split-length encoding.
+            // Rewrite the main-log page records into the v7 split-length encoding.
             var mainLogSegment = FindLogSegmentZero(logDir, MainLogName);
             var pageBytes = File.ReadAllBytes(mainLogSegment);
             fixed (byte* pagePtr = pageBytes)
             {
-                var pageBase = (long)pagePtr;   // logical address == file offset on page 0
-                var offset = beginAddress;
-                while (offset < tailAddress)
+                var pageBase = (long)pagePtr;   // logical address == file offset on segment 0
+                foreach (var offset in GetOnDiskRecordOffsets(pageBase, beginAddress, tailAddress))
                 {
                     var logRecord = new LogRecord(pageBase + offset);
-                    if (logRecord.Info.IsNull)
-                    {
-                        offset += RecordInfo.Size;
-                        continue;
-                    }
-                    var allocatedSize = logRecord.AllocatedSize;
                     if (logRecord.Info.Valid && !logRecord.DataHeader.RecordIsInline)
                         StampRecordAsV7(pageBase + offset);
-                    offset += allocatedSize;
                 }
             }
             File.WriteAllBytes(mainLogSegment, pageBytes);
@@ -385,6 +377,30 @@ namespace Tsavorite.test.recovery
             *objectLogPositionPtr = (positionWord & ObjectLogFilePositionInfo.SegmentAndOffsetMask) | ObjectLogFilePositionInfo.kReuseObjectIdForSizeMask;
         }
 
+        // Collect the offsets of the on-disk main-log records in a pinned segment-0 image, skipping each page's PageHeader and the
+        // end-of-page filler. Logical address equals file offset on segment 0.
+        static unsafe List<long> GetOnDiskRecordOffsets(long pageBase, long beginAddress, long tailAddress)
+        {
+            List<long> offsets = [];
+            for (var pageStart = beginAddress & ~((long)MinKvLogPageSize - 1); pageStart < tailAddress; pageStart += MinKvLogPageSize)
+            {
+                var offset = Math.Max(beginAddress, pageStart + PageHeader.Size);
+                var pageEnd = Math.Min(tailAddress, pageStart + MinKvLogPageSize);
+                while (offset < pageEnd)
+                {
+                    var logRecord = new LogRecord(pageBase + offset);
+                    if (logRecord.Info.IsNull)
+                    {
+                        offset += RecordInfo.Size;
+                        continue;
+                    }
+                    offsets.Add(offset);
+                    offset += logRecord.AllocatedSize;
+                }
+            }
+            return offsets;
+        }
+
         static string FindLogSegmentZero(string logDir, string logName)
         {
             var candidates = Directory.GetFiles(logDir, logName + ".*")
@@ -414,7 +430,6 @@ namespace Tsavorite.test.recovery
             ClassicAssert.AreEqual(0, info.useSnapshotFile, "expected a FoldOver checkpoint");
             var beginAddress = info.beginAddress;
             var tailAddress = info.recoveredTailAddress;
-            ClassicAssert.LessOrEqual(tailAddress, (long)MinKvLogPageSize, "v7 fixture must fit on a single main-log page (single-page transform)");
             var segmentSizeBits = info.hlogEndObjectLogTail.SegmentSizeBits;
 
             var mainLogSegment = FindLogSegmentZero(logDir, MainLogName);
@@ -426,17 +441,11 @@ namespace Tsavorite.test.recovery
             fixed (byte* pagePtr = pageBytes)
             {
                 var pageBase = (long)pagePtr;
-                var offset = beginAddress;
                 var recordIndex = 0;
-                while (offset < tailAddress)
+                var stampedPage = -1L;
+                foreach (var offset in GetOnDiskRecordOffsets(pageBase, beginAddress, tailAddress))
                 {
                     var logRecord = new LogRecord(pageBase + offset);
-                    if (logRecord.Info.IsNull)
-                    {
-                        offset += RecordInfo.Size;
-                        continue;
-                    }
-                    var allocatedSize = logRecord.AllocatedSize;
                     if (logRecord.Info.Valid && !logRecord.DataHeader.RecordIsInline)
                     {
                         var dataHeader = logRecord.DataHeader;
@@ -459,11 +468,16 @@ namespace Tsavorite.test.recovery
                         }
 
                         StampRecordDenseV7(pageBase + offset, (ulong)denseStart, keyLen, valLen);
-                        if (recordIndex == 0)
-                            ((PageHeader*)pagePtr)->objectLogLowestPositionWord = (ulong)denseStart;
+
+                        // Each page's header records where that page's objects begin.
+                        var page = offset / MinKvLogPageSize;
+                        if (page != stampedPage)
+                        {
+                            stampedPage = page;
+                            ((PageHeader*)(pageBase + page * MinKvLogPageSize))->objectLogLowestPositionWord = (ulong)denseStart;
+                        }
                         ++recordIndex;
                     }
-                    offset += allocatedSize;
                 }
             }
             File.WriteAllBytes(mainLogSegment, pageBytes);
@@ -849,7 +863,8 @@ namespace Tsavorite.test.recovery
             // Proves the up-conversion actually rewrote the log rather than leaving the records readable only through the downlevel
             // decode path. After recovery flushes every page, no main-log record may still carry the v7 ReuseObjectIdForSize flag
             // (bit 63): the current format never sets it, so any record left set is one the conversion pass missed.
-            const int numRecords = 12;
+            // Enough records to span several main-log pages, so the per-page object-log position stamps are exercised.
+            const int numRecords = 150;
             var token = BuildV7DenseObjectValueFixture(numRecords, valueSize);
 
             var checkpointDir = Path.Combine(MethodTestDir, CheckpointDirName);
@@ -905,23 +920,35 @@ namespace Tsavorite.test.recovery
             fixed (byte* pagePtr = pageBytes)
             {
                 var pageBase = (long)pagePtr;
-                var offset = info.beginAddress;
-                while (offset < info.recoveredTailAddress)
+                var page = -1L;
+                var pageHeaderPosition = 0UL;
+                var sawPageObjectRecord = false;
+                foreach (var offset in GetOnDiskRecordOffsets(pageBase, info.beginAddress, info.recoveredTailAddress))
                 {
                     var logRecord = new LogRecord(pageBase + offset);
-                    if (logRecord.Info.IsNull)
-                    {
-                        offset += RecordInfo.Size;
-                        continue;
-                    }
                     if (logRecord.Info.Valid && !logRecord.DataHeader.RecordIsInline)
                     {
                         var word = *(ulong*)logRecord.GetObjectLogPositionAddress(logRecord.GetOptionalStartAddress());
                         ClassicAssert.AreEqual(0UL, word & ObjectLogFilePositionInfo.kReuseObjectIdForSizeMask,
                             $"record at {offset} was not up-converted: ReuseObjectIdForSize (bit 63) is still set");
+
+                        // The page header stamps where the page's objects begin, so it must agree with the first record that has objects.
+                        // A page left carrying its downlevel stamp would point into the replaced device and mis-drive object-log truncation.
+                        if (offset / MinKvLogPageSize != page)
+                        {
+                            page = offset / MinKvLogPageSize;
+                            pageHeaderPosition = ((PageHeader*)(pageBase + page * MinKvLogPageSize))->objectLogLowestPositionWord;
+                            sawPageObjectRecord = false;
+                        }
+                        if (!sawPageObjectRecord)
+                        {
+                            sawPageObjectRecord = true;
+                            ClassicAssert.AreNotEqual(ObjectLogFilePositionInfo.NotSet, pageHeaderPosition, $"page {page} has object records but no stamped object-log position");
+                            ClassicAssert.AreEqual(word & ObjectLogFilePositionInfo.SegmentAndOffsetMask, pageHeaderPosition & ObjectLogFilePositionInfo.SegmentAndOffsetMask,
+                                $"page {page} header object-log position does not match its first object record");
+                        }
                         ++objectRecordCount;
                     }
-                    offset += logRecord.AllocatedSize;
                 }
             }
             ClassicAssert.AreEqual(expectedObjectRecords, objectRecordCount, "expected one out-of-line object record per key");
@@ -956,15 +983,9 @@ namespace Tsavorite.test.recovery
             fixed (byte* pagePtr = pageBytes)
             {
                 var pageBase = (long)pagePtr;
-                var offset = info.beginAddress;
-                while (offset < info.recoveredTailAddress)
+                foreach (var offset in GetOnDiskRecordOffsets(pageBase, info.beginAddress, info.recoveredTailAddress))
                 {
                     var logRecord = new LogRecord(pageBase + offset);
-                    if (logRecord.Info.IsNull)
-                    {
-                        offset += RecordInfo.Size;
-                        continue;
-                    }
                     if (logRecord.Info.Valid && !logRecord.DataHeader.RecordIsInline)
                     {
                         var word = *(ulong*)logRecord.GetObjectLogPositionAddress(logRecord.GetOptionalStartAddress());
@@ -974,7 +995,6 @@ namespace Tsavorite.test.recovery
                         ClassicAssert.AreEqual(0UL, word & ObjectLogFilePositionInfo.kKeyHasExtendedSizeHintMask, "KeyHasExtendedSizeHint should be clear on a v7 record");
                         ++objectRecordCount;
                     }
-                    offset += logRecord.AllocatedSize;
                 }
             }
             ClassicAssert.AreEqual(numRecords, objectRecordCount, "expected one out-of-line object record per key");

@@ -611,7 +611,9 @@ namespace Tsavorite.core
                 var pageHeader = *(PageHeader*)buffer.aligned_pointer;
                 if (pageHeader.objectLogLowestPositionWord != ObjectLogFilePositionInfo.NotSet)
                 {
-                    var objectLogPosition = new ObjectLogFilePositionInfo(pageHeader.objectLogLowestPositionWord, objectLogTail.SegmentSizeBits);   // TODO verify SegmentSizeBits is correct
+                    // Recovery verifies that the checkpoint's ObjectLogSegmentSize matches the settings the store was opened with, so the
+                    // live objectLogTail's segment bits are the same bits the page header was stamped under.
+                    var objectLogPosition = new ObjectLogFilePositionInfo(pageHeader.objectLogLowestPositionWord, objectLogTail.SegmentSizeBits);
                     objectLogSegment = objectLogPosition.SegmentId;
                 }
             }
@@ -701,6 +703,10 @@ namespace Tsavorite.core
             objectLogDevice = upgradeObjectLogDevice;
             objectLogWasUpgraded = true;
             isUpgradingObjectLog = false;
+
+            // lowestObjectLogSegmentInUse needs no reset: conversion appends from segment 0 of the new device, and the field is only ever
+            // raised by object-log truncation, which cannot run during the recovery read phase.
+            Debug.Assert(lowestObjectLogSegmentInUse == 0, "Object-log truncation should not have run during up-conversion");
         }
 
         /// <inheritdoc/>
@@ -853,7 +859,14 @@ namespace Tsavorite.core
             // write the page's inline span directly, so we want the header updated regardless of whether we have objects (this may be a page with no
             // objects after some pages with objects, and so we want Truncate() to know it has to preserve those object log segments).
             if (isFirstRecordOnPage)
-                ((PageHeader*)logPagePointer)->SetLowestObjectLogPosition(objectLogTail);
+            {
+                // While up-converting, the page's stamp is a position on the downlevel device the conversion is replacing, so it must be
+                // overwritten with the position on the upgrade device where this page's objects are about to be written.
+                if (isUpgradingObjectLog)
+                    ((PageHeader*)logPagePointer)->SetLowestObjectLogPosition(upgradeObjectLogTail, force: true);
+                else
+                    ((PageHeader*)logPagePointer)->SetLowestObjectLogPosition(objectLogTail);
+            }
 
             Debug.Assert(asyncResult.page == flushPage, $"asyncResult.page {asyncResult.page} should equal flushPage {flushPage}");
 
