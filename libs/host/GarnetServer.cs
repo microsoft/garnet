@@ -49,7 +49,14 @@ namespace Garnet
         private readonly ILoggerFactory loggerFactory;
         private readonly bool cleanupDir;
         private bool disposeLoggerFactory;
+        private bool disposed;
         protected readonly LightEpoch storeEpoch, pubSubEpoch;
+
+        /// <summary>
+        /// Whether this server was started to up-convert a downlevel store (<c>--upgrade</c>) rather than to serve requests.
+        /// Such a process must call <see cref="RunUpgrade"/> instead of <see cref="Start"/>, and exit when it returns.
+        /// </summary>
+        public bool IsUpgradeRun => opts.Upgrade;
 
         /// <summary>
         /// Store and associated information used by this Garnet server
@@ -550,7 +557,11 @@ namespace Garnet
         /// <param name="deleteDir">Whether to delete logs and checkpoints</param>
         public void Dispose(bool deleteDir = true)
         {
-            InternalDispose();
+            if (!disposed)
+            {
+                InternalDispose();
+                disposed = true;
+            }
             if (deleteDir)
             {
                 logFactory?.Delete(new FileDescriptor { directoryName = "" });
@@ -560,6 +571,46 @@ namespace Garnet
                     checkpointDeviceFactory.Delete(new FileDescriptor { directoryName = "" });
                 }
             }
+        }
+
+        /// <summary>
+        /// Up-convert a downlevel (v7) store instead of starting the server, then return so the process can exit.
+        /// <para>Recovery rewrites the main log in place and writes the converted object bytes to the configured upgrade object-log
+        /// device, repointing the live allocator at it. A checkpoint then stamps the current format version and makes every converted
+        /// object-log position durable, and the store is closed so the converted object log can be renamed in as the live one.</para>
+        /// </summary>
+        /// <remarks>Requires <c>--upgrade</c>. Does nothing to the object-log files when the recovered checkpoint was already current
+        /// format, because the upgrade device then holds no data.</remarks>
+        public void RunUpgrade()
+        {
+            if (!opts.Upgrade)
+                throw new GarnetException($"{nameof(RunUpgrade)} requires the --upgrade option");
+
+            logger?.LogInformation("Upgrade: recovering and up-converting the object log; the server will not accept connections.");
+#pragma warning disable VSTHRD002 // The upgrade runs to completion synchronously and then exits.
+            Provider.RecoverAsync().AsTask().GetAwaiter().GetResult();
+
+            var wasUpgraded = storeWrapper.store.Log.ObjectLogWasUpgraded;
+            if (!wasUpgraded)
+            {
+                logger?.LogInformation("Upgrade: the recovered checkpoint is already in the current format; nothing to up-convert.");
+            }
+            else
+            {
+                // The converted object bytes are only reachable through a checkpoint stamped with the current format version: the
+                // recovered metadata still describes the downlevel object log that is about to be retired.
+                if (!storeWrapper.TakeCheckpointAsync(background: false, logger: logger).GetAwaiter().GetResult())
+                    throw new GarnetException("Upgrade: could not take the checkpoint that records the up-converted object log");
+            }
+#pragma warning restore VSTHRD002
+
+            // Close the store before renaming, so no device holds either object-log file.
+            InternalDispose();
+            disposed = true;
+
+            if (wasUpgraded)
+                ObjectLogUpgradeSwap.Swap(opts.LogDir, GarnetServerOptions.ObjectLogFileName, GarnetServerOptions.UpgradeObjectLogFileName, logger);
+            logger?.LogInformation("Upgrade: complete.");
         }
 
         private void InternalDispose()

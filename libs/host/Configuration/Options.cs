@@ -140,7 +140,7 @@ namespace Garnet
         public bool? Recover { get; set; }
 
         [OptionValidation]
-        [Option("upgrade", Required = false, HelpText = "Up-convert a store written by an earlier release, then exit. The object log is rewritten in current format alongside the original, which is retained under a versioned name, and a fresh checkpoint is taken. Requires --recover and tiered storage; has no effect on a store with no object log.")]
+        [Option("upgrade", Required = false, HelpText = "Up-convert a store written by an earlier release, then exit. The object log is rewritten in current format alongside the original, which is retained under a versioned name, and a fresh checkpoint is taken. Requires --recover and tiered storage, and is refused while the append-only file is enabled; has no effect on a store with no object log or one already in the current format.")]
         public bool? Upgrade { get; set; }
 
         [OptionValidation]

@@ -35,6 +35,13 @@ namespace Tsavorite.core
         public long TailAddress => allocatorBase.GetTailAddress();
 
         /// <summary>
+        /// Whether recovery up-converted a downlevel object log into <see cref="KVSettings.UpgradeObjectLogDevice"/> and made that device
+        /// the live object log. False when there was nothing to convert, in which case the upgrade device holds no data and must not be
+        /// swapped in as the store's object log.
+        /// </summary>
+        public bool ObjectLogWasUpgraded => allocatorBase.ObjectLogWasUpgraded;
+
+        /// <summary>
         /// Read-only address of log, i.e. boundary between read-only region and mutable region
         /// </summary>
         public long ReadOnlyAddress => allocatorBase.ReadOnlyAddress;

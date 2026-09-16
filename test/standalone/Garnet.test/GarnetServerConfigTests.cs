@@ -194,6 +194,119 @@ namespace Garnet.test
         }
 
         [Test]
+        public void UpgradeRejectsEnabledAof()
+        {
+            // An upgrade run recovers, checkpoints, and exits; an AOF around that would be re-stamped at a version a later
+            // normal recovery discards.
+            var ok = ServerSettingsManager.TryParseCommandLineArguments(
+                ["--upgrade", "true", "--recover", "true", "--storage-tier", "true", "--aof", "true", "--logdir", TestUtils.MethodTestDir],
+                out var options, out _, out _, out _, silentMode: true);
+            ClassicAssert.IsTrue(ok);
+            var ex = Assert.Throws<Exception>(() => options.GetServerOptions().GetSettings(null, null, null, out _));
+            ClassicAssert.IsTrue(ex.Message.Contains("append-only file"), $"unexpected message: {ex.Message}");
+        }
+
+        [Test]
+        public void UpgradeRejectsLeftoverUpgradeObjectLog()
+        {
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
+            try
+            {
+                // The upgrade device is written from its start, so a previous attempt's segments would be interleaved with this one.
+                var storeDir = ObjectLogUpgradeSwap.GetStoreDirectory(TestUtils.MethodTestDir);
+                _ = Directory.CreateDirectory(storeDir);
+                File.WriteAllBytes(Path.Combine(storeDir, GarnetServerOptions.UpgradeObjectLogFileName + ".0"), [1, 2, 3]);
+
+                var ok = ServerSettingsManager.TryParseCommandLineArguments(
+                    ["--upgrade", "true", "--recover", "true", "--storage-tier", "true", "--logdir", TestUtils.MethodTestDir],
+                    out var options, out _, out _, out _, silentMode: true);
+                ClassicAssert.IsTrue(ok);
+                var ex = Assert.Throws<GarnetException>(() => options.GetServerOptions().GetSettings(null, null, null, out _));
+                ClassicAssert.IsTrue(ex.Message.Contains("previous upgrade attempt"), $"unexpected message: {ex.Message}");
+            }
+            finally
+            {
+                TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
+            }
+        }
+
+        [Test]
+        public void InterruptedUpgradeSwapBlocksNormalStartAndResumesUnderUpgrade()
+        {
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
+            try
+            {
+                // Simulate a crash after the marker was written but before any segment was moved.
+                var storeDir = ObjectLogUpgradeSwap.GetStoreDirectory(TestUtils.MethodTestDir);
+                _ = Directory.CreateDirectory(storeDir);
+                var liveSegment = Path.Combine(storeDir, GarnetServerOptions.ObjectLogFileName + ".0");
+                var upgradeSegment = Path.Combine(storeDir, GarnetServerOptions.UpgradeObjectLogFileName + ".0");
+                File.WriteAllBytes(liveSegment, [7]);
+                File.WriteAllBytes(upgradeSegment, [8]);
+                File.WriteAllLines(ObjectLogUpgradeSwap.GetMarkerPath(TestUtils.MethodTestDir),
+                    [GarnetServerOptions.ObjectLogFileName, GarnetServerOptions.UpgradeObjectLogFileName, "hlog_objs_retired"]);
+
+                // A normal start must refuse: the object log under the live name is at best incomplete.
+                var ok = ServerSettingsManager.TryParseCommandLineArguments(
+                    ["--storage-tier", "true", "--logdir", TestUtils.MethodTestDir], out var options, out _, out _, out _, silentMode: true);
+                ClassicAssert.IsTrue(ok);
+                var ex = Assert.Throws<GarnetException>(() => options.GetServerOptions().GetSettings(null, null, null, out _));
+                ClassicAssert.IsTrue(ex.Message.Contains("--upgrade"), $"unexpected message: {ex.Message}");
+
+                // An upgrade run finishes the rename before opening any device.
+                ok = ServerSettingsManager.TryParseCommandLineArguments(
+                    ["--upgrade", "true", "--recover", "true", "--storage-tier", "true", "--logdir", TestUtils.MethodTestDir],
+                    out options, out _, out _, out _, silentMode: true);
+                ClassicAssert.IsTrue(ok);
+                using var kvSettings = options.GetServerOptions().GetSettings(null, null, null, out _);
+
+                ClassicAssert.IsFalse(ObjectLogUpgradeSwap.HasPendingSwap(TestUtils.MethodTestDir), "marker should be gone after the resume");
+                ClassicAssert.AreEqual(new byte[] { 7 }, File.ReadAllBytes(Path.Combine(storeDir, "hlog_objs_retired.0")), "downlevel segment should be retired");
+                ClassicAssert.AreEqual(new byte[] { 8 }, File.ReadAllBytes(liveSegment), "up-converted segment should be promoted");
+            }
+            finally
+            {
+                TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
+            }
+        }
+
+        [Test]
+        public void UpgradeSwapRetiresAndPromotesEverySegment()
+        {
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
+            try
+            {
+                var storeDir = ObjectLogUpgradeSwap.GetStoreDirectory(TestUtils.MethodTestDir);
+                _ = Directory.CreateDirectory(storeDir);
+                for (var segment = 0; segment < 3; segment++)
+                {
+                    File.WriteAllBytes(Path.Combine(storeDir, $"{GarnetServerOptions.ObjectLogFileName}.{segment}"), [(byte)segment]);
+                    File.WriteAllBytes(Path.Combine(storeDir, $"{GarnetServerOptions.UpgradeObjectLogFileName}.{segment}"), [(byte)(10 + segment)]);
+                }
+
+                ObjectLogUpgradeSwap.Swap(TestUtils.MethodTestDir, GarnetServerOptions.ObjectLogFileName, GarnetServerOptions.UpgradeObjectLogFileName, logger: null);
+
+                ClassicAssert.IsFalse(ObjectLogUpgradeSwap.HasPendingSwap(TestUtils.MethodTestDir), "marker should be deleted after a completed swap");
+                for (var segment = 0; segment < 3; segment++)
+                {
+                    ClassicAssert.AreEqual(new byte[] { (byte)(10 + segment) },
+                        File.ReadAllBytes(Path.Combine(storeDir, $"{GarnetServerOptions.ObjectLogFileName}.{segment}")), $"segment {segment} should be the up-converted one");
+                }
+                ClassicAssert.IsEmpty(Directory.GetFiles(storeDir, GarnetServerOptions.UpgradeObjectLogFileName + ".*"), "upgrade segments should have been moved, not copied");
+
+                // The downlevel segments are retained under a single retired base name.
+                var retired = Directory.GetFiles(storeDir, GarnetServerOptions.ObjectLogFileName + "_pre_upgrade_*").Order().ToArray();
+                ClassicAssert.AreEqual(3, retired.Length, "every downlevel segment should be retained");
+                for (var segment = 0; segment < 3; segment++)
+                    ClassicAssert.AreEqual(new byte[] { (byte)segment }, File.ReadAllBytes(retired[segment]));
+            }
+            finally
+            {
+                TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
+            }
+        }
+
+        [Test]
         public void UseLegacyBufferPoolOptionParsing()
         {
             // Default: origin-return pool is used (legacy flag off).

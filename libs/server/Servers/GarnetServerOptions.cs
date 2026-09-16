@@ -901,6 +901,12 @@ namespace Garnet.server
                     throw new Exception("Upgrade specified without Recover; there is nothing to up-convert unless an existing checkpoint is recovered");
                 if (!EnableStorageTier)
                     throw new Exception("Upgrade specified without enabling tiered storage (UseStorage); there is no object log to up-convert");
+
+                // An upgrade run recovers, checkpoints, and exits without serving. Replaying and then re-committing an AOF around that
+                // would re-stamp its records at a version the next normal recovery discards, so require the AOF to be disabled and let
+                // the operator drain it first.
+                if (EnableAOF)
+                    throw new Exception("Upgrade specified with the append-only file enabled; restart with AOF disabled to up-convert, then re-enable it");
             }
 
             if (EnableStorageTier)
@@ -913,6 +919,11 @@ namespace Garnet.server
                 kvSettings.LogDevice = logFactory.Get(new FileDescriptor("Store", "hlog"));
                 if (!DisableObjects)
                 {
+                    // Before any device opens the object log, settle an upgrade rename that a previous run left half-applied.
+                    ObjectLogUpgradeSwap.ResolvePendingSwap(LogDir, Upgrade, logger);
+                    if (Upgrade)
+                        ObjectLogUpgradeSwap.VerifyNoPriorUpgradeAttempt(LogDir, UpgradeObjectLogFileName);
+
                     kvSettings.ObjectLogDevice = logFactory.Get(new FileDescriptor("Store", ObjectLogFileName));
                     if (Upgrade)
                         kvSettings.UpgradeObjectLogDevice = logFactory.Get(new FileDescriptor("Store", UpgradeObjectLogFileName));

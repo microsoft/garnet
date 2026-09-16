@@ -46,6 +46,10 @@ namespace Tsavorite.core
 
         /// <summary>Finish up-converting a downlevel object log, making the upgrade device the live object log.</summary>
         internal virtual void CompleteObjectLogUpgrade() { }
+
+        /// <summary>Whether a downlevel object-log up-conversion completed, making the upgrade device the live object log.</summary>
+        internal virtual bool ObjectLogWasUpgraded => false;
+
         /// <summary>Calculate the total serialized object size on a loaded page. Only implemented by ObjectAllocator.</summary>
         internal virtual long CalculatePageObjectSizes(int page, long startAddress, long untilAddress, int checkpointVersion) => 0;
         /// <summary>Load objects for records on an already-loaded page for recovery pass 2.</summary>

@@ -694,6 +694,9 @@ namespace Tsavorite.core
         internal override bool IsUpgradingObjectLog => isUpgradingObjectLog;
 
         /// <inheritdoc/>
+        internal override bool ObjectLogWasUpgraded => objectLogWasUpgraded;
+
+        /// <inheritdoc/>
         internal override void CompleteObjectLogUpgrade()
         {
             Debug.Assert(isUpgradingObjectLog, $"{nameof(CompleteObjectLogUpgrade)} requires {nameof(BeginObjectLogUpgrade)}");
