@@ -160,7 +160,7 @@ namespace Garnet.server
 
         readonly LuaLoggingMode logMode;
         readonly HashSet<string> allowedFunctions;
-        readonly ReadOnlyMemory<byte> source;
+        readonly LuaScriptChunk source;
         readonly ScratchBufferNetworkSender scratchBufferNetworkSender;
         readonly RespServerSession respServerSession;
 
@@ -208,7 +208,7 @@ namespace Garnet.server
             int? memLimitBytes,
             LuaLoggingMode logMode,
             HashSet<string> allowedFunctions,
-            ReadOnlyMemory<byte> source,
+            LuaScriptChunk source,
             bool txnMode = false,
             RespServerSession respServerSession = null,
             ScratchBufferNetworkSender scratchBufferNetworkSender = null,
@@ -328,7 +328,7 @@ namespace Garnet.server
                 throw new GarnetException("Insufficient space in Lua VM for redis version number global");
             }
 
-            var loadRes = state.LoadBuffer(PrepareLoaderBlockBytes(allowedFunctions, logger).Span);
+            var loadRes = state.LoadBinaryBuffer(PrepareLoaderBlockBytes(allowedFunctions, logger).Span);
             if (loadRes != LuaStatus.OK)
             {
                 if (state.StackTop == 1 && state.Type(1) == LuaType.String)
@@ -409,7 +409,7 @@ namespace Garnet.server
         /// Creates a new runner with the source of the script
         /// </summary>
         public LuaRunner(LuaOptions options, string source, bool txnMode = false, RespServerSession respServerSession = null, ScratchBufferNetworkSender scratchBufferNetworkSender = null, string redisVersion = "0.0.0.0", ILogger logger = null)
-            : this(options.MemoryManagementMode, options.GetMemoryLimitBytes(), options.LogMode, options.AllowedFunctions, Encoding.UTF8.GetBytes(source), txnMode, respServerSession, scratchBufferNetworkSender, redisVersion, logger)
+            : this(options.MemoryManagementMode, options.GetMemoryLimitBytes(), options.LogMode, options.AllowedFunctions, new LuaScriptChunk(Encoding.UTF8.GetBytes(source), LuaScriptChunkKind.Text), txnMode, respServerSession, scratchBufferNetworkSender, redisVersion, logger)
         {
         }
 

@@ -34,7 +34,7 @@ namespace Garnet.fuzz.Targets
             {
                 try
                 {
-                    using var runner = new LuaRunner(op.MemoryManagementMode, op.GetMemoryLimitBytes(), op.LogMode, op.AllowedFunctions, input.ToArray());
+                    using var runner = new LuaRunner(op.MemoryManagementMode, op.GetMemoryLimitBytes(), op.LogMode, op.AllowedFunctions, new LuaScriptChunk(input.ToArray(), LuaScriptChunkKind.Text));
 
                     runner.CompileForRunner();
                     _ = runner.RunForRunner([], []);
