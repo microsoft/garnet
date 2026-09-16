@@ -293,11 +293,11 @@ namespace Garnet.test
                 // Free a slot and use it, to show the counter tracks refusals and not churn.
                 accepted[0].Dispose();
                 accepted.RemoveAt(0);
-                WaitForAcceptance().Dispose();
+                WaitForAcceptance(out var refusedWhileWaiting).Dispose();
 
                 // Two sampling intervals, so a build that miscounted accepts has had time to show it.
                 Thread.Sleep(MetricsSamplingFreq * 2000);
-                ClassicAssert.AreEqual(Refusals, ReadRejectedConnections(),
+                ClassicAssert.AreEqual(Refusals + refusedWhileWaiting, ReadRejectedConnections(),
                     "accepted connections must not be counted as rejected");
             }
             finally
@@ -373,19 +373,29 @@ namespace Garnet.test
 
             DisposeAll(accepted);
 
-            using var reconnected = WaitForAcceptance();
+            using var reconnected = WaitForAcceptance(out var refusedWhileWaiting);
 
             Thread.Sleep(MetricsSamplingFreq * 2000);
-            ClassicAssert.AreEqual(1, ReadRejectedConnections(),
+            ClassicAssert.AreEqual(1 + refusedWhileWaiting, ReadRejectedConnections(),
                 "rejected_connections is cumulative, so draining and reconnecting must not reduce it");
         }
 
+        static Socket WaitForAcceptance() => WaitForAcceptance(out _);
+
         /// <summary>
         /// Polls until the server has capacity, returning the established socket. Capacity returns
-        /// when the server observes the closes, which is not synchronous with the client's dispose.
+        /// when the server observes the closes, which is not synchronous with the client's dispose,
+        /// so an attempt made before it does is refused for real and does advance
+        /// <c>rejected_connections</c>.
+        ///
+        /// <paramref name="refused"/> reports how many attempts were turned away, so a caller
+        /// asserting on that counter can stay exact instead of racing a teardown it does not
+        /// control. Only a genuine max-clients reply is counted, so an unrelated socket error
+        /// cannot inflate the allowance and mask a miscount.
         /// </summary>
-        static Socket WaitForAcceptance()
+        static Socket WaitForAcceptance(out int refused)
         {
+            refused = 0;
             var sw = Stopwatch.StartNew();
             while (sw.Elapsed < TimeSpan.FromSeconds(30))
             {
@@ -398,8 +408,11 @@ namespace Garnet.test
 
                     var buffer = new byte[64];
                     var read = socket.Receive(buffer);
-                    if (read > 0 && Encoding.ASCII.GetString(buffer, 0, read) == "+PONG\r\n")
+                    var reply = read > 0 ? Encoding.ASCII.GetString(buffer, 0, read) : string.Empty;
+                    if (reply == "+PONG\r\n")
                         return socket;
+                    if (reply == MaxClientsError)
+                        refused++;
                 }
                 catch (SocketException) { }
 
