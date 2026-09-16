@@ -1,6 +1,8 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
+using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Net;
 using System.Text;
@@ -173,11 +175,229 @@ namespace Garnet.test.cluster
 
             // Verify version byte at start of payload
             Assert.That(ClusterConfig.TryPeekVersion(configBytes, out var version), Is.True);
-            Assert.That(version, Is.EqualTo(ClusterConfig.ClusterConfigVersion));
+            Assert.That(version, Is.EqualTo(1));
 
             // Round-trip should succeed
             var restored = ClusterConfig.FromByteArray(configBytes);
             Assert.That(restored.LocalNodeId, Is.EqualTo(config.LocalNodeId));
+        }
+
+        [TestCase(1)]
+        [TestCase(2)]
+        [Category("CLUSTER-CONFIG")]
+        public void ClusterConfigWorkerFormatTest(byte version)
+        {
+            var workers = CreateFormatWorkers();
+            var expected = SerializeFormatFixture(version, workers);
+            var config = new ClusterConfig(new HashSlot[ClusterConfig.MAX_HASH_SLOT_VALUE], workers);
+
+            Assert.That(config.ToByteArray(version), Is.EqualTo(expected));
+            Assert.That(config.ToByteArray(), Is.EqualTo(SerializeFormatFixture(1, workers)));
+
+            var restored = ClusterConfig.FromByteArray(expected);
+            if (version == 1)
+            {
+                for (var i = 1; i < workers.Length; i++)
+                {
+                    workers[i].ClusterAddress = workers[i].Address;
+                    workers[i].ClusterPort = workers[i].Port;
+                }
+            }
+
+            Assert.That(restored.ToByteArray(2), Is.EqualTo(SerializeFormatFixture(2, workers)));
+            Assert.That(restored.Copy().ToByteArray(2), Is.EqualTo(restored.ToByteArray(2)));
+            Assert.That(restored.ToByteArray(), Is.EqualTo(SerializeFormatFixture(1, workers)));
+
+            var initialized = restored.InitializeLocalWorker(workers[1].Nodeid, workers[1].Address,
+                workers[1].Port, workers[1].ConfigEpoch, workers[1].Role, null, workers[1].hostname);
+            workers[1].ReplicationOffset = 0;
+            Assert.That(initialized.ToByteArray(2), Is.EqualTo(SerializeFormatFixture(2, workers)));
+        }
+
+        [Test]
+        [Category("CLUSTER-CONFIG")]
+        public void ClusterConfigClusterFieldsDoNotChangeRoutingTest()
+        {
+            var config = ClusterConfig.FromByteArray(SerializeFormatFixture(2, CreateFormatWorkers()));
+            config = config.AssignSlots([0], ClusterConfig.LOCAL_WORKER_ID, SlotState.STABLE);
+
+            Assert.That(config.GetWorkerAddress(1), Is.EqualTo(("203.0.113.1", 17001)));
+            Assert.That(config.GetEndpointFromSlot(0, Garnet.server.ClusterPreferredEndpointType.Ip), Is.EqualTo(("203.0.113.1", 17001)));
+            Assert.That(config.AskEndpointFromSlot(0, Garnet.server.ClusterPreferredEndpointType.Ip), Is.EqualTo(("203.0.113.1", 17001)));
+            Assert.That(config.GetEndpointFromSlot(0, Garnet.server.ClusterPreferredEndpointType.Hostname), Is.EqualTo(("node.example.com", 17001)));
+            Assert.That(config.GetReplicaEndpoints(config.LocalNodeId).Single(), Is.EqualTo(("203.0.113.2", 17002)));
+            Assert.That(config.GetWorkerInfoForGossip().Single(), Is.EqualTo((new string('b', 40), "203.0.113.2", 17002)));
+            Assert.That(config.GetClusterInfo(null), Does.Contain("203.0.113.1:17001@27001,node.example.com"));
+        }
+
+        [Test]
+        [Category("CLUSTER-CONFIG")]
+        public void ClusterConfigMergePreservesClusterFieldsTest()
+        {
+            var workers = CreateFormatWorkers();
+            var receiver = new ClusterConfig().InitializeLocalWorker(workers[1].Nodeid, workers[1].Address,
+                workers[1].Port, workers[1].ConfigEpoch, workers[1].Role, null, workers[1].hostname);
+            var senderWorkers = new Worker[] { default, workers[2] };
+            var sender = ClusterConfig.FromByteArray(SerializeFormatFixture(2, senderWorkers));
+
+            receiver = receiver.Merge(sender, []);
+            workers[1].ClusterAddress = workers[1].Address;
+            workers[1].ClusterPort = workers[1].Port;
+            workers[1].ReplicationOffset = 0;
+            workers[2].ReplicationOffset = 0;
+            Assert.That(receiver.ToByteArray(2), Is.EqualTo(SerializeFormatFixture(2, workers)));
+
+            workers[2].ConfigEpoch++;
+            workers[2].ClusterAddress = "127.0.0.3";
+            workers[2].ClusterPort = 7003;
+            senderWorkers[1] = workers[2];
+            sender = ClusterConfig.FromByteArray(SerializeFormatFixture(2, senderWorkers));
+            receiver = receiver.Merge(sender, []);
+            Assert.That(receiver.ToByteArray(2), Is.EqualTo(SerializeFormatFixture(2, workers)));
+        }
+
+        [TestCase(0)]
+        [TestCase(3)]
+        [TestCase(255)]
+        [Category("CLUSTER-CONFIG")]
+        public void ClusterConfigUnsupportedVersionTest(byte version)
+        {
+            var config = new ClusterConfig();
+            Assert.That(ClusterConfig.IsSupportedVersion(version), Is.False);
+            Assert.Throws<ArgumentOutOfRangeException>(() => config.ToByteArray(version));
+            Assert.Throws<InvalidDataException>(() => ClusterConfig.FromByteArray([version]));
+        }
+
+        [Test]
+        [Category("CLUSTER-CONFIG")]
+        public void ClusterConfigTruncatedVersion2WorkerTest()
+        {
+            var bytes = SerializeFormatFixture(2, CreateFormatWorkers());
+            Assert.Throws<EndOfStreamException>(() => ClusterConfig.FromByteArray(bytes[..^1]));
+        }
+
+        [TestCase(1, true)]
+        [TestCase(2, true)]
+        [TestCase(0, false)]
+        [TestCase(3, false)]
+        [TestCase(255, false)]
+        [Category("CLUSTER-CONFIG")]
+        public void ClusterConfigGossipVersionTest(byte version, bool supported)
+        {
+            context.CreateInstances(1);
+            context.CreateConnection();
+            var workers = CreateFormatWorkers();
+            var server = context.clusterTestUtils.GetServer(context.endpoints[0].ToIPEndPoint());
+            var response = (byte[])server.Execute("CLUSTER", "GOSSIP", "WITHMEET", SerializeFormatFixture(version, workers));
+
+            Assert.That(ClusterConfig.IsSupportedVersion(version), Is.EqualTo(supported));
+            Assert.That(response[0], Is.EqualTo(1));
+            var nodes = context.clusterTestUtils.ClusterNodes(0);
+            Assert.That(nodes.Nodes.Any(node => node.NodeId == workers[1].Nodeid), Is.EqualTo(supported));
+        }
+
+        [TestCase(1)]
+        [TestCase(2)]
+        [Category("CLUSTER-CONFIG")]
+        public void ClusterConfigDiskVersionTest(byte version)
+        {
+            context.CreateInstances(1);
+            context.CreateConnection();
+            var nodeId = context.clusterTestUtils.ClusterNodes(0).Nodes.Single(node => node.IsMyself).NodeId;
+            context.nodes[0].Dispose(false);
+            context.nodes[0] = null;
+
+            var workers = CreateFormatWorkers();
+            workers[1].Nodeid = nodeId;
+            workers[1].Address = "127.0.0.1";
+            workers[1].Port = ClusterTestContext.Port;
+            var bytes = SerializeFormatFixture(version, [default, workers[1]]);
+            var configPath = Directory.GetFiles(context.TestFolder, "nodes.conf*", SearchOption.AllDirectories).Single();
+            using (var stream = new FileStream(configPath, FileMode.Open, FileAccess.Write))
+            using (var writer = new BinaryWriter(stream))
+            {
+                writer.Write(bytes.Length);
+                writer.Write(bytes);
+            }
+
+            context.nodes[0] = context.CreateInstance(context.clusterTestUtils.GetEndPoint(0), cleanClusterConfig: false);
+            context.nodes[0].Start();
+            context.CreateConnection();
+            Assert.That(context.clusterTestUtils.ClusterNodes(0).Nodes.Single(node => node.IsMyself).NodeId, Is.EqualTo(nodeId));
+
+            var server = context.clusterTestUtils.GetServer(context.endpoints[0].ToIPEndPoint());
+            var response = (byte[])server.Execute("CLUSTER", "GOSSIP", Array.Empty<byte>());
+            Assert.That(response[0], Is.EqualTo(1));
+            Assert.That(server.Execute("CLUSTER", "BUMPEPOCH").ToString(), Is.EqualTo("OK"));
+            context.nodes[0].Dispose(false);
+            context.nodes[0] = null;
+            Assert.That(File.ReadAllBytes(configPath)[sizeof(int)], Is.EqualTo(1));
+        }
+
+        private static Worker[] CreateFormatWorkers()
+        {
+            var primaryId = new string('a', 40);
+            return
+            [
+                default,
+                new Worker
+                {
+                    Nodeid = primaryId,
+                    Address = "203.0.113.1",
+                    Port = 17001,
+                    ClusterAddress = "127.0.0.1",
+                    ClusterPort = 7001,
+                    ConfigEpoch = 1,
+                    Role = Garnet.cluster.NodeRole.PRIMARY,
+                    ReplicationOffset = 100,
+                    hostname = "node.example.com"
+                },
+                new Worker
+                {
+                    Nodeid = new string('b', 40),
+                    Address = "203.0.113.2",
+                    Port = 17002,
+                    ClusterAddress = "127.0.0.2",
+                    ClusterPort = 7002,
+                    ConfigEpoch = 2,
+                    Role = Garnet.cluster.NodeRole.REPLICA,
+                    ReplicaOfNodeId = primaryId,
+                    ReplicationOffset = 90
+                }
+            ];
+        }
+
+        private static byte[] SerializeFormatFixture(byte version, Worker[] workers)
+        {
+            using var stream = new MemoryStream();
+            using var writer = new BinaryWriter(stream);
+            writer.Write(version);
+            writer.Write((ushort)1);
+            writer.Write((ushort)ClusterConfig.MAX_HASH_SLOT_VALUE);
+            writer.Write((ushort)0);
+            writer.Write((byte)SlotState.OFFLINE);
+            writer.Write(workers.Length);
+            foreach (var worker in workers.Skip(1))
+            {
+                writer.Write(worker.Nodeid);
+                writer.Write(worker.Address);
+                writer.Write(worker.Port);
+                writer.Write(worker.ConfigEpoch);
+                writer.Write((byte)worker.Role);
+                writer.Write(worker.ReplicaOfNodeId != null);
+                if (worker.ReplicaOfNodeId != null)
+                    writer.Write(worker.ReplicaOfNodeId);
+                writer.Write(worker.ReplicationOffset);
+                writer.Write(worker.hostname != null);
+                if (worker.hostname != null)
+                    writer.Write(worker.hostname);
+                if (version == 2)
+                {
+                    writer.Write(worker.ClusterAddress);
+                    writer.Write(worker.ClusterPort);
+                }
+            }
+            return stream.ToArray();
         }
 
         [Test, Order(5)]

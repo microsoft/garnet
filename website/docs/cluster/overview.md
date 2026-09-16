@@ -50,6 +50,16 @@ in the cluster.
 
 For more information about the cluster configuration please see the description of *CLUSTER NODES* command.
 
+### Cluster Configuration Format
+
+Garnet reads cluster configuration versions 1 and 2 from disk and gossip. Version 2 stores
+`ClusterAddress` and `ClusterPort` in each worker record, alongside the existing client-facing
+`Address` and `Port`. Version 1 reads initialize the cluster fields from `Address` and `Port`.
+
+Production persistence and gossip still write version 1, and routing behavior is unchanged.
+Writing version 2 and using separate cluster endpoints require a follow-up change after all
+nodes support reading version 2.
+
 ## Control Plane
 
 It is important to keep in mind that Garnet's cluster mode design is currently _passive_: this means that it does not implement leader election, and simply responds to cluster 

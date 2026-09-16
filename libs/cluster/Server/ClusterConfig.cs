@@ -42,9 +42,14 @@ namespace Garnet.cluster
 
         /// <summary>
         /// Version of the cluster config serialization format.
-        /// Increment when the binary layout of <see cref="ToByteArray"/>/<see cref="FromByteArray"/> changes.
+        /// Increment when the binary layout of <see cref="ToByteArray(byte)"/>/<see cref="FromByteArray"/> changes.
         /// </summary>
-        public const byte ClusterConfigVersion = 1;
+        public const byte ClusterConfigVersion = 2;
+
+        /// <summary>
+        /// Production write version, retained until all nodes can read version 2.
+        /// </summary>
+        public const byte DefaultClusterConfigVersion = 1;
 
         /// <summary>
         /// 
@@ -104,6 +109,8 @@ namespace Garnet.cluster
         {
             workers[RESERVED_WORKER_ID].Address = "unassigned";
             workers[RESERVED_WORKER_ID].Port = 0;
+            workers[RESERVED_WORKER_ID].ClusterAddress = "unassigned";
+            workers[RESERVED_WORKER_ID].ClusterPort = 0;
             workers[RESERVED_WORKER_ID].Nodeid = null;
             workers[RESERVED_WORKER_ID].ConfigEpoch = 0;
             workers[RESERVED_WORKER_ID].Role = NodeRole.UNASSIGNED;
@@ -142,6 +149,11 @@ namespace Garnet.cluster
             newWorkers[LOCAL_WORKER_ID].ReplicaOfNodeId = replicaOfNodeId;
             newWorkers[LOCAL_WORKER_ID].ReplicationOffset = 0;
             newWorkers[LOCAL_WORKER_ID].hostname = hostname;
+            if (workers[LOCAL_WORKER_ID].Nodeid == null)
+            {
+                newWorkers[LOCAL_WORKER_ID].ClusterAddress = address;
+                newWorkers[LOCAL_WORKER_ID].ClusterPort = port;
+            }
             return new ClusterConfig(slotMap, newWorkers);
         }
 
@@ -1144,6 +1156,8 @@ namespace Garnet.cluster
             // Insert or update worker information
             newWorkers[workerId].Address = worker.Address;
             newWorkers[workerId].Port = worker.Port;
+            newWorkers[workerId].ClusterAddress = worker.ClusterAddress;
+            newWorkers[workerId].ClusterPort = worker.ClusterPort;
             newWorkers[workerId].Nodeid = worker.Nodeid;
             newWorkers[workerId].ConfigEpoch = worker.ConfigEpoch;
             newWorkers[workerId].Role = worker.Role;

@@ -194,7 +194,7 @@ namespace Garnet.cluster
                     var respArray = resp.Span.ToArray();
 
                     // Validate config version before full deserialization
-                    if (!ClusterConfig.TryPeekVersion(respArray, out var version) || version != ClusterConfig.ClusterConfigVersion)
+                    if (!ClusterConfig.TryPeekVersion(respArray, out var version) || !ClusterConfig.IsSupportedVersion(version))
                     {
                         logger?.LogWarning("MEET response has incompatible config version: {version}", version);
                         if (created) gsn?.Dispose();
