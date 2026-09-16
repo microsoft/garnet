@@ -202,8 +202,19 @@ namespace Garnet.server
         {
             LuaScriptChunk generatedBytecode;
             string error;
-            if (LuaRunner.TryCompileSource(source, out generatedBytecode, out error))
-                return TryGetOrCreateRunnerFromGeneratedBytecode(session, generatedBytecode, digest, ref luaScriptHandle, out runner, out digestOnHeap);
+            try
+            {
+                if (LuaRunner.TryCompileSource(source, out generatedBytecode, out error))
+                    return TryGetOrCreateRunnerFromGeneratedBytecode(session, generatedBytecode, digest, ref luaScriptHandle, out runner, out digestOnHeap);
+            }
+            catch (Exception ex)
+            {
+                logger?.LogError(ex, "During Lua script compilation, an unexpected exception");
+                runner = null;
+                digestOnHeap = null;
+                luaScriptHandle = null;
+                return false;
+            }
 
             session.WriteLuaCompilationError(error);
             runner = null;
@@ -223,7 +234,6 @@ namespace Garnet.server
                 return true;
             }
 
-            runner = null;
             try
             {
                 runner = new LuaRunner(memoryManagementMode, memoryLimitBytes, logMode, allowedFunctions, generatedBytecode, storeWrapper.serverOptions.LuaTransactionMode, processor, scratchBufferNetworkSender, storeWrapper.redisProtocolVersion, logger);
@@ -261,13 +271,13 @@ namespace Garnet.server
                     return false;
                 }
             }
-            catch
+            catch (Exception ex)
             {
-                runner?.Dispose();
-                runner = null;
+                logger?.LogError(ex, "During Lua script loading, an unexpected exception");
+
                 digestOnHeap = null;
                 luaScriptHandle = null;
-                throw;
+                return false;
             }
 
             return true;
