@@ -37,15 +37,10 @@ namespace Garnet.server
         /// Creates a handle for Lua source text.
         /// </summary>
         /// <param name="scriptData">Lua source text.</param>
-        public LuaScriptHandle(ReadOnlyMemory<byte> scriptData)
-            : this(new LuaScriptChunk(scriptData, LuaScriptChunkKind.Text))
-        {
-        }
+        /// <returns>A handle containing Lua source text.</returns>
+        public static LuaScriptHandle FromSource(ReadOnlyMemory<byte> scriptData) => new(new LuaScriptChunk(scriptData, LuaScriptChunkKind.Text));
 
-        internal LuaScriptHandle(LuaScriptChunk chunk)
-        {
-            Chunk = chunk;
-        }
+        internal LuaScriptHandle(LuaScriptChunk chunk) => Chunk = chunk;
 
         /// <inheritdoc/>
         public void Dispose()

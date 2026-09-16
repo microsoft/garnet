@@ -51,14 +51,14 @@ namespace BDN.benchmark.Lua
 
             outerHitDigest = GC.AllocateUninitializedArray<byte>(SessionScriptCache.SHA1Len, pinned: true);
             sessionScriptCache.GetScriptDigest("return 1"u8, outerHitDigest);
-            if (!storeWrapper.storeScriptCache.TryAdd(new(outerHitDigest), new("return 1"u8.ToArray())))
+            if (!storeWrapper.storeScriptCache.TryAdd(new(outerHitDigest), LuaScriptHandle.FromSource("return 1"u8.ToArray())))
             {
                 throw new InvalidOperationException("Should have been able to load into global cache");
             }
 
             innerHitDigest = GC.AllocateUninitializedArray<byte>(SessionScriptCache.SHA1Len, pinned: true);
             sessionScriptCache.GetScriptDigest("return 1 + 1"u8, innerHitDigest);
-            if (!storeWrapper.storeScriptCache.TryAdd(new(innerHitDigest), new("return 1 + 1"u8.ToArray())))
+            if (!storeWrapper.storeScriptCache.TryAdd(new(innerHitDigest), LuaScriptHandle.FromSource("return 1 + 1"u8.ToArray())))
             {
                 throw new InvalidOperationException("Should have been able to load into global cache");
             }
