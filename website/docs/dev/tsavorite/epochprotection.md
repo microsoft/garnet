@@ -29,7 +29,23 @@ We need to ensure shared variables are not being read and mutated simultaneously
 -	We can add trigger actions that are executed when all threads are past a safe epoch ``` (For every thread T: SafeEpoch <= thread local Epoch <= Global Epoch) ```. Since the system holds all thread local epochs in a system accesible epoch table we can scan and find a safe epoch.
 This gives us the ability to have an exactly-once invoked function that depends on all threads logically coordinating and not having any code being executed at the time of Epoch ending for the trigger.
 
--	If you look closely, what `epoch.Resume()` essentially does is have a thread find a free entry in the epoch table, put its id there, and "claim" the current epoch (the next thread will increment the epoch by 1 and claim the next epoch). Inside `epoch.Resume()`, there is a loop; if the current target epoch entry is already occupied by another thread, the current thread will yield. When it wakes up, it will try to occupy the next entry. If the epoch table is full, the rest of the threads will keep yielding.
+-	If you look closely, what `epoch.Resume()` essentially does is have a thread find a free entry in the epoch table, put its id there, and "claim" the current epoch (the next thread will increment the epoch by 1 and claim the next epoch). Inside `epoch.Resume()`, the thread probes two hashed starting offsets and then circles the whole table twice looking for a free entry. If every entry is taken, the thread blocks rather than spinning; see *Waiting for an epoch table entry* below.
+
+### Waiting for an epoch table entry
+
+The table has a fixed number of slots, so more threads can want protection than there are entries. A thread that cannot claim one blocks on a semaphore until another thread frees a slot.
+
+-	A thread that fails to claim a slot increments `waiterCount`, re-probes the table, and only then blocks. The re-probe is what closes the race against a releasing thread that read `waiterCount` as zero a moment earlier and therefore did not signal; without it, that thread could block on a slot that is already free.
+
+-	`Release` (reached through `Suspend` and `SuspendResume`) frees the slot and then wakes one waiter. It publishes the slot as free *before* deciding whether to signal, so a waiter that wakes always sees the freed slot.
+
+-	The number of signals issued but not yet consumed is tracked in `pendingWaiterSignals`, and a signal is only issued while that is below the current waiter count. This caps outstanding signals at the *peak* number of concurrent waiters rather than the instantaneous count: a waiter can claim the freed slot and leave while a signal reserved for it is still in flight, briefly leaving a signal outstanding with no waiter present. Such a leftover is consumed by the next waiter, which re-probes the table after waking, so leftovers drain instead of accumulating. Any such bound is what matters — the count is `O(threads)` rather than unbounded. The bound is needed because `ProtectAndDrain` hops through `SuspendResume` on *every* refresh while any waiter exists, to give waiters a fair chance at a slot. Releases therefore vastly outnumber waiters under contention, and signalling on each one would grow the semaphore's count until it overflowed.
+
+-	Suppressing a signal cannot strand a waiter: a signal is only withheld when every current waiter already has a wake pending, and a woken waiter re-probes the entire table before blocking again.
+
+-	`Dispose` cancels the shared `CancellationTokenSource` so parked threads unwind as `ObjectDisposedException`, and sets the MSB of `waiterCount` to keep new waiters out.
+
+-	Oversubscribing the table degrades into waiting, not failure. Sustained concurrency well above `N` shows up as added latency on `Resume`, so `N = max(128, ProcessorCount * 2)` is a throughput consideration rather than a hard limit on the number of threads that may use a `LightEpoch`.
 
 ## Relevant Public Methods and How to use them
 
