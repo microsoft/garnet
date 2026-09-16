@@ -696,6 +696,9 @@ namespace Tsavorite.core
             logSettings.LogDevice.Initialize(1L << logSettings.SegmentSizeBits, epoch);
             logSettings.ObjectLogDevice?.Initialize(1L << logSettings.ObjectLogSegmentSizeBits, epoch);
 
+            // The up-converted log replaces the object log, so it must share its segment size for object-log positions to resolve identically.
+            logSettings.UpgradeObjectLogDevice?.Initialize(1L << logSettings.ObjectLogSegmentSizeBits, epoch);
+
             // Page size
             LogPageSizeBits = logSettings.PageSizeBits;
             PageSize = 1 << LogPageSizeBits;
@@ -833,6 +836,26 @@ namespace Tsavorite.core
                 throw new TsavoriteException($"Recovery ObjectLogSegmentSize mismatch: checkpoint was written with {info.objectLogSegmentSize} but this store is configured with {actualObjectLogSegmentSize}");
         }
 
+        /// <summary>
+        /// Verify that a downlevel checkpoint carrying object-log data can actually be up-converted. A downlevel object log stores
+        /// records headerless above the size that now requires a chunk header, so it cannot be rewritten in place; the converted
+        /// bytes need a separate destination device. Recovering without one would leave the object log in a format that a later
+        /// release, which no longer carries the per-record downlevel selector, cannot decode.
+        /// </summary>
+        /// <remarks>
+        /// A store with no object-log device has nothing to convert and needs no upgrade device; any checkpoint it later takes is
+        /// stamped with the current version regardless.
+        /// </remarks>
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        private void VerifyUpgradeCapability(HybridLogRecoveryInfo info)
+        {
+            if (!HybridLogRecoveryInfo.UsesDownlevelObjectLog(info.hybridLogRecoveryVersion) || !HasObjectLogDevice || HasUpgradeObjectLogDevice)
+                return;
+
+            throw new TsavoriteException($"Recovering checkpoint version {info.hybridLogRecoveryVersion} requires up-converting its object log,"
+                + $" but no {nameof(KVSettings.UpgradeObjectLogDevice)} was configured to receive the converted object bytes");
+        }
+
         [MethodImpl(MethodImplOptions.NoInlining)]
         internal void VerifyRecoveryInfo(HybridLogCheckpointInfo recoveredHLCInfo, bool trimLog = false)
         {
@@ -840,6 +863,7 @@ namespace Tsavorite.core
             // segment range necessary for recovery to given checkpoint
 
             VerifyLogGeometry(recoveredHLCInfo.info);
+            VerifyUpgradeCapability(recoveredHLCInfo.info);
 
             var diskBeginAddress = recoveredHLCInfo.info.beginAddress;
             var diskFlushedUntilAddress = recoveredHLCInfo.info.useSnapshotFile == 0
@@ -1097,6 +1121,13 @@ namespace Tsavorite.core
 
         /// <summary>Object log segment size</summary>
         public virtual long GetObjectLogSegmentSize() => -1;
+
+        /// <summary>Whether an object-log device is configured. False for allocators that store no out-of-line objects, and for an
+        /// object allocator whose objects are held entirely in memory.</summary>
+        internal virtual bool HasObjectLogDevice => false;
+
+        /// <summary>Whether a device is configured to receive up-converted object bytes when recovering a downlevel checkpoint.</summary>
+        internal virtual bool HasUpgradeObjectLogDevice => false;
 
         /// <summary>Get tail address</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

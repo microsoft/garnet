@@ -74,6 +74,10 @@ namespace Tsavorite.core
 
         private readonly IDevice objectLogDevice;
 
+        /// <summary>Device receiving up-converted object bytes while recovering a downlevel checkpoint; null otherwise.
+        /// <see cref="objectLogDevice"/> is the read source for that conversion.</summary>
+        private readonly IDevice upgradeObjectLogDevice;
+
         /// <summary>The free pages of the log</summary>
         private readonly OverflowPool<PageUnit<ObjectPage>> freePagePool;
 
@@ -87,6 +91,7 @@ namespace Tsavorite.core
             : base(settings, storeFunctions, wrapperCreator, settings.logger, transientObjectIdMap: new ObjectIdMap())
         {
             objectLogDevice = settings.LogSettings.ObjectLogDevice;
+            upgradeObjectLogDevice = settings.LogSettings.UpgradeObjectLogDevice;
 
             maxInlineKeySize = settings.LogSettings.MaxInlineKeySize;
             maxInlineValueSize = settings.LogSettings.MaxInlineValueSize;
@@ -697,6 +702,12 @@ namespace Tsavorite.core
 
         /// <summary>Object log segment size</summary>
         public override long GetObjectLogSegmentSize() => ObjectLogSegmentSize;
+
+        /// <inheritdoc/>
+        internal override bool HasObjectLogDevice => objectLogDevice is not null;
+
+        /// <inheritdoc/>
+        internal override bool HasUpgradeObjectLogDevice => upgradeObjectLogDevice is not null;
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.NoInlining)]

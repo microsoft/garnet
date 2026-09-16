@@ -38,7 +38,11 @@ namespace Tsavorite.test.recovery
     {
         const string MainLogName = "v7main.log";
         const string ObjectLogName = "v7main.obj.log";
+        const string UpgradeObjectLogName = "v8main.obj.log";
         const string CheckpointDirName = "checkpoints";
+
+        // Recovering a downlevel checkpoint that has object-log data requires a device to receive the up-converted object bytes.
+        static IDevice CreateUpgradeObjectLog() => Devices.CreateLogDevice(Path.Combine(MethodTestDir, UpgradeObjectLogName), deleteOnClose: false);
 
         [SetUp]
         public void Setup() => RecreateDirectory(MethodTestDir);
@@ -46,12 +50,13 @@ namespace Tsavorite.test.recovery
         [TearDown]
         public void TearDown() => OnTearDown();
 
-        static TsavoriteKV<ObjStoreFunctions, ObjAllocator> CreateObjectStore(IDevice log, IDevice objlog, string checkpointDir, long memorySize)
+        static TsavoriteKV<ObjStoreFunctions, ObjAllocator> CreateObjectStore(IDevice log, IDevice objlog, string checkpointDir, long memorySize, IDevice upgradeObjlog = null)
             => new(new()
             {
                 IndexSize = 1L << 20,
                 LogDevice = log,
                 ObjectLogDevice = objlog,
+                UpgradeObjectLogDevice = upgradeObjlog,
                 MutableFraction = 0.9,
                 PageSize = MinKvLogPageSize,
                 LogMemorySize = memorySize,
@@ -64,12 +69,13 @@ namespace Tsavorite.test.recovery
         const int OverflowKeyInlineCutoff = 16;     // keys longer than this go out of line (into the object log)
 
         // Overflow-key store: SpanByte keys forced out of line (small MaxInlineKeySize), with small overflow (byte[]) values.
-        static TsavoriteKV<SbKeyStoreFunctions, SbKeyAllocator> CreateOverflowKeyStore(IDevice log, IDevice objlog, string checkpointDir, long memorySize)
+        static TsavoriteKV<SbKeyStoreFunctions, SbKeyAllocator> CreateOverflowKeyStore(IDevice log, IDevice objlog, string checkpointDir, long memorySize, IDevice upgradeObjlog = null)
             => new(new()
             {
                 IndexSize = 1L << 20,
                 LogDevice = log,
                 ObjectLogDevice = objlog,
+                UpgradeObjectLogDevice = upgradeObjlog,
                 MutableFraction = 0.9,
                 PageSize = MinKvLogPageSize,
                 LogMemorySize = memorySize,
@@ -174,12 +180,13 @@ namespace Tsavorite.test.recovery
         }
 
         // Inline-key + overflow-value store (raw byte[] values forced out of line into the object log).
-        static TsavoriteKV<ObjStoreFunctions, ObjAllocator> CreateOverflowValueStore(IDevice log, IDevice objlog, string checkpointDir, long memorySize)
+        static TsavoriteKV<ObjStoreFunctions, ObjAllocator> CreateOverflowValueStore(IDevice log, IDevice objlog, string checkpointDir, long memorySize, IDevice upgradeObjlog = null)
             => new(new()
             {
                 IndexSize = 1L << 20,
                 LogDevice = log,
                 ObjectLogDevice = objlog,
+                UpgradeObjectLogDevice = upgradeObjlog,
                 MutableFraction = 0.9,
                 PageSize = MinKvLogPageSize,
                 LogMemorySize = memorySize,
@@ -191,12 +198,13 @@ namespace Tsavorite.test.recovery
                (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions));
 
         // Overflow-key + inline-value store: SpanByte keys forced out of line, values small enough to stay inline in the record.
-        static TsavoriteKV<SbKeyStoreFunctions, SbKeyAllocator> CreateOverflowKeyInlineValueStore(IDevice log, IDevice objlog, string checkpointDir, long memorySize)
+        static TsavoriteKV<SbKeyStoreFunctions, SbKeyAllocator> CreateOverflowKeyInlineValueStore(IDevice log, IDevice objlog, string checkpointDir, long memorySize, IDevice upgradeObjlog = null)
             => new(new()
             {
                 IndexSize = 1L << 20,
                 LogDevice = log,
                 ObjectLogDevice = objlog,
+                UpgradeObjectLogDevice = upgradeObjlog,
                 MutableFraction = 0.9,
                 PageSize = MinKvLogPageSize,
                 LogMemorySize = memorySize,
@@ -520,9 +528,10 @@ namespace Tsavorite.test.recovery
             var checkpointDir = Path.Combine(MethodTestDir, CheckpointDirName);
             IDevice log = Devices.CreateLogDevice(Path.Combine(MethodTestDir, MainLogName), deleteOnClose: false);
             IDevice objlog = Devices.CreateLogDevice(Path.Combine(MethodTestDir, ObjectLogName), deleteOnClose: false);
+            IDevice upgradeObjlog = CreateUpgradeObjectLog();
             try
             {
-                using var store = CreateObjectStore(log, objlog, checkpointDir, 1L << 20);
+                using var store = CreateObjectStore(log, objlog, checkpointDir, 1L << 20, upgradeObjlog);
                 _ = await store.RecoverAsync(default, token).ConfigureAwait(false);
 
                 using var session = store.NewSession<TestObjectKey, TestLargeObjectInput, TestLargeObjectOutput, Empty, TestLargeObjectFunctions>(new TestLargeObjectFunctions());
@@ -545,6 +554,31 @@ namespace Tsavorite.test.recovery
             {
                 log.Dispose();
                 objlog.Dispose();
+                upgradeObjlog.Dispose();
+            }
+        }
+
+        [Test]
+        [Category("TsavoriteKV"), Category("CheckpointRestore")]
+        public void RecoverV7WithoutUpgradeObjectLogFails()
+        {
+            // A downlevel object log cannot be rewritten in place, so recovery needs a device to receive the converted bytes.
+            // Without one it must fail rather than leave the object log in a format a later release cannot decode.
+            var token = BuildV7FoldOverFixture(numRecords: 8, valueSize: 100);
+
+            var checkpointDir = Path.Combine(MethodTestDir, CheckpointDirName);
+            IDevice log = Devices.CreateLogDevice(Path.Combine(MethodTestDir, MainLogName), deleteOnClose: false);
+            IDevice objlog = Devices.CreateLogDevice(Path.Combine(MethodTestDir, ObjectLogName), deleteOnClose: false);
+            try
+            {
+                using var store = CreateObjectStore(log, objlog, checkpointDir, 1L << 20, upgradeObjlog: null);
+                var ex = Assert.ThrowsAsync<TsavoriteException>(async () => _ = await store.RecoverAsync(default, token).ConfigureAwait(false));
+                ClassicAssert.IsTrue(ex.Message.Contains(nameof(KVSettings.UpgradeObjectLogDevice)), $"unexpected message: {ex.Message}");
+            }
+            finally
+            {
+                log.Dispose();
+                objlog.Dispose();
             }
         }
 
@@ -561,9 +595,10 @@ namespace Tsavorite.test.recovery
             var checkpointDir = Path.Combine(MethodTestDir, CheckpointDirName);
             IDevice log = Devices.CreateLogDevice(Path.Combine(MethodTestDir, MainLogName), deleteOnClose: false);
             IDevice objlog = Devices.CreateLogDevice(Path.Combine(MethodTestDir, ObjectLogName), deleteOnClose: false);
+            IDevice upgradeObjlog = CreateUpgradeObjectLog();
             try
             {
-                using var store = CreateObjectStore(log, objlog, checkpointDir, 1L << 20);
+                using var store = CreateObjectStore(log, objlog, checkpointDir, 1L << 20, upgradeObjlog);
                 _ = await store.RecoverAsync(default, token).ConfigureAwait(false);
 
                 using var session = store.NewSession<TestObjectKey, TestLargeObjectInput, TestLargeObjectOutput, Empty, TestLargeObjectFunctions>(new TestLargeObjectFunctions());
@@ -586,6 +621,7 @@ namespace Tsavorite.test.recovery
             {
                 log.Dispose();
                 objlog.Dispose();
+                upgradeObjlog.Dispose();
             }
         }
 
@@ -599,9 +635,10 @@ namespace Tsavorite.test.recovery
             var checkpointDir = Path.Combine(MethodTestDir, CheckpointDirName);
             IDevice log = Devices.CreateLogDevice(Path.Combine(MethodTestDir, MainLogName), deleteOnClose: false);
             IDevice objlog = Devices.CreateLogDevice(Path.Combine(MethodTestDir, ObjectLogName), deleteOnClose: false);
+            IDevice upgradeObjlog = CreateUpgradeObjectLog();
             try
             {
-                using var store = CreateOverflowValueStore(log, objlog, checkpointDir, 1L << 20);
+                using var store = CreateOverflowValueStore(log, objlog, checkpointDir, 1L << 20, upgradeObjlog);
                 _ = await store.RecoverAsync(default, token).ConfigureAwait(false);
 
                 using var session = store.NewSession<TestObjectKey, TestLargeObjectInput, TestLargeObjectOutput, Empty, TestLargeObjectFunctions>(new TestLargeObjectFunctions());
@@ -624,6 +661,7 @@ namespace Tsavorite.test.recovery
             {
                 log.Dispose();
                 objlog.Dispose();
+                upgradeObjlog.Dispose();
             }
         }
 
@@ -641,9 +679,10 @@ namespace Tsavorite.test.recovery
             var checkpointDir = Path.Combine(MethodTestDir, CheckpointDirName);
             IDevice log = Devices.CreateLogDevice(Path.Combine(MethodTestDir, MainLogName), deleteOnClose: false);
             IDevice objlog = Devices.CreateLogDevice(Path.Combine(MethodTestDir, ObjectLogName), deleteOnClose: false);
+            IDevice upgradeObjlog = CreateUpgradeObjectLog();
             try
             {
-                using var store = CreateObjectStore(log, objlog, checkpointDir, 1L << 20);
+                using var store = CreateObjectStore(log, objlog, checkpointDir, 1L << 20, upgradeObjlog);
                 var target = 4L * MinKvLogPageSize;
                 var tracker = new LogSizeTracker<ObjStoreFunctions, ObjAllocator>(store.Log, target, target / 8, target / 16, logger: null);
                 store.Log.SetLogSizeTracker(tracker);
@@ -669,6 +708,7 @@ namespace Tsavorite.test.recovery
             {
                 log.Dispose();
                 objlog.Dispose();
+                upgradeObjlog.Dispose();
             }
         }
 
@@ -682,9 +722,10 @@ namespace Tsavorite.test.recovery
             var checkpointDir = Path.Combine(MethodTestDir, CheckpointDirName);
             IDevice log = Devices.CreateLogDevice(Path.Combine(MethodTestDir, MainLogName), deleteOnClose: false);
             IDevice objlog = Devices.CreateLogDevice(Path.Combine(MethodTestDir, ObjectLogName), deleteOnClose: false);
+            IDevice upgradeObjlog = CreateUpgradeObjectLog();
             try
             {
-                using var store = CreateOverflowKeyStore(log, objlog, checkpointDir, 1L << 20);
+                using var store = CreateOverflowKeyStore(log, objlog, checkpointDir, 1L << 20, upgradeObjlog);
                 _ = await store.RecoverAsync(default, token).ConfigureAwait(false);
 
                 using var session = store.NewSession<TestSpanByteKey, TestLargeObjectInput, TestLargeObjectOutput, Empty, TestLargeObjectFunctions>(new TestLargeObjectFunctions());
@@ -709,6 +750,7 @@ namespace Tsavorite.test.recovery
             {
                 log.Dispose();
                 objlog.Dispose();
+                upgradeObjlog.Dispose();
             }
         }
 
@@ -722,9 +764,10 @@ namespace Tsavorite.test.recovery
             var checkpointDir = Path.Combine(MethodTestDir, CheckpointDirName);
             IDevice log = Devices.CreateLogDevice(Path.Combine(MethodTestDir, MainLogName), deleteOnClose: false);
             IDevice objlog = Devices.CreateLogDevice(Path.Combine(MethodTestDir, ObjectLogName), deleteOnClose: false);
+            IDevice upgradeObjlog = CreateUpgradeObjectLog();
             try
             {
-                using var store = CreateOverflowKeyInlineValueStore(log, objlog, checkpointDir, 1L << 20);
+                using var store = CreateOverflowKeyInlineValueStore(log, objlog, checkpointDir, 1L << 20, upgradeObjlog);
                 _ = await store.RecoverAsync(default, token).ConfigureAwait(false);
 
                 using var session = store.NewSession<TestSpanByteKey, TestLargeObjectInput, TestLargeObjectOutput, Empty, TestLargeObjectFunctions>(new TestLargeObjectFunctions());
@@ -747,6 +790,7 @@ namespace Tsavorite.test.recovery
             {
                 log.Dispose();
                 objlog.Dispose();
+                upgradeObjlog.Dispose();
             }
         }
 

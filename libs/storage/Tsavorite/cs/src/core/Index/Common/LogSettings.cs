@@ -83,6 +83,12 @@ namespace Tsavorite.core
         public IDevice ObjectLogDevice;
 
         /// <summary>
+        /// Device receiving up-converted object bytes when recovering a downlevel checkpoint, read from <see cref="ObjectLogDevice"/>.
+        /// Null unless an upgrade was requested. See <see cref="KVSettings.UpgradeObjectLogDevice"/>.
+        /// </summary>
+        public IDevice UpgradeObjectLogDevice;
+
+        /// <summary>
         /// Total size of in-memory part of log, in bytes. Does not need to be a power of 2
         /// </summary>
         public long MemorySize = 1L << 34;
