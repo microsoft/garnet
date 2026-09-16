@@ -332,6 +332,17 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Number of compiled scripts currently held. For tests.
+        /// </summary>
+        internal int CachedScriptCount => scriptCache.Count;
+
+        /// <summary>
+        /// Whether the script with the given digest is currently held. For tests.
+        /// </summary>
+        internal bool ContainsDigest(ReadOnlySpan<byte> digest)
+        => scriptCache.ContainsKey(new ScriptHashKey(digest));
+
+        /// <summary>
         /// Make room for one more entry when the cache is at its configured capacity, by evicting
         /// the least recently used script.
         /// </summary>
