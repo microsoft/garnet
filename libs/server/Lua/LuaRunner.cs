@@ -208,17 +208,13 @@ namespace Garnet.server
             int? memLimitBytes,
             LuaLoggingMode logMode,
             HashSet<string> allowedFunctions,
-            ReadOnlyMemory<byte> source,
+            LuaScriptChunk source,
             bool txnMode = false,
             RespServerSession respServerSession = null,
             ScratchBufferNetworkSender scratchBufferNetworkSender = null,
             string redisVersion = "0.0.0.0",
             ILogger logger = null
-        ) : this(memMode, memLimitBytes, logMode, allowedFunctions, new LuaScriptChunk(source, LuaScriptChunkKind.Text), txnMode, respServerSession, scratchBufferNetworkSender, redisVersion, logger)
-        {
-        }
-
-        internal unsafe LuaRunner(LuaMemoryManagementMode memMode, int? memLimitBytes, LuaLoggingMode logMode, HashSet<string> allowedFunctions, LuaScriptChunk source, bool txnMode = false, RespServerSession respServerSession = null, ScratchBufferNetworkSender scratchBufferNetworkSender = null, string redisVersion = "0.0.0.0", ILogger logger = null)
+        )
         {
             // KEYS and ARGV are always access by index, and to avoid allocation concerns
             // we also want to track their 'array'-bits sizes
@@ -413,7 +409,7 @@ namespace Garnet.server
         /// Creates a new runner with the source of the script
         /// </summary>
         public LuaRunner(LuaOptions options, string source, bool txnMode = false, RespServerSession respServerSession = null, ScratchBufferNetworkSender scratchBufferNetworkSender = null, string redisVersion = "0.0.0.0", ILogger logger = null)
-            : this(options.MemoryManagementMode, options.GetMemoryLimitBytes(), options.LogMode, options.AllowedFunctions, Encoding.UTF8.GetBytes(source), txnMode, respServerSession, scratchBufferNetworkSender, redisVersion, logger)
+            : this(options.MemoryManagementMode, options.GetMemoryLimitBytes(), options.LogMode, options.AllowedFunctions, new LuaScriptChunk(Encoding.UTF8.GetBytes(source), LuaScriptChunkKind.Text), txnMode, respServerSession, scratchBufferNetworkSender, redisVersion, logger)
         {
         }
 
