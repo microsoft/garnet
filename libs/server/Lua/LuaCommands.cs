@@ -115,6 +115,7 @@ namespace Garnet.server
 
             var onStackScriptKey = new ScriptHashKey(digest);
             if (!TryLoadScriptForSession(script.ReadOnlySpan, digest, onStackScriptKey, out var runner))
+                // The loading error was already written to the response.
                 return true;
 
             if (runner == null)
