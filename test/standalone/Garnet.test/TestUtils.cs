@@ -176,6 +176,15 @@ namespace Garnet.test
         }
 
         /// <summary>
+        /// Forces the port slot to be resolved now. Projects that rely on the static port defaults have no
+        /// <c>[SetUpFixture]</c> calling <see cref="SetTestPort"/>, and the remaining members read only
+        /// constants, so without this the slot would be claimed lazily and any failure would surface as a
+        /// <see cref="TypeInitializationException"/> from whichever test first touched a port.
+        /// </summary>
+        internal static void EnsurePortSlotResolved()
+            => RuntimeHelpers.RunClassConstructor(typeof(TestUtils).TypeHandle);
+
+        /// <summary>
         /// Reads <see cref="PortSlotEnvVar"/> and converts it to a port offset.
         /// </summary>
         /// <returns>The offset to add to every assigned port; 0 when no slot is selected.</returns>
