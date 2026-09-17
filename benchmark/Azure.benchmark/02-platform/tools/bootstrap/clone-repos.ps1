@@ -25,6 +25,13 @@ if (-not (Test-Path $ManifestPath)) {
     exit 1
 }
 $manifest = Get-Content $ManifestPath -Raw | ConvertFrom-Json
+$deploymentEnv = "/opt/deploy-actions/deployment.env"
+$workloadProfile = "benchmark"
+if (Test-Path $deploymentEnv) {
+    Get-Content $deploymentEnv | ForEach-Object {
+        if ($_ -match '^WORKLOAD_PROFILE="?([^"]+)"?$') { $workloadProfile = $Matches[1] }
+    }
+}
 
 if (-not $manifest.repos) {
     Write-Host "No repos section in manifest.json" -ForegroundColor Yellow
@@ -32,6 +39,13 @@ if (-not $manifest.repos) {
 }
 
 foreach ($repo in $manifest.repos) {
+    $repoProfiles = @(
+        if ($repo.PSObject.Properties['profiles']) { $repo.profiles } else { 'benchmark' }
+    )
+    if ($repoProfiles -notcontains $workloadProfile) {
+        continue
+    }
+
     $target = $repo.path
     $url = $repo.url
     $branch = if ($repo.branch -is [array]) { $repo.branch[0] } else { $repo.branch }

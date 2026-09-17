@@ -16,6 +16,8 @@ write_files:
     permissions: '0644'
     content: |
       DEPLOYMENT_ROLE=__DEPLOYMENT_ROLE__
+      WORKLOAD_PROFILE=__WORKLOAD_PROFILE__
+      HARDWARE_PROFILE=__HARDWARE_PROFILE__
 
 runcmd:
   # Install all build dependencies
@@ -55,4 +57,4 @@ runcmd:
   - sudo pwsh /home/guser/tools/update.ps1 -Run
 
   # Install dotnet-stack global tool for guser (PATH persisted via /etc/profile.d/dotnet-tools.sh)
-  - sudo -u guser dotnet tool install --global dotnet-stack
+  - if [ "__WORKLOAD_PROFILE__" = "benchmark" ]; then sudo -u guser dotnet tool install --global dotnet-stack; fi

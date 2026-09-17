@@ -147,6 +147,13 @@ if (-not (Test-Path $Manifest)) {
 }
 
 $entries = Get-Content $Manifest -Raw | ConvertFrom-Json
+$deploymentEnv = "/opt/deploy-actions/deployment.env"
+$workloadProfile = "benchmark"
+if (Test-Path $deploymentEnv) {
+    Get-Content $deploymentEnv | ForEach-Object {
+        if ($_ -match '^WORKLOAD_PROFILE="?([^"]+)"?$') { $workloadProfile = $Matches[1] }
+    }
+}
 
 # Copy scripts to deployed locations (skip with -RunOnly)
 if (-not $RunOnly) {
@@ -191,6 +198,13 @@ if ($Run -or $RunOnly) {
     bash -c "sudo mkdir -p $logDir && sudo chmod 1777 $logDir" 2>$null
 
     foreach ($cmd in $entries.runcmd) {
+        $cmdProfiles = @(
+            if ($cmd.PSObject.Properties['profiles']) { $cmd.profiles } else { 'benchmark' }
+        )
+        if ($cmdProfiles -notcontains $workloadProfile) {
+            continue
+        }
+
         $scriptName = $cmd.run
         $useSudo = $cmd.sudo
         $cmdArgs = $cmd.args

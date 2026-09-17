@@ -21,6 +21,9 @@ Workstation-side assets that deploy and manage the VMSS compute platform. Run th
 # absent on this machine, create offers to stage it from the target resource group.
 .\02-platform\manage-vmss.ps1 -rg <rg> -Action create -DeploymentRole server
 
+# Deploy a vLLM development VMSS with CPU dependencies
+.\02-platform\manage-vmss.ps1 -rg <rg> -Action create -DeploymentRole server -WorkloadProfile vllm-dev
+
 # Creation stops before ARM deployment unless `tools/tools.tar.gz` exists and
 # the `tools-sas-url` Key Vault secret can download it. Use `-Action publish-tools`
 # for a missing blob or refresh the SAS through deploy-common-resources.ps1.
@@ -56,7 +59,7 @@ az deployment group create `
 >
 > **Disabling the PPG:** If no proximity placement group exists in the region (or you want the platform to spread instances for better allocation success), add `enableProximityPlacement=false`. The PPG is also skipped automatically when `proximityId` is empty. A PPG is a single-region resource, so its region must match the VMSS region.
 
-VMs are provisioned via cloud-init with .NET SDKs, repos, and tooling pre-installed.
+VMs are provisioned via cloud-init with profile-specific repositories and tooling pre-installed.
 
 ## Manage VMSS (`manage-vmss.ps1`)
 
@@ -71,7 +74,7 @@ pwsh .\02-platform\manage-vmss.ps1 --help
 | Action | Description |
 |--------|-------------|
 | `refresh` (default) | Git pull all repos (garnet, valkey, dragonfly, redis, memtier, AzureBench) |
-| `create` | Provision the VMSS from `vmss.bicep`. Confirms the active tenant/subscription/resource group, offers to generate a missing machine-local `vmss-parameters.json` through `01-resources/deploy-common-resources.ps1 -Action stage`, and validates its NSG, VNet, subnets, PPG, locations, subscription, and resource group before deployment. Staging also copies manifest-declared public keys from the local `basePath` (normally `%USERPROFILE%\.ssh`) into the git-ignored security cache. Explicit `-ParametersFile` inputs are never overwritten. Create re-syncs those keys before deployment, inline-discovers the Key Vault, and grants the VMSS managed identity secret-get access. Add `-GrantStorageAccess` to also grant Storage Blob Data Reader (requires **Owner** / **User Access Administrator**). Remaining VM inputs are prompted by az |
+| `create` | Provision the VMSS from `vmss.bicep`. Confirms the active tenant/subscription/resource group, offers to generate a missing machine-local `vmss-parameters.json` through `01-resources/deploy-common-resources.ps1 -Action stage`, and validates its NSG, VNet, subnets, PPG, locations, subscription, and resource group before deployment. Staging also copies manifest-declared public keys from the local `basePath` (normally `%USERPROFILE%\.ssh`) into the git-ignored security cache. Explicit `-ParametersFile` inputs are never overwritten. Create re-syncs those keys before deployment, inline-discovers the Key Vault, and grants the VMSS managed identity secret-get access. Add `-GrantStorageAccess` to also grant Storage Blob Data Reader (requires **Owner** / **User Access Administrator**). Use `-WorkloadProfile vllm-dev` with `-HardwareProfile cpu` or `gpu` for vLLM dependencies; the existing family/core SKU selection remains available |
 | `rebuild` | Git pull + rebuild specified system (requires `-System` parameter) |
 | `deploy` | Fetch the tools bundle and run the full deployment workflow, including ordinary Valkey, TLS-enabled `valkey-server-tls`/`valkey-cli-tls`, and `redis-server-tls`/`redis-cli-tls` |
 | `install` | Git pull AzureBench + copy scripts to system paths only |
@@ -98,6 +101,14 @@ pwsh .\02-platform\manage-vmss.ps1 --help
 # Run full deployment workflow from scratch on all VMSS
 .\02-platform\manage-vmss.ps1 -rg <owner>-garnet -VmssName all -Action deploy
 
+# Create a CPU-only vLLM development VMSS (installs dependencies, does not build)
+.\02-platform\manage-vmss.ps1 -rg <owner>-garnet -Action create `
+  -DeploymentRole server -WorkloadProfile vllm-dev
+
+# Build vLLM for CPU (default backend)
+.\02-platform\manage-vmss.ps1 -rg <owner>-garnet -VmssName <name> `
+  -Action rebuild -System vllm -NoPull
+
 # The Valkey builds are installed side by side:
 # /usr/local/bin/valkey-server, /usr/local/bin/valkey-cli
 # /usr/local/bin/valkey-server-tls, /usr/local/bin/valkey-cli-tls
@@ -121,6 +132,7 @@ pwsh .\02-platform\manage-vmss.ps1 --help
 
 **Notes:**
 - Build branches are configured in `tools/manifest.json` and automatically substituted during rebuild
+- `-WorkloadProfile benchmark` is the default and preserves the existing Garnet/Valkey deployment
 - Supports multiple VMSS: `-VmssName server,client` or `-VmssName all`
 - SSH keys automatically resolved from `01-resources/security/manifest.json` (userKeys)
 - Results reported per-instance with success/failure summary
@@ -132,6 +144,76 @@ pwsh .\02-platform\manage-vmss.ps1 --help
 - `vmss.bicep` loads `cloud-config*.yml` with **relative** `loadTextContent`, so those files must stay together in this folder.
 - `manage-vmss.ps1` resolves `tools/manifest.json` (repos/build args) and `../01-resources/security/manifest.json` (SSH keys). It also dot-sources `../03-workload/bench/utils.ps1` for shared helpers, and drives VM-side scripts by their absolute guest paths (`/home/<user>/tools/...`).
 - **`tools/` is the VM guest asset tree, delivered as a tarball (not a git clone).** `manage-vmss.ps1 -Action publish-tools` packages it into `tools.tar.gz` and uploads it to the shared storage account; at boot, cloud-init fetches it via the `tools-sas-url` Key Vault secret, extracts it to `/home/<user>/tools`, and runs `tools/update.ps1 -Run`. Its subfolders express the provisioning-vs-workload split (`bootstrap/` is platform-owned; `cluster/`, `bench/`, `config/` are workload-owned).
+
+## vLLM development profile
+
+The `vllm-dev` workload profile uses the existing x64 VM family/core selection in
+`vmss.bicep`; no GPU SKU is hardcoded. Both Ubuntu 24.04 and Azure Linux 3 x64
+images are supported. The bootstrap selects `apt-get` or `tdnf`, uses the
+distribution's compatible Python 3 interpreter, and rejects ARM images.
+
+`-HardwareProfile cpu` (default) installs CPU development dependencies.
+`-HardwareProfile gpu` installs both CPU and CUDA dependencies and enables the
+Azure NVIDIA driver extension. Because the template's existing family list
+contains CPU SKUs only, pass the desired exact GPU SKU through `-VmSku`; this is
+a free-form override and does not add a SKU to the template's allowed list.
+
+Before creating the VMSS, publish the updated tools bundle:
+
+```powershell
+.\02-platform\manage-vmss.ps1 -rg <rg> -Action publish-tools
+.\02-platform\manage-vmss.ps1 -rg <rg> -Action create `
+  -DeploymentRole server -WorkloadProfile vllm-dev
+```
+
+Provisioning clones `https://github.com/vazois/vllm.git` (`main`) into
+`/home/guser/vllm` and installs dependencies without building vLLM:
+
+- Python 3.10-3.14, `uv`, CPU PyTorch, and vLLM common dependencies
+- CMake, Ninja, GCC/G++, ccache, NUMA and distribution-specific development libraries
+- Rust, vLLM build dependencies, lint dependencies, and backend-specific test dependencies
+- `.venv-cpu` on every vLLM development VM
+- `.venv-cuda`, CUDA 13.0, and the NVIDIA driver on GPU-profile VMs
+
+Build vLLM separately through `manage-vmss.ps1`. CPU is the deterministic
+default; `-Backend cuda` selects the CUDA environment:
+
+```powershell
+# Pull main and build a CPU wheel
+.\02-platform\manage-vmss.ps1 -rg <rg> -VmssName <name> `
+  -Action rebuild -System vllm
+
+# Build local VM changes without pulling
+.\02-platform\manage-vmss.ps1 -rg <rg> -VmssName <name> `
+  -Action rebuild -System vllm -Backend cpu -NoPull
+
+# Build CUDA on a GPU-profile VM
+.\02-platform\manage-vmss.ps1 -rg <rg> -VmssName <name> `
+  -Action rebuild -System vllm -Backend cuda -NoPull
+```
+
+Each build produces a backend-specific wheel under `~/vllm/dist/<backend>/` and
+installs it into `.venv-<backend>`. CPU and CUDA dependencies and installed
+wheels therefore remain isolated.
+
+After connecting over SSH:
+
+```bash
+source /etc/profile.d/vllm-dev.sh
+use-vllm-cpu
+cd ~/vllm
+python -c "import torch, vllm; print(vllm.__version__, torch.__version__)"
+pytest -q tests/entrypoints/launchers/test_cli_args.py
+
+# On a GPU-profile VM, after building the CUDA backend:
+use-vllm-cuda
+python -c "import torch; print(torch.cuda.get_device_name(0))"
+```
+
+A GPU-profile VM can use either environment on demand. CPU mode supports API,
+scheduler, tokenizer, model-configuration, and CPU backend development. CUDA
+mode additionally covers CUDA kernels, NCCL, GPU memory behavior, and GPU
+performance.
 
 ## NOTES
 

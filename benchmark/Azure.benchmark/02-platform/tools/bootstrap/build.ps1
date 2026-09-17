@@ -1,7 +1,7 @@
 #!/usr/bin/env pwsh
 <#
 .SYNOPSIS
-    Build and install a benchmark system: redis, valkey, garnet, resp-bench, or memtier.
+    Build and install a benchmark system or a selected vLLM backend.
 
 .DESCRIPTION
     PowerShell port of build.sh. Targets Linux VMSS instances (invokes native
@@ -15,11 +15,14 @@
     build.ps1 garnet main
     build.ps1 resp-bench
     build.ps1 memtier
+    build.ps1 vllm -Backend cpu
+    build.ps1 vllm -Backend cuda
 #>
 param(
     [Parameter(Position = 0, Mandatory = $true)][string]$System,
     [Parameter(Position = 1)][string]$Branch = '',
-    [Parameter(Position = 2)][string]$Tls = ''
+    [Parameter(Position = 2)][string]$Tls = '',
+    [ValidateSet('cpu', 'cuda')][string]$Backend = 'cpu'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -51,6 +54,7 @@ $garnetDir = Get-RepoPath 'garnet'
 $valkeyDir = Get-RepoPath 'valkey'
 $redisDir = Get-RepoPath 'redis'
 $memtierDir = Get-RepoPath 'memtier'
+$vllmDir = Get-RepoPath 'vllm'
 
 function Get-Rid {
     $arch = (& uname -m).Trim()
@@ -191,14 +195,112 @@ function Build-RespBench {
     Write-Host "Installed at $INSTALL_DIR/resp-bench/Resp.benchmark"
 }
 
+function Build-Vllm {
+    if (-not (Test-Path "$vllmDir/pyproject.toml")) {
+        throw "vLLM checkout not found at $vllmDir. Deploy the vllm-dev workload profile first."
+    }
+
+    if ($Branch) {
+        Write-Host "==== Checking out vLLM $Branch ===="
+        Invoke-Git @('-C', $vllmDir, 'fetch', '--all', '--tags')
+        Invoke-Git @('-C', $vllmDir, 'checkout', $Branch, '--')
+        Invoke-Git @('-C', $vllmDir, 'reset', '--hard', $Branch, '--')
+    }
+
+    $venvDir = "$vllmDir/.venv-$Backend"
+    $python = "$venvDir/bin/python"
+    $uv = "$venvDir/bin/uv"
+    if (-not (Test-Path $python) -or -not (Test-Path $uv)) {
+        throw "The $Backend dependency environment is missing at $venvDir. Re-run setup-vllm-dependencies.ps1 with the appropriate hardware profile."
+    }
+
+    if ($Backend -eq 'cuda') {
+        $nvcc = '/usr/local/cuda-13.0/bin/nvcc'
+        if (-not (Get-Command nvidia-smi -ErrorAction SilentlyContinue)) {
+            throw 'The NVIDIA driver is unavailable. CUDA builds require a GPU hardware profile.'
+        }
+        & nvidia-smi 2>$null | Out-Null
+        if ($LASTEXITCODE -ne 0) {
+            throw 'nvidia-smi failed. Verify that the Azure NVIDIA driver extension completed.'
+        }
+        if (-not (Test-Path $nvcc)) {
+            throw "CUDA compiler nvcc is unavailable at $nvcc."
+        }
+    }
+
+    $distDir = "$vllmDir/dist/$Backend"
+    foreach ($generatedPath in @("$vllmDir/build", $distDir)) {
+        if (Test-Path $generatedPath) {
+            Remove-Item $generatedPath -Recurse -Force
+        }
+    }
+    New-Item -ItemType Directory -Path $distDir -Force | Out-Null
+    & chown -R "${DEPLOY_USER}:${DEPLOY_USER}" "$vllmDir/dist"
+
+    $buildEnv = @(
+        "HOME=$USER_HOME",
+        "PATH=$venvDir/bin:$USER_HOME/.cargo/bin:/usr/local/cuda-13.0/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+        "VLLM_TARGET_DEVICE=$Backend",
+        "MAX_JOBS=$cores"
+    )
+    if ($Backend -eq 'cuda') {
+        $buildEnv += 'CUDA_HOME=/usr/local/cuda-13.0'
+    }
+
+    Write-Host "==== Building vLLM backend: $Backend ===="
+    Push-Location $vllmDir
+    try {
+        & sudo -u $DEPLOY_USER env @buildEnv $python setup.py bdist_wheel --dist-dir $distDir
+        if ($LASTEXITCODE -ne 0) {
+            throw "vLLM $Backend wheel build failed."
+        }
+    }
+    finally {
+        Pop-Location
+    }
+
+    $wheel = Get-ChildItem -Path $distDir -Filter '*.whl' |
+        Sort-Object LastWriteTime -Descending |
+        Select-Object -First 1
+    if (-not $wheel) {
+        throw "vLLM $Backend build did not produce a wheel."
+    }
+
+    & sudo -u $DEPLOY_USER env @buildEnv $uv pip install --python $python `
+        --force-reinstall --no-deps $wheel.FullName
+    if ($LASTEXITCODE -ne 0) {
+        throw "Failed to install the vLLM $Backend wheel."
+    }
+
+    $validation = if ($Backend -eq 'cuda') {
+        "import torch, vllm; assert torch.cuda.is_available(); print(vllm.__version__, torch.cuda.get_device_name(0))"
+    }
+    else {
+        "import torch, vllm; print(vllm.__version__, torch.__version__)"
+    }
+    Push-Location $USER_HOME
+    try {
+        & sudo -u $DEPLOY_USER env @buildEnv $python -c $validation
+        if ($LASTEXITCODE -ne 0) {
+            throw "vLLM $Backend validation failed."
+        }
+    }
+    finally {
+        Pop-Location
+    }
+
+    Write-Host "==== vLLM $Backend build complete: $($wheel.FullName) ===="
+}
+
 switch ($System) {
     'redis' { Build-ValkeyRedis $redisDir }
     'valkey' { Build-ValkeyRedis $valkeyDir }
     'garnet' { Build-Garnet }
     'resp-bench' { Build-RespBench }
     'memtier' { Build-Memtier }
+    'vllm' { Build-Vllm }
     default {
-        Write-Host "Unknown system: $System (use redis, valkey, garnet, resp-bench, or memtier)"
+        Write-Host "Unknown system: $System (use redis, valkey, garnet, resp-bench, memtier, or vllm)"
         exit 1
     }
 }

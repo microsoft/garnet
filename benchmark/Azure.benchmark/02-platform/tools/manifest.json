@@ -32,6 +32,15 @@
       "url": "https://github.com/redis/memtier_benchmark",
       "path": "/home/guser/memtier",
       "branch": "master"
+    },
+    {
+      "name": "vllm",
+      "url": "https://github.com/vazois/vllm.git",
+      "path": "/home/guser/vllm",
+      "branch": "main",
+      "profiles": [
+        "vllm-dev"
+      ]
     }
   ],
   "scripts": [
@@ -109,6 +118,11 @@
       "src": "bootstrap/list-ips.ps1",
       "dst": "/usr/local/bin/list-ips.ps1",
       "mode": "755"
+    },
+    {
+      "src": "bootstrap/setup-vllm-dependencies.ps1",
+      "dst": "/opt/deploy-actions/setup-vllm-dependencies.ps1",
+      "mode": "755"
     }
   ],
   "runcmd": [
@@ -120,7 +134,19 @@
     {
       "run": "clone-repos.ps1",
       "sudo": false,
-      "args": ""
+      "args": "",
+      "profiles": [
+        "benchmark",
+        "vllm-dev"
+      ]
+    },
+    {
+      "run": "setup-vllm-dependencies.ps1",
+      "sudo": true,
+      "args": "",
+      "profiles": [
+        "vllm-dev"
+      ]
     },
     {
       "run": "build.ps1",

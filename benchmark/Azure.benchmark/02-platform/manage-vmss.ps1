@@ -30,7 +30,19 @@
 
 .PARAMETER System
     System to rebuild (required when Action=rebuild).
-    Valid: garnet, valkey, resp-bench, memtier
+    Valid: garnet, valkey, resp-bench, memtier, vllm
+
+.PARAMETER Backend
+    vLLM build backend used by Action=rebuild: cpu (default) or cuda.
+
+.PARAMETER WorkloadProfile
+    Guest software profile used by Action=create. The default benchmark profile
+    preserves the existing deployment. vllm-dev installs vLLM development
+    dependencies for the selected hardware profile on Ubuntu or Azure Linux x64.
+
+.PARAMETER HardwareProfile
+    Hardware dependencies installed for a vllm-dev deployment. cpu prepares
+    CPU development only; gpu prepares both CPU and CUDA development.
 
 .PARAMETER SshUser
     SSH username (default: guser)
@@ -74,8 +86,11 @@ param(
     [ValidateSet('refresh', 'rebuild', 'deploy', 'install', 'ping', 'start', 'stop', 'restart', 'list', 'discover', 'create', 'push-keys', 'publish-tools')]
     [string]$Action = 'refresh',
 
-    [ValidateSet('garnet', 'valkey', 'resp-bench', 'memtier')]
+    [ValidateSet('garnet', 'valkey', 'resp-bench', 'memtier', 'vllm')]
     [string]$System,
+
+    [ValidateSet('cpu', 'cuda')]
+    [string]$Backend = 'cpu',
 
     [int]$MaxScan = 0,
 
@@ -91,6 +106,14 @@ param(
 
     [ValidateSet('server', 'client')]
     [string]$DeploymentRole,
+
+    [ValidateSet('benchmark', 'vllm-dev')]
+    [string]$WorkloadProfile = 'benchmark',
+
+    [ValidateSet('cpu', 'gpu')]
+    [string]$HardwareProfile = 'cpu',
+
+    [string]$VmSku,
 
     [string]$ToolsPath,
 
@@ -132,8 +155,9 @@ if ($Help -or -not $rg) {
     Write-Host "                      create         - deploy the VMSS from $TemplateFile (auto-discovers KV + SSH keys; storage RBAC via -GrantStorageAccess)"
     Write-Host "                      push-keys      - push authorized_keys (security/*.pub) to running instances via run-command"
     Write-Host "                      publish-tools  - package tools/ into a tarball and upload it to the shared storage account (blob for SAS delivery)"
-    Write-Host "  -System <name>      System to rebuild: garnet, valkey, resp-bench, memtier"
+    Write-Host "  -System <name>      System to rebuild: garnet, valkey, resp-bench, memtier, vllm"
     Write-Host "                      Required when -Action rebuild"
+    Write-Host "  -Backend <name>     vLLM build backend: cpu (default) or cuda"
     Write-Host "  -MaxScan <n>        Cap subnet-scan probes for -Action discover (0 = unlimited)"
     Write-Host "  -Ref <commit>       Rebuild from a specific commit/tag/branch (fetch + git reset --hard)"
     Write-Host "                      Only valid with -Action rebuild; overrides -Force/-NoPull pull behavior"
@@ -142,6 +166,9 @@ if ($Help -or -not $rg) {
     Write-Host "  -TemplateFile <p>   Bicep template for -Action create (default: vmss.bicep)"
     Write-Host "  -DeploymentName <n> Deployment name for -Action create (default: timestamp yyyy-MM-dd-HH-mm)"
     Write-Host "  -DeploymentRole <r> VMSS role for -Action create: server or client (required)"
+    Write-Host "  -WorkloadProfile <p> Guest software profile for -Action create: benchmark or vllm-dev"
+    Write-Host "  -HardwareProfile <p> vLLM hardware dependencies for -Action create: cpu or gpu"
+    Write-Host "  -VmSku <name>        Optional exact VM SKU override; required for the current GPU workflow"
     Write-Host "  -ToolsPath <p>      tools/ directory to package for -Action publish-tools (default: .\tools)"
     Write-Host "  -ContainerName <c>  Blob container for -Action publish-tools (default: tools)"
     Write-Host "  -ToolsBlobName <n>  Blob name for -Action publish-tools (default: tools.tar.gz)"
@@ -162,6 +189,9 @@ if ($Help -or -not $rg) {
     Write-Host "  .\manage-vmss.ps1 -rg <owner>-garnet -VmssName server -Action ping"
     Write-Host "  .\manage-vmss.ps1 -rg <owner>-garnet -VmssName server -Action rebuild -System garnet -Ref a1b2c3d"
     Write-Host "  .\manage-vmss.ps1 -rg <owner>-garnet -Action create -DeploymentRole server"
+    Write-Host "  .\manage-vmss.ps1 -rg <owner>-garnet -Action create -DeploymentRole server -WorkloadProfile vllm-dev"
+    Write-Host "  .\manage-vmss.ps1 -rg <owner>-garnet -Action create -DeploymentRole server -WorkloadProfile vllm-dev -HardwareProfile gpu -VmSku <gpu-sku>"
+    Write-Host "  .\manage-vmss.ps1 -rg <owner>-garnet -VmssName server -Action rebuild -System vllm -Backend cuda"
     Write-Host "  .\manage-vmss.ps1 -rg <owner>-garnet -Action publish-tools"
     Write-Host "  .\manage-vmss.ps1 -rg <owner>-garnet -VmssName server -Action push-keys"
     Write-Host ""
@@ -429,6 +459,14 @@ if ($Action -eq 'create') {
         Write-CreateError "-DeploymentRole is required for VMSS creation. Specify 'server' or 'client'."
         exit 1
     }
+    if ($WorkloadProfile -ne 'vllm-dev' -and $HardwareProfile -ne 'cpu') {
+        Write-CreateError "-HardwareProfile gpu is only valid with -WorkloadProfile vllm-dev."
+        exit 1
+    }
+    if ($HardwareProfile -eq 'gpu' -and -not $VmSku) {
+        Write-CreateError "-VmSku is required with -HardwareProfile gpu because no GPU SKU is hardcoded in vmss.bicep."
+        exit 1
+    }
 
     $templatePath = if ([System.IO.Path]::IsPathRooted($TemplateFile)) {
         $TemplateFile
@@ -583,6 +621,9 @@ if ($Action -eq 'create') {
     Write-Host "  SSH keys        : $sshKeyCount ($($keySync.ResolvedNames -join ', '))"
     Write-Host "  SSH key source  : $($sshManifest.BasePath) (synced to security cache)"
     Write-Host "  Deployment role : $DeploymentRole"
+    Write-Host "  Workload profile: $WorkloadProfile"
+    Write-Host "  Hardware profile: $HardwareProfile"
+    if ($VmSku) { Write-Host "  VM SKU override : $VmSku" }
     Write-Host "  Template        : $TemplateFile"
     Write-Host "  Parameters      : $ParametersFile"
     Write-Host "  Deployment name : $DeploymentName"
@@ -594,8 +635,10 @@ if ($Action -eq 'create') {
         '--name', $DeploymentName,
         '--template-file', $templatePath,
         '--parameters', "@$paramsPath",
-        '--parameters', "keyVaultName=$kv", "deploymentRole=$DeploymentRole"
+        '--parameters', "keyVaultName=$kv", "deploymentRole=$DeploymentRole", `
+        "workloadProfile=$WorkloadProfile", "hardwareProfile=$HardwareProfile"
     )
+    if ($VmSku) { $deployArgs += "vmSize=$VmSku" }
     if ($GrantStorageAccess) { $deployArgs += "storageAccountName=$st" }
     if ($sshParamsFile) { $deployArgs += @('--parameters', "@$sshParamsFile") }
 
@@ -689,7 +732,7 @@ if ($Action -eq 'publish-tools') {
 
 # Validate Action and System parameter combination
 if ($Action -eq 'rebuild' -and -not $System) {
-    Write-Error "Action 'rebuild' requires -System parameter (garnet, valkey, resp-bench, or memtier)"
+    Write-Error "Action 'rebuild' requires -System parameter (garnet, valkey, resp-bench, memtier, or vllm)"
     exit 1
 }
 
@@ -1320,7 +1363,7 @@ function Get-SshCommand {
             $pullCommands = $nodeManifest.repos | ForEach-Object {
                 $branch = if ($_.branch -is [array]) { $_.branch[0] } else { $_.branch }
                 $pull = Get-GitPull -branch $branch
-                "cd $($_.path) && echo '[$($_.name)]:' && $pull"
+                "if [ -d '$($_.path)/.git' ]; then cd '$($_.path)' && echo '[$($_.name)]:' && $pull; fi"
             }
 
             $dnsRestart = "sudo resolvectl flush-caches 2>/dev/null; sudo systemctl restart systemd-resolved 2>/dev/null; nslookup github.com >/dev/null 2>&1 || sleep 3"
@@ -1336,16 +1379,21 @@ function Get-SshCommand {
             }
 
             $nodeManifest = Get-Content $manifestFile -Raw | ConvertFrom-Json
-            $buildEntry = $nodeManifest.runcmd | Where-Object {
-                $_.run -eq 'build.ps1' -and $_.args -match "^$System\b"
-            } | Select-Object -First 1
-
-            if (-not $buildEntry) {
-                Write-Error "No build entry found in manifest for system '$System'"
-                exit 1
+            if ($System -eq 'vllm') {
+                $buildEntry = $null
+                $buildArgs = 'vllm'
             }
+            else {
+                $buildEntry = $nodeManifest.runcmd | Where-Object {
+                    $_.run -eq 'build.ps1' -and $_.args -match "^$System\b"
+                } | Select-Object -First 1
 
-            $buildArgs = $buildEntry.args
+                if (-not $buildEntry) {
+                    Write-Error "No build entry found in manifest for system '$System'"
+                    exit 1
+                }
+                $buildArgs = $buildEntry.args
+            }
 
             # Map system to repo (resp-bench is built from garnet)
             $repoName = switch ($System) {
@@ -1362,7 +1410,7 @@ function Get-SshCommand {
 
             # Resolve branch: index into repos[].branch array, or use string directly
             $branchField = $repoEntry.branch
-            if ($buildEntry.PSObject.Properties['branch'] -and $null -ne $buildEntry.branch -and $branchField -is [array]) {
+            if ($buildEntry -and $buildEntry.PSObject.Properties['branch'] -and $null -ne $buildEntry.branch -and $branchField -is [array]) {
                 $buildBranch = $branchField[$buildEntry.branch]
             } elseif ($branchField -is [array]) {
                 $buildBranch = $branchField[0]
@@ -1375,6 +1423,9 @@ function Get-SshCommand {
             # override the explicit ref we just checked out)
             if (-not $NoPull -and -not $Ref -and $buildArgs -match '^\s*\S+\s*$') {
                 $buildArgs = "$($buildArgs.Trim()) $buildBranch"
+            }
+            if ($System -eq 'vllm') {
+                $buildArgs = "$buildArgs -Backend $Backend"
             }
 
             $repoPath = $repoEntry.path

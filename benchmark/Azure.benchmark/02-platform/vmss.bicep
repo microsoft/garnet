@@ -16,6 +16,20 @@ param instanceCount int
 ])
 param deploymentRole string
 
+@description('Guest software profile installed during bootstrap.')
+@allowed([
+  'benchmark'
+  'vllm-dev'
+])
+param workloadProfile string = 'benchmark'
+
+@description('Hardware dependency profile installed for vLLM development.')
+@allowed([
+  'cpu'
+  'gpu'
+])
+param hardwareProfile string = 'cpu'
+
 // Server and client VMSS share accSubnet for their eth1 (data-plane) NICs.
 // deploymentRole is forwarded independently of vmssName so role-specific
 // bootstrap and secret distribution never depend on naming conventions.
@@ -86,6 +100,9 @@ param vmFamily string
 })
 param vmCores int
 
+@description('Optional exact Azure VM size. Overrides the synthesized family/core SKU without adding it to the template SKU list.')
+param vmSize string = ''
+
 @description('Availability zone strategy: "single" pins all instances to zone 1 and uses a Proximity Placement Group for lowest inter-node latency; "all" spreads instances across zones 1, 2 and 3 for higher resilience/capacity (no PPG, since a PPG requires a single zone); "none" assigns no availability zone (required for regions without AZ support, e.g. canadaeast) while still using a Proximity Placement Group for low latency.')
 @allowed([
   'single'
@@ -107,12 +124,13 @@ var familyName = split(vmFamily, ':')[0]
 // e.g. familyName "Fs_v2" + cores 72 → series "F" + suffix "s_v2" → "Standard_F72s_v2"
 var seriesLetter = substring(familyName, 0, 1)
 var suffixAndVersion = substring(familyName, 1, max(0, length(familyName) - 1))
-var vmSKU = familyName == 'DSv2' ? 'Standard_DS5_v2' : 'Standard_${seriesLetter}${vmCores}${suffixAndVersion}'
+var synthesizedVmSKU = familyName == 'DSv2' ? 'Standard_DS5_v2' : 'Standard_${seriesLetter}${vmCores}${suffixAndVersion}'
+var vmSKU = empty(vmSize) ? synthesizedVmSKU : vmSize
 
 // ARM-based SKUs do not support Trusted Launch.
 // x64 families: E_v3, Fs_v2, Fas_v6, Ds_v6, Dlds_v6, Es_v6, DSv2
 var x64Families = ['E_v3', 'E_v4', 'E_v5', 'Fs_v2', 'Fas_v6', 'Ds_v6', 'Dds_v6', 'Dlds_v6', 'Es_v6', 'Dds_v7', 'Dlds_v7', 'DSv2', 'Bs_v2', 'Bas_v2', 'Las_v3', 'Ls_v3', 'Las_v4', 'Ls_v4']
-var supportsTrustedLaunch = contains(x64Families, familyName)
+var supportsTrustedLaunch = hardwareProfile != 'gpu' && contains(x64Families, familyName)
 
 // Non-'s' E-series (E_v3/E_v4/E_v5) do not support Premium storage; fall back
 // the OS disk to Standard_LRS when a Premium type was requested for them.
@@ -272,8 +290,8 @@ var isAzureLinux = linuxImage.publisher == 'microsoftcblmariner'
 // Load cloud-config templates and inject non-secret deployment metadata.
 var cloudInitAzureLinuxRaw = loadTextContent('cloud-config-azurelinux.yml')
 var cloudInitUbuntuRaw = loadTextContent('cloud-config.yml')
-var cloudInitAzureLinuxFinal = replace(replace(replace(cloudInitAzureLinuxRaw, '__KEYVAULT_NAME__', keyVaultName), '__TOOLS_SAS_SECRET__', toolsSasSecretName), '__DEPLOYMENT_ROLE__', deploymentRole)
-var cloudInitUbuntuFinal = replace(replace(replace(cloudInitUbuntuRaw, '__KEYVAULT_NAME__', keyVaultName), '__TOOLS_SAS_SECRET__', toolsSasSecretName), '__DEPLOYMENT_ROLE__', deploymentRole)
+var cloudInitAzureLinuxFinal = replace(replace(replace(replace(replace(cloudInitAzureLinuxRaw, '__KEYVAULT_NAME__', keyVaultName), '__TOOLS_SAS_SECRET__', toolsSasSecretName), '__DEPLOYMENT_ROLE__', deploymentRole), '__WORKLOAD_PROFILE__', workloadProfile), '__HARDWARE_PROFILE__', hardwareProfile)
+var cloudInitUbuntuFinal = replace(replace(replace(replace(replace(cloudInitUbuntuRaw, '__KEYVAULT_NAME__', keyVaultName), '__TOOLS_SAS_SECRET__', toolsSasSecretName), '__DEPLOYMENT_ROLE__', deploymentRole), '__WORKLOAD_PROFILE__', workloadProfile), '__HARDWARE_PROFILE__', hardwareProfile)
 
 var cloudInitUbuntu = base64(cloudInitUbuntuFinal)
 var cloudInitAzureLinux = base64(cloudInitAzureLinuxFinal)
@@ -304,6 +322,8 @@ var tagsProfile = {
   Environment: '/NonProd'
   Root: vmssName
   deploymentRole: deploymentRole
+  workloadProfile: workloadProfile
+  hardwareProfile: hardwareProfile
 }
 
 var networkProfileConfig = {
@@ -540,6 +560,19 @@ resource linuxGuestConfigExtension 'Microsoft.Compute/virtualMachineScaleSets/ex
   }
 }
 
+resource linuxGpuDriverExtension 'Microsoft.Compute/virtualMachineScaleSets/extensions@2020-12-01' = if (operatingSystem == 'linux' && workloadProfile == 'vllm-dev' && hardwareProfile == 'gpu') {
+  parent: linuxVmss
+  name: 'NvidiaGpuDriverLinux'
+  properties: {
+    publisher: 'Microsoft.HpcCompute'
+    type: 'NvidiaGpuDriverLinux'
+    typeHandlerVersion: '1.10'
+    autoUpgradeMinorVersion: true
+    enableAutomaticUpgrade: true
+    settings: {}
+  }
+}
+
 resource windowsGuestConfigExtension 'Microsoft.Compute/virtualMachineScaleSets/extensions@2020-12-01' = if (operatingSystem == 'windows') {
   parent: windowsVmss
   name: 'AzurePolicyforWindows'
@@ -578,6 +611,9 @@ resource kvAccessPolicy 'Microsoft.KeyVault/vaults/accessPolicies@2023-07-01' = 
 
 output vmssResourceId string = operatingSystem == 'linux' ? linuxVmss.id : windowsVmss.id
 output deploymentRole string = deploymentRole
+output workloadProfile string = workloadProfile
+output hardwareProfile string = hardwareProfile
+output vmSize string = vmSKU
 
 // Grant the VMSS managed identity read access to the tools tarball blob so it can
 // pull tools.tar.gz from the shared storage account at provisioning/update time.
