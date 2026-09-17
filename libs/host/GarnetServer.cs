@@ -564,23 +564,35 @@ namespace Garnet
 
         private void InternalDispose()
         {
-            // Phase 1: Stop listening on all servers to free ports immediately.
-            for (var i = 0; i < servers.Length; i++)
-                servers[i]?.Close();
+            // A thread parked in a test injection point holds a pooled network buffer, and the drain below
+            // waits for every such buffer to come back. Suspending covers both waiters already parked and
+            // requests that reach an injection point while this runs, so shutdown cannot be blocked by an
+            // injection point whose owner is already gone. Compiled out in Release.
+            ExceptionInjectionHelper.SuspendParking();
+            try
+            {
+                // Phase 1: Stop listening on all servers to free ports immediately.
+                for (var i = 0; i < servers.Length; i++)
+                    servers[i]?.Close();
 
-            // Phase 2: Drain active handlers and clean up remaining resources.
-            for (var i = 0; i < servers.Length; i++)
-                servers[i]?.Dispose();
+                // Phase 2: Drain active handlers and clean up remaining resources.
+                for (var i = 0; i < servers.Length; i++)
+                    servers[i]?.Dispose();
 
-            // Phase 3: Dispose the provider (storage engine shutdown — may take time).
-            Provider?.Dispose();
+                // Phase 3: Dispose the provider (storage engine shutdown — may take time).
+                Provider?.Dispose();
 
-            subscribeBroker?.Dispose();
-            storeEpoch?.Dispose();
-            pubSubEpoch?.Dispose();
-            opts.AuthSettings?.Dispose();
-            if (disposeLoggerFactory)
-                loggerFactory?.Dispose();
+                subscribeBroker?.Dispose();
+                storeEpoch?.Dispose();
+                pubSubEpoch?.Dispose();
+                opts.AuthSettings?.Dispose();
+                if (disposeLoggerFactory)
+                    loggerFactory?.Dispose();
+            }
+            finally
+            {
+                ExceptionInjectionHelper.ResumeParking();
+            }
         }
 
         private static void DeleteDirectory(string path)
