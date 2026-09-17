@@ -10,7 +10,7 @@ using System.Threading;
 
 namespace Tsavorite.core
 {
-    internal enum RecoveryPhase : byte { None = 0, Pass1 = 1, Pass2 = 2 }
+    internal enum RecoveryPhase : byte { None = 0, Pass1 = 1 }
 
     /// <summary>
     /// Result of async page read

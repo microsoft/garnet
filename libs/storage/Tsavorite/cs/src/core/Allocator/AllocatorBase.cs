@@ -2178,15 +2178,15 @@ namespace Tsavorite.core
         /// <summary>Read pages from specified device(s) for recovery, with no output of the countdown event (but it is still created in the
         ///     <see cref="PageAsyncReadResult{TContext}"/> and thus must be Dispose()d).</summary>
         internal void AsyncReadPagesForRecovery<TContext>(int readPageStart, int numPages, long untilAddress, TContext context,
-            int devicePageOffset = 0, IDevice logDevice = null, IDevice objectLogDevice = null, RecoveryPhase recoveryPhase = RecoveryPhase.Pass1,
+            int devicePageOffset = 0, IDevice logDevice = null, RecoveryPhase recoveryPhase = RecoveryPhase.Pass1,
             long mergeFromAddress = -1)
-            => AsyncReadPagesForRecovery(readPageStart, numPages, untilAddress, context, out _, devicePageOffset, logDevice, objectLogDevice,
+            => AsyncReadPagesForRecovery(readPageStart, numPages, untilAddress, context, out _, devicePageOffset, logDevice,
                 recoveryPhase, mergeFromAddress);
 
         /// <summary>Read pages from specified device for recovery, returning the countdown event</summary>
         [MethodImpl(MethodImplOptions.NoInlining)]
         private void AsyncReadPagesForRecovery<TContext>(int readPageStart, int numPages, long untilAddress, TContext context,
-            out CountdownEvent completed, int devicePageOffset = 0, IDevice logDevice = null, IDevice objectLogDevice = null,
+            out CountdownEvent completed, int devicePageOffset = 0, IDevice logDevice = null,
             RecoveryPhase recoveryPhase = RecoveryPhase.Pass1, long mergeFromAddress = -1)
         {
             var usedDevice = logDevice ?? this.device;
@@ -2257,13 +2257,6 @@ namespace Tsavorite.core
 
                 asyncResult.destinationPtr = destinationPtr;
 
-                if (recoveryPhase == RecoveryPhase.Pass2)
-                {
-                    // Create separate readBuffers for each main-log page, as each page launches its own async read and callbacks are on different threads.
-                    // Do *not* use "using" here as we need it to survive to the ReadAsync AsyncReadPagesForRecoveryCallback.
-                    asyncResult.readBuffers = CreateCircularReadBuffers(objectLogDevice, logger);
-                }
-
                 // Call the overridden ReadAsync for the derived allocator class
                 try
                 {
@@ -2272,8 +2265,6 @@ namespace Tsavorite.core
                 catch
                 {
                     asyncResult.Free();
-                    asyncResult.readBuffers?.Dispose();
-                    asyncResult.readBuffers = null;
                     throw;
                 }
             }

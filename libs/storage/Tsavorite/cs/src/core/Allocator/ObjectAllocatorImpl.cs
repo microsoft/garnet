@@ -1429,13 +1429,12 @@ namespace Tsavorite.core
                 return;
             }
 
-            // If this is Recovery Pass 1 we skip object deserialization (frame reads are in RecoveryPhase.None).
+            // Recovery Pass 1 skips object deserialization; those objects are loaded afterwards by LoadObjectsForRecoveryPass2.
             if (result.recoveryPhase != RecoveryPhase.Pass1)
             {
-                var objectIdMapToUse = result.recoveryPhase != RecoveryPhase.None ? objectPages[result.page % BufferSize].objectIdMap : transientObjectIdMap;
-                // This callback is used for runtime reads and the RecoveryPhase.None post-recovery head read, which read the live current-format log
-                // (RecoveryPhase.Pass1 skips object deserialization above, and Pass2 is loaded via LoadObjectsForRecoveryPass2), so decode as current.
-                DeserializeObjectsOnPage((long)result.destinationPtr, result.maxAddressOffsetOnPage, objectIdMapToUse, result.readBuffers, HybridLogRecoveryInfo.CheckpointVersion);
+                // The remaining callers are runtime reads and the post-recovery head read (RecoveryPhase.None), which read the live
+                // current-format log into a transient map, so decode as current.
+                DeserializeObjectsOnPage((long)result.destinationPtr, result.maxAddressOffsetOnPage, transientObjectIdMap, result.readBuffers, HybridLogRecoveryInfo.CheckpointVersion);
             }
 
             // Call the "real" page read callback
