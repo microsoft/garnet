@@ -30,7 +30,9 @@ namespace Garnet.common
     ///   By ensuring all exclusive locks walk "up" we guarantee no two exclusive lock acquisitions end up waiting for each other.
     /// 
     /// Locks themselves are just ints, where a negative value indicates an exclusive lock and a positive value is the number of active readers.
-    /// Read locks are acquired optimistically, so actual lock values will fluctate above int.MinValue when an exclusive lock is held.
+    /// Shared locks are acquired optimistically, so actual lock values will fluctate above int.MinValue when an exclusive lock is held.
+    /// Exclusive locks being acquired non-blocking-ly, if enough attempts fail, will eventually set a hint bit to get shared lockers to back off.
+    ///   This hint bit is (1 &lt;&lt; 30), read lock attempts may push us above that temporarily.
     /// 
     /// The last set of optimizations is around cache lines coherency:
     ///   We assume cache lines of 64-bytes (the x86 default, which is also true for some [but not all] ARM processors) and size counters-per-core in multiples of that
@@ -126,6 +128,30 @@ namespace Garnet.common
         /// Generally correct for x86-derived processors, sometimes correct for ARM-derived ones.
         /// </summary>
         public const int CacheLineSizeBytes = 64;
+
+        /// <summary>
+        /// Value OR'd into a lock to hint that an exclusive lock is attempting to be acquired.
+        /// 
+        /// Needs to be extremely positive so shared locks don't reach it, but not so positive that
+        /// overflow is likely.
+        /// </summary>
+        private const int WaitingExclusiveHint = 1 << 30;
+
+        /// <summary>
+        /// Value set by exclusive locks - must be extremely negative as shared locks may unconditionally increment it
+        /// and then check its sign.
+        /// </summary>
+        private const int ExclusiveLockValue = int.MinValue;
+
+        /// <summary>
+        /// After this many failed (blocking) exclusive acquisition attempts, transition to using <see cref="WaitingExclusiveHint"/>.
+        /// </summary>
+        private const int ExclusiveHintAfterSpins = 8;
+
+        /// <summary>
+        /// Maximum number of times to spin in a (non-blocking) shared acqusition if <see cref="WaitingExclusiveHint"/> is seen.
+        /// </summary>
+        private const int MaxSharedHintSpins = 16;
 
         [ThreadStatic]
         private static int ProcessorHint;
@@ -235,9 +261,39 @@ namespace Garnet.common
                 Unsafe.SkipInit(out lockToken);
                 return false;
             }
+            else if (res > WaitingExclusiveHint)
+            {
+                // Shared lock, but an exclusive acquisition is waiting
+                _ = Interlocked.Decrement(ref acquireRef);
+
+                WaitForExclusiveSlowPath(ref acquireRef);
+
+                Unsafe.SkipInit(out lockToken);
+                return false;
+            }
 
             lockToken = LockToken.CreateShared(ix);
             return true;
+
+            // Slow path taken if we saw that an exclusive acquisition is waiting
+            //
+            // This will spin for a bit to give the exclusive acquisition time to advance
+            //
+            // We cannot block indefinitely without violating our contract.
+            //
+            // This path is unlikely on large SKUs or low load instances, and so is explicitly
+            // kept off the hot path
+            [MethodImpl(MethodImplOptions.NoInlining)]
+            static void WaitForExclusiveSlowPath(ref int acquireRef)
+            {
+                var spins = 0;
+                while (spins < MaxSharedHintSpins && Volatile.Read(ref acquireRef) >= WaitingExclusiveHint)
+                {
+                    spins++;
+
+                    _ = Thread.Yield();
+                }
+            }
         }
 
         /// <summary>
@@ -262,10 +318,30 @@ namespace Garnet.common
                     // Spin until we can grab this one
                     _ = Thread.Yield();
                 }
+                else if (res > WaitingExclusiveHint)
+                {
+                    // Shared lock, but an exclusive acquisition is waiting
+                    _ = Interlocked.Decrement(ref acquireRef);
+                    WaitForExclusiveSlowPath(ref acquireRef);
+                }
                 else
                 {
                     lockToken = LockToken.CreateShared(ix);
                     return;
+                }
+            }
+
+            // Slow path taken if we saw that an exclusive acquisition is waiting
+            //
+            // This will spin until the exclusive acquisition happens and the hint is cleared
+            // This path is unlikely on large SKUs or low load instances, and so is explicitly
+            // kept off the hot path
+            [MethodImpl(MethodImplOptions.NoInlining)]
+            static void WaitForExclusiveSlowPath(ref int acquireRef)
+            {
+                while (Volatile.Read(ref acquireRef) >= WaitingExclusiveHint)
+                {
+                    _ = Thread.Yield();
                 }
             }
         }
@@ -288,7 +364,7 @@ namespace Garnet.common
                     var releaseIx = CalculateIndex(hash, i);
 
                     ref var releaseRef = ref Unsafe.Add(ref countRef, releaseIx);
-                    while (Interlocked.CompareExchange(ref releaseRef, 0, int.MinValue) != int.MinValue)
+                    while (Interlocked.CompareExchange(ref releaseRef, 0, ExclusiveLockValue) != ExclusiveLockValue)
                     {
                         // Optimistic shared lock got us, back off and try again
                         _ = Thread.Yield();
@@ -310,7 +386,7 @@ namespace Garnet.common
                 for (var i = 0; i < lockCounts.Length; i++)
                 {
                     ref var releaseRef = ref lockCounts[i];
-                    while (Interlocked.CompareExchange(ref releaseRef, 0, int.MinValue) != int.MinValue)
+                    while (Interlocked.CompareExchange(ref releaseRef, 0, ExclusiveLockValue) != ExclusiveLockValue)
                     {
                         // Optimistic shared lock got us, back off and try again
                         _ = Thread.Yield();
@@ -334,7 +410,7 @@ namespace Garnet.common
                 var acquireIx = CalculateIndex(hash, i);
                 ref var acquireRef = ref Unsafe.Add(ref countRef, acquireIx);
 
-                if (Interlocked.CompareExchange(ref acquireRef, int.MinValue, 0) != 0)
+                if (Interlocked.CompareExchange(ref acquireRef, ExclusiveLockValue, 0) != 0)
                 {
                     // Failed, release previously acquired
                     for (var j = 0; j < i; j++)
@@ -342,7 +418,7 @@ namespace Garnet.common
                         var releaseIx = CalculateIndex(hash, j);
 
                         ref var releaseRef = ref Unsafe.Add(ref countRef, releaseIx);
-                        while (Interlocked.CompareExchange(ref releaseRef, 0, int.MinValue) != int.MinValue)
+                        while (Interlocked.CompareExchange(ref releaseRef, 0, ExclusiveLockValue) != ExclusiveLockValue)
                         {
                             // Optimistic shared lock got us, back off and try again
                             _ = Thread.Yield();
@@ -377,17 +453,73 @@ namespace Garnet.common
                 var acquireIx = CalculateIndex(hash, i);
 
                 ref var acquireRef = ref Unsafe.Add(ref countRef, acquireIx);
-                while (Interlocked.CompareExchange(ref acquireRef, int.MinValue, 0) != 0)
+
+                var spins = 0;
+                while (true)
                 {
+                    if (spins < ExclusiveHintAfterSpins)
+                    {
+                        if (Interlocked.CompareExchange(ref acquireRef, ExclusiveLockValue, 0) == 0)
+                        {
+                            // Acquired successfully
+                            break;
+                        }
+                    }
+                    else
+                    {
+                        // Was blocked too many times, start setting hints to block shared locks
+                        if (TryHintAndAcquireSlowPath(ref acquireRef))
+                        {
+                            // Acquired successfully, possibly after some hinting to block readers
+                            break;
+                        }
+                    }
+
                     // Optimistic shared lock got us, or conflict with some other excluive lock acquisition
                     //
                     // Backoff and try again
                     _ = Thread.Yield();
+
+                    spins++;
                 }
             }
 
             // Throwing away half the hash shouldn't affect correctness since we do the same thing when processing the full hash
             lockToken = LockToken.CreateExclusive((int)hash);
+
+            // Slow path where we (might) set a hint to block readers
+            //
+            // This path is most likely on small SKUs under high load, a hopefully rare combination,
+            // so we explicitly keep it off the hot path.
+            [MethodImpl(MethodImplOptions.NoInlining)]
+            static bool TryHintAndAcquireSlowPath(ref int acquireRef)
+            {
+                var oldValue = Volatile.Read(ref acquireRef);
+                if (oldValue == 0 && Interlocked.CompareExchange(ref acquireRef, ExclusiveLockValue, 0) == 0)
+                {
+                    return true;
+                }
+
+                if (oldValue > 0 && (oldValue & WaitingExclusiveHint) == 0)
+                {
+                    // Attempt to hint that we're waiting, which will block future acquisitons
+                    var hintedValue = oldValue | WaitingExclusiveHint;
+                    if (Interlocked.CompareExchange(ref acquireRef, hintedValue, oldValue) == oldValue)
+                    {
+                        // Successfully hinted, now we wait for a chance to take full lock
+
+                        while (Interlocked.CompareExchange(ref acquireRef, ExclusiveLockValue, WaitingExclusiveHint) != WaitingExclusiveHint)
+                        {
+                            // Shared locks which were active when hint added haven't been released yet
+                            _ = Thread.Yield();
+                        }
+
+                        return true;
+                    }
+                }
+
+                return false;
+            }
         }
 
         /// <summary>
@@ -401,7 +533,7 @@ namespace Garnet.common
             {
                 ref var acquireRef = ref lockCounts[i];
 
-                while (Interlocked.CompareExchange(ref acquireRef, int.MinValue, 0) != 0)
+                while (Interlocked.CompareExchange(ref acquireRef, ExclusiveLockValue, 0) != 0)
                 {
                     // Optimistic shared lock got us, or conflict with some other excluive lock acquisition
                     //
@@ -438,7 +570,7 @@ namespace Garnet.common
                 if (acquireIx == lockToken.token)
                 {
                     // Do the promote
-                    if (Interlocked.CompareExchange(ref acquireRef, int.MinValue, 1) != 1)
+                    if (Interlocked.CompareExchange(ref acquireRef, ExclusiveLockValue, 1) != 1)
                     {
                         // Failed, release previously acquired all of which are exclusive locks
                         for (var j = 0; j < i; j++)
@@ -446,7 +578,7 @@ namespace Garnet.common
                             var releaseIx = CalculateIndex(hash, j);
 
                             ref var releaseRef = ref Unsafe.Add(ref countRef, releaseIx);
-                            while (Interlocked.CompareExchange(ref releaseRef, 0, int.MinValue) != int.MinValue)
+                            while (Interlocked.CompareExchange(ref releaseRef, 0, ExclusiveLockValue) != ExclusiveLockValue)
                             {
                                 // Optimistic shared lock got us, back off and try again
                                 _ = Thread.Yield();
@@ -460,7 +592,7 @@ namespace Garnet.common
                 else
                 {
                     // Otherwise attempt an exclusive acquire
-                    if (Interlocked.CompareExchange(ref acquireRef, int.MinValue, 0) != 0)
+                    if (Interlocked.CompareExchange(ref acquireRef, ExclusiveLockValue, 0) != 0)
                     {
                         // Failed, release previously acquired - one of which MIGHT be the shared lock
                         for (var j = 0; j < i; j++)
@@ -469,7 +601,7 @@ namespace Garnet.common
                             var releaseTargetValue = releaseIx == lockToken.token ? 1 : 0;
 
                             ref var releaseRef = ref Unsafe.Add(ref countRef, releaseIx);
-                            while (Interlocked.CompareExchange(ref releaseRef, releaseTargetValue, int.MinValue) != int.MinValue)
+                            while (Interlocked.CompareExchange(ref releaseRef, releaseTargetValue, ExclusiveLockValue) != ExclusiveLockValue)
                             {
                                 // Optimistic shared lock got us, back off and try again
                                 _ = Thread.Yield();
