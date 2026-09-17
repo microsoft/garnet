@@ -94,6 +94,19 @@ namespace Garnet.test
         }
 
         /// <summary>
+        /// Slot 0's offset is 0, which is what every checkout that does not set the variable already uses, so
+        /// handing it to <c>auto</c> would produce a run with no isolation at all.
+        /// </summary>
+        [Test]
+        public void AutoNeverClaimsTheUnshiftedSlot()
+        {
+            Assert.That(TestUtils.MinAutoPortSlot, Is.GreaterThan(0),
+                "auto must not claim slot 0; its offset is 0, the port used by checkouts that set no slot.");
+            Assert.That(TestUtils.MinAutoPortSlot, Is.LessThanOrEqualTo(TestUtils.MaxPortSlot),
+                "There would be no slot left for auto to claim.");
+        }
+
+        /// <summary>
         /// The stride must not be a distance between two existing assignments, or one assignment under a slot
         /// would land exactly on another under a different slot. This is why the stride is not 1000: that is
         /// precisely the distance from GarnetTest to GarnetTestAlternate.

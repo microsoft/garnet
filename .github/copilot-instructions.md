@@ -66,8 +66,13 @@ unset keeps the upstream ports unchanged, which is what CI does.
 |-------|----------|
 | unset or empty | Upstream ports, unchanged. The CI path. |
 | `auto` | Claim (or rejoin) this checkout's slot. Use this locally. |
-| `0`-`7` | A specific slot, for debugging or a pinned port. |
+| `1`-`7` | A specific slot, for debugging or a pinned port. |
+| `0` | Upstream ports. `auto` never selects it, because a checkout that sets no slot is already there — see below. |
 | anything else | Fails immediately with a diagnostic. |
+
+Note that slot 0 gives *no* isolation: its offset is zero, so it lands on the same ports as any checkout that
+does not set the variable at all. `auto` skips it for that reason. Only set `GARNET_TEST_PORT_SLOT=0` when you
+deliberately want the upstream ports.
 
 Two further cautions when sharing a machine:
 

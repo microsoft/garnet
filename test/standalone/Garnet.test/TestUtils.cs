@@ -106,7 +106,6 @@ namespace Garnet.test
         /// Accepts <c>auto</c> to claim a slot for this checkout, or an integer in [0, <see cref="MaxPortSlot"/>].
         /// </summary>
         internal const string PortSlotEnvVar = "GARNET_TEST_PORT_SLOT";
-
         /// <summary>
         /// Distance between consecutive port slots. Must exceed the width of both port bands, otherwise slot n
         /// overlaps slot n+1. A stride of 1000 would be actively wrong: 33278 + 1000 is
@@ -119,6 +118,14 @@ namespace Garnet.test
         /// <see cref="EphemeralPortFloor"/>.
         /// </summary>
         internal const int MaxPortSlot = 7;
+
+        /// <summary>
+        /// Lowest slot <c>auto</c> will claim. Slot 0 is excluded because its offset is 0, which is the port
+        /// every checkout that does not set <see cref="PortSlotEnvVar"/> already uses, so claiming it would leave
+        /// the run exposed to exactly the collisions slots exist to prevent. Slot 0 stays reachable explicitly,
+        /// since pinning the upstream ports is occasionally useful.
+        /// </summary>
+        internal const int MinAutoPortSlot = 1;
 
         /// <summary>
         /// Ports reserved per assignment, matching the spacing convention of <see cref="TestPortAssignment"/> and
@@ -291,14 +298,14 @@ namespace Garnet.test
 
             // Rejoin a slot this checkout already owns. No bind probe here: another test host from this same
             // checkout may legitimately have those ports bound right now.
-            for (var slot = 0; slot <= MaxPortSlot; slot++)
+            for (var slot = MinAutoPortSlot; slot <= MaxPortSlot; slot++)
             {
                 if (string.Equals(ReadSlotOwner(dir, slot), checkoutKey, StringComparison.Ordinal))
                     return TakeSlot(dir, slot, checkoutKey, "rejoined");
             }
 
             // Otherwise take a slot that is unowned, or whose owning checkout has no live test hosts left.
-            for (var slot = 0; slot <= MaxPortSlot; slot++)
+            for (var slot = MinAutoPortSlot; slot <= MaxPortSlot; slot++)
             {
                 if (ReadSlotOwner(dir, slot) != null && HasLiveHolder(dir, slot))
                     continue;
@@ -314,8 +321,9 @@ namespace Garnet.test
             }
 
             throw new InvalidOperationException(
-                $"All {MaxPortSlot + 1} Garnet test port slots in '{dir}' are held by other checkouts. Finish or " +
-                $"terminate a run in another checkout, or set {PortSlotEnvVar} to an explicit free slot.");
+                $"All {MaxPortSlot - MinAutoPortSlot + 1} Garnet test port slots in '{dir}' are held by other " +
+                $"checkouts. Finish or terminate a run in another checkout, or set {PortSlotEnvVar} to an " +
+                $"explicit free slot.");
         }
 
         /// <summary>
