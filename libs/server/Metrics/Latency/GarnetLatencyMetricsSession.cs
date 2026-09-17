@@ -148,10 +148,12 @@ namespace Garnet.server
             try
             {
                 disposeLock.WriteLock();
-                if (metrics != null && metrics[idx].latency != null)
-                {
-                    metrics[idx].latency[PriorVersion].Reset();
-                }
+                var m = metrics;
+                if (m == null) return;
+
+                var histograms = m[idx].latency;
+                if (histograms != null)
+                    histograms[PriorVersion].Reset();
             }
             finally
             {
