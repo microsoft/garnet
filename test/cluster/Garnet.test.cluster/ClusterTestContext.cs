@@ -65,7 +65,7 @@ namespace Garnet.test.cluster
         public static void SetPort(ClusterPortAssignment port)
         {
             Port = (int)port + TestUtils.PortOffset;
-            TestUtils.EnsurePortAvailable(Port, port.ToString());
+            TestUtils.EnsureClusterPortsAvailable(Port, port.ToString());
         }
 
         public Random r = new();

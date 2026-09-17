@@ -12,6 +12,7 @@ using System.Net.NetworkInformation;
 using System.Net.Security;
 using System.Net.Sockets;
 using System.Runtime.CompilerServices;
+using System.Runtime.ExceptionServices;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
@@ -129,6 +130,12 @@ namespace Garnet.test
         internal const int MinAutoPortSlot = 1;
 
         /// <summary>
+        /// Ports a cluster sub-project can bind, one per node from its base. The largest cluster test today
+        /// creates 5 nodes; the headroom stays well inside <see cref="PortsPerAssignment"/>.
+        /// </summary>
+        internal const int MaxClusterNodesPerSubProject = 8;
+
+        /// <summary>
         /// Ports reserved per assignment, matching the spacing convention of <see cref="TestPortAssignment"/> and
         /// ClusterPortAssignment. The bands are validated against this reserved width rather than against current
         /// usage, so a test that grows to use more of its range does not silently invalidate the slot arithmetic.
@@ -155,6 +162,17 @@ namespace Garnet.test
         /// <summary>
         /// Amount added to every test port so concurrent checkouts do not collide. Declared before
         /// <see cref="TestPort"/> because static field initializers run in textual order.
+        /// <para>
+        /// Resolving this can fail — an unparseable <see cref="PortSlotEnvVar"/>, every slot held by another
+        /// checkout, or the bookkeeping files being unwritable. The failure is deliberately left to propagate
+        /// rather than falling back to offset 0: that fallback would put the run on the shared default ports and
+        /// reintroduce exactly the silent cross-checkout corruption slots exist to prevent. Because the
+        /// initializer is forced from an assembly-level <c>[OneTimeSetUp]</c> by
+        /// <see cref="EnsurePortSlotResolved"/>, the effect is that NUnit fails that fixture, every test in the
+        /// assembly is reported as errored, none of them run, and the process exits non-zero. The CLR also caches
+        /// a failed type initializer, so every later use of this class rethrows; there is no path on which some
+        /// tests proceed against unknown ports.
+        /// </para>
         /// </summary>
         internal static readonly int PortOffset = ResolvePortOffset();
 
@@ -186,11 +204,22 @@ namespace Garnet.test
         /// <summary>
         /// Forces the port slot to be resolved now. Projects that rely on the static port defaults have no
         /// <c>[SetUpFixture]</c> calling <see cref="SetTestPort"/>, and the remaining members read only
-        /// constants, so without this the slot would be claimed lazily and any failure would surface as a
-        /// <see cref="TypeInitializationException"/> from whichever test first touched a port.
+        /// constants, so without this the slot would be claimed lazily and any failure would surface from
+        /// whichever test first touched a port. See <see cref="PortOffset"/> for what a failure does to the run.
+        /// The underlying exception is rethrown in place of the type initializer wrapper, so the actionable
+        /// message is the one reported rather than "the type initializer threw an exception".
         /// </summary>
         internal static void EnsurePortSlotResolved()
-            => RuntimeHelpers.RunClassConstructor(typeof(TestUtils).TypeHandle);
+        {
+            try
+            {
+                RuntimeHelpers.RunClassConstructor(typeof(TestUtils).TypeHandle);
+            }
+            catch (TypeInitializationException e) when (e.InnerException is not null)
+            {
+                ExceptionDispatchInfo.Capture(e.InnerException).Throw();
+            }
+        }
 
         /// <summary>
         /// Reads <see cref="PortSlotEnvVar"/> and converts it to a port offset.
@@ -278,15 +307,26 @@ namespace Garnet.test
         }
 
         /// <summary>
-        /// Proof that this process is still using its port slot. Held for the lifetime of the test host and
-        /// deliberately never disposed: the OS releases it on exit, crash, or kill, which is exactly how a slot
-        /// becomes free again.
+        /// This process's claim on its port slot, one of possibly several held against the same slot by test
+        /// hosts from this checkout. The field exists to root the stream for the lifetime of the test host: the
+        /// lock lives in the open handle, so letting this be collected and finalized would silently release the
+        /// slot mid-run. It is never read and must not be removed or replaced with a local. Deliberately never
+        /// disposed either — the OS releases it on exit, crash, or kill, which is exactly how a slot becomes free.
         /// </summary>
         private static FileStream portSlotHolder;
 
         /// <summary>
         /// Claims a port slot for this checkout, or rejoins the one it already holds. Claiming per checkout rather
-        /// than per process lets one checkout run all of its test projects in parallel on a single slot.
+        /// than per process lets one checkout run all of its test projects in parallel on a single slot: their
+        /// base ports already differ, so the slot only has to move the whole checkout clear of other checkouts.
+        /// <para>
+        /// Two kinds of file track a slot, and they identify different things. <c>slot{n}.owner</c> names a
+        /// <em>directory</em>: the checkout the slot belongs to, recorded as text and kept indefinitely, so a
+        /// checkout keeps returning to the same slot. <c>slot{n}.holder-{pid}</c> names a <em>process</em>: one
+        /// per live test host, empty because the lock on it is the whole point, released by the OS when that
+        /// process dies. So a slot has exactly one owner and any number of holders — one per concurrent
+        /// <c>dotnet test</c> from that checkout, which the parallel test-project runsettings makes routine.
+        /// </para>
         /// </summary>
         /// <returns>The claimed slot number.</returns>
         private static int ClaimCheckoutPortSlot()
@@ -325,20 +365,30 @@ namespace Garnet.test
         }
 
         /// <summary>
-        /// Probes the base port of each band. A server stranded by a crashed run holds no slot lock at all, so
-        /// binding is the authority on whether a slot is actually usable.
+        /// Probes the ports a slot hands out. A server stranded by a crashed run holds no slot lock at all, so
+        /// binding is the authority on whether a slot is actually usable. The cluster band is probed across its
+        /// node range rather than at the base alone: a run can die leaving a non-base node listening while its
+        /// base node is already disposed, which a base-only probe would read as free.
         /// </summary>
         /// <param name="slot">Slot to probe.</param>
-        /// <returns>True when both band base ports are free.</returns>
+        /// <returns>True when every port probed for the slot is free.</returns>
         private static bool ArePortsFree(int slot)
         {
             var offset = slot * PortSlotStride;
-            return IsPortFree((int)TestPortAssignment.GarnetTest + offset) &&
-                IsPortFree(ClusterPortBandBase + offset);
+            if (!IsPortFree((int)TestPortAssignment.GarnetTest + offset))
+                return false;
+
+            for (var node = 0; node < MaxClusterNodesPerSubProject; node++)
+            {
+                if (!IsPortFree(ClusterPortBandBase + offset + node))
+                    return false;
+            }
+
+            return true;
         }
 
         /// <summary>
-        /// Records this checkout as the slot's owner and registers a holder lock for this process.
+        /// Records the owning checkout and registers this process as a holder of the slot.
         /// </summary>
         /// <param name="dir">Slot bookkeeping directory.</param>
         /// <param name="slot">Slot being taken.</param>
@@ -347,7 +397,7 @@ namespace Garnet.test
         /// <returns>The slot number.</returns>
         private static int TakeSlot(string dir, int slot, string checkoutKey, string verb)
         {
-            File.WriteAllText(SlotOwnerPath(dir, slot), checkoutKey);
+            WriteSlotOwner(dir, slot, checkoutKey);
             portSlotHolder = new FileStream(
                 Path.Combine(dir, $"slot{slot}.holder-{Environment.ProcessId}"),
                 FileMode.Create, FileAccess.ReadWrite, FileShare.None, bufferSize: 1, FileOptions.DeleteOnClose);
@@ -358,6 +408,16 @@ namespace Garnet.test
         }
 
         private static string SlotOwnerPath(string dir, int slot) => Path.Combine(dir, $"slot{slot}.owner");
+
+        /// <summary>
+        /// Records the checkout a slot belongs to. Failure propagates: continuing without the record would let a
+        /// later run treat this slot as unowned and hand it to another checkout while this one is still on it.
+        /// </summary>
+        /// <param name="dir">Slot bookkeeping directory.</param>
+        /// <param name="slot">Slot to record.</param>
+        /// <param name="checkoutKey">Key identifying the owning checkout.</param>
+        private static void WriteSlotOwner(string dir, int slot, string checkoutKey)
+            => File.WriteAllText(SlotOwnerPath(dir, slot), checkoutKey);
 
         /// <summary>
         /// Reads the checkout key recorded against a slot.
@@ -454,10 +514,12 @@ namespace Garnet.test
         }
 
         /// <summary>
-        /// Identifies the checkout so every test host built from it shares one slot. Uses
-        /// <see cref="AppContext.BaseDirectory"/> rather than the NUnit test directory because the value is needed
-        /// during static initialization. The solution file is the marker: in a worktree, .git is a hidden file
-        /// rather than a directory.
+        /// Identifies the checkout — one working copy of the repo, meaning the directory containing
+        /// <c>Garnet.slnx</c>, which is the worktree root under <c>git worktree</c> and the clone root otherwise.
+        /// Every test host launched from that directory resolves the same key and so shares one slot. Uses
+        /// <see cref="AppContext.BaseDirectory"/> rather than the NUnit test directory because the value is
+        /// needed during static initialization. The solution file is the marker because in a worktree .git is a
+        /// hidden file rather than a directory.
         /// </summary>
         /// <returns>A normalized key identifying this checkout.</returns>
         private static string GetCheckoutKey()
@@ -508,6 +570,19 @@ namespace Garnet.test
                 $"run; another checkout running this test project without {PortSlotEnvVar}; or this test project " +
                 $"already running from this checkout. Set {PortSlotEnvVar}=auto in every checkout that shares this " +
                 $"machine, and terminate stray processes by PID rather than by name.");
+        }
+
+        /// <summary>
+        /// Fails when any port a cluster sub-project can bind is already taken. Cluster tests bind one port per
+        /// node from their base, so checking the base alone would miss a node stranded by a crashed run and let
+        /// the conflict surface later as a cluster that never forms.
+        /// </summary>
+        /// <param name="basePort">The sub-project's resolved base port.</param>
+        /// <param name="assignment">Name of the assignment that produced it.</param>
+        internal static void EnsureClusterPortsAvailable(int basePort, string assignment)
+        {
+            for (var node = 0; node < MaxClusterNodesPerSubProject; node++)
+                EnsurePortAvailable(basePort + node, assignment);
         }
 
         /// <summary>

@@ -11,16 +11,16 @@ Garnet is a high-performance remote cache-store from Microsoft Research implemen
 dotnet build
 
 # Run all Garnet tests
-dotnet test test/standalone/Garnet.test -f net10.0 -c Debug -l "console;verbosity=detailed"
+GARNET_TEST_PORT_SLOT=auto dotnet test test/standalone/Garnet.test -f net10.0 -c Debug -l "console;verbosity=detailed"
 
 # Run all cluster tests
-dotnet test test/cluster/Garnet.test.cluster -f net10.0 -c Debug -l "console;verbosity=detailed"
+GARNET_TEST_PORT_SLOT=auto dotnet test test/cluster/Garnet.test.cluster -f net10.0 -c Debug -l "console;verbosity=detailed"
 
 # Run a single test by fully qualified name
-dotnet test test/standalone/Garnet.test -f net10.0 -c Debug --filter "FullyQualifiedName~RespTests.PingTest"
+GARNET_TEST_PORT_SLOT=auto dotnet test test/standalone/Garnet.test -f net10.0 -c Debug --filter "FullyQualifiedName~RespTests.PingTest"
 
 # Run all tests in a single test class
-dotnet test test/standalone/Garnet.test -f net10.0 -c Debug --filter "FullyQualifiedName~RespTests"
+GARNET_TEST_PORT_SLOT=auto dotnet test test/standalone/Garnet.test -f net10.0 -c Debug --filter "FullyQualifiedName~RespTests"
 
 # Build and test Tsavorite independently (has its own solution)
 dotnet build libs/storage/Tsavorite/cs/test/Tsavorite.test.csproj
@@ -34,15 +34,23 @@ dotnet format libs/storage/Tsavorite/cs/Tsavorite.slnx --verify-no-changes
 cd main/GarnetServer && dotnet run -c Debug -f net10.0 -- --logger-level Trace -m 4g -i 64m
 ```
 
+`GARNET_TEST_PORT_SLOT=auto` keeps this working copy's test ports clear of other working copies on the same
+machine; see [Running tests when several checkouts share a machine](#running-tests-when-several-checkouts-share-a-machine)
+for what it does, the PowerShell form, and why CI leaves it unset. Tsavorite has no Garnet servers and needs no slot.
+
 Target frameworks are `net8.0` and `net10.0`. CI runs tests on both, in Debug and Release, on Ubuntu and Windows.
 
 Test projects live under `test/standalone/` and `test/cluster/` — there is no bare `test/Garnet.test`.
 
 ### Running tests when several checkouts share a machine
 
+Throughout this section a **checkout** means one working copy of the repo — the directory containing
+`Garnet.slnx`. That is the worktree root when you are in a `git worktree`, or the clone root otherwise. A slot is
+claimed per checkout, so every test host launched from the same working copy shares one slot.
+
 Garnet's test ports are hardcoded per sub-project (`TestUtils.TestPortAssignment`,
 `ClusterTestContext.ClusterPortAssignment`), so two test hosts running the same sub-project from different
-worktrees bind the same port. The symptom is not a clean failure: your client connects to the other checkout's
+checkouts bind the same port. The symptom is not a clean failure: your client connects to the other checkout's
 server and returns plausible but wrong results, or the run dies mid-test with `SocketFailure`. Both look exactly
 like real regressions, so this can cost hours before it is even recognized as a port conflict.
 
@@ -58,9 +66,12 @@ GARNET_TEST_PORT_SLOT=auto dotnet test test/standalone/Garnet.test -f net10.0 -c
 ```
 
 `auto` claims a free port slot for the checkout you are in and shifts every test port by a fixed offset, so all
-of that checkout's test projects can run in parallel on one slot while other checkouts stay out of the way. The
-slot is released when the last test host exits, including on crash or kill, because the OS drops the lock the
-host was holding. Leaving the variable unset keeps the upstream ports unchanged, which is what CI does.
+of that checkout's test projects can run in parallel on one slot while other checkouts stay out of the way.
+Sharing one slot across them is safe because sub-projects already have distinct base ports; the slot only has to
+move a whole checkout clear of other checkouts. Running the *same* sub-project twice at once from one checkout
+does still conflict, and fails immediately with a diagnostic rather than corrupting the run. The slot is released
+when the last test host exits, including on crash or kill, because the OS drops the lock the host was holding.
+Leaving the variable unset keeps the upstream ports unchanged, which is what CI does.
 
 | Value | Behavior |
 |-------|----------|
