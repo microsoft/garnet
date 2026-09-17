@@ -81,8 +81,31 @@ namespace Garnet.server
             }
             catch (TsavoriteNoHybridLogException ex)
             {
-                // No hybrid log being found is not the same as an error in recovery. e.g. fresh start
-                Logger?.LogInformation(ex, "No Hybrid Log found for recovery; storeVersion = {storeVersion};", storeVersion);
+                // Finding no hybrid log is not by itself a recovery error: a fresh start and an AOF-only database
+                // both land here. Record what the scan saw so VerifyRecoveryIsComplete can tell those apart from a
+                // checkpointed prefix that exists on disk but could not be read, once the AOF state is also known.
+                defaultDatabase.CheckpointRecovery = new CheckpointRecoveryOutcome
+                {
+                    CandidateTokenCount = ex.CandidateTokenCount,
+                    UnreadableTokenCount = ex.UnreadableTokenCount
+                };
+
+                if (ex.CandidateTokenCount == 0)
+                {
+                    Logger?.LogInformation(ex, "No Hybrid Log found for recovery; storeVersion = {storeVersion};", storeVersion);
+                }
+                else
+                {
+                    Logger?.LogError(ex,
+                        "Unable to read any of the {candidateTokenCount} HybridLog checkpoint token(s) found on disk; storeVersion = {storeVersion};",
+                        ex.CandidateTokenCount, storeVersion);
+
+                    // A replica that continues here would hold an incomplete store while still advertising the
+                    // replication offset the primary sent it, diverging from the primary with nothing to signal it.
+                    // Fail the sync instead, independently of FailOnRecoveryError, which governs standalone startup.
+                    if (replicaRecover)
+                        throw;
+                }
             }
             catch (Exception ex)
             {
@@ -249,6 +272,10 @@ namespace Garnet.server
 
         /// <inheritdoc/>
         public override ValueTask RecoverAOFAsync() => RecoverDatabaseAOFAsync(defaultDatabase);
+
+        /// <inheritdoc/>
+        public override void VerifyRecoveryIsComplete(bool canBeRepairedBySync = false)
+            => VerifyDatabaseRecoveryIsComplete(defaultDatabase, canBeRepairedBySync);
 
         /// <inheritdoc/>
         public override AofAddress ReplayAOF(AofAddress untilAddress)
