@@ -59,8 +59,8 @@ GARNET_TEST_PORT_SLOT=auto dotnet test test/standalone/Garnet.test -f net10.0 -c
 
 `auto` claims a free port slot for the checkout you are in and shifts every test port by a fixed offset, so all
 of that checkout's test projects can run in parallel on one slot while other checkouts stay out of the way. The
-slot is released automatically when the last test host exits, including on crash or kill. Leaving the variable
-unset keeps the upstream ports unchanged, which is what CI does.
+slot is released when the last test host exits, including on crash or kill, because the OS drops the lock the
+host was holding. Leaving the variable unset keeps the upstream ports unchanged, which is what CI does.
 
 | Value | Behavior |
 |-------|----------|
@@ -74,13 +74,18 @@ Note that slot 0 gives *no* isolation: its offset is zero, so it lands on the sa
 does not set the variable at all. `auto` skips it for that reason. Only set `GARNET_TEST_PORT_SLOT=0` when you
 deliberately want the upstream ports.
 
+Explicit slots are not coordinated with each other — nothing stops two checkouts from both picking `3`. Prefer
+`auto`, which reserves the slot it hands out. Coordination is per machine and relies on all runs seeing the same
+temp directory, so it does not span users or containers with separate `TEMP`/`TMPDIR` values.
+
 Two further cautions when sharing a machine:
 
 - **Never terminate processes by name** (`Stop-Process -Name dotnet`, `taskkill /IM testhost.exe`). That kills
   other checkouts' test hosts and builds, which surfaces as a test host vanishing with no .NET fault event. Kill
   by PID only.
-- **Always check test output for `error CS` before trusting a result.** If the test project fails to compile,
-  `dotnet test` silently runs the previously built assembly and can report 0 failures on code that never built.
+- **Check test output for `error CS` before trusting a result.** With `--no-build`, and when a compile error
+  surfaces in a project that is not rebuilt, `dotnet test` runs the previously built assembly and can report a
+  pass for code that never compiled.
 
 
 ## Architecture

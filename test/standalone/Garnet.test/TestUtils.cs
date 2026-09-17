@@ -106,6 +106,7 @@ namespace Garnet.test
         /// Accepts <c>auto</c> to claim a slot for this checkout, or an integer in [0, <see cref="MaxPortSlot"/>].
         /// </summary>
         internal const string PortSlotEnvVar = "GARNET_TEST_PORT_SLOT";
+
         /// <summary>
         /// Distance between consecutive port slots. Must exceed the width of both port bands, otherwise slot n
         /// overlaps slot n+1. A stride of 1000 would be actively wrong: 33278 + 1000 is
@@ -296,34 +297,44 @@ namespace Garnet.test
             var checkoutKey = GetCheckoutKey();
             using var claimLock = AcquireClaimLock(dir);
 
-            // Rejoin a slot this checkout already owns. No bind probe here: another test host from this same
-            // checkout may legitimately have those ports bound right now.
+            // Rejoin a slot this checkout already owns. While another test host from this checkout still holds
+            // the slot, its ports are legitimately in use by that host, so they are not probed. Once no holder
+            // is left the ownership record is only a hint: another checkout may have taken those ports with an
+            // explicit slot in the meantime, so they have to be re-checked before trusting it.
             for (var slot = MinAutoPortSlot; slot <= MaxPortSlot; slot++)
             {
-                if (string.Equals(ReadSlotOwner(dir, slot), checkoutKey, StringComparison.Ordinal))
+                if (!string.Equals(ReadSlotOwner(dir, slot), checkoutKey, StringComparison.Ordinal))
+                    continue;
+
+                if (HasLiveHolder(dir, slot) || ArePortsFree(slot))
                     return TakeSlot(dir, slot, checkoutKey, "rejoined");
             }
 
-            // Otherwise take a slot that is unowned, or whose owning checkout has no live test hosts left.
+            // Otherwise take a slot that no live test host is using and whose ports are actually free. The owner
+            // record is not consulted here: a slot with no live holder is available whoever used it last.
             for (var slot = MinAutoPortSlot; slot <= MaxPortSlot; slot++)
             {
-                if (ReadSlotOwner(dir, slot) != null && HasLiveHolder(dir, slot))
-                    continue;
-
-                // A server stranded by a crashed run holds no lock at all, so binding is the authority on
-                // whether the band is actually usable.
-                var offset = slot * PortSlotStride;
-                if (!IsPortFree((int)TestPortAssignment.GarnetTest + offset) ||
-                    !IsPortFree(ClusterPortBandBase + offset))
-                    continue;
-
-                return TakeSlot(dir, slot, checkoutKey, "claimed");
+                if (!HasLiveHolder(dir, slot) && ArePortsFree(slot))
+                    return TakeSlot(dir, slot, checkoutKey, "claimed");
             }
 
             throw new InvalidOperationException(
                 $"All {MaxPortSlot - MinAutoPortSlot + 1} Garnet test port slots in '{dir}' are held by other " +
                 $"checkouts. Finish or terminate a run in another checkout, or set {PortSlotEnvVar} to an " +
                 $"explicit free slot.");
+        }
+
+        /// <summary>
+        /// Probes the base port of each band. A server stranded by a crashed run holds no slot lock at all, so
+        /// binding is the authority on whether a slot is actually usable.
+        /// </summary>
+        /// <param name="slot">Slot to probe.</param>
+        /// <returns>True when both band base ports are free.</returns>
+        private static bool ArePortsFree(int slot)
+        {
+            var offset = slot * PortSlotStride;
+            return IsPortFree((int)TestPortAssignment.GarnetTest + offset) &&
+                IsPortFree(ClusterPortBandBase + offset);
         }
 
         /// <summary>

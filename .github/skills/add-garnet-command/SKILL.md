@@ -789,9 +789,9 @@ $env:GARNET_TEST_PORT_SLOT = 'auto'; dotnet test test/standalone/Garnet.test -f 
 $env:GARNET_TEST_PORT_SLOT = 'auto'; dotnet test test/standalone/Garnet.test -f net10.0 -c Debug --filter "FullyQualifiedName~RespTests"
 ```
 
-`GARNET_TEST_PORT_SLOT=auto` keeps this checkout's test ports clear of any other checkout on the machine; see
-`.github/copilot-instructions.md`. Always check the output for `error CS` before trusting a pass — a test project
-that fails to compile silently runs the previously built assembly.
+`GARNET_TEST_PORT_SLOT=auto` keeps this checkout's test ports clear of other checkouts that also use a slot; see
+`.github/copilot-instructions.md`. Check the output for `error CS` before trusting a pass — with `--no-build`, or
+when a compile error surfaces in a project that is not rebuilt, the previously built assembly runs instead.
 
 ---
 
