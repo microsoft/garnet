@@ -480,14 +480,6 @@ namespace Tsavorite.core
             RecoveryOptions options = new(fuzzyRegionStartAddress: recoveredHLCInfo.info.fuzzyRegionStartAddress, undoNextVersion,
                 checkpointVersion: recoveredHLCInfo.info.hybridLogRecoveryVersion);
 
-            // Up-converting a downlevel object log must rewrite EVERY record, not just the ones recovery would otherwise bring back.
-            // Recovery normally scans down only to the checkpoint's headAddress and leaves colder pages on disk untouched; those pages
-            // still carry downlevel records pointing into the object log that the conversion retires, so they would be unreadable
-            // afterwards. Scan from the beginning of the log instead. The pages are evicted again as the conversion walks up, so this
-            // costs IO rather than memory.
-            if (HybridLogRecoveryInfo.UsesDownlevelObjectLog(options.checkpointVersion) && hlogBase.HasObjectLogDevice)
-                scanFromAddress = headAddress = recoveredHLCInfo.info.beginAddress;
-
             // Make index consistent for version v
             long readOnlyAddress;
             long finalHeadAddress;
@@ -631,7 +623,16 @@ namespace Tsavorite.core
 
             tailAddress = recoveredHLCInfo.info.recoveredTailAddress;
             headAddress = recoveredHLCInfo.info.headAddress;
-            if (numPagesToPreload != -1)
+
+            // Up-converting a downlevel object log must rewrite EVERY record, not just the ones recovery would otherwise bring back.
+            // Recovery normally scans down only to the checkpoint's headAddress and leaves colder pages on disk untouched; those pages
+            // still carry downlevel records pointing into the object log that the conversion retires, so they would be unreadable
+            // afterwards. Scan the whole log instead, ignoring the preload window. The conversion pass evicts each page as it walks up,
+            // so this costs IO rather than memory.
+            var upgradeObjectLog = HybridLogRecoveryInfo.UsesDownlevelObjectLog(recoveredHLCInfo.info.hybridLogRecoveryVersion) && hlogBase.HasObjectLogDevice;
+            if (upgradeObjectLog)
+                headAddress = recoveredHLCInfo.info.beginAddress;
+            else if (numPagesToPreload != -1)
             {
                 var head = hlogBase.GetFirstValidLogicalAddressOnPage(hlogBase.GetPage(tailAddress) - numPagesToPreload);
                 if (head > headAddress)
@@ -650,7 +651,9 @@ namespace Tsavorite.core
                     headAddress = recoveredHLCInfo.info.headAddress;
             }
 
-            if (hlogBase.FlushedUntilAddress > scanFromAddress)
+            // Pages already flushed in this process need not be read back -- except when up-converting, where being durable in this
+            // process says nothing about the on-disk encoding, and skipping them would leave downlevel records behind.
+            if (!upgradeObjectLog && hlogBase.FlushedUntilAddress > scanFromAddress)
                 scanFromAddress = hlogBase.FlushedUntilAddress;
             return true;
         }
@@ -667,7 +670,7 @@ namespace Tsavorite.core
 
             // Issue request to read pages as much as possible
             hlogBase.AsyncReadPagesForRecovery(page, numPagesToRead, endAddress, recoveryStatus, recoveryStatus.recoveryDevicePageOffset,
-                recoveryStatus.recoveryDevice, recoveryStatus.objectLogRecoveryDevice, RecoveryPhase.Pass1, mergeFromAddress);
+                recoveryStatus.recoveryDevice, RecoveryPhase.Pass1, mergeFromAddress);
         }
 
         /// <summary>

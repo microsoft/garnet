@@ -226,7 +226,7 @@ namespace Garnet.test
 
         [Test]
         [Category("GarnetServer")]
-        public void UpgradeConvertsDownlevelStoreEndToEnd([Values(false, true)] bool enableAof)
+        public void UpgradeConvertsDownlevelStoreEndToEnd([Values(false, true)] bool enableAof, [Values(false, true)] bool useFoldOver)
         {
             // The whole feature, end to end on a real Garnet store: take a current-format FoldOver checkpoint, rewrite it on disk as
             // downlevel (v7), then run --upgrade and start normally. Values are kept small so every object stays headerless, which is
@@ -234,7 +234,7 @@ namespace Garnet.test
             const int numKeys = 400;
             const int extraKeys = 16;
 
-            using (var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, lowMemory: true, useFoldOverCheckpoints: true, enableAOF: enableAof, commitFrequencyMs: enableAof ? -1 : 0))
+            using (var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, lowMemory: true, useFoldOverCheckpoints: useFoldOver, enableAOF: enableAof, commitFrequencyMs: enableAof ? -1 : 0))
             {
                 server.Start();
                 using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
@@ -254,7 +254,7 @@ namespace Garnet.test
             var convertedRecords = TransformGarnetCheckpointToV7();
             ClassicAssert.Greater(convertedRecords, 0, "expected the fixture to have out-of-line object records on the main log");
 
-            using (var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, lowMemory: true, useFoldOverCheckpoints: true, enableAOF: enableAof, commitFrequencyMs: enableAof ? -1 : 0, tryRecover: true, upgrade: true))
+            using (var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, lowMemory: true, useFoldOverCheckpoints: useFoldOver, enableAOF: enableAof, commitFrequencyMs: enableAof ? -1 : 0, tryRecover: true, upgrade: true))
             {
                 ClassicAssert.IsTrue(server.IsUpgradeRun);
                 server.RunUpgrade();
@@ -271,7 +271,7 @@ namespace Garnet.test
             ClassicAssert.IsEmpty(Directory.GetFiles(storeDir, GarnetServerOptions.UpgradeObjectLogFileName + ".*"), "the converted object log should have been promoted, not left behind");
             ClassicAssert.IsFalse(ObjectLogUpgradeSwap.HasPendingSwap(new DirectoryInfo(TestUtils.MethodTestDir).FullName), "the rename marker should be gone");
 
-            using (var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, lowMemory: true, useFoldOverCheckpoints: true, enableAOF: enableAof, commitFrequencyMs: enableAof ? -1 : 0, tryRecover: true))
+            using (var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, lowMemory: true, useFoldOverCheckpoints: useFoldOver, enableAOF: enableAof, commitFrequencyMs: enableAof ? -1 : 0, tryRecover: true))
             {
                 server.Start();
                 using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
@@ -287,13 +287,13 @@ namespace Garnet.test
 
         [Test]
         [Category("GarnetServer")]
-        public void FoldOverCheckpointObjectsSurviveDiskReads([Values(false, true)] bool enableAof)
+        public void CheckpointedObjectsSurviveDiskReads([Values(false, true)] bool enableAof, [Values(false, true)] bool useFoldOver)
         {
             // Control for UpgradeConvertsDownlevelStoreEndToEnd: the same fixture and reads, with no v7 transform and no upgrade run.
-            // Isolates whether a failure there comes from the up-conversion or from recovering a FoldOver object checkpoint at all.
+            // Isolates whether a failure there comes from the up-conversion or from recovering an object checkpoint at all.
             const int numKeys = 400;
 
-            using (var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, lowMemory: true, useFoldOverCheckpoints: true, enableAOF: enableAof, commitFrequencyMs: enableAof ? -1 : 0))
+            using (var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, lowMemory: true, useFoldOverCheckpoints: useFoldOver, enableAOF: enableAof, commitFrequencyMs: enableAof ? -1 : 0))
             {
                 server.Start();
                 using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
@@ -303,20 +303,22 @@ namespace Garnet.test
                 _ = db.Execute("SAVE");
             }
 
-            using (var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, lowMemory: true, useFoldOverCheckpoints: true, enableAOF: enableAof, commitFrequencyMs: enableAof ? -1 : 0, tryRecover: true))
+            using (var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, lowMemory: true, useFoldOverCheckpoints: useFoldOver, enableAOF: enableAof, commitFrequencyMs: enableAof ? -1 : 0, tryRecover: true))
             {
                 server.Start();
                 using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
                 var db = redis.GetDatabase(0);
                 for (var key = 0; key < numKeys; key++)
-                    ClassicAssert.AreEqual(SmallValueFor(key), (string)db.HashGet($"hash:{key}", "f"), $"hash:{key} did not survive a FoldOver checkpoint");
+                    ClassicAssert.AreEqual(SmallValueFor(key), (string)db.HashGet($"hash:{key}", "f"), $"hash:{key} did not survive a checkpoint");
             }
         }
 
         /// <summary>
-        /// Rewrite the store's current-format FoldOver checkpoint on disk so it reads as downlevel (v7): re-stamp each out-of-line
-        /// record into the v7 split-length encoding and re-serialize the metadata at version 7. The object-log bytes and record
-        /// positions are left untouched, which is only valid while every object is headerless in the current format.
+        /// Rewrite the store's current-format checkpoint on disk so it reads as downlevel (v7): re-stamp each out-of-line record into
+        /// the v7 split-length encoding and re-serialize the metadata at version 7. The object-log bytes and record positions are left
+        /// untouched, which is only valid while every object is headerless in the current format. Handles both checkpoint types: a
+        /// FoldOver checkpoint's records are all on the main log, while a Snapshot checkpoint splits them between the main log (below
+        /// mainLogRecoveryEndAddress) and the snapshot file above it.
         /// </summary>
         /// <returns>The number of records converted.</returns>
         static unsafe int TransformGarnetCheckpointToV7()
@@ -330,19 +332,46 @@ namespace Garnet.test
             var info = new HybridLogRecoveryInfo();
             info.Recover(token, checkpointManager);
             ClassicAssert.AreEqual(HybridLogRecoveryInfo.CheckpointVersion, info.hybridLogRecoveryVersion, "expected a current-format checkpoint before transform");
-            ClassicAssert.AreEqual(0, info.useSnapshotFile, "expected a FoldOver checkpoint");
             ClassicAssert.Greater(info.pageSize, 0, "current-format metadata should record the page size");
-
-            var mainLogSegment = Path.Combine(logDir, "Store", "hlog.0");
-            ClassicAssert.IsTrue(File.Exists(mainLogSegment), $"no main-log segment at {mainLogSegment}");
             ClassicAssert.LessOrEqual(info.recoveredTailAddress, info.segmentSize, "v7 fixture expects a single main-log segment");
 
-            var pageBytes = File.ReadAllBytes(mainLogSegment);
-            var converted = 0;
-            fixed (byte* pagePtr = pageBytes)
+            // The main log carries the whole recovered range for FoldOver, and only the region below the snapshot boundary otherwise.
+            var mainLogUntil = info.useSnapshotFile == 0 ? info.recoveredTailAddress : info.mainLogRecoveryEndAddress;
+            var converted = StampRegionAsV7(Path.Combine(logDir, "Store", "hlog.0"), addressBias: 0, info.beginAddress, mainLogUntil, info.pageSize);
+
+            if (info.useSnapshotFile != 0)
             {
-                var pageBase = (long)pagePtr;   // logical address == file offset on segment 0
-                foreach (var offset in GetOnDiskRecordOffsets(pageBase, info.beginAddress, info.recoveredTailAddress, info.pageSize))
+                // Snapshot-file offset 0 is the start of the page containing snapshotFileLogicalStartAddress, so bias the image by that
+                // page's logical start to index it with logical addresses.
+                var snapshotDir = Path.Combine(storeCheckpointDir, "cpr-checkpoints", token.ToString());
+                var snapshotSegment = Directory.GetFiles(snapshotDir, "snapshot.dat.*").OrderBy(f => f, StringComparer.Ordinal).FirstOrDefault();
+                ClassicAssert.IsNotNull(snapshotSegment, $"no snapshot segment in {snapshotDir}");
+                var snapshotStartPageAddress = info.snapshotFileLogicalStartAddress & ~(info.pageSize - 1);
+                converted += StampRegionAsV7(snapshotSegment, addressBias: snapshotStartPageAddress, info.mainLogRecoveryEndAddress, info.recoveredTailAddress, info.pageSize);
+            }
+
+            checkpointManager.CommitLogCheckpointMetadata(token, info.ToByteArray(targetVersion: 7));
+            return converted;
+        }
+
+        /// <summary>Re-stamp every out-of-line record of one on-disk log image in [fromAddress, untilAddress) into the v7 encoding.</summary>
+        /// <param name="path">The log segment file.</param>
+        /// <param name="addressBias">The logical address that maps to offset 0 of this file.</param>
+        /// <param name="fromAddress">The lowest logical address to convert.</param>
+        /// <param name="untilAddress">The exclusive highest logical address to convert.</param>
+        /// <param name="pageSize">The log's page size.</param>
+        static unsafe int StampRegionAsV7(string path, long addressBias, long fromAddress, long untilAddress, long pageSize)
+        {
+            if (fromAddress >= untilAddress)
+                return 0;
+            ClassicAssert.IsTrue(File.Exists(path), $"no log segment at {path}");
+
+            var imageBytes = File.ReadAllBytes(path);
+            var converted = 0;
+            fixed (byte* imagePtr = imageBytes)
+            {
+                var pageBase = (long)imagePtr - addressBias;
+                foreach (var offset in GetOnDiskRecordOffsets(pageBase, fromAddress, untilAddress, pageSize))
                 {
                     var logRecord = new LogRecord(pageBase + offset);
                     if (!logRecord.Info.Valid || logRecord.DataHeader.RecordIsInline)
@@ -351,9 +380,7 @@ namespace Garnet.test
                     ++converted;
                 }
             }
-            File.WriteAllBytes(mainLogSegment, pageBytes);
-
-            checkpointManager.CommitLogCheckpointMetadata(token, info.ToByteArray(targetVersion: 7));
+            File.WriteAllBytes(path, imageBytes);
             return converted;
         }
 
