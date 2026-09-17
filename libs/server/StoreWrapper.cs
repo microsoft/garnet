@@ -404,6 +404,35 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Recover for an offline up-conversion run (<c>--upgrade</c>). Performs the standalone recovery sequence unconditionally,
+        /// including in cluster mode: cluster startup recovers through the replication manager, whose behavior depends on the node's
+        /// role -- a replica does not read its checkpoint at all unless ClusterReplicaResumeWithData is set -- so routing through it
+        /// would let the run finish without having examined the store. The upgrade never serves requests, so no replication state is
+        /// established and the role is irrelevant to what has to be converted on disk.
+        /// </summary>
+        public async ValueTask RecoverForUpgradeAsync()
+        {
+            await RecoverCheckpointAsync().ConfigureAwait(false);
+            databaseManager.RecoverVectorSets();
+            await RecoverAOFAsync().ConfigureAwait(false);
+            _ = ReplayAOF(AofAddress.Create(length: serverOptions.AofPhysicalSublogCount, value: -1));
+        }
+
+        /// <summary>
+        /// Count the databases whose object log was up-converted by <see cref="RecoverForUpgradeAsync"/>.
+        /// </summary>
+        public int CountUpgradedDatabases()
+        {
+            var count = 0;
+            foreach (var db in databaseManager.GetDatabasesSnapshot())
+            {
+                if (db?.Store?.Log.ObjectLogWasUpgraded == true)
+                    ++count;
+            }
+            return count;
+        }
+
+        /// <summary>
         /// Take checkpoint of all active databases (or a specified database)
         /// </summary>
         /// <param name="background">True if method can return before checkpoint is taken</param>

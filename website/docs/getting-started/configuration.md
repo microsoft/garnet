@@ -266,6 +266,14 @@ server normally afterwards; do not pass `--upgrade` again.**
 Notes:
 
 * `--recover` and tiered storage are required — there is nothing to convert without an existing checkpoint on disk.
+* Cluster mode may stay enabled. The run performs its own offline recovery rather than the role-dependent cluster
+  startup path, so it examines the node's store whether it is a primary or a replica — routing through cluster startup
+  would let a replica finish without reading its checkpoint at all. It never serves requests or establishes
+  replication; up-convert each node, then restart it normally. **This path is not yet covered by an automated
+  end-to-end test**: confirm the log reports a retired object log (`hlog_objs_pre_upgrade_<timestamp>`) before
+  restarting the node.
+* A multi-database store cannot be up-converted. All databases share one object log, so their conversions would
+  overwrite each other; the run fails before renaming anything and leaves the store untouched.
 * The append-only file may stay enabled. The run replays it as part of recovery and folds those records into the
   checkpoint it takes, so nothing written after the last checkpoint is lost. Records already covered by that
   checkpoint are skipped by later starts, as usual.

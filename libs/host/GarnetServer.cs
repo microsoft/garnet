@@ -588,11 +588,27 @@ namespace Garnet
 
             logger?.LogInformation("Upgrade: recovering and up-converting the object log; the server will not accept connections.");
 #pragma warning disable VSTHRD002 // The upgrade runs to completion synchronously and then exits.
-            Provider.RecoverAsync().AsTask().GetAwaiter().GetResult();
+            storeWrapper.RecoverForUpgradeAsync().AsTask().GetAwaiter().GetResult();
 
             var wasUpgraded = storeWrapper.store.Log.ObjectLogWasUpgraded;
             if (!wasUpgraded)
-                logger?.LogInformation("Upgrade: the recovered checkpoint is already in the current format; nothing to up-convert.");
+            {
+                // State the fact rather than inferring a cause: recovery converts nothing both when the checkpoint is already in the
+                // current format and when there was no checkpoint to recover at all.
+                logger?.LogInformation("Upgrade: no downlevel object log was converted; the store's object log is left as it was found."
+                    + " This is expected when the store was already written by this release, and when there is no checkpoint to recover.");
+            }
+
+            // Every database shares one object log (LogDir/Store/hlog_objs), but each has its own allocator, so each converts its own
+            // records from its own append position starting at zero. A second converting database therefore overwrites the first's
+            // converted bytes. Fail before the rename, while the live object log is still untouched, rather than promote a log that is
+            // missing one database's objects.
+            var upgradedDatabases = storeWrapper.CountUpgradedDatabases();
+            if (upgradedDatabases > 1)
+            {
+                throw new GarnetException($"Upgrade: {upgradedDatabases} databases hold downlevel object data, but all databases share one object log,"
+                    + " so their conversions would overwrite each other. Up-converting a multi-database store is not supported; nothing was changed on disk.");
+            }
 
             // The converted object bytes are only reachable through a checkpoint stamped with the current format version: the recovered
             // metadata still describes the downlevel object log that is about to be retired. This also captures any records the
