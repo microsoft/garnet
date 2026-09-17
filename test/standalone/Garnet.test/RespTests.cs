@@ -750,6 +750,83 @@ namespace Garnet.test
         }
 
         [Test]
+        public void SetExpiryAcceptsInt64Value()
+        {
+            const long LargeMilliseconds = 4_294_967_296;
+            const long LargeSeconds = 3_000_000_000;
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            void AssertLargeTtl(string key, long expectedTtlMilliseconds)
+            {
+                var ttl = (long)db.Execute("PTTL", key);
+                ClassicAssert.Greater(ttl, expectedTtlMilliseconds - 10_000);
+                ClassicAssert.LessOrEqual(ttl, expectedTtlMilliseconds);
+            }
+
+            var result = db.Execute("SET", "set-px", "value", "PX", LargeMilliseconds);
+            ClassicAssert.AreEqual("OK", result.ToString());
+            AssertLargeTtl("set-px", LargeMilliseconds);
+
+            result = db.Execute("SET", "set-ex", "value", "EX", LargeSeconds);
+            ClassicAssert.AreEqual("OK", result.ToString());
+            AssertLargeTtl("set-ex", LargeSeconds * 1000);
+
+            result = db.Execute("SETEX", "setex", LargeSeconds, "value");
+            ClassicAssert.AreEqual("OK", result.ToString());
+            AssertLargeTtl("setex", LargeSeconds * 1000);
+
+            result = db.Execute("PSETEX", "psetex", LargeMilliseconds, "value");
+            ClassicAssert.AreEqual("OK", result.ToString());
+            AssertLargeTtl("psetex", LargeMilliseconds);
+
+            result = db.Execute("SET", "set-nx", "value", "PX", LargeMilliseconds, "NX");
+            ClassicAssert.AreEqual("OK", result.ToString());
+            AssertLargeTtl("set-nx", LargeMilliseconds);
+
+            ClassicAssert.IsTrue(db.StringSet("set-xx-get", "old-value"));
+            result = db.Execute("SET", "set-xx-get", "new-value", "PX", LargeMilliseconds, "XX", "GET");
+            ClassicAssert.AreEqual("old-value", result.ToString());
+            AssertLargeTtl("set-xx-get", LargeMilliseconds);
+        }
+
+        [Test]
+        public void SetExpiryOutOfRangeIsRejectedWithoutKillingSession()
+        {
+            const string Key = nameof(SetExpiryOutOfRangeIsRejectedWithoutKillingSession);
+            const string ExpectedError = "ERR invalid expire time in 'set' command";
+
+            var faulted = false;
+
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
+            {
+                redis.ConnectionFailed += delegate { faulted = true; };
+
+                var db = redis.GetDatabase();
+                ClassicAssert.IsTrue(db.StringSet(Key, "original"));
+
+                var overflowSeconds = ((long.MaxValue - DateTimeOffset.UtcNow.Ticks) / TimeSpan.TicksPerSecond) + 1;
+
+                void AssertInvalidExpiry(string command, params object[] args)
+                {
+                    var exception = ClassicAssert.Throws<RedisServerException>(() => db.Execute(command, args));
+                    ClassicAssert.AreEqual(ExpectedError, exception.Message);
+                    ClassicAssert.AreEqual("original", db.StringGet(Key).ToString());
+                }
+
+                AssertInvalidExpiry("SET", Key, "replacement", "EX", overflowSeconds);
+                AssertInvalidExpiry("SET", Key, "replacement", "PX", long.MaxValue);
+                AssertInvalidExpiry("SETEX", Key, overflowSeconds, "replacement");
+                AssertInvalidExpiry("PSETEX", Key, long.MaxValue, "replacement");
+
+                ClassicAssert.Greater(db.Ping(), TimeSpan.Zero);
+            }
+
+            ClassicAssert.IsFalse(faulted);
+        }
+
+        [Test]
         public void SetExpiryThenExpireAndAppend()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
