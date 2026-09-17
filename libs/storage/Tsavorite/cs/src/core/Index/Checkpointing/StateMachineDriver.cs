@@ -338,7 +338,7 @@ namespace Tsavorite.core
             catch (Exception e)
             {
                 FastForwardStateMachineToRest();
-                ReleaseAbortedStateMachineResources();
+                ReleaseAbortedStateMachineResources(e);
                 logger?.LogError(e, "Exception in state machine");
                 ex = e;
                 throw;
@@ -364,14 +364,16 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Lets the state machine release resources it acquired in the phases it entered before aborting, since the
-        /// REST phase that normally releases them is never reached.
+        /// Lets the state machine release resources it acquired in the phases it entered before aborting, and
+        /// complete anything the rest of the system is waiting on, since the REST phase that normally does both is
+        /// never reached.
         /// </summary>
-        void ReleaseAbortedStateMachineResources()
+        /// <param name="exception">The exception that aborted the state machine.</param>
+        void ReleaseAbortedStateMachineResources(Exception exception)
         {
             try
             {
-                stateMachine.OnAbort(this);
+                stateMachine.OnAbort(this, exception);
             }
             catch (Exception e)
             {

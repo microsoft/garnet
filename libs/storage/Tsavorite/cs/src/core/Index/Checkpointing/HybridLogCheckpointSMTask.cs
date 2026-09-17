@@ -117,12 +117,26 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc />
-        public virtual void OnAbort(StateMachineDriver stateMachineDriver)
+        public virtual void OnAbort(StateMachineDriver stateMachineDriver, Exception exception)
         {
-            // Mirrors the Phase.REST handling above, which an aborted state machine never reaches, and matches the
-            // cleanup CompleteCheckpointAsync performs when it observes a failed checkpoint. Disposing releases any
-            // snapshot devices and flush buffers already created, and clears the checkpoint so the next one can run.
+            // Mirrors the Phase.REST handling above, which an aborted state machine never reaches.
+
+            // Lets the application release the barrier it set at VersionShift. Deliberately a distinct trigger from
+            // CheckpointCompleted: work that is only safe once a checkpoint has made its data recoverable - such as
+            // reclaiming deletions - must stay pending for the next successful checkpoint.
+            store.storeFunctions.OnCheckpoint(CheckpointTrigger.CheckpointFailed, guid);
+
+            // Releases any snapshot devices and flush buffers already created, and clears the checkpoint so the next
+            // one can run. Matches the cleanup CompleteCheckpointAsync performs when it observes a failed checkpoint.
             store._hybridLogCheckpoint.Dispose();
+
+            // Waiters such as ClientSession.WaitForCommitAsync park on store.CheckpointTask, which REST would have
+            // completed; leaving it pending hangs them forever. Publish the next checkpoint's source before faulting
+            // the old one, so a continuation that immediately re-reads store.checkpointTcs picks up the source for
+            // the next checkpoint rather than the one it just watched fail.
+            var previousTcs = store.checkpointTcs;
+            store.checkpointTcs = new TaskCompletionSource<LinkedCheckpointInfo>(TaskCreationOptions.RunContinuationsAsynchronously);
+            _ = previousTcs.TrySetException(exception ?? new TsavoriteException("Checkpoint state machine aborted"));
         }
     }
 }

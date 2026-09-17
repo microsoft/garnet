@@ -64,7 +64,7 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc />
-        public void OnAbort(StateMachineDriver stateMachineDriver)
+        public void OnAbort(StateMachineDriver stateMachineDriver, Exception exception)
         {
             // Mirrors the Phase.REST handling above, which an aborted state machine never reaches. Leaving
             // _indexCheckpoint set would make the PREPARE phase of every later checkpoint fail its IsDefault check,

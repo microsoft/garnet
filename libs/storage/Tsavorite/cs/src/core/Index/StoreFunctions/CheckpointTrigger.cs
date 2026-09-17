@@ -26,6 +26,16 @@ namespace Tsavorite.core
         /// REST phase, after the checkpoint is fully persisted. The application
         /// should clean up outdated external checkpoint artifacts.
         /// </summary>
-        CheckpointCompleted
+        CheckpointCompleted,
+
+        /// <summary>
+        /// The checkpoint state machine aborted before reaching <see cref="CheckpointCompleted"/>, so nothing was
+        /// persisted. The application should release the barrier set during <see cref="VersionShift"/> without doing
+        /// any of the work that is only safe once a checkpoint has made its data recoverable.
+        /// </summary>
+        /// <remarks>
+        /// May be raised even when <see cref="VersionShift"/> was never reached, so handling must be idempotent.
+        /// </remarks>
+        CheckpointFailed
     }
 }

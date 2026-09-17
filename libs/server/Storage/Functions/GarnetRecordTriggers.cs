@@ -184,6 +184,16 @@ namespace Garnet.server
                 case CheckpointTrigger.CheckpointCompleted:
                     vectorManager?.CheckpointCompleted();
                     break;
+                case CheckpointTrigger.CheckpointFailed:
+                    // Release the barrier set at VersionShift, which FlushBegin would have cleared - range index
+                    // operations spin-wait on it, so an aborted checkpoint would block them indefinitely. Idempotent,
+                    // so it is safe when the abort happened after FlushBegin or before the barrier was ever set.
+                    //
+                    // Deliberately does not call vectorManager.CheckpointCompleted(): that reclaims deletions, which
+                    // is only safe once a checkpoint has made them recoverable. A failed checkpoint has not, so they
+                    // must stay queued for the next successful one.
+                    rangeIndexManager?.ClearCheckpointBarrier();
+                    break;
             }
         }
 
