@@ -7125,7 +7125,7 @@
   {
     "Command": "REPLCONF",
     "Name": "REPLCONF",
-    "Summary": "Configures a Redis server as a replica of another, or promotes it to a primary.",
+    "Summary": "An internal command for configuring the replication stream.",
     "Group": "Server",
     "Complexity": "O(1)",
     "Arguments": [
@@ -7154,7 +7154,7 @@
   {
     "Command": "PSYNC",
     "Name": "PSYNC",
-    "Summary": "Synchronously replicates data from a primary to a replica, or vice versa.",
+    "Summary": "An internal command used in replication.",
     "Group": "Server",
     "Complexity": "O(N) where N is the amount of data replicated",
     "Arguments": [

@@ -13,7 +13,13 @@ namespace Garnet.test.sentinel.Fixtures
     /// </summary>
     internal sealed class RedisSentinelProcess : ProcessWrapper
     {
-        public const string DefaultCacheDir = "/home/skyline/.cache/redis-bin/7.4.11";
+        /// <summary>
+        /// Conventional binary location, resolved against the current user's home
+        /// directory so the tests are not tied to one developer's machine. Override with
+        /// the GARNET_TEST_REDIS_SENTINEL env var when redis-sentinel lives elsewhere.
+        /// </summary>
+        public static string DefaultCacheDir =>
+            System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".cache", "redis-bin", "7.4.11");
 
         private readonly string _sentinelConfigPath;
         private readonly string _primaryName;

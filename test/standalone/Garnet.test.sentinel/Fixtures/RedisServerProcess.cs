@@ -8,15 +8,22 @@ using System.IO;
 namespace Garnet.test.sentinel.Fixtures
 {
     /// <summary>
-    /// Spawns a stock redis-server subprocess (the binary we built earlier into
-    /// ~/.cache/redis-bin/7.4.11/redis-server). Discovers the binary via the
-    /// GARNET_TEST_REDIS_SERVER env var or the conventional cache path.
+    /// Spawns a stock redis-server subprocess (a binary the developer builds once, e.g.
+    /// into ~/.cache/redis-bin/7.4.11/redis-server). Discovers the binary via the
+    /// GARNET_TEST_REDIS_SERVER env var, falling back to the conventional cache path
+    /// under the current user's home directory.
     ///
     /// Ready line is "Ready to accept connections", which redis-server emits on stdout.
     /// </summary>
     internal sealed class RedisServerProcess : ProcessWrapper
     {
-        public const string DefaultCacheDir = "/home/skyline/.cache/redis-bin/7.4.11";
+        /// <summary>
+        /// Conventional binary location, resolved against the current user's home
+        /// directory so the tests are not tied to one developer's machine. Override with
+        /// the GARNET_TEST_REDIS_SERVER env var when Redis lives elsewhere.
+        /// </summary>
+        public static string DefaultCacheDir =>
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".cache", "redis-bin", "7.4.11");
 
         private readonly string _configPath;
         private readonly bool _asReplica;

@@ -4607,7 +4607,7 @@
     "Command": "PSYNC",
     "Name": "PSYNC",
     "Arity": 3,
-    "Flags": "Admin, NoAsyncLoading, NoScript, Stale",
+    "Flags": "Admin, NoAsyncLoading, NoMulti, NoScript, Stale",
     "AclCategories": "Admin, Dangerous, Slow"
   },
   {

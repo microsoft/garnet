@@ -42,7 +42,9 @@ namespace Garnet.server
         /// </list>
         ///
         /// <para>The response is always <c>+FULLRESYNC &lt;primaryReplId&gt; 0</c>
-        /// followed by a $N\r\n&lt;RDB&gt;\r\n frame containing the empty-DB RDB body.</para>
+        /// followed by a <c>$N\r\n&lt;RDB&gt;</c> frame containing the empty-DB RDB body.
+        /// Note that this frame is <em>not</em> a normal RESP bulk string: the transfer is
+        /// length-delimited and carries no trailing CRLF after the RDB bytes.</para>
         /// </summary>
         private bool NetworkPSYNC()
         {
@@ -91,8 +93,18 @@ namespace Garnet.server
             while (!RespWriteUtils.TryWriteDirect(" 0\r\n"u8, ref dcurr, dend))
                 SendAndReset();
 
-            // Write $<len>\r\n<RDB>\r\n
-            while (!RespWriteUtils.TryWriteBulkString(rdbWithCrc, ref dcurr, dend))
+            // Write $<len>\r\n<RDB> — with NO trailing CRLF.
+            //
+            // The replication transfer is length-delimited: Redis sends
+            // "$<len>\r\n" followed by exactly <len> bytes of RDB and nothing else.
+            // We therefore cannot use RespWriteUtils.TryWriteBulkString, which
+            // appends a trailing CRLF as part of the normal bulk-string encoding and
+            // would leave two stray bytes at the head of the replication command
+            // stream. Verified against a live 7.4.11 primary (172-byte RDB, zero
+            // bytes following the body).
+            while (!RespWriteUtils.TryWriteBulkStringLength(rdbWithCrc.Length, ref dcurr, dend))
+                SendAndReset();
+            while (!RespWriteUtils.TryWriteDirect(rdbWithCrc, ref dcurr, dend))
                 SendAndReset();
 
             return true;

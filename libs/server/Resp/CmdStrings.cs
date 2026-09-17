@@ -70,14 +70,19 @@ namespace Garnet.server
         // arguments (already uppercased by the parser) via EqualsUpperCaseSpanIgnoringCase,
         // which Debug.Asserts that the constant side is ASCII 'A'-'Z'. Keys containing
         // non-alphabetic characters (the hyphens in listening-port / ip-address /
-        // no-one-connects) additionally require allowNonAlphabeticChars: true at the
+        // rdb-only) additionally require allowNonAlphabeticChars: true at the
         // call site, mirroring the LIB_NAME / LIB_VER pattern in ClientCommands.cs.
+        //
+        // This set is the option list recognised by REPLCONF in Redis 7.4, confirmed by
+        // probing a live 7.4.11 server. Note that Redis does NOT recognise some options
+        // that look plausible: "no-one-connects", "eof" and "psync2" are all rejected
+        // with -ERR Unrecognized REPLCONF option (eof/psync2 are CAPA *values*, not keys).
         public static ReadOnlySpan<byte> LISTENING_PORT => "LISTENING-PORT"u8;
         public static ReadOnlySpan<byte> IP_ADDRESS => "IP-ADDRESS"u8;
         public static ReadOnlySpan<byte> CAPA => "CAPA"u8;
+        public static ReadOnlySpan<byte> RDB_ONLY => "RDB-ONLY"u8;
         public static ReadOnlySpan<byte> ACK => "ACK"u8;
         public static ReadOnlySpan<byte> GETACK => "GETACK"u8;
-        public static ReadOnlySpan<byte> NO_ONE_CONNECTS => "NO-ONE-CONNECTS"u8;
         public static ReadOnlySpan<byte> RICREATE => "RI.CREATE"u8;
         public static ReadOnlySpan<byte> RISET => "RI.SET"u8;
         public static ReadOnlySpan<byte> RIGET => "RI.GET"u8;

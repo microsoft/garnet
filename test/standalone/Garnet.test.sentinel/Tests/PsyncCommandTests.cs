@@ -22,6 +22,7 @@ using System.IO;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using Garnet.test.sentinel.Fixtures;
 using NUnit.Framework;
@@ -32,7 +33,23 @@ namespace Garnet.test.sentinel.Tests
     [TestFixture]
     public class PsyncCommandTests : TestBase
     {
-        private const string RedisBinaryDir = "/home/skyline/.cache/redis-bin/7.4.11";
+        /// <summary>
+        /// Directory holding the stock redis binaries used by the interoperability tests.
+        /// Honours GARNET_TEST_REDIS_SERVER (the file, whose directory is used) so the
+        /// tests are not tied to one developer's machine, and otherwise falls back to the
+        /// conventional per-user cache path.
+        /// </summary>
+        private static string RedisBinaryDir
+        {
+            get
+            {
+                var configured = Environment.GetEnvironmentVariable("GARNET_TEST_REDIS_SERVER");
+                if (!string.IsNullOrEmpty(configured))
+                    return Path.GetDirectoryName(configured)!;
+
+                return Fixtures.RedisServerProcess.DefaultCacheDir;
+            }
+        }
 
         /// <summary>
         /// Sends a raw PSYNC command over a fresh TCP connection and returns the
@@ -57,7 +74,10 @@ namespace Garnet.test.sentinel.Tests
             ClassicAssert.That(fullResyncLine, Does.StartWith("+FULLRESYNC"),
                 $"Expected +FULLRESYNC reply, got: {fullResyncLine}");
 
-            // Next line is the RDB body header: $<len>\r\n, then <body>, then \r\n
+            // Next line is the length-delimited RDB header: $<len>\r\n, then exactly
+            // <len> bytes of RDB payload. This is NOT a normal RESP bulk string: the
+            // replication transfer omits the trailing CRLF (verified against a live
+            // Redis 7.4.11 primary), so no trailer may be expected or sent.
             var rdbHeader = await ReadLineAsync(ns);
             ClassicAssert.That(rdbHeader, Does.StartWith("$"),
                 $"Expected bulk-string header for RDB, got: {rdbHeader}");
@@ -72,9 +92,12 @@ namespace Garnet.test.sentinel.Tests
             }
             ClassicAssert.AreEqual(rdbLen, read, "RDB body short read.");
 
-            // Then the trailing CRLF after the bulk string.
-            var trailingCrLf = await ReadBytesAsync(ns, 2);
-            ClassicAssert.AreEqual("\r\n", Encoding.ASCII.GetString(trailingCrLf));
+            // Assert that nothing follows the RDB body. A stray trailer here would be
+            // consumed by the replica as the first bytes of the replication command
+            // stream, so this check guards the framing fix.
+            var extra = await ReadBytesOrNoneAsync(ns, 2, timeoutMs: 500);
+            ClassicAssert.AreEqual(0, extra.Length,
+                $"Expected no bytes after the RDB body (length-delimited framing), got: {BitConverter.ToString(extra)}");
 
             return rdbBody;
         }
@@ -122,6 +145,27 @@ namespace Garnet.test.sentinel.Tests
                 read += n;
             }
             return buf;
+        }
+
+        /// <summary>
+        /// Reads up to <paramref name="count"/> bytes, giving up after
+        /// <paramref name="timeoutMs"/> and returning whatever (possibly nothing) arrived.
+        /// Used to assert the *absence* of trailing bytes, where blocking indefinitely
+        /// would hang the test instead of failing it.
+        /// </summary>
+        private static async Task<byte[]> ReadBytesOrNoneAsync(NetworkStream ns, int count, int timeoutMs)
+        {
+            var buf = new byte[count];
+            using var cts = new CancellationTokenSource(timeoutMs);
+            try
+            {
+                var n = await ns.ReadAsync(buf.AsMemory(0, count), cts.Token);
+                return buf.AsSpan(0, n).ToArray();
+            }
+            catch (OperationCanceledException)
+            {
+                return [];
+            }
         }
 
         [Test]
