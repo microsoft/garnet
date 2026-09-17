@@ -5,6 +5,7 @@ using System;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Threading;
 using Garnet.common;
 using Microsoft.Extensions.Logging;
 
@@ -121,10 +122,36 @@ namespace Garnet.server
                 var destinationPath = Path.Combine(dir, toBase + suffix);
                 if (File.Exists(destinationPath))
                     throw new GarnetException($"Object-log upgrade cannot move '{sourcePath}' to '{destinationPath}': the destination already exists.");
-                File.Move(sourcePath, destinationPath);
+                MoveWhenHandleReleased(sourcePath, destinationPath);
                 ++moved;
             }
             return moved;
+        }
+
+        /// <summary>
+        /// Move one segment file, retrying briefly while the file is still locked. A device's file handle can outlive the Dispose that
+        /// closed it, because an in-flight IO completion still holds it; the rename runs immediately after the store is closed and would
+        /// otherwise fail on that lag. Retries are bounded so a genuinely held file still surfaces as an error.
+        /// </summary>
+        static void MoveWhenHandleReleased(string sourcePath, string destinationPath)
+        {
+            const int maxAttempts = 50;
+            for (var attempt = 1; ; attempt++)
+            {
+                try
+                {
+                    File.Move(sourcePath, destinationPath);
+                    return;
+                }
+                catch (IOException) when (attempt < maxAttempts)
+                {
+                    Thread.Sleep(100);
+                }
+                catch (UnauthorizedAccessException) when (attempt < maxAttempts)
+                {
+                    Thread.Sleep(100);
+                }
+            }
         }
 
         /// <summary>

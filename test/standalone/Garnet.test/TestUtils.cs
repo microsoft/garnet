@@ -352,7 +352,8 @@ namespace Garnet.test
             string segmentSize = "1g",
             bool? nativeAllocator = null,
             string bufferPoolMemoryBudget = null,
-            bool upgrade = false
+            bool upgrade = false,
+            bool useFoldOverCheckpoints = false
         )
         {
             if (useAzureStorage)
@@ -399,6 +400,7 @@ namespace Garnet.test
                 DisablePubSub = disablePubSub,
                 Recover = tryRecover,
                 Upgrade = upgrade,
+                UseFoldOverCheckpoints = useFoldOverCheckpoints,
                 IndexMemorySize = indexSize,
                 UseNativeAllocator = nativeAllocator ?? false,
                 EnableAOF = enableAOF,

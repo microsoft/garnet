@@ -480,6 +480,14 @@ namespace Tsavorite.core
             RecoveryOptions options = new(fuzzyRegionStartAddress: recoveredHLCInfo.info.fuzzyRegionStartAddress, undoNextVersion,
                 checkpointVersion: recoveredHLCInfo.info.hybridLogRecoveryVersion);
 
+            // Up-converting a downlevel object log must rewrite EVERY record, not just the ones recovery would otherwise bring back.
+            // Recovery normally scans down only to the checkpoint's headAddress and leaves colder pages on disk untouched; those pages
+            // still carry downlevel records pointing into the object log that the conversion retires, so they would be unreadable
+            // afterwards. Scan from the beginning of the log instead. The pages are evicted again as the conversion walks up, so this
+            // costs IO rather than memory.
+            if (HybridLogRecoveryInfo.UsesDownlevelObjectLog(options.checkpointVersion) && hlogBase.HasObjectLogDevice)
+                scanFromAddress = headAddress = recoveredHLCInfo.info.beginAddress;
+
             // Make index consistent for version v
             long readOnlyAddress;
             long finalHeadAddress;

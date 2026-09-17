@@ -1,6 +1,8 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using Garnet.common;
@@ -8,6 +10,7 @@ using Garnet.server;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using StackExchange.Redis;
+using Tsavorite.core;
 
 namespace Garnet.test
 {
@@ -170,6 +173,35 @@ namespace Garnet.test
             ClassicAssert.AreEqual((0, 0), MissingCounts(NumKeys, extraKeys), "data was lost across checkpoint-after-replay (checkpointed, aof-only)");
         }
 
+        /// <summary>Count out-of-line main-log records still carrying the downlevel ReuseObjectIdForSize flag (bit 63).</summary>
+        static unsafe int CountDownlevelRecordsOnMainLog()
+        {
+            var logDir = new DirectoryInfo(TestUtils.MethodTestDir).FullName;
+            var storeCheckpointDir = Path.Combine(logDir, "Store", GarnetServerOptions.GetCheckpointDirectoryName(0));
+            var namingScheme = new DefaultCheckpointNamingScheme(storeCheckpointDir);
+            using var checkpointManager = new DeviceLogCommitCheckpointManager(new LocalStorageNamedDeviceFactoryCreator(), namingScheme, removeOutdated: false);
+
+            var info = new HybridLogRecoveryInfo();
+            info.Recover(checkpointManager.GetLogCheckpointTokens().Last(), checkpointManager);
+
+            var pageBytes = File.ReadAllBytes(Path.Combine(logDir, "Store", "hlog.0"));
+            var downlevel = 0;
+            fixed (byte* pagePtr = pageBytes)
+            {
+                var pageBase = (long)pagePtr;
+                foreach (var offset in GetOnDiskRecordOffsets(pageBase, info.beginAddress, info.recoveredTailAddress, info.pageSize))
+                {
+                    var logRecord = new LogRecord(pageBase + offset);
+                    if (!logRecord.Info.Valid || logRecord.DataHeader.RecordIsInline)
+                        continue;
+                    var word = *(ulong*)logRecord.GetObjectLogPositionAddress(logRecord.GetOptionalStartAddress());
+                    if ((word & ObjectLogFilePositionInfo.kReuseObjectIdForSizeMask) != 0)
+                        ++downlevel;
+                }
+            }
+            return downlevel;
+        }
+
         /// <summary>Recover normally and report how many checkpointed and how many AOF-only keys are missing.</summary>
         static (int checkpointed, int aofOnly) MissingCounts(int checkpointedKeys, int extraKeys)
         {
@@ -190,6 +222,205 @@ namespace Garnet.test
                     ++missingAofOnly;
             }
             return (missingCheckpointed, missingAofOnly);
+        }
+
+        [Test]
+        [Category("GarnetServer")]
+        public void UpgradeConvertsDownlevelStoreEndToEnd([Values(false, true)] bool enableAof)
+        {
+            // The whole feature, end to end on a real Garnet store: take a current-format FoldOver checkpoint, rewrite it on disk as
+            // downlevel (v7), then run --upgrade and start normally. Values are kept small so every object stays headerless, which is
+            // what makes the current object-log bytes byte-identical to the v7 dense encoding and lets the fixture reuse them.
+            const int numKeys = 400;
+            const int extraKeys = 16;
+
+            using (var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, lowMemory: true, useFoldOverCheckpoints: true, enableAOF: enableAof, commitFrequencyMs: enableAof ? -1 : 0))
+            {
+                server.Start();
+                using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
+                var db = redis.GetDatabase(0);
+                for (var key = 0; key < numKeys; key++)
+                    db.HashSet($"hash:{key}", [new HashEntry("f", SmallValueFor(key))]);
+                _ = db.Execute("SAVE");
+
+                if (enableAof)
+                {
+                    for (var key = numKeys; key < numKeys + extraKeys; key++)
+                        db.HashSet($"hash:{key}", [new HashEntry("f", SmallValueFor(key))]);
+                    _ = db.Execute("COMMITAOF");
+                }
+            }
+
+            var convertedRecords = TransformGarnetCheckpointToV7();
+            ClassicAssert.Greater(convertedRecords, 0, "expected the fixture to have out-of-line object records on the main log");
+
+            using (var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, lowMemory: true, useFoldOverCheckpoints: true, enableAOF: enableAof, commitFrequencyMs: enableAof ? -1 : 0, tryRecover: true, upgrade: true))
+            {
+                ClassicAssert.IsTrue(server.IsUpgradeRun);
+                server.RunUpgrade();
+            }
+
+            // Every out-of-line record must now be in the current format. One left in the downlevel encoding would be decoded with the
+            // current reader on a live read, which is how a missed record surfaces (as garbage lengths) rather than as a recovery error.
+            var stillDownlevel = CountDownlevelRecordsOnMainLog();
+            ClassicAssert.AreEqual(0, stillDownlevel, "records were left in the downlevel encoding after the upgrade");
+
+            // The downlevel object log must have been retired and the converted one promoted in its place.
+            var storeDir = ObjectLogUpgradeSwap.GetStoreDirectory(new DirectoryInfo(TestUtils.MethodTestDir).FullName);
+            ClassicAssert.IsNotEmpty(Directory.GetFiles(storeDir, GarnetServerOptions.ObjectLogFileName + "_pre_upgrade_*"), "the downlevel object log should have been retired");
+            ClassicAssert.IsEmpty(Directory.GetFiles(storeDir, GarnetServerOptions.UpgradeObjectLogFileName + ".*"), "the converted object log should have been promoted, not left behind");
+            ClassicAssert.IsFalse(ObjectLogUpgradeSwap.HasPendingSwap(new DirectoryInfo(TestUtils.MethodTestDir).FullName), "the rename marker should be gone");
+
+            using (var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, lowMemory: true, useFoldOverCheckpoints: true, enableAOF: enableAof, commitFrequencyMs: enableAof ? -1 : 0, tryRecover: true))
+            {
+                server.Start();
+                using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
+                var db = redis.GetDatabase(0);
+                var total = numKeys + (enableAof ? extraKeys : 0);
+                for (var key = 0; key < total; key++)
+                    ClassicAssert.AreEqual(SmallValueFor(key), (string)db.HashGet($"hash:{key}", "f"), $"hash:{key} did not survive the v7 upgrade");
+            }
+        }
+
+        // Small enough that the serialized object stays headerless in the current format, so its bytes are already v7-dense.
+        static string SmallValueFor(int key) => $"v{key:D6}";
+
+        [Test]
+        [Category("GarnetServer")]
+        public void FoldOverCheckpointObjectsSurviveDiskReads([Values(false, true)] bool enableAof)
+        {
+            // Control for UpgradeConvertsDownlevelStoreEndToEnd: the same fixture and reads, with no v7 transform and no upgrade run.
+            // Isolates whether a failure there comes from the up-conversion or from recovering a FoldOver object checkpoint at all.
+            const int numKeys = 400;
+
+            using (var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, lowMemory: true, useFoldOverCheckpoints: true, enableAOF: enableAof, commitFrequencyMs: enableAof ? -1 : 0))
+            {
+                server.Start();
+                using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
+                var db = redis.GetDatabase(0);
+                for (var key = 0; key < numKeys; key++)
+                    db.HashSet($"hash:{key}", [new HashEntry("f", SmallValueFor(key))]);
+                _ = db.Execute("SAVE");
+            }
+
+            using (var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, lowMemory: true, useFoldOverCheckpoints: true, enableAOF: enableAof, commitFrequencyMs: enableAof ? -1 : 0, tryRecover: true))
+            {
+                server.Start();
+                using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
+                var db = redis.GetDatabase(0);
+                for (var key = 0; key < numKeys; key++)
+                    ClassicAssert.AreEqual(SmallValueFor(key), (string)db.HashGet($"hash:{key}", "f"), $"hash:{key} did not survive a FoldOver checkpoint");
+            }
+        }
+
+        /// <summary>
+        /// Rewrite the store's current-format FoldOver checkpoint on disk so it reads as downlevel (v7): re-stamp each out-of-line
+        /// record into the v7 split-length encoding and re-serialize the metadata at version 7. The object-log bytes and record
+        /// positions are left untouched, which is only valid while every object is headerless in the current format.
+        /// </summary>
+        /// <returns>The number of records converted.</returns>
+        static unsafe int TransformGarnetCheckpointToV7()
+        {
+            var logDir = new DirectoryInfo(TestUtils.MethodTestDir).FullName;
+            var storeCheckpointDir = Path.Combine(logDir, "Store", GarnetServerOptions.GetCheckpointDirectoryName(0));
+            var namingScheme = new DefaultCheckpointNamingScheme(storeCheckpointDir);
+            using var checkpointManager = new DeviceLogCommitCheckpointManager(new LocalStorageNamedDeviceFactoryCreator(), namingScheme, removeOutdated: false);
+
+            var token = checkpointManager.GetLogCheckpointTokens().Single();
+            var info = new HybridLogRecoveryInfo();
+            info.Recover(token, checkpointManager);
+            ClassicAssert.AreEqual(HybridLogRecoveryInfo.CheckpointVersion, info.hybridLogRecoveryVersion, "expected a current-format checkpoint before transform");
+            ClassicAssert.AreEqual(0, info.useSnapshotFile, "expected a FoldOver checkpoint");
+            ClassicAssert.Greater(info.pageSize, 0, "current-format metadata should record the page size");
+
+            var mainLogSegment = Path.Combine(logDir, "Store", "hlog.0");
+            ClassicAssert.IsTrue(File.Exists(mainLogSegment), $"no main-log segment at {mainLogSegment}");
+            ClassicAssert.LessOrEqual(info.recoveredTailAddress, info.segmentSize, "v7 fixture expects a single main-log segment");
+
+            var pageBytes = File.ReadAllBytes(mainLogSegment);
+            var converted = 0;
+            fixed (byte* pagePtr = pageBytes)
+            {
+                var pageBase = (long)pagePtr;   // logical address == file offset on segment 0
+                foreach (var offset in GetOnDiskRecordOffsets(pageBase, info.beginAddress, info.recoveredTailAddress, info.pageSize))
+                {
+                    var logRecord = new LogRecord(pageBase + offset);
+                    if (!logRecord.Info.Valid || logRecord.DataHeader.RecordIsInline)
+                        continue;
+                    StampRecordAsV7(pageBase + offset);
+                    ++converted;
+                }
+            }
+            File.WriteAllBytes(mainLogSegment, pageBytes);
+
+            checkpointManager.CommitLogCheckpointMetadata(token, info.ToByteArray(targetVersion: 7));
+            return converted;
+        }
+
+        /// <summary>
+        /// Convert one record from the current objectId-hint encoding to the v7 split-length encoding. The object-log bytes and the
+        /// record's position are left alone, so this is only valid when the current encoding is headerless.
+        /// </summary>
+        static unsafe void StampRecordAsV7(long physicalAddress)
+        {
+            var logRecord = new LogRecord(physicalAddress);
+            var dataHeader = logRecord.DataHeader;
+
+            // Field addresses use the physical (objectId-slot) field lengths, which are independent of the raw length bits, so they are
+            // stable across the stamp. Read the current exact lengths and the position word BEFORE mutating the length fields.
+            var (_, keyAddress) = dataHeader.GetKeyFieldInfo(physicalAddress);
+            var (_, valueAddress) = dataHeader.GetValueFieldInfo(physicalAddress);
+            var objectLogPositionPtr = (ulong*)logRecord.GetObjectLogPositionAddress(logRecord.GetOptionalStartAddress());
+            var positionWord = *objectLogPositionPtr;
+            _ = logRecord.GetObjectLogRecordStartPositionAndLengths(out var keyLength, out var valueLength, HybridLogRecoveryInfo.CheckpointVersion);
+
+            // A component the current format frames with a leading ChunkHeader is NOT byte-identical to v7 dense, so reusing its bytes
+            // would silently misframe the fixture rather than exercise the up-conversion. The exact-size flag is precisely the
+            // "headerless, and the extent is the true length" condition this reuse depends on.
+            ClassicAssert.AreNotEqual(0UL, positionWord & ObjectLogFilePositionInfo.kValueIsExactSizeMask,
+                "fixture value is not stored exact-size/headerless, so its current bytes are not v7 dense");
+            ClassicAssert.LessOrEqual((long)valueLength, (long)RecordDataHeader.kOutOfLineExactSizeCutoff, "fixture value is too large to reuse as v7 dense bytes");
+
+            if (dataHeader.KeyIsOverflow)
+            {
+                *(int*)keyAddress = (int)((uint)keyLength >> RecordDataHeader.kKeyLengthBits);
+                dataHeader.KeyLength = keyLength & (int)RecordDataHeader.kKeyLengthLowBitsMask;
+            }
+            if (!dataHeader.ValueIsInline)
+            {
+                *(int*)valueAddress = (int)(valueLength >> RecordDataHeader.kValueLengthBits);
+                dataHeader.ValueLength = (int)(valueLength & RecordDataHeader.kValueLengthLowBitsMask);
+            }
+            logRecord.SetDataHeader(dataHeader);
+
+            // Keep the segment+offset; set the ReuseObjectIdForSize flag (bit 63); clear the current size-hint flags.
+            *objectLogPositionPtr = (positionWord & ObjectLogFilePositionInfo.SegmentAndOffsetMask) | ObjectLogFilePositionInfo.kReuseObjectIdForSizeMask;
+        }
+
+        /// <summary>
+        /// Offsets of the on-disk main-log records in a pinned segment-0 image, skipping each page's PageHeader and the end-of-page
+        /// filler. Logical address equals file offset on segment 0.
+        /// </summary>
+        static unsafe List<long> GetOnDiskRecordOffsets(long pageBase, long beginAddress, long tailAddress, long pageSize)
+        {
+            List<long> offsets = [];
+            for (var pageStart = beginAddress & ~(pageSize - 1); pageStart < tailAddress; pageStart += pageSize)
+            {
+                var offset = Math.Max(beginAddress, pageStart + PageHeader.Size);
+                var pageEnd = Math.Min(tailAddress, pageStart + pageSize);
+                while (offset < pageEnd)
+                {
+                    var logRecord = new LogRecord(pageBase + offset);
+                    if (logRecord.Info.IsNull)
+                    {
+                        offset += RecordInfo.Size;
+                        continue;
+                    }
+                    offsets.Add(offset);
+                    offset += logRecord.AllocatedSize;
+                }
+            }
+            return offsets;
         }
 
         [Test]
