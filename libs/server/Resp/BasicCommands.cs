@@ -539,7 +539,7 @@ namespace Garnet.server
             var key = parseState.GetArgSliceByRef(0);
 
             // Validate expiry
-            if (!parseState.TryGetInt(1, out var expiry))
+            if (!parseState.TryGetLong(1, out var expiry))
             {
                 return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER);
             }
@@ -549,10 +549,10 @@ namespace Garnet.server
                 return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_INVALIDEXP_IN_SET);
             }
 
-            var valMetadata = DateTimeOffset.UtcNow.Ticks +
-                              (highPrecision
-                                  ? TimeSpan.FromMilliseconds(expiry).Ticks
-                                  : TimeSpan.FromSeconds(expiry).Ticks);
+            if (!TryGetAbsoluteExpiryTicks(expiry, highPrecision, out var valMetadata))
+            {
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_INVALIDEXP_IN_SET);
+            }
 
             var value = parseState.GetArgSliceByRef(2);
 
@@ -608,7 +608,7 @@ namespace Garnet.server
             var key = parseState.GetArgSliceByRef(0);
             var val = parseState.GetArgSliceByRef(1);
 
-            var expiry = 0;
+            long expiry = 0;
             ReadOnlySpan<byte> errorMessage = default;
             var existOptions = ExistOptions.None;
             var expOption = ExpirationOption.None;
@@ -650,7 +650,7 @@ namespace Garnet.server
                         }
 
                         // account for the expiry argument by moving past the tokenIdx
-                        if (!parseState.TryGetInt(tokenIdx++, out expiry))
+                        if (!parseState.TryGetLong(tokenIdx++, out expiry))
                         {
                             errorMessage = CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER;
                             break;
@@ -749,16 +749,16 @@ namespace Garnet.server
             return true;
         }
 
-        private unsafe bool NetworkSET_EX<TGarnetApi>(RespCommand cmd, ExpirationOption expOption, int expiry, PinnedSpanByte key, PinnedSpanByte val, ref TGarnetApi storageApi)
+        private unsafe bool NetworkSET_EX<TGarnetApi>(RespCommand cmd, ExpirationOption expOption, long expiry, PinnedSpanByte key, PinnedSpanByte val, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
             Debug.Assert(cmd == RespCommand.SET);
 
             var highPrecision = expOption == ExpirationOption.PX;
-            var valMetadata = DateTimeOffset.UtcNow.Ticks +
-                              (highPrecision
-                                  ? TimeSpan.FromMilliseconds(expiry).Ticks
-                                  : TimeSpan.FromSeconds(expiry).Ticks);
+            if (!TryGetAbsoluteExpiryTicks(expiry, highPrecision, out var valMetadata))
+            {
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_INVALIDEXP_IN_SET);
+            }
 
             var input = new StringInput(cmd, 0, valMetadata);
 
@@ -769,15 +769,14 @@ namespace Garnet.server
             return true;
         }
 
-        private bool NetworkSET_Conditional<TGarnetApi>(RespCommand cmd, int expiry, PinnedSpanByte key, bool getValue, bool highPrecision, ref TGarnetApi storageApi)
+        private bool NetworkSET_Conditional<TGarnetApi>(RespCommand cmd, long expiry, PinnedSpanByte key, bool getValue, bool highPrecision, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            var inputArg = expiry == 0
-                ? 0
-                : DateTimeOffset.UtcNow.Ticks +
-                  (highPrecision
-                      ? TimeSpan.FromMilliseconds(expiry).Ticks
-                      : TimeSpan.FromSeconds(expiry).Ticks);
+            long inputArg = 0;
+            if (expiry != 0 && !TryGetAbsoluteExpiryTicks(expiry, highPrecision, out inputArg))
+            {
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_INVALIDEXP_IN_SET);
+            }
 
             var input = new StringInput(cmd, ref parseState, startIdx: 1, arg1: inputArg);
 
@@ -844,6 +843,20 @@ namespace Garnet.server
 
                 return true;
             }
+        }
+
+        private static bool TryGetAbsoluteExpiryTicks(long expiry, bool highPrecision, out long expiryTicks)
+        {
+            var ticksPerUnit = highPrecision ? TimeSpan.TicksPerMillisecond : TimeSpan.TicksPerSecond;
+            var currentTicks = DateTimeOffset.UtcNow.Ticks;
+            if (expiry > (long.MaxValue - currentTicks) / ticksPerUnit)
+            {
+                expiryTicks = 0;
+                return false;
+            }
+
+            expiryTicks = currentTicks + expiry * ticksPerUnit;
+            return true;
         }
 
         /// <summary>

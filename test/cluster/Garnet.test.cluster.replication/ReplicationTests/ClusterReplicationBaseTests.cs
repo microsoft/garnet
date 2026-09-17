@@ -672,6 +672,9 @@ namespace Garnet.test.cluster
             // Enable when old primary becomes replica
             context.clusterTestUtils.WaitForReplicaRecovery(primaryIndex, logger: context.logger);
 
+            // The promoted node has to be usable as a primary by this client before writes are sent to it
+            context.clusterTestUtils.WaitForPrimaryRole(replicaIndex, context.logger);
+
             // Check if allowed to write to new Primary
             if (!performRMW)
                 context.PopulatePrimary(ref context.kvPairs, keyLength, kvpairCount, replicaIndex, slotMap: slotMap);
@@ -743,6 +746,9 @@ namespace Garnet.test.cluster
             // Wait for both nodes to enter no failover
             context.clusterTestUtils.WaitForNoFailover(1, context.logger);
             context.clusterTestUtils.WaitForNoFailover(2, context.logger);
+
+            // Node 1 has to be usable as a primary by this client before writes are sent to it
+            context.clusterTestUtils.WaitForPrimaryRole(1, context.logger);
 
             // Wait for replica to recover
             context.clusterTestUtils.WaitForReplicaRecovery(2, context.logger);
@@ -1039,6 +1045,11 @@ namespace Garnet.test.cluster
             _ = context.clusterTestUtils.AddDelSlotsRange(newPrimaryIndex, [(0, 16383)], addslot: true, context.logger);
             context.clusterTestUtils.BumpEpoch(newPrimaryIndex, logger: context.logger);
 
+            // Slot re-assignment settles asynchronously, so the new primary has to observe itself as the
+            // owner before it will serve writes instead of redirecting them
+            var newPrimaryId = context.clusterTestUtils.ClusterMyId(newPrimaryIndex, context.logger);
+            context.clusterTestUtils.WaitForSlotOwnership(newPrimaryIndex, newPrimaryId, [0, 16383], context.logger);
+
             // New primary diverges to its own history by new random seed
             kvpairCount <<= 1;
             if (disableObjects)
@@ -1051,7 +1062,6 @@ namespace Garnet.test.cluster
 
             if (!ckptBeforeDivergence || multiCheckpointAfterDivergence) context.clusterTestUtils.Checkpoint(newPrimaryIndex, logger: context.logger);
 
-            var newPrimaryId = context.clusterTestUtils.ClusterMyId(newPrimaryIndex, context.logger);
             while (true)
             {
                 var replicaConfig = context.clusterTestUtils.ClusterNodes(replicaIndex, context.logger);
