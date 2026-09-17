@@ -82,10 +82,10 @@ namespace Garnet.server
                 // No hybrid log being found is not the same as an error in recovery. e.g. fresh start
                 //
                 // This is deliberately not gated on FailOnRecoveryError: a server started with --recover against a
-                // directory that has never been checkpointed must come up rather than refuse to start. The cost is
-                // that a checkpoint which was never written is indistinguishable here from a fresh start, so the
-                // server comes up empty either way. That is why a failed checkpoint must never be reported as a
-                // successful save (see RecordCheckpointOutcome) - the save path is the only place the difference is known.
+                // directory that has never been checkpointed must come up rather than refuse to start. When no
+                // checkpoint was ever written there are no tokens to find, so this is indistinguishable from a fresh
+                // start and the server comes up empty. That is why a failed checkpoint must never be reported as a
+                // successful save (see RecordCheckpointOutcome).
                 Logger?.LogInformation(ex, "No Hybrid Log found for recovery; storeVersion = {storeVersion};", storeVersion);
             }
             catch (Exception ex)
