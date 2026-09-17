@@ -146,6 +146,22 @@ namespace Garnet.test
         public const string certFile = "testcert.pfx";
         public const string certPassword = "placeholder";
 
+        static X509Certificate2 clientCertificate;
+        static readonly object clientCertificateLock = new();
+
+        /// <summary>
+        /// Returns the client certificate used by TLS-enabled tests, importing it from disk on first use.
+        /// Importing a PKCS#12 file is expensive - on Windows it materializes a key container - and the
+        /// options factory a client calls runs once per connection attempt, so importing per connection
+        /// spends that cost inside the client's connect timeout on every attempt and retry.
+        /// </summary>
+        public static X509Certificate2 GetClientCertificate()
+        {
+            if (clientCertificate is not null) return clientCertificate;
+            lock (clientCertificateLock)
+                return clientCertificate ??= CertificateUtils.GetMachineCertificateByFile(certFile, certPassword);
+        }
+
         public const string pemCertFile = "testcert.pem";
         public const string pemCertKeyFile = "testcert.key.pem";
 
@@ -858,7 +874,7 @@ namespace Garnet.test
                     tlsServerOptionsOverride: null,
                     clusterTlsClientOptionsOverride: new SslClientAuthenticationOptions
                     {
-                        ClientCertificates = certificates ?? [CertificateUtils.GetMachineCertificateByFile(certFile, certPassword)],
+                        ClientCertificates = certificates ?? [GetClientCertificate()],
                         TargetHost = "GarnetTest",
                         AllowRenegotiation = false,
                         RemoteCertificateValidationCallback = ValidateServerCertificate,
@@ -968,7 +984,10 @@ namespace Garnet.test
                 SyncTimeout = (int)TimeSpan.FromSeconds(30).TotalMilliseconds,
                 AsyncTimeout = (int)TimeSpan.FromSeconds(30).TotalMilliseconds,
                 AllowAdmin = allowAdmin,
-                ReconnectRetryPolicy = new LinearRetry((int)TimeSpan.FromSeconds(10).TotalMilliseconds),
+                // Gates how often the multiplexer may retry a dropped connection. Tests restart nodes
+                // routinely, and the first command issued afterwards blocks until the next retry is
+                // allowed, so a long interval is dead time added to every such test.
+                ReconnectRetryPolicy = new LinearRetry((int)TimeSpan.FromMilliseconds(250).TotalMilliseconds),
                 ConnectRetry = 5,
                 IncludeDetailInExceptions = true,
                 AbortOnConnectFail = true,
@@ -992,7 +1011,7 @@ namespace Garnet.test
                 (
                     new SslClientAuthenticationOptions
                     {
-                        ClientCertificates = certificates ?? [CertificateUtils.GetMachineCertificateByFile(certFile, certPassword)],
+                        ClientCertificates = certificates ?? [GetClientCertificate()],
                         TargetHost = "GarnetTest",
                         AllowRenegotiation = false,
                         RemoteCertificateValidationCallback = ValidateServerCertificate,
@@ -1009,7 +1028,7 @@ namespace Garnet.test
             {
                 sslOptions = new SslClientAuthenticationOptions
                 {
-                    ClientCertificates = [CertificateUtils.GetMachineCertificateByFile(certFile, certPassword)],
+                    ClientCertificates = [GetClientCertificate()],
                     TargetHost = "GarnetTest",
                     AllowRenegotiation = false,
                     RemoteCertificateValidationCallback = ValidateServerCertificate,
@@ -1025,7 +1044,7 @@ namespace Garnet.test
             {
                 sslOptions = new SslClientAuthenticationOptions
                 {
-                    ClientCertificates = [CertificateUtils.GetMachineCertificateByFile(certFile, certPassword)],
+                    ClientCertificates = [GetClientCertificate()],
                     TargetHost = "GarnetTest",
                     AllowRenegotiation = false,
                     RemoteCertificateValidationCallback = ValidateServerCertificate,
@@ -1041,7 +1060,7 @@ namespace Garnet.test
             {
                 sslOptions = new SslClientAuthenticationOptions
                 {
-                    ClientCertificates = [CertificateUtils.GetMachineCertificateByFile(certFile, certPassword)],
+                    ClientCertificates = [GetClientCertificate()],
                     TargetHost = "GarnetTest",
                     AllowRenegotiation = false,
                     RemoteCertificateValidationCallback = ValidateServerCertificate,

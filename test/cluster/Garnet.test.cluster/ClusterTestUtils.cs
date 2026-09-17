@@ -16,7 +16,6 @@ using System.Threading.Tasks;
 using Garnet.client;
 using Garnet.common;
 using Garnet.server;
-using Garnet.server.TLS;
 using GarnetClusterManagement;
 using Microsoft.Extensions.Logging;
 using NUnit.Framework;
@@ -408,12 +407,36 @@ namespace Garnet.test.cluster
 
                     if (count > 0)
                     {
-                        await BackOffAsync(cancellationToken: context.cts.Token).ConfigureAwait(false);
+                        var msg = context.cts.IsCancellationRequested
+                            ? DescribeSyncMismatch(server.EndPoint, expectedConfig, nodes)
+                            : null;
+                        await BackOffAsync(cancellationToken: context.cts.Token, msg: msg).ConfigureAwait(false);
                         goto retry;
                     }
                 }
                 break;
             }
+        }
+
+        /// <summary>
+        /// Describes which of the expected nodes a server has not yet agreed on, so a cluster that never
+        /// converges reports what it was waiting for.
+        /// </summary>
+        /// <param name="endPoint">Server whose view was inspected.</param>
+        /// <param name="expectedConfig">Expected cluster configuration, keyed by node id.</param>
+        /// <param name="nodes">Nodes the server reported, or null if it reported none.</param>
+        private static string DescribeSyncMismatch(EndPoint endPoint, Dictionary<string, string> expectedConfig, IEnumerable<ClusterNode> nodes)
+        {
+            var sb = new StringBuilder($"Cluster did not converge; {endPoint} disagrees on:");
+            foreach (var (nodeId, raw) in expectedConfig)
+            {
+                var node = nodes?.FirstOrDefault(n => n.NodeId == nodeId);
+                if (node == null)
+                    sb.Append($"\n  {nodeId}: not known to this node. Expected: {raw.Trim()}");
+                else if (!NodesEqual(new ClientClusterNode(raw.Trim()), node))
+                    sb.Append($"\n  {nodeId}: expected [{raw.Trim()}] actual [{node.Raw?.Trim()}]");
+            }
+            return sb.ToString();
         }
 
         public (List<ShardInfo>, List<ushort>) SimpleSetupCluster(
@@ -906,7 +929,7 @@ namespace Garnet.test.cluster
                 {
                     sslOptions = new SslClientAuthenticationOptions
                     {
-                        ClientCertificates = [CertificateUtils.GetMachineCertificateByFile(certFile, certPassword)],
+                        ClientCertificates = [TestUtils.GetClientCertificate()],
                         TargetHost = "GarnetTest",
                         AllowRenegotiation = false,
                         RemoteCertificateValidationCallback = TestUtils.ValidateServerCertificate,
@@ -928,7 +951,7 @@ namespace Garnet.test.cluster
             {
                 sslOptions = new SslClientAuthenticationOptions
                 {
-                    ClientCertificates = [CertificateUtils.GetMachineCertificateByFile(certFile, certPassword)],
+                    ClientCertificates = [TestUtils.GetClientCertificate()],
                     TargetHost = "GarnetTest",
                     AllowRenegotiation = false,
                     RemoteCertificateValidationCallback = TestUtils.ValidateServerCertificate,
@@ -2282,6 +2305,10 @@ namespace Garnet.test.cluster
         public string ClusterReplicate(int replicaNodeIndex, int primaryNodeIndex, bool async = false, bool failEx = true, ILogger logger = null)
         {
             var primaryId = ClusterMyId(primaryNodeIndex, logger: logger);
+            // CLUSTER REPLICATE resolves the primary's node id against the replica's own configuration.
+            // MEET only makes the node it is sent to aware of its target; the reverse direction arrives
+            // through the gossip handshake that follows, so wait for it before issuing the command.
+            WaitUntilNodeIdIsKnown(replicaNodeIndex, primaryId, logger: logger);
             return ClusterReplicate(replicaNodeIndex, primaryId, async: async, failEx: failEx, logger: logger);
         }
 
@@ -3433,13 +3460,23 @@ namespace Garnet.test.cluster
             }
         }
 
+        /// <summary>
+        /// Waits until the node reports the primary role and the multiplexer has observed it.
+        /// The multiplexer caches a per-endpoint replica flag and rejects a primary-only command
+        /// before it leaves the client, refreshing that flag only on its periodic configuration
+        /// check, so a promotion is not usable until the topology has been re-read.
+        /// </summary>
         public void WaitForPrimaryRole(int nodeIndex, ILogger logger = null)
         {
+            var endPoint = GetEndPoint(nodeIndex);
             while (true)
             {
-                var role = RoleCommand(nodeIndex, logger);
-                if (role.Value.Equals("master")) break;
-                BackOff(cancellationToken: context.cts.Token);
+                if (RoleCommand(endPoint, logger).Value.Equals("master"))
+                {
+                    if (!redis.GetServer(endPoint).IsReplica) break;
+                    _ = redis.Configure();
+                }
+                BackOff(cancellationToken: context.cts.Token, msg: nameof(WaitForPrimaryRole));
             }
         }
 
