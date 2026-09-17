@@ -121,6 +121,8 @@ namespace Garnet.server
             long elapsed = Stopwatch.GetTimestamp() - startTimestamp;
             startTimestamp = 0;
 
+            // Single-capture, not a convenience: the monitor thread can null this field concurrently,
+            // so a null check followed by a separate dereference would fault. See ReclaimIfQuiesced.
             var histograms = latency ?? Allocate();
             histograms[ver].RecordValue(IsValidRange(elapsed) ? elapsed : HISTOGRAM_UPPER_BOUND);
         }
@@ -130,6 +132,8 @@ namespace Garnet.server
         {
             if (elapsed == 0) return;
 
+            // Single-capture, not a convenience: the monitor thread can null this field concurrently,
+            // so a null check followed by a separate dereference would fault. See ReclaimIfQuiesced.
             var histograms = latency ?? Allocate();
             histograms[ver].RecordValue(IsValidRange(elapsed) ? elapsed : HISTOGRAM_UPPER_BOUND);
         }
