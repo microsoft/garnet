@@ -367,10 +367,13 @@ namespace Garnet.server
         ///
         /// Three semantics worth stating, because each is a question an operator will ask:
         ///
-        /// Every inbound connection counts, including replicas and cluster peers. That matches
-        /// Redis, whose accept path compares against the client list plus
-        /// <c>getClusterConnectionsCount()</c>, and where a replica link starts life as an ordinary
-        /// client. So a cluster's effective client headroom is the limit less its peer links.
+        /// Every inbound connection counts, including replica and cluster gossip links, and at the
+        /// limit those are refused along with ordinary clients: Garnet accepts every connection on
+        /// the same listener and cannot tell the kinds apart at accept time. Redis also counts
+        /// cluster bus links against <c>maxclients</c>, but accepts them on a separate bus port
+        /// whose accept path applies no limit, so Redis refuses replica links and Garnet refuses
+        /// replica and gossip links alike. Size the limit to leave headroom for peer links, or a
+        /// cluster that reaches it cannot form new ones.
         ///
         /// Lowering the limit below the live population does not disconnect anyone. It is admission
         /// control, evaluated once per accept, so the population drains naturally rather than being

@@ -57,8 +57,14 @@ namespace Garnet.server
             if (sessionMetrics == null || metrics == null) return;
             int ver = lm.PriorVersion; // Use prior version for merge
             for (int i = 0; i < metrics.Length; i++)
-                if (sessionMetrics[i].latency != null && sessionMetrics[i].latency[ver].TotalCount > 0)
-                    metrics[i].latency.Add(sessionMetrics[i].latency[ver]);
+            {
+                // Captured once: the monitor sweep can drop a quiesced session's histograms concurrently,
+                // and it does so under the session's dispose lock while this runs on the disposing
+                // session's thread under a different one.
+                var sessionLatency = sessionMetrics[i].latency;
+                if (sessionLatency != null && sessionLatency[ver].TotalCount > 0)
+                    metrics[i].latency.Add(sessionLatency[ver]);
+            }
         }
 
         public void Reset(LatencyMetricsType cmd)

@@ -49,12 +49,18 @@ namespace Garnet.server
         /// <param name="threshold">Consecutive empty windows required before releasing.</param>
         /// <remarks>
         /// The reference is dropped rather than handed back to <c>ArrayPool&lt;long&gt;.Shared</c>, and that
-        /// is load-bearing. <see cref="RecordValue(int)"/> is deliberately unsynchronised: it tests
-        /// <see cref="latency"/> for null and then dereferences it, so a caller can already hold the array
-        /// when this runs. Returning the arrays would let another session rent them and receive that write,
-        /// or would null <c>_counts</c> under a live writer. Dropping leaves the racing writer holding the
-        /// only reference to the graph, so its write is unobservable and the collector reclaims it
-        /// afterwards -- costing at most one sample from a window that recorded none.
+        /// is load-bearing. The record path is deliberately unsynchronised, so a caller can already be
+        /// holding the array when this runs. Returning the arrays would let another session rent them and
+        /// receive that write, or would null <c>_counts</c> under a live writer. Dropping leaves the racing
+        /// writer holding the only reference to the graph, so its write is unobservable and the collector
+        /// reclaims it afterwards -- costing at most one sample from a window that recorded none.
+        /// <para>
+        /// That argument holds only because every reader of <see cref="latency"/> loads it into a local
+        /// exactly once and then works from that local. A reader that re-read the field after null-checking
+        /// it could observe the null this method publishes and fault instead. The field is written here
+        /// under the session's dispose lock but read on paths that do not take it, so single-capture is the
+        /// invariant to preserve when changing any reader.
+        /// </para>
         /// <para>
         /// Both buffers are tested because one is being written while the other is merged, and a session
         /// that resumed part way through the window has values in only one of them.
@@ -62,10 +68,11 @@ namespace Garnet.server
         /// </remarks>
         public bool ReclaimIfQuiesced(int threshold)
         {
-            if (latency == null)
+            var histograms = latency;
+            if (histograms == null)
                 return false;
 
-            if (latency[0].TotalCount > 0 || latency[1].TotalCount > 0)
+            if (histograms[0].TotalCount > 0 || histograms[1].TotalCount > 0)
             {
                 emptyWindows = 0;
                 return false;
@@ -79,8 +86,12 @@ namespace Garnet.server
             return true;
         }
 
+        /// <summary>
+        /// Allocates this type's histograms and returns them, so a caller reads <see cref="latency"/>
+        /// exactly once on both the hit and the miss path.
+        /// </summary>
         [MethodImpl(MethodImplOptions.NoInlining)]
-        void Allocate()
+        LongHistogram[] Allocate()
             => latency =
             [
                 new(HISTOGRAM_LOWER_BOUND, HISTOGRAM_UPPER_BOUND, significantDigits),
@@ -89,11 +100,12 @@ namespace Garnet.server
 
         public void Return()
         {
-            if (latency == null)
+            var histograms = latency;
+            if (histograms == null)
                 return;
 
-            latency[0].Return();
-            latency[1].Return();
+            histograms[0].Return();
+            histograms[1].Return();
         }
 
         public void Start()
@@ -109,8 +121,8 @@ namespace Garnet.server
             long elapsed = Stopwatch.GetTimestamp() - startTimestamp;
             startTimestamp = 0;
 
-            if (latency == null) Allocate();
-            latency[ver].RecordValue(IsValidRange(elapsed) ? elapsed : HISTOGRAM_UPPER_BOUND);
+            var histograms = latency ?? Allocate();
+            histograms[ver].RecordValue(IsValidRange(elapsed) ? elapsed : HISTOGRAM_UPPER_BOUND);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -118,8 +130,8 @@ namespace Garnet.server
         {
             if (elapsed == 0) return;
 
-            if (latency == null) Allocate();
-            latency[ver].RecordValue(IsValidRange(elapsed) ? elapsed : HISTOGRAM_UPPER_BOUND);
+            var histograms = latency ?? Allocate();
+            histograms[ver].RecordValue(IsValidRange(elapsed) ? elapsed : HISTOGRAM_UPPER_BOUND);
         }
     }
 }

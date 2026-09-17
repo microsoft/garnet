@@ -1,4 +1,4 @@
-﻿---
+---
 id: configuration
 sidebar_label: Configuration
 title: Garnet Configuration
@@ -172,7 +172,7 @@ For all available command line settings, run `GarnetServer.exe -h` or `GarnetSer
 | **ThreadPoolMaxThreads** | ```--maxthreads``` | ```int``` | Integer in range:<br/>[0, MaxValue] | Maximum worker threads in thread pool, 0 uses the system default. |
 | **ThreadPoolMinIOCompletionThreads** | ```--miniothreads``` | ```int``` | Integer in range:<br/>[0, MaxValue] | Minimum IO completion threads in thread pool, 0 uses the system default. |
 | **ThreadPoolMaxIOCompletionThreads** | ```--maxiothreads``` | ```int``` | Integer in range:<br/>[0, MaxValue] | Maximum IO completion threads in thread pool, 0 uses the system default. |
-| **NetworkConnectionLimit** | ```--network-connection-limit``` | ```int``` | Integer in range:<br/>[-1, MaxValue] | Maximum number of simultaneously active network connections across all listeners, or -1 for unlimited. Equivalent to the Redis `maxclients` parameter, and settable at runtime with `CONFIG SET maxclients`. Replica and cluster peer links count against it, as they do in Redis. Lowering it refuses new connections rather than disconnecting established ones. |
+| **NetworkConnectionLimit** | ```--network-connection-limit``` | ```int``` | Integer in range:<br/>[-1, MaxValue] | Maximum number of simultaneously active network connections across all listeners, or -1 for unlimited. Equivalent to the Redis `maxclients` parameter, and settable at runtime with `CONFIG SET maxclients`. Every inbound connection counts, including replica and cluster gossip links, and at the limit those are refused along with ordinary clients -- Garnet accepts them all on one listener and cannot tell the kinds apart at accept time. Redis also counts cluster bus links against `maxclients`, but accepts them on a separate bus port that applies no limit. Leave headroom for peer links. Lowering it refuses new connections rather than disconnecting established ones. |
 | **UseAzureStorage** | ```--use-azure-storage``` | ```bool``` |  | Use Azure Page Blobs for storage instead of local storage. |
 | **AzureStorageServiceUri** | ```--storage-service-uri``` | ```string``` |  | The URI to use when establishing connection to Azure Blobs Storage. |
 | **AzureStorageManagedIdentity** | ```--storage-managed-identity``` | ```string``` |  | The managed identity to use when establishing connection to Azure Blobs Storage. |

@@ -203,14 +203,26 @@ namespace Garnet.common
         }
 
         /// <summary>
-        /// Record that a buffer was shrunk because the budget was under pressure.
+        /// Record that a buffer was shrunk because the budget was under pressure. Inert when the budget is
+        /// disabled, matching <see cref="OnBufferAcquired"/>: every pool that was handed no budget shares the
+        /// <see cref="Disabled"/> singleton, so counting there would put a contended process-wide interlocked
+        /// write on the shrink path of connections the budget does not govern.
         /// </summary>
-        public void RecordPressureShrink() => Interlocked.Increment(ref pressureShrinks);
+        public void RecordPressureShrink()
+        {
+            if (!IsEnabled) return;
+            _ = Interlocked.Increment(ref pressureShrinks);
+        }
 
         /// <summary>
-        /// Record that a buffer was shrunk after a quiet stretch.
+        /// Record that a buffer was shrunk after a quiet stretch. Inert when the budget is disabled, for the
+        /// reason given on <see cref="RecordPressureShrink"/>.
         /// </summary>
-        public void RecordIdleShrink() => Interlocked.Increment(ref idleShrinks);
+        public void RecordIdleShrink()
+        {
+            if (!IsEnabled) return;
+            _ = Interlocked.Increment(ref idleShrinks);
+        }
 
         /// <summary>
         /// Recompute and publish <see cref="TargetBufferSize"/>. Runs from <see cref="OnBufferAcquired"/> and
