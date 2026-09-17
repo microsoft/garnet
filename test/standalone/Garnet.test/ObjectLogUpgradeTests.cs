@@ -1,8 +1,6 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System;
-using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using Garnet.common;
@@ -10,7 +8,6 @@ using Garnet.server;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using StackExchange.Redis;
-using Tsavorite.core;
 
 namespace Garnet.test
 {
@@ -174,33 +171,7 @@ namespace Garnet.test
         }
 
         /// <summary>Count out-of-line main-log records still carrying the downlevel ReuseObjectIdForSize flag (bit 63).</summary>
-        static unsafe int CountDownlevelRecordsOnMainLog()
-        {
-            var logDir = new DirectoryInfo(TestUtils.MethodTestDir).FullName;
-            var storeCheckpointDir = Path.Combine(logDir, "Store", GarnetServerOptions.GetCheckpointDirectoryName(0));
-            var namingScheme = new DefaultCheckpointNamingScheme(storeCheckpointDir);
-            using var checkpointManager = new DeviceLogCommitCheckpointManager(new LocalStorageNamedDeviceFactoryCreator(), namingScheme, removeOutdated: false);
-
-            var info = new HybridLogRecoveryInfo();
-            info.Recover(checkpointManager.GetLogCheckpointTokens().Last(), checkpointManager);
-
-            var pageBytes = File.ReadAllBytes(Path.Combine(logDir, "Store", "hlog.0"));
-            var downlevel = 0;
-            fixed (byte* pagePtr = pageBytes)
-            {
-                var pageBase = (long)pagePtr;
-                foreach (var offset in GetOnDiskRecordOffsets(pageBase, info.beginAddress, info.recoveredTailAddress, info.pageSize))
-                {
-                    var logRecord = new LogRecord(pageBase + offset);
-                    if (!logRecord.Info.Valid || logRecord.DataHeader.RecordIsInline)
-                        continue;
-                    var word = *(ulong*)logRecord.GetObjectLogPositionAddress(logRecord.GetOptionalStartAddress());
-                    if ((word & ObjectLogFilePositionInfo.kReuseObjectIdForSizeMask) != 0)
-                        ++downlevel;
-                }
-            }
-            return downlevel;
-        }
+        static int CountDownlevelRecordsOnMainLog() => V7CheckpointFixture.CountDownlevelRecordsOnMainLog(new DirectoryInfo(TestUtils.MethodTestDir).FullName);
 
         /// <summary>Recover normally and report how many checkpointed and how many AOF-only keys are missing.</summary>
         static (int checkpointed, int aofOnly) MissingCounts(int checkpointedKeys, int extraKeys)
@@ -314,141 +285,11 @@ namespace Garnet.test
         }
 
         /// <summary>
-        /// Rewrite the store's current-format checkpoint on disk so it reads as downlevel (v7): re-stamp each out-of-line record into
-        /// the v7 split-length encoding and re-serialize the metadata at version 7. The object-log bytes and record positions are left
-        /// untouched, which is only valid while every object is headerless in the current format. Handles both checkpoint types: a
-        /// FoldOver checkpoint's records are all on the main log, while a Snapshot checkpoint splits them between the main log (below
-        /// mainLogRecoveryEndAddress) and the snapshot file above it.
+        /// Rewrite the store's current-format checkpoint on disk so it reads as downlevel (v7), so the upgrade path has something
+        /// to convert. See <see cref="V7CheckpointFixture"/>, which the cluster upgrade tests share.
         /// </summary>
         /// <returns>The number of records converted.</returns>
-        static unsafe int TransformGarnetCheckpointToV7()
-        {
-            var logDir = new DirectoryInfo(TestUtils.MethodTestDir).FullName;
-            var storeCheckpointDir = Path.Combine(logDir, "Store", GarnetServerOptions.GetCheckpointDirectoryName(0));
-            var namingScheme = new DefaultCheckpointNamingScheme(storeCheckpointDir);
-            using var checkpointManager = new DeviceLogCommitCheckpointManager(new LocalStorageNamedDeviceFactoryCreator(), namingScheme, removeOutdated: false);
-
-            var token = checkpointManager.GetLogCheckpointTokens().Single();
-            var info = new HybridLogRecoveryInfo();
-            info.Recover(token, checkpointManager);
-            ClassicAssert.AreEqual(HybridLogRecoveryInfo.CheckpointVersion, info.hybridLogRecoveryVersion, "expected a current-format checkpoint before transform");
-            ClassicAssert.Greater(info.pageSize, 0, "current-format metadata should record the page size");
-            ClassicAssert.LessOrEqual(info.recoveredTailAddress, info.segmentSize, "v7 fixture expects a single main-log segment");
-
-            // The main log carries the whole recovered range for FoldOver, and only the region below the snapshot boundary otherwise.
-            var mainLogUntil = info.useSnapshotFile == 0 ? info.recoveredTailAddress : info.mainLogRecoveryEndAddress;
-            var converted = StampRegionAsV7(Path.Combine(logDir, "Store", "hlog.0"), addressBias: 0, info.beginAddress, mainLogUntil, info.pageSize);
-
-            if (info.useSnapshotFile != 0)
-            {
-                // Snapshot-file offset 0 is the start of the page containing snapshotFileLogicalStartAddress, so bias the image by that
-                // page's logical start to index it with logical addresses.
-                var snapshotDir = Path.Combine(storeCheckpointDir, "cpr-checkpoints", token.ToString());
-                var snapshotSegment = Directory.GetFiles(snapshotDir, "snapshot.dat.*").OrderBy(f => f, StringComparer.Ordinal).FirstOrDefault();
-                ClassicAssert.IsNotNull(snapshotSegment, $"no snapshot segment in {snapshotDir}");
-                var snapshotStartPageAddress = info.snapshotFileLogicalStartAddress & ~(info.pageSize - 1);
-                converted += StampRegionAsV7(snapshotSegment, addressBias: snapshotStartPageAddress, info.mainLogRecoveryEndAddress, info.recoveredTailAddress, info.pageSize);
-            }
-
-            checkpointManager.CommitLogCheckpointMetadata(token, info.ToByteArray(targetVersion: 7));
-            return converted;
-        }
-
-        /// <summary>Re-stamp every out-of-line record of one on-disk log image in [fromAddress, untilAddress) into the v7 encoding.</summary>
-        /// <param name="path">The log segment file.</param>
-        /// <param name="addressBias">The logical address that maps to offset 0 of this file.</param>
-        /// <param name="fromAddress">The lowest logical address to convert.</param>
-        /// <param name="untilAddress">The exclusive highest logical address to convert.</param>
-        /// <param name="pageSize">The log's page size.</param>
-        static unsafe int StampRegionAsV7(string path, long addressBias, long fromAddress, long untilAddress, long pageSize)
-        {
-            if (fromAddress >= untilAddress)
-                return 0;
-            ClassicAssert.IsTrue(File.Exists(path), $"no log segment at {path}");
-
-            var imageBytes = File.ReadAllBytes(path);
-            var converted = 0;
-            fixed (byte* imagePtr = imageBytes)
-            {
-                var pageBase = (long)imagePtr - addressBias;
-                foreach (var offset in GetOnDiskRecordOffsets(pageBase, fromAddress, untilAddress, pageSize))
-                {
-                    var logRecord = new LogRecord(pageBase + offset);
-                    if (!logRecord.Info.Valid || logRecord.DataHeader.RecordIsInline)
-                        continue;
-                    StampRecordAsV7(pageBase + offset);
-                    ++converted;
-                }
-            }
-            File.WriteAllBytes(path, imageBytes);
-            return converted;
-        }
-
-        /// <summary>
-        /// Convert one record from the current objectId-hint encoding to the v7 split-length encoding. The object-log bytes and the
-        /// record's position are left alone, so this is only valid when the current encoding is headerless.
-        /// </summary>
-        static unsafe void StampRecordAsV7(long physicalAddress)
-        {
-            var logRecord = new LogRecord(physicalAddress);
-            var dataHeader = logRecord.DataHeader;
-
-            // Field addresses use the physical (objectId-slot) field lengths, which are independent of the raw length bits, so they are
-            // stable across the stamp. Read the current exact lengths and the position word BEFORE mutating the length fields.
-            var (_, keyAddress) = dataHeader.GetKeyFieldInfo(physicalAddress);
-            var (_, valueAddress) = dataHeader.GetValueFieldInfo(physicalAddress);
-            var objectLogPositionPtr = (ulong*)logRecord.GetObjectLogPositionAddress(logRecord.GetOptionalStartAddress());
-            var positionWord = *objectLogPositionPtr;
-            _ = logRecord.GetObjectLogRecordStartPositionAndLengths(out var keyLength, out var valueLength, HybridLogRecoveryInfo.CheckpointVersion);
-
-            // A component the current format frames with a leading ChunkHeader is NOT byte-identical to v7 dense, so reusing its bytes
-            // would silently misframe the fixture rather than exercise the up-conversion. The exact-size flag is precisely the
-            // "headerless, and the extent is the true length" condition this reuse depends on.
-            ClassicAssert.AreNotEqual(0UL, positionWord & ObjectLogFilePositionInfo.kValueIsExactSizeMask,
-                "fixture value is not stored exact-size/headerless, so its current bytes are not v7 dense");
-            ClassicAssert.LessOrEqual((long)valueLength, (long)RecordDataHeader.kOutOfLineExactSizeCutoff, "fixture value is too large to reuse as v7 dense bytes");
-
-            if (dataHeader.KeyIsOverflow)
-            {
-                *(int*)keyAddress = (int)((uint)keyLength >> RecordDataHeader.kKeyLengthBits);
-                dataHeader.KeyLength = keyLength & (int)RecordDataHeader.kKeyLengthLowBitsMask;
-            }
-            if (!dataHeader.ValueIsInline)
-            {
-                *(int*)valueAddress = (int)(valueLength >> RecordDataHeader.kValueLengthBits);
-                dataHeader.ValueLength = (int)(valueLength & RecordDataHeader.kValueLengthLowBitsMask);
-            }
-            logRecord.SetDataHeader(dataHeader);
-
-            // Keep the segment+offset; set the ReuseObjectIdForSize flag (bit 63); clear the current size-hint flags.
-            *objectLogPositionPtr = (positionWord & ObjectLogFilePositionInfo.SegmentAndOffsetMask) | ObjectLogFilePositionInfo.kReuseObjectIdForSizeMask;
-        }
-
-        /// <summary>
-        /// Offsets of the on-disk main-log records in a pinned segment-0 image, skipping each page's PageHeader and the end-of-page
-        /// filler. Logical address equals file offset on segment 0.
-        /// </summary>
-        static unsafe List<long> GetOnDiskRecordOffsets(long pageBase, long beginAddress, long tailAddress, long pageSize)
-        {
-            List<long> offsets = [];
-            for (var pageStart = beginAddress & ~(pageSize - 1); pageStart < tailAddress; pageStart += pageSize)
-            {
-                var offset = Math.Max(beginAddress, pageStart + PageHeader.Size);
-                var pageEnd = Math.Min(tailAddress, pageStart + pageSize);
-                while (offset < pageEnd)
-                {
-                    var logRecord = new LogRecord(pageBase + offset);
-                    if (logRecord.Info.IsNull)
-                    {
-                        offset += RecordInfo.Size;
-                        continue;
-                    }
-                    offsets.Add(offset);
-                    offset += logRecord.AllocatedSize;
-                }
-            }
-            return offsets;
-        }
+        static int TransformGarnetCheckpointToV7() => V7CheckpointFixture.TransformCheckpointToV7(new DirectoryInfo(TestUtils.MethodTestDir).FullName);
 
         [Test]
         [Category("GarnetServer")]

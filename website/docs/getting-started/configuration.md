@@ -269,9 +269,8 @@ Notes:
 * Cluster mode may stay enabled. The run performs its own offline recovery rather than the role-dependent cluster
   startup path, so it examines the node's store whether it is a primary or a replica — routing through cluster startup
   would let a replica finish without reading its checkpoint at all. It never serves requests or establishes
-  replication; up-convert each node, then restart it normally. **This path is not yet covered by an automated
-  end-to-end test**: confirm the log reports a retired object log (`hlog_objs_pre_upgrade_<timestamp>`) before
-  restarting the node.
+  replication, and it leaves the node's identity and slot assignment untouched; up-convert each node, then restart it
+  normally.
 * A multi-database store cannot be up-converted. All databases share one object log, so their conversions would
   overwrite each other; the run fails before renaming anything and leaves the store untouched.
 * The append-only file may stay enabled. The run replays it as part of recovery and folds those records into the
