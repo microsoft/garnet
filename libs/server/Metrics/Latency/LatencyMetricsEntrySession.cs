@@ -23,6 +23,12 @@ namespace Garnet.server
         /// only some of the latency types, and the buffers are large enough that allocating them at
         /// connection time makes the cost scale with connection count rather than with load.
         /// </summary>
+        /// <remarks>
+        /// Nulled by the monitor thread when the session quiesces, on paths that do not take the lock
+        /// the record path runs under. Any new reader must therefore load this field into a local
+        /// exactly once and work from that local; a null check followed by a separate dereference can
+        /// fault. See <see cref="ReclaimIfQuiesced"/>.
+        /// </remarks>
         public LongHistogram[] latency;
 
         /// <summary>
