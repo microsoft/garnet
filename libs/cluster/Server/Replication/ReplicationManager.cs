@@ -4,7 +4,6 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
-using System.IO;
 using System.Linq;
 using System.Text;
 using System.Threading;
@@ -151,9 +150,9 @@ namespace Garnet.cluster
             checkpointStore = new CheckpointStore(storeWrapper, clusterProvider, true, logger);
             aofSyncDriverStore = new(clusterProvider, 1, logger);
 
-            var clusterDataPath = Path.Combine(opts.CheckpointDir ?? string.Empty, "cluster");
-            var deviceFactory = opts.GetInitializedDeviceFactory(clusterDataPath);
-            replicationConfigDevice = deviceFactory.Get(new FileDescriptor(directoryName: "", fileName: "replication.conf"));
+            // Compose "cluster" through the file descriptor rather than the base name; see ClusterManager.
+            var deviceFactory = opts.GetInitializedDeviceFactory(opts.CheckpointDir ?? string.Empty);
+            replicationConfigDevice = deviceFactory.Get(new FileDescriptor(directoryName: "cluster", fileName: "replication.conf"));
             replicationConfigDevicePool = new(1, (int)replicationConfigDevice.SectorSize);
 
             var canRecoverReplicationHistory = replicationConfigDevice.GetFileSize(0) > 0;
