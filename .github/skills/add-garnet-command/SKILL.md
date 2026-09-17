@@ -776,18 +776,22 @@ dotnet format Garnet.slnx --verify-no-changes
 
 ### Run your tests
 ```bash
-dotnet test test/Garnet.test -f net10.0 -c Debug --filter "FullyQualifiedName~RespMyFeatureTests"
+$env:GARNET_TEST_PORT_SLOT = 'auto'; dotnet test test/standalone/Garnet.test -f net10.0 -c Debug --filter "FullyQualifiedName~RespMyFeatureTests"
 ```
 
 ### Run ACL coverage test
 ```bash
-dotnet test test/Garnet.test -f net10.0 -c Debug --filter "FullyQualifiedName~AllCommandsCovered"
+$env:GARNET_TEST_PORT_SLOT = 'auto'; dotnet test test/standalone/Garnet.test -f net10.0 -c Debug --filter "FullyQualifiedName~AllCommandsCovered"
 ```
 
 ### Run broader regression tests
 ```bash
-dotnet test test/Garnet.test -f net10.0 -c Debug --filter "FullyQualifiedName~RespTests"
+$env:GARNET_TEST_PORT_SLOT = 'auto'; dotnet test test/standalone/Garnet.test -f net10.0 -c Debug --filter "FullyQualifiedName~RespTests"
 ```
+
+`GARNET_TEST_PORT_SLOT=auto` keeps this checkout's test ports clear of any other checkout on the machine; see
+`.github/copilot-instructions.md`. Always check the output for `error CS` before trusting a pass — a test project
+that fails to compile silently runs the previously built assembly.
 
 ---
 

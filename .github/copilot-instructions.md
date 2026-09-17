@@ -11,16 +11,16 @@ Garnet is a high-performance remote cache-store from Microsoft Research implemen
 dotnet build
 
 # Run all Garnet tests
-dotnet test test/Garnet.test -f net10.0 -c Debug -l "console;verbosity=detailed"
+dotnet test test/standalone/Garnet.test -f net10.0 -c Debug -l "console;verbosity=detailed"
 
 # Run all cluster tests
-dotnet test test/Garnet.test.cluster -f net10.0 -c Debug -l "console;verbosity=detailed"
+dotnet test test/cluster/Garnet.test.cluster -f net10.0 -c Debug -l "console;verbosity=detailed"
 
 # Run a single test by fully qualified name
-dotnet test test/Garnet.test -f net10.0 -c Debug --filter "FullyQualifiedName~RespTests.PingTest"
+dotnet test test/standalone/Garnet.test -f net10.0 -c Debug --filter "FullyQualifiedName~RespTests.PingTest"
 
 # Run all tests in a single test class
-dotnet test test/Garnet.test -f net10.0 -c Debug --filter "FullyQualifiedName~RespTests"
+dotnet test test/standalone/Garnet.test -f net10.0 -c Debug --filter "FullyQualifiedName~RespTests"
 
 # Build and test Tsavorite independently (has its own solution)
 dotnet build libs/storage/Tsavorite/cs/test/Tsavorite.test.csproj
@@ -35,6 +35,48 @@ cd main/GarnetServer && dotnet run -c Debug -f net10.0 -- --logger-level Trace -
 ```
 
 Target frameworks are `net8.0` and `net10.0`. CI runs tests on both, in Debug and Release, on Ubuntu and Windows.
+
+Test projects live under `test/standalone/` and `test/cluster/` — there is no bare `test/Garnet.test`.
+
+### Running tests when several checkouts share a machine
+
+Garnet's test ports are hardcoded per sub-project (`TestUtils.TestPortAssignment`,
+`ClusterTestContext.ClusterPortAssignment`), so two test hosts running the same sub-project from different
+worktrees bind the same port. The symptom is not a clean failure: your client connects to the other checkout's
+server and returns plausible but wrong results, or the run dies mid-test with `SocketFailure`. Both look exactly
+like real regressions, so this can cost hours before it is even recognized as a port conflict.
+
+Set `GARNET_TEST_PORT_SLOT` on **every** `dotnet test` invocation. Each shell command is a fresh process, so it
+has to be on the same command line:
+
+```bash
+# PowerShell
+$env:GARNET_TEST_PORT_SLOT = 'auto'; dotnet test test/standalone/Garnet.test -f net10.0 -c Debug
+
+# bash
+GARNET_TEST_PORT_SLOT=auto dotnet test test/standalone/Garnet.test -f net10.0 -c Debug
+```
+
+`auto` claims a free port slot for the checkout you are in and shifts every test port by a fixed offset, so all
+of that checkout's test projects can run in parallel on one slot while other checkouts stay out of the way. The
+slot is released automatically when the last test host exits, including on crash or kill. Leaving the variable
+unset keeps the upstream ports unchanged, which is what CI does.
+
+| Value | Behavior |
+|-------|----------|
+| unset or empty | Upstream ports, unchanged. The CI path. |
+| `auto` | Claim (or rejoin) this checkout's slot. Use this locally. |
+| `0`-`7` | A specific slot, for debugging or a pinned port. |
+| anything else | Fails immediately with a diagnostic. |
+
+Two further cautions when sharing a machine:
+
+- **Never terminate processes by name** (`Stop-Process -Name dotnet`, `taskkill /IM testhost.exe`). That kills
+  other checkouts' test hosts and builds, which surfaces as a test host vanishing with no .NET fault event. Kill
+  by PID only.
+- **Always check test output for `error CS` before trusting a result.** If the test project fails to compile,
+  `dotnet test` silently runs the previously built assembly and can report 0 failures on code that never built.
+
 
 ## Architecture
 

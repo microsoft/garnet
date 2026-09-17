@@ -8,5 +8,5 @@ using NUnit.Framework;
 public class TestProjectSetup
 {
     [OneTimeSetUp]
-    public void SetPort() => ClusterTestContext.Port = (int)ClusterPortAssignment.ClusterMultiLogDiskless;
+    public void SetPort() => ClusterTestContext.SetPort(ClusterPortAssignment.ClusterMultiLogDiskless);
 }
