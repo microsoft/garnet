@@ -587,6 +587,10 @@ namespace Garnet
                 throw new GarnetException($"{nameof(RunUpgrade)} requires the --upgrade option");
 
             logger?.LogInformation("Upgrade: recovering and up-converting the object log; the server will not accept connections.");
+
+            // A recovery error normally leaves the server running on whatever was recovered. An upgrade run must not do that: it would
+            // report that nothing needed converting and then rename a partially converted object log into place.
+            opts.FailOnRecoveryError = true;
 #pragma warning disable VSTHRD002 // The upgrade runs to completion synchronously and then exits.
             storeWrapper.RecoverForUpgradeAsync().AsTask().GetAwaiter().GetResult();
 
