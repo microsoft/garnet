@@ -297,6 +297,10 @@ namespace Tsavorite.core
             closest = default;
             closestToken = default;
             cookie = default;
+
+            // The scan is sequential, which is what makes the reject count meaningful as evidence about on-disk
+            // state: one metadata read is in flight at a time, so a rejection reflects the file rather than
+            // interference from a concurrent reader. Parallelizing the loop would invalidate that.
             var candidateTokenCount = 0;
             var unreadableTokenCount = 0;
 

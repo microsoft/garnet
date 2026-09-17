@@ -62,7 +62,8 @@ namespace Tsavorite.core
         public int CandidateTokenCount { get; }
 
         /// <summary>
-        /// Number of the <see cref="CandidateTokenCount"/> tokens whose metadata could not be read.
+        /// Number of the <see cref="CandidateTokenCount"/> tokens whose metadata could not be read. The scan that
+        /// produces this is sequential, so a rejection reflects the on-disk state rather than a concurrent reader.
         /// </summary>
         public int UnreadableTokenCount { get; }
 
