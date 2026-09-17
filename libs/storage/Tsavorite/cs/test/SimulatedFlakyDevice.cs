@@ -349,4 +349,177 @@ namespace Tsavorite.test
         /// <inheritdoc/>
         public override void Dispose() => underlying.Dispose();
     }
+
+    /// <summary>
+    /// Holds each read and write until a test releases it, so completions can be delivered in an order the test chooses.
+    /// The underlying IO is deferred along with its callback, so a caller woken by an unrelated completion observes its
+    /// own buffer exactly as it left it rather than data the device delivered in the meantime.
+    /// </summary>
+    public class GatedCompletionDevice : StorageDeviceBase
+    {
+        /// <summary>A read or write captured by the gate, replayed against the underlying device on release.</summary>
+        private sealed class PendingIo
+        {
+            public bool IsWrite;
+            public int SegmentId;
+            public ulong DeviceAddress;
+            public IntPtr MemoryAddress;
+            public uint Length;
+            public DeviceIOCompletionCallback Callback;
+            public object Context;
+            public int CompletionStamp;
+        }
+
+        private readonly IDevice underlying;
+        private readonly List<PendingIo> pending = [];
+        private readonly object gateLock = new();
+        private int sequence;
+
+        /// <summary>When true, reads and writes are captured rather than issued, until <see cref="Release"/> is called.
+        /// Leave it false to let a test seed or verify the file through the same device.</summary>
+        public volatile bool Gate;
+
+        public GatedCompletionDevice(IDevice underlying) : base(underlying.FileName, underlying.SectorSize, underlying.Capacity)
+            => this.underlying = underlying;
+
+        /// <inheritdoc/>
+        public override void Initialize(long segmentSize, LightEpoch epoch = null, bool omitSegmentIdFromFilename = false)
+        {
+            base.Initialize(segmentSize, epoch, omitSegmentIdFromFilename);
+            underlying.Initialize(segmentSize, epoch, omitSegmentIdFromFilename);
+        }
+
+        /// <inheritdoc/>
+        public override void RemoveSegmentAsync(int segment, AsyncCallback callback, IAsyncResult result)
+            => underlying.RemoveSegmentAsync(segment, callback, result);
+
+        /// <summary>
+        /// Takes the next value of the counter that orders gated completions against events a test records itself, so
+        /// "did this caller return before its own completion?" can be asserted without timing.
+        /// </summary>
+        public int NextSequence() => Interlocked.Increment(ref sequence);
+
+        /// <summary>Counter value taken when the gated operation's callback fired, or 0 while it is still pending.</summary>
+        public int CompletionStamp(int index)
+        {
+            lock (gateLock)
+                return Volatile.Read(ref pending[index].CompletionStamp);
+        }
+
+        /// <summary>Blocks until the gate has captured <paramref name="count"/> operations.</summary>
+        public void WaitForPending(int count, TimeSpan timeout)
+        {
+            var deadline = DateTime.UtcNow + timeout;
+            var spinWait = new SpinWait();
+            while (true)
+            {
+                lock (gateLock)
+                {
+                    if (pending.Count >= count)
+                        return;
+                }
+                if (DateTime.UtcNow >= deadline)
+                    throw new TimeoutException($"Only {pending.Count} of {count} operations reached the gate");
+                spinWait.SpinOnce();
+            }
+        }
+
+        /// <summary>
+        /// Blocks until the released operation's callback has fired. Lets a test separate one completion from the next
+        /// release, so a caller that wakes on a completion it does not own does so while its own IO has not run at all.
+        /// </summary>
+        public void WaitForCompletion(int index, TimeSpan timeout)
+        {
+            var deadline = DateTime.UtcNow + timeout;
+            var spinWait = new SpinWait();
+            while (CompletionStamp(index) == 0)
+            {
+                if (DateTime.UtcNow >= deadline)
+                    throw new TimeoutException($"Operation {index} did not complete");
+                spinWait.SpinOnce();
+            }
+        }
+
+        /// <summary>
+        /// Issues the captured operation and lets its callback run. A non-zero <paramref name="errorCode"/> completes it
+        /// with that error instead, without touching the underlying device.
+        /// </summary>
+        public void Release(int index, uint errorCode = 0)
+        {
+            PendingIo io;
+            lock (gateLock)
+                io = pending[index];
+
+            if (errorCode != 0)
+            {
+                Complete(io, errorCode, 0, null);
+                return;
+            }
+
+            if (io.IsWrite)
+                underlying.WriteAsync(io.MemoryAddress, io.SegmentId, io.DeviceAddress, io.Length,
+                    (code, numBytes, _, ioException) => Complete(io, code, numBytes, ioException), io.Context);
+            else
+                underlying.ReadAsync(io.SegmentId, io.DeviceAddress, io.MemoryAddress, io.Length,
+                    (code, numBytes, _, ioException) => Complete(io, code, numBytes, ioException), io.Context);
+        }
+
+        /// <inheritdoc/>
+        public override void WriteAsync(IntPtr sourceAddress, int segmentId, ulong destinationAddress, uint numBytesToWrite,
+            DeviceIOCompletionCallback callback, object context)
+        {
+            if (!Gate)
+            {
+                underlying.WriteAsync(sourceAddress, segmentId, destinationAddress, numBytesToWrite, callback, context);
+                return;
+            }
+            Capture(new PendingIo
+            {
+                IsWrite = true,
+                SegmentId = segmentId,
+                DeviceAddress = destinationAddress,
+                MemoryAddress = sourceAddress,
+                Length = numBytesToWrite,
+                Callback = callback,
+                Context = context
+            });
+        }
+
+        /// <inheritdoc/>
+        public override void ReadAsync(int segmentId, ulong sourceAddress, IntPtr destinationAddress, uint readLength,
+            DeviceIOCompletionCallback callback, object context)
+        {
+            if (!Gate)
+            {
+                underlying.ReadAsync(segmentId, sourceAddress, destinationAddress, readLength, callback, context);
+                return;
+            }
+            Capture(new PendingIo
+            {
+                SegmentId = segmentId,
+                DeviceAddress = sourceAddress,
+                MemoryAddress = destinationAddress,
+                Length = readLength,
+                Callback = callback,
+                Context = context
+            });
+        }
+
+        private void Capture(PendingIo io)
+        {
+            lock (gateLock)
+                pending.Add(io);
+        }
+
+        // Stamped before the caller's callback runs: the callback is what unblocks the caller, so a stamp taken after it
+        // could not be ordered against the caller's own return.
+        private void Complete(PendingIo io, uint errorCode, uint numBytes, Exception ioException)
+        {
+            Volatile.Write(ref io.CompletionStamp, NextSequence());
+            io.Callback(errorCode, numBytes, io.Context, ioException);
+        }
+
+        /// <inheritdoc/>
+        public override void Dispose() => underlying.Dispose();
+    }
 }
