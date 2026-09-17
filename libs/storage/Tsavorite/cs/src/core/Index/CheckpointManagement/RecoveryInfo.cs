@@ -283,6 +283,13 @@ namespace Tsavorite.core
         public readonly byte[] ToByteArray() => ToByteArray(CheckpointVersion);
 
         /// <summary>
+        /// Write info that was read back from an existing checkpoint to a byte array in the layout it was recovered with. Callers
+        /// that re-serialize recovered metadata must use this rather than <see cref="ToByteArray()"/>, which would relabel a
+        /// downlevel checkpoint as current and so hide the fact that its object log still needs up-converting.
+        /// </summary>
+        public readonly byte[] ToByteArrayPreservingVersion() => ToByteArray(hybridLogRecoveryVersion);
+
+        /// <summary>
         /// Write info to byte array in the layout of <paramref name="targetVersion"/>. Only the current version is written by
         /// production code; downlevel targets exist so compatibility tests can generate real historical metadata through this
         /// serializer rather than relabeling current bytes with an older version number.

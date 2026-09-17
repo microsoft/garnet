@@ -843,11 +843,11 @@ namespace Tsavorite.core
             }
 
             if (info.pageSize != PageSize)
-                throw new TsavoriteException($"Recovery PageSize mismatch: checkpoint was written with {info.pageSize} but this store is configured with {PageSize}");
+                throw new TsavoriteException($"Recovery PageSize mismatch: checkpoint (version {info.hybridLogRecoveryVersion}) was written with {info.pageSize} but this store is configured with {PageSize}");
             if (info.segmentSize != SegmentSize)
-                throw new TsavoriteException($"Recovery SegmentSize mismatch: checkpoint was written with {info.segmentSize} but this store is configured with {SegmentSize}");
+                throw new TsavoriteException($"Recovery SegmentSize mismatch: checkpoint (version {info.hybridLogRecoveryVersion}) was written with {info.segmentSize} but this store is configured with {SegmentSize}");
             if (info.objectLogSegmentSize != actualObjectLogSegmentSize)
-                throw new TsavoriteException($"Recovery ObjectLogSegmentSize mismatch: checkpoint was written with {info.objectLogSegmentSize} but this store is configured with {actualObjectLogSegmentSize}");
+                throw new TsavoriteException($"Recovery ObjectLogSegmentSize mismatch: checkpoint (version {info.hybridLogRecoveryVersion}) was written with {info.objectLogSegmentSize} but this store is configured with {actualObjectLogSegmentSize}");
         }
 
         /// <summary>
