@@ -14,7 +14,7 @@ namespace Garnet.cluster
     internal sealed unsafe partial class ClusterSession : IClusterSession
     {
         public string RemoteNodeId { get; private set; }
-        byte gossipVersion = ClusterConfig.DefaultClusterConfigVersion;
+        byte gossipVersion = ClusterConfig.LegacyClusterConfigVersion;
 
         /// <summary>
         /// Implements CLUSTER BUMPEPOCH command
@@ -360,16 +360,6 @@ namespace Garnet.cluster
         {
             invalidParameters = false;
 
-            // The version query also advertises that this connection can receive version 2.
-            if (parseState.Count == 0)
-            {
-                gossipVersion = ClusterConfig.ClusterConfigVersion;
-                lastSentConfig = null;
-                while (!RespWriteUtils.TryWriteInt32(ClusterConfig.ClusterConfigVersion, ref dcurr, dend))
-                    SendAndReset();
-                return true;
-            }
-
             // Expecting 1 or 2 arguments
             if (parseState.Count is < 1 or > 2)
             {
@@ -409,7 +399,7 @@ namespace Garnet.cluster
                     // GossipWithMeet messages are only send through a call to CLUSTER MEET at the remote node
                     if (gossipWithMeet || current.IsKnown(other.LocalNodeId))
                     {
-                        if (version > gossipVersion)
+                        if (version != gossipVersion)
                         {
                             gossipVersion = version;
                             lastSentConfig = null;

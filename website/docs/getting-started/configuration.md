@@ -279,20 +279,24 @@ endpoints. Removing a peer override restores inheritance from the client endpoin
 
 Deploy the endpoint compatibility release to every cluster node before enabling separate
 client and peer endpoints. During this first rolling upgrade, keep the existing endpoints.
-The compatibility release negotiates gossip versions per connection, so older nodes continue
-to receive their supported format. It also routes internal traffic through peer endpoints
-learned from upgraded nodes and preserves those endpoints in the saved cluster configuration.
+The compatibility release initiates gossip, MEET, and failover exchanges in version one.
+It reads both formats, routes internal traffic through learned peer endpoints, and saves
+version-two cluster configurations to preserve those endpoints across restarts.
 
 After every node runs the compatibility release, deploy the endpoint configuration release
 one node at a time. Separate client and peer endpoints can be enabled on each upgraded node
 immediately, while other nodes still run the compatibility release. Peer endpoints must be
 reachable from every cluster node. Client discovery and redirections continue to use the
-client address, port, and announced hostname.
+client address, port, and announced hostname. The endpoint configuration release initiates
+exchanges in version two. No activation step or capability query is required.
+
+Both releases reply in the format of the last accepted request on each connection, including
+responses to subsequent empty heartbeats. New connections default to version-one replies
+until a configuration is accepted. Version-one messages cannot erase known peer endpoints.
 
 Keep the node's saved cluster configuration when restarting or upgrading it. Updated saved
 configurations require the compatibility release or newer; older binaries cannot read them.
-Rolling back from the endpoint configuration release to the compatibility release also
-requires restoring that node's original endpoint settings.
+This sequence supports forward rolling upgrades, not rollback to version-one-only binaries.
 
 When restarting a primary with surviving replicas, configure the existing
 `cluster-replication-reestablishment-timeout` recovery policy as appropriate for the deployment.

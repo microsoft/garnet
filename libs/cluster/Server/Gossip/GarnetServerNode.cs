@@ -30,7 +30,6 @@ namespace Garnet.cluster
         /// Last transmitted configuration
         /// </summary>
         ClusterConfig lastConfig = null;
-        byte gossipVersion = ClusterConfig.DefaultClusterConfigVersion;
 
         /// <summary>
         /// Outstanding gossip task if any
@@ -112,9 +111,6 @@ namespace Garnet.cluster
 
             cts = CancellationTokenSource.CreateLinkedTokenSource(clusterProvider.clusterManager.ctsGossip.Token, internalCts.Token);
             await gc.ReconnectAsync().WaitAsync(clusterProvider.clusterManager.gossipDelay, cts.Token).ConfigureAwait(false);
-            gossipVersion = await gc.NegotiateGossipVersionAsync(cts.Token)
-                .WaitAsync(clusterProvider.clusterManager.gossipDelay, cts.Token).ConfigureAwait(false);
-            lastConfig = null;
         }
 
         public void Dispose()
@@ -174,7 +170,7 @@ namespace Garnet.cluster
                     // NOTE: We update replication offset for sublog-0 because this info is used in CLUSTER NODES
                     // and we cannot have multiple replication offsets without changing the expected CLUSTER NODES response
                     lastConfig.LazyUpdateLocalReplicationOffset(clusterProvider.replicationManager.GetReplicationOffset(0));
-                byteArray = lastConfig.ToByteArray(gossipVersion);
+                byteArray = lastConfig.ToByteArray(ClusterConfig.OutboundGossipVersion);
             }
             else
             {
@@ -228,7 +224,7 @@ namespace Garnet.cluster
         public Task<MemoryResult<byte>> TryMeetAsync(ClusterConfig config)
         {
             UpdateGossipSend();
-            return gc.GossipWithMeetAsync(config.ToByteArray(gossipVersion), internalCts.Token).WaitAsync(clusterProvider.clusterManager.clusterTimeout, cts.Token);
+            return gc.GossipWithMeetAsync(config.ToByteArray(ClusterConfig.OutboundGossipVersion), internalCts.Token).WaitAsync(clusterProvider.clusterManager.clusterTimeout, cts.Token);
         }
 
         /// <summary>
@@ -242,7 +238,7 @@ namespace Garnet.cluster
             if (task == null)
             {
                 // Issue first time gossip
-                var configArray = clusterProvider.clusterManager.CurrentConfig.ToByteArray(gossipVersion);
+                var configArray = clusterProvider.clusterManager.CurrentConfig.ToByteArray(ClusterConfig.OutboundGossipVersion);
                 gossipTask = GossipAsync(configArray);
                 UpdateGossipSend();
                 clusterProvider.clusterManager.gossipStats.gossip_full_send++;
