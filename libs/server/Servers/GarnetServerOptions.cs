@@ -365,8 +365,6 @@ namespace Garnet.server
         /// Maximum number of simultaneous client connections across all listeners, or -1 for
         /// unlimited. Settable at runtime through <c>CONFIG SET maxclients</c>.
         ///
-        /// Three semantics worth stating, because each is a question an operator will ask:
-        ///
         /// Every inbound connection counts, including replica and cluster gossip links, and at the
         /// limit those are refused along with ordinary clients: Garnet accepts every connection on
         /// the same listener and cannot tell the kinds apart at accept time. Redis also counts
@@ -525,7 +523,7 @@ namespace Garnet.server
             }
             // The pool must be able to recycle buffers all the way down to the adaptive floor, otherwise a
             // buffer clamped below the configured size would fall outside every size class and be dropped
-            // instead of pooled. Only applies when the budget is enabled, so other pools keep today's geometry.
+            // instead of pooled. Only applies when the budget is enabled, so other pools keep their geometry.
             var minAllocationSize = IsNetworkBufferBudgetEnabled() ? GetNetworkReceiveFloor() : 0;
             return new NetworkBufferSettings(sendSize, sendSize, maxReceiveSize, minAllocationSize);
         }

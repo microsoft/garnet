@@ -133,7 +133,7 @@ namespace Garnet.common
             }
             else
             {
-                // Preserve the historical bound: maxEntriesPerLevel entries on every level simultaneously.
+                // Derived bound: maxEntriesPerLevel entries on every level simultaneously.
                 long derived = 0;
                 for (var i = 0; i < numLevels; i++)
                     derived += (long)maxEntriesPerLevel * (minAllocationSize << i);
@@ -180,10 +180,9 @@ namespace Garnet.common
             budget.OnBufferReleased();
 
             var level = Position(length);
-            // While the budget is binding, an over-sized idle buffer is pinned memory that the live
-            // connections need, so drop it rather than holding it on the free list. Unpressured it is pooled
-            // normally, so repeated short-lived connections handling moderately large payloads keep their
-            // reuse. Same definition of pressure the receive shrink policy uses.
+            // While the budget is binding, an over-sized idle buffer is pinned memory the live connections
+            // need, so drop it rather than holding it on the free list. Unpressured it is pooled normally.
+            // Same definition of pressure the receive shrink policy uses.
             if (level >= 0 && budget.IsUnderPressure && length > TargetSizeFor(buffer.source))
                 level = -1;
 

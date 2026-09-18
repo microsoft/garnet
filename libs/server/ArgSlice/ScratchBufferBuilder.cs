@@ -109,11 +109,11 @@ namespace Garnet.server
         /// </summary>
         /// <remarks>
         /// Cold by construction, and the caller owns the interval. Only a caller that runs once per batch may
-        /// drive this: several callers reset far more often than that -- notably the Lua interpreter, which
-        /// resets per string while decoding a JSON document -- and checkpointing from those would fire many
-        /// times within a single command, shrinking a buffer the very next element re-grows. The owning
-        /// session counts the interval, so a session with several capped buffers pays one countdown for all
-        /// of them. A reset must already have invalidated every outstanding slice.
+        /// drive this: several callers reset far more often -- notably the Lua interpreter, which resets per
+        /// string while decoding a JSON document -- and checkpointing from those would shrink a buffer the
+        /// very next element re-grows. The owning session counts the interval, so a session with several
+        /// capped buffers pays one countdown for all of them. A reset must already have invalidated every
+        /// outstanding slice.
         /// </remarks>
         [MethodImpl(MethodImplOptions.NoInlining)]
         internal void ShrinkCheckpoint()

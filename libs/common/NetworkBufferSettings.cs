@@ -31,7 +31,7 @@ namespace Garnet.common
 
         /// <summary>
         /// Smallest size class the pool built from these settings can recycle. Zero derives it from the three
-        /// sizes above, which is the historical behaviour.
+        /// sizes above.
         /// </summary>
         /// <remarks>
         /// This exists so that the pool's size classes can start below <see cref="initialReceiveBufferSize"/>.

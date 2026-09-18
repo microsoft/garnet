@@ -32,8 +32,8 @@ namespace Garnet.networking
 
         /// <summary>
         /// Process-wide buffer budget this connection's pool participates in. Cached rather than reached
-        /// through <see cref="networkPool"/> because <see cref="BaseReceiveBufferSize"/> is read on every
-        /// receive, and the pool indirection costs two dependent loads there.
+        /// through <see cref="networkPool"/> because <see cref="BaseReceiveBufferSize"/> reads it on every
+        /// receive.
         /// </summary>
         readonly NetworkBufferBudget budget;
 
@@ -44,11 +44,9 @@ namespace Garnet.networking
 
         /// <summary>
         /// Size for a new TLS plaintext send buffer. Send buffers never grow -- an oversized response is
-        /// chunked through whatever buffer it was given, and <c>GetResponseObjectHead</c>/<c>Tail</c> read the
-        /// length off the entry -- so the size is safe to adapt. It must be adapted: the pool measures a
-        /// returned entry of this type against the send target, so leaving the allocation at the configured
-        /// size would make every TLS connection's buffer over-target under pressure, dropped on return, and
-        /// freshly pinned on the next connect.
+        /// chunked through whatever buffer it was given -- so the size is safe to adapt, and must be: the pool
+        /// measures a returned entry of this type against the send target, so an unadapted allocation would be
+        /// over-target under pressure, dropped on return, and freshly pinned on the next connect.
         /// </summary>
         protected int BaseSendBufferSize
         {
@@ -102,20 +100,18 @@ namespace Garnet.networking
 
         /// <summary>
         /// Number of consecutive receives that must fit in a smaller buffer before a grown receive buffer is
-        /// released back to the pool while the process is under no memory pressure. Deliberately generous: a
-        /// connection whose payloads are large but recurring keeps its buffer through the burst and only gives
-        /// it up after a genuinely long quiet stretch. Under pressure the shrink is immediate and this does not
-        /// apply.
+        /// released back to the pool while the process is under no memory pressure. Generous, so a connection
+        /// whose payloads are large but recurring keeps its buffer through the burst. Under pressure
+        /// <see cref="PressureShrinkHysteresis"/> applies instead.
         /// </summary>
         const int ShrinkHysteresis = 256;
 
         /// <summary>
         /// Hysteresis applied instead of <see cref="ShrinkHysteresis"/> while the process-wide budget is
-        /// binding. Pressure is sticky -- the target stays below the ceiling for as long as the connections are
-        /// live -- so releasing on the first small receive would reallocate a pinned buffer on every large
-        /// request of an alternating workload, precisely when the server is most loaded. A short countdown
-        /// still converges the aggregate quickly while a strictly alternating workload never trips it, because
-        /// each large receive resets the countdown.
+        /// binding. Pressure is sticky -- the target stays below the ceiling for as long as the connections
+        /// are live -- so releasing on the first small receive would reallocate a pinned buffer on every large
+        /// request of an alternating workload. A short countdown converges the aggregate quickly, and each
+        /// large receive resets it, so an alternating workload never trips it.
         /// </summary>
         const int PressureShrinkHysteresis = 8;
 
@@ -416,9 +412,8 @@ namespace Garnet.networking
             }
             else if (networkReceiveBuffer.Length > BaseReceiveBufferSize)
             {
-                // Guarded here rather than inside the callee so that the overwhelmingly common case -- a
-                // buffer still at its base size, which is every pass on a connection that has never grown --
-                // costs one comparison and makes no call at all.
+                // Guarded here rather than inside the callee so a buffer still at its base size -- every pass
+                // on a connection that has never grown -- costs one comparison and makes no call.
                 MaybeShrinkNetworkReceiveBuffer(demand);
             }
         }
@@ -449,11 +444,9 @@ namespace Garnet.networking
 
             if (current > networkBufferSettings.maxReceiveBufferSize)
             {
-                // Above the pool's largest size class, so this buffer was allocated outside the pool and will be
-                // dropped rather than recycled on return. Give it back without waiting out the hysteresis, and
-                // size it to what is still buffered rather than to the pass's demand: the demand is already
-                // consumed, and measuring against it would hold the whole oversized array for a connection that
-                // never speaks again -- which is exactly what this branch exists to prevent.
+                // Above the pool's largest size class, so this buffer cannot be recycled on return. Release it
+                // without waiting out the hysteresis, sized to what is still buffered rather than to the
+                // pass's demand, which is already consumed.
                 var residual = TargetReceiveBufferSize(networkBytesRead, baseSize, current);
                 networkShrinkCountdown = ShrinkHysteresis;
                 if (residual < current)
