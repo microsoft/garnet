@@ -131,8 +131,8 @@ namespace HdrHistogram
         /// <remarks>
         /// For a histogram whose recorder is not quiesced at release time, such as a client disposed while
         /// its receive callback is still completing replies. Pooling the array there would let another
-        /// consumer rent it and receive that write; dropping it leaves the racing recorder writing into an
-        /// array nothing else can reach, and the collector reclaims it afterwards.
+        /// consumer rent it and receive that write. A recorder that reads the field after this point drops
+        /// its sample; one that read it before writes into an array nothing else can reach.
         /// </remarks>
         public void Release() => _counts = null;
 
@@ -163,6 +163,31 @@ namespace HdrHistogram
         }
 
         /// <summary>
+        /// Copies this histogram, reading the counts array exactly once.
+        /// </summary>
+        /// <param name="copy">The copy, or null once the array has been released.</param>
+        /// <returns>True if a copy was taken.</returns>
+        /// <remarks>
+        /// <see cref="Release"/> runs on a thread that does not synchronise with readers, so testing
+        /// <see cref="IsReturned"/> and then calling <see cref="Copy"/> reads the field twice and can
+        /// dereference an array dropped in between.
+        /// </remarks>
+        public bool TryCopy(out LongHistogram copy)
+        {
+            var counts = _counts;
+            if (counts is null)
+            {
+                copy = null;
+                return false;
+            }
+
+            copy = new LongHistogram(LowestTrackableValue, HighestTrackableValue, NumberOfSignificantValueDigits);
+            Array.Copy(counts, copy._counts, CountsArrayLength);
+            copy._totalCount = _totalCount;
+            return true;
+        }
+
+        /// <summary>
         /// Gets the number of recorded values at a given index.
         /// </summary>
         /// <param name="index">The index to get the count for</param>
@@ -188,7 +213,11 @@ namespace HdrHistogram
         /// <param name="index">The index to increment the count at.</param>
         protected override void IncrementCountAtIndex(int index)
         {
-            _counts[index]++;
+            var counts = _counts;
+            if (counts is null)
+                return;
+
+            counts[index]++;
             _totalCount++;
         }
 
@@ -199,7 +228,11 @@ namespace HdrHistogram
         /// <param name="addend">The amount to increment by.</param>
         protected override void AddToCountAtIndex(int index, long addend)
         {
-            _counts[index] += addend;
+            var counts = _counts;
+            if (counts is null)
+                return;
+
+            counts[index] += addend;
             _totalCount += addend;
         }
 

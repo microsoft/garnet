@@ -643,18 +643,32 @@ namespace Garnet.test
         }
 
         /// <summary>
-        /// The release waits for consecutive empty windows, so a session whose traffic straddles a window
-        /// boundary is not released and re-allocated repeatedly. Driven directly, because inducing an exact
-        /// sequence of empty and non-empty windows through a live server is timing-dependent.
+        /// The release waits for consecutive empty windows and a window that records a value restarts the
+        /// run, so a session whose traffic straddles a window boundary is not released and re-allocated
+        /// repeatedly. Driven directly, because inducing an exact sequence of empty and non-empty windows
+        /// through a live server is timing-dependent.
         /// </summary>
+        /// <remarks>
+        /// Pins the arithmetic and that the configured threshold leaves more than one window of margin.
+        /// Its exact value is a judgement about how long a quiet session keeps its histograms rather than a
+        /// derivable invariant, and separating four from three would need a request interval inside a
+        /// single window of the sweep, which is the flakiness this fixture has already had to retreat from.
+        /// </remarks>
         [Test]
         public void ReclaimWaitsForConsecutiveEmptyWindows()
         {
-            const int Threshold = 4;
+            const int Threshold = GarnetServerMonitor.QuiescedWindowsBeforeRelease;
+            ClassicAssert.Greater(Threshold, 1,
+                "the threshold leaves no hysteresis margin, so a session silent for a single window is released");
+
             var entry = new LatencyMetricsEntrySession(GarnetServerOptions.DefaultLatencyMonitorPrecision);
 
             entry.RecordValue(0, 1234);
             ClassicAssert.IsNotNull(entry.latency, "recording a value should have allocated the histograms");
+
+            // The windows below are only empty once the recorded value is cleared.
+            entry.latency[0].Reset();
+            entry.latency[1].Reset();
 
             for (var i = 0; i < Threshold - 1; i++)
                 ClassicAssert.IsFalse(entry.ReclaimIfQuiesced(Threshold),
