@@ -20,6 +20,7 @@ namespace Garnet.test
     {
         const int Connections = 100;
         const int InitialReceiveBufferSize = 128 * 1024;
+        const int MaxReceiveBufferSize = 1024 * 1024;
 
         GarnetServer server;
 
@@ -92,15 +93,39 @@ namespace Garnet.test
             return Encoding.ASCII.GetString(buf, 0, n);
         }
 
-        static long StatBytes(string name)
+        static long StatBytes(string name) => StatBytes(name, BpStats());
+
+        static long StatBytes(string name, string stats)
         {
-            var stats = BpStats();
             var marker = name + "=";
             var idx = stats.IndexOf(marker, StringComparison.Ordinal);
             ClassicAssert.GreaterOrEqual(idx, 0, $"'{name}' not found in BPSTATS: {stats}");
             idx += marker.Length;
             var end = stats.IndexOfAny([',', '\r', '\n'], idx);
             return ParseMemoryBytes(stats[idx..end]);
+        }
+
+        /// <summary>
+        /// Reads a per-size-class free-list entry count. Exact, unlike the byte totals, which are rendered
+        /// through <c>Format.MemoryBytes</c> and round up to a whole megabyte.
+        /// </summary>
+        static int PooledEntriesAtSize(string stats, string size)
+        {
+            var listStart = stats.IndexOf("totalBufferCount=", StringComparison.Ordinal);
+            ClassicAssert.GreaterOrEqual(listStart, 0, $"no per-level list in BPSTATS: {stats}");
+            listStart = stats.IndexOf(',', listStart) + 1;
+            var listEnd = stats.IndexOfAny(['\r', '\n'], listStart);
+            var list = listEnd < 0 ? stats[listStart..] : stats[listStart..listEnd];
+
+            foreach (var entry in list.Split(','))
+            {
+                var parts = entry.Split('=');
+                if (parts.Length == 2 && parts[1] == size)
+                    return int.Parse(parts[0], System.Globalization.CultureInfo.InvariantCulture);
+            }
+
+            ClassicAssert.Fail($"no '{size}' level in BPSTATS: {stats}");
+            return -1;
         }
 
         static long ParseMemoryBytes(string value)
@@ -162,7 +187,9 @@ namespace Garnet.test
 
         /// <summary>
         /// Buffers larger than the pool's largest size class cannot be recycled, so they must be released as
-        /// soon as the payload has been consumed rather than waiting out the shrink hysteresis.
+        /// soon as the payload has been consumed rather than waiting out the shrink hysteresis. The
+        /// replacement is the largest poolable size rather than the base: the residual left after a fully
+        /// consumed request is zero, which says nothing about the capacity the connection needs next.
         /// </summary>
         [Test]
         public void OversizedReceiveBufferIsReleasedImmediately()
@@ -180,11 +207,27 @@ namespace Garnet.test
             SendAndDrain(s, BuildSet("oversized", 3 * 1024 * 1024), 1);
             var after = StatBytes("liveBytes");
 
-            TestContext.Out.WriteLine($"baseline={baseline / 1024} KB, after={after / 1024} KB");
-            TestContext.Out.WriteLine(BpStats());
+            var retained = after - baseline;
+            var stats = BpStats();
+            TestContext.Out.WriteLine($"baseline={baseline / 1024} KB, after={after / 1024} KB, retained={retained / 1024} KB");
+            TestContext.Out.WriteLine(stats);
 
-            ClassicAssert.LessOrEqual(after, baseline + (2L * InitialReceiveBufferSize),
+            // The buffer grew past the pool's largest class to hold the payload. Retaining anything near that
+            // size means it was not released on the receive that consumed the request.
+            ClassicAssert.LessOrEqual(retained, 2L * MaxReceiveBufferSize,
                 "oversized receive buffer should be released as soon as the payload is consumed");
+
+            // Guards the level assertion below against passing vacuously on a run that never grew past the
+            // pool's largest class.
+            var stats0 = stats;
+            ClassicAssert.GreaterOrEqual(StatBytes("totalOutOfBoundAllocations", stats0), 1,
+                "the payload did not grow the receive buffer past the pool's largest size class");
+
+            // Growing to the payload pooled a 1 MB buffer on the way up. The replacement takes it back out,
+            // so the level is empty. Dropping to the base instead would leave it on the free list and make a
+            // connection that sends one large request per batch re-grow through every class each time.
+            ClassicAssert.AreEqual(0, PooledEntriesAtSize(stats0, "1MB"),
+                "the oversized buffer was replaced below the largest poolable size");
         }
 
         /// <summary>
