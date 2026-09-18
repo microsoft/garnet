@@ -39,7 +39,7 @@ namespace Tsavorite.core
         internal static bool IsBlittable => Utility.IsBlittable<T>();
 
         private int checkpointCallbackCount;
-        private int checkpointErrorCode;
+        private string checkpointError;
         private TaskCompletionSource<bool> checkpointTcs;
 
         private readonly ConcurrentQueue<long> freeList;
@@ -299,7 +299,7 @@ namespace Tsavorite.core
             int numCompleteLevels = localCount >> PageSizeBits;
             int numLevels = numCompleteLevels + (recordsCountInLastLevel > 0 ? 1 : 0);
             checkpointCallbackCount = numLevels;
-            checkpointErrorCode = 0;
+            checkpointError = null;
             checkpointTcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
             uint alignedPageSize = PageSize * (uint)RecordSize;
             uint lastLevelSize = (uint)recordsCountInLastLevel * (uint)RecordSize;
@@ -309,8 +309,10 @@ namespace Tsavorite.core
             for (int i = 0; i < numLevels; i++)
             {
                 OverflowPagesFlushAsyncResult result = default;
+                result.levelIndex = i;
 
                 uint writeSize = (uint)((i == numCompleteLevels) ? (lastLevelSize + (sectorSize - 1)) & ~(sectorSize - 1) : alignedPageSize);
+                result.numBytesToWrite = writeSize;
 
                 if (!useReadCache)
                 {
@@ -344,27 +346,39 @@ namespace Tsavorite.core
 
         private unsafe void AsyncFlushCallback(uint errorCode, uint numBytes, object context, Exception ioException)
         {
+            var result = (OverflowPagesFlushAsyncResult)context;
             if (errorCode != 0)
             {
                 if (ioException is null)
                     logger?.LogError($"{nameof(AsyncFlushCallback)} error: {{errorCode}}", errorCode);
                 else
                     logger?.LogError($"{nameof(AsyncFlushCallback)} error: {{exception}}", Utility.GetCallbackExceptionDetail(ioException));
-                _ = Interlocked.CompareExchange(ref checkpointErrorCode, (int)errorCode, 0);
+                RecordCheckpointError($"level {result.levelIndex} failed with error code {errorCode}");
+            }
+            else if (numBytes < result.numBytesToWrite)
+            {
+                // A device may report success for a transfer that moved fewer bytes than requested; the level is not
+                // fully on disk, so fail the checkpoint rather than record a truncated overflow-bucket image.
+                logger?.LogError($"{nameof(AsyncFlushCallback)} error: wrote {{numBytes}} of {{numBytesToWrite}} bytes", numBytes, result.numBytesToWrite);
+                RecordCheckpointError($"level {result.levelIndex} wrote {numBytes} of {result.numBytesToWrite} bytes");
             }
 
-            var mem = ((OverflowPagesFlushAsyncResult)context).mem;
-            mem?.Dispose();
+            result.mem?.Dispose();
 
             if (Interlocked.Decrement(ref checkpointCallbackCount) == 0)
             {
-                var err = checkpointErrorCode;
-                if (err != 0)
-                    checkpointTcs.TrySetException(new TsavoriteException($"Overflow-bucket checkpoint flush failed with error code {err}"));
+                var error = checkpointError;
+                if (error is not null)
+                    checkpointTcs.TrySetException(new TsavoriteException($"Overflow-bucket checkpoint flush failed: {error}"));
                 else
                     checkpointTcs.TrySetResult(true);
             }
         }
+
+        /// <summary>Record the first failure seen while flushing the overflow buckets, so the checkpoint fails with
+        /// the error that occurred first; subsequent failures are logged but do not overwrite it.</summary>
+        private void RecordCheckpointError(string detail)
+            => _ = Interlocked.CompareExchange(ref checkpointError, detail, null);
 
         /// <summary>
         /// Max valid address
@@ -392,11 +406,15 @@ namespace Tsavorite.core
         {
             BeginRecovery(device, offset, buckets, numBytes, out ulong numBytesRead, isAsync: true);
             await recoveryCountdown.WaitAsync(cancellationToken).ConfigureAwait(false);
+            var error = recoveryError;
+            if (error is not null)
+                throw new TsavoriteException($"Overflow-bucket recovery failed: {error}");
             return numBytesRead;
         }
 
         // Implementation of asynchronous recovery
         private CountdownWrapper recoveryCountdown;
+        private string recoveryError;
 
         internal unsafe void BeginRecovery(IDevice device,
                                     ulong offset,
@@ -416,6 +434,7 @@ namespace Tsavorite.core
             int numCompleteLevels = numRecords >> PageSizeBits;
             int numLevels = numCompleteLevels + (recordsCountInLastLevel > 0 ? 1 : 0);
 
+            recoveryError = null;
             recoveryCountdown = new CountdownWrapper(numLevels, isAsync);
 
             numBytesRead = 0;
@@ -423,25 +442,44 @@ namespace Tsavorite.core
             uint lastLevelSize = (uint)recordsCountInLastLevel * (uint)RecordSize;
             for (int i = 0; i < numLevels; i++)
             {
-                //read a full page
-                uint length = (uint)PageSize * (uint)RecordSize;
+                // Read exactly what the checkpoint wrote for this level: the final level is shorter than a page and
+                // is the end of the checkpoint region, so requesting a full page would read past the end of the file.
+                uint length = (i == numCompleteLevels) ? lastLevelSize : alignedPageSize;
                 OverflowPagesReadAsyncResult result = default;
+                result.levelIndex = i;
+                result.numBytesToRead = length;
                 device.ReadAsync(offset + numBytesRead, pointers[i], length, AsyncPageReadCallback, result);
-                numBytesRead += (i == numCompleteLevels) ? lastLevelSize : alignedPageSize;
+                numBytesRead += length;
             }
+            Debug.Assert(numBytesRead == numBytesToRead);
         }
 
         private unsafe void AsyncPageReadCallback(uint errorCode, uint numBytes, object context, Exception ioException)
         {
+            var result = (OverflowPagesReadAsyncResult)context;
             if (errorCode != 0)
             {
                 if (ioException is null)
                     logger?.LogError($"{nameof(AsyncPageReadCallback)} error: {{errorCode}}", errorCode);
                 else
                     logger?.LogError($"{nameof(AsyncPageReadCallback)} error: {{exception}}", Utility.GetCallbackExceptionDetail(ioException));
+                RecordRecoveryError($"level {result.levelIndex} failed with error code {errorCode}");
+            }
+            else if (numBytes < result.numBytesToRead)
+            {
+                // A device may report success for a transfer that moved fewer bytes than requested; the rest of the
+                // level still holds its pre-read contents, so fail recovery rather than bring up overflow buckets
+                // that are missing entries.
+                logger?.LogError($"{nameof(AsyncPageReadCallback)} error: read {{numBytes}} of {{numBytesToRead}} bytes", numBytes, result.numBytesToRead);
+                RecordRecoveryError($"level {result.levelIndex} read {numBytes} of {result.numBytesToRead} bytes");
             }
             recoveryCountdown.Decrement();
         }
+
+        /// <summary>Record the first failure seen while reading the overflow buckets, so recovery fails with the error
+        /// that occurred first; subsequent failures are logged but do not overwrite it.</summary>
+        private void RecordRecoveryError(string detail)
+            => _ = Interlocked.CompareExchange(ref recoveryError, detail, null);
         #endregion
     }
 }

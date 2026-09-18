@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using System.Threading;
@@ -344,6 +345,73 @@ namespace Tsavorite.test
                 return;
             }
             underlying.ReadAsync(segmentId, sourceAddress, destinationAddress, readLength, callback, context);
+        }
+
+        /// <inheritdoc/>
+        public override void Dispose() => underlying.Dispose();
+    }
+
+    /// <summary>
+    /// Simulates an operating system that caps a single transfer, as Linux does at MAX_RW_COUNT (INT_MAX rounded down
+    /// to a page boundary): a request longer than <see cref="MaxBytesPerRequest"/> is issued to the underlying device
+    /// for only that many bytes, and therefore completes successfully reporting the truncated count.
+    /// </summary>
+    public class TruncatingIoDevice : StorageDeviceBase
+    {
+        private readonly IDevice underlying;
+
+        /// <summary>Maximum number of bytes a single request transfers; longer requests complete short. Defaults to
+        /// no truncation.</summary>
+        public volatile uint MaxBytesPerRequest = uint.MaxValue;
+
+        private int truncatedRequestCount;
+
+        /// <summary>Number of requests that were truncated, so a test can assert its fault injection fired.</summary>
+        public int TruncatedRequestCount => truncatedRequestCount;
+
+        /// <summary>Offset and requested (pre-truncation) length of every write issued to this device, in issue order.</summary>
+        public readonly ConcurrentQueue<(ulong offset, uint length)> Writes = new();
+
+        /// <summary>Offset and requested (pre-truncation) length of every read issued to this device, in issue order.</summary>
+        public readonly ConcurrentQueue<(ulong offset, uint length)> Reads = new();
+
+        public TruncatingIoDevice(IDevice underlying) : base(underlying.FileName, underlying.SectorSize, underlying.Capacity)
+            => this.underlying = underlying;
+
+        /// <inheritdoc/>
+        public override void Initialize(long segmentSize, LightEpoch epoch = null, bool omitSegmentIdFromFilename = false)
+        {
+            base.Initialize(segmentSize, epoch, omitSegmentIdFromFilename);
+            underlying.Initialize(segmentSize, epoch, omitSegmentIdFromFilename);
+        }
+
+        /// <inheritdoc/>
+        public override void RemoveSegmentAsync(int segment, AsyncCallback callback, IAsyncResult result)
+            => underlying.RemoveSegmentAsync(segment, callback, result);
+
+        /// <inheritdoc/>
+        public override void WriteAsync(IntPtr sourceAddress, int segmentId, ulong destinationAddress, uint numBytesToWrite,
+            DeviceIOCompletionCallback callback, object context)
+        {
+            Writes.Enqueue((destinationAddress, numBytesToWrite));
+            underlying.WriteAsync(sourceAddress, segmentId, destinationAddress, Truncate(numBytesToWrite), callback, context);
+        }
+
+        /// <inheritdoc/>
+        public override void ReadAsync(int segmentId, ulong sourceAddress, IntPtr destinationAddress, uint readLength,
+            DeviceIOCompletionCallback callback, object context)
+        {
+            Reads.Enqueue((sourceAddress, readLength));
+            underlying.ReadAsync(segmentId, sourceAddress, destinationAddress, Truncate(readLength), callback, context);
+        }
+
+        private uint Truncate(uint numBytes)
+        {
+            var maxBytes = MaxBytesPerRequest;
+            if (numBytes <= maxBytes)
+                return numBytes;
+            _ = Interlocked.Increment(ref truncatedRequestCount);
+            return maxBytes;
         }
 
         /// <inheritdoc/>
