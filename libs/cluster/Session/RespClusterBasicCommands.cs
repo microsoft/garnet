@@ -14,6 +14,7 @@ namespace Garnet.cluster
     internal sealed unsafe partial class ClusterSession : IClusterSession
     {
         public string RemoteNodeId { get; private set; }
+        byte gossipVersion = ClusterConfig.DefaultClusterConfigVersion;
 
         /// <summary>
         /// Implements CLUSTER BUMPEPOCH command
@@ -359,6 +360,16 @@ namespace Garnet.cluster
         {
             invalidParameters = false;
 
+            // The version query also advertises that this connection can receive version 2.
+            if (parseState.Count == 0)
+            {
+                gossipVersion = ClusterConfig.ClusterConfigVersion;
+                lastSentConfig = null;
+                while (!RespWriteUtils.TryWriteInt32(ClusterConfig.ClusterConfigVersion, ref dcurr, dend))
+                    SendAndReset();
+                return true;
+            }
+
             // Expecting 1 or 2 arguments
             if (parseState.Count is < 1 or > 2)
             {
@@ -398,6 +409,11 @@ namespace Garnet.cluster
                     // GossipWithMeet messages are only send through a call to CLUSTER MEET at the remote node
                     if (gossipWithMeet || current.IsKnown(other.LocalNodeId))
                     {
+                        if (version > gossipVersion)
+                        {
+                            gossipVersion = version;
+                            lastSentConfig = null;
+                        }
                         // NOTE: release the epoch to avoid deadlock with MIGRATE config suspension
                         ReleaseCurrentEpoch();
                         try
@@ -421,7 +437,7 @@ namespace Garnet.cluster
             // Respond if configuration has changed or gossipWithMeet option is specified
             if (lastSentConfig != current || gossipWithMeet)
             {
-                var configByteArray = current.ToByteArray();
+                var configByteArray = current.ToByteArray(gossipVersion);
                 clusterProvider.clusterManager.gossipStats.UpdateGossipBytesSend(configByteArray.Length);
                 while (!RespWriteUtils.TryWriteBulkString(configByteArray, ref dcurr, dend))
                     SendAndReset();

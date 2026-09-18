@@ -34,7 +34,7 @@ namespace Garnet.cluster
         /// <summary>
         /// Serialize config to byte array
         /// </summary>
-        public byte[] ToByteArray() => ToByteArray(DefaultClusterConfigVersion);
+        public byte[] ToByteArray() => ToByteArray(ClusterConfigVersion);
 
         /// <summary>
         /// Serialize config using the specified format version.
@@ -87,7 +87,8 @@ namespace Garnet.cluster
 
                 if (version >= 2)
                 {
-                    writer.Write(worker.ClusterAddress);
+                    // An empty address preserves missing metadata across upgraded relays and recovery.
+                    writer.Write(worker.ClusterAddress ?? "");
                     writer.Write(worker.ClusterPort);
                 }
             }
@@ -179,8 +180,12 @@ namespace Garnet.cluster
                 if (isNull > 0)
                     newWorkers[i].hostname = reader.ReadString();
 
-                newWorkers[i].ClusterAddress = version >= 2 ? reader.ReadString() : newWorkers[i].Address;
-                newWorkers[i].ClusterPort = version >= 2 ? reader.ReadInt32() : newWorkers[i].Port;
+                if (version >= 2)
+                {
+                    var clusterAddress = reader.ReadString();
+                    newWorkers[i].ClusterAddress = clusterAddress.Length == 0 ? null : clusterAddress;
+                    newWorkers[i].ClusterPort = reader.ReadInt32();
+                }
             }
 
             reader.Dispose();

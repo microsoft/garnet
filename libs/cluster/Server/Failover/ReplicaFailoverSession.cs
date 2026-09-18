@@ -182,9 +182,9 @@ namespace Garnet.cluster
         /// Issue gossip and attach request to replica
         /// </summary>
         /// <param name="replicaId">Replica-id to issue gossip and attache request</param>
-        /// <param name="configByteArray">Serialized local cluster config data</param>
+        /// <param name="config">Local cluster config</param>
         /// <returns></returns>
-        private async Task BroadcastConfigAndRequestAttachAsync(string replicaId, byte[] configByteArray)
+        private async Task BroadcastConfigAndRequestAttachAsync(string replicaId, ClusterConfig config)
         {
             // Force async
             await Task.Yield();
@@ -202,7 +202,8 @@ namespace Garnet.cluster
                 }
 
                 // Force send updated config to replica
-                var resp = await client.GossipAsync(configByteArray).WaitAsync(failoverTimeout, cts.Token).ConfigureAwait(false);
+                var gossipVersion = await client.NegotiateGossipVersionAsync(cts.Token).WaitAsync(failoverTimeout, cts.Token).ConfigureAwait(false);
+                var resp = await client.GossipAsync(config.ToByteArray(gossipVersion)).WaitAsync(failoverTimeout, cts.Token).ConfigureAwait(false);
 
                 try
                 {
@@ -238,8 +239,7 @@ namespace Garnet.cluster
                     resp.Dispose();
                 }
 
-                var localAddress = oldConfig.LocalNodeIp;
-                var localPort = oldConfig.LocalNodePort;
+                var (localAddress, localPort) = oldConfig.GetWorkerAddress(ClusterConfig.LOCAL_WORKER_ID);
 
                 // Ask replica to attach and sync
                 var replicaOfResp = await client.ReplicaOf(localAddress, localPort).WaitAsync(failoverTimeout, cts.Token).ConfigureAwait(false);
@@ -265,7 +265,6 @@ namespace Garnet.cluster
             // Get replica ids for old primary from old configuration
             var oldPrimaryId = oldConfig.LocalNodePrimaryId;
             var replicaIds = newConfig.GetReplicaIds(oldPrimaryId);
-            var configByteArray = newConfig.ToByteArray();
             var attachReplicaTasks = new List<Task>();
 
             // If DEFAULT failover try to make old primary replica of this new primary
@@ -279,7 +278,7 @@ namespace Garnet.cluster
             {
                 try
                 {
-                    attachReplicaTasks.Add(BroadcastConfigAndRequestAttachAsync(replicaId, configByteArray));
+                    attachReplicaTasks.Add(BroadcastConfigAndRequestAttachAsync(replicaId, newConfig));
                 }
                 catch (Exception ex)
                 {

@@ -45,14 +45,17 @@ namespace Garnet.cluster
         public int Port;
 
         /// <summary>
-        /// Cluster IP address stored in version 2 configs; not yet used for routing.
+        /// Cluster IP address; null when a legacy relay has not supplied it.
         /// </summary>
         public string ClusterAddress;
 
         /// <summary>
-        /// Cluster port stored in version 2 configs; not yet used for routing.
+        /// Cluster port; zero when a legacy relay has not supplied it.
         /// </summary>
         public int ClusterPort;
+
+        internal string PeerAddress => ClusterAddress ?? Address;
+        internal int PeerPort => ClusterAddress == null ? Port : ClusterPort;
 
         /// <summary>
         /// Configuration epoch.

@@ -15,6 +15,23 @@ namespace Garnet.cluster
         static readonly Memory<byte> GOSSIP = "GOSSIP"u8.ToArray();
         static readonly Memory<byte> WITHMEET = "WITHMEET"u8.ToArray();
 
+        internal static async Task<byte> NegotiateGossipVersionAsync(this GarnetClient client, CancellationToken cancellationToken)
+        {
+            try
+            {
+                var response = await client.ExecuteForStringResultWithCancellationAsync(
+                    GarnetClient.CLUSTER, [GOSSIP], cancellationToken).ConfigureAwait(false);
+                if (byte.TryParse(response, out var version) && version >= ClusterConfig.ClusterConfigVersion)
+                    return ClusterConfig.ClusterConfigVersion;
+                throw new InvalidOperationException($"Invalid gossip version response: {response}");
+            }
+            catch (Exception ex) when (ex.Message.StartsWith("ERR wrong number of arguments", StringComparison.Ordinal))
+            {
+                // Legacy nodes reject the version query before reading any configuration.
+                return ClusterConfig.DefaultClusterConfigVersion;
+            }
+        }
+
         /// <summary>
         /// Send config
         /// </summary>
