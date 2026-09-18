@@ -249,6 +249,55 @@ For all available command line settings, run `GarnetServer.exe -h` or `GarnetSer
 
 ---
 
+## Separate peer and client endpoints
+
+`--cluster-announce-ip`, `--cluster-announce-port`, and `--cluster-announce-hostname`
+describe the client-facing endpoint. Client discovery and `MOVED` and `ASK` redirections use
+these values, subject to `--cluster-preferred-endpoint-type`.
+
+Set `--cluster-address` and `--cluster-port` to override the peer address and port.
+Each unset peer setting inherits the corresponding client-advertised value. Gossip,
+replication, failover, cluster publish, and migration connections use the peer endpoint.
+`CLUSTER MEET` must target a reachable peer endpoint. `MIGRATE` accepts a known peer endpoint
+or client-advertised address or hostname and port, then connects through the peer endpoint.
+The synthetic bus port in `CLUSTER NODES` is the peer port plus 10000, not another listener.
+
+For example, these arguments advertise a translated client endpoint for a private listener:
+
+```text
+--bind 10.0.0.4 --port 6379
+--cluster-announce-ip 203.0.113.4 --cluster-announce-port 17004
+--cluster-announce-hostname cache.example.com --cluster-preferred-endpoint-type hostname
+--cluster-address 10.0.0.4 --cluster-port 6379
+```
+
+Advertised endpoints do not change listener bindings or configure forwarding, name resolution,
+or certificates. Configure those separately. Startup settings replace recovered local
+endpoints. Removing a peer override restores inheritance from the client endpoint.
+
+### Rolling upgrades
+
+Deploy the endpoint compatibility release to every cluster node before enabling separate
+client and peer endpoints. During this first rolling upgrade, keep the existing endpoints.
+The compatibility release negotiates gossip versions per connection, so older nodes continue
+to receive their supported format. It also routes internal traffic through peer endpoints
+learned from upgraded nodes and preserves those endpoints in the saved cluster configuration.
+
+After every node runs the compatibility release, deploy the endpoint configuration release
+one node at a time. Separate client and peer endpoints can be enabled on each upgraded node
+immediately, while other nodes still run the compatibility release. Peer endpoints must be
+reachable from every cluster node. Client discovery and redirections continue to use the
+client address, port, and announced hostname.
+
+Keep the node's saved cluster configuration when restarting or upgrading it. Updated saved
+configurations require the compatibility release or newer; older binaries cannot read them.
+Rolling back from the endpoint configuration release to the compatibility release also
+requires restoring that node's original endpoint settings.
+
+When restarting a primary with surviving replicas, configure the existing
+`cluster-replication-reestablishment-timeout` recovery policy as appropriate for the deployment.
+Its default value of zero disables automatic replication resynchronization.
+
 ## Native device IO tuning (Linux)
 
 When `--device-type Native` is used on Linux (the default on x64 Linux), four orthogonal knobs

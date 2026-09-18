@@ -45,14 +45,17 @@ namespace Garnet.cluster
         public int Port;
 
         /// <summary>
-        /// IP address used for peer connections.
+        /// Cluster IP address; null when a legacy relay has not supplied it.
         /// </summary>
         public string ClusterAddress;
 
         /// <summary>
-        /// Port used for peer connections.
+        /// Cluster port; zero when a legacy relay has not supplied it.
         /// </summary>
         public int ClusterPort;
+
+        internal string PeerAddress => ClusterAddress ?? Address;
+        internal int PeerPort => ClusterAddress == null ? Port : ClusterPort;
 
         /// <summary>
         /// Configuration epoch.

@@ -30,6 +30,7 @@ namespace Garnet.cluster
         /// Last transmitted configuration
         /// </summary>
         ClusterConfig lastConfig = null;
+        byte gossipVersion = ClusterConfig.DefaultClusterConfigVersion;
 
         /// <summary>
         /// Outstanding gossip task if any
@@ -104,13 +105,16 @@ namespace Garnet.cluster
         /// Initialize connection and cancellation tokens.
         /// Initialization is performed only once
         /// </summary>
-        public ValueTask InitializeAsync()
+        public async ValueTask InitializeAsync()
         {
             // Ensure initialize executes only once
-            if (initialized != 0 || Interlocked.CompareExchange(ref initialized, 1, 0) != 0) return default;
+            if (initialized != 0 || Interlocked.CompareExchange(ref initialized, 1, 0) != 0) return;
 
             cts = CancellationTokenSource.CreateLinkedTokenSource(clusterProvider.clusterManager.ctsGossip.Token, internalCts.Token);
-            return new(gc.ReconnectAsync().WaitAsync(clusterProvider.clusterManager.gossipDelay, cts.Token));
+            await gc.ReconnectAsync().WaitAsync(clusterProvider.clusterManager.gossipDelay, cts.Token).ConfigureAwait(false);
+            gossipVersion = await gc.NegotiateGossipVersionAsync(cts.Token)
+                .WaitAsync(clusterProvider.clusterManager.gossipDelay, cts.Token).ConfigureAwait(false);
+            lastConfig = null;
         }
 
         public void Dispose()
@@ -170,7 +174,7 @@ namespace Garnet.cluster
                     // NOTE: We update replication offset for sublog-0 because this info is used in CLUSTER NODES
                     // and we cannot have multiple replication offsets without changing the expected CLUSTER NODES response
                     lastConfig.LazyUpdateLocalReplicationOffset(clusterProvider.replicationManager.GetReplicationOffset(0));
-                byteArray = lastConfig.ToByteArray();
+                byteArray = lastConfig.ToByteArray(gossipVersion);
             }
             else
             {
@@ -219,12 +223,12 @@ namespace Garnet.cluster
         /// <summary>
         /// Issue gossip meet with meet to force receiving node to trust an untrusted node
         /// </summary>
-        /// <param name="configByteArray"></param>
+        /// <param name="config"></param>
         /// <returns></returns>
-        public Task<MemoryResult<byte>> TryMeetAsync(byte[] configByteArray)
+        public Task<MemoryResult<byte>> TryMeetAsync(ClusterConfig config)
         {
             UpdateGossipSend();
-            return gc.GossipWithMeetAsync(configByteArray, internalCts.Token).WaitAsync(clusterProvider.clusterManager.clusterTimeout, cts.Token);
+            return gc.GossipWithMeetAsync(config.ToByteArray(gossipVersion), internalCts.Token).WaitAsync(clusterProvider.clusterManager.clusterTimeout, cts.Token);
         }
 
         /// <summary>
@@ -238,7 +242,7 @@ namespace Garnet.cluster
             if (task == null)
             {
                 // Issue first time gossip
-                var configArray = clusterProvider.clusterManager.CurrentConfig.ToByteArray();
+                var configArray = clusterProvider.clusterManager.CurrentConfig.ToByteArray(gossipVersion);
                 gossipTask = GossipAsync(configArray);
                 UpdateGossipSend();
                 clusterProvider.clusterManager.gossipStats.gossip_full_send++;

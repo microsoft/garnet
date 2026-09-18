@@ -188,7 +188,7 @@ namespace Garnet.cluster
                 await gsn.InitializeAsync().ConfigureAwait(false);
 
                 // Send full config in Gossip
-                resp = await gsn.TryMeetAsync(conf.ToByteArray()).ConfigureAwait(false);
+                resp = await gsn.TryMeetAsync(conf).ConfigureAwait(false);
                 if (resp.Length > 0)
                 {
                     var respArray = resp.Span.ToArray();
