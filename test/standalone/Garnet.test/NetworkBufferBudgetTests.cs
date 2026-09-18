@@ -9,6 +9,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Garnet.client;
 using Garnet.common;
+using Garnet.server;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 
@@ -381,7 +382,7 @@ namespace Garnet.test
                 ClassicAssert.AreEqual(ReceiveFloor, StatBytes("targetBufferSize"));
                 ClassicAssert.AreEqual(SendFloor, StatBytes("targetSendBufferSize"));
 
-                var before = SocketStatBytes("pooledBytes");
+                var before = SocketStatBytes("pooledBytes", PoolStats());
 
                 // Churn connections that are correctly sized from birth: nothing they hold is over-target.
                 // Each one reuses what the last returned, so the free list settles at one connection's worth
@@ -390,8 +391,8 @@ namespace Garnet.test
                 for (var i = 0; i < Churn; i++)
                     Ping(Connect()).Dispose();
 
-                var after = WaitForPooledBytes(SendFloor);
-                var stats = BpStats();
+                var stats = WaitForPooledEntryAtSize(SendFloor);
+                var after = SocketStatBytes("pooledBytes", stats);
                 var sendSized = PooledCountAtSize(SendFloor, stats);
                 TestContext.Out.WriteLine(
                     $"pooledBytes before={before}, after={after}, entries at {SendFloor}B={sendSized}");
@@ -410,19 +411,52 @@ namespace Garnet.test
         }
 
         /// <summary>
-        /// Connection teardown is asynchronous, so the buffers a closed connection releases arrive on the free
-        /// list shortly after the socket is closed.
+        /// The same rule driven against the pool directly. Send and receive adapt to separate floors, so an
+        /// entry has to be compared against the target for its own direction; comparing it against the
+        /// receive target treats a correctly sized send buffer as over-sized and drops it.
         /// </summary>
-        static long WaitForPooledBytes(long atLeast)
+        [Test]
+        public void UnderPressureAnEntryIsComparedAgainstTheTargetForItsOwnDirection()
         {
-            var pooled = 0L;
-            for (var attempt = 0; attempt < 100; attempt++)
+            // 130 live buffers against 64 * 128 KB of budget publishes a 32 KB receive target -- below the
+            // ceiling, so the budget binds and the drop rule is engaged, and below the send floor, so the
+            // two directions disagree about what counts as over-sized.
+            var budget = new NetworkBufferBudget(Ceiling * 64L, Ceiling, ReceiveFloor, SendFloor);
+            for (var i = 0; i < 130; i++)
+                budget.OnBufferAcquired();
+
+            ClassicAssert.IsTrue(budget.IsUnderPressure, "the budget is not binding, so the drop rule is inert");
+            ClassicAssert.AreEqual(SendFloor, budget.TargetSendBufferSize);
+            ClassicAssert.Less(budget.TargetBufferSize, SendFloor,
+                "the two targets have to differ for this to discriminate a direction-aware comparison");
+
+            using var pool = new LimitedFixedBufferPool(ReceiveFloor, numLevels: 7,
+                ownerType: PoolOwnerType.ServerNetwork, budget: budget);
+
+            var send = pool.Get(SendFloor, PoolEntryBufferType.SaeaSendBuffer);
+            send.Dispose();
+
+            var stats = pool.GetStats();
+            ClassicAssert.AreEqual(1, PooledCountAtSize(SendFloor, "server_socket_0=" + stats),
+                $"a send buffer at exactly the send target was dropped rather than pooled while the budget " +
+                $"was binding: {stats}");
+        }
+
+        /// <summary>
+        /// Connection teardown is asynchronous, so the buffers a closed connection releases arrive on the free
+        /// list shortly after the socket is closed. Polls the size class the assertion reads rather than the
+        /// byte total, and returns the snapshot every assertion is then taken from, so the wait and the
+        /// assertion cannot be satisfied by different things.
+        /// </summary>
+        string WaitForPooledEntryAtSize(int size)
+        {
+            var stats = PoolStats();
+            for (var attempt = 0; attempt < 100 && PooledCountAtSize(size, stats) < 1; attempt++)
             {
-                pooled = SocketStatBytes("pooledBytes");
-                if (pooled >= atLeast) return pooled;
                 Thread.Sleep(50);
+                stats = PoolStats();
             }
-            return pooled;
+            return stats;
         }
 
         /// <summary>
@@ -1276,6 +1310,25 @@ namespace Garnet.test
             var buf = new byte[32 * 1024];
             var n = s.Receive(buf);
             return Encoding.ASCII.GetString(buf, 0, n);
+        }
+
+        /// <summary>
+        /// The listener pool's own stats, read off the server rather than over the wire, in the shape
+        /// <c>INFO BPSTATS</c> renders them under. A wire probe has to open a connection, and writing its
+        /// reply takes a send buffer and a receive buffer off the very free list being measured, so an
+        /// assertion on the free list would be read from a snapshot the reading of it had already changed.
+        /// </summary>
+        string PoolStats()
+        {
+            var field = typeof(GarnetServer).GetField("servers",
+                System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+            ClassicAssert.IsNotNull(field, "GarnetServer should still hold its listeners in a 'servers' field");
+
+            foreach (var listener in (IGarnetServer[])field.GetValue(server))
+                if (listener is GarnetServerTcp tcp)
+                    return "server_socket_0=" + tcp.GetBufferPoolStats();
+
+            throw new AssertionException("the server has no TCP listener to read pool stats from");
         }
 
         static string StatRaw(string name) => StatRaw(name, BpStats());
