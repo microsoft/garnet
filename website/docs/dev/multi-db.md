@@ -48,9 +48,53 @@ flowchart LR
     mdbm --> dbn
 ```
 
-## Checkpointing, AOF & Recovery
+## Storage Layout
 
-Each database's store data will be separately stored on its own directory. Checkpoints are stored in `CheckpointDir` defined in the configuration (and if not specified defaults to `LogDir`). The store's checkpoint data will then be stored in `Store/checkpoints` for the default database or in `Store/checkpoints_i` for database of index `i` (the store's object-log data is stored under `Store/hlog_objs`).\
-Similarly, AOF data will be stored in the same  `CheckpointDir` (and if not specified defaults to `LogDir`). Each database AOF data will be stored in `AOF` for the default database or in `AOF_i` for database of index `i`.
+A server instance keeps three kinds of on-disk state, each rooted at a different configured directory:
+
+| State | Root option | Root when unspecified |
+| --- | --- | --- |
+| Hybrid log — tiered records, written only when `EnableStorageTier` (`--storage-tier`) is on | `LogDir` (`-l`, `--logdir`) | current directory |
+| Checkpoints | `CheckpointDir` (`-c`, `--checkpointdir`) | `LogDir` |
+| AOF | `CheckpointDir` (`-c`, `--checkpointdir`) | current directory |
+
+Checkpoint, AOF and hybrid log paths are all per-database: the default database (index `0`) uses the unsuffixed name, and the database of index `i` uses the same name with an `_i` suffix.
+
+The tree below is the layout for a server started with `--storage-tier --logdir <LogDir> --checkpointdir <CheckpointDir> --aof`, with databases `0` and `2` in use:
+
+```text
+<LogDir>/
+└── Store/
+    ├── hlog.0, hlog.1, ...                 database 0 main-log segments
+    ├── hlog_objs.0, hlog_objs.1, ...       database 0 object-log segments
+    ├── hlog_2.0, hlog_2.1, ...             database 2 main-log segments
+    ├── hlog_objs_2.0, hlog_objs_2.1, ...   database 2 object-log segments
+    ├── rangeindex/                         database 0 RangeIndex files (preview)
+    └── rangeindex_2/                       database 2 RangeIndex files (preview)
+
+<CheckpointDir>/
+├── Store/
+│   ├── checkpoints/                    database 0
+│   │   ├── index-checkpoints/<token>/  info.dat, ht.dat
+│   │   └── cpr-checkpoints/<token>/    info.dat, snapshot.dat, snapshot.obj.dat
+│   │                                   (and rangeindex/ when the preview is enabled)
+│   └── checkpoints_2/                  database 2, same structure
+├── AOF/                                database 0
+│   ├── aof.log.0, aof.log.1, ...
+│   └── log-commits/commit.<n>.0
+└── AOF_2/                              database 2, same structure
+```
+
+When `CheckpointDir` is not specified it defaults to `LogDir`, so a single `Store/` directory holds both the hybrid log segments and the `checkpoints[_i]/` directories.
+
+Every name above is a logical device name; the device layer appends a segment index, so `hlog` is stored as `hlog.0`, `hlog.1`, … and `info.dat` as `info.dat.0`.
+
+All of a database's file names are fixed when its store is created. [SWAPDB](../commands/server.md#swapdb) exchanges the logical index of two databases but does not move their files, so it is not durable: recovery reconstructs each database's index from the directory names and undoes the swap.
+
+:::caution
+Databases did not always have their own log devices. A store checkpointed by an earlier release wrote every database into one shared `Store/hlog` and `Store/hlog_objs` pair, whose contents cannot be attributed to a single database (see [issue #2152](https://github.com/microsoft/garnet/issues/2152)). Recovering such a store reports the condition for each database other than the default, and any records those databases had tiered to storage are lost. The default database is unaffected — it keeps the unsuffixed file names and recovers unchanged.
+:::
+
+## Checkpointing, AOF & Recovery
 
 Upon recovery, Garnet will extract the indexes of the saved databases from the aforementioned directory name pattern and recover any saved data matching the database index.

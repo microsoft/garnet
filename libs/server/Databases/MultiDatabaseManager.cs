@@ -110,9 +110,17 @@ namespace Garnet.server
 
             foreach (var dbId in dbIdsToRecover)
             {
+                // Sample this before the database is created, so the store opening its own log device
+                // cannot be mistaken for a log the previous run actually wrote.
+                var hybridLogMissing = StoreWrapper.serverOptions.EnableStorageTier &&
+                    !File.Exists(GetHybridLogSegmentZeroPath(dbId));
+
                 var db = TryGetOrAddDatabase(dbId, out var success, out _);
                 if (!success)
                     throw new GarnetException($"Failed to retrieve or create database for checkpoint recovery (DB ID = {dbId}).");
+
+                if (hybridLogMissing)
+                    ReportMissingHybridLog(db);
 
                 try
                 {
@@ -139,6 +147,75 @@ namespace Garnet.server
                 // Once everything is setup, initialize the VectorManager
                 db.VectorManager.Initialize();
             }
+        }
+
+        /// <summary>
+        /// Path of the first hybrid log segment file for a database. Segment files are named
+        /// <c>&lt;fileName&gt;.&lt;segment&gt;</c>, and segment 0 is written first.
+        /// </summary>
+        /// <param name="dbId">Database Id</param>
+        private string GetHybridLogSegmentZeroPath(int dbId) =>
+            Path.Combine(StoreWrapper.serverOptions.LogDir ?? string.Empty, GarnetServerOptions.StoreDirectoryName,
+                GarnetServerOptions.GetHybridLogFileName(dbId, isObj: false)) + ".0";
+
+        /// <summary>
+        /// Report that a database's hybrid log file is absent while a checkpoint for it exists.
+        /// Recovery still proceeds: a database whose records never left memory is recoverable from its
+        /// snapshot alone, so this is reported rather than treated as fatal.
+        /// </summary>
+        /// <param name="db">Database being recovered</param>
+        private void ReportMissingHybridLog(GarnetDatabase db)
+        {
+            if (db.Id == 0)
+                return;
+
+            var logPath = GetHybridLogSegmentZeroPath(db.Id);
+
+            if (WasCheckpointedWithPerDatabaseLogs(db))
+            {
+                Logger?.LogWarning(
+                    "Hybrid log {logPath} for database {dbId} is missing; any records tiered to storage for this database cannot be recovered",
+                    logPath, db.Id);
+                return;
+            }
+
+            Logger?.LogError(
+                "Database {dbId} was checkpointed before databases had their own log devices, when every database shared a single log file " +
+                "whose contents cannot be attributed to one database (see https://github.com/microsoft/garnet/issues/2152). " +
+                "Expected hybrid log {logPath} is missing, so any records this database tiered to storage cannot be recovered.",
+                db.Id, logPath);
+        }
+
+        /// <summary>
+        /// Whether the latest readable checkpoint for a database was written by a build that gave each
+        /// database its own log devices.
+        /// </summary>
+        /// <param name="db">Database being recovered</param>
+        private bool WasCheckpointedWithPerDatabaseLogs(GarnetDatabase db)
+        {
+            var checkpointManager = db.Store.CheckpointManager;
+            foreach (var token in checkpointManager.GetLogCheckpointTokens())
+            {
+                try
+                {
+                    var metadata = checkpointManager.GetLogCheckpointMetadata(token);
+                    if (metadata == null)
+                        continue;
+
+                    HybridLogRecoveryInfo recoveryInfo = new();
+                    using var reader = new StreamReader(new MemoryStream(metadata));
+                    recoveryInfo.Initialize(reader);
+
+                    return GarnetCheckpointManager.TryGetCheckpointLayout(recoveryInfo.cookie, out _);
+                }
+                catch (Exception ex)
+                {
+                    Logger?.LogDebug(ex, "Could not read checkpoint metadata {token} for database {dbId}", token, db.Id);
+                }
+            }
+
+            // No readable checkpoint metadata: assume the current layout so nothing misleading is reported.
+            return true;
         }
 
         /// <inheritdoc/>
