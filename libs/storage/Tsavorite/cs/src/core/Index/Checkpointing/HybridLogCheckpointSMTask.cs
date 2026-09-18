@@ -35,8 +35,14 @@ namespace Tsavorite.core
                 case Phase.PREPARE:
                     // Capture state before checkpoint starts
                     lastVersion = store._hybridLogCheckpoint.info.version = next.Version;
-                    store._hybridLogCheckpoint.info.startLogicalAddress = store.hlogBase.GetTailAddress();
+                    store._hybridLogCheckpoint.info.fuzzyRegionStartAddress = store.hlogBase.GetTailAddress();
                     store._hybridLogCheckpoint.info.beginAddress = store.hlogBase.BeginAddress;
+                    store._hybridLogCheckpoint.info.pageSize = store.hlogBase.PageSize;
+                    store._hybridLogCheckpoint.info.segmentSize = store.hlogBase.GetMainLogSegmentSize();
+
+                    // Allocators without an object log return -1; record 0 there, matching "not applicable" in the metadata.
+                    var objectLogSegmentSize = store.hlogBase.GetObjectLogSegmentSize();
+                    store._hybridLogCheckpoint.info.objectLogSegmentSize = objectLogSegmentSize > 0 ? objectLogSegmentSize : 0;
                     break;
 
                 case Phase.IN_PROGRESS:
@@ -51,7 +57,7 @@ namespace Tsavorite.core
                     Debug.Assert(stateMachineDriver.GetNumActiveTransactions(lastVersion) == 0, $"Active transactions in last version: {stateMachineDriver.GetNumActiveTransactions(lastVersion)}");
                     stateMachineDriver.ResetLastVersion();
                     // Grab final logical address (end of fuzzy region)
-                    store._hybridLogCheckpoint.info.finalLogicalAddress = store.hlogBase.GetTailAddress();
+                    store._hybridLogCheckpoint.info.recoveredTailAddress = store.hlogBase.GetTailAddress();
 
                     // Grab other metadata for the checkpoint
                     store._hybridLogCheckpoint.info.headAddress = store.hlogBase.HeadAddress;

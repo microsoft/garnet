@@ -128,7 +128,7 @@ namespace Tsavorite.core
             return true;
         }
 
-        private bool LoadPageIfNeeded(out long headAddress, out long currentPage, long stopAddress)
+        private bool LoadPageIfNeeded(out long headAddress, out int currentPage, long stopAddress)
         {
             headAddress = hlogBase.HeadAddress;
 
@@ -151,7 +151,7 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal long SnapToLogicalAddressBoundary(ref long logicalAddress, long headAddress, long currentPage)
+        internal long SnapToLogicalAddressBoundary(ref long logicalAddress, long headAddress, int currentPage)
         {
             var offset = hlogBase.GetOffsetOnPage(logicalAddress);
 
@@ -178,13 +178,13 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        long GetPhysicalAddress(long currentAddress, long headAddress, long currentPage, long offset)
+        long GetPhysicalAddress(long currentAddress, long headAddress, int currentPage, long offset)
             => currentAddress >= headAddress || assumeInMemory
                 ? hlogBase.GetPhysicalAddress(currentAddress)
                 : frame.GetPhysicalAddress(currentPage, offset);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        long GetPhysicalAddressAndAllocatedSize(long currentAddress, long headAddress, long currentPage, long offset, out long allocatedSize)
+        long GetPhysicalAddressAndAllocatedSize(long currentAddress, long headAddress, int currentPage, long offset, out long allocatedSize)
         {
             var physicalAddress = GetPhysicalAddress(currentAddress, headAddress, currentPage, offset);
 
@@ -453,8 +453,8 @@ namespace Tsavorite.core
             frame?.Dispose();
         }
 
-        internal override void AsyncReadPageFromDeviceToFrame<TContext>(CircularDiskReadBuffer readBuffers, long readPage, long untilAddress, TContext context, out CountdownEvent completed,
-                long devicePageOffset = 0, IDevice device = null, IDevice objectLogDevice = null, CancellationTokenSource cts = null)
+        internal override void AsyncReadPageFromDeviceToFrame<TContext>(CircularDiskReadBuffer readBuffers, int readPage, long untilAddress, TContext context, out CountdownEvent completed,
+                int devicePageOffset = 0, IDevice device = null, IDevice objectLogDevice = null, CancellationTokenSource cts = null)
             => hlogBase.AsyncReadPageFromDeviceToFrame(readBuffers, readPage, untilAddress, AsyncReadPageFromDeviceToFrameCallback, context, frame, out completed, devicePageOffset, device, objectLogDevice, cts);
     }
 }

@@ -124,7 +124,7 @@ namespace Tsavorite.core
 
             // The number of pages we have is untilPage - headPage + 1. If we're called here when allocating a new page, see if the new page
             // would put us over the maximum count.
-            var numPages = (int)(tailPage - headPage + 1);
+            var numPages = tailPage - headPage + 1;
             if (addingPage && numPages == logAccessor.allocatorBase.MaxAllocatedPageCount)
                 return true;
 
@@ -206,7 +206,7 @@ namespace Tsavorite.core
             Debug.Assert(newTargetSize > highDelta);
             Debug.Assert(newTargetSize > lowDelta);
 
-            if (newTargetSize < logAccessor.allocatorBase.PageSize * MinTargetPageCount)
+            if (newTargetSize < (long)logAccessor.allocatorBase.PageSize * MinTargetPageCount)
                 throw new TsavoriteException($"Target size must be at least {MinTargetPageCount} pages");
 
             var shrink = newTargetSize < TargetSize;
@@ -325,14 +325,14 @@ namespace Tsavorite.core
                 if (isComplete)
                 {
                     // We can completely satisfy the over-budget amount, so we can add some pages back to keep more below maxEvictUntilPage.
-                    var additionalPagesToKeep = margin / allocator.PageSize;
+                    var additionalPagesToKeep = (int)(margin / allocator.PageSize);
                     maxEvictUntilPage -= additionalPagesToKeep;
                 }
 
                 // We'll evict the maxEvictUntilPage so start at the first valid logical address on the next page.
                 headAddress = allocator.GetFirstValidLogicalAddressOnPage(maxEvictUntilPage);
 
-                allocatedPageCount -= (int)(maxEvictUntilPage - startingHeadPage);
+                allocatedPageCount -= maxEvictUntilPage - startingHeadPage;
                 return isComplete;
             }
 

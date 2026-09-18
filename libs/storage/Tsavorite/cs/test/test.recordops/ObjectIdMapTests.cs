@@ -69,6 +69,19 @@ namespace Tsavorite.test.Objects
         }
 
         [Test]
+        [Category(ObjectIdMapCategory), Category(SmokeTestCategory)]
+        public void TryGetHeapObjectWithStampedSizeHint()
+        {
+            var valueObject = new TestObjectValue();
+            var objectId = map.Allocate();
+            map.Set(objectId, valueObject);
+
+            var stampedObjectId = ObjectIdMap.StampSizeHint(objectId, 123);
+            Assert.That(map.TryGetHeapObject(stampedObjectId, out var actual), Is.True);
+            Assert.That(actual, Is.SameAs(valueObject));
+        }
+
+        [Test]
         [Category(ObjectIdMapCategory), Category(MultiLevelPageArrayCategory), Category(SmokeTestCategory)]
         [Repeat(1000)]  // Repeat is an intended part of the test due to thread-timing non-determinism; writing the iteration count would slow things so we don't
         public void ObjectIdMapTestStressInitialAllocs([Values(1, 8)] int numThreads)

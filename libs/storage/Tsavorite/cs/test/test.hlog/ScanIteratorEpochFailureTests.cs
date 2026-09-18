@@ -35,8 +35,8 @@ namespace Tsavorite.test
             public readonly int OverflowPageCount => 0;
             public readonly void PopulateRecordSizeInfo(ref RecordSizeInfo sizeInfo) => throw new NotSupportedException();
             public readonly void AllocatePage(int pageIndex) => throw new NotSupportedException();
-            public readonly void FreePage(long pageIndex) => throw new NotSupportedException();
-            public readonly long GetPageOfAddress(long logicalAddress, int logPageSizeBits) => logicalAddress >> logPageSizeBits;
+            public readonly void FreePage(int pageIndex) => throw new NotSupportedException();
+            public readonly int GetPageOfAddress(long logicalAddress, int logPageSizeBits) => (int)(logicalAddress >> logPageSizeBits);
         }
 
         /// <summary>Iterator that records page-read issuance and exposes the members the tests drive.</summary>
@@ -54,12 +54,12 @@ namespace Tsavorite.test
 
             public int PendingDrainCallbacks => Volatile.Read(ref pendingDrainCallbacks);
 
-            public bool ClaimFrameAndIssueRead(long page)
-                => BufferAndLoad(currentIterationAddress: page << LogPageSizeBits, currentPage: page, currentFrame: 0,
+            public bool ClaimFrameAndIssueRead(int page)
+                => BufferAndLoad(currentIterationAddress: (long)page << LogPageSizeBits, currentPage: page, currentFrame: 0,
                                  headAddress: long.MaxValue, endIterationAddress: long.MaxValue);
 
-            internal override void AsyncReadPageFromDeviceToFrame<TContext>(CircularDiskReadBuffer readBuffers, long readPage, long untilAddress, TContext context,
-                    out CountdownEvent completed, long devicePageOffset = 0, IDevice device = null, IDevice objectLogDevice = null, CancellationTokenSource cts = null)
+            internal override void AsyncReadPageFromDeviceToFrame<TContext>(CircularDiskReadBuffer readBuffers, int readPage, long untilAddress, TContext context,
+                    out CountdownEvent completed, int devicePageOffset = 0, IDevice device = null, IDevice objectLogDevice = null, CancellationTokenSource cts = null)
             {
                 _ = Interlocked.Increment(ref ReadCallCount);
 
