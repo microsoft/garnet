@@ -630,6 +630,41 @@ namespace Garnet.test
         }
 
         /// <summary>
+        /// A TLS connection decrypts into a second receive buffer that grows through its own code path, so a
+        /// payload larger than the largest poolable size drives an above-max release there as well as on the
+        /// ciphertext buffer. The replacement is floored at the largest poolable size on both, which takes the
+        /// buffer the growth ladder pooled back off the free list.
+        /// </summary>
+        [Test]
+        public async Task OversizedTlsReceiveBuffersAreReplacedAtTheLargestPoolableSize()
+        {
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableTLS: true);
+            server.Start();
+
+            using var client = TestUtils.GetGarnetClient(useTLS: true);
+            await client.ConnectAsync();
+            _ = await client.PingAsync();
+
+            // Larger than the 1 MB max receive buffer size, so the buffer that holds it is allocated outside
+            // the pool, and small enough to fit the client's default send page. Measured with no further
+            // traffic: the release happens on the receive that consumed the payload, and a trailing command
+            // would let a buffer released on the following pass through.
+            _ = await client.StringSetAsync("oversized", new string('v', 1536 * 1024));
+
+            var stats = PoolStats();
+            TestContext.Out.WriteLine(stats);
+
+            // Guards the level assertion against a run that never grew past the pool's largest class.
+            ClassicAssert.GreaterOrEqual(SocketStatBytes("totalOutOfBoundAllocations", stats), 1,
+                "the payload did not grow a receive buffer past the pool's largest size class");
+
+            ClassicAssert.AreEqual(0, PooledCountAtSize(1024 * 1024, stats),
+                "an oversized TLS receive buffer was replaced below the largest poolable size, so a connection " +
+                "sending one large request per batch re-grows through every class each time");
+        }
+
+        /// <summary>
         /// A session aborted by a protocol error is torn down through a different path than a clean
         /// disconnect. Because the target is <c>budget / liveBufferCount</c>, a count that ratchets up does
         /// not degrade gracefully -- it collapses every connection to the floor permanently -- so the abort
