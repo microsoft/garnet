@@ -533,16 +533,71 @@ namespace Garnet.common
             {
                 ref var acquireRef = ref lockCounts[i];
 
-                while (Interlocked.CompareExchange(ref acquireRef, ExclusiveLockValue, 0) != 0)
+                var spins = 0;
+                while (true)
                 {
+                    if (spins < ExclusiveHintAfterSpins)
+                    {
+                        if (Interlocked.CompareExchange(ref acquireRef, ExclusiveLockValue, 0) == 0)
+                        {
+                            // Got the lock, move on to next shard
+                            break;
+                        }
+                    }
+                    else
+                    {
+                        // Was blocked too many times, start setting hints to block shared locks
+                        if (TryHintAndAcquireSlowPath(ref acquireRef))
+                        {
+                            // Acquired successfully, possibly after some hinting to block readers
+                            break;
+                        }
+                    }
+
                     // Optimistic shared lock got us, or conflict with some other excluive lock acquisition
                     //
                     // Backoff and try again
                     _ = Thread.Yield();
+
+                    spins++;
                 }
             }
 
             lockToken = LockToken.CreateAllExclusive();
+
+            // Slow path where we (might) set a hint to block readers
+            //
+            // This path is most likely on small SKUs under high load, a hopefully rare combination,
+            // so we explicitly keep it off the hot path.
+            [MethodImpl(MethodImplOptions.NoInlining)]
+            static bool TryHintAndAcquireSlowPath(ref int acquireRef)
+            {
+                var oldValue = Volatile.Read(ref acquireRef);
+                if (oldValue == 0 && Interlocked.CompareExchange(ref acquireRef, ExclusiveLockValue, 0) == 0)
+                {
+                    return true;
+                }
+
+                if (oldValue > 0 && (oldValue & WaitingExclusiveHint) == 0)
+                {
+                    // Attempt to hint that we're waiting, which will block future acquisitons
+                    var hintedValue = oldValue | WaitingExclusiveHint;
+                    if (Interlocked.CompareExchange(ref acquireRef, hintedValue, oldValue) == oldValue)
+                    {
+                        // Successfully hinted, now we wait for a chance to take full lock
+
+                        while (Interlocked.CompareExchange(ref acquireRef, ExclusiveLockValue, WaitingExclusiveHint) != WaitingExclusiveHint)
+                        {
+                            // Shared locks which were active when hint added haven't been released yet
+                            _ = Thread.Yield();
+                        }
+
+                        return true;
+                    }
+                }
+
+                return false;
+            }
         }
 
         /// <summary>

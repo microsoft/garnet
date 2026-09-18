@@ -281,8 +281,9 @@ namespace Garnet.test
             }
         }
 
-        [Test]
-        public void ExclusiveLockStarvation()
+        [TestCase(false)]
+        [TestCase(true)]
+        public void ExclusiveLockStarvation(bool acquireAll)
         {
             const int BudgetSeconds = 30;
 
@@ -334,7 +335,16 @@ namespace Garnet.test
                 new Thread(
                     () =>
                     {
-                        locks.AcquireExclusiveLock(Hash, out var writeToken);
+                        ReadOptimizedLock.LockToken writeToken;
+
+                        if (acquireAll)
+                        {
+                            locks.AcquireAllExclusiveLock(out writeToken);
+                        }
+                        else
+                        {
+                            locks.AcquireExclusiveLock(Hash, out writeToken);
+                        }
                         Volatile.Write(ref acquired, true);
                         locks.ReleaseLock(writeToken);
                     }
