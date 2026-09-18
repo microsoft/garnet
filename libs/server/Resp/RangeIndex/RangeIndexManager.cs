@@ -4,7 +4,6 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.IO.Hashing;
@@ -728,18 +727,21 @@ namespace Garnet.server
             string dataPath, string flushPath, Span<byte> valueSpan, long logicalAddress)
         {
             var keyHash = GarnetKeyComparer.StaticGetHashCode64((FixedSpanByteKey)PinnedSpanByte.FromPinnedSpan(key));
+            var lockIndex = rangeIndexLocks.CalculateIndexWithHint(keyHash);
 
+            bool releaseLock;
             ReadOptimizedLock.LockToken sharedLockToken;
-            if (SharedLockHeldForKeyHash.Held)
+            if (SharedLockHeldForKeyHash.Held && SharedLockHeldForKeyHash.Index == lockIndex)
             {
-                Debug.Assert(SharedLockHeldForKeyHash.Hash == keyHash, "If re-entrant, should be holding same lock");
-
+                // Do not acquire shared lock if already held
+                releaseLock = false;
                 sharedLockToken = default;
             }
             else
             {
+                releaseLock = true;
                 rangeIndexLocks.AcquireSharedLock(keyHash, out sharedLockToken);
-                SharedLockHeldForKeyHash = (true, keyHash);
+                SharedLockHeldForKeyHash = (true, lockIndex);
             }
 
             try
@@ -765,7 +767,7 @@ namespace Garnet.server
             }
             finally
             {
-                if (SharedLockHeldForKeyHash.Held)
+                if (releaseLock)
                 {
                     rangeIndexLocks.ReleaseLock(sharedLockToken);
                     SharedLockHeldForKeyHash = (false, 0);

@@ -243,13 +243,20 @@ namespace Garnet.common
         }
 
         /// <summary>
+        /// Take a hash and get a  _hint_ about the current processor and determine which count should be used.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public readonly int CalculateIndexWithHint(long hash)
+        => CalculateIndex(hash, GetProcessorHint());
+
+        /// <summary>
         /// Attempt to acquire a shared lock for the given hash.
         /// 
         /// Will block exclusive locks until released.
         /// </summary>
         public readonly bool TryAcquireSharedLock(long hash, out LockToken lockToken)
         {
-            var ix = CalculateIndex(hash, GetProcessorHint());
+            var ix = CalculateIndexWithHint(hash);
 
             ref var acquireRef = ref Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(lockCounts), ix);
 
@@ -645,10 +652,10 @@ namespace Garnet.common
         /// <summary>
         /// Get a somewhat-correlated-to-processor value.
         /// 
-        /// While we could use <see cref="Thread.GetCurrentProcessorId()"/>, that isn't fast on all platforms.
-        /// 
         /// For our purposes, we just need something that will tend to keep different active processors
         /// from touching each other.  ManagedThreadId works well enough.
+        /// 
+        /// It is assumed that this value is stable on the same thread.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private static int GetProcessorHint()

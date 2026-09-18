@@ -33,10 +33,10 @@ namespace Garnet.server
     {
         /// <summary>
         /// Prevents re-entrant use of <see cref="ReadOptimizedLock"/> by remembering if we've
-        /// already acquiried a lock on this thread.
+        /// already acquired a lock on this thread.
         /// </summary>
         [ThreadStatic]
-        private static (bool Held, long Hash) SharedLockHeldForKeyHash;
+        private static (bool Held, int Index) SharedLockHeldForKeyHash;
 
         /// <summary>
         /// RAII holder for a shared lock on a RangeIndex key.
@@ -126,8 +126,8 @@ namespace Garnet.server
         Retry:
             var output = StringOutput.FromPinnedSpan(indexSpan);
             rangeIndexLocks.AcquireSharedLock(keyHash, out var sharedLockToken);
-            SharedLockHeldForKeyHash = (true, keyHash);
-            
+            SharedLockHeldForKeyHash = (true, rangeIndexLocks.CalculateIndexWithHint(keyHash));
+
             try
             {
 
