@@ -221,6 +221,13 @@ namespace Garnet.common
         /// value some recent count justified. The callers move the count <em>before</em> calling this, so
         /// whichever thread invalidated the target is itself required to recompute from the moved count.
         /// </para>
+        /// <para>
+        /// A stale target left too high can never be suppressed by the hysteresis band: clearing
+        /// <see cref="IsUnderPressure"/> needs the target at the ceiling, which requires the quotient to reach
+        /// the ceiling, and the band suppresses only when the quotient is at least the current target. One left
+        /// too low can sit inside the band, but fails safe -- smaller buffers and more shrinking than the live
+        /// count requires.
+        /// </para>
         /// </remarks>
         public void Recompute()
         {
