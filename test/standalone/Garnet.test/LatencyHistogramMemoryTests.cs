@@ -692,6 +692,29 @@ namespace Garnet.test
         }
 
         /// <summary>
+        /// Release drops the counts array while a recorder may still be running, so recording after it
+        /// loses the sample rather than faulting and a copy reports there is nothing to copy. The client
+        /// releases its histogram from Dispose while reply processing on the network thread may still be
+        /// recording, and that thread is not drained first.
+        /// </summary>
+        [Test]
+        public void RecordingAfterReleaseDropsTheSampleRatherThanFaulting()
+        {
+            var histogram = new LongHistogram(1, TimeStamp.Seconds(100), GarnetServerOptions.DefaultLatencyMonitorPrecision);
+            histogram.RecordValue(1234);
+
+            ClassicAssert.IsTrue(histogram.TryCopy(out var live), "a live histogram should be copyable");
+            ClassicAssert.AreEqual(1, live.TotalCount, "the copy should carry the recorded value");
+
+            histogram.Release();
+
+            Assert.DoesNotThrow(() => histogram.RecordValue(1234),
+                "a recorder racing the release must drop its sample rather than fault on the dropped array");
+            ClassicAssert.IsFalse(histogram.TryCopy(out var released), "a released histogram has nothing to copy");
+            ClassicAssert.IsNull(released, "a failed copy should not hand back a histogram");
+        }
+
+        /// <summary>
         /// A released histogram must not be handed back to the shared pool. The record path is
         /// unsynchronised, so a caller can still hold the array; returning it would let another session
         /// rent the array that caller is about to write into.
