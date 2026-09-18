@@ -857,6 +857,98 @@ namespace Garnet.test.cluster
             }
         }
 
+        [Test]
+        [Category("REPLICATION")]
+        [CancelAfter(60_000)]
+        public void ClusterCheckpointCleanupRetiresEntriesPinnedByActiveReader(CancellationToken cancellationToken)
+        {
+#if !DEBUG
+            Assert.Ignore($"Depends on {nameof(ExceptionInjectionHelper)}, which is disabled in non-Debug builds");
+#endif
+            var primaryIndex = 0;
+            var replicaIndex = 1;
+            var keyLength = 16;
+            var kvpairCount = 32;
+
+            context.CreateInstances(2, enableAOF: true, DisableStorageTier: true, useTLS: useTLS, sublogCount: sublogCount);
+            context.CreateConnection(useTLS: useTLS);
+
+            ClassicAssert.AreEqual("OK", context.clusterTestUtils.AddDelSlotsRange(primaryIndex, [(0, 16383)], true, context.logger));
+            context.clusterTestUtils.SetConfigEpoch(primaryIndex, primaryIndex + 1, logger: context.logger);
+            context.clusterTestUtils.SetConfigEpoch(replicaIndex, replicaIndex + 1, logger: context.logger);
+            context.clusterTestUtils.Meet(primaryIndex, replicaIndex, logger: context.logger);
+            context.clusterTestUtils.WaitUntilNodeIsKnown(primaryIndex, replicaIndex, logger: context.logger);
+            context.clusterTestUtils.WaitUntilNodeIsKnown(replicaIndex, primaryIndex, logger: context.logger);
+
+            context.kvPairs = [];
+            context.PopulatePrimary(ref context.kvPairs, keyLength, kvpairCount, primaryIndex);
+
+            var checkpointRoot = Path.Combine(context.nodeOptions[primaryIndex].CheckpointDir, "Store", "checkpoints");
+            var logRoot = Path.Combine(checkpointRoot, "cpr-checkpoints");
+            var indexRoot = Path.Combine(checkpointRoot, "index-checkpoints");
+
+            // The first checkpoint creates the index that every later log-only checkpoint shares
+            context.clusterTestUtils.Checkpoint(primaryIndex, context.logger);
+            var indexDirectories = Directory.GetDirectories(indexRoot);
+            ClassicAssert.AreEqual(1, indexDirectories.Length);
+            var sharedIndexDirectory = indexDirectories[0];
+
+            try
+            {
+                ExceptionInjectionHelper.EnableException(ExceptionInjectionType.Replication_Wait_After_Checkpoint_Acquisition);
+
+                // The attaching replica pins the latest checkpoint entry on the primary as an active reader
+                var resp = context.clusterTestUtils.ClusterReplicate(replicaNodeIndex: replicaIndex, primaryNodeIndex: primaryIndex, async: true, failEx: false, logger: context.logger);
+                ClassicAssert.AreEqual("OK", resp);
+
+                while (ExceptionInjectionHelper.IsEnabled(ExceptionInjectionType.Replication_Wait_After_Checkpoint_Acquisition))
+                    ClusterTestUtils.BackOff(cancellationToken: cancellationToken, msg: "Waiting for the replica to acquire the checkpoint");
+
+                // Checkpoints taken while the oldest entry is pinned cannot retire anything
+                for (var checkpoint = 0; checkpoint < 2; checkpoint++)
+                {
+                    context.PopulatePrimary(ref context.kvPairs, keyLength, kvpairCount, primaryIndex);
+                    context.clusterTestUtils.Checkpoint(primaryIndex, context.logger);
+                }
+                ClassicAssert.AreEqual(3, Directory.GetDirectories(logRoot).Length, "Checkpoints pinned by an active reader must be retained");
+
+                var syncTask = Task.Run(() =>
+                {
+                    context.clusterTestUtils.WaitForReplicaAofSync(primaryIndex, replicaIndex, context.logger);
+                    context.clusterTestUtils.WaitForReplicaRecovery(replicaIndex, context.logger);
+                });
+
+                // Let the pinned reader finish. Checkpoint acquisition can re-enter the wait, so keep re-arming the signal.
+                while (!syncTask.IsCompleted)
+                {
+                    ExceptionInjectionHelper.EnableException(ExceptionInjectionType.Replication_Wait_After_Checkpoint_Acquisition);
+                    ClusterTestUtils.BackOff(cancellationToken: cancellationToken, msg: "Waiting for the replica to release the checkpoint and sync");
+                }
+                syncTask.GetAwaiter().GetResult();
+            }
+            finally
+            {
+                ExceptionInjectionHelper.DisableException(ExceptionInjectionType.Replication_Wait_After_Checkpoint_Acquisition);
+            }
+
+            // Once the reader is gone a single cleanup pass has to retire every entry before the tail,
+            // even though all of them share the index of the checkpoint that is still in use
+            context.PopulatePrimary(ref context.kvPairs, keyLength, kvpairCount, primaryIndex);
+            context.clusterTestUtils.Checkpoint(primaryIndex, context.logger);
+
+            var logDirectories = Directory.GetDirectories(logRoot);
+            ClassicAssert.AreEqual(1, logDirectories.Length, "Only the latest log checkpoint should remain");
+            ClassicAssert.IsTrue(new FileInfo(Path.Combine(logDirectories[0], "info.dat.0")).Length > 0,
+                "The retained checkpoint metadata must be readable");
+
+            indexDirectories = Directory.GetDirectories(indexRoot);
+            ClassicAssert.AreEqual(1, indexDirectories.Length, "Log-only checkpoints should retain the shared index");
+            ClassicAssert.AreEqual(sharedIndexDirectory, indexDirectories[0]);
+
+            context.clusterTestUtils.WaitForReplicaAofSync(primaryIndex, replicaIndex, context.logger);
+            context.ValidateKVCollectionAgainstReplica(ref context.kvPairs, replicaIndex);
+        }
+
         [Test, Order(14)]
         [Category("REPLICATION")]
         public void ClusterMainMemoryReplicationAttachReplicas()
