@@ -26,7 +26,7 @@ namespace Garnet.cluster
             ClusterSlotVerificationResult SingleKeyReadSlotVerify(ref ClusterConfig config, ref PinnedSpanByte keySlice)
             {
                 var _slot = slot == -1 ? HashSlotUtils.HashSlot(keySlice) : (ushort)slot;
-                var IsLocal = config.IsLocal(_slot);
+                var IsLocal = config.IsLocal(_slot, enableReplicaReads: readOnlySession);
                 var state = config.GetState(_slot);
 
                 // If local check we can serve request or redirect with ask
@@ -69,7 +69,7 @@ namespace Garnet.cluster
                 var _slot = slot == -1 ? HashSlotUtils.HashSlot(keySlice) : (ushort)slot;
 
             tryAgain:
-                var IsLocal = config.IsLocal(_slot, readWriteSession: readWriteSession);
+                var IsLocal = config.IsLocal(_slot, enableReplicaReads: internalWriteSession);
                 var state = config.GetState(_slot);
 
                 if (waitForStableSlot && state is SlotState.IMPORTING or SlotState.MIGRATING)
@@ -79,7 +79,7 @@ namespace Garnet.cluster
                 }
 
                 // Redirect r/w requests towards primary
-                if (config.LocalNodeRole == NodeRole.REPLICA && !readWriteSession)
+                if (config.LocalNodeRole == NodeRole.REPLICA && !internalWriteSession)
                     return new(SlotVerifiedState.MOVED, _slot);
 
                 if (IsLocal)

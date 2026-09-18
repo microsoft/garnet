@@ -1484,6 +1484,15 @@ namespace Garnet.test
         }
 
         [Test]
+        public void CanDoSPOPWithCountCommandWhenKeyDoesNotExistLC()
+        {
+            using var lightClientRequest = TestUtils.CreateRequest();
+            var response = lightClientRequest.SendCommand("SPOP fooset 3");
+            var expectedResponse = "*0\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+        }
+
+        [Test]
         public void CanUseNotExistingSetwithSMembers()
         {
             using var lightClientRequest = TestUtils.CreateRequest();

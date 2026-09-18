@@ -99,49 +99,85 @@ namespace Garnet.server
         bool NetworkGETEX<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            // Equivalent to DateTimeOffset.MaxValue.ToUnixTimeSeconds()
+            const long MAX_UNIX_TIME_SECONDS = 253_402_300_799L;
+
+            // Equivalent to DateTimeOffset.MaxValue.ToUnixTimeMilliseconds()
+            const long MAX_UNIX_TIME_MILLISECONDS = 253_402_300_799_999L;
+
             if (parseState.Count < 1 || parseState.Count > 3)
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.GETEX));
 
             var key = parseState.GetArgSliceByRef(0);
 
+            DateTimeOffset? now = null;
             TimeSpan? tsExpiry = null;
             if (parseState.Count > 1)
             {
                 var option = parseState.GetArgSliceByRef(1).ReadOnlySpan;
                 if (option.EqualsUpperCaseSpanIgnoringCase(CmdStrings.PERSIST))
+                {
                     tsExpiry = TimeSpan.Zero;
+                }
                 else
                 {
                     if (parseState.Count < 3 || !parseState.TryGetLong(2, out var expireTime) || expireTime <= 0)
                         return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_OUT_OF_RANGE);
 
-                    switch (option)
+                    if (option.EqualsUpperCaseSpanIgnoringCase(CmdStrings.EX))
                     {
-                        case var _ when option.EqualsUpperCaseSpanIgnoringCase(CmdStrings.EX):
-                            tsExpiry = TimeSpan.FromSeconds(expireTime);
-                            break;
+                        if (expireTime > TimeSpan.MaxValue.TotalSeconds)
+                        {
+                            return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_INVALIDEXP_IN_GETEX);
+                        }
 
-                        case var _ when option.EqualsUpperCaseSpanIgnoringCase(CmdStrings.PX):
-                            tsExpiry = TimeSpan.FromMilliseconds(expireTime);
-                            break;
+                        tsExpiry = TimeSpan.FromSeconds(expireTime);
+                    }
+                    else if (option.EqualsUpperCaseSpanIgnoringCase(CmdStrings.PX))
+                    {
+                        if (expireTime > TimeSpan.MaxValue.TotalMilliseconds)
+                        {
+                            return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_INVALIDEXP_IN_GETEX);
+                        }
 
-                        case var _ when option.EqualsUpperCaseSpanIgnoringCase(CmdStrings.EXAT):
-                            tsExpiry = DateTimeOffset.FromUnixTimeSeconds(expireTime) - DateTimeOffset.UtcNow;
-                            break;
+                        tsExpiry = TimeSpan.FromMilliseconds(expireTime);
+                    }
+                    else if (option.EqualsUpperCaseSpanIgnoringCase(CmdStrings.EXAT))
+                    {
+                        if (expireTime > MAX_UNIX_TIME_SECONDS)
+                        {
+                            return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_INVALIDEXP_IN_GETEX);
+                        }
 
-                        case var _ when option.EqualsUpperCaseSpanIgnoringCase(CmdStrings.PXAT):
-                            tsExpiry = DateTimeOffset.FromUnixTimeMilliseconds(expireTime) - DateTimeOffset.UtcNow;
-                            break;
+                        tsExpiry = DateTimeOffset.FromUnixTimeSeconds(expireTime) - (now = DateTimeOffset.UtcNow);
+                    }
+                    else if (option.EqualsUpperCaseSpanIgnoringCase(CmdStrings.PXAT))
+                    {
+                        if (expireTime > MAX_UNIX_TIME_MILLISECONDS)
+                        {
+                            return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_INVALIDEXP_IN_GETEX);
+                        }
 
-                        default:
-                            while (!RespWriteUtils.TryWriteError($"ERR Unsupported option {parseState.GetString(1)}", ref dcurr, dend))
-                                SendAndReset();
-                            return true;
+                        tsExpiry = DateTimeOffset.FromUnixTimeMilliseconds(expireTime) - (now = DateTimeOffset.UtcNow);
+                    }
+                    else
+                    {
+                        while (!RespWriteUtils.TryWriteError($"ERR Unsupported option {parseState.GetString(1)}", ref dcurr, dend))
+                        {
+                            SendAndReset();
+                        }
+
+                        return true;
                     }
                 }
             }
 
-            var expiry = (tsExpiry.HasValue && tsExpiry.Value.Ticks > 0) ? DateTimeOffset.UtcNow.Ticks + tsExpiry.Value.Ticks : 0;
+            var expiry = (tsExpiry.HasValue && tsExpiry.Value.Ticks > 0) ? (now ?? DateTimeOffset.UtcNow).Ticks + tsExpiry.Value.Ticks : 0;
+            if (expiry < 0)
+            {
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_OVERFLOWEXP_IN_GETEX);
+            }
+
             var input = new StringInput(RespCommand.GETEX, ref parseState, startIdx: 1, arg1: expiry);
 
             var output = GetStringOutput();
@@ -503,7 +539,7 @@ namespace Garnet.server
             var key = parseState.GetArgSliceByRef(0);
 
             // Validate expiry
-            if (!parseState.TryGetInt(1, out var expiry))
+            if (!parseState.TryGetLong(1, out var expiry))
             {
                 return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER);
             }
@@ -513,10 +549,10 @@ namespace Garnet.server
                 return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_INVALIDEXP_IN_SET);
             }
 
-            var valMetadata = DateTimeOffset.UtcNow.Ticks +
-                              (highPrecision
-                                  ? TimeSpan.FromMilliseconds(expiry).Ticks
-                                  : TimeSpan.FromSeconds(expiry).Ticks);
+            if (!TryGetAbsoluteExpiryTicks(expiry, highPrecision, out var valMetadata))
+            {
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_INVALIDEXP_IN_SET);
+            }
 
             var value = parseState.GetArgSliceByRef(2);
 
@@ -572,7 +608,7 @@ namespace Garnet.server
             var key = parseState.GetArgSliceByRef(0);
             var val = parseState.GetArgSliceByRef(1);
 
-            var expiry = 0;
+            long expiry = 0;
             ReadOnlySpan<byte> errorMessage = default;
             var existOptions = ExistOptions.None;
             var expOption = ExpirationOption.None;
@@ -614,7 +650,7 @@ namespace Garnet.server
                         }
 
                         // account for the expiry argument by moving past the tokenIdx
-                        if (!parseState.TryGetInt(tokenIdx++, out expiry))
+                        if (!parseState.TryGetLong(tokenIdx++, out expiry))
                         {
                             errorMessage = CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER;
                             break;
@@ -713,16 +749,16 @@ namespace Garnet.server
             return true;
         }
 
-        private unsafe bool NetworkSET_EX<TGarnetApi>(RespCommand cmd, ExpirationOption expOption, int expiry, PinnedSpanByte key, PinnedSpanByte val, ref TGarnetApi storageApi)
+        private unsafe bool NetworkSET_EX<TGarnetApi>(RespCommand cmd, ExpirationOption expOption, long expiry, PinnedSpanByte key, PinnedSpanByte val, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
             Debug.Assert(cmd == RespCommand.SET);
 
             var highPrecision = expOption == ExpirationOption.PX;
-            var valMetadata = DateTimeOffset.UtcNow.Ticks +
-                              (highPrecision
-                                  ? TimeSpan.FromMilliseconds(expiry).Ticks
-                                  : TimeSpan.FromSeconds(expiry).Ticks);
+            if (!TryGetAbsoluteExpiryTicks(expiry, highPrecision, out var valMetadata))
+            {
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_INVALIDEXP_IN_SET);
+            }
 
             var input = new StringInput(cmd, 0, valMetadata);
 
@@ -733,15 +769,14 @@ namespace Garnet.server
             return true;
         }
 
-        private bool NetworkSET_Conditional<TGarnetApi>(RespCommand cmd, int expiry, PinnedSpanByte key, bool getValue, bool highPrecision, ref TGarnetApi storageApi)
+        private bool NetworkSET_Conditional<TGarnetApi>(RespCommand cmd, long expiry, PinnedSpanByte key, bool getValue, bool highPrecision, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            var inputArg = expiry == 0
-                ? 0
-                : DateTimeOffset.UtcNow.Ticks +
-                  (highPrecision
-                      ? TimeSpan.FromMilliseconds(expiry).Ticks
-                      : TimeSpan.FromSeconds(expiry).Ticks);
+            long inputArg = 0;
+            if (expiry != 0 && !TryGetAbsoluteExpiryTicks(expiry, highPrecision, out inputArg))
+            {
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_INVALIDEXP_IN_SET);
+            }
 
             var input = new StringInput(cmd, ref parseState, startIdx: 1, arg1: inputArg);
 
@@ -808,6 +843,20 @@ namespace Garnet.server
 
                 return true;
             }
+        }
+
+        private static bool TryGetAbsoluteExpiryTicks(long expiry, bool highPrecision, out long expiryTicks)
+        {
+            var ticksPerUnit = highPrecision ? TimeSpan.TicksPerMillisecond : TimeSpan.TicksPerSecond;
+            var currentTicks = DateTimeOffset.UtcNow.Ticks;
+            if (expiry > (long.MaxValue - currentTicks) / ticksPerUnit)
+            {
+                expiryTicks = 0;
+                return false;
+            }
+
+            expiryTicks = currentTicks + expiry * ticksPerUnit;
+            return true;
         }
 
         /// <summary>
@@ -999,7 +1048,7 @@ namespace Garnet.server
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.FLUSHDB));
             }
 
-            if (storeWrapper.serverOptions.EnableCluster && storeWrapper.clusterProvider.IsReplica() && !clusterSession.ReadWriteSession)
+            if (storeWrapper.serverOptions.EnableCluster && storeWrapper.clusterProvider.IsReplica() && !clusterSession.IsInternalWriteSession)
             {
                 while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_FLUSHALL_READONLY_REPLICA, ref dcurr, dend))
                     SendAndReset();
@@ -1021,7 +1070,7 @@ namespace Garnet.server
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.FLUSHALL));
             }
 
-            if (storeWrapper.serverOptions.EnableCluster && storeWrapper.clusterProvider.IsReplica() && !clusterSession.ReadWriteSession)
+            if (storeWrapper.serverOptions.EnableCluster && storeWrapper.clusterProvider.IsReplica() && !clusterSession.IsInternalWriteSession)
             {
                 return AbortWithErrorMessage(CmdStrings.RESP_ERR_FLUSHALL_READONLY_REPLICA);
             }
@@ -1034,7 +1083,7 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Mark this session as readonly session
+        /// Allow this connection to serve read-only commands from a replica
         /// </summary>
         /// <returns></returns>
         private bool NetworkREADONLY()
@@ -1047,7 +1096,7 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Mark this session as readwrite
+        /// Restore the default behavior of redirecting commands from a replica
         /// </summary>
         /// <returns></returns>
         private bool NetworkREADWRITE()

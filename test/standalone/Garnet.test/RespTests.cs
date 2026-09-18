@@ -694,7 +694,7 @@ namespace Garnet.test
         [Test]
         public void SetExpiry()
         {
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
             var db = redis.GetDatabase(0);
 
             string origValue = "abcdefghij";
@@ -747,6 +747,83 @@ namespace Garnet.test
             Thread.Sleep(2000);
             retValue = db.StringGet("mykey");
             ClassicAssert.AreEqual(null, retValue);
+        }
+
+        [Test]
+        public void SetExpiryAcceptsInt64Value()
+        {
+            const long LargeMilliseconds = 4_294_967_296;
+            const long LargeSeconds = 3_000_000_000;
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            void AssertLargeTtl(string key, long expectedTtlMilliseconds)
+            {
+                var ttl = (long)db.Execute("PTTL", key);
+                ClassicAssert.Greater(ttl, expectedTtlMilliseconds - 10_000);
+                ClassicAssert.LessOrEqual(ttl, expectedTtlMilliseconds);
+            }
+
+            var result = db.Execute("SET", "set-px", "value", "PX", LargeMilliseconds);
+            ClassicAssert.AreEqual("OK", result.ToString());
+            AssertLargeTtl("set-px", LargeMilliseconds);
+
+            result = db.Execute("SET", "set-ex", "value", "EX", LargeSeconds);
+            ClassicAssert.AreEqual("OK", result.ToString());
+            AssertLargeTtl("set-ex", LargeSeconds * 1000);
+
+            result = db.Execute("SETEX", "setex", LargeSeconds, "value");
+            ClassicAssert.AreEqual("OK", result.ToString());
+            AssertLargeTtl("setex", LargeSeconds * 1000);
+
+            result = db.Execute("PSETEX", "psetex", LargeMilliseconds, "value");
+            ClassicAssert.AreEqual("OK", result.ToString());
+            AssertLargeTtl("psetex", LargeMilliseconds);
+
+            result = db.Execute("SET", "set-nx", "value", "PX", LargeMilliseconds, "NX");
+            ClassicAssert.AreEqual("OK", result.ToString());
+            AssertLargeTtl("set-nx", LargeMilliseconds);
+
+            ClassicAssert.IsTrue(db.StringSet("set-xx-get", "old-value"));
+            result = db.Execute("SET", "set-xx-get", "new-value", "PX", LargeMilliseconds, "XX", "GET");
+            ClassicAssert.AreEqual("old-value", result.ToString());
+            AssertLargeTtl("set-xx-get", LargeMilliseconds);
+        }
+
+        [Test]
+        public void SetExpiryOutOfRangeIsRejectedWithoutKillingSession()
+        {
+            const string Key = nameof(SetExpiryOutOfRangeIsRejectedWithoutKillingSession);
+            const string ExpectedError = "ERR invalid expire time in 'set' command";
+
+            var faulted = false;
+
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
+            {
+                redis.ConnectionFailed += delegate { faulted = true; };
+
+                var db = redis.GetDatabase();
+                ClassicAssert.IsTrue(db.StringSet(Key, "original"));
+
+                var overflowSeconds = ((long.MaxValue - DateTimeOffset.UtcNow.Ticks) / TimeSpan.TicksPerSecond) + 1;
+
+                void AssertInvalidExpiry(string command, params object[] args)
+                {
+                    var exception = ClassicAssert.Throws<RedisServerException>(() => db.Execute(command, args));
+                    ClassicAssert.AreEqual(ExpectedError, exception.Message);
+                    ClassicAssert.AreEqual("original", db.StringGet(Key).ToString());
+                }
+
+                AssertInvalidExpiry("SET", Key, "replacement", "EX", overflowSeconds);
+                AssertInvalidExpiry("SET", Key, "replacement", "PX", long.MaxValue);
+                AssertInvalidExpiry("SETEX", Key, overflowSeconds, "replacement");
+                AssertInvalidExpiry("PSETEX", Key, long.MaxValue, "replacement");
+
+                ClassicAssert.Greater(db.Ping(), TimeSpan.Zero);
+            }
+
+            ClassicAssert.IsFalse(faulted);
         }
 
         [Test]
@@ -2678,7 +2755,7 @@ namespace Garnet.test
         [TestCase("PEXPIRE")]
         public void KeyExpireObjectTest(string command)
         {
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
             var db = redis.GetDatabase(0);
 
             var key = "keyA";
@@ -4310,7 +4387,7 @@ namespace Garnet.test
         [TestCase(RedisProtocol.Resp3)]
         public void ClientListTest(RedisProtocol protocol)
         {
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(protocol: protocol));
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(protocol: protocol, allowAdmin: true));
             var db = redis.GetDatabase(0);
 
             // List everything
@@ -4337,7 +4414,7 @@ namespace Garnet.test
         [Test]
         public void ClientListErrorTest()
         {
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
             var db = redis.GetDatabase(0);
 
             // Bad option
@@ -4392,7 +4469,7 @@ namespace Garnet.test
         [Test]
         public async Task ClientKillTestAsync()
         {
-            using var mainConnection = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            using var mainConnection = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
             var mainDB = mainConnection.GetDatabase(0);
             var mainId = (long)mainDB.Execute("CLIENT", "ID");
 
@@ -4580,12 +4657,25 @@ namespace Garnet.test
             // Check that we really killed the connection backing a GarnetClient
             static void AssertNotConnected(GarnetClient client)
             {
-                // Force the issue by attempting a command
-                try
+                // IsConnected reads Socket.Connected, which reports the state as of the last completed
+                // I/O. Once the server closes the connection the first send still succeeds locally and
+                // only a following one observes the reset, so a single ping cannot establish that the
+                // connection is gone. Keep issuing pings until the disconnect surfaces; a connection
+                // that was not killed keeps answering them and still fails the assert below.
+                var elapsed = Stopwatch.StartNew();
+                while (client.IsConnected && elapsed.Elapsed < TimeSpan.FromSeconds(10))
                 {
-                    client.Ping(static (_, __) => { });
+                    try
+                    {
+                        client.Ping(static (_, __) => { });
+                    }
+                    catch
+                    {
+                        break;
+                    }
+
+                    Thread.Sleep(10);
                 }
-                catch { }
 
                 ClassicAssert.IsFalse(client.IsConnected);
             }
@@ -4594,7 +4684,7 @@ namespace Garnet.test
         [Test]
         public void ClientKillErrors()
         {
-            using var mainConnection = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            using var mainConnection = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
             var mainDB = mainConnection.GetDatabase(0);
 
             // Errors that match Redis behavior
@@ -4962,6 +5052,60 @@ namespace Garnet.test
             db.StringSet(key, value);
 
             Assert.Throws<RedisServerException>(() => db.Execute("GETEX", [key, .. options]));
+        }
+
+        [Test]
+        public void GetExpiryOutOfRangeIsRejectedWithoutKillingSession()
+        {
+            const string Key = nameof(GetExpiryOutOfRangeIsRejectedWithoutKillingSession);
+
+            var faulted = false;
+
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
+            {
+                redis.ConnectionFailed += delegate { faulted = true; };
+
+                var db = redis.GetDatabase();
+
+                ClassicAssert.True(db.StringSet(Key, "Value"));
+
+                // seconds too far in the future
+                var exc0 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("GETEX", Key, "EX", long.MaxValue.ToString()));
+                ClassicAssert.AreEqual("ERR invalid expire time in 'getex' command", exc0.Message);
+
+                // milliseconds too far in the future
+                var exc1 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("GETEX", Key, "PX", long.MaxValue.ToString()));
+                ClassicAssert.AreEqual("ERR invalid expire time in 'getex' command", exc1.Message);
+
+                // unix time too far in the future
+                var exc2 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("GETEX", Key, "EXAT", long.MaxValue.ToString()));
+                ClassicAssert.AreEqual("ERR invalid expire time in 'getex' command", exc2.Message);
+
+                // unix time ms too far in the future
+                var exc3 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("GETEX", Key, "PXAT", long.MaxValue.ToString()));
+                ClassicAssert.AreEqual("ERR invalid expire time in 'getex' command", exc3.Message);
+
+                var ticksSpace = long.MaxValue - DateTime.UtcNow.Ticks;
+                var overflowSeconds = (ticksSpace / TimeSpan.TicksPerSecond) + 1;
+                var overflowMilliseconds = (ticksSpace / TimeSpan.TicksPerMillisecond) + 1;
+
+                // seconds overflow
+                var exc4 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("GETEX", Key, "EX", overflowSeconds.ToString()));
+                ClassicAssert.AreEqual("ERR expire time overflows date in 'getex' command", exc4.Message);
+
+                // milliseconds overflow
+                var exc5 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("GETEX", Key, "PX", overflowMilliseconds.ToString()));
+                ClassicAssert.AreEqual("ERR expire time overflows date in 'getex' command", exc5.Message);
+
+                // TTL unchanged and key undeleted
+                var ttl = db.KeyTimeToLive(Key);
+                ClassicAssert.IsNull(ttl);
+
+                ClassicAssert.IsTrue(db.KeyExists(Key));
+            }
+
+            // Connection never faulted during operation
+            ClassicAssert.IsFalse(faulted);
         }
 
         #endregion
@@ -5399,7 +5543,7 @@ namespace Garnet.test
         [TestCase(20, Description = "Probable unblock failed case")]
         public async Task MultipleClientsUnblockAndAddTest(int numberOfItems)
         {
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
             var db = redis.GetDatabase(0);
 
             var key = "blockingList";
@@ -5420,18 +5564,23 @@ namespace Garnet.test
             // Wait for client to enter blocking state
             await Task.Delay(1000).ConfigureAwait(false);
 
-            // Start parallel unblock and add tasks
-            var unblockTasks = new List<Task<int>>();
+            // Start parallel unblock and add tasks.
+            // These use the asynchronous StackExchange.Redis APIs deliberately: the synchronous overloads block a
+            // thread pool thread for the duration of the round trip, and issuing numberOfItems + 3 of them at once
+            // exhausts the pool on a 2-core machine. The pool then injects replacement threads at roughly one per
+            // second, so the commands reach the server several seconds late - after the blocking command has already
+            // timed out - and the concurrency this test exists to exercise never actually happens.
+            var unblockTasks = new List<Task<RedisResult>>();
             var addTasks = new List<Task>();
             for (int i = 0; i < numberOfItems; i++)
             {
                 var _i = i;
-                addTasks.Add(Task.Run(() => redis.GetDatabase(0).ListLeftPush(key, $"{value}{_i}")));
+                addTasks.Add(db.ListLeftPushAsync(key, $"{value}{_i}"));
             }
 
             for (int i = 0; i < 3; i++)
             {
-                unblockTasks.Add(Task.Run(() => (int)redis.GetDatabase(0).Execute("CLIENT", "UNBLOCK", clientId, "ERROR")));
+                unblockTasks.Add(db.ExecuteAsync("CLIENT", "UNBLOCK", clientId, "ERROR"));
             }
 
             await Task.WhenAll(unblockTasks).ConfigureAwait(false);
@@ -5446,11 +5595,11 @@ namespace Garnet.test
             if (numberOfItemsReturned == 0)
             {
                 ClassicAssert.IsTrue(blockingResult.StartsWith("-UNBLOCKED"));
-                ClassicAssert.IsTrue(unblockTasks.Any(x => x.Result == 1));
+                ClassicAssert.IsTrue(unblockTasks.Any(x => (int)x.Result == 1));
             }
             else
             {
-                ClassicAssert.IsTrue(unblockTasks.All(x => x.Result == 0));
+                ClassicAssert.IsTrue(unblockTasks.All(x => (int)x.Result == 0));
             }
         }
 
@@ -5459,7 +5608,7 @@ namespace Garnet.test
         [TestCase(999999, Description = "Unblock with non-existent client ID")]
         public void ClientUnblockInvalidIdTest(int invalidId)
         {
-            using var mainConnection = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            using var mainConnection = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
             var mainDB = mainConnection.GetDatabase(0);
 
             var unblockResult = (int)mainDB.Execute("CLIENT", "UNBLOCK", invalidId);
@@ -5469,7 +5618,7 @@ namespace Garnet.test
         [Test]
         public void ClientUnblockInvalidModeTest()
         {
-            using var mainConnection = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            using var mainConnection = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
             var mainDB = mainConnection.GetDatabase(0);
 
             Assert.Throws<RedisServerException>(() => mainDB.Execute("CLIENT", "UNBLOCK", 123, "INVALID"));

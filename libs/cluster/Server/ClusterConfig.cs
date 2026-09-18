@@ -168,22 +168,22 @@ namespace Garnet.cluster
         /// 3. Local slots for a replica are those slots served by its primary only for read operations
         /// </summary>
         /// <param name="slot">Slot to check</param>
-        /// <param name="readWriteSession">Used to override write restrictions for non-local slots that are replicas of the slot owner</param>
+        /// <param name="enableReplicaReads">Whether a replica can serve reads for slots owned by its primary</param>
         /// <returns>True if slot is owned by this node, false otherwise</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool IsLocal(ushort slot, bool readWriteSession = true)
-            => slotMap[slot].workerId == LOCAL_WORKER_ID || IsLocalExpensive(slot, readWriteSession);
+        public bool IsLocal(ushort slot, bool enableReplicaReads = true)
+            => slotMap[slot].workerId == LOCAL_WORKER_ID || IsLocalExpensive(slot, enableReplicaReads);
 
         /// <summary>
         /// If slot in MIGRATE state then it must have been set by original owner, so we keep treating it like a local slot and serve requests if the key has not yet migrated.
         /// If it is a read command and this is a replica the associated slot should be assigned to this node's primary in order for the read request to be served.
         /// </summary>
         /// <param name="slot"></param>
-        /// <param name="readWriteSession"></param>
+        /// <param name="enableReplicaReads"></param>
         /// <returns></returns>
-        private bool IsLocalExpensive(ushort slot, bool readWriteSession)
+        private bool IsLocalExpensive(ushort slot, bool enableReplicaReads)
             => slotMap[slot]._state == SlotState.MIGRATING ||
-            (readWriteSession &&
+            (enableReplicaReads &&
             workers[1].Role == NodeRole.REPLICA &&
             slotMap[slot]._workerId > 1 &&
             LocalNodePrimaryId != null &&
@@ -1198,8 +1198,16 @@ namespace Garnet.cluster
                     if (senderConfig.LocalNodeConfigEpoch != 0 && workers[currentOwnerId].ConfigEpoch >= senderConfig.LocalNodeConfigEpoch)
                         continue;
                 }
-                else if (currentOwnerId != RESERVED_WORKER_ID) // Possibly multiple replicas may enter this but only the old primary should succeed in the event of a planned failover.
+                else
                 {
+                    // Sender is a replica. It may only hand off a slot that this node already credits to the
+                    // sender itself, which is the planned-failover case described below. An unowned slot gives
+                    // no such basis, so leave it alone and let its real owner claim it through the primary path
+                    // above; a replica must never introduce ownership. Crediting the replica here would reject
+                    // the true owner's claims for as long as the bogus owner's config epoch remains the higher one.
+                    if (currentOwnerId == RESERVED_WORKER_ID)
+                        continue;
+
                     // This should guarantee that only the old primary should proceed with re-assigning the slots to the replica that is taking over
                     // Scenario 4 nodes A,B,C,D for which B,C are replicas of A and B takes over from A,
                     // then due to delay D will receive a gossip from A,B,C in any order.

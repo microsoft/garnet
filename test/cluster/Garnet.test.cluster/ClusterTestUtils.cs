@@ -16,7 +16,6 @@ using System.Threading.Tasks;
 using Garnet.client;
 using Garnet.common;
 using Garnet.server;
-using Garnet.server.TLS;
 using GarnetClusterManagement;
 using Microsoft.Extensions.Logging;
 using NUnit.Framework;
@@ -181,7 +180,7 @@ namespace Garnet.test.cluster
             try
             {
                 var server = GetServer(endPoint);
-                var resp = server.Execute(cmd, args, flags: flags);
+                var resp = server.Execute(0, cmd, args, flags: flags);
                 return resp;
             }
             catch (Exception ex)
@@ -198,7 +197,7 @@ namespace Garnet.test.cluster
             try
             {
                 var server = GetServer(endPoint);
-                var resp = await server.ExecuteAsync(cmd, args, flags: flags).ConfigureAwait(false);
+                var resp = await server.ExecuteAsync(0, cmd, args, flags: flags).ConfigureAwait(false);
                 return resp;
             }
             catch (Exception ex)
@@ -408,12 +407,36 @@ namespace Garnet.test.cluster
 
                     if (count > 0)
                     {
-                        await BackOffAsync(cancellationToken: context.cts.Token).ConfigureAwait(false);
+                        var msg = context.cts.IsCancellationRequested
+                            ? DescribeSyncMismatch(server.EndPoint, expectedConfig, nodes)
+                            : null;
+                        await BackOffAsync(cancellationToken: context.cts.Token, msg: msg).ConfigureAwait(false);
                         goto retry;
                     }
                 }
                 break;
             }
+        }
+
+        /// <summary>
+        /// Describes which of the expected nodes a server has not yet agreed on, so a cluster that never
+        /// converges reports what it was waiting for.
+        /// </summary>
+        /// <param name="endPoint">Server whose view was inspected.</param>
+        /// <param name="expectedConfig">Expected cluster configuration, keyed by node id.</param>
+        /// <param name="nodes">Nodes the server reported, or null if it reported none.</param>
+        private static string DescribeSyncMismatch(EndPoint endPoint, Dictionary<string, string> expectedConfig, IEnumerable<ClusterNode> nodes)
+        {
+            var sb = new StringBuilder($"Cluster did not converge; {endPoint} disagrees on:");
+            foreach (var (nodeId, raw) in expectedConfig)
+            {
+                var node = nodes?.FirstOrDefault(n => n.NodeId == nodeId);
+                if (node == null)
+                    sb.Append($"\n  {nodeId}: not known to this node. Expected: {raw.Trim()}");
+                else if (!NodesEqual(new ClientClusterNode(raw.Trim()), node))
+                    sb.Append($"\n  {nodeId}: expected [{raw.Trim()}] actual [{node.Raw?.Trim()}]");
+            }
+            return sb.ToString();
         }
 
         public (List<ShardInfo>, List<ushort>) SimpleSetupCluster(
@@ -667,15 +690,15 @@ namespace Garnet.test.cluster
             {
                 var server = GetServer(nodeIndex);
 
-                var txnblockResp = (string)server.Execute("MULTI", new List<object>(), CommandFlags.NoRedirect);
+                var txnblockResp = (string)server.Execute(0, "MULTI", new List<object>(), CommandFlags.NoRedirect);
                 ClassicAssert.AreEqual(txnblockResp, "OK");
                 foreach (var cmd in commands)
                 {
-                    var respCmd = (string)server.Execute(cmd.Item1, cmd.Item2, CommandFlags.NoRedirect);
+                    var respCmd = (string)server.Execute(0, cmd.Item1, cmd.Item2, CommandFlags.NoRedirect);
                     ClassicAssert.AreEqual(respCmd, "QUEUED");
                 }
 
-                result = server.Execute("EXEC", new List<object>(), CommandFlags.NoRedirect);
+                result = server.Execute(0, "EXEC", new List<object>(), CommandFlags.NoRedirect);
             }
             catch (Exception ex)
             {
@@ -784,7 +807,10 @@ namespace Garnet.test.cluster
         {
             await InitMultiplexerAsync(GetRedisConfig(endpoints), textWriter, logger: logger);
             if (cluster)
+            {
                 this.nodeIds = await GetNodeIdsAsync(logger: logger).ConfigureAwait(false);
+                await EnableReplicaReadsAsync(endpoints, logger).ConfigureAwait(false);
+            }
         }
 
         private async Task InitMultiplexerAsync(ConfigurationOptions redisConfig, TextWriter textWriter, bool failAssert = true, ILogger logger = null)
@@ -810,7 +836,8 @@ namespace Garnet.test.cluster
                 disablePubSub: disablePubSub,
                 authUsername: authUsername,
                 authPassword: authPassword,
-                certificates: certificates);
+                certificates: certificates,
+                protocol: RedisProtocol.Resp2);
         }
 
         public void Dispose()
@@ -855,7 +882,7 @@ namespace Garnet.test.cluster
             return nodeIds;
         }
 
-        public async Task ReconnectAsync(List<int> nodes = null, TextWriter textWriter = null, ILogger logger = null)
+        public async Task ReconnectAsync(List<int> nodes = null, TextWriter textWriter = null, ILogger logger = null, bool cluster = true)
         {
             await CloseConnectionsAsync().ConfigureAwait(false);
             var endPoints = endpoints;
@@ -871,6 +898,18 @@ namespace Garnet.test.cluster
             var connOpts = GetRedisConfig(endPoints);
             await InitMultiplexerAsync(connOpts, textWriter, logger: logger).ConfigureAwait(false);
             nodeIds = await GetNodeIdsAsync(nodes, logger).ConfigureAwait(false);
+            if (cluster)
+                await EnableReplicaReadsAsync(endPoints, logger).ConfigureAwait(false);
+        }
+
+        private async Task EnableReplicaReadsAsync(EndPointCollection endPoints, ILogger logger)
+        {
+            foreach (var endPoint in endPoints)
+            {
+                logger?.LogInformation("({endpoint}) > READONLY", endPoint);
+                var result = await redis.GetServer(endPoint).ExecuteAsync("READONLY", Array.Empty<object>(), CommandFlags.NoRedirect).ConfigureAwait(false);
+                ClassicAssert.AreEqual("OK", (string)result);
+            }
         }
 
         public EndPointCollection GetEndPoints() => endpoints;
@@ -890,7 +929,7 @@ namespace Garnet.test.cluster
                 {
                     sslOptions = new SslClientAuthenticationOptions
                     {
-                        ClientCertificates = [CertificateUtils.GetMachineCertificateByFile(certFile, certPassword)],
+                        ClientCertificates = [TestUtils.GetClientCertificate()],
                         TargetHost = "GarnetTest",
                         AllowRenegotiation = false,
                         RemoteCertificateValidationCallback = TestUtils.ValidateServerCertificate,
@@ -912,7 +951,7 @@ namespace Garnet.test.cluster
             {
                 sslOptions = new SslClientAuthenticationOptions
                 {
-                    ClientCertificates = [CertificateUtils.GetMachineCertificateByFile(certFile, certPassword)],
+                    ClientCertificates = [TestUtils.GetClientCertificate()],
                     TargetHost = "GarnetTest",
                     AllowRenegotiation = false,
                     RemoteCertificateValidationCallback = TestUtils.ValidateServerCertificate,
@@ -2007,7 +2046,7 @@ namespace Garnet.test.cluster
 
             try
             {
-                var resp = server.Execute("migrate", args);
+                var resp = server.Execute(0, "migrate", args);
                 ClassicAssert.AreEqual((string)resp, "OK");
             }
             catch (Exception ex)
@@ -2035,7 +2074,7 @@ namespace Garnet.test.cluster
             var elapsed = Stopwatch.GetTimestamp();
             try
             {
-                var resp = server.Execute("migrate", args);
+                var resp = server.Execute(0, "migrate", args);
                 ClassicAssert.AreEqual((string)resp, "OK");
             }
             catch (Exception ex)
@@ -2266,6 +2305,10 @@ namespace Garnet.test.cluster
         public string ClusterReplicate(int replicaNodeIndex, int primaryNodeIndex, bool async = false, bool failEx = true, ILogger logger = null)
         {
             var primaryId = ClusterMyId(primaryNodeIndex, logger: logger);
+            // CLUSTER REPLICATE resolves the primary's node id against the replica's own configuration.
+            // MEET only makes the node it is sent to aware of its target; the reverse direction arrives
+            // through the gossip handshake that follows, so wait for it before issuing the command.
+            WaitUntilNodeIdIsKnown(replicaNodeIndex, primaryId, logger: logger);
             return ClusterReplicate(replicaNodeIndex, primaryId, async: async, failEx: failEx, logger: logger);
         }
 
@@ -2616,14 +2659,14 @@ namespace Garnet.test.cluster
                 if (expiry == -1)
                 {
                     ICollection<object> args = [key, value];
-                    var resp = (string)server.Execute("set", args, CommandFlags.NoRedirect);
+                    var resp = (string)server.Execute(0, "set", args, CommandFlags.NoRedirect);
                     ClassicAssert.AreEqual("OK", resp);
                     return ResponseState.OK;
                 }
                 else
                 {
                     ICollection<object> args = [key, expiry, value];
-                    var resp = (string)server.Execute("setex", args, CommandFlags.NoRedirect);
+                    var resp = (string)server.Execute(0, "setex", args, CommandFlags.NoRedirect);
                     ClassicAssert.AreEqual("OK", resp);
                     return ResponseState.OK;
                 }
@@ -2693,7 +2736,7 @@ namespace Garnet.test.cluster
             try
             {
                 ICollection<object> args = new List<object>() { (object)key };
-                result = (string)server.Execute("get", args, CommandFlags.NoRedirect);
+                result = (string)server.Execute(0, "get", args, CommandFlags.NoRedirect);
                 slot = HashSlot(key);
                 responseState = ResponseState.OK;
                 return result;
@@ -2754,7 +2797,7 @@ namespace Garnet.test.cluster
 
             try
             {
-                return (string)server.Execute("mset", args, CommandFlags.NoRedirect);
+                return (string)server.Execute(0, "mset", args, CommandFlags.NoRedirect);
             }
             catch (Exception e)
             {
@@ -2799,7 +2842,7 @@ namespace Garnet.test.cluster
 
             try
             {
-                var result = server.Execute("mget", args, CommandFlags.NoRedirect);
+                var result = server.Execute(0, "mget", args, CommandFlags.NoRedirect);
                 getResult = [.. ((RedisResult[])result).Select(x => (byte[])x)];
                 return "OK";
             }
@@ -2840,7 +2883,7 @@ namespace Garnet.test.cluster
 
                 for (int i = elements.Count - 1; i >= 0; i--) args.Add(elements[i]);
 
-                var result = (int)server.Execute("LPUSH", args);
+                var result = (int)server.Execute(0, "LPUSH", args);
                 ClassicAssert.AreEqual(elements.Count, result);
                 return result;
             }
@@ -2859,7 +2902,7 @@ namespace Garnet.test.cluster
                 var server = GetServer(nodeIndex);
                 var args = new List<object>() { key, "0", "-1" };
 
-                var result = server.Execute("LRANGE", args);
+                var result = server.Execute(0, "LRANGE", args);
                 return [.. ((int[])result)];
             }
             catch (Exception ex)
@@ -2879,7 +2922,7 @@ namespace Garnet.test.cluster
 
                 for (int i = elements.Count - 1; i >= 0; i--) args.Add(elements[i]);
 
-                var result = (int)server.Execute("SADD", args);
+                var result = (int)server.Execute(0, "SADD", args);
                 ClassicAssert.AreEqual(elements.Count, result);
             }
             catch (Exception ex)
@@ -2896,7 +2939,7 @@ namespace Garnet.test.cluster
                 var server = GetServer(nodeIndex);
                 var args = new List<object>() { key };
 
-                var result = server.Execute("SMEMBERS", args);
+                var result = server.Execute(0, "SMEMBERS", args);
                 return [.. ((int[])result)];
             }
             catch (Exception ex)
@@ -3126,7 +3169,7 @@ namespace Garnet.test.cluster
             var server = redis.GetServer(endPoint);
             try
             {
-                var result = server.InfoRawAsync("persistence").Result;
+                var result = server.InfoRaw("persistence");
                 return ProcessPersistenceInfo(result);
             }
             catch (Exception ex)
@@ -3260,7 +3303,7 @@ namespace Garnet.test.cluster
             try
             {
                 var server = redis.GetServer(endPoint);
-                var result = server.InfoRawAsync("store").Result;
+                var result = server.InfoRaw("store");
                 var data = result.Split('\n');
                 foreach (var line in data)
                 {
@@ -3417,13 +3460,23 @@ namespace Garnet.test.cluster
             }
         }
 
+        /// <summary>
+        /// Waits until the node reports the primary role and the multiplexer has observed it.
+        /// The multiplexer caches a per-endpoint replica flag and rejects a primary-only command
+        /// before it leaves the client, refreshing that flag only on its periodic configuration
+        /// check, so a promotion is not usable until the topology has been re-read.
+        /// </summary>
         public void WaitForPrimaryRole(int nodeIndex, ILogger logger = null)
         {
+            var endPoint = GetEndPoint(nodeIndex);
             while (true)
             {
-                var role = RoleCommand(nodeIndex, logger);
-                if (role.Value.Equals("master")) break;
-                BackOff(cancellationToken: context.cts.Token);
+                if (RoleCommand(endPoint, logger).Value.Equals("master"))
+                {
+                    if (!redis.GetServer(endPoint).IsReplica) break;
+                    _ = redis.Configure();
+                }
+                BackOff(cancellationToken: context.cts.Token, msg: nameof(WaitForPrimaryRole));
             }
         }
 
@@ -3532,7 +3585,7 @@ namespace Garnet.test.cluster
             try
             {
                 var server = redis.GetServer(endPoint);
-                return (int)server.Execute("incrby", key, value);
+                return (int)server.Execute(0, "incrby", [key, value]);
             }
             catch (Exception ex)
             {
@@ -3625,7 +3678,7 @@ namespace Garnet.test.cluster
             try
             {
                 var server = redis.GetServer(endPoint);
-                var count = (int)server.Execute("DBSIZE");
+                var count = (int)server.Execute(0, "DBSIZE", []);
                 return count;
             }
             catch (Exception ex)

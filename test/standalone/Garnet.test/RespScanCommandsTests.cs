@@ -50,7 +50,7 @@ namespace Garnet.test
         [Test]
         public void SeKeysTest()
         {
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
             var db = redis.GetDatabase(0);
 
             // add keys in main store
@@ -88,7 +88,7 @@ namespace Garnet.test
         public void SeKeysCursorTest()
         {
             // Test a large number of keys
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
             var db = redis.GetDatabase(0);
 
             // set 10_000 strings
@@ -116,7 +116,7 @@ namespace Garnet.test
         [Test]
         public void SeKeysNoDuplicatesUnderRcu()
         {
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
             var db = redis.GetDatabase(0);
 
             const int KeyCount = 2_000;
@@ -180,7 +180,7 @@ namespace Garnet.test
         [TestCase(false, Description = "Key is still live when deleted")]
         public void SeKeysDoesNotListDeletedKeyWithSupersededRecord(bool expireBeforeDelete)
         {
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
             var db = redis.GetDatabase(0);
 
             var key = new RedisKey("del:superseded");
@@ -242,7 +242,7 @@ namespace Garnet.test
         [Test]
         public void SeKeysDoesNotListDeletedObjectKeyWithSupersededRecord()
         {
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
             var db = redis.GetDatabase(0);
 
             var key = new RedisKey("del:objsuperseded");
@@ -336,7 +336,7 @@ namespace Garnet.test
         [Test]
         public void CanUsePatternsInKeysTest()
         {
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
             var db = redis.GetDatabase(0);
 
             //h?llo matches hello, hallo and hxllo
@@ -388,7 +388,7 @@ namespace Garnet.test
         [Test]
         public void SeKeysPatternTest()
         {
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
             var db = redis.GetDatabase(0);
             db.StringSet(new RedisKey("keyone"), new RedisValue("valueone"));
             db.StringSet(new RedisKey("keytwo"), new RedisValue("valuetwo"));
@@ -401,7 +401,7 @@ namespace Garnet.test
         [Test]
         public void SeKeysPatternMatchingTest()
         {
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
             var db = redis.GetDatabase(0);
             db.StringSet(new RedisKey("he**"), new RedisValue("keyvalueone"));
             db.StringSet(new RedisKey(@"he\*\*"), new RedisValue("keyvaluetwo"));
@@ -424,7 +424,7 @@ namespace Garnet.test
         [Test]
         public void SeKeysPatternMatchingTestVerbatim()
         {
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
             var db = redis.GetDatabase(0);
             db.StringSet(new RedisKey("he**"), new RedisValue("keyvalueone"));
             db.StringSet(new RedisKey(@"he**foo"), new RedisValue("keyvaluetwo"));
