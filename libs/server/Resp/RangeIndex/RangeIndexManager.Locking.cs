@@ -32,13 +32,6 @@ namespace Garnet.server
     public sealed partial class RangeIndexManager
     {
         /// <summary>
-        /// Prevents re-entrant use of <see cref="ReadOptimizedLock"/> by remembering if we've
-        /// already acquired a lock on this thread.
-        /// </summary>
-        [ThreadStatic]
-        private static (bool Held, int Index) SharedLockHeldForKeyHash;
-
-        /// <summary>
         /// RAII holder for a shared lock on a RangeIndex key.
         /// Disposing releases the shared lock.
         /// </summary>
@@ -88,6 +81,12 @@ namespace Garnet.server
             }
         }
 
+        /// <summary>
+        /// Prevents re-entrant use of <see cref="ReadOptimizedLock"/> by remembering if we've
+        /// already acquired a lock on this thread.
+        /// </summary>
+        private readonly ThreadLocal<(bool Held, int Index)> SharedLockHeldForKeyHash = new(trackAllValues: false);
+
         private readonly ReadOptimizedLock rangeIndexLocks;
 
         /// <summary>
@@ -126,7 +125,7 @@ namespace Garnet.server
         Retry:
             var output = StringOutput.FromPinnedSpan(indexSpan);
             rangeIndexLocks.AcquireSharedLock(keyHash, out var sharedLockToken);
-            SharedLockHeldForKeyHash = (true, rangeIndexLocks.CalculateIndexWithHint(keyHash));
+            SharedLockHeldForKeyHash.Value = (true, rangeIndexLocks.CalculateIndexWithHint(keyHash));
 
             try
             {
@@ -197,7 +196,7 @@ namespace Garnet.server
             finally
             {
                 // Returning or retrying MUST have released the shared lock
-                SharedLockHeldForKeyHash = (false, 0);
+                SharedLockHeldForKeyHash.Value = (false, 0);
             }
         }
 

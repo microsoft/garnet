@@ -731,9 +731,9 @@ namespace Garnet.server
 
             bool releaseLock;
             ReadOptimizedLock.LockToken sharedLockToken;
-            if (SharedLockHeldForKeyHash.Held && SharedLockHeldForKeyHash.Index == lockIndex)
+            if (SharedLockHeldForKeyHash.Value.Held && SharedLockHeldForKeyHash.Value.Index == lockIndex)
             {
-                // Do not acquire shared lock if already held
+                // Do not acquire shared lock if already held for this index
                 releaseLock = false;
                 sharedLockToken = default;
             }
@@ -741,7 +741,6 @@ namespace Garnet.server
             {
                 releaseLock = true;
                 rangeIndexLocks.AcquireSharedLock(keyHash, out sharedLockToken);
-                SharedLockHeldForKeyHash = (true, lockIndex);
             }
 
             try
@@ -770,7 +769,6 @@ namespace Garnet.server
                 if (releaseLock)
                 {
                     rangeIndexLocks.ReleaseLock(sharedLockToken);
-                    SharedLockHeldForKeyHash = (false, 0);
                 }
             }
         }
