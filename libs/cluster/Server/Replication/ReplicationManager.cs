@@ -538,6 +538,12 @@ namespace Garnet.cluster
         {
             await storeWrapper.RecoverCheckpointAsync().ConfigureAwait(false);
             await storeWrapper.RecoverAOFAsync().ConfigureAwait(false);
+
+            // A replica is reconciled by a full sync from its primary, so an incomplete local recovery is reported
+            // but must not stop it from starting and connecting.
+            var isReplica = clusterProvider.clusterManager.CurrentConfig.LocalNodeRole == NodeRole.REPLICA;
+            storeWrapper.VerifyRecoveryIsComplete(canBeRepairedBySync: isReplica);
+
             if (clusterProvider.serverOptions.EnableAOF)
             {
                 storeWrapper.DefaultDatabase.VectorManager?.Initialize();

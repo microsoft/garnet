@@ -517,6 +517,54 @@ namespace Garnet.test.cluster
                 ExceptionInjectionHelper.DisableException(ExceptionInjectionType.Replication_Fail_Replica_Checkpoint_Recovery);
             }
         }
+
+        [Test, Order(6), CancelAfter(testTimeout)]
+        public void ClusterReplicaUnreadableCheckpointAbortsSyncTest()
+        {
+            var primaryIndex = 0;
+            var replicaIndex = 1;
+            var nodes_count = 2;
+
+            // FailOnRecoveryError governs standalone startup, so leave it off: a replica must abort the sync on an
+            // unreadable checkpoint regardless, rather than advertising the primary's offset over incomplete state.
+            context.CreateInstances(nodes_count, disableObjects: false, enableAOF: true, timeout: timeout);
+            context.CreateConnection();
+
+            _ = context.clusterTestUtils.AddDelSlotsRange(primaryIndex, [(0, 16383)], addslot: true, logger: context.logger);
+            context.clusterTestUtils.SetConfigEpoch(primaryIndex, primaryIndex + 1, logger: context.logger);
+            context.clusterTestUtils.SetConfigEpoch(replicaIndex, replicaIndex + 1, logger: context.logger);
+            context.clusterTestUtils.Meet(primaryIndex, replicaIndex, logger: context.logger);
+
+            var keyLength = 32;
+            var kvpairCount = 32;
+            context.kvPairs = [];
+            context.PopulatePrimary(ref context.kvPairs, keyLength, kvpairCount, primaryIndex, null);
+
+            // Take a checkpoint so the replica performs a disk-based full sync and recovers from the shipped token
+            var primaryLastSaveTime = context.clusterTestUtils.LastSave(primaryIndex, logger: context.logger);
+            context.clusterTestUtils.WaitUntilNextSecond(primaryIndex, primaryLastSaveTime);
+            context.clusterTestUtils.Checkpoint(primaryIndex, logger: context.logger);
+            context.clusterTestUtils.WaitCheckpoint(primaryIndex, primaryLastSaveTime, logger: context.logger);
+
+            try
+            {
+                ExceptionInjectionHelper.EnableException(ExceptionInjectionType.Replication_Fail_Replica_Unreadable_Checkpoint);
+
+                var respReplicate = context.clusterTestUtils.ClusterReplicate(replicaNodeIndex: replicaIndex, primaryNodeIndex: primaryIndex, failEx: false, logger: context.logger);
+
+                // A checkpoint whose tokens are all unreadable recovers nothing, so continuing would leave the
+                // replica advertising the primary's replication offset over an empty store.
+                ClassicAssert.AreEqual(0, context.clusterTestUtils.DBSize(replicaIndex, logger: context.logger),
+                    "recovery must have left the replica store empty for this scenario to be under test");
+
+                Assert.That(respReplicate, Does.Contain(nameof(ExceptionInjectionType.Replication_Fail_Replica_Unreadable_Checkpoint)),
+                    "an unreadable replica checkpoint must abort the sync rather than be treated as a fresh start");
+            }
+            finally
+            {
+                ExceptionInjectionHelper.DisableException(ExceptionInjectionType.Replication_Fail_Replica_Unreadable_Checkpoint);
+            }
+        }
 #endif
 
         [Test, Order(10), CancelAfter(60_000)]
