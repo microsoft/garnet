@@ -417,4 +417,95 @@ namespace Tsavorite.test
         /// <inheritdoc/>
         public override void Dispose() => underlying.Dispose();
     }
+
+    /// <summary>
+    /// Simulates a device that completes transfers successfully but does not populate the transferred byte count,
+    /// which <see cref="DeviceIOCompletionCallback"/> permits by reporting 0. Used to verify that short-transfer
+    /// detection treats 0 as "not reported" rather than as a truncated transfer.
+    /// </summary>
+    public class ZeroCountReportingDevice : StorageDeviceBase
+    {
+        private readonly IDevice underlying;
+
+        public ZeroCountReportingDevice(IDevice underlying) : base(underlying.FileName, underlying.SectorSize, underlying.Capacity)
+            => this.underlying = underlying;
+
+        /// <inheritdoc/>
+        public override void Initialize(long segmentSize, LightEpoch epoch = null, bool omitSegmentIdFromFilename = false)
+        {
+            base.Initialize(segmentSize, epoch, omitSegmentIdFromFilename);
+            underlying.Initialize(segmentSize, epoch, omitSegmentIdFromFilename);
+        }
+
+        /// <inheritdoc/>
+        public override void RemoveSegmentAsync(int segment, AsyncCallback callback, IAsyncResult result)
+            => underlying.RemoveSegmentAsync(segment, callback, result);
+
+        /// <inheritdoc/>
+        public override void WriteAsync(IntPtr sourceAddress, int segmentId, ulong destinationAddress, uint numBytesToWrite,
+            DeviceIOCompletionCallback callback, object context)
+            => underlying.WriteAsync(sourceAddress, segmentId, destinationAddress, numBytesToWrite, ZeroCount(callback), context);
+
+        /// <inheritdoc/>
+        public override void ReadAsync(int segmentId, ulong sourceAddress, IntPtr destinationAddress, uint readLength,
+            DeviceIOCompletionCallback callback, object context)
+            => underlying.ReadAsync(segmentId, sourceAddress, destinationAddress, readLength, ZeroCount(callback), context);
+
+        private static DeviceIOCompletionCallback ZeroCount(DeviceIOCompletionCallback callback)
+            => (errorCode, numBytes, context, ioException) => callback(errorCode, 0, context, ioException);
+
+        /// <inheritdoc/>
+        public override void Dispose() => underlying.Dispose();
+    }
+
+    /// <summary>
+    /// Simulates a device whose request submission fails partway through a multi-request operation: the first
+    /// <see cref="ThrowReadsAfter"/> reads are forwarded and the next submission throws synchronously, leaving the
+    /// forwarded reads outstanding.
+    /// </summary>
+    public class ThrowOnNthReadDevice : StorageDeviceBase
+    {
+        private readonly IDevice underlying;
+        private int readCount;
+
+        /// <summary>Number of reads to forward before the next submission throws.</summary>
+        public int ThrowReadsAfter = int.MaxValue;
+
+        /// <summary>Number of reads forwarded to the underlying device.</summary>
+        public int ForwardedReadCount => readCount;
+
+        public ThrowOnNthReadDevice(IDevice underlying) : base(underlying.FileName, underlying.SectorSize, underlying.Capacity)
+            => this.underlying = underlying;
+
+        /// <inheritdoc/>
+        public override void Initialize(long segmentSize, LightEpoch epoch = null, bool omitSegmentIdFromFilename = false)
+        {
+            base.Initialize(segmentSize, epoch, omitSegmentIdFromFilename);
+            underlying.Initialize(segmentSize, epoch, omitSegmentIdFromFilename);
+        }
+
+        /// <inheritdoc/>
+        public override void RemoveSegmentAsync(int segment, AsyncCallback callback, IAsyncResult result)
+            => underlying.RemoveSegmentAsync(segment, callback, result);
+
+        /// <inheritdoc/>
+        public override void WriteAsync(IntPtr sourceAddress, int segmentId, ulong destinationAddress, uint numBytesToWrite,
+            DeviceIOCompletionCallback callback, object context)
+            => underlying.WriteAsync(sourceAddress, segmentId, destinationAddress, numBytesToWrite, callback, context);
+
+        /// <inheritdoc/>
+        public override void ReadAsync(int segmentId, ulong sourceAddress, IntPtr destinationAddress, uint readLength,
+            DeviceIOCompletionCallback callback, object context)
+        {
+            if (Interlocked.Increment(ref readCount) > ThrowReadsAfter)
+            {
+                _ = Interlocked.Decrement(ref readCount);
+                throw new IOException("Simulated submission failure");
+            }
+            underlying.ReadAsync(segmentId, sourceAddress, destinationAddress, readLength, callback, context);
+        }
+
+        /// <inheritdoc/>
+        public override void Dispose() => underlying.Dispose();
+    }
 }

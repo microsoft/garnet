@@ -80,8 +80,9 @@ namespace Tsavorite.core
             => _ = Interlocked.CompareExchange(ref mainIndexCheckpointError, detail, null);
 
         /// <summary>Write the main hash index to <paramref name="device"/> as a sequence of chunks, none larger than
-        /// <paramref name="maxIoBytesPerRequest"/>. The default is the largest transfer the OS performs in a single
-        /// request; tests lower it to exercise multi-chunk issuance without allocating a multi-gigabyte table.</summary>
+        /// <paramref name="maxIoBytesPerRequest"/>. The default is <see cref="Constants.kMaxIoBytesPerRequest"/>, which
+        /// is deliberately below the largest single transfer any supported platform performs; tests lower it to
+        /// exercise multi-chunk issuance without allocating a multi-gigabyte table.</summary>
         internal unsafe void BeginMainIndexCheckpoint(int version, IDevice device, out ulong numBytesWritten, bool useReadCache = false, SkipReadCache skipReadCache = default,
                 int throttleCheckpointFlushDelayMs = -1, long maxIoBytesPerRequest = Constants.kMaxIoBytesPerRequest)
         {
@@ -233,11 +234,11 @@ namespace Tsavorite.core
                         logger?.LogError($"{nameof(AsyncPageFlushCallback)} error: {{exception}}", Utility.GetCallbackExceptionDetail(ioException));
                     RecordMainIndexCheckpointError($"chunk {result.chunkIndex} failed with error code {errorCode}");
                 }
-                else if (numBytes < result.numBytesToWrite)
+                else if (numBytes != 0 && numBytes < result.numBytesToWrite)
                 {
-                    // A device may report success for a transfer that moved fewer bytes than requested; Linux does
-                    // this for any single request above MAX_RW_COUNT. The chunk is not fully on disk, so fail the
-                    // checkpoint rather than record an index image that is missing part of the hash table.
+                    // Linux completes a single request larger than MAX_RW_COUNT successfully but short, so a
+                    // transferred count below the requested length means the chunk is not fully on disk. A count of
+                    // zero means the device does not report one (see DeviceIOCompletionCallback), not a short write.
                     logger?.LogError($"{nameof(AsyncPageFlushCallback)} error: wrote {{numBytes}} of {{numBytesToWrite}} bytes", numBytes, result.numBytesToWrite);
                     RecordMainIndexCheckpointError($"chunk {result.chunkIndex} wrote {numBytes} of {result.numBytesToWrite} bytes");
                 }

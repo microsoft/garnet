@@ -10,8 +10,11 @@ namespace Tsavorite.core
     /// </summary>
     /// <param name="errorCode">Numeric error code from the IO completion channel (0 on success).</param>
     /// <param name="numBytes">
-    /// Number of bytes transferred. Not all <see cref="IDevice"/> implementations populate this: some report 0 on a
-    /// successful transfer. Do not use it to detect short reads.
+    /// Number of bytes transferred, or 0 if this <see cref="IDevice"/> implementation does not report one. Some
+    /// implementations report the requested length rather than the actual one, so a value equal to the requested
+    /// length does not prove a full transfer; a nonzero value below it does prove a short one. Do not treat 0 as a
+    /// short transfer, and do not rely on this to detect short reads on the hybrid log, where a short read is
+    /// legitimate and is retried.
     /// </param>
     /// <param name="context">Caller-supplied context object.</param>
     /// <param name="ioException">

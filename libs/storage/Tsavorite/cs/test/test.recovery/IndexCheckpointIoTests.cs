@@ -348,5 +348,103 @@ namespace Tsavorite.test.recovery
                 recovered.Free();
             }
         }
+
+        /// <summary>A device is permitted to complete successfully without reporting a transferred count, which
+        /// <see cref="DeviceIOCompletionCallback"/> represents as 0. Short-transfer detection must treat that as
+        /// "not reported" rather than as a truncated transfer, or every checkpoint and recovery on such a device
+        /// would fail.</summary>
+        [Test]
+        [Category("CheckpointRestore")]
+        [Category("Smoke")]
+        public async Task ZeroReportedByteCountIsNotTreatedAsShortTransfer()
+        {
+            var htZeroCount = new ZeroCountReportingDevice(htDevice);
+            var ofbZeroCount = new ZeroCountReportingDevice(ofbDevice);
+
+            table = CreatePopulatedTable(Seed, TableSizeInBuckets, NumAdds);
+            table.TakeIndexFuzzyCheckpoint(0, htZeroCount, out var htBytesWritten, ofbZeroCount, out var ofbBytesWritten, out var numOfbBuckets);
+            await table.IsIndexFuzzyCheckpointCompletedAsync();
+
+            ClassicAssert.AreEqual(0, htDevice.TruncatedRequestCount, "The device reports 0 bytes but transfers everything");
+
+            var recovered = new TsavoriteBase();
+            try
+            {
+                recovered.Initialize(TableSizeInBuckets, 512);
+                await recovered.RecoverFuzzyIndexAsync(0, htZeroCount, htBytesWritten, ofbZeroCount, numOfbBuckets, ofbBytesWritten, CancellationToken.None);
+                AssertTablesMatch(Seed, NumAdds, table, recovered);
+            }
+            finally
+            {
+                recovered.Free();
+            }
+        }
+
+        /// <summary>A device that throws while submitting one of several chunk reads leaves the earlier reads
+        /// outstanding. Recovery must still surface the failure instead of waiting forever for the chunks that were
+        /// never issued, so that a caller can drain and close the device.</summary>
+        [Test]
+        [Category("CheckpointRestore")]
+        [Category("Smoke")]
+        public void RecoveryFailsPromptlyWhenAChunkCannotBeIssued()
+        {
+            const long maxIoBytesPerRequest = 1L << 20;     // The 4MiB table below needs four requests at this cap
+
+            table = CreatePopulatedTable(Seed, TableSizeInBuckets, NumAdds);
+            table.TakeIndexFuzzyCheckpoint(0, htDevice, out var htBytesWritten, ofbDevice, out var ofbBytesWritten, out var numOfbBuckets);
+            table.IsIndexFuzzyCheckpointCompletedAsync().AsTask().Wait();
+
+            // Let the first chunk through, then fail submission with the rest of the table still unread.
+            var failing = new ThrowOnNthReadDevice(htDevice) { ThrowReadsAfter = 1 };
+
+            var recovered = new TsavoriteBase();
+            try
+            {
+                recovered.Initialize(TableSizeInBuckets, 512);
+
+                var recovery = Task.Run(async ()
+                    => await recovered.RecoverFuzzyIndexAsync(0, failing, htBytesWritten, ofbDevice, numOfbBuckets, ofbBytesWritten, CancellationToken.None, maxIoBytesPerRequest));
+
+                // Wait through a continuation so a faulted recovery is observed as completion, not rethrown here.
+                var settled = recovery.ContinueWith(_ => { }, TaskScheduler.Default).Wait(TimeSpan.FromSeconds(30));
+                ClassicAssert.IsTrue(settled, "Recovery must not hang on chunks that were never issued");
+                ClassicAssert.IsTrue(recovery.IsFaulted, "Recovery must report the submission failure");
+                ClassicAssert.AreEqual(1, failing.ForwardedReadCount);
+
+                // The chunks that were never issued must have been retired, so that a caller waiting for outstanding
+                // reads to finish before closing the device is not left waiting forever.
+                var drain = recovered.DrainMainIndexRecoveryAsync().AsTask();
+                ClassicAssert.IsTrue(drain.Wait(TimeSpan.FromSeconds(30)), "Draining must complete once the issued read has called back");
+            }
+            finally
+            {
+                recovered.Free();
+            }
+        }
+
+        /// <summary>Cancelling a wait for outstanding IO must abandon only the wait. The IO itself is not cancellable,
+        /// so the countdown has to stay usable: a failure path still needs to learn when the last callback has run
+        /// before it releases the buffers and devices that IO is using.</summary>
+        [Test]
+        [Category("CheckpointRestore")]
+        [Category("Smoke")]
+        public void CancellingAWaitLeavesTheCountdownDrainable()
+        {
+            var countdown = new CountdownWrapper(2, isAsync: true);
+            using var cts = new CancellationTokenSource();
+
+            var wait = Task.Run(async () => await countdown.WaitAsync(cts.Token));
+            cts.Cancel();
+            _ = Assert.ThrowsAsync<TaskCanceledException>(async () => await wait);
+
+            // The "outstanding IO" now completes, as it would have regardless of the cancellation.
+            countdown.Decrement();
+            var drain = countdown.DrainAsync().AsTask();
+            ClassicAssert.IsFalse(drain.Wait(TimeSpan.FromMilliseconds(250)), "Draining must not complete while IO is outstanding");
+
+            countdown.Decrement();
+            ClassicAssert.IsTrue(drain.Wait(TimeSpan.FromSeconds(30)), "Draining must complete once the last callback has run");
+            ClassicAssert.IsTrue(countdown.IsCompleted);
+        }
     }
 }

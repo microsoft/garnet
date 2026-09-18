@@ -23,9 +23,9 @@ namespace Tsavorite.core
         // Derived class exposed API
         internal async ValueTask RecoverFuzzyIndexAsync(IndexCheckpointInfo info, CancellationToken cancellationToken)
         {
-            ulong alignedIndexSize = InitializeMainIndexRecovery(ref info, isAsync: true);
             try
             {
+                ulong alignedIndexSize = InitializeMainIndexRecovery(ref info, isAsync: true);
                 await recoveryCountdown.WaitAsync(cancellationToken).ConfigureAwait(false);
                 ThrowIfMainIndexRecoveryFailed();
                 await overflowBucketsAllocator.RecoverAsync(info.main_ht_device, alignedIndexSize, info.info.num_buckets, info.info.num_ofb_bytes, cancellationToken).ConfigureAwait(false);
@@ -33,8 +33,12 @@ namespace Tsavorite.core
             catch
             {
                 // FinalizeMainIndexRecovery, which closes the index checkpoint file on the success path, is not
-                // reached; close it here so a failed recovery does not leak the device.
-                info.main_ht_device.Dispose();
+                // reached. Reads may still be outstanding against that file: cancelling the waits above does not
+                // cancel the reads they were waiting for, and InitializeMainIndexRecovery can throw partway through
+                // issuing them. Let every issued read call back before closing the device it is reading from.
+                await DrainMainIndexRecoveryAsync().ConfigureAwait(false);
+                await overflowBucketsAllocator.DrainRecoveryAsync().ConfigureAwait(false);
+                info.main_ht_device?.Dispose();
                 throw;
             }
             FinalizeMainIndexRecovery(info);
@@ -44,6 +48,10 @@ namespace Tsavorite.core
         {
             var token = info.info.token;
             var ht_version = resizeInfo.version;
+
+            // Drop any countdown left by an earlier recovery so a failure before BeginMainIndexRecovery cannot drain
+            // against stale state.
+            recoveryCountdown = null;
 
             // Create devices to read from using Async API
             info.main_ht_device = checkpointManager.GetIndexDevice(token);
@@ -103,8 +111,9 @@ namespace Tsavorite.core
         }
 
         /// <summary>Read the main hash index from <paramref name="device"/> as a sequence of chunks, none larger than
-        /// <paramref name="maxIoBytesPerRequest"/>. The default is the largest transfer the OS performs in a single
-        /// request; tests lower it to exercise multi-chunk issuance without allocating a multi-gigabyte table.</summary>
+        /// <paramref name="maxIoBytesPerRequest"/>. The default is <see cref="Constants.kMaxIoBytesPerRequest"/>, which
+        /// is deliberately below the largest single transfer any supported platform performs; tests lower it to
+        /// exercise multi-chunk issuance without allocating a multi-gigabyte table.</summary>
         private unsafe void BeginMainIndexRecovery(
                                 int version,
                                 IDevice device,
@@ -126,17 +135,35 @@ namespace Tsavorite.core
             HashBucket* start = state[version].tableAligned;
 
             ulong numBytesRead = 0;
-            for (int index = 0; index < numChunks; index++)
+            int index = 0;
+            try
             {
-                IntPtr chunkStartBucket = (IntPtr)(((byte*)start) + (index * chunkSize));
-                HashIndexPageAsyncReadResult result = default;
-                result.chunkIndex = index;
-                result.numBytesToRead = chunkSize;
-                device.ReadAsync(numBytesRead, chunkStartBucket, chunkSize, AsyncPageReadCallback, result);
-                numBytesRead += chunkSize;
+                for (; index < numChunks; index++)
+                {
+                    IntPtr chunkStartBucket = (IntPtr)(((byte*)start) + (index * chunkSize));
+                    HashIndexPageAsyncReadResult result = default;
+                    result.chunkIndex = index;
+                    result.numBytesToRead = chunkSize;
+                    device.ReadAsync(numBytesRead, chunkStartBucket, chunkSize, AsyncPageReadCallback, result);
+                    numBytesRead += chunkSize;
+                }
+                Debug.Assert(numBytesRead == num_bytes);
             }
-            Debug.Assert(numBytesRead == num_bytes);
+            catch (Exception ex)
+            {
+                // The chunks already issued will still complete and touch the device, so the countdown must reach
+                // zero for the caller to know when it is safe to dispose. Retire the chunks that were never issued.
+                RecordMainIndexRecoveryError($"chunk {index} could not be issued: {ex.Message}");
+                for (; index < numChunks; index++)
+                    recoveryCountdown.Decrement();
+                throw;
+            }
         }
+
+        /// <summary>Wait for every main-index read that was issued to complete, ignoring whether it succeeded. Used on
+        /// failure paths before disposing the device, since cancelling the wait does not cancel the reads.</summary>
+        internal ValueTask DrainMainIndexRecoveryAsync()
+            => recoveryCountdown is null ? default : recoveryCountdown.DrainAsync();
 
         private unsafe void AsyncPageReadCallback(uint errorCode, uint numBytes, object context, Exception ioException)
         {
@@ -149,11 +176,11 @@ namespace Tsavorite.core
                     logger?.LogError($"{nameof(AsyncPageReadCallback)} error: {{exception}}", Utility.GetCallbackExceptionDetail(ioException));
                 RecordMainIndexRecoveryError($"chunk {result.chunkIndex} failed with error code {errorCode}");
             }
-            else if (numBytes < result.numBytesToRead)
+            else if (numBytes != 0 && numBytes < result.numBytesToRead)
             {
-                // A device may report success for a transfer that moved fewer bytes than requested; Linux does this
-                // for any single request above MAX_RW_COUNT. The rest of the chunk still holds its pre-read contents,
-                // so fail recovery rather than bring up a hash table that is missing buckets.
+                // A transferred count below the requested length means part of the chunk still holds its pre-read
+                // contents, so fail recovery rather than bring up a hash table that is missing buckets. A count of
+                // zero means the device does not report one (see DeviceIOCompletionCallback), not a short read.
                 logger?.LogError($"{nameof(AsyncPageReadCallback)} error: read {{numBytes}} of {{numBytesToRead}} bytes", numBytes, result.numBytesToRead);
                 RecordMainIndexRecoveryError($"chunk {result.chunkIndex} read {numBytes} of {result.numBytesToRead} bytes");
             }

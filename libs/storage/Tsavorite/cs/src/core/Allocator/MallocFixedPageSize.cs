@@ -355,10 +355,10 @@ namespace Tsavorite.core
                     logger?.LogError($"{nameof(AsyncFlushCallback)} error: {{exception}}", Utility.GetCallbackExceptionDetail(ioException));
                 RecordCheckpointError($"level {result.levelIndex} failed with error code {errorCode}");
             }
-            else if (numBytes < result.numBytesToWrite)
+            else if (numBytes != 0 && numBytes < result.numBytesToWrite)
             {
-                // A device may report success for a transfer that moved fewer bytes than requested; the level is not
-                // fully on disk, so fail the checkpoint rather than record a truncated overflow-bucket image.
+                // A transferred count below the requested length means the level is not fully on disk. A count of
+                // zero means the device does not report one (see DeviceIOCompletionCallback), not a short write.
                 logger?.LogError($"{nameof(AsyncFlushCallback)} error: wrote {{numBytes}} of {{numBytesToWrite}} bytes", numBytes, result.numBytesToWrite);
                 RecordCheckpointError($"level {result.levelIndex} wrote {numBytes} of {result.numBytesToWrite} bytes");
             }
@@ -440,19 +440,37 @@ namespace Tsavorite.core
             numBytesRead = 0;
             uint alignedPageSize = (uint)PageSize * (uint)RecordSize;
             uint lastLevelSize = (uint)recordsCountInLastLevel * (uint)RecordSize;
-            for (int i = 0; i < numLevels; i++)
+            int i = 0;
+            try
             {
-                // Read exactly what the checkpoint wrote for this level: the final level is shorter than a page and
-                // is the end of the checkpoint region, so requesting a full page would read past the end of the file.
-                uint length = (i == numCompleteLevels) ? lastLevelSize : alignedPageSize;
-                OverflowPagesReadAsyncResult result = default;
-                result.levelIndex = i;
-                result.numBytesToRead = length;
-                device.ReadAsync(offset + numBytesRead, pointers[i], length, AsyncPageReadCallback, result);
-                numBytesRead += length;
+                for (; i < numLevels; i++)
+                {
+                    // Read exactly what the checkpoint wrote for this level: the final level is shorter than a page and
+                    // is the end of the checkpoint region, so requesting a full page would read past the end of the file.
+                    uint length = (i == numCompleteLevels) ? lastLevelSize : alignedPageSize;
+                    OverflowPagesReadAsyncResult result = default;
+                    result.levelIndex = i;
+                    result.numBytesToRead = length;
+                    device.ReadAsync(offset + numBytesRead, pointers[i], length, AsyncPageReadCallback, result);
+                    numBytesRead += length;
+                }
+                Debug.Assert(numBytesRead == numBytesToRead);
             }
-            Debug.Assert(numBytesRead == numBytesToRead);
+            catch (Exception ex)
+            {
+                // The levels already issued will still complete and touch the device, so the countdown must reach
+                // zero for the caller to know when it is safe to dispose. Retire the levels that were never issued.
+                RecordRecoveryError($"level {i} could not be issued: {ex.Message}");
+                for (; i < numLevels; i++)
+                    recoveryCountdown.Decrement();
+                throw;
+            }
         }
+
+        /// <summary>Wait for every overflow-bucket read that was issued to complete, ignoring whether it succeeded.
+        /// Used on failure paths before the caller disposes the device these reads are still using.</summary>
+        internal ValueTask DrainRecoveryAsync()
+            => recoveryCountdown is null ? default : recoveryCountdown.DrainAsync();
 
         private unsafe void AsyncPageReadCallback(uint errorCode, uint numBytes, object context, Exception ioException)
         {
@@ -465,11 +483,11 @@ namespace Tsavorite.core
                     logger?.LogError($"{nameof(AsyncPageReadCallback)} error: {{exception}}", Utility.GetCallbackExceptionDetail(ioException));
                 RecordRecoveryError($"level {result.levelIndex} failed with error code {errorCode}");
             }
-            else if (numBytes < result.numBytesToRead)
+            else if (numBytes != 0 && numBytes < result.numBytesToRead)
             {
-                // A device may report success for a transfer that moved fewer bytes than requested; the rest of the
-                // level still holds its pre-read contents, so fail recovery rather than bring up overflow buckets
-                // that are missing entries.
+                // A transferred count below the requested length means part of the level still holds its pre-read
+                // contents, so fail recovery rather than bring up overflow buckets that are missing entries. A count
+                // of zero means the device does not report one (see DeviceIOCompletionCallback), not a short read.
                 logger?.LogError($"{nameof(AsyncPageReadCallback)} error: read {{numBytes}} of {{numBytesToRead}} bytes", numBytes, result.numBytesToRead);
                 RecordRecoveryError($"level {result.levelIndex} read {numBytes} of {result.numBytesToRead} bytes");
             }
