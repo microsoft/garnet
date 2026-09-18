@@ -329,5 +329,61 @@ namespace Garnet.test
                 $"the buffer returned to {afterNextUse} bytes, at or above the {grown} bytes the cap released");
             ClassicAssert.Greater((int)(t - h), 0, "the response window is empty");
         }
+
+        /// <summary>
+        /// <see cref="ScratchBufferAllocator.Reset"/> runs several times per batch -- twice per transaction
+        /// procedure, once at the batch boundary, and once for every extension that calls
+        /// <c>ResetScratchBuffer</c>. Releasing there reallocates a pinned array for a session that needs
+        /// the capacity every batch, so only the periodic checkpoint may release.
+        /// </summary>
+        [Test]
+        public void AllocatorReleasesAnOversizedBufferAtACheckpointRatherThanAtEveryReset()
+        {
+            var allocator = new ScratchBufferAllocator(maxInitialCapacity: MaxRetained);
+
+            _ = allocator.CreateArgSlice(new byte[MaxRetained * 2]);
+            var grown = allocator.TotalLength;
+            ClassicAssert.Greater(grown, MaxRetained, "the allocator did not grow past its cap");
+
+            for (var i = 0; i < Interval * 4; i++)
+                allocator.Reset();
+
+            ClassicAssert.AreEqual(grown, allocator.TotalLength,
+                $"{Interval * 4} resets released the buffer, so a session needing it every batch churns a pinned array");
+
+            // Reclaim takes two checkpoints: the first records the new high, the second observes no growth
+            // since and releases.
+            allocator.ShrinkCheckpoint();
+            allocator.ShrinkCheckpoint();
+
+            ClassicAssert.AreEqual(0, allocator.TotalLength,
+                $"the buffer stayed at {allocator.TotalLength} bytes after two checkpoints");
+        }
+
+        /// <summary>
+        /// The transaction allocator holds the key bytes <c>WATCH</c> copied out of the receive buffer, and a
+        /// <c>WATCH ... MULTI ... EXEC</c> spans batches. Releasing its buffer while those slices are
+        /// outstanding leaves them pointing at collectable pinned memory, which a functional test cannot
+        /// observe until a collection happens to reuse it -- so the invariant is asserted directly.
+        /// </summary>
+        [Test]
+        public void AllocatorKeepsAnOversizedBufferWhileSlicesAreOutstanding()
+        {
+            var allocator = new ScratchBufferAllocator(maxInitialCapacity: MaxRetained);
+
+            _ = allocator.CreateArgSlice(new byte[MaxRetained * 2]);
+            var grown = allocator.TotalLength;
+            allocator.Reset();
+            allocator.ShrinkCheckpoint();
+
+            _ = allocator.CreateArgSlice(new byte[64]);
+            ClassicAssert.AreNotEqual(0, allocator.ScratchBufferOffset, "the slice was not allocated");
+
+            for (var i = 0; i < 4; i++)
+                allocator.ShrinkCheckpoint();
+
+            ClassicAssert.AreEqual(grown, allocator.TotalLength,
+                "the buffer backing an outstanding slice was released, so the slice points at freed memory");
+        }
     }
 }
