@@ -56,7 +56,7 @@ namespace Garnet.test
         [Test]
         public void ConcurrentVaddToSpilledSetMakesProgress()
         {
-            var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, lowMemory: true, enableVectorSetPreview: true);
+            var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, lowMemory: true, enableVectorSetPreview: true, logTo: TestContext.Out);
 
             // Under a regression the quantization workers spin-wait on the vector-set lock permanently and
             // VectorManager.Dispose() blocks on Task.WhenAll of them, so disposing the server inline (via a using)
