@@ -706,10 +706,12 @@ namespace Garnet.test
             ClassicAssert.IsTrue(histogram.TryCopy(out var live), "a live histogram should be copyable");
             ClassicAssert.AreEqual(1, live.TotalCount, "the copy should carry the recorded value");
 
-            // The copy must report what one built by replaying the counts reports. This does not discriminate
-            // how the total is arrived at, which only a racing recorder can separate.
+            // Both assertions derive from the counts array rather than from the tracking values, so they pin
+            // that the copy reports what one built by replaying the counts reports -- not how its total is
+            // arrived at, which only a racing recorder can separate.
             var reference = (LongHistogram)histogram.Copy();
-            ClassicAssert.AreEqual(reference.GetMaxValue(), live.GetMaxValue(), "the copy should carry the maximum");
+            ClassicAssert.AreEqual(reference.GetMaxValue(), live.GetMaxValue(),
+                "the copy should report the same maximum as one built by replaying the counts");
             ClassicAssert.AreEqual(reference.GetValueAtPercentile(99), live.GetValueAtPercentile(99),
                 "the copy should report the same percentiles as one built by replaying the counts");
 

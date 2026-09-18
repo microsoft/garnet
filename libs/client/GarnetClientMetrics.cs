@@ -44,7 +44,7 @@ namespace Garnet.client
 
             MetricsItem[] percentiles =
             [
-                new("calls", latency.TotalCount.ToString()),
+                new("calls", histogram.TotalCount.ToString()),
                 new("min", _min),
                 new("5th", _5),
                 new("50th", _50),

@@ -446,11 +446,16 @@ namespace Garnet.networking
             {
                 // Above the pool's largest size class, so this buffer cannot be recycled on return. Release it
                 // without waiting out the hysteresis, sized to what is still buffered rather than to the
-                // pass's demand, which is already consumed. The floor is the largest poolable size, so a
-                // connection that needs the capacity on every request re-grows by one doubling; the
-                // hysteresis path below takes it the rest of the way down once the traffic no longer needs it.
-                var residual = Math.Max(networkBufferSettings.maxReceiveBufferSize,
-                    TargetReceiveBufferSize(networkBytesRead, baseSize, current));
+                // pass's demand, which is already consumed.
+                var residual = TargetReceiveBufferSize(networkBytesRead, baseSize, current);
+
+                // The floor applies only while the budget is slack, where it saves a connection that needs the
+                // capacity on every request from re-growing through every size class. While the budget is
+                // binding, a buffer that size is above the adapted target, so the pool discards it on return
+                // and the pressure countdown shrinks it out again within a few receives.
+                if (!budget.IsUnderPressure)
+                    residual = Math.Max(networkBufferSettings.maxReceiveBufferSize, residual);
+
                 networkShrinkCountdown = ShrinkHysteresis;
                 if (residual < current)
                 {
@@ -789,11 +794,12 @@ namespace Garnet.networking
 
             // See MaybeShrinkNetworkReceiveBuffer for the policy, including why the above-max branch is
             // measured against the residual rather than the pass's demand, is floored at the largest
-            // poolable size, and is checked first.
+            // poolable size only while the budget is slack, and is checked first.
             if (aboveMax)
             {
-                target = Math.Max(networkBufferSettings.maxReceiveBufferSize,
-                    TargetReceiveBufferSize(transportBytesRead, baseSize, current));
+                target = TargetReceiveBufferSize(transportBytesRead, baseSize, current);
+                if (!budget.IsUnderPressure)
+                    target = Math.Max(networkBufferSettings.maxReceiveBufferSize, target);
                 if (target >= current)
                 {
                     transportShrinkCountdown = ShrinkHysteresis;

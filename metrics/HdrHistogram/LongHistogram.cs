@@ -33,6 +33,10 @@ namespace HdrHistogram
     /// </remarks>
     public class LongHistogram : HistogramBase
     {
+        /// <summary>
+        /// Counts array, dropped by <see cref="Release"/> and <see cref="Return"/> on paths that do not
+        /// synchronise with recorders, so every reader must load it into a local exactly once.
+        /// </summary>
         private long[] _counts;
         private long _totalCount;
 
@@ -246,8 +250,9 @@ namespace HdrHistogram
         /// </summary>
         protected override void ClearCounts()
         {
-            if (_counts != null)
-                Array.Clear(_counts, 0, _counts.Length);
+            var counts = _counts;
+            if (counts != null)
+                Array.Clear(counts, 0, counts.Length);
             _totalCount = 0;
         }
 
@@ -257,7 +262,8 @@ namespace HdrHistogram
         /// <param name="target">The array to write each count value into.</param>
         protected override void CopyCountsInto(long[] target)
         {
-            Array.Copy(_counts, target, Math.Min(_counts.Length, target.Length));
+            var counts = _counts;
+            Array.Copy(counts, target, Math.Min(counts.Length, target.Length));
         }
     }
 }
