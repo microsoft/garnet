@@ -4,6 +4,7 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.IO.Hashing;
@@ -727,7 +728,20 @@ namespace Garnet.server
             string dataPath, string flushPath, Span<byte> valueSpan, long logicalAddress)
         {
             var keyHash = GarnetKeyComparer.StaticGetHashCode64((FixedSpanByteKey)PinnedSpanByte.FromPinnedSpan(key));
-            rangeIndexLocks.AcquireSharedLock(keyHash, out var sharedLockToken);
+
+            ReadOptimizedLock.LockToken sharedLockToken;
+            if (SharedLockHeldForKeyHash.Held)
+            {
+                Debug.Assert(SharedLockHeldForKeyHash.Hash == keyHash, "If re-entrant, should be holding same lock");
+
+                sharedLockToken = default;
+            }
+            else
+            {
+                rangeIndexLocks.AcquireSharedLock(keyHash, out sharedLockToken);
+                SharedLockHeldForKeyHash = (true, keyHash);
+            }
+
             try
             {
                 // Re-check: a tree may have become live under a different stub for this key
@@ -751,7 +765,11 @@ namespace Garnet.server
             }
             finally
             {
-                rangeIndexLocks.ReleaseLock(sharedLockToken);
+                if (SharedLockHeldForKeyHash.Held)
+                {
+                    rangeIndexLocks.ReleaseLock(sharedLockToken);
+                    SharedLockHeldForKeyHash = (false, 0);
+                }
             }
         }
 
