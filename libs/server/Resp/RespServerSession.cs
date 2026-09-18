@@ -463,6 +463,8 @@ namespace Garnet.server
             // live. The script processor's builder is checkpointed here rather than from its own resets,
             // which run per string while decoding a JSON document.
             scratchBufferBuilder.ShrinkCheckpoint();
+            scratchBufferAllocator.ShrinkCheckpoint();
+            txnManager?.ScratchBufferShrinkCheckpoint();
             sessionScriptCache?.ScratchBufferShrinkCheckpoint();
 
             if (parseStateShrinkThreshold == int.MaxValue)

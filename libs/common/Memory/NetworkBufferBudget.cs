@@ -16,7 +16,7 @@ namespace Garnet.common
     /// <para>
     /// The buffer pool's own <c>maxPooledBytes</c> ceiling bounds only the idle free list. Buffers
     /// checked out by live connections are bounded by nothing, so their footprint is
-    /// <c>connections x per-connection size</c>. This type supplies the missing ceiling by publishing a
+    /// <c>connections x per-connection size</c>. This type bounds the per-connection factor by publishing a
     /// <see cref="TargetBufferSize"/> that allocation sites use as the <em>base</em> size for a new buffer:
     /// <code>
     ///     target = clamp(floor, ceiling, PreviousPowerOf2(budget / liveBufferCount))
@@ -26,6 +26,12 @@ namespace Garnet.common
     /// Two invariants bound what adaptation may do. The target can only ever <em>lower</em> the base size,
     /// because it is clamped to the configured buffer size as a ceiling. Demand-driven growth is never
     /// clamped, so a connection that needs a large buffer still gets one.
+    /// </para>
+    /// <para>
+    /// The second invariant is why the budget is a target rather than a hard ceiling: a connection may grow
+    /// past its base size on demand, so the aggregate can exceed the budget. What it bounds is the base size
+    /// every connection starts at and settles back to, which is the term that scales with connection count.
+    /// <c>--network-connection-limit</c> is the hard admission bound.
     /// </para>
     /// </remarks>
     public sealed class NetworkBufferBudget

@@ -14,8 +14,8 @@ namespace Garnet.client
         readonly LongHistogram latency;
 
         /// <summary>
-        /// Get client latency histogram. Null once the client has been disposed and the histogram's
-        /// pooled array has gone back to the pool.
+        /// Get client latency histogram. Null once the client has been disposed and the histogram has
+        /// released its counts array.
         /// </summary>
         public LongHistogram CopyLatencyHistogram
             => latency is null || latency.IsReturned ? null : (LongHistogram)latency.Copy();

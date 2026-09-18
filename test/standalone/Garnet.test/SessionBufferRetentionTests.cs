@@ -59,9 +59,21 @@ namespace Garnet.test
             return s;
         }
 
+        /// <summary>Blocking sends may complete partially, so every byte is accounted for.</summary>
+        static void SendAll(Socket s, byte[] payload)
+        {
+            var sent = 0;
+            while (sent < payload.Length)
+            {
+                var n = s.Send(payload, sent, payload.Length - sent, SocketFlags.None);
+                if (n <= 0) throw new Exception("connection closed while sending");
+                sent += n;
+            }
+        }
+
         static void SendAndDrain(Socket s, byte[] payload, int expectedReplies)
         {
-            s.Send(payload);
+            SendAll(s, payload);
             var buf = new byte[64 * 1024];
             var replies = 0;
             while (replies < expectedReplies)
@@ -105,10 +117,20 @@ namespace Garnet.test
         /// <summary>Sends a command and verifies the reply, so a silently rejected probe cannot pass.</summary>
         static void AssertReply(Socket s, byte[] payload, string expected)
         {
-            s.Send(payload);
-            var buf = new byte[64 * 1024];
-            var n = s.Receive(buf);
-            var reply = Encoding.ASCII.GetString(buf, 0, n);
+            SendAll(s, payload);
+
+            // A single receive returns whatever has arrived, so a reply spanning several segments would be
+            // compared against its first fragment.
+            var buf = new byte[expected.Length];
+            var read = 0;
+            while (read < buf.Length)
+            {
+                var n = s.Receive(buf, read, buf.Length - read, SocketFlags.None);
+                if (n == 0) throw new Exception("connection closed while receiving");
+                read += n;
+            }
+
+            var reply = Encoding.ASCII.GetString(buf, 0, read);
             ClassicAssert.AreEqual(expected, reply, "probe command did not succeed, so it measured nothing");
         }
 

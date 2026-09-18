@@ -28,7 +28,14 @@ namespace Garnet.server
 
         int SignificantDigits => monitor.LatencyPrecision;
 
-        public void Return()
+        /// <summary>
+        /// Releases this session's histograms on dispose.
+        /// </summary>
+        /// <remarks>
+        /// Publishing <c>null</c> stops new readers reaching the graph, but a reader that captured it
+        /// before the write still holds it, so the entries drop their arrays instead of pooling them.
+        /// </remarks>
+        public void Release()
         {
             LatencyMetricsEntrySession[] toRelease;
             try
@@ -42,13 +49,11 @@ namespace Garnet.server
                 disposeLock.WriteUnlock();
             }
 
-            // Published as unavailable before the arrays go back to the shared pool, so no reader can
-            // still reach them through this session.
             if (toRelease == null)
                 return;
 
             foreach (var cmd in defaultLatencyTypes)
-                toRelease[(int)cmd].Return();
+                toRelease[(int)cmd].Release();
         }
 
         private void Init()

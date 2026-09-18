@@ -102,15 +102,17 @@ namespace Garnet.server
                 new(HISTOGRAM_LOWER_BOUND, HISTOGRAM_UPPER_BOUND, significantDigits)
             ];
 
-        public void Return()
-        {
-            var histograms = latency;
-            if (histograms == null)
-                return;
-
-            histograms[0].Return();
-            histograms[1].Return();
-        }
+        /// <summary>
+        /// Releases this type's histograms when the owning session is disposed.
+        /// </summary>
+        /// <remarks>
+        /// Drops the reference rather than returning the arrays to <c>ArrayPool&lt;long&gt;.Shared</c>, for
+        /// the reason given on <see cref="ReclaimIfQuiesced"/>. Dispose narrows the window on the record
+        /// path but does not close it -- it signals the async waiter without waiting for a pending
+        /// operation to finish recording -- so a writer can still hold the array here. Pooling it would let
+        /// another session rent it and receive that write.
+        /// </remarks>
+        public void Release() => latency = null;
 
         public void Start()
         {

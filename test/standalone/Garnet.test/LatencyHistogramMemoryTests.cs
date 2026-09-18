@@ -396,26 +396,54 @@ namespace Garnet.test
         }
 
         /// <summary>
-        /// Sessions are torn down while the monitor may still be reaching them, so releasing the pooled
-        /// arrays has to tolerate being called more than once and on an entry that never allocated.
+        /// Sessions are torn down while the monitor may still be reaching them, so releasing the
+        /// histograms has to tolerate being called more than once and on an entry that never allocated.
         /// </summary>
         [Test]
-        public void ReturnIsSafeWhenNothingWasAllocated()
+        public void ReleaseIsSafeWhenNothingWasAllocated()
         {
             var unused = new LatencyMetricsEntrySession(GarnetServerOptions.DefaultLatencyMonitorPrecision);
-            Assert.DoesNotThrow(() => unused.Return());
-            Assert.DoesNotThrow(() => unused.Return());
+            Assert.DoesNotThrow(() => unused.Release());
+            Assert.DoesNotThrow(() => unused.Release());
 
             var used = new LatencyMetricsEntrySession(GarnetServerOptions.DefaultLatencyMonitorPrecision);
             used.RecordValue(0, 1234);
-            Assert.DoesNotThrow(() => used.Return());
-            Assert.DoesNotThrow(() => used.Return());
+            Assert.DoesNotThrow(() => used.Release());
+            Assert.DoesNotThrow(() => used.Release());
         }
 
         /// <summary>
-        /// The histogram arrays go back to a shared pool on dispose, so disconnecting mid-command must not
-        /// leave the record path writing into an array another session has since rented. Churns connections
-        /// against a sampling monitor and requires the server to stay healthy throughout.
+        /// Dispose signals the async waiter without waiting for a pending operation to finish recording, so
+        /// the dispose path has to drop its histograms exactly as the quiesce path does. Pooling them would
+        /// let another session rent an array a racing recorder still holds.
+        /// </summary>
+        [Test]
+        public void SessionDisposeReleasesItsHistogramsWithoutPoolingThem()
+        {
+            var entry = new LatencyMetricsEntrySession(GarnetServerOptions.DefaultLatencyMonitorPrecision);
+            entry.RecordValue(0, 1234);
+
+            // The reference a racing writer would already be holding.
+            var held = entry.latency;
+
+            entry.Release();
+            ClassicAssert.IsNull(entry.latency, "the histograms should have been released");
+
+            ClassicAssert.IsFalse(held[0].IsReturned,
+                "the disposed session returned its histogram to the shared pool, so a concurrent recorder " +
+                "could write into an array another session has since rented");
+            ClassicAssert.IsFalse(held[1].IsReturned,
+                "the disposed session returned its histogram to the shared pool, so a concurrent recorder " +
+                "could write into an array another session has since rented");
+
+            // The write a racing recorder would make lands in a graph nobody else can reach.
+            Assert.DoesNotThrow(() => held[0].RecordValue(1234));
+        }
+
+        /// <summary>
+        /// Disconnecting mid-command must not leave the record path writing into an array another session
+        /// has since rented. Churns connections against a sampling monitor and requires the server to stay
+        /// healthy throughout.
         /// </summary>
         [Test]
         public void DisconnectingUnderLoadDoesNotCorruptTheMonitor()
