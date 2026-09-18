@@ -87,6 +87,9 @@ namespace Garnet.server
         // Total offset of buffers in the stack
         int totalLength;
 
+        // Capacity observed at the previous shrink checkpoint
+        int checkpointCapacity;
+
         /// <summary>
         /// Combined offset across all managed scratch buffers; capture it as a savepoint and pass it to
         /// <see cref="TryRewindToOffset"/> to reclaim everything allocated afterwards.
@@ -120,44 +123,51 @@ namespace Garnet.server
             // Invalidate the current buffer
             currScratchBuffer.scratchBufferOffset = 0;
 
-            var isCurrBufferSet = false;
-
-            // If max capacity is not set or the current buffer is under the max capacity - 
-            // we keep it as the current buffer
-            if (currScratchBuffer.Length <= maxInitialCapacity)
-            {
-                isCurrBufferSet = true;
-            }
-            else
-            {
-                totalLength -= currScratchBuffer.Length;
-            }
-
-            // Pop and reset any previous buffers
+            // Pop and discard any previous buffers. Growth always allocates strictly larger than the
+            // buffer it displaces, so the current buffer is the largest and is the one worth keeping.
+            // Releasing an over-sized one is left to ShrinkCheckpoint, which runs on a coarser interval
+            // than this method and so does not churn a session that needs the capacity every batch.
             while (previousScratchBuffers.Count > 0)
             {
                 var prevBuffer = previousScratchBuffers.Pop();
                 prevScratchBuffersOffset -= prevBuffer.scratchBufferOffset;
-
-                // Check if we need to set this scratch buffer as the current
-                // i.e. if this is the largest buffer under the max capacity limit
-                if (!isCurrBufferSet && prevBuffer.Length <= maxInitialCapacity)
-                {
-                    currScratchBuffer = prevBuffer;
-                    currScratchBuffer.scratchBufferOffset = 0;
-                    isCurrBufferSet = true;
-                }
-                else
-                {
-                    totalLength -= prevBuffer.Length;
-                }
+                totalLength -= prevBuffer.Length;
             }
-
-            if (!isCurrBufferSet)
-                currScratchBuffer = default;
 
             Debug.Assert(currScratchBuffer.IsDefault || ScratchBufferOffset == 0);
             Debug.Assert(TotalLength == (currScratchBuffer.IsDefault ? 0 : currScratchBuffer.Length));
+        }
+
+        /// <summary>
+        /// Releases a buffer that is above <see cref="maxInitialCapacity"/> and has not grown since the
+        /// previous checkpoint, so a session enlarged by one unusually large argument does not keep the
+        /// pinned array for its lifetime.
+        /// </summary>
+        /// <remarks>
+        /// Only a caller that runs on a coarse interval may drive this. <see cref="Reset"/> runs several
+        /// times per batch — twice per transaction procedure, once at the batch boundary, and once for every
+        /// extension that calls <c>ResetScratchBuffer</c> — and releasing there would reallocate a pinned
+        /// array for a session that needs the capacity every batch.
+        /// </remarks>
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        internal void ShrinkCheckpoint()
+        {
+            if (maxInitialCapacity == int.MaxValue)
+                return;
+
+            var capacity = currScratchBuffer.IsDefault ? 0 : currScratchBuffer.Length;
+
+            // Nothing outstanding is required as well as the size test: a transaction allocator holding
+            // WATCHed keys stays live across batches, and its slices must survive the checkpoint.
+            if (capacity > maxInitialCapacity && capacity <= checkpointCapacity &&
+                previousScratchBuffers.Count == 0 && ScratchBufferOffset == 0)
+            {
+                totalLength -= capacity;
+                currScratchBuffer = default;
+                capacity = 0;
+            }
+
+            checkpointCapacity = capacity;
         }
 
         /// <summary>
@@ -215,16 +225,6 @@ namespace Garnet.server
             {
                 currScratchBuffer.scratchBufferOffset -= slice.Length;
                 slice = default; // Invalidate the given ArgSlice
-
-                // If this buffer is now empty, and it is the only buffer remaining -
-                // If the buffer is over the max initial capacity we get rid of it (similarly to Reset)
-                if (currScratchBuffer.scratchBufferOffset == 0 &&
-                    previousScratchBuffers.Count == 0 &&
-                    currScratchBuffer.Length > maxInitialCapacity)
-                {
-                    totalLength -= currScratchBuffer.Length;
-                    currScratchBuffer = default;
-                }
 
                 return true;
             }

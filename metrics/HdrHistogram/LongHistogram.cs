@@ -109,6 +109,10 @@ namespace HdrHistogram
         /// <summary>
         /// Return the histogram long array to the pool for recycling.
         /// </summary>
+        /// <remarks>
+        /// Only for a histogram the caller owns outright, such as a copy taken for reporting. Use
+        /// <see cref="Release"/> where a concurrent recorder may still hold the array.
+        /// </remarks>
         public void Return()
         {
             var counts = _counts;
@@ -120,6 +124,17 @@ namespace HdrHistogram
             _counts = null;
             ArrayPool<long>.Shared.Return(counts);
         }
+
+        /// <summary>
+        /// Releases the counts array without handing it back to the shared pool.
+        /// </summary>
+        /// <remarks>
+        /// For a histogram whose recorder is not quiesced at release time, such as a client disposed while
+        /// its receive callback is still completing replies. Pooling the array there would let another
+        /// consumer rent it and receive that write; dropping it leaves the racing recorder writing into an
+        /// array nothing else can reach, and the collector reclaims it afterwards.
+        /// </remarks>
+        public void Release() => _counts = null;
 
         /// <summary>
         /// Gets the total number of recorded values.

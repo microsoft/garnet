@@ -45,9 +45,21 @@ namespace Garnet.test
             return s;
         }
 
+        /// <summary>Blocking sends may complete partially, so every byte is accounted for.</summary>
+        static void SendAll(Socket s, byte[] payload)
+        {
+            var sent = 0;
+            while (sent < payload.Length)
+            {
+                var n = s.Send(payload, sent, payload.Length - sent, SocketFlags.None);
+                if (n <= 0) throw new Exception("connection closed while sending");
+                sent += n;
+            }
+        }
+
         static void SendAndDrain(Socket s, byte[] payload, int expectedReplies)
         {
-            s.Send(payload);
+            SendAll(s, payload);
             var buf = new byte[64 * 1024];
             var replies = 0;
             while (replies < expectedReplies)

@@ -108,7 +108,7 @@ namespace Garnet.server
                 if (currSessionMetrics != null) globalMetrics.historySessionMetrics.Add(currSessionMetrics);
                 if (currLatencyMetrics != null) globalMetrics.globalLatencyMetrics.Merge(currLatencyMetrics);
                 if (currCommandStats != null) globalMetrics.historyCommandStats?.Add(currCommandStats);
-                currLatencyMetrics?.Return();
+                currLatencyMetrics?.Release();
             }
             finally { rwLock.WriteUnlock(); }
         }
