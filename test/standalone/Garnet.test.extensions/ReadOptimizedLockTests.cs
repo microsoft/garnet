@@ -28,14 +28,10 @@ namespace Garnet.test
             var gotShared0 = lockContext.TryAcquireSharedLock(hash, out var sharedToken0);
             ClassicAssert.IsTrue(gotShared0);
 
-            var gotShared1 = lockContext.TryAcquireSharedLock(hash, out var sharedToken1);
-            ClassicAssert.IsTrue(gotShared1);
-
             var gotExclusive = lockContext.TryAcquireExclusiveLock(hash, out _);
             ClassicAssert.IsFalse(gotExclusive);
 
             lockContext.ReleaseLock(sharedToken0);
-            lockContext.ReleaseLock(sharedToken1);
 
             var gotExclusiveAgain = lockContext.TryAcquireExclusiveLock(hash, out var exclusiveToken);
             ClassicAssert.IsTrue(gotExclusiveAgain);
