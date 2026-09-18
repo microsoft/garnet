@@ -75,7 +75,7 @@ namespace Garnet.server
 
         readonly SimpleStack<ScratchBuffer> previousScratchBuffers = new();
 
-        // Max size of previously allocated unused buffer that we can reuse upon reset
+        // Max size of a buffer retained across a shrink checkpoint
         readonly int maxInitialCapacity;
 
         // Min size that can be allocated for a single buffer
@@ -105,7 +105,7 @@ namespace Garnet.server
         /// Creates an instance of <see cref="ScratchBufferAllocator"/>
         /// </summary>
         /// <param name="minSizeBuffer">Min size that can be allocated for a single buffer (Default: 64)</param>
-        /// <param name="maxInitialCapacity">Max size of previously allocated unused buffer to keep upon reset (Default: no limit)</param>
+        /// <param name="maxInitialCapacity">Max size of a buffer retained across a <see cref="ShrinkCheckpoint"/> (Default: no limit)</param>
         public ScratchBufferAllocator(int minSizeBuffer = 64, int maxInitialCapacity = int.MaxValue)
         {
             this.minSizeBuffer = minSizeBuffer;

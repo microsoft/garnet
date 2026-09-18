@@ -40,15 +40,11 @@ namespace Garnet.test
             ClassicAssert.AreEqual(8 + 128, sam.TotalLength);
 
             // Re-wind last slice created - new offset is 0
-            // Total length either 0 or 8 (depending on if the initial capacity max is >= 8)
+            // Popping back to the 8 byte buffer releases the 128 byte one; the buffer that remains is
+            // retained whatever the capacity max, which only ShrinkCheckpoint acts on
             ClassicAssert.IsTrue(sam.RewindScratchBuffer(ref as1));
             ClassicAssert.AreEqual(0, sam.ScratchBufferOffset);
-            var expectedTotalSize = maxInitialCapacity switch
-            {
-                < 8 => 0,
-                _ => 8
-            };
-            ClassicAssert.AreEqual(expectedTotalSize, sam.TotalLength);
+            ClassicAssert.AreEqual(8, sam.TotalLength);
 
             // Re-create slices for previous data
             // Total length is 8 + 128
@@ -57,16 +53,10 @@ namespace Garnet.test
             ClassicAssert.AreEqual(8 + 128, sam.TotalLength);
 
             // Reset all buffers, offset should be 0
-            // Total length is either 0, 8 or 128 (depending on the initial capacity max)
+            // Reset discards the buffers below the current one and keeps the current, largest one
             sam.Reset();
             ClassicAssert.AreEqual(0, sam.ScratchBufferOffset);
-            expectedTotalSize = maxInitialCapacity switch
-            {
-                0 => 0,
-                < 128 => 8,
-                _ => 128
-            };
-            ClassicAssert.AreEqual(expectedTotalSize, sam.TotalLength);
+            ClassicAssert.AreEqual(128, sam.TotalLength);
 
             // Data of length 6611 - SAM creates a buffer of size 8192 & removes the current empty buffer
             var as3 = sam.CreateArgSlice(string3);
@@ -76,12 +66,17 @@ namespace Garnet.test
             ClassicAssert.AreEqual(string1.Length + string3.Length, sam.ScratchBufferOffset);
             ClassicAssert.AreEqual(8192, sam.TotalLength);
 
-            // Re-wind last 2 slices created - new offset is 0
-            // Total length is either 0 or 8192 (depending on the initial capacity max)
+            // Re-wind last 2 slices created - new offset is 0, and the buffer is retained
             ClassicAssert.IsTrue(sam.RewindScratchBuffer(ref as1));
             ClassicAssert.IsTrue(sam.RewindScratchBuffer(ref as3));
             ClassicAssert.AreEqual(0, sam.ScratchBufferOffset);
-            expectedTotalSize = maxInitialCapacity switch
+            ClassicAssert.AreEqual(8192, sam.TotalLength);
+
+            // A buffer above the capacity max is released at a checkpoint rather than at reset or rewind.
+            // Two are needed: the first records the capacity, the second sees it has not grown since.
+            sam.ShrinkCheckpoint();
+            sam.ShrinkCheckpoint();
+            var expectedTotalSize = maxInitialCapacity switch
             {
                 < 8192 => 0,
                 _ => 8192
