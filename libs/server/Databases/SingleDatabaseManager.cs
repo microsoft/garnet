@@ -62,6 +62,15 @@ namespace Garnet.server
                 if (replicaRecover)
                 {
                     ExceptionInjectionHelper.TriggerException(ExceptionInjectionType.Replication_Fail_Replica_Checkpoint_Recovery);
+#if DEBUG
+                    // Stand in for a transferred checkpoint whose metadata cannot be read. That surfaces from the
+                    // token scan as a rejected-candidate result rather than a general failure, which is the case the
+                    // handler below must not treat as a fresh start.
+                    if (ExceptionInjectionHelper.IsEnabled(ExceptionInjectionType.Replication_Fail_Replica_Unreadable_Checkpoint))
+                        throw new TsavoriteNoHybridLogException(
+                            $"Exception injection triggered {nameof(ExceptionInjectionType.Replication_Fail_Replica_Unreadable_Checkpoint)}",
+                            candidateTokenCount: 1, unreadableTokenCount: 1);
+#endif
 
                     // Note: Since replicaRecover only pertains to cluster-mode, we can use the default store pointers (since multi-db mode is disabled in cluster-mode)
                     if (metadata!.storeIndexToken != default && metadata.storeHlogToken != default)

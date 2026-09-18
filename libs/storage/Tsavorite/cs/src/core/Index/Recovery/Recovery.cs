@@ -298,9 +298,11 @@ namespace Tsavorite.core
             closestToken = default;
             cookie = default;
 
-            // The scan is sequential, which is what makes the reject count meaningful as evidence about on-disk
-            // state: one metadata read is in flight at a time, so a rejection reflects the file rather than
-            // interference from a concurrent reader. Parallelizing the loop would invalidate that.
+            // Startup recovery is what makes the reject count meaningful as evidence about on-disk state: it runs
+            // before any listener or the metrics monitor starts, so no other caller is reading metadata through this
+            // checkpoint manager, and this scan issues one read at a time. Callers that run once the server is
+            // serving, such as GetLatestCheckpointTokens, have no such exclusivity and remain subject to the
+            // concurrent-read race in #2149, so the counts are only trustworthy on the startup path.
             var candidateTokenCount = 0;
             var unreadableTokenCount = 0;
 

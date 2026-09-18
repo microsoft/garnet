@@ -62,8 +62,9 @@ namespace Tsavorite.core
         public int CandidateTokenCount { get; }
 
         /// <summary>
-        /// Number of the <see cref="CandidateTokenCount"/> tokens whose metadata could not be read. The scan that
-        /// produces this is sequential, so a rejection reflects the on-disk state rather than a concurrent reader.
+        /// Number of the <see cref="CandidateTokenCount"/> tokens whose metadata could not be read. This reflects
+        /// on-disk state only when no other caller can read metadata through the same checkpoint manager, as during
+        /// Garnet startup recovery; a concurrent reader elsewhere can cause transient read failures.
         /// </summary>
         public int UnreadableTokenCount { get; }
 
