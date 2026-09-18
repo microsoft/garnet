@@ -327,6 +327,13 @@ namespace Garnet.test
         /// process dies. So a slot has exactly one owner and any number of holders — one per concurrent
         /// <c>dotnet test</c> from that checkout, which the parallel test-project runsettings makes routine.
         /// </para>
+        /// <para>
+        /// Because holders are per live process, the supply limits how many checkouts can run tests
+        /// simultaneously, not how many checkouts may exist. Exhaustion therefore means either more than
+        /// <see cref="MaxPortSlot"/> concurrent runs, or servers stranded by earlier runs that still hold ports
+        /// while holding no lock. Both are reported per slot so they can be told apart, and the throw stops the
+        /// run outright — see <see cref="PortOffset"/>.
+        /// </para>
         /// </summary>
         /// <returns>The claimed slot number.</returns>
         private static int ClaimCheckoutPortSlot()
@@ -349,19 +356,33 @@ namespace Garnet.test
                 if (HasLiveHolder(dir, slot) || ArePortsFree(slot))
                     return TakeSlot(dir, slot, checkoutKey, "rejoined");
             }
-
             // Otherwise take a slot that no live test host is using and whose ports are actually free. The owner
             // record is not consulted here: a slot with no live holder is available whoever used it last.
+            var blockedBy = new List<string>();
             for (var slot = MinAutoPortSlot; slot <= MaxPortSlot; slot++)
             {
-                if (!HasLiveHolder(dir, slot) && ArePortsFree(slot))
-                    return TakeSlot(dir, slot, checkoutKey, "claimed");
+                if (HasLiveHolder(dir, slot))
+                {
+                    blockedBy.Add($"slot {slot}: in use by {ReadSlotOwner(dir, slot) ?? "an unrecorded checkout"}");
+                    continue;
+                }
+
+                if (!ArePortsFree(slot))
+                {
+                    // No lock, but something is on the ports: typically a server stranded by a crashed run.
+                    blockedBy.Add($"slot {slot}: ports in use with no test host holding the slot");
+                    continue;
+                }
+
+                return TakeSlot(dir, slot, checkoutKey, "claimed");
             }
 
             throw new InvalidOperationException(
-                $"All {MaxPortSlot - MinAutoPortSlot + 1} Garnet test port slots in '{dir}' are held by other " +
-                $"checkouts. Finish or terminate a run in another checkout, or set {PortSlotEnvVar} to an " +
-                $"explicit free slot.");
+                $"No Garnet test port slot is available; all {MaxPortSlot - MinAutoPortSlot + 1} are taken." +
+                Environment.NewLine + string.Join(Environment.NewLine, blockedBy) + Environment.NewLine +
+                $"Slots are only held while test hosts are running, so this means that many concurrent runs, or " +
+                $"stray servers left by earlier ones. Wait for a run to finish, terminate stray processes by PID " +
+                $"(never by name), or set {PortSlotEnvVar} to an explicit slot. Bookkeeping lives in '{dir}'.");
         }
 
         /// <summary>

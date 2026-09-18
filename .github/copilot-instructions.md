@@ -89,6 +89,37 @@ Explicit slots are not coordinated with each other — nothing stops two checkou
 `auto`, which reserves the slot it hands out. Coordination is per machine and relies on all runs seeing the same
 temp directory, so it does not span users or containers with separate `TEMP`/`TMPDIR` values.
 
+#### Running out of slots
+
+There are 7 slots for `auto` (1-7; slot 0 is excluded as above). A slot is held only while a test host is
+actually running, not by the checkout itself, so the limit is **7 checkouts running tests at the same moment**,
+not 7 checkouts on disk. Any number of checkouts can exist, and any number can run tests one after another. A
+checkout running ten test projects in parallel still uses one slot.
+
+In practice you hit the limit one of two ways:
+
+- More than 7 checkouts genuinely running tests at once.
+- Stray servers from earlier runs. A process killed between binding a port and releasing it leaves the port
+  occupied but holds no slot lock, so `auto` sees the ports busy and skips that slot. Enough of these and the
+  slots are gone while nothing is really running.
+
+The failure is immediate and loud, never silent: slot resolution throws before any test executes, so NUnit
+reports every test in the assembly as errored, **zero tests run**, and the process exits non-zero. The message
+lists each slot and why it was unavailable, distinguishing a live test host from ports held with no lock, which
+is what tells the two causes above apart:
+
+```
+No Garnet test port slot is available; all 7 are taken.
+slot 1: in use by d:\src\garnet-worktree-a
+slot 2: ports in use with no test host holding the slot
+...
+```
+
+The second line is the stray-server case: find the process with `Get-NetTCPConnection -LocalPort <port>` (or
+`ss -ltnp` / `lsof -i :<port>`) and kill it **by PID**. Slots free themselves as runs finish, so waiting also
+works. Setting `GARNET_TEST_PORT_SLOT` to an explicit slot bypasses the check, but only do that once you know
+the slot is genuinely free — explicit slots are not coordinated.
+
 Two further cautions when sharing a machine:
 
 - **Never terminate processes by name** (`Stop-Process -Name dotnet`, `taskkill /IM testhost.exe`). That kills
