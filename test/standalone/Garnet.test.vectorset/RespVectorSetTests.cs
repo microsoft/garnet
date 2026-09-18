@@ -2721,7 +2721,7 @@ namespace Garnet.test
 
             // Test success case - element with no attribute
             var res2 = (byte[])db.Execute("VGETATTR", [vectorSetKey, elementId1]);
-            ClassicAssert.AreEqual(0, res2.Length);
+            ClassicAssert.IsNull(res2);
 
             // Test various attribute sizes
             int[] attributeSizes = [64, 128, 256, 257, 512, 1024];
@@ -2748,7 +2748,7 @@ namespace Garnet.test
             ClassicAssert.AreEqual(1, (int)res3);
 
             var res4 = (byte[])db.Execute("VGETATTR", [vectorSetKey, emptyAttrElement]);
-            ClassicAssert.AreEqual(0, res4.Length);
+            ClassicAssert.IsNull(res4);
         }
 
         [Test]
