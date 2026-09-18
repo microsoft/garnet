@@ -183,7 +183,11 @@ namespace HdrHistogram
 
             copy = new LongHistogram(LowestTrackableValue, HighestTrackableValue, NumberOfSignificantValueDigits);
             Array.Copy(counts, copy._counts, CountsArrayLength);
-            copy._totalCount = _totalCount;
+
+            // Derive the total, maximum and minimum non-zero value from the counts that were copied, which is
+            // what Add does when building a copy the ordinary way. Deriving them rather than carrying them
+            // across also keeps the copy self-consistent under a recorder that is still writing.
+            copy.EstablishInternalTackingValues(CountsArrayLength);
             return true;
         }
 

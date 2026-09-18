@@ -706,6 +706,13 @@ namespace Garnet.test
             ClassicAssert.IsTrue(histogram.TryCopy(out var live), "a live histogram should be copyable");
             ClassicAssert.AreEqual(1, live.TotalCount, "the copy should carry the recorded value");
 
+            // A copy taken the ordinary way derives these from the counts it replays, and the percentiles the
+            // client reports are read off them, so a copy that only carried the counts would report zero.
+            var reference = (LongHistogram)histogram.Copy();
+            ClassicAssert.AreEqual(reference.GetMaxValue(), live.GetMaxValue(), "the copy should carry the maximum");
+            ClassicAssert.AreEqual(reference.GetValueAtPercentile(99), live.GetValueAtPercentile(99),
+                "the copy should report the same percentiles as one built by replaying the counts");
+
             histogram.Release();
 
             Assert.DoesNotThrow(() => histogram.RecordValue(1234),
