@@ -47,9 +47,14 @@ namespace Garnet.cluster
         public const byte ClusterConfigVersion = 2;
 
         /// <summary>
-        /// Gossip version used until the connection negotiates version 2.
+        /// Legacy cluster config serialization format.
         /// </summary>
-        public const byte DefaultClusterConfigVersion = 1;
+        public const byte LegacyClusterConfigVersion = 1;
+
+        /// <summary>
+        /// Format used when initiating gossip, MEET, and failover exchanges.
+        /// </summary>
+        public const byte OutboundGossipVersion = LegacyClusterConfigVersion;
 
         /// <summary>
         /// 
@@ -1129,13 +1134,6 @@ namespace Garnet.cluster
 
         private ClusterConfig MergeWorkerInfo(Worker worker, bool isSender)
         {
-            // A legacy owner uses its client endpoint, but a legacy relay cannot describe peer endpoints.
-            if (isSender && worker.ClusterAddress == null)
-            {
-                worker.ClusterAddress = worker.Address;
-                worker.ClusterPort = worker.Port;
-            }
-
             ushort workerId = RESERVED_WORKER_ID;
             // Find workerId offset from my local configuration
             for (var i = 1; i < workers.Length; i++)
@@ -1143,6 +1141,7 @@ namespace Garnet.cluster
                 if (workers[i].Nodeid.Equals(worker.Nodeid, StringComparison.OrdinalIgnoreCase))
                 {
                     if (worker.ConfigEpoch < workers[i].ConfigEpoch) return this;
+                    // Version-one owner replies also omit peer endpoints during mixed-version exchanges.
                     if (worker.ClusterAddress == null)
                     {
                         worker.ClusterAddress = workers[i].ClusterAddress;

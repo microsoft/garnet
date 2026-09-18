@@ -202,8 +202,7 @@ namespace Garnet.cluster
                 }
 
                 // Force send updated config to replica
-                var gossipVersion = await client.NegotiateGossipVersionAsync(cts.Token).WaitAsync(failoverTimeout, cts.Token).ConfigureAwait(false);
-                var resp = await client.GossipAsync(config.ToByteArray(gossipVersion)).WaitAsync(failoverTimeout, cts.Token).ConfigureAwait(false);
+                var resp = await client.GossipAsync(config.ToByteArray(ClusterConfig.OutboundGossipVersion)).WaitAsync(failoverTimeout, cts.Token).ConfigureAwait(false);
 
                 try
                 {

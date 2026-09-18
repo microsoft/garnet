@@ -296,24 +296,67 @@ namespace Garnet.test.cluster
 
             var legacyOwner = ClusterConfig.FromByteArray(owner.ToByteArray(1));
             receiver = receiver.Merge(legacyOwner, []);
-            Assert.That(receiver.GetWorkerAddressFromNodeId(workers[1].Nodeid), Is.EqualTo(("203.0.113.1", 17001)));
+            Assert.That(receiver.GetWorkerAddressFromNodeId(workers[1].Nodeid), Is.EqualTo(("127.0.0.1", 7004)));
+
+            workers[1].ConfigEpoch++;
+            legacyOwner = ClusterConfig.FromByteArray(SerializeFormatFixture(1, [default, workers[1]]));
+            receiver = ClusterConfig.FromByteArray(receiver.Merge(legacyOwner, []).ToByteArray());
+            Assert.That(receiver.GetWorkerAddressFromNodeId(workers[1].Nodeid), Is.EqualTo(("127.0.0.1", 7004)));
+            Assert.That(receiver.GetWorkerFromNodeId(workers[1].Nodeid).ConfigEpoch, Is.EqualTo(workers[1].ConfigEpoch));
         }
 
         [Test]
         [Category("CLUSTER-CONFIG")]
-        public void ClusterConfigGossipNegotiatesPerConnectionTest()
+        public void ClusterConfigGossipMatchesRequestVersionPerConnectionTest()
         {
             context.CreateInstances(1);
             context.CreateConnection();
             var server = context.clusterTestUtils.GetServer(context.endpoints[0].ToIPEndPoint());
-            Assert.That(((byte[])server.Execute("CLUSTER", "GOSSIP", Array.Empty<byte>()))[0], Is.EqualTo(1));
-            Assert.That((int)server.Execute("CLUSTER", "GOSSIP"), Is.EqualTo(2));
-            Assert.That(((byte[])server.Execute("CLUSTER", "GOSSIP", Array.Empty<byte>()))[0], Is.EqualTo(2));
+            RedisServerException error = Assert.Throws<RedisServerException>(() => server.Execute("CLUSTER", "GOSSIP"));
+            Assert.That(error.Message, Does.StartWith("ERR wrong number of arguments"));
 
             using var client = TestUtils.GetGarnetClient(context.endpoints[0]);
             client.Connect();
             using var response = client.GossipAsync(Array.Empty<byte>()).GetAwaiter().GetResult();
             Assert.That(response.Span[0], Is.EqualTo(1));
+            ClusterConfig config = ClusterConfig.FromByteArray(response.Span.ToArray());
+
+            foreach (byte version in new byte[] { 2, 1, 2, 1 })
+            {
+                using var matched = client.GossipAsync(config.ToByteArray(version)).GetAwaiter().GetResult();
+                Assert.That(matched.Span[0], Is.EqualTo(version));
+                using var unchanged = client.GossipAsync(Array.Empty<byte>()).GetAwaiter().GetResult();
+                Assert.That(unchanged.Length, Is.Zero);
+
+                Assert.That(server.Execute("CLUSTER", "BUMPEPOCH").ToString(), Is.EqualTo("OK"));
+                using var heartbeat = client.GossipAsync(Array.Empty<byte>()).GetAwaiter().GetResult();
+                Assert.That(heartbeat.Span[0], Is.EqualTo(version));
+            }
+
+            using var newClient = TestUtils.GetGarnetClient(context.endpoints[0]);
+            newClient.Connect();
+            using var initial = newClient.GossipAsync(Array.Empty<byte>()).GetAwaiter().GetResult();
+            Assert.That(initial.Span[0], Is.EqualTo(1));
+        }
+
+        [Test]
+        [Category("CLUSTER-CONFIG")]
+        public void ClusterConfigUntrustedGossipDoesNotChangeReplyVersionTest()
+        {
+            context.CreateInstances(1);
+            context.CreateConnection();
+            using var client = TestUtils.GetGarnetClient(context.endpoints[0]);
+            client.Connect();
+            byte[] unknown = SerializeFormatFixture(2, CreateFormatWorkers());
+            using var rejected = client.GossipAsync(unknown).GetAwaiter().GetResult();
+            Assert.That(rejected.Span[0], Is.EqualTo(1));
+            using var accepted = client.GossipWithMeetAsync(unknown).GetAwaiter().GetResult();
+            Assert.That(accepted.Span[0], Is.EqualTo(2));
+
+            Worker[] workers = CreateFormatWorkers();
+            workers[1].Nodeid = new string('c', 40);
+            using var stillVersionTwo = client.GossipAsync(SerializeFormatFixture(1, workers)).GetAwaiter().GetResult();
+            Assert.That(stillVersionTwo.Span[0], Is.EqualTo(2));
         }
 
         [Test]
