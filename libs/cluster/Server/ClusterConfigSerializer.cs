@@ -29,7 +29,7 @@ namespace Garnet.cluster
         /// Check whether a cluster config serialization version can be read.
         /// </summary>
         /// <param name="version">Serialization version.</param>
-        public static bool IsSupportedVersion(byte version) => version is 1 or 2;
+        public static bool IsSupportedVersion(byte version) => version is DefaultClusterConfigVersion or ClusterConfigVersion;
 
         /// <summary>
         /// Serialize config to byte array
