@@ -686,12 +686,16 @@ namespace Garnet.test
         /// While the budget is binding that release must land on the adapted base rather than the largest
         /// poolable size: the target is derived from a buffer <em>count</em>, so a connection parked at the
         /// maximum costs the same single unit as one at the floor and the budget gets no feedback from it.
+        /// Run over both transports: the plaintext and TLS receive paths gate the release independently, so a
+        /// single-transport arm leaves the other site's gate unexercised.
         /// </summary>
-        [Test]
-        public async Task UnderPressureAnOversizedReceiveBufferIsReleasedToTheAdaptedBase()
+        [TestCase(false)]
+        [TestCase(true)]
+        public async Task UnderPressureAnOversizedReceiveBufferIsReleasedToTheAdaptedBase(bool useTls)
         {
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, networkBufferMemoryBudget: "1m");
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableTLS: useTls,
+                networkBufferMemoryBudget: "1m");
             server.Start();
 
             const int Connections = 8;
@@ -701,7 +705,7 @@ namespace Garnet.test
             {
                 for (var i = 0; i < Connections; i++)
                 {
-                    var c = TestUtils.GetGarnetClient();
+                    var c = TestUtils.GetGarnetClient(useTLS: useTls);
                     await c.ConnectAsync();
                     _ = await c.PingAsync();
                     clients.Add(c);

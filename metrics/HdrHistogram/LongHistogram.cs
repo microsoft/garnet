@@ -263,6 +263,8 @@ namespace HdrHistogram
         protected override void CopyCountsInto(long[] target)
         {
             var counts = _counts;
+            if (counts == null)
+                return;
             Array.Copy(counts, target, Math.Min(counts.Length, target.Length));
         }
     }
