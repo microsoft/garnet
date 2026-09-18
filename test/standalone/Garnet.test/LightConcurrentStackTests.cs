@@ -14,8 +14,14 @@ namespace Garnet.test
     /// buffer subtracts it from the accounting while the pinned memory remains.
     /// </summary>
     [TestFixture]
-    public class LightConcurrentStackTests
+    public class LightConcurrentStackTests : TestBase
     {
+        [SetUp]
+        public void Setup() => TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
+
+        [TearDown]
+        public void TearDown() => TestUtils.OnTearDown();
+
         sealed class Payload : IDisposable
         {
             public bool Disposed;
