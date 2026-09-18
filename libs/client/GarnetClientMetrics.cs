@@ -18,7 +18,7 @@ namespace Garnet.client
         /// released its counts array.
         /// </summary>
         public LongHistogram CopyLatencyHistogram
-            => latency is null || latency.IsReturned ? null : (LongHistogram)latency.Copy();
+            => latency is not null && latency.TryCopy(out var copy) ? copy : null;
 
         /// <summary>
         /// Reset internal latency histogram if enabled
