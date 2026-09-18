@@ -23,18 +23,9 @@ namespace Garnet.common
     /// </code>
     /// </para>
     /// <para>
-    /// It is a division rather than a feedback control loop, which is deliberate. Buffer sizes move in
-    /// factor-of-two steps, so any controller whose deadband is narrower than 2x cannot converge and will
-    /// limit-cycle between two size classes. Sizing directly from the live buffer count has no equilibrium
-    /// to hunt for, and it is agnostic to TLS, throttle depth and payload mix because those all show up
-    /// directly in the count.
-    /// </para>
-    /// <para>
-    /// Three properties keep the common case free of change. The target can only ever <em>lower</em> the
-    /// base size, because it is clamped to the configured buffer size as a ceiling. Demand-driven growth is
-    /// never clamped, so a connection that needs a large buffer still gets one. And adaptation only engages
-    /// once <c>budget / liveBufferCount</c> falls below the configured size, which at the default settings
-    /// is several thousand connections; below that every comparison is arithmetically inert.
+    /// Two invariants bound what adaptation may do. The target can only ever <em>lower</em> the base size,
+    /// because it is clamped to the configured buffer size as a ceiling. Demand-driven growth is never
+    /// clamped, so a connection that needs a large buffer still gets one.
     /// </para>
     /// </remarks>
     public sealed class NetworkBufferBudget
@@ -76,16 +67,13 @@ namespace Garnet.common
         long idleShrinks;
 
         /// <summary>
-        /// Whether adaptation is enabled. When false the budget is inert and behaviour is exactly as it
-        /// was before the budget existed.
+        /// Whether adaptation is enabled. When false the budget is inert.
         /// </summary>
         public bool IsEnabled => budgetBytes > 0;
 
         /// <summary>
-        /// Whether the budget is actually binding, i.e. the published target has been driven below the
-        /// configured size by the number of live buffers. This is the pressure signal the shrink policy
-        /// gates on: it reads an already-published value rather than a contended byte counter, so it costs
-        /// one predictable branch on the receive path.
+        /// Whether the budget is binding, i.e. the published target has been driven below the configured
+        /// size by the number of live buffers. This is the pressure signal the shrink policy gates on.
         /// </summary>
         public bool IsUnderPressure => IsEnabled && TargetBufferSize < ceiling;
 
@@ -112,12 +100,6 @@ namespace Garnet.common
         /// <summary>
         /// Clamps a configured receive size to the published target.
         /// </summary>
-        /// <remarks>
-        /// Exists so the receive path, which reads this on every pass, resolves the clamp in one inlined
-        /// call over three field loads rather than walking pool to budget and back out through two
-        /// properties. The disabled test is first and reads the same field the constructor fixes for the
-        /// lifetime of the object, so it is perfectly predicted.
-        /// </remarks>
         /// <param name="configured">Configured base size for the buffer.</param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public int ClampReceiveBufferSize(int configured)
@@ -178,8 +160,8 @@ namespace Garnet.common
         }
 
         /// <summary>
-        /// Account for a buffer being checked out. Inert when the budget is disabled, so pools that do not
-        /// participate cannot accumulate a meaningless count on the shared <see cref="Disabled"/> instance.
+        /// Account for a buffer being checked out. Inert when the budget is disabled, so non-budgeted pools
+        /// sharing the <see cref="Disabled"/> singleton do not accumulate a count against it.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void OnBufferAcquired()
@@ -204,9 +186,8 @@ namespace Garnet.common
 
         /// <summary>
         /// Record that a buffer was shrunk because the budget was under pressure. Inert when the budget is
-        /// disabled, matching <see cref="OnBufferAcquired"/>: every pool that was handed no budget shares the
-        /// <see cref="Disabled"/> singleton, so counting there would put a contended process-wide interlocked
-        /// write on the shrink path of connections the budget does not govern.
+        /// disabled: non-budgeted pools share the <see cref="Disabled"/> singleton, so counting there would
+        /// put a contended process-wide write on the shrink path of connections the budget does not govern.
         /// </summary>
         public void RecordPressureShrink()
         {
@@ -226,10 +207,8 @@ namespace Garnet.common
 
         /// <summary>
         /// Recompute and publish <see cref="TargetBufferSize"/>. Runs from <see cref="OnBufferAcquired"/> and
-        /// <see cref="OnBufferReleased"/> so the count and the target it derives can never diverge: every path
-        /// that moves the live population republishes. Pooled reuse grows that population just as an
-        /// allocate-miss does, and a drained spike only shrinks it, so recomputing on allocation alone leaves
-        /// the target pinned at whatever the spike drove it to.
+        /// <see cref="OnBufferReleased"/> so that every path moving the live population republishes, and the
+        /// count and the target it derives can never diverge.
         /// </summary>
         /// <remarks>
         /// The published target must agree with the count it was derived from, and a single compare-exchange
@@ -237,22 +216,10 @@ namespace Garnet.common
         /// exchange, and a thread holding a fresh one can lose it. So both outcomes re-derive -- a lost
         /// exchange retries, and a won exchange re-reads the count and retries if it moved underneath.
         /// <para>
-        /// Exhausting the attempts publishes nothing, which is safe rather than resigned. Every write to
-        /// <c>targetBufferSize</c> is made by a thread that read both the previous target and the count
-        /// immediately beforehand, so exhaustion leaves a value that some recent count justified, never an
-        /// invented one. And because <see cref="OnBufferAcquired"/> and <see cref="OnBufferReleased"/> move
-        /// the count *before* calling this, whichever thread invalidated the published target is itself
-        /// required to recompute from the moved count.
-        /// </para>
-        /// <para>
-        /// A stale target left too *high* cannot hide behind the hysteresis band either, which is the case
-        /// that would matter because only it can clear <see cref="IsUnderPressure"/>. Clearing that requires
-        /// the published target to equal the ceiling, while the budget binding at the live count means
-        /// <c>budgetBytes / count &lt; ceiling</c>. The band suppresses a write only when
-        /// <c>raw &gt;= current</c>, i.e. only when that same quotient is at least the ceiling. Both cannot
-        /// hold at once, so a wrong-high target is always re-derived by the next acquire or release. A stale
-        /// target left too *low* can sit inside the band, but that direction fails safe: smaller buffers,
-        /// more pressure shrinking, and more drop-on-return than the budget strictly requires.
+        /// Exhausting the attempts publishes nothing, and needs no fallback. Every write is made by a thread
+        /// that read both the previous target and the count immediately beforehand, so exhaustion leaves a
+        /// value some recent count justified. The callers move the count <em>before</em> calling this, so
+        /// whichever thread invalidated the target is itself required to recompute from the moved count.
         /// </para>
         /// </remarks>
         public void Recompute()
@@ -260,9 +227,8 @@ namespace Garnet.common
             if (budgetBytes == 0)
                 return;
 
-            // Bounded because this runs on every buffer acquire and release. Under a stampede a later
-            // acquire or release republishes anyway; the point of the loop is to close the ordinary
-            // two-thread race, not to serialize an arbitrarily long one.
+            // Bounded because this runs on every buffer acquire and release. The loop closes the ordinary
+            // two-thread race; a later acquire or release republishes under sustained contention.
             for (var attempt = 0; attempt < MaxRecomputeAttempts; attempt++)
             {
                 var count = Interlocked.Read(ref liveBufferCount);

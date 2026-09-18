@@ -61,11 +61,9 @@ namespace Garnet.server
         /// writer holding the only reference to the graph, so its write is unobservable and the collector
         /// reclaims it afterwards -- costing at most one sample from a window that recorded none.
         /// <para>
-        /// That argument holds only because every reader of <see cref="latency"/> loads it into a local
-        /// exactly once and then works from that local. A reader that re-read the field after null-checking
-        /// it could observe the null this method publishes and fault instead. The field is written here
-        /// under the session's dispose lock but read on paths that do not take it, so single-capture is the
-        /// invariant to preserve when changing any reader.
+        /// That holds only while every reader of <see cref="latency"/> loads it into a local exactly once;
+        /// a reader that re-read the field after null-checking it could observe the null published here and
+        /// fault instead.
         /// </para>
         /// <para>
         /// Both buffers are tested because one is being written while the other is merged, and a session

@@ -15,10 +15,9 @@ namespace Garnet.server
     /// the limit, which is what a Redis operator setting <c>maxclients</c> expects.
     ///
     /// The current population is summed from the listeners' own live-handler counts rather than
-    /// tracked in a counter of its own. That is deliberate: a second counter would have to be
-    /// maintained at every accept, reject, setup-failure and dispose path, and a counter that
-    /// ratchets because one of those paths was missed fails closed -- it would refuse every
-    /// connection forever, with no way to recover short of a restart.
+    /// tracked in a counter of its own. A second counter would have to be maintained at every
+    /// accept, reject, setup-failure and dispose path, and one that ratchets because a path was
+    /// missed fails closed -- refusing every connection until the process restarts.
     /// </summary>
     public sealed class ConnectionLimit
     {
@@ -84,10 +83,9 @@ namespace Garnet.server
         /// Whether the server is within its connection limit, called by a listener that has
         /// already counted the connection being admitted.
         ///
-        /// Racy by construction, exactly as the per-listener check it replaces: two listeners can
-        /// both observe room and both admit. The overshoot is bounded by the number of listeners
-        /// and is self-correcting, which is the right trade for admission control -- the
-        /// alternative is serializing every accept in the process behind one lock.
+        /// Racy by construction: two listeners can both observe room and both admit. The overshoot
+        /// is bounded by the number of listeners and is self-correcting, which is the right trade
+        /// against serializing every accept in the process behind one lock.
         /// </summary>
         public bool IsWithinLimit()
         {

@@ -103,13 +103,11 @@ namespace Garnet.server
         /// </summary>
         /// <remarks>
         /// The processor is a <see cref="RespServerSession"/> that never reads from a network, so it has no
-        /// batch boundary of its own to drive the checkpoint from. Lua resets that buffer many times within a
-        /// single script -- once per string while decoding JSON, for instance -- so the checkpoint cannot be
-        /// driven from those resets either without releasing a buffer the next element re-grows. The owning
-        /// network session calls this from its own checkpoint, which is outside any script execution.
-        /// Both the buffer that <c>redis.call</c> requests are built in and the one their replies are written
-        /// into are covered: a script reading one large value ratchets the reply buffer just as encoding one
-        /// ratchets the request buffer.
+        /// batch boundary of its own to drive the checkpoint from, and Lua resets its buffer many times
+        /// within a single script -- once per string while decoding JSON, for instance -- so those resets
+        /// cannot drive it either. The owning network session calls this from its own checkpoint, outside any
+        /// script execution. Both the buffer <c>redis.call</c> requests are built in and the one their replies
+        /// are written into are covered.
         /// </remarks>
         internal void ScratchBufferShrinkCheckpoint()
         {
