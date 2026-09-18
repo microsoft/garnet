@@ -398,8 +398,16 @@ namespace Tsavorite.test.recovery
             using var s1 = store.NewSession<TestSpanByteKey, long, long, Empty, SimpleLongSimpleFunctions>(new SimpleLongSimpleFunctions());
             var bc1 = s1.BasicContext;
 
+            // Local variables in an async function can be moved, so we must use an array for the key
+            var keyArray = new byte[sizeof(long)];
+
             for (long key = 0; key < 1000; key++)
-                _ = bc1.Upsert(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), SpanByte.FromPinnedVariable(ref key));
+            {
+                var keySpan = new Span<byte>(keyArray);
+                ref var keyLong = ref keySpan.AsRef<long>();
+                keyLong = key;
+                _ = bc1.Upsert(TestSpanByteKey.FromArray(keyArray), keySpan);
+            }
 
             var task = store.TakeHybridLogCheckpointAsync(checkpointType);
             (bool success, Guid token) = await task.ConfigureAwait(false);
@@ -407,8 +415,12 @@ namespace Tsavorite.test.recovery
 
             for (long key = 0; key < 1000; key++)
             {
+                var keySpan = new Span<byte>(keyArray);
+                ref var keyLong = ref keySpan.AsRef<long>();
+                keyLong = key;
+
                 long output = default;
-                var status = bc1.Read(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), ref output);
+                var status = bc1.Read(TestSpanByteKey.FromArray(keyArray), ref output);
                 var wasPending = status.IsPending;
                 if (wasPending)
                 {
@@ -420,15 +432,24 @@ namespace Tsavorite.test.recovery
             }
 
             for (long key = 1000; key < 2000; key++)
-                _ = bc1.Upsert(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), SpanByte.FromPinnedVariable(ref key));
+            {
+                var keySpan = new Span<byte>(keyArray);
+                ref var keyLong = ref keySpan.AsRef<long>();
+                keyLong = key;
+                _ = bc1.Upsert(TestSpanByteKey.FromArray(keyArray), keySpan);
+            }
 
             // Reset store to empty state
             store.Reset();
 
             for (long key = 0; key < 2000; key++)
             {
+                var keySpan = new Span<byte>(keyArray);
+                ref var keyLong = ref keySpan.AsRef<long>();
+                keyLong = key;
+
                 long output = default;
-                var status = bc1.Read(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), ref output);
+                var status = bc1.Read(TestSpanByteKey.FromArray(keyArray), ref output);
                 var wasPending = status.IsPending;
                 if (wasPending)
                 {
@@ -443,8 +464,12 @@ namespace Tsavorite.test.recovery
 
             for (long key = 0; key < 1000; key++)
             {
+                var keySpan = new Span<byte>(keyArray);
+                ref var keyLong = ref keySpan.AsRef<long>();
+                keyLong = key;
+
                 long output = default;
-                var status = bc1.Read(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), ref output);
+                var status = bc1.Read(TestSpanByteKey.FromArray(keyArray), ref output);
                 var wasPending = status.IsPending;
                 if (wasPending)
                 {
@@ -457,8 +482,12 @@ namespace Tsavorite.test.recovery
 
             for (long key = 1000; key < 2000; key++)
             {
+                var keySpan = new Span<byte>(keyArray);
+                ref var keyLong = ref keySpan.AsRef<long>();
+                keyLong = key;
+
                 long output = default;
-                var status = bc1.Read(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), ref output);
+                var status = bc1.Read(TestSpanByteKey.FromArray(keyArray), ref output);
                 var wasPending = status.IsPending;
                 if (wasPending)
                 {
@@ -469,12 +498,21 @@ namespace Tsavorite.test.recovery
             }
 
             for (long key = 1000; key < 2000; key++)
-                _ = bc1.Upsert(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), SpanByte.FromPinnedVariable(ref key));
+            {
+                var keySpan = new Span<byte>(keyArray);
+                ref var keyLong = ref keySpan.AsRef<long>();
+                keyLong = key;
+                _ = bc1.Upsert(TestSpanByteKey.FromArray(keyArray), keySpan);
+            }
 
             for (long key = 0; key < 2000; key++)
             {
+                var keySpan = new Span<byte>(keyArray);
+                ref var keyLong = ref keySpan.AsRef<long>();
+                keyLong = key;
+
                 long output = default;
-                var status = bc1.Read(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), ref output);
+                var status = bc1.Read(TestSpanByteKey.FromArray(keyArray), ref output);
                 var wasPending = status.IsPending;
                 if (wasPending)
                 {
