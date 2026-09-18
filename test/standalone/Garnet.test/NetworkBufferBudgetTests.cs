@@ -460,6 +460,23 @@ namespace Garnet.test
         }
 
         /// <summary>
+        /// A reply is written before the receive buffer is resized, so a client holding its reply can still be
+        /// ahead of the server's buffer maintenance. Polls the level the assertion reads and returns the
+        /// snapshot it is taken from. A run that never drains the level still fails the assertion, so the wait
+        /// cannot mask the defect it guards.
+        /// </summary>
+        string WaitForPooledLevelToDrain(int size)
+        {
+            var stats = PoolStats();
+            for (var attempt = 0; attempt < 100 && PooledCountAtSize(size, stats) > 0; attempt++)
+            {
+                Thread.Sleep(50);
+                stats = PoolStats();
+            }
+            return stats;
+        }
+
+        /// <summary>
         /// Shrinking a connection's buffer only moves the bytes from <c>liveBytes</c> to the idle free list --
         /// still pinned, still counted against the process. While the budget is binding those over-target
         /// buffers must be dropped rather than pooled. Unpressured they are pooled as before, which the control
@@ -631,9 +648,9 @@ namespace Garnet.test
 
         /// <summary>
         /// A TLS connection decrypts into a second receive buffer that grows through its own code path, so a
-        /// payload larger than the largest poolable size drives an above-max release there as well as on the
-        /// ciphertext buffer. The replacement is floored at the largest poolable size on both, which takes the
-        /// buffer the growth ladder pooled back off the free list.
+        /// payload larger than the largest poolable size drives an above-max release there. While the budget is
+        /// slack the replacement is floored at the largest poolable size, which takes the buffer the growth
+        /// ladder pooled back off the free list.
         /// </summary>
         [Test]
         public async Task OversizedTlsReceiveBuffersAreReplacedAtTheLargestPoolableSize()
@@ -652,7 +669,7 @@ namespace Garnet.test
             // would let a buffer released on the following pass through.
             _ = await client.StringSetAsync("oversized", new string('v', 1536 * 1024));
 
-            var stats = PoolStats();
+            var stats = WaitForPooledLevelToDrain(1024 * 1024);
             TestContext.Out.WriteLine(stats);
 
             // Guards the level assertion against a run that never grew past the pool's largest class.
@@ -662,6 +679,65 @@ namespace Garnet.test
             ClassicAssert.AreEqual(0, PooledCountAtSize(1024 * 1024, stats),
                 "an oversized TLS receive buffer was replaced below the largest poolable size, so a connection " +
                 "sending one large request per batch re-grows through every class each time");
+        }
+
+        /// <summary>
+        /// A buffer above the largest poolable size is released immediately because the pool cannot recycle it.
+        /// While the budget is binding that release must land on the adapted base rather than the largest
+        /// poolable size: the target is derived from a buffer <em>count</em>, so a connection parked at the
+        /// maximum costs the same single unit as one at the floor and the budget gets no feedback from it.
+        /// </summary>
+        [Test]
+        public async Task UnderPressureAnOversizedReceiveBufferIsReleasedToTheAdaptedBase()
+        {
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, networkBufferMemoryBudget: "1m");
+            server.Start();
+
+            const int Connections = 8;
+            var payload = new string('v', 1536 * 1024);
+            var clients = new List<GarnetClient>();
+            try
+            {
+                for (var i = 0; i < Connections; i++)
+                {
+                    var c = TestUtils.GetGarnetClient();
+                    await c.ConnectAsync();
+                    _ = await c.PingAsync();
+                    clients.Add(c);
+                }
+
+                foreach (var c in clients)
+                    _ = await c.StringSetAsync("oversized", payload);
+
+                // Half the largest poolable size per connection: the release lands either on the adapted base,
+                // far below it, or on the 1 MB maximum, far above it.
+                var bound = (long)Connections * 512 * 1024;
+
+                // Measured with no further traffic, because a silent connection is the shape that pins the
+                // buffer -- nothing else walks it back down. The reply is written before the buffer is
+                // resized, so the client holding its reply can still be ahead of the server.
+                var stats = PoolStats();
+                for (var attempt = 0; attempt < 100 && SocketStatBytes("liveBytes", stats) >= bound; attempt++)
+                {
+                    Thread.Sleep(50);
+                    stats = PoolStats();
+                }
+
+                var live = SocketStatBytes("liveBytes", stats);
+                TestContext.Out.WriteLine(stats);
+
+                ClassicAssert.GreaterOrEqual(SocketStatBytes("totalOutOfBoundAllocations", stats), 1,
+                    "the payload did not grow a receive buffer past the pool's largest size class");
+
+                ClassicAssert.Less(live, bound,
+                    $"oversized receive buffers were released at the largest poolable size while the budget was " +
+                    $"binding, so {Connections} silent connections hold {live} bytes against a {bound} byte bound");
+            }
+            finally
+            {
+                foreach (var c in clients) c.Dispose();
+            }
         }
 
         /// <summary>
@@ -1421,6 +1497,7 @@ namespace Garnet.test
                 if (int.TryParse(pair[..eq], out var count)) return count;
             }
 
+            ClassicAssert.Fail($"no '{want}' level in BPSTATS: {stats}");
             return 0;
         }
 
