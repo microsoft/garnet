@@ -446,8 +446,11 @@ namespace Garnet.networking
             {
                 // Above the pool's largest size class, so this buffer cannot be recycled on return. Release it
                 // without waiting out the hysteresis, sized to what is still buffered rather than to the
-                // pass's demand, which is already consumed.
-                var residual = TargetReceiveBufferSize(networkBytesRead, baseSize, current);
+                // pass's demand, which is already consumed. The floor is the largest poolable size, so a
+                // connection that needs the capacity on every request re-grows by one doubling; the
+                // hysteresis path below takes it the rest of the way down once the traffic no longer needs it.
+                var residual = Math.Max(networkBufferSettings.maxReceiveBufferSize,
+                    TargetReceiveBufferSize(networkBytesRead, baseSize, current));
                 networkShrinkCountdown = ShrinkHysteresis;
                 if (residual < current)
                 {
@@ -785,10 +788,12 @@ namespace Garnet.networking
             int target;
 
             // See MaybeShrinkNetworkReceiveBuffer for the policy, including why the above-max branch is
-            // measured against the residual rather than the pass's demand and is checked first.
+            // measured against the residual rather than the pass's demand, is floored at the largest
+            // poolable size, and is checked first.
             if (aboveMax)
             {
-                target = TargetReceiveBufferSize(transportBytesRead, baseSize, current);
+                target = Math.Max(networkBufferSettings.maxReceiveBufferSize,
+                    TargetReceiveBufferSize(transportBytesRead, baseSize, current));
                 if (target >= current)
                 {
                     transportShrinkCountdown = ShrinkHysteresis;
