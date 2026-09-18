@@ -38,7 +38,7 @@ namespace Garnet.server
         public abstract ValueTask RecoverCheckpointAsync(bool replicaRecover = false, bool recoverFromToken = false, CheckpointMetadata metadata = null);
 
         /// <inheritdoc/>
-        public abstract Task<bool> TakeCheckpointAsync(bool background, int dbId = -1, CancellationToken token = default, ILogger logger = null);
+        public abstract Task<CheckpointStatus> TakeCheckpointAsync(bool background, int dbId = -1, CancellationToken token = default, ILogger logger = null);
 
         /// <inheritdoc/>
         public abstract Task TakeOnDemandCheckpointAsync(DateTimeOffset entryTime, int dbId = 0);
@@ -181,8 +181,13 @@ namespace Garnet.server
         /// <param name="db">Database to checkpoint</param>
         /// <param name="logger">Logger</param>
         /// <param name="token">Cancellation token</param>
-        /// <returns>Tuple of store tail address and object store tail address</returns>
-        protected async Task<long?> TakeCheckpointAsync(GarnetDatabase db, ILogger logger = null, CancellationToken token = default)
+        /// <returns>The checkpoint outcome, including the store tail address covered by a full checkpoint</returns>
+        /// <remarks>
+        /// Failures are reported through the returned <see cref="CheckpointResult"/> rather than thrown, so that a
+        /// background checkpoint cannot tear down the server and so that one database's failure does not abort the
+        /// bookkeeping of the other databases checkpointed alongside it.
+        /// </remarks>
+        protected async Task<CheckpointResult> TakeCheckpointAsync(GarnetDatabase db, ILogger logger = null, CancellationToken token = default)
         {
             try
             {
@@ -193,16 +198,42 @@ namespace Garnet.server
                            lastSaveStoreTailAddress - db.LastSaveStoreTailAddress >= StoreWrapper.serverOptions.FullCheckpointLogInterval;
 
                 var checkpointType = StoreWrapper.serverOptions.UseFoldOverCheckpoints ? CheckpointType.FoldOver : CheckpointType.Snapshot;
-                await InitiateCheckpointAsync(db, full, checkpointType, logger).ConfigureAwait(false);
+                if (!await InitiateCheckpointAsync(db, full, checkpointType, logger).ConfigureAwait(false))
+                    return CheckpointResult.Failed;
 
-                return full ? lastSaveStoreTailAddress : null;
+                return CheckpointResult.Succeeded(full ? lastSaveStoreTailAddress : null);
             }
             catch (Exception ex)
             {
-                logger?.LogError(ex, "Checkpointing threw exception, DB ID: {id}", db.Id);
+                // The caller's logger is optional, so fall back to this manager's logger; otherwise a failed
+                // checkpoint leaves no trace at all.
+                (logger ?? Logger)?.LogError(ex, "Checkpointing threw exception, DB ID: {id}", db.Id);
             }
 
-            return null;
+            return CheckpointResult.Failed;
+        }
+
+        /// <summary>
+        /// Record the outcome of a checkpoint attempt on the specified database
+        /// </summary>
+        /// <param name="db">Database that was checkpointed</param>
+        /// <param name="result">Outcome of the checkpoint attempt</param>
+        /// <remarks>
+        /// The last save time is advanced only for a successful checkpoint. Advancing it for a failed one reports
+        /// data to clients (through LASTSAVE, and to the cluster through on-demand checkpointing) as durable when
+        /// nothing was written.
+        /// </remarks>
+        protected static void RecordCheckpointOutcome(GarnetDatabase db, CheckpointResult result)
+        {
+            db.LastSaveSucceeded = result.IsSuccessful;
+
+            if (!result.IsSuccessful)
+                return;
+
+            if (result.StoreTailAddress.HasValue)
+                db.LastSaveStoreTailAddress = result.StoreTailAddress.Value;
+
+            db.LastSaveTime = DateTimeOffset.UtcNow;
         }
 
         /// <summary>
@@ -494,8 +525,8 @@ namespace Garnet.server
         /// <param name="full">True if full checkpoint should be initiated</param>
         /// <param name="checkpointType">Type of checkpoint</param>
         /// <param name="logger">Logger</param>
-        /// <returns>Task</returns>
-        private async Task InitiateCheckpointAsync(GarnetDatabase db, bool full, CheckpointType checkpointType,
+        /// <returns>True if the checkpoint ran to completion</returns>
+        private async Task<bool> InitiateCheckpointAsync(GarnetDatabase db, bool full, CheckpointType checkpointType,
             ILogger logger = null)
         {
             logger?.LogInformation("Initiating checkpoint; full = {full}, type = {checkpointType}, dbId = {dbId}", full, checkpointType, db.Id);
@@ -529,6 +560,16 @@ namespace Garnet.server
 
             checkpointResult.success = await db.StateMachineDriver.RunAsync(sm).ConfigureAwait(false);
 
+            if (!checkpointResult.success)
+            {
+                // Another state machine operation (such as an index resize) was already running, so the checkpoint
+                // never ran. Nothing was written, so the AOF must not be truncated and no checkpoint entry may be
+                // registered with the cluster - both would discard data this checkpoint does not cover.
+                (logger ?? Logger)?.LogWarning(
+                    "Checkpoint did not run because another state machine operation is in progress, DB ID: {id}", db.Id);
+                return false;
+            }
+
             // If cluster is enabled the replication manager is responsible for truncating AOF
             if (StoreWrapper.serverOptions.EnableCluster && StoreWrapper.serverOptions.EnableAOF)
             {
@@ -547,6 +588,7 @@ namespace Garnet.server
                 logger ?? Logger);
 
             logger?.LogInformation("Completed checkpoint for DB ID: {id}", db.Id);
+            return true;
         }
 
         internal static void RunPostCheckpointCleanup(Action cleanup, int dbId, ILogger logger)

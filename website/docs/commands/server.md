@@ -229,7 +229,7 @@ Sections:
 * `STORE`: Per-database store details, including the current and last-checkpointed version, system state, hash-index bucket counts and sizes, and the hybrid-log and read-cache page/memory/heap sizes together with the key log addresses (`Log.BeginAddress`, `Log.HeadAddress`, `Log.SafeReadOnlyAddress`, `Log.FlushedUntilAddress`, `Log.TailAddress`, and the corresponding `ReadCache.*` addresses).
 * `STOREHASHTABLE`: Per-database dump of the hash-table bucket distribution (how records are spread across the index bucket chains); useful for diagnosing index sizing.
 * `STOREREVIV`: Per-database revivification (deleted-record free list) statistics.
-* `PERSISTENCE`: Checkpoint and append-only-file persistence information.
+* `PERSISTENCE`: Checkpoint and append-only-file persistence information. `rdb_last_bgsave_status` reports whether the last checkpoint attempt for the database succeeded (`ok`) or failed (`err`); the append-only-file addresses are reported as `N/A` when the append-only file is disabled.
 * `CLIENTS`: Connected-client statistics.
 * `KEYSPACE`: Per-database key counts. Requested explicitly only, since it requires a full log scan.
 * `MODULES`: Loaded module information.

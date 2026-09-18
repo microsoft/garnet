@@ -121,6 +121,11 @@ namespace Garnet.server
                 catch (TsavoriteNoHybridLogException ex)
                 {
                     // No hybrid log being found is not the same as an error in recovery. e.g. fresh start
+                    //
+                    // As in SingleDatabaseManager, this is deliberately not gated on FailOnRecoveryError so that a
+                    // --recover start against a never-checkpointed directory comes up. When no checkpoint was ever
+                    // written there are no tokens to find, so this is indistinguishable from a fresh start, which is
+                    // why the save path must not report a failed checkpoint as a successful save.
                     Logger?.LogInformation(ex,
                         "No Hybrid Log found for recovery; storeVersion = {storeVersion}; objectStoreVersion = {objectStoreVersion}",
                         storeVersion, objectStoreVersion);
@@ -142,12 +147,12 @@ namespace Garnet.server
         }
 
         /// <inheritdoc/>
-        public override Task<bool> TakeCheckpointAsync(bool background, int dbId = -1, CancellationToken token = default, ILogger logger = null)
+        public override Task<CheckpointStatus> TakeCheckpointAsync(bool background, int dbId = -1, CancellationToken token = default, ILogger logger = null)
         {
             // Acquire databasesContentLock (read) so a concurrent swap-db can't move GarnetDatabase
             // wrappers out from under us mid-checkpoint (which would mis-attribute LASTSAVE to the
             // swapped DB and let a second BGSAVE race against the in-flight checkpoint).
-            if (!TryGetDatabasesContentReadLock(token)) return Task.FromResult(false);
+            if (!TryGetDatabasesContentReadLock(token)) return Task.FromResult(CheckpointStatus.AlreadyInProgress);
 
             var multiDbLockHeld = false;
             int[] pausedDbIds = null;
@@ -168,7 +173,7 @@ namespace Garnet.server
                         if (!multiDbCheckpointingLock.TryWriteLock())
                         {
                             databasesContentLock.ReadUnlock();
-                            return Task.FromResult(false);
+                            return Task.FromResult(CheckpointStatus.AlreadyInProgress);
                         }
 
                         multiDbLockHeld = true;
@@ -192,7 +197,7 @@ namespace Garnet.server
                     if (!TryPauseCheckpoints(dbId))
                     {
                         databasesContentLock.ReadUnlock();
-                        return Task.FromResult(false);
+                        return Task.FromResult(CheckpointStatus.AlreadyInProgress);
                     }
 
                     pausedDbIds = [dbId];
@@ -217,7 +222,7 @@ namespace Garnet.server
             var checkpointTask = RunPausedCheckpointsAndReleaseLocksAsync(pausedDbIds, pausedCount, multiDbLockHeld, token, logger);
 
             if (background)
-                return Task.FromResult(true);
+                return Task.FromResult(CheckpointStatus.Success);
 
             return checkpointTask;
         }
@@ -242,8 +247,8 @@ namespace Garnet.server
                     return;
 
                 // Necessary to take a checkpoint because the latest checkpoint is before entryTime
-                var storeTailAddress = await TakeCheckpointAsync(db, logger: Logger).ConfigureAwait(false);
-                UpdateLastSaveData(dbId, storeTailAddress);
+                var result = await TakeCheckpointAsync(db, logger: Logger).ConfigureAwait(false);
+                UpdateLastSaveData(dbId, result);
             }
             finally
             {
@@ -299,8 +304,8 @@ namespace Garnet.server
 
                 try
                 {
-                    var storeTailAddress = await TakeCheckpointAsync(databasesMapSnapshot[pausedDbId], logger: logger, token: token).ConfigureAwait(false);
-                    UpdateLastSaveData(pausedDbId, storeTailAddress);
+                    var result = await TakeCheckpointAsync(databasesMapSnapshot[pausedDbId], logger: logger, token: token).ConfigureAwait(false);
+                    UpdateLastSaveData(pausedDbId, result);
                 }
                 finally
                 {
@@ -994,7 +999,7 @@ namespace Garnet.server
         /// individual one) so a per-DB BGSAVE issued mid-flight during a general BGSAVE reliably
         /// observes the in-progress checkpoint and fails with "checkpoint already in progress".
         /// </summary>
-        private async Task<bool> RunPausedCheckpointsAndReleaseLocksAsync(int[] pausedDbIds, int pausedCount,
+        private async Task<CheckpointStatus> RunPausedCheckpointsAndReleaseLocksAsync(int[] pausedDbIds, int pausedCount,
             bool multiDbLockHeld, CancellationToken token, ILogger logger)
         {
             // Pre-fill with Task.CompletedTask so the catch path can safely await Task.WhenAll
@@ -1002,6 +1007,10 @@ namespace Garnet.server
             var checkpointTasks = new Task[pausedCount];
             for (var i = 0; i < pausedCount; i++)
                 checkpointTasks[i] = Task.CompletedTask;
+
+            // Each checkpoint records its own outcome here rather than through its task's result, so a database
+            // whose task was never created or which threw stays counted as a failure.
+            var succeeded = new bool[pausedCount];
 
             try
             {
@@ -1013,7 +1022,7 @@ namespace Garnet.server
                 try
                 {
                     for (var i = 0; i < pausedCount; i++)
-                        checkpointTasks[i] = TakeOneCheckpointAsync(databaseMapSnapshot[pausedDbIds[i]], pausedDbIds[i]);
+                        checkpointTasks[i] = TakeOneCheckpointAsync(databaseMapSnapshot[pausedDbIds[i]], pausedDbIds[i], i);
 
                     await Task.WhenAll(checkpointTasks).ConfigureAwait(false);
                 }
@@ -1039,28 +1048,38 @@ namespace Garnet.server
                 databasesContentLock.ReadUnlock();
             }
 
-            return true;
+            // A database that was already being checkpointed was not paused here, so it is not in this set and its
+            // in-flight checkpoint reports its own outcome. An empty set therefore leaves this a success.
+            var allSucceeded = true;
+            for (var i = 0; i < pausedCount; i++)
+                allSucceeded &= succeeded[i];
+
+            return allSucceeded ? CheckpointStatus.Success : CheckpointStatus.Failed;
 
             // Local function: take one per-DB checkpoint and update LASTSAVE. Does NOT resume the
             // per-DB lock — the outer finally above resumes all paused DBs after WhenAll completes.
-            async Task TakeOneCheckpointAsync(GarnetDatabase db, int dbId)
+            async Task TakeOneCheckpointAsync(GarnetDatabase db, int dbId, int slot)
             {
-                var storeTailAddress = await TakeCheckpointAsync(db, logger: logger, token: token).ConfigureAwait(false);
-                UpdateLastSaveData(dbId, storeTailAddress);
+                var result = await TakeCheckpointAsync(db, logger: logger, token: token).ConfigureAwait(false);
+                UpdateLastSaveData(dbId, result);
+                succeeded[slot] = result.IsSuccessful;
             }
         }
 
-        private void UpdateLastSaveData(int dbId, long? storeTailAddress)
+        /// <summary>
+        /// Resolve the database for the given ID and record its checkpoint outcome
+        /// </summary>
+        /// <param name="dbId">ID of the database that was checkpointed</param>
+        /// <param name="result">Outcome of the checkpoint attempt</param>
+        /// <remarks>
+        /// The database is read from the map here rather than taken from the caller, so that a swap-db that ran while
+        /// the checkpoint was in flight cannot attribute the outcome to the database that was swapped away.
+        /// </remarks>
+        private void UpdateLastSaveData(int dbId, CheckpointResult result)
         {
             var databasesMapSnapshot = databases.Map;
 
-            var db = databasesMapSnapshot[dbId];
-            db.LastSaveTime = DateTimeOffset.UtcNow;
-
-            if (storeTailAddress.HasValue)
-            {
-                db.LastSaveStoreTailAddress = storeTailAddress.Value;
-            }
+            RecordCheckpointOutcome(databasesMapSnapshot[dbId], result);
         }
 
         /// <inheritdoc/>

@@ -82,6 +82,12 @@ namespace Garnet.server
             catch (TsavoriteNoHybridLogException ex)
             {
                 // No hybrid log being found is not the same as an error in recovery. e.g. fresh start
+                //
+                // This is deliberately not gated on FailOnRecoveryError: a server started with --recover against a
+                // directory that has never been checkpointed must come up rather than refuse to start. When no
+                // checkpoint was ever written there are no tokens to find, so this is indistinguishable from a fresh
+                // start and the server comes up empty. That is why a failed checkpoint must never be reported as a
+                // successful save (see RecordCheckpointOutcome).
                 Logger?.LogInformation(ex, "No Hybrid Log found for recovery; storeVersion = {storeVersion};", storeVersion);
             }
             catch (Exception ex)
@@ -118,32 +124,28 @@ namespace Garnet.server
         }
 
         /// <inheritdoc/>
-        public override async Task<bool> TakeCheckpointAsync(bool background, int dbId = -1, CancellationToken token = default, ILogger logger = null)
+        public override async Task<CheckpointStatus> TakeCheckpointAsync(bool background, int dbId = -1, CancellationToken token = default, ILogger logger = null)
         {
             if (dbId != -1 && dbId != 0)
                 throw new ArgumentOutOfRangeException(nameof(dbId), dbId, "SingleDatabaseManager only supports dbId 0.");
 
             // Check if checkpoint already in progress
             if (!TryPauseCheckpoints(defaultDatabase.Id))
-                return false;
+                return CheckpointStatus.AlreadyInProgress;
 
             var checkpointTask = TakeCheckpointHelperAsync(defaultDatabase, logger, token);
             if (background)
-                return true;
+                return CheckpointStatus.Success;
 
-            await checkpointTask.ConfigureAwait(false);
-            return true;
+            return await checkpointTask.ConfigureAwait(false) ? CheckpointStatus.Success : CheckpointStatus.Failed;
 
-            async Task TakeCheckpointHelperAsync(GarnetDatabase defaultDatabase, ILogger logger, CancellationToken token)
+            async Task<bool> TakeCheckpointHelperAsync(GarnetDatabase defaultDatabase, ILogger logger, CancellationToken token)
             {
                 try
                 {
-                    var storeTailAddress = await TakeCheckpointAsync(defaultDatabase, logger: logger, token: token).ConfigureAwait(false);
-
-                    if (storeTailAddress.HasValue)
-                        defaultDatabase.LastSaveStoreTailAddress = storeTailAddress.Value;
-
-                    defaultDatabase.LastSaveTime = DateTimeOffset.UtcNow;
+                    var result = await TakeCheckpointAsync(defaultDatabase, logger: logger, token: token).ConfigureAwait(false);
+                    RecordCheckpointOutcome(defaultDatabase, result);
+                    return result.IsSuccessful;
                 }
                 finally
                 {
@@ -169,13 +171,7 @@ namespace Garnet.server
 
                 // Necessary to take a checkpoint because the latest checkpoint is before entryTime
                 var result = await TakeCheckpointAsync(defaultDatabase, logger: Logger).ConfigureAwait(false);
-
-                var storeTailAddress = result;
-
-                if (storeTailAddress.HasValue)
-                    defaultDatabase.LastSaveStoreTailAddress = storeTailAddress.Value;
-
-                defaultDatabase.LastSaveTime = DateTimeOffset.UtcNow;
+                RecordCheckpointOutcome(defaultDatabase, result);
             }
             finally
             {
@@ -205,11 +201,8 @@ namespace Garnet.server
                 logger?.LogInformation("Enforcing AOF size limit currentAofSize: {aofSize} >  AofSizeLimit: {aofSizeLimit}",
                     aofSize, aofSizeLimit);
 
-                var storeTailAddress = await TakeCheckpointAsync(defaultDatabase, logger: logger, token: token).ConfigureAwait(false);
-                if (storeTailAddress.HasValue)
-                    defaultDatabase.LastSaveStoreTailAddress = storeTailAddress.Value;
-
-                defaultDatabase.LastSaveTime = DateTimeOffset.UtcNow;
+                var result = await TakeCheckpointAsync(defaultDatabase, logger: logger, token: token).ConfigureAwait(false);
+                RecordCheckpointOutcome(defaultDatabase, result);
             }
             finally
             {
