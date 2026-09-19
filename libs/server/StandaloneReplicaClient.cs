@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Buffers;
 using System.Linq;
 using System.Net;
 using System.Net.Sockets;
@@ -214,80 +215,96 @@ namespace Garnet.server
                     if (!StandaloneReplicationWireFormat.TryReadHeader(header, out var frameHeader))
                         throw new InvalidOperationException("Primary sent an invalid standalone replication frame");
 
-                    var payload = new byte[frameHeader.PayloadLength];
-                    if (payload.Length > 0)
-                        await stream.ReadExactlyAsync(payload, token).ConfigureAwait(false);
-
-                    switch (frameHeader.Type)
+                    byte[] payload = null;
+                    try
                     {
-                        case StandaloneReplicationFrameType.CheckpointFile:
-                            checkpointReceiver.ProcessFileSegment(
-                                frameHeader.Token,
-                                frameHeader.CheckpointFileType,
-                                frameHeader.Address,
-                                payload);
-                            break;
-                        case StandaloneReplicationFrameType.CheckpointMetadata:
-                            checkpointReceiver.ProcessMetadata(
-                                frameHeader.Token,
-                                frameHeader.CheckpointFileType,
-                                payload);
-                            break;
-                        case StandaloneReplicationFrameType.CheckpointFileEnd:
-                            checkpointReceiver.ProcessFileSegment(
-                                frameHeader.Token,
-                                frameHeader.CheckpointFileType,
-                                frameHeader.Address,
-                                []);
-                            break;
-                        case StandaloneReplicationFrameType.CheckpointComplete:
-                            checkpointReceiver.Dispose();
-                            checkpointReceiver = null;
-                            var metadata = StandaloneReplicationWireFormat.DeserializeCheckpointMetadata(
-                                payload,
-                                storeWrapper.serverOptions.AofPhysicalSublogCount);
-                            await storeWrapper.RecoverCheckpointAsync(
-                                replicaRecover: true,
-                                recoverFromToken: true,
-                                metadata: metadata).ConfigureAwait(false);
-                            MarkSyncCompleted();
-                            break;
-                        case StandaloneReplicationFrameType.AofRecord:
-                            aofProcessor ??= new AofProcessor(
-                                storeWrapper,
-                                recordToAof: storeWrapper.serverOptions.EnableAOF,
-                                logger: logger);
-                            ProcessAofRecord(aofProcessor, payload, frameHeader.Address);
-                            MarkSyncCompleted();
-                            break;
-                        case StandaloneReplicationFrameType.AofBatch:
-                            aofProcessor ??= new AofProcessor(
-                                storeWrapper,
-                                recordToAof: storeWrapper.serverOptions.EnableAOF,
-                                logger: logger);
-                            ReadOnlySpan<byte> batch = payload;
-                            var recordCount = 0;
-                            while (!batch.IsEmpty)
-                            {
-                                if (!StandaloneReplicationWireFormat.TryReadAofBatchRecord(
-                                    ref batch,
-                                    out var currentAddress,
-                                    out var record))
+                        if (frameHeader.PayloadLength > 0)
+                        {
+                            payload = ArrayPool<byte>.Shared.Rent(frameHeader.PayloadLength);
+                            await stream.ReadExactlyAsync(
+                                payload.AsMemory(0, frameHeader.PayloadLength),
+                                token).ConfigureAwait(false);
+                        }
+
+                        switch (frameHeader.Type)
+                        {
+                            case StandaloneReplicationFrameType.CheckpointFile:
+                                checkpointReceiver.ProcessFileSegment(
+                                    frameHeader.Token,
+                                    frameHeader.CheckpointFileType,
+                                    frameHeader.Address,
+                                    payload.AsSpan(0, frameHeader.PayloadLength));
+                                break;
+                            case StandaloneReplicationFrameType.CheckpointMetadata:
+                                checkpointReceiver.ProcessMetadata(
+                                    frameHeader.Token,
+                                    frameHeader.CheckpointFileType,
+                                    payload.AsSpan(0, frameHeader.PayloadLength));
+                                break;
+                            case StandaloneReplicationFrameType.CheckpointFileEnd:
+                                checkpointReceiver.ProcessFileSegment(
+                                    frameHeader.Token,
+                                    frameHeader.CheckpointFileType,
+                                    frameHeader.Address,
+                                    []);
+                                break;
+                            case StandaloneReplicationFrameType.CheckpointComplete:
+                                checkpointReceiver.Dispose();
+                                checkpointReceiver = null;
+                                var metadata = StandaloneReplicationWireFormat.DeserializeCheckpointMetadata(
+                                    payload.AsSpan(0, frameHeader.PayloadLength),
+                                    storeWrapper.serverOptions.AofPhysicalSublogCount);
+                                await storeWrapper.RecoverCheckpointAsync(
+                                    replicaRecover: true,
+                                    recoverFromToken: true,
+                                    metadata: metadata).ConfigureAwait(false);
+                                MarkSyncCompleted();
+                                break;
+                            case StandaloneReplicationFrameType.AofRecord:
+                                aofProcessor ??= new AofProcessor(
+                                    storeWrapper,
+                                    recordToAof: storeWrapper.serverOptions.EnableAOF,
+                                    logger: logger);
+                                ProcessAofRecord(
+                                    aofProcessor,
+                                    payload.AsSpan(0, frameHeader.PayloadLength),
+                                    frameHeader.Address);
+                                MarkSyncCompleted();
+                                break;
+                            case StandaloneReplicationFrameType.AofBatch:
+                                aofProcessor ??= new AofProcessor(
+                                    storeWrapper,
+                                    recordToAof: storeWrapper.serverOptions.EnableAOF,
+                                    logger: logger);
+                                ReadOnlySpan<byte> batch = payload.AsSpan(0, frameHeader.PayloadLength);
+                                var recordCount = 0;
+                                while (!batch.IsEmpty)
                                 {
-                                    throw new InvalidOperationException("Primary sent an invalid standalone replication AOF batch");
+                                    if (!StandaloneReplicationWireFormat.TryReadAofBatchRecord(
+                                        ref batch,
+                                        out var currentAddress,
+                                        out var record))
+                                    {
+                                        throw new InvalidOperationException("Primary sent an invalid standalone replication AOF batch");
+                                    }
+                                    ProcessAofRecord(aofProcessor, record, currentAddress);
+                                    recordCount++;
                                 }
-                                ProcessAofRecord(aofProcessor, record, currentAddress);
-                                recordCount++;
-                            }
-                            if (recordCount == 0)
-                                throw new InvalidOperationException("Primary sent an empty standalone replication AOF batch");
-                            MarkSyncCompleted();
-                            break;
-                        case StandaloneReplicationFrameType.StreamReady:
-                            MarkSyncCompleted();
-                            break;
-                        default:
-                            throw new InvalidOperationException($"Unsupported standalone replication frame {frameHeader.Type}");
+                                if (recordCount == 0)
+                                    throw new InvalidOperationException("Primary sent an empty standalone replication AOF batch");
+                                MarkSyncCompleted();
+                                break;
+                            case StandaloneReplicationFrameType.StreamReady:
+                                MarkSyncCompleted();
+                                break;
+                            default:
+                                throw new InvalidOperationException($"Unsupported standalone replication frame {frameHeader.Type}");
+                        }
+                    }
+                    finally
+                    {
+                        if (payload != null)
+                            ArrayPool<byte>.Shared.Return(payload);
                     }
 
                     storeWrapper.LocalReplicationState.ReportLinkUp();
