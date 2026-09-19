@@ -166,25 +166,53 @@ namespace Garnet.server
                 // orchestrator sees no replicas and can never select one to promote.
                 var registry = storeWrapper.replicaRegistry;
                 var slaveInfos = registry.GetSlaveInfoStrings();
+                var localSnapshot = storeWrapper.LocalReplicationState.Snapshot();
 
-                replicationInfo =
-                [
-                    new("role", "master"),
-                    new("connected_slaves", slaveInfos.Count.ToString()),
-                    new("master_failover_state", "no-failover"),
-                    new("master_replid", storeWrapper.GetOrCreatePrimaryReplId()),
-                    new("master_replid2", "0000000000000000000000000000000000000000"),
-                    // Reported as a number, not "N/A". Sentinel and many clients parse
-                    // this field as an integer; "N/A" is not a valid value for them.
-                    new("master_repl_offset", storeWrapper.PrimaryReplOffset.ToString()),
-                    new("second_repl_offset", "-1"),
-                    new("store_current_safe_aof_address", "N/A"),
-                    new("store_recovered_safe_aof_address", "N/A"),
-                ];
+                // Two layouts are possible on a standalone node:
+                //
+                //  - Primary ("master"):  role, connected_slaves, master_replid, ...
+                //  - Replica  ("slave"):  role, master_host, master_port, master_link_status,
+                //                         master_last_io_seconds_ago, master_sync_in_progress
+                //
+                // Sentinel only cares about the primary layout (it watches the primary
+                // and reads slave<N>: lines). A replica still needs a plausible layout
+                // for clients that connect to it directly and call INFO replication.
+                if (localSnapshot.Role == "master")
+                {
+                    replicationInfo =
+                    [
+                        new("role", "master"),
+                        new("connected_slaves", slaveInfos.Count.ToString()),
+                        new("master_failover_state", "no-failover"),
+                        new("master_replid", storeWrapper.GetOrCreatePrimaryReplId()),
+                        new("master_replid2", "0000000000000000000000000000000000000000"),
+                        // Reported as a number, not "N/A". Sentinel and many clients parse
+                        // this field as an integer; "N/A" is not a valid value for them.
+                        new("master_repl_offset", storeWrapper.PrimaryReplOffset.ToString()),
+                        new("second_repl_offset", "-1"),
+                        new("store_current_safe_aof_address", "N/A"),
+                        new("store_recovered_safe_aof_address", "N/A"),
+                    ];
 
-                // slave0:ip=...,port=...,state=online,offset=...,lag=...
-                for (var i = 0; i < slaveInfos.Count; i++)
-                    replicationInfo = [.. replicationInfo, new($"slave{i}", slaveInfos[i])];
+                    // slave0:ip=...,port=...,state=online,offset=...,lag=...
+                    for (var i = 0; i < slaveInfos.Count; i++)
+                        replicationInfo = [.. replicationInfo, new($"slave{i}", slaveInfos[i])];
+                }
+                else
+                {
+                    var lastIoSeconds = (long)(DateTime.UtcNow - localSnapshot.LastInteractionUtc).TotalSeconds;
+                    if (lastIoSeconds < 0) lastIoSeconds = 0;
+
+                    replicationInfo =
+                    [
+                        new("role", "slave"),
+                        new("master_host", localSnapshot.PrimaryHost ?? string.Empty),
+                        new("master_port", localSnapshot.PrimaryPort.ToString()),
+                        new("master_link_status", localSnapshot.MasterLinkStatus),
+                        new("master_last_io_seconds_ago", lastIoSeconds.ToString()),
+                        new("master_sync_in_progress", localSnapshot.SyncCompleted ? "0" : "1"),
+                    ];
+                }
             }
             else
             {

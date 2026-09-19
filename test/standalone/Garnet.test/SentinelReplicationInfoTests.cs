@@ -302,4 +302,340 @@ namespace Garnet.test
             return Encoding.ASCII.GetString(buf.ToArray());
         }
     }
+
+    /// <summary>
+    /// Covers the replica-side attach flow that lets a standalone Garnet node become a
+    /// replica of another Garnet node under the Sentinel control plane. The fix is
+    /// gated behind <c>EnableStandaloneReplication</c> (CLI <c>--sentinel-replication</c>),
+    /// because shipping it on by default would silently change the meaning of
+    /// <c>REPLICAOF</c> for existing deployments.
+    ///
+    /// <para>These tests are in-process (no Sentinel binary required) and ungated so they
+    /// run in default CI. The Sentinel binary itself is exercised separately by the
+    /// gated suite under <c>test/standalone/Garnet.test.sentinel/</c>.</para>
+    /// </summary>
+    [TestFixture]
+    public class SentinelStandaloneReplicationTests
+    {
+        GarnetServer primary;
+        GarnetServer replica;
+
+        int primaryPort;
+        int replicaPort;
+
+        [SetUp]
+        public void Setup()
+        {
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
+
+            // Pick two free ports.
+            primaryPort = FindFreePort();
+            replicaPort = FindFreePort();
+
+            primary = TestUtils.CreateGarnetServer(
+                TestUtils.MethodTestDir,
+                port: primaryPort,
+                disableObjects: true);
+            primary.Start();
+
+            // EnableStandaloneReplication is the opt-in for the standalone REPLICAOF
+            // handler. Without it, REPLICAOF on a standalone node still errors out
+            // with the stock "cluster disabled" message.
+            replica = TestUtils.CreateGarnetServer(
+                TestUtils.MethodTestDir,
+                port: replicaPort,
+                disableObjects: true,
+                enableStandaloneReplication: true);
+            replica.Start();
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            replica?.Dispose();
+            primary?.Dispose();
+            TestUtils.OnTearDown();
+        }
+
+        [Test]
+        public async Task ReplicaofHostPortConnectsAndReportsAsSlave()
+        {
+            // Issue REPLICAOF on the replica. The reply should be +OK and the replica
+            // should then attempt the attach handshake in the background.
+            using var client = new TcpClient();
+            await client.ConnectAsync(IPAddress.Loopback, replicaPort);
+            await using var stream = client.GetStream();
+
+            await WriteCommandAsync(stream, "REPLICAOF", "127.0.0.1", primaryPort.ToString());
+            var reply = await ReadLineAsync(stream);
+            ClassicAssert.AreEqual("+OK", reply, "REPLICAOF host port should reply +OK.");
+
+            // Wait for the background handshake to complete (PING / REPLCONF / PSYNC).
+            await WaitForReplicaCountAsync(primaryPort, expected: 1, timeoutMs: 5000);
+
+            // The primary should now report the replica as attached.
+            var primaryInfo = await TestUtils.SendRawAsync(primaryPort, "INFO", "replication");
+            ClassicAssert.AreEqual("1", TestUtils.InfoValue(primaryInfo, "connected_slaves"),
+                "After the replica handshake completes, the primary must report 1 connected_slaves.");
+            ClassicAssert.That(primaryInfo, Does.Contain("slave0:"),
+                $"Expected a slave0 line on the primary after attach, got:\n{primaryInfo}");
+            ClassicAssert.That(primaryInfo, Does.Contain("state=online"),
+                $"A replica that completed PSYNC should be reported as 'online', got:\n{primaryInfo}");
+
+            // And the replica itself should now report itself as role:slave.
+            var replicaInfo = await TestUtils.SendRawAsync(replicaPort, "INFO", "replication");
+            ClassicAssert.AreEqual("slave", TestUtils.InfoValue(replicaInfo, "role"),
+                $"After REPLICAOF, the replica should report role:slave, got:\n{replicaInfo}");
+            ClassicAssert.AreEqual("127.0.0.1", TestUtils.InfoValue(replicaInfo, "master_host"));
+            ClassicAssert.AreEqual(primaryPort.ToString(), TestUtils.InfoValue(replicaInfo, "master_port"));
+            ClassicAssert.AreEqual("up", TestUtils.InfoValue(replicaInfo, "master_link_status"));
+            ClassicAssert.AreEqual("0", TestUtils.InfoValue(replicaInfo, "master_sync_in_progress"),
+                $"After PSYNC completes, master_sync_in_progress must be 0, got:\n{replicaInfo}");
+        }
+
+        [Test]
+        public async Task RoleCommandReflectsReplicaState()
+        {
+            using var client = new TcpClient();
+            await client.ConnectAsync(IPAddress.Loopback, replicaPort);
+            await using var stream = client.GetStream();
+
+            // Before REPLICAOF, ROLE on a standalone node is ["master", 0, []].
+            var beforeRole = await ReadBulkArrayAsync(stream, "ROLE");
+            ClassicAssert.AreEqual(3, beforeRole.Length, "ROLE on a fresh standalone node returns 3 elements.");
+            ClassicAssert.AreEqual("master", beforeRole[0]);
+
+            await WriteCommandAsync(stream, "REPLICAOF", "127.0.0.1", primaryPort.ToString());
+            _ = await ReadLineAsync(stream);
+
+            // Wait for the attach to settle so the role is stable.
+            await WaitForReplicaCountAsync(primaryPort, expected: 1, timeoutMs: 5000);
+
+            var afterRole = await ReadBulkArrayAsync(stream, "ROLE");
+            ClassicAssert.AreEqual(5, afterRole.Length,
+                $"ROLE on a standalone replica returns 5 elements (slave/host/port/state/offset), got {afterRole.Length}: {string.Join(",", afterRole)}");
+            ClassicAssert.AreEqual("slave", afterRole[0]);
+            ClassicAssert.AreEqual("127.0.0.1", afterRole[1]);
+            ClassicAssert.AreEqual(primaryPort.ToString(), afterRole[2]);
+            ClassicAssert.That(afterRole[3], Is.AnyOf("connecting", "connected"),
+                $"After attach, state must be connecting or connected, got: {afterRole[3]}");
+        }
+
+        [Test]
+        public async Task MultipleReplicasAttachConcurrently()
+        {
+            // Three replicas, three Sentinels is the canonical shape. We can stand up
+            // additional replicas in-process and verify the primary reports each.
+            var extraPorts = new[] { FindFreePort(), FindFreePort() };
+            var extraServers = new System.Collections.Generic.List<GarnetServer>();
+
+            try
+            {
+                foreach (var p in extraPorts)
+                {
+                    var s = TestUtils.CreateGarnetServer(
+                        TestUtils.MethodTestDir,
+                        port: p,
+                        disableObjects: true,
+                        enableStandaloneReplication: true);
+                    s.Start();
+                    extraServers.Add(s);
+                }
+
+                foreach (var p in new[] { replicaPort }.Concat(extraPorts))
+                {
+                    using var c = new TcpClient();
+                    await c.ConnectAsync(IPAddress.Loopback, p);
+                    await using var s = c.GetStream();
+                    await WriteCommandAsync(s, "REPLICAOF", "127.0.0.1", primaryPort.ToString());
+                    _ = await ReadLineAsync(s);
+                }
+
+                await WaitForReplicaCountAsync(primaryPort, expected: 3, timeoutMs: 10_000);
+
+                var info = await TestUtils.SendRawAsync(primaryPort, "INFO", "replication");
+                ClassicAssert.AreEqual("3", TestUtils.InfoValue(info, "connected_slaves"),
+                    $"Expected 3 connected_slaves after three replicas attached, got:\n{info}");
+                ClassicAssert.That(info, Does.Contain("slave0:"));
+                ClassicAssert.That(info, Does.Contain("slave1:"));
+                ClassicAssert.That(info, Does.Contain("slave2:"));
+            }
+            finally
+            {
+                foreach (var s in extraServers) s.Dispose();
+            }
+        }
+
+        [Test]
+        public async Task ReplicaofNoOnePromotesAndClearsState()
+        {
+            // First attach.
+            using (var c = new TcpClient())
+            {
+                await c.ConnectAsync(IPAddress.Loopback, replicaPort);
+                await using var s = c.GetStream();
+                await WriteCommandAsync(s, "REPLICAOF", "127.0.0.1", primaryPort.ToString());
+                _ = await ReadLineAsync(s);
+            }
+
+            await WaitForReplicaCountAsync(primaryPort, expected: 1, timeoutMs: 5000);
+
+            // Promote.
+            using (var c = new TcpClient())
+            {
+                await c.ConnectAsync(IPAddress.Loopback, replicaPort);
+                await using var s = c.GetStream();
+                await WriteCommandAsync(s, "REPLICAOF", "NO", "ONE");
+                _ = await ReadLineAsync(s);
+            }
+
+            // The replica should now report role:master and the primary should drop it.
+            await WaitForReplicaCountAsync(primaryPort, expected: 0, timeoutMs: 5000);
+
+            var replicaInfo = await TestUtils.SendRawAsync(replicaPort, "INFO", "replication");
+            ClassicAssert.AreEqual("master", TestUtils.InfoValue(replicaInfo, "role"),
+                $"After REPLICAOF NO ONE, the replica should be a master, got:\n{replicaInfo}");
+
+            var primaryInfo = await TestUtils.SendRawAsync(primaryPort, "INFO", "replication");
+            ClassicAssert.AreEqual("0", TestUtils.InfoValue(primaryInfo, "connected_slaves"),
+                $"After the replica detached, primary should report 0 slaves, got:\n{primaryInfo}");
+        }
+
+        [Test]
+        public async Task ReplicaofWithoutFlagErrorsOut()
+        {
+            // Spin up a third node that does NOT have the flag set, to confirm the
+            // option is the actual gate (not just the existence of a handler).
+            var ungatedPort = FindFreePort();
+            GarnetServer ungated = null;
+            try
+            {
+                ungated = TestUtils.CreateGarnetServer(
+                    TestUtils.MethodTestDir,
+                    port: ungatedPort,
+                    disableObjects: true);
+                ungated.Start();
+
+                using var c = new TcpClient();
+                await c.ConnectAsync(IPAddress.Loopback, ungatedPort);
+                await using var s = c.GetStream();
+                await WriteCommandAsync(s, "REPLICAOF", "127.0.0.1", primaryPort.ToString());
+                var reply = await ReadLineAsync(s);
+                ClassicAssert.That(reply, Does.StartWith("-ERR"),
+                    $"Without --sentinel-replication, REPLICAOF should error, got: {reply}");
+            }
+            finally
+            {
+                ungated?.Dispose();
+            }
+        }
+
+        // ---- helpers -----------------------------------------------------------
+
+        static int FindFreePort()
+        {
+            var l = new TcpListener(IPAddress.Loopback, 0);
+            l.Start();
+            try { return ((IPEndPoint)l.LocalEndpoint).Port; }
+            finally { l.Stop(); }
+        }
+
+        static async Task WaitForReplicaCountAsync(int port, int expected, int timeoutMs)
+        {
+            var deadline = DateTime.UtcNow.AddMilliseconds(timeoutMs);
+            while (DateTime.UtcNow < deadline)
+            {
+                var info = await TestUtils.SendRawAsync(port, "INFO", "replication");
+                var raw = TestUtils.InfoValue(info, "connected_slaves");
+                if (long.TryParse(raw, out var n) && n == expected) return;
+                await Task.Delay(100);
+            }
+            throw new TimeoutException($"Timed out waiting for connected_slaves == {expected} on port {port}.");
+        }
+
+        static async Task<string[]> ReadBulkArrayAsync(NetworkStream stream, params string[] args)
+        {
+            await WriteCommandAsync(stream, args);
+            // Read the array header line "*<n>\r\n", then n elements. An element may be
+            // a bulk string ($), an integer (:), or a nested array (*); this helper
+            // flattens all of them into their string representation so callers can
+            // assert on the wire shape.
+            var firstLine = await ReadLineAsync(stream);
+            if (!firstLine.StartsWith('*')) throw new InvalidOperationException($"Expected array reply, got: {firstLine}");
+            var n = int.Parse(firstLine.AsSpan(1));
+            var result = new string[n];
+            for (var i = 0; i < n; i++)
+            {
+                var header = await ReadLineAsync(stream);
+                switch (header[0])
+                {
+                    case '$':
+                    {
+                        var len = int.Parse(header.AsSpan(1));
+                        var buf = new byte[len];
+                        var got = 0;
+                        while (got < len)
+                        {
+                            var read = await stream.ReadAsync(buf, got, len - got).ConfigureAwait(false);
+                            if (read == 0) throw new EndOfStreamException();
+                            got += read;
+                        }
+                        // Consume trailing \r\n
+                        await stream.ReadAsync(new byte[2]).ConfigureAwait(false);
+                        result[i] = Encoding.UTF8.GetString(buf);
+                        break;
+                    }
+                    case ':':
+                        // Integer reply: payload is the number itself, no length, no \r\n.
+                        result[i] = header[1..];
+                        break;
+                    case '*':
+                        // Nested array: recurse. Empty array "*0\r\n" -> empty string[0].
+                        // Push back the header by re-reading is not supported; for our
+                        // purposes the only nested reply we expect is the empty array
+                        // for ROLE's third element, so handle it explicitly.
+                        if (header == "*0") { result[i] = ""; }
+                        else throw new NotSupportedException($"Nested arrays other than *0 are not supported in this test helper, got: {header}");
+                        break;
+                    default:
+                        throw new InvalidOperationException($"Expected element header, got: {header}");
+                }
+            }
+            return result;
+        }
+
+        static async Task WriteCommandAsync(NetworkStream stream, params string[] args)
+        {
+            var sb = new StringBuilder();
+            sb.Append('*').Append(args.Length).Append("\r\n");
+            foreach (var a in args)
+                sb.Append('$').Append(Encoding.UTF8.GetByteCount(a)).Append("\r\n").Append(a).Append("\r\n");
+
+            await stream.WriteAsync(Encoding.ASCII.GetBytes(sb.ToString()));
+            await stream.FlushAsync();
+        }
+
+        static async Task<string> ReadLineAsync(NetworkStream stream)
+        {
+            var buf = new MemoryStream();
+            var one = new byte[1];
+            using var cts = new System.Threading.CancellationTokenSource(2000);
+            try
+            {
+                while (true)
+                {
+                    var n = await stream.ReadAsync(one, 0, 1, cts.Token);
+                    if (n == 0) break;
+                    buf.WriteByte(one[0]);
+                    if (one[0] == (byte)'\n' && buf.Length >= 2)
+                    {
+                        var arr = buf.ToArray();
+                        return Encoding.ASCII.GetString(arr, 0, arr.Length - 2);
+                    }
+                }
+            }
+            catch (OperationCanceledException) { }
+            return Encoding.ASCII.GetString(buf.ToArray());
+        }
+    }
 }

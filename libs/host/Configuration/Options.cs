@@ -156,6 +156,10 @@ namespace Garnet
         public bool? EnableCluster { get; set; }
 
         [OptionValidation]
+        [Option("sentinel-replication", Required = false, HelpText = "Enable standalone replication under the stock Redis/Valkey Sentinel control plane. Honours REPLICAOF host port / REPLICAOF NO ONE and tracks replicas via INFO replication. Data plane beyond the empty-RDB handshake is not implemented by this option.")]
+        public bool? EnableStandaloneReplication { get; set; }
+
+        [OptionValidation]
         [Option("clean-cluster-config", Required = false, HelpText = "Start with clean cluster config.")]
         public bool? CleanClusterConfig { get; set; }
 
@@ -913,6 +917,7 @@ namespace Garnet
                 PubSubPageSize = PubSubPageSize,
                 DisableObjects = DisableObjects.GetValueOrDefault(),
                 EnableCluster = EnableCluster.GetValueOrDefault(),
+                EnableStandaloneReplication = EnableStandaloneReplication.GetValueOrDefault(),
                 CleanClusterConfig = CleanClusterConfig.GetValueOrDefault(),
                 ParallelMigrateTaskCount = ParallelMigrateTaskCount,
                 FastMigrate = FastMigrate.GetValueOrDefault(),

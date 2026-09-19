@@ -163,6 +163,27 @@ namespace Garnet.server
         internal readonly IClusterProvider clusterProvider;
 
         /// <summary>
+        /// State describing this node's role when running under standalone Sentinel
+        /// control plane (<see cref="GarnetServerOptions.EnableStandaloneReplication"/>).
+        /// <c>null</c> when the feature is disabled, or when this node is in cluster mode.
+        ///
+        /// <para>The state is intentionally tiny: just enough for INFO replication,
+        /// ROLE, and the standalone <c>REPLICAOF</c> command to surface the right
+        /// picture to Sentinel and to clients. It is updated by the
+        /// <c>REPLICAOF host port</c> / <c>REPLICAOF NO ONE</c> command handlers
+        /// on this node.</para>
+        /// </summary>
+        internal readonly LocalReplicationState LocalReplicationState;
+
+        /// <summary>
+        /// Outbound replication client used when this node is a standalone replica under
+        /// the Sentinel control plane. Lazily constructed on first
+        /// <c>REPLICAOF host port</c>; <c>null</c> in cluster mode or when the option
+        /// is disabled.
+        /// </summary>
+        internal StandaloneReplicaClient StandaloneReplicaClient;
+
+        /// <summary>
         /// Registry of stock RESP replicas attached to this node as primary, used to
         /// populate the <c>connected_slaves</c> / <c>slave&lt;N&gt;</c> fields of
         /// <c>INFO replication</c> outside cluster mode. Sentinel discovers a primary's
@@ -299,6 +320,11 @@ namespace Garnet.server
             this.customCommandManager = customCommandManager;
             this.loggerFactory = loggerFactory;
             this.databaseManager = databaseManager ?? DatabaseManagerFactory.CreateDatabaseManager(serverOptions, createDatabaseDelegate, this);
+            // Standalone replication under Sentinel is opt-in. Even in cluster mode this
+            // is allocated (to a no-op state) so command handlers don't have to null-check
+            // before reading it; the actual role transitions only fire when the option is
+            // enabled AND we are not in cluster mode.
+            this.LocalReplicationState = new LocalReplicationState();
             this.monitor = serverOptions.MetricsSamplingFrequency > 0 || serverOptions.CommandStatsMonitor || serverOptions.LatencyMonitor
                 ? new GarnetServerMonitor(this, serverOptions, servers,
                     loggerFactory?.CreateLogger("GarnetServerMonitor"))
@@ -995,6 +1021,7 @@ namespace Garnet.server
             ctsCommit?.Cancel();
             taskManager.Dispose();
             rangeIndexManager?.Dispose();
+            StandaloneReplicaClient?.Dispose();
             databaseManager.Dispose();
 
             ctsCommit?.Dispose();

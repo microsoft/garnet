@@ -716,12 +716,116 @@ namespace Garnet.server
 
         private bool NetworkProcessClusterCommand(RespCommand command)
         {
+            // Standalone Sentinel control plane: when the host is in standalone (not
+            // cluster) mode and EnableStandaloneReplication is set, intercept
+            // REPLICAOF / SECONDARYOF / FAILOVER and route them through the standalone
+            // handler below. This keeps cluster-mode behaviour intact while opening the
+            // Sentinel-driven path on a single-flag opt-in.
+            if (clusterSession == null
+                && !storeWrapper.serverOptions.EnableCluster
+                && storeWrapper.serverOptions.EnableStandaloneReplication
+                && (command == RespCommand.REPLICAOF
+                    || command == RespCommand.SECONDARYOF
+                    || command == RespCommand.FAILOVER))
+            {
+                return NetworkREPLICAOF_Standalone(command);
+            }
+
             if (clusterSession == null)
             {
                 return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_CLUSTER_DISABLED);
             }
 
             clusterSession.ProcessClusterCommands(command, storageSession.vectorManager, ref parseState, ref dcurr, ref dend);
+            return true;
+        }
+
+        /// <summary>
+        /// Standalone-mode handler for <c>REPLICAOF</c> / <c>SECONDARYOF</c> /
+        /// <c>FAILOVER</c>. Behaviour mirrors Redis 7.4 (verified against a live
+        /// 7.4.11):
+        /// <list type="bullet">
+        ///   <item><c>REPLICAOF NO ONE</c> detaches this node from its current
+        ///         primary and promotes it to "master".</item>
+        ///   <item><c>REPLICAOF host port</c> opens an outbound replication link
+        ///         to the named primary and runs the standard attach handshake
+        ///         (PING / REPLCONF / PSYNC).</item>
+        ///   <item>Anything else (including no arguments) is a syntax error.</item>
+        /// </list>
+        /// </summary>
+        private bool NetworkREPLICAOF_Standalone(RespCommand command)
+        {
+            // REPLICAOF arity is -1 in stock Redis. Reject odd arity (mismatched
+            // host/port pairs), no arguments, or unknown subcommands like "FAILOVER"
+            // for the purposes of this handler (Sentinel only ever issues REPLICAOF
+            // NO ONE or REPLICAOF host port).
+            if (parseState.Count == 0)
+            {
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.REPLICAOF));
+            }
+
+            // Lazy-construct the per-node outbound replication client.
+            if (storeWrapper.StandaloneReplicaClient == null)
+            {
+                // Capture field for closure on a thread that may outlive this session.
+                var wrapper = storeWrapper;
+                wrapper.StandaloneReplicaClient = new StandaloneReplicaClient(wrapper, logger);
+            }
+
+            var firstSlice = parseState.GetArgSliceByRef(0).ReadOnlySpan;
+
+            // REPLICAOF NO ONE / SECONDARYOF NO ONE  (parseState.Count == 2 here)
+            if (parseState.Count == 2
+                && firstSlice.EqualsUpperCaseSpanIgnoringCase(CmdStrings.NO))
+            {
+                var secondSlice = parseState.GetArgSliceByRef(1).ReadOnlySpan;
+                if (secondSlice.EqualsUpperCaseSpanIgnoringCase(CmdStrings.ONE, allowNonAlphabeticChars: true))
+                {
+                    storeWrapper.StandaloneReplicaClient.Detach();
+
+                    while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                        SendAndReset();
+                    return true;
+                }
+            }
+
+            // REPLICAOF host port  /  REPLICAOF FAILOVER host port  (parseState.Count == 2)
+            if (parseState.Count == 2)
+            {
+                string host;
+                int port;
+
+                try
+                {
+                    host = Encoding.ASCII.GetString(parseState.GetArgSliceByRef(0).ReadOnlySpan);
+                    if (!NumUtils.TryParse(parseState.GetArgSliceByRef(1).ReadOnlySpan, out port))
+                    {
+                        while (!RespWriteUtils.TryWriteError("ERR invalid port"u8, ref dcurr, dend))
+                            SendAndReset();
+                        return true;
+                    }
+                }
+                catch
+                {
+                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR, ref dcurr, dend))
+                        SendAndReset();
+                    return true;
+                }
+
+                // Kick off the outbound attach in the background. The current client
+                // gets +OK immediately, matching stock Redis semantics: REPLICAOF returns
+                // OK as soon as the command is dispatched, not after the handshake.
+                storeWrapper.StandaloneReplicaClient.Start(host, port);
+
+                while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                    SendAndReset();
+                return true;
+            }
+
+            // Anything else (e.g. 1 arg, or 2 args that aren't NO/ONE or host/port) is
+            // a syntax error.
+            while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR, ref dcurr, dend))
+                SendAndReset();
             return true;
         }
 
@@ -866,17 +970,44 @@ namespace Garnet.server
 
             if (!storeWrapper.serverOptions.EnableCluster)
             {
-                while (!RespWriteUtils.TryWriteArrayLength(3, ref dcurr, dend))
-                    SendAndReset();
+                var snapshot = storeWrapper.LocalReplicationState.Snapshot();
 
-                while (!RespWriteUtils.TryWriteAsciiBulkString("master", ref dcurr, dend))
-                    SendAndReset();
+                // Primary-side ROLE is 3 elements: ["master", <offset>, [replicas...]].
+                // Replica-side ROLE is 5 elements: ["slave", <host>, <port>, <state>, <offset>].
+                if (snapshot.Role == "master")
+                {
+                    while (!RespWriteUtils.TryWriteArrayLength(3, ref dcurr, dend))
+                        SendAndReset();
 
-                while (!RespWriteUtils.TryWriteInt32(0, ref dcurr, dend))
-                    SendAndReset();
+                    while (!RespWriteUtils.TryWriteAsciiBulkString("master", ref dcurr, dend))
+                        SendAndReset();
 
-                while (!RespWriteUtils.TryWriteEmptyArray(ref dcurr, dend))
-                    SendAndReset();
+                    while (!RespWriteUtils.TryWriteInt64(0, ref dcurr, dend))
+                        SendAndReset();
+
+                    while (!RespWriteUtils.TryWriteEmptyArray(ref dcurr, dend))
+                        SendAndReset();
+                }
+                else
+                {
+                    while (!RespWriteUtils.TryWriteArrayLength(5, ref dcurr, dend))
+                        SendAndReset();
+
+                    while (!RespWriteUtils.TryWriteAsciiBulkString("slave", ref dcurr, dend))
+                        SendAndReset();
+
+                    while (!RespWriteUtils.TryWriteAsciiBulkString(snapshot.PrimaryHost, ref dcurr, dend))
+                        SendAndReset();
+
+                    while (!RespWriteUtils.TryWriteInt32(snapshot.PrimaryPort, ref dcurr, dend))
+                        SendAndReset();
+
+                    while (!RespWriteUtils.TryWriteAsciiBulkString(snapshot.SyncCompleted ? "connected" : "connecting", ref dcurr, dend))
+                        SendAndReset();
+
+                    while (!RespWriteUtils.TryWriteInt64(0, ref dcurr, dend))
+                        SendAndReset();
+                }
             }
             else
             {

@@ -406,6 +406,18 @@ namespace Garnet.server
 
             subscribeBroker?.RemoveSubscription(this);
             storeWrapper.itemBroker?.HandleSessionDisposed(this);
+
+            // A replica's replication link is just an ordinary session. When it ends, its
+            // registry entry must be removed, otherwise the node keeps advertising the
+            // replica in INFO replication's connected_slaves/slave<N> forever and an
+            // orchestrator would consider a dead replica a promotion candidate. Keyed by
+            // the same source-port identity the handshake registered under.
+            {
+                var (sourcePort, _) = GetReplicaIdentity();
+                if (sourcePort > 0)
+                    storeWrapper.replicaRegistry.Remove(sourcePort);
+            }
+
             sessionScriptCache?.Dispose();
 
             // Cancel the async processor, if any

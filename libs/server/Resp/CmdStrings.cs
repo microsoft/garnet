@@ -506,6 +506,7 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> MAXAGE => "MAXAGE"u8;
         public static ReadOnlySpan<byte> YES => "YES"u8;
         public static ReadOnlySpan<byte> NO => "NO"u8;
+        public static ReadOnlySpan<byte> ONE => "ONE"u8;
 
         // Cluster subcommands which are internal and thus undocumented
         // 
