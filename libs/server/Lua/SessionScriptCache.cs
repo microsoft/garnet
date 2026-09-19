@@ -163,15 +163,15 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Load script into the cache.
+        /// Compile Lua source text and load it into the session cache.
         /// 
         /// If necessary, <paramref name="digestOnHeap"/> will be set so the allocation can be reused.
         /// </summary>
-        internal bool TryLoad(
+        internal bool TryGetOrCreateRunnerFromSource(
             RespServerSession session,
             ReadOnlySpan<byte> source,
             ScriptHashKey digest,
-            ref LuaScriptHandle luaScriptHandle,
+            out LuaScriptHandle luaScriptHandle,
             out LuaRunner runner,
             out ScriptHashKey? digestOnHeap
         )
@@ -183,11 +183,60 @@ namespace Garnet.server
                 return true;
             }
 
+            luaScriptHandle = null;
+            return TryCompileSourceAndCreateRunner(session, source, digest, ref luaScriptHandle, out runner, out digestOnHeap);
+        }
+
+        /// <summary>
+        /// Load a script previously stored in the global cache.
+        /// </summary>
+        internal bool TryGetOrCreateRunnerFromCachedScript(RespServerSession session, ScriptHashKey digest, LuaScriptHandle cachedScriptHandle, out LuaRunner runner)
+        {
+            if (TryGetFromDigest(digest, out runner, out _))
+                return true;
+
+            return TryGetOrCreateRunnerFromGeneratedBytecode(session, cachedScriptHandle.Chunk, digest, ref cachedScriptHandle, out runner, out _);
+        }
+
+        private bool TryCompileSourceAndCreateRunner(RespServerSession session, ReadOnlySpan<byte> source, ScriptHashKey digest, ref LuaScriptHandle luaScriptHandle, out LuaRunner runner, out ScriptHashKey? digestOnHeap)
+        {
+            LuaScriptChunk generatedBytecode;
+            string error;
             try
             {
-                var compiledSource = LuaRunner.CompileSource(source);
+                if (LuaRunner.TryCompileSource(source, out generatedBytecode, out error))
+                    return TryGetOrCreateRunnerFromGeneratedBytecode(session, generatedBytecode, digest, ref luaScriptHandle, out runner, out digestOnHeap);
+            }
+            catch (Exception ex)
+            {
+                logger?.LogError(ex, "During Lua script compilation, an unexpected exception");
+                runner = null;
+                digestOnHeap = null;
+                luaScriptHandle = null;
+                return false;
+            }
 
-                runner = new LuaRunner(memoryManagementMode, memoryLimitBytes, logMode, allowedFunctions, compiledSource, storeWrapper.serverOptions.LuaTransactionMode, processor, scratchBufferNetworkSender, storeWrapper.redisProtocolVersion, logger);
+            session.WriteLuaCompilationError(error);
+            runner = null;
+            digestOnHeap = null;
+            return false;
+        }
+
+        /// <summary>
+        /// Load internally compiled script bytecode into the cache.
+        /// </summary>
+        private bool TryGetOrCreateRunnerFromGeneratedBytecode(RespServerSession session, LuaScriptChunk generatedBytecode, ScriptHashKey digest, ref LuaScriptHandle luaScriptHandle, out LuaRunner runner, out ScriptHashKey? digestOnHeap)
+        {
+            if (TryGetFromDigest(digest, out runner, out var existingLuaScriptHandle))
+            {
+                luaScriptHandle = existingLuaScriptHandle;
+                digestOnHeap = null;
+                return true;
+            }
+
+            try
+            {
+                runner = new LuaRunner(memoryManagementMode, memoryLimitBytes, logMode, allowedFunctions, generatedBytecode, storeWrapper.serverOptions.LuaTransactionMode, processor, scratchBufferNetworkSender, storeWrapper.redisProtocolVersion, logger);
 
                 // If compilation fails, an error is written out
                 if (runner.CompileForSession(session))
@@ -203,7 +252,7 @@ namespace Garnet.server
                     ScriptHashKey storeKeyDigest = new(into);
                     digestOnHeap = storeKeyDigest;
 
-                    luaScriptHandle ??= new(compiledSource);
+                    luaScriptHandle ??= new(generatedBytecode.Data);
                     scriptCache.Add(storeKeyDigest, (runner, luaScriptHandle));
 
                     // On first script load, register for timeout notifications
