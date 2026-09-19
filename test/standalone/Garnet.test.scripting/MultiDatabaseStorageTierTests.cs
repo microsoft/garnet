@@ -4,12 +4,12 @@
 using System;
 using System.IO;
 using System.Linq;
-using System.Text;
 using System.Threading;
 using Garnet.server;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using StackExchange.Redis;
+using Tsavorite.core;
 
 namespace Garnet.test
 {
@@ -280,17 +280,18 @@ namespace Garnet.test
             var matched = reported.Split(Environment.NewLine).Where(l => l.Contains("2152", StringComparison.Ordinal)).ToArray();
             TestContext.Progress.WriteLine(string.Join(Environment.NewLine, matched));
 
-            ClassicAssert.IsTrue(matched.Any(l => l.Contains("Database 1 was checkpointed before", StringComparison.Ordinal)),
+            ClassicAssert.IsTrue(reported.Contains("Database 1 was checkpointed before", StringComparison.Ordinal),
                 "Recovery did not report database 1's unrecoverable tiered records");
-            ClassicAssert.IsTrue(matched.Any(l => l.Contains("Database 0 was checkpointed before", StringComparison.Ordinal)),
+            ClassicAssert.IsTrue(reported.Contains("Database 0 was checkpointed before", StringComparison.Ordinal),
                 "Recovery did not report that database 0's shared log may hold another database's records");
         }
 
         /// <summary>
         /// Rewrites every log checkpoint's metadata under a database's checkpoint directory so its
-        /// cookie carries no layout trailer, which is how a checkpoint written before per-database log
-        /// devices appears. Metadata is stored as an int32 payload length followed by the payload, so
-        /// the payload is shrunk in place and the length updated, keeping the file's original size.
+        /// cookie is absent, which is how a checkpoint written before per-database log devices appears.
+        /// Metadata is stored as an int32 payload length followed by the payload; the payload is
+        /// round-tripped through the production serializer and shrunk in place, so the file keeps its
+        /// original sector-aligned size.
         /// </summary>
         /// <param name="checkpointDir">A <c>Store/checkpoints[_i]</c> directory</param>
         static void StripLayoutTrailer(string checkpointDir)
@@ -304,35 +305,16 @@ namespace Garnet.test
             {
                 var bytes = File.ReadAllBytes(infoFile);
                 var payloadLength = BitConverter.ToInt32(bytes, 0);
-                var lines = Encoding.UTF8.GetString(bytes, sizeof(int), payloadLength).Split(Environment.NewLine).ToList();
 
-                var last = lines.Count - 1;
-                while (last >= 0 && lines[last].Length == 0)
-                    last--;
+                HybridLogRecoveryInfo recoveryInfo = new();
+                using (var reader = new StreamReader(new MemoryStream(bytes, sizeof(int), payloadLength)))
+                    recoveryInfo.Initialize(reader);
 
-                // The payload ends with a cookie length followed by that many single-byte lines. Scan
-                // back for a length whose bytes parse as a cookie carrying the layout trailer; a bare
-                // length check would match the final byte line trivially.
-                var lengthIndex = -1;
-                byte[] cookie = null;
-                for (var i = last - 1; i >= 0; i--)
-                {
-                    if (!int.TryParse(lines[i], out var cookieLength) || cookieLength != last - i)
-                        continue;
+                ClassicAssert.IsTrue(GarnetCheckpointManager.TryGetCheckpointLayout(recoveryInfo.cookie, out _),
+                    $"Checkpoint metadata in {infoFile} has no layout trailer to strip");
 
-                    var candidate = lines.Skip(i + 1).Take(cookieLength).Select(byte.Parse).ToArray();
-                    if (!GarnetCheckpointManager.TryGetCheckpointLayout(candidate, out _))
-                        continue;
-
-                    lengthIndex = i;
-                    cookie = candidate;
-                    break;
-                }
-                ClassicAssert.GreaterOrEqual(lengthIndex, 0, $"No cookie with a layout trailer in {infoFile}");
-                TestContext.Progress.WriteLine($"{Path.GetFileName(Path.GetDirectoryName(infoFile))}: stripping {cookie.Length}-byte cookie");
-
-                var kept = lines.Take(lengthIndex).Append("0");
-                var newPayload = Encoding.UTF8.GetBytes(string.Concat(kept.Select(line => line + Environment.NewLine)));
+                recoveryInfo.cookie = null;
+                var newPayload = recoveryInfo.ToByteArray();
                 ClassicAssert.LessOrEqual(sizeof(int) + newPayload.Length, bytes.Length);
 
                 BitConverter.GetBytes(newPayload.Length).CopyTo(bytes, 0);
