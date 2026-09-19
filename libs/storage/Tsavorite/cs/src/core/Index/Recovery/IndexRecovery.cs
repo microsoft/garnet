@@ -21,6 +21,11 @@ namespace Tsavorite.core
         public ICheckpointManager CheckpointManager => checkpointManager;
 
         // Derived class exposed API
+        /// <summary>Recover the hash index from <paramref name="info"/>.</summary>
+        /// <remarks>Cancelling <paramref name="cancellationToken"/> abandons the wait but not the reads it was waiting
+        /// for: the reads are writing into the in-memory table and reading from the checkpoint file, so this returns
+        /// only once every issued read has called back. A device that never completes a read therefore makes a
+        /// cancelled recovery wait indefinitely rather than returning promptly.</remarks>
         internal async ValueTask RecoverFuzzyIndexAsync(IndexCheckpointInfo info, CancellationToken cancellationToken)
         {
             try
@@ -49,9 +54,10 @@ namespace Tsavorite.core
             var token = info.info.token;
             var ht_version = resizeInfo.version;
 
-            // Drop any countdown left by an earlier recovery so a failure before BeginMainIndexRecovery cannot drain
-            // against stale state.
+            // Drop any state left by an earlier recovery so a failure before BeginMainIndexRecovery cannot drain
+            // against a stale countdown, and so a stale error cannot fail this recovery.
             recoveryCountdown = null;
+            mainIndexRecoveryError = null;
 
             // Create devices to read from using Async API
             info.main_ht_device = checkpointManager.GetIndexDevice(token);
@@ -94,12 +100,12 @@ namespace Tsavorite.core
         /// Main Index Recovery Functions
         /// </summary>
         private protected CountdownWrapper recoveryCountdown;
-        private string mainIndexRecoveryError;
+        private IoFailure mainIndexRecoveryError;
 
         /// <summary>Record the first failure seen while reading the main index, so recovery fails with the error that
         /// occurred first; subsequent failures are logged but do not overwrite it.</summary>
-        private void RecordMainIndexRecoveryError(string detail)
-            => _ = Interlocked.CompareExchange(ref mainIndexRecoveryError, detail, null);
+        private void RecordMainIndexRecoveryError(string detail, Exception exception = null)
+            => _ = Interlocked.CompareExchange(ref mainIndexRecoveryError, new IoFailure(detail, exception), null);
 
         /// <summary>Throw if any chunk of the main index failed to read, or read fewer bytes than were requested; the
         /// in-memory table would otherwise be silently missing the buckets that were not read.</summary>
@@ -107,7 +113,7 @@ namespace Tsavorite.core
         {
             var error = mainIndexRecoveryError;
             if (error is not null)
-                throw new TsavoriteException($"Main index recovery failed: {error}");
+                throw error.ToException("Main index recovery failed");
         }
 
         /// <summary>Read the main hash index from <paramref name="device"/> as a sequence of chunks, none larger than
@@ -144,17 +150,31 @@ namespace Tsavorite.core
                     HashIndexPageAsyncReadResult result = default;
                     result.chunkIndex = index;
                     result.numBytesToRead = chunkSize;
-                    device.ReadAsync(numBytesRead, chunkStartBucket, chunkSize, AsyncPageReadCallback, result);
+                    result.retirementGuard = new(0);
+                    try
+                    {
+                        device.ReadAsync(numBytesRead, chunkStartBucket, chunkSize, AsyncPageReadCallback, result);
+                    }
+                    catch
+                    {
+                        // A device may invoke the completion callback synchronously and then throw back out of the
+                        // submit, so this chunk may already have been retired. Claim exactly once: retiring it twice
+                        // would let the countdown reach zero while earlier reads are still writing into the table,
+                        // and the caller would close the device out from under them.
+                        if (result.TryClaimRetirement())
+                            recoveryCountdown.Decrement();
+                        throw;
+                    }
                     numBytesRead += chunkSize;
                 }
                 Debug.Assert(numBytesRead == num_bytes);
             }
-            catch (Exception ex)
+            catch
             {
                 // The chunks already issued will still complete and touch the device, so the countdown must reach
-                // zero for the caller to know when it is safe to dispose. Retire the chunks that were never issued.
-                RecordMainIndexRecoveryError($"chunk {index} could not be issued: {ex.Message}");
-                for (; index < numChunks; index++)
+                // zero for the caller to know when it is safe to dispose. Retire the chunks never issued; the one
+                // that failed to issue was retired above.
+                for (index++; index < numChunks; index++)
                     recoveryCountdown.Decrement();
                 throw;
             }
@@ -174,7 +194,7 @@ namespace Tsavorite.core
                     logger?.LogError($"{nameof(AsyncPageReadCallback)} error: {{errorCode}}", errorCode);
                 else
                     logger?.LogError($"{nameof(AsyncPageReadCallback)} error: {{exception}}", Utility.GetCallbackExceptionDetail(ioException));
-                RecordMainIndexRecoveryError($"chunk {result.chunkIndex} failed with error code {errorCode}");
+                RecordMainIndexRecoveryError($"chunk {result.chunkIndex} failed with error code {errorCode}", ioException);
             }
             else if (numBytes != 0 && numBytes < result.numBytesToRead)
             {
@@ -184,7 +204,8 @@ namespace Tsavorite.core
                 logger?.LogError($"{nameof(AsyncPageReadCallback)} error: read {{numBytes}} of {{numBytesToRead}} bytes", numBytes, result.numBytesToRead);
                 RecordMainIndexRecoveryError($"chunk {result.chunkIndex} read {numBytes} of {result.numBytesToRead} bytes");
             }
-            recoveryCountdown.Decrement();
+            if (result.TryClaimRetirement())
+                recoveryCountdown.Decrement();
         }
 
         internal unsafe void DeleteTentativeEntries()

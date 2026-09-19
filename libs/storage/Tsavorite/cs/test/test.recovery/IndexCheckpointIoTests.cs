@@ -5,6 +5,7 @@ using System;
 using System.IO;
 using System.Linq;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 using Garnet.test;
@@ -161,7 +162,7 @@ namespace Tsavorite.test.recovery
 
             table.TakeIndexFuzzyCheckpoint(0, htDevice, out _, ofbDevice, out _, out _);
 
-            var ex = Assert.ThrowsAsync<TsavoriteException>(async () => await table.IsIndexFuzzyCheckpointCompletedAsync());
+            var ex = Assert.ThrowsAsync<TsavoriteIOException>(async () => await table.IsIndexFuzzyCheckpointCompletedAsync());
             StringAssert.Contains("Main index checkpoint flush failed", ex.Message);
             ClassicAssert.AreEqual(1, htDevice.TruncatedRequestCount, "Expected exactly one truncated write");
         }
@@ -178,7 +179,7 @@ namespace Tsavorite.test.recovery
 
             table.TakeIndexFuzzyCheckpoint(0, htDevice, out _, ofbDevice, out _, out _);
 
-            var ex = Assert.ThrowsAsync<TsavoriteException>(async () => await table.IsIndexFuzzyCheckpointCompletedAsync());
+            var ex = Assert.ThrowsAsync<TsavoriteIOException>(async () => await table.IsIndexFuzzyCheckpointCompletedAsync());
             StringAssert.Contains("Overflow-bucket checkpoint flush failed", ex.Message);
             ClassicAssert.GreaterOrEqual(ofbDevice.TruncatedRequestCount, 1, "Expected at least one truncated write");
         }
@@ -202,7 +203,7 @@ namespace Tsavorite.test.recovery
             try
             {
                 recovered.Initialize(TableSizeInBuckets, 512);
-                var ex = Assert.ThrowsAsync<TsavoriteException>(async ()
+                var ex = Assert.ThrowsAsync<TsavoriteIOException>(async ()
                     => await recovered.RecoverFuzzyIndexAsync(0, htDevice, htBytesWritten, ofbDevice, numOfbBuckets, ofbBytesWritten, default));
                 StringAssert.Contains("Main index recovery failed", ex.Message);
                 ClassicAssert.AreEqual(1, htDevice.TruncatedRequestCount, "Expected exactly one truncated read");
@@ -229,7 +230,7 @@ namespace Tsavorite.test.recovery
             try
             {
                 recovered.Initialize(TableSizeInBuckets, 512);
-                var ex = Assert.ThrowsAsync<TsavoriteException>(async ()
+                var ex = Assert.ThrowsAsync<TsavoriteIOException>(async ()
                     => await recovered.RecoverFuzzyIndexAsync(0, htDevice, htBytesWritten, ofbDevice, numOfbBuckets, ofbBytesWritten, default));
                 StringAssert.Contains("Overflow-bucket recovery failed", ex.Message);
                 ClassicAssert.GreaterOrEqual(ofbDevice.TruncatedRequestCount, 1, "Expected at least one truncated read");
@@ -420,6 +421,250 @@ namespace Tsavorite.test.recovery
             {
                 recovered.Free();
             }
+        }
+
+        /// <summary>When the device reports a write failure through the completion callback, the exception it supplied
+        /// must survive to the caller as the inner exception rather than being flattened into a message, so the
+        /// original error and its stack trace remain available for diagnosis.</summary>
+        [Test]
+        [Category("CheckpointRestore")]
+        [Category("Smoke")]
+        public void CheckpointPreservesTheDeviceExceptionAsInnerException()
+        {
+            table = CreatePopulatedTable(Seed, TableSizeInBuckets, NumAdds);
+
+            var failing = new CallbackExceptionDevice(htDevice) { FailWrites = true };
+
+            table.TakeIndexFuzzyCheckpoint(0, failing, out _, ofbDevice, out _, out _);
+
+            var ex = Assert.ThrowsAsync<TsavoriteIOException>(async () => await table.IsIndexFuzzyCheckpointCompletedAsync());
+            StringAssert.Contains("Main index checkpoint flush failed", ex.Message);
+            ClassicAssert.AreSame(failing.Injected, ex.InnerException, "The device's exception must be preserved as the inner exception");
+        }
+
+        /// <summary>The same for recovery: a read failure reported with an exception must reach the caller with that
+        /// exception attached.</summary>
+        [Test]
+        [Category("CheckpointRestore")]
+        [Category("Smoke")]
+        public void RecoveryPreservesTheDeviceExceptionAsInnerException()
+        {
+            table = CreatePopulatedTable(Seed, TableSizeInBuckets, NumAdds);
+            table.TakeIndexFuzzyCheckpoint(0, htDevice, out var htBytesWritten, ofbDevice, out var ofbBytesWritten, out var numOfbBuckets);
+            table.IsIndexFuzzyCheckpointCompletedAsync().AsTask().Wait();
+
+            var failing = new CallbackExceptionDevice(htDevice) { FailReads = true };
+
+            var recovered = new TsavoriteBase();
+            try
+            {
+                recovered.Initialize(TableSizeInBuckets, 512);
+                var ex = Assert.ThrowsAsync<TsavoriteIOException>(async ()
+                    => await recovered.RecoverFuzzyIndexAsync(0, failing, htBytesWritten, ofbDevice, numOfbBuckets, ofbBytesWritten, default));
+                StringAssert.Contains("Main index recovery failed", ex.Message);
+                ClassicAssert.AreSame(failing.Injected, ex.InnerException, "The device's exception must be preserved as the inner exception");
+            }
+            finally
+            {
+                recovered.Free();
+            }
+        }
+
+        /// <summary>A recovery that fails or is cancelled closes the index checkpoint file, but the reads it issued
+        /// are still reading from that file and writing into the in-memory table. Closing it first is a use-after-free,
+        /// so the failure path must wait for every issued read to call back. This exercises the production entry point,
+        /// which owns both the device and the failure path.</summary>
+        [Test]
+        [Category("CheckpointRestore")]
+        [Category("Smoke")]
+        public void CancelledRecoveryClosesTheIndexFileOnlyAfterItsReadsHaveCompleted()
+        {
+            table = CreatePopulatedTable(Seed, TableSizeInBuckets, NumAdds);
+            table.TakeIndexFuzzyCheckpoint(0, htDevice, out var htBytesWritten, ofbDevice, out var ofbBytesWritten, out var numOfbBuckets);
+            table.IsIndexFuzzyCheckpointCompletedAsync().AsTask().Wait();
+
+            var deferring = new DeferredCompletionDevice(htDevice);
+            var recovered = new TsavoriteBase { checkpointManager = new SingleDeviceCheckpointManager(deferring) };
+            try
+            {
+                recovered.Initialize(TableSizeInBuckets, 512);
+
+                var info = new IndexCheckpointInfo();
+                info.info.token = Guid.NewGuid();
+                info.info.table_size = TableSizeInBuckets;
+                info.info.num_ht_bytes = htBytesWritten;
+                info.info.num_buckets = numOfbBuckets;
+                info.info.num_ofb_bytes = ofbBytesWritten;
+
+                using var cts = new CancellationTokenSource();
+                var recovery = Task.Run(async () => await recovered.RecoverFuzzyIndexAsync(info, cts.Token));
+
+                // The read is held, so recovery is waiting on it. Cancelling abandons that wait but not the read.
+                while (deferring.DeferredCount == 0)
+                    Thread.Sleep(10);
+                cts.Cancel();
+
+                var settled = recovery.ContinueWith(_ => { }, TaskScheduler.Default);
+                ClassicAssert.IsFalse(settled.Wait(TimeSpan.FromMilliseconds(250)), "Recovery must not return while its read is outstanding");
+                ClassicAssert.IsFalse(deferring.Disposed, "The index file must stay open while a read is reading from it");
+
+                deferring.CompleteDeferred();
+                ClassicAssert.IsTrue(settled.Wait(TimeSpan.FromSeconds(30)), "Recovery must return once the outstanding read has called back");
+                ClassicAssert.IsTrue(recovery.IsCanceled || recovery.IsFaulted, "Recovery must report the cancellation");
+                ClassicAssert.IsTrue(deferring.Disposed, "The index file must be closed on the failure path");
+                ClassicAssert.IsFalse(deferring.DisposedWithIoOutstanding, "The index file was closed while a read was still using it");
+            }
+            finally
+            {
+                recovered.Free();
+            }
+        }
+
+        /// <summary>A device may complete a request synchronously and then throw out of the submit. The completed
+        /// request must be retired from the countdown exactly once: retiring it again in the submission-failure path
+        /// would drop the countdown to zero while earlier reads are still writing into the table, and the caller would
+        /// then close the device out from under them.</summary>
+        [Test]
+        [Category("CheckpointRestore")]
+        [Category("Smoke")]
+        public void SynchronousCompletionThenThrowRetiresAChunkOnlyOnce()
+        {
+            const long maxIoBytesPerRequest = 1L << 20;     // The 4MiB table below needs four requests at this cap
+
+            table = CreatePopulatedTable(Seed, TableSizeInBuckets, NumAdds);
+            table.TakeIndexFuzzyCheckpoint(0, htDevice, out var htBytesWritten, ofbDevice, out var ofbBytesWritten, out var numOfbBuckets);
+            table.IsIndexFuzzyCheckpointCompletedAsync().AsTask().Wait();
+
+            // Chunk 0 is left outstanding; chunk 1 completes synchronously and then fails to submit.
+            var failing = new CallbackThenThrowDevice(htDevice) { DeferReadsBefore = 1 };
+
+            var recovered = new TsavoriteBase();
+            try
+            {
+                recovered.Initialize(TableSizeInBuckets, 512);
+
+                var recovery = Task.Run(async ()
+                    => await recovered.RecoverFuzzyIndexAsync(0, failing, htBytesWritten, ofbDevice, numOfbBuckets, ofbBytesWritten, CancellationToken.None, maxIoBytesPerRequest));
+                ClassicAssert.IsTrue(recovery.ContinueWith(_ => { }, TaskScheduler.Default).Wait(TimeSpan.FromSeconds(30)));
+                ClassicAssert.IsTrue(recovery.IsFaulted, "Recovery must report the submission failure");
+                ClassicAssert.AreEqual(1, failing.DeferredCount, "Chunk 0 must still be outstanding");
+
+                // Chunk 0 has not called back, so the countdown must not have reached zero. If chunk 1 were retired
+                // twice the drain would complete here, telling the caller it is safe to close the device.
+                var drain = recovered.DrainMainIndexRecoveryAsync().AsTask();
+                ClassicAssert.IsFalse(drain.Wait(TimeSpan.FromMilliseconds(250)), "Draining must not complete while a read is outstanding");
+
+                failing.CompleteDeferred();
+                ClassicAssert.IsTrue(drain.Wait(TimeSpan.FromSeconds(30)), "Draining must complete once the outstanding read has called back");
+            }
+            finally
+            {
+                recovered.Free();
+            }
+        }
+
+        /// <summary>A checkpoint whose level cannot be submitted must still complete its checkpoint task. The levels
+        /// already issued call back and retire themselves, but a level that was never issued has no callback, so
+        /// without retiring it the outstanding count never reaches zero and every waiter on the checkpoint blocks
+        /// forever.</summary>
+        [Test]
+        [Category("CheckpointRestore")]
+        [Category("Smoke")]
+        public void OverflowBucketCheckpointFailsRatherThanHangingWhenALevelCannotBeIssued()
+        {
+            // Three levels, so that the first is issued, the second's submission fails, and the third is never issued
+            // and so has no callback of its own to retire it.
+            const int numRecords = (2 << 16) + 1;
+
+            var allocator = new MallocFixedPageSize<HashBucket>();
+            for (var ii = 0; ii < numRecords; ii++)
+                _ = allocator.Allocate();
+
+            // Not disposed here: it wraps ofbDevice, which the fixture teardown owns.
+            var failing = new ThrowOnNthWriteDevice(ofbDevice) { ThrowWritesAfter = 1 };
+            try
+            {
+                _ = Assert.Throws<IOException>(() => allocator.BeginCheckpoint(failing, 0, out _, useReadCache: false, skipReadCache: null, epoch: null));
+
+                var completion = allocator.IsCheckpointCompletedAsync().AsTask();
+                ClassicAssert.IsTrue(completion.ContinueWith(_ => { }, TaskScheduler.Default).Wait(TimeSpan.FromSeconds(30)),
+                    "The checkpoint task must complete rather than hang");
+                ClassicAssert.IsTrue(completion.IsFaulted, "The checkpoint must report the submission failure");
+            }
+            finally
+            {
+                allocator.Dispose();
+            }
+        }
+
+        /// <summary>A 12-byte record: deliberately not a divisor of any sector size, so the checkpoint's sector
+        /// rounding leaves padding that is not a whole number of records.</summary>
+        [StructLayout(LayoutKind.Sequential, Size = 12)]
+        private struct TwelveByteRecord
+        {
+            internal int a, b, c;
+        }
+
+        /// <summary>The overflow-bucket checkpoint rounds its final level up to a sector, so the persisted byte count
+        /// is not generally a whole number of records. Recovery must read back exactly those bytes: deriving the
+        /// length from a record count instead truncates, and issues a read that is both short and unaligned, which the
+        /// O_DIRECT device paths reject outright.</summary>
+        [Test]
+        [Category("CheckpointRestore")]
+        [Category("Smoke")]
+        public void OverflowBucketRecoveryReadsSectorAlignedFinalLevel()
+        {
+            // 17 records of 12 bytes is 204 bytes, which the checkpoint rounds up to one 512-byte sector. 512 is not a
+            // multiple of 12, so a record count round-trip loses the remainder.
+            const int numRecords = 17;
+
+            var allocator = new MallocFixedPageSize<TwelveByteRecord>();
+            for (var ii = 0; ii < numRecords; ii++)
+                _ = allocator.Allocate();
+
+            allocator.BeginCheckpoint(ofbDevice, 0, out var numBytesWritten, useReadCache: false, skipReadCache: null, epoch: null);
+            allocator.IsCheckpointCompletedAsync().AsTask().Wait();
+            allocator.Dispose();
+
+            ClassicAssert.AreEqual(0UL, numBytesWritten % OneSector, "The checkpoint always sector-aligns its final level");
+            ClassicAssert.AreNotEqual(0UL, numBytesWritten % 12, "This test is only meaningful when the persisted size is not a whole number of records");
+
+            ofbDevice.Reads.Clear();
+            var recovered = new MallocFixedPageSize<TwelveByteRecord>();
+            try
+            {
+                var numBytesRead = recovered.RecoverAsync(ofbDevice, 0, numRecords, numBytesWritten, CancellationToken.None).AsTask().GetAwaiter().GetResult();
+                ClassicAssert.AreEqual(numBytesWritten, numBytesRead, "Recovery must read back exactly what was written");
+
+                // Every read must be sector aligned, or a device opened with O_DIRECT rejects it outright.
+                foreach (var (_, length) in ofbDevice.Reads)
+                    ClassicAssert.AreEqual(0, length % OneSector, $"Read of {length} bytes is not sector aligned");
+            }
+            finally
+            {
+                recovered.Dispose();
+            }
+        }
+
+        /// <summary>A device that splits one logical write across shards must report what the whole write transferred.
+        /// Reporting only the last shard's count makes a complete checkpoint look short, which would fail a checkpoint
+        /// that actually succeeded.</summary>
+        [Test]
+        [Category("CheckpointRestore")]
+        [Category("Smoke")]
+        public void ShardedCheckpointIsNotReportedAsShort()
+        {
+            var shard0 = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "Shard0.dat"), deleteOnClose: true);
+            var shard1 = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "Shard1.dat"), deleteOnClose: true);
+            using var sharded = new ShardedStorageDevice(new UniformPartitionScheme(IDevice.MinDeviceSectorSize, shard0, shard1));
+            sharded.Initialize(segmentSize: 1L << 30, epoch: null);
+
+            table = CreatePopulatedTable(Seed, TableSizeInBuckets, NumAdds);
+
+            table.TakeIndexFuzzyCheckpoint(0, sharded, out _, ofbDevice, out _, out _);
+
+            // Each shard transfers only its slice, so an aggregate that reports one shard's count looks short here.
+            Assert.DoesNotThrowAsync(async () => await table.IsIndexFuzzyCheckpointCompletedAsync());
         }
 
         /// <summary>Cancelling a wait for outstanding IO must abandon only the wait. The IO itself is not cancellable,

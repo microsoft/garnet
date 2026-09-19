@@ -40,9 +40,9 @@ namespace Tsavorite.core
         }
 
         /// <summary>Wait for all counts without observing cancellation, for failure paths that must not release
-        /// resources the outstanding IO is still using. A no-op for the sync variant and once already completed.</summary>
+        /// resources the outstanding IO is still using. A no-op for the sync variant.</summary>
         internal ValueTask DrainAsync()
-            => asyncTcs is null || IsCompleted ? default : new ValueTask(asyncTcs.Task);
+            => asyncTcs is null ? default : new ValueTask(asyncTcs.Task);
 
         internal void Decrement()
         {

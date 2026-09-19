@@ -99,7 +99,9 @@ namespace Tsavorite.core
         /// Number of equal-sized chunks, a power of two, that <paramref name="totalBytes"/> must be split into so that
         /// no chunk exceeds <paramref name="maxBytesPerChunk"/>.
         /// </summary>
-        /// <param name="totalBytes">Total number of bytes to be transferred; must be positive</param>
+        /// <param name="totalBytes">Total number of bytes to be transferred; must be positive. Callers derive the
+        /// chunk size as <paramref name="totalBytes"/> divided by the returned count, so a total that is not a
+        /// multiple of that count silently loses the remainder; pass a power of two to divide exactly.</param>
         /// <param name="maxBytesPerChunk">Maximum number of bytes a single chunk may contain; must be positive</param>
         internal static int GetNumIoChunks(long totalBytes, long maxBytesPerChunk)
         {

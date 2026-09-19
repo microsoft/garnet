@@ -45,13 +45,6 @@ namespace Tsavorite.core
             num_ofb_buckets = overflowBucketsAllocator.GetMaxValidAddress();
         }
 
-        internal bool IsIndexFuzzyCheckpointCompleted()
-        {
-            bool completed1 = IsMainIndexCheckpointCompleted();
-            bool completed2 = overflowBucketsAllocator.IsCheckpointCompleted();
-            return completed1 && completed2;
-        }
-
         internal void AddIndexCheckpointWaitingList(StateMachineDriver stateMachineDriver)
         {
             stateMachineDriver.AddToWaitingList(mainIndexCheckpointTcs.Task, StateMachineTaskType.IndexCheckpointSMTaskMainIndexCheckpoint);
@@ -70,14 +63,14 @@ namespace Tsavorite.core
         // Implementation of an asynchronous checkpointing scheme 
         // for main hash index of Tsavorite
         private int mainIndexCheckpointCallbackCount;
-        private string mainIndexCheckpointError;
+        private IoFailure mainIndexCheckpointError;
         private TaskCompletionSource<bool> mainIndexCheckpointTcs;
         private SemaphoreSlim throttleIndexCheckpointFlushSemaphore;
 
         /// <summary>Record the first failure seen while flushing the main index, so the checkpoint fails with the
         /// error that occurred first; subsequent failures are logged but do not overwrite it.</summary>
-        private void RecordMainIndexCheckpointError(string detail)
-            => _ = Interlocked.CompareExchange(ref mainIndexCheckpointError, detail, null);
+        private void RecordMainIndexCheckpointError(string detail, Exception exception = null)
+            => _ = Interlocked.CompareExchange(ref mainIndexCheckpointError, new IoFailure(detail, exception), null);
 
         /// <summary>Write the main hash index to <paramref name="device"/> as a sequence of chunks, none larger than
         /// <paramref name="maxIoBytesPerRequest"/>. The default is <see cref="Constants.kMaxIoBytesPerRequest"/>, which
@@ -158,13 +151,21 @@ namespace Tsavorite.core
                                 prot = true;
                                 epoch.Resume();
                             }
-                            Buffer.MemoryCopy((void*)chunkStartBucket, result.mem.aligned_pointer, chunkSize, chunkSize);
-                            for (int j = 0; j < chunkSize; j += sizeof(HashBucket))
+                            try
                             {
-                                skipReadCache((HashBucket*)(result.mem.aligned_pointer + j));
+                                Buffer.MemoryCopy((void*)chunkStartBucket, result.mem.aligned_pointer, chunkSize, chunkSize);
+                                for (int j = 0; j < chunkSize; j += sizeof(HashBucket))
+                                {
+                                    skipReadCache((HashBucket*)(result.mem.aligned_pointer + j));
+                                }
                             }
-                            if (prot)
-                                epoch.Suspend();
+                            finally
+                            {
+                                // Staging can throw, and with throttling enabled this is a pooled thread. Leaving it
+                                // epoch-protected would pin the safe-to-reclaim boundary for the life of the process.
+                                if (prot)
+                                    epoch.Suspend();
+                            }
 
                             BeginNativeIndexCheckpointIo();
                             try
@@ -175,11 +176,14 @@ namespace Tsavorite.core
                             {
                                 // A device may invoke the completion callback synchronously and then throw back out of
                                 // the submit (LocalMemoryDevice propagates callback exceptions), so the callback may
-                                // already have released this chunk's unit. Claim exactly once to avoid underflowing
-                                // the index's outstanding-IO count, which could free a superseded table while issuance still
-                                // reads it. If the submit failed before any callback ran, we are the only claimant.
+                                // already have released this chunk's unit and its staging buffer. Claim exactly once to
+                                // avoid underflowing the index's outstanding-IO count, which could free a superseded
+                                // table while issuance still reads it, and to avoid returning the buffer twice.
                                 if (result.TryClaimIoUnitRelease())
+                                {
+                                    result.mem.Dispose();
                                     EndNativeIndexCheckpointIo();
+                                }
                                 throw;
                             }
                         }
@@ -208,11 +212,6 @@ namespace Tsavorite.core
             }
         }
 
-        private bool IsMainIndexCheckpointCompleted()
-        {
-            return mainIndexCheckpointCallbackCount == 0;
-        }
-
         private async ValueTask IsMainIndexCheckpointCompletedAsync(CancellationToken token = default)
         {
             await mainIndexCheckpointTcs.Task.WaitAsync(token).ConfigureAwait(false);
@@ -223,16 +222,13 @@ namespace Tsavorite.core
             var result = (HashIndexPageAsyncFlushResult)context;
             try
             {
-                // Set the page status to flushed
-                result.mem?.Dispose();
-
                 if (errorCode != 0)
                 {
                     if (ioException is null)
                         logger?.LogError($"{nameof(AsyncPageFlushCallback)} error: {{errorCode}}", errorCode);
                     else
                         logger?.LogError($"{nameof(AsyncPageFlushCallback)} error: {{exception}}", Utility.GetCallbackExceptionDetail(ioException));
-                    RecordMainIndexCheckpointError($"chunk {result.chunkIndex} failed with error code {errorCode}");
+                    RecordMainIndexCheckpointError($"chunk {result.chunkIndex} failed with error code {errorCode}", ioException);
                 }
                 else if (numBytes != 0 && numBytes < result.numBytesToWrite)
                 {
@@ -247,7 +243,7 @@ namespace Tsavorite.core
                 {
                     var error = mainIndexCheckpointError;
                     if (error is not null)
-                        mainIndexCheckpointTcs.TrySetException(new TsavoriteException($"Main index checkpoint flush failed: {error}"));
+                        mainIndexCheckpointTcs.TrySetException(error.ToException("Main index checkpoint flush failed"));
                     else
                         mainIndexCheckpointTcs.TrySetResult(true);
                 }
@@ -255,12 +251,16 @@ namespace Tsavorite.core
             }
             finally
             {
-                // Release this chunk write's unit of outstanding index-checkpoint IO. In a finally so it runs on
-                // every path (success, error, exception); when the last unit is released, tables superseded by a
-                // grow while this write was in flight are munmap'd. No-op for the managed hash index. Claimed
-                // exactly once so a synchronous callback here and the issuer's catch cannot both release.
+                // Release this chunk write's unit of outstanding index-checkpoint IO, and the staging buffer it wrote
+                // from. In a finally so it runs on every path (success, error, exception); when the last unit is
+                // released, tables superseded by a grow while this write was in flight are munmap'd. No-op for the
+                // managed hash index. Claimed exactly once so a synchronous callback here and the issuer's catch
+                // cannot both release the unit or return the buffer twice.
                 if (result.TryClaimIoUnitRelease())
+                {
+                    result.mem?.Dispose();
                     EndNativeIndexCheckpointIo();
+                }
             }
         }
     }

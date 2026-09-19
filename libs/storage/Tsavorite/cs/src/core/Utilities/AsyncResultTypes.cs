@@ -35,6 +35,15 @@ namespace Tsavorite.core
         /// <summary>Number of bytes this chunk's read was issued for, compared against the transferred count in the
         /// completion callback so a successful but short read does not leave part of the hash table unrecovered.</summary>
         public uint numBytesToRead;
+
+        /// <summary>Shared one-shot guard for retiring this chunk from the recovery countdown. See
+        /// <see cref="HashIndexPageAsyncFlushResult.ioUnitReleaseGuard"/> for why this must be a reference type.</summary>
+        public System.Runtime.CompilerServices.StrongBox<int> retirementGuard;
+
+        /// <summary>Atomically claim the right to retire this chunk from the countdown exactly once. Returns true to
+        /// the single caller that should decrement.</summary>
+        public readonly bool TryClaimRetirement()
+            => System.Threading.Interlocked.Exchange(ref retirementGuard.Value, 1) == 0;
     }
 
     internal struct OverflowPagesFlushAsyncResult
@@ -47,6 +56,14 @@ namespace Tsavorite.core
         /// <summary>Number of bytes this level's write was issued for, compared against the transferred count in the
         /// completion callback to detect a successful but short write.</summary>
         public uint numBytesToWrite;
+
+        /// <summary>Shared one-shot guard for retiring this level from the checkpoint's outstanding-write count. See
+        /// <see cref="HashIndexPageAsyncFlushResult.ioUnitReleaseGuard"/> for why this must be a reference type.</summary>
+        public System.Runtime.CompilerServices.StrongBox<int> retirementGuard;
+
+        /// <summary>Atomically claim the right to retire this level exactly once. Returns true to the single caller
+        /// that claims it.</summary>
+        public readonly bool TryClaimRetirement() => System.Threading.Interlocked.Exchange(ref retirementGuard.Value, 1) == 0;
     }
 
     internal struct OverflowPagesReadAsyncResult
@@ -57,5 +74,14 @@ namespace Tsavorite.core
         /// <summary>Number of bytes of this level that must be recovered. The completion callback fails the recovery
         /// if fewer bytes were transferred.</summary>
         public uint numBytesToRead;
+
+        /// <summary>Shared one-shot guard for retiring this level from the recovery countdown. See
+        /// <see cref="HashIndexPageAsyncFlushResult.ioUnitReleaseGuard"/> for why this must be a reference type.</summary>
+        public System.Runtime.CompilerServices.StrongBox<int> retirementGuard;
+
+        /// <summary>Atomically claim the right to retire this level from the countdown exactly once. Returns true to
+        /// the single caller that should decrement.</summary>
+        public readonly bool TryClaimRetirement()
+            => System.Threading.Interlocked.Exchange(ref retirementGuard.Value, 1) == 0;
     }
 }
