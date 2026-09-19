@@ -260,6 +260,29 @@ namespace Garnet.server
                             ProcessAofRecord(aofProcessor, payload, frameHeader.Address);
                             MarkSyncCompleted();
                             break;
+                        case StandaloneReplicationFrameType.AofBatch:
+                            aofProcessor ??= new AofProcessor(
+                                storeWrapper,
+                                recordToAof: storeWrapper.serverOptions.EnableAOF,
+                                logger: logger);
+                            ReadOnlySpan<byte> batch = payload;
+                            var recordCount = 0;
+                            while (!batch.IsEmpty)
+                            {
+                                if (!StandaloneReplicationWireFormat.TryReadAofBatchRecord(
+                                    ref batch,
+                                    out var currentAddress,
+                                    out var record))
+                                {
+                                    throw new InvalidOperationException("Primary sent an invalid standalone replication AOF batch");
+                                }
+                                ProcessAofRecord(aofProcessor, record, currentAddress);
+                                recordCount++;
+                            }
+                            if (recordCount == 0)
+                                throw new InvalidOperationException("Primary sent an empty standalone replication AOF batch");
+                            MarkSyncCompleted();
+                            break;
                         case StandaloneReplicationFrameType.StreamReady:
                             MarkSyncCompleted();
                             break;
@@ -337,7 +360,7 @@ namespace Garnet.server
             }
         }
 
-        static unsafe void ProcessAofRecord(AofProcessor aofProcessor, byte[] payload, long currentAddress)
+        static unsafe void ProcessAofRecord(AofProcessor aofProcessor, ReadOnlySpan<byte> payload, long currentAddress)
         {
             fixed (byte* ptr = payload)
                 aofProcessor.ProcessAofRecordInternal(0, ptr, payload.Length, asReplica: true, out _, currentAddress);

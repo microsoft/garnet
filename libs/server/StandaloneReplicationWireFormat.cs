@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Buffers;
 using System.Buffers.Binary;
 using System.IO;
 using System.Text;
@@ -18,7 +19,8 @@ namespace Garnet.server
         CheckpointMetadata = 3,
         CheckpointFileEnd = 4,
         CheckpointComplete = 5,
-        StreamReady = 6
+        StreamReady = 6,
+        AofBatch = 7
     }
 
     /// <summary>
@@ -114,6 +116,9 @@ namespace Garnet.server
             {
                 StandaloneReplicationFrameType.AofRecord =>
                     payloadLength > 0 && checkpointFileType == CheckpointFileType.NONE && token == default && address >= 0,
+                StandaloneReplicationFrameType.AofBatch =>
+                    payloadLength >= sizeof(long) + sizeof(int) && checkpointFileType == CheckpointFileType.NONE &&
+                    token == default && address >= 0,
                 StandaloneReplicationFrameType.CheckpointFile =>
                     payloadLength > 0 && checkpointFileType != CheckpointFileType.NONE && token != default && address >= 0,
                 StandaloneReplicationFrameType.CheckpointMetadata =>
@@ -132,6 +137,42 @@ namespace Garnet.server
                 return false;
 
             frameHeader = new(type, checkpointFileType, payloadLength, token, address);
+            return true;
+        }
+
+        internal static void WriteAofBatchRecord(
+            IBufferWriter<byte> writer,
+            long currentAddress,
+            ReadOnlySpan<byte> record)
+        {
+            var recordHeader = writer.GetSpan(sizeof(long) + sizeof(int));
+            BinaryPrimitives.WriteInt64LittleEndian(recordHeader, currentAddress);
+            BinaryPrimitives.WriteInt32LittleEndian(recordHeader[sizeof(long)..], record.Length);
+            writer.Advance(sizeof(long) + sizeof(int));
+
+            record.CopyTo(writer.GetSpan(record.Length));
+            writer.Advance(record.Length);
+        }
+
+        internal static bool TryReadAofBatchRecord(
+            ref ReadOnlySpan<byte> payload,
+            out long currentAddress,
+            out ReadOnlySpan<byte> record)
+        {
+            currentAddress = 0;
+            record = default;
+
+            if (payload.Length < sizeof(long) + sizeof(int))
+                return false;
+
+            currentAddress = BinaryPrimitives.ReadInt64LittleEndian(payload);
+            var recordLength = BinaryPrimitives.ReadInt32LittleEndian(payload[sizeof(long)..]);
+            if (currentAddress < 0 || recordLength <= 0 ||
+                recordLength > payload.Length - sizeof(long) - sizeof(int))
+                return false;
+
+            record = payload.Slice(sizeof(long) + sizeof(int), recordLength);
+            payload = payload[(sizeof(long) + sizeof(int) + recordLength)..];
             return true;
         }
     }

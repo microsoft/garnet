@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Buffers;
 using Garnet.server;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -106,6 +107,43 @@ namespace Garnet.test
                 address: 64);
 
             ClassicAssert.IsFalse(StandaloneReplicationWireFormat.TryReadHeader(buffer, out _));
+        }
+
+        [Test]
+        public void StandaloneReplicationAofBatchRoundTripsRecords()
+        {
+            var writer = new ArrayBufferWriter<byte>();
+            StandaloneReplicationWireFormat.WriteAofBatchRecord(writer, 64, [1, 2, 3]);
+            StandaloneReplicationWireFormat.WriteAofBatchRecord(writer, 128, [4, 5]);
+
+            var payload = writer.WrittenSpan;
+            ClassicAssert.IsTrue(StandaloneReplicationWireFormat.TryReadAofBatchRecord(
+                ref payload,
+                out var firstAddress,
+                out var firstRecord));
+            ClassicAssert.AreEqual(64, firstAddress);
+            CollectionAssert.AreEqual(new byte[] { 1, 2, 3 }, firstRecord.ToArray());
+
+            ClassicAssert.IsTrue(StandaloneReplicationWireFormat.TryReadAofBatchRecord(
+                ref payload,
+                out var secondAddress,
+                out var secondRecord));
+            ClassicAssert.AreEqual(128, secondAddress);
+            CollectionAssert.AreEqual(new byte[] { 4, 5 }, secondRecord.ToArray());
+            ClassicAssert.IsTrue(payload.IsEmpty);
+        }
+
+        [Test]
+        public void StandaloneReplicationAofBatchRejectsTruncatedRecord()
+        {
+            var writer = new ArrayBufferWriter<byte>();
+            StandaloneReplicationWireFormat.WriteAofBatchRecord(writer, 64, [1, 2, 3]);
+
+            ReadOnlySpan<byte> payload = writer.WrittenSpan[..^1];
+            ClassicAssert.IsFalse(StandaloneReplicationWireFormat.TryReadAofBatchRecord(
+                ref payload,
+                out _,
+                out _));
         }
     }
 }

@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Buffers;
 using System.Threading;
 using System.Threading.Tasks;
 using Garnet.common;
@@ -16,6 +17,9 @@ namespace Garnet.server
     /// </summary>
     internal sealed class StandaloneSyncDriver : IDisposable
     {
+        const int MaxBatchBytes = 256 * 1024;
+        const int MaxBatchRecords = 256;
+
         readonly StoreWrapper storeWrapper;
         readonly INetworkSender networkSender;
         readonly ILogger logger;
@@ -102,11 +106,43 @@ namespace Garnet.server
                     recover: false,
                     logger: logger);
 
-                await foreach (var (entry, entryLength, currentAddress, _) in iterator.GetAsyncEnumerable(token).ConfigureAwait(false))
+                var batch = new ArrayBufferWriter<byte>(MaxBatchBytes);
+                while (!token.IsCancellationRequested)
                 {
-                    SendFrame(entry.AsSpan(0, entryLength), currentAddress);
-                    Volatile.Write(ref retainedAddress, iterator.NextAddress);
-                    networkSender.Throttle();
+                    var recordCount = 0;
+                    var batchStartAddress = 0L;
+                    var batchEndAddress = iterator.NextAddress;
+
+                    while (recordCount < MaxBatchRecords &&
+                           batch.WrittenCount < MaxBatchBytes &&
+                           iterator.GetNext(out var entry, out var entryLength, out var currentAddress, out var nextAddress))
+                    {
+                        if (recordCount == 0)
+                            batchStartAddress = currentAddress;
+                        StandaloneReplicationWireFormat.WriteAofBatchRecord(
+                            batch,
+                            currentAddress,
+                            entry.AsSpan(0, entryLength));
+                        batchEndAddress = nextAddress;
+                        recordCount++;
+                    }
+
+                    if (recordCount > 0)
+                    {
+                        SendFrame(
+                            StandaloneReplicationFrameType.AofBatch,
+                            CheckpointFileType.NONE,
+                            default,
+                            batchStartAddress,
+                            batch.WrittenSpan);
+                        Volatile.Write(ref retainedAddress, batchEndAddress);
+                        batch.Clear();
+                        networkSender.Throttle();
+                        continue;
+                    }
+
+                    if (!await iterator.WaitAsync(token).ConfigureAwait(false))
+                        break;
                 }
 
                 async Task SendCheckpointAsync(CancellationToken token)
@@ -197,16 +233,6 @@ namespace Garnet.server
             Interlocked.Exchange(ref checkpointReader, null)?.Dispose();
             Interlocked.Exchange(ref checkpointLease, null)?.Dispose();
             Interlocked.Exchange(ref snapshotRetentionLease, null)?.Dispose();
-        }
-
-        unsafe void SendFrame(ReadOnlySpan<byte> payload, long currentAddress)
-        {
-            SendFrame(
-                StandaloneReplicationFrameType.AofRecord,
-                CheckpointFileType.NONE,
-                default,
-                currentAddress,
-                payload);
         }
 
         unsafe void SendFrame(
