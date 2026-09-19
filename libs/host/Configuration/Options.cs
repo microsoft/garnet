@@ -156,7 +156,7 @@ namespace Garnet
         public bool? EnableCluster { get; set; }
 
         [OptionValidation]
-        [Option("sentinel-replication", Required = false, HelpText = "Enable standalone replication under the stock Redis/Valkey Sentinel control plane. Honours REPLICAOF host port / REPLICAOF NO ONE and tracks replicas via INFO replication. Data plane beyond the empty-RDB handshake is not implemented by this option.")]
+        [Option("sentinel-replication", Required = false, HelpText = "Enable Garnet-to-Garnet standalone replication under the stock Redis/Valkey Sentinel control plane. Requires AOF on primary and replicas. Replicates writes made after attachment; initial snapshot and partial resync are not implemented.")]
         public bool? EnableStandaloneReplication { get; set; }
 
         [OptionValidation]

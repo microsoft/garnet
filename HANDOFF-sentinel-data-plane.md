@@ -1,328 +1,458 @@
-# HANDOFF — Garnet as a data plane under stock Redis/Valkey Sentinel
+# HANDOFF - Garnet data plane under Redis/Valkey Sentinel
 
-**Status:** work in progress, saved and pushed. This document is a temporary
-handoff note; delete it before merging anything upstream.
+**Status:** standalone Garnet-to-Garnet replication is functional and pushed.
+This is a temporary engineering handoff; remove it before an upstream merge.
 
-**Branch:** `sentinel-support` (on fork `skyline75489/garnet`)
-**HEAD:** `2e66fc123` — `[Resp] Add standalone REPLICAOF so a Garnet node can be a replica (Phase 3)`
-**Tree:** clean, builds with 0 warnings.
+**Implementation HEAD before this handoff:** `f2c59fe78`
+(`[Resp] Pool standalone replication frame buffers`)
 
----
+## 1. Goal and scope
 
-## 1. The goal, stated precisely
+The target topology is:
 
-Make Garnet usable as the **data plane** underneath a **stock Redis/Valkey
-Sentinel control plane**, for a "somewhat workable" branch that upstream will
-review.
+- One standalone Garnet primary.
+- One or more standalone Garnet replicas.
+- Stock Redis or Valkey Sentinel as the control plane.
+- Garnet's native checkpoint and AOF formats as the data plane.
 
-Concretely:
+Sentinel monitors nodes, selects a promotion candidate, sends
+`REPLICAOF NO ONE`, and reconfigures the remaining replicas. Sentinel does not
+carry replication data.
 
-* **Topology:** 1 Garnet primary + N Garnet replicas, watched by stock Sentinel
-  (the normal deployment is 1 primary + 2..3 replicas + 3 Sentinels).
-* **Sentinel's only job:** monitor, detect failure, pick a replica, promote it,
-  and reconfigure the others. It never touches replication bytes.
-* **The data plane is entirely Garnet-to-Garnet.** Sentinel is the orchestrator,
-  not a participant.
-* **A stock Redis replica is explicitly a non-goal / stretch goal.** Do not
-  design for it. It was considered early on and drives the design in the wrong
-  direction (see §4).
+Both ends of the data plane must be Garnet. A stock Redis replica cannot decode
+Garnet's physical AOF records and is not a target for this implementation.
 
-**Two proven empirical facts that shape everything:**
+The feature remains opt-in through:
 
-1. Sentinel discovers a primary's replicas *only* from the `connected_slaves`
-   count and the `slave<N>:` lines in the primary's `INFO replication` output.
-   Prove it yourself: run a real Redis primary with a replica attached, point
-   Sentinel at it, and watch `SENTINEL MASTERS`. With `connected_slaves:0`,
-   `num-slaves` is 0 and Sentinel has no promotion candidate — failover can
-   never start.
-2. Sentinel tolerates a primary that only speaks a subset of Redis. It issues
-   `PING`, `INFO`, `REPLICAOF` and (rarely) `CLIENT LIST`. It does not care what
-   the primary's write command set is.
-
----
-
-## 2. Current state — what works today
-
-The Sentinel **control plane** is complete end-to-end, and a Garnet node can now
-**attach as a replica**. What is missing is the **data flow**.
-
-### Works
-
-* `REPLCONF` and `PSYNC` implemented on the primary, wire-compatible with Redis
-  7.4.11 (verified byte-for-byte against a live server).
-* `INFO replication` on a standalone primary reports real `connected_slaves` and
-  `slave<N>:` lines sourced from a registry, so Sentinel **can** discover
-  replicas.
-* `ROLE` reports `master` or `slave` correctly in standalone mode.
-* A standalone Garnet node accepts `REPLICAOF <host> <port>` and opens an
-  outbound link to the named primary, running the stock handshake.
-* `REPLICAOF NO ONE` detaches and promotes back to primary.
-* Registry entries are pruned when a replica's connection ends.
-* **End-to-end Sentinel failover was demonstrated** with a real Sentinel binary:
-  full state machine `+slave → +sdown → +odown → +try-failover → +selected-slave
-  → +send-slaveof-noone → +promoted-slave → +failover-end → +switch-master`,
-  with the promoted node ending as `role:master`. (This demo used a stock Redis
-  replica for the attach side, because Garnet-as-replica did not exist yet.)
-
-### Does NOT work — the whole of the remaining work
-
-* **No data is replicated.** `SET k v` on the primary does not appear on the
-  replica. `PSYNC` replies with a valid but **empty 56-byte RDB body**, and
-  nothing is streamed afterwards.
-* The replication link is **silently idle** after the handshake
-  (`master_link_status:up` while `master_last_io_seconds_ago` climbs forever).
-* No partial resync / no `+CONTINUE` (no replication backlog).
-* `master_repl_offset` does not advance meaningfully.
-
-**Say this plainly in any PR description or README.** The branch is honest about
-being control-plane-complete and data-plane-empty. Claiming otherwise would be
-the easiest way to lose reviewer trust.
-
----
-
-## 3. Where the code is
-
-### Phase 1 + Round 1 — the stock handshake (primary side)
-
-| File | What |
-|---|---|
-| `libs/server/Resp/ReplConfCommands.cs` | `REPLCONF` handler. Handles `listening-port`, `ip-address`, `capa`, `rdb-only`; `ACK`/`GETACK` are **no-reply** (verified against Redis). |
-| `libs/server/Resp/PsyncCommands.cs` | `PSYNC` handler. Replies `+FULLRESYNC <replid> 0` then a length-delimited RDB body with **no trailing CRLF**. |
-| `libs/resources/RespCommands{Info,Docs}.json` | Generated command metadata. Regenerate via `playground/CommandInfoUpdater/`; do not hand-edit. |
-| `playground/CommandInfoUpdater/SupportedCommand.cs` | Registers `REPLCONF` + `PSYNC`. |
-
-### Phase 2 — replica discovery (primary side)
-
-| File | What |
-|---|---|
-| `libs/server/ReplicaRegistry.cs` | Tracks attached replicas keyed by **source port** (not ip-address, which is optional). Produces the `slave<N>` line text. |
-| `libs/server/Metrics/Info/GarnetInfoMetrics.cs` | `PopulateReplicationInfo` — emits the master layout (or the slave layout when this node is a replica). |
-| `libs/server/StoreWrapper.cs` | `GetOrCreatePrimaryReplId()` (stable per process — must not be re-minted per call), `PrimaryReplOffset`. |
-
-### Phase 3 — Garnet as a replica (this is the newest, least-reviewed part)
-
-| File | What |
-|---|---|
-| `libs/server/LocalReplicationState.cs` | **NEW.** This node's own role: `master`/`slave`, primary endpoint, link status. API: `Snapshot()`, `BecomeReplica()`, `BecomePrimary()`, `ReportLinkUp/Down()`, `MarkSyncCompleted()`. |
-| `libs/server/StandaloneReplicaClient.cs` | **NEW.** The outbound link. `Start(host, port)` opens a `GarnetClientSession` and runs the handshake; `Detach()` tears it down. One per node. |
-| `libs/server/Resp/AdminCommands.cs` | `NetworkProcessClusterCommand` (line 717) routes `REPLICAOF`/`SECONDARYOF`/`FAILOVER` to `NetworkREPLICAOF_Standalone` (line 756) when not cluster mode and the flag is set. Also `ROLE` (line 964). |
-| `libs/server/Resp/RespServerSession.cs` | `Dispose()` (line 418) prunes `replicaRegistry` — **this was a real bug**, `Remove` existed but was never called. |
-| `libs/server/Servers/GarnetServerOptions.cs` | `EnableStandaloneReplication` (line 71), default `false`. |
-| `libs/host/Configuration/Options.cs` | `--sentinel-replication` (line 159, mapped ~920). |
-| `libs/host/Configuration/Redis/RedisOptions.cs` | Redis-config alias (line 54). |
-| `libs/host/defaults.conf` | **Required** default (line 108) — see the trap in §6. |
-
-### Tests
-
-| Path | What |
-|---|---|
-| `test/standalone/Garnet.test/SentinelReplicationInfoTests.cs` | **13 ungated in-process tests.** 8 for the primary surface, 5 for `SentinelStandaloneReplicationTests` (attach, multi-replica, ROLE shape, promotion, flag gate). These run in default CI — the deliberate design decision was that the core surface must not be gate-only. |
-| `test/standalone/Garnet.test/TestUtils.cs` | `CreateGarnetServer` gained `port:` and `enableStandaloneReplication:`. Also exposes `SendRawAsync` / `InfoValue` publicly (shared by the replication tests). |
-| `test/standalone/Garnet.test.sentinel/` | External-process suite, **doubly gated** (compile-time `-p:EnableSentinelTests=true` AND runtime `GARNET_SENTINEL_TESTS=1`). |
-| `test/standalone/Garnet.test.sentinel/verify-sentinel-failover.sh` | Runnable end-to-end demo: Garnet primary + replica + real Sentinel, then kills the primary to show the failover sequence. |
-| `test/standalone/Garnet.test.sentinel/README.md` | Gap table with severities. |
-
----
-
-## 4. THE central technical finding — read this before designing anything
-
-**Garnet's AOF is a physical mutation log, not a Redis command log. It cannot be
-sent to a stock Redis replica.**
-
-`GarnetLog.Enqueue` (libs/server/AOF/GarnetLog.cs:637) writes
-`AofEntryType + version + sessionId + key + value + typed input struct`, behind a
-Garnet-specific `AofHeader` (six variants: basic/sharded/transaction/chunked).
-The original RESP command text is **gone** by the time the record is written —
-argv has been parsed into typed fields.
-
-Consequences:
-
-* You **cannot** pipe AOF bytes to stock Redis. It has no decoder for those
-  headers or opcodes.
-* You **can** read the AOF cheaply: `GarnetLog.Scan(sublogIdx, beginAddress,
-  endAddress, ...)` returns a seekable `TsavoriteLogScanIterator`. This is the
-  streaming primitive, and it already exists.
-* The cluster replication path (`libs/cluster/Server/Replication/`) ships these
-  Garnet AOF bytes over the wire and re-applies them via `AofProcessor`. **Both
-  ends must be Garnet.** It also drives a proprietary handshake
-  (`ExecuteClusterInitiateReplicaSync`, `CLUSTER FLUSHALL`, …) that stock Redis
-  does not speak.
-
-**This is why the goal narrowed to Garnet-to-Garnet.** Once both ends are Garnet,
-the AOF byte stream is *fine* — it is Garnet's native format and `AofProcessor`
-already knows how to apply it. The entire "translate to RESP" problem disappears.
-Do not re-open the stock-Redis-replica path; it forces you to build a RESP
-re-encoder for every command family, which is where the bugs live.
-
-### Reuse map for the data plane
-
-| Need | Existing code | Notes |
-|---|---|---|
-| Iterate the AOF from an offset | `GarnetLog.Scan` | Works today; used by recovery. |
-| Ship records to a replica | `AofSyncDriver` / `AofSyncTask` (cluster) | Coupled to `IClusterProvider`; will need a stripped standalone variant. |
-| Apply records on the replica | `AofProcessor` (`ProcessAofRecordInternal`) | Reusable as-is. |
-| Receive checkpoint on the replica | `ReceiveCheckpointHandler` (cluster) | Reusable, but wired through cluster types. |
-| Cluster sync entry point | `PrimarySync.TryBeginDiskbasedSyncAsync` | Takes typed `SyncMetadata`; the cluster-specific part is *how the address was learned*, not the sync itself. |
-
-**Recommended shape:** two new classes in `libs/server/`, with **no edits to
-`libs/cluster/**`**:
-
-* `StandaloneSyncDriver` (primary side) — one streamer task per attached replica,
-  reads via `GarnetLog.Scan`, writes to the socket.
-* Extend `StandaloneReplicaClient` (replica side) — after the handshake, read
-  records off the socket and apply via `AofProcessor`.
-
----
-
-## 5. Suggested next steps, in order
-
-Each step is independently demonstrable. Do not skip ahead; each one proves the
-prerequisite for the next.
-
-### Step A — stream data one-way (highest value)
-
-* Primary: after `PSYNC`, keep the connection and stream AOF records for every
-  mutation, via `GarnetLog.Scan` from the current tail forward.
-* Replica: read the records and apply them.
-* **Proof:** `SET k v` on the primary → `GET k` on the replica returns `v`.
-* This alone converts the branch from "attaches but empty" to "actually
-  replicates".
-
-### Step B — offset + keepalives
-
-* Track a real byte offset; report it in `INFO` and `+FULLRESYNC`.
-* Send periodic pings so `master_last_io_seconds_ago` stops climbing.
-* **Proof:** `master_repl_offset` advances; `master_last_io_seconds_ago` stays
-  low while idle.
-
-### Step C — initial snapshot
-
-* Replace the empty 56-byte RDB body with a real snapshot so a replica that
-  attaches to a **non-empty** primary converges.
-* **Proof:** write 1000 keys, then attach a fresh replica; it ends with the same
-  1000 keys.
-
-### Step D — backlog + `+CONTINUE`
-
-* In-memory ring of recent bytes; on reconnect, if the replica's offset is still
-  in the ring, reply `+CONTINUE` and skip the snapshot.
-* **Proof:** kill and restart the replica; its log says partial resync, not full.
-
-### Step E — polish
-
-* `replica-announce-ip` / `replica-announce-port` (NAT/proxy).
-* `min-replicas-to-write`, `replica-serve-stale-data`.
-* Multi-replica end-to-end test (1 primary + 3 replicas + 3 Sentinels, and
-  ideally **two consecutive failovers** to prove the reconfigure path works
-  with more than one replica).
-
----
-
-## 6. Traps and gotchas
-
-These are all things that actually cost time during this work.
-
-* **`defaults.conf` is mandatory.** There is an enforced invariant
-  (`GarnetServerConfigTests.DefaultConfigurationOptionsCoverage`) that every
-  `[Option]`-attributed property on `Options` has a default there. Adding an
-  option without it fails **45 config tests**. `defaults.conf` is an embedded
-  resource in both the host and test projects, so it needs a rebuild.
-* **`parseState.Count` excludes the command name.** `REPLICAOF host port` is
-  `Count == 2`, not 3. This cost a debugging cycle.
-* **`ReplicaRegistry` was never pruned.** Fixed in this branch, but if you touch
-  session lifecycle, re-check that pruning still happens — a stale entry is a
-  dead replica that Sentinel will happily consider for promotion.
-* **`GarnetClientSession` needs a real `NetworkBufferSettings`.** Passing `null`
-  throws `NullReferenceException` inside the constructor (it calls
-  `CreateBufferPool` on it). Use `new NetworkBufferSettings()`.
-* **`AdminCommands` ROLE reply mixes types.** `["master", 0, []]` is a bulk
-  string, an **integer**, and a nested array — not three bulk strings. Test
-  helpers that only parse `$` will break.
-* **`GetOrCreatePrimaryReplId` must not use `Generator.DefaultHexId()`** — that
-  returns an all-zero placeholder and makes the node look like a different
-  primary on every poll. It uses `CreateHexId()`.
-* **The test helper `useTestLogger` is a `const`-ish static** in `TestUtils.cs`.
-  It was flipped to `true` temporarily for debugging and set back to `false`.
-  Do not commit it as `true`.
-
----
-
-## 7. How to build and test
-
-```bash
-export PATH=/home/skyline/.dotnet:$PATH
-
-# Build everything
-dotnet build Garnet.slnx -c Debug -nologo
-
-# The 13 ungated replication tests (fast, no external processes)
-dotnet test test/standalone/Garnet.test/Garnet.test.csproj --framework net10.0 \
-  --filter "FullyQualifiedName~Sentinel"
-
-# ACL suite — must stay green; enforces that every command has ACL coverage (468 tests)
-dotnet test test/standalone/Garnet.test.acl/Garnet.test.acl.csproj --framework net10.0
-
-# Command metadata / enum stability (91 tests)
-dotnet test test/standalone/Garnet.test/Garnet.test.csproj --framework net10.0 \
-  --filter "FullyQualifiedName~RespCommand|FullyQualifiedName~RespInfo|FullyQualifiedName~RespDocs|FullyQualifiedName~PersistedEnumStability"
-
-# Gated external-process suite (needs BOTH gates)
-dotnet build test/standalone/Garnet.test.sentinel/Garnet.test.sentinel.csproj \
-  -p:EnableSentinelTests=true
-GARNET_SENTINEL_TESTS=1 dotnet test test/standalone/Garnet.test.sentinel/Garnet.test.sentinel.csproj \
-  --framework net10.0
-
-# End-to-end demo (Garnet + real Sentinel, then kills the primary)
-test/standalone/Garnet.test.sentinel/verify-sentinel-failover.sh
+```text
+--sentinel-replication
 ```
 
-### Verified state at this commit
+## 2. Current capabilities
 
-| Suite | Result |
+The following work is implemented:
+
+- Redis-compatible `REPLCONF`, `PSYNC`, `REPLICAOF`/`SECONDARYOF`, `ROLE`, and
+  standalone `INFO replication` surfaces needed by Sentinel.
+- Replica discovery through real `connected_slaves` and `slave<N>` entries.
+- Garnet replica attach and detach.
+- Stable primary replication identity.
+- Live Garnet AOF streaming and replay.
+- Fixed and moving AOF retention leases.
+- A lease-aware standalone checkpoint catalogue.
+- Checkpoint catalogue restoration after restart.
+- Shared checkpoint source and receiver infrastructure in `Garnet.server`.
+- Typed private checkpoint and AOF frames negotiated with
+  `REPLCONF capa garnet-snapshot`.
+- Full checkpoint transfer, replica recovery, and ordered AOF catch-up.
+- Atomic checkpoint-to-AOF handoff.
+- Idle-stream readiness notification.
+- Bounded AOF batches preserving complete records and logical addresses.
+- Pooled replica frame buffers.
+- Sentinel promotion and replica reconfiguration surfaces.
+
+A fresh replica can attach to a non-empty primary, receive a checkpoint, recover
+it, replay retained AOF records written after the checkpoint boundary, and then
+continue receiving live writes on the same connection.
+
+## 3. Important limitations
+
+### AOF is mandatory
+
+Standalone Sentinel replication requires AOF on both primary and replicas.
+
+The primary needs AOF for:
+
+- The ordered mutation stream.
+- Logical replication addresses.
+- The checkpoint coverage boundary.
+- Retention while a snapshot is in flight.
+- Catch-up after snapshot recovery.
+
+The replica currently requires AOF so that a promoted replica has durable
+history and can recover or become a primary for other replicas.
+
+Without AOF:
+
+- Sentinel can still poll `PING`, `INFO`, and role information.
+- `REPLICAOF host port` fails with
+  `ERR standalone replication requires AOF`.
+- `PSYNC` on a standalone-replication primary fails with the same error.
+- There is no functional replication or failover data plane.
+
+Do not describe an AOF-disabled benchmark as a supported Sentinel deployment.
+It measures the underlying engine, not this replication mode.
+
+### No partial resynchronization
+
+`PSYNC` always establishes a full synchronization. There is no Redis-like
+bounded backlog and no `+CONTINUE` path yet.
+
+The batched wire format preserves complete-record boundaries and original AOF
+addresses so future partial resync does not need a new record representation.
+
+### No shared replication hub
+
+Each standalone replica owns:
+
+- One `StandaloneSyncDriver`.
+- One AOF iterator.
+- One batch writer.
+- One network stream.
+
+This deliberately remains the initial implementation. CPU profiles do not show
+the iterator or batch-construction path as a leading cost with two replicas.
+
+Cluster replication also remains per-replica/per-physical-sublog. The existing
+`AofSyncDriverStore` is a lifecycle registry, not a shared fan-out backlog.
+
+### Single physical AOF log only
+
+Standalone replication rejects multi-log AOF. Cluster replication continues to
+own multi-sublog orchestration.
+
+### Garnet-to-Garnet only
+
+Garnet AOF records contain Garnet-specific headers and typed inputs, not the
+original RESP command bytes. A stock Redis replica cannot consume this stream.
+
+## 4. Consistency model
+
+Initial synchronization follows this sequence:
+
+1. Acquire a checkpoint lease.
+2. Acquire a fixed AOF retention lease at the checkpoint's covered address.
+3. Send checkpoint files and metadata.
+4. Recover the checkpoint on the replica.
+5. Create the live AOF iterator at the covered address.
+6. Install the moving retention lease associated with replica progress.
+7. Replay catch-up records and continue streaming live records.
+8. Release the checkpoint and fixed snapshot retention resources.
+
+This ordering is essential. Releasing the fixed AOF pin before the live iterator
+and moving lease are active can create an unrecoverable gap between snapshot and
+stream.
+
+The checkpoint metadata unifies:
+
+- Store and index checkpoint tokens.
+- Store version.
+- Covered AOF address.
+- Primary replication ID.
+
+The same identity and coverage data feed checkpoint recovery, `INFO`,
+`FULLRESYNC`, and restart restoration.
+
+## 5. Wire protocol
+
+The initial handshake remains recognizable to Redis/Sentinel:
+
+```text
+PING
+REPLCONF listening-port <port>
+REPLCONF capa eof capa psync2 capa garnet-snapshot
+PSYNC ? -1
+```
+
+After `+FULLRESYNC`, the primary sends a valid length-delimited empty RDB
+preamble. When `garnet-snapshot` was negotiated, Garnet-private typed frames
+follow it.
+
+Frame types are:
+
+- `CheckpointFile`
+- `CheckpointMetadata`
+- `CheckpointFileEnd`
+- `CheckpointComplete`
+- `StreamReady`
+- `AofRecord` (accepted for compatibility)
+- `AofBatch`
+
+An AOF batch is a sequence of:
+
+```text
+long currentAddress
+int recordLength
+byte[recordLength] record
+```
+
+Batch policy:
+
+- Up to 256 complete records.
+- Approximately 256 KiB per batch.
+- Drain only records immediately available from the iterator.
+- Flush a partial batch before waiting for more data.
+
+An isolated write is therefore not delayed while waiting for a batch to fill.
+
+## 6. Key code
+
+### Standalone control and data plane
+
+| File | Responsibility |
 |---|---|
-| Build | succeeded, **0 warnings** |
-| `Sentinel*` in-process | **13/13** |
-| ACL | **468/468** |
-| RespCommand/Info/Docs/EnumStability | **91/91** |
-| Full `Garnet.test` | only **4 failures, all pre-existing + environmental** |
+| `libs/server/Resp/ReplConfCommands.cs` | Replication capability and listening-port negotiation. |
+| `libs/server/Resp/PsyncCommands.cs` | Full-sync response, snapshot selection, retention acquisition, and primary driver creation. |
+| `libs/server/Resp/AdminCommands.cs` | Standalone `REPLICAOF`, promotion, and role handling. |
+| `libs/server/StandaloneReplicaClient.cs` | Outbound attach, checkpoint receive/recovery, pooled frame receive, and AOF replay. |
+| `libs/server/StandaloneSyncDriver.cs` | Checkpoint transfer followed by batched catch-up and live AOF streaming. |
+| `libs/server/StandaloneReplicationWireFormat.cs` | Frame validation and AOF batch encoding/decoding. |
+| `libs/server/LocalReplicationState.cs` | Local role, upstream endpoint, and link state. |
+| `libs/server/ReplicaRegistry.cs` | Primary-side attached replica discovery for `INFO`. |
 
-**Those 4 failures are not yours.** `ConnectionProtectionTest` ×3 and
-`MultiTcpSocketTest` call `Dns.GetHostAddresses` on the machine's own hostname,
-which does not resolve in this environment (`getent hosts opensuse` returns
-nothing). The stack trace shows the throw occurs before any project code runs.
-Confirm this before spending time on them.
+### Snapshot and retention infrastructure
 
----
+| File | Responsibility |
+|---|---|
+| `libs/server/Replication/AofRetentionManager.cs` | Fixed and moving retention leases. |
+| `libs/server/Replication/Snapshot/TsavoriteCheckpointDataSourceReader.cs` | Enumerates and reads checkpoint files and metadata. |
+| `libs/server/Replication/Snapshot/CheckpointFileReceiveHandler.cs` | Receives checkpoint files and metadata. |
+| `libs/server/Replication/Snapshot/CheckpointFileTransferProvider.cs` | Shared checkpoint device access. |
+| `libs/server/StandaloneCheckpointStore.cs` | Lease-aware catalogue and restart restoration. |
+| `libs/server/AOF/GarnetAppendOnlyFile.cs` | Owns the AOF and retention manager. |
 
-## 8. Working agreements that were followed
+### Cluster code that informed the design
 
-* **Empirical verification over memory.** Redis 7.4.11 is built at
-  `~/.cache/redis-bin/7.4.11/` and is used as an oracle. Claims about wire
-  behaviour were proven by capturing actual bytes.
-* **Strict Redis compatibility** is preferred over documenting a divergence.
-  The one deliberate divergence (Garnet counts a replica as early as `REPLCONF`,
-  where Redis waits for `PSYNC`) is documented in code and pinned by a test.
-* **Do not disturb existing test structure.** The sentinel suite is a sibling
-  project; only `Garnet.slnx` gained a line. Do not edit existing csproj/test
-  files gratuitously.
-* **Do not hand-edit generated resources.** `RespCommands{Info,Docs}.json` come
-  from `playground/CommandInfoUpdater/`.
-* **Two-layer gating for external tests** (compile-time symbol **and** runtime
-  env var). In-process tests stay ungated so CI actually exercises the surface.
-* **Honesty about gaps.** The README and commit messages state plainly what is
-  not implemented. Keep it that way.
+| File | Note |
+|---|---|
+| `libs/cluster/Server/Replication/PrimaryOps/AofOperations/AofSyncDriverStore.cs` | Driver lifecycle and retention; not a shared buffer. |
+| `libs/cluster/Server/Replication/PrimaryOps/AofOperations/AofSyncDriver.cs` | One cluster driver per replica. |
+| `libs/cluster/Server/Replication/PrimaryOps/AofOperations/AofSyncTask.cs` | One iterator per replica and physical sublog; already batches up to about 1 MiB. |
+| `libs/server/AOF/AofProcessor.cs` | Applies Garnet AOF records on replicas and during recovery. |
 
----
+## 7. Tests
 
-## 9. Immediate next action
+The main targeted suites are:
 
-**Step A in §5.** Stream AOF records from the primary to an attached replica and
-apply them, so that `SET k v` on the primary shows up on the replica.
+- `test/standalone/Garnet.test/SentinelReplicationInfoTests.cs`
+- `test/standalone/Garnet.test/ReplicationLeaseTests.cs`
 
-Start by reading `libs/cluster/Server/Replication/PrimaryOps/AofOperations/AofSyncTask.cs`
-and `libs/server/AOF/AofProcessor.cs` — between them they contain almost
-everything needed; the work is stripping the cluster coupling, not inventing a
-mechanism.
+They cover:
 
-If anything in this document turns out to be wrong, **trust the code and the
-measurements over this document**, and update it.
+- Primary and replica `INFO`/`ROLE` behavior.
+- Feature gating.
+- Attach, detach, and live writes.
+- Multiple attached replicas.
+- Checkpoint transfer and recovery.
+- Writes made while checkpoint synchronization is active.
+- Checkpoint and AOF lease lifetime.
+- Replication identity restoration.
+- Frame headers and malformed input.
+- Multi-record AOF batch round trips.
+- Truncated batch record rejection.
+
+Latest validation after pooled receive buffers:
+
+| Validation | Result |
+|---|---|
+| Release `net10.0` server build | Passed, zero warnings |
+| Targeted standalone replication tests, `net8.0` | 16/16 passed |
+| Targeted standalone replication tests, `net10.0` | 16/16 passed |
+| Formatting verification | Passed |
+| `git diff --check` | Passed |
+
+Before the final batching and pooling commits, the broader replication work was
+also checked against selected cluster checkpoint, RangeIndex, and injected
+checkpoint-failure tests. Keep those areas in the regression set when changing
+shared snapshot infrastructure.
+
+Useful commands:
+
+```bash
+dotnet build main/GarnetServer/GarnetServer.csproj -c Release -f net10.0
+
+dotnet test test/standalone/Garnet.test/Garnet.test.csproj \
+  -f net8.0 -c Debug \
+  --filter "FullyQualifiedName~SentinelReplicationInfoTests|FullyQualifiedName~ReplicationLeaseTests"
+
+dotnet test test/standalone/Garnet.test/Garnet.test.csproj \
+  -f net10.0 -c Debug \
+  --filter "FullyQualifiedName~SentinelReplicationInfoTests|FullyQualifiedName~ReplicationLeaseTests"
+
+dotnet format Garnet.slnx --verify-no-changes \
+  --include libs/server/StandaloneReplicaClient.cs
+```
+
+## 8. Performance findings
+
+The repeatable local workload used:
+
+- Garnet Release on .NET 10.
+- Redis 7.4.11.
+- AOF enabled on every node.
+- 500,000 `SET` operations.
+- 50 clients.
+- Pipeline depth 16.
+- 256-byte values.
+- Three fresh trials per topology.
+- One six-core host for primary, replicas, and client.
+
+Median scaling results with default behavior:
+
+| System | Replicas | Requests/s | Incremental throughput loss |
+|---|---:|---:|---:|
+| Redis | 0 | 303,767 | - |
+| Redis | 1 | 270,124 | 11.1% |
+| Redis | 2 | 249,875 | 7.5% |
+| Garnet | 0 | 150,602 | - |
+| Garnet | 1 | 80,026 | 46.9% |
+| Garnet | 2 | 63,743 | 20.4% |
+
+This comparison is not raw in-memory throughput:
+
+- Redis used `appendfsync no`.
+- Garnet used its default immediate AOF commit policy.
+- All processes contended for six cores.
+
+A diagnostic Garnet run with `--aof-commit-freq 1000` produced:
+
+| Replicas | Requests/s |
+|---:|---:|
+| 0 | 481,232 |
+| 1 | 289,687 |
+| 2 | 210,349 |
+
+Do not change the default based only on this result. AOF commit frequency has
+durability and recovery implications that require an explicit contract.
+
+CPU traces with immediate commit showed:
+
+- `TsavoriteLog.Commit`: about 35% inclusive primary samples.
+- `LightEpoch.BumpCurrentEpoch`: about 25% inclusive and 21% exclusive.
+- `StandaloneSyncDriver.StreamAsync`: about 1.75% inclusive.
+- AOF iterator `GetNext`: under 1% inclusive.
+- Replica `StandaloneReplicaClient.RunAttachAsync`: about 3.65% inclusive and
+  0.03% exclusive in a traced run.
+
+Conclusions:
+
+- Immediate AOF commit/epoch coordination is a larger bottleneck than batch
+  construction.
+- Batching improved two-replica drain lag by about 98% and throughput by about
+  7% in the original before/after experiment.
+- Pooled receive buffers are allocation/GC hygiene, not a proven throughput
+  improvement.
+- A shared hub should not be added to the initial PR based on current evidence.
+- Production-style measurements should place primary and replicas on different
+  hosts or CPU sets.
+
+Performance artifacts are outside the repository:
+
+```text
+/home/skyline/.copilot/session-state/e15dc936-5726-4ab1-a7ca-ef107fcaa4cd/files/
+```
+
+Important files there include:
+
+- `sentinel_perf_compare.py`
+- `sentinel_perf_results.json`
+- `sentinel_perf_batched_results.json`
+- `aof_batching_perf_report.md`
+- `replica_scaling_perf.py`
+- `replica_scaling_perf_results.json`
+- `replica_scaling_commit_1000ms_results.json`
+- `replica_scaling_pooled_results.json`
+- `standalone_replication_scaling_report.md`
+- `garnet_two_replica_primary.nettrace`
+- `garnet_two_replica_receiver.nettrace`
+- `garnet_two_replica_commit_1000ms_primary.nettrace`
+
+## 9. Commit sequence
+
+Core standalone data-plane commits:
+
+```text
+aea85c3bc [Resp] Add REPLCONF and PSYNC for Redis Sentinel / stock-replica support (Phase 1)
+ba417d1f3 [Resp] Fix REPLCONF/PSYNC review findings (round 1)
+ed8dce346 [Resp] Report attached replicas in INFO replication for Sentinel (phase 2)
+2bc3b6ae3 [Docs] Document Sentinel support status and add failover verification script
+2e66fc123 [Resp] Add standalone REPLICAOF so a Garnet node can be a replica (Phase 3)
+86addb5c7 [Resp] Stream standalone AOF replication data (Phase 4)
+7bd5a7da5 [Cluster] Decouple checkpoint transfer from ClusterProvider
+f0bf6786b [Cluster] Extract checkpoint and AOF retention leases
+2c879bb9b [Resp] Protect standalone AOF streams from checkpoint truncation
+ffb10af63 [Resp] Add lease-aware standalone checkpoint catalogue
+8166553cb [Cluster] Move checkpoint transfer adapter to server
+503752b55 [Resp] Unify standalone checkpoint replication identity
+9c9d338b4 [Cluster] Extract reusable checkpoint data reader
+a7b7e4047 [Cluster] Extract reusable checkpoint file receiver
+268e39e74 [Resp] Add typed standalone replication frames
+7c82564a8 [Resp] Stream standalone checkpoints before AOF catch-up
+05887aea8 [Resp] Batch standalone AOF replication frames
+f2c59fe78 [Resp] Pool standalone replication frame buffers
+```
+
+## 10. Recommended future work
+
+### First: prepare the initial PR
+
+Before adding more architecture:
+
+1. Review the full branch diff against its merge base.
+2. Ensure user-facing documentation matches current snapshot support.
+3. Correct the stale `--sentinel-replication` help text in
+   `libs/host/Configuration/Options.cs`; it still says initial snapshots are not
+   implemented.
+4. Run the broad standalone, ACL, command metadata, and selected cluster
+   regression suites expected by the PR.
+5. Write a precise PR description separating implemented behavior from partial
+   resync and other future work.
+
+### Then: partial resynchronization
+
+The next substantial feature should be reconnect without full checkpoint
+transfer:
+
+1. Persist the replica's primary ID and last completely applied AOF address.
+2. Send that identity and address in `PSYNC`.
+3. Validate identity and retained AOF range on the primary.
+4. Reply `+CONTINUE` when the requested complete-record boundary is retained.
+5. Fall back to the existing full snapshot flow otherwise.
+6. Add reconnect tests for retained and truncated ranges.
+
+Reuse `AofRetentionManager`; do not invent an unrelated offset lifetime model.
+
+### Separate performance investigation
+
+Investigate AOF commit policy separately from Sentinel replication:
+
+- Define acknowledged durability semantics for each commit mode.
+- Compare equivalent Redis and Garnet durability settings.
+- Profile epoch/commit contention with no replicas and with isolated replicas.
+- Avoid silently weakening defaults for benchmark results.
+
+### Defer the shared hub
+
+Only revisit a shared hub if measurements at higher replica counts show
+per-replica iterator and copying work becoming dominant. If pursued:
+
+- Place a generic `AofReplicationHub` in `Garnet.server`.
+- Use one publisher per physical sublog.
+- Share immutable pooled batches.
+- Give each subscriber a bounded queue and applied-address progress.
+- Join shared live fan-out only after private catch-up to a captured barrier.
+- Adapt standalone first; migrate cluster transport later.
+
+Do not combine a full cluster migration with the initial Sentinel PR.
+
+## 11. Traps
+
+- `parseState.Count` excludes the command name.
+- The replication RDB transfer has no trailing RESP CRLF after its body.
+- `REPLCONF ACK` is a no-reply command.
+- `ReplicaRegistry` entries must be pruned when sessions end.
+- Primary replication ID must be stable and checkpoint-restored.
+- Retention leases must cover the entire snapshot-to-live transition.
+- `ScratchBufferBuilder` slices cannot escape or survive reallocation.
+- Pooled replication payloads cannot be retained after the frame handler
+  returns them to `ArrayPool<byte>`.
+- Drain-list callbacks and epoch actions may run synchronously on arbitrary
+  protected threads.
+- Do not assume asynchronous replication is free; primary publication, AOF
+  reads, copying, sockets, replica replay, storage I/O, and scheduling still
+  consume resources.
+- Do not use an AOF-disabled benchmark to evaluate the supported Sentinel
+  topology.
+
+If this handoff conflicts with code or fresh measurements, trust the code and
+measurements, then update this document.

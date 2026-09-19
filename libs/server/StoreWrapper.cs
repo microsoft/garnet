@@ -209,6 +209,9 @@ namespace Garnet.server
         /// </summary>
         public string GetOrCreatePrimaryReplId()
         {
+            if (!serverOptions.EnableCluster)
+                return runId;
+
             if (primaryReplId == null)
             {
                 lock (replicaRegistry)

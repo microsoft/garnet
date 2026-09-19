@@ -3,7 +3,7 @@
 
 using Tsavorite.core;
 
-namespace Garnet.cluster
+namespace Garnet.server
 {
     /// <summary>
     /// Represents the result of a chunk read from a checkpoint data source.

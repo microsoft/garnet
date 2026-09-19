@@ -80,6 +80,7 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> LISTENING_PORT => "LISTENING-PORT"u8;
         public static ReadOnlySpan<byte> IP_ADDRESS => "IP-ADDRESS"u8;
         public static ReadOnlySpan<byte> CAPA => "CAPA"u8;
+        public static ReadOnlySpan<byte> GARNET_SNAPSHOT => "GARNET-SNAPSHOT"u8;
         public static ReadOnlySpan<byte> RDB_ONLY => "RDB-ONLY"u8;
         public static ReadOnlySpan<byte> ACK => "ACK"u8;
         public static ReadOnlySpan<byte> GETACK => "GETACK"u8;

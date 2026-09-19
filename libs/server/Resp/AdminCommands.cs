@@ -792,6 +792,20 @@ namespace Garnet.server
             // REPLICAOF host port  /  REPLICAOF FAILOVER host port  (parseState.Count == 2)
             if (parseState.Count == 2)
             {
+                if (storeWrapper.appendOnlyFile == null)
+                {
+                    while (!RespWriteUtils.TryWriteError("ERR standalone replication requires AOF"u8, ref dcurr, dend))
+                        SendAndReset();
+                    return true;
+                }
+
+                if (storeWrapper.serverOptions.MultiLogEnabled)
+                {
+                    while (!RespWriteUtils.TryWriteError("ERR standalone replication does not support multi-log AOF"u8, ref dcurr, dend))
+                        SendAndReset();
+                    return true;
+                }
+
                 string host;
                 int port;
 

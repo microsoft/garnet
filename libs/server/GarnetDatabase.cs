@@ -50,6 +50,11 @@ namespace Garnet.server
         public GarnetAppendOnlyFile AppendOnlyFile { get; }
 
         /// <summary>
+        /// Lease-aware checkpoint catalogue used by standalone replication.
+        /// </summary>
+        internal StandaloneCheckpointStore StandaloneCheckpointStore { get; }
+
+        /// <summary>
         /// Version map
         /// </summary>
         public WatchVersionMap VersionMap { get; }
@@ -126,6 +131,8 @@ namespace Garnet.server
             StateMachineDriver = stateMachineDriver;
             SizeTracker = sizeTracker;
             AppendOnlyFile = appendOnlyFile;
+            if (store.CheckpointManager is GarnetCheckpointManager { EnableCheckpointLeases: true } checkpointManager)
+                StandaloneCheckpointStore = new(checkpointManager);
             StoreIndexMaxedOut = storeIndexMaxedOut;
             VectorManager = vectorManager;
             RangeIndexManager = rangeIndexManager;
@@ -140,6 +147,7 @@ namespace Garnet.server
             StateMachineDriver = srcDb.StateMachineDriver;
             SizeTracker = srcDb.SizeTracker;
             AppendOnlyFile = enableAof ? srcDb.AppendOnlyFile : null;
+            StandaloneCheckpointStore = srcDb.StandaloneCheckpointStore;
             StoreIndexMaxedOut = srcDb.StoreIndexMaxedOut;
             VectorManager = srcDb.VectorManager;
             RangeIndexManager = srcDb.RangeIndexManager;

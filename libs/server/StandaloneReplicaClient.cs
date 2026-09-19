@@ -2,12 +2,13 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Buffers;
 using System.Linq;
 using System.Net;
+using System.Net.Sockets;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
-using Garnet.client;
-using Garnet.common;
 using Microsoft.Extensions.Logging;
 
 namespace Garnet.server
@@ -17,30 +18,19 @@ namespace Garnet.server
     ///
     /// <para>One instance lives in <see cref="StoreWrapper"/> per node that has executed
     /// <c>REPLICAOF host port</c>. <see cref="Start(string,int)"/> opens a
-    /// <see cref="GarnetClientSession"/>, runs the stock-Redis attach handshake
+    /// TCP connection, runs the stock-Redis attach handshake
     /// (<c>PING</c>, <c>REPLCONF listening-port</c>, <c>REPLCONF capa eof capa psync2</c>,
-    /// <c>PSYNC ? -1</c>), and then idles. The primary side completes the handshake
+    /// <c>PSYNC ? -1</c>), and then consumes Garnet AOF frames. The primary side completes the handshake
     /// with <c>+FULLRESYNC &lt;replid&gt; 0</c> + the empty-DB RDB body, which is
-    /// enough for Sentinel to see the replica as attached (<c>master_link_status:up</c>,
-    /// <c>connected_slaves:N</c> includes us). No actual data replication is performed
-    /// by this class.</para>
-    ///
-    /// <para>What this does <em>not</em> do (Phase 4 scope):</para>
-    /// <list type="bullet">
-    ///   <item>Stream AOF records from the primary's side. The replica receives only the
-    ///         <c>+FULLRESYNC</c> reply and the 56-byte empty body, then keeps the
-    ///         socket open for the primary to write more bytes onto later.</item>
-    ///   <item>Periodic <c>REPLCONF ACK</c> from replica to primary. Sentinel does not
-    ///         require ACK to advertise the replica in INFO replication; it just needs
-    ///         a healthy TCP socket and a successful PSYNC.</item>
-    /// </list>
+    /// enough for Sentinel to see the replica as attached and for writes made after
+    /// attachment to be replayed on the replica.</para>
     /// </summary>
     internal sealed class StandaloneReplicaClient : IDisposable
     {
         readonly StoreWrapper storeWrapper;
         readonly ILogger logger;
 
-        GarnetClientSession session;
+        TcpClient client;
         CancellationTokenSource cts;
         Task attachTask;
         readonly object attachLock = new();
@@ -97,9 +87,9 @@ namespace Garnet.server
                 }
             }
 
-            var oldSession = session;
-            session = null;
-            oldSession?.Dispose();
+            var oldClient = client;
+            client = null;
+            oldClient?.Dispose();
 
             lock (attachLock)
             {
@@ -114,7 +104,7 @@ namespace Garnet.server
         public void Dispose() => Detach();
 
         /// <summary>
-        /// Background task: open a <see cref="GarnetClientSession"/> to the primary
+        /// Background task: open a TCP connection to the primary
         /// and run the standard Redis attach handshake.
         ///
         /// <para>The handshake order matches what stock Redis 7.4.11 accepts from a
@@ -130,7 +120,9 @@ namespace Garnet.server
         /// </summary>
         static async Task RunAttachAsync(string host, int port, StandaloneReplicaClient owner, StoreWrapper storeWrapper, ILogger logger, CancellationToken token)
         {
-            GarnetClientSession newClient = null;
+            TcpClient newClient = null;
+            AofProcessor aofProcessor = null;
+            CheckpointFileReceiveHandler checkpointReceiver = null;
             try
             {
                 token.ThrowIfCancellationRequested();
@@ -152,13 +144,14 @@ namespace Garnet.server
                 }
 
                 var endpoint = new IPEndPoint(address, port);
-                newClient = new GarnetClientSession(endpoint, networkBufferSettings: new NetworkBufferSettings(), clientName: nameof(StandaloneReplicaClient));
-
-                await newClient.ConnectAsync(token: token).ConfigureAwait(false);
+                newClient = new TcpClient(endpoint.AddressFamily);
+                await newClient.ConnectAsync(endpoint, token).ConfigureAwait(false);
+                var stream = newClient.GetStream();
 
                 // Step 1: PING
-                var pong = await newClient.ExecuteAsync("PING").WaitAsync(token).ConfigureAwait(false);
-                if (pong != "PONG")
+                await WriteCommandAsync(stream, token, "PING").ConfigureAwait(false);
+                var pong = await ReadLineAsync(stream, token).ConfigureAwait(false);
+                if (pong != "+PONG")
                 {
                     logger?.LogWarning("StandaloneReplicaClient: unexpected PING reply '{pong}' from {endpoint}", pong, endpoint);
                     newClient.Dispose();
@@ -167,15 +160,11 @@ namespace Garnet.server
                 }
 
                 // Step 2: REPLCONF listening-port <our-port>
-                // We tell the primary the port Sentinel should later connect to. The
-                // local listening port is what the host configures; we do not have a
-                // direct accessor on StoreWrapper, so we use the system-default 0 and
-                // let the primary interpret that. A future phase should plumb the
-                // server's actual listening port through here.
-                var ourPort = 0;
-                var ackPort = await newClient.ExecuteAsync("REPLCONF", "listening-port", ourPort.ToString())
-                    .WaitAsync(token).ConfigureAwait(false);
-                if (ackPort != "OK")
+                // Tell the primary the port Sentinel should later connect to.
+                var ourPort = GetListeningPort(storeWrapper);
+                await WriteCommandAsync(stream, token, "REPLCONF", "listening-port", ourPort.ToString()).ConfigureAwait(false);
+                var ackPort = await ReadLineAsync(stream, token).ConfigureAwait(false);
+                if (ackPort != "+OK")
                 {
                     logger?.LogWarning("StandaloneReplicaClient: unexpected REPLCONF listening-port reply '{reply}'", ackPort);
                     newClient.Dispose();
@@ -184,9 +173,9 @@ namespace Garnet.server
                 }
 
                 // Step 3: REPLCONF capa eof capa psync2
-                var ackCapa = await newClient.ExecuteAsync("REPLCONF", "capa", "eof", "capa", "psync2")
-                    .WaitAsync(token).ConfigureAwait(false);
-                if (ackCapa != "OK")
+                await WriteCommandAsync(stream, token, "REPLCONF", "capa", "eof", "capa", "psync2", "capa", "garnet-snapshot").ConfigureAwait(false);
+                var ackCapa = await ReadLineAsync(stream, token).ConfigureAwait(false);
+                if (ackCapa != "+OK")
                 {
                     logger?.LogWarning("StandaloneReplicaClient: unexpected REPLCONF capa reply '{reply}'", ackCapa);
                     newClient.Dispose();
@@ -195,13 +184,9 @@ namespace Garnet.server
                 }
 
                 // Step 4: PSYNC ? -1
-                // The reply is a multi-line response: "+FULLRESYNC <replid> 0\r\n"
-                // followed by "$56\r\n<empty RDB>". ExecuteAsync collapses these into
-                // its single-string return; we only need to verify it starts with
-                // "+FULLRESYNC" or contains the marker.
-                var psyncReply = await newClient.ExecuteAsync("PSYNC", "?", "-1")
-                    .WaitAsync(token).ConfigureAwait(false);
-                if (psyncReply == null || !psyncReply.Contains("FULLRESYNC"))
+                await WriteCommandAsync(stream, token, "PSYNC", "?", "-1").ConfigureAwait(false);
+                var psyncReply = await ReadLineAsync(stream, token).ConfigureAwait(false);
+                if (!psyncReply.StartsWith("+FULLRESYNC ", StringComparison.Ordinal))
                 {
                     logger?.LogWarning("StandaloneReplicaClient: unexpected PSYNC reply '{reply}'", psyncReply);
                     newClient.Dispose();
@@ -209,29 +194,193 @@ namespace Garnet.server
                     return;
                 }
 
-                storeWrapper.LocalReplicationState.ReportLinkUp();
-                storeWrapper.LocalReplicationState.MarkSyncCompleted();
-                logger?.LogInformation("StandaloneReplicaClient: attached to {endpoint} as replica", endpoint);
+                var rdbHeader = await ReadLineAsync(stream, token).ConfigureAwait(false);
+                if (rdbHeader.Length < 2 || rdbHeader[0] != '$' || !int.TryParse(rdbHeader.AsSpan(1), out var rdbLength) || rdbLength < 0)
+                    throw new InvalidOperationException($"Invalid RDB length header '{rdbHeader}'");
 
-                // Hand the live session back to the owner so Detach() can dispose it.
-                // Until we reach this point, the session is local to RunAttachAsync and
-                // would not be cleaned up by REPLICAOF NO ONE.
-                owner.session = newClient;
-                newClient = null;
-                newClient = null;
+                var rdb = new byte[rdbLength];
+                await stream.ReadExactlyAsync(rdb, token).ConfigureAwait(false);
+
+                owner.client = newClient;
+                checkpointReceiver = new CheckpointFileReceiveHandler(
+                    new CheckpointFileTransferProvider(storeWrapper.serverOptions, storeWrapper.StoreCheckpointManager),
+                    storeWrapper.serverOptions.ReplicaSyncTimeout,
+                    logger);
+
+                var header = new byte[StandaloneReplicationWireFormat.HeaderLength];
+                var syncCompleted = false;
+                while (true)
+                {
+                    await stream.ReadExactlyAsync(header, token).ConfigureAwait(false);
+                    if (!StandaloneReplicationWireFormat.TryReadHeader(header, out var frameHeader))
+                        throw new InvalidOperationException("Primary sent an invalid standalone replication frame");
+
+                    byte[] payload = null;
+                    try
+                    {
+                        if (frameHeader.PayloadLength > 0)
+                        {
+                            payload = ArrayPool<byte>.Shared.Rent(frameHeader.PayloadLength);
+                            await stream.ReadExactlyAsync(
+                                payload.AsMemory(0, frameHeader.PayloadLength),
+                                token).ConfigureAwait(false);
+                        }
+
+                        switch (frameHeader.Type)
+                        {
+                            case StandaloneReplicationFrameType.CheckpointFile:
+                                checkpointReceiver.ProcessFileSegment(
+                                    frameHeader.Token,
+                                    frameHeader.CheckpointFileType,
+                                    frameHeader.Address,
+                                    payload.AsSpan(0, frameHeader.PayloadLength));
+                                break;
+                            case StandaloneReplicationFrameType.CheckpointMetadata:
+                                checkpointReceiver.ProcessMetadata(
+                                    frameHeader.Token,
+                                    frameHeader.CheckpointFileType,
+                                    payload.AsSpan(0, frameHeader.PayloadLength));
+                                break;
+                            case StandaloneReplicationFrameType.CheckpointFileEnd:
+                                checkpointReceiver.ProcessFileSegment(
+                                    frameHeader.Token,
+                                    frameHeader.CheckpointFileType,
+                                    frameHeader.Address,
+                                    []);
+                                break;
+                            case StandaloneReplicationFrameType.CheckpointComplete:
+                                checkpointReceiver.Dispose();
+                                checkpointReceiver = null;
+                                var metadata = StandaloneReplicationWireFormat.DeserializeCheckpointMetadata(
+                                    payload.AsSpan(0, frameHeader.PayloadLength),
+                                    storeWrapper.serverOptions.AofPhysicalSublogCount);
+                                await storeWrapper.RecoverCheckpointAsync(
+                                    replicaRecover: true,
+                                    recoverFromToken: true,
+                                    metadata: metadata).ConfigureAwait(false);
+                                MarkSyncCompleted();
+                                break;
+                            case StandaloneReplicationFrameType.AofRecord:
+                                aofProcessor ??= new AofProcessor(
+                                    storeWrapper,
+                                    recordToAof: storeWrapper.serverOptions.EnableAOF,
+                                    logger: logger);
+                                ProcessAofRecord(
+                                    aofProcessor,
+                                    payload.AsSpan(0, frameHeader.PayloadLength),
+                                    frameHeader.Address);
+                                MarkSyncCompleted();
+                                break;
+                            case StandaloneReplicationFrameType.AofBatch:
+                                aofProcessor ??= new AofProcessor(
+                                    storeWrapper,
+                                    recordToAof: storeWrapper.serverOptions.EnableAOF,
+                                    logger: logger);
+                                ReadOnlySpan<byte> batch = payload.AsSpan(0, frameHeader.PayloadLength);
+                                var recordCount = 0;
+                                while (!batch.IsEmpty)
+                                {
+                                    if (!StandaloneReplicationWireFormat.TryReadAofBatchRecord(
+                                        ref batch,
+                                        out var currentAddress,
+                                        out var record))
+                                    {
+                                        throw new InvalidOperationException("Primary sent an invalid standalone replication AOF batch");
+                                    }
+                                    ProcessAofRecord(aofProcessor, record, currentAddress);
+                                    recordCount++;
+                                }
+                                if (recordCount == 0)
+                                    throw new InvalidOperationException("Primary sent an empty standalone replication AOF batch");
+                                MarkSyncCompleted();
+                                break;
+                            case StandaloneReplicationFrameType.StreamReady:
+                                MarkSyncCompleted();
+                                break;
+                            default:
+                                throw new InvalidOperationException($"Unsupported standalone replication frame {frameHeader.Type}");
+                        }
+                    }
+                    finally
+                    {
+                        if (payload != null)
+                            ArrayPool<byte>.Shared.Return(payload);
+                    }
+
+                    storeWrapper.LocalReplicationState.ReportLinkUp();
+                }
+
+                void MarkSyncCompleted()
+                {
+                    if (syncCompleted)
+                        return;
+                    syncCompleted = true;
+                    storeWrapper.LocalReplicationState.ReportLinkUp();
+                    storeWrapper.LocalReplicationState.MarkSyncCompleted();
+                    logger?.LogInformation("StandaloneReplicaClient: attached to {endpoint} as replica", endpoint);
+                }
             }
             catch (OperationCanceledException)
             {
                 logger?.LogInformation("StandaloneReplicaClient: attach cancelled");
-                newClient?.Dispose();
                 storeWrapper.LocalReplicationState.ReportLinkDown();
             }
             catch (Exception ex)
             {
                 logger?.LogError(ex, "StandaloneReplicaClient: attach failed");
-                newClient?.Dispose();
                 storeWrapper.LocalReplicationState.ReportLinkDown();
             }
+            finally
+            {
+                aofProcessor?.Dispose();
+                checkpointReceiver?.Dispose();
+                newClient?.Dispose();
+                if (ReferenceEquals(owner.client, newClient))
+                    owner.client = null;
+            }
+        }
+
+        static int GetListeningPort(StoreWrapper storeWrapper)
+            => storeWrapper.serverOptions.EndPoints.OfType<IPEndPoint>().FirstOrDefault()?.Port ?? 0;
+
+        static async Task WriteCommandAsync(NetworkStream stream, CancellationToken token, params string[] args)
+        {
+            var command = new StringBuilder();
+            command.Append('*').Append(args.Length).Append("\r\n");
+            foreach (var arg in args)
+            {
+                var byteCount = Encoding.UTF8.GetByteCount(arg);
+                command.Append('$').Append(byteCount).Append("\r\n").Append(arg).Append("\r\n");
+            }
+
+            var bytes = Encoding.UTF8.GetBytes(command.ToString());
+            await stream.WriteAsync(bytes, token).ConfigureAwait(false);
+        }
+
+        static async Task<string> ReadLineAsync(NetworkStream stream, CancellationToken token)
+        {
+            var buffer = new byte[256];
+            var length = 0;
+            while (true)
+            {
+                if (length == buffer.Length)
+                {
+                    if (buffer.Length >= 64 * 1024)
+                        throw new InvalidOperationException("Replication handshake line exceeds 64 KiB");
+                    Array.Resize(ref buffer, buffer.Length * 2);
+                }
+
+                await stream.ReadExactlyAsync(buffer.AsMemory(length, 1), token).ConfigureAwait(false);
+                if (length > 0 && buffer[length - 1] == '\r' && buffer[length] == '\n')
+                    return Encoding.ASCII.GetString(buffer, 0, length - 1);
+                length++;
+            }
+        }
+
+        static unsafe void ProcessAofRecord(AofProcessor aofProcessor, ReadOnlySpan<byte> payload, long currentAddress)
+        {
+            fixed (byte* ptr = payload)
+                aofProcessor.ProcessAofRecordInternal(0, ptr, payload.Length, asReplica: true, out _, currentAddress);
         }
     }
 }

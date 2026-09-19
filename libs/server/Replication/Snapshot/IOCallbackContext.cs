@@ -3,7 +3,7 @@
 
 using Tsavorite.core;
 
-namespace Garnet.cluster
+namespace Garnet.server
 {
     /// <summary>
     /// Roots the buffer so the pinned byte[] is not collected while IO is in-flight.

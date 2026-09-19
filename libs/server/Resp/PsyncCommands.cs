@@ -3,6 +3,7 @@
 
 using System;
 using Garnet.common;
+using Tsavorite.core;
 
 namespace Garnet.server
 {
@@ -14,22 +15,25 @@ namespace Garnet.server
     /// by anything that drives Redis-style replication, including Sentinel) when
     /// they first attach to a primary or reconnect after a transient drop.</para>
     ///
-    /// <para>Phase 1 scope: parse the two arguments, always reply
+    /// <para>The command parses the two arguments, replies
     /// <c>+FULLRESYNC &lt;replid&gt; 0</c>, and ship a valid empty-database RDB body
-    /// (56 bytes: 48-byte body + 8-byte CRC64 little-endian) so a stock replica
-    /// can complete its handshake against a Garnet primary with an empty database.</para>
+    /// (56 bytes: 48-byte body + 8-byte CRC64 little-endian). When standalone
+    /// replication and AOF are enabled, new Garnet AOF records are streamed after
+    /// the RDB body.</para>
     ///
-    /// <para>What Phase 1 does <em>not</em> yet do:</para>
+    /// <para>What this does <em>not</em> yet do:</para>
     /// <list type="bullet">
     ///   <item><c>+CONTINUE</c> for partial resync (requires a replication backlog,
     ///         wired in Phase 2).</item>
-    ///   <item>Streaming the actual database state — we reply with an empty RDB. A
-    ///         stock replica will end up with an empty database, which is the same
-    ///         end-state as a fresh primary that has never received a write.</item>
+    ///   <item>Streaming the initial database state — the RDB remains empty, so only
+    ///         writes made after attachment are replicated.</item>
     /// </list>
     /// </summary>
     internal sealed unsafe partial class RespServerSession : ServerSessionBase
     {
+        StandaloneSyncDriver standaloneSyncDriver;
+        bool supportsGarnetSnapshot;
+
         /// <summary>
         /// Implements <c>PSYNC &lt;replid&gt; &lt;offset&gt;</c>.
         ///
@@ -57,12 +61,69 @@ namespace Garnet.server
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.PSYNC));
             }
 
+            if (storeWrapper.serverOptions.EnableStandaloneReplication)
+            {
+                if (storeWrapper.appendOnlyFile == null)
+                {
+                    while (!RespWriteUtils.TryWriteError("ERR standalone replication requires AOF"u8, ref dcurr, dend))
+                        SendAndReset();
+                    return true;
+                }
+
+                if (storeWrapper.serverOptions.MultiLogEnabled)
+                {
+                    while (!RespWriteUtils.TryWriteError("ERR standalone replication does not support multi-log AOF"u8, ref dcurr, dend))
+                        SendAndReset();
+                    return true;
+                }
+            }
+
             // Source the primary's replid from the store so it matches what INFO
             // replication advertises. A replica records the replid it is given and
             // presents it on subsequent PSYNC attempts; if the two surfaces disagreed,
             // every reconnect would look like a brand-new primary. Phase 2 will thread
             // this through the cluster-managed PrimaryReplId as well.
             var primaryReplId = storeWrapper.GetOrCreatePrimaryReplId();
+            long? syncStartAddress = null;
+            CheckpointLease<CheckpointMetadata> checkpointLease = null;
+            AofRetentionLease snapshotRetentionLease = null;
+            LogFileInfo checkpointLogFileInfo = default;
+            long checkpointIndexSize = 0;
+            if (supportsGarnetSnapshot &&
+                storeWrapper.serverOptions.EnableStandaloneReplication &&
+                storeWrapper.appendOnlyFile != null &&
+                !storeWrapper.serverOptions.MultiLogEnabled)
+            {
+                if (storeWrapper.DefaultDatabase.StandaloneCheckpointStore?.TryAcquireLatest(out checkpointLease) == true)
+                {
+                    try
+                    {
+                        var metadata = checkpointLease.Value;
+                        checkpointLogFileInfo = storeWrapper.store.GetLogFileSize(metadata.storeHlogToken);
+                        checkpointIndexSize = storeWrapper.store.GetIndexFileSize(metadata.storeIndexToken);
+                        if (!storeWrapper.appendOnlyFile.RetentionManager.TryAcquire(
+                            metadata.storeCheckpointCoveredAofAddress,
+                            allowDataLoss: false,
+                            out snapshotRetentionLease))
+                        {
+                            throw new GarnetException($"Checkpoint AOF boundary {metadata.storeCheckpointCoveredAofAddress} has already been truncated");
+                        }
+                        syncStartAddress = metadata.storeCheckpointCoveredAofAddress[0];
+                    }
+                    catch
+                    {
+                        checkpointLease.Dispose();
+                        checkpointLease = null;
+                        snapshotRetentionLease?.Dispose();
+                        snapshotRetentionLease = null;
+                        throw;
+                    }
+                }
+                else
+                {
+                    syncStartAddress = storeWrapper.appendOnlyFile.Log.GetTailAddress(0);
+                }
+            }
 
             // Record this connection as an attached replica, and mark its handshake as
             // complete so INFO replication reports it as "online". Sentinel discovers a
@@ -120,6 +181,21 @@ namespace Garnet.server
                 SendAndReset();
             while (!RespWriteUtils.TryWriteDirect(rdbWithCrc, ref dcurr, dend))
                 SendAndReset();
+
+            standaloneSyncDriver?.Dispose();
+            standaloneSyncDriver = null;
+            if (syncStartAddress.HasValue)
+            {
+                standaloneSyncDriver = new StandaloneSyncDriver(
+                    storeWrapper,
+                    networkSender,
+                    syncStartAddress.Value,
+                    logger,
+                    checkpointLease,
+                    snapshotRetentionLease,
+                    checkpointLogFileInfo,
+                    checkpointIndexSize);
+            }
 
             return true;
         }

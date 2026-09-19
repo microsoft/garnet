@@ -105,7 +105,8 @@ namespace Garnet.cluster
                 authPassword: clusterProvider.ClusterPassword,
                 clientName: nameof(ReplicaSyncSession.SendCheckpointAsync),
                 logger: logger);
-            CheckpointEntry localEntry = default;
+            CheckpointLease<CheckpointEntry> checkpointLease = null;
+            AofRetentionLease aofRetentionLease = null;
             AofSyncDriver aofSyncDriver = null;
 
             try
@@ -115,7 +116,8 @@ namespace Garnet.cluster
 
                 logger?.LogInformation("Attempting to acquire checkpoint");
 
-                (localEntry, aofSyncDriver) = await AcquireCheckpointEntryAsync().ConfigureAwait(false);
+                (checkpointLease, aofRetentionLease) = await AcquireCheckpointEntryAsync().ConfigureAwait(false);
+                var localEntry = checkpointLease.Value;
                 logger?.LogInformation("Checkpoint search completed");
 
                 await gcs.ConnectAsync((int)storeWrapper.serverOptions.ReplicaSyncTimeout.TotalMilliseconds, cts.Token).ConfigureAwait(false);
@@ -137,8 +139,11 @@ namespace Garnet.cluster
                 {
                     logger?.LogInformation("Sending main store checkpoint {version} {storeHlogToken} {storeIndexToken} to replica", localEntry.metadata.storeVersion, localEntry.metadata.storeHlogToken, localEntry.metadata.storeIndexToken);
 
+                    var checkpointFileProvider = new CheckpointFileTransferProvider(
+                        clusterProvider.serverOptions,
+                        clusterProvider.ReplicationLogCheckpointManager);
                     using var checkpointTransmissionDriver = new SnapshotTransmissionDriver(gcs, storeWrapper.serverOptions.ReplicaSyncTimeout, logger);
-                    checkpointTransmissionDriver.AddReader(new TsavoriteSnapshotReader(clusterProvider, localEntry, hlog_size, index_size, storeWrapper.serverOptions.ReplicaSyncTimeout, logger));
+                    checkpointTransmissionDriver.AddReader(new TsavoriteSnapshotReader(checkpointFileProvider, localEntry, hlog_size, index_size, storeWrapper.serverOptions.ReplicaSyncTimeout, logger));
 
                     // Add RangeIndex files if RI is enabled
                     if (storeWrapper.serverOptions.EnableRangeIndexPreview)
@@ -204,8 +209,8 @@ namespace Garnet.cluster
             }
             catch (Exception ex)
             {
-                if (localEntry != null)
-                    logger?.LogCheckpointEntry(LogLevel.Error, "Error at attaching", localEntry);
+                if (checkpointLease != null)
+                    logger?.LogCheckpointEntry(LogLevel.Error, "Error at attaching", checkpointLease.Value);
                 else
                     logger?.LogError("Error at attaching: {ex}", ex.Message);
 
@@ -218,20 +223,22 @@ namespace Garnet.cluster
             {
                 // At this point the replica has received the most recent checkpoint data
                 // and recovered from it so primary can release and delete it safely
-                localEntry?.RemoveReader();
+                aofRetentionLease?.Dispose();
+                checkpointLease?.Dispose();
                 gcs.Dispose();
             }
             return true;
         }
 
-        private async Task<(CheckpointEntry, AofSyncDriver)> AcquireCheckpointEntryAsync()
+        private async Task<(CheckpointLease<CheckpointEntry>, AofRetentionLease)> AcquireCheckpointEntryAsync()
         {
-            AofSyncDriver aofSyncDriver;
+            CheckpointLease<CheckpointEntry> checkpointLease;
+            AofRetentionLease aofRetentionLease;
             CheckpointEntry cEntry;
 
             // This loop tries to provide the following two guarantees
-            // 1. Retrieve latest checkpoint and lock it to prevent deletion before it is send to the replica
-            // 2. Guard against truncation of AOF in between the retrieval of the checkpoint metadata and start of the aofSyncTask
+            // 1. Lease the latest checkpoint to prevent deletion before it is sent to the replica.
+            // 2. Guard against AOF truncation between checkpoint selection and live streaming.
             var iteration = 0;
             var numOdcAttempts = 0;
             const int maxOdcAttempts = 2;
@@ -242,7 +249,8 @@ namespace Garnet.cluster
                 logger?.LogInformation("AcquireCheckpointEntry iteration {iteration}", iteration);
                 iteration++;
 
-                aofSyncDriver = null;
+                checkpointLease = null;
+                aofRetentionLease = null;
                 cEntry = default;
 
                 // Acquire startSaveTime to identify if an external task might have taken the checkpoint for us
@@ -253,7 +261,7 @@ namespace Garnet.cluster
                 var exceptionInjected = ExceptionInjectionHelper.TriggerCondition(ExceptionInjectionType.Replication_Acquire_Checkpoint_Entry_Fail_Condition);
 
                 // Retrieve latest checkpoint and lock it from deletion operations
-                var addedReader = !exceptionInjected && clusterProvider.replicationManager.TryGetLatestCheckpointEntryFromMemory(out cEntry);
+                var addedReader = !exceptionInjected && clusterProvider.replicationManager.TryAcquireLatestCheckpoint(out checkpointLease);
 
                 if (!addedReader)
                 {
@@ -264,53 +272,59 @@ namespace Garnet.cluster
                     await Task.Yield();
                     continue;
                 }
+                var transferLeases = false;
+                try
+                {
+                    cEntry = checkpointLease.Value;
 
 #if DEBUG
-                // Only on Debug mode
-                await ExceptionInjectionHelper.ResetAndWaitAsync(ExceptionInjectionType.Replication_Wait_After_Checkpoint_Acquisition).ConfigureAwait(false);
+                    // Only on Debug mode
+                    await ExceptionInjectionHelper.ResetAndWaitAsync(ExceptionInjectionType.Replication_Wait_After_Checkpoint_Acquisition).ConfigureAwait(false);
 #endif
 
-                // Calculate the minimum start address covered by this checkpoint
-                var startAofAddress = cEntry.GetMinAofCoveredAddress();
+                    // Calculate the minimum start address covered by this checkpoint
+                    var startAofAddress = cEntry.GetMinAofCoveredAddress();
 
-                // If there is possible AOF data loss and we need to take an on-demand checkpoint,
-                // then we should take the checkpoint before we register the sync task, because
-                // TryAddReplicationTask is guaranteed to return true in this scenario.
-                var validMetadata = ValidateMetadata(cEntry, out _, out _, out _);
-                if (clusterProvider.serverOptions.OnDemandCheckpoint &&
-                    (startAofAddress.AnyLesser(clusterProvider.replicationManager.AofSyncDriverStore.TruncatedUntil) || !validMetadata))
-                {
-                    if (numOdcAttempts >= maxOdcAttempts && clusterProvider.AllowDataLoss)
+                    // If there is possible AOF data loss and we need to take an on-demand checkpoint,
+                    // then take the checkpoint before registering the retention lease.
+                    var validMetadata = ValidateMetadata(cEntry, out _, out _, out _);
+                    if (clusterProvider.serverOptions.OnDemandCheckpoint &&
+                        (startAofAddress.AnyLesser(clusterProvider.replicationManager.AofSyncDriverStore.TruncatedUntil) || !validMetadata))
                     {
-                        logger?.LogWarning("Failed to acquire checkpoint after {numOdcAttempts} on-demand checkpoint attempts. Possible data loss, startAofAddress:{startAofAddress} < truncatedUntil:{truncatedUntil}.", numOdcAttempts, startAofAddress, clusterProvider.replicationManager.AofSyncDriverStore.TruncatedUntil);
+                        if (numOdcAttempts >= maxOdcAttempts && clusterProvider.AllowDataLoss)
+                        {
+                            logger?.LogWarning("Failed to acquire checkpoint after {numOdcAttempts} on-demand checkpoint attempts. Possible data loss, startAofAddress:{startAofAddress} < truncatedUntil:{truncatedUntil}.", numOdcAttempts, startAofAddress, clusterProvider.replicationManager.AofSyncDriverStore.TruncatedUntil);
+                        }
+                        else
+                        {
+                            numOdcAttempts++;
+                            logger?.LogInformation("Taking on-demand checkpoint, attempt {numOdcAttempts}.", numOdcAttempts);
+                            await storeWrapper.TakeOnDemandCheckpointAsync(lastSaveTime).ConfigureAwait(false);
+                            await Task.Yield();
+                            continue;
+                        }
                     }
-                    else
+
+                    // Pin the checkpoint boundary before releasing the checkpoint lease. Registration
+                    // is serialized with AOF truncation, closing the snapshot-to-stream race.
+                    if (clusterProvider.replicationManager.AofSyncDriverStore.TryAcquireRetention(startAofAddress, out aofRetentionLease))
                     {
-                        cEntry.RemoveReader();
-                        numOdcAttempts++;
-                        logger?.LogInformation("Taking on-demand checkpoint, attempt {numOdcAttempts}.", numOdcAttempts);
-                        await storeWrapper.TakeOnDemandCheckpointAsync(lastSaveTime).ConfigureAwait(false);
-                        await Task.Yield();
-                        continue;
+                        transferLeases = true;
+                        return (checkpointLease, aofRetentionLease);
                     }
                 }
-
-                // Validate that AofSyncDriver has been terminated
-                clusterProvider.replicationManager.AofSyncDriverStore.AssertDoesNotExist(replicaNodeId);
-
-                // Enqueue AOF sync task with startAofAddress to prevent future AOF truncations
-                // and check if truncation has happened in between retrieving the latest checkpoint and enqueuing the aofSyncTask
-                if (clusterProvider.replicationManager.AofSyncDriverStore.TryAddReplicationDriver(replicaNodeId, ref startAofAddress, out aofSyncDriver))
-                    break;
-
-                // Unlock last checkpoint because associated startAofAddress is no longer available
-                cEntry.RemoveReader();
+                finally
+                {
+                    if (!transferLeases)
+                    {
+                        aofRetentionLease?.Dispose();
+                        checkpointLease.Dispose();
+                    }
+                }
 
                 // Go back to re-acquire checkpoint
                 await Task.Yield();
             }
-
-            return (cEntry, aofSyncDriver);
         }
     }
 }

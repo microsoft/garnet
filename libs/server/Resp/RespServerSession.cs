@@ -385,6 +385,9 @@ namespace Garnet.server
         {
             logger?.LogDebug("Disposing RespServerSession Id={id}", this.Id);
 
+            standaloneSyncDriver?.Dispose();
+            standaloneSyncDriver = null;
+
             if (recvBufferPtr != null)
             {
                 try { if (recvHandle.IsAllocated) recvHandle.Free(); } catch { }

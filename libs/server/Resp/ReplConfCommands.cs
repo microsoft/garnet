@@ -26,10 +26,9 @@ namespace Garnet.server
     ///         <c>-ERR Unrecognized REPLCONF option: &lt;key&gt;</c>.</item>
     /// </list>
     ///
-    /// <para>Phase 1 scope: validate and acknowledge. The handler does not yet persist
-    /// <c>listening-port</c> / <c>ip-address</c> / <c>capa</c> values, nor does it act
-    /// on <c>ack</c> offsets; those are wired in Phase 2 alongside
-    /// <c>replica-announce-*</c> config and the replica-side offset-tracking changes.</para>
+    /// <para>The handler persists <c>listening-port</c>, <c>ip-address</c>, and
+    /// acknowledged offsets in the replica registry. Capabilities are accepted but
+    /// are not currently used to negotiate stream behavior.</para>
     /// </summary>
     internal sealed unsafe partial class RespServerSession : ServerSessionBase
     {
@@ -120,8 +119,18 @@ namespace Garnet.server
                     continue;
                 }
 
-                if (keySlice.EqualsUpperCaseSpanIgnoringCase(CmdStrings.CAPA) ||
-                    keySlice.EqualsUpperCaseSpanIgnoringCase(CmdStrings.RDB_ONLY, allowNonAlphabeticChars: true))
+                if (keySlice.EqualsUpperCaseSpanIgnoringCase(CmdStrings.CAPA))
+                {
+                    if (valueSlice.EqualsUpperCaseSpanIgnoringCase(CmdStrings.GARNET_SNAPSHOT, allowNonAlphabeticChars: true))
+                        supportsGarnetSnapshot = true;
+
+                    if (sourcePort > 0)
+                        storeWrapper.replicaRegistry.GetOrAdd(sourcePort, remoteAddress);
+
+                    continue;
+                }
+
+                if (keySlice.EqualsUpperCaseSpanIgnoringCase(CmdStrings.RDB_ONLY, allowNonAlphabeticChars: true))
                 {
                     // Register the connection on first contact even when the replica
                     // sends neither listening-port nor ip-address, so the handshake is

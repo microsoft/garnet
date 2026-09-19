@@ -240,28 +240,29 @@ namespace Garnet.cluster
         }
 
         /// <summary>
-        /// Return latest checkpoint entry and increment readers counter.
-        /// Caller is responsible for releasing reader by calling removeReader on entry
+        /// Return a lease for the latest checkpoint entry.
         /// </summary>
         /// <returns></returns>
-        public bool TryGetLatestCheckpointEntryFromMemory(out CheckpointEntry cEntry)
+        public bool TryAcquireLatestCheckpoint(out CheckpointLease<CheckpointEntry> lease)
         {
-            cEntry = null;
+            lease = null;
             var _tail = tail;
             if (_tail == null)
             {
-                cEntry = new CheckpointEntry
+                var emptyEntry = new CheckpointEntry
                 {
                     metadata = new(storeWrapper.serverOptions.AofPhysicalSublogCount)
                 };
-                _ = cEntry.TryAddReader();
+                if (!emptyEntry.TryAddReader())
+                    return false;
+                lease = new CheckpointLease<CheckpointEntry>(emptyEntry, emptyEntry.RemoveReader);
                 return true;
             }
 
             if (!_tail.TryAddReader())
                 return false;
 
-            cEntry = _tail;
+            lease = new CheckpointLease<CheckpointEntry>(_tail, _tail.RemoveReader);
             return true;
         }
 

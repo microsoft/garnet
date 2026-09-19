@@ -170,7 +170,28 @@ namespace Garnet.server
             Logger?.LogInformation("Recovered store to version {storeVersion}", storeVersion);
 
             if (storeVersion > 0)
+            {
                 db.LastSaveTime = DateTimeOffset.UtcNow;
+                if (db.StandaloneCheckpointStore != null)
+                {
+                    db.Store.GetLatestCheckpointTokens(out var logToken, out var indexToken, out _);
+                    var recoveredSafeAofAddress = AofAddress.Create(StoreWrapper.serverOptions.AofPhysicalSublogCount, 0);
+                    StoreWrapper.StoreCheckpointManager.GetCheckpointCookieMetadata(
+                        logToken,
+                        ref recoveredSafeAofAddress,
+                        out var recoveredHistoryId);
+                    StoreWrapper.StoreCheckpointManager.SetRecoveredSafeAofAddress(ref recoveredSafeAofAddress);
+                    StoreWrapper.StoreCheckpointManager.RecoveredHistoryId = recoveredHistoryId;
+                    db.StandaloneCheckpointStore.Initialize(new CheckpointMetadata(StoreWrapper.serverOptions.AofPhysicalSublogCount)
+                    {
+                        storeVersion = storeVersion,
+                        storeHlogToken = logToken,
+                        storeIndexToken = indexToken,
+                        storeCheckpointCoveredAofAddress = recoveredSafeAofAddress,
+                        storePrimaryReplId = recoveredHistoryId
+                    });
+                }
+            }
 
             return storeVersion;
         }
@@ -512,7 +533,7 @@ namespace Garnet.server
                 }
 
                 if (checkpointCoveredAofAddress.AnyGreater(0))
-                    logger?.LogInformation("Will truncate AOF to {tailAddress} after checkpoint (files deleted after next commit), dbId = {dbId}", checkpointCoveredAofAddress, db.Id);
+                    logger?.LogInformation("Checkpoint covers AOF through {tailAddress}; active retention leases may bound truncation below it, dbId = {dbId}", checkpointCoveredAofAddress, db.Id);
             }
 
             (bool success, Guid token) checkpointResult = default;
@@ -537,8 +558,18 @@ namespace Garnet.server
             }
             else
             {
-                db.AppendOnlyFile?.Log.TruncateUntil(checkpointCoveredAofAddress);
-                db.AppendOnlyFile?.Log.Commit();
+                if (db.AppendOnlyFile != null)
+                {
+                    db.StandaloneCheckpointStore?.AddCheckpoint(
+                        full,
+                        db.Store.CurrentVersion,
+                        checkpointResult.token,
+                        checkpointCoveredAofAddress,
+                        StoreWrapper.StoreCheckpointManager.CurrentHistoryId);
+                    var truncationLimit = db.AppendOnlyFile.RetentionManager.GetTruncationLimit(checkpointCoveredAofAddress);
+                    db.AppendOnlyFile.Log.TruncateUntil(truncationLimit);
+                    db.AppendOnlyFile.Log.Commit();
+                }
             }
 
             RunPostCheckpointCleanup(

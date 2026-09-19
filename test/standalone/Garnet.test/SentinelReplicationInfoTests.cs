@@ -135,6 +135,8 @@ namespace Garnet.test
             ClassicAssert.AreEqual(first, second,
                 "master_replid must be stable across INFO calls; a value that changed per call " +
                 "would make the node look like a different primary on every poll.");
+            ClassicAssert.AreEqual(server.Provider.StoreWrapper.RunId, first,
+                "Standalone INFO and checkpoint history must use the same replication ID.");
             ClassicAssert.AreNotEqual(new string('0', 40), first,
                 "master_replid must not be all zeros: clients may read an all-zero ID as " +
                 "'no replication history' and force a full resync.");
@@ -333,18 +335,21 @@ namespace Garnet.test
             replicaPort = FindFreePort();
 
             primary = TestUtils.CreateGarnetServer(
-                TestUtils.MethodTestDir,
+                Path.Combine(TestUtils.MethodTestDir, "primary"),
                 port: primaryPort,
-                disableObjects: true);
+                disableObjects: true,
+                enableAOF: true,
+                enableStandaloneReplication: true);
             primary.Start();
 
             // EnableStandaloneReplication is the opt-in for the standalone REPLICAOF
             // handler. Without it, REPLICAOF on a standalone node still errors out
             // with the stock "cluster disabled" message.
             replica = TestUtils.CreateGarnetServer(
-                TestUtils.MethodTestDir,
+                Path.Combine(TestUtils.MethodTestDir, "replica"),
                 port: replicaPort,
                 disableObjects: true,
+                enableAOF: true,
                 enableStandaloneReplication: true);
             replica.Start();
         }
@@ -394,6 +399,106 @@ namespace Garnet.test
         }
 
         [Test]
+        public async Task WritesAfterAttachReplicateToReplica()
+        {
+            using var client = new TcpClient();
+            await client.ConnectAsync(IPAddress.Loopback, replicaPort);
+            await using var stream = client.GetStream();
+
+            await WriteCommandAsync(stream, "REPLICAOF", "127.0.0.1", primaryPort.ToString());
+            ClassicAssert.AreEqual("+OK", await ReadLineAsync(stream));
+            await WaitForReplicaCountAsync(primaryPort, expected: 1, timeoutMs: 5000);
+
+            ClassicAssert.AreEqual("+OK\r\n", await TestUtils.SendRawAsync(primaryPort, "SET", "replicated-key", "replicated-value"));
+            await WaitForValueAsync(replicaPort, "replicated-key", "replicated-value", timeoutMs: 5000);
+        }
+
+        [Test]
+        public async Task CheckpointAndCatchupReplicateOnAttach()
+        {
+            ClassicAssert.AreEqual("+OK\r\n", await TestUtils.SendRawAsync(primaryPort, "SET", "snapshot-key", "snapshot-value"));
+            ClassicAssert.IsTrue(await primary.Provider.StoreWrapper.TakeCheckpointAsync(background: false));
+            ClassicAssert.AreEqual("+OK\r\n", await TestUtils.SendRawAsync(primaryPort, "SET", "catchup-key", "catchup-value"));
+
+            ClassicAssert.AreEqual(
+                "+OK\r\n",
+                await TestUtils.SendRawAsync(replicaPort, "REPLICAOF", "127.0.0.1", primaryPort.ToString()));
+
+            await WaitForValueAsync(replicaPort, "snapshot-key", "snapshot-value", timeoutMs: 10000);
+            await WaitForValueAsync(replicaPort, "catchup-key", "catchup-value", timeoutMs: 10000);
+        }
+
+        [Test]
+        public async Task PrimaryCheckpointDoesNotInterruptLiveReplication()
+        {
+            using var client = new TcpClient();
+            await client.ConnectAsync(IPAddress.Loopback, replicaPort);
+            await using var stream = client.GetStream();
+
+            await WriteCommandAsync(stream, "REPLICAOF", "127.0.0.1", primaryPort.ToString());
+            ClassicAssert.AreEqual("+OK", await ReadLineAsync(stream));
+            await WaitForReplicaCountAsync(primaryPort, expected: 1, timeoutMs: 5000);
+
+            ClassicAssert.AreEqual("+OK\r\n", await TestUtils.SendRawAsync(primaryPort, "SET", "before-checkpoint", "value-1"));
+            await WaitForValueAsync(replicaPort, "before-checkpoint", "value-1", timeoutMs: 5000);
+
+            ClassicAssert.IsTrue(await primary.Provider.StoreWrapper.TakeCheckpointAsync(background: false));
+
+            ClassicAssert.AreEqual("+OK\r\n", await TestUtils.SendRawAsync(primaryPort, "SET", "after-checkpoint", "value-2"));
+            await WaitForValueAsync(replicaPort, "after-checkpoint", "value-2", timeoutMs: 5000);
+        }
+
+        [Test]
+        public async Task CheckpointLeasePinsFilesUntilReleased()
+        {
+            ClassicAssert.AreEqual("+OK\r\n", await TestUtils.SendRawAsync(primaryPort, "SET", "checkpoint-key", "value-1"));
+            ClassicAssert.IsTrue(await primary.Provider.StoreWrapper.TakeCheckpointAsync(background: false));
+
+            var checkpointStore = primary.Provider.StoreWrapper.DefaultDatabase.StandaloneCheckpointStore;
+            ClassicAssert.IsNotNull(checkpointStore);
+            ClassicAssert.IsTrue(checkpointStore.TryAcquireLatest(out var checkpointLease));
+            var leasedLogToken = checkpointLease.Value.storeHlogToken;
+
+            ClassicAssert.AreEqual("+OK\r\n", await TestUtils.SendRawAsync(primaryPort, "SET", "checkpoint-key", "value-2"));
+            ClassicAssert.IsTrue(await primary.Provider.StoreWrapper.TakeCheckpointAsync(background: false));
+
+            var checkpointManager = primary.Provider.StoreWrapper.StoreCheckpointManager;
+            CollectionAssert.Contains(checkpointManager.GetLogCheckpointTokens().ToArray(), leasedLogToken);
+
+            checkpointLease.Dispose();
+            CollectionAssert.DoesNotContain(checkpointManager.GetLogCheckpointTokens().ToArray(), leasedLogToken);
+        }
+
+        [Test]
+        public async Task RecoveredCheckpointIsAvailableForLeasing()
+        {
+            ClassicAssert.AreEqual("+OK\r\n", await TestUtils.SendRawAsync(primaryPort, "SET", "recovered-key", "recovered-value"));
+            var checkpointHistoryId = primary.Provider.StoreWrapper.RunId;
+            ClassicAssert.IsTrue(await primary.Provider.StoreWrapper.TakeCheckpointAsync(background: false));
+
+            primary.Dispose(false);
+            primary = TestUtils.CreateGarnetServer(
+                Path.Combine(TestUtils.MethodTestDir, "primary"),
+                port: primaryPort,
+                disableObjects: true,
+                enableAOF: true,
+                tryRecover: true,
+                enableStandaloneReplication: true);
+            primary.Start();
+
+            var checkpointStore = primary.Provider.StoreWrapper.DefaultDatabase.StandaloneCheckpointStore;
+            ClassicAssert.IsNotNull(checkpointStore);
+            ClassicAssert.IsTrue(checkpointStore.TryAcquireLatest(out var checkpointLease));
+            using (checkpointLease)
+            {
+                ClassicAssert.AreNotEqual(default, checkpointLease.Value.storeHlogToken);
+                ClassicAssert.AreNotEqual(default, checkpointLease.Value.storeIndexToken);
+                ClassicAssert.AreEqual(checkpointHistoryId, checkpointLease.Value.storePrimaryReplId);
+                ClassicAssert.That(checkpointLease.Value.storeCheckpointCoveredAofAddress[0], Is.GreaterThan(0));
+            }
+        }
+
+        [Test]
         public async Task RoleCommandReflectsReplicaState()
         {
             using var client = new TcpClient();
@@ -434,9 +539,10 @@ namespace Garnet.test
                 foreach (var p in extraPorts)
                 {
                     var s = TestUtils.CreateGarnetServer(
-                        TestUtils.MethodTestDir,
+                        Path.Combine(TestUtils.MethodTestDir, $"replica-{p}"),
                         port: p,
                         disableObjects: true,
+                        enableAOF: true,
                         enableStandaloneReplication: true);
                     s.Start();
                     extraServers.Add(s);
@@ -530,6 +636,26 @@ namespace Garnet.test
             }
         }
 
+        [Test]
+        public async Task ReplicaofWithoutAofErrorsOut()
+        {
+            var noAofPort = FindFreePort();
+            using var noAofServer = TestUtils.CreateGarnetServer(
+                Path.Combine(TestUtils.MethodTestDir, "no-aof"),
+                port: noAofPort,
+                disableObjects: true,
+                enableStandaloneReplication: true);
+            noAofServer.Start();
+
+            using var client = new TcpClient();
+            await client.ConnectAsync(IPAddress.Loopback, noAofPort);
+            await using var stream = client.GetStream();
+            await WriteCommandAsync(stream, "REPLICAOF", "127.0.0.1", primaryPort.ToString());
+
+            var reply = await ReadLineAsync(stream);
+            ClassicAssert.AreEqual("-ERR standalone replication requires AOF", reply);
+        }
+
         // ---- helpers -----------------------------------------------------------
 
         static int FindFreePort()
@@ -553,6 +679,20 @@ namespace Garnet.test
             throw new TimeoutException($"Timed out waiting for connected_slaves == {expected} on port {port}.");
         }
 
+        static async Task WaitForValueAsync(int port, string key, string expected, int timeoutMs)
+        {
+            var expectedReply = $"${Encoding.UTF8.GetByteCount(expected)}\r\n{expected}\r\n";
+            var deadline = DateTime.UtcNow.AddMilliseconds(timeoutMs);
+            while (DateTime.UtcNow < deadline)
+            {
+                if (await TestUtils.SendRawAsync(port, "GET", key) == expectedReply)
+                    return;
+                await Task.Delay(50);
+            }
+
+            throw new TimeoutException($"Timed out waiting for key '{key}' to replicate to port {port}.");
+        }
+
         static async Task<string[]> ReadBulkArrayAsync(NetworkStream stream, params string[] args)
         {
             await WriteCommandAsync(stream, args);
@@ -570,21 +710,21 @@ namespace Garnet.test
                 switch (header[0])
                 {
                     case '$':
-                    {
-                        var len = int.Parse(header.AsSpan(1));
-                        var buf = new byte[len];
-                        var got = 0;
-                        while (got < len)
                         {
-                            var read = await stream.ReadAsync(buf, got, len - got).ConfigureAwait(false);
-                            if (read == 0) throw new EndOfStreamException();
-                            got += read;
+                            var len = int.Parse(header.AsSpan(1));
+                            var buf = new byte[len];
+                            var got = 0;
+                            while (got < len)
+                            {
+                                var read = await stream.ReadAsync(buf, got, len - got).ConfigureAwait(false);
+                                if (read == 0) throw new EndOfStreamException();
+                                got += read;
+                            }
+                            // Consume trailing \r\n
+                            await stream.ReadAsync(new byte[2]).ConfigureAwait(false);
+                            result[i] = Encoding.UTF8.GetString(buf);
+                            break;
                         }
-                        // Consume trailing \r\n
-                        await stream.ReadAsync(new byte[2]).ConfigureAwait(false);
-                        result[i] = Encoding.UTF8.GetString(buf);
-                        break;
-                    }
                     case ':':
                         // Integer reply: payload is the number itself, no length, no \r\n.
                         result[i] = header[1..];

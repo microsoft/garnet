@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Diagnostics;
 using System.Linq;
 using System.Net;
 using System.Threading;
@@ -21,6 +22,7 @@ namespace Garnet.cluster
         readonly string remoteNodeId;
         readonly ILogger logger;
         readonly CancellationTokenSource cts;
+        AofRetentionLease retentionLease;
 
         readonly AofSyncTask[] aofSyncTasks;
 
@@ -118,6 +120,9 @@ namespace Garnet.cluster
         /// </summary>
         public void Dispose()
         {
+            retentionLease?.Dispose();
+            retentionLease = null;
+
             // Cancel cts
             cts?.Cancel();
 
@@ -130,6 +135,15 @@ namespace Garnet.cluster
 
             // Finally, dispose the cts
             cts?.Dispose();
+        }
+
+        /// <summary>
+        /// Transfers ownership of an AOF retention lease to this driver.
+        /// </summary>
+        internal void SetRetentionLease(AofRetentionLease lease)
+        {
+            Debug.Assert(retentionLease == null);
+            retentionLease = lease;
         }
 
         /// <summary>

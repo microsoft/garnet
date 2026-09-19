@@ -3,7 +3,6 @@
 
 using System;
 using System.Diagnostics;
-using System.IO;
 using System.Net;
 using System.Text;
 using System.Threading;
@@ -13,7 +12,6 @@ using Garnet.cluster.Server.Replication;
 using Garnet.common;
 using Garnet.server;
 using Microsoft.Extensions.Logging;
-using Tsavorite.core;
 
 namespace Garnet.cluster
 {
@@ -158,7 +156,7 @@ namespace Garnet.cluster
                     //
                     // Replica waits for retrieval to complete before moving forward to recovery
                     //      Retrieval completion coordinated by remoteCheckpointRetrievalCompleted
-                    recvCheckpointHandler = new ReceiveCheckpointHandler(clusterProvider, logger);
+                    recvCheckpointHandler = CreateReceiveCheckpointHandler();
 
                     var nodeId = current.LocalNodeId;
                     cEntry = GetLatestCheckpointEntryFromDisk();
@@ -216,55 +214,20 @@ namespace Garnet.cluster
             }
         }
 
-        /// <summary>
-        /// Check if device needs to be initialized with a specifi segment size depending on the checkpoint file type
-        /// </summary>
-        /// <param name="type">Checkpoint type</param>
-        /// <param name="serverOptions">Server options to acquire segment bit counts</param>
-        /// <returns>A tuple indicating whether to initialize and, if so, the segment size bits</returns>
-        public static (bool shouldInitialize, int segmentSizeBits) ShouldInitialize(CheckpointFileType type, GarnetServerOptions serverOptions)
+        private ReceiveCheckpointHandler CreateReceiveCheckpointHandler()
         {
-            return type switch
-            {
-                CheckpointFileType.STORE_HLOG or CheckpointFileType.STORE_SNAPSHOT => (true, serverOptions.SegmentSizeBits(isObj: false)),
-                CheckpointFileType.STORE_HLOG_OBJ or CheckpointFileType.STORE_SNAPSHOT_OBJ => (true, serverOptions.SegmentSizeBits(isObj: true)),
-                _ => (false, 0)
-            };
-        }
-
-        /// <summary>
-        /// Get an IDevice that is also initialized if needed
-        /// </summary>
-        /// <param name="token"></param>
-        /// <param name="type"></param>
-        /// <returns></returns>
-        public IDevice CreateCheckpointDevice(Guid token, CheckpointFileType type)
-        {
-            var device = type switch
-            {
-                CheckpointFileType.STORE_HLOG => GetStoreHLogDevice(isObj: false),
-                CheckpointFileType.STORE_HLOG_OBJ => GetStoreHLogDevice(isObj: true),
-                _ => clusterProvider.ReplicationLogCheckpointManager.GetDevice(type, token),
-            };
-
-            var (shouldInitialize, segmentSizeBits) = ShouldInitialize(type, clusterProvider.serverOptions);
-            if (shouldInitialize)
-                device.Initialize(segmentSize: 1L << segmentSizeBits);
-            return device;
-
-            IDevice GetStoreHLogDevice(bool isObj)
-            {
-                var opts = clusterProvider.serverOptions;
-                if (opts.EnableStorageTier)
-                {
-                    var LogDir = !string.IsNullOrEmpty(opts.LogDir) ? opts.LogDir : Directory.GetCurrentDirectory();
-                    var logFactory = opts.GetInitializedDeviceFactory(LogDir);
-
-                    // These must match GarnetServerOptions.GetSettings, EnableStorageTier
-                    return logFactory.Get(new FileDescriptor("Store", isObj ? "hlog_objs" : "hlog"));
-                }
-                return null;
-            }
+            var checkpointFileProvider = new CheckpointFileTransferProvider(
+                clusterProvider.serverOptions,
+                clusterProvider.ReplicationLogCheckpointManager);
+            var rangeIndexManager = clusterProvider.serverOptions.EnableRangeIndexPreview
+                ? clusterProvider.rangeIndexManager
+                : null;
+            return new ReceiveCheckpointHandler(
+                checkpointFileProvider,
+                clusterProvider.serverOptions.ReplicaSyncTimeout,
+                rangeIndexManager,
+                UpdateLastPrimarySyncTime,
+                logger);
         }
 
         /// <summary>
