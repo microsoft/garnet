@@ -68,6 +68,18 @@ namespace Garnet.server
             => deviceFactory.Delete(checkpointNamingScheme.IndexCheckpointBase(token));
 
         /// <summary>
+        /// Commits log checkpoint metadata received from another Garnet server.
+        /// </summary>
+        internal void CommitLogCheckpointFromTransfer(Guid logToken, ReadOnlySpan<byte> checkpointMetadata)
+        {
+            HybridLogRecoveryInfo recoveryInfo = new();
+            using var stream = new MemoryStream(checkpointMetadata.ToArray());
+            using var reader = new StreamReader(stream);
+            recoveryInfo.Initialize(reader);
+            CommitLogCheckpointMetadata(logToken, recoveryInfo.ToByteArray());
+        }
+
+        /// <summary>
         /// Set current AOF address
         /// </summary>
         /// <param name="safeAofTailAddress"></param>

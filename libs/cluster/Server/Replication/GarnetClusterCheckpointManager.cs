@@ -49,18 +49,6 @@ namespace Garnet.cluster
         public override void CheckpointVersionShiftEnd(long oldVersion, long newVersion, bool isStreaming)
             => checkpointVersionShiftEnd?.Invoke(isMainStore, oldVersion, newVersion, isStreaming);
 
-        public IDevice GetDevice(CheckpointFileType retStateType, Guid fileToken)
-        {
-            var device = retStateType switch
-            {
-                CheckpointFileType.STORE_INDEX => GetIndexDevice(fileToken),
-                CheckpointFileType.STORE_SNAPSHOT => GetSnapshotLogDevice(fileToken),
-                CheckpointFileType.STORE_SNAPSHOT_OBJ => GetSnapshotObjectLogDevice(fileToken),
-                _ => throw new Exception($"RetrieveCheckpointFile: unexpected state{retStateType}")
-            };
-            return device;
-        }
-
         #region ICheckpointManager
 
         private HybridLogRecoveryInfo ConvertMetadata(byte[] checkpointMetadata)
@@ -80,17 +68,6 @@ namespace Garnet.cluster
             }
 
             return recoveryInfo;
-        }
-
-        /// <summary>
-        /// Commit log checkpoint metadata with included cookie in byte array
-        /// </summary>
-        /// <param name="logToken"></param>
-        /// <param name="checkpointMetadata"></param>
-        public void CommitLogCheckpointSendFromPrimary(Guid logToken, byte[] checkpointMetadata)
-        {
-            var recoveryInfo = ConvertMetadata(checkpointMetadata);
-            CommitLogCheckpointMetadata(logToken, recoveryInfo.ToByteArray());
         }
 
         /// <summary>

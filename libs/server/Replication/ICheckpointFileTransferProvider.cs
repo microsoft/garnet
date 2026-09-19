@@ -4,7 +4,7 @@
 using System;
 using Tsavorite.core;
 
-namespace Garnet.cluster
+namespace Garnet.server
 {
     /// <summary>
     /// Provides checkpoint storage operations required by snapshot transmission and receipt.

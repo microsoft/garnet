@@ -14,6 +14,11 @@ global using BasicGarnetApi = Garnet.server.GarnetApi<
         Tsavorite.core.ObjectAllocator<Tsavorite.core.StoreFunctions<Garnet.common.GarnetKeyComparer, Garnet.server.GarnetRecordTriggers>>>>;
 #endif
 
+#if CLUSTER_PROJECT
+global using CheckpointFileType = Garnet.server.CheckpointFileType;
+global using ICheckpointFileTransferProvider = Garnet.server.ICheckpointFileTransferProvider;
+#endif
+
 #if SERVER_PROJECT
 global using ConsistentReadGarnetApi = Garnet.server.GarnetApi<
         Tsavorite.core.ConsistentReadContext<Garnet.common.FixedSpanByteKey, Garnet.server.StringInput, Garnet.server.StringOutput, long, Garnet.server.MainSessionFunctions,

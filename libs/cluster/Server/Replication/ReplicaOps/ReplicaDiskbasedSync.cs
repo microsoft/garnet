@@ -216,7 +216,7 @@ namespace Garnet.cluster
 
         private ReceiveCheckpointHandler CreateReceiveCheckpointHandler()
         {
-            var checkpointFileProvider = new ClusterCheckpointFileTransferProvider(
+            var checkpointFileProvider = new CheckpointFileTransferProvider(
                 clusterProvider.serverOptions,
                 clusterProvider.ReplicationLogCheckpointManager);
             var rangeIndexManager = clusterProvider.serverOptions.EnableRangeIndexPreview
