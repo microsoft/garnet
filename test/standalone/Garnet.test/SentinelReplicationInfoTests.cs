@@ -135,6 +135,8 @@ namespace Garnet.test
             ClassicAssert.AreEqual(first, second,
                 "master_replid must be stable across INFO calls; a value that changed per call " +
                 "would make the node look like a different primary on every poll.");
+            ClassicAssert.AreEqual(server.Provider.StoreWrapper.RunId, first,
+                "Standalone INFO and checkpoint history must use the same replication ID.");
             ClassicAssert.AreNotEqual(new string('0', 40), first,
                 "master_replid must not be all zeros: clients may read an all-zero ID as " +
                 "'no replication history' and force a full resync.");
@@ -456,6 +458,7 @@ namespace Garnet.test
         public async Task RecoveredCheckpointIsAvailableForLeasing()
         {
             ClassicAssert.AreEqual("+OK\r\n", await TestUtils.SendRawAsync(primaryPort, "SET", "recovered-key", "recovered-value"));
+            var checkpointHistoryId = primary.Provider.StoreWrapper.RunId;
             ClassicAssert.IsTrue(await primary.Provider.StoreWrapper.TakeCheckpointAsync(background: false));
 
             primary.Dispose(false);
@@ -475,6 +478,8 @@ namespace Garnet.test
             {
                 ClassicAssert.AreNotEqual(default, checkpointLease.Value.storeHlogToken);
                 ClassicAssert.AreNotEqual(default, checkpointLease.Value.storeIndexToken);
+                ClassicAssert.AreEqual(checkpointHistoryId, checkpointLease.Value.storePrimaryReplId);
+                ClassicAssert.That(checkpointLease.Value.storeCheckpointCoveredAofAddress[0], Is.GreaterThan(0));
             }
         }
 

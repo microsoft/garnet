@@ -175,13 +175,20 @@ namespace Garnet.server
                 if (db.StandaloneCheckpointStore != null)
                 {
                     db.Store.GetLatestCheckpointTokens(out var logToken, out var indexToken, out _);
+                    var recoveredSafeAofAddress = AofAddress.Create(StoreWrapper.serverOptions.AofPhysicalSublogCount, 0);
+                    StoreWrapper.StoreCheckpointManager.GetCheckpointCookieMetadata(
+                        logToken,
+                        ref recoveredSafeAofAddress,
+                        out var recoveredHistoryId);
+                    StoreWrapper.StoreCheckpointManager.SetRecoveredSafeAofAddress(ref recoveredSafeAofAddress);
+                    StoreWrapper.StoreCheckpointManager.RecoveredHistoryId = recoveredHistoryId;
                     db.StandaloneCheckpointStore.Initialize(new CheckpointMetadata(StoreWrapper.serverOptions.AofPhysicalSublogCount)
                     {
                         storeVersion = storeVersion,
                         storeHlogToken = logToken,
                         storeIndexToken = indexToken,
-                        storeCheckpointCoveredAofAddress = StoreWrapper.StoreCheckpointManager.RecoveredSafeAofAddress,
-                        storePrimaryReplId = StoreWrapper.StoreCheckpointManager.RecoveredHistoryId
+                        storeCheckpointCoveredAofAddress = recoveredSafeAofAddress,
+                        storePrimaryReplId = recoveredHistoryId
                     });
                 }
             }

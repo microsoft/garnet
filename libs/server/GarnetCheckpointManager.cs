@@ -4,6 +4,7 @@
 using System;
 using System.IO;
 using System.Text;
+using Garnet.common;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 
@@ -72,11 +73,53 @@ namespace Garnet.server
         /// </summary>
         internal void CommitLogCheckpointFromTransfer(Guid logToken, ReadOnlySpan<byte> checkpointMetadata)
         {
+            var recoveryInfo = ConvertMetadata(checkpointMetadata);
+            CommitLogCheckpointMetadata(logToken, recoveryInfo.ToByteArray());
+        }
+
+        /// <summary>
+        /// Reads the Garnet replication history stored in a log checkpoint.
+        /// </summary>
+        internal unsafe void GetCheckpointCookieMetadata(
+            Guid logToken,
+            ref AofAddress recoveredSafeAofAddress,
+            out string recoveredHistoryId)
+        {
+            var recoveryInfo = ConvertMetadata(GetLogCheckpointMetadata(logToken));
+            recoveredHistoryId = null;
+            if (recoveryInfo.cookie == null || recoveryInfo.cookie.Length == 0)
+                return;
+
+            if (recoveredSafeAofAddress.Length == 1)
+            {
+                fixed (byte* ptr = recoveryInfo.cookie)
+                {
+                    if (recoveryInfo.cookie.Length < sizeof(int))
+                        throw new GarnetException($"Invalid checkpoint cookie length: {recoveryInfo.cookie.Length}");
+                    var cookieSize = *(int*)ptr;
+                    if (cookieSize < sizeof(long) || recoveryInfo.cookie.Length < sizeof(int) + cookieSize)
+                        throw new GarnetException($"Invalid checkpoint cookie size: {cookieSize}");
+
+                    recoveredSafeAofAddress[0] = *(long*)(ptr + sizeof(int));
+                    if (cookieSize > sizeof(long))
+                        recoveredHistoryId = Encoding.ASCII.GetString(ptr + sizeof(int) + sizeof(long), cookieSize - sizeof(long));
+                }
+                return;
+            }
+
+            using var stream = new MemoryStream(recoveryInfo.cookie);
+            using var reader = new BinaryReader(stream, Encoding.ASCII);
+            recoveredHistoryId = reader.ReadInt32() > 0 ? reader.ReadString() : null;
+            recoveredSafeAofAddress = AofAddress.Deserialize(reader);
+        }
+
+        static HybridLogRecoveryInfo ConvertMetadata(ReadOnlySpan<byte> checkpointMetadata)
+        {
             HybridLogRecoveryInfo recoveryInfo = new();
             using var stream = new MemoryStream(checkpointMetadata.ToArray());
             using var reader = new StreamReader(stream);
             recoveryInfo.Initialize(reader);
-            CommitLogCheckpointMetadata(logToken, recoveryInfo.ToByteArray());
+            return recoveryInfo;
         }
 
         /// <summary>
