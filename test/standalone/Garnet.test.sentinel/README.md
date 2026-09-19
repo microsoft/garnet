@@ -99,26 +99,26 @@ TestBase.cs                     running-test tracking (mirrors Garnet.test)
 
 ### What does not work yet
 
-These are measured, not inferred. The critical ones mean a failover currently
-produces an **empty** new primary.
+These are measured, not inferred. The critical gap means a replica attached
+after the primary already contains data starts without that existing data.
 
 | # | Gap | Severity | Notes |
 |---|---|---|---|
-| 1 | **No data is replicated** | Critical | Garnet replies `+FULLRESYNC` with an always-empty RDB and then sends no command stream. Keys written on the primary never reach the replica. A promoted replica is empty. |
-| 2 | **The replication link is silently idle** | Critical | `master_link_status` stays `up` while `master_last_io_seconds_ago` climbs indefinitely and nothing is transferred. The socket is open but no keepalives or data flow. |
+| 1 | **No initial snapshot** | Critical | Garnet replies `+FULLRESYNC` with an empty RDB. Writes made after attachment are streamed through Garnet's AOF, but keys that existed before attachment do not reach the replica. |
+| 2 | **No idle keepalive** | High | The link transfers AOF records when writes occur, but `master_last_io_seconds_ago` still climbs while idle. |
 | 3 | **No partial resync (`+CONTINUE`)** | High | Every reconnect forces a full resync, and the replica logs `Discarding previously cached master state`. Needs a replication backlog. |
-| 4 | **`master_repl_offset` does not advance** | High | Stays 0 through writes. Sentinel uses lag when ranking replicas, so this can affect promotion choice. |
-| 5 | **`REPLCONF ACK` offsets stay 0** | Medium | The field is wired into the registry; there is simply no stream to acknowledge yet. |
-| 6 | **Registry entries are not pruned** | Medium | A disconnect does not remove a replica, so `connected_slaves` can over-report. |
+| 4 | **Replication offsets are not wired to the stream** | High | `master_repl_offset` reflects the local AOF tail, but `FULLRESYNC` still reports 0 and replica ACKs are not emitted. Sentinel uses lag when ranking replicas, so this can affect promotion choice. |
+| 5 | **`REPLCONF ACK` offsets stay 0** | Medium | The field is wired into the registry, but the standalone replica client does not emit periodic ACKs yet. |
+| 6 | **No automatic reconnect** | Medium | A broken primary link is reported down, but the replica does not retry until another `REPLICAOF` command is issued. |
 | 7 | No `SENTINEL` command / `INFO sentinel` | Low | Does not block failover: only sentinels serve `SENTINEL`, and a monitored primary is not required to. Matters only for clients that probe it for discovery. |
-| 8 | Garnet cannot be a replica of a stock Redis primary | Low | Outbound replication speaks a proprietary `CLUSTER_*` protocol, and `REPLICAOF` only accepts known cluster workers. Also needs an RDB reader, which Garnet does not have. |
+| 8 | Garnet cannot be a replica of a stock Redis primary | Low | After the Redis-compatible handshake, standalone replication uses Garnet AOF frames rather than Redis command frames. Supporting a stock primary would also require an RDB reader. |
 | 9 | No `replica-announce-ip` / `-port` | Low | Needed for NAT/proxied deployments. |
 | 10 | No `min-replicas-to-write` / `replica-serve-stale-data` | Low | Common write-safety guards alongside Sentinel. |
 
 **Summary:** the control plane is complete — Sentinel can monitor, discover, and fail
-over. The data plane is not started beyond the handshake, so gaps 1–4 need to be closed
-before this is safe to use for real data. The cheapest credible path to gap 1 is to stream
-the existing AOF/command log rather than write a full RDB serializer; a real replication
+over. The first data-plane increment streams writes made after attachment between Garnet
+nodes when AOF is enabled, but gaps 1–4 need to be closed before this is safe to use for
+real data. A real replication
 backlog (gap 3) and a true byte offset (gap 4) follow from that.
 
 ## Divergences from Redis

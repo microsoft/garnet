@@ -62,9 +62,9 @@ namespace Garnet.server
         /// Sentinel can discover them); as a replica it opens a stock-Redis-style
         /// outbound replication link (PING / REPLCONF / PSYNC) to the named primary.
         ///
-        /// <para>The data plane beyond the empty-RDB handshake is not implemented by
-        /// this option; replication carries no data, only the metadata required for
-        /// Sentinel's discovery and failover machinery. Setting this to <c>true</c>
+        /// <para>When AOF is also enabled, writes made after a replica attaches are
+        /// streamed between Garnet nodes. Initial snapshot and partial resync are not
+        /// implemented. Setting this to <c>true</c>
         /// without also enabling the AOF is sufficient for Sentinel-driven failover,
         /// which is the primary use case.</para>
         /// </summary>

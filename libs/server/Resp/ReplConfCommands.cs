@@ -26,10 +26,9 @@ namespace Garnet.server
     ///         <c>-ERR Unrecognized REPLCONF option: &lt;key&gt;</c>.</item>
     /// </list>
     ///
-    /// <para>Phase 1 scope: validate and acknowledge. The handler does not yet persist
-    /// <c>listening-port</c> / <c>ip-address</c> / <c>capa</c> values, nor does it act
-    /// on <c>ack</c> offsets; those are wired in Phase 2 alongside
-    /// <c>replica-announce-*</c> config and the replica-side offset-tracking changes.</para>
+    /// <para>The handler persists <c>listening-port</c>, <c>ip-address</c>, and
+    /// acknowledged offsets in the replica registry. Capabilities are accepted but
+    /// are not currently used to negotiate stream behavior.</para>
     /// </summary>
     internal sealed unsafe partial class RespServerSession : ServerSessionBase
     {

@@ -13,7 +13,7 @@ namespace Garnet.server
     /// ROLE, and the standalone <c>REPLICAOF</c> command need to surface to Sentinel
     /// and to clients. The actual replication stream is not driven from here; the
     /// primary side discovers attached replicas through <see cref="ReplicaRegistry"/>
-    /// and the replica side opens a <c>GarnetClientSession</c> to its primary on
+    /// and the replica side opens a TCP replication connection to its primary on
     /// receipt of <c>REPLICAOF host port</c>.</para>
     ///
     /// <para>Lifecycle:</para>
