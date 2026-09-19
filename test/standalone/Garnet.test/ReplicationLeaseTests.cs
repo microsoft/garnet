@@ -1,6 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
 using Garnet.server;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -68,6 +69,43 @@ namespace Garnet.test
             ClassicAssert.IsNull(lease);
             ClassicAssert.IsTrue(manager.TryAcquire(unavailableAddress, allowDataLoss: true, out lease));
             lease.Dispose();
+        }
+
+        [Test]
+        public void StandaloneReplicationFrameHeaderRoundTrips()
+        {
+            var token = Guid.NewGuid();
+            Span<byte> buffer = stackalloc byte[StandaloneReplicationWireFormat.HeaderLength];
+
+            StandaloneReplicationWireFormat.WriteHeader(
+                buffer,
+                StandaloneReplicationFrameType.CheckpointFile,
+                CheckpointFileType.STORE_SNAPSHOT,
+                payloadLength: 4096,
+                token,
+                address: 8192);
+
+            ClassicAssert.IsTrue(StandaloneReplicationWireFormat.TryReadHeader(buffer, out var header));
+            ClassicAssert.AreEqual(StandaloneReplicationFrameType.CheckpointFile, header.Type);
+            ClassicAssert.AreEqual(CheckpointFileType.STORE_SNAPSHOT, header.CheckpointFileType);
+            ClassicAssert.AreEqual(4096, header.PayloadLength);
+            ClassicAssert.AreEqual(token, header.Token);
+            ClassicAssert.AreEqual(8192, header.Address);
+        }
+
+        [Test]
+        public void StandaloneReplicationFrameHeaderRejectsInvalidShape()
+        {
+            Span<byte> buffer = stackalloc byte[StandaloneReplicationWireFormat.HeaderLength];
+            StandaloneReplicationWireFormat.WriteHeader(
+                buffer,
+                StandaloneReplicationFrameType.AofRecord,
+                CheckpointFileType.STORE_INDEX,
+                payloadLength: 32,
+                Guid.NewGuid(),
+                address: 64);
+
+            ClassicAssert.IsFalse(StandaloneReplicationWireFormat.TryReadHeader(buffer, out _));
         }
     }
 }

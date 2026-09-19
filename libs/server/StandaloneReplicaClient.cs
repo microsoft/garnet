@@ -171,7 +171,7 @@ namespace Garnet.server
                 }
 
                 // Step 3: REPLCONF capa eof capa psync2
-                await WriteCommandAsync(stream, token, "REPLCONF", "capa", "eof", "capa", "psync2").ConfigureAwait(false);
+                await WriteCommandAsync(stream, token, "REPLCONF", "capa", "eof", "capa", "psync2", "capa", "garnet-snapshot").ConfigureAwait(false);
                 var ackCapa = await ReadLineAsync(stream, token).ConfigureAwait(false);
                 if (ackCapa != "+OK")
                 {
@@ -213,12 +213,13 @@ namespace Garnet.server
                 while (true)
                 {
                     await stream.ReadExactlyAsync(header, token).ConfigureAwait(false);
-                    if (!StandaloneReplicationWireFormat.TryReadHeader(header, out var payloadLength, out var currentAddress))
+                    if (!StandaloneReplicationWireFormat.TryReadHeader(header, out var frameHeader) ||
+                        frameHeader.Type != StandaloneReplicationFrameType.AofRecord)
                         throw new InvalidOperationException("Primary sent an invalid standalone replication frame");
 
-                    var payload = new byte[payloadLength];
+                    var payload = new byte[frameHeader.PayloadLength];
                     await stream.ReadExactlyAsync(payload, token).ConfigureAwait(false);
-                    ProcessAofRecord(aofProcessor, payload, currentAddress);
+                    ProcessAofRecord(aofProcessor, payload, frameHeader.Address);
                     storeWrapper.LocalReplicationState.ReportLinkUp();
                 }
             }

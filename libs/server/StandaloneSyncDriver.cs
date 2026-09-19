@@ -85,7 +85,13 @@ namespace Garnet.server
         unsafe void SendFrame(ReadOnlySpan<byte> payload, long currentAddress)
         {
             Span<byte> header = stackalloc byte[StandaloneReplicationWireFormat.HeaderLength];
-            StandaloneReplicationWireFormat.WriteHeader(header, payload.Length, currentAddress);
+            StandaloneReplicationWireFormat.WriteHeader(
+                header,
+                StandaloneReplicationFrameType.AofRecord,
+                CheckpointFileType.NONE,
+                payload.Length,
+                default,
+                currentAddress);
 
             networkSender.EnterAndGetResponseObject(out var head, out var tail);
             try

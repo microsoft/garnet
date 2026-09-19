@@ -31,6 +31,7 @@ namespace Garnet.server
     internal sealed unsafe partial class RespServerSession : ServerSessionBase
     {
         StandaloneSyncDriver standaloneSyncDriver;
+        bool supportsGarnetSnapshot;
 
         /// <summary>
         /// Implements <c>PSYNC &lt;replid&gt; &lt;offset&gt;</c>.
@@ -83,7 +84,8 @@ namespace Garnet.server
             // this through the cluster-managed PrimaryReplId as well.
             var primaryReplId = storeWrapper.GetOrCreatePrimaryReplId();
             long? syncStartAddress = null;
-            if (storeWrapper.serverOptions.EnableStandaloneReplication &&
+            if (supportsGarnetSnapshot &&
+                storeWrapper.serverOptions.EnableStandaloneReplication &&
                 storeWrapper.appendOnlyFile != null &&
                 !storeWrapper.serverOptions.MultiLogEnabled)
             {

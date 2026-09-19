@@ -119,8 +119,18 @@ namespace Garnet.server
                     continue;
                 }
 
-                if (keySlice.EqualsUpperCaseSpanIgnoringCase(CmdStrings.CAPA) ||
-                    keySlice.EqualsUpperCaseSpanIgnoringCase(CmdStrings.RDB_ONLY, allowNonAlphabeticChars: true))
+                if (keySlice.EqualsUpperCaseSpanIgnoringCase(CmdStrings.CAPA))
+                {
+                    if (valueSlice.EqualsUpperCaseSpanIgnoringCase(CmdStrings.GARNET_SNAPSHOT, allowNonAlphabeticChars: true))
+                        supportsGarnetSnapshot = true;
+
+                    if (sourcePort > 0)
+                        storeWrapper.replicaRegistry.GetOrAdd(sourcePort, remoteAddress);
+
+                    continue;
+                }
+
+                if (keySlice.EqualsUpperCaseSpanIgnoringCase(CmdStrings.RDB_ONLY, allowNonAlphabeticChars: true))
                 {
                     // Register the connection on first contact even when the replica
                     // sends neither listening-port nor ip-address, so the handshake is
