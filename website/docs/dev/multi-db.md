@@ -55,8 +55,8 @@ A server instance keeps three kinds of on-disk state, each rooted at a different
 | State | Root option | Root when unspecified |
 | --- | --- | --- |
 | Hybrid log — tiered records, written only when `EnableStorageTier` (`--storage-tier`) is on | `LogDir` (`-l`, `--logdir`) | current directory |
-| Checkpoints | `CheckpointDir` (`-c`, `--checkpointdir`) | `LogDir` |
-| AOF | `CheckpointDir` (`-c`, `--checkpointdir`) | current directory |
+| Checkpoints | `CheckpointDir` (`-c`, `--checkpointdir`) | `LogDir`, or the current directory if that is also unspecified |
+| AOF | `CheckpointDir` (`-c`, `--checkpointdir`) | `LogDir`, or the current directory if that is also unspecified |
 
 Checkpoint, AOF and hybrid log paths are all per-database: the default database (index `0`) uses the unsuffixed name, and the database of index `i` uses the same name with an `_i` suffix.
 
@@ -92,7 +92,9 @@ Every name above is a logical device name; the device layer appends a segment in
 All of a database's file names are fixed when its store is created. [SWAPDB](../commands/server.md#swapdb) exchanges the logical index of two databases but does not move their files, so it is not durable: recovery reconstructs each database's index from the directory names and undoes the swap.
 
 :::caution
-Databases did not always have their own log devices. A store checkpointed by an earlier release wrote every database into one shared `Store/hlog` and `Store/hlog_objs` pair, whose contents cannot be attributed to a single database (see [issue #2152](https://github.com/microsoft/garnet/issues/2152)). Recovering such a store reports the condition for each database other than the default, and any records those databases had tiered to storage are lost. The default database is unaffected — it keeps the unsuffixed file names and recovers unchanged.
+Databases did not always have their own log devices. A store checkpointed by an earlier release wrote every database into one shared `Store/hlog` and `Store/hlog_objs` pair, whose contents cannot be attributed to a single database (see [issue #2152](https://github.com/microsoft/garnet/issues/2152)). Recovering such a store reports the condition and cannot recover any records that databases other than the default had tiered to storage.
+
+The default database is not exempt. It keeps the unsuffixed file names, so recovery finds a log — but in a multi-database store that log is the shared one, and the records in it may have been written by, or overwritten by, another database. Only a store that held a single database is unaffected.
 :::
 
 ## Checkpointing, AOF & Recovery

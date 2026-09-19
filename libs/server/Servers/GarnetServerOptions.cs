@@ -770,6 +770,17 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Get main store settings for the default database.
+        /// </summary>
+        /// <param name="loggerFactory">Logger factory for debugging and error tracing</param>
+        /// <param name="epoch">Epoch instance used by server</param>
+        /// <param name="stateMachineDriver">Common state machine driver used by Garnet</param>
+        /// <param name="logFactory">Tsavorite Log factory instance</param>
+        /// <returns></returns>
+        public KVSettings GetSettings(ILoggerFactory loggerFactory, LightEpoch epoch, StateMachineDriver stateMachineDriver, out INamedDeviceFactory logFactory)
+            => GetSettings(dbId: 0, loggerFactory, epoch, stateMachineDriver, out logFactory);
+
+        /// <summary>
         /// Get main store settings
         /// </summary>
         /// <param name="dbId">Database Id; selects the per-database hybrid log devices</param>

@@ -4,6 +4,7 @@
 using System;
 using System.IO;
 using System.Linq;
+using System.Text;
 using System.Threading;
 using Garnet.server;
 using NUnit.Framework;
@@ -232,8 +233,8 @@ namespace Garnet.test
 
         /// <summary>
         /// A store written before databases had their own log devices has a checkpoint for database 1 but
-        /// no hlog_1 to recover it from. The condition must be reported explicitly rather than surfacing
-        /// as the same message a fresh start produces.
+        /// no hlog_1 to recover it from, and database 0's log is the shared one. Both must be reported
+        /// explicitly rather than surfacing as the same message a fresh start produces.
         /// </summary>
         [Test]
         public void PreFixCheckpointIsReportedOnRecovery()
@@ -255,8 +256,13 @@ namespace Garnet.test
             server.Dispose(false);
             server = null;
 
-            // Reproduce the pre-fix on-disk shape: database 1 has a checkpoint but its log lived in the
-            // single shared file, so no hlog_1 segment exists.
+            // Reproduce the pre-fix on-disk shape. The checkpoints above were written by this build, so
+            // their cookies carry the layout trailer; strip it, or recovery would classify them as
+            // current-layout and take the wrong branch.
+            StripLayoutTrailer(Path.Combine(StoreDir, "checkpoints"));
+            StripLayoutTrailer(Path.Combine(StoreDir, "checkpoints_1"));
+
+            // Database 1's records lived in the single shared file, so it has no log of its own.
             var perDbLogs = Directory.GetFiles(StoreDir, "hlog*_1.*");
             ClassicAssert.IsNotEmpty(perDbLogs, "Database 1 never wrote a log segment, so the scenario is not set up");
             foreach (var path in perDbLogs)
@@ -273,14 +279,66 @@ namespace Garnet.test
 
             var matched = reported.Split(Environment.NewLine).Where(l => l.Contains("2152", StringComparison.Ordinal)).ToArray();
             TestContext.Progress.WriteLine(string.Join(Environment.NewLine, matched));
-            ClassicAssert.IsNotEmpty(matched, "Recovery did not report the pre-fix shared-log checkpoint");
 
-            // Database 0 is unaffected: it keeps the unsuffixed names, so it must still recover.
-            using var redis2 = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
-            var (correct, foreign) = CountValues(redis2.GetDatabase(0), 0, ReadString, StrVal);
-            TestContext.Progress.WriteLine($"db0 after recovery: correct={correct} foreign={foreign}");
-            ClassicAssert.AreEqual(0, foreign, "db0 returned another database's values");
-            ClassicAssert.AreEqual(NumKeys, correct, "db0 lost records");
+            ClassicAssert.IsTrue(matched.Any(l => l.Contains("Database 1 was checkpointed before", StringComparison.Ordinal)),
+                "Recovery did not report database 1's unrecoverable tiered records");
+            ClassicAssert.IsTrue(matched.Any(l => l.Contains("Database 0 was checkpointed before", StringComparison.Ordinal)),
+                "Recovery did not report that database 0's shared log may hold another database's records");
+        }
+
+        /// <summary>
+        /// Rewrites every log checkpoint's metadata under a database's checkpoint directory so its
+        /// cookie carries no layout trailer, which is how a checkpoint written before per-database log
+        /// devices appears. Metadata is stored as an int32 payload length followed by the payload, so
+        /// the payload is shrunk in place and the length updated, keeping the file's original size.
+        /// </summary>
+        /// <param name="checkpointDir">A <c>Store/checkpoints[_i]</c> directory</param>
+        static void StripLayoutTrailer(string checkpointDir)
+        {
+            // Only the log checkpoints carry a cookie; index checkpoints use a different metadata format.
+            var cprDir = Path.Combine(checkpointDir, "cpr-checkpoints");
+            var infoFiles = Directory.GetFiles(cprDir, "info.dat.0", SearchOption.AllDirectories);
+            ClassicAssert.IsNotEmpty(infoFiles, $"No log checkpoint metadata under {cprDir}");
+
+            foreach (var infoFile in infoFiles)
+            {
+                var bytes = File.ReadAllBytes(infoFile);
+                var payloadLength = BitConverter.ToInt32(bytes, 0);
+                var lines = Encoding.UTF8.GetString(bytes, sizeof(int), payloadLength).Split(Environment.NewLine).ToList();
+
+                var last = lines.Count - 1;
+                while (last >= 0 && lines[last].Length == 0)
+                    last--;
+
+                // The payload ends with a cookie length followed by that many single-byte lines. Scan
+                // back for a length whose bytes parse as a cookie carrying the layout trailer; a bare
+                // length check would match the final byte line trivially.
+                var lengthIndex = -1;
+                byte[] cookie = null;
+                for (var i = last - 1; i >= 0; i--)
+                {
+                    if (!int.TryParse(lines[i], out var cookieLength) || cookieLength != last - i)
+                        continue;
+
+                    var candidate = lines.Skip(i + 1).Take(cookieLength).Select(byte.Parse).ToArray();
+                    if (!GarnetCheckpointManager.TryGetCheckpointLayout(candidate, out _))
+                        continue;
+
+                    lengthIndex = i;
+                    cookie = candidate;
+                    break;
+                }
+                ClassicAssert.GreaterOrEqual(lengthIndex, 0, $"No cookie with a layout trailer in {infoFile}");
+                TestContext.Progress.WriteLine($"{Path.GetFileName(Path.GetDirectoryName(infoFile))}: stripping {cookie.Length}-byte cookie");
+
+                var kept = lines.Take(lengthIndex).Append("0");
+                var newPayload = Encoding.UTF8.GetBytes(string.Concat(kept.Select(line => line + Environment.NewLine)));
+                ClassicAssert.LessOrEqual(sizeof(int) + newPayload.Length, bytes.Length);
+
+                BitConverter.GetBytes(newPayload.Length).CopyTo(bytes, 0);
+                newPayload.CopyTo(bytes, sizeof(int));
+                File.WriteAllBytes(infoFile, bytes);
+            }
         }
     }
 }
