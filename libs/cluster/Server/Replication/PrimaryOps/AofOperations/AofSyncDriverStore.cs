@@ -33,12 +33,13 @@ namespace Garnet.cluster
 
         readonly ClusterProvider clusterProvider;
         readonly ILogger logger;
+        readonly AofRetentionManager retentionManager;
 
         AofSyncDriver[] syncDrivers;
         int numDrivers;
         SingleWriterMultiReaderLock _lock;
         bool _disposed;
-        internal AofAddress TruncatedUntil;
+        internal AofAddress TruncatedUntil => retentionManager.TruncatedUntil;
 
         public int AofSyncDriverCount => numDrivers;
 
@@ -48,6 +49,7 @@ namespace Garnet.cluster
             this.logger = logger;
             syncDrivers = new AofSyncDriver[initialSize];
             numDrivers = 0;
+            retentionManager = new(clusterProvider.serverOptions.AofPhysicalSublogCount);
             if (clusterProvider.storeWrapper.appendOnlyFile != null)
             {
                 if (clusterProvider.serverOptions.FastAofTruncate)
@@ -59,7 +61,6 @@ namespace Garnet.cluster
                     }
                 }
             }
-            TruncatedUntil = AofAddress.Create(clusterProvider.serverOptions.AofPhysicalSublogCount, 0);
         }
 
         /// <summary>
@@ -70,101 +71,63 @@ namespace Garnet.cluster
         /// <returns></returns>
         long SafeTruncateAof(long truncateUntil, int physicalSublogIdx)
         {
-            _lock.WriteLock();
-
-            if (_disposed)
-            {
-                _lock.WriteUnlock();
-                return -1;
-            }
-
-            // Calculate min address of all iterators
-            var TruncatedUntil = truncateUntil;
+            _lock.ReadLock();
             try
             {
-                for (var i = 0; i < numDrivers; i++)
-                {
-                    Debug.Assert(syncDrivers[i] != null, $"syncDriver cannot be null at {nameof(SafeTruncateAof)}");
-                    var prevAddress = syncDrivers[i].GetPreviousAddress(physicalSublogIdx);
-                    if (prevAddress < TruncatedUntil)
-                        TruncatedUntil = prevAddress;
-                }
-
-                // Bound truncation by replicationOffset to avoid truncating replica log beyond the point of active replay
-                var replicationUpperBound = clusterProvider.replicationManager.GetReplicationOffset(physicalSublogIdx);
-                if (replicationUpperBound < TruncatedUntil)
-                    TruncatedUntil = replicationUpperBound;
-
-                // Inform that we have logically truncatedUntil
-                this.TruncatedUntil.MonotonicUpdate(TruncatedUntil, physicalSublogIdx);
+                if (_disposed)
+                    return -1;
             }
             finally
             {
-                // Release lock early
-                _lock.WriteUnlock();
+                _lock.ReadUnlock();
             }
+
+            // Bound truncation by active retention leases and replicationOffset to avoid truncating
+            // replica log beyond the point of active replay.
+            var replicationUpperBound = clusterProvider.replicationManager.GetReplicationOffset(physicalSublogIdx);
+            var truncationLimit = retentionManager.GetTruncationLimit(truncateUntil, physicalSublogIdx, replicationUpperBound);
 
             if (clusterProvider.serverOptions.FastAofTruncate)
             {
-                clusterProvider.storeWrapper.appendOnlyFile?.Log.UnsafeShiftBeginAddress(physicalSublogIdx, TruncatedUntil, snapToPageStart: true, truncateLog: true);
+                clusterProvider.storeWrapper.appendOnlyFile?.Log.UnsafeShiftBeginAddress(physicalSublogIdx, truncationLimit, snapToPageStart: true, truncateLog: true);
             }
             else
             {
-                clusterProvider.storeWrapper.appendOnlyFile?.Log.TruncateUntil(physicalSublogIdx, TruncatedUntil);
+                clusterProvider.storeWrapper.appendOnlyFile?.Log.TruncateUntil(physicalSublogIdx, truncationLimit);
                 clusterProvider.storeWrapper.appendOnlyFile?.Log.Commit();
             }
 
-            return TruncatedUntil;
+            return truncationLimit;
         }
 
         /// <summary>
-        /// Safely truncate AOF until provided address by checking against active AofSyncDrivers
+        /// Safely truncate AOF until provided address while honoring active retention leases.
         /// </summary>
         /// <param name="role">Role of caller</param>
         /// <param name="truncateUntil">TruncateUntil address</param>
         public void SafeTruncateAof(NodeRole role, in AofAddress truncateUntil)
         {
             Debug.Assert(role == NodeRole.PRIMARY, $"{nameof(SafeTruncateAof)} should be called only by a PRIMARY node!");
-            _lock.WriteLock();
-
-            if (_disposed)
-            {
-                _lock.WriteUnlock();
-                return;
-            }
-
-            // Calculate min address of all iterators
-            var TruncatedUntil = truncateUntil;
+            _lock.ReadLock();
             try
             {
-                for (var i = 0; i < numDrivers; i++)
-                {
-                    Debug.Assert(syncDrivers[i] != null, $"syncDriver cannot be null {nameof(SafeTruncateAof)}");
-                    var previousAddress = syncDrivers[i].PreviousAddress;
-                    for (var physicalSublogIdx = 0; physicalSublogIdx < previousAddress.Length; physicalSublogIdx++)
-                    {
-                        if (previousAddress[physicalSublogIdx] < TruncatedUntil[physicalSublogIdx])
-                            TruncatedUntil[physicalSublogIdx] = previousAddress[physicalSublogIdx];
-                    }
-                }
-
-                // NOTE: Do not need truncation based on replicationOffset because caller should always be a PRIMARY.
-                // Inform that we have logically truncatedUntil
-                this.TruncatedUntil.MonotonicUpdate(ref TruncatedUntil);
+                if (_disposed)
+                    return;
             }
             finally
             {
-                // Release lock early
-                _lock.WriteUnlock();
+                _lock.ReadUnlock();
             }
+
+            var truncationLimit = retentionManager.GetTruncationLimit(truncateUntil);
 
             if (clusterProvider.serverOptions.FastAofTruncate)
             {
-                clusterProvider.storeWrapper.appendOnlyFile?.Log.UnsafeShiftBeginAddress(TruncatedUntil, snapToPageStart: true, truncateLog: true);
+                clusterProvider.storeWrapper.appendOnlyFile?.Log.UnsafeShiftBeginAddress(truncationLimit, snapToPageStart: true, truncateLog: true);
             }
             else
             {
-                clusterProvider.storeWrapper.appendOnlyFile?.Log.TruncateUntil(TruncatedUntil);
+                clusterProvider.storeWrapper.appendOnlyFile?.Log.TruncateUntil(truncationLimit);
                 clusterProvider.storeWrapper.appendOnlyFile?.Log.Commit();
             }
         }
@@ -308,6 +271,7 @@ namespace Garnet.cluster
             }
             numDrivers = 0;
             Array.Clear(syncDrivers);
+            retentionManager.Dispose();
 
             // With no drivers attached, PublishShippedAddresses writes a max watermark per sublog,
             // making every appender's computed lag non-positive so none stalls on the gate.
@@ -355,18 +319,20 @@ namespace Garnet.cluster
 
             Debug.Assert(aofSyncDriver != null, $"aofSyncTaskInfo should not be null {nameof(TryAddReplicationDriver)}");
 
+            if (!retentionManager.TryAcquire(startAddress, aofSyncDriver.GetPreviousAddress, clusterProvider.AllowDataLoss, out var retentionLease))
+            {
+                logger?.LogWarning("AOF sync task for {remoteNodeId}, with start address {startAddress}, could not retain local AOF truncated until {truncatedUntil}", remoteNodeId, startAddress, TruncatedUntil);
+                aofSyncDriver.Dispose();
+                aofSyncDriver = null;
+                return false;
+            }
+            aofSyncDriver.SetRetentionLease(retentionLease);
+
             // Lock to prevent add/remove tasks and truncate operations
             _lock.WriteLock();
             try
             {
                 if (_disposed) return success;
-
-                // Fail adding the task if truncation has happened, and we are not in AllowDataLoss mode
-                if (startAddress.AnyLesser(TruncatedUntil) && !clusterProvider.AllowDataLoss)
-                {
-                    logger?.LogWarning("AOF sync task for {remoteNodeId}, with start address {startAddress}, could not be added, local AOF is truncated until {truncatedUntil}", remoteNodeId, startAddress, TruncatedUntil);
-                    return success;
-                }
 
                 // Iterate array of existing tasks and update associated task if it already exists
                 for (var i = 0; i < numDrivers; i++)
@@ -440,37 +406,53 @@ namespace Garnet.cluster
 
                 // If address is null or port is not valid, we cannot create a task
                 if (address == null || port <= 0)
-                    throw new GarnetException($"Failed to create AOF sync task for {replicaNodeId} with address {address} and port {port}");
+                {
+                    logger?.LogError("Failed to create AOF sync task for {replicaNodeId} with address {address} and port {port}", replicaNodeId, address, port);
+                    success = false;
+                    break;
+                }
 
+                AofSyncDriver syncDriver = null;
                 try
                 {
-                    rss.AddAofSyncTask(new AofSyncDriver(
+                    syncDriver = new AofSyncDriver(
                         clusterProvider,
                         this,
                         current.LocalNodeId,
                         replicaNodeId,
                         new IPEndPoint(IPAddress.Parse(address), port),
                         ref startAddress,
-                        logger));
+                        logger);
+                    if (!retentionManager.TryAcquire(startAddress, syncDriver.GetPreviousAddress, clusterProvider.AllowDataLoss, out var retentionLease))
+                    {
+                        syncDriver.Dispose();
+                        logger?.LogError("{method} failed to retain AOF from {startAddress}; truncated until {truncatedUntil}", nameof(TryAddReplicationDrivers), startAddress, TruncatedUntil);
+                        success = false;
+                        break;
+                    }
+                    syncDriver.SetRetentionLease(retentionLease);
+                    rss.AddAofSyncTask(syncDriver);
                 }
                 catch (Exception ex)
                 {
+                    syncDriver?.Dispose();
                     logger?.LogError(ex, "{method} creating AOF sync task for {replicaNodeId} failed", nameof(TryAddReplicationDrivers), replicaNodeId);
-                    return false;
+                    success = false;
+                    break;
                 }
+            }
+
+            if (!success)
+            {
+                foreach (var rss in replicaSyncSessions)
+                    rss?.AofSyncDriver?.Dispose();
+                return false;
             }
 
             _lock.WriteLock();
             try
             {
                 if (_disposed) return false;
-
-                // Fail adding the task if truncation has happened
-                if (startAddress.AnyLesser(TruncatedUntil) && !clusterProvider.AllowDataLoss)
-                {
-                    logger?.LogError("{method} failed to add tasks for AOF sync {startAddress} {truncatedUntil}", nameof(TryAddReplicationDrivers), startAddress, TruncatedUntil);
-                    return false;
-                }
 
                 foreach (var rss in replicaSyncSessions)
                 {
@@ -612,17 +594,13 @@ namespace Garnet.cluster
         /// </summary>
         /// <param name="truncatedUntil"></param>
         public void UpdateTruncatedUntil(AofAddress truncatedUntil)
-        {
-            try
-            {
-                _lock.WriteLock();
-                TruncatedUntil.MonotonicUpdate(ref truncatedUntil);
-            }
-            finally
-            {
-                _lock.WriteUnlock();
-            }
-        }
+            => retentionManager.UpdateTruncatedUntil(truncatedUntil);
+
+        /// <summary>
+        /// Attempts to pin AOF at a fixed address until the returned lease is disposed.
+        /// </summary>
+        public bool TryAcquireRetention(in AofAddress startAddress, out AofRetentionLease lease)
+            => retentionManager.TryAcquire(startAddress, clusterProvider.AllowDataLoss, out lease);
 
         /// <summary>
         /// Remove and dispose all active aof sync drivers
