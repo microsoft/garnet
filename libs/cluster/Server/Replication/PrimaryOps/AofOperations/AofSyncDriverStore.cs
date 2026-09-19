@@ -34,6 +34,7 @@ namespace Garnet.cluster
         readonly ClusterProvider clusterProvider;
         readonly ILogger logger;
         readonly AofRetentionManager retentionManager;
+        readonly bool ownsRetentionManager;
 
         AofSyncDriver[] syncDrivers;
         int numDrivers;
@@ -49,7 +50,9 @@ namespace Garnet.cluster
             this.logger = logger;
             syncDrivers = new AofSyncDriver[initialSize];
             numDrivers = 0;
-            retentionManager = new(clusterProvider.serverOptions.AofPhysicalSublogCount);
+            var appendOnlyFile = clusterProvider.storeWrapper.appendOnlyFile;
+            retentionManager = appendOnlyFile?.RetentionManager ?? new(clusterProvider.serverOptions.AofPhysicalSublogCount);
+            ownsRetentionManager = appendOnlyFile == null;
             if (clusterProvider.storeWrapper.appendOnlyFile != null)
             {
                 if (clusterProvider.serverOptions.FastAofTruncate)
@@ -271,7 +274,8 @@ namespace Garnet.cluster
             }
             numDrivers = 0;
             Array.Clear(syncDrivers);
-            retentionManager.Dispose();
+            if (ownsRetentionManager)
+                retentionManager.Dispose();
 
             // With no drivers attached, PublishShippedAddresses writes a max watermark per sublog,
             // making every appender's computed lag non-positive so none stalls on the gate.

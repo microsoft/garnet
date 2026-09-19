@@ -4,6 +4,7 @@
 using System;
 using System.Threading;
 using System.Threading.Tasks;
+using Garnet.common;
 using Garnet.networking;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
@@ -20,6 +21,8 @@ namespace Garnet.server
         readonly ILogger logger;
         readonly CancellationTokenSource cts = new();
         readonly Task syncTask;
+        readonly AofRetentionLease retentionLease;
+        long retainedAddress;
         TsavoriteLogScanSingleIterator iterator;
 
         public StandaloneSyncDriver(StoreWrapper storeWrapper, INetworkSender networkSender, long startAddress, ILogger logger)
@@ -27,6 +30,17 @@ namespace Garnet.server
             this.storeWrapper = storeWrapper;
             this.networkSender = networkSender;
             this.logger = logger;
+            retainedAddress = startAddress;
+
+            var retentionStartAddress = AofAddress.Create(1, startAddress);
+            if (!storeWrapper.appendOnlyFile.RetentionManager.TryAcquire(
+                retentionStartAddress,
+                _ => Volatile.Read(ref retainedAddress),
+                allowDataLoss: false,
+                out retentionLease))
+            {
+                throw new GarnetException($"Cannot stream AOF from {startAddress}; data has already been truncated");
+            }
 
             syncTask = Task.Run(() => StreamAsync(startAddress, cts.Token));
         }
@@ -46,6 +60,7 @@ namespace Garnet.server
                 await foreach (var (entry, entryLength, currentAddress, _) in iterator.GetAsyncEnumerable(token).ConfigureAwait(false))
                 {
                     SendFrame(entry.AsSpan(0, entryLength), currentAddress);
+                    Volatile.Write(ref retainedAddress, iterator.NextAddress);
                     networkSender.Throttle();
                 }
             }
@@ -121,6 +136,7 @@ namespace Garnet.server
         {
             cts.Cancel();
             iterator?.Dispose();
+            retentionLease.Dispose();
             _ = syncTask.ContinueWith(
                 static (_, state) => ((CancellationTokenSource)state).Dispose(),
                 cts,

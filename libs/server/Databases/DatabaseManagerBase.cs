@@ -512,7 +512,7 @@ namespace Garnet.server
                 }
 
                 if (checkpointCoveredAofAddress.AnyGreater(0))
-                    logger?.LogInformation("Will truncate AOF to {tailAddress} after checkpoint (files deleted after next commit), dbId = {dbId}", checkpointCoveredAofAddress, db.Id);
+                    logger?.LogInformation("Checkpoint covers AOF through {tailAddress}; active retention leases may bound truncation below it, dbId = {dbId}", checkpointCoveredAofAddress, db.Id);
             }
 
             (bool success, Guid token) checkpointResult = default;
@@ -537,8 +537,12 @@ namespace Garnet.server
             }
             else
             {
-                db.AppendOnlyFile?.Log.TruncateUntil(checkpointCoveredAofAddress);
-                db.AppendOnlyFile?.Log.Commit();
+                if (db.AppendOnlyFile != null)
+                {
+                    var truncationLimit = db.AppendOnlyFile.RetentionManager.GetTruncationLimit(checkpointCoveredAofAddress);
+                    db.AppendOnlyFile.Log.TruncateUntil(truncationLimit);
+                    db.AppendOnlyFile.Log.Commit();
+                }
             }
 
             RunPostCheckpointCleanup(

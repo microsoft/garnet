@@ -412,6 +412,26 @@ namespace Garnet.test
         }
 
         [Test]
+        public async Task PrimaryCheckpointDoesNotInterruptLiveReplication()
+        {
+            using var client = new TcpClient();
+            await client.ConnectAsync(IPAddress.Loopback, replicaPort);
+            await using var stream = client.GetStream();
+
+            await WriteCommandAsync(stream, "REPLICAOF", "127.0.0.1", primaryPort.ToString());
+            ClassicAssert.AreEqual("+OK", await ReadLineAsync(stream));
+            await WaitForReplicaCountAsync(primaryPort, expected: 1, timeoutMs: 5000);
+
+            ClassicAssert.AreEqual("+OK\r\n", await TestUtils.SendRawAsync(primaryPort, "SET", "before-checkpoint", "value-1"));
+            await WaitForValueAsync(replicaPort, "before-checkpoint", "value-1", timeoutMs: 5000);
+
+            ClassicAssert.IsTrue(await primary.Provider.StoreWrapper.TakeCheckpointAsync(background: false));
+
+            ClassicAssert.AreEqual("+OK\r\n", await TestUtils.SendRawAsync(primaryPort, "SET", "after-checkpoint", "value-2"));
+            await WaitForValueAsync(replicaPort, "after-checkpoint", "value-2", timeoutMs: 5000);
+        }
+
+        [Test]
         public async Task RoleCommandReflectsReplicaState()
         {
             using var client = new TcpClient();
