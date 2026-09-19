@@ -3,7 +3,7 @@
 
 using System;
 
-namespace Garnet.cluster
+namespace Garnet.server
 {
     /// <summary>
     /// Interface for a checkpoint data sink that receives chunk-based writes.

@@ -3,7 +3,7 @@
 
 using System;
 
-namespace Garnet.cluster
+namespace Garnet.server
 {
     /// <summary>
     /// In-memory implementation of <see cref="ISnapshotDataSink"/> that commits checkpoint

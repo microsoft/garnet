@@ -2,29 +2,19 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Threading;
 using Garnet.common;
 using Garnet.server;
 using Microsoft.Extensions.Logging;
-using Tsavorite.core;
 
 namespace Garnet.cluster
 {
     internal sealed class ReceiveCheckpointHandler : IDisposable
     {
-        readonly ICheckpointFileTransferProvider checkpointFileProvider;
         readonly RangeIndexManager rangeIndexManager;
         readonly Action updateLastPrimarySyncTime;
-        readonly TimeSpan timeout;
-        readonly CancellationTokenSource cts;
         readonly ILogger logger;
-
-        // Shared resources across FileDataSink instances
-        SectorAlignedBufferPool bufferPool;
-        readonly SemaphoreSlim writeSemaphore = new(0);
-
-        // Active sink (one at a time, matching the sequential protocol)
-        ISnapshotDataSink activeSink;
+        readonly CheckpointFileReceiveHandler checkpointFileReceiver;
+        ISnapshotDataSink activeRangeIndexSink;
 
         public ReceiveCheckpointHandler(
             ICheckpointFileTransferProvider checkpointFileProvider,
@@ -33,23 +23,17 @@ namespace Garnet.cluster
             Action updateLastPrimarySyncTime = null,
             ILogger logger = null)
         {
-            this.checkpointFileProvider = checkpointFileProvider;
-            this.timeout = timeout;
             this.rangeIndexManager = rangeIndexManager;
             this.updateLastPrimarySyncTime = updateLastPrimarySyncTime;
             this.logger = logger;
-            cts = new();
+            checkpointFileReceiver = new(checkpointFileProvider, timeout, logger);
         }
 
         public void Dispose()
         {
-            cts.Cancel();
-            cts.Dispose();
-            activeSink?.Dispose();
-            activeSink = null;
-            writeSemaphore?.Dispose();
-            bufferPool?.Free();
-            bufferPool = null;
+            checkpointFileReceiver.Dispose();
+            activeRangeIndexSink?.Dispose();
+            activeRangeIndexSink = null;
         }
 
         /// <summary>
@@ -64,23 +48,7 @@ namespace Garnet.cluster
         {
             updateLastPrimarySyncTime?.Invoke();
 
-            if (data.Length == 0)
-            {
-                activeSink?.Complete();
-                activeSink = null;
-                return;
-            }
-
-            if (activeSink == null)
-            {
-                // On retry, this may reopen an existing file from a previous failed attempt.
-                // This is safe because chunks are streamed from the start, overwriting any partial data.
-                var device = checkpointFileProvider.CreateCheckpointDevice(type, token);
-                bufferPool ??= new SectorAlignedBufferPool(1, (int)device.SectorSize);
-                activeSink = new FileDataSink(type, token, device, bufferPool, writeSemaphore, timeout, cts.Token, logger);
-            }
-
-            activeSink.WriteChunk(startAddress, data);
+            checkpointFileReceiver.ProcessFileSegment(token, type, startAddress, data);
 
 #if DEBUG
             ExceptionInjectionHelper.WaitOnClear(ExceptionInjectionType.Replication_Timeout_On_Receive_Checkpoint);
@@ -96,9 +64,7 @@ namespace Garnet.cluster
         public void ProcessMetadata(Guid token, CheckpointFileType type, ReadOnlySpan<byte> checkpointMetadata)
         {
             updateLastPrimarySyncTime?.Invoke();
-            using var sink = new MetadataDataSink(type, token, checkpointFileProvider);
-            sink.WriteChunk(0, checkpointMetadata);
-            sink.Complete();
+            checkpointFileReceiver.ProcessMetadata(token, type, checkpointMetadata);
         }
 
         /// <summary>
@@ -129,23 +95,14 @@ namespace Garnet.cluster
                         // Create sink immediately from metadata; data chunks will follow
                         if (rangeIndexManager == null)
                             ExceptionUtils.ThrowException(new GarnetException("RangeIndex not enabled but received RI checkpoint data"));
-                        if (activeSink != null)
+                        if (activeRangeIndexSink != null)
                             ExceptionUtils.ThrowException(new GarnetException("ActiveSink already initialized!"));
-                        activeSink = RangeIndexFileDataSink.FromMetadata(type, token, data, rangeIndexManager, logger);
+                        activeRangeIndexSink = RangeIndexFileDataSink.FromMetadata(type, token, data, rangeIndexManager, logger);
                         return;
                     case CheckpointFileType.STORE_INDEX:
                     case CheckpointFileType.STORE_SNAPSHOT:
-                        var sink = new MetadataDataSink(type, token, checkpointFileProvider);
-                        try
-                        {
-                            sink.WriteChunk(0, data);
-                            sink.Complete();
-                            return;
-                        }
-                        finally
-                        {
-                            sink.Dispose();
-                        }
+                        checkpointFileReceiver.ProcessMetadata(token, type, data);
+                        return;
                     default:
                         ExceptionUtils.ThrowException(new GarnetException($"{nameof(ProcessSnapshotData)} invalid startAddress for checkpoint type: {type}!"));
                         return;
@@ -155,34 +112,28 @@ namespace Garnet.cluster
             // File segment handling: empty data signals end-of-stream
             if (data.Length == 0)
             {
-                activeSink?.Complete();
-                activeSink = null;
+                if (type is CheckpointFileType.STORE_RANGEINDEX_FLUSH or CheckpointFileType.STORE_RANGEINDEX_SNAPSHOT)
+                {
+                    activeRangeIndexSink?.Complete();
+                    activeRangeIndexSink = null;
+                }
+                else
+                {
+                    checkpointFileReceiver.ProcessFileSegment(token, type, startAddress, data);
+                }
                 return;
             }
 
-            // Initialize sink for multi-segment file transmission
-            if (activeSink == null)
+            if (type is CheckpointFileType.STORE_RANGEINDEX_FLUSH or CheckpointFileType.STORE_RANGEINDEX_SNAPSHOT)
             {
-                switch (type)
-                {
-                    case CheckpointFileType.STORE_HLOG:
-                    case CheckpointFileType.STORE_HLOG_OBJ:
-                    case CheckpointFileType.STORE_SNAPSHOT:
-                    case CheckpointFileType.STORE_SNAPSHOT_OBJ:
-                    case CheckpointFileType.STORE_INDEX:
-                        // On retry, this may reopen an existing file from a previous failed attempt.
-                        // This is safe because chunks are streamed from the start, overwriting any partial data.
-                        var device = checkpointFileProvider.CreateCheckpointDevice(type, token);
-                        bufferPool ??= new SectorAlignedBufferPool(1, (int)device.SectorSize);
-                        activeSink = new FileDataSink(type, token, device, bufferPool, writeSemaphore, timeout, cts.Token, logger);
-                        break;
-                    default:
-                        ExceptionUtils.ThrowException(new GarnetException($"{nameof(ProcessSnapshotData)} invalid startAddress for checkpoint type: {type}!"));
-                        return;
-                }
+                if (activeRangeIndexSink == null)
+                    ExceptionUtils.ThrowException(new GarnetException($"RangeIndex sink is not initialized for {type}"));
+                activeRangeIndexSink.WriteChunk(startAddress, data);
             }
-
-            activeSink.WriteChunk(startAddress, data);
+            else
+            {
+                checkpointFileReceiver.ProcessFileSegment(token, type, startAddress, data);
+            }
 
 #if DEBUG
             ExceptionInjectionHelper.WaitOnClear(ExceptionInjectionType.Replication_Timeout_On_Receive_Checkpoint);
