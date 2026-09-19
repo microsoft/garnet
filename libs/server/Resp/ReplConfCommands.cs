@@ -1,6 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
 using System.Text;
 using Garnet.common;
 
@@ -37,6 +38,11 @@ namespace Garnet.server
         /// </summary>
         private bool NetworkREPLCONF()
         {
+            // Identity of the replica on this connection. RemoteEndpointName is
+            // "<ip>:<port>" for TCP transports, and empty for in-process senders (e.g.
+            // Lua scratch buffers), in which case no replica is registered.
+            var (sourcePort, remoteAddress) = GetReplicaIdentity();
+
             // Redis accepts a bare REPLCONF (arity -1) and only rejects an odd number
             // of option arguments. Two behaviours verified against a live 7.4.11:
             //   REPLCONF            -> +OK
@@ -62,28 +68,67 @@ namespace Garnet.server
                 // ACK and GETACK are no-reply forms. Redis emits nothing at all for
                 // these, and we must do the same: a reply here would be interpreted by
                 // the replica as the first bytes of the replication stream.
-                if (keySlice.EqualsUpperCaseSpanIgnoringCase(CmdStrings.ACK) ||
-                    keySlice.EqualsUpperCaseSpanIgnoringCase(CmdStrings.GETACK))
+                if (keySlice.EqualsUpperCaseSpanIgnoringCase(CmdStrings.ACK))
                 {
-                    // Phase 2 will route the ACK offset to the replication manager so it
-                    // can track replica progress; the value is intentionally unused here.
+                    // Record the replica's acknowledged offset. It is surfaced as the
+                    // "offset" field of the slave<N> line in INFO replication.
+                    if (sourcePort > 0 && NumUtils.TryParse(valueSlice, out long ackOffset))
+                    {
+                        var entry = storeWrapper.replicaRegistry.GetOrAdd(sourcePort, remoteAddress);
+                        entry.AckOffset = ackOffset;
+                        entry.LastInteractionUtc = DateTime.UtcNow;
+                    }
+
+                    return true;
+                }
+
+                if (keySlice.EqualsUpperCaseSpanIgnoringCase(CmdStrings.GETACK))
+                {
+                    // Phase 2 will reply with an offset once the replication stream is
+                    // wired; Redis also emits nothing here in the interim.
                     _ = valueSlice;
                     return true;
                 }
 
-                // Known, replied-to options. Phase 1 validates arity only and discards
-                // the value; Phase 2 will persist listening-port / ip-address / capa.
-                //
-                // Redis 7.4 recognises: listening-port, ip-address, capa, rdb-only and
-                // rdb-filter-only. We accept the first four; rdb-filter-only has its own
-                // value validation in Redis and is deliberately left to Phase 2, so it
-                // currently falls through to the Unrecognized error below.
-                if (keySlice.EqualsUpperCaseSpanIgnoringCase(CmdStrings.LISTENING_PORT, allowNonAlphabeticChars: true) ||
-                    keySlice.EqualsUpperCaseSpanIgnoringCase(CmdStrings.IP_ADDRESS, allowNonAlphabeticChars: true) ||
-                    keySlice.EqualsUpperCaseSpanIgnoringCase(CmdStrings.CAPA) ||
+                // Known, replied-to options. Redis 7.4 recognises: listening-port,
+                // ip-address, capa, rdb-only and rdb-filter-only. We record the two that
+                // identify the replica (so it can be reported to Sentinel) and accept the
+                // rest without persisting them.
+                if (keySlice.EqualsUpperCaseSpanIgnoringCase(CmdStrings.LISTENING_PORT, allowNonAlphabeticChars: true))
+                {
+                    // This is the port Sentinel will connect to in order to promote this
+                    // replica, so it must be recorded rather than discarded.
+                    if (sourcePort > 0 && NumUtils.TryParse(valueSlice, out int listeningPort))
+                    {
+                        var entry = storeWrapper.replicaRegistry.GetOrAdd(sourcePort, remoteAddress);
+                        entry.ListeningPort = listeningPort;
+                        entry.LastInteractionUtc = DateTime.UtcNow;
+                    }
+
+                    continue;
+                }
+
+                if (keySlice.EqualsUpperCaseSpanIgnoringCase(CmdStrings.IP_ADDRESS, allowNonAlphabeticChars: true))
+                {
+                    if (sourcePort > 0)
+                    {
+                        var entry = storeWrapper.replicaRegistry.GetOrAdd(sourcePort, remoteAddress);
+                        entry.IpAddress = Encoding.ASCII.GetString(valueSlice);
+                        entry.LastInteractionUtc = DateTime.UtcNow;
+                    }
+
+                    continue;
+                }
+
+                if (keySlice.EqualsUpperCaseSpanIgnoringCase(CmdStrings.CAPA) ||
                     keySlice.EqualsUpperCaseSpanIgnoringCase(CmdStrings.RDB_ONLY, allowNonAlphabeticChars: true))
                 {
-                    _ = valueSlice;
+                    // Register the connection on first contact even when the replica
+                    // sends neither listening-port nor ip-address, so the handshake is
+                    // still visible in INFO replication.
+                    if (sourcePort > 0)
+                        storeWrapper.replicaRegistry.GetOrAdd(sourcePort, remoteAddress);
+
                     continue;
                 }
 
@@ -107,6 +152,33 @@ namespace Garnet.server
                 SendAndReset();
 
             return true;
+        }
+
+        /// <summary>
+        /// Derives this connection's replica identity: the remote source port (used as a
+        /// stable key for the connection) and the remote IP address.
+        ///
+        /// <para>Returns <c>(0, null)</c> when the transport does not expose a TCP endpoint
+        /// (for example an in-process sender), in which case the caller skips registration
+        /// rather than recording a bogus replica.</para>
+        /// </summary>
+        private (int SourcePort, string Address) GetReplicaIdentity()
+        {
+            var endpoint = networkSender?.RemoteEndpointName;
+            if (string.IsNullOrEmpty(endpoint))
+                return (0, null);
+
+            // Format is "<address>:<port>". IPv6 addresses can themselves contain ':'
+            // (and may be bracketed), so split on the LAST colon to isolate the port.
+            var lastColon = endpoint.LastIndexOf(':');
+            if (lastColon <= 0)
+                return (0, null);
+
+            var addressPart = endpoint[..lastColon].Trim('[', ']');
+            if (!NumUtils.TryParse(Encoding.ASCII.GetBytes(endpoint[(lastColon + 1)..]), out int port))
+                return (0, null);
+
+            return (port, addressPart);
         }
     }
 }

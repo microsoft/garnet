@@ -57,15 +57,29 @@ namespace Garnet.server
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.PSYNC));
             }
 
-            // Source the primary's replid. Phase 1 always mints a fresh 40-char
-            // hex per PSYNC call (matching what ClusterProvider.cs:225-226 emits
-            // for INFO replication in non-cluster mode). Phase 2 will thread this
-            // through the cluster-managed PrimaryReplId so replicas see the same
-            // value across restarts of a cluster node. Avoiding the cluster
-            // interface here keeps Phase 1 decoupled from IClusterProvider and
-            // means PSYNC works correctly in non-cluster mode without any
-            // conditional wiring.
-            var primaryReplId = Generator.DefaultHexId();
+            // Source the primary's replid from the store so it matches what INFO
+            // replication advertises. A replica records the replid it is given and
+            // presents it on subsequent PSYNC attempts; if the two surfaces disagreed,
+            // every reconnect would look like a brand-new primary. Phase 2 will thread
+            // this through the cluster-managed PrimaryReplId as well.
+            var primaryReplId = storeWrapper.GetOrCreatePrimaryReplId();
+
+            // Record this connection as an attached replica, and mark its handshake as
+            // complete so INFO replication reports it as "online". Sentinel discovers a
+            // primary's replicas solely from the slave<N> lines of INFO replication, so
+            // without this a replica would complete a sync but remain invisible to any
+            // orchestrator. RemoteEndpointName is "<ip>:<port>" on TCP transports and
+            // empty for in-process senders, in which case no replica is registered.
+            {
+                var endpoint = networkSender?.RemoteEndpointName;
+                var lastColon = endpoint?.LastIndexOf(':') ?? -1;
+                if (lastColon > 0 && NumUtils.TryParse(System.Text.Encoding.ASCII.GetBytes(endpoint[(lastColon + 1)..]), out int sourcePort))
+                {
+                    var addressPart = endpoint[..lastColon].Trim('[', ']');
+                    var entry = storeWrapper.replicaRegistry.GetOrAdd(sourcePort, addressPart);
+                    entry.SyncCompleted = true;
+                }
+            }
 
             // Build the RDB body once per call (it's tiny — 56 bytes). Doing it on
             // each PSYNC keeps the code obvious and lets future phases replace the

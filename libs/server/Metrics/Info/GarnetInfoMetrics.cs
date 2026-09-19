@@ -159,18 +159,32 @@ namespace Garnet.server
         {
             if (storeWrapper.clusterProvider == null)
             {
+                // Standalone mode. Report attached stock replicas so that an external
+                // orchestrator (Redis Sentinel) can discover them: Sentinel learns a
+                // primary's replica set *only* from the connected_slaves count and the
+                // slave<N>: lines below. With a hard-coded connected_slaves:0 an
+                // orchestrator sees no replicas and can never select one to promote.
+                var registry = storeWrapper.replicaRegistry;
+                var slaveInfos = registry.GetSlaveInfoStrings();
+
                 replicationInfo =
                 [
                     new("role", "master"),
-                    new("connected_slaves", "0"),
+                    new("connected_slaves", slaveInfos.Count.ToString()),
                     new("master_failover_state", "no-failover"),
-                    new("master_replid", Generator.DefaultHexId()),
-                    new("master_replid2", Generator.DefaultHexId()),
-                    new("master_repl_offset", "N/A"),
-                    new("second_repl_offset", "N/A"),
+                    new("master_replid", storeWrapper.GetOrCreatePrimaryReplId()),
+                    new("master_replid2", "0000000000000000000000000000000000000000"),
+                    // Reported as a number, not "N/A". Sentinel and many clients parse
+                    // this field as an integer; "N/A" is not a valid value for them.
+                    new("master_repl_offset", storeWrapper.PrimaryReplOffset.ToString()),
+                    new("second_repl_offset", "-1"),
                     new("store_current_safe_aof_address", "N/A"),
                     new("store_recovered_safe_aof_address", "N/A"),
-               ];
+                ];
+
+                // slave0:ip=...,port=...,state=online,offset=...,lag=...
+                for (var i = 0; i < slaveInfos.Count; i++)
+                    replicationInfo = [.. replicationInfo, new($"slave{i}", slaveInfos[i])];
             }
             else
             {
