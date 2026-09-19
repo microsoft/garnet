@@ -11,7 +11,7 @@ namespace Garnet.cluster
     /// </summary>
     internal sealed class MetadataDataSink : ISnapshotDataSink
     {
-        private readonly ClusterProvider clusterProvider;
+        private readonly ICheckpointFileTransferProvider checkpointFileProvider;
 
         public CheckpointFileType Type { get; }
         public Guid Token { get; }
@@ -21,35 +21,25 @@ namespace Garnet.cluster
         /// </summary>
         /// <param name="type">The checkpoint file type (STORE_INDEX or STORE_SNAPSHOT).</param>
         /// <param name="token">The checkpoint token.</param>
-        /// <param name="clusterProvider">The cluster provider for accessing checkpoint managers.</param>
-        public MetadataDataSink(CheckpointFileType type, Guid token, ClusterProvider clusterProvider)
+        /// <param name="checkpointFileProvider">The checkpoint storage provider.</param>
+        public MetadataDataSink(CheckpointFileType type, Guid token, ICheckpointFileTransferProvider checkpointFileProvider)
         {
             Type = type;
             Token = token;
-            this.clusterProvider = clusterProvider;
+            this.checkpointFileProvider = checkpointFileProvider;
         }
 
         /// <inheritdoc/>
         public void WriteChunk(long startAddress, ReadOnlySpan<byte> data)
         {
-            var checkpointMetadata = data.ToArray();
-            var ckptManager = Type switch
-            {
-                CheckpointFileType.STORE_SNAPSHOT or
-                CheckpointFileType.STORE_INDEX => clusterProvider.ReplicationLogCheckpointManager,
-                _ => throw new Exception($"Invalid checkpoint filetype {Type}"),
-            };
-
             switch (Type)
             {
-                case CheckpointFileType.STORE_SNAPSHOT:
-                    ckptManager.CommitLogCheckpointSendFromPrimary(Token, checkpointMetadata);
-                    break;
                 case CheckpointFileType.STORE_INDEX:
-                    ckptManager.CommitIndexCheckpoint(Token, checkpointMetadata);
+                case CheckpointFileType.STORE_SNAPSHOT:
+                    checkpointFileProvider.CommitCheckpointMetadata(Type, Token, data);
                     break;
                 default:
-                    throw new Exception($"Invalid checkpoint filetype {Type}");
+                    throw new Exception($"Invalid checkpoint file type {Type}");
             }
         }
 

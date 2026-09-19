@@ -137,8 +137,11 @@ namespace Garnet.cluster
                 {
                     logger?.LogInformation("Sending main store checkpoint {version} {storeHlogToken} {storeIndexToken} to replica", localEntry.metadata.storeVersion, localEntry.metadata.storeHlogToken, localEntry.metadata.storeIndexToken);
 
+                    var checkpointFileProvider = new ClusterCheckpointFileTransferProvider(
+                        clusterProvider.serverOptions,
+                        clusterProvider.ReplicationLogCheckpointManager);
                     using var checkpointTransmissionDriver = new SnapshotTransmissionDriver(gcs, storeWrapper.serverOptions.ReplicaSyncTimeout, logger);
-                    checkpointTransmissionDriver.AddReader(new TsavoriteSnapshotReader(clusterProvider, localEntry, hlog_size, index_size, storeWrapper.serverOptions.ReplicaSyncTimeout, logger));
+                    checkpointTransmissionDriver.AddReader(new TsavoriteSnapshotReader(checkpointFileProvider, localEntry, hlog_size, index_size, storeWrapper.serverOptions.ReplicaSyncTimeout, logger));
 
                     // Add RangeIndex files if RI is enabled
                     if (storeWrapper.serverOptions.EnableRangeIndexPreview)

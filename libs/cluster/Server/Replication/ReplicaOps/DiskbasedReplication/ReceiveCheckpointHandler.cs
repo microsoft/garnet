@@ -4,6 +4,7 @@
 using System;
 using System.Threading;
 using Garnet.common;
+using Garnet.server;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 
@@ -11,7 +12,10 @@ namespace Garnet.cluster
 {
     internal sealed class ReceiveCheckpointHandler : IDisposable
     {
-        readonly ClusterProvider clusterProvider;
+        readonly ICheckpointFileTransferProvider checkpointFileProvider;
+        readonly RangeIndexManager rangeIndexManager;
+        readonly Action updateLastPrimarySyncTime;
+        readonly TimeSpan timeout;
         readonly CancellationTokenSource cts;
         readonly ILogger logger;
 
@@ -22,9 +26,17 @@ namespace Garnet.cluster
         // Active sink (one at a time, matching the sequential protocol)
         ISnapshotDataSink activeSink;
 
-        public ReceiveCheckpointHandler(ClusterProvider clusterProvider, ILogger logger = null)
+        public ReceiveCheckpointHandler(
+            ICheckpointFileTransferProvider checkpointFileProvider,
+            TimeSpan timeout,
+            RangeIndexManager rangeIndexManager = null,
+            Action updateLastPrimarySyncTime = null,
+            ILogger logger = null)
         {
-            this.clusterProvider = clusterProvider;
+            this.checkpointFileProvider = checkpointFileProvider;
+            this.timeout = timeout;
+            this.rangeIndexManager = rangeIndexManager;
+            this.updateLastPrimarySyncTime = updateLastPrimarySyncTime;
             this.logger = logger;
             cts = new();
         }
@@ -50,7 +62,7 @@ namespace Garnet.cluster
         /// <param name="data">The data to write. Empty signals end-of-stream.</param>
         public void ProcessFileSegment(Guid token, CheckpointFileType type, long startAddress, ReadOnlySpan<byte> data)
         {
-            clusterProvider.replicationManager.UpdateLastPrimarySyncTime();
+            updateLastPrimarySyncTime?.Invoke();
 
             if (data.Length == 0)
             {
@@ -63,9 +75,9 @@ namespace Garnet.cluster
             {
                 // On retry, this may reopen an existing file from a previous failed attempt.
                 // This is safe because chunks are streamed from the start, overwriting any partial data.
-                var device = clusterProvider.replicationManager.CreateCheckpointDevice(token, type);
+                var device = checkpointFileProvider.CreateCheckpointDevice(type, token);
                 bufferPool ??= new SectorAlignedBufferPool(1, (int)device.SectorSize);
-                activeSink = new FileDataSink(type, token, device, bufferPool, writeSemaphore, clusterProvider.serverOptions.ReplicaSyncTimeout, cts.Token, logger);
+                activeSink = new FileDataSink(type, token, device, bufferPool, writeSemaphore, timeout, cts.Token, logger);
             }
 
             activeSink.WriteChunk(startAddress, data);
@@ -83,8 +95,8 @@ namespace Garnet.cluster
         /// <param name="checkpointMetadata">Raw bytes of checkpoint metadata.</param>
         public void ProcessMetadata(Guid token, CheckpointFileType type, ReadOnlySpan<byte> checkpointMetadata)
         {
-            clusterProvider.replicationManager.UpdateLastPrimarySyncTime();
-            using var sink = new MetadataDataSink(type, token, clusterProvider);
+            updateLastPrimarySyncTime?.Invoke();
+            using var sink = new MetadataDataSink(type, token, checkpointFileProvider);
             sink.WriteChunk(0, checkpointMetadata);
             sink.Complete();
         }
@@ -104,7 +116,7 @@ namespace Garnet.cluster
         /// <param name="data">The data to write. Empty signals end-of-stream for streamed file segments.</param>
         public void ProcessSnapshotData(Guid token, CheckpointFileType type, long startAddress, ReadOnlySpan<byte> data)
         {
-            clusterProvider.replicationManager.UpdateLastPrimarySyncTime();
+            updateLastPrimarySyncTime?.Invoke();
 
             // Single-message payload (startAddress == -1)
             // NOTE: Use for single write metadata or to configure initialization parameters for shipping multi-segments files.
@@ -115,15 +127,15 @@ namespace Garnet.cluster
                     case CheckpointFileType.STORE_RANGEINDEX_FLUSH:
                     case CheckpointFileType.STORE_RANGEINDEX_SNAPSHOT:
                         // Create sink immediately from metadata; data chunks will follow
-                        if (!clusterProvider.serverOptions.EnableRangeIndexPreview)
+                        if (rangeIndexManager == null)
                             ExceptionUtils.ThrowException(new GarnetException("RangeIndex not enabled but received RI checkpoint data"));
                         if (activeSink != null)
                             ExceptionUtils.ThrowException(new GarnetException("ActiveSink already initialized!"));
-                        activeSink = RangeIndexFileDataSink.FromMetadata(type, token, data, clusterProvider.rangeIndexManager, logger);
+                        activeSink = RangeIndexFileDataSink.FromMetadata(type, token, data, rangeIndexManager, logger);
                         return;
                     case CheckpointFileType.STORE_INDEX:
                     case CheckpointFileType.STORE_SNAPSHOT:
-                        var sink = new MetadataDataSink(type, token, clusterProvider);
+                        var sink = new MetadataDataSink(type, token, checkpointFileProvider);
                         try
                         {
                             sink.WriteChunk(0, data);
@@ -160,9 +172,9 @@ namespace Garnet.cluster
                     case CheckpointFileType.STORE_INDEX:
                         // On retry, this may reopen an existing file from a previous failed attempt.
                         // This is safe because chunks are streamed from the start, overwriting any partial data.
-                        var device = clusterProvider.replicationManager.CreateCheckpointDevice(token, type);
+                        var device = checkpointFileProvider.CreateCheckpointDevice(type, token);
                         bufferPool ??= new SectorAlignedBufferPool(1, (int)device.SectorSize);
-                        activeSink = new FileDataSink(type, token, device, bufferPool, writeSemaphore, clusterProvider.serverOptions.ReplicaSyncTimeout, cts.Token, logger);
+                        activeSink = new FileDataSink(type, token, device, bufferPool, writeSemaphore, timeout, cts.Token, logger);
                         break;
                     default:
                         ExceptionUtils.ThrowException(new GarnetException($"{nameof(ProcessSnapshotData)} invalid startAddress for checkpoint type: {type}!"));
