@@ -432,6 +432,53 @@ namespace Garnet.test
         }
 
         [Test]
+        public async Task CheckpointLeasePinsFilesUntilReleased()
+        {
+            ClassicAssert.AreEqual("+OK\r\n", await TestUtils.SendRawAsync(primaryPort, "SET", "checkpoint-key", "value-1"));
+            ClassicAssert.IsTrue(await primary.Provider.StoreWrapper.TakeCheckpointAsync(background: false));
+
+            var checkpointStore = primary.Provider.StoreWrapper.DefaultDatabase.StandaloneCheckpointStore;
+            ClassicAssert.IsNotNull(checkpointStore);
+            ClassicAssert.IsTrue(checkpointStore.TryAcquireLatest(out var checkpointLease));
+            var leasedLogToken = checkpointLease.Value.storeHlogToken;
+
+            ClassicAssert.AreEqual("+OK\r\n", await TestUtils.SendRawAsync(primaryPort, "SET", "checkpoint-key", "value-2"));
+            ClassicAssert.IsTrue(await primary.Provider.StoreWrapper.TakeCheckpointAsync(background: false));
+
+            var checkpointManager = primary.Provider.StoreWrapper.StoreCheckpointManager;
+            CollectionAssert.Contains(checkpointManager.GetLogCheckpointTokens().ToArray(), leasedLogToken);
+
+            checkpointLease.Dispose();
+            CollectionAssert.DoesNotContain(checkpointManager.GetLogCheckpointTokens().ToArray(), leasedLogToken);
+        }
+
+        [Test]
+        public async Task RecoveredCheckpointIsAvailableForLeasing()
+        {
+            ClassicAssert.AreEqual("+OK\r\n", await TestUtils.SendRawAsync(primaryPort, "SET", "recovered-key", "recovered-value"));
+            ClassicAssert.IsTrue(await primary.Provider.StoreWrapper.TakeCheckpointAsync(background: false));
+
+            primary.Dispose(false);
+            primary = TestUtils.CreateGarnetServer(
+                Path.Combine(TestUtils.MethodTestDir, "primary"),
+                port: primaryPort,
+                disableObjects: true,
+                enableAOF: true,
+                tryRecover: true,
+                enableStandaloneReplication: true);
+            primary.Start();
+
+            var checkpointStore = primary.Provider.StoreWrapper.DefaultDatabase.StandaloneCheckpointStore;
+            ClassicAssert.IsNotNull(checkpointStore);
+            ClassicAssert.IsTrue(checkpointStore.TryAcquireLatest(out var checkpointLease));
+            using (checkpointLease)
+            {
+                ClassicAssert.AreNotEqual(default, checkpointLease.Value.storeHlogToken);
+                ClassicAssert.AreNotEqual(default, checkpointLease.Value.storeIndexToken);
+            }
+        }
+
+        [Test]
         public async Task RoleCommandReflectsReplicaState()
         {
             using var client = new TcpClient();

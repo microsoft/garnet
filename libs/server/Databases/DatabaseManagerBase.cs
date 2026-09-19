@@ -170,7 +170,21 @@ namespace Garnet.server
             Logger?.LogInformation("Recovered store to version {storeVersion}", storeVersion);
 
             if (storeVersion > 0)
+            {
                 db.LastSaveTime = DateTimeOffset.UtcNow;
+                if (db.StandaloneCheckpointStore != null)
+                {
+                    db.Store.GetLatestCheckpointTokens(out var logToken, out var indexToken, out _);
+                    db.StandaloneCheckpointStore.Initialize(new CheckpointMetadata(StoreWrapper.serverOptions.AofPhysicalSublogCount)
+                    {
+                        storeVersion = storeVersion,
+                        storeHlogToken = logToken,
+                        storeIndexToken = indexToken,
+                        storeCheckpointCoveredAofAddress = StoreWrapper.StoreCheckpointManager.RecoveredSafeAofAddress,
+                        storePrimaryReplId = StoreWrapper.StoreCheckpointManager.RecoveredHistoryId
+                    });
+                }
+            }
 
             return storeVersion;
         }
@@ -539,6 +553,12 @@ namespace Garnet.server
             {
                 if (db.AppendOnlyFile != null)
                 {
+                    db.StandaloneCheckpointStore?.AddCheckpoint(
+                        full,
+                        db.Store.CurrentVersion,
+                        checkpointResult.token,
+                        checkpointCoveredAofAddress,
+                        StoreWrapper.StoreCheckpointManager.CurrentHistoryId);
                     var truncationLimit = db.AppendOnlyFile.RetentionManager.GetTruncationLimit(checkpointCoveredAofAddress);
                     db.AppendOnlyFile.Log.TruncateUntil(truncationLimit);
                     db.AppendOnlyFile.Log.Commit();

@@ -49,12 +49,6 @@ namespace Garnet.cluster
         public override void CheckpointVersionShiftEnd(long oldVersion, long newVersion, bool isStreaming)
             => checkpointVersionShiftEnd?.Invoke(isMainStore, oldVersion, newVersion, isStreaming);
 
-        public void DeleteLogCheckpoint(Guid logToken)
-            => deviceFactory.Delete(checkpointNamingScheme.LogCheckpointBase(logToken));
-
-        public void DeleteIndexCheckpoint(Guid indexToken)
-            => deviceFactory.Delete(checkpointNamingScheme.IndexCheckpointBase(indexToken));
-
         public IDevice GetDevice(CheckpointFileType retStateType, Guid fileToken)
         {
             var device = retStateType switch

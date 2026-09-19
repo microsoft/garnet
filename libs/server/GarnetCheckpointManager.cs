@@ -14,6 +14,13 @@ namespace Garnet.server
     /// </summary>
     public class GarnetCheckpointManager : DeviceLogCommitCheckpointManager
     {
+        readonly bool enableCheckpointLeases;
+
+        /// <summary>
+        /// Whether checkpoint cleanup is managed through explicit leases.
+        /// </summary>
+        internal bool EnableCheckpointLeases => enableCheckpointLeases;
+
         public string CurrentHistoryId { get; set; }
         public string RecoveredHistoryId { get; set; }
         public AofAddress CurrentSafeAofAddress { get; private set; }
@@ -28,14 +35,37 @@ namespace Garnet.server
         /// <param name="removeOutdated">Remove older Tsavorite log commits</param>
         /// <param name="fastCommitThrottleFreq">FastCommit throttle frequency - use only in FastCommit mode</param>
         /// <param name="logger">Logger</param>
-        public GarnetCheckpointManager(int AofPhysicalSublogCount, INamedDeviceFactoryCreator deviceFactoryCreator, ICheckpointNamingScheme checkpointNamingScheme, bool removeOutdated = true, int fastCommitThrottleFreq = 0, ILogger logger = null)
+        public GarnetCheckpointManager(
+            int AofPhysicalSublogCount,
+            INamedDeviceFactoryCreator deviceFactoryCreator,
+            ICheckpointNamingScheme checkpointNamingScheme,
+            bool removeOutdated = true,
+            int fastCommitThrottleFreq = 0,
+            ILogger logger = null,
+            bool enableCheckpointLeases = false)
             : base(deviceFactoryCreator, checkpointNamingScheme, removeOutdated, fastCommitThrottleFreq, logger)
         {
+            this.enableCheckpointLeases = enableCheckpointLeases;
             CurrentHistoryId = null;
             RecoveredHistoryId = null;
             CurrentSafeAofAddress = AofAddress.Create(AofPhysicalSublogCount, 0);
             RecoveredSafeAofAddress = AofAddress.Create(AofPhysicalSublogCount, 0);
         }
+
+        /// <inheritdoc />
+        public override bool PerformAutomaticCleanup => !enableCheckpointLeases;
+
+        /// <summary>
+        /// Deletes a log checkpoint.
+        /// </summary>
+        internal void DeleteLogCheckpoint(Guid token)
+            => deviceFactory.Delete(checkpointNamingScheme.LogCheckpointBase(token));
+
+        /// <summary>
+        /// Deletes an index checkpoint.
+        /// </summary>
+        internal void DeleteIndexCheckpoint(Guid token)
+            => deviceFactory.Delete(checkpointNamingScheme.IndexCheckpointBase(token));
 
         /// <summary>
         /// Set current AOF address
