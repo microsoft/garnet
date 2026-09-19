@@ -409,7 +409,8 @@ namespace Garnet
                 var logRootBase = serverOptions.LogDir
                                   ?? serverOptions.CheckpointDir
                                   ?? Directory.GetCurrentDirectory();
-                var riLogRoot = Path.Combine(logRootBase ?? string.Empty, "Store", "rangeindex");
+                var riLogRoot = Path.Combine(logRootBase ?? string.Empty, GarnetServerOptions.StoreDirectoryName,
+                    GarnetServerOptions.GetRangeIndexDirectoryName(dbId));
                 var cprDir = Path.Combine(serverOptions.GetStoreCheckpointDirectory(dbId), "cpr-checkpoints");
 
                 rangeIndexManager = new RangeIndexManager(
@@ -471,7 +472,7 @@ namespace Garnet
 
             stateMachineDriver = new StateMachineDriver(epoch, loggerFactory?.CreateLogger($"StateMachineDriver"));
 
-            kvSettings = opts.GetSettings(loggerFactory, epoch, stateMachineDriver, out logFactory);
+            kvSettings = opts.GetSettings(dbId, loggerFactory, epoch, stateMachineDriver, out logFactory);
 
             // Run checkpoint on its own thread to control p99
             kvSettings.ThrottleCheckpointFlushDelayMs = opts.CheckpointThrottleFlushDelayMs;

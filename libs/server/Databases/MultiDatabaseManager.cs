@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
@@ -108,11 +109,18 @@ namespace Garnet.server
 
             long storeVersion = 0, objectStoreVersion = 0;
 
+            // Sample the log segments before any database is created, so a store opening its own log
+            // device cannot be mistaken for a log the previous run actually wrote.
+            var hybridLogSegments = ListHybridLogSegments();
+            var multiDatabaseStore = dbIdsToRecover.Any(id => id != 0);
+
             foreach (var dbId in dbIdsToRecover)
             {
                 var db = TryGetOrAddDatabase(dbId, out var success, out _);
                 if (!success)
                     throw new GarnetException($"Failed to retrieve or create database for checkpoint recovery (DB ID = {dbId}).");
+
+                ReportPreFixHybridLogLayout(db, hybridLogSegments, multiDatabaseStore);
 
                 try
                 {
@@ -139,6 +147,136 @@ namespace Garnet.server
                 // Once everything is setup, initialize the VectorManager
                 db.VectorManager.Initialize();
             }
+        }
+
+        /// <summary>
+        /// Names of every file under the store directory on the configured log device backend. Goes
+        /// through the device factory rather than the filesystem so non-local backends work, and
+        /// returns an empty set when storage tiering is off or the listing cannot be read.
+        /// </summary>
+        private HashSet<string> ListHybridLogSegments()
+        {
+            var opts = StoreWrapper.serverOptions;
+            if (!opts.EnableStorageTier)
+                return null;
+
+            try
+            {
+                var factory = opts.GetInitializedDeviceFactory(opts.LogDir);
+                return new HashSet<string>(
+                    factory.ListContents(GarnetServerOptions.StoreDirectoryName)
+                        .Select(static descriptor => descriptor.fileName)
+                        .Where(static name => !string.IsNullOrEmpty(name)),
+                    StringComparer.Ordinal);
+            }
+            catch (Exception ex)
+            {
+                // Without a listing nothing can be concluded, so report nothing rather than guess.
+                Logger?.LogDebug(ex, "Could not enumerate hybrid log segments under {logDir}", opts.LogDir);
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// Whether any hybrid log segment exists for a database. Log truncation can remove earlier
+        /// segments, so any segment counts, not just segment 0.
+        /// </summary>
+        /// <param name="segments">File names under the store directory</param>
+        /// <param name="dbId">Database Id</param>
+        private static bool HasHybridLogSegment(HashSet<string> segments, int dbId)
+        {
+            // Segment files are named "<fileName>.<segment>". The '.' keeps "hlog." from matching
+            // "hlog_1.0" or "hlog_objs.0".
+            var prefix = GarnetServerOptions.GetHybridLogFileName(dbId, isObj: false) + ".";
+            foreach (var name in segments)
+            {
+                if (name.StartsWith(prefix, StringComparison.Ordinal))
+                    return true;
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// Report a checkpoint written before databases had their own log devices, when all of them
+        /// shared one log file whose contents cannot be attributed to a single database.
+        /// Recovery still proceeds: a database whose records never left memory is recoverable from its
+        /// snapshot alone, so this is reported rather than treated as fatal.
+        /// </summary>
+        /// <param name="db">Database being recovered</param>
+        /// <param name="segments">File names under the store directory, or null if unavailable</param>
+        /// <param name="multiDatabaseStore">Whether more than one database is being recovered</param>
+        private void ReportPreFixHybridLogLayout(GarnetDatabase db, HashSet<string> segments, bool multiDatabaseStore)
+        {
+            if (segments == null)
+                return;
+
+            var perDatabaseLayout = WasCheckpointedWithPerDatabaseLogs(db);
+
+            if (db.Id == 0)
+            {
+                // The default database keeps the unsuffixed file names, so it always finds its log.
+                // In a pre-fix store holding more than one database that log is the shared one, and
+                // the records in it may belong to any database.
+                if (!perDatabaseLayout && multiDatabaseStore)
+                {
+                    Logger?.LogError(
+                        "Database 0 was checkpointed before databases had their own log devices, when every database shared a single log file " +
+                        "(see https://github.com/microsoft/garnet/issues/2152). Records this database tiered to storage may have been " +
+                        "overwritten by, or may be read back as, another database's records.");
+                }
+                return;
+            }
+
+            if (HasHybridLogSegment(segments, db.Id))
+                return;
+
+            var logName = GarnetServerOptions.GetHybridLogFileName(db.Id, isObj: false);
+
+            if (perDatabaseLayout)
+            {
+                Logger?.LogWarning(
+                    "No {logName} segment found under {storeDir} for database {dbId}; any records tiered to storage for this database cannot be recovered",
+                    logName, GarnetServerOptions.StoreDirectoryName, db.Id);
+                return;
+            }
+
+            Logger?.LogError(
+                "Database {dbId} was checkpointed before databases had their own log devices, when every database shared a single log file " +
+                "whose contents cannot be attributed to one database (see https://github.com/microsoft/garnet/issues/2152). " +
+                "No {logName} segment exists under {storeDir}, so any records this database tiered to storage cannot be recovered.",
+                db.Id, logName, GarnetServerOptions.StoreDirectoryName);
+        }
+
+        /// <summary>
+        /// Whether the latest readable checkpoint for a database was written by a build that gave each
+        /// database its own log devices.
+        /// </summary>
+        /// <param name="db">Database being recovered</param>
+        private bool WasCheckpointedWithPerDatabaseLogs(GarnetDatabase db)
+        {
+            var checkpointManager = db.Store.CheckpointManager;
+            foreach (var token in checkpointManager.GetLogCheckpointTokens())
+            {
+                try
+                {
+                    var metadata = checkpointManager.GetLogCheckpointMetadata(token);
+                    if (metadata == null)
+                        continue;
+
+                    HybridLogRecoveryInfo recoveryInfo = new();
+                    using var reader = new StreamReader(new MemoryStream(metadata));
+                    recoveryInfo.Initialize(reader);
+
+                    return GarnetCheckpointManager.TryGetCheckpointLayout(recoveryInfo.cookie, out _);
+                }
+                catch (Exception ex)
+                {
+                    Logger?.LogDebug(ex, "Could not read checkpoint metadata {token} for database {dbId}", token, db.Id);
+                }
+            }
+
+            // No readable checkpoint metadata: assume the current layout so nothing misleading is reported.
+            return true;
         }
 
         /// <inheritdoc/>

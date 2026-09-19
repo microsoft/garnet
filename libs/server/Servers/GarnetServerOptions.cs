@@ -625,9 +625,15 @@ namespace Garnet.server
         public string CheckpointBaseDirectory => (CheckpointDir ?? LogDir) ?? string.Empty;
 
         /// <summary>
+        /// Name of the directory holding all store files, under both the log directory and
+        /// <see cref="CheckpointBaseDirectory"/>
+        /// </summary>
+        public const string StoreDirectoryName = "Store";
+
+        /// <summary>
         /// Gets the base directory for storing main-store checkpoints
         /// </summary>
-        public string StoreCheckpointBaseDirectory => Path.Combine(CheckpointBaseDirectory, "Store");
+        public string StoreCheckpointBaseDirectory => Path.Combine(CheckpointBaseDirectory, StoreDirectoryName);
 
         /// <summary>
         /// Seconds between attempts to re-establish replication between a Primary and Replica if the replication connection
@@ -713,6 +719,36 @@ namespace Garnet.server
             Path.Combine(AppendOnlyFileBaseDirectory, GetAppendOnlyFileDirectoryName(dbId));
 
         /// <summary>
+        /// Get the directory name for a database's RangeIndex log-tied files, under
+        /// <see cref="StoreDirectoryName"/>. RangeIndex file names are derived from a hash of the key,
+        /// so each database needs its own root to keep identically-named keys apart.
+        /// </summary>
+        /// <param name="dbId">Database Id</param>
+        /// <returns>Directory name</returns>
+        public static string GetRangeIndexDirectoryName(int dbId) =>
+            $"rangeindex{(dbId == 0 ? string.Empty : $"_{dbId}")}";
+
+        /// <summary>
+        /// Get the hybrid log device file name for a database, under <see cref="StoreDirectoryName"/>.
+        /// Each database owns its log devices; the default database keeps the unsuffixed names so that
+        /// stores written before per-database logs are still recovered.
+        /// </summary>
+        /// <param name="dbId">Database Id</param>
+        /// <param name="isObj">True for the object log, false for the main log</param>
+        /// <returns>File name</returns>
+        public static string GetHybridLogFileName(int dbId, bool isObj) =>
+            $"{(isObj ? "hlog_objs" : "hlog")}{(dbId == 0 ? string.Empty : $"_{dbId}")}";
+
+        /// <summary>
+        /// Get the hybrid log device descriptor for a database.
+        /// </summary>
+        /// <param name="dbId">Database Id</param>
+        /// <param name="isObj">True for the object log, false for the main log</param>
+        /// <returns>File descriptor</returns>
+        public static FileDescriptor GetHybridLogFileDescriptor(int dbId, bool isObj) =>
+            new(StoreDirectoryName, GetHybridLogFileName(dbId, isObj));
+
+        /// <summary>
         /// Constructor
         /// </summary>
         public GarnetServerOptions(ILogger logger = null) : base(logger)
@@ -734,15 +770,27 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Get main store settings
+        /// Get main store settings for the default database.
         /// </summary>
         /// <param name="loggerFactory">Logger factory for debugging and error tracing</param>
         /// <param name="epoch">Epoch instance used by server</param>
         /// <param name="stateMachineDriver">Common state machine driver used by Garnet</param>
         /// <param name="logFactory">Tsavorite Log factory instance</param>
         /// <returns></returns>
-        /// <exception cref="Exception"></exception>
         public KVSettings GetSettings(ILoggerFactory loggerFactory, LightEpoch epoch, StateMachineDriver stateMachineDriver, out INamedDeviceFactory logFactory)
+            => GetSettings(dbId: 0, loggerFactory, epoch, stateMachineDriver, out logFactory);
+
+        /// <summary>
+        /// Get main store settings
+        /// </summary>
+        /// <param name="dbId">Database Id; selects the per-database hybrid log devices</param>
+        /// <param name="loggerFactory">Logger factory for debugging and error tracing</param>
+        /// <param name="epoch">Epoch instance used by server</param>
+        /// <param name="stateMachineDriver">Common state machine driver used by Garnet</param>
+        /// <param name="logFactory">Tsavorite Log factory instance</param>
+        /// <returns></returns>
+        /// <exception cref="Exception"></exception>
+        public KVSettings GetSettings(int dbId, ILoggerFactory loggerFactory, LightEpoch epoch, StateMachineDriver stateMachineDriver, out INamedDeviceFactory logFactory)
         {
             if (MutablePercent is < 10 or > 95)
                 throw new Exception("MutablePercent must be between 10 and 95");
@@ -883,10 +931,9 @@ namespace Garnet.server
                     LogDir = Directory.GetCurrentDirectory();
                 logFactory = GetInitializedDeviceFactory(LogDir);
 
-                // These must match GetInitializedSegmentFileDevice.GetStoreHLogDevice
-                kvSettings.LogDevice = logFactory.Get(new FileDescriptor("Store", "hlog"));
+                kvSettings.LogDevice = logFactory.Get(GetHybridLogFileDescriptor(dbId, isObj: false));
                 if (!DisableObjects)
-                    kvSettings.ObjectLogDevice = logFactory.Get(new FileDescriptor("Store", "hlog_objs"));
+                    kvSettings.ObjectLogDevice = logFactory.Get(GetHybridLogFileDescriptor(dbId, isObj: true));
             }
             else
             {
