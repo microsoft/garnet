@@ -9,7 +9,7 @@ using Garnet.common;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 
-namespace Garnet.cluster
+namespace Garnet.server
 {
     /// <summary>
     /// Base class for checkpoint data sources that reads from an IDevice using sector-aligned async I/O.

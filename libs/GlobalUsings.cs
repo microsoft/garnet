@@ -16,7 +16,11 @@ global using BasicGarnetApi = Garnet.server.GarnetApi<
 
 #if CLUSTER_PROJECT
 global using CheckpointFileType = Garnet.server.CheckpointFileType;
+global using DataSourceReadResult = Garnet.server.DataSourceReadResult;
+global using FileDataSource = Garnet.server.FileDataSource;
 global using ICheckpointFileTransferProvider = Garnet.server.ICheckpointFileTransferProvider;
+global using IOCallbackContext = Garnet.server.IOCallbackContext;
+global using ISnapshotDataSource = Garnet.server.ISnapshotDataSource;
 #endif
 
 #if SERVER_PROJECT
