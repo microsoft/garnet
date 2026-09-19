@@ -1,4 +1,4 @@
-// Copyright (c) Microsoft Corporation.
+﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -803,6 +803,7 @@ namespace Garnet.test
             bool disableObjects = false,
             int metricsSamplingFreq = -1,
             bool latencyMonitor = false,
+            int latencyMonitorPrecision = GarnetServerOptions.DefaultLatencyMonitorPrecision,
             bool commandStatsMonitor = false,
             int commitFrequencyMs = 0,
             bool commitWait = false,
@@ -831,6 +832,7 @@ namespace Garnet.test
             bool asyncReplay = false,
             LuaMemoryManagementMode luaMemoryMode = LuaMemoryManagementMode.Native,
             string luaMemoryLimit = "",
+            int luaScriptCacheSize = LuaOptions.DefaultScriptCacheSize,
             TimeSpan? luaTimeout = null,
             LuaLoggingMode luaLoggingMode = LuaLoggingMode.Enable,
             IEnumerable<string> luaAllowedFunctions = null,
@@ -856,7 +858,14 @@ namespace Garnet.test
             int compactionMaxSegments = 32,
             string segmentSize = "1g",
             bool? nativeAllocator = null,
-            string bufferPoolMemoryBudget = null
+            string bufferPoolMemoryBudget = null,
+            string networkBufferSize = null,
+            string networkBufferMemoryBudget = null,
+            int networkConnectionLimit = GarnetServerOptions.DefaultNetworkConnectionLimit,
+            string networkReceiveBufferMinSize = null,
+            string networkSendBufferMinSize = null,
+            string sessionScratchBufferMaxRetainedSize = null,
+            int? sessionParseStateMaxRetainedArgs = null
         )
         {
             if (useAzureStorage)
@@ -901,6 +910,13 @@ namespace Garnet.test
                 CheckpointDir = checkpointDir,
                 EndPoints = endpoints ?? [EndPoint],
                 DisablePubSub = disablePubSub,
+                NetworkBufferSize = networkBufferSize,
+                NetworkBufferMemoryBudget = networkBufferMemoryBudget,
+                NetworkConnectionLimit = networkConnectionLimit,
+                NetworkReceiveBufferMinSize = networkReceiveBufferMinSize,
+                NetworkSendBufferMinSize = networkSendBufferMinSize,
+                SessionScratchBufferMaxRetainedSize = sessionScratchBufferMaxRetainedSize,
+                SessionParseStateMaxRetainedArgs = sessionParseStateMaxRetainedArgs ?? GarnetServerOptions.DefaultSessionParseStateMaxRetainedArgs,
                 Recover = tryRecover,
                 IndexMemorySize = indexSize,
                 UseNativeAllocator = nativeAllocator ?? false,
@@ -922,6 +938,7 @@ namespace Garnet.test
                 QuietMode = true,
                 MetricsSamplingFrequency = metricsSamplingFreq,
                 LatencyMonitor = latencyMonitor,
+                LatencyMonitorPrecision = latencyMonitorPrecision,
                 CommandStatsMonitor = commandStatsMonitor,
                 DeviceFactoryCreator = useAzureStorage ?
                         logger == null ? TestUtils.AzureStorageNamedDeviceFactoryCreator : new AzureStorageNamedDeviceFactoryCreator(AzureEmulatedStorageString, logger)
@@ -940,7 +957,7 @@ namespace Garnet.test
                 AofReplayMaxLagBytes = asyncReplay ? -1 : 0,
                 AofReplayTaskCount = replayTaskCount,
                 AofPhysicalSublogCount = aofPhysicalSublogCount,
-                LuaOptions = enableLua ? new LuaOptions(luaMemoryMode, luaMemoryLimit, luaTimeout ?? Timeout.InfiniteTimeSpan, luaLoggingMode, luaAllowedFunctions ?? [], logger) : null,
+                LuaOptions = enableLua ? new LuaOptions(luaMemoryMode, luaMemoryLimit, luaTimeout ?? Timeout.InfiniteTimeSpan, luaLoggingMode, luaAllowedFunctions ?? [], logger) { ScriptCacheSize = luaScriptCacheSize } : null,
                 UnixSocketPath = unixSocketPath,
                 UnixSocketPermission = unixSocketPermission,
                 SlowLogThreshold = slowLogThreshold,
@@ -1108,6 +1125,7 @@ namespace Garnet.test
             string replicaDisklessSyncFullSyncAofThreshold = null,
             LuaMemoryManagementMode luaMemoryMode = LuaMemoryManagementMode.Native,
             string luaMemoryLimit = "",
+            int luaScriptCacheSize = LuaOptions.DefaultScriptCacheSize,
             EndPoint clusterAnnounceEndpoint = null,
             bool luaTransactionMode = false,
             DeviceType deviceType = DeviceType.Default,
@@ -1257,6 +1275,7 @@ namespace Garnet.test
             ILogger logger = null,
             LuaMemoryManagementMode luaMemoryMode = LuaMemoryManagementMode.Native,
             string luaMemoryLimit = "",
+            int luaScriptCacheSize = LuaOptions.DefaultScriptCacheSize,
             TimeSpan? luaTimeout = null,
             LuaLoggingMode luaLoggingMode = LuaLoggingMode.Enable,
             IEnumerable<string> luaAllowedFunctions = null,
@@ -1386,7 +1405,7 @@ namespace Garnet.test
                 EnableLua = enableLua,
                 LuaTransactionMode = luaTransactionMode,
                 AofReplayMaxLagBytes = asyncReplay ? -1 : 0,
-                LuaOptions = enableLua ? new LuaOptions(luaMemoryMode, luaMemoryLimit, luaTimeout ?? Timeout.InfiniteTimeSpan, luaLoggingMode, luaAllowedFunctions ?? [], logger) : null,
+                LuaOptions = enableLua ? new LuaOptions(luaMemoryMode, luaMemoryLimit, luaTimeout ?? Timeout.InfiniteTimeSpan, luaLoggingMode, luaAllowedFunctions ?? [], logger) { ScriptCacheSize = luaScriptCacheSize } : null,
                 UnixSocketPath = unixSocketPath,
                 ReplicaDisklessSync = enableDisklessSync,
                 ReplicaDisklessSyncDelay = replicaDisklessSyncDelay,

@@ -1,0 +1,313 @@
+﻿// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
+
+using System;
+using System.Diagnostics;
+using System.Numerics;
+using System.Runtime.CompilerServices;
+using System.Threading;
+
+namespace Garnet.common
+{
+    /// <summary>
+    /// Process-wide budget for the network buffers held by live connections.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The buffer pool's own <c>maxPooledBytes</c> ceiling bounds only the idle free list. Buffers
+    /// checked out by live connections are bounded by nothing, so their footprint is
+    /// <c>connections x per-connection size</c>. This type bounds the per-connection factor by publishing a
+    /// <see cref="TargetBufferSize"/> that allocation sites use as the <em>base</em> size for a new buffer:
+    /// <code>
+    ///     target = clamp(floor, ceiling, PreviousPowerOf2(budget / liveBufferCount))
+    /// </code>
+    /// </para>
+    /// <para>
+    /// Two invariants bound what adaptation may do. The target can only ever <em>lower</em> the base size,
+    /// because it is clamped to the configured buffer size as a ceiling. Demand-driven growth is never
+    /// clamped, so a connection that needs a large buffer still gets one.
+    /// </para>
+    /// <para>
+    /// The second invariant is why the budget is a target rather than a hard ceiling: a connection may grow
+    /// past its base size on demand, so the aggregate can exceed the budget. What it bounds is the base size
+    /// every connection starts at and settles back to, which is the term that scales with connection count.
+    /// <c>--network-connection-limit</c> is the hard admission bound.
+    /// </para>
+    /// </remarks>
+    public sealed class NetworkBufferBudget
+    {
+        /// <summary>
+        /// Total bytes the live buffers should collectively stay within. Zero disables adaptation.
+        /// </summary>
+        readonly long budgetBytes;
+
+        /// <summary>
+        /// The configured base buffer size. The target is clamped to this, so adaptation can only shrink.
+        /// </summary>
+        readonly int ceiling;
+
+        /// <summary>
+        /// Smallest base size a receive buffer may be clamped to.
+        /// </summary>
+        readonly int receiveFloor;
+
+        /// <summary>
+        /// Smallest base size a send buffer may be clamped to. Higher than <see cref="receiveFloor"/>
+        /// because an undersized send buffer pushes oversized responses onto the pooled-rental path.
+        /// </summary>
+        readonly int sendFloor;
+
+        /// <summary>
+        /// Outstanding buffers checked out of the budgeted pools. This rides exactly the two paths that
+        /// maintain the pool's live byte accounting, and nothing else.
+        /// </summary>
+        long liveBufferCount;
+
+        /// <summary>
+        /// Published base size, read by allocation sites. Advisory: a stale read costs at most one
+        /// buffer allocated at the previous size.
+        /// </summary>
+        int targetBufferSize;
+
+        long pressureShrinks;
+        long idleShrinks;
+
+        /// <summary>
+        /// Whether adaptation is enabled. When false the budget is inert.
+        /// </summary>
+        public bool IsEnabled => budgetBytes > 0;
+
+        /// <summary>
+        /// Whether the budget is binding, i.e. the published target has been driven below the configured
+        /// size by the number of live buffers. This is the pressure signal the shrink policy gates on.
+        /// </summary>
+        public bool IsUnderPressure => IsEnabled && TargetBufferSize < ceiling;
+
+        /// <summary>
+        /// Configured budget in bytes. Zero when disabled.
+        /// </summary>
+        public long BudgetBytes => budgetBytes;
+
+        /// <summary>
+        /// Current published base size for a new buffer, before the per-site floor is applied.
+        /// </summary>
+        public int TargetBufferSize => Volatile.Read(ref targetBufferSize);
+
+        /// <summary>
+        /// Base size for a new receive buffer.
+        /// </summary>
+        public int TargetReceiveBufferSize => Math.Max(receiveFloor, TargetBufferSize);
+
+        /// <summary>
+        /// Base size for a new send buffer.
+        /// </summary>
+        public int TargetSendBufferSize => Math.Max(sendFloor, TargetBufferSize);
+
+        /// <summary>
+        /// Clamps a configured receive size to the published target.
+        /// </summary>
+        /// <param name="configured">Configured base size for the buffer.</param>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public int ClampReceiveBufferSize(int configured)
+            => budgetBytes == 0
+                ? configured
+                : Math.Min(configured, Math.Max(receiveFloor, Volatile.Read(ref targetBufferSize)));
+
+        /// <summary>
+        /// Clamps a configured send size to the published target. See
+        /// <see cref="ClampReceiveBufferSize(int)"/>.
+        /// </summary>
+        /// <param name="configured">Configured base size for the buffer.</param>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public int ClampSendBufferSize(int configured)
+            => budgetBytes == 0
+                ? configured
+                : Math.Min(configured, Math.Max(sendFloor, Volatile.Read(ref targetBufferSize)));
+
+        /// <summary>
+        /// Outstanding buffers checked out of the budgeted pools.
+        /// </summary>
+        public long LiveBufferCount => Interlocked.Read(ref liveBufferCount);
+
+        /// <summary>
+        /// Number of times a buffer was shrunk because the budget was under pressure.
+        /// </summary>
+        public long PressureShrinks => Interlocked.Read(ref pressureShrinks);
+
+        /// <summary>
+        /// Number of times a buffer was shrunk after a quiet stretch rather than under pressure.
+        /// </summary>
+        public long IdleShrinks => Interlocked.Read(ref idleShrinks);
+
+        /// <summary>
+        /// A disabled budget, for pools that are not connection-scaled.
+        /// </summary>
+        public static NetworkBufferBudget Disabled { get; } = new NetworkBufferBudget(0, 1 << 17, 1 << 14, 1 << 16);
+
+        /// <summary>
+        /// Create a budget.
+        /// </summary>
+        /// <param name="budgetBytes">Total bytes live buffers should stay within. Zero disables adaptation.</param>
+        /// <param name="ceiling">Configured base buffer size; the target never exceeds this.</param>
+        /// <param name="receiveFloor">Smallest base size for a receive buffer.</param>
+        /// <param name="sendFloor">Smallest base size for a send buffer.</param>
+        public NetworkBufferBudget(long budgetBytes, int ceiling, int receiveFloor, int sendFloor)
+        {
+            Debug.Assert(BitOperations.IsPow2(ceiling));
+            Debug.Assert(BitOperations.IsPow2(receiveFloor));
+            Debug.Assert(BitOperations.IsPow2(sendFloor));
+
+            this.budgetBytes = budgetBytes > 0 ? budgetBytes : 0;
+            this.ceiling = ceiling;
+            // A floor above the configured size would raise the base size, which adaptation must never do.
+            this.receiveFloor = Math.Min(receiveFloor, ceiling);
+            this.sendFloor = Math.Min(sendFloor, ceiling);
+            this.targetBufferSize = ceiling;
+        }
+
+        /// <summary>
+        /// Account for a buffer being checked out. Inert when the budget is disabled, so non-budgeted pools
+        /// sharing the <see cref="Disabled"/> singleton do not accumulate a count against it.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void OnBufferAcquired()
+        {
+            if (budgetBytes == 0)
+                return;
+            _ = Interlocked.Increment(ref liveBufferCount);
+            Recompute();
+        }
+
+        /// <summary>
+        /// Account for a buffer being handed back, whether it was pooled or dropped.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void OnBufferReleased()
+        {
+            if (budgetBytes == 0)
+                return;
+            _ = Interlocked.Decrement(ref liveBufferCount);
+            Recompute();
+        }
+
+        /// <summary>
+        /// Record that a buffer was shrunk because the budget was under pressure. Inert when the budget is
+        /// disabled: non-budgeted pools share the <see cref="Disabled"/> singleton, so counting there would
+        /// put a contended process-wide write on the shrink path of connections the budget does not govern.
+        /// </summary>
+        public void RecordPressureShrink()
+        {
+            if (!IsEnabled) return;
+            _ = Interlocked.Increment(ref pressureShrinks);
+        }
+
+        /// <summary>
+        /// Record that a buffer was shrunk after a quiet stretch. Inert when the budget is disabled, for the
+        /// reason given on <see cref="RecordPressureShrink"/>.
+        /// </summary>
+        public void RecordIdleShrink()
+        {
+            if (!IsEnabled) return;
+            _ = Interlocked.Increment(ref idleShrinks);
+        }
+
+        /// <summary>
+        /// Recompute and publish <see cref="TargetBufferSize"/>. Runs from <see cref="OnBufferAcquired"/> and
+        /// <see cref="OnBufferReleased"/> so that every path moving the live population republishes, and the
+        /// count and the target it derives can never diverge.
+        /// </summary>
+        /// <remarks>
+        /// The published target must agree with the count it was derived from, and a single compare-exchange
+        /// against the previous target does not establish that: a thread holding a stale count can win the
+        /// exchange, and a thread holding a fresh one can lose it. So both outcomes re-derive -- a lost
+        /// exchange retries, and a won exchange re-reads the count and retries if it moved underneath.
+        /// <para>
+        /// Exhausting the attempts publishes nothing, and needs no fallback. Every write is made by a thread
+        /// that read both the previous target and the count immediately beforehand, so exhaustion leaves a
+        /// value some recent count justified. The callers move the count <em>before</em> calling this, so
+        /// whichever thread invalidated the target is itself required to recompute from the moved count.
+        /// </para>
+        /// <para>
+        /// A stale target left too high can never be suppressed by the hysteresis band: clearing
+        /// <see cref="IsUnderPressure"/> needs the target at the ceiling, which requires the quotient to reach
+        /// the ceiling, and the band suppresses only when the quotient is at least the current target. One left
+        /// too low can sit inside the band, but fails safe -- smaller buffers and more shrinking than the live
+        /// count requires.
+        /// </para>
+        /// </remarks>
+        public void Recompute()
+        {
+            if (budgetBytes == 0)
+                return;
+
+            // Bounded because this runs on every buffer acquire and release. The loop closes the ordinary
+            // two-thread race; a later acquire or release republishes under sustained contention.
+            for (var attempt = 0; attempt < MaxRecomputeAttempts; attempt++)
+            {
+                var count = Interlocked.Read(ref liveBufferCount);
+                var raw = budgetBytes / Math.Max(1, count);
+
+                var current = Volatile.Read(ref targetBufferSize);
+
+                // Hysteresis must be at least as wide as the actuation step, which is 2x. Shrink as soon as
+                // the quotient falls below the published target; grow only once it reaches twice that. A
+                // narrower band would oscillate between adjacent size classes indefinitely.
+                if (raw >= current && raw < 2L * current)
+                    return;
+
+                var next = ComputeTarget(raw);
+                if (next == current)
+                    return;
+
+                if (Interlocked.CompareExchange(ref targetBufferSize, next, current) != current)
+                    continue;
+
+                if (Interlocked.Read(ref liveBufferCount) == count)
+                    return;
+            }
+        }
+
+        /// <summary>
+        /// Attempts <see cref="Recompute"/> makes to publish a target that agrees with the live count before
+        /// giving up, leaving the value a concurrent publisher wrote from its own fresh count. A constant
+        /// rather than a constructor parameter: with no fallback behind it, a caller passing zero would
+        /// produce a budget that never publishes at all, and no production path wants a different bound.
+        /// </summary>
+        const int MaxRecomputeAttempts = 8;
+
+        /// <summary>
+        /// Largest permitted base size for the given per-buffer byte quotient.
+        /// </summary>
+        int ComputeTarget(long raw)
+        {
+            if (raw >= ceiling)
+                return ceiling;
+            if (raw <= receiveFloor)
+                return receiveFloor;
+
+            // Round down to a size class the pool can actually recycle.
+            var rounded = 1 << (BitOperations.Log2((ulong)raw));
+            return Math.Clamp(rounded, receiveFloor, ceiling);
+        }
+
+        /// <summary>
+        /// Target that would be published for a given live buffer count, without touching shared state or
+        /// applying hysteresis. Pure function of the configuration, so the sizing policy can be examined
+        /// and tested without sockets.
+        /// </summary>
+        /// <param name="count">Hypothetical live buffer count.</param>
+        public int TargetForCount(long count)
+            => budgetBytes == 0 ? ceiling : ComputeTarget(budgetBytes / Math.Max(1, count));
+
+        /// <summary>
+        /// Stats fragment for INFO.
+        /// </summary>
+        public string GetStats()
+            => $"budgetBytes={Format.MemoryBytes(budgetBytes)}," +
+               $"targetBufferSize={Format.MemoryBytes(TargetBufferSize)}," +
+               $"targetSendBufferSize={Format.MemoryBytes(TargetSendBufferSize)}," +
+               $"liveBufferCount={LiveBufferCount}," +
+               $"pressureShrinks={PressureShrinks}," +
+               $"idleShrinks={IdleShrinks}";
+    }
+}

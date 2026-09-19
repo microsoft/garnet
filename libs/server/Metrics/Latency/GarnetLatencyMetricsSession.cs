@@ -26,66 +26,84 @@ namespace Garnet.server
             Init();
         }
 
-        public void Return()
+        int SignificantDigits => monitor.LatencyPrecision;
+
+        /// <summary>
+        /// Releases this session's histograms on dispose.
+        /// </summary>
+        /// <remarks>
+        /// Publishing <c>null</c> stops new readers reaching the graph, but a reader that captured it
+        /// before the write still holds it, so the entries drop their arrays instead of pooling them.
+        /// </remarks>
+        public void Release()
         {
-            foreach (var cmd in defaultLatencyTypes)
-            {
-                metrics[(int)cmd].Return();
-            }
+            LatencyMetricsEntrySession[] toRelease;
             try
             {
                 disposeLock.WriteLock();
+                toRelease = metrics;
                 metrics = null;
             }
             finally
             {
                 disposeLock.WriteUnlock();
             }
+
+            if (toRelease == null)
+                return;
+
+            foreach (var cmd in defaultLatencyTypes)
+                toRelease[(int)cmd].Release();
         }
 
         private void Init()
         {
             metrics = new LatencyMetricsEntrySession[defaultLatencyTypes.Length];
             foreach (var cmd in defaultLatencyTypes)
-                metrics[(int)cmd] = new LatencyMetricsEntrySession();
+                metrics[(int)cmd] = new LatencyMetricsEntrySession(SignificantDigits);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void Start(LatencyMetricsType cmd)
         {
-            int idx = (int)cmd;
-            metrics[idx].Start();
+            var m = metrics;
+            if (m == null) return;
+            m[(int)cmd].Start();
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public long Get(LatencyMetricsType cmd)
         {
-            int idx = (int)cmd;
-            return metrics[idx].startTimestamp;
+            var m = metrics;
+            return m == null ? 0 : m[(int)cmd].startTimestamp;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void StopAndSwitch(LatencyMetricsType oldCmd, LatencyMetricsType newCmd)
         {
+            var m = metrics;
+            if (m == null) return;
             int old_idx = (int)oldCmd;
             int new_idx = (int)newCmd;
-            metrics[new_idx].startTimestamp = metrics[old_idx].startTimestamp;
-            metrics[old_idx].startTimestamp = 0;
-            metrics[new_idx].RecordValue(Version);
+            m[new_idx].startTimestamp = m[old_idx].startTimestamp;
+            m[old_idx].startTimestamp = 0;
+            m[new_idx].RecordValue(Version);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void Stop(LatencyMetricsType cmd)
         {
-            int idx = (int)cmd;
-            metrics[idx].RecordValue(Version);
+            var m = metrics;
+            if (m == null) return;
+            m[(int)cmd].RecordValue(Version);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void RecordValue(LatencyMetricsType cmd, long value)
         {
-            int idx = (int)cmd;
-            metrics[idx].RecordValue(Version, value);
+            var m = metrics;
+            if (m == null) return;
+            m[(int)cmd].RecordValue(Version, value);
         }
 
         public void ResetAll()
@@ -94,16 +112,53 @@ namespace Garnet.server
                 Reset(cmd);
         }
 
+        /// <summary>
+        /// Releases the histograms of every type that has recorded nothing for <paramref name="threshold"/>
+        /// consecutive monitor windows. Returns the number of types released.
+        /// </summary>
+        /// <param name="threshold">Consecutive empty windows required before releasing a type.</param>
+        /// <remarks>
+        /// Called from the monitor sweep, which visits every session on a timer and so reaches connections
+        /// that are quiet -- the state this reclaims. Takes the dispose lock so a session being torn down
+        /// concurrently cannot have its metrics array replaced part way through; the lock does not, and is
+        /// not intended to, exclude the record path, which
+        /// <see cref="LatencyMetricsEntrySession.ReclaimIfQuiesced"/> is safe against by construction.
+        /// </remarks>
+        public int ReclaimQuiescedHistograms(int threshold)
+        {
+            var released = 0;
+            try
+            {
+                disposeLock.WriteLock();
+                if (metrics == null)
+                    return 0;
+
+                foreach (var cmd in defaultLatencyTypes)
+                {
+                    if (metrics[(int)cmd].ReclaimIfQuiesced(threshold))
+                        released++;
+                }
+            }
+            finally
+            {
+                disposeLock.WriteUnlock();
+            }
+
+            return released;
+        }
+
         public void Reset(LatencyMetricsType cmd)
         {
             int idx = (int)cmd;
             try
             {
                 disposeLock.WriteLock();
-                if (metrics != null)
-                {
-                    metrics[idx].latency[PriorVersion].Reset();
-                }
+                var m = metrics;
+                if (m == null) return;
+
+                var histograms = m[idx].latency;
+                if (histograms != null)
+                    histograms[PriorVersion].Reset();
             }
             finally
             {

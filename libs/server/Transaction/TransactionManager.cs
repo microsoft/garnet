@@ -175,7 +175,8 @@ namespace Garnet.server
 
             this.respSession = respSession;
 
-            txnScratchBufferAllocator = new ScratchBufferAllocator();
+            txnScratchBufferAllocator = new ScratchBufferAllocator(
+                maxInitialCapacity: storeWrapper.serverOptions.GetSessionScratchBufferMaxRetainedSize());
             watchContainer = new WatchedKeysContainer(initialSliceBufferSize, functionsState.watchVersionMap, txnScratchBufferAllocator);
             keyEntries = new TxnKeyEntries(initialSliceBufferSize, unifiedTransactionalContext);
             this.scratchBufferAllocator = scratchBufferAllocator;
@@ -207,6 +208,13 @@ namespace Garnet.server
         }
 
         internal void Reset() => Reset(state == TxnState.Running);
+
+        /// <summary>
+        /// Releases the transaction scratch allocator if it is over its cap, idle, and holds nothing live.
+        /// Driven from the session's batch boundary; WATCHed key slices span batches, so the allocator
+        /// itself declines to shrink while anything is outstanding.
+        /// </summary>
+        internal void ScratchBufferShrinkCheckpoint() => txnScratchBufferAllocator.ShrinkCheckpoint();
 
         internal void Reset(bool isRunning)
         {

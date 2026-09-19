@@ -191,6 +191,7 @@ namespace Garnet.server
                     new("total_connections_active", metricsDisabled ? "0" : globalMetrics.total_connections_active.ToString()),
                     new("total_connections_received", metricsDisabled ? "0" : globalMetrics.total_connections_received.ToString()),
                     new("total_connections_disposed", metricsDisabled ? "0" : globalMetrics.total_connections_disposed.ToString()),
+                    new("rejected_connections", metricsDisabled ? "0" : globalMetrics.rejected_connections.ToString()),
                     new("total_commands_processed", metricsDisabled ? "0" : globalMetrics.globalSessionMetrics.get_total_commands_processed().ToString()),
                     new("instantaneous_ops_per_sec", metricsDisabled ? "0" : globalMetrics.instantaneous_cmd_per_sec.ToString()),
                     new("total_net_input_bytes", metricsDisabled ? "0" : globalMetrics.globalSessionMetrics.get_total_net_input_bytes().ToString()),
@@ -411,8 +412,14 @@ namespace Garnet.server
             bufferPoolStats = new MetricsItem[server.Length];
             for (var i = 0; i < server.Length; i++)
                 bufferPoolStats[i] = new($"server_socket_{i}", ((GarnetServerTcp)server[i]).GetBufferPoolStats());
+            // The budget is shared by every listener, so it is reported once rather than per socket.
+            if (server.Length > 0)
+                bufferPoolStats = [.. bufferPoolStats, new MetricsItem("network_buffer_budget", ((GarnetServerTcp)server[0]).NetworkBufferBudget.GetStats())];
             if (storeWrapper.clusterProvider != null)
                 bufferPoolStats = [.. bufferPoolStats, .. storeWrapper.clusterProvider.GetBufferPoolStats()];
+            // Reported here rather than under STATS because, like the rest of this section, it is read
+            // live from the source rather than sampled by the monitor. See RespMemoryWriter.TotalOutputRentals.
+            bufferPoolStats = [.. bufferPoolStats, new MetricsItem("total_output_buffer_rentals", RespMemoryWriter.TotalOutputRentals.ToString())];
         }
 
         private void PopulateCheckpointInfo(StoreWrapper storeWrapper)

@@ -46,6 +46,11 @@ namespace Garnet.server
         /// </summary>
         PinnedSpanByte[] rootBuffer;
 
+        /// <summary>
+        /// Capacity, in arguments, that the root buffer currently holds.
+        /// </summary>
+        public readonly int RootBufferLength => rootBuffer?.Length ?? 0;
+
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private SessionParseState(ref PinnedSpanByte[] rootBuffer, int rootCount, PinnedSpanByte* bufferPtr, int count)
         {
@@ -63,6 +68,24 @@ namespace Garnet.server
             Count = 0;
             rootCount = 0;
             rootBuffer = GC.AllocateArray<PinnedSpanByte>(MinParams, true);
+            bufferPtr = (PinnedSpanByte*)Unsafe.AsPointer(ref rootBuffer[0]);
+        }
+
+        /// <summary>
+        /// Releases an over-sized root buffer back down to <paramref name="retainedCount"/> arguments.
+        /// The root buffer grows to fit the widest command a session has ever sent and is pinned, so
+        /// without this one high-arity command permanently enlarges the session. Only safe at a batch
+        /// boundary, where no outstanding argument pointers remain.
+        /// </summary>
+        /// <param name="retainedCount">Argument capacity to retain.</param>
+        public void ShrinkRootBuffer(int retainedCount)
+        {
+            if (retainedCount < MinParams) retainedCount = MinParams;
+            if (rootBuffer == null || rootBuffer.Length <= retainedCount) return;
+
+            Count = 0;
+            rootCount = 0;
+            rootBuffer = GC.AllocateArray<PinnedSpanByte>(retainedCount, true);
             bufferPtr = (PinnedSpanByte*)Unsafe.AsPointer(ref rootBuffer[0]);
         }
 

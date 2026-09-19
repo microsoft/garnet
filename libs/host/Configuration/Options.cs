@@ -1,4 +1,4 @@
-// Copyright (c) Microsoft Corporation.
+﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -343,6 +343,10 @@ namespace Garnet
         [Option("latency-monitor", Required = false, HelpText = "Track latency of various events.")]
         public bool? LatencyMonitor { get; set; }
 
+        [IntRangeValidation(0, 5)]
+        [Option("latency-monitor-precision", Required = false, HelpText = "Significant decimal digits of value resolution kept by the latency histograms (0-5). Lowering this from 2 to 1 reduces latency monitor memory several-fold, at the cost of reporting percentiles to 10% rather than 1% resolution.")]
+        public int LatencyMonitorPrecision { get; set; }
+
         [OptionValidation]
         [Option("commandstats-monitor", Required = false, HelpText = "Track per-command usage statistics (calls, failures, rejections). Exposed via INFO COMMANDSTATS.")]
         public bool? CommandStatsMonitor { get; set; }
@@ -395,7 +399,7 @@ namespace Garnet
         public int ThreadPoolMaxIOCompletionThreads { get; set; }
 
         [IntRangeValidation(-1, int.MaxValue)]
-        [Option("network-connection-limit", Required = false, HelpText = "Maximum number of simultaneously active network connections.")]
+        [Option("network-connection-limit", Required = false, HelpText = "Maximum number of simultaneously active network connections across all listeners, or -1 for unlimited. Equivalent to the Redis maxclients parameter, and settable at runtime with CONFIG SET maxclients.")]
         public int NetworkConnectionLimit { get; set; }
 
         [OptionValidation]
@@ -425,6 +429,10 @@ namespace Garnet
         [IntRangeValidation(0, int.MaxValue)]
         [Option("network-send-throttle", Required = false, HelpText = "Throttle the maximum outstanding network sends per session.")]
         public int NetworkSendThrottleMax { get; set; }
+
+        [MemorySizeValidation(false)]
+        [Option("network-buffer-memory-budget", Required = false, HelpText = "Process-wide budget for the network buffers held by live client connections, shared across all listeners. While connections are few this is slack and each connection gets the full 128k send and receive buffers; once the budget divided by the live buffer count falls below that, the base size for new buffers adapts down toward a 16k floor so the total stays near the budget. Buffers still grow on demand beyond their base size, so large requests are unaffected. Set to 0 to disable adaptation, leaving per-connection buffers unbounded. E.g. 1g, 512m.")]
+        public string NetworkBufferMemoryBudget { get; set; }
 
         [OptionValidation]
         [Option("sg-get", Required = false, HelpText = "Whether to use scatter-gather IO for a run of contiguous GET operations - useful to saturate disk random read IO. MGET always uses scatter-gather.")]
@@ -945,6 +953,12 @@ namespace Garnet
                 ClusterConfigFlushFrequencyMs = ClusterConfigFlushFrequencyMs,
                 FastCommitThrottleFreq = FastCommitThrottleFreq,
                 NetworkSendThrottleMax = NetworkSendThrottleMax,
+                NetworkBufferMemoryBudget = NetworkBufferMemoryBudget,
+
+                // Not operator-settable, but the standalone server has always run a 64 MB idle pool ceiling.
+                // Left unset, the pool derives a smaller ceiling from its per-level entry bound, so this is
+                // assigned here rather than defaulted in GarnetServerOptions, which embedded hosts share.
+                NetworkBufferPoolSize = "64m",
                 TlsOptions = EnableTLS.GetValueOrDefault() ? new GarnetTlsOptions(
                     CertFileName, CertPassword,
                     ClientCertificateRequired.GetValueOrDefault(),
@@ -957,6 +971,7 @@ namespace Garnet
                     ServerCertificateRequired.GetValueOrDefault(),
                     logger: logger) : null,
                 LatencyMonitor = LatencyMonitor.GetValueOrDefault(),
+                LatencyMonitorPrecision = LatencyMonitorPrecision,
                 CommandStatsMonitor = CommandStatsMonitor.GetValueOrDefault(),
                 SlowLogThreshold = SlowLogThreshold,
                 SlowLogMaxEntries = SlowLogMaxEntries,

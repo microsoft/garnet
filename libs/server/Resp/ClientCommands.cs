@@ -505,8 +505,7 @@ namespace Garnet.server
             }
             else
             {
-                while (!RespWriteUtils.TryWriteAsciiBulkString(this.clientName, ref dcurr, dend))
-                    SendAndReset();
+                WriteAsciiBulkString(this.clientName);
             }
 
             return true;
