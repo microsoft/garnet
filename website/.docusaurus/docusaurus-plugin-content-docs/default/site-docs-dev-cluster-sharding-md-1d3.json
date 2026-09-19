@@ -1,0 +1,28 @@
+{
+  "id": "dev/cluster/sharding",
+  "title": "Sharding Overview",
+  "description": "Cluster Configuration",
+  "source": "@site/docs/dev/cluster/sharding.md",
+  "sourceDirName": "dev/cluster",
+  "slug": "/dev/cluster/sharding",
+  "permalink": "/garnet/docs/dev/cluster/sharding",
+  "draft": false,
+  "unlisted": false,
+  "editUrl": "https://github.com/microsoft/garnet/tree/main/website/docs/dev/cluster/sharding.md",
+  "tags": [],
+  "version": "current",
+  "frontMatter": {
+    "id": "sharding",
+    "sidebar_label": "Sharding",
+    "title": "Sharding Overview"
+  },
+  "sidebar": "garnetDocSidebar",
+  "previous": {
+    "title": "Cluster Overview",
+    "permalink": "/garnet/docs/dev/cluster/overview"
+  },
+  "next": {
+    "title": "Migration",
+    "permalink": "/garnet/docs/dev/cluster/slot-migration"
+  }
+}

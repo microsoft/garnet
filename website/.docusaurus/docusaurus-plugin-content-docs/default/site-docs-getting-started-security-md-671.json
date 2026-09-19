@@ -1,0 +1,29 @@
+{
+  "id": "getting-started/security",
+  "title": "Securing your Garnet Deployment",
+  "description": "Garnet supports TLS/SSL connections using the SslStream capability built into .NET. You can enable end to end encryption using this functionality, discussed next.",
+  "source": "@site/docs/getting-started/security.md",
+  "sourceDirName": "getting-started",
+  "slug": "/security",
+  "permalink": "/garnet/docs/security",
+  "draft": false,
+  "unlisted": false,
+  "editUrl": "https://github.com/microsoft/garnet/tree/main/website/docs/getting-started/security.md",
+  "tags": [],
+  "version": "current",
+  "frontMatter": {
+    "id": "security",
+    "sidebar_label": "Security",
+    "title": "Securing your Garnet Deployment",
+    "slug": "/security"
+  },
+  "sidebar": "garnetDocSidebar",
+  "previous": {
+    "title": "Memory",
+    "permalink": "/garnet/docs/getting-started/memory"
+  },
+  "next": {
+    "title": "Compaction",
+    "permalink": "/garnet/docs/getting-started/compaction"
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "id": "dev/cluster",
+  "title": "Cluster Mode",
+  "description": "Throughput: 92,263.32 ops/sec",
+  "source": "@site/docs/dev/cluster.md",
+  "sourceDirName": "dev",
+  "slug": "/dev/cluster",
+  "permalink": "/garnet/docs/dev/cluster",
+  "draft": false,
+  "unlisted": false,
+  "editUrl": "https://github.com/microsoft/garnet/tree/main/website/docs/dev/cluster.md",
+  "tags": [],
+  "version": "current",
+  "frontMatter": {
+    "id": "cluster",
+    "sidebar_label": "Cluster Mode",
+    "title": "Cluster Mode"
+  },
+  "sidebar": "tutorialSidebar",
+  "previous": {
+    "title": "Sharding",
+    "permalink": "/garnet/docs/dev/cluster/sharding"
+  },
+  "next": {
+    "title": "Code Structure",
+    "permalink": "/garnet/docs/dev/code-structure"
+  }
+}
