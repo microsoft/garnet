@@ -22,15 +22,39 @@ namespace Garnet.server
         readonly CancellationTokenSource cts = new();
         readonly Task syncTask;
         readonly AofRetentionLease retentionLease;
+        AofRetentionLease snapshotRetentionLease;
+        CheckpointLease<CheckpointMetadata> checkpointLease;
+        TsavoriteCheckpointDataSourceReader checkpointReader;
         long retainedAddress;
         TsavoriteLogScanSingleIterator iterator;
 
-        public StandaloneSyncDriver(StoreWrapper storeWrapper, INetworkSender networkSender, long startAddress, ILogger logger)
+        public StandaloneSyncDriver(
+            StoreWrapper storeWrapper,
+            INetworkSender networkSender,
+            long startAddress,
+            ILogger logger,
+            CheckpointLease<CheckpointMetadata> checkpointLease = null,
+            AofRetentionLease snapshotRetentionLease = null,
+            LogFileInfo logFileInfo = default,
+            long indexSize = 0)
         {
             this.storeWrapper = storeWrapper;
             this.networkSender = networkSender;
             this.logger = logger;
+            this.checkpointLease = checkpointLease;
+            this.snapshotRetentionLease = snapshotRetentionLease;
             retainedAddress = startAddress;
+
+            if (checkpointLease != null)
+            {
+                checkpointReader = new TsavoriteCheckpointDataSourceReader(
+                    new CheckpointFileTransferProvider(storeWrapper.serverOptions, storeWrapper.StoreCheckpointManager),
+                    checkpointLease.Value,
+                    logFileInfo,
+                    indexSize,
+                    storeWrapper.serverOptions.ReplicaSyncTimeout,
+                    logger);
+            }
 
             var retentionStartAddress = AofAddress.Create(1, startAddress);
             if (!storeWrapper.appendOnlyFile.RetentionManager.TryAcquire(
@@ -49,6 +73,27 @@ namespace Garnet.server
         {
             try
             {
+                if (checkpointReader != null)
+                {
+                    try
+                    {
+                        await SendCheckpointAsync(token).ConfigureAwait(false);
+                    }
+                    finally
+                    {
+                        ReleaseSnapshotResources();
+                    }
+                }
+                else
+                {
+                    SendFrame(
+                        StandaloneReplicationFrameType.StreamReady,
+                        CheckpointFileType.NONE,
+                        default,
+                        startAddress,
+                        []);
+                }
+
                 iterator = storeWrapper.appendOnlyFile.Log.ScanSingle(
                     0,
                     startAddress,
@@ -62,6 +107,71 @@ namespace Garnet.server
                     SendFrame(entry.AsSpan(0, entryLength), currentAddress);
                     Volatile.Write(ref retainedAddress, iterator.NextAddress);
                     networkSender.Throttle();
+                }
+
+                async Task SendCheckpointAsync(CancellationToken token)
+                {
+                    foreach (var dataSource in checkpointReader.GetDataSources())
+                    {
+                        try
+                        {
+                            while (dataSource.HasNextChunk)
+                            {
+                                var result = await dataSource.ReadNextChunkAsync(token).ConfigureAwait(false);
+                                if (result.Buffer != null)
+                                {
+                                    try
+                                    {
+                                        unsafe
+                                        {
+                                            SendFrame(
+                                                StandaloneReplicationFrameType.CheckpointFile,
+                                                dataSource.Type,
+                                                dataSource.Token,
+                                                result.ChunkStartAddress,
+                                                new ReadOnlySpan<byte>(result.Buffer.aligned_pointer, result.BytesRead));
+                                        }
+                                    }
+                                    finally
+                                    {
+                                        result.Buffer.Return();
+                                    }
+                                }
+                                else
+                                {
+                                    SendFrame(
+                                        StandaloneReplicationFrameType.CheckpointMetadata,
+                                        dataSource.Type,
+                                        dataSource.Token,
+                                        -1,
+                                        result.Data);
+                                }
+                                networkSender.Throttle();
+                            }
+
+                            if (dataSource is not TsavoriteMetadataSource)
+                            {
+                                SendFrame(
+                                    StandaloneReplicationFrameType.CheckpointFileEnd,
+                                    dataSource.Type,
+                                    dataSource.Token,
+                                    dataSource.CurrentOffset,
+                                    []);
+                            }
+                        }
+                        finally
+                        {
+                            dataSource.Dispose();
+                        }
+                    }
+
+                    var metadata = checkpointLease.Value;
+                    SendFrame(
+                        StandaloneReplicationFrameType.CheckpointComplete,
+                        CheckpointFileType.NONE,
+                        metadata.storeHlogToken,
+                        metadata.storeCheckpointCoveredAofAddress[0],
+                        StandaloneReplicationWireFormat.SerializeCheckpointMetadata(metadata));
                 }
             }
             catch (OperationCanceledException) when (token.IsCancellationRequested)
@@ -82,16 +192,32 @@ namespace Garnet.server
             }
         }
 
+        void ReleaseSnapshotResources()
+        {
+            Interlocked.Exchange(ref checkpointReader, null)?.Dispose();
+            Interlocked.Exchange(ref checkpointLease, null)?.Dispose();
+            Interlocked.Exchange(ref snapshotRetentionLease, null)?.Dispose();
+        }
+
         unsafe void SendFrame(ReadOnlySpan<byte> payload, long currentAddress)
         {
-            Span<byte> header = stackalloc byte[StandaloneReplicationWireFormat.HeaderLength];
-            StandaloneReplicationWireFormat.WriteHeader(
-                header,
+            SendFrame(
                 StandaloneReplicationFrameType.AofRecord,
                 CheckpointFileType.NONE,
-                payload.Length,
                 default,
-                currentAddress);
+                currentAddress,
+                payload);
+        }
+
+        unsafe void SendFrame(
+            StandaloneReplicationFrameType type,
+            CheckpointFileType checkpointFileType,
+            Guid token,
+            long address,
+            ReadOnlySpan<byte> payload)
+        {
+            Span<byte> header = stackalloc byte[StandaloneReplicationWireFormat.HeaderLength];
+            StandaloneReplicationWireFormat.WriteHeader(header, type, checkpointFileType, payload.Length, token, address);
 
             networkSender.EnterAndGetResponseObject(out var head, out var tail);
             try
@@ -142,6 +268,7 @@ namespace Garnet.server
         {
             cts.Cancel();
             iterator?.Dispose();
+            ReleaseSnapshotResources();
             retentionLease.Dispose();
             _ = syncTask.ContinueWith(
                 static (_, state) => ((CancellationTokenSource)state).Dispose(),

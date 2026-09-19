@@ -414,6 +414,21 @@ namespace Garnet.test
         }
 
         [Test]
+        public async Task CheckpointAndCatchupReplicateOnAttach()
+        {
+            ClassicAssert.AreEqual("+OK\r\n", await TestUtils.SendRawAsync(primaryPort, "SET", "snapshot-key", "snapshot-value"));
+            ClassicAssert.IsTrue(await primary.Provider.StoreWrapper.TakeCheckpointAsync(background: false));
+            ClassicAssert.AreEqual("+OK\r\n", await TestUtils.SendRawAsync(primaryPort, "SET", "catchup-key", "catchup-value"));
+
+            ClassicAssert.AreEqual(
+                "+OK\r\n",
+                await TestUtils.SendRawAsync(replicaPort, "REPLICAOF", "127.0.0.1", primaryPort.ToString()));
+
+            await WaitForValueAsync(replicaPort, "snapshot-key", "snapshot-value", timeoutMs: 10000);
+            await WaitForValueAsync(replicaPort, "catchup-key", "catchup-value", timeoutMs: 10000);
+        }
+
+        [Test]
         public async Task PrimaryCheckpointDoesNotInterruptLiveReplication()
         {
             using var client = new TcpClient();

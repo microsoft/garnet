@@ -3,6 +3,7 @@
 
 using System;
 using Garnet.common;
+using Tsavorite.core;
 
 namespace Garnet.server
 {
@@ -84,14 +85,44 @@ namespace Garnet.server
             // this through the cluster-managed PrimaryReplId as well.
             var primaryReplId = storeWrapper.GetOrCreatePrimaryReplId();
             long? syncStartAddress = null;
+            CheckpointLease<CheckpointMetadata> checkpointLease = null;
+            AofRetentionLease snapshotRetentionLease = null;
+            LogFileInfo checkpointLogFileInfo = default;
+            long checkpointIndexSize = 0;
             if (supportsGarnetSnapshot &&
                 storeWrapper.serverOptions.EnableStandaloneReplication &&
                 storeWrapper.appendOnlyFile != null &&
                 !storeWrapper.serverOptions.MultiLogEnabled)
             {
-                // Capture the boundary before emitting FULLRESYNC so writes concurrent
-                // with the handshake cannot fall between the empty snapshot and stream.
-                syncStartAddress = storeWrapper.appendOnlyFile.Log.GetTailAddress(0);
+                if (storeWrapper.DefaultDatabase.StandaloneCheckpointStore?.TryAcquireLatest(out checkpointLease) == true)
+                {
+                    try
+                    {
+                        var metadata = checkpointLease.Value;
+                        checkpointLogFileInfo = storeWrapper.store.GetLogFileSize(metadata.storeHlogToken);
+                        checkpointIndexSize = storeWrapper.store.GetIndexFileSize(metadata.storeIndexToken);
+                        if (!storeWrapper.appendOnlyFile.RetentionManager.TryAcquire(
+                            metadata.storeCheckpointCoveredAofAddress,
+                            allowDataLoss: false,
+                            out snapshotRetentionLease))
+                        {
+                            throw new GarnetException($"Checkpoint AOF boundary {metadata.storeCheckpointCoveredAofAddress} has already been truncated");
+                        }
+                        syncStartAddress = metadata.storeCheckpointCoveredAofAddress[0];
+                    }
+                    catch
+                    {
+                        checkpointLease.Dispose();
+                        checkpointLease = null;
+                        snapshotRetentionLease?.Dispose();
+                        snapshotRetentionLease = null;
+                        throw;
+                    }
+                }
+                else
+                {
+                    syncStartAddress = storeWrapper.appendOnlyFile.Log.GetTailAddress(0);
+                }
             }
 
             // Record this connection as an attached replica, and mark its handshake as
@@ -155,7 +186,15 @@ namespace Garnet.server
             standaloneSyncDriver = null;
             if (syncStartAddress.HasValue)
             {
-                standaloneSyncDriver = new StandaloneSyncDriver(storeWrapper, networkSender, syncStartAddress.Value, logger);
+                standaloneSyncDriver = new StandaloneSyncDriver(
+                    storeWrapper,
+                    networkSender,
+                    syncStartAddress.Value,
+                    logger,
+                    checkpointLease,
+                    snapshotRetentionLease,
+                    checkpointLogFileInfo,
+                    checkpointIndexSize);
             }
 
             return true;

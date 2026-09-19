@@ -121,6 +121,7 @@ namespace Garnet.server
         {
             TcpClient newClient = null;
             AofProcessor aofProcessor = null;
+            CheckpointFileReceiveHandler checkpointReceiver = null;
             try
             {
                 token.ThrowIfCancellationRequested();
@@ -199,28 +200,84 @@ namespace Garnet.server
                 var rdb = new byte[rdbLength];
                 await stream.ReadExactlyAsync(rdb, token).ConfigureAwait(false);
 
-                storeWrapper.LocalReplicationState.ReportLinkUp();
-                storeWrapper.LocalReplicationState.MarkSyncCompleted();
-                logger?.LogInformation("StandaloneReplicaClient: attached to {endpoint} as replica", endpoint);
-
                 owner.client = newClient;
-                aofProcessor = new AofProcessor(
-                    storeWrapper,
-                    recordToAof: storeWrapper.serverOptions.EnableAOF,
-                    logger: logger);
+                checkpointReceiver = new CheckpointFileReceiveHandler(
+                    new CheckpointFileTransferProvider(storeWrapper.serverOptions, storeWrapper.StoreCheckpointManager),
+                    storeWrapper.serverOptions.ReplicaSyncTimeout,
+                    logger);
 
                 var header = new byte[StandaloneReplicationWireFormat.HeaderLength];
+                var syncCompleted = false;
                 while (true)
                 {
                     await stream.ReadExactlyAsync(header, token).ConfigureAwait(false);
-                    if (!StandaloneReplicationWireFormat.TryReadHeader(header, out var frameHeader) ||
-                        frameHeader.Type != StandaloneReplicationFrameType.AofRecord)
+                    if (!StandaloneReplicationWireFormat.TryReadHeader(header, out var frameHeader))
                         throw new InvalidOperationException("Primary sent an invalid standalone replication frame");
 
                     var payload = new byte[frameHeader.PayloadLength];
-                    await stream.ReadExactlyAsync(payload, token).ConfigureAwait(false);
-                    ProcessAofRecord(aofProcessor, payload, frameHeader.Address);
+                    if (payload.Length > 0)
+                        await stream.ReadExactlyAsync(payload, token).ConfigureAwait(false);
+
+                    switch (frameHeader.Type)
+                    {
+                        case StandaloneReplicationFrameType.CheckpointFile:
+                            checkpointReceiver.ProcessFileSegment(
+                                frameHeader.Token,
+                                frameHeader.CheckpointFileType,
+                                frameHeader.Address,
+                                payload);
+                            break;
+                        case StandaloneReplicationFrameType.CheckpointMetadata:
+                            checkpointReceiver.ProcessMetadata(
+                                frameHeader.Token,
+                                frameHeader.CheckpointFileType,
+                                payload);
+                            break;
+                        case StandaloneReplicationFrameType.CheckpointFileEnd:
+                            checkpointReceiver.ProcessFileSegment(
+                                frameHeader.Token,
+                                frameHeader.CheckpointFileType,
+                                frameHeader.Address,
+                                []);
+                            break;
+                        case StandaloneReplicationFrameType.CheckpointComplete:
+                            checkpointReceiver.Dispose();
+                            checkpointReceiver = null;
+                            var metadata = StandaloneReplicationWireFormat.DeserializeCheckpointMetadata(
+                                payload,
+                                storeWrapper.serverOptions.AofPhysicalSublogCount);
+                            await storeWrapper.RecoverCheckpointAsync(
+                                replicaRecover: true,
+                                recoverFromToken: true,
+                                metadata: metadata).ConfigureAwait(false);
+                            MarkSyncCompleted();
+                            break;
+                        case StandaloneReplicationFrameType.AofRecord:
+                            aofProcessor ??= new AofProcessor(
+                                storeWrapper,
+                                recordToAof: storeWrapper.serverOptions.EnableAOF,
+                                logger: logger);
+                            ProcessAofRecord(aofProcessor, payload, frameHeader.Address);
+                            MarkSyncCompleted();
+                            break;
+                        case StandaloneReplicationFrameType.StreamReady:
+                            MarkSyncCompleted();
+                            break;
+                        default:
+                            throw new InvalidOperationException($"Unsupported standalone replication frame {frameHeader.Type}");
+                    }
+
                     storeWrapper.LocalReplicationState.ReportLinkUp();
+                }
+
+                void MarkSyncCompleted()
+                {
+                    if (syncCompleted)
+                        return;
+                    syncCompleted = true;
+                    storeWrapper.LocalReplicationState.ReportLinkUp();
+                    storeWrapper.LocalReplicationState.MarkSyncCompleted();
+                    logger?.LogInformation("StandaloneReplicaClient: attached to {endpoint} as replica", endpoint);
                 }
             }
             catch (OperationCanceledException)
@@ -236,6 +293,7 @@ namespace Garnet.server
             finally
             {
                 aofProcessor?.Dispose();
+                checkpointReceiver?.Dispose();
                 newClient?.Dispose();
                 if (ReferenceEquals(owner.client, newClient))
                     owner.client = null;

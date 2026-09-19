@@ -3,6 +3,8 @@
 
 using System;
 using System.Buffers.Binary;
+using System.IO;
+using System.Text;
 
 namespace Garnet.server
 {
@@ -15,7 +17,8 @@ namespace Garnet.server
         CheckpointFile = 2,
         CheckpointMetadata = 3,
         CheckpointFileEnd = 4,
-        CheckpointComplete = 5
+        CheckpointComplete = 5,
+        StreamReady = 6
     }
 
     /// <summary>
@@ -38,6 +41,35 @@ namespace Garnet.server
 
         const uint Magic = 0x464F4147;
         const int Version = 2;
+
+        internal static byte[] SerializeCheckpointMetadata(CheckpointMetadata metadata)
+        {
+            using var stream = new MemoryStream();
+            using var writer = new BinaryWriter(stream, Encoding.ASCII);
+            writer.Write(metadata.storeVersion);
+            writer.Write(metadata.storeHlogToken.ToByteArray());
+            writer.Write(metadata.storeIndexToken.ToByteArray());
+            metadata.storeCheckpointCoveredAofAddress.Serialize(writer);
+            writer.Write(metadata.storePrimaryReplId ?? string.Empty);
+            return stream.ToArray();
+        }
+
+        internal static CheckpointMetadata DeserializeCheckpointMetadata(ReadOnlySpan<byte> payload, int physicalSublogCount)
+        {
+            using var stream = new MemoryStream(payload.ToArray());
+            using var reader = new BinaryReader(stream, Encoding.ASCII);
+            var metadata = new CheckpointMetadata(physicalSublogCount)
+            {
+                storeVersion = reader.ReadInt64(),
+                storeHlogToken = new Guid(reader.ReadBytes(16)),
+                storeIndexToken = new Guid(reader.ReadBytes(16)),
+                storeCheckpointCoveredAofAddress = AofAddress.Deserialize(reader),
+                storePrimaryReplId = reader.ReadString()
+            };
+            if (stream.Position != stream.Length)
+                throw new InvalidDataException("Checkpoint metadata frame contains trailing data");
+            return metadata;
+        }
 
         internal static void WriteHeader(
             Span<byte> header,
@@ -91,6 +123,8 @@ namespace Garnet.server
                     payloadLength == 0 && checkpointFileType != CheckpointFileType.NONE && token != default && address >= 0,
                 StandaloneReplicationFrameType.CheckpointComplete =>
                     payloadLength > 0 && checkpointFileType == CheckpointFileType.NONE && token != default && address >= 0,
+                StandaloneReplicationFrameType.StreamReady =>
+                    payloadLength == 0 && checkpointFileType == CheckpointFileType.NONE && token == default && address >= 0,
                 _ => false
             };
 
