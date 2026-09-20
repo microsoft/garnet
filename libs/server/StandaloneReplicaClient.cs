@@ -161,7 +161,8 @@ namespace Garnet.server
 
                 // Step 2: REPLCONF listening-port <our-port>
                 // Tell the primary the port Sentinel should later connect to.
-                var ourPort = GetListeningPort(storeWrapper);
+                // Honors --replica-announce-port; falls back to the bound port.
+                var ourPort = GetAnnouncePort(storeWrapper);
                 await WriteCommandAsync(stream, token, "REPLCONF", "listening-port", ourPort.ToString()).ConfigureAwait(false);
                 var ackPort = await ReadLineAsync(stream, token).ConfigureAwait(false);
                 if (ackPort != "+OK")
@@ -170,6 +171,23 @@ namespace Garnet.server
                     newClient.Dispose();
                     storeWrapper.LocalReplicationState.ReportLinkDown();
                     return;
+                }
+
+                // Step 2b: REPLCONF ip-address <our-ip>  (only if --replica-announce-ip was set).
+                // Mirrors Redis 7.4 replica-announce-ip: skipped when not configured, so the
+                // primary falls back to the connection's peer address.
+                var ourIp = GetAnnounceIp(storeWrapper);
+                if (!string.IsNullOrEmpty(ourIp))
+                {
+                    await WriteCommandAsync(stream, token, "REPLCONF", "ip-address", ourIp).ConfigureAwait(false);
+                    var ackIp = await ReadLineAsync(stream, token).ConfigureAwait(false);
+                    if (ackIp != "+OK")
+                    {
+                        logger?.LogWarning("StandaloneReplicaClient: unexpected REPLCONF ip-address reply '{reply}'", ackIp);
+                        newClient.Dispose();
+                        storeWrapper.LocalReplicationState.ReportLinkDown();
+                        return;
+                    }
                 }
 
                 // Step 3: REPLCONF capa eof capa psync2
@@ -340,8 +358,13 @@ namespace Garnet.server
             }
         }
 
-        static int GetListeningPort(StoreWrapper storeWrapper)
-            => storeWrapper.serverOptions.EndPoints.OfType<IPEndPoint>().FirstOrDefault()?.Port ?? 0;
+        static int GetAnnouncePort(StoreWrapper storeWrapper)
+            => storeWrapper.serverOptions.ReplicaAnnouncePort != 0
+                ? storeWrapper.serverOptions.ReplicaAnnouncePort
+                : (storeWrapper.serverOptions.EndPoints.OfType<IPEndPoint>().FirstOrDefault()?.Port ?? 0);
+
+        static string GetAnnounceIp(StoreWrapper storeWrapper)
+            => storeWrapper.serverOptions.ReplicaAnnounceIp;
 
         static async Task WriteCommandAsync(NetworkStream stream, CancellationToken token, params string[] args)
         {

@@ -98,7 +98,9 @@ namespace Garnet.server
                 var state = SyncCompleted ? "online" : "sync";
 
                 // Redis uses the connection's peer address when the replica has not
-                // announced one via REPLCONF ip-address.
+                // announced one via REPLCONF ip-address. GetOrAdd populates this
+                // field with the peer address on first REPLCONF, so the only time
+                // it is null is a test-only entry that bypassed the registry.
                 var ip = string.IsNullOrEmpty(IpAddress) ? "127.0.0.1" : IpAddress;
 
                 return $"ip={ip},port={ListeningPort},state={state},offset={AckOffset},lag={lag}";

@@ -656,6 +656,67 @@ namespace Garnet.test
             ClassicAssert.AreEqual("-ERR standalone replication requires AOF", reply);
         }
 
+        [Test]
+        public async Task ReplicaAnnounceIpReachesPrimaryInfoReplication()
+        {
+            // The replica, configured with --replica-announce-ip, must surface that
+            // address in the primary's INFO replication output rather than the
+            // connection's loopback peer address.
+            var announcePort = FindFreePort();
+            var announceIp = "10.20.30.40";
+            using var announceReplica = TestUtils.CreateGarnetServer(
+                Path.Combine(TestUtils.MethodTestDir, "announce-ip-replica"),
+                port: announcePort,
+                disableObjects: true,
+                enableAOF: true,
+                enableStandaloneReplication: true,
+                replicaAnnounceIp: announceIp);
+            announceReplica.Start();
+
+            using var client = new TcpClient();
+            await client.ConnectAsync(IPAddress.Loopback, announcePort);
+            await using var stream = client.GetStream();
+            await WriteCommandAsync(stream, "REPLICAOF", "127.0.0.1", primaryPort.ToString());
+            ClassicAssert.AreEqual("+OK", await ReadLineAsync(stream));
+            await WaitForReplicaCountAsync(primaryPort, expected: 1, timeoutMs: 5000);
+
+            var primaryInfo = await TestUtils.SendRawAsync(primaryPort, "INFO", "replication");
+            // The replica announced a non-loopback IP, so the primary must report it.
+            ClassicAssert.That(primaryInfo, Does.Contain($"ip={announceIp}"),
+                $"Expected primary INFO replication to contain 'ip={announceIp}', got:\n{primaryInfo}");
+        }
+
+        [Test]
+        public async Task ReplicaAnnouncePortOverrideReachesPrimaryInfoReplication()
+        {
+            // The replica, configured with --replica-announce-port, must surface that
+            // port in the primary's INFO replication output rather than the bound
+            // listening port.
+            var boundPort = FindFreePort();
+            var announcedPort = boundPort + 1000;
+            using var announceReplica = TestUtils.CreateGarnetServer(
+                Path.Combine(TestUtils.MethodTestDir, "announce-port-replica"),
+                port: boundPort,
+                disableObjects: true,
+                enableAOF: true,
+                enableStandaloneReplication: true,
+                replicaAnnouncePort: announcedPort);
+            announceReplica.Start();
+
+            using var client = new TcpClient();
+            await client.ConnectAsync(IPAddress.Loopback, boundPort);
+            await using var stream = client.GetStream();
+            await WriteCommandAsync(stream, "REPLICAOF", "127.0.0.1", primaryPort.ToString());
+            ClassicAssert.AreEqual("+OK", await ReadLineAsync(stream));
+            await WaitForReplicaCountAsync(primaryPort, expected: 1, timeoutMs: 5000);
+
+            var primaryInfo = await TestUtils.SendRawAsync(primaryPort, "INFO", "replication");
+            ClassicAssert.That(primaryInfo, Does.Contain($"port={announcedPort}"),
+                $"Expected primary INFO replication to contain 'port={announcedPort}', got:\n{primaryInfo}");
+            ClassicAssert.That(primaryInfo, Does.Not.Contain($"port={boundPort},"),
+                $"When --replica-announce-port is set, the bound port should NOT appear, got:\n{primaryInfo}");
+        }
+
         // ---- helpers -----------------------------------------------------------
 
         static int FindFreePort()
