@@ -157,6 +157,7 @@ namespace Garnet.server
             var multiDbLockHeld = false;
             int[] pausedDbIds = null;
             var pausedCount = 0;
+            var requestedCount = 0;
 
             try
             {
@@ -179,6 +180,7 @@ namespace Garnet.server
                         multiDbLockHeld = true;
                     }
 
+                    requestedCount = activeDbIdsMapSize;
                     pausedDbIds = new int[activeDbIdsMapSize];
                     var activeDbIdsMapSnapshot = activeDbIds.Map;
                     for (var i = 0; i < activeDbIdsMapSize; i++)
@@ -202,6 +204,7 @@ namespace Garnet.server
 
                     pausedDbIds = [dbId];
                     pausedCount = 1;
+                    requestedCount = 1;
                 }
             }
             catch
@@ -219,7 +222,7 @@ namespace Garnet.server
                 throw;
             }
 
-            var checkpointTask = RunPausedCheckpointsAndReleaseLocksAsync(pausedDbIds, pausedCount, multiDbLockHeld, token, logger);
+            var checkpointTask = RunPausedCheckpointsAndReleaseLocksAsync(pausedDbIds, pausedCount, requestedCount, multiDbLockHeld, token, logger);
 
             if (background)
                 return Task.FromResult(CheckpointStatus.Success);
@@ -999,8 +1002,15 @@ namespace Garnet.server
         /// individual one) so a per-DB BGSAVE issued mid-flight during a general BGSAVE reliably
         /// observes the in-progress checkpoint and fails with "checkpoint already in progress".
         /// </summary>
+        /// <param name="pausedDbIds">Buffer whose first <paramref name="pausedCount"/> entries are pause-locked database IDs.</param>
+        /// <param name="pausedCount">Number of databases this request pause-locked and will checkpoint.</param>
+        /// <param name="requestedCount">Number of databases this request was asked to checkpoint, which exceeds
+        /// <paramref name="pausedCount"/> when a database was skipped because its checkpoint lock was already held.</param>
+        /// <param name="multiDbLockHeld">Whether the caller holds <see cref="multiDbCheckpointingLock"/>.</param>
+        /// <param name="token">Cancellation token.</param>
+        /// <param name="logger">Logger.</param>
         private async Task<CheckpointStatus> RunPausedCheckpointsAndReleaseLocksAsync(int[] pausedDbIds, int pausedCount,
-            bool multiDbLockHeld, CancellationToken token, ILogger logger)
+            int requestedCount, bool multiDbLockHeld, CancellationToken token, ILogger logger)
         {
             // Pre-fill with Task.CompletedTask so the catch path can safely await Task.WhenAll
             // even if the synchronous task-creation loop below throws partway through.
@@ -1048,13 +1058,23 @@ namespace Garnet.server
                 databasesContentLock.ReadUnlock();
             }
 
-            // A database that was already being checkpointed was not paused here, so it is not in this set and its
-            // in-flight checkpoint reports its own outcome. An empty set therefore leaves this a success.
             var allSucceeded = true;
             for (var i = 0; i < pausedCount; i++)
                 allSucceeded &= succeeded[i];
 
-            return allSucceeded ? CheckpointStatus.Success : CheckpointStatus.Failed;
+            if (!allSucceeded)
+                return CheckpointStatus.Failed;
+
+            // A database that could not be pause-locked already had a checkpoint in flight, so this request never
+            // attempted it and cannot vouch for it. Reporting success would tell a foreground SAVE that every
+            // requested database is on disk when one of them was skipped, and that skipped checkpoint may still
+            // fail. The skipped database records its own outcome through its own RecordCheckpointOutcome, so its
+            // LASTSAVE and rdb_last_bgsave_status stay truthful either way; this only stops the aggregate reply
+            // from claiming more than the request actually did.
+            //
+            // Background requests reply before this runs, so the BGSAVE contract of "skip the busy databases and
+            // report started" - asserted by MultiDatabaseSaveInProgressTest - is unaffected.
+            return pausedCount < requestedCount ? CheckpointStatus.AlreadyInProgress : CheckpointStatus.Success;
 
             // Local function: take one per-DB checkpoint and update LASTSAVE. Does NOT resume the
             // per-DB lock — the outer finally above resumes all paused DBs after WhenAll completes.
