@@ -41,10 +41,6 @@ public sealed class GlobalUnhandledExceptionHandling
     [OneTimeSetUp]
     public void Install()
     {
-        // Resolve the port slot before any test runs. Garnet.test and Garnet.test.cluster use the static port
-        // defaults rather than a [SetUpFixture] of their own, so this is where they claim their slot.
-        Garnet.test.TestUtils.EnsurePortSlotResolved();
-
         AppDomain.CurrentDomain.UnhandledException += (s, e) =>
         {
             DumpTests();
