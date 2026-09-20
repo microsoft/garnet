@@ -462,5 +462,59 @@ namespace Garnet.test.cluster.MultiLogTests
                 ClassicAssert.AreEqual(values, result);
             }
         }
+
+        [Test, Order(6)]
+        [Category("REPLICATION")]
+        public async Task ClusterReplicationSinglePhysicalLogTailWitnessPulseTest()
+        {
+            var primaryNodeIndex = 0;
+            var replicaNodeIndex = 1;
+
+            // One physical sublog replayed by several tasks. Multi-log is on, so the primary emits
+            // tail witness pulses, but records on a single physical sublog carry no generator
+            // sequence number and the replay side times its virtual sublogs by log address.
+            context.CreateInstances(2,
+                disableObjects: false,
+                enableAOF: true,
+                useTLS: useTLS,
+                asyncReplay: asyncReplay,
+                sublogCount: 1,
+                replayTaskCount: TestReplayTaskCount);
+            context.CreateConnection(useTLS: useTLS);
+
+            var resp = context.clusterTestUtils.AddDelSlotsRange(primaryNodeIndex, [(0, 16383)], addslot: true, logger: context.logger);
+            ClassicAssert.AreEqual("OK", resp);
+
+            context.clusterTestUtils.SetConfigEpoch(primaryNodeIndex, primaryNodeIndex + 1, logger: context.logger);
+            context.clusterTestUtils.SetConfigEpoch(replicaNodeIndex, replicaNodeIndex + 1, logger: context.logger);
+            context.clusterTestUtils.Meet(primaryNodeIndex, replicaNodeIndex, logger: context.logger);
+            context.clusterTestUtils.WaitUntilNodeIsKnown(primaryNodeIndex, replicaNodeIndex, logger: context.logger);
+            context.clusterTestUtils.WaitUntilNodeIsKnown(replicaNodeIndex, primaryNodeIndex, logger: context.logger);
+
+            resp = context.clusterTestUtils.ClusterReplicate(replicaNodeIndex, primaryNodeIndex, logger: context.logger);
+            ClassicAssert.AreEqual("OK", resp);
+            context.clusterTestUtils.WaitForReplicaRecovery(replicaNodeIndex, logger: context.logger);
+
+            // Leave the AOF sync task idle for longer than AofTailWitnessFreqMs (100 ms by default,
+            // and the harness does not override it) so it emits at least one pulse before anything is
+            // written. Everything below this point depends on the sync task having survived that pulse.
+            await Task.Delay(TimeSpan.FromSeconds(1)).ConfigureAwait(false);
+
+            string[] keys = ["{_}a", "{_}b", "{_}c"];
+            string[] values = ["10", "15", "20"];
+            for (var i = 0; i < keys.Length; i++)
+            {
+                var state = context.clusterTestUtils.SetKey(primaryNodeIndex, Encoding.ASCII.GetBytes(keys[i]), Encoding.ASCII.GetBytes(values[i]), out _, out _, logger: context.logger);
+                ClassicAssert.AreEqual(ResponseState.OK, state);
+            }
+
+            context.clusterTestUtils.WaitForReplicaAofSync(primaryNodeIndex, replicaNodeIndex, context.logger);
+
+            for (var i = 0; i < keys.Length; i++)
+            {
+                var value = context.clusterTestUtils.GetKey(replicaNodeIndex, Encoding.ASCII.GetBytes(keys[i]), out _, out _, out _);
+                ClassicAssert.AreEqual(values[i], value, $"At replica, key {keys[i]}");
+            }
+        }
     }
 }
