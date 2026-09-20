@@ -459,6 +459,12 @@ namespace Garnet.server
             // This is a read operation, so it must not mutate the object: it runs under a shared lock and may execute
             // while the flush path is serializing this same instance. Expired fields are reported as absent by
             // ContainsKey (via GetExpiration) without being removed; the mutating paths purge them from the live object.
+            //
+            // Retention is bounded, not unbounded: a field can only become expirable through HEXPIRE/HPEXPIRE, which is
+            // an RMW that itself calls DeleteExpiredItems() first. So the expired-but-unpurged set can never exceed the
+            // fields that were carrying a TTL at the last mutating operation, and a read-only workload cannot grow it.
+            // That memory is reclaimed by the next mutating operation, by HCOLLECT, or by the background collector
+            // (ExpiredObjectCollectionFrequencySecs). This matches SortedSetTimeToLive (ZTTL), which has never purged.
             var isMilliseconds = input.arg1 == 1;
             var isTimestamp = input.arg2 == 1;
             var numFields = input.parseState.Count;
