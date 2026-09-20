@@ -16,17 +16,20 @@ namespace Garnet.server
     /// they first attach to a primary or reconnect after a transient drop.</para>
     ///
     /// <para>The command parses the two arguments, replies
-    /// <c>+FULLRESYNC &lt;replid&gt; 0</c>, and ship a valid empty-database RDB body
+    /// <c>+FULLRESYNC &lt;replid&gt; 0</c>, and ships a valid empty-database RDB body
     /// (56 bytes: 48-byte body + 8-byte CRC64 little-endian). When standalone
-    /// replication and AOF are enabled, new Garnet AOF records are streamed after
-    /// the RDB body.</para>
+    /// replication and AOF are enabled, and the replica advertised
+    /// <c>REPLCONF capa garnet-snapshot</c>, the primary streams a Garnet
+    /// checkpoint and AOF records after the RDB body via the typed private frames
+    /// in <see cref="StandaloneReplicationWireFormat"/>; otherwise it falls back
+    /// to empty-body behaviour (writes made after attachment are still replicated
+    /// as plain RESP frames via the legacy AOF path).</para>
     ///
     /// <para>What this does <em>not</em> yet do:</para>
     /// <list type="bullet">
-    ///   <item><c>+CONTINUE</c> for partial resync (requires a replication backlog,
-    ///         wired in Phase 2).</item>
-    ///   <item>Streaming the initial database state — the RDB remains empty, so only
-    ///         writes made after attachment are replicated.</item>
+    ///   <item><c>+CONTINUE</c> for partial resync. The replica's last known offset
+    ///         is currently ignored; every PSYNC forces a full snapshot. A bounded
+    ///         backlog and partial-resync path are the next major feature.</item>
     /// </list>
     /// </summary>
     internal sealed unsafe partial class RespServerSession : ServerSessionBase
