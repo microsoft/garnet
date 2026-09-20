@@ -18,6 +18,12 @@ namespace Garnet.common
         static TaskCompletionSource<bool> update = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
         /// <summary>
+        /// Non-zero while at least one <see cref="SuspendParking"/> scope is open. While it is non-zero
+        /// <see cref="ResetAndWaitAsync"/> refuses to park, because nothing is left to signal it.
+        /// </summary>
+        static int parkingSuspensions;
+
+        /// <summary>
         /// Array of exception injection types
         /// </summary>
         static readonly bool[] ExceptionInjectionTypes =
@@ -129,6 +135,51 @@ namespace Garnet.common
         }
 
         /// <summary>
+        /// Stops <see cref="ResetAndWaitAsync"/> from parking, and releases anyone already parked.
+        ///
+        /// A parked waiter is only released by <see cref="EnableException"/>, but the cleanup a test runs on
+        /// its way out is <see cref="DisableException"/>. A test that leaves between a waiter arriving and
+        /// being re-enabled - an assertion failing, or a wait for the arrival timing out - therefore strands
+        /// that waiter permanently. The waiter is a server thread holding a pooled network buffer, so
+        /// <c>LimitedFixedBufferPool.Dispose</c> then spins forever waiting for a reference that is never
+        /// returned and the whole test process hangs rather than one test failing.
+        ///
+        /// Suspension covers arrivals as well as waiters already parked, so a request that reaches an
+        /// injection point after its owner has begun shutting down cannot re-create the same hang.
+        ///
+        /// Every call must be paired with <see cref="ResumeParking"/>. The count keeps concurrent shutdowns
+        /// independent, and ending every scope is what stops a suspension leaking into a later test sharing
+        /// this process-wide state.
+        /// </summary>
+        [Conditional("DEBUG")]
+        public static void SuspendParking()
+        {
+            TaskCompletionSource<bool> release;
+
+            lock (@lock)
+            {
+                parkingSuspensions++;
+                release = update;
+                update = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            }
+
+            _ = release.TrySetResult(true);
+        }
+
+        /// <summary>
+        /// Ends a <see cref="SuspendParking"/> scope. Parking resumes once every scope has ended.
+        /// </summary>
+        [Conditional("DEBUG")]
+        public static void ResumeParking()
+        {
+            lock (@lock)
+            {
+                Debug.Assert(parkingSuspensions > 0, "ResumeParking without a matching SuspendParking");
+                parkingSuspensions--;
+            }
+        }
+
+        /// <summary>
         /// Wait on set condition
         /// </summary>
         /// <param name="exceptionType"></param>
@@ -149,7 +200,10 @@ namespace Garnet.common
                     Task task;
                     lock (@lock)
                     {
-                        if (IsEnabled(exceptionType))
+                        // Parking is suspended while a server is shutting down, because whoever armed this
+                        // injection point is gone and will never re-enable it. Reading it under the lock is
+                        // what makes a suspension raised at any point before here take effect.
+                        if (IsEnabled(exceptionType) || parkingSuspensions > 0)
                             break;
                         task = update.Task;
                     }

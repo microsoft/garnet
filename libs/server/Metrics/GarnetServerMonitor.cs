@@ -309,6 +309,10 @@ namespace Garnet.server
                     CleanupGlobalLatencyMetrics();
                 }
             }
+            catch (OperationCanceledException) when (token.IsCancellationRequested)
+            {
+                // Suppress the exception if the task was cancelled because the monitor was disposed
+            }
             catch (Exception ex)
             {
                 logger?.LogCritical(ex, "MainMonitorTask exception");
