@@ -8,6 +8,8 @@
 
   <PropertyGroup>
     <NoWarn>1701;1702;1591</NoWarn>
+    <!-- TestBase.cs is shared with Tsavorite.test, which does not compile TestUtils.cs. -->
+    <DefineConstants>$(DefineConstants);GARNET_TEST_UTILS</DefineConstants>
   </PropertyGroup>
 
   <ItemGroup>
