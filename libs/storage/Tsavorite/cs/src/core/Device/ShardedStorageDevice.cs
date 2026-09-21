@@ -210,6 +210,8 @@ namespace Tsavorite.core
             long currentWriteStart = (long)destinationAddress;
             long writeEnd = currentWriteStart + (long)numBytesToWrite;
             uint aggregateErrorCode = 0;
+            uint aggregateNumBytes = 0;
+            var countUnknown = false;
             Exception aggregateException = null;
             while (currentWriteStart < writeEnd)
             {
@@ -235,9 +237,19 @@ namespace Tsavorite.core
                                                                  aggregateErrorCode = e;
                                                                  aggregateException = ex;
                                                              }
+
+                                                             // Report what the whole logical write transferred, not
+                                                             // what the last shard to finish did. A shard that reports
+                                                             // 0 does not populate the count, which makes the total
+                                                             // unknown rather than short.
+                                                             if (n == 0)
+                                                                 countUnknown = true;
+                                                             else
+                                                                 _ = Interlocked.Add(ref aggregateNumBytes, n);
+
                                                              if (countdown.Signal())
                                                              {
-                                                                 callback(aggregateErrorCode, n, o, ioException: aggregateException);
+                                                                 callback(aggregateErrorCode, countUnknown ? 0 : aggregateNumBytes, o, ioException: aggregateException);
                                                                  countdown.Dispose();
                                                              }
                                                          },
@@ -260,7 +272,7 @@ namespace Tsavorite.core
             // TODO: Check if overlapped wrapper is handled correctly
             if (countdown.Signal())
             {
-                callback(aggregateErrorCode, numBytesToWrite, context, ioException: aggregateException);
+                callback(aggregateErrorCode, countUnknown ? 0 : aggregateNumBytes, context, ioException: aggregateException);
                 countdown.Dispose();
             }
         }
@@ -282,6 +294,7 @@ namespace Tsavorite.core
             long readEnd = currentReadStart + readLength;
             uint aggregateErrorCode = 0;
             uint aggregateNumBytes = 0;
+            var countUnknown = false;
             Exception aggregateException = null;
             while (currentReadStart < readEnd)
             {
@@ -305,13 +318,19 @@ namespace Tsavorite.core
                                                                 aggregateErrorCode = errorCode;
                                                                 aggregateException = ex;
                                                             }
-                                                            _ = Interlocked.Add(ref aggregateNumBytes, numBytes);
+
+                                                            // A shard that reports 0 does not populate the count, so
+                                                            // the total is unknown rather than short.
+                                                            if (numBytes == 0)
+                                                                countUnknown = true;
+                                                            else
+                                                                _ = Interlocked.Add(ref aggregateNumBytes, numBytes);
 
                                                             if (countdown.Signal())
                                                             {
                                                                 // ReadAsync has called the ending .Signal() and exited, and we're the last parallel reader to finish.
                                                                 // Call the callback with the full length read.
-                                                                callback(aggregateErrorCode, aggregateNumBytes, ctx, ioException: aggregateException);
+                                                                callback(aggregateErrorCode, countUnknown ? 0 : aggregateNumBytes, ctx, ioException: aggregateException);
                                                                 countdown.Dispose();
                                                             }
                                                         },
@@ -335,7 +354,7 @@ namespace Tsavorite.core
             if (countdown.Signal())
             {
                 // All parallel readers have finished. Call the callback with the full length read.
-                callback(aggregateErrorCode, aggregateNumBytes, context, ioException: aggregateException);
+                callback(aggregateErrorCode, countUnknown ? 0 : aggregateNumBytes, context, ioException: aggregateException);
                 countdown.Dispose();
             }
         }
