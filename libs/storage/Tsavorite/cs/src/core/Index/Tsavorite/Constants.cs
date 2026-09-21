@@ -53,5 +53,18 @@ namespace Tsavorite.core
         // Size of chunks for garbage collection
         public const int kSizeofChunkBits = 14;
         public const int kSizeofChunk = 1 << 14;
+
+        /// <summary>
+        /// Maximum number of bytes transferred by a single device read or write request issued by the index
+        /// checkpoint and recovery paths.
+        /// </summary>
+        /// <remarks>
+        /// Linux truncates an individual read or write to MAX_RW_COUNT (INT_MAX rounded down to a page boundary,
+        /// i.e. 0x7ffff000 with 4KiB pages) and reports the truncated count as a successful completion, so a larger
+        /// request transfers only part of its buffer. The hash table is therefore split into chunks of at most this
+        /// size. It is also below int.MaxValue, which devices that route the transfer through a managed
+        /// <see cref="System.Memory{T}"/> require.
+        /// </remarks>
+        public const long kMaxIoBytesPerRequest = 1L << 30;
     }
 }
