@@ -145,5 +145,10 @@ namespace Garnet.common
         /// Replica full sync: fail recovery of the checkpoint received from the primary, before any of it is applied.
         /// </summary>
         Replication_Fail_Replica_Checkpoint_Recovery,
+        /// <summary>
+        /// Replica full sync: stand in for a transferred HybridLog checkpoint whose metadata cannot be read, so the
+        /// token scan finds candidates but rejects every one of them.
+        /// </summary>
+        Replication_Fail_Replica_Unreadable_Checkpoint,
     }
 }
