@@ -8,6 +8,9 @@
 
   <PropertyGroup>
     <NoWarn>1701;1702;1591</NoWarn>
+    <!-- Marks this project as one that compiles TestUtils.cs, for source shared with projects that do not
+         (TestBase.cs is link-compiled into Tsavorite.test). No source is conditioned on it today. -->
+    <DefineConstants>$(DefineConstants);GARNET_TEST_UTILS</DefineConstants>
   </PropertyGroup>
 
   <ItemGroup>
