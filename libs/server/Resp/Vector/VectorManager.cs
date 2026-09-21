@@ -6,7 +6,6 @@ using System.Buffers;
 using System.Buffers.Binary;
 using System.Collections.Concurrent;
 using System.Diagnostics;
-using System.Linq;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading.Channels;
@@ -172,7 +171,19 @@ namespace Garnet.server
 
         private readonly int dbId;
 
-        private ConcurrentDictionary<ulong, byte> recoveredIndexes;
+        /// <summary>
+        /// Context of each Vector Set index record found during recovery, mapped to the hash slot of the key
+        /// that owns it. <see cref="ReconcileRecoveredState"/> restores the reservation for each of these
+        /// contexts, and needs the hash slot recorded here because the record itself is not retained.
+        /// </summary>
+        private ConcurrentDictionary<ulong, ushort> recoveredIndexes;
+
+        /// <summary>
+        /// Newest context metadata recovered for each index into <c>contextMetadatas</c>. A snapshot holds
+        /// every version of a record written in the range it covers, so the same index is presented more than
+        /// once; entries are kept by <c>ContextMetadata.Version</c> and trimmed by
+        /// <see cref="ReconcileRecoveredState"/>.
+        /// </summary>
         private ConcurrentDictionary<int, ContextMetadata> recoveredMetadata;
 
         public VectorManager(int dbId, GarnetServerOptions serverOptions, Func<IMessageConsumer> getTempSession, ILoggerFactory loggerFactory)
@@ -275,6 +286,14 @@ namespace Garnet.server
 
             ref var ctx = ref session.storageSession.vectorBasicContext;
 
+            // recoveredIndexes only holds the index records the store reported while ingesting a checkpoint
+            // snapshot, which covers a single range of the log - anything already flushed to the main log
+            // before the checkpoint is recovered without being reported. Liveness below is decided by
+            // absence, so completing the set from the recovered store is what keeps a live Vector Set from
+            // being mistaken for an abandoned context and having its element records deleted.
+            RecoveredIndexScanFunctions indexScan = new(this);
+            _ = session.storageSession.stringBasicContext.Session.IterateLookupSnapshot(ref indexScan);
+
             var needsUpdated = false;
 
             lock (this)
@@ -292,21 +311,57 @@ namespace Garnet.server
                 }
 
                 // Any ContextMetadatas we found need to be restored
-                if (!recoveredMetadata.IsEmpty)
+                //
+                // The array must also span every recovered index, because the reservation for a context is
+                // restored below through contextMetadatas[contextIndex] - the metadata record holding that
+                // context can be missing when the index record is not.
+                var maxIndex = -1;
+                foreach (var (index, metadata) in recoveredMetadata)
                 {
-                    var maxContext = recoveredMetadata.Keys.Max();
-                    contextMetadatas = new ContextMetadata[maxContext + 1];
+                    if (!metadata.IsEmpty && index > maxIndex)
+                    {
+                        maxIndex = index;
+                    }
+                }
+
+                foreach (var context in recoveredIndexes.Keys)
+                {
+                    var (contextIndex, _) = ContextMetadata.DecomposeContext(context);
+                    if (contextIndex > maxIndex)
+                    {
+                        maxIndex = contextIndex;
+                    }
+                }
+
+                if (maxIndex >= 0)
+                {
+                    var priorMetadatas = contextMetadatas;
+
+                    contextMetadatas = new ContextMetadata[maxIndex + 1];
 
                     for (var i = 0; i < contextMetadatas.Length; i++)
                     {
-                        if (!recoveredMetadata.TryGetValue(i, out contextMetadatas[i]))
+                        if (!recoveredMetadata.TryGetValue(i, out contextMetadatas[i]) || contextMetadatas[i].IsEmpty)
                         {
-                            contextMetadatas[i] = new();
+                            // Nothing was recovered for this index, so keep whatever is already in memory rather
+                            // than defaulting it. A cluster node with AOF enabled reconciles twice while starting
+                            // up - once from RecoverCheckpointAndAOFAsync and again from StoreWrapper - and the
+                            // first pass consumes recoveredMetadata, so the second has only the index records to
+                            // go on. Defaulting here would drop a reservation that has no index record instead of
+                            // marking it for cleanup below, leaving that context free to hand to the next Vector
+                            // Set while the data behind it is still present, and would reset the persisted
+                            // version so that later metadata writes are cancelled as stale.
+                            contextMetadatas[i] = i < priorMetadatas.Length ? priorMetadatas[i] : new();
                         }
                     }
                 }
 
                 recoveredMetadata.Clear();
+
+                // Rebuilding contextMetadatas invalidates any migration remapping built against the old array.
+                // An interrupted migration is treated as failed below - its context is marked for cleanup - so
+                // a surviving entry would steer the retried migration into a context being torn down.
+                ClearMigratedContextRemap();
 
                 // If we come up and contexts are marked for migration, that means the migration FAILED
                 // and we'd like those contexts back ASAP
@@ -329,9 +384,21 @@ namespace Garnet.server
                 }
 
                 // Any non-deleted records we recovered for contexts being deleted, we need to undo that
-                foreach (var (context, _) in recoveredIndexes)
+                foreach (var (context, hashSlot) in recoveredIndexes)
                 {
                     var (contextIndex, contextValue) = ContextMetadata.DecomposeContext(context);
+
+                    // The index record is written before the context metadata that reserves its context, so a
+                    // recovery boundary between the two leaves a live index record pointing at a free context.
+                    // Reserving it here keeps the context from being handed to a different Vector Set.
+                    if (!contextMetadatas[contextIndex].IsInUse(contextIndex != 0, contextValue))
+                    {
+                        contextMetadatas[contextIndex].MarkInUse(contextIndex != 0, contextValue, hashSlot);
+
+                        _ = dirtyContextMetadatas.Add(contextIndex);
+
+                        needsUpdated = true;
+                    }
 
                     if (contextMetadatas[contextIndex].IsCleaningUp(contextIndex != 0, contextValue))
                     {
@@ -389,6 +456,41 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Collects every live Vector Set index record in the store into <see cref="recoveredIndexes"/>.
+        /// </summary>
+        private sealed class RecoveredIndexScanFunctions : IScanIteratorFunctions
+        {
+            private readonly VectorManager manager;
+
+            internal RecoveredIndexScanFunctions(VectorManager manager)
+            {
+                this.manager = manager;
+            }
+
+            public void OnException(Exception exception, long numberOfRecords) { }
+            public bool OnStart(long beginAddress, long endAddress) => true;
+            public void OnStop(bool completed, long numberOfRecords) { }
+
+            /// <inheritdoc/>
+            public bool Reader<TSourceLogRecord>(in TSourceLogRecord logRecord, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
+                where TSourceLogRecord : ISourceLogRecord
+            {
+                cursorRecordResult = CursorRecordResult.Skip;
+
+                if (logRecord.HasNamespace || logRecord.RecordType != RecordType || logRecord.ValueSpan.Length != IndexSize)
+                {
+                    return true;
+                }
+
+                ReadIndex(logRecord.ValueSpan, out var context, out _, out _, out _, out _, out _, out _, out _, out _);
+                manager.recoveredIndexes[context] = HashSlotUtils.HashSlot(logRecord.Key);
+
+                cursorRecordResult = CursorRecordResult.Accept;
+                return true;
+            }
+        }
+
+        /// <summary>
         /// Called during recovery for each Vector Set index key.
         /// </summary>
         public void RecoveredVectorSetIndexKey<TSourceLogRecord>(ref TSourceLogRecord record) where TSourceLogRecord : ISourceLogRecord
@@ -399,7 +501,10 @@ namespace Garnet.server
             }
 
             ReadIndex(record.ValueSpan, out var context, out _, out _, out _, out _, out _, out _, out _, out _);
-            recoveredIndexes[context] = 0;
+
+            // The hash slot is needed to restore the context reservation in ReconcileRecoveredState, which
+            // has only this map to work from - the record itself is not retained past this call
+            recoveredIndexes[context] = HashSlotUtils.HashSlot(record.Key);
         }
 
         /// <summary>
@@ -415,17 +520,19 @@ namespace Garnet.server
             var index = BinaryPrimitives.ReadInt32LittleEndian(record.Key);
             var metadata = MemoryMarshal.Cast<byte, ContextMetadata>(record.ValueSpan)[0];
 
-            // During recovery, we can trim off empty ContextMetadata
+            // A snapshot covers a range of the log, so it holds every version of a record written in that
+            // range - the same index is legitimately presented more than once, newest version last only if
+            // each update was copied to the tail. ContextMetadata.Version orders them, and only the newest
+            // describes the state to restore.
             //
-            // ReconcileRecoveredState will fill in any gaps this causes
-            if (metadata.IsEmpty)
+            // Empty entries are kept here and trimmed in ReconcileRecoveredState, so that a newest version
+            // which released its last context still supersedes the older non-empty versions.
+            lock (recoveredMetadata)
             {
-                return;
-            }
-
-            if (!recoveredMetadata.TryAdd(index, metadata))
-            {
-                throw new GarnetException($"Recovered multiple instances of the same ContextMetadata: {index}");
+                if (!recoveredMetadata.TryGetValue(index, out var existing) || metadata.Version >= existing.Version)
+                {
+                    recoveredMetadata[index] = metadata;
+                }
             }
         }
 

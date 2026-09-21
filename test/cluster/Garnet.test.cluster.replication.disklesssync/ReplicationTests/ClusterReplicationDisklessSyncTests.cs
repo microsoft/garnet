@@ -86,13 +86,7 @@ namespace Garnet.test.cluster
         void Failover(int replicaIndex, string option = null)
         {
             _ = context.clusterTestUtils.ClusterFailover(replicaIndex, option, logger: context.logger);
-            var role = context.clusterTestUtils.RoleCommand(replicaIndex, logger: context.logger);
-            while (!role.Value.Equals("master"))
-            {
-                ClusterTestUtils.BackOff(cancellationToken: context.cts.Token);
-                role = context.clusterTestUtils.RoleCommand(replicaIndex, logger: context.logger);
-            }
-
+            context.clusterTestUtils.WaitForPrimaryRole(replicaIndex, context.logger);
         }
 
         // Deterministic field value so a huge hash can be verified without holding every value in memory.
