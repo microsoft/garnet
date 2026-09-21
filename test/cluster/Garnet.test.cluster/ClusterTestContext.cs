@@ -55,7 +55,18 @@ namespace Garnet.test.cluster
         public ILogger logger;
 
         public int defaultShards = 3;
-        public static int Port = (int)ClusterPortAssignment.ClusterTest;    // No OneTimeSetUp needed for "Garnet.test.cluster" to set this
+        public static int Port = (int)ClusterPortAssignment.ClusterTest + TestUtils.PortOffset;    // No OneTimeSetUp needed for "Garnet.test.cluster" to set this
+
+        /// <summary>
+        /// Sets the cluster test port for the current sub-project. Mirrors <see cref="TestUtils.SetTestPort"/>;
+        /// call from a <c>[SetUpFixture]</c> in each sub-project.
+        /// </summary>
+        /// <param name="port">The sub-project's port assignment.</param>
+        public static void SetPort(ClusterPortAssignment port)
+        {
+            Port = (int)port + TestUtils.PortOffset;
+            TestUtils.EnsureClusterPortsAvailable(Port, port.ToString());
+        }
 
         public Random r = new();
         public ManualResetEventSlim waiter;

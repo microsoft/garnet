@@ -96,6 +96,27 @@ namespace Tsavorite.core
         internal static long NextPowerOf2(long v) => (long)BitOperations.RoundUpToPowerOf2((nuint)v);
 
         /// <summary>
+        /// Number of equal-sized chunks, a power of two, that <paramref name="totalBytes"/> must be split into so that
+        /// no chunk exceeds <paramref name="maxBytesPerChunk"/>.
+        /// </summary>
+        /// <param name="totalBytes">Total number of bytes to be transferred; must be positive. Callers derive the
+        /// chunk size as <paramref name="totalBytes"/> divided by the returned count, so a total that is not a
+        /// multiple of that count silently loses the remainder; pass a power of two to divide exactly.</param>
+        /// <param name="maxBytesPerChunk">Maximum number of bytes a single chunk may contain; must be positive</param>
+        internal static int GetNumIoChunks(long totalBytes, long maxBytesPerChunk)
+        {
+            Debug.Assert(totalBytes > 0, "totalBytes must be positive");
+            Debug.Assert(maxBytesPerChunk > 0, "maxBytesPerChunk must be positive");
+
+            // The chunk count is a power of two so that a power-of-two total (as the hash table always is) divides
+            // evenly into chunks whose size keeps the sector alignment the device requires.
+            var numChunks = 1L;
+            while (numChunks < (1L << 30) && totalBytes / numChunks > maxBytesPerChunk)
+                numChunks <<= 1;
+            return (int)numChunks;
+        }
+
+        /// <summary>
         /// Pretty print value
         /// </summary>
         /// <param name="value"></param>
