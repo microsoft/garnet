@@ -4,6 +4,7 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 using Garnet.common;
@@ -39,7 +40,7 @@ namespace Garnet.server
         /// <param name="startFresh">start the log from scratch, do not continue</param>
         public SubscribeBroker(string logDir, long pageSize, LightEpoch epoch, bool startFresh = true, ILogger logger = null)
         {
-            device = logDir == null ? new NullDevice() : Devices.CreateLogDevice(logDir + "/pubsubkv", preallocateFile: false);
+            device = logDir == null ? new NullDevice() : Devices.CreateLogDevice(Path.Combine(logDir, "pubsubkv"), preallocateFile: false);
             device.Initialize((long)(1 << 30) * 64);
             aof = new TsavoriteLog(new TsavoriteLogSettings { LogDevice = device, PageSize = pageSize, MemorySize = pageSize * 4, Epoch = epoch });
             pageSizeBits = aof.UnsafeGetLogPageSizeBits();
