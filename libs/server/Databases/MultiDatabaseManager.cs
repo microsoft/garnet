@@ -120,15 +120,29 @@ namespace Garnet.server
                 }
                 catch (TsavoriteNoHybridLogException ex)
                 {
-                    // No hybrid log being found is not the same as an error in recovery. e.g. fresh start
-                    //
-                    // As in SingleDatabaseManager, this is deliberately not gated on FailOnRecoveryError so that a
-                    // --recover start against a never-checkpointed directory comes up. When no checkpoint was ever
-                    // written there are no tokens to find, so this is indistinguishable from a fresh start, which is
-                    // why the save path must not report a failed checkpoint as a successful save.
-                    Logger?.LogInformation(ex,
-                        "No Hybrid Log found for recovery; storeVersion = {storeVersion}; objectStoreVersion = {objectStoreVersion}",
-                        storeVersion, objectStoreVersion);
+                    // Finding no hybrid log is not by itself a recovery error: a fresh start and an AOF-only database
+                    // both land here. Record what the scan saw so VerifyRecoveryIsComplete can tell those apart from
+                    // a checkpointed prefix that exists on disk but could not be read, once the AOF state is known.
+                    db.CheckpointRecovery = new CheckpointRecoveryOutcome
+                    {
+                        CandidateTokenCount = ex.CandidateTokenCount,
+                        UnreadableTokenCount = ex.UnreadableTokenCount
+                    };
+
+                    if (ex.CandidateTokenCount == 0)
+                    {
+                        // As in SingleDatabaseManager, nothing was ever written, so recovery cannot tell that a
+                        // checkpoint the client was told had succeeded is missing; see RecordCheckpointOutcome.
+                        Logger?.LogInformation(ex,
+                            "No Hybrid Log found for recovery; storeVersion = {storeVersion}; objectStoreVersion = {objectStoreVersion}",
+                            storeVersion, objectStoreVersion);
+                    }
+                    else
+                    {
+                        Logger?.LogError(ex,
+                            "Unable to read any of the {candidateTokenCount} HybridLog checkpoint token(s) found on disk (DB ID: {id}); storeVersion = {storeVersion}",
+                            ex.CandidateTokenCount, dbId, storeVersion);
+                    }
                 }
                 catch (Exception ex)
                 {
@@ -458,6 +472,13 @@ namespace Garnet.server
 
                 await RecoverDatabaseAOFAsync(db).ConfigureAwait(false);
             }
+        }
+
+        /// <inheritdoc/>
+        public override void VerifyRecoveryIsComplete(bool canBeRepairedBySync = false)
+        {
+            foreach (var db in GetDatabasesSnapshot())
+                VerifyDatabaseRecoveryIsComplete(db, canBeRepairedBySync);
         }
 
         /// <inheritdoc/>

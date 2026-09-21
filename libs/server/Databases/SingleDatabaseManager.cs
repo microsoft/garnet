@@ -62,6 +62,15 @@ namespace Garnet.server
                 if (replicaRecover)
                 {
                     ExceptionInjectionHelper.TriggerException(ExceptionInjectionType.Replication_Fail_Replica_Checkpoint_Recovery);
+#if DEBUG
+                    // Stand in for a transferred checkpoint whose metadata cannot be read. That surfaces from the
+                    // token scan as a rejected-candidate result rather than a general failure, which is the case the
+                    // handler below must not treat as a fresh start.
+                    if (ExceptionInjectionHelper.IsEnabled(ExceptionInjectionType.Replication_Fail_Replica_Unreadable_Checkpoint))
+                        throw new TsavoriteNoHybridLogException(
+                            $"Exception injection triggered {nameof(ExceptionInjectionType.Replication_Fail_Replica_Unreadable_Checkpoint)}",
+                            candidateTokenCount: 1, unreadableTokenCount: 1);
+#endif
 
                     // Note: Since replicaRecover only pertains to cluster-mode, we can use the default store pointers (since multi-db mode is disabled in cluster-mode)
                     if (metadata!.storeIndexToken != default && metadata.storeHlogToken != default)
@@ -81,14 +90,35 @@ namespace Garnet.server
             }
             catch (TsavoriteNoHybridLogException ex)
             {
-                // No hybrid log being found is not the same as an error in recovery. e.g. fresh start
-                //
-                // This is deliberately not gated on FailOnRecoveryError: a server started with --recover against a
-                // directory that has never been checkpointed must come up rather than refuse to start. When no
-                // checkpoint was ever written there are no tokens to find, so this is indistinguishable from a fresh
-                // start and the server comes up empty. That is why a failed checkpoint must never be reported as a
-                // successful save (see RecordCheckpointOutcome).
-                Logger?.LogInformation(ex, "No Hybrid Log found for recovery; storeVersion = {storeVersion};", storeVersion);
+                // Finding no hybrid log is not by itself a recovery error: a fresh start and an AOF-only database
+                // both land here. Record what the scan saw so VerifyRecoveryIsComplete can tell those apart from a
+                // checkpointed prefix that exists on disk but could not be read, once the AOF state is also known.
+                defaultDatabase.CheckpointRecovery = new CheckpointRecoveryOutcome
+                {
+                    CandidateTokenCount = ex.CandidateTokenCount,
+                    UnreadableTokenCount = ex.UnreadableTokenCount
+                };
+
+                if (ex.CandidateTokenCount == 0)
+                {
+                    // Nothing was ever written, so the server comes up empty and no disk state contradicts that.
+                    // Recovery therefore cannot tell that a checkpoint the client was told had succeeded is missing,
+                    // which is why a failed checkpoint must never be reported as a successful save; see
+                    // RecordCheckpointOutcome.
+                    Logger?.LogInformation(ex, "No Hybrid Log found for recovery; storeVersion = {storeVersion};", storeVersion);
+                }
+                else
+                {
+                    Logger?.LogError(ex,
+                        "Unable to read any of the {candidateTokenCount} HybridLog checkpoint token(s) found on disk; storeVersion = {storeVersion};",
+                        ex.CandidateTokenCount, storeVersion);
+
+                    // A replica that continues here would hold an incomplete store while still advertising the
+                    // replication offset the primary sent it, diverging from the primary with nothing to signal it.
+                    // Fail the sync instead, independently of FailOnRecoveryError, which governs standalone startup.
+                    if (replicaRecover)
+                        throw;
+                }
             }
             catch (Exception ex)
             {
@@ -242,6 +272,10 @@ namespace Garnet.server
 
         /// <inheritdoc/>
         public override ValueTask RecoverAOFAsync() => RecoverDatabaseAOFAsync(defaultDatabase);
+
+        /// <inheritdoc/>
+        public override void VerifyRecoveryIsComplete(bool canBeRepairedBySync = false)
+            => VerifyDatabaseRecoveryIsComplete(defaultDatabase, canBeRepairedBySync);
 
         /// <inheritdoc/>
         public override AofAddress ReplayAOF(AofAddress untilAddress)

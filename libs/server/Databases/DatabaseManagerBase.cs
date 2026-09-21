@@ -60,6 +60,9 @@ namespace Garnet.server
         public abstract ValueTask RecoverAOFAsync();
 
         /// <inheritdoc/>
+        public abstract void VerifyRecoveryIsComplete(bool canBeRepairedBySync = false);
+
+        /// <inheritdoc/>
         public abstract AofAddress ReplayAOF(AofAddress untilAddress);
 
         /// <inheritdoc/>
@@ -169,10 +172,72 @@ namespace Garnet.server
             var storeVersion = await db.Store.RecoverAsync().ConfigureAwait(false);
             Logger?.LogInformation("Recovered store to version {storeVersion}", storeVersion);
 
+            db.CheckpointRecovery = new CheckpointRecoveryOutcome { StoreVersion = storeVersion };
+
             if (storeVersion > 0)
                 db.LastSaveTime = DateTimeOffset.UtcNow;
 
             return storeVersion;
+        }
+
+        /// <summary>
+        /// Verify that what was recovered for a single database can reconstruct everything that was durably
+        /// acknowledged before shutdown, and fail startup when it cannot.
+        /// </summary>
+        /// <param name="db">Database to verify</param>
+        /// <param name="canBeRepairedBySync">True if a full sync from a primary will reconcile this node, in which
+        /// case an incomplete local recovery is reported but is not fatal</param>
+        protected void VerifyDatabaseRecoveryIsComplete(GarnetDatabase db, bool canBeRepairedBySync)
+        {
+            // The only unambiguous evidence of an unrecoverable prefix is checkpoint tokens that exist on disk but
+            // could not be read. An AOF that begins past the first valid address is expected on its own: a completed
+            // checkpoint truncates it, and a diskless-sync replica initializes it at its primary's begin address.
+            if (!db.CheckpointRecovery.CheckpointTokensRejected)
+                return;
+
+            var serverOptions = StoreWrapper.serverOptions;
+
+            // These modes discard AOF history by design and make no promise of full reconstruction from it.
+            if (serverOptions.FastAofTruncate || serverOptions.UseAofNullDevice)
+                return;
+
+            if (AofCanReconstructFromOrigin(db, out var aofState))
+                return;
+
+            var message = $"Recovery is incomplete: {db.CheckpointRecovery.CandidateTokenCount} HybridLog checkpoint " +
+                $"token(s) exist on disk but none could be read ({db.CheckpointRecovery.UnreadableTokenCount} unreadable), " +
+                $"and {aofState}, so the checkpointed prefix of the database cannot be reconstructed. " +
+                $"The checkpoint artifacts under '{serverOptions.GetStoreCheckpointDirectory(db.Id)}' have been preserved for diagnosis.";
+
+            Logger?.LogError("{message} (DB ID: {id})", message, db.Id);
+
+            if (serverOptions.FailOnRecoveryError && !canBeRepairedBySync)
+                throw new GarnetException(message);
+        }
+
+        /// <summary>
+        /// Determine whether replaying the retained AOF in full would reconstruct the database from nothing.
+        /// </summary>
+        private static bool AofCanReconstructFromOrigin(GarnetDatabase db, out string state)
+        {
+            if (db.AppendOnlyFile == null)
+            {
+                state = "the AOF is disabled";
+                return false;
+            }
+
+            var beginAddress = db.AppendOnlyFile.Log.BeginAddress;
+            for (var sublogIdx = 0; sublogIdx < beginAddress.Length; sublogIdx++)
+            {
+                if (beginAddress[sublogIdx] != LogAddress.FirstValidAddress)
+                {
+                    state = $"AOF sublog {sublogIdx} begins at address {beginAddress[sublogIdx]} rather than the first valid address {LogAddress.FirstValidAddress}";
+                    return false;
+                }
+            }
+
+            state = null;
+            return true;
         }
 
         /// <summary>

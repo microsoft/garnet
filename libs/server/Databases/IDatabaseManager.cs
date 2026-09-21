@@ -147,6 +147,19 @@ namespace Garnet.server
         public ValueTask RecoverAOFAsync();
 
         /// <summary>
+        /// Verify that the state recovered from checkpoint and AOF can reconstruct everything that was durably
+        /// acknowledged before shutdown. Reports an incomplete recovery as an error, and throws when the server
+        /// is configured to fail on recovery errors.
+        ///
+        /// The default implementation does nothing. The check reads recovery state that a database manager records
+        /// while recovering its own databases, so an implementation that does not track that state has nothing to
+        /// verify, and defaulting here keeps existing external implementations source and binary compatible.
+        /// </summary>
+        /// <param name="canBeRepairedBySync">True if a full sync from a primary will reconcile this node, in which
+        /// case an incomplete local recovery is reported but is not fatal</param>
+        public void VerifyRecoveryIsComplete(bool canBeRepairedBySync = false) { }
+
+        /// <summary>
         /// When replaying AOF we do not want to write AOF records again.
         /// </summary>
         public AofAddress ReplayAOF(AofAddress untilAddress);

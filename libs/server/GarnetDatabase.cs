@@ -71,6 +71,11 @@ namespace Garnet.server
         public bool LastSaveSucceeded;
 
         /// <summary>
+        /// What checkpoint recovery found on disk and what it recovered at startup
+        /// </summary>
+        public CheckpointRecoveryOutcome CheckpointRecovery;
+
+        /// <summary>
         /// True if database's store index has maxed-out
         /// </summary>
         public bool StoreIndexMaxedOut;
