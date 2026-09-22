@@ -31,7 +31,9 @@ namespace Garnet.common
     /// The second invariant is why the budget is a target rather than a hard ceiling: a connection may grow
     /// past its base size on demand, so the aggregate can exceed the budget. What it bounds is the base size
     /// every connection starts at and settles back to, which is the term that scales with connection count.
-    /// <c>--network-connection-limit</c> is the hard admission bound.
+    /// The per-direction floors bound the target from below for the same reason, so once it reaches them the
+    /// aggregate grows with the connection count again; <see cref="sendFloor"/> is the higher of the two and
+    /// binds first. <c>--network-connection-limit</c> is the hard admission bound.
     /// </para>
     /// </remarks>
     public sealed class NetworkBufferBudget

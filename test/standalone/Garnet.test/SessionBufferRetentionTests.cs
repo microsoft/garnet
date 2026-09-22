@@ -218,14 +218,25 @@ namespace Garnet.test
         /// The scratch buffer ratchet is real at the component level (see <see cref="SessionBufferShrinkTests"/>),
         /// but no RESP command path was found that leaves it retained: EVAL, which copies every ARGV into the
         /// scratch buffer, shows no measurable per-session retention either way. This test therefore pins the
-        /// property that matters operationally - the cap must not change results or throughput characteristics
-        /// for large arguments - rather than asserting a memory magnitude that is not observable here.
+        /// property that matters operationally - the cap must not change results for large arguments - and
+        /// drives both configurations through a 2 MB argument on 50 sessions to get there.
         /// </summary>
+        /// <remarks>
+        /// Deliberately asserts no memory magnitude. Two measurements bound what this setup can resolve: the
+        /// two arms run against successive server instances in one process, so whichever runs second also
+        /// measures its predecessor's residue -- swapping them moves each figure by about 130 KB per session
+        /// and flips the sign of the difference; and releasing the buffer at every reset rather than at the
+        /// checkpoint, which is the churn a memory assertion here would be claiming to catch, moves it by
+        /// less than that, because churn leaves garbage that the forced collection reclaims rather than
+        /// retention. An assertion over this figure would pass against both implementations.
+        /// </remarks>
         [Test]
         public void ScratchBufferCapDoesNotChangeLargeArgumentResults()
         {
             const int Conns = 50;
 
+            // Every reply is validated inside MeasureRetentionPerSession, which is what this test turns on:
+            // a 2 MB argument has to round-trip identically with the cap enforced and with it disabled.
             StartServer(scratchCap: "0", enableLua: true);
             var unbounded = MeasureRetentionPerSession(HugeScratchCommand, SmallScratchCommand, Conns, ":1\r\n");
             server.Dispose(); server = null;
@@ -234,14 +245,6 @@ namespace Garnet.test
             var bounded = MeasureRetentionPerSession(HugeScratchCommand, SmallScratchCommand, Conns, ":1\r\n");
 
             TestContext.Out.WriteLine($"scratch retained/session: unbounded={unbounded / 1024}KB bounded={bounded / 1024}KB");
-
-            // Every reply was already validated by MeasureRetentionPerSession, so results are correct.
-            // What remains to pin is that the cap does not make retention *worse* - a shrink policy that
-            // churned would show up here as extra retained memory rather than as a wrong answer. The
-            // margin is one cap's worth, which is tight enough to fail on churn and loose enough to
-            // survive the variance of a forced-collection measurement.
-            ClassicAssert.LessOrEqual(bounded, unbounded + (64 * 1024),
-                "capping retained scratch capacity must not increase what a session holds");
         }
 
         /// <summary>
