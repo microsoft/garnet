@@ -15,21 +15,41 @@ namespace Tsavorite.core
     /// </summary>
     public class StateMachineDriver
     {
+        // Globally published phase and version.
         SystemState systemState;
+
+        // The single state machine currently owning this driver; null while idle.
         IStateMachine stateMachine;
+
+        // Already-started tasks that must complete before the driver can leave the current phase.
+        // ProcessWaitingListAsync awaits these only after the transition-in epoch barrier completes.
         readonly List<(Task task, StateMachineTaskType type)> waitingList;
+
+        // Completion source for the entire state-machine run, not an individual phase transition.
         TaskCompletionSource<bool> stateMachineCompleted;
-        // All threads have entered the given state
+
+        // Semaphore associated with the currently published state. MakeTransitionWorker releases it after
+        // prior-epoch participants have advanced or suspended and GlobalAfterEnteringState has completed.
+        // This does not include completion of tasks in waitingList.
         SemaphoreSlim waitForTransitionIn;
+
+        // GlobalAfterEnteringState may run on an arbitrary epoch-drain thread, so its exception is captured
+        // here and rethrown by ProcessWaitingListAsync on the state-machine driver path.
         Exception waitForTransitionInException;
-        // All threads have exited the given state
+
+        // Semaphore associated with the currently published state. GlobalStateMachineStep releases it as
+        // soon as the next state is published; it does not wait for the transition-in epoch barrier.
         SemaphoreSlim waitForTransitionOut;
-        // Transactions drained in last version
+
+        // Version whose active transactions must drain before the state machine can advance.
         long lastVersion;
         TaskCompletionSource<bool> lastVersionTransactionsDone;
+
         List<IStateMachineCallback> callbacks;
         readonly LightEpoch epoch;
         readonly ILogger logger;
+
+        // Active transaction counts are indexed by version parity; only two adjacent versions can be active.
         readonly long[] NumActiveTransactions;
 
         public SystemState SystemState => SystemState.Copy(ref systemState);
@@ -157,6 +177,7 @@ namespace Tsavorite.core
 
         internal void AddToWaitingList(Task waiter, StateMachineTaskType type)
         {
+            // Callers start the operation before registering it. The driver awaits it after transition-in.
             if (waiter != null)
                 waitingList.Add((waiter, type));
         }
@@ -219,22 +240,25 @@ namespace Tsavorite.core
 
             var nextState = stateMachine.NextState(systemState);
 
+            // Run task-specific work while systemState still identifies the previous phase.
             stateMachine.GlobalBeforeEnteringState(nextState, this);
 
-            // Execute any additional registered callbacks
+            // External callbacks have the same before-publication ordering as the state-machine task hooks.
             if (callbacks != null)
             {
                 foreach (var callback in callbacks)
                     callback.BeforeEnteringState(nextState);
             }
 
-            // Write new phase
+            // Publish the new phase and version so subsequent session refreshes observe nextState.
             systemState.Word = nextState.Word;
 
-            // Release waiters for new phase
+            // Release the semaphore associated with the phase just exited.
             _ = waitForTransitionOut?.Release(int.MaxValue);
 
-            // Write new semaphores
+            // Install semaphores for the newly published phase. Its transition-out semaphore is released
+            // when the following phase is published; its transition-in semaphore is released by the
+            // epoch-drain callback below. These assignments occur after systemState is published.
             waitForTransitionOut = new SemaphoreSlim(0);
             waitForTransitionIn = new SemaphoreSlim(0);
 
@@ -244,6 +268,9 @@ namespace Tsavorite.core
             try
             {
                 epoch.Resume();
+
+                // Associate MakeTransitionWorker with the prior epoch. It becomes eligible only after
+                // participants still announcing that epoch have advanced through ProtectAndDrain or suspended.
                 epoch.BumpCurrentEpoch(() => MakeTransitionWorker(nextState));
             }
             finally
@@ -259,6 +286,7 @@ namespace Tsavorite.core
         /// <returns></returns>
         public async Task WaitForStateChange(SystemState currentState)
         {
+            // Capture before rechecking state so a racing transition that releases this semaphore is observed.
             var _waitForTransitionOut = waitForTransitionOut;
             if (SystemState.Equal(currentState, systemState))
             {
@@ -273,7 +301,11 @@ namespace Tsavorite.core
         /// <returns></returns>
         public async Task WaitForCompletion(SystemState currentState)
         {
+            // First wait until currentState is no longer published.
             await WaitForStateChange(currentState).ConfigureAwait(false);
+
+            // Then capture the newly published state and wait until its epoch transition and
+            // GlobalAfterEnteringState hooks complete. Phase waiting-list tasks are not included.
             currentState = systemState;
             var _waitForTransitionIn = waitForTransitionIn;
             if (SystemState.Equal(currentState, systemState))
@@ -286,29 +318,35 @@ namespace Tsavorite.core
         {
             try
             {
+                // This is an epoch-drain action and may execute synchronously from BumpCurrentEpoch
+                // or later on any thread that advances or suspends epoch protection.
                 stateMachine.GlobalAfterEnteringState(nextState, this);
             }
             catch (Exception e)
             {
-                // Store the exception to be thrown by state machine driver
-                // We do not throw here as this epoch action may be executed in a different thread context
+                // Propagate on the driver path rather than throwing on an arbitrary epoch-drain thread.
                 waitForTransitionInException = e;
 
                 logger?.LogError(e, "Exception in state machine transition worker");
             }
             finally
             {
+                // Signal that the epoch transition and all after-transition hooks have finished.
                 waitForTransitionIn.Release(int.MaxValue);
             }
         }
 
         async Task ProcessWaitingListAsync(CancellationToken token = default)
         {
+            // Do not process phase tasks until the prior epoch has drained and after-transition hooks finish.
             await waitForTransitionIn.WaitAsync(token).ConfigureAwait(false);
             if (waitForTransitionInException != null)
             {
                 throw waitForTransitionInException;
             }
+
+            // These tasks were started by state-machine hooks and may have progressed concurrently with
+            // the epoch transition. Awaiting them here prevents the driver from publishing the next phase.
             foreach (var (task, type) in waitingList)
             {
                 try
@@ -331,6 +369,7 @@ namespace Tsavorite.core
             {
                 do
                 {
+                    // Publish one transition, then wait for both transition-in and its registered phase work.
                     GlobalStateMachineStep(systemState);
                     await ProcessWaitingListAsync(token).ConfigureAwait(false);
                 } while (systemState.Phase != Phase.REST);
@@ -397,14 +436,14 @@ namespace Tsavorite.core
             if (waitForTransitionOut?.CurrentCount == 0)
                 _ = waitForTransitionOut?.Release(int.MaxValue);
 
-            // Clear semaphores
+            // Failure recovery does not execute skipped transition hooks. Discard their synchronization state.
             waitForTransitionOut = null;
             waitForTransitionIn = null;
 
-            // Clear exception if any
+            // Clear any exception captured from an after-transition hook.
             waitForTransitionInException = null;
 
-            // Clear waiting list
+            // The failed run no longer waits for phase-specific asynchronous work.
             waitingList.Clear();
         }
     }
