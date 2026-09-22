@@ -102,9 +102,19 @@ namespace Garnet.server
                         for (var attempt = 0; !TryProcessQuantizationRequest(self, session, writer, state, indexArray); attempt++)
                         {
                             if (attempt < 16)
+                            {
                                 await Task.Yield();
+                            }
                             else
+                            {
+                                // If we're going to delay _but_ are being shutdown, bail on this request
+                                if (reader.Completion.IsCompleted)
+                                {
+                                    break;
+                                }
+
                                 await Task.Delay(1).ConfigureAwait(false);
+                            }
                         }
                     }
                 }
