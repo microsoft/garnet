@@ -27,7 +27,9 @@ namespace Garnet.cluster
             this.head = this.tail = null;
             this.logger = logger;
 
-            if (safelyRemoveOutdated)
+            // When recovering, defer the orphan purge to Initialize() so that nothing is deleted before it is known
+            // what recovery was able to read. Otherwise this is the only purge, so run it now.
+            if (safelyRemoveOutdated && !clusterProvider.serverOptions.Recover)
                 PurgeAllCheckpointsExceptEntry();
         }
 
@@ -52,6 +54,8 @@ namespace Garnet.cluster
             // This purge does not check for active readers
             // 1. If primary is initializing then we will not have any active readers since not connections are established at recovery
             // 2. If replica is initializing during failover we do this before allowing other replicas to attach.
+            // Note that a null tail here means nothing valid was found, and PurgeAllCheckpointsExceptEntry declines
+            // to delete anything in that case rather than treating default tokens as the selection to retain.
             if (safelyRemoveOutdated)
                 PurgeAllCheckpointsExceptEntry(tail);
         }
@@ -83,6 +87,14 @@ namespace Garnet.cluster
 
             void PurgeAllCheckpointsExceptTokens(Guid logToken, Guid indexToken)
             {
+                // A default token selects nothing to keep, which would delete every checkpoint on disk. That is
+                // never the intent: it means no valid checkpoint was identified, so the artifacts must be preserved.
+                if (logToken == default)
+                {
+                    logger?.LogWarning("Skipping checkpoint purge because no valid HybridLog checkpoint was identified to retain");
+                    return;
+                }
+
                 var ckptManager = clusterProvider.ReplicationLogCheckpointManager;
 
                 // Delete log checkpoints
@@ -181,9 +193,8 @@ namespace Garnet.cluster
                     break;
                 clusterProvider.ReplicationLogCheckpointManager.DeleteLogCheckpoint(curr.metadata.storeHlogToken);
 
-                if (!CanDeleteToken(curr, CheckpointFileType.STORE_INDEX))
-                    break;
-                clusterProvider.ReplicationLogCheckpointManager.DeleteIndexCheckpoint(curr.metadata.storeIndexToken);
+                if (CanDeleteToken(curr, CheckpointFileType.STORE_INDEX))
+                    clusterProvider.ReplicationLogCheckpointManager.DeleteIndexCheckpoint(curr.metadata.storeIndexToken);
 
                 logger?.LogCheckpointEntry(LogLevel.Warning, "Deleting outdated checkpoint", curr);
 
@@ -266,7 +277,9 @@ namespace Garnet.cluster
         }
 
         /// <summary>
-        /// Return latest checkpoint entry from disk by scanning all available tokens
+        /// Return latest checkpoint entry from disk by scanning all available tokens. When nothing valid is found
+        /// the returned entry carries default tokens and <c>storeVersion == -1</c>, meaning "no checkpoint here";
+        /// callers must not treat that as a checkpoint selection.
         /// </summary>
         /// <returns></returns>
         public CheckpointEntry GetLatestCheckpointEntryFromDisk()

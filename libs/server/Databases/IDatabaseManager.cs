@@ -91,8 +91,12 @@ namespace Garnet.server
         /// <param name="dbId">ID of database to checkpoint, or -1 (default) to checkpoint all active databases</param>
         /// <param name="token">Cancellation token</param>
         /// <param name="logger">Logger</param>
-        /// <returns>False if another checkpointing process is already in progress</returns>
-        public Task<bool> TakeCheckpointAsync(bool background, int dbId = -1, CancellationToken token = default, ILogger logger = null);
+        /// <returns>
+        /// <see cref="CheckpointStatus.AlreadyInProgress"/> if another checkpointing process is already in progress,
+        /// <see cref="CheckpointStatus.Failed"/> if a foreground checkpoint did not complete, otherwise
+        /// <see cref="CheckpointStatus.Success"/>. A background checkpoint reports success once it has started.
+        /// </returns>
+        public Task<CheckpointStatus> TakeCheckpointAsync(bool background, int dbId = -1, CancellationToken token = default, ILogger logger = null);
 
         /// <summary>
         /// Take a checkpoint if no checkpoint was taken after the provided time offset
@@ -141,6 +145,19 @@ namespace Garnet.server
         /// Recover AOF
         /// </summary>
         public ValueTask RecoverAOFAsync();
+
+        /// <summary>
+        /// Verify that the state recovered from checkpoint and AOF can reconstruct everything that was durably
+        /// acknowledged before shutdown. Reports an incomplete recovery as an error, and throws when the server
+        /// is configured to fail on recovery errors.
+        ///
+        /// The default implementation does nothing. The check reads recovery state that a database manager records
+        /// while recovering its own databases, so an implementation that does not track that state has nothing to
+        /// verify, and defaulting here keeps existing external implementations source and binary compatible.
+        /// </summary>
+        /// <param name="canBeRepairedBySync">True if a full sync from a primary will reconcile this node, in which
+        /// case an incomplete local recovery is reported but is not fatal</param>
+        public void VerifyRecoveryIsComplete(bool canBeRepairedBySync = false) { }
 
         /// <summary>
         /// When replaying AOF we do not want to write AOF records again.

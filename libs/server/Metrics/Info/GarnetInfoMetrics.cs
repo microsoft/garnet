@@ -374,7 +374,11 @@ namespace Garnet.server
                 new($"FlushedUntilAddress", !aofEnabled ? "N/A" : db.AppendOnlyFile.Log.FlushedUntilAddress.ToString()),
                 new($"BeginAddress", !aofEnabled ? "N/A" : db.AppendOnlyFile.Log.BeginAddress.ToString()),
                 new($"TailAddress", !aofEnabled ? "N/A" : db.AppendOnlyFile.Log.TailAddress.ToString()),
-                new($"SafeAofAddress", !aofEnabled ? "N/A" : storeWrapper.safeAofAddress.ToString())
+                new($"SafeAofAddress", !aofEnabled ? "N/A" : storeWrapper.safeAofAddress.ToString()),
+
+                // A background save replies before it runs, so this is the only way a client can observe that one
+                // failed. Named and valued as in Redis.
+                new($"rdb_last_bgsave_status", db.LastSaveSucceeded ? "ok" : "err")
             ];
         }
 
@@ -524,8 +528,6 @@ namespace Garnet.server
                     GetSectionRespInfo(header, storeRevivInfo[dbId], sbResponse);
                     return;
                 case InfoMetricsType.PERSISTENCE:
-                    if (!storeWrapper.serverOptions.EnableAOF)
-                        return;
                     PopulatePersistenceInfo(storeWrapper);
                     GetSectionRespInfo(header, persistenceInfo[dbId], sbResponse);
                     return;
@@ -604,8 +606,6 @@ namespace Garnet.server
                     PopulateStoreRevivInfo(storeWrapper);
                     return storeRevivInfo[dbId];
                 case InfoMetricsType.PERSISTENCE:
-                    if (!storeWrapper.serverOptions.EnableAOF)
-                        return null;
                     PopulatePersistenceInfo(storeWrapper);
                     return persistenceInfo[dbId];
                 case InfoMetricsType.CLIENTS:
