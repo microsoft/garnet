@@ -1656,6 +1656,7 @@ namespace Garnet.server
                         var getRes = MemoryMarshal.TryGetArray<byte>(ids.Memory.Memory, out var arrSeg);
                         Debug.Assert(getRes, "Should always be able to get array to pin");
 
+                        idsPin?.Free();
                         idsPin = GCHandle.Alloc(arrSeg.Array, GCHandleType.Pinned);
                     }
                     else
