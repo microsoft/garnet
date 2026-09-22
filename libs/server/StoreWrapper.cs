@@ -394,6 +394,7 @@ namespace Garnet.server
                     databaseManager.RecoverVectorSets();
 
                     await RecoverAOFAsync().ConfigureAwait(false);
+                    databaseManager.VerifyRecoveryIsComplete();
                     _ = ReplayAOF(AofAddress.Create(length: serverOptions.AofPhysicalSublogCount, value: -1));
                 }
                 else
@@ -476,6 +477,16 @@ namespace Garnet.server
         /// Recover AOF
         /// </summary>
         public ValueTask RecoverAOFAsync() => databaseManager.RecoverAOFAsync();
+
+        /// <summary>
+        /// Verify that the state recovered from checkpoint and AOF can reconstruct everything that was durably
+        /// acknowledged before shutdown. Reports an incomplete recovery as an error, and throws when the server
+        /// is configured to fail on recovery errors.
+        /// </summary>
+        /// <param name="canBeRepairedBySync">True if a full sync from a primary will reconcile this node, in which
+        /// case an incomplete local recovery is reported but is not fatal</param>
+        public void VerifyRecoveryIsComplete(bool canBeRepairedBySync = false)
+            => databaseManager.VerifyRecoveryIsComplete(canBeRepairedBySync);
 
         /// <summary>
         /// When replaying AOF we do not want to write AOF records again.

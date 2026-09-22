@@ -56,11 +56,36 @@ namespace Tsavorite.core
     public class TsavoriteNoHybridLogException : TsavoriteException
     {
         /// <summary>
+        /// Number of HybridLog checkpoint tokens present on disk when recovery scanned for one. Zero means nothing
+        /// was ever checkpointed to this location, which distinguishes a fresh start from a set of rejected tokens.
+        /// </summary>
+        public int CandidateTokenCount { get; }
+
+        /// <summary>
+        /// Number of the <see cref="CandidateTokenCount"/> tokens whose metadata could not be read. This reflects
+        /// on-disk state only when no other caller can read metadata through the same checkpoint manager, as during
+        /// Garnet startup recovery; a concurrent reader elsewhere can cause transient read failures.
+        /// </summary>
+        public int UnreadableTokenCount { get; }
+
+        /// <summary>
         /// Throw Tsavorite exception
         /// </summary>
         /// <param name="message"></param>
         public TsavoriteNoHybridLogException(string message) : base(message)
         {
+        }
+
+        /// <summary>
+        /// Throw Tsavorite exception, reporting the checkpoint tokens that were scanned and rejected
+        /// </summary>
+        /// <param name="message"></param>
+        /// <param name="candidateTokenCount">Number of HybridLog checkpoint tokens present on disk</param>
+        /// <param name="unreadableTokenCount">Number of those tokens whose metadata could not be read</param>
+        public TsavoriteNoHybridLogException(string message, int candidateTokenCount, int unreadableTokenCount) : base(message)
+        {
+            CandidateTokenCount = candidateTokenCount;
+            UnreadableTokenCount = unreadableTokenCount;
         }
     }
 }

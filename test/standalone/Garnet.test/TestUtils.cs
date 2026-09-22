@@ -851,6 +851,8 @@ namespace Garnet.test
             bool copyReadsToTail = false,
             int replayTaskCount = 1,
             bool failOnRecoveryError = false,
+            bool fastAofTruncate = false,
+            bool useAofNullDevice = false,
             LogCompactionType compactionType = LogCompactionType.None,
             int mutablePercent = 90,
             int compactionMaxSegments = 32,
@@ -949,6 +951,8 @@ namespace Garnet.test
                 EnableRangeIndexPreview = enableRangeIndexPreview,
                 CopyReadsToTail = copyReadsToTail,
                 FailOnRecoveryError = failOnRecoveryError,
+                FastAofTruncate = fastAofTruncate,
+                UseAofNullDevice = useAofNullDevice,
                 CompactionType = compactionType,
                 MutablePercent = mutablePercent,
                 CompactionMaxSegments = compactionMaxSegments,
@@ -1625,8 +1629,58 @@ namespace Garnet.test
 
             var rootPath = Path.Combine(RootTestsProjectPath, ".tmp", testPath);
 
-            return rootPath;
+            return EnsureExtendedLengthPathIfNeeded(rootPath);
         }
+
+        /// <summary>
+        /// On Windows, rewrites <paramref name="path"/> as a Win32 extended-length path (prefixed with
+        /// <c>\\?\</c>, or <c>\\?\UNC\</c> for a network share) when its fully-qualified length is close
+        /// enough to the 260-char MAX_PATH limit that the files tests create beneath it could exceed it.
+        /// Extended-length paths are exempt from that limit and are honored by the device layer (which
+        /// passes them straight to CreateFileW) as well as the BCL file APIs.
+        /// </summary>
+        /// <remarks>
+        /// This mirrors the equivalent helper in Tsavorite's TestUtils. Without it, a checkout under a long
+        /// root makes the deepest files Garnet creates — checkpoint files such as
+        /// "\Store\checkpoints\cpr-checkpoints\&lt;guid&gt;\snapshot.obj.dat" (~88 chars) — exceed the limit,
+        /// and the device layer rejects them. Because the directory name embeds a per-process randomized
+        /// <see cref="HashCode"/>, its length varies between runs, so such failures are intermittent.
+        ///
+        /// Only a path that actually needs rewriting is canonicalized: when it is close enough to the limit,
+        /// it is fully qualified via <see cref="Path.GetFullPath(string)"/> so that relative segments and
+        /// forward slashes are normalized to backslashes (as required by extended-length paths, which Windows
+        /// does not normalize) before the <c>\\?\</c> prefix is applied. The input is returned unchanged on
+        /// non-Windows platforms, when it is already extended-length, or when it is short enough that no child
+        /// path can overflow; this keeps the common short-path case (normal checkouts and CI) on ordinary paths.
+        ///
+        /// The constants below are duplicated rather than taken from Tsavorite's Native32 because that type's
+        /// members are internal and Garnet.test.cluster, which compiles this file via a linked Compile item,
+        /// is not granted InternalsVisibleTo by Tsavorite.core.
+        /// </remarks>
+        internal static string EnsureExtendedLengthPathIfNeeded(string path)
+        {
+            if (string.IsNullOrEmpty(path) || !OperatingSystem.IsWindows() || path.StartsWith(ExtendedLengthPathPrefix, StringComparison.Ordinal))
+                return path;
+
+            var fullPath = Path.GetFullPath(path);
+
+            // The device layer rejects non-extended paths longer than MAX_PATH - 11 (the 11 reserves room for
+            // a ".<segmentId>" suffix). Once this directory's fully-qualified length is within the reserve
+            // below of MAX_PATH, switch to an extended-length path so those children stay valid.
+            const int win32MaxPath = 260;
+            const int reservedForChildPaths = 100;
+            if (fullPath.Length <= win32MaxPath - reservedForChildPaths)
+                return path;
+
+            // UNC paths (\\server\share\...) use the \\?\UNC\server\share\... form.
+            if (fullPath.StartsWith(@"\\", StringComparison.Ordinal))
+                return ExtendedLengthPathPrefix + "UNC" + fullPath[1..];
+
+            return ExtendedLengthPathPrefix + fullPath;
+        }
+
+        /// <summary>The Win32 extended-length path prefix; paths using it bypass the MAX_PATH limit.</summary>
+        private const string ExtendedLengthPathPrefix = @"\\?\";
 
         /// <summary>
         /// Delete a directory recursively
