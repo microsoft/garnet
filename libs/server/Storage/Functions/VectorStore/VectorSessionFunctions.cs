@@ -334,11 +334,10 @@ namespace Garnet.server
             }
             else
             {
-                Debug.Assert(input.WriteDesiredSize <= newValueAligned.Length, "Insufficient space for copy update, this should never happen");
-                Debug.Assert(input.WriteDesiredSize <= oldValueAligned.Length, "Insufficient space for copy update, this should never happen");
+                // WriteDesiredSize is ignored on CopyUpdate
 
-                var srcCopy = oldValueAligned[..input.WriteDesiredSize];
-                var dstCopy = newValueAligned[..input.WriteDesiredSize];
+                var srcCopy = oldValueAligned;
+                var dstCopy = newValueAligned[..oldValueAligned.Length];
 
                 srcCopy.CopyTo(dstCopy);
 
@@ -348,7 +347,7 @@ namespace Garnet.server
                     var callback = (delegate* unmanaged[Cdecl, SuppressGCTransition]<nint, nint, nuint, void>)input.Callback;
 
                     var dataPtr = (nint)Unsafe.AsPointer(ref MemoryMarshal.GetReference(newValueAligned));
-                    var dataLen = (nuint)input.WriteDesiredSize;
+                    var dataLen = (nuint)dstCopy.Length;
 
                     AssertAlignment(in srcLogRecord, dataPtr);
                     callback(input.CallbackContext, dataPtr, dataLen);
