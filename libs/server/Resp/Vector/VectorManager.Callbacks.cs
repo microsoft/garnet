@@ -367,7 +367,7 @@ namespace Garnet.server
 
             var valueLengthHintWithOverhead = valueLengthHint + VectorRecordReadOverheadBytes;
 
-            var enumerable = new VectorReadBatch(dataCallback, dataCallbackContext, numKeys, PinnedSpanByte.FromPinnedPointer((byte*)keysData, (int)keysLength), nsBytes, readCopyOptions, (int)valueLengthHint);
+            var enumerable = new VectorReadBatch(dataCallback, dataCallbackContext, numKeys, PinnedSpanByte.FromPinnedPointer((byte*)keysData, (int)keysLength), nsBytes, readCopyOptions, (int)valueLengthHintWithOverhead);
 
             ref var ctx = ref ActiveThreadSession.vectorBasicContext;
 
