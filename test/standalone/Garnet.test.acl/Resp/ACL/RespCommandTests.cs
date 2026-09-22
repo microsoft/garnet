@@ -7813,6 +7813,50 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
+        public async Task XVCreateACLsAsync()
+        {
+            var count = 0;
+            await CheckCommandsAsync("XVCREATE", [CreateAsync]).ConfigureAwait(false);
+
+            async Task CreateAsync(GarnetClient client)
+            {
+                var key = $"xvcreate-{count++}";
+                var result = await client.ExecuteForStringResultAsync("XVCREATE", [key, "DIM", "3", "NOQUANT"]).ConfigureAwait(false);
+                ClassicAssert.AreEqual("OK", result);
+            }
+        }
+
+        [Test]
+        public async Task XVImportACLsAsync()
+        {
+            await CheckCommandsAsync("XVIMPORT", [ImportAsync, FinishAsync]).ConfigureAwait(false);
+
+            static async Task FinishAsync(GarnetClient client)
+            {
+                try
+                {
+                    _ = await client.ExecuteForStringResultAsync("XVIMPORT", ["missing", "FINISH"]).ConfigureAwait(false);
+                    ClassicAssert.Fail("Finalization of a missing vector set should fail");
+                }
+                catch (Exception exception) when (exception.Message.Equals("ERR vector set does not exist"))
+                {
+                }
+            }
+
+            static async Task ImportAsync(GarnetClient client)
+            {
+                try
+                {
+                    _ = await client.ExecuteForStringResultAsync("XVIMPORT", ["missing", "VECTOR", "\u0001\0\0\0", new string('\0', 12)]).ConfigureAwait(false);
+                    ClassicAssert.Fail("Import into a missing vector set should fail");
+                }
+                catch (Exception exception) when (exception.Message.Equals("ERR vector set does not exist"))
+                {
+                }
+            }
+        }
+
+        [Test]
         public async Task VAddACLsAsync()
         {
             await CheckCommandsAsync(

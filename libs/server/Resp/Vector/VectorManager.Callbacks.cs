@@ -354,6 +354,13 @@ namespace Garnet.server
         {
             // dataCallback takes: index, dataCallbackContext, data pointer, data length, and returns nothing
 
+#if DEBUG
+            if ((context & (ContextStep - 1)) == DiskANNService.FullVector &&
+                ExceptionInjectionHelper.TriggerCondition(ExceptionInjectionType.VectorSet_Fail_Import_Verification_Read))
+            {
+                return;
+            }
+#endif
             Span<byte> nsBytes = stackalloc byte[sizeof(uint)];
             StoreContextInNamespace(context, ref nsBytes);
 

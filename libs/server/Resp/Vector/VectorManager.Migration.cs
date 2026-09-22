@@ -144,7 +144,7 @@ namespace Garnet.server
             input.header.cmd = RespCommand.VADD;
             input.arg1 = CreateIndexArg;
 
-            ReadIndex(value, out var context, out var dimensions, out var reduceDims, out var quantType, out var buildExplorationFactor, out var numLinks, out var distanceMetric, out _, out var indexPtr);
+            ReadIndex(value, out var context, out var dimensions, out var reduceDims, out var quantType, out var buildExplorationFactor, out var numLinks, out var distanceMetric, out var flags, out var indexPtr);
 
             Debug.Assert(indexPtr == 0, "Shouldn't receive an index pointer during a migration");
 
@@ -187,11 +187,14 @@ namespace Garnet.server
                 var numLinksArg = PinnedSpanByte.FromPinnedSpan(MemoryMarshal.Cast<uint, byte>(MemoryMarshal.CreateSpan(ref numLinks, 1)));
                 var distanceMetricArg = PinnedSpanByte.FromPinnedSpan(MemoryMarshal.Cast<VectorDistanceMetricType, byte>(MemoryMarshal.CreateSpan(ref distanceMetric, 1)));
 
-                nint newlyAllocatedIndex;
-                bool requestQuantization;
-                unsafe
+                nint newlyAllocatedIndex = 0;
+                var requestQuantization = false;
+                if ((flags & VectorSetFlags.ImportPending) == 0)
                 {
-                    newlyAllocatedIndex = Service.RecreateIndex(context, dimensions, reduceDims, quantType, buildExplorationFactor, numLinks, distanceMetric, ReadCallbackPtr, WriteCallbackPtr, DeleteCallbackPtr, ReadModifyWriteCallbackPtr, FilterCallbackPtr, LogCallbackPtr, out requestQuantization);
+                    unsafe
+                    {
+                        newlyAllocatedIndex = Service.RecreateIndex(context, dimensions, reduceDims, quantType, buildExplorationFactor, numLinks, distanceMetric, ReadCallbackPtr, WriteCallbackPtr, DeleteCallbackPtr, ReadModifyWriteCallbackPtr, FilterCallbackPtr, LogCallbackPtr, out requestQuantization);
+                    }
                 }
 
                 var ctxArg = PinnedSpanByte.FromPinnedSpan(MemoryMarshal.Cast<ulong, byte>(MemoryMarshal.CreateSpan(ref context, 1)));
@@ -231,11 +234,16 @@ namespace Garnet.server
                     {
                         indexConfigOutput.SpanByteAndMemory.Memory?.Dispose();
 
-                        Service.DropIndex(context, newlyAllocatedIndex);
+                        if (newlyAllocatedIndex != 0)
+                        {
+                            Service.DropIndex(context, newlyAllocatedIndex);
+                        }
                         throw new GarnetException("Failed to import migrated Vector Set index, aborting migration");
                     }
 
                     Debug.Assert(indexConfigOutput.SpanByteAndMemory.IsSpanByte, "Should never allocate");
+
+                    SetFlags(key, flags, ref ActiveThreadSession.stringBasicContext, SetImportStateArg);
 
                     var hashSlot = HashSlotUtils.HashSlot(key);
 

@@ -156,6 +156,25 @@ namespace Garnet.server
                     bool needsRecreate;
                     if (readRes == GarnetStatus.OK)
                     {
+                        if (readCmd == RespCommand.XVIMPORT && (IsImportCompleted(indexSpan) || IsImportFailed(indexSpan)))
+                        {
+                            status = GarnetStatus.OK;
+                            return new(in vectorSetLocks, lockToken);
+                        }
+                        if (IsImportPending(indexSpan))
+                        {
+                            if (readCmd == RespCommand.VINFO)
+                            {
+                                status = GarnetStatus.OK;
+                                return new(in vectorSetLocks, lockToken);
+                            }
+                            if (readCmd != RespCommand.XVIMPORT)
+                            {
+                                status = GarnetStatus.VECTORSETNOTREADY;
+                                vectorSetLocks.ReleaseLock(lockToken);
+                                return default;
+                            }
+                        }
                         needsRecreate = NeedsRecreate(indexConfigOutput.SpanByteAndMemory.ReadOnlySpan);
                     }
                     else
@@ -163,7 +182,8 @@ namespace Garnet.server
                         needsRecreate = false;
                     }
 
-                    if (lockToken.IsExclusive && !needsRecreate)
+                    var importNeedsExclusive = readRes == GarnetStatus.OK && readCmd == RespCommand.XVIMPORT && !IsImportPending(indexSpan);
+                    if (lockToken.IsExclusive && !needsRecreate && !importNeedsExclusive)
                     {
                         // Raised to recreate but don't need it, lower to shared and retry
                         vectorSetLocks.ReleaseLock(lockToken);
@@ -287,6 +307,13 @@ namespace Garnet.server
                         return default;
                     }
 
+                    if (importNeedsExclusive && !lockToken.IsExclusive && !vectorSetLocks.TryPromoteSharedLock(keyHash, ref lockToken))
+                    {
+                        vectorSetLocks.ReleaseLock(lockToken);
+                        takeExclusiveLock = true;
+                        continue;
+                    }
+
                     status = GarnetStatus.OK;
                     return new(in vectorSetLocks, lockToken);
                 }
@@ -360,6 +387,12 @@ namespace Garnet.server
                     bool needsRecreate;
                     if (readRes == GarnetStatus.OK)
                     {
+                        if (IsImportPending(indexSpan))
+                        {
+                            status = GarnetStatus.VECTORSETNOTREADY;
+                            vectorSetLocks.ReleaseLock(lockToken);
+                            return default;
+                        }
                         needsRecreate = NeedsRecreate(indexConfigOutput.SpanByteAndMemory.ReadOnlySpan);
                     }
                     else
@@ -531,6 +564,115 @@ namespace Garnet.server
                 ActiveThreadSession = null;
 
                 throw;
+            }
+        }
+
+        /// <summary>
+        /// Creates an empty index.
+        /// </summary>
+        internal GarnetStatus CreateVectorIndex(StorageSession storageSession, ReadOnlySpan<byte> key,
+            uint dimensions, uint reduceDims, VectorQuantType quantizer, uint buildExplorationFactor, uint numLinks,
+            VectorDistanceMetricType distanceMetric, bool hasQuantState, ReadOnlySpan<byte> quantState,
+            out VectorManagerResult result, out ReadOnlySpan<byte> errorMsg)
+        {
+            result = VectorManagerResult.Invalid;
+            errorMsg = default;
+
+            var input = new StringInput(RespCommand.VADD);
+            Span<byte> indexSpan = stackalloc byte[IndexSizeBytes];
+            using var indexLock = ReadForDeleteVectorIndex(storageSession, key, ref input, indexSpan, out var readStatus);
+            if (readStatus == GarnetStatus.OK)
+            {
+                result = VectorManagerResult.Duplicate;
+                errorMsg = "ERR vector set already exists"u8;
+                return GarnetStatus.OK;
+            }
+
+            if (readStatus != GarnetStatus.NOTFOUND)
+            {
+                return readStatus;
+            }
+
+            var context = NextVectorSetContext(HashSlotUtils.HashSlot(key));
+            nint indexPtr = 0;
+            var published = false;
+            CreateIndex(dimensions, reduceDims, quantizer, buildExplorationFactor, numLinks, distanceMetric, context, indexPtr, indexSpan);
+            try
+            {
+                UpdateContextMetadata(ref storageSession.vectorBasicContext);
+                bool requestQuantization;
+                unsafe
+                {
+                    indexPtr = Service.CreateIndex(context, dimensions, reduceDims, quantizer, buildExplorationFactor, numLinks, distanceMetric,
+                        ReadCallbackPtr, WriteCallbackPtr, DeleteCallbackPtr, ReadModifyWriteCallbackPtr, FilterCallbackPtr, LogCallbackPtr, out requestQuantization);
+                }
+                CreateIndex(dimensions, reduceDims, quantizer, buildExplorationFactor, numLinks, distanceMetric, context, indexPtr, indexSpan);
+
+                if (indexPtr == 0)
+                {
+                    errorMsg = "ERR vector set creation failed"u8;
+                    return GarnetStatus.OK;
+                }
+
+                if (hasQuantState && !Service.SetQuantState(context, indexPtr, quantState))
+                {
+                    errorMsg = "ERR vector set quantizer state initialization failed"u8;
+                    return GarnetStatus.OK;
+                }
+
+                input.arg1 = CreateIndexArg;
+                input.parseState.InitializeWithArguments([
+                    PinnedSpanByte.FromPinnedSpan(MemoryMarshal.AsBytes(MemoryMarshal.CreateSpan(ref dimensions, 1))),
+                    PinnedSpanByte.FromPinnedSpan(MemoryMarshal.AsBytes(MemoryMarshal.CreateSpan(ref reduceDims, 1))),
+                    default, default, default,
+                    PinnedSpanByte.FromPinnedSpan(MemoryMarshal.AsBytes(MemoryMarshal.CreateSpan(ref quantizer, 1))),
+                    PinnedSpanByte.FromPinnedSpan(MemoryMarshal.AsBytes(MemoryMarshal.CreateSpan(ref buildExplorationFactor, 1))),
+                    default,
+                    PinnedSpanByte.FromPinnedSpan(MemoryMarshal.AsBytes(MemoryMarshal.CreateSpan(ref numLinks, 1))),
+                    PinnedSpanByte.FromPinnedSpan(MemoryMarshal.AsBytes(MemoryMarshal.CreateSpan(ref distanceMetric, 1))),
+                    PinnedSpanByte.FromPinnedSpan(MemoryMarshal.AsBytes(MemoryMarshal.CreateSpan(ref context, 1))),
+                    PinnedSpanByte.FromPinnedSpan(MemoryMarshal.AsBytes(MemoryMarshal.CreateSpan(ref indexPtr, 1)))
+                ]);
+
+                var writeStatus = storageSession.stringBasicContext.RMW((FixedSpanByteKey)key, ref input);
+                if (writeStatus.IsPending)
+                {
+                    CompletePending(ref writeStatus, ref storageSession.stringBasicContext);
+                }
+
+                if (!writeStatus.IsCompletedSuccessfully)
+                {
+                    return GarnetStatus.WRONGTYPE;
+                }
+
+                if (!writeStatus.Record.Created)
+                {
+                    result = VectorManagerResult.Duplicate;
+                    errorMsg = "ERR vector set already exists"u8;
+                    return GarnetStatus.OK;
+                }
+
+                published = true;
+                ReplicateVectorSetCreate(key, dimensions, reduceDims, quantizer, buildExplorationFactor, numLinks, distanceMetric, hasQuantState, quantState);
+                result = VectorManagerResult.OK;
+                if (requestQuantization && !hasQuantState)
+                {
+                    _ = quantizationChannel.Writer.TryWrite(new(key.ToArray(), QuantizationStep.BuildQuantizationTable, 0));
+                }
+
+                return GarnetStatus.OK;
+            }
+            catch (EntryPointNotFoundException)
+            {
+                errorMsg = "ERR native library does not support QUANT_STATE"u8;
+                return GarnetStatus.OK;
+            }
+            finally
+            {
+                if (!published)
+                {
+                    RequestDeletion(indexSpan);
+                }
             }
         }
 

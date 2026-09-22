@@ -70,7 +70,8 @@ namespace CommandInfoUpdater
 
             IDictionary<string, RespCommandDocs> queriedCommandsDocs = new Dictionary<string, RespCommandDocs>();
             var commandsToQuery = commandsToAdd.Keys.Select(k => k.Command)
-                .Where(c => updatedCommandsInfo.ContainsKey(c) || (updatedCommandsInfo[c].SubCommands?.Length > 0 && !updatedCommandsInfo[c].IsInternal)).ToArray();
+                .Where(c => !updatedCommandsInfo.TryGetValue(c, out var info) || !info.IsInternal)
+                .Where(c => !garnetCommandsDocs.ContainsKey(c) || garnetCommandsDocs[c].SubCommands?.Length > 0).ToArray();
             if (commandsToQuery.Length > 0)
             {
                 for (var i = 0; i < commandsToQuery.Length; i += QUERY_CMD_BATCH_SIZE)

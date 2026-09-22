@@ -4,6 +4,8 @@
 using System;
 using System.Collections.Concurrent;
 using System.Diagnostics;
+using System.Linq;
+using System.Runtime.ExceptionServices;
 using System.Threading.Tasks;
 using Garnet.common;
 using Microsoft.Extensions.Logging;
@@ -62,8 +64,16 @@ namespace Garnet.server
         /// <param name="logger"></param>
         public class AofReplayCoordinator(GarnetServerOptions serverOptions, AofProcessor aofProcessor, ILogger logger = null) : IDisposable
         {
+            sealed class CoordinatedTransaction
+            {
+                internal readonly ConcurrentBag<TransactionGroup> Groups = [];
+                internal bool Replayed;
+                internal ExceptionDispatchInfo Failure;
+            }
+
             readonly GarnetServerOptions serverOptions = serverOptions;
             readonly ConcurrentDictionary<BarrierKey, LeaderBarrier> leaderBarriers = [];
+            readonly ConcurrentDictionary<BarrierKey, CoordinatedTransaction> coordinatedTransactions = [];
             readonly AofProcessor aofProcessor = aofProcessor;
             readonly AofReplayContext[] aofReplayContext = InitializeReplayContext(serverOptions.AofVirtualSublogCount, aofProcessor);
             SingleWriterMultiReaderLock disposed = new();
@@ -92,6 +102,7 @@ namespace Garnet.server
                 if (!disposed.TryWriteLock()) return;
                 foreach (var replayContext in aofReplayContext)
                     replayContext.Dispose();
+                coordinatedTransactions.Clear();
             }
 
             /// <summary>
@@ -169,7 +180,9 @@ namespace Garnet.server
                         case AofEntryType.StoredProcedure:
                             throw new GarnetException($"Unexpected AOF header operation type {header.opType} within transaction");
                         default:
-                            group.Operations.Add(new ReplayOperation(new ReadOnlySpan<byte>(ptr, length).ToArray()));
+                            var sequenceNumber = header.HeaderType == AofHeaderType.ShardedHeader
+                                ? (*(AofShardedHeader*)ptr).sequenceNumber : logAddressSequenceNumber;
+                            group.Operations.Add(new ReplayOperation(new ReadOnlySpan<byte>(ptr, length).ToArray(), sequenceNumber, virtualSublogIdx));
                             break;
                     }
 
@@ -258,11 +271,11 @@ namespace Garnet.server
             /// existing group" case; standalone chunked ops return false and are replayed by the caller.
             /// </summary>
             /// <returns>True if the op was buffered into an active transaction group; otherwise false.</returns>
-            internal bool AddOrReplayTransactionOperation(int virtualSublogIdx, ChunkedAccumulator acc)
+            internal bool AddOrReplayTransactionOperation(int virtualSublogIdx, ChunkedAccumulator acc, long logAddressSequenceNumber = 0)
             {
                 if (aofReplayContext[virtualSublogIdx].activeTxns.TryGetValue(acc.sessionID, out var group))
                 {
-                    group.Operations.Add(new ReplayOperation(acc));
+                    group.Operations.Add(new ReplayOperation(acc, logAddressSequenceNumber, virtualSublogIdx));
                     return true;
                 }
                 return false;
@@ -356,9 +369,6 @@ namespace Garnet.server
                 {
                     var txnManager = replayContext.respServerSession.txnManager;
 
-                    // Start by saving transaction keys for locking
-                    SaveTransactionGroupKeysToLock(txnManager, txnGroup);
-
                     if (serverOptions.MultiLogEnabled)
                     {
                         var headerType = (AofHeaderType)(*(AofHeader*)ptr).HeaderType;
@@ -384,15 +394,27 @@ namespace Garnet.server
                             partCount = (short)serverOptions.AofReplayTaskCount;
                         }
 
+                        var transactionKey = new BarrierKey { SessionId = sessionId, txnId = txnGroup.StartSequenceNumber };
+                        var coordinated = coordinatedTransactions.GetOrAdd(transactionKey, static _ => new CoordinatedTransaction());
+                        coordinated.Groups.Add(txnGroup);
+
                         // Acquire-barrier: synchronize all participants before locking using TxnStart sequence number
                         ProcessSynchronizedOperation(
                             sublogIdx,
                             txnGroup.StartSequenceNumber,
                             partCount,
                             sessionId,
-                            null);
+                            ReplayOrderedTransactionAsync);
+
+                        coordinated.Failure?.Throw();
+                        if (coordinated.Replayed)
+                        {
+                            ProcessSynchronizedOperation(sublogIdx, commitSeqNum, partCount, sessionId, null);
+                            return;
+                        }
 
                         // Start transaction (acquires locks)
+                        SaveTransactionGroupKeysToLock(txnManager, txnGroup);
                         _ = txnManager.Run(internal_txn: true);
 
                         // Process transaction group operations
@@ -412,10 +434,52 @@ namespace Garnet.server
                             partCount,
                             sessionId,
                             null);
+
+                        Task ReplayOrderedTransactionAsync()
+                        {
+                            try
+                            {
+                                if (coordinated.Groups.Any(group => group.Operations.Any(RequiresOrderedReplay)))
+                                {
+                                    coordinated.Replayed = true;
+                                    var orderedGroup = new TransactionGroup(sublogIdx, txnGroup.LogAccessCount, txnGroup.StartSequenceNumber)
+                                    {
+                                        Operations = coordinated.Groups.SelectMany(group => group.Operations).OrderBy(operation => operation.SequenceNumber).ToList()
+                                    };
+                                    SaveTransactionGroupKeysToLock(txnManager, orderedGroup);
+                                    _ = txnManager.Run(internal_txn: true);
+                                    try
+                                    {
+                                        ProcessTransactionGroupOperations(
+                                            aofProcessor,
+                                            txnManager.StringTransactionalContext,
+                                            txnManager.ObjectTransactionalContext,
+                                            txnManager.UnifiedTransactionalContext,
+                                            orderedGroup,
+                                            asReplica,
+                                            entryAddress);
+                                    }
+                                    finally
+                                    {
+                                        txnManager.Commit(true);
+                                    }
+                                }
+                            }
+                            catch (Exception exception)
+                            {
+                                coordinated.Failure = ExceptionDispatchInfo.Capture(exception);
+                            }
+                            finally
+                            {
+                                _ = coordinatedTransactions.TryRemove(transactionKey, out _);
+                            }
+                            return Task.CompletedTask;
+                        }
                     }
                     else
                     {
                         // Single-log: no synchronization needed
+                        SaveTransactionGroupKeysToLock(txnManager, txnGroup);
                         _ = txnManager.Run(internal_txn: true);
 
                         ProcessTransactionGroupOperations(
@@ -430,6 +494,36 @@ namespace Garnet.server
 
                     // Commit (NOTE: need to ensure that we do not write to log here)
                     txnManager.Commit(true);
+                }
+
+                static bool RequiresOrderedReplay(ReplayOperation operation)
+                {
+                    if (operation.IsChunked)
+                    {
+                        if (operation.Chunk.opType != AofEntryType.UnifiedStoreStringUpsert)
+                            return false;
+                        fixed (byte* inputPtr = operation.Chunk.input)
+                            return IsVectorRename(inputPtr);
+                    }
+
+                    fixed (byte* recordPtr = operation.Record)
+                    {
+                        if (((AofHeader*)recordPtr)->opType != AofEntryType.UnifiedStoreStringUpsert)
+                            return false;
+                        var inputPtr = AofHeader.SkipHeader(recordPtr);
+                        inputPtr += PinnedSpanByte.FromLengthPrefixedPinnedPointer(inputPtr).TotalSize;
+                        inputPtr += PinnedSpanByte.FromLengthPrefixedPinnedPointer(inputPtr).TotalSize;
+                        return IsVectorRename(inputPtr, ((AofHeader*)recordPtr)->aofHeaderVersion < 4);
+                    }
+
+                    static bool IsVectorRename(byte* inputPtr, bool legacyCmdFormat = false)
+                    {
+                        UnifiedInput input = default;
+                        _ = input.DeserializeFrom(inputPtr);
+                        if (legacyCmdFormat)
+                            input.header.cmd = LegacyRespCommand.FromV3(input.header.cmd);
+                        return input.header.cmd == RespCommand.RENAME && input.arg1 == VectorManager.RecordType;
+                    }
                 }
 
                 // Helper to iterate of transaction keys and add them to lockset
@@ -466,10 +560,11 @@ namespace Garnet.server
                     var replayContext = aofProcessor.aofReplayCoordinator.GetReplayContext(txnGroup.VirtualSublogIdx);
                     foreach (var op in txnGroup.Operations)
                     {
+                        var operationSublogIdx = op.VirtualSublogIdx >= 0 ? op.VirtualSublogIdx : txnGroup.VirtualSublogIdx;
                         if (op.IsChunked)
                         {
                             _ = aofProcessor.ReplayOpDispatch(
-                                txnGroup.VirtualSublogIdx,
+                                operationSublogIdx,
                                 op.Chunk,
                                 replayContext,
                                 stringContext,
@@ -484,7 +579,7 @@ namespace Garnet.server
                             {
                                 var header = *(AofHeader*)entryPtr;
                                 _ = aofProcessor.ReplayOpDispatch(
-                                    txnGroup.VirtualSublogIdx,
+                                    operationSublogIdx,
                                     header,
                                     replayContext,
                                     stringContext,

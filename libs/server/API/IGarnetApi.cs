@@ -1332,6 +1332,43 @@ namespace Garnet.server
 
         #region VectorSet Methods
         /// <summary>
+        /// Creates an empty vector set with fixed parameters and optional native quantizer state.
+        /// </summary>
+        /// <param name="key">Name of the new vector set.</param>
+        /// <param name="dimensions">Input vector dimensions.</param>
+        /// <param name="reduceDims">Reduced dimensions, or zero to disable reduction.</param>
+        /// <param name="quantizer">Quantizer to use.</param>
+        /// <param name="buildExplorationFactor">Exploration factor used to build the graph.</param>
+        /// <param name="numLinks">Maximum graph degree.</param>
+        /// <param name="distanceMetric">Distance metric to use.</param>
+        /// <param name="quantState">Optional opaque quantizer state; null means no supplied state.</param>
+        /// <param name="result">Creation result.</param>
+        /// <param name="errorMsg">Error details when creation fails.</param>
+        GarnetStatus VectorSetCreate(PinnedSpanByte key, int dimensions, int reduceDims, VectorQuantType quantizer,
+            int buildExplorationFactor, int numLinks, VectorDistanceMetricType distanceMetric, PinnedSpanByte? quantState,
+            out VectorManagerResult result, out ReadOnlySpan<byte> errorMsg);
+
+        /// <summary>
+        /// Imports an opaque term into an existing vector set.
+        /// </summary>
+        /// <param name="key">Name of the vector set.</param>
+        /// <param name="termType">Native term tag, excluding metadata.</param>
+        /// <param name="id">Opaque term key.</param>
+        /// <param name="value">Opaque term value.</param>
+        /// <param name="result">Import result.</param>
+        /// <param name="errorMsg">Error details when import fails.</param>
+        GarnetStatus VectorSetImport(PinnedSpanByte key, uint termType, PinnedSpanByte id, PinnedSpanByte value,
+            out VectorManagerResult result, out ReadOnlySpan<byte> errorMsg);
+
+        /// <summary>
+        /// Verifies and finalizes an imported vector set before returning.
+        /// </summary>
+        /// <param name="key">Name of the vector set.</param>
+        /// <param name="result">Finalization result.</param>
+        /// <param name="errorMsg">Error details when finalization fails.</param>
+        GarnetStatus VectorSetFinishImport(PinnedSpanByte key, out VectorManagerResult result, out ReadOnlySpan<byte> errorMsg);
+
+        /// <summary>
         /// Adds to (and may create) a vector set with the given parameters.
         /// </summary>
         GarnetStatus VectorSetAdd(PinnedSpanByte key, int reduceDims, VectorValueType valueType, PinnedSpanByte value, PinnedSpanByte element, VectorQuantType quantizer, int buildExplorationFactor, PinnedSpanByte attributes, int numLinks, VectorDistanceMetricType distanceMetric, out VectorManagerResult result, out ReadOnlySpan<byte> errorMsg);
@@ -2128,6 +2165,7 @@ namespace Garnet.server
         /// <summary>
         /// Count the number of vectors in a Vector Set.
         /// </summary>
+        /// <remarks>When the status is OK, a negative <paramref name="card"/> indicates an internal index failure.</remarks>
         GarnetStatus VectorSetCardinality(PinnedSpanByte key, out long card);
 
         /// <summary>
@@ -2193,7 +2231,21 @@ namespace Garnet.server
         /// <summary>
         /// Fetch debugging information about the Vector Set.
         /// </summary>
+        /// <remarks>When the status is OK, a negative <paramref name="size"/> indicates an internal index failure.</remarks>
         GarnetStatus VectorSetInfo(PinnedSpanByte key, out VectorQuantType quantType, out VectorDistanceMetricType distanceMetricType, out uint vectorDimensions, out uint reducedDimensions, out uint buildExplorationFactor, out uint numberOfLinks, out long size);
+
+        /// <summary>
+        /// Fetch debugging information, including whether import is pending.
+        /// </summary>
+        /// <remarks>
+        /// When the status is OK, <paramref name="size"/> is unavailable if <paramref name="importPending"/> is true;
+        /// otherwise a negative size indicates an internal index failure.
+        /// </remarks>
+        GarnetStatus VectorSetInfo(PinnedSpanByte key, out VectorQuantType quantType, out VectorDistanceMetricType distanceMetricType, out uint vectorDimensions, out uint reducedDimensions, out uint buildExplorationFactor, out uint numberOfLinks, out long size, out bool importPending)
+        {
+            importPending = false;
+            return VectorSetInfo(key, out quantType, out distanceMetricType, out vectorDimensions, out reducedDimensions, out buildExplorationFactor, out numberOfLinks, out size);
+        }
 
         /// <summary>
         /// Get the attributes associated with an element in the Vector Set.

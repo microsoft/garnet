@@ -113,6 +113,7 @@ namespace Garnet.server
                 case RespCommand.VISMEMBER:
                 case RespCommand.VLINKS:
                 case RespCommand.VRANDMEMBER:
+                case RespCommand.XVIMPORT:
                 case RespCommand.GET:
                 case RespCommand.RIGET:
                 case RespCommand.RISET:

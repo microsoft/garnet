@@ -8373,6 +8373,208 @@
     ]
   },
   {
+    "Command": "XVCREATE",
+    "Name": "XVCREATE",
+    "Summary": "Creates an empty vector set with explicit parameters and optional quantizer state.",
+    "Group": "Generic",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "DIM",
+        "DisplayText": "dimensions",
+        "Type": "Integer",
+        "Token": "DIM"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "M",
+        "DisplayText": "degree",
+        "Type": "Integer",
+        "Token": "M",
+        "ArgumentFlags": "Optional"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "EF",
+        "DisplayText": "build-exploration-factor",
+        "Type": "Integer",
+        "Token": "EF",
+        "ArgumentFlags": "Optional"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "DISTANCE_METRIC",
+        "DisplayText": "metric",
+        "Type": "String",
+        "Token": "DISTANCE_METRIC",
+        "ArgumentFlags": "Optional"
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "QUANTIZATION",
+        "Type": "OneOf",
+        "ArgumentFlags": "Optional",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "NOQUANT",
+            "Type": "PureToken",
+            "Token": "NOQUANT"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "Q8",
+            "Type": "PureToken",
+            "Token": "Q8"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "BIN",
+            "Type": "PureToken",
+            "Token": "BIN"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "XNOQUANT_U8",
+            "Type": "PureToken",
+            "Token": "XNOQUANT_U8"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "XNOQUANT_I8",
+            "Type": "PureToken",
+            "Token": "XNOQUANT_I8"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "XBIN_U8",
+            "Type": "PureToken",
+            "Token": "XBIN_U8"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "XBIN_I8",
+            "Type": "PureToken",
+            "Token": "XBIN_I8"
+          }
+        ]
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "REDUCE",
+        "DisplayText": "reduced-dimensions",
+        "Type": "Integer",
+        "Token": "REDUCE",
+        "ArgumentFlags": "Optional"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "QUANT_STATE",
+        "DisplayText": "state",
+        "Type": "String",
+        "Token": "QUANT_STATE",
+        "ArgumentFlags": "Optional"
+      }
+    ]
+  },
+  {
+    "Command": "XVIMPORT",
+    "Name": "XVIMPORT",
+    "Summary": "Imports an opaque index term or explicitly finishes a vector set import.",
+    "Group": "Generic",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "OPERATION",
+        "Type": "OneOf",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "FINISH",
+            "Type": "PureToken",
+            "Token": "FINISH"
+          },
+          {
+            "TypeDiscriminator": "RespCommandContainerArgument",
+            "Name": "IMPORT",
+            "Type": "Block",
+            "Arguments": [
+              {
+                "TypeDiscriminator": "RespCommandContainerArgument",
+                "Name": "TERM",
+                "Type": "OneOf",
+                "Arguments": [
+                  {
+                    "TypeDiscriminator": "RespCommandBasicArgument",
+                    "Name": "VECTOR",
+                    "Type": "PureToken",
+                    "Token": "VECTOR"
+                  },
+                  {
+                    "TypeDiscriminator": "RespCommandBasicArgument",
+                    "Name": "INTMAP",
+                    "Type": "PureToken",
+                    "Token": "INTMAP"
+                  },
+                  {
+                    "TypeDiscriminator": "RespCommandBasicArgument",
+                    "Name": "EXTMAP",
+                    "Type": "PureToken",
+                    "Token": "EXTMAP"
+                  },
+                  {
+                    "TypeDiscriminator": "RespCommandBasicArgument",
+                    "Name": "QUANT",
+                    "Type": "PureToken",
+                    "Token": "QUANT"
+                  },
+                  {
+                    "TypeDiscriminator": "RespCommandBasicArgument",
+                    "Name": "ATTRS",
+                    "Type": "PureToken",
+                    "Token": "ATTRS"
+                  },
+                  {
+                    "TypeDiscriminator": "RespCommandBasicArgument",
+                    "Name": "NEIGHBORS",
+                    "Type": "PureToken",
+                    "Token": "NEIGHBORS"
+                  }
+                ]
+              },
+              {
+                "TypeDiscriminator": "RespCommandBasicArgument",
+                "Name": "ID",
+                "DisplayText": "id",
+                "Type": "String"
+              },
+              {
+                "TypeDiscriminator": "RespCommandBasicArgument",
+                "Name": "VALUE",
+                "DisplayText": "value",
+                "Type": "String"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
     "Command": "ZADD",
     "Name": "ZADD",
     "Summary": "Adds one or more members to a sorted set, or updates their scores. Creates the key if it doesn't exist.",

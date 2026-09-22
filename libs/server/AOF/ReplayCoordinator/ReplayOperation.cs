@@ -16,18 +16,28 @@ namespace Garnet.server
         /// <summary>Completed chunked-record accumulator; null when this is a non-chunked operation.</summary>
         public readonly ChunkedAccumulator Chunk;
 
+        /// <summary>Original log address or sharded sequence number used to order transaction operations.</summary>
+        public readonly long SequenceNumber;
+
+        /// <summary>Replay task that owns the operation's key, or -1 when supplied by the caller.</summary>
+        public readonly int VirtualSublogIdx;
+
         /// <summary>Create a non-chunked (raw record) operation.</summary>
-        public ReplayOperation(byte[] record)
+        public ReplayOperation(byte[] record, long sequenceNumber = 0, int virtualSublogIdx = -1)
         {
             Record = record;
             Chunk = null;
+            SequenceNumber = sequenceNumber;
+            VirtualSublogIdx = virtualSublogIdx;
         }
 
         /// <summary>Create a chunked operation from a completed accumulator.</summary>
-        public ReplayOperation(ChunkedAccumulator chunk)
+        public ReplayOperation(ChunkedAccumulator chunk, long logAddressSequenceNumber = 0, int virtualSublogIdx = -1)
         {
             Record = null;
             Chunk = chunk;
+            SequenceNumber = chunk.headerType == AofHeaderType.ShardedHeader ? chunk.sequenceNumber : logAddressSequenceNumber;
+            VirtualSublogIdx = virtualSublogIdx;
         }
 
         /// <summary>Whether this operation is a completed chunked record.</summary>

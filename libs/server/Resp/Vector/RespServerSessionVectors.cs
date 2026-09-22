@@ -11,6 +11,239 @@ namespace Garnet.server
 {
     internal sealed unsafe partial class RespServerSession : ServerSessionBase
     {
+        private bool NetworkXVCREATE<TGarnetApi>(ref TGarnetApi storageApi)
+            where TGarnetApi : IGarnetApi
+        {
+            if (!storageSession.vectorManager.IsEnabled)
+            {
+                return AbortWithErrorMessage("ERR Vector Set (preview) commands are not enabled");
+            }
+
+            if (parseState.Count < 3)
+            {
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.XVCREATE));
+            }
+
+            int? dimensions = null;
+            int? reduceDims = null;
+            int? numLinks = null;
+            int? buildExplorationFactor = null;
+            VectorQuantType? quantizer = null;
+            VectorDistanceMetricType? distanceMetric = null;
+            PinnedSpanByte? quantState = null;
+
+            var optionIndex = 1;
+            while (optionIndex < parseState.Count)
+            {
+                var option = parseState.GetArgSliceByRef(optionIndex++).ReadOnlySpan;
+                var optionQuantizer =
+                    option.EqualsUpperCaseSpanIgnoringCase("NOQUANT"u8) ? VectorQuantType.NoQuant :
+                    option.EqualsUpperCaseSpanIgnoringCase("Q8"u8, allowNonAlphabeticChars: true) ? VectorQuantType.Q8 :
+                    option.EqualsUpperCaseSpanIgnoringCase("BIN"u8) ? VectorQuantType.Bin :
+                    option.EqualsUpperCaseSpanIgnoringCase("XNOQUANT_U8"u8, allowNonAlphabeticChars: true) ? VectorQuantType.XNoQuant_U8 :
+                    option.EqualsUpperCaseSpanIgnoringCase("XNOQUANT_I8"u8, allowNonAlphabeticChars: true) ? VectorQuantType.XNoQuant_I8 :
+                    option.EqualsUpperCaseSpanIgnoringCase("XBIN_U8"u8, allowNonAlphabeticChars: true) ? VectorQuantType.XBin_U8 :
+                    option.EqualsUpperCaseSpanIgnoringCase("XBIN_I8"u8, allowNonAlphabeticChars: true) ? VectorQuantType.XBin_I8 :
+                    VectorQuantType.Invalid;
+
+                if (optionQuantizer != VectorQuantType.Invalid)
+                {
+                    if (quantizer.HasValue)
+                    {
+                        return AbortWithErrorMessage("ERR Quantization specified multiple times"u8);
+                    }
+                    quantizer = optionQuantizer;
+                    continue;
+                }
+
+                if (optionIndex >= parseState.Count)
+                {
+                    return AbortWithErrorMessage("ERR missing XVCREATE option value"u8);
+                }
+
+                if (option.EqualsUpperCaseSpanIgnoringCase("DIM"u8))
+                {
+                    if (dimensions.HasValue)
+                    {
+                        return AbortWithErrorMessage("ERR DIM specified multiple times"u8);
+                    }
+                    if (!parseState.TryGetInt(optionIndex, out var parsedDimensions))
+                    {
+                        return AbortWithErrorMessage("ERR DIM must be an integer between 1 and 65536"u8);
+                    }
+                    dimensions = parsedDimensions;
+                }
+                else if (option.EqualsUpperCaseSpanIgnoringCase("REDUCE"u8))
+                {
+                    if (reduceDims.HasValue)
+                    {
+                        return AbortWithErrorMessage("ERR REDUCE specified multiple times"u8);
+                    }
+                    if (!parseState.TryGetInt(optionIndex, out var parsedReduceDims) || parsedReduceDims <= 0)
+                    {
+                        return AbortWithErrorMessage("ERR REDUCE dimension must be > 0"u8);
+                    }
+                    reduceDims = parsedReduceDims;
+                }
+                else if (option.EqualsUpperCaseSpanIgnoringCase("M"u8))
+                {
+                    if (numLinks.HasValue)
+                    {
+                        return AbortWithErrorMessage("ERR M specified multiple times"u8);
+                    }
+                    if (!parseState.TryGetInt(optionIndex, out var parsedNumLinks))
+                    {
+                        return AbortWithErrorMessage("ERR M must be an integer between 4 and 4096"u8);
+                    }
+                    numLinks = parsedNumLinks;
+                }
+                else if (option.EqualsUpperCaseSpanIgnoringCase("EF"u8))
+                {
+                    if (buildExplorationFactor.HasValue)
+                    {
+                        return AbortWithErrorMessage("ERR EF specified multiple times"u8);
+                    }
+                    if (!parseState.TryGetInt(optionIndex, out var parsedBuildExplorationFactor))
+                    {
+                        return AbortWithErrorMessage($"ERR EF must be an integer between 1 and {VectorManager.MaxExplorationFactor}");
+                    }
+                    buildExplorationFactor = parsedBuildExplorationFactor;
+                }
+                else if (option.EqualsUpperCaseSpanIgnoringCase("DISTANCE_METRIC"u8, allowNonAlphabeticChars: true))
+                {
+                    if (distanceMetric.HasValue)
+                    {
+                        return AbortWithErrorMessage("ERR DISTANCE_METRIC specified multiple times"u8);
+                    }
+                    var metric = parseState.GetArgSliceByRef(optionIndex).ReadOnlySpan;
+                    distanceMetric =
+                        metric.EqualsUpperCaseSpanIgnoringCase("L2"u8, allowNonAlphabeticChars: true) ? VectorDistanceMetricType.L2 :
+                        metric.EqualsUpperCaseSpanIgnoringCase("COSINE"u8) ? VectorDistanceMetricType.Cosine :
+                        metric.EqualsUpperCaseSpanIgnoringCase("IP"u8) ? VectorDistanceMetricType.InnerProduct :
+                        metric.EqualsUpperCaseSpanIgnoringCase("XCOSINE_NORMALIZED"u8, allowNonAlphabeticChars: true) ? VectorDistanceMetricType.XCosine_Normalized :
+                        VectorDistanceMetricType.Invalid;
+                }
+                else if (option.EqualsUpperCaseSpanIgnoringCase("QUANT_STATE"u8, allowNonAlphabeticChars: true))
+                {
+                    if (quantState.HasValue)
+                    {
+                        return AbortWithErrorMessage("ERR QUANT_STATE specified multiple times"u8);
+                    }
+                    quantState = parseState.GetArgSliceByRef(optionIndex);
+                }
+                else
+                {
+                    return AbortWithErrorMessage("ERR unknown XVCREATE option"u8);
+                }
+
+                optionIndex++;
+            }
+
+            if (!dimensions.HasValue)
+            {
+                return AbortWithErrorMessage("ERR DIM is required"u8);
+            }
+
+            var status = storageApi.VectorSetCreate(parseState.GetArgSliceByRef(0), dimensions.Value, reduceDims ?? 0,
+                quantizer ?? VectorQuantType.Q8, buildExplorationFactor ?? 200, numLinks ?? 16, distanceMetric ?? VectorDistanceMetricType.L2,
+                quantState, out var result, out var errorMsg);
+
+            if (status == GarnetStatus.WRONGTYPE)
+            {
+                return AbortVectorSetWrongType();
+            }
+            else if (status == GarnetStatus.OK && result == VectorManagerResult.OK)
+            {
+                WriteDirect(CmdStrings.RESP_OK);
+            }
+            else
+            {
+                return AbortWithErrorMessage(errorMsg.IsEmpty ? "ERR vector set creation failed"u8 : errorMsg);
+            }
+
+            return true;
+        }
+
+        private bool NetworkXVIMPORT<TGarnetApi>(ref TGarnetApi storageApi)
+            where TGarnetApi : IGarnetApi
+        {
+            if (!storageSession.vectorManager.IsEnabled)
+            {
+                return AbortWithErrorMessage("ERR Vector Set (preview) commands are not enabled");
+            }
+
+            if (parseState.Count is not (2 or 4))
+            {
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.XVIMPORT));
+            }
+
+            var term = parseState.GetArgSliceByRef(1).ReadOnlySpan;
+            if (term.EqualsUpperCaseSpanIgnoringCase("FINISH"u8))
+            {
+                if (parseState.Count != 2)
+                {
+                    return AbortWithWrongNumberOfArguments(nameof(RespCommand.XVIMPORT));
+                }
+                if (parseState.GetArgSliceByRef(0).ReadOnlySpan.IsEmpty)
+                {
+                    return AbortWithErrorMessage("ERR Vector Set key cannot be empty"u8);
+                }
+
+                var finishStatus = storageApi.VectorSetFinishImport(parseState.GetArgSliceByRef(0), out var finishResult, out var finishErrorMsg);
+                if (finishStatus == GarnetStatus.WRONGTYPE)
+                {
+                    return AbortVectorSetWrongType();
+                }
+                if (finishStatus == GarnetStatus.NOTFOUND)
+                {
+                    return AbortWithErrorMessage("ERR vector set does not exist"u8);
+                }
+                if (finishStatus != GarnetStatus.OK || finishResult != VectorManagerResult.OK)
+                {
+                    return AbortWithErrorMessage(finishErrorMsg.IsEmpty ? "ERR vector set import finalization failed"u8 : finishErrorMsg);
+                }
+
+                WriteDirect(CmdStrings.RESP_OK);
+                return true;
+            }
+            if (parseState.Count != 4)
+            {
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.XVIMPORT));
+            }
+
+            uint termType =
+                term.EqualsUpperCaseSpanIgnoringCase("VECTOR"u8) ? DiskANNService.FullVector :
+                term.EqualsUpperCaseSpanIgnoringCase("NEIGHBORS"u8) ? DiskANNService.NeighborList :
+                term.EqualsUpperCaseSpanIgnoringCase("QUANT"u8) ? DiskANNService.QuantizedVector :
+                term.EqualsUpperCaseSpanIgnoringCase("ATTRS"u8) ? DiskANNService.Attributes :
+                term.EqualsUpperCaseSpanIgnoringCase("INTMAP"u8) ? DiskANNService.InternalIdMap :
+                term.EqualsUpperCaseSpanIgnoringCase("EXTMAP"u8) ? DiskANNService.ExternalIdMap :
+                uint.MaxValue;
+
+            if (termType == uint.MaxValue)
+            {
+                return AbortWithErrorMessage("ERR invalid vector set import term"u8);
+            }
+
+            var status = storageApi.VectorSetImport(parseState.GetArgSliceByRef(0), termType,
+                parseState.GetArgSliceByRef(2), parseState.GetArgSliceByRef(3), out var result, out var errorMsg);
+            if (status == GarnetStatus.WRONGTYPE)
+            {
+                return AbortVectorSetWrongType();
+            }
+            if (status == GarnetStatus.NOTFOUND)
+            {
+                return AbortWithErrorMessage("ERR vector set does not exist"u8);
+            }
+            if (status != GarnetStatus.OK || result != VectorManagerResult.OK)
+            {
+                return AbortWithErrorMessage(errorMsg.IsEmpty ? "ERR vector set import failed"u8 : errorMsg);
+            }
+
+            WriteDirect(CmdStrings.RESP_OK);
+            return true;
+        }
+
         private bool NetworkVADD<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
@@ -458,6 +691,10 @@ namespace Garnet.server
                     }
                 }
 
+                if (res == GarnetStatus.VECTORSETNOTREADY)
+                {
+                    return AbortVectorSetNotReady();
+                }
                 if (res == GarnetStatus.OK)
                 {
                     if (result == VectorManagerResult.OK)
@@ -902,6 +1139,10 @@ namespace Garnet.server
                         customErrMsg = default;
                     }
 
+                    if (res == GarnetStatus.VECTORSETNOTREADY)
+                    {
+                        return AbortVectorSetNotReady();
+                    }
                     if (res == GarnetStatus.NOTFOUND)
                     {
                         // Vector Set does not exist
@@ -1297,6 +1538,10 @@ namespace Garnet.server
                 {
                     var res = storageApi.VectorSetRawEmbedding(key, elem, ref quantizedResult, out var quantType, out var norm, out var range);
 
+                    if (res == GarnetStatus.VECTORSETNOTREADY)
+                    {
+                        return AbortVectorSetNotReady();
+                    }
                     if (res == GarnetStatus.OK)
                     {
                         // Start array
@@ -1386,6 +1631,10 @@ namespace Garnet.server
                 {
                     var res = storageApi.VectorSetEmbedding(key, elem, ref distanceResult);
 
+                    if (res == GarnetStatus.VECTORSETNOTREADY)
+                    {
+                        return AbortVectorSetNotReady();
+                    }
                     if (res == GarnetStatus.OK)
                     {
                         var distanceSpan = MemoryMarshal.Cast<byte, float>(distanceResult.ReadOnlySpan);
@@ -1446,6 +1695,10 @@ namespace Garnet.server
 
             var res = storageApi.VectorSetCardinality(key, out var card);
 
+            if (res == GarnetStatus.VECTORSETNOTREADY)
+            {
+                return AbortVectorSetNotReady();
+            }
             switch (res)
             {
                 case GarnetStatus.WRONGTYPE:
@@ -1457,6 +1710,10 @@ namespace Garnet.server
                     goto case GarnetStatus.OK;
 
                 case GarnetStatus.OK:
+                    if (card < 0)
+                    {
+                        return AbortWithErrorMessage("ERR vector set cardinality failed"u8);
+                    }
                     WriteInt64(card);
                     break;
             }
@@ -1479,6 +1736,10 @@ namespace Garnet.server
 
             var res = storageApi.VectorSetDimensions(key, out var dimensions);
 
+            if (res == GarnetStatus.VECTORSETNOTREADY)
+            {
+                return AbortVectorSetNotReady();
+            }
             if (res == GarnetStatus.NOTFOUND)
             {
                 while (!RespWriteUtils.TryWriteError("ERR Key not found"u8, ref dcurr, dend))
@@ -1522,6 +1783,10 @@ namespace Garnet.server
             try
             {
                 var res = storageApi.VectorSetGetAttribute(key, element, ref attributesOutput);
+                if (res == GarnetStatus.VECTORSETNOTREADY)
+                {
+                    return AbortVectorSetNotReady();
+                }
                 if (res != GarnetStatus.OK)
                 {
                     if (res == GarnetStatus.NOTFOUND)
@@ -1537,7 +1802,7 @@ namespace Garnet.server
                     return AbortWithErrorMessage($"Unexpected GarnetStatus: {res}");
                 }
 
-                WriteBulkString(attributesOutput.ReadOnlySpan);
+                WriteDirectLargeRespString(attributesOutput.ReadOnlySpan);
                 return true;
             }
             finally
@@ -1560,7 +1825,11 @@ namespace Garnet.server
             }
 
             var key = parseState.GetArgSliceByRef(0);
-            var res = storageApi.VectorSetInfo(key, out VectorQuantType quantType, out var distanceMetricType, out var vectorDimensions, out var reducedDimensions, out var buildExplorationFactor, out var numLinks, out var size);
+            var res = storageApi.VectorSetInfo(key, out VectorQuantType quantType, out var distanceMetricType, out var vectorDimensions, out var reducedDimensions, out var buildExplorationFactor, out var numLinks, out var size, out var importPending);
+            if (res == GarnetStatus.VECTORSETNOTREADY)
+            {
+                return AbortVectorSetNotReady();
+            }
             if (res != GarnetStatus.OK)
             {
                 if (res == GarnetStatus.NOTFOUND)
@@ -1574,6 +1843,11 @@ namespace Garnet.server
                 }
 
                 return AbortWithErrorMessage($"Unexpected GarnetStatus: {res}");
+            }
+
+            if (!importPending && size < 0)
+            {
+                return AbortWithErrorMessage("ERR vector set cardinality failed"u8);
             }
 
             var quantTypeSpan = quantType switch
@@ -1597,7 +1871,7 @@ namespace Garnet.server
                 _ => throw new GarnetException($"Invalid VectorDistanceMetricType: {distanceMetricType}"),
             };
 
-            WriteArrayLength(14);
+            WriteArrayLength(importPending ? 14 : 16);
             WriteSimpleString("quant-type"u8);
             WriteSimpleString(quantTypeSpan);
             WriteSimpleString("distance-metric"u8);
@@ -1610,8 +1884,13 @@ namespace Garnet.server
             WriteInt32AsBulkString((int)buildExplorationFactor);
             WriteSimpleString("num-links"u8);
             WriteInt32AsBulkString((int)numLinks);
-            WriteSimpleString("size"u8);
-            WriteInt64AsBulkString(size);
+            if (!importPending)
+            {
+                WriteSimpleString("size"u8);
+                WriteInt64AsBulkString(size);
+            }
+            WriteSimpleString("import-pending"u8);
+            WriteInt32AsBulkString(importPending ? 1 : 0);
             return true;
         }
 
@@ -1633,6 +1912,10 @@ namespace Garnet.server
 
             var res = storageApi.VectorSetIsMember(key, element);
 
+            if (res == GarnetStatus.VECTORSETNOTREADY)
+            {
+                return AbortVectorSetNotReady();
+            }
             switch (res)
             {
                 case GarnetStatus.OK:
@@ -1706,6 +1989,10 @@ namespace Garnet.server
             {
                 var res = storageApi.VectorSetLinks(key, element, ref idResult, ref distanceResult);
 
+                if (res == GarnetStatus.VECTORSETNOTREADY)
+                {
+                    return AbortVectorSetNotReady();
+                }
                 switch (res)
                 {
                     case GarnetStatus.NOTFOUND:
@@ -1805,6 +2092,10 @@ namespace Garnet.server
             {
                 var res = storageApi.VectorSetRandomMembers(key, count, ref idResult, out var actualCount);
 
+                if (res == GarnetStatus.VECTORSETNOTREADY)
+                {
+                    return AbortVectorSetNotReady();
+                }
                 switch (res)
                 {
                     case GarnetStatus.NOTFOUND:
@@ -1884,6 +2175,10 @@ namespace Garnet.server
 
             var res = storageApi.VectorSetRemove(key, elem);
 
+            if (res == GarnetStatus.VECTORSETNOTREADY)
+            {
+                return AbortVectorSetNotReady();
+            }
             if (res == GarnetStatus.WRONGTYPE)
             {
                 return AbortVectorSetWrongType();
@@ -1918,6 +2213,10 @@ namespace Garnet.server
 
             var res = storageApi.VectorSetSetAttribute(key, elem, attr);
 
+            if (res == GarnetStatus.VECTORSETNOTREADY)
+            {
+                return AbortVectorSetNotReady();
+            }
             switch (res)
             {
                 case GarnetStatus.NOTFOUND:
@@ -1949,6 +2248,9 @@ namespace Garnet.server
 
             return true;
         }
+
+        private bool AbortVectorSetNotReady()
+            => AbortWithErrorMessage("ERR Vector Set import is not finished"u8);
 
         private bool AbortVectorSetWrongType()
         {

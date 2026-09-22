@@ -144,6 +144,8 @@ namespace Garnet.test
             [RespCommand.BITOP_XOR] = 118,
             [RespCommand.BITOP_NOT] = 119,
             [RespCommand.BITOP_DIFF] = 120,
+            [RespCommand.XVCREATE] = 121,
+            [RespCommand.XVIMPORT] = 122,
         };
 
         private static readonly Dictionary<HashOperation, int> ExpectedHashOps = new()
@@ -252,7 +254,7 @@ namespace Garnet.test
 
             // FirstWriteCommand/LastWriteCommand anchor the persisted range.
             ClassicAssert.AreEqual(1, (int)RespCommand.APPEND, "FirstWriteCommand (APPEND) must be 1");
-            ClassicAssert.AreEqual(120, (int)RespCommand.BITOP_DIFF, "LastWriteCommand (BITOP_DIFF) must be 120");
+            ClassicAssert.AreEqual(122, (int)RespCommand.XVIMPORT, "LastWriteCommand (XVIMPORT) must be 122");
         }
 
         [Test]
@@ -314,13 +316,17 @@ namespace Garnet.test
                 if (!RespCommandsInfo.TryGetRespCommandInfo(cmd, out var info))
                     continue;
 
-                var isInWriteBlock = (int)cmd >= 1 && (int)cmd <= 120;
+                var isInWriteBlock = (int)cmd >= 1 && (int)cmd <= 122;
                 var isWrite = info.AclCategories.HasFlag(RespAclCategories.Write);
 
                 if (isWrite)
-                    ClassicAssert.IsTrue(isInWriteBlock, $"Write command {cmd} is outside the write block [1,120]");
+                {
+                    ClassicAssert.IsTrue(isInWriteBlock, $"Write command {cmd} is outside the write block [1,122]");
+                }
                 else
-                    ClassicAssert.IsFalse(isInWriteBlock, $"Non-write command {cmd} is inside the write block [1,120]");
+                {
+                    ClassicAssert.IsFalse(isInWriteBlock, $"Non-write command {cmd} is inside the write block [1,122]");
+                }
             }
         }
 

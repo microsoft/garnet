@@ -30,6 +30,11 @@ namespace Garnet.server
         /// For testing purposes, in DEBUG builds the count of calls to <see cref="DropIndex"/> on this instance.
         /// </summary>
         internal int DropIndexCalls;
+
+        /// <summary>
+        /// For testing purposes, in DEBUG builds the count of native import-finalization calls on this instance.
+        /// </summary>
+        internal int FinishImportCalls;
 #endif
 
         public nint CreateIndex(
@@ -87,6 +92,47 @@ namespace Garnet.server
 #endif
 
             NativeDiskANNMethods.drop_index(context, index);
+        }
+
+        public bool SetQuantState(ulong context, nint index, ReadOnlySpan<byte> state)
+        {
+            fixed (byte* stateData = state)
+            {
+                return NativeDiskANNMethods.set_quant_state(context, index, (nint)stateData, (nuint)state.Length) == 1;
+            }
+        }
+
+        /// <summary>
+        /// Returns whether import is enabled in the index.
+        /// </summary>
+        /// <param name="context">Vector set context.</param>
+        /// <param name="index">Native index handle.</param>
+        public bool CanImport(ulong context, nint index)
+            => NativeDiskANNMethods.can_import(context, index) == 1;
+
+        public bool ImportTerm(ulong context, nint index, uint termType, ReadOnlySpan<byte> id, ReadOnlySpan<byte> value)
+        {
+            fixed (byte* idData = id)
+            fixed (byte* valueData = value)
+            {
+                return NativeDiskANNMethods.import_term(context, index, termType, (nint)idData, (nuint)id.Length, (nint)valueData, (nuint)value.Length) == 1;
+            }
+        }
+
+        /// <summary>
+        /// Verifies one import partition and finalizes the index when all partitions succeed.
+        /// </summary>
+        /// <param name="context">Vector set context.</param>
+        /// <param name="index">Native index handle.</param>
+        /// <param name="taskIndex">Zero-based partition index.</param>
+        /// <param name="taskCount">Total number of partitions.</param>
+        /// <returns>Task completion or retryable/terminal failure.</returns>
+        public NativeDiskANNMethods.DiskANNImportResult FinishImport(ulong context, nint index, int taskIndex, int taskCount)
+        {
+#if DEBUG
+            System.Threading.Interlocked.Increment(ref FinishImportCalls);
+#endif
+            return NativeDiskANNMethods.finish_import(context, index, (nuint)taskIndex, (nuint)taskCount);
         }
 
         public bool Insert(ulong context, nint index, ReadOnlySpan<byte> id, ReadOnlySpan<byte> vector, int vectorElementCount, ReadOnlySpan<byte> attributes, out bool needsQuantization)
@@ -455,6 +501,19 @@ namespace Garnet.server
             SuccessStartTraining = 2,
         }
 
+        /// <summary>
+        /// Native import finalization result.
+        /// </summary>
+        public enum DiskANNImportResult : byte
+        {
+            /// <summary>Task succeeded.</summary>
+            Success = 0,
+            /// <summary>Task failed before completion and can be retried.</summary>
+            TaskFailed = 1,
+            /// <summary>Task completed but finalization failed; do not retry it.</summary>
+            FinishFailed = 2,
+        }
+
         const string DISKANN_GARNET = "diskann_garnet";
 
         [LibraryImport(DISKANN_GARNET)]
@@ -479,6 +538,39 @@ namespace Garnet.server
         public static partial void drop_index(
             ulong context,
             nint index
+        );
+
+        [LibraryImport(DISKANN_GARNET)]
+        public static partial byte set_quant_state(
+            ulong context,
+            nint index,
+            nint state,
+            nuint state_len
+        );
+
+        [LibraryImport(DISKANN_GARNET)]
+        public static partial byte can_import(
+            ulong context,
+            nint index
+        );
+
+        [LibraryImport(DISKANN_GARNET)]
+        public static partial byte import_term(
+            ulong context,
+            nint index,
+            uint term_type,
+            nint id_data,
+            nuint id_data_len,
+            nint value_data,
+            nuint value_len
+        );
+
+        [LibraryImport(DISKANN_GARNET)]
+        public static partial DiskANNImportResult finish_import(
+            ulong context,
+            nint index,
+            nuint task_index,
+            nuint task_count
         );
 
         [LibraryImport(DISKANN_GARNET)]

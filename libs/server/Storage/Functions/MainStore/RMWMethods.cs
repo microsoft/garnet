@@ -52,7 +52,9 @@ namespace Garnet.server
                     // DEL happened and we should not do InitialUpdate, otherwise we would ressurect a stub with garbage data.
                     return input.arg1 is VectorManager.CreateIndexArg or VectorManager.MigrateElementKeyLogArg or VectorManager.MigrateIndexKeyLogArg;
                 case RespCommand.VREM:
-                    // VREM should never create a new record in InitialUpdate, only VADD should.
+                case RespCommand.XVCREATE:
+                case RespCommand.XVIMPORT:
+                    // These operations should never create a new record in InitialUpdate, only VADD should.
                     return false;
                 default:
                     if (input.header.cmd > RespCommandExtensions.LastValidCommand)
@@ -831,6 +833,15 @@ namespace Garnet.server
                     }
 
                     return TryCopyValueLengthToOutput(logRecord.ValueSpan, ref output) ? IPUResult.Succeeded : IPUResult.Failed;
+                case RespCommand.XVCREATE:
+                case RespCommand.XVIMPORT:
+                    if (logRecord.RecordType != VectorManager.RecordType)
+                    {
+                        rmwInfo.Action = RMWAction.CancelOperation;
+                        return IPUResult.Failed;
+                    }
+                    return IPUResult.Succeeded;
+
                 case RespCommand.VADD:
                     // If the key was concurrently deleted and re-typed (e.g. a raced String SET) the record is no longer
                     // an index; cancel so no AOF entry is emitted.
@@ -856,12 +867,13 @@ namespace Garnet.server
                         functionsState.vectorManager.RecreateIndex(newIndexPtr, logRecord.ValueSpan);
                     }
 
-                    if (input.arg1 == VectorManager.VADDSetFlagsArg)
+                    if (input.arg1 is VectorManager.VADDSetFlagsArg or VectorManager.SetImportStateArg)
                     {
                         // Update flags on the index
                         var flags = MemoryMarshal.Read<VectorSetFlags>(input.parseState.GetArgSliceByRef(0).Span);
 
-                        VectorManager.SetIndexFlags(logRecord.ValueSpan, flags);
+                        VectorManager.SetIndexFlags(logRecord.ValueSpan, flags,
+                            input.arg1 == VectorManager.SetImportStateArg ? VectorSetFlags.ImportPending | VectorSetFlags.ImportCompleted | VectorSetFlags.ImportFailed : VectorSetFlags.SuppressCleanup);
                     }
 
                     // Ignore everything else
@@ -1009,6 +1021,8 @@ namespace Garnet.server
                     return true;
                 case RespCommand.VADD:
                 case RespCommand.VREM:
+                case RespCommand.XVCREATE:
+                case RespCommand.XVIMPORT:
                     // If the key was concurrently deleted and re-typed (e.g. a raced String SET), no index remains
                     if (srcLogRecord.RecordType != VectorManager.RecordType)
                     {
@@ -1411,6 +1425,11 @@ namespace Garnet.server
                     _ = TryCopyValueLengthToOutput(newValue, ref output);
                     break;
 
+                case RespCommand.XVCREATE:
+                case RespCommand.XVIMPORT:
+                    oldValue.CopyTo(dstLogRecord.ValueSpan);
+                    break;
+
                 case RespCommand.VADD:
                     // NeedCopyUpdate cancels when the record is no longer an index, so CopyUpdater is only reached for a genuine index record.
                     Debug.Assert(srcLogRecord.RecordType == VectorManager.RecordType, "CopyUpdater reached for VADD on a non-index record");
@@ -1424,10 +1443,11 @@ namespace Garnet.server
                         var newIndexPtr = MemoryMarshal.Read<nint>(input.parseState.GetArgSliceByRef(11).Span);
                         functionsState.vectorManager.RecreateIndex(newIndexPtr, dstLogRecord.ValueSpan);
                     }
-                    else if (input.arg1 == VectorManager.VADDSetFlagsArg)
+                    else if (input.arg1 is VectorManager.VADDSetFlagsArg or VectorManager.SetImportStateArg)
                     {
                         var flags = MemoryMarshal.Read<VectorSetFlags>(input.parseState.GetArgSliceByRef(0).Span);
-                        VectorManager.SetIndexFlags(dstLogRecord.ValueSpan, flags);
+                        VectorManager.SetIndexFlags(dstLogRecord.ValueSpan, flags,
+                            input.arg1 == VectorManager.SetImportStateArg ? VectorSetFlags.ImportPending | VectorSetFlags.ImportCompleted | VectorSetFlags.ImportFailed : VectorSetFlags.SuppressCleanup);
                     }
 
                     break;
@@ -1561,7 +1581,7 @@ namespace Garnet.server
 
                 RangeIndexManager.SetTransferredFlag(srcSpan);
             }
-            else if (cmd == RespCommand.VADD)
+            else if (cmd is RespCommand.VADD or RespCommand.XVCREATE or RespCommand.XVIMPORT)
             {
                 // Similar to RIPROMOTE, after a CU we want to clear the source records index pointer so we don't drop it on eviction
                 VectorManager.ClearIndexPointer(srcLogRecord.ValueSpan);

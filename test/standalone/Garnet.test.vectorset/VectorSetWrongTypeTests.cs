@@ -232,6 +232,33 @@ namespace Garnet.test
         // Vector Set commands - these WRONGTYPE against non-Vector Set keys
 
         [Test]
+        public Task XVCREATEAsync()
+        {
+            return TestVectorSetCommandAsync(RunCommandAsync);
+
+            static Task RunCommandAsync(IDatabase db, RedisKey againstKey)
+            => db.ExecuteAsync("XVCREATE", againstKey, "DIM", 3);
+        }
+
+        [Test]
+        public Task XVIMPORTAsync()
+        {
+            return TestVectorSetCommandAsync(RunCommandAsync);
+
+            static Task RunCommandAsync(IDatabase db, RedisKey againstKey)
+            => db.ExecuteAsync("XVIMPORT", againstKey, "VECTOR", new byte[] { 1, 0, 0, 0 }, new byte[12]);
+        }
+
+        [Test]
+        public Task XVIMPORTFinishAsync()
+        {
+            return TestVectorSetCommandAsync(RunCommandAsync);
+
+            static Task RunCommandAsync(IDatabase db, RedisKey againstKey)
+            => db.ExecuteAsync("XVIMPORT", againstKey, "FINISH");
+        }
+
+        [Test]
         public Task VADDAsync()
         {
             return TestVectorSetCommandAsync(RunCommandAsync);

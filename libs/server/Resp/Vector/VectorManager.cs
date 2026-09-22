@@ -54,6 +54,7 @@ namespace Garnet.server
         internal const long VADDSetFlagsArg = MigrateIndexKeyLogArg + 1; // AOF: YES. InitialUpdater: NO (record must exist).
         internal const long CreateIndexArg = VADDSetFlagsArg + 1; // New stub record creation. AOF: NO. InitialUpdater: YES.
         internal const long VSETATTRAppendLogArg = CreateIndexArg + 1; // User VSETATTR update, replayed on replicas. AOF: Yes. InitialUpdater: NO.
+        internal const long SetImportStateArg = VSETATTRAppendLogArg + 1; // Import lifecycle flags. AOF: NO. InitialUpdater: NO (record must exist).
 
         /// <summary>
         /// Byte stored on log records to distinguish the INDEX key as a Vector Set
@@ -248,6 +249,9 @@ namespace Garnet.server
             // So Dispose's Task.WhenAll is safe even if StartQuantizationTasks never ran.
             Array.Fill(quantizationTasks, Task.CompletedTask);
 
+            importTasks = new Task[quantizationTaskCount];
+            Array.Fill(importTasks, Task.CompletedTask);
+
             logger?.LogInformation("Created VectorManager");
         }
 
@@ -269,6 +273,7 @@ namespace Garnet.server
 
             // Spin up quantization
             StartQuantizationTasks();
+            StartImportTasks();
         }
 
         /// <summary>
@@ -587,6 +592,8 @@ namespace Garnet.server
 
             replicationBlockEvent.Dispose();
 
+            StopImportTasks();
+
             // Wait for any _drops_ in progress to finish
             requestDropTaskChannel.CompleteAndWaitForConsumerTask(requestDropTask);
 
@@ -858,6 +865,7 @@ namespace Garnet.server
             ReadIndex(value, out var context, out _, out _, out _, out _, out _, out _, out _, out var indexPtr);
 
             Service.DropIndex(context, indexPtr);
+            _ = importJobs.TryRemove((context, indexPtr), out _);
         }
 
         /// <summary>
