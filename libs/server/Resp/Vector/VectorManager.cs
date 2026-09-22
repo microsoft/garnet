@@ -1708,6 +1708,7 @@ namespace Garnet.server
                         var newIds = MemoryPool<byte>.Shared.Rent(ids.Length * 2);
                         ids.Span.CopyTo(newIds.Memory.Span);
 
+                        ids.Memory?.Dispose();
                         ids = new(newIds, newIds.Memory.Length);
 
                         remainingIds = ids.Span;
