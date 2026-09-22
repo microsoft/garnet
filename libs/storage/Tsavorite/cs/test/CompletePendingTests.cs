@@ -1,6 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Threading.Tasks;
@@ -177,12 +178,15 @@ namespace Tsavorite.test
 
             ProcessPending processPending = new();
 
+            // Locals in an async method can be moved by the GC, so the value must live in pinned storage
+            var valueStructs = GC.AllocateArray<ValueStruct>(1, pinned: true);
+
             for (var key = 0; key < NumRecords; ++key)
             {
                 var keyStruct = NewKeyStruct(key);
-                var valueStruct = NewValueStruct(key);
+                valueStructs[0] = NewValueStruct(key);
                 processPending.keyAddressDict[key] = store.Log.TailAddress;
-                _ = bContext.Upsert(keyStruct, SpanByte.FromPinnedVariable(ref valueStruct));
+                _ = bContext.Upsert(keyStruct, SpanByte.FromPinnedVariable(ref valueStructs[0]));
             }
 
             // Flush to make reads or RMWs go pending.

@@ -3,6 +3,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Threading;
 using Garnet.common;
@@ -27,14 +28,10 @@ namespace Garnet.test
             var gotShared0 = lockContext.TryAcquireSharedLock(hash, out var sharedToken0);
             ClassicAssert.IsTrue(gotShared0);
 
-            var gotShared1 = lockContext.TryAcquireSharedLock(hash, out var sharedToken1);
-            ClassicAssert.IsTrue(gotShared1);
-
             var gotExclusive = lockContext.TryAcquireExclusiveLock(hash, out _);
             ClassicAssert.IsFalse(gotExclusive);
 
             lockContext.ReleaseLock(sharedToken0);
-            lockContext.ReleaseLock(sharedToken1);
 
             var gotExclusiveAgain = lockContext.TryAcquireExclusiveLock(hash, out var exclusiveToken);
             ClassicAssert.IsTrue(gotExclusiveAgain);
@@ -277,6 +274,93 @@ namespace Garnet.test
                 {
                     ClassicAssert.AreEqual(vals[0], vals[k]);
                 }
+            }
+        }
+
+        [TestCase(false)]
+        [TestCase(true)]
+        public void ExclusiveLockStarvation(bool acquireAll)
+        {
+            const int BudgetSeconds = 30;
+
+            const long Hash = 0x5151_5151_5151_5151L;
+            const int HoldMicroseconds = 200;
+
+            var locks = new ReadOptimizedLock(16);
+
+            var readerCount = Environment.ProcessorCount + 4;
+
+            using var stop = new CancellationTokenSource();
+            using var readersRunning = new CountdownEvent(readerCount);
+
+            var readerThreads = new Thread[readerCount];
+
+            for (var i = 0; i < readerCount; i++)
+            {
+                readerThreads[i] =
+                    new Thread(
+                        () =>
+                        {
+                            _ = readersRunning.Signal();
+
+                            while (!stop.IsCancellationRequested)
+                            {
+                                locks.AcquireSharedLock(Hash, out var readToken);
+
+                                var until = Stopwatch.GetTimestamp() + (Stopwatch.Frequency * HoldMicroseconds / 1_000_000);
+                                while (Stopwatch.GetTimestamp() < until)
+                                {
+                                }
+
+                                locks.ReleaseLock(readToken);
+                            }
+                        }
+                    )
+                    {
+                        IsBackground = true
+                    };
+
+                readerThreads[i].Start();
+            }
+
+            readersRunning.Wait();
+            Thread.Sleep(250);
+
+            var acquired = false;
+            var writer =
+                new Thread(
+                    () =>
+                    {
+                        ReadOptimizedLock.LockToken writeToken;
+
+                        if (acquireAll)
+                        {
+                            locks.AcquireAllExclusiveLock(out writeToken);
+                        }
+                        else
+                        {
+                            locks.AcquireExclusiveLock(Hash, out writeToken);
+                        }
+                        Volatile.Write(ref acquired, true);
+                        locks.ReleaseLock(writeToken);
+                    }
+                )
+                {
+                    IsBackground = true
+                };
+
+            var sw = Stopwatch.StartNew();
+            writer.Start();
+            var finished = writer.Join(TimeSpan.FromSeconds(BudgetSeconds));
+            sw.Stop();
+            stop.Cancel();
+
+            ClassicAssert.IsTrue(Volatile.Read(ref acquired), $"Writer wasn't acquired after {sw.Elapsed}");
+            ClassicAssert.IsTrue(finished, "Writer did not shutdown cleanly");
+
+            foreach (var reader in readerThreads)
+            {
+                reader.Join();
             }
         }
     }

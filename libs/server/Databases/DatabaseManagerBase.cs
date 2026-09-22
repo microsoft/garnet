@@ -38,7 +38,7 @@ namespace Garnet.server
         public abstract ValueTask RecoverCheckpointAsync(bool replicaRecover = false, bool recoverFromToken = false, CheckpointMetadata metadata = null);
 
         /// <inheritdoc/>
-        public abstract Task<bool> TakeCheckpointAsync(bool background, int dbId = -1, CancellationToken token = default, ILogger logger = null);
+        public abstract Task<CheckpointStatus> TakeCheckpointAsync(bool background, int dbId = -1, CancellationToken token = default, ILogger logger = null);
 
         /// <inheritdoc/>
         public abstract Task TakeOnDemandCheckpointAsync(DateTimeOffset entryTime, int dbId = 0);
@@ -58,6 +58,9 @@ namespace Garnet.server
 
         /// <inheritdoc/>
         public abstract ValueTask RecoverAOFAsync();
+
+        /// <inheritdoc/>
+        public abstract void VerifyRecoveryIsComplete(bool canBeRepairedBySync = false);
 
         /// <inheritdoc/>
         public abstract AofAddress ReplayAOF(AofAddress untilAddress);
@@ -169,6 +172,8 @@ namespace Garnet.server
             var storeVersion = await db.Store.RecoverAsync().ConfigureAwait(false);
             Logger?.LogInformation("Recovered store to version {storeVersion}", storeVersion);
 
+            db.CheckpointRecovery = new CheckpointRecoveryOutcome { StoreVersion = storeVersion };
+
             if (storeVersion > 0)
             {
                 db.LastSaveTime = DateTimeOffset.UtcNow;
@@ -197,13 +202,78 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Verify that what was recovered for a single database can reconstruct everything that was durably
+        /// acknowledged before shutdown, and fail startup when it cannot.
+        /// </summary>
+        /// <param name="db">Database to verify</param>
+        /// <param name="canBeRepairedBySync">True if a full sync from a primary will reconcile this node, in which
+        /// case an incomplete local recovery is reported but is not fatal</param>
+        protected void VerifyDatabaseRecoveryIsComplete(GarnetDatabase db, bool canBeRepairedBySync)
+        {
+            // The only unambiguous evidence of an unrecoverable prefix is checkpoint tokens that exist on disk but
+            // could not be read. An AOF that begins past the first valid address is expected on its own: a completed
+            // checkpoint truncates it, and a diskless-sync replica initializes it at its primary's begin address.
+            if (!db.CheckpointRecovery.CheckpointTokensRejected)
+                return;
+
+            var serverOptions = StoreWrapper.serverOptions;
+
+            // These modes discard AOF history by design and make no promise of full reconstruction from it.
+            if (serverOptions.FastAofTruncate || serverOptions.UseAofNullDevice)
+                return;
+
+            if (AofCanReconstructFromOrigin(db, out var aofState))
+                return;
+
+            var message = $"Recovery is incomplete: {db.CheckpointRecovery.CandidateTokenCount} HybridLog checkpoint " +
+                $"token(s) exist on disk but none could be read ({db.CheckpointRecovery.UnreadableTokenCount} unreadable), " +
+                $"and {aofState}, so the checkpointed prefix of the database cannot be reconstructed. " +
+                $"The checkpoint artifacts under '{serverOptions.GetStoreCheckpointDirectory(db.Id)}' have been preserved for diagnosis.";
+
+            Logger?.LogError("{message} (DB ID: {id})", message, db.Id);
+
+            if (serverOptions.FailOnRecoveryError && !canBeRepairedBySync)
+                throw new GarnetException(message);
+        }
+
+        /// <summary>
+        /// Determine whether replaying the retained AOF in full would reconstruct the database from nothing.
+        /// </summary>
+        private static bool AofCanReconstructFromOrigin(GarnetDatabase db, out string state)
+        {
+            if (db.AppendOnlyFile == null)
+            {
+                state = "the AOF is disabled";
+                return false;
+            }
+
+            var beginAddress = db.AppendOnlyFile.Log.BeginAddress;
+            for (var sublogIdx = 0; sublogIdx < beginAddress.Length; sublogIdx++)
+            {
+                if (beginAddress[sublogIdx] != LogAddress.FirstValidAddress)
+                {
+                    state = $"AOF sublog {sublogIdx} begins at address {beginAddress[sublogIdx]} rather than the first valid address {LogAddress.FirstValidAddress}";
+                    return false;
+                }
+            }
+
+            state = null;
+            return true;
+        }
+
+        /// <summary>
         /// Asynchronously checkpoint a single database
         /// </summary>
         /// <param name="db">Database to checkpoint</param>
         /// <param name="logger">Logger</param>
         /// <param name="token">Cancellation token</param>
-        /// <returns>Tuple of store tail address and object store tail address</returns>
-        protected async Task<long?> TakeCheckpointAsync(GarnetDatabase db, ILogger logger = null, CancellationToken token = default)
+        /// <returns>The checkpoint outcome, including the store tail address covered by a full checkpoint</returns>
+        /// <remarks>
+        /// Failures are reported through the returned <see cref="CheckpointResult"/> rather than thrown, so that a
+        /// background checkpoint cannot tear down the server and so that one database's failure does not abort the
+        /// bookkeeping of the other databases checkpointed alongside it.
+        /// </remarks>
+        protected async Task<CheckpointResult> TakeCheckpointAsync(GarnetDatabase db, ILogger logger = null, CancellationToken token = default)
         {
             try
             {
@@ -214,16 +284,42 @@ namespace Garnet.server
                            lastSaveStoreTailAddress - db.LastSaveStoreTailAddress >= StoreWrapper.serverOptions.FullCheckpointLogInterval;
 
                 var checkpointType = StoreWrapper.serverOptions.UseFoldOverCheckpoints ? CheckpointType.FoldOver : CheckpointType.Snapshot;
-                await InitiateCheckpointAsync(db, full, checkpointType, logger).ConfigureAwait(false);
+                if (!await InitiateCheckpointAsync(db, full, checkpointType, logger).ConfigureAwait(false))
+                    return CheckpointResult.Failed;
 
-                return full ? lastSaveStoreTailAddress : null;
+                return CheckpointResult.Succeeded(full ? lastSaveStoreTailAddress : null);
             }
             catch (Exception ex)
             {
-                logger?.LogError(ex, "Checkpointing threw exception, DB ID: {id}", db.Id);
+                // The caller's logger is optional, so fall back to this manager's logger; otherwise a failed
+                // checkpoint leaves no trace at all.
+                (logger ?? Logger)?.LogError(ex, "Checkpointing threw exception, DB ID: {id}", db.Id);
             }
 
-            return null;
+            return CheckpointResult.Failed;
+        }
+
+        /// <summary>
+        /// Record the outcome of a checkpoint attempt on the specified database
+        /// </summary>
+        /// <param name="db">Database that was checkpointed</param>
+        /// <param name="result">Outcome of the checkpoint attempt</param>
+        /// <remarks>
+        /// The last save time is advanced only for a successful checkpoint. Advancing it for a failed one reports
+        /// data to clients (through LASTSAVE, and to the cluster through on-demand checkpointing) as durable when
+        /// nothing was written.
+        /// </remarks>
+        protected static void RecordCheckpointOutcome(GarnetDatabase db, CheckpointResult result)
+        {
+            db.LastSaveSucceeded = result.IsSuccessful;
+
+            if (!result.IsSuccessful)
+                return;
+
+            if (result.StoreTailAddress.HasValue)
+                db.LastSaveStoreTailAddress = result.StoreTailAddress.Value;
+
+            db.LastSaveTime = DateTimeOffset.UtcNow;
         }
 
         /// <summary>
@@ -515,8 +611,8 @@ namespace Garnet.server
         /// <param name="full">True if full checkpoint should be initiated</param>
         /// <param name="checkpointType">Type of checkpoint</param>
         /// <param name="logger">Logger</param>
-        /// <returns>Task</returns>
-        private async Task InitiateCheckpointAsync(GarnetDatabase db, bool full, CheckpointType checkpointType,
+        /// <returns>True if the checkpoint ran to completion</returns>
+        private async Task<bool> InitiateCheckpointAsync(GarnetDatabase db, bool full, CheckpointType checkpointType,
             ILogger logger = null)
         {
             logger?.LogInformation("Initiating checkpoint; full = {full}, type = {checkpointType}, dbId = {dbId}", full, checkpointType, db.Id);
@@ -550,6 +646,16 @@ namespace Garnet.server
 
             checkpointResult.success = await db.StateMachineDriver.RunAsync(sm).ConfigureAwait(false);
 
+            if (!checkpointResult.success)
+            {
+                // Another state machine operation (such as an index resize) was already running, so the checkpoint
+                // never ran. Nothing was written, so the AOF must not be truncated and no checkpoint entry may be
+                // registered with the cluster - both would discard data this checkpoint does not cover.
+                (logger ?? Logger)?.LogWarning(
+                    "Checkpoint did not run because another state machine operation is in progress, DB ID: {id}", db.Id);
+                return false;
+            }
+
             // If cluster is enabled the replication manager is responsible for truncating AOF
             if (StoreWrapper.serverOptions.EnableCluster && StoreWrapper.serverOptions.EnableAOF)
             {
@@ -578,6 +684,7 @@ namespace Garnet.server
                 logger ?? Logger);
 
             logger?.LogInformation("Completed checkpoint for DB ID: {id}", db.Id);
+            return true;
         }
 
         internal static void RunPostCheckpointCleanup(Action cleanup, int dbId, ILogger logger)

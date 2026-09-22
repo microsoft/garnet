@@ -727,7 +727,22 @@ namespace Garnet.server
             string dataPath, string flushPath, Span<byte> valueSpan, long logicalAddress)
         {
             var keyHash = GarnetKeyComparer.StaticGetHashCode64((FixedSpanByteKey)PinnedSpanByte.FromPinnedSpan(key));
-            rangeIndexLocks.AcquireSharedLock(keyHash, out var sharedLockToken);
+            var lockIndex = rangeIndexLocks.CalculateIndexWithHint(keyHash);
+
+            bool releaseLock;
+            ReadOptimizedLock.LockToken sharedLockToken;
+            if (SharedLockHeldForKeyHash.Value.Held && SharedLockHeldForKeyHash.Value.Index == lockIndex)
+            {
+                // Do not acquire shared lock if already held for this index
+                releaseLock = false;
+                sharedLockToken = default;
+            }
+            else
+            {
+                releaseLock = true;
+                rangeIndexLocks.AcquireSharedLock(keyHash, out sharedLockToken);
+            }
+
             try
             {
                 // Re-check: a tree may have become live under a different stub for this key
@@ -751,7 +766,10 @@ namespace Garnet.server
             }
             finally
             {
-                rangeIndexLocks.ReleaseLock(sharedLockToken);
+                if (releaseLock)
+                {
+                    rangeIndexLocks.ReleaseLock(sharedLockToken);
+                }
             }
         }
 

@@ -200,8 +200,8 @@ namespace Tsavorite.core
             this.deleteDirOnDispose = deleteDirOnDispose;
             this.baseDir = baseDir;
 
-            LogDevice = baseDir == null ? new NullDevice() : Devices.CreateLogDevice(baseDir + "/hlog.log", deleteOnClose: deleteDirOnDispose);
-            CheckpointDir = baseDir == null ? null : baseDir + "/checkpoints";
+            LogDevice = baseDir == null ? new NullDevice() : Devices.CreateLogDevice(Path.Combine(baseDir, "hlog.log"), deleteOnClose: deleteDirOnDispose);
+            CheckpointDir = baseDir == null ? null : Path.Combine(baseDir, "checkpoints");
         }
 
         /// <inheritdoc />

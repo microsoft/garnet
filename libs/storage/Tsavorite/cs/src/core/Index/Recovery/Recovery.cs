@@ -138,6 +138,24 @@ namespace Tsavorite.core
     }
 
     /// <summary>
+    /// Outcome of scanning the HybridLog checkpoint tokens that are present on disk.
+    /// </summary>
+    internal readonly struct HybridLogCheckpointScanStats
+    {
+        /// <summary>Number of HybridLog checkpoint tokens present on disk.</summary>
+        internal readonly int CandidateTokenCount;
+
+        /// <summary>Number of those tokens whose metadata could not be read.</summary>
+        internal readonly int UnreadableTokenCount;
+
+        internal HybridLogCheckpointScanStats(int candidateTokenCount, int unreadableTokenCount)
+        {
+            CandidateTokenCount = candidateTokenCount;
+            UnreadableTokenCount = unreadableTokenCount;
+        }
+    }
+
+    /// <summary>
     /// Log File info
     /// </summary>
     public struct LogFileInfo
@@ -157,7 +175,7 @@ namespace Tsavorite.core
         /// <summary>Address of <see cref="HybridLogRecoveryInfo.beginAddressObjectLogSegment"/>; the start of the lowest object log segment
         /// in use by the hybrid log at snapshot PREPARE time</summary>
         public long hybridLogObjectFileStartAddress;
-        /// <summary>The objectLogTail taken at the start of WAIT_FLUSH, corresponding to the hlog's FlushedUntilAddress at that point</summary>
+        /// <summary>The hlogEndObjectLogTail taken at PERSISTENCE_CALLBACK, corresponding to the hlog's FlushedUntilAddress at that point</summary>
         public long hybridLogObjectFileEndAddress;
         /// <summary>The snapshotEndObjectLogTail taken at PERSISTENCE_CALLBACK, which corresponds to the object log position for the final TailAddress
         /// written by the checkpoint. (Start address is always 0.)</summary>
@@ -176,7 +194,7 @@ namespace Tsavorite.core
         /// <param name="storeVersion"></param>
         public void GetLatestCheckpointTokens(out Guid hlogToken, out Guid indexToken, out long storeVersion)
         {
-            GetClosestHybridLogCheckpointInfo(-1, out hlogToken, out var recoveredHlcInfo, out var _);
+            GetClosestHybridLogCheckpointInfo(-1, out hlogToken, out var recoveredHlcInfo, out var _, out _);
             try
             {
                 if (hlogToken == default)
@@ -205,7 +223,7 @@ namespace Tsavorite.core
         /// </summary>
         public long GetLatestCheckpointVersion()
         {
-            GetClosestHybridLogCheckpointInfo(-1, out var hlogToken, out var hlcInfo, out var _);
+            GetClosestHybridLogCheckpointInfo(-1, out var hlogToken, out var hlcInfo, out var _, out _);
             hlcInfo.Dispose();
             if (hlogToken == default)
                 return -1;
@@ -253,7 +271,7 @@ namespace Tsavorite.core
                 // a main-log Flush. However the snapshot does cause object-log segments for the mutable range to be written.
                 hasSnapshotObjects = hasSnapshotObjects,
                 hybridLogObjectFileStartAddress = hasSnapshotObjects ? (long)current.info.beginAddressObjectLogSegment << current.info.hlogEndObjectLogTail.SegmentSizeBits : 0,
-                hybridLogObjectFileEndAddress = hasSnapshotObjects ? (long)current.info.snapshotStartObjectLogTail.CurrentAddress : 0,
+                hybridLogObjectFileEndAddress = hasSnapshotObjects ? (long)current.info.hlogEndObjectLogTail.CurrentAddress : 0,
                 snapshotObjectFileEndAddress = hasSnapshotObjects ? (long)current.info.snapshotEndObjectLogTail.CurrentAddress : 0,
 
             };
@@ -271,7 +289,8 @@ namespace Tsavorite.core
             return (long)(recoveredICInfo.info.num_ht_bytes + recoveredICInfo.info.num_ofb_bytes);
         }
 
-        private void GetClosestHybridLogCheckpointInfo(long requestedVersion, out Guid closestToken, out HybridLogCheckpointInfo closest, out byte[] cookie)
+        private void GetClosestHybridLogCheckpointInfo(long requestedVersion, out Guid closestToken, out HybridLogCheckpointInfo closest, out byte[] cookie,
+            out HybridLogCheckpointScanStats scanStats)
         {
             HybridLogCheckpointInfo current;
             var closestVersion = long.MaxValue;
@@ -279,11 +298,20 @@ namespace Tsavorite.core
             closestToken = default;
             cookie = default;
 
+            // Startup recovery is what makes the reject count meaningful as evidence about on-disk state: it runs
+            // before any listener or the metrics monitor starts, so no other caller is reading metadata through this
+            // checkpoint manager, and this scan issues one read at a time. Callers that run once the server is
+            // serving, such as GetLatestCheckpointTokens, have no such exclusivity and remain subject to the
+            // concurrent-read race in #2149, so the counts are only trustworthy on the startup path.
+            var candidateTokenCount = 0;
+            var unreadableTokenCount = 0;
+
             // Traverse through all current tokens to find either the largest version or the version that's closest to
             // but smaller than the requested version. Need to iterate through all unpruned versions because file system
             // is not guaranteed to return tokens in order of freshness.
             foreach (var hybridLogToken in checkpointManager.GetLogCheckpointTokens())
             {
+                ++candidateTokenCount;
                 try
                 {
                     current = new HybridLogCheckpointInfo();
@@ -322,12 +350,15 @@ namespace Tsavorite.core
                 {
                     // A checkpoint whose metadata cannot be read is skipped in favor of an older one. Report it so
                     // that unreadable checkpoints are distinguishable from an empty checkpoint set.
+                    ++unreadableTokenCount;
                     logger?.LogWarning(ex, "Skipping unreadable HybridLog checkpoint: {hybridLogToken}", hybridLogToken);
                     continue;
                 }
 
                 logger?.LogInformation("HybridLog Checkpoint: {hybridLogToken}", hybridLogToken);
             }
+
+            scanStats = new HybridLogCheckpointScanStats(candidateTokenCount, unreadableTokenCount);
         }
 
         private void GetClosestIndexCheckpointInfo(ref HybridLogCheckpointInfo recoveredHlcInfo, out Guid closestToken, out IndexCheckpointInfo recoveredICInfo)
@@ -365,9 +396,15 @@ namespace Tsavorite.core
         {
             logger?.LogInformation("********* Primary Recovery Information ********");
 
-            GetClosestHybridLogCheckpointInfo(requestedVersion, out var closestToken, out recoveredHlcInfo, out recoveredCommitCookie);
+            GetClosestHybridLogCheckpointInfo(requestedVersion, out var closestToken, out recoveredHlcInfo, out recoveredCommitCookie, out var scanStats);
             if (recoveredHlcInfo.IsDefault)
-                throw new TsavoriteNoHybridLogException("Unable to find valid HybridLog token");
+            {
+                // Report what the scan saw: having found no tokens at all is a fresh start, whereas having rejected
+                // every token that was present means a checkpointed prefix exists on disk but cannot be read.
+                throw new TsavoriteNoHybridLogException(
+                    $"Unable to find valid HybridLog token; checkpoint tokens found: {scanStats.CandidateTokenCount}, unreadable: {scanStats.UnreadableTokenCount}",
+                    scanStats.CandidateTokenCount, scanStats.UnreadableTokenCount);
+            }
 
             recoveredHlcInfo.info.DebugPrint(logger);
 

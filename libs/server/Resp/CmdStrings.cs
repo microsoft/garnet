@@ -373,6 +373,7 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> RESP_ERR_ZSET_MEMBER => "ERR could not decode requested zset member"u8;
         public static ReadOnlySpan<byte> RESP_ERR_EXPDELSCAN_INVALID => "ERR Cannot execute EXPDELSCAN with background expired key deletion scan enabled"u8;
         public static ReadOnlySpan<byte> RESP_ERR_CHECKPOINT_ALREADY_IN_PROGRESS => "ERR checkpoint already in progress"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_CHECKPOINT_FAILED => "ERR checkpoint failed, check server logs"u8;
 
         /// <summary>
         /// Response string templates

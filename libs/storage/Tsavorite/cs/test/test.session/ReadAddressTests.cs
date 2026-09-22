@@ -210,6 +210,8 @@ namespace Tsavorite.test.readaddress
                 var bContext = session.BasicContext;
 
                 var prevLap = 0;
+                // Locals in an async method can be moved by the GC, so the value must live in pinned storage
+                var values = GC.AllocateArray<ValueStruct>(1, pinned: true);
                 for (int ii = 0; ii < NumKeys; ii++)
                 {
                     // lap is used to illustrate the changing values
@@ -222,11 +224,11 @@ namespace Tsavorite.test.readaddress
                     }
 
                     var key = new KeyStruct(ii % KeyMod);
-                    var value = new ValueStruct(key.key + LapOffset(lap));
+                    values[0] = new ValueStruct(key.key + LapOffset(lap));
 
                     var status = useRMW
-                        ? bContext.RMW(key, ref value)
-                        : bContext.Upsert(key, SpanByte.FromPinnedVariable(ref value));
+                        ? bContext.RMW(key, ref values[0])
+                        : bContext.Upsert(key, SpanByte.FromPinnedVariable(ref values[0]));
 
                     if (status.IsPending)
                         await bContext.CompletePendingAsync().ConfigureAwait(false);
