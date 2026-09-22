@@ -6,6 +6,7 @@ using System.Buffers.Binary;
 using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
+using Garnet.server;
 using NUnit.Framework;
 using StackExchange.Redis;
 
@@ -38,10 +39,13 @@ namespace Garnet.test
         static byte[] Vec(Random r, int dim)
         {
             var v = new float[dim];
-            double n = 0;
-            for (var i = 0; i < dim; i++) { v[i] = (float)(r.NextDouble() * 2 - 1); n += (double)v[i] * v[i]; }
-            n = Math.Sqrt(n);
-            for (var i = 0; i < dim; i++) v[i] = (float)(v[i] / n);
+
+            // [0, 127] is valid for all quantizers
+            for(var i = 0; i < v.Length; i++)
+            {
+                v[i] = r.Next(128);
+            }
+
             return MemoryMarshal.Cast<float, byte>(v.AsSpan()).ToArray();
         }
 
@@ -54,9 +58,18 @@ namespace Garnet.test
         /// no-progress window flags the hang.
         /// </summary>
         [Test]
-        public void ConcurrentVaddToSpilledSetMakesProgress()
+        [TestCase(VectorQuantType.Bin)]
+        [TestCase(VectorQuantType.NoQuant)]
+        [TestCase(VectorQuantType.Q8)]
+        [TestCase(VectorQuantType.XBin_I8)]
+        [TestCase(VectorQuantType.XBin_U8)]
+        [TestCase(VectorQuantType.XNoQuant_I8)]
+        [TestCase(VectorQuantType.XNoQuant_U8)]
+        public void ConcurrentVaddToSpilledSetMakesProgress(VectorQuantType quant)
         {
             var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, lowMemory: true, enableVectorSetPreview: true);
+
+            var quantStr = quant.ToString().ToUpperInvariant();
 
             // Under a regression the quantization workers spin-wait on the vector-set lock permanently and
             // VectorManager.Dispose() blocks on Task.WhenAll of them, so disposing the server inline (via a using)
@@ -70,24 +83,25 @@ namespace Garnet.test
             {
                 server.Start();
 
-                const int threads = 8, dim = 32;
-                const int runSeconds = 60;
-                const int stallLimitSeconds = 45;
+                const int Threads = 8;
+                const int Dim = 32;
+                const int RunSeconds = 10;
+                const int StallLimitSeconds = 7;
 
                 // Records spill to the object log within the first few inserts (4 KB pages vs ~8 KB records), so a
                 // small floor already proves the spill/flush path ran; it only guards against the workers never
                 // executing (e.g. VADD rejected). It is kept well below the throughput of a heavily loaded,
                 // disk-bound CI runner (observed ~800 inserts here) so slow hardware cannot make it flake. The
                 // deadlock itself is detected by the no-progress stall monitor below, not by this count.
-                const int minInserts = 100;
+                const int MinInserts = 100;
                 var cfg = TestUtils.GetConfig(allowAdmin: true);
                 cfg.SyncTimeout = 60000;
                 using var redis = ConnectionMultiplexer.Connect(cfg);
 
                 var stop = new CancellationTokenSource();
-                var deadline = DateTime.UtcNow.AddSeconds(runSeconds);
-                var workers = new Task[threads];
-                for (var t = 0; t < threads; t++)
+                var deadline = DateTime.UtcNow.AddSeconds(RunSeconds);
+                var workers = new Task[Threads];
+                for (var t = 0; t < Threads; t++)
                 {
                     var tid = t;
                     workers[tid] = Task.Run(() =>
@@ -99,7 +113,7 @@ namespace Garnet.test
                         while (!stop.IsCancellationRequested && DateTime.UtcNow < deadline)
                         {
                             BinaryPrimitives.WriteInt32LittleEndian(id, tid * 10_000_000 + k++);
-                            db.Execute("VADD", ["hk", "FP32", Vec(r, dim), (byte[])id.Clone(), "BIN", "EF", "64", "M", "16", "XDISTANCE_METRIC", "COSINE"]);
+                            db.Execute("VADD", ["hk", "FP32", Vec(r, Dim), (byte[])id.Clone(), quantStr, "EF", "64", "M", "16", "XDISTANCE_METRIC", "COSINE"]);
                             Interlocked.Increment(ref done);
                         }
                     });
@@ -117,7 +131,7 @@ namespace Garnet.test
                     var cur = Interlocked.Read(ref done);
                     stalledSeconds = cur == last ? stalledSeconds + 2 : 0;
                     last = cur;
-                    if (stalledSeconds >= stallLimitSeconds)
+                    if (stalledSeconds >= StallLimitSeconds)
                     {
                         stop.Cancel();
 
@@ -127,14 +141,14 @@ namespace Garnet.test
                         disposeServer = false;
                         _ = Task.Run(() => server.Dispose()).Wait(TimeSpan.FromSeconds(10));
 
-                        Assert.Fail($"DEADLOCK: {threads} concurrent VADD workers made no progress for {stalledSeconds}s at {cur} inserts " +
+                        Assert.Fail($"DEADLOCK: {Threads} concurrent VADD workers made no progress for {stalledSeconds}s at {cur} inserts " +
                                     "(a server VADD is blocked in VectorManager.ReadCallbackUnmanaged on a pending-read completion that is starved of a thread).");
                     }
                 }
                 stop.Cancel();
 
                 Task.WaitAll(workers);
-                Assert.That(Interlocked.Read(ref done), Is.GreaterThan(minInserts),
+                Assert.That(Interlocked.Read(ref done), Is.GreaterThan(MinInserts),
                     "Workers did not perform enough inserts to exercise the object-log spill path.");
             }
             finally
