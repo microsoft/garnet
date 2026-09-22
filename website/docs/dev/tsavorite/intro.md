@@ -10,6 +10,5 @@ Garnet’s storage layer, called Tsavorite, was forked from our prior open-sourc
 tiered storage support (memory, SSD, and cloud storage), fast non-blocking checkpointing, recovery, operation logging for durability, multi-key [locking](locking.md) and transaction support, and better 
 memory management and [space reuse](reviv.md).
 
-
-
-
+Checkpointing, version changes, and index growth are coordinated by the
+[state machine driver](state-machine.md).
