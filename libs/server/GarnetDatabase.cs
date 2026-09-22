@@ -65,6 +65,12 @@ namespace Garnet.server
         public DateTimeOffset LastSaveTime;
 
         /// <summary>
+        /// True if the most recent checkpoint attempt for this database completed, false if it failed. Reported to
+        /// clients as <c>rdb_last_bgsave_status</c>; a background save's failure cannot be reported in its reply.
+        /// </summary>
+        public bool LastSaveSucceeded;
+
+        /// <summary>
         /// What checkpoint recovery found on disk and what it recovered at startup
         /// </summary>
         public CheckpointRecoveryOutcome CheckpointRecovery;
@@ -153,6 +159,7 @@ namespace Garnet.server
             {
                 LastSaveTime = srcDb.LastSaveTime;
                 LastSaveStoreTailAddress = srcDb.LastSaveStoreTailAddress;
+                LastSaveSucceeded = srcDb.LastSaveSucceeded;
             }
         }
 
@@ -161,6 +168,9 @@ namespace Garnet.server
             VersionMap = new WatchVersionMap(DefaultVersionMapSize);
             LastSaveStoreTailAddress = 0;
             LastSaveTime = DateTimeOffset.FromUnixTimeSeconds(0);
+
+            // Matches Redis, which reports rdb_last_bgsave_status as ok until a save actually fails.
+            LastSaveSucceeded = true;
         }
 
         /// <summary>
