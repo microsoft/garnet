@@ -72,6 +72,7 @@ namespace Garnet.server
             Add("TYPE", RespCommand.TYPE);
             Add("RENAME", RespCommand.RENAME);
             Add("RENAMENX", RespCommand.RENAMENX);
+            Add("COPY", RespCommand.COPY);
             Add("UNLINK", RespCommand.UNLINK);
             Add("KEYS", RespCommand.KEYS);
             Add("SCAN", RespCommand.SCAN);

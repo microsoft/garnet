@@ -230,6 +230,93 @@ namespace Garnet.server
         public unsafe GarnetStatus RENAMENX(PinnedSpanByte oldKeySlice, PinnedSpanByte newKeySlice, out int result)
             => RENAME(oldKeySlice, newKeySlice, true, out result);
 
+        /// <summary>Copies a key while retaining the source.</summary>
+        public unsafe GarnetStatus COPY(PinnedSpanByte sourceKey, PinnedSpanByte destinationKey, bool replace, out int result)
+        {
+            result = 0;
+            var createTransaction = false;
+            if (txnManager.state != TxnState.Running)
+            {
+                createTransaction = true;
+                txnManager.AddTransactionStoreTypes(TransactionStoreTypes.Main | TransactionStoreTypes.Object);
+                txnManager.SaveKeyEntryToLock(sourceKey, LockType.Exclusive);
+                txnManager.SaveKeyEntryToLock(destinationKey, LockType.Exclusive);
+                _ = txnManager.Run(true);
+            }
+
+            var context = txnManager.UnifiedTransactionalContext;
+            SessionParseState parseState = new();
+            parseState.InitializeWithArguments(sourceKey, destinationKey);
+            UnifiedInput input = new(RespCommand.COPY, ref parseState);
+            var output = new UnifiedOutput();
+            var destinationOutput = new UnifiedOutput();
+            var abortTransaction = false;
+            try
+            {
+                var status = GET(sourceKey, ref input, ref output, ref context);
+                if (status != GarnetStatus.OK)
+                {
+                    abortTransaction = true;
+                    return status;
+                }
+
+                fixed (byte* sourceRecordPtr = output.SpanByteAndMemory.ReadOnlySpan)
+                {
+                    var sourceRecord = new LogRecord(sourceRecordPtr, functionsState.transientObjectIdMap);
+                    if (sourceRecord.RecordType != 0)
+                    {
+                        abortTransaction = true;
+                        return GarnetStatus.WRONGTYPE;
+                    }
+
+                    var destinationProbeInput = new UnifiedInput(RespCommand.RENAME, ref parseState);
+                    status = GET(destinationKey, ref destinationProbeInput, ref destinationOutput, ref context);
+                    var destinationExists = status == GarnetStatus.OK;
+                    if (destinationExists)
+                    {
+                        if (!replace)
+                        {
+                            abortTransaction = true;
+                            return GarnetStatus.OK;
+                        }
+                    }
+
+                    // A COPY write is logged with COPY as its input command; replay writes only the destination.
+                    if (destinationExists)
+                        _ = DELETE(destinationKey, ref context);
+
+                    input.arg1 = sourceRecord.DataHeader.HasExpiration ? sourceRecord.Expiration : 0;
+                    status = SET(destinationKey, ref input, in sourceRecord, ref context);
+                    if (status == GarnetStatus.OK)
+                    {
+                        result = 1;
+                        if (sourceRecord.DataHeader.ValueIsObject && sourceRecord.DataHeader.HasExpiration)
+                        {
+                            var expirationMilliseconds = ConvertUtils.UnixTimeInMillisecondsFromTicks(sourceRecord.Expiration);
+                            status = EXPIRE(destinationKey, expirationMilliseconds, out _, ExpireOption.None, ref context, RespCommand.PEXPIREAT);
+                        }
+                    }
+                    else
+                        abortTransaction = true;
+                    if (status != GarnetStatus.OK)
+                        abortTransaction = true;
+                    return status;
+                }
+            }
+            finally
+            {
+                if (createTransaction)
+                {
+                    if (abortTransaction)
+                        txnManager.Reset();
+                    else
+                        txnManager.Commit(true);
+                }
+                output.Dispose();
+                destinationOutput.Dispose();
+            }
+        }
+
         /// <summary>
         /// RENAME a key in the unified store context
         /// </summary>

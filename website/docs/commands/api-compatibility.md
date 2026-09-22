@@ -196,7 +196,7 @@ Legend: ➕ = supported, ➖ = not supported.
 |  | PFDEBUG | ➖ | Internal command |
 |  | [PFMERGE](analytics.md#pfmerge) | ➕ |  |
 |  | PFSELFTEST | ➖ | Internal command |
-| <span id="keys">**KEYS**</span> | COPY | ➖ |  |
+| <span id="keys">**KEYS**</span> | COPY | ➕ |  |
 |  | [DEL](generic-commands.md#del) | ➕ |  |
 |  | [DUMP](generic-commands.md#dump) | ➕ |
 |  | [EXISTS](generic-commands.md#exists) | ➕ |  |

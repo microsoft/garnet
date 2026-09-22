@@ -5477,6 +5477,27 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
+        public async Task CopyACLsAsync()
+        {
+            await CheckCommandsAsync("COPY", [DoCopyAsync]).ConfigureAwait(false);
+
+            static async Task DoCopyAsync(GarnetClient client)
+            {
+                try
+                {
+                    var result = await client.ExecuteForLongResultAsync("COPY", ["foo", "bar"]).ConfigureAwait(false);
+                    ClassicAssert.AreEqual(0, result);
+                }
+                catch (Exception e)
+                {
+                    if (e.Message == "ERR no such key")
+                        return;
+                    throw;
+                }
+            }
+        }
+
+        [Test]
         public async Task RICreateACLsAsync()
         {
             int count = 0;

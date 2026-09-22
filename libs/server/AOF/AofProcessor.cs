@@ -708,6 +708,7 @@ namespace Garnet.server
             if (legacyCmdFormat)
                 unifiedInput.header.cmd = LegacyRespCommand.FromV3(unifiedInput.header.cmd);
 
+            // COPY rejects Vector Sets and Range Indexes, so only RENAME can reach this specialized replay path.
             if (unifiedInput.header.cmd == RespCommand.RENAME && unifiedInput.arg1 == VectorManager.RecordType)
             {
                 // Renaming a Vector SET, this requires special handling during a replay since the bytes in the value have an invalid pointer and (potentially) an invalid context

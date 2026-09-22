@@ -2195,6 +2195,177 @@ namespace Garnet.test
             ClassicAssert.AreEqual(origValue, retValue);
         }
 
+        [Test]
+        public void CopyCommandSemantics()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            db.StringSet("copy-src", "source");
+            ClassicAssert.AreEqual(1, (long)db.Execute("COPY", "copy-src", "copy-dst"));
+            ClassicAssert.AreEqual("source", (string)db.StringGet("copy-dst"));
+
+            db.HashSet("copy-hash-replace-dst", "field", "old");
+            ClassicAssert.AreEqual(1, (long)db.Execute("COPY", "copy-src", "copy-hash-replace-dst", "replace", "REPLACE"));
+            ClassicAssert.AreEqual("source", (string)db.StringGet("copy-hash-replace-dst"));
+
+            ClassicAssert.AreEqual("source", (string)db.StringGet("copy-src"));
+            ClassicAssert.IsFalse(db.KeyTimeToLive("copy-dst").HasValue);
+
+            db.StringSet("copy-dst", "existing");
+            ClassicAssert.AreEqual(0, (long)db.Execute("COPY", "copy-src", "copy-dst"));
+            ClassicAssert.AreEqual("existing", (string)db.StringGet("copy-dst"));
+            ClassicAssert.AreEqual(1, (long)db.Execute("COPY", "copy-src", "copy-dst", "REPLACE"));
+            ClassicAssert.AreEqual("source", (string)db.StringGet("copy-dst"));
+
+            ClassicAssert.AreEqual(0, (long)db.Execute("COPY", "missing", "copy-missing-dst"));
+            ClassicAssert.IsFalse(db.KeyExists("copy-missing-dst"));
+
+            var sameKey = Assert.Throws<RedisServerException>(() => db.Execute("COPY", "copy-src", "copy-src"));
+            ClassicAssert.AreEqual("ERR source and destination objects are the same", sameKey.Message);
+
+            db.ListRightPush("copy-list-src", ["a", "b"]);
+            ClassicAssert.AreEqual(1, (long)db.Execute("COPY", "copy-list-src", "copy-list-dst"));
+            db.ListLeftPush("copy-list-dst", "changed");
+            ClassicAssert.AreEqual(new RedisValue[] { "a", "b" }, db.ListRange("copy-list-src"));
+
+            db.HashSet("copy-hash-src", "field", "value");
+            ClassicAssert.AreEqual(1, (long)db.Execute("COPY", "copy-hash-src", "copy-hash-dst"));
+            db.HashSet("copy-hash-dst", "field", "changed");
+            ClassicAssert.AreEqual("value", (string)db.HashGet("copy-hash-src", "field"));
+
+            db.StringSet("copy-string-replace-dst", "old");
+            ClassicAssert.AreEqual(1, (long)db.Execute("COPY", "copy-hash-src", "copy-string-replace-dst", "REPLACE"));
+            ClassicAssert.AreEqual("value", (string)db.HashGet("copy-string-replace-dst", "field"));
+
+            db.KeyExpire("copy-src", TimeSpan.FromMinutes(1));
+            ClassicAssert.AreEqual(1, (long)db.Execute("COPY", "copy-src", "copy-ttl-dst"));
+            var ttl = db.KeyTimeToLive("copy-ttl-dst");
+            ClassicAssert.IsTrue(ttl.HasValue);
+            ClassicAssert.Greater(ttl.Value.TotalMilliseconds, 0);
+            ClassicAssert.LessOrEqual(ttl.Value.TotalMilliseconds, TimeSpan.FromMinutes(1).TotalMilliseconds);
+
+            var arity = Assert.Throws<RedisServerException>(() => db.Execute("COPY"));
+            ClassicAssert.IsTrue(arity.Message.Contains("wrong number of arguments", StringComparison.OrdinalIgnoreCase));
+            arity = Assert.Throws<RedisServerException>(() => db.Execute("COPY", "copy-src"));
+            ClassicAssert.IsTrue(arity.Message.Contains("wrong number of arguments", StringComparison.OrdinalIgnoreCase));
+            var syntax = Assert.Throws<RedisServerException>(() => db.Execute("COPY", "copy-src", "x", "UNKNOWN"));
+            ClassicAssert.AreEqual("ERR syntax error", syntax.Message);
+            syntax = Assert.Throws<RedisServerException>(() => db.Execute("COPY", "copy-src", "x", "DB"));
+            ClassicAssert.AreEqual("ERR syntax error", syntax.Message);
+            var integer = Assert.Throws<RedisServerException>(() => db.Execute("COPY", "copy-src", "x", "DB", "nope"));
+            ClassicAssert.IsTrue(integer.Message.Contains("value is not an integer or out of range", StringComparison.OrdinalIgnoreCase));
+            ClassicAssert.AreEqual(1, (long)db.Execute("COPY", "copy-src", "copy-db-equal", "DB", "0"));
+            var crossDb = Assert.Throws<RedisServerException>(() => db.Execute("COPY", "copy-src", "x", "DB", "1"));
+            ClassicAssert.AreEqual("ERR COPY across databases is not supported", crossDb.Message);
+
+            ClassicAssert.AreEqual("OK", (string)db.Execute("MULTI"));
+            ClassicAssert.AreEqual("QUEUED", (string)db.Execute("COPY", "copy-src", "copy-multi-dst"));
+            var exec = (RedisResult[])db.Execute("EXEC");
+            ClassicAssert.AreEqual(1, (long)exec[0]);
+            ClassicAssert.AreEqual("source", (string)db.StringGet("copy-multi-dst"));
+        }
+
+        [Test]
+        public void CopyReplaceSameTypeObjectsAreIndependent()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            db.ListRightPush("copy-replace-list-src", ["a", "b"]);
+            db.ListRightPush("copy-replace-list-dst", "old");
+            ClassicAssert.AreEqual(1, (long)db.Execute("COPY", "copy-replace-list-src", "copy-replace-list-dst", "REPLACE"));
+            db.ListRightPush("copy-replace-list-dst", "dst-change");
+            ClassicAssert.AreEqual(new RedisValue[] { "a", "b" }, db.ListRange("copy-replace-list-src"));
+            db.ListRightPush("copy-replace-list-src", "src-change");
+            ClassicAssert.AreEqual(new RedisValue[] { "a", "b", "dst-change" }, db.ListRange("copy-replace-list-dst"));
+
+        }
+
+        [Test]
+        public void CopyReplaceSameTypeHashesAreIndependent()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            db.HashSet("copy-replace-hash-src", "field", "source");
+            db.HashSet("copy-replace-hash-dst", "old", "value");
+            ClassicAssert.AreEqual(1, (long)db.Execute("COPY", "copy-replace-hash-src", "copy-replace-hash-dst", "REPLACE"));
+            db.HashSet("copy-replace-hash-dst", "field", "dst-change");
+            ClassicAssert.AreEqual("source", (string)db.HashGet("copy-replace-hash-src", "field"));
+            db.HashSet("copy-replace-hash-src", "field", "src-change");
+            ClassicAssert.AreEqual("dst-change", (string)db.HashGet("copy-replace-hash-dst", "field"));
+        }
+
+        [Test]
+        public void CopyReplacePreservesAndRemovesExpiration()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            db.ListRightPush("copy-replace-ttl-list-src", "source");
+            db.KeyExpire("copy-replace-ttl-list-src", TimeSpan.FromMinutes(5));
+            db.ListRightPush("copy-replace-ttl-list-dst", "old");
+            ClassicAssert.AreEqual(1, (long)db.Execute("COPY", "copy-replace-ttl-list-src", "copy-replace-ttl-list-dst", "REPLACE"));
+            var listTtl = db.KeyTimeToLive("copy-replace-ttl-list-dst");
+            ClassicAssert.IsTrue(listTtl.HasValue);
+            ClassicAssert.LessOrEqual(Math.Abs((listTtl.Value - db.KeyTimeToLive("copy-replace-ttl-list-src").Value).TotalMilliseconds), 1000);
+            ClassicAssert.AreEqual("PONG", (string)db.Execute("PING"));
+
+            db.StringSet("copy-replace-ttl-string-src", "source", TimeSpan.FromMinutes(5));
+            db.StringSet("copy-replace-ttl-string-dst", "old");
+            ClassicAssert.AreEqual(1, (long)db.Execute("COPY", "copy-replace-ttl-string-src", "copy-replace-ttl-string-dst", "REPLACE"));
+            var stringTtl = db.KeyTimeToLive("copy-replace-ttl-string-dst");
+            ClassicAssert.IsTrue(stringTtl.HasValue);
+            ClassicAssert.LessOrEqual(Math.Abs((stringTtl.Value - db.KeyTimeToLive("copy-replace-ttl-string-src").Value).TotalMilliseconds), 1000);
+
+            db.StringSet("copy-replace-no-ttl-string-src", "source");
+            db.StringSet("copy-replace-no-ttl-string-dst", "old", TimeSpan.FromMinutes(5));
+            ClassicAssert.AreEqual(1, (long)db.Execute("COPY", "copy-replace-no-ttl-string-src", "copy-replace-no-ttl-string-dst", "REPLACE"));
+            ClassicAssert.IsFalse(db.KeyTimeToLive("copy-replace-no-ttl-string-dst").HasValue);
+
+            db.ListRightPush("copy-replace-no-ttl-list-src", "source");
+            db.ListRightPush("copy-replace-no-ttl-list-dst", "old");
+            db.KeyExpire("copy-replace-no-ttl-list-dst", TimeSpan.FromMinutes(5));
+            ClassicAssert.AreEqual(1, (long)db.Execute("COPY", "copy-replace-no-ttl-list-src", "copy-replace-no-ttl-list-dst", "REPLACE"));
+            ClassicAssert.IsFalse(db.KeyTimeToLive("copy-replace-no-ttl-list-dst").HasValue);
+        }
+
+        [Test]
+        public void CopyLargeStringIsIndependent()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var srcKey = "copy-large-src";
+            var dstKey = "copy-large-dst";
+            var large = new string('a', 3 * 1024 * 1024);
+
+            _ = db.StringSet(srcKey, large);
+            _ = db.KeyExpire(srcKey, TimeSpan.FromMinutes(5));
+            ClassicAssert.AreEqual(1, (long)db.Execute("COPY", srcKey, dstKey));
+
+            // A TTL on the large source is carried to the destination
+            var dstTtl = db.KeyTimeToLive(dstKey);
+            ClassicAssert.IsTrue(dstTtl.HasValue, "Expected TTL on COPY destination of large source");
+            ClassicAssert.Greater(dstTtl.Value.TotalMilliseconds, 0);
+            ClassicAssert.LessOrEqual(dstTtl.Value.TotalMilliseconds, TimeSpan.FromMinutes(5).TotalMilliseconds);
+
+            // In-place same-length SETRANGE of the source must not affect the destination
+            _ = db.StringSetRange(srcKey, 0, "ZZZZ");
+            ClassicAssert.AreEqual("aaaaaaaa", (string)db.Execute("GETRANGE", dstKey, 0, 7));
+            ClassicAssert.AreEqual("ZZZZaaaa", (string)db.Execute("GETRANGE", srcKey, 0, 7));
+
+            // Same-length SET of the source must not affect the destination
+            _ = db.StringSet(srcKey, new string('b', 3 * 1024 * 1024));
+            ClassicAssert.AreEqual("aaaaaaaa", (string)db.Execute("GETRANGE", dstKey, 0, 7));
+
+            // Reverse: mutating the destination must not affect the source
+            _ = db.StringSetRange(dstKey, 0, "YYYY");
+            ClassicAssert.AreEqual("YYYYaaaa", (string)db.Execute("GETRANGE", dstKey, 0, 7));
+            ClassicAssert.AreEqual("bbbbbbbb", (string)db.Execute("GETRANGE", srcKey, 0, 7));
+        }
+
         #region RENAMENX
 
         [Test]

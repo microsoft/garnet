@@ -1818,6 +1818,45 @@
     ]
   },
   {
+    "Command": "COPY",
+    "Name": "COPY",
+    "Summary": "Copies the value of a key to a new key.",
+    "Group": "Generic",
+    "Complexity": "O(N) worst case for collections, where N is the number of nested items. O(1) for string values.",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "SOURCE",
+        "DisplayText": "source",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "DESTINATION",
+        "DisplayText": "destination",
+        "Type": "Key",
+        "KeySpecIndex": 1
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "DESTINATION-DB",
+        "DisplayText": "destination-db",
+        "Type": "Integer",
+        "Token": "DB",
+        "ArgumentFlags": "Optional"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "REPLACE",
+        "DisplayText": "replace",
+        "Type": "PureToken",
+        "Token": "REPLACE",
+        "ArgumentFlags": "Optional"
+      }
+    ]
+  },
+  {
     "Command": "COSCAN",
     "Name": "COSCAN",
     "Summary": "Iterates over members of a collection object.",
