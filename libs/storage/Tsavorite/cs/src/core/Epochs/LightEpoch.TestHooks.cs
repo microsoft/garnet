@@ -37,5 +37,27 @@ namespace Tsavorite.core
         /// Capacity of the drain list.
         /// </summary>
         internal static int TestHookDrainListCapacity => kDrainListSize;
+
+        /// <summary>
+        /// Number of entries in the epoch table.
+        /// </summary>
+        internal static int TestHookTableSize => kTableSize;
+
+        /// <summary>
+        /// Number of threads currently waiting for an epoch table entry.
+        /// </summary>
+        internal int TestHookWaiterCount => waiterCount & ~kDisposedFlag;
+
+        /// <summary>
+        /// Signals issued to waiters but not yet consumed. This is the count that overflows
+        /// <see cref="System.Threading.SemaphoreSlim"/> if <see cref="Release"/> signals unconditionally.
+        /// </summary>
+        internal int TestHookOutstandingWaiterSignals => waiterSemaphore.CurrentCount;
+
+        /// <summary>
+        /// Signal reservations taken by <see cref="SignalWaiter"/>, an upper bound on
+        /// <see cref="TestHookOutstandingWaiterSignals"/>.
+        /// </summary>
+        internal int TestHookPendingWaiterSignals => pendingWaiterSignals;
     }
 }

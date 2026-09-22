@@ -978,17 +978,23 @@ namespace Garnet.server
             var checkpointTask = storeWrapper.TakeCheckpointAsync(false, dbId: dbId, logger: logger);
 
             // No choice but to block, we're on the network thread
-            var success = AsyncUtils.BlockingWait(checkpointTask);
+            var status = AsyncUtils.BlockingWait(checkpointTask);
 
-            if (!success)
+            switch (status)
             {
-                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_CHECKPOINT_ALREADY_IN_PROGRESS, ref dcurr, dend))
-                    SendAndReset();
-            }
-            else
-            {
-                while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
-                    SendAndReset();
+                case CheckpointStatus.AlreadyInProgress:
+                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_CHECKPOINT_ALREADY_IN_PROGRESS, ref dcurr, dend))
+                        SendAndReset();
+                    break;
+                case CheckpointStatus.Failed:
+                    // Nothing durable was written, so replying OK here would report data as saved that was not.
+                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_CHECKPOINT_FAILED, ref dcurr, dend))
+                        SendAndReset();
+                    break;
+                default:
+                    while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                        SendAndReset();
+                    break;
             }
 
             return true;
@@ -1100,16 +1106,18 @@ namespace Garnet.server
             var checkpointTask = storeWrapper.TakeCheckpointAsync(true, dbId: dbId, logger: logger);
 
             // No choice but to block, we're on the network thread
-            var success = AsyncUtils.BlockingWait(checkpointTask);
+            var status = AsyncUtils.BlockingWait(checkpointTask);
 
-            if (success)
+            // A background checkpoint replies before it runs, so its failure cannot be reported here; it surfaces
+            // through LASTSAVE not advancing and through rdb_last_bgsave_status in INFO PERSISTENCE.
+            if (status == CheckpointStatus.AlreadyInProgress)
             {
-                while (!RespWriteUtils.TryWriteSimpleString("Background saving started"u8, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_CHECKPOINT_ALREADY_IN_PROGRESS, ref dcurr, dend))
                     SendAndReset();
             }
             else
             {
-                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_CHECKPOINT_ALREADY_IN_PROGRESS, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteSimpleString("Background saving started"u8, ref dcurr, dend))
                     SendAndReset();
             }
 

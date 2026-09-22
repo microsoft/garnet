@@ -287,9 +287,11 @@ namespace Tsavorite.test
 
             // Upsert
             var key1 = new KeyWithNamespaceStruct { kfield1 = KeyField1, kfield2 = KeyField2, namespaceArr = ns1 };
-            var value1 = new ValueStruct { vfield1 = ValField1, vfield2 = ValField2 };
+            // Locals in an async method can be moved by the GC, so the value must live in pinned storage
+            var value1s = GC.AllocateArray<ValueStruct>(1, pinned: true);
+            value1s[0] = new ValueStruct { vfield1 = ValField1, vfield2 = ValField2 };
 
-            var upsertStatus = bContext.Upsert(key1, SpanByte.FromPinnedVariable(ref value1), Empty.Default);
+            var upsertStatus = bContext.Upsert(key1, SpanByte.FromPinnedVariable(ref value1s[0]), Empty.Default);
             AssertCompleted(new(OperationStatus.NOTFOUND | OperationStatus.CREATED_RECORD), upsertStatus);
 
             // Checkpoint
@@ -309,7 +311,7 @@ namespace Tsavorite.test
             OutputStruct output = default;
             var readSameStatus = bContext.Read(key1, ref input, ref output);
             AssertCompleted(new(StatusCode.Found), readSameStatus);
-            ClassicAssert.IsTrue(value1.vfield1 == output.value.vfield1 && value1.vfield2 == output.value.vfield2);
+            ClassicAssert.IsTrue(value1s[0].vfield1 == output.value.vfield1 && value1s[0].vfield2 == output.value.vfield2);
 
             // Reading same key, different namespaces fails
             foreach (var otherNamespaceSize in new int[] { 0, 1, 4, sbyte.MaxValue })
@@ -381,7 +383,7 @@ namespace Tsavorite.test
             // Read the RMW'd value
             var reaUpdatedStatus = bContext.Read(key1, ref input, ref output);
             AssertCompleted(new(StatusCode.Found), reaUpdatedStatus);
-            ClassicAssert.IsTrue((value1.vfield1 + input.ifield1) == output.value.vfield1 && (value1.vfield2 + input.ifield2) == output.value.vfield2);
+            ClassicAssert.IsTrue((value1s[0].vfield1 + input.ifield1) == output.value.vfield1 && (value1s[0].vfield2 + input.ifield2) == output.value.vfield2);
         }
 
         private void AssertCompleted(Status expectedSubset, Status actual)
