@@ -974,6 +974,65 @@ namespace Garnet.test
         }
 
         /// <summary>
+        /// The receive path must never refuse a request for being larger than the buffer policy's ceiling.
+        /// Growth is grow-to-fit: <c>maxReceiveBufferSize</c> bounds only what a connection *retains*, and
+        /// the pool allocates out of band above its largest size class rather than failing, so a chunk far
+        /// above it has to be accepted whole. Dribbled in small slices so the request is left partially
+        /// buffered across many receive passes, which is where the shrink policy runs against a live partial
+        /// request and could truncate it.
+        /// </summary>
+        [Test]
+        public void LargeRequestsAreAcceptedWholeWhileTheBudgetIsBinding()
+        {
+            StartServer(networkBufferMemoryBudget: "1m");
+
+            // Eight times the 1 MB largest poolable size class, so the buffer grows out of band repeatedly.
+            const int PayloadLength = 8 * 1024 * 1024;
+            var payload = new byte[PayloadLength];
+            for (var i = 0; i < PayloadLength; i++)
+                payload[i] = (byte)('a' + (i % 26));
+
+            // The budget divides by the live buffer count, so it only binds once enough connections exist.
+            const int Connections = 16;
+            var idle = new List<Socket>();
+            try
+            {
+                for (var i = 0; i < Connections; i++)
+                    idle.Add(Ping(Connect()));
+
+                using var s = Ping(Connect());
+                ClassicAssert.Less(StatBytes("targetBufferSize"), Ceiling, "the budget must be binding for this test");
+
+                Send(s, $"*3\r\n$3\r\nSET\r\n$3\r\nbig\r\n${PayloadLength}\r\n");
+                var sent = 0;
+                while (sent < PayloadLength)
+                {
+                    var slice = Math.Min(64 * 1024, PayloadLength - sent);
+                    var wrote = 0;
+                    while (wrote < slice)
+                        wrote += s.Send(payload, sent + wrote, slice - wrote, SocketFlags.None);
+                    sent += slice;
+                }
+                Send(s, "\r\n");
+
+                ClassicAssert.AreEqual("+OK\r\n", ReadExactly(s, 5), "an over-sized request was refused");
+
+                Send(s, "*2\r\n$3\r\nGET\r\n$3\r\nbig\r\n");
+                var header = $"${PayloadLength}\r\n";
+                ClassicAssert.AreEqual(header, ReadExactly(s, header.Length));
+                var echoed = ReadExactlyBytes(s, PayloadLength);
+                ClassicAssert.AreEqual("\r\n", ReadExactly(s, 2));
+
+                ClassicAssert.IsTrue(payload.AsSpan().SequenceEqual(echoed),
+                    "the payload did not survive the receive path intact");
+            }
+            finally
+            {
+                foreach (var c in idle) c.Dispose();
+            }
+        }
+
+        /// <summary>
         /// Under pressure a grown buffer must come back without waiting out the long idle hysteresis, or the
         /// aggregate cannot converge in time to matter. The control arm -- identical workload, budget disabled
         /// -- must still be holding its grown buffers after the same handful of small receives, which is what
@@ -1400,6 +1459,22 @@ namespace Garnet.test
             var sent = 0;
             while (sent < bytes.Length)
                 sent += s.Send(bytes, sent, bytes.Length - sent, SocketFlags.None);
+        }
+
+        /// <summary>
+        /// Reads exactly <paramref name="count"/> bytes, for a payload too large to compare as a string.
+        /// </summary>
+        static byte[] ReadExactlyBytes(Socket s, int count)
+        {
+            var buf = new byte[count];
+            var read = 0;
+            while (read < count)
+            {
+                var n = s.Receive(buf, read, count - read, SocketFlags.None);
+                if (n == 0) throw new Exception("connection closed");
+                read += n;
+            }
+            return buf;
         }
 
         /// <summary>

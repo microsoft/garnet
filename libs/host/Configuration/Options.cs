@@ -344,7 +344,7 @@ namespace Garnet
         public bool? LatencyMonitor { get; set; }
 
         [IntRangeValidation(0, 5)]
-        [Option("latency-monitor-precision", Required = false, HelpText = "Resolution kept by the latency histograms, in significant decimal digits (0-5). This is relative accuracy at every magnitude rather than a fixed time unit: percentiles are reported to within 1 part in 10^N of the value, whether that value is microseconds or seconds. 2 (default) reports to ~1% at ~32KB per histogram, 1 to ~10% at ~5KB, 3 to ~0.1% at ~225KB.")]
+        [Option("latency-monitor-precision", Required = false, HelpText = "Resolution kept by the latency histograms, in significant decimal digits (0-5). This is relative accuracy at every magnitude: percentiles are reported to within 1 part in 10^N of the value, whether that value is microseconds or seconds. 2 (default) reports to ~1% at ~32KB per histogram, 1 to ~10% at ~5KB, 3 to ~0.1% at ~225KB.")]
         public int LatencyMonitorPrecision { get; set; }
 
         [OptionValidation]
