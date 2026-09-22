@@ -41,7 +41,7 @@ namespace Garnet.test
             var v = new float[dim];
 
             // [0, 127] is valid for all quantizers
-            for(var i = 0; i < v.Length; i++)
+            for (var i = 0; i < v.Length; i++)
             {
                 v[i] = r.Next(128);
             }
