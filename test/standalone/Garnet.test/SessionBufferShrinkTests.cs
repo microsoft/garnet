@@ -102,17 +102,18 @@ namespace Garnet.test
             const int Batches = Interval * 8;
 
             var shrinks = 0;
-            var previous = 0;
             for (var i = 0; i < Batches; i++)
             {
                 var s = builder.CreateArgSlice(big);
                 ClassicAssert.AreEqual(big.Length, s.Length, $"large request failed at iteration {i}");
                 ClassicAssert.IsTrue(builder.RewindScratchBuffer(s));
-                BatchBoundary(builder);
 
-                var capacity = builder.ScratchBufferCapacity;
-                if (i > 0 && capacity < previous) shrinks++;
-                previous = capacity;
+                // Sampled either side of the boundary rather than across iterations: a policy that released
+                // on every batch would regrow before the next sample, so consecutive post-boundary capacities
+                // would be equal and the churn would count as zero.
+                var before = builder.ScratchBufferCapacity;
+                BatchBoundary(builder);
+                if (builder.ScratchBufferCapacity < before) shrinks++;
             }
 
             // One release per two intervals is the design maximum; allow the boundary case.
