@@ -1332,6 +1332,7 @@ namespace Garnet.server
             }
 
             // Update ids on success
+            outputIds.Memory?.Dispose();
             outputIds = new(newIdSpace, newIdSpace.Memory.Length);
             return count;
         }
