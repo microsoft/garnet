@@ -138,6 +138,31 @@ namespace Tsavorite.test
             public override void WriteType(BinaryWriter writer, bool isNull) => writer.Write(isNull);
         }
 
+        sealed class CountingSerializationHeapObject : HeapObjectBase
+        {
+            internal const string SerializeFailureMessage = "Injected DoSerialize failure";
+
+            // Counts entries into the direct-serialize path, and records which indicator Serialize() wrote.
+            internal int doSerializeCount;
+            internal bool? lastWriteTypeIsNull;
+            internal bool throwOnSerialize;
+
+            public override IHeapObject Clone() => new CountingSerializationHeapObject();
+            public override void Dispose() { }
+            public override void DoSerialize(BinaryWriter writer)
+            {
+                _ = Interlocked.Increment(ref doSerializeCount);
+                if (throwOnSerialize)
+                    throw new InvalidOperationException(SerializeFailureMessage);
+                writer.Write(0);
+            }
+            public override void WriteType(BinaryWriter writer, bool isNull)
+            {
+                lastWriteTypeIsNull = isNull;
+                writer.Write(isNull);
+            }
+        }
+
         [SetUp]
         public void Setup()
         {
@@ -258,6 +283,141 @@ namespace Tsavorite.test
             }
 
             await serializationTask.ConfigureAwait(false);
+        }
+
+        /// <summary>
+        /// Creates the store used by the cached-serialization tests, upserts <paramref name="value"/>, and marks its
+        /// record as the new version, which is what makes CacheSerializedObjectData capture the (v) bytes rather
+        /// than simply hand the object off. Returns the address range covering that single record.
+        /// </summary>
+        private (long beginAddress, long endAddress) CreateStoreWithCachedSerializationSource(string name, IHeapObject value, out long recordAddress)
+        {
+            log = Devices.CreateLogDevice(Path.Join(MethodTestDir, $"{name}.log"), deleteOnClose: true);
+            objlog = Devices.CreateLogDevice(Path.Join(MethodTestDir, $"{name}.obj.log"), deleteOnClose: true);
+            store = new(new()
+            {
+                IndexSize = 1L << 13,
+                LogDevice = log,
+                ObjectLogDevice = objlog,
+                MutableFraction = 0.1,
+                LogMemorySize = 1L << 15,
+                PageSize = MinKvLogPageSize
+            }, StoreFunctions.Create(comparer, () => new TrackingHeapObjectSerializer())
+                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
+            );
+
+            using var session = store.NewSession<OverflowTestKey, TestObjectInput, TestObjectOutput, Empty, TestObjectFunctions>(new TestObjectFunctions());
+            var context = session.BasicContext;
+
+            var beginAddress = store.Log.TailAddress;
+            _ = context.Upsert(new OverflowTestKey(1), value, Empty.Default);
+            var endAddress = store.Log.TailAddress;
+
+            recordAddress = beginAddress;
+            var logRecord = store.hlogBase._wrapper.CreateLogRecord(beginAddress);
+            logRecord.InfoRef.SetIsInNewVersion();
+            return (beginAddress, endAddress);
+        }
+
+        /// <summary>
+        /// Regression test for #2101. A CopyUpdate during a checkpoint caches the superseded (v) object's bytes
+        /// and leaves it SERIALIZED; post-checkpoint cleanup then releases those bytes. Because Clone() is a
+        /// shallow copy, the (v+1) record that superseded it shares and keeps mutating its collections, so the
+        /// object must stay terminal. Returning it to REST let the next checkpoint take the direct-serialize
+        /// path and enumerate those live collections, throwing "Collection was modified" out of DoSerialize and
+        /// wedging the checkpoint pipeline.
+        /// </summary>
+        [Test]
+        [Category("TsavoriteKV")]
+        public void CleanupOfCachedDataLeavesObjectTerminal()
+        {
+            var value = new CountingSerializationHeapObject();
+            var (beginAddress, endAddress) = CreateStoreWithCachedSerializationSource("CachedDataCleanup", value, out var recordAddress);
+
+            // Drive the CopyUpdate-during-checkpoint path that caches the (v) bytes.
+            var logRecord = store.hlogBase._wrapper.CreateLogRecord(recordAddress);
+            RMWInfo rmwInfo = default;
+            value.CacheSerializedObjectData(ref logRecord, ref rmwInfo, srcIsOnMemoryLog: true);
+
+            // Caching serializes once, into the cached byte[] rather than to a writer.
+            Assert.That(value.doSerializeCount, Is.EqualTo(1), "CacheSerializedObjectData did not capture the (v) bytes");
+
+            // Post-checkpoint cleanup releases the cached bytes.
+            store.Log.ClearSerializedObjectData(beginAddress, endAddress);
+
+            // This transition can only succeed if cleanup incorrectly reset the phase to REST.
+            Assert.That(value.MakeTransition(SerializationPhase.REST, SerializationPhase.SERIALIZING), Is.False,
+                "Cleanup returned a superseded object to REST");
+
+            using var stream = new MemoryStream();
+            using var writer = new BinaryWriter(stream);
+            value.Serialize(writer);
+
+            // SERIALIZED with no cached bytes means the object was superseded after the checkpoint completed:
+            // the superseding record sits at a higher address and carries the live data, so this one writes null.
+            Assert.That(value.doSerializeCount, Is.EqualTo(1), "A superseded object was re-serialized from its live state");
+            Assert.That(value.lastWriteTypeIsNull, Is.True, "A superseded object with no cached bytes must write the null indicator");
+        }
+
+        /// <summary>
+        /// A failing DoSerialize on the direct path (Serialize straight to the wire) must not strand the object
+        /// in SERIALIZING: every later Serialize() and CacheSerializedObjectData() spins waiting for that phase
+        /// to clear, so the checkpoint pipeline would hang rather than report the failure.
+        /// </summary>
+        [Test]
+        [Category("TsavoriteKV")]
+        public void FailedSerializationRestoresRestPhase()
+        {
+            var value = new CountingSerializationHeapObject { throwOnSerialize = true };
+
+            using var stream = new MemoryStream();
+            using var writer = new BinaryWriter(stream);
+
+            var failure = Assert.Throws<InvalidOperationException>(() => value.Serialize(writer));
+            Assert.That(failure.Message, Is.EqualTo(CountingSerializationHeapObject.SerializeFailureMessage));
+            Assert.That(value.doSerializeCount, Is.EqualTo(1));
+
+            // Only succeeds if the failed serialization restored REST.
+            Assert.That(value.MakeTransition(SerializationPhase.REST, SerializationPhase.SERIALIZING), Is.True,
+                "A failed serialization stranded the object outside REST");
+        }
+
+        /// <summary>
+        /// The same guarantee for the other DoSerialize caller: the CopyUpdate-during-checkpoint path that captures
+        /// the (v) bytes. A failure there must rethrow, restore REST, and publish no partial capture; stranding the
+        /// object in SERIALIZING would hang every later serialization attempt on it.
+        /// </summary>
+        [Test]
+        [Category("TsavoriteKV")]
+        public void FailedCachedSerializationRestoresRestPhase()
+        {
+            var value = new CountingSerializationHeapObject { throwOnSerialize = true };
+            _ = CreateStoreWithCachedSerializationSource("FailedCachedSerialization", value, out var recordAddress);
+
+            var failure = Assert.Throws<InvalidOperationException>(() =>
+            {
+                // The ref local must be created inside the lambda; ref locals cannot be captured.
+                var record = store.hlogBase._wrapper.CreateLogRecord(recordAddress);
+                RMWInfo info = default;
+                value.CacheSerializedObjectData(ref record, ref info, srcIsOnMemoryLog: true);
+            });
+            Assert.That(failure.Message, Is.EqualTo(CountingSerializationHeapObject.SerializeFailureMessage));
+            Assert.That(value.doSerializeCount, Is.EqualTo(1));
+
+            // Only succeeds if the failed capture restored REST rather than leaving SERIALIZING behind.
+            Assert.That(value.MakeTransition(SerializationPhase.REST, SerializationPhase.SERIALIZING), Is.True,
+                "A failed cached serialization stranded the object outside REST");
+            Assert.That(value.MakeTransition(SerializationPhase.SERIALIZING, SerializationPhase.REST), Is.True);
+
+            // No partial capture was published: a later Serialize re-serializes from the live object and writes it
+            // as present, rather than emitting a truncated cached buffer or the superseded null indicator.
+            value.throwOnSerialize = false;
+            using var stream = new MemoryStream();
+            using var writer = new BinaryWriter(stream);
+            value.Serialize(writer);
+
+            Assert.That(value.doSerializeCount, Is.EqualTo(2), "The object did not re-serialize from its live state");
+            Assert.That(value.lastWriteTypeIsNull, Is.False, "A failed capture must not leave the object looking superseded");
         }
 
         internal struct ObjectPushScanTestFunctions : IScanIteratorFunctions
