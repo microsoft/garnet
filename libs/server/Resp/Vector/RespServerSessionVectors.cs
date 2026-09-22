@@ -1736,14 +1736,13 @@ namespace Garnet.server
                                 {
                                     if (respProtocolVersion == 3)
                                     {
-                                        WriteMapLength(2);
+                                        WriteMapLength(1);
                                     }
                                     else
                                     {
                                         WriteArrayLength(2);
                                     }
 
-                                    WriteArrayLength(2);
                                     WriteBulkString(id);
                                     WriteDoubleNumeric(score);
                                 }

@@ -4397,13 +4397,15 @@ namespace Garnet.test
         }
 
         [Test]
-        public async Task VLINKSAsync()
+        [TestCase(RedisProtocol.Resp2)]
+        [TestCase(RedisProtocol.Resp3)]
+        public async Task VLINKSAsync(RedisProtocol proto)
         {
             const string Key = nameof(VLINKSAsync);
             const string ElementPrefix = "foo";
             const int VectorCount = 100;
 
-            await using var redis = await ConnectionMultiplexer.ConnectAsync(TestUtils.GetConfig());
+            await using var redis = await ConnectionMultiplexer.ConnectAsync(TestUtils.GetConfig(protocol: proto));
             var db = redis.GetDatabase();
 
             for (var i = 0; i < VectorCount; i++)
@@ -4413,15 +4415,33 @@ namespace Garnet.test
                 ClassicAssert.True(addRes);
             }
 
-            using var neighborsRes = await db.VectorSetGetLinksAsync(Key, $"{ElementPrefix}_0").ConfigureAwait(false);
-            ClassicAssert.IsTrue(neighborsRes.Length >= 1);
-
-            var uniqueRes = new HashSet<byte[]>(ByteArrayComparer.Instance);
-            foreach (var res in neighborsRes.Span)
+            // Normal
             {
-                ClassicAssert.IsTrue(((string)res).StartsWith(ElementPrefix));
+                using var neighborsRes = await db.VectorSetGetLinksAsync(Key, $"{ElementPrefix}_0").ConfigureAwait(false);
+                ClassicAssert.IsTrue(neighborsRes.Length >= 1);
 
-                ClassicAssert.IsTrue(uniqueRes.Add((byte[])res));
+                var uniqueRes = new HashSet<byte[]>(ByteArrayComparer.Instance);
+                foreach (var res in neighborsRes.Span)
+                {
+                    ClassicAssert.IsTrue(((string)res).StartsWith(ElementPrefix));
+
+                    ClassicAssert.IsTrue(uniqueRes.Add((byte[])res));
+                }
+            }
+
+            // WITHSCORES
+            {
+                using var neighborsRes = await db.VectorSetGetLinksWithScoresAsync(Key, $"{ElementPrefix}_0").ConfigureAwait(false);
+                ClassicAssert.IsTrue(neighborsRes.Length >= 1);
+
+                var uniqueRes = new HashSet<byte[]>(ByteArrayComparer.Instance);
+                foreach (var res in neighborsRes.Span)
+                {
+                    ClassicAssert.IsTrue(((string)res.Member).StartsWith(ElementPrefix));
+                    ClassicAssert.IsTrue(res.Score >= 0);
+
+                    ClassicAssert.IsTrue(uniqueRes.Add((byte[])res.Member));
+                }
             }
         }
 
