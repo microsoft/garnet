@@ -64,21 +64,21 @@ Can work as expected.  Without namespacing, the `SET` would overwrite (or otherw
 
 ## Operations
 
-We implement the [Redis Vector Set API](https://redis.io/docs/latest/commands/?group=vector_set):
+We implement the majority of the [Redis Vector Set API](https://redis.io/docs/latest/commands/?group=vector_set):
 
 Implemented commands:
  - [x] VADD
- - [ ] VCARD
+ - [x] VCARD
  - [x] VDIM
  - [x] VEMB
  - [x] VGETATTR
  - [x] VINFO
- - [ ] VISMEMBER
- - [ ] VLINKS
- - [ ] VRANDMEMBER
+ - [x] VISMEMBER
+ - [x] VLINKS
+ - [x] VRANDMEMBER
  - [ ] VRANGE
  - [x] VREM
- - [ ] VSETATTR
+ - [x] VSETATTR
  - [x] VSIM
 
 ### Creation (via `VADD`)
@@ -94,6 +94,13 @@ Once a Vector Set exists, insertions (which also use `VADD`) can proceed in para
 Every insertion begins with a Tsavorite read, to get the [`Index`](#indexes) metadata (for validation) and the pointer to DiskANN's index.  As a consequence, most `VADD` operations despite _semantically_ being writes are, from Tsavorite's perspective, reads.  This has implications for replication, [which is discussed below](#replication).
 
 To prevent the index from being deleted mid-insertion, we hold a shared lock while calling DiskANN's `insert` function.  These locks are sharded for performance purposes, [which is discussed below](#locking).
+
+### Attribute Updates (via `VSETATTR`)
+
+Existing elements may have their attributes updates with `VSETATTR`.
+
+This is a simple passthrough to the DiskANN `set_attribute` function.
+To prevent the index from being deleted mid-insertion, we hold a shared lock while calling DiskANN's `set_attribute` function.  These locks are sharded for performance purposes, [which is discussed below](#locking).
 
 ### Removal (via `VREM`)
 
@@ -124,9 +131,13 @@ Metadata is handled purely on the Garnet side by reading out the [`Index`](#inde
 > Because our implementation is different, we intentionally will not expose all the same information.
 > To be concrete `max-level`, `vset-uid`, and `hnsw-max-node-uid` are not returned.
 
-> [!IMPORTANT]
-> We _may_ return more details of our own implementation.  What those are need to be documented, and why,
-> when we implement `VINFO`.
+### Miscellaneous or Debugging Commands (`VCARD`, `VISMEMBER`, `VLINKS`, and `VRANDMEMBER`)
+
+These commands are implemented, though not particularly optimized in comparison to `VADD` and `VSIM`.
+
+`VISMEMBER` is processed entirely on the Garnet side, just checking for an existing external-id to internal-id map.
+
+All other commands are implemented using their paired DiskANN functions.
 
 ### Deletion (via `DEL`, `UNLINK`, `FLUSHDB`, `FLUSHALL`)
 
