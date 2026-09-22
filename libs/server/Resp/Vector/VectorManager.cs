@@ -1814,9 +1814,7 @@ namespace Garnet.server
             if (outputDistances.Length < sizeof(float) * numLinks)
             {
                 var neededBytes = (int)(sizeof(float) * numLinks);
-                var newOutputDistances = MemoryPool<byte>.Shared.Rent(neededBytes);
-                outputDistances.Memory = newOutputDistances;
-                outputDistances.Length = neededBytes;
+                outputDistances.EnsureHeapMemorySize(neededBytes);
             }
 
             var found = Service.SearchNeighbors(context, indexPtr, element, outputIds, outputDistances, out var continuation);
