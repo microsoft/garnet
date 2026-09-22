@@ -1711,7 +1711,7 @@ namespace Garnet.server
                         remainingIds = ids.Span;
                         for (var i = 0; i < (count - remainingCount); i++)
                         {
-                            var idLen = BinaryPrimitives.ReadInt16LittleEndian(remainingIds);
+                            var idLen = BinaryPrimitives.ReadInt32LittleEndian(remainingIds);
                             if (idLen < 0)
                             {
                                 break;
