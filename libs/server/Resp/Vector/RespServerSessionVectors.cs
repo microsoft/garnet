@@ -1793,6 +1793,11 @@ namespace Garnet.server
                 {
                     return AbortWithErrorMessage("ERR expected integer count");
                 }
+
+                if (count == int.MinValue)
+                {
+                    return AbortWithErrorMessage("ERR count magnitude too large");
+                }
             }
 
             Span<byte> idSpace = stackalloc byte[DefaultResultSetSize * DefaultIdSize];
