@@ -4413,6 +4413,13 @@ namespace Garnet.test
                 var json = $"{{\"PrettyLongFieldName\":{i}, \"AnotherPrettyLongFieldName\":{i}, \"YetAnotherPrettyLongFieldName\":{i}, \"Id\":{i}}}";
                 var addRes = await db.VectorSetAddAsync(Key, VectorSetAddRequest.Member($"{ElementPrefix}_{i}", new float[] { 1, 2, 3 }, json)).ConfigureAwait(false);
                 ClassicAssert.True(addRes);
+
+                // Check with single element Vector Set
+                if (i == 0)
+                {
+                    using var neighborsRes = await db.VectorSetGetLinksAsync(Key, $"{ElementPrefix}_0").ConfigureAwait(false);
+                    ClassicAssert.AreEqual(0, neighborsRes.Length);
+                }
             }
 
             // Normal

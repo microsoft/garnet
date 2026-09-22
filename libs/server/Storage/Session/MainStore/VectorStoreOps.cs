@@ -517,7 +517,7 @@ namespace Garnet.server
                 }
 
                 var res = vectorManager.GetNeighbors(indexSpan, element, ref idResults, ref distanceResults);
-                return res == VectorManagerResult.OK && distanceResults.Length > 0 ? GarnetStatus.OK : GarnetStatus.NOTFOUND;
+                return res == VectorManagerResult.OK ? GarnetStatus.OK : GarnetStatus.NOTFOUND;
             }
         }
 
