@@ -836,11 +836,33 @@ namespace Tsavorite.test
         private readonly IDevice underlying;
         private readonly List<PendingIo> pending = [];
         private readonly object gateLock = new();
+        private readonly ManualResetEventSlim callerGate = new(true);
+        private volatile bool holdCallers;
         private int sequence;
 
         /// <summary>When true, reads and writes are captured rather than issued, until <see cref="Release"/> is called.
         /// Leave it false to let a test seed or verify the file through the same device.</summary>
         public volatile bool Gate;
+
+        /// <summary>
+        /// Blocks a caller inside the IO call once its operation has been captured, so it never reaches the wait that
+        /// follows. A test can then deliver a different operation's completion while exactly one caller is waiting,
+        /// which is what makes completion theft observable without depending on <see cref="SemaphoreSlim"/>'s wake
+        /// order — that order is explicitly unspecified, so a test that assumed FIFO could pass against a shared
+        /// semaphore purely by scheduling luck.
+        /// </summary>
+        public void HoldCallersAfterCapture()
+        {
+            callerGate.Reset();
+            holdCallers = true;
+        }
+
+        /// <summary>Lets callers held by <see cref="HoldCallersAfterCapture"/> proceed to their wait.</summary>
+        public void ReleaseHeldCallers()
+        {
+            holdCallers = false;
+            callerGate.Set();
+        }
 
         public GatedCompletionDevice(IDevice underlying) : base(underlying.FileName, underlying.SectorSize, underlying.Capacity)
             => this.underlying = underlying;
@@ -972,6 +994,10 @@ namespace Tsavorite.test
         {
             lock (gateLock)
                 pending.Add(io);
+
+            // Outside the lock: a held caller must not block the test thread that releases it.
+            if (holdCallers)
+                callerGate.Wait();
         }
 
         // Stamped before the caller's callback runs: the callback is what unblocks the caller, so a stamp taken after it
@@ -983,6 +1009,11 @@ namespace Tsavorite.test
         }
 
         /// <inheritdoc/>
-        public override void Dispose() => underlying.Dispose();
+        public override void Dispose()
+        {
+            // Never leave a captured caller parked on a disposed gate.
+            ReleaseHeldCallers();
+            underlying.Dispose();
+        }
     }
 }

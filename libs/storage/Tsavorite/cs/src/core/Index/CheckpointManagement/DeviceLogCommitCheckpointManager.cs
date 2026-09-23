@@ -426,15 +426,23 @@ namespace Tsavorite.core
 
         /// <summary>
         /// Returns the pool backing metadata IO, creating it on first use. Concurrent metadata operations share one pool,
-        /// so the creation is published with a compare-exchange rather than a check-then-assign.
+        /// so the creation is published with a compare-exchange rather than a check-then-assign. A candidate that loses
+        /// the race is freed rather than dropped: its constructor reserves a process-wide pool slot that sizes every
+        /// thread's shard array, and only <see cref="SectorAlignedBufferPool.Free"/> returns that slot.
         /// </summary>
         private SectorAlignedBufferPool GetBufferPool(IDevice device)
         {
             var pool = bufferPool;
             if (pool is not null)
                 return pool;
-            pool = new SectorAlignedBufferPool(1, (int)device.SectorSize);
-            return Interlocked.CompareExchange(ref bufferPool, pool, null) ?? pool;
+
+            var candidate = new SectorAlignedBufferPool(1, (int)device.SectorSize);
+            var published = Interlocked.CompareExchange(ref bufferPool, candidate, null);
+            if (published is null)
+                return candidate;
+
+            candidate.Free();
+            return published;
         }
 
         /// <summary>

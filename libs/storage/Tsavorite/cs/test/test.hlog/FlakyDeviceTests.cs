@@ -621,19 +621,26 @@ namespace Tsavorite.test
                     ex => failures[index] = ex);
             }
 
-            // Start the reads one at a time, and let each reach its completion wait, so the first read is the first
-            // waiter and its gate index matches its thread index.
+            // Start the reads one at a time so each read's gate index matches its thread index. The first read must
+            // be parked in its wait before the second is issued.
             threads[0].Start();
             gated.WaitForPending(1, MetadataIoTimeout);
             WaitUntilWaitingForCompletion(threads[0]);
+
+            // Hold the second reader inside the device call, after its read is captured but before it can reach its
+            // own wait. SemaphoreSlim does not specify which waiter a release wakes, so without this the shared
+            // semaphore could hand completion 1 to read 1 and leave the theft unobserved; with exactly one waiter
+            // there is no such choice to make.
+            gated.HoldCallersAfterCapture();
             threads[1].Start();
             gated.WaitForPending(2, MetadataIoTimeout);
-            WaitUntilWaitingForCompletion(threads[1]);
 
-            // Complete the second read, and let its completion be delivered, before the first read's IO has run at all.
-            // The first read must stay blocked: the only completion in flight is not its own.
+            // Deliver the second read's completion while only the first read is waiting. A shared completion signal
+            // releases the first read here, with its own IO not yet issued and its buffer still zeroed.
             gated.Release(1);
             gated.WaitForCompletion(1, MetadataIoTimeout);
+
+            gated.ReleaseHeldCallers();
             gated.Release(0);
 
             JoinMetadataOperations(threads);
@@ -688,14 +695,19 @@ namespace Tsavorite.test
             writer.Start();
             gated.WaitForPending(1, MetadataIoTimeout);
             WaitUntilWaitingForCompletion(writer);
+
+            // As in the concurrent-reads case, hold the reader after capture so the write is the only waiter when the
+            // read's completion arrives. Relying on the writer having waited first would depend on SemaphoreSlim's
+            // unspecified wake order.
+            gated.HoldCallersAfterCapture();
             reader.Start();
             gated.WaitForPending(2, MetadataIoTimeout);
-            WaitUntilWaitingForCompletion(reader);
 
-            // Complete the read, and let its completion be delivered, before the write's IO has run at all. The write
-            // must stay blocked: the only completion in flight is not its own.
+            // Deliver the read's completion while only the write is waiting.
             gated.Release(1);
             gated.WaitForCompletion(1, MetadataIoTimeout);
+
+            gated.ReleaseHeldCallers();
             gated.Release(0);
 
             JoinMetadataOperations(writer, reader);
