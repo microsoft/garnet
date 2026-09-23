@@ -100,6 +100,6 @@ namespace Garnet.common
         {
             failureCount = 0;
             retryAtMilliseconds = 0;
-        }        
+        }
     }
 }

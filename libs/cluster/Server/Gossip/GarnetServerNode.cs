@@ -18,6 +18,7 @@ namespace Garnet.cluster
         readonly ClusterProvider clusterProvider;
         readonly GarnetClient gc;
         readonly ExponentialBackoff backoff;
+        ConfigSerializationBuffer configSerializationBuffer;
         readonly object initializationSync = new();
 
         long gossipSend;
@@ -103,6 +104,7 @@ namespace Garnet.cluster
                 clientName: $"Gossip-{clusterProvider.clusterManager.CurrentConfig.LocalNodeEndpoint}",
                 logger: logger);
             this.backoff = new ExponentialBackoff();
+            this.configSerializationBuffer = new ConfigSerializationBuffer();
             initialized = false;
             this.logger = logger;
             this.gossipRecv = 0;
@@ -181,6 +183,7 @@ namespace Garnet.cluster
                 internalCts?.Cancel();
                 internalCts?.Dispose();
                 gc?.Dispose();
+                configSerializationBuffer.Dispose();
             }
             catch { }
         }

@@ -30,13 +30,30 @@ namespace Garnet.cluster
         /// </summary>
         public byte[] ToByteArray()
         {
-            var ms = new MemoryStream();
-            var writer = new BinaryWriter(ms);
+            var buffer = new ConfigSerializationBuffer();
+            try
+            {
+                Serialize(ref buffer);
+                return buffer.ToByteArray();
+            }
+            finally
+            {
+                buffer.Dispose();
+            }
+        }
+
+        /// <summary>
+        /// Serializes the config into a reusable buffer.
+        /// </summary>
+        /// <param name="buffer">Buffer that retains its backing storage across calls.</param>
+        public void Serialize(ref ConfigSerializationBuffer buffer)
+        {
+            var writer = buffer.Reset();
 
             // Write serialization format version
             writer.Write(ClusterConfigVersion);
 
-            SerializeSlotMap(ref ms, ref writer);
+            SerializeSlotMap(writer);
 
             //Serialize worker info
             //4 bytes + 400 * N
@@ -70,28 +87,26 @@ namespace Garnet.cluster
                     //256 bytes
                     writer.Write(worker.hostname);
             }
-
-            byte[] byteArray = ms.ToArray();
-            writer.Dispose();
-            ms.Dispose();
-            return byteArray;
         }
 
-        private void SerializeSlotMap(ref MemoryStream ms, ref BinaryWriter writer)
+        private void SerializeSlotMap(BinaryWriter writer)
         {
+            var stream = writer.BaseStream;
+
             //serialize slotMap
-            var segmentCountPosition = ms.Position;
-            ms.Position += 2;
+            var segmentCountPosition = stream.Position;
+            stream.Position += 2;
             ushort segmentCount = 0;
             ushort count = 1;
-            ushort workerId = slotMap[0]._workerId;
-            byte state = (byte)slotMap[0]._state;
+            var workerId = slotMap[0]._workerId;
+            var state = (byte)slotMap[0]._state;
 
-            for (int i = 1; i < slotMap.Length; i++)
+            for (var i = 1; i < slotMap.Length; i++)
             {
                 var _state = (byte)slotMap[i]._state;
+                var _workerId = slotMap[i]._workerId;
 
-                if (slotMap[i]._workerId != workerId || _state != state)
+                if (_workerId != workerId || _state != state)
                 {
                     segmentCount++;
                     //Write continuous segment
@@ -101,8 +116,8 @@ namespace Garnet.cluster
 
                     //reset segment info
                     count = 1;
-                    workerId = slotMap[i]._workerId;
-                    state = (byte)slotMap[i]._state;
+                    workerId = _workerId;
+                    state = _state;
                     continue;
                 }
                 count++;
@@ -115,10 +130,10 @@ namespace Garnet.cluster
             writer.Write(state);
 
             //Write segment count at the reserved position
-            var _position = ms.Position;
-            ms.Position = segmentCountPosition;
+            var _position = stream.Position;
+            stream.Position = segmentCountPosition;
             writer.Write(segmentCount);
-            ms.Position = _position;
+            stream.Position = _position;
         }
 
         /// <summary>

@@ -5,6 +5,7 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net;
+using System.Runtime.InteropServices;
 using System.Text;
 using Garnet.cluster;
 using Garnet.common;
@@ -180,6 +181,36 @@ namespace Garnet.test.cluster
             // Round-trip should succeed
             var restored = ClusterConfig.FromByteArray(configBytes);
             Assert.That(restored.LocalNodeId, Is.EqualTo(config.LocalNodeId));
+        }
+
+        [Test, Order(5)]
+        [Category("CLUSTER-CONFIG"), CancelAfter(1000)]
+        public void ClusterConfigSerializationBufferReusesBackingArrayTest()
+        {
+            var config = new ClusterConfig().InitializeLocalWorker(
+                Generator.CreateHexId(),
+                "127.0.0.1",
+                ClusterTestContext.Port + 1,
+                configEpoch: 1,
+                Garnet.cluster.NodeRole.PRIMARY,
+                null,
+                "");
+            var buffer = new ConfigSerializationBuffer();
+            try
+            {
+                config.Serialize(ref buffer);
+                var expected = config.ToByteArray();
+                Assert.That(buffer.WrittenMemory.Span.SequenceEqual(expected), Is.True);
+                Assert.That(MemoryMarshal.TryGetArray(buffer.WrittenMemory, out var firstSegment), Is.True);
+
+                config.Serialize(ref buffer);
+                Assert.That(MemoryMarshal.TryGetArray(buffer.WrittenMemory, out var secondSegment), Is.True);
+                Assert.That(ReferenceEquals(firstSegment.Array, secondSegment.Array), Is.True);
+            }
+            finally
+            {
+                buffer.Dispose();
+            }
         }
 
         [Test, Order(5)]
