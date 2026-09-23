@@ -2,6 +2,8 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Buffers;
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Net.Security;
 using System.Net.Sockets;
@@ -15,6 +17,26 @@ using Microsoft.Extensions.Logging;
 
 namespace Garnet.client
 {
+    readonly struct Payload : IDisposable
+    {
+        readonly ArrayPool<byte> pool;
+
+        internal byte[] Buffer { get; }
+        internal int Length { get; }
+
+        internal Payload(ArrayPool<byte> pool, int length)
+        {
+            this.pool = pool;
+            this.Buffer = pool.Rent(length);
+            this.Length = length;
+        }
+
+        public void Dispose()
+        {
+            if (Buffer != null)
+                pool.Return(Buffer, clearArray: true);
+        }
+    }
 
     [StructLayout(LayoutKind.Explicit)]
     struct FullPageStatus
@@ -76,6 +98,8 @@ namespace Garnet.client
         readonly LimitedFixedBufferPool networkPool;
         readonly GarnetClientTcpNetworkHandler networkHandler;
         readonly bool useOutOfLineExecution;
+        readonly ArrayPool<byte> outOfLineBufferPool;
+        readonly ConcurrentDictionary<long, Payload> outstandingPayloads;
 
         /// <summary>
         /// Constructor
@@ -94,6 +118,11 @@ namespace Garnet.client
             this.PageSize = sendPageSize;
             this.logger = logger;
             this.useOutOfLineExecution = useOutOfLineExecution;
+            if (useOutOfLineExecution)
+            {
+                this.outOfLineBufferPool = ArrayPool<byte>.Create();
+                this.outstandingPayloads = new();
+            }
             this.LogPageSizeBits = Utility.NumBitsPreviousPowerOf2(sendPageSize);
             this.WrapDistance = PageWrapDistance << LogPageSizeBits;
 
@@ -109,11 +138,38 @@ namespace Garnet.client
         /// <inheritdoc />
         public void Dispose()
         {
-            disposed = true;
+            Volatile.Write(ref disposed, true);
+            if (outstandingPayloads != null)
+            {
+                foreach (var entry in outstandingPayloads)
+                {
+                    if (outstandingPayloads.TryRemove(entry.Key, out var payload))
+                        payload.Dispose();
+                }
+            }
             FlushEvent.Dispose();
             networkHandler.Dispose();
             networkPool?.Dispose();
         }
+
+        // TODO: Expose a reserve-and-commit API so callers can write directly into reusable out-of-line buffers.
+        internal Payload RentPayloadBuffer(int length)
+            => new(outOfLineBufferPool, length);
+
+        internal void EnqueuePayloadBuffer(long address, Payload payload)
+        {
+            if (Volatile.Read(ref disposed))
+                throw new ObjectDisposedException(nameof(NetworkWriter));
+
+            if (!outstandingPayloads.TryAdd(address, payload))
+                throw new InvalidOperationException($"An out-of-line payload is already registered at address {address}.");
+
+            if (Volatile.Read(ref disposed) && outstandingPayloads.TryRemove(address, out var removedPayload))
+                removedPayload.Dispose();
+        }
+
+        internal bool DequeuePayloadBuffer(long address, out Payload payload)
+            => outstandingPayloads.TryRemove(address, out payload);
 
         /// <summary>
         /// Get tail address

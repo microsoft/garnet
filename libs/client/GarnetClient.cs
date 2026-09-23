@@ -1198,76 +1198,127 @@ namespace Garnet.client
         async ValueTask InternalExecuteChunkedAsync(TcsWrapper tcs, Memory<byte> respOp, ICollection<Memory<byte>> args = null, CancellationToken token = default)
         {
             tcs.timestamp = GetTimestamp();
+            bool isArray = args != null;
+            int arraySize = checked(1 + (isArray ? args.Count : 0));
+            int totalLength = checked(1 + NumUtils.CountDigits(arraySize) + 2 + respOp.Length);
+
+            if (isArray)
+            {
+                foreach (var arg in args)
+                {
+                    int length = arg.Length;
+                    totalLength = checked(totalLength + 1 + NumUtils.CountDigits(length) + 2 + length + 2);
+                }
+            }
+
             await InputGateAsync(token).ConfigureAwait(false);
+            var payload = networkWriter.RentPayloadBuffer(totalLength);
+            var payloadRegistered = false;
 
             try
             {
-                networkWriter.epoch.Resume();
-
-                int taskId;
-                long address;
-                while (true)
+                unsafe
                 {
-                    token.ThrowIfCancellationRequested();
-                    if (!IsConnected)
+                    fixed (byte* payloadPtr = payload.Buffer)
                     {
-                        Dispose();
+                        byte* curr = payloadPtr;
+                        byte* end = payloadPtr + payload.Length;
+
+                        if (!RespWriteUtils.TryWriteArrayLength(arraySize, ref curr, end) ||
+                            !RespWriteUtils.TryWriteDirect(respOp.Span, ref curr, end))
+                        {
+                            throw new InvalidOperationException("Unable to serialize the out-of-line command into its reserved buffer.");
+                        }
+
+                        if (isArray)
+                        {
+                            foreach (var arg in args)
+                            {
+                                if (!RespWriteUtils.TryWriteBulkString(arg.Span, ref curr, end))
+                                    throw new InvalidOperationException("Unable to serialize the out-of-line command into its reserved buffer.");
+                            }
+                        }
+
+                        if (curr != end)
+                            throw new InvalidOperationException("The serialized out-of-line command did not fill its reserved buffer.");
+                    }
+                }
+
+                try
+                {
+                    networkWriter.epoch.Resume();
+
+                    int taskId;
+                    long address;
+                    while (true)
+                    {
+                        token.ThrowIfCancellationRequested();
+                        if (!IsConnected)
+                        {
+                            Dispose();
+                            ThrowException(disposeException);
+                        }
+
+                        (taskId, address) = networkWriter.TryAllocate(OutOfLineRecordSize, out var flushEvent);
+                        if (address >= 0)
+                            break;
+
+                        try
+                        {
+                            networkWriter.epoch.Suspend();
+                            await flushEvent.WaitAsync(token).ConfigureAwait(false);
+                        }
+                        finally
+                        {
+                            networkWriter.epoch.Resume();
+                        }
+                    }
+
+                    tcs.nextTaskId = taskId;
+
+                    networkWriter.EnqueuePayloadBuffer(address, payload);
+                    payloadRegistered = true;
+                    unsafe
+                    {
+                        *(long*)networkWriter.GetPhysicalAddress(address) = address;
+                    }
+
+                    int shortTaskId = taskId & (maxOutstandingTasks - 1);
+                    var oldTcs = tcsArray[shortTaskId];
+                    if (oldTcs.taskType != TaskType.None || !oldTcs.IsNext(taskId))
+                    {
+                        networkWriter.epoch.ProtectAndDrain();
+                        networkWriter.DoAggressiveShiftReadOnly();
+                        try
+                        {
+                            networkWriter.epoch.Suspend();
+                            await AwaitPreviousTaskAsync(taskId).ConfigureAwait(false);
+                        }
+                        finally
+                        {
+                            networkWriter.epoch.Resume();
+                        }
+                    }
+
+                    tcsArray[shortTaskId].LoadFrom(tcs);
+                    if (Disposed)
+                    {
+                        DisposeOffset(shortTaskId);
                         ThrowException(disposeException);
                     }
 
-                    (taskId, address) = networkWriter.TryAllocate(OutOfLineRecordSize, out var flushEvent);
-                    if (address >= 0)
-                        break;
-
-                    try
-                    {
-                        networkWriter.epoch.Suspend();
-                        await flushEvent.WaitAsync(token).ConfigureAwait(false);
-                    }
-                    finally
-                    {
-                        networkWriter.epoch.Resume();
-                    }
-                }
-
-                tcs.nextTaskId = taskId;
-
-                // TODO: Register respOp and args under address before publishing this record.
-                unsafe
-                {
-                    *(long*)networkWriter.GetPhysicalAddress(address) = address;
-                }
-
-                int shortTaskId = taskId & (maxOutstandingTasks - 1);
-                var oldTcs = tcsArray[shortTaskId];
-                if (oldTcs.taskType != TaskType.None || !oldTcs.IsNext(taskId))
-                {
                     networkWriter.epoch.ProtectAndDrain();
                     networkWriter.DoAggressiveShiftReadOnly();
-                    try
-                    {
-                        networkWriter.epoch.Suspend();
-                        await AwaitPreviousTaskAsync(taskId).ConfigureAwait(false);
-                    }
-                    finally
-                    {
-                        networkWriter.epoch.Resume();
-                    }
                 }
-
-                tcsArray[shortTaskId].LoadFrom(tcs);
-                if (Disposed)
+                finally
                 {
-                    DisposeOffset(shortTaskId);
-                    ThrowException(disposeException);
+                    networkWriter.epoch.Suspend();
                 }
-
-                networkWriter.epoch.ProtectAndDrain();
-                networkWriter.DoAggressiveShiftReadOnly();
             }
             finally
             {
-                networkWriter.epoch.Suspend();
+                if (!payloadRegistered)
+                    payload.Dispose();
             }
         }
 
@@ -1281,50 +1332,93 @@ namespace Garnet.client
         /// <param name="token">Cancellation token</param>
         void InternalExecuteChunkedNoResponse(Memory<byte> respOp, ReadOnlyMemory<byte> subop, ReadOnlyMemory<byte> param1, ReadOnlyMemory<byte> param2, CancellationToken token = default)
         {
+            const int arraySize = 4;
+            int totalLength = checked(1 + NumUtils.CountDigits(arraySize) + 2 + respOp.Length);
+
+            int length = subop.Length;
+            totalLength = checked(totalLength + 1 + NumUtils.CountDigits(length) + 2 + length + 2);
+            length = param1.Length;
+            totalLength = checked(totalLength + 1 + NumUtils.CountDigits(length) + 2 + length + 2);
+            length = param2.Length;
+            totalLength = checked(totalLength + 1 + NumUtils.CountDigits(length) + 2 + length + 2);
+
+            var payload = networkWriter.RentPayloadBuffer(totalLength);
+            var payloadRegistered = false;
+
             try
             {
-                networkWriter.epoch.Resume();
-
-                long address;
-                while (true)
-                {
-                    token.ThrowIfCancellationRequested();
-                    if (!IsConnected)
-                    {
-                        Dispose();
-                        ThrowException(disposeException);
-                    }
-
-                    (_, address) = networkWriter.TryAllocate(OutOfLineRecordSize, out var flushEvent, skipTaskIdIncrement: true);
-                    if (address >= 0)
-                        break;
-
-                    try
-                    {
-                        networkWriter.epoch.Suspend();
-                        flushEvent.Wait(token);
-                    }
-                    finally
-                    {
-                        networkWriter.epoch.Resume();
-                    }
-                }
-
-                // TODO: Register respOp, subop, param1, and param2 under address before publishing this record.
                 unsafe
                 {
-                    *(long*)networkWriter.GetPhysicalAddress(address) = address;
+                    fixed (byte* payloadPtr = payload.Buffer)
+                    {
+                        byte* curr = payloadPtr;
+                        byte* end = payloadPtr + payload.Length;
+
+                        if (!RespWriteUtils.TryWriteArrayLength(arraySize, ref curr, end) ||
+                            !RespWriteUtils.TryWriteDirect(respOp.Span, ref curr, end) ||
+                            !RespWriteUtils.TryWriteBulkString(subop.Span, ref curr, end) ||
+                            !RespWriteUtils.TryWriteBulkString(param1.Span, ref curr, end) ||
+                            !RespWriteUtils.TryWriteBulkString(param2.Span, ref curr, end))
+                        {
+                            throw new InvalidOperationException("Unable to serialize the out-of-line command into its reserved buffer.");
+                        }
+
+                        if (curr != end)
+                            throw new InvalidOperationException("The serialized out-of-line command did not fill its reserved buffer.");
+                    }
                 }
 
-                if (Disposed)
-                    ThrowException(disposeException);
+                try
+                {
+                    networkWriter.epoch.Resume();
 
-                networkWriter.epoch.ProtectAndDrain();
-                networkWriter.DoAggressiveShiftReadOnly();
+                    long address;
+                    while (true)
+                    {
+                        token.ThrowIfCancellationRequested();
+                        if (!IsConnected)
+                        {
+                            Dispose();
+                            ThrowException(disposeException);
+                        }
+
+                        (_, address) = networkWriter.TryAllocate(OutOfLineRecordSize, out var flushEvent, skipTaskIdIncrement: true);
+                        if (address >= 0)
+                            break;
+
+                        try
+                        {
+                            networkWriter.epoch.Suspend();
+                            flushEvent.Wait(token);
+                        }
+                        finally
+                        {
+                            networkWriter.epoch.Resume();
+                        }
+                    }
+
+                    networkWriter.EnqueuePayloadBuffer(address, payload);
+                    payloadRegistered = true;
+                    unsafe
+                    {
+                        *(long*)networkWriter.GetPhysicalAddress(address) = address;
+                    }
+
+                    if (Disposed)
+                        ThrowException(disposeException);
+
+                    networkWriter.epoch.ProtectAndDrain();
+                    networkWriter.DoAggressiveShiftReadOnly();
+                }
+                finally
+                {
+                    networkWriter.epoch.Suspend();
+                }
             }
             finally
             {
-                networkWriter.epoch.Suspend();
+                if (!payloadRegistered)
+                    payload.Dispose();
             }
         }
 
