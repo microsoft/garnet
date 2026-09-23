@@ -8,8 +8,6 @@
 
   <PropertyGroup>
     <NoWarn>1701;1702;1591</NoWarn>
-    <!-- TestBase.cs is shared with Tsavorite.test, which does not compile TestUtils.cs. -->
-    <DefineConstants>$(DefineConstants);GARNET_TEST_UTILS</DefineConstants>
   </PropertyGroup>
 
   <ItemGroup>
@@ -64,6 +62,7 @@
     <ProjectReference Include="..\..\..\libs\host\Garnet.host.csproj" />
     <ProjectReference Include="..\..\..\libs\server\Garnet.server.csproj" />
     <ProjectReference Include="..\..\..\libs\storage\Tsavorite\cs\src\devices\AzureStorageDevice\Tsavorite.devices.AzureStorageDevice.csproj" />
+    <ProjectReference Include="..\..\..\libs\storage\Tsavorite\cs\test\Tsavorite.test.csproj" />
     <ProjectReference Include="..\..\..\main\GarnetServer\GarnetServer.csproj" />
     <ProjectReference Include="..\..\..\modules\GarnetJSON\GarnetJSON.csproj" />
     <ProjectReference Include="..\..\..\modules\NoOpModule\NoOpModule.csproj" />

@@ -133,6 +133,36 @@ namespace Garnet.test
             Assert.That(logger.Entries, Is.Empty, "a cycle cancelled by shutdown must not be logged as a failure");
         }
 
+        /// <summary>
+        /// A cycle can fail for its own reasons at the same moment shutdown begins. That is still an ordinary
+        /// cycle failure and must not be reported as the terminal, task-ending fault, which is reserved for a
+        /// fault in the loop itself.
+        /// </summary>
+        [Test]
+        public async Task ACycleFailingAsShutdownBeginsIsNotLoggedAsTerminal()
+        {
+            using var cts = new CancellationTokenSource();
+            var logger = new RecordingLogger();
+
+            var loop = StoreWrapper.RunMaintenanceLoopAsync(async (_) =>
+            {
+                // Cancel before throwing so cancellation is always already requested when the failure is
+                // classified, making the window deterministic rather than timing-dependent.
+                await cts.CancelAsync();
+                throw new InvalidOperationException("injected failure concurrent with shutdown");
+            }, Interval, "test task", logger, cts.Token);
+
+            Assert.That(await Task.WhenAny(loop, Task.Delay(WaitTimeout)), Is.SameAs(loop), "the loop did not end after cancellation");
+            await loop;
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(loop.IsCompletedSuccessfully, Is.True, "cancellation must not fault the task");
+                Assert.That(logger.Entries, Has.None.Matches<LogEntry>(e => e.Level == LogLevel.Critical),
+                    "a cycle failure must never be reported as terminal");
+            });
+        }
+
         readonly record struct LogEntry(LogLevel Level, Exception Exception);
 
         sealed class RecordingLogger : ILogger
