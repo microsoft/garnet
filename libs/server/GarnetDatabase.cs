@@ -20,9 +20,19 @@ namespace Garnet.server
         const int DefaultVersionMapSize = 1 << 16;
 
         /// <summary>
-        /// Database ID
+        /// Logical database ID — the index a client selects with SELECT, and the key into the
+        /// database manager's map. A swap re-labels a store by constructing a copy with a different
+        /// Id; see <see cref="StorageSlot"/> for the half that does not move.
         /// </summary>
         public int Id { get; }
+
+        /// <summary>
+        /// Storage slot — the on-disk identity of this store, fixed for its lifetime. Names its
+        /// hybrid log, checkpoint directory and AOF directory, all of which are bound when the store
+        /// is created and cannot follow a re-label. Equal to <see cref="Id"/> until the databases are
+        /// swapped.
+        /// </summary>
+        public int StorageSlot { get; }
 
         /// <summary>
         /// Store
@@ -115,11 +125,12 @@ namespace Garnet.server
 
         bool disposed = false;
 
-        public GarnetDatabase(int id, TsavoriteKV<StoreFunctions, StoreAllocator> store, KVSettings kvSettings, LightEpoch epoch, StateMachineDriver stateMachineDriver,
+        public GarnetDatabase(int id, int storageSlot, TsavoriteKV<StoreFunctions, StoreAllocator> store, KVSettings kvSettings, LightEpoch epoch, StateMachineDriver stateMachineDriver,
                 CacheSizeTracker sizeTracker, GarnetAppendOnlyFile appendOnlyFile, bool storeIndexMaxedOut, VectorManager vectorManager, RangeIndexManager rangeIndexManager)
             : this()
         {
             Id = id;
+            StorageSlot = storageSlot;
             Store = store;
             KvSettings = kvSettings;
             Epoch = epoch;
@@ -134,6 +145,9 @@ namespace Garnet.server
         public GarnetDatabase(int id, GarnetDatabase srcDb, bool enableAof, bool copyLastSaveData = false) : this()
         {
             Id = id;
+            // The slot travels with the store, like every other artifact below: a swap changes the
+            // logical label only, and never moves a file.
+            StorageSlot = srcDb.StorageSlot;
             Store = srcDb.Store;
             KvSettings = srcDb.KvSettings;
             Epoch = srcDb.Epoch;

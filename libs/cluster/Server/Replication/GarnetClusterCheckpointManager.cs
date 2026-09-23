@@ -43,12 +43,6 @@ namespace Garnet.cluster
         /// </summary>
         public override bool PerformAutomaticCleanup => false;
 
-        /// <summary>
-        /// Cluster mode permits only the default database, so its checkpoints never need the
-        /// per-database log layout marker and the cookie stays byte-identical to prior releases.
-        /// </summary>
-        protected override bool EmitLayoutTrailer => false;
-
         public override void CheckpointVersionShiftStart(long oldVersion, long newVersion, bool isStreaming)
             => checkpointVersionShiftStart?.Invoke(isMainStore, oldVersion, newVersion, isStreaming);
 

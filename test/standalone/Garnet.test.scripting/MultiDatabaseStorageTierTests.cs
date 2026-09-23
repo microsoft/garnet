@@ -4,6 +4,7 @@
 using System;
 using System.IO;
 using System.Linq;
+using System.Text;
 using System.Threading;
 using Garnet.server;
 using NUnit.Framework;
@@ -257,10 +258,10 @@ namespace Garnet.test
             server = null;
 
             // Reproduce the pre-fix on-disk shape. The checkpoints above were written by this build, so
-            // their cookies carry the layout trailer; strip it, or recovery would classify them as
-            // current-layout and take the wrong branch.
-            StripLayoutTrailer(Path.Combine(StoreDir, "checkpoints"));
-            StripLayoutTrailer(Path.Combine(StoreDir, "checkpoints_1"));
+            // they carry the current version; roll them back to the downlevel version, or recovery
+            // would classify them as current-layout and take the wrong branch.
+            DowngradeCheckpoints(Path.Combine(StoreDir, "checkpoints"));
+            DowngradeCheckpoints(Path.Combine(StoreDir, "checkpoints_1"));
 
             // Database 1's records lived in the single shared file, so it has no log of its own.
             var perDbLogs = Directory.GetFiles(StoreDir, "hlog*_1.*");
@@ -287,16 +288,17 @@ namespace Garnet.test
         }
 
         /// <summary>
-        /// Rewrites every log checkpoint's metadata under a database's checkpoint directory so its
-        /// cookie is absent, which is how a checkpoint written before per-database log devices appears.
-        /// Metadata is stored as an int32 payload length followed by the payload; the payload is
-        /// round-tripped through the production serializer and shrunk in place, so the file keeps its
-        /// original sector-aligned size.
+        /// Rewrites every log checkpoint's metadata under a database's checkpoint directory to the
+        /// downlevel version, which is how a checkpoint written before per-database log devices
+        /// appears. Metadata is stored as an int32 payload length followed by the payload; the payload
+        /// is round-tripped through the production serializer so the file keeps its original
+        /// sector-aligned size.
         /// </summary>
         /// <param name="checkpointDir">A <c>Store/checkpoints[_i]</c> directory</param>
-        static void StripLayoutTrailer(string checkpointDir)
+        static void DowngradeCheckpoints(string checkpointDir)
         {
-            // Only the log checkpoints carry a cookie; index checkpoints use a different metadata format.
+            // Only the log checkpoints carry a version this test cares about; index checkpoints use a
+            // different metadata format.
             var cprDir = Path.Combine(checkpointDir, "cpr-checkpoints");
             var infoFiles = Directory.GetFiles(cprDir, "info.dat.0", SearchOption.AllDirectories);
             ClassicAssert.IsNotEmpty(infoFiles, $"No log checkpoint metadata under {cprDir}");
@@ -310,17 +312,39 @@ namespace Garnet.test
                 using (var reader = new StreamReader(new MemoryStream(bytes, sizeof(int), payloadLength)))
                     recoveryInfo.Initialize(reader);
 
-                ClassicAssert.IsTrue(GarnetCheckpointManager.TryGetCheckpointLayout(recoveryInfo.cookie, out _),
-                    $"Checkpoint metadata in {infoFile} has no layout trailer to strip");
+                ClassicAssert.AreEqual(HybridLogRecoveryInfo.CheckpointVersion, recoveryInfo.hybridLogRecoveryVersion,
+                    $"Checkpoint metadata in {infoFile} was not written at the current version");
 
-                recoveryInfo.cookie = null;
-                var newPayload = recoveryInfo.ToByteArray();
+                // ToByteArray always stamps the current version, so rewrite the version line directly.
+                // Everything after it is unchanged, and the version is outside Checksum().
+                var newPayload = DowngradePayload(recoveryInfo.ToByteArray());
                 ClassicAssert.LessOrEqual(sizeof(int) + newPayload.Length, bytes.Length);
 
                 BitConverter.GetBytes(newPayload.Length).CopyTo(bytes, 0);
                 newPayload.CopyTo(bytes, sizeof(int));
                 File.WriteAllBytes(infoFile, bytes);
             }
+        }
+
+        /// <summary>
+        /// Replaces the leading version line of a serialized <see cref="HybridLogRecoveryInfo"/> payload
+        /// with the downlevel version, and drops the trailing fields that version does not have.
+        /// </summary>
+        static byte[] DowngradePayload(byte[] payload)
+        {
+            var lines = Encoding.UTF8.GetString(payload).Split(Environment.NewLine).ToList();
+            ClassicAssert.AreEqual(HybridLogRecoveryInfo.CheckpointVersion.ToString(), lines[0]);
+            lines[0] = HybridLogRecoveryInfo.MinRecoverableCheckpointVersion.ToString();
+
+            // A downlevel payload ends after the cookie: drop the mapping length, its entries, and the
+            // swap epoch that this build appends. With no mapping written, that is exactly two lines.
+            var last = lines.Count - 1;
+            while (last >= 0 && lines[last].Length == 0)
+                last--;
+            ClassicAssert.GreaterOrEqual(last, 2, "Payload is too short to be a checkpoint");
+            lines.RemoveRange(last - 1, 2);
+
+            return Encoding.UTF8.GetBytes(string.Concat(lines.Select(line => line + Environment.NewLine)));
         }
     }
 }

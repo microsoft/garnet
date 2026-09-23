@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Buffers.Binary;
 using System.IO;
 using System.Text;
 using Microsoft.Extensions.Logging;
@@ -50,67 +49,8 @@ namespace Garnet.server
         /// <param name="recoveredSafeAofAddress"></param>
         public void SetRecoveredSafeAofAddress(ref AofAddress recoveredSafeAofAddress) => RecoveredSafeAofAddress = recoveredSafeAofAddress;
 
-        /// <summary>
-        /// Trailer appended to the cookie, identifying the on-disk layout a checkpoint was written with.
-        /// Both cookie layouts read by the cluster replication layer are parsed from the front and ignore
-        /// trailing bytes, so appending is backward compatible.
-        /// </summary>
-        private static ReadOnlySpan<byte> LayoutTrailerMagic => "GNTLAYOUT"u8;
-
-        /// <summary>
-        /// Layout in which every database owns its hybrid log devices (<c>Store/hlog[_dbId]</c>).
-        /// Checkpoints written before per-database log devices carry no trailer at all.
-        /// </summary>
-        public const int PerDatabaseHybridLogLayout = 1;
-
-        private static int LayoutTrailerLength => LayoutTrailerMagic.Length + sizeof(int);
-
-        /// <summary>
-        /// Whether to append the layout trailer to the cookie. Cluster mode permits only the default
-        /// database, so its checkpoints never need the marker and its cookie stays byte-identical.
-        /// </summary>
-        protected virtual bool EmitLayoutTrailer => true;
-
-        /// <summary>
-        /// Read the on-disk layout a checkpoint was written with from its cookie.
-        /// </summary>
-        /// <param name="cookie">Cookie recovered from the checkpoint metadata</param>
-        /// <param name="layout">Layout identifier, when present</param>
-        /// <returns>True if the cookie carries a layout trailer</returns>
-        public static bool TryGetCheckpointLayout(byte[] cookie, out int layout)
-        {
-            layout = 0;
-            if (cookie == null || cookie.Length < LayoutTrailerLength)
-                return false;
-
-            var trailer = cookie.AsSpan(cookie.Length - LayoutTrailerLength);
-            if (!trailer[..LayoutTrailerMagic.Length].SequenceEqual(LayoutTrailerMagic))
-                return false;
-
-            layout = BinaryPrimitives.ReadInt32LittleEndian(trailer[LayoutTrailerMagic.Length..]);
-            return true;
-        }
-
-        private static byte[] AppendLayoutTrailer(byte[] cookie)
-        {
-            var body = cookie ?? [];
-            var result = new byte[body.Length + LayoutTrailerLength];
-            body.CopyTo(result, 0);
-
-            var trailer = result.AsSpan(body.Length);
-            LayoutTrailerMagic.CopyTo(trailer);
-            BinaryPrimitives.WriteInt32LittleEndian(trailer[LayoutTrailerMagic.Length..], PerDatabaseHybridLogLayout);
-            return result;
-        }
-
         /// <inheritdoc />
-        public override byte[] GetCookie()
-        {
-            var body = GetCookieBody();
-            return EmitLayoutTrailer ? AppendLayoutTrailer(body) : body;
-        }
-
-        private unsafe byte[] GetCookieBody()
+        public override unsafe byte[] GetCookie()
         {
             if (CurrentHistoryId == null) return null;
 

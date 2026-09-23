@@ -390,7 +390,16 @@ namespace Garnet
             }
         }
 
-        private GarnetDatabase CreateDatabase(int dbId, GarnetServerOptions serverOptions, ClusterFactory clusterFactory,
+        /// <summary>
+        /// Create a database bound to a storage slot. A newly created database takes the slot matching
+        /// its logical id: the live slots and the live logical ids are always the same set, because a
+        /// swap only permutes labels within that set, so a free logical id implies a free slot.
+        /// </summary>
+        /// <param name="storageSlot">Storage slot, which is also the initial logical database ID</param>
+        /// <param name="serverOptions">Server options</param>
+        /// <param name="clusterFactory">Cluster factory</param>
+        /// <param name="customCommandManager">Custom command manager</param>
+        private GarnetDatabase CreateDatabase(int storageSlot, GarnetServerOptions serverOptions, ClusterFactory clusterFactory,
             CustomCommandManager customCommandManager)
         {
             var removeOutdated = !serverOptions.EnableCluster;
@@ -410,8 +419,8 @@ namespace Garnet
                                   ?? serverOptions.CheckpointDir
                                   ?? Directory.GetCurrentDirectory();
                 var riLogRoot = Path.Combine(logRootBase ?? string.Empty, GarnetServerOptions.StoreDirectoryName,
-                    GarnetServerOptions.GetRangeIndexDirectoryName(dbId));
-                var cprDir = Path.Combine(serverOptions.GetStoreCheckpointDirectory(dbId), "cpr-checkpoints");
+                    GarnetServerOptions.GetRangeIndexDirectoryName(storageSlot));
+                var cprDir = Path.Combine(serverOptions.GetStoreCheckpointDirectory(storageSlot), "cpr-checkpoints");
 
                 rangeIndexManager = new RangeIndexManager(
                     riLogRoot: riLogRoot, cprDir: cprDir,
@@ -419,15 +428,15 @@ namespace Garnet
                     logger: loggerFactory?.CreateLogger("RangeIndexManager"));
             }
             var vectorManager = new VectorManager(
-                dbId,
+                storageSlot,
                 serverOptions,
                 () => Provider.GetSession(WireFormat.ASCII, null),
                 loggerFactory
             );
-            var store = CreateStore(dbId, clusterFactory, customCommandManager, storeEpoch, rangeIndexManager, vectorManager, out var stateMachineDriver, out var sizeTracker, out var kvSettings);
-            var aof = CreateAOF(dbId);
+            var store = CreateStore(storageSlot, clusterFactory, customCommandManager, storeEpoch, rangeIndexManager, vectorManager, out var stateMachineDriver, out var sizeTracker, out var kvSettings);
+            var aof = CreateAOF(storageSlot);
 
-            return new GarnetDatabase(dbId, store, kvSettings, storeEpoch, stateMachineDriver, sizeTracker, aof, serverOptions.AdjustedIndexMaxCacheLines == 0, vectorManager, rangeIndexManager);
+            return new GarnetDatabase(storageSlot, storageSlot, store, kvSettings, storeEpoch, stateMachineDriver, sizeTracker, aof, serverOptions.AdjustedIndexMaxCacheLines == 0, vectorManager, rangeIndexManager);
         }
 
         private void LoadModules(CustomCommandManager customCommandManager)
@@ -465,19 +474,19 @@ namespace Garnet
             }
         }
 
-        private TsavoriteKV<StoreFunctions, StoreAllocator> CreateStore(int dbId, IClusterFactory clusterFactory, CustomCommandManager customCommandManager,
+        private TsavoriteKV<StoreFunctions, StoreAllocator> CreateStore(int storageSlot, IClusterFactory clusterFactory, CustomCommandManager customCommandManager,
             LightEpoch epoch, RangeIndexManager rangeIndexManager, VectorManager vectorManager, out StateMachineDriver stateMachineDriver, out CacheSizeTracker sizeTracker, out KVSettings kvSettings)
         {
             sizeTracker = null;
 
             stateMachineDriver = new StateMachineDriver(epoch, loggerFactory?.CreateLogger($"StateMachineDriver"));
 
-            kvSettings = opts.GetSettings(dbId, loggerFactory, epoch, stateMachineDriver, out logFactory);
+            kvSettings = opts.GetSettings(storageSlot, loggerFactory, epoch, stateMachineDriver, out logFactory);
 
             // Run checkpoint on its own thread to control p99
             kvSettings.ThrottleCheckpointFlushDelayMs = opts.CheckpointThrottleFlushDelayMs;
 
-            var baseName = opts.GetStoreCheckpointDirectory(dbId);
+            var baseName = opts.GetStoreCheckpointDirectory(storageSlot);
             var defaultNamingScheme = new DefaultCheckpointNamingScheme(baseName);
 
             kvSettings.CheckpointManager = opts.EnableCluster ?
@@ -502,7 +511,7 @@ namespace Garnet
             return store;
         }
 
-        private GarnetAppendOnlyFile CreateAOF(int dbId)
+        private GarnetAppendOnlyFile CreateAOF(int storageSlot)
         {
             if (!opts.EnableAOF)
             {
@@ -514,7 +523,7 @@ namespace Garnet
             if (opts.FastAofTruncate && opts.CommitFrequencyMs != -1)
                 throw new Exception("Need to set CommitFrequencyMs to -1 (manual commits) with FastAofTruncate");
 
-            opts.GetAofSettings(dbId, out var aofSettings);
+            opts.GetAofSettings(storageSlot, out var aofSettings);
             var appendOnlyFile = new GarnetAppendOnlyFile(opts, aofSettings, logger: this.loggerFactory?.CreateLogger("GarnetLog [aof]"));
 
             if (opts.CommitFrequencyMs < 0 && opts.WaitForCommit)

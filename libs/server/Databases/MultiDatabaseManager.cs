@@ -178,16 +178,16 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Whether any hybrid log segment exists for a database. Log truncation can remove earlier
+        /// Whether any hybrid log segment exists for a storage slot. Log truncation can remove earlier
         /// segments, so any segment counts, not just segment 0.
         /// </summary>
         /// <param name="segments">File names under the store directory</param>
-        /// <param name="dbId">Database Id</param>
-        private static bool HasHybridLogSegment(HashSet<string> segments, int dbId)
+        /// <param name="storageSlot">Storage slot naming the hybrid log</param>
+        private static bool HasHybridLogSegment(HashSet<string> segments, int storageSlot)
         {
             // Segment files are named "<fileName>.<segment>". The '.' keeps "hlog." from matching
             // "hlog_1.0" or "hlog_objs.0".
-            var prefix = GarnetServerOptions.GetHybridLogFileName(dbId, isObj: false) + ".";
+            var prefix = GarnetServerOptions.GetHybridLogFileName(storageSlot, isObj: false) + ".";
             foreach (var name in segments)
             {
                 if (name.StartsWith(prefix, StringComparison.Ordinal))
@@ -212,9 +212,10 @@ namespace Garnet.server
 
             var perDatabaseLayout = WasCheckpointedWithPerDatabaseLogs(db);
 
-            if (db.Id == 0)
+            // File names come from the storage slot, never the logical id.
+            if (db.StorageSlot == 0)
             {
-                // The default database keeps the unsuffixed file names, so it always finds its log.
+                // The default slot keeps the unsuffixed file names, so it always finds its log.
                 // In a pre-fix store holding more than one database that log is the shared one, and
                 // the records in it may belong to any database.
                 if (!perDatabaseLayout && multiDatabaseStore)
@@ -227,10 +228,10 @@ namespace Garnet.server
                 return;
             }
 
-            if (HasHybridLogSegment(segments, db.Id))
+            if (HasHybridLogSegment(segments, db.StorageSlot))
                 return;
 
-            var logName = GarnetServerOptions.GetHybridLogFileName(db.Id, isObj: false);
+            var logName = GarnetServerOptions.GetHybridLogFileName(db.StorageSlot, isObj: false);
 
             if (perDatabaseLayout)
             {
@@ -249,7 +250,8 @@ namespace Garnet.server
 
         /// <summary>
         /// Whether the latest readable checkpoint for a database was written by a build that gave each
-        /// database its own log devices.
+        /// database its own log devices. Checkpoints at
+        /// <see cref="HybridLogRecoveryInfo.MinRecoverableCheckpointVersion"/> predate that change.
         /// </summary>
         /// <param name="db">Database being recovered</param>
         private bool WasCheckpointedWithPerDatabaseLogs(GarnetDatabase db)
@@ -267,7 +269,7 @@ namespace Garnet.server
                     using var reader = new StreamReader(new MemoryStream(metadata));
                     recoveryInfo.Initialize(reader);
 
-                    return GarnetCheckpointManager.TryGetCheckpointLayout(recoveryInfo.cookie, out _);
+                    return recoveryInfo.hybridLogRecoveryVersion > HybridLogRecoveryInfo.MinRecoverableCheckpointVersion;
                 }
                 catch (Exception ex)
                 {
