@@ -4,6 +4,7 @@
 using System;
 using System.Linq;
 using System.Net;
+using System.Net.Sockets;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 
@@ -123,6 +124,162 @@ namespace Garnet.test
                     Assert.That(high - low, Is.Not.EqualTo(TestUtils.PortSlotStride),
                         $"Ports {low} and {high} are exactly one stride apart, so they collide across slots.");
                 }
+            }
+        }
+
+        /// <summary>
+        /// A slot reserves one port per standalone assignment plus the cluster node range, so the probe must
+        /// enumerate all of them. This is the test that fails when a new assignment is added and the probe stops
+        /// covering the ports the projects actually bind.
+        /// </summary>
+        [Test]
+        public void SlotPortsCoverEveryReservedPort()
+        {
+            const int slot = TestUtils.MaxPortSlot;
+            var offset = slot * TestUtils.PortSlotStride;
+            var ports = TestUtils.SlotPorts(slot).ToHashSet();
+
+            foreach (var assignment in Enum.GetValues<TestPortAssignment>())
+            {
+                Assert.That(ports, Does.Contain((int)assignment + offset),
+                    $"Slot {slot} hands {assignment} a port the claim-time probe never checks, so a server " +
+                    $"stranded on it would not stop the slot from being claimed.");
+            }
+
+            for (var node = 0; node < TestUtils.MaxClusterNodesPerSubProject; node++)
+            {
+                Assert.That(ports, Does.Contain(TestUtils.ClusterPortBandBase + offset + node),
+                    $"Cluster node {node} of slot {slot} is not probed, so a node stranded by a crashed run " +
+                    $"would read as free.");
+            }
+        }
+
+        /// <summary>
+        /// A server stranded on a non-default assignment has to stop <c>auto</c> from taking that slot, rather
+        /// than being discovered later when the owning project binds. GarnetTestAlternate is occupied because
+        /// this assembly is its only user and NUnit runs these fixtures sequentially, so the bind cannot
+        /// disturb a sibling project sharing the slot.
+        /// </summary>
+        [Test]
+        public void OccupiedNonDefaultAssignmentBlocksTheSlot()
+            => AssertOccupiedPortBlocksTheSlot(IPAddress.Loopback);
+
+        /// <summary>
+        /// Tests bind every address <see cref="Dns.GetHostAddresses(string)"/> returns, not just the loopbacks,
+        /// so a server stranded on one of those has to block the slot as well.
+        /// </summary>
+        [Test]
+        public void OccupiedNonLoopbackAddressBlocksTheSlot()
+        {
+            var address = NonLoopbackAddress();
+            if (address is null)
+                Assert.Ignore("This host has no non-loopback IPv4 address to occupy.");
+
+            AssertOccupiedPortBlocksTheSlot(address);
+        }
+
+        /// <summary>
+        /// The IPv4 wildcard cannot see an IPv6 listener, so this is the case that fails when the probe stops
+        /// binding both families. Tests reach the IPv6 loopback through GarnetServerTcpTests and the
+        /// multi-endpoint configuration tests.
+        /// </summary>
+        [Test]
+        public void OccupiedIPv6LoopbackBlocksTheSlot()
+        {
+            if (!Socket.OSSupportsIPv6)
+                Assert.Ignore("This host has IPv6 disabled, so no test can strand a listener there.");
+
+            AssertOccupiedPortBlocksTheSlot(IPAddress.IPv6Loopback);
+        }
+
+        /// <summary>
+        /// A stranded server has to be seen wherever it listens, which is any of the four kinds of address the
+        /// tests bind. The port is one the OS hands out for this listener, so the case is exact and unaffected
+        /// by other test projects running in parallel.
+        /// </summary>
+        /// <param name="addressKind">Which of the bound address kinds to strand the listener on.</param>
+        [TestCase(BoundAddressKind.Loopback)]
+        [TestCase(BoundAddressKind.IPv6Loopback)]
+        [TestCase(BoundAddressKind.NonLoopback)]
+        [TestCase(BoundAddressKind.Wildcard)]
+        public void ListenerIsDetectedOnEveryBoundAddressKind(BoundAddressKind addressKind)
+        {
+            var address = ResolveAddress(addressKind);
+            if (address is null)
+                Assert.Ignore($"This host cannot bind {addressKind}.");
+
+            var listener = new TcpListener(address, 0);
+
+            try
+            {
+                listener.Start();
+                var port = ((IPEndPoint)listener.LocalEndpoint).Port;
+
+                Assert.That(TestUtils.IsPortFree(port), Is.False,
+                    $"A listener on {address}:{port} reads as free, so a server stranded there would not stop " +
+                    $"auto from claiming the slot that hands out that port.");
+            }
+            finally
+            {
+                listener.Stop();
+            }
+        }
+
+        /// <summary>
+        /// The kinds of address Garnet tests bind, which the probe has to cover.
+        /// </summary>
+        public enum BoundAddressKind
+        {
+            /// <summary>127.0.0.1, the default behind <see cref="TestUtils.EndPoint"/>.</summary>
+            Loopback,
+
+            /// <summary>::1, bound by GarnetServerTcpTests and the multi-endpoint configuration tests.</summary>
+            IPv6Loopback,
+
+            /// <summary>A routable address, bound by the multi-endpoint configuration tests.</summary>
+            NonLoopback,
+
+            /// <summary>0.0.0.0, bound by the cluster tests.</summary>
+            Wildcard,
+        }
+
+        private static IPAddress ResolveAddress(BoundAddressKind addressKind) => addressKind switch
+        {
+            BoundAddressKind.Loopback => IPAddress.Loopback,
+            BoundAddressKind.IPv6Loopback => Socket.OSSupportsIPv6 ? IPAddress.IPv6Loopback : null,
+            BoundAddressKind.NonLoopback => NonLoopbackAddress(),
+            _ => IPAddress.Any,
+        };
+
+        private static IPAddress NonLoopbackAddress()
+            => Dns.GetHostAddresses(TestUtils.GetHostName())
+                .FirstOrDefault(a => !IPAddress.IsLoopback(a) && a.AddressFamily == AddressFamily.InterNetwork);
+
+        /// <summary>
+        /// Occupies this slot's GarnetTestAlternate port on one address and asserts the slot stops reading as
+        /// free. The listener is always released, so a failed assertion cannot strand one on a shared machine.
+        /// </summary>
+        /// <param name="address">Address to hold the port on.</param>
+        private static void AssertOccupiedPortBlocksTheSlot(IPAddress address)
+        {
+            var slot = TestUtils.PortOffset / TestUtils.PortSlotStride;
+            if (!TestUtils.ArePortsFree(slot))
+                Assert.Ignore($"Slot {slot} already has ports in use, so blocking it proves nothing.");
+
+            var port = TestUtils.GetTestPort(TestPortAssignment.GarnetTestAlternate);
+            var listener = new TcpListener(address, port);
+
+            try
+            {
+                listener.Start();
+
+                Assert.That(TestUtils.ArePortsFree(slot), Is.False,
+                    $"Port {port} ({TestPortAssignment.GarnetTestAlternate}) is occupied on {address}, but slot " +
+                    $"{slot} still reads as free, so auto would claim a slot a project cannot bind.");
+            }
+            finally
+            {
+                listener.Stop();
             }
         }
     }
