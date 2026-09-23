@@ -17,12 +17,15 @@ namespace Garnet.cluster
     {
         readonly ClusterProvider clusterProvider;
         readonly GarnetClient gc;
+        readonly ExponentialBackoff backoff;
+        readonly object initializationSync = new();
 
         long gossipSend;
         long gossipRecv;
         CancellationTokenSource cts = new();
         CancellationTokenSource internalCts = new();
-        volatile int initialized = 0;
+        volatile bool initialized;
+        Task<bool> initializationTask;
         readonly ILogger logger = null;
         SingleWriterMultiReaderLock dispose;
 
@@ -45,6 +48,11 @@ namespace Garnet.cluster
         /// GarnetClient connection
         /// </summary>
         public GarnetClient Client => gc;
+
+        /// <summary>
+        /// Whether the client connection has been initialized successfully.
+        /// </summary>
+        public bool IsInitialized => initialized;
 
         /// <summary>
         /// NodeId of remote node
@@ -75,6 +83,7 @@ namespace Garnet.cluster
         /// <param name="clusterProvider"></param>
         /// <param name="endpoint">The endpoint of the remote node</param>
         /// <param name="tlsOptions"></param>
+        /// <param name="epoch"></param>
         /// <param name="logger"></param>
         public GarnetServerNode(ClusterProvider clusterProvider, EndPoint endpoint, SslClientAuthenticationOptions tlsOptions, LightEpoch epoch, ILogger logger = null)
         {
@@ -93,7 +102,8 @@ namespace Garnet.cluster
                 epoch: epoch,
                 clientName: $"Gossip-{clusterProvider.clusterManager.CurrentConfig.LocalNodeEndpoint}",
                 logger: logger);
-            this.initialized = 0;
+            this.backoff = new ExponentialBackoff();
+            initialized = false;
             this.logger = logger;
             this.gossipRecv = 0;
             this.gossipSend = 0;
@@ -101,16 +111,58 @@ namespace Garnet.cluster
         }
 
         /// <summary>
-        /// Initialize connection and cancellation tokens.
-        /// Initialization is performed only once
+        /// Attempts to initialize the connection when its reconnect backoff permits.
         /// </summary>
-        public ValueTask InitializeAsync()
+        /// <returns>True when the connection is initialized; otherwise false.</returns>
+        public ValueTask<bool> TryInitializeAsync()
         {
-            // Ensure initialize executes only once
-            if (initialized != 0 || Interlocked.CompareExchange(ref initialized, 1, 0) != 0) return default;
+            lock (initializationSync)
+            {
+                if (initialized)
+                    return new(true);
 
-            cts = CancellationTokenSource.CreateLinkedTokenSource(clusterProvider.clusterManager.ctsGossip.Token, internalCts.Token);
-            return new(gc.ReconnectAsync().WaitAsync(clusterProvider.clusterManager.gossipDelay, cts.Token));
+                if (initializationTask is { IsCompleted: false })
+                    return new(initializationTask);
+
+                if (!backoff.CanAttempt())
+                    return new(false);
+
+                initializationTask = InitializeCoreAsync();
+                return new(initializationTask);
+            }
+
+            async Task<bool> InitializeCoreAsync()
+            {
+                try
+                {
+                    cts = CancellationTokenSource.CreateLinkedTokenSource(clusterProvider.clusterManager.ctsGossip.Token, internalCts.Token);
+                    await gc.ReconnectAsync().WaitAsync(clusterProvider.clusterManager.gossipDelay, cts.Token).ConfigureAwait(false);
+                    backoff.Reset();
+                    initialized = true;
+                    return true;
+                }
+                catch (Exception ex)
+                {
+                    initialized = false;
+                    ResetCts();
+                    var retryDelay = backoff.RecordFailure();
+                    logger?.LogWarning(ex, "Could not establish connection to remote node [{nodeId} {endpoint}]; retrying in {retryDelay}",
+                        NodeId, EndPoint, retryDelay);
+                    return false;
+                }
+            }
+        }
+
+        /// <summary>
+        /// Records a connection failure and returns the delay before reconnection may be attempted.
+        /// </summary>
+        public TimeSpan RecordConnectionFailure()
+        {
+            lock (initializationSync)
+            {
+                initialized = false;
+                return backoff.RecordFailure();
+            }
         }
 
         public void Dispose()
@@ -213,6 +265,7 @@ namespace Garnet.cluster
             catch (Exception ex)
             {
                 logger?.LogCritical(ex, "GOSSIP faulted processing response");
+                throw;
             }
         }
 

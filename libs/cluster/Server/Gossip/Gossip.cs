@@ -183,9 +183,13 @@ namespace Garnet.cluster
                     created = true;
                 }
 
-                // Initialize GarnetServerNode
-                // Thread-Safe initialization executes only once
-                await gsn.InitializeAsync().ConfigureAwait(false);
+                // Initialize or reconnect the GarnetServerNode.
+                if (!await gsn.TryInitializeAsync().ConfigureAwait(false))
+                {
+                    if (created) gsn.Dispose();
+                    gossipStats.UpdateMeetRequestsFailed();
+                    return;
+                }
 
                 // Send full config in Gossip
                 resp = await gsn.TryMeetAsync(conf.ToByteArray()).ConfigureAwait(false);
@@ -272,11 +276,13 @@ namespace Garnet.cluster
                 if (gsn == null)
                     continue;
 
-                // Initialize GarnetServerNode
-                // Thread-Safe initialization executes only once
-                var initTask = gsn.InitializeAsync();
+                // Initialize or reconnect the GarnetServerNode.
+                var initTask = gsn.TryInitializeAsync();
                 if (initTask.IsCompletedSuccessfully)
                 {
+                    if (!AsyncUtils.BlockingWait(initTask))
+                        continue;
+
                     // Can stay sync, so proceed
                     gsn.TryClusterPublish(cmd, channel, message);
                 }
@@ -290,7 +296,7 @@ namespace Garnet.cluster
             // Completed synchronously
             return default;
 
-            async Task GoAsyncHelperAsync(ValueTask<(bool Success, GarnetServerNode Node)> getOrAddTask, ValueTask initTask, int lastEntryIx, GarnetServerNode lastGsn, RespCommand cmd, Memory<byte> channel, Memory<byte> message)
+            async Task GoAsyncHelperAsync(ValueTask<(bool Success, GarnetServerNode Node)> getOrAddTask, ValueTask<bool> initTask, int lastEntryIx, GarnetServerNode lastGsn, RespCommand cmd, Memory<byte> channel, Memory<byte> message)
             {
                 // Finish the task which caused us to go async
                 if (lastGsn == null)
@@ -299,12 +305,14 @@ namespace Garnet.cluster
 
                     if (lastGsn != null)
                     {
-                        await lastGsn.InitializeAsync().ConfigureAwait(false);
+                        if (!await lastGsn.TryInitializeAsync().ConfigureAwait(false))
+                            lastGsn = null;
                     }
                 }
                 else
                 {
-                    await initTask.ConfigureAwait(false);
+                    if (!await initTask.ConfigureAwait(false))
+                        lastGsn = null;
                 }
 
                 if (lastGsn != null)
@@ -322,9 +330,9 @@ namespace Garnet.cluster
                     if (gsn == null)
                         continue;
 
-                    // Initialize GarnetServerNode
-                    // Thread-Safe initialization executes only once
-                    await gsn.InitializeAsync().ConfigureAwait(false);
+                    // Initialize or reconnect the GarnetServerNode.
+                    if (!await gsn.TryInitializeAsync().ConfigureAwait(false))
+                        continue;
 
                     // Publish to remote nodes
                     gsn.TryClusterPublish(cmd, channel.Span, message.Span);
@@ -387,7 +395,7 @@ namespace Garnet.cluster
                 _ = Interlocked.Decrement(ref numActiveTasks);
             }
 
-            // Initialize connections for nodes that have either been dispose due to banlist (after expiry) or timeout
+            // Initialize new connections and reconnect failed nodes when their per-node backoff permits.
             async Task InitConnectionsAsync()
             {
                 await DisposeBannedWorkerConnectionsAsync().ConfigureAwait(false);
@@ -402,29 +410,23 @@ namespace Garnet.cluster
                     var address = a.Item2;
                     var port = a.Item3;
 
-                    // Establish new connection only if it is not in banlist and not in dictionary
-                    if (!workerBanList.ContainsKey(nodeId) && !clusterConnectionStore.GetConnection(nodeId, out var _))
+                    if (!workerBanList.ContainsKey(nodeId))
                     {
-                        try
+                        var (_, gsn) = await clusterConnectionStore.GetOrAddAsync(
+                            clusterProvider,
+                            new IPEndPoint(IPAddress.Parse(address), port),
+                            tlsOptions,
+                            nodeId,
+                            logger: logger).ConfigureAwait(false);
+
+                        if (gsn == null)
                         {
-                            var (success, gsn) = await clusterConnectionStore.GetOrAddAsync(clusterProvider, new IPEndPoint(IPAddress.Parse(address), port), tlsOptions, nodeId, logger: logger).ConfigureAwait(false);
-
-                            if (gsn == null)
-                            {
-                                logger?.LogWarning("InitConnections: Could not establish connection to remote node [{nodeId} {address}:{port}] failed", nodeId, address, port);
-
-                                _ = await clusterConnectionStore.TryRemoveConnectionAsync(nodeId).ConfigureAwait(false);
-
-                                continue;
-                            }
-
-                            await gsn.InitializeAsync().ConfigureAwait(false);
+                            logger?.LogWarning("InitConnections: Could not create connection to remote node [{nodeId} {address}:{port}]",
+                                nodeId, address, port);
+                            continue;
                         }
-                        catch (Exception ex)
-                        {
-                            logger?.LogWarning(ex, "InitConnections: Could not establish connection to remote node [{nodeId} {address}:{port}] failed", nodeId, address, port);
-                            _ = await clusterConnectionStore.TryRemoveConnectionAsync(nodeId).ConfigureAwait(false);
-                        }
+
+                        _ = await gsn.TryInitializeAsync().ConfigureAwait(false);
                     }
                 }
 
@@ -461,6 +463,12 @@ namespace Garnet.cluster
                     {
                         ctsGossip.Token.ThrowIfCancellationRequested();
 
+                        if (!currNode.IsInitialized)
+                        {
+                            offset++;
+                            continue;
+                        }
+
                         // Issue gossip message to node and truck success metrics
                         if (currNode.TryGossip())
                         {
@@ -470,14 +478,18 @@ namespace Garnet.cluster
                         }
 
                         gossipStats.gossip_timeout_count++;
-                        logger?.LogWarning("GOSSIP to remote node [{nodeId} {endpoint}] timeout!", currNode.NodeId, currNode.EndPoint);
-                        _ = await clusterConnectionStore.TryRemoveConnectionAsync(currNode.NodeId).ConfigureAwait(false);
+                        var retryDelay = currNode.RecordConnectionFailure();
+                        logger?.LogWarning("GOSSIP to remote node [{nodeId} {endpoint}] timeout; retrying in {retryDelay}",
+                            currNode.NodeId, currNode.EndPoint, retryDelay);
+                        offset++;
                     }
                     catch (Exception ex)
                     {
-                        logger?.LogWarning(ex, "GOSSIP to remote node [{nodeId} {endpoint}] failed!", currNode.NodeId, currNode.EndPoint);
-                        _ = await clusterConnectionStore.TryRemoveConnectionAsync(currNode.NodeId).ConfigureAwait(false);
+                        var retryDelay = currNode.RecordConnectionFailure();
+                        logger?.LogWarning(ex, "GOSSIP to remote node [{nodeId} {endpoint}] failed; retrying in {retryDelay}",
+                            currNode.NodeId, currNode.EndPoint, retryDelay);
                         gossipStats.gossip_failed_count++;
+                        offset++;
                     }
                 }
             }
@@ -498,7 +510,7 @@ namespace Garnet.cluster
                     for (var i = 0; i < maxRandomNodesToPoll; i++)
                     {
                         // Pick the node with earliest send timestamp
-                        if (clusterConnectionStore.GetRandomConnection(out var c) && c.GossipSend < minSend)
+                        if (clusterConnectionStore.GetRandomConnection(out var c) && c.IsInitialized && c.GossipSend < minSend)
                         {
                             minSend = c.GossipSend;
                             currNode = c;
@@ -515,17 +527,20 @@ namespace Garnet.cluster
                         if (currNode.TryGossip())
                         {
                             gossipStats.gossip_success_count++;
+                            count--;
                             continue;
                         }
 
                         gossipStats.gossip_timeout_count++;
-                        logger?.LogWarning("GOSSIP to remote node [{nodeId} {endpoint}] timeout!", currNode.NodeId, currNode.EndPoint);
-                        _ = await clusterConnectionStore.TryRemoveConnectionAsync(currNode.NodeId).ConfigureAwait(false);
+                        var retryDelay = currNode.RecordConnectionFailure();
+                        logger?.LogWarning("GOSSIP to remote node [{nodeId} {endpoint}] timeout; retrying in {retryDelay}",
+                            currNode.NodeId, currNode.EndPoint, retryDelay);
                     }
                     catch (Exception ex)
                     {
-                        logger?.LogError(ex, "GOSSIP to remote node [{nodeId} {endpoint}] failed!", currNode.NodeId, currNode.EndPoint);
-                        _ = await clusterConnectionStore.TryRemoveConnectionAsync(currNode.NodeId).ConfigureAwait(false);
+                        var retryDelay = currNode.RecordConnectionFailure();
+                        logger?.LogError(ex, "GOSSIP to remote node [{nodeId} {endpoint}] failed; retrying in {retryDelay}",
+                            currNode.NodeId, currNode.EndPoint, retryDelay);
                         gossipStats.gossip_failed_count++;
                     }
 
