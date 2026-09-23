@@ -196,7 +196,7 @@ Legend: ➕ = supported, ➖ = not supported.
 |  | PFDEBUG | ➖ | Internal command |
 |  | [PFMERGE](analytics.md#pfmerge) | ➕ |  |
 |  | PFSELFTEST | ➖ | Internal command |
-| <span id="keys">**KEYS**</span> | COPY | ➕ |  |
+| <span id="keys">**KEYS**</span> | [COPY](generic-commands.md#copy) | ➕ | Cross-database copy and Vector Set / Range Index sources are not supported |
 |  | [DEL](generic-commands.md#del) | ➕ |  |
 |  | [DUMP](generic-commands.md#dump) | ➕ |
 |  | [EXISTS](generic-commands.md#exists) | ➕ |  |
