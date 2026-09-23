@@ -736,9 +736,14 @@ namespace Garnet.server
                     {
                         await runCycle(token).ConfigureAwait(false);
                     }
-                    catch (Exception ex) when (!token.IsCancellationRequested)
+                    catch (Exception ex)
                     {
-                        logger?.LogError(ex, "Unknown exception received for {taskDescription}. Retrying on the next cycle.", taskDescription);
+                        // Every cycle failure is classified here rather than in an exception filter, so one that
+                        // races shutdown is still handled as a cycle failure: the outer handlers recognize
+                        // cancellation by exception type and treat anything else as terminal. Cancellation makes
+                        // the failure shutdown noise, so the loop ends without logging it.
+                        if (!token.IsCancellationRequested)
+                            logger?.LogError(ex, "Unknown exception received for {taskDescription}. Retrying on the next cycle.", taskDescription);
                     }
 
                     await Task.Delay(interval, token).ConfigureAwait(false);
