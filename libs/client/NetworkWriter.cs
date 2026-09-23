@@ -75,11 +75,12 @@ namespace Garnet.client
         readonly NetworkBufferSettings networkBufferSettings;
         readonly LimitedFixedBufferPool networkPool;
         readonly GarnetClientTcpNetworkHandler networkHandler;
+        readonly bool useOutOfLineExecution;
 
         /// <summary>
         /// Constructor
         /// </summary>
-        public NetworkWriter(GarnetClient serverHook, Socket socket, int messageBufferSize, SslClientAuthenticationOptions sslOptions, out GarnetClientTcpNetworkHandler networkHandler, int sendPageSize, int networkSendThrottleMax, LightEpoch epoch, PoolOwnerType ownerType, ILogger logger = null)
+        public NetworkWriter(GarnetClient serverHook, Socket socket, int messageBufferSize, SslClientAuthenticationOptions sslOptions, out GarnetClientTcpNetworkHandler networkHandler, int sendPageSize, int networkSendThrottleMax, LightEpoch epoch, PoolOwnerType ownerType, bool useOutOfLineExecution, ILogger logger = null)
         {
             this.networkBufferSettings = new NetworkBufferSettings(messageBufferSize, messageBufferSize);
             this.networkPool = networkBufferSettings.CreateBufferPool(ownerType: ownerType, logger: logger);
@@ -92,6 +93,7 @@ namespace Garnet.client
             this.epoch = epoch;
             this.PageSize = sendPageSize;
             this.logger = logger;
+            this.useOutOfLineExecution = useOutOfLineExecution;
             this.LogPageSizeBits = Utility.NumBitsPreviousPowerOf2(sendPageSize);
             this.WrapDistance = PageWrapDistance << LogPageSizeBits;
 
@@ -268,7 +270,15 @@ namespace Garnet.client
 
         void OnPagesMarkedReadOnly(long oldReadOnlyAddress, long newReadOnlyAddress)
         {
-            AsyncFlushPages(oldReadOnlyAddress, newReadOnlyAddress);
+            if (useOutOfLineExecution)
+            {
+                // TODO: Call AsyncFlushOutOfLinePages when implemented.
+                AsyncFlushPages(oldReadOnlyAddress, newReadOnlyAddress);
+            }
+            else
+            {
+                AsyncFlushPages(oldReadOnlyAddress, newReadOnlyAddress);
+            }
         }
 
         /// <summary>
