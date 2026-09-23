@@ -19,4 +19,14 @@ namespace Garnet.client
         internal long fromOffset;
         internal long untilOffset;
     }
+
+    /// <summary>
+    /// Out-of-line payload async flush result
+    /// </summary>
+    class PayloadAsyncFlushResult
+    {
+        public CountWrapper count;
+        public Payload payload;
+        public int remainingChunks;
+    }
 }

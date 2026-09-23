@@ -328,8 +328,7 @@ namespace Garnet.client
         {
             if (useOutOfLineExecution)
             {
-                // TODO: Call AsyncFlushOutOfLinePages when implemented.
-                AsyncFlushPages(oldReadOnlyAddress, newReadOnlyAddress);
+                AsyncFlushPayloads(oldReadOnlyAddress, newReadOnlyAddress);
             }
             else
             {
@@ -345,6 +344,7 @@ namespace Garnet.client
         /// <param name="untilAddress"></param>
         public void AsyncFlushPages(long fromAddress, long untilAddress)
         {
+            Debug.Assert(!useOutOfLineExecution, "Inline page flushing cannot be used in out-of-line mode.");
             long startPage = fromAddress >> LogPageSizeBits;
             long endPage = untilAddress >> LogPageSizeBits;
 
@@ -410,25 +410,157 @@ namespace Garnet.client
         }
 
         /// <summary>
-        /// Completion callback for page flush
+        /// Flush an address range containing out-of-line payload keys
+        /// </summary>
+        /// <param name="fromAddress">Start address</param>
+        /// <param name="untilAddress">End address</param>
+        public unsafe void AsyncFlushPayloads(long fromAddress, long untilAddress)
+        {
+            Debug.Assert(useOutOfLineExecution, "Out-of-line page flushing requires out-of-line mode.");
+            const int recordSize = sizeof(long);
+            var startPage = fromAddress >> LogPageSizeBits;
+            var endPage = untilAddress >> LogPageSizeBits;
+            var count = new CountWrapper
+            {
+                count = 1,
+                untilAddress = untilAddress
+            };
+            var flushFailed = false;
+
+            var flushPage = startPage;
+            while (true)
+            {
+                long startOffset = 0, endOffset = 1L << LogPageSizeBits;
+                if (flushPage == startPage) startOffset = GetOffsetInPage(fromAddress);
+                if (flushPage == endPage) endOffset = GetOffsetInPage(untilAddress);
+
+                var realEndOffset = endOffset;
+                ref var page = ref values[flushPage % BufferSize];
+                if (page.lastOffset > 0 && endOffset > page.lastOffset)
+                {
+                    realEndOffset = page.lastOffset;
+                    page.lastOffset = 0;
+                }
+
+                if ((startOffset & (recordSize - 1)) != 0 || (realEndOffset & (recordSize - 1)) != 0)
+                {
+                    FailOnPayloadFlush(ref flushFailed, $"Out-of-line flush range {flushPage}:{startOffset}-{realEndOffset} is not aligned to {recordSize}-byte records.");
+                    realEndOffset -= (realEndOffset - startOffset) & (recordSize - 1);
+                }
+
+                for (var offset = startOffset; offset < realEndOffset; offset += recordSize)
+                {
+                    var address = (flushPage << LogPageSizeBits) | (uint)offset;
+                    var key = *(long*)(page.pointer + offset);
+
+                    if (key != address)
+                    {
+                        FailOnPayloadFlush(ref flushFailed, $"Out-of-line payload key {key} does not match its log address {address}.");
+                        if (DequeuePayloadBuffer(address, out var mismatchedPayload))
+                            mismatchedPayload.Dispose();
+                        continue;
+                    }
+
+                    if (!DequeuePayloadBuffer(key, out var payload))
+                    {
+                        FailOnPayloadFlush(ref flushFailed, $"No out-of-line payload is registered for address {address}.");
+                        continue;
+                    }
+
+                    if (flushFailed)
+                    {
+                        payload.Dispose();
+                        continue;
+                    }
+
+                    SendPayload(ref payload, count, ref flushFailed);
+                }
+
+                if (flushPage == endPage) break;
+                flushPage = (flushPage + 1) & PageOffset.kPageMask;
+            }
+
+            CompleteFlush(count);
+
+            void SendPayload(ref Payload payload, CountWrapper count, ref bool flushFailed)
+            {
+                var chunkSize = Math.Max(1, networkBufferSettings.sendBufferSize);
+                var chunkCount = ((payload.Length - 1) / chunkSize) + 1;
+                var result = new PayloadAsyncFlushResult
+                {
+                    count = count,
+                    payload = payload,
+                    remainingChunks = chunkCount
+                };
+                _ = Interlocked.Increment(ref count.count);
+
+                var dispatchedChunks = 0;
+                try
+                {
+                    for (var offset = 0; offset < payload.Length; offset += chunkSize)
+                    {
+                        var length = Math.Min(chunkSize, payload.Length - offset);
+                        networkSender.SendResponse(payload.Buffer, offset, length, result);
+                        dispatchedChunks++;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    logger?.LogError(ex, "Exception sending an out-of-line payload");
+                    flushFailed = true;
+                    networkHandler.Dispose();
+
+                    for (var i = dispatchedChunks; i < chunkCount; i++)
+                        AsyncFlushPageCallback(result);
+                }
+            }
+
+            void FailOnPayloadFlush(ref bool flushFailed, string message)
+            {
+                if (flushFailed)
+                    return;
+
+                flushFailed = true;
+                logger?.LogError("{Message}", message);
+                networkHandler.Dispose();
+            }
+        }
+
+        /// <summary>
+        /// Completion callback for network flush
         /// </summary>
         /// <param name="context"></param>
         private void AsyncFlushPageCallback(object context)
         {
+            switch (context)
+            {
+                case PageAsyncFlushResult pageResult:
+                    CompleteFlush(pageResult.count);
+                    break;
+
+                case PayloadAsyncFlushResult payloadResult:
+                    if (Interlocked.Decrement(ref payloadResult.remainingChunks) == 0)
+                    {
+                        payloadResult.payload.Dispose();
+                        CompleteFlush(payloadResult.count);
+                    }
+                    break;
+
+                default:
+                    Debug.Fail($"Unexpected network flush context type {context?.GetType().FullName ?? "null"}.");
+                    break;
+            }
+        }
+
+        void CompleteFlush(CountWrapper count)
+        {
             try
             {
-
-                // Set the page status to flushed
-                var result = (PageAsyncFlushResult)context;
-
-                if (Interlocked.Decrement(ref result.count.count) == 0)
+                if (Interlocked.Decrement(ref count.count) == 0)
                 {
-                    long endAddress = result.count.untilAddress;
-                    //Console.WriteLine($"Flushing until {endAddress}");
-
+                    long endAddress = count.untilAddress;
                     if (Utility.MonotonicUpdate(ref FlushedUntilAddress, endAddress, WrapDistance, out _))
                     {
-                        //Console.WriteLine($"Flushed until {endAddress}");
                         FlushEvent.Set();
                     }
                     AggressiveShiftReadOnlyRunner(true);

@@ -644,6 +644,7 @@ namespace Garnet.client
 
         async ValueTask InternalExecuteAsync(TcsWrapper tcs, Memory<byte> op, string param1 = null, string param2 = null, CancellationToken token = default)
         {
+            Debug.Assert(!useOutOfLineExecution, "Legacy InternalExecute methods cannot be used in out-of-line mode.");
             tcs.timestamp = GetTimestamp();
             int totalLen = 0;
             int arraySize = 1;
@@ -757,6 +758,7 @@ namespace Garnet.client
 
         async ValueTask InternalExecuteAsync(TcsWrapper tcs, Memory<byte> op, Memory<byte> param1, Memory<byte> param2, CancellationToken token = default)
         {
+            Debug.Assert(!useOutOfLineExecution, "Legacy InternalExecute methods cannot be used in out-of-line mode.");
             tcs.timestamp = GetTimestamp();
             int totalLen = 0;
             int arraySize = 1;
@@ -871,6 +873,7 @@ namespace Garnet.client
 
         void InternalExecuteNoResponse(Memory<byte> op, ReadOnlySpan<byte> subop, Span<byte> param1, Span<byte> param2, CancellationToken token = default)
         {
+            Debug.Assert(!useOutOfLineExecution, "Legacy InternalExecute methods cannot be used in out-of-line mode.");
             var totalLen = 0;
             var arraySize = 4;
 
@@ -965,6 +968,7 @@ namespace Garnet.client
         /// <param name="tcs"></param>
         async ValueTask InternalExecuteAsync(TcsWrapper tcs, string op, ICollection<string> args = null, CancellationToken token = default)
         {
+            Debug.Assert(!useOutOfLineExecution, "Legacy InternalExecute methods cannot be used in out-of-line mode.");
             tcs.timestamp = GetTimestamp();
             bool isArray = args != null;
             int arraySize = 1 + (isArray ? args.Count : 0);
@@ -1083,6 +1087,7 @@ namespace Garnet.client
         /// <returns></returns>
         async ValueTask InternalExecuteAsync(TcsWrapper tcs, Memory<byte> respOp, ICollection<Memory<byte>> args = null, CancellationToken token = default)
         {
+            Debug.Assert(!useOutOfLineExecution, "Legacy InternalExecute methods cannot be used in out-of-line mode.");
             tcs.timestamp = GetTimestamp();
             bool isArray = args != null;
             int arraySize = 1 + (isArray ? args.Count : 0);
@@ -1197,6 +1202,7 @@ namespace Garnet.client
         /// <param name="token">Cancellation token</param>
         async ValueTask InternalExecuteChunkedAsync(TcsWrapper tcs, Memory<byte> respOp, ICollection<Memory<byte>> args = null, CancellationToken token = default)
         {
+            Debug.Assert(useOutOfLineExecution, "Chunked InternalExecute methods require out-of-line mode.");
             tcs.timestamp = GetTimestamp();
             bool isArray = args != null;
             int arraySize = checked(1 + (isArray ? args.Count : 0));
@@ -1332,6 +1338,7 @@ namespace Garnet.client
         /// <param name="token">Cancellation token</param>
         void InternalExecuteChunkedNoResponse(Memory<byte> respOp, ReadOnlyMemory<byte> subop, ReadOnlyMemory<byte> param1, ReadOnlyMemory<byte> param2, CancellationToken token = default)
         {
+            Debug.Assert(useOutOfLineExecution, "Chunked InternalExecute methods require out-of-line mode.");
             const int arraySize = 4;
             int totalLength = checked(1 + NumUtils.CountDigits(arraySize) + 2 + respOp.Length);
 
