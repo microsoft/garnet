@@ -6,8 +6,10 @@ metadata:
   labels:
     {{- include "garnet.labels" . | nindent 4 }}
 spec:
-  {{- if .Values.podDisruptionBudget.maxUnavailable }}
-  maxUnavailable: {{ .Values.podDisruptionBudget.maxUnavailable }}
+  {{- /* Test against the empty-string sentinel, not truthiness: Go templates treat integer 0 as false, and 0 is a valid maxUnavailable. */}}
+  {{- $maxUnavailable := .Values.podDisruptionBudget.maxUnavailable }}
+  {{- if and (not (kindIs "invalid" $maxUnavailable)) (ne (toString $maxUnavailable) "") }}
+  maxUnavailable: {{ $maxUnavailable }}
   {{- else }}
   minAvailable: {{ .Values.podDisruptionBudget.minAvailable }}
   {{- end }}
