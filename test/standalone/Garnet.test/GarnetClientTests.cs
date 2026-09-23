@@ -3,6 +3,7 @@
 using System;
 using System.Linq;
 using System.Net;
+using System.Net.Security;
 using System.Net.Sockets;
 using System.Reflection;
 using System.Text;
@@ -570,6 +571,58 @@ namespace Garnet.test
 
             result = await db.ExecuteForStringResultAsync("PING").ConfigureAwait(false);
             ClassicAssert.AreEqual("PONG", result);
+        }
+
+        [Test]
+        public async Task ChunkedSendVariablePayloadSizes([Values] bool useTls)
+        {
+            const int sendPageSize = 16;
+            const int bufferSize = 256;
+            int[] payloadSizes = [0, 1, 7, 8, 31, 32, 127, 255, 256, 257, 511, 512, 513, 4097];
+
+            using var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableTLS: useTls);
+            server.Start();
+
+            SslClientAuthenticationOptions tlsOptions = null;
+            if (useTls)
+            {
+                tlsOptions = new SslClientAuthenticationOptions
+                {
+                    ClientCertificates = [TestUtils.GetClientCertificate()],
+                    TargetHost = "GarnetTest",
+                    AllowRenegotiation = false,
+                    RemoteCertificateValidationCallback = TestUtils.ValidateServerCertificate,
+                };
+            }
+
+            using var db = new GarnetClient(
+                TestUtils.EndPoint,
+                tlsOptions,
+                sendPageSize: sendPageSize,
+                bufferSize: bufferSize,
+                maxOutstandingTasks: 8,
+                useOutOfLineExecution: true);
+            await db.ConnectAsync().ConfigureAwait(false);
+
+            Memory<byte> set = "$3\r\nSET\r\n"u8.ToArray();
+            Memory<byte> get = "$3\r\nGET\r\n"u8.ToArray();
+
+            var tasks = payloadSizes.Select(async payloadSize =>
+            {
+                Memory<byte> key = Encoding.ASCII.GetBytes($"chunked-send-{payloadSize}");
+                Memory<byte> value = new byte[payloadSize];
+                for (int i = 0; i < value.Length; i++)
+                    value.Span[i] = (byte)((i * 31 + payloadSize) & 0xFF);
+
+                var setResult = await db.ExecuteForStringResultAsync(set, [key, value]).ConfigureAwait(false);
+                ClassicAssert.AreEqual("OK", setResult);
+
+                using var getResult = await db.ExecuteForMemoryResultWithCancellationAsync(get, [key]).ConfigureAwait(false);
+                ClassicAssert.AreEqual(payloadSize, getResult.Length);
+                ClassicAssert.IsTrue(getResult.Span.SequenceEqual(value.Span));
+            });
+
+            await Task.WhenAll(tasks).ConfigureAwait(false);
         }
 
         /// <summary>

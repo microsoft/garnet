@@ -68,7 +68,7 @@ namespace Garnet.cluster
         /// <summary>
         /// Default send page size for GarnetClient
         /// </summary>
-        const int defaultSendPageSize = 1 << 10;
+        const int defaultSendPageSize = 1 << 13;
 
         /// <summary>
         /// Default max outstanding tasks for GarnetClient
@@ -94,6 +94,7 @@ namespace Garnet.cluster
                 endpoint,
                 tlsOptions,
                 sendPageSize: defaultSendPageSize,
+                bufferSize: defaultSendPageSize,
                 maxOutstandingTasks: defaultMaxOutstandingTask,
                 timeoutMilliseconds: GetClientTimeoutMilliseconds(
                     clusterProvider.storeWrapper.runtimeConfig.GetInt(ServerConfigType.CLUSTER_NODE_TIMEOUT)),

@@ -74,7 +74,7 @@ namespace Garnet.client
         // Circular buffer definition
         readonly Page[] values;
         readonly ILogger logger;
-        readonly int BufferSize = 4, LogPageSizeBits, PageSizeMask;
+        readonly int BufferSize = 2, LogPageSizeBits, PageSizeMask;
         internal readonly int PageSize;
         readonly long WrapDistance;
 
