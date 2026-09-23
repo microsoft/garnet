@@ -266,7 +266,11 @@ namespace Tsavorite.core
             await checkpointTcs.Task.WaitAsync(token).ConfigureAwait(false);
         }
 
-        public Task GetCheckpointTask() => checkpointTcs.Task;
+        /// <summary>
+        /// Task that completes when the flush started by the most recent <see cref="BeginCheckpoint(IDevice, ulong, out ulong)"/>
+        /// has finished, or <c>null</c> if no checkpoint has been started on this allocator.
+        /// </summary>
+        public Task GetCheckpointTask() => checkpointTcs?.Task;
 
         /// <summary>
         /// Public facing persistence API

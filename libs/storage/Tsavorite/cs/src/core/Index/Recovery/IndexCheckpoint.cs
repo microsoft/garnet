@@ -51,6 +51,52 @@ namespace Tsavorite.core
             stateMachineDriver.AddToWaitingList(overflowBucketsAllocator.GetCheckpointTask(), StateMachineTaskType.IndexCheckpointSMTaskOverflowBucketsCheckpoint);
         }
 
+        /// <summary>
+        /// Blocks until the fuzzy index checkpoint flush issued at <see cref="Phase.PREPARE"/> has completed, for a
+        /// state machine that aborted before <see cref="Phase.WAIT_INDEX_CHECKPOINT"/> put those flushes on the
+        /// driver's waiting list.
+        /// </summary>
+        /// <remarks>
+        /// The flush writes to the index checkpoint device and reports through flush state that is shared across
+        /// checkpoints (<see cref="mainIndexCheckpointCallbackCount"/>, <see cref="mainIndexCheckpointError"/>,
+        /// <see cref="mainIndexCheckpointTcs"/> and their overflow-bucket counterparts). Releasing the device while a
+        /// write is still in flight makes that write fail, and its completion then lands on whichever checkpoint owns
+        /// the shared state by then - failing the next checkpoint with an error belonging to this one, or completing
+        /// its flush before the data is on disk. Faults are observed and discarded here: this checkpoint has already
+        /// failed, and the exception that aborted it is the actionable one.
+        /// </remarks>
+        internal void WaitForIndexCheckpointFlushCompletion()
+        {
+            WaitForCheckpointFlush(GetMainIndexCheckpointTask());
+            WaitForCheckpointFlush(overflowBucketsAllocator.GetCheckpointTask());
+        }
+
+        /// <summary>
+        /// Task that completes when the flush started by the most recent <see cref="BeginMainIndexCheckpoint"/> has
+        /// finished, or <c>null</c> if no main index checkpoint has been started on this instance.
+        /// </summary>
+        internal Task GetMainIndexCheckpointTask() => mainIndexCheckpointTcs?.Task;
+
+        /// <summary>
+        /// Blocks until <paramref name="flushTask"/> completes, discarding its outcome. Does nothing when the flush
+        /// was never started.
+        /// </summary>
+        internal static void WaitForCheckpointFlush(Task flushTask)
+        {
+            if (flushTask is null)
+                return;
+
+            try
+            {
+                flushTask.GetAwaiter().GetResult();
+            }
+            catch
+            {
+                // The flush outcome is deliberately discarded; the caller is already unwinding a failed checkpoint.
+                // Retrieving it here also marks the task's exception observed.
+            }
+        }
+
         internal async ValueTask IsIndexFuzzyCheckpointCompletedAsync(CancellationToken token = default)
         {
             // Get tasks first to ensure we have captured the semaphore instances synchronously
@@ -72,6 +118,20 @@ namespace Tsavorite.core
         private void RecordMainIndexCheckpointError(string detail, Exception exception = null)
             => _ = Interlocked.CompareExchange(ref mainIndexCheckpointError, new IoFailure(detail, exception), null);
 
+        /// <summary>Retire one outstanding chunk from the main index checkpoint flush, completing the checkpoint task
+        /// when the last one is retired.</summary>
+        private void RetireMainIndexCheckpointChunk()
+        {
+            if (Interlocked.Decrement(ref mainIndexCheckpointCallbackCount) == 0)
+            {
+                var error = mainIndexCheckpointError;
+                if (error is not null)
+                    mainIndexCheckpointTcs.TrySetException(error.ToException("Main index checkpoint flush failed"));
+                else
+                    mainIndexCheckpointTcs.TrySetResult(true);
+            }
+        }
+
         /// <summary>Write the main hash index to <paramref name="device"/> as a sequence of chunks, none larger than
         /// <paramref name="maxIoBytesPerRequest"/>. The default is <see cref="Constants.kMaxIoBytesPerRequest"/>, which
         /// is deliberately below the largest single transfer any supported platform performs; tests lower it to
@@ -81,6 +141,7 @@ namespace Tsavorite.core
         {
             long totalSize = state[version].size * sizeof(HashBucket);
             numBytesWritten = (ulong)totalSize;
+            mainIndexCheckpointCallbackCount = 0;
             mainIndexCheckpointError = null;
             mainIndexCheckpointTcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
 
@@ -97,6 +158,11 @@ namespace Tsavorite.core
 
             void FlushRunner()
             {
+                // Number of chunks whose retirement is accounted for: the device accepted the write and its completion
+                // callback will retire the chunk, or the submit failed and the catch below retired it in place. Chunks
+                // past this point were counted into mainIndexCheckpointCallbackCount but never handed to the device.
+                var accountedChunks = 0;
+                var countedChunks = 0;
                 try
                 {
                     // Split the table into chunks small enough that no single device request exceeds the maximum the
@@ -109,7 +175,7 @@ namespace Tsavorite.core
 
                     uint chunkSize = (uint)(totalSize / numChunks);
                     Debug.Assert(chunkSize <= maxChunkSize, "Index checkpoint chunk exceeds the maximum device request size");
-                    mainIndexCheckpointCallbackCount = numChunks;
+                    mainIndexCheckpointCallbackCount = countedChunks = numChunks;
 
                     if (throttleCheckpointFlushDelayMs >= 0)
                         throttleIndexCheckpointFlushSemaphore = new SemaphoreSlim(0);
@@ -130,15 +196,21 @@ namespace Tsavorite.core
                             {
                                 device.WriteAsync(chunkStartBucket, numBytesWritten, chunkSize, AsyncPageFlushCallback, result);
                             }
-                            catch
+                            catch (Exception ex)
                             {
                                 // A device may invoke the completion callback synchronously and then throw back out of
                                 // the submit (LocalMemoryDevice propagates callback exceptions), so the callback may
-                                // already have released this chunk's unit. Claim exactly once to avoid underflowing
-                                // the index's outstanding-IO count, which could free a superseded table while issuance still
-                                // reads it. If the submit failed before any callback ran, we are the only claimant.
+                                // already have released this chunk's unit and retired the chunk. Claim exactly once to
+                                // avoid underflowing the index's outstanding-IO count, which could free a superseded table
+                                // while issuance still reads it, and to avoid retiring the chunk twice. Record the error
+                                // before retiring, so a retirement that completes the task reports the failure.
+                                RecordMainIndexCheckpointError($"chunk {index} could not be issued", ex);
                                 if (result.TryClaimIoUnitRelease())
+                                {
                                     EndNativeIndexCheckpointIo();
+                                    RetireMainIndexCheckpointChunk();
+                                }
+                                accountedChunks++;
                                 throw;
                             }
                         }
@@ -172,21 +244,27 @@ namespace Tsavorite.core
                             {
                                 device.WriteAsync((IntPtr)result.mem.aligned_pointer, numBytesWritten, chunkSize, AsyncPageFlushCallback, result);
                             }
-                            catch
+                            catch (Exception ex)
                             {
                                 // A device may invoke the completion callback synchronously and then throw back out of
                                 // the submit (LocalMemoryDevice propagates callback exceptions), so the callback may
-                                // already have released this chunk's unit and its staging buffer. Claim exactly once to
-                                // avoid underflowing the index's outstanding-IO count, which could free a superseded
-                                // table while issuance still reads it, and to avoid returning the buffer twice.
+                                // already have released this chunk's unit, its staging buffer, and retired the chunk.
+                                // Claim exactly once to avoid underflowing the index's outstanding-IO count, which could
+                                // free a superseded table while issuance still reads it, and to avoid returning the buffer
+                                // or retiring the chunk twice. Record the error before retiring, so a retirement that
+                                // completes the task reports the failure.
+                                RecordMainIndexCheckpointError($"chunk {index} could not be issued", ex);
                                 if (result.TryClaimIoUnitRelease())
                                 {
                                     result.mem.Dispose();
                                     EndNativeIndexCheckpointIo();
+                                    RetireMainIndexCheckpointChunk();
                                 }
+                                accountedChunks++;
                                 throw;
                             }
                         }
+                        accountedChunks++;
                         if (throttleCheckpointFlushDelayMs >= 0)
                         {
                             throttleIndexCheckpointFlushSemaphore.Wait();
@@ -201,7 +279,20 @@ namespace Tsavorite.core
                 catch (Exception ex)
                 {
                     logger?.LogError(ex, "{method} failed while flushing index checkpoint", nameof(BeginMainIndexCheckpoint));
-                    mainIndexCheckpointTcs.TrySetException(ex);
+
+                    // Chunks already handed to the device will still complete and retire themselves, but the ones
+                    // counted after the failure have no callback to retire them. Retiring them here is what lets the
+                    // outstanding count reach zero, so the last real completion - not this thread - completes the task.
+                    // Completing the task directly instead would release its waiters while writes are still in flight
+                    // against a device the failing checkpoint is about to dispose, and those completions would then be
+                    // counted against whichever checkpoint owns the shared flush state by the time they land.
+                    RecordMainIndexCheckpointError($"index checkpoint flush failed after {accountedChunks} of {countedChunks} chunks", ex);
+                    for (var unaccounted = accountedChunks; unaccounted < countedChunks; unaccounted++)
+                        RetireMainIndexCheckpointChunk();
+
+                    // Nothing was counted, so no completion will ever run; the task has to be failed here.
+                    if (countedChunks == 0)
+                        mainIndexCheckpointTcs.TrySetException(ex);
                 }
                 finally
                 {
@@ -239,14 +330,7 @@ namespace Tsavorite.core
                     RecordMainIndexCheckpointError($"chunk {result.chunkIndex} wrote {numBytes} of {result.numBytesToWrite} bytes");
                 }
 
-                if (Interlocked.Decrement(ref mainIndexCheckpointCallbackCount) == 0)
-                {
-                    var error = mainIndexCheckpointError;
-                    if (error is not null)
-                        mainIndexCheckpointTcs.TrySetException(error.ToException("Main index checkpoint flush failed"));
-                    else
-                        mainIndexCheckpointTcs.TrySetResult(true);
-                }
+                RetireMainIndexCheckpointChunk();
                 throttleIndexCheckpointFlushSemaphore?.Release();
             }
             finally
