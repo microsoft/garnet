@@ -28,16 +28,18 @@ namespace BDN.benchmark.Operations
         /// <summary>
         /// Operation parameters provider
         /// </summary>
+        /// <remarks>
+        /// This sequence is unconditional and must stay that way: BenchmarkDotNet identifies each value by its
+        /// position here, and the generated per-job process re-invokes the provider and selects by that
+        /// position. <see cref="OperationParamsFilter"/> applies <c>--opparams</c> by excluding whole benchmark
+        /// cases, which leaves the positions intact; see there for the full path.
+        /// </remarks>
         public IEnumerable<OperationParams> OperationParamsProvider()
         {
-            if (ParamsNone)
-                yield return new(false, false);
-            if (ParamsACL)
-                yield return new(true, false);
-            if (ParamsAOF)
-                yield return new(false, true);
-            if (ParamsAAD)
-                yield return new(false, false, useAad: true);
+            yield return new(useACLs: false, useAof: false, useAad: false);
+            yield return new(useACLs: true, useAof: false, useAad: false);
+            yield return new(useACLs: false, useAof: true, useAad: false);
+            yield return new(useACLs: false, useAof: false, useAad: true);
         }
 
         /// <summary>
@@ -52,7 +54,8 @@ namespace BDN.benchmark.Operations
         }
 
         /// <summary>
-        /// Set by cmdline arg --opparams
+        /// Set by cmdline arg --opparams and read by <see cref="OperationParamsFilter"/>. These are host-process
+        /// state; the generated per-job process always sees the defaults.
         /// </summary>
         internal static bool ParamsNone = true;
         internal static bool ParamsACL = true;
