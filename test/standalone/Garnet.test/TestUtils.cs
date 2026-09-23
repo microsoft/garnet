@@ -202,17 +202,27 @@ namespace Garnet.test
         }
 
         /// <summary>
-        /// Forces the port slot to be resolved now. Projects that rely on the static port defaults have no
-        /// <c>[SetUpFixture]</c> calling <see cref="SetTestPort"/>, and the remaining members read only
-        /// constants, so without this the slot would be claimed lazily and any failure would surface from
-        /// whichever test first touched a port. See <see cref="PortOffset"/> for what a failure does to the run.
+        /// Forces the port slot to be resolved now, at the point of this call.
+        /// <para>
+        /// The slot is claimed by the <see cref="PortOffset"/> field initializer, which the CLR runs as part of
+        /// this class's static constructor the first time anything touches the class. <c>RunClassConstructor</c>
+        /// is the mechanism: it runs that static constructor on demand, so <see cref="ResolvePortOffset"/>
+        /// executes here rather than at some arbitrary later point. Nothing else pulls it forward — projects
+        /// that rely on the static port defaults have no <c>[SetUpFixture]</c> calling
+        /// <see cref="SetTestPort"/>, and the remaining members read only constants — so without this the slot
+        /// would be claimed lazily and any failure would surface from whichever test first touched a port. See
+        /// <see cref="PortOffset"/> for what a failure does to the run.
+        /// </para>
+        /// <para>
         /// The underlying exception is rethrown in place of the type initializer wrapper, so the actionable
         /// message is the one reported rather than "the type initializer threw an exception".
+        /// </para>
         /// </summary>
         internal static void EnsurePortSlotResolved()
         {
             try
             {
+                // Runs the static constructor, evaluating the PortOffset initializer and claiming the slot.
                 RuntimeHelpers.RunClassConstructor(typeof(TestUtils).TypeHandle);
             }
             catch (TypeInitializationException e) when (e.InnerException is not null)
@@ -386,27 +396,36 @@ namespace Garnet.test
         }
 
         /// <summary>
-        /// Probes the ports a slot hands out. A server stranded by a crashed run holds no slot lock at all, so
-        /// binding is the authority on whether a slot is actually usable. The cluster band is probed across its
-        /// node range rather than at the base alone: a run can die leaving a non-base node listening while its
-        /// base node is already disposed, which a base-only probe would read as free.
+        /// The ports a slot reserves. Enumerated from <see cref="TestPortAssignment"/> rather than listed here,
+        /// so every assignment a project can bind is probed at claim time and a new one is covered without a
+        /// second edit: claim time and bind time have to see the same set of ports.
+        /// <para>
+        /// Standalone assignments are probed at their base alone because no standalone project binds past it;
+        /// one that starts to must widen this. The cluster band is probed across its whole node range, because
+        /// a run can die leaving a non-base node listening while its base node is disposed, which a base-only
+        /// probe would read as free.
+        /// </para>
         /// </summary>
-        /// <param name="slot">Slot to probe.</param>
-        /// <returns>True when every port probed for the slot is free.</returns>
-        private static bool ArePortsFree(int slot)
+        /// <param name="slot">Slot whose ports to enumerate.</param>
+        /// <returns>Every port the slot hands out.</returns>
+        internal static IEnumerable<int> SlotPorts(int slot)
         {
             var offset = slot * PortSlotStride;
-            if (!IsPortFree((int)TestPortAssignment.GarnetTest + offset))
-                return false;
+
+            foreach (var assignment in Enum.GetValues<TestPortAssignment>())
+                yield return (int)assignment + offset;
 
             for (var node = 0; node < MaxClusterNodesPerSubProject; node++)
-            {
-                if (!IsPortFree(ClusterPortBandBase + offset + node))
-                    return false;
-            }
-
-            return true;
+                yield return ClusterPortBandBase + offset + node;
         }
+
+        /// <summary>
+        /// Probes the ports a slot hands out. A server stranded by a crashed run holds no slot lock at all, so
+        /// binding is the authority on whether a slot is actually usable.
+        /// </summary>
+        /// <param name="slot">Slot to probe.</param>
+        /// <returns>True when every port the slot reserves is free.</returns>
+        internal static bool ArePortsFree(int slot) => SlotPorts(slot).All(IsPortFree);
 
         /// <summary>
         /// Records the owning checkout and registers this process as a holder of the slot.
@@ -555,15 +574,35 @@ namespace Garnet.test
         }
 
         /// <summary>
-        /// Reports whether a port can currently be bound.
+        /// Reports whether a port can currently be bound. Both wildcards are probed, and exclusively, so that a
+        /// listener is detected wherever it sits: tests bind the IPv4 and IPv6 loopbacks, every address
+        /// <see cref="Dns.GetHostAddresses(string)"/> returns, and <see cref="IPAddress.Any"/>, and a wildcard
+        /// bind conflicts with a specific-address one only when it asks for exclusive use.
+        /// <para>
+        /// Each family is bound separately rather than through one dual-mode socket, whose handling of
+        /// IPv4-mapped addresses is platform-dependent. <see cref="IPAddress.Any"/> covers IPv4 alone, so a
+        /// listener on <see cref="IPAddress.IPv6Loopback"/> needs the second bind to be seen.
+        /// </para>
         /// </summary>
         /// <param name="port">Port to test.</param>
         /// <returns>True when the port is free.</returns>
-        private static bool IsPortFree(int port)
+        internal static bool IsPortFree(int port)
+            => CanBindExclusively(IPAddress.Any, port)
+                && (!Socket.OSSupportsIPv6 || CanBindExclusively(IPAddress.IPv6Any, port));
+
+        /// <summary>
+        /// Binds one address exclusively and releases it again. Exclusivity is what makes this a probe: a shared
+        /// bind succeeds alongside a listener on a specific address under that wildcard and would report the
+        /// port free. A port in <c>TIME_WAIT</c> is still reported free, since no listener can be there.
+        /// </summary>
+        /// <param name="address">Address to bind, normally a wildcard.</param>
+        /// <param name="port">Port to bind.</param>
+        /// <returns>True when the bind succeeded.</returns>
+        private static bool CanBindExclusively(IPAddress address, int port)
         {
             try
             {
-                var listener = new TcpListener(IPAddress.Loopback, port);
+                var listener = new TcpListener(address, port) { ExclusiveAddressUse = true };
                 listener.Start();
                 listener.Stop();
                 return true;
@@ -851,6 +890,8 @@ namespace Garnet.test
             bool copyReadsToTail = false,
             int replayTaskCount = 1,
             bool failOnRecoveryError = false,
+            bool fastAofTruncate = false,
+            bool useAofNullDevice = false,
             LogCompactionType compactionType = LogCompactionType.None,
             int mutablePercent = 90,
             int compactionMaxSegments = 32,
@@ -949,6 +990,8 @@ namespace Garnet.test
                 EnableRangeIndexPreview = enableRangeIndexPreview,
                 CopyReadsToTail = copyReadsToTail,
                 FailOnRecoveryError = failOnRecoveryError,
+                FastAofTruncate = fastAofTruncate,
+                UseAofNullDevice = useAofNullDevice,
                 CompactionType = compactionType,
                 MutablePercent = mutablePercent,
                 CompactionMaxSegments = compactionMaxSegments,
@@ -1625,8 +1668,58 @@ namespace Garnet.test
 
             var rootPath = Path.Combine(RootTestsProjectPath, ".tmp", testPath);
 
-            return rootPath;
+            return EnsureExtendedLengthPathIfNeeded(rootPath);
         }
+
+        /// <summary>
+        /// On Windows, rewrites <paramref name="path"/> as a Win32 extended-length path (prefixed with
+        /// <c>\\?\</c>, or <c>\\?\UNC\</c> for a network share) when its fully-qualified length is close
+        /// enough to the 260-char MAX_PATH limit that the files tests create beneath it could exceed it.
+        /// Extended-length paths are exempt from that limit and are honored by the device layer (which
+        /// passes them straight to CreateFileW) as well as the BCL file APIs.
+        /// </summary>
+        /// <remarks>
+        /// This mirrors the equivalent helper in Tsavorite's TestUtils. Without it, a checkout under a long
+        /// root makes the deepest files Garnet creates — checkpoint files such as
+        /// "\Store\checkpoints\cpr-checkpoints\&lt;guid&gt;\snapshot.obj.dat" (~88 chars) — exceed the limit,
+        /// and the device layer rejects them. Because the directory name embeds a per-process randomized
+        /// <see cref="HashCode"/>, its length varies between runs, so such failures are intermittent.
+        ///
+        /// Only a path that actually needs rewriting is canonicalized: when it is close enough to the limit,
+        /// it is fully qualified via <see cref="Path.GetFullPath(string)"/> so that relative segments and
+        /// forward slashes are normalized to backslashes (as required by extended-length paths, which Windows
+        /// does not normalize) before the <c>\\?\</c> prefix is applied. The input is returned unchanged on
+        /// non-Windows platforms, when it is already extended-length, or when it is short enough that no child
+        /// path can overflow; this keeps the common short-path case (normal checkouts and CI) on ordinary paths.
+        ///
+        /// The constants below are duplicated rather than taken from Tsavorite's Native32 because that type's
+        /// members are internal and Garnet.test.cluster, which compiles this file via a linked Compile item,
+        /// is not granted InternalsVisibleTo by Tsavorite.core.
+        /// </remarks>
+        internal static string EnsureExtendedLengthPathIfNeeded(string path)
+        {
+            if (string.IsNullOrEmpty(path) || !OperatingSystem.IsWindows() || path.StartsWith(ExtendedLengthPathPrefix, StringComparison.Ordinal))
+                return path;
+
+            var fullPath = Path.GetFullPath(path);
+
+            // The device layer rejects non-extended paths longer than MAX_PATH - 11 (the 11 reserves room for
+            // a ".<segmentId>" suffix). Once this directory's fully-qualified length is within the reserve
+            // below of MAX_PATH, switch to an extended-length path so those children stay valid.
+            const int win32MaxPath = 260;
+            const int reservedForChildPaths = 100;
+            if (fullPath.Length <= win32MaxPath - reservedForChildPaths)
+                return path;
+
+            // UNC paths (\\server\share\...) use the \\?\UNC\server\share\... form.
+            if (fullPath.StartsWith(@"\\", StringComparison.Ordinal))
+                return ExtendedLengthPathPrefix + "UNC" + fullPath[1..];
+
+            return ExtendedLengthPathPrefix + fullPath;
+        }
+
+        /// <summary>The Win32 extended-length path prefix; paths using it bypass the MAX_PATH limit.</summary>
+        private const string ExtendedLengthPathPrefix = @"\\?\";
 
         /// <summary>
         /// Delete a directory recursively

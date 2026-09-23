@@ -1,12 +1,12 @@
-// Copyright (c) Microsoft Corporation.
+﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
 using System.IO;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
-using Garnet.test;
 using Microsoft.Extensions.Logging;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -137,7 +137,7 @@ namespace Tsavorite.test.recovery.sumstore
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 
-            NumClicks value;
+            var valueArr = new NumClicks[1];
             AdInput inputArg = default;
             Output output = default;
 
@@ -146,8 +146,8 @@ namespace Tsavorite.test.recovery.sumstore
 
             for (int key = 0; key < NumOps; key++)
             {
-                value.numClicks = key;
-                _ = bContext1.Upsert(inputArray[key], SpanByte.FromPinnedVariable(ref value), Empty.Default);
+                valueArr[0].numClicks = key;
+                _ = bContext1.Upsert(inputArray[key], MemoryMarshal.AsBytes(valueArr.AsSpan()), Empty.Default);
             }
 
             _ = store1.TryInitiateFullCheckpoint(out Guid token, checkpointType);
@@ -214,7 +214,7 @@ namespace Tsavorite.test.recovery.sumstore
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 
-            NumClicks value;
+            var valueArr = new NumClicks[1];
             AdInput inputArg = default;
             Output output = default;
 
@@ -223,8 +223,8 @@ namespace Tsavorite.test.recovery.sumstore
 
             for (int key = 0; key < NumOps; key++)
             {
-                value.numClicks = key;
-                _ = bContext1.Upsert(inputArray[key], SpanByte.FromPinnedVariable(ref value), Empty.Default);
+                valueArr[0].numClicks = key;
+                _ = bContext1.Upsert(inputArray[key], MemoryMarshal.AsBytes(valueArr.AsSpan()), Empty.Default);
             }
             _ = store1.TryInitiateFullCheckpoint(out Guid token, checkpointType);
             await store1.CompleteCheckpointAsync().ConfigureAwait(false);
@@ -276,7 +276,7 @@ namespace Tsavorite.test.recovery.sumstore
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 
-            NumClicks value;
+            var valueArr = new NumClicks[1];
 
             var session1 = store1.NewSession<AdId, AdInput, Output, Empty, AdSimpleFunctions>(new AdSimpleFunctions());
             var bContext1 = session1.BasicContext;
@@ -284,8 +284,8 @@ namespace Tsavorite.test.recovery.sumstore
             var address = 0L;
             for (int key = 0; key < NumOps; key++)
             {
-                value.numClicks = key;
-                _ = bContext1.Upsert(inputArray[key], SpanByte.FromPinnedVariable(ref value), Empty.Default);
+                valueArr[0].numClicks = key;
+                _ = bContext1.Upsert(inputArray[key], MemoryMarshal.AsBytes(valueArr.AsSpan()), Empty.Default);
 
                 if (key == 2999)
                     address = store1.Log.TailAddress;
@@ -331,7 +331,7 @@ namespace Tsavorite.test.recovery.sumstore
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 
-            NumClicks value;
+            var valueArr = new NumClicks[1];
             AdInput inputArg = default;
             Output output = default;
             AdSimpleFunctions functions1 = new(1);
@@ -342,12 +342,12 @@ namespace Tsavorite.test.recovery.sumstore
 
             for (int key = 0; key < NumOps; key++)
             {
-                value.numClicks = key;
+                valueArr[0].numClicks = key;
                 if ((key & 1) > 0)
-                    _ = bContext1.Upsert(inputArray[key], SpanByte.FromPinnedVariable(ref value), Empty.Default);
+                    _ = bContext1.Upsert(inputArray[key], MemoryMarshal.AsBytes(valueArr.AsSpan()), Empty.Default);
                 else
                 {
-                    AdInput input = new() { adId = inputArray[key], numClicks = value };
+                    AdInput input = new() { adId = inputArray[key], numClicks = valueArr[0] };
                     _ = bContext1.RMW(inputArray[key], ref input);
                 }
             }
@@ -365,8 +365,8 @@ namespace Tsavorite.test.recovery.sumstore
             var status = bContext2.Read(inputArray[lastKey], ref inputArg, ref output, Empty.Default);
             ClassicAssert.IsFalse(status.IsPending, status.ToString());
 
-            value.numClicks = lastKey;
-            status = bContext2.Upsert(inputArray[lastKey], SpanByte.FromPinnedVariable(ref value), Empty.Default);
+            valueArr[0].numClicks = lastKey;
+            status = bContext2.Upsert(inputArray[lastKey], MemoryMarshal.AsBytes(valueArr.AsSpan()), Empty.Default);
             ClassicAssert.IsFalse(status.IsPending, status.ToString());
 
             inputArg = new() { adId = inputArray[lastKey], numClicks = new NumClicks { numClicks = 0 } }; // CopyUpdater adds, so make this 0

@@ -394,6 +394,7 @@ namespace Garnet.server
                     databaseManager.RecoverVectorSets();
 
                     await RecoverAOFAsync().ConfigureAwait(false);
+                    databaseManager.VerifyRecoveryIsComplete();
                     _ = ReplayAOF(AofAddress.Create(length: serverOptions.AofPhysicalSublogCount, value: -1));
                 }
                 else
@@ -410,8 +411,12 @@ namespace Garnet.server
         /// <param name="dbId">ID of database to checkpoint, or -1 (default) to checkpoint all active databases</param>
         /// <param name="token">Cancellation token</param>
         /// <param name="logger">Logger</param>
-        /// <returns>False if another checkpointing process is already in progress</returns>
-        public Task<bool> TakeCheckpointAsync(bool background, int dbId = -1, CancellationToken token = default, ILogger logger = null)
+        /// <returns>
+        /// <see cref="CheckpointStatus.AlreadyInProgress"/> if another checkpointing process is already in progress,
+        /// <see cref="CheckpointStatus.Failed"/> if a foreground checkpoint did not complete, otherwise
+        /// <see cref="CheckpointStatus.Success"/>
+        /// </returns>
+        public Task<CheckpointStatus> TakeCheckpointAsync(bool background, int dbId = -1, CancellationToken token = default, ILogger logger = null)
         {
             if (dbId > 0 && !CheckMultiDatabaseCompatibility())
                 throw new GarnetException($"Unable to call {nameof(databaseManager.TakeCheckpointAsync)} with DB ID: {dbId}");
@@ -476,6 +481,16 @@ namespace Garnet.server
         /// Recover AOF
         /// </summary>
         public ValueTask RecoverAOFAsync() => databaseManager.RecoverAOFAsync();
+
+        /// <summary>
+        /// Verify that the state recovered from checkpoint and AOF can reconstruct everything that was durably
+        /// acknowledged before shutdown. Reports an incomplete recovery as an error, and throws when the server
+        /// is configured to fail on recovery errors.
+        /// </summary>
+        /// <param name="canBeRepairedBySync">True if a full sync from a primary will reconcile this node, in which
+        /// case an incomplete local recovery is reported but is not fatal</param>
+        public void VerifyRecoveryIsComplete(bool canBeRepairedBySync = false)
+            => databaseManager.VerifyRecoveryIsComplete(canBeRepairedBySync);
 
         /// <summary>
         /// When replaying AOF we do not want to write AOF records again.
@@ -699,23 +714,39 @@ namespace Garnet.server
             }
         }
 
-        async Task CompactionTaskAsync(int compactionFrequencySecs, CancellationToken token = default)
+        /// <summary>
+        /// Run <paramref name="runCycle"/> every <paramref name="interval"/> until <paramref name="token"/> is
+        /// cancelled. A cycle that throws is logged and retried on the next interval, so a transient fault
+        /// cannot disable a maintenance task for the lifetime of the process. Cancellation ends the loop
+        /// without logging.
+        /// </summary>
+        /// <param name="runCycle">The work to perform on each cycle.</param>
+        /// <param name="interval">Delay between cycles.</param>
+        /// <param name="taskDescription">Task name used in the failure log message.</param>
+        /// <param name="logger">Logger for failed cycles, may be null.</param>
+        /// <param name="token">Cancellation token that ends the loop.</param>
+        internal static async Task RunMaintenanceLoopAsync(Func<CancellationToken, ValueTask> runCycle,
+            TimeSpan interval, string taskDescription, ILogger logger, CancellationToken token)
         {
-            Debug.Assert(compactionFrequencySecs > 0);
             try
             {
-                while (true)
+                while (!token.IsCancellationRequested)
                 {
-                    if (token.IsCancellationRequested) return;
+                    try
+                    {
+                        await runCycle(token).ConfigureAwait(false);
+                    }
+                    catch (Exception ex)
+                    {
+                        // Every cycle failure is classified here rather than in an exception filter, so one that
+                        // races shutdown is still handled as a cycle failure: the outer handlers recognize
+                        // cancellation by exception type and treat anything else as terminal. Cancellation makes
+                        // the failure shutdown noise, so the loop ends without logging it.
+                        if (!token.IsCancellationRequested)
+                            logger?.LogError(ex, "Unknown exception received for {taskDescription}. Retrying on the next cycle.", taskDescription);
+                    }
 
-                    await databaseManager.DoCompactionAsync(token, logger).ConfigureAwait(false);
-
-                    if (!runtimeConfig.GetBool(ServerConfigType.COMPACTION_FORCE_DELETE))
-                        logger?.LogInformation("NOTE: Take a checkpoint (SAVE/BGSAVE) in order to actually delete the older data segments (files) from disk");
-                    else
-                        logger?.LogInformation("NOTE: Compaction will delete files, make sure checkpoint/recovery is not being used");
-
-                    await Task.Delay(compactionFrequencySecs * 1000, token).ConfigureAwait(false);
+                    await Task.Delay(interval, token).ConfigureAwait(false);
                 }
             }
             catch (OperationCanceledException) when (token.IsCancellationRequested)
@@ -725,62 +756,51 @@ namespace Garnet.server
             }
             catch (Exception ex)
             {
-                logger?.LogError(ex, "CompactionTask exception received.");
+                logger?.LogCritical(ex, "Unknown exception received for {taskDescription}. The task won't be resumed.", taskDescription);
             }
         }
 
-        async Task ObjectCollectTaskAsync(int objectCollectFrequencySecs, CancellationToken token = default)
+        Task CompactionTaskAsync(int compactionFrequencySecs, CancellationToken token = default)
+        {
+            Debug.Assert(compactionFrequencySecs > 0);
+
+            return RunMaintenanceLoopAsync(async (cancellationToken) =>
+            {
+                await databaseManager.DoCompactionAsync(cancellationToken, logger).ConfigureAwait(false);
+
+                if (!runtimeConfig.GetBool(ServerConfigType.COMPACTION_FORCE_DELETE))
+                    logger?.LogInformation("NOTE: Take a checkpoint (SAVE/BGSAVE) in order to actually delete the older data segments (files) from disk");
+                else
+                    logger?.LogInformation("NOTE: Compaction will delete files, make sure checkpoint/recovery is not being used");
+            }, TimeSpan.FromSeconds(compactionFrequencySecs), "background compaction task", logger, token);
+        }
+
+        Task ObjectCollectTaskAsync(int objectCollectFrequencySecs, CancellationToken token = default)
         {
             Debug.Assert(objectCollectFrequencySecs > 0);
-            try
-            {
-                if (serverOptions.DisableObjects)
-                {
-                    logger?.LogWarning("ExpiredObjectCollectionFrequencySecs option is configured but Object store is disabled. Stopping the background hash collect task.");
-                    return;
-                }
 
-                while (true)
-                {
-                    if (token.IsCancellationRequested) return;
-
-                    databaseManager.ExecuteObjectCollection();
-
-                    await Task.Delay(TimeSpan.FromSeconds(objectCollectFrequencySecs), token).ConfigureAwait(false);
-                }
-            }
-            catch (TaskCanceledException) when (token.IsCancellationRequested)
+            if (serverOptions.DisableObjects)
             {
-                // Suppress the exception if the task was cancelled because of store wrapper disposal
+                logger?.LogWarning("ExpiredObjectCollectionFrequencySecs option is configured but Object store is disabled. Stopping the background hash collect task.");
+                return Task.CompletedTask;
             }
-            catch (Exception ex)
+
+            return RunMaintenanceLoopAsync((_) =>
             {
-                logger?.LogCritical(ex, "Unknown exception received for background hash collect task. Object collect task won't be resumed.");
-            }
+                databaseManager.ExecuteObjectCollection();
+                return ValueTask.CompletedTask;
+            }, TimeSpan.FromSeconds(objectCollectFrequencySecs), "background hash collect task", logger, token);
         }
 
-        async Task ExpiredKeyDeletionScanTaskAsync(int expiredKeyDeletionScanFrequencySecs, CancellationToken token = default)
+        Task ExpiredKeyDeletionScanTaskAsync(int expiredKeyDeletionScanFrequencySecs, CancellationToken token = default)
         {
             Debug.Assert(expiredKeyDeletionScanFrequencySecs > 0);
-            try
-            {
-                while (true)
-                {
-                    if (token.IsCancellationRequested) return;
 
-                    databaseManager.ExpiredKeyDeletionScan();
-
-                    await Task.Delay(TimeSpan.FromSeconds(expiredKeyDeletionScanFrequencySecs), token).ConfigureAwait(false);
-                }
-            }
-            catch (TaskCanceledException) when (token.IsCancellationRequested)
+            return RunMaintenanceLoopAsync((_) =>
             {
-                // Suppress the exception if the task was cancelled because of store wrapper disposal
-            }
-            catch (Exception ex)
-            {
-                logger?.LogCritical(ex, "Unknown exception received for background expired key deletion scan task. The task won't be resumed.");
-            }
+                databaseManager.ExpiredKeyDeletionScan();
+                return ValueTask.CompletedTask;
+            }, TimeSpan.FromSeconds(expiredKeyDeletionScanFrequencySecs), "background expired key deletion scan task", logger, token);
         }
 
         /// <summary>
