@@ -8,9 +8,6 @@
 
   <PropertyGroup>
     <NoWarn>1701;1702;1591</NoWarn>
-    <!-- Marks this project as one that compiles TestUtils.cs, for source shared with projects that do not
-         (TestBase.cs is link-compiled into Tsavorite.test). No source is conditioned on it today. -->
-    <DefineConstants>$(DefineConstants);GARNET_TEST_UTILS</DefineConstants>
   </PropertyGroup>
 
   <ItemGroup>
@@ -29,7 +26,6 @@
     <Compile Include="..\..\standalone\Garnet.test\Extensions\RateLimiterTxn.cs" Link="RateLimiterTxn.cs" />
 		<Compile Include="..\..\standalone\Garnet.test\Extensions\BulkIncrementBy.cs" Link="BulkIncrementBy.cs" />
 		<Compile Include="..\..\standalone\Garnet.test\Extensions\BulkRead.cs" Link="BulkRead.cs" />
-		<Compile Include="..\..\standalone\Garnet.test\TestBase.cs" Link="TestBase.cs" />
   </ItemGroup>
 
   <ItemGroup>
@@ -60,6 +56,7 @@
     <ProjectReference Include="..\..\..\libs\host\Garnet.host.csproj" />
     <ProjectReference Include="..\..\..\libs\server\Garnet.server.csproj" />
     <ProjectReference Include="..\..\..\libs\storage\Tsavorite\cs\src\devices\AzureStorageDevice\Tsavorite.devices.AzureStorageDevice.csproj" />
+    <ProjectReference Include="..\..\..\libs\storage\Tsavorite\cs\test\Tsavorite.test.csproj" />
   </ItemGroup>
 
   <ItemGroup>

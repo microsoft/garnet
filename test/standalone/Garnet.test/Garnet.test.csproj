@@ -8,9 +8,6 @@
 
   <PropertyGroup>
     <NoWarn>1701;1702;1591</NoWarn>
-    <!-- Marks this project as one that compiles TestUtils.cs, for source shared with projects that do not
-         (TestBase.cs is link-compiled into Tsavorite.test). No source is conditioned on it today. -->
-    <DefineConstants>$(DefineConstants);GARNET_TEST_UTILS</DefineConstants>
   </PropertyGroup>
 
   <ItemGroup>
@@ -65,6 +62,7 @@
     <ProjectReference Include="..\..\..\libs\host\Garnet.host.csproj" />
     <ProjectReference Include="..\..\..\libs\server\Garnet.server.csproj" />
     <ProjectReference Include="..\..\..\libs\storage\Tsavorite\cs\src\devices\AzureStorageDevice\Tsavorite.devices.AzureStorageDevice.csproj" />
+    <ProjectReference Include="..\..\..\libs\storage\Tsavorite\cs\test\Tsavorite.test.csproj" />
     <ProjectReference Include="..\..\..\main\GarnetServer\GarnetServer.csproj" />
     <ProjectReference Include="..\..\..\modules\GarnetJSON\GarnetJSON.csproj" />
     <ProjectReference Include="..\..\..\modules\NoOpModule\NoOpModule.csproj" />

@@ -38,10 +38,6 @@ jobs:
         filters: |
           tsavorite:
             - 'libs/storage/Tsavorite/**'
-            # Sources outside the Tsavorite tree that Tsavorite.test.csproj pulls in via <Compile Include>.
-            # Omitting them skips every Tsavorite job when only the linked file changes, letting a break in
-            # it reach main unbuilt. Keep in sync with libs/storage/Tsavorite/cs/test/Tsavorite.test.csproj.
-            - 'test/standalone/Garnet.test/TestBase.cs'
           website:
             - 'website/**'
           garnet:

@@ -4,7 +4,6 @@
 using System;
 using System.Collections.Generic;
 using System.Threading;
-using Garnet.test;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 
