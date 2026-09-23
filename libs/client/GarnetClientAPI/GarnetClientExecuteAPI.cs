@@ -25,7 +25,19 @@ namespace Garnet.client
         public Task<string> ExecuteForStringResultAsync(Memory<byte> respOp, string param1 = null, string param2 = null)
         {
             var tcs = new TcsWrapper { taskType = TaskType.StringAsync, stringTcs = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously) };
-            var _ = InternalExecuteAsync(tcs, respOp, param1, param2);
+            if (useChunkedSend)
+            {
+                var args = new List<Memory<byte>>(2);
+                if (param1 != null)
+                    args.Add(System.Text.Encoding.UTF8.GetBytes(param1));
+                if (param2 != null)
+                    args.Add(System.Text.Encoding.UTF8.GetBytes(param2));
+                var _ = InternalExecuteChunkedAsync(tcs, respOp, args);
+            }
+            else
+            {
+                var _ = InternalExecuteAsync(tcs, respOp, param1, param2);
+            }
             return tcs.stringTcs.Task;
         }
 
@@ -67,7 +79,14 @@ namespace Garnet.client
         public Task<string> ExecuteForStringResultAsync(Memory<byte> respOp, ICollection<Memory<byte>> args = null)
         {
             var tcs = new TcsWrapper { taskType = TaskType.StringAsync, stringTcs = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously) };
-            var _ = InternalExecuteAsync(tcs, respOp, args);
+            if (useChunkedSend)
+            {
+                var _ = InternalExecuteChunkedAsync(tcs, respOp, args);
+            }
+            else
+            {
+                var _ = InternalExecuteAsync(tcs, respOp, args);
+            }
             return tcs.stringTcs.Task;
         }
 
@@ -225,13 +244,17 @@ namespace Garnet.client
             {
                 using (token.Register(TokenRegistrationStringCallback, tcs.stringTcs))
                 {
-                    var _ = InternalExecuteAsync(tcs, respOp, args, token);
+                    var _ = useChunkedSend
+                        ? InternalExecuteChunkedAsync(tcs, respOp, args, token)
+                        : InternalExecuteAsync(tcs, respOp, args, token);
                     return await tcs.stringTcs.Task.ConfigureAwait(false);
                 }
             }
             else
             {
-                var _ = InternalExecuteAsync(tcs, respOp, args, token);
+                var _ = useChunkedSend
+                    ? InternalExecuteChunkedAsync(tcs, respOp, args, token)
+                    : InternalExecuteAsync(tcs, respOp, args, token);
                 return await tcs.stringTcs.Task.ConfigureAwait(false);
             }
         }
@@ -451,13 +474,17 @@ namespace Garnet.client
             {
                 using (token.Register(TokenRegistrationMemoryResultCallback, tcs.memoryByteTcs))
                 {
-                    var _ = InternalExecuteAsync(tcs, respOp, args, token);
+                    var _ = useChunkedSend
+                        ? InternalExecuteChunkedAsync(tcs, respOp, args, token)
+                        : InternalExecuteAsync(tcs, respOp, args, token);
                     return await tcs.memoryByteTcs.Task.ConfigureAwait(false);
                 }
             }
             else
             {
-                var _ = InternalExecuteAsync(tcs, respOp, args, token);
+                var _ = useChunkedSend
+                    ? InternalExecuteChunkedAsync(tcs, respOp, args, token)
+                    : InternalExecuteAsync(tcs, respOp, args, token);
                 return await tcs.memoryByteTcs.Task.ConfigureAwait(false);
             }
         }
@@ -1079,7 +1106,12 @@ namespace Garnet.client
         /// <param name="token"></param>
         /// <returns></returns>
         public void ExecuteNoResponse(Memory<byte> op, ReadOnlySpan<byte> param1, Span<byte> param2, Span<byte> param3, CancellationToken token = default)
-            => InternalExecuteNoResponse(op, param1, param2, param3, token);
+        {
+            if (useChunkedSend)
+                InternalExecuteChunkedNoResponse(op, param1, param2, param3, token);
+            else
+                InternalExecuteNoResponse(op, param1, param2, param3, token);
+        }
         #endregion
 
         void TokenRegistrationLongCallback(object s) => ((TaskCompletionSource<long>)s).TrySetCanceled();

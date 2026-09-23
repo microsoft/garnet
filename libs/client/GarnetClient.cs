@@ -86,7 +86,7 @@ namespace Garnet.client
         /// <summary>
         /// Whether requests use out-of-line execution
         /// </summary>
-        readonly bool useOutOfLineExecution;
+        readonly bool useChunkedSend;
 
         /// <summary>
         /// Username to authenticate client on server.
@@ -193,7 +193,7 @@ namespace Garnet.client
             if (timeoutMilliseconds > 0 && useTimeoutChecker)
                 timeoutCheckerCts = new();
             this.networkSendThrottleMax = networkSendThrottleMax;
-            this.useOutOfLineExecution = useOutOfLineExecution;
+            this.useChunkedSend = useOutOfLineExecution;
             for (int i = 0; i < maxOutstandingTasks; i++)
                 tcsArray[i].nextTaskId = i;
             if (epoch == null)
@@ -219,7 +219,7 @@ namespace Garnet.client
         public void Connect(CancellationToken token = default)
         {
             socket = ConnectSendSocket();
-            networkWriter = new NetworkWriter(this, socket, bufferSize, sslOptions, out networkHandler, sendPageSize, networkSendThrottleMax, epoch, PoolOwnerType.GarnetClient, useOutOfLineExecution, logger);
+            networkWriter = new NetworkWriter(this, socket, bufferSize, sslOptions, out networkHandler, sendPageSize, networkSendThrottleMax, epoch, PoolOwnerType.GarnetClient, useChunkedSend, logger);
             networkHandler.Start(sslOptions, EndPoint.ToString(), token);
 
             if (timeoutMilliseconds > 0)
@@ -271,7 +271,7 @@ namespace Garnet.client
         public async Task ConnectAsync(CancellationToken token = default)
         {
             socket = await ConnectSendSocketAsync(timeoutMilliseconds, token).ConfigureAwait(false);
-            networkWriter = new NetworkWriter(this, socket, bufferSize, sslOptions, out networkHandler, sendPageSize, networkSendThrottleMax, epoch, PoolOwnerType.GarnetClient, useOutOfLineExecution, logger);
+            networkWriter = new NetworkWriter(this, socket, bufferSize, sslOptions, out networkHandler, sendPageSize, networkSendThrottleMax, epoch, PoolOwnerType.GarnetClient, useChunkedSend, logger);
             await networkHandler.StartAsync(sslOptions, EndPoint.ToString(), token).ConfigureAwait(false);
 
             if (timeoutMilliseconds > 0)
@@ -644,7 +644,7 @@ namespace Garnet.client
 
         async ValueTask InternalExecuteAsync(TcsWrapper tcs, Memory<byte> op, string param1 = null, string param2 = null, CancellationToken token = default)
         {
-            Debug.Assert(!useOutOfLineExecution, "Legacy InternalExecute methods cannot be used in out-of-line mode.");
+            Debug.Assert(!useChunkedSend, "Legacy InternalExecute methods cannot be used in out-of-line mode.");
             tcs.timestamp = GetTimestamp();
             int totalLen = 0;
             int arraySize = 1;
@@ -758,7 +758,7 @@ namespace Garnet.client
 
         async ValueTask InternalExecuteAsync(TcsWrapper tcs, Memory<byte> op, Memory<byte> param1, Memory<byte> param2, CancellationToken token = default)
         {
-            Debug.Assert(!useOutOfLineExecution, "Legacy InternalExecute methods cannot be used in out-of-line mode.");
+            Debug.Assert(!useChunkedSend, "Legacy InternalExecute methods cannot be used in out-of-line mode.");
             tcs.timestamp = GetTimestamp();
             int totalLen = 0;
             int arraySize = 1;
@@ -873,7 +873,7 @@ namespace Garnet.client
 
         void InternalExecuteNoResponse(Memory<byte> op, ReadOnlySpan<byte> subop, Span<byte> param1, Span<byte> param2, CancellationToken token = default)
         {
-            Debug.Assert(!useOutOfLineExecution, "Legacy InternalExecute methods cannot be used in out-of-line mode.");
+            Debug.Assert(!useChunkedSend, "Legacy InternalExecute methods cannot be used in out-of-line mode.");
             var totalLen = 0;
             var arraySize = 4;
 
@@ -968,7 +968,7 @@ namespace Garnet.client
         /// <param name="tcs"></param>
         async ValueTask InternalExecuteAsync(TcsWrapper tcs, string op, ICollection<string> args = null, CancellationToken token = default)
         {
-            Debug.Assert(!useOutOfLineExecution, "Legacy InternalExecute methods cannot be used in out-of-line mode.");
+            Debug.Assert(!useChunkedSend, "Legacy InternalExecute methods cannot be used in out-of-line mode.");
             tcs.timestamp = GetTimestamp();
             bool isArray = args != null;
             int arraySize = 1 + (isArray ? args.Count : 0);
@@ -1087,7 +1087,7 @@ namespace Garnet.client
         /// <returns></returns>
         async ValueTask InternalExecuteAsync(TcsWrapper tcs, Memory<byte> respOp, ICollection<Memory<byte>> args = null, CancellationToken token = default)
         {
-            Debug.Assert(!useOutOfLineExecution, "Legacy InternalExecute methods cannot be used in out-of-line mode.");
+            Debug.Assert(!useChunkedSend, "Legacy InternalExecute methods cannot be used in out-of-line mode.");
             tcs.timestamp = GetTimestamp();
             bool isArray = args != null;
             int arraySize = 1 + (isArray ? args.Count : 0);
@@ -1202,7 +1202,7 @@ namespace Garnet.client
         /// <param name="token">Cancellation token</param>
         async ValueTask InternalExecuteChunkedAsync(TcsWrapper tcs, Memory<byte> respOp, ICollection<Memory<byte>> args = null, CancellationToken token = default)
         {
-            Debug.Assert(useOutOfLineExecution, "Chunked InternalExecute methods require out-of-line mode.");
+            Debug.Assert(useChunkedSend, "Chunked InternalExecute methods require out-of-line mode.");
             tcs.timestamp = GetTimestamp();
             bool isArray = args != null;
             int arraySize = checked(1 + (isArray ? args.Count : 0));
@@ -1336,9 +1336,9 @@ namespace Garnet.client
         /// <param name="param1">First parameter</param>
         /// <param name="param2">Second parameter</param>
         /// <param name="token">Cancellation token</param>
-        void InternalExecuteChunkedNoResponse(Memory<byte> respOp, ReadOnlyMemory<byte> subop, ReadOnlyMemory<byte> param1, ReadOnlyMemory<byte> param2, CancellationToken token = default)
+        void InternalExecuteChunkedNoResponse(Memory<byte> respOp, ReadOnlySpan<byte> subop, Span<byte> param1, Span<byte> param2, CancellationToken token = default)
         {
-            Debug.Assert(useOutOfLineExecution, "Chunked InternalExecute methods require out-of-line mode.");
+            Debug.Assert(useChunkedSend, "Chunked InternalExecute methods require out-of-line mode.");
             const int arraySize = 4;
             int totalLength = checked(1 + NumUtils.CountDigits(arraySize) + 2 + respOp.Length);
 
@@ -1363,9 +1363,9 @@ namespace Garnet.client
 
                         if (!RespWriteUtils.TryWriteArrayLength(arraySize, ref curr, end) ||
                             !RespWriteUtils.TryWriteDirect(respOp.Span, ref curr, end) ||
-                            !RespWriteUtils.TryWriteBulkString(subop.Span, ref curr, end) ||
-                            !RespWriteUtils.TryWriteBulkString(param1.Span, ref curr, end) ||
-                            !RespWriteUtils.TryWriteBulkString(param2.Span, ref curr, end))
+                            !RespWriteUtils.TryWriteBulkString(subop, ref curr, end) ||
+                            !RespWriteUtils.TryWriteBulkString(param1, ref curr, end) ||
+                            !RespWriteUtils.TryWriteBulkString(param2, ref curr, end))
                         {
                             throw new InvalidOperationException("Unable to serialize the out-of-line command into its reserved buffer.");
                         }

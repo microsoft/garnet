@@ -68,7 +68,7 @@ namespace Garnet.cluster
         /// <summary>
         /// Default send page size for GarnetClient
         /// </summary>
-        const int defaultSendPageSize = 1 << 17;
+        const int defaultSendPageSize = 1 << 10;
 
         /// <summary>
         /// Default max outstanding tasks for GarnetClient
@@ -88,13 +88,12 @@ namespace Garnet.cluster
         /// <param name="logger"></param>
         public GarnetServerNode(ClusterProvider clusterProvider, EndPoint endpoint, SslClientAuthenticationOptions tlsOptions, LightEpoch epoch, ILogger logger = null)
         {
-            var opts = clusterProvider.storeWrapper.serverOptions;
             this.clusterProvider = clusterProvider;
             this.EndPoint = endpoint;
             this.gc = new GarnetClient(
                 endpoint,
                 tlsOptions,
-                sendPageSize: opts.DisablePubSub ? defaultSendPageSize : Math.Max(defaultSendPageSize, (int)opts.PubSubPageSizeBytes()),
+                sendPageSize: defaultSendPageSize,
                 maxOutstandingTasks: defaultMaxOutstandingTask,
                 timeoutMilliseconds: GetClientTimeoutMilliseconds(
                     clusterProvider.storeWrapper.runtimeConfig.GetInt(ServerConfigType.CLUSTER_NODE_TIMEOUT)),
@@ -102,7 +101,8 @@ namespace Garnet.cluster
                 authPassword: clusterProvider.clusterManager.clusterProvider.ClusterPassword,
                 epoch: epoch,
                 clientName: $"Gossip-{clusterProvider.clusterManager.CurrentConfig.LocalNodeEndpoint}",
-                logger: logger);
+                logger: logger,
+                useOutOfLineExecution: true);
             this.backoff = new ExponentialBackoff();
             this.configSerializationBuffer = new ConfigSerializationBuffer();
             initialized = false;
@@ -214,10 +214,9 @@ namespace Garnet.cluster
         /// Keep track of updated config per connection. Useful when gossip sampling so as to ensure updates are propagated
         /// </summary>
         /// <returns></returns>
-        byte[] GetMostRecentConfig()
+        ReadOnlyMemory<byte> GetMostRecentConfig()
         {
             var conf = clusterProvider.clusterManager.CurrentConfig;
-            byte[] byteArray;
             if (conf != lastConfig)
             {
                 lastConfig = conf;
@@ -225,13 +224,11 @@ namespace Garnet.cluster
                     // NOTE: We update replication offset for sublog-0 because this info is used in CLUSTER NODES
                     // and we cannot have multiple replication offsets without changing the expected CLUSTER NODES response
                     lastConfig.LazyUpdateLocalReplicationOffset(clusterProvider.replicationManager.GetReplicationOffset(0));
-                byteArray = lastConfig.ToByteArray();
+                lastConfig.Serialize(ref configSerializationBuffer);
+                return configSerializationBuffer.WrittenMemory;
             }
-            else
-            {
-                byteArray = [];
-            }
-            return byteArray;
+
+            return ReadOnlyMemory<byte>.Empty;
         }
 
         /// <summary>
@@ -239,7 +236,7 @@ namespace Garnet.cluster
         /// </summary>
         /// <param name="configByteArray"></param>
         /// <returns></returns>
-        private async Task GossipAsync(byte[] configByteArray)
+        private async Task GossipAsync(ReadOnlyMemory<byte> configByteArray)
         {
             try
             {
@@ -294,7 +291,8 @@ namespace Garnet.cluster
             if (task == null)
             {
                 // Issue first time gossip
-                var configArray = clusterProvider.clusterManager.CurrentConfig.ToByteArray();
+                clusterProvider.clusterManager.CurrentConfig.Serialize(ref configSerializationBuffer);
+                var configArray = configSerializationBuffer.WrittenMemory;
                 gossipTask = GossipAsync(configArray);
                 UpdateGossipSend();
                 clusterProvider.clusterManager.gossipStats.gossip_full_send++;
