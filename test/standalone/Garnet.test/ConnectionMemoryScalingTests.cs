@@ -3,8 +3,10 @@
 
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Net.Sockets;
 using System.Text;
+using System.Threading;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 
@@ -95,6 +97,32 @@ namespace Garnet.test
 
         static long StatBytes(string name) => StatBytes(name, BpStats());
 
+        /// <summary>
+        /// Samples BPSTATS until <paramref name="settled"/> holds, returning the last snapshot either way so
+        /// the caller still asserts against real numbers on timeout.
+        /// </summary>
+        /// <remarks>
+        /// A receive releases its buffer in <c>UpdateNetworkBuffers</c>, which runs only after <c>Process</c>
+        /// has written the reply, so a client that has already read its response can be ahead of the release.
+        /// Polling closes that window without sending anything further on the connection under test, which is
+        /// what keeps the wait from papering over the behaviour being checked: a buffer released only by the
+        /// following receive never gets one here, so it still fails.
+        /// </remarks>
+        static string PollStatsUntil(Func<string, bool> settled)
+        {
+            var elapsed = Stopwatch.StartNew();
+            string stats;
+            do
+            {
+                stats = BpStats();
+                if (settled(stats))
+                    break;
+                Thread.Sleep(5);
+            }
+            while (elapsed.ElapsedMilliseconds < 5_000);
+            return stats;
+        }
+
         static long StatBytes(string name, string stats)
         {
             var marker = name + "=";
@@ -169,18 +197,22 @@ namespace Garnet.test
             for (var round = 0; round < 280; round++)
                 foreach (var s in sockets)
                     SendAndDrain(s, ping, 1);
-            var settledLive = StatBytes("liveBytes");
+
+            // Each connection releases after its reply has gone out, so on a loaded runner the last few can
+            // still be in flight once the loop returns. Wait for the total rather than sampling once.
+            var allowed = baselineLive + (2L * InitialReceiveBufferSize);
+            var settledStats = PollStatsUntil(st => StatBytes("liveBytes", st) <= allowed);
+            var settledLive = StatBytes("liveBytes", settledStats);
 
             TestContext.Out.WriteLine($"baseline={baselineLive / 1024} KB, burst={burstLive / 1024} KB, settled={settledLive / 1024} KB");
             TestContext.Out.WriteLine($"per-conn baseline={baselineLive / Connections / 1024} KB, settled={settledLive / Connections / 1024} KB");
-            TestContext.Out.WriteLine(BpStats());
+            TestContext.Out.WriteLine(settledStats);
 
             foreach (var s in sockets) s.Dispose();
 
             ClassicAssert.Greater(burstLive, baselineLive, "the oversized payload should have grown receive buffers");
 
             // The grown buffers must come back; allow slack for the short-lived INFO connection.
-            var allowed = baselineLive + (2L * InitialReceiveBufferSize);
             ClassicAssert.LessOrEqual(settledLive, allowed,
                 $"grown receive buffers were not released (settled={settledLive}, baseline={baselineLive})");
         }
@@ -205,10 +237,13 @@ namespace Garnet.test
             // the receive that consumed the payload, not on the next one. A trailing PING here would let a
             // buffer that is only released on the following receive pass anyway.
             SendAndDrain(s, BuildSet("oversized", 3 * 1024 * 1024), 1);
-            var after = StatBytes("liveBytes");
+
+            // The reply is written before the release runs, so read the counters until they settle rather
+            // than once. Only the out-of-band INFO connection is used, leaving the rule above intact.
+            var stats = PollStatsUntil(st => StatBytes("liveBytes", st) - baseline <= 2L * MaxReceiveBufferSize);
+            var after = StatBytes("liveBytes", stats);
 
             var retained = after - baseline;
-            var stats = BpStats();
             TestContext.Out.WriteLine($"baseline={baseline / 1024} KB, after={after / 1024} KB, retained={retained / 1024} KB");
             TestContext.Out.WriteLine(stats);
 
@@ -219,14 +254,13 @@ namespace Garnet.test
 
             // Guards the level assertion below against passing vacuously on a run that never grew past the
             // pool's largest class.
-            var stats0 = stats;
-            ClassicAssert.GreaterOrEqual(StatBytes("totalOutOfBoundAllocations", stats0), 1,
+            ClassicAssert.GreaterOrEqual(StatBytes("totalOutOfBoundAllocations", stats), 1,
                 "the payload did not grow the receive buffer past the pool's largest size class");
 
             // Growing to the payload pooled a 1 MB buffer on the way up. The replacement takes it back out,
             // so the level is empty. Dropping to the base instead would leave it on the free list and make a
             // connection that sends one large request per batch re-grow through every class each time.
-            ClassicAssert.AreEqual(0, PooledEntriesAtSize(stats0, "1MB"),
+            ClassicAssert.AreEqual(0, PooledEntriesAtSize(stats, "1MB"),
                 "the oversized buffer was replaced below the largest poolable size");
         }
 
