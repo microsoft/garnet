@@ -33,40 +33,21 @@ namespace Tsavorite.core
     {
 
         /// <summary>
-        /// Writes a chunk record's header: copies the caller's template (which already holds the constant fields — keyHash and the
-        /// component lengths) and patches the per-chunk <c>objectId</c> at a caller-provided offset, so this layer does not need
-        /// the concrete header type.
+        /// State for writing one chunked record. Instances are reused across writes (see <see cref="RentChunkWriteState"/>):
+        /// <see cref="Reset{THeader}"/> re-initializes every field, so a cached instance carries nothing from the previous record.
         /// </summary>
-        abstract class ChunkHeaderWriter
-        {
-            public int HeaderSize;
-            public abstract unsafe void Write(byte* dest, ulong objectId);
-        }
-
-        sealed class ChunkHeaderWriter<THeader> : ChunkHeaderWriter
-            where THeader : unmanaged
-        {
-            THeader template;
-            readonly int objectIdOffset;
-
-            public unsafe ChunkHeaderWriter(THeader template, int objectIdOffset)
-            {
-                this.template = template;
-                this.objectIdOffset = objectIdOffset;
-                HeaderSize = sizeof(THeader);
-            }
-
-            public override unsafe void Write(byte* dest, ulong objectId)
-            {
-                *(THeader*)dest = template;
-                *(ulong*)(dest + objectIdOffset) = objectId;
-            }
-        }
-
         sealed class ChunkWriteState
         {
-            /// <summary>Writes the (opaque) chunk header template, patching the per-chunk objectId.</summary>
-            public ChunkHeaderWriter headerWriter;
+            /// <summary>Capacity of <see cref="headerTemplate"/>. The largest chunk header in use is Garnet's
+            /// <c>AofShardedChunkHeader</c> (52 bytes); <see cref="Reset{THeader}"/> rejects anything larger.</summary>
+            internal const int MaxHeaderSize = 64;
+
+            /// <summary>The caller's chunk header template, holding the constant fields (keyHash and the component lengths).
+            /// <see cref="WriteHeader"/> copies it into each chunk record and patches the per-chunk objectId, so this layer never
+            /// needs the concrete header type. Allocated once per instance and overwritten by <see cref="Reset{THeader}"/>.</summary>
+            readonly byte[] headerTemplate = new byte[MaxHeaderSize];
+            /// <summary>Byte offset of the objectId field within the header template.</summary>
+            int objectIdOffset;
             /// <summary>Size of the chunk header (sizeof(THeader)).</summary>
             public int headerFieldsSize;
             /// <summary>Maximum entry-content bytes (chunk header + packed segments) in a single record; 4-aligned so
@@ -74,7 +55,7 @@ namespace Tsavorite.core
             public int maxContent;
             /// <summary>LogicalAddress of the first chunk of this logical record; -1 until the first chunk is allocated.
             /// Returned to the *Enqueue* caller.</summary>
-            public long firstLogicalAddress = -1;
+            public long firstLogicalAddress;
             /// <summary>The objectId written into every chunk (= <see cref="firstLogicalAddress"/>).</summary>
             public ulong objectId;
             /// <summary>True once the key has been fully written (on the first Consume call).</summary>
@@ -90,6 +71,44 @@ namespace Tsavorite.core
             /// across records (see <see cref="WriteOneRecord"/>); kept rooted here for the pointer's lifetime. Null when the
             /// input was written inline (the common case) or the record has no input.</summary>
             public byte[] materializedInput;
+
+            /// <summary>Re-initialize for one chunked record: capture the header template and clear all per-record progress.</summary>
+            public unsafe void Reset<THeader>(THeader header, int objectIdOffset, int maxContent)
+                where THeader : unmanaged
+            {
+                if (sizeof(THeader) > MaxHeaderSize)
+                    throw new TsavoriteException($"Chunk header of {sizeof(THeader)} bytes exceeds the {MaxHeaderSize}-byte chunk header template");
+
+                fixed (byte* dest = headerTemplate)
+                    *(THeader*)dest = header;
+                headerFieldsSize = sizeof(THeader);
+                this.objectIdOffset = objectIdOffset;
+                this.maxContent = maxContent;
+
+                firstLogicalAddress = -1;
+                objectId = 0;
+                keyDone = false;
+                hasValue = false;
+                hasInput = false;
+                epochAccessor = null;
+                materializedInput = null;
+            }
+
+            /// <summary>Write a chunk record's header: copy the template, then patch the per-chunk objectId.</summary>
+            public unsafe void WriteHeader(byte* dest, ulong objectId)
+            {
+                fixed (byte* src = headerTemplate)
+                    Buffer.MemoryCopy(src, dest, headerFieldsSize, headerFieldsSize);
+                *(ulong*)(dest + objectIdOffset) = objectId;
+            }
+
+            /// <summary>Drop the per-record references so a cached instance does not root the caller's epoch accessor or a
+            /// (pinned, possibly large) materialized input buffer between writes.</summary>
+            public void Clear()
+            {
+                epochAccessor = null;
+                materializedInput = null;
+            }
         }
 
         // One component (key, value, or input) being packed into records: its bytes, how much is written, and whether it is
@@ -132,8 +151,63 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Enqueue a chunked object record: construct the streaming serializer and drive it, packing the record's key, the
-        /// streamed value, and (optionally) its input into chunk records via <see cref="Consume{TContext, TKey, TInput}"/>.
+        /// Size of the reusable circular buffer a streamed object value is serialized through. Fixed (rather than sized per
+        /// object) so each thread allocates it once and reuses it, and deliberately below the 85,000-byte large-object-heap
+        /// threshold so a large value can never put a per-write buffer on the LOH. It only bounds how many value bytes are held
+        /// at once: a value larger than this is simply drained into more chunk records.
+        /// </summary>
+        internal const int ChunkedObjectRingBufferSize = 64 * 1024;
+
+        /// <summary>Per-thread cache of the reusable <see cref="ChunkWriteState"/>. A chunked write is synchronous and
+        /// non-reentrant on the writing thread, so one cached instance per thread suffices; renting takes it out of the cache, so
+        /// an unexpected reentrant write simply gets its own.</summary>
+        [ThreadStatic]
+        static ChunkWriteState cachedChunkWriteState;
+
+        /// <summary>Per-thread cache of the reusable object-streaming serializer (with its ring buffer and stream), one per input
+        /// type. See <see cref="cachedChunkWriteState"/> for the rental discipline.</summary>
+        static class CachedChunkSerializer<TInput>
+            where TInput : IStoreInput
+        {
+            [ThreadStatic]
+            internal static ChunkedObjectSerializer<ChunkWriteState, TInput> instance;
+        }
+
+        static ChunkWriteState RentChunkWriteState()
+        {
+            var state = cachedChunkWriteState;
+            if (state is null)
+                return new ChunkWriteState();
+            cachedChunkWriteState = null;
+            return state;
+        }
+
+        static void ReturnChunkWriteState(ChunkWriteState state)
+        {
+            state.Clear();
+            cachedChunkWriteState = state;
+        }
+
+        static ChunkedObjectSerializer<ChunkWriteState, TInput> RentChunkSerializer<TInput>()
+            where TInput : IStoreInput
+        {
+            var serializer = CachedChunkSerializer<TInput>.instance;
+            if (serializer is null)
+                return new ChunkedObjectSerializer<ChunkWriteState, TInput>(ChunkedObjectRingBufferSize);
+            CachedChunkSerializer<TInput>.instance = null;
+            return serializer;
+        }
+
+        static void ReturnChunkSerializer<TInput>(ChunkedObjectSerializer<ChunkWriteState, TInput> serializer)
+            where TInput : IStoreInput
+        {
+            serializer.Clear();
+            CachedChunkSerializer<TInput>.instance = serializer;
+        }
+
+        /// <summary>
+        /// Enqueue a chunked object record: drive the streaming serializer, packing the record's key, the streamed value, and
+        /// (optionally) its input into chunk records via <see cref="Consume{TContext, TKey, TInput}"/>.
         /// </summary>
         /// <param name="header">The chunk header written into every chunk record; its constant fields (keyHash, component lengths)
         /// are already set by the caller. Only the per-chunk objectId is patched, at <paramref name="objectIdOffset"/>.</param>
@@ -142,32 +216,35 @@ namespace Tsavorite.core
         /// <param name="input">The record's input.</param>
         /// <param name="objectSerializer">Serializes the value object into the streaming buffer.</param>
         /// <param name="value">The value object to serialize.</param>
-        /// <param name="bufferSize">Size of the serializer's circular buffer (the max bytes held at once).</param>
         /// <param name="writeInput">Whether a trailing input component is written (false for object upserts, which carry no replayed input).</param>
         /// <param name="epochAccessor">The caller's (store) epoch, suspended while blocked on an AOF flush during allocation; null when the caller holds no store epoch.</param>
         /// <param name="firstLogicalAddress">The logicalAddress of the first chunk of the record (also its objectId).</param>
-        public unsafe void EnqueueChunkedObject<THeader, TInput>(THeader header, int objectIdOffset, in ConditionallyHoistedKey key, ref TInput input, IObjectSerializer<IHeapObject> objectSerializer, IHeapObject value, int bufferSize, bool writeInput, IEpochAccessor epochAccessor, out long firstLogicalAddress)
+        public unsafe void EnqueueChunkedObject<THeader, TInput>(THeader header, int objectIdOffset, in ConditionallyHoistedKey key, ref TInput input, IObjectSerializer<IHeapObject> objectSerializer, IHeapObject value, bool writeInput, IEpochAccessor epochAccessor, out long firstLogicalAddress)
             where THeader : unmanaged
             where TInput : IStoreInput
         {
-            var state = CreateChunkWriteState(header, objectIdOffset);
+            var state = RentChunkWriteState();
+            var serializer = RentChunkSerializer<TInput>();
+            InitChunkWriteState(state, header, objectIdOffset);
             state.hasValue = true;   // an object record always has a (streamed) value component
             state.hasInput = writeInput;
             state.epochAccessor = epochAccessor;
-            var serializer = new ChunkedObjectSerializer<ChunkWriteState, TInput>(in key, ref input, this, objectSerializer, value, bufferSize);
+            serializer.SetRecord(in key, ref input, this, objectSerializer, value);
             epoch.Resume();
             BeginInflightEnqueue();
             try
             {
                 serializer.Serialize(state);
+                firstLogicalAddress = state.firstLogicalAddress;
             }
             finally
             {
                 EndInflightEnqueue();
                 epoch.Suspend();
+                ReturnChunkSerializer(serializer);
+                ReturnChunkWriteState(state);
             }
 
-            firstLogicalAddress = state.firstLogicalAddress;
             if (autoCommit)
                 Commit();
         }
@@ -185,7 +262,8 @@ namespace Tsavorite.core
 #endif
             where TInput : IStoreInput
         {
-            var state = CreateChunkWriteState(header, objectIdOffset);
+            var state = RentChunkWriteState();
+            InitChunkWriteState(state, header, objectIdOffset);
             state.hasValue = writeValue;
             state.hasInput = writeInput;
             state.epochAccessor = epochAccessor;
@@ -194,25 +272,24 @@ namespace Tsavorite.core
             try
             {
                 _ = Consume(value, default, isStart: true, isComplete: true, key, ref input, state);
+                firstLogicalAddress = state.firstLogicalAddress;
             }
             finally
             {
                 EndInflightEnqueue();
                 epoch.Suspend();
+                ReturnChunkWriteState(state);
             }
 
-            firstLogicalAddress = state.firstLogicalAddress;
             if (autoCommit)
                 Commit();
         }
 
-        unsafe ChunkWriteState CreateChunkWriteState<THeader>(THeader header, int objectIdOffset)
+        unsafe void InitChunkWriteState<THeader>(ChunkWriteState state, THeader header, int objectIdOffset)
             where THeader : unmanaged
         {
             if (commitNum == long.MaxValue)
                 throw new TsavoriteException("Attempting to enqueue into a completed log");
-
-            var writer = new ChunkHeaderWriter<THeader>(header, objectIdOffset);
 
             // A page-tail filler (AllocatorBase.HandlePageOverflow) records the wasted tail in the main-store
             // RecordDataHeader.ValueLength field, and that tail is bounded by MinPartialAllocSize; ensure it fits that field.
@@ -220,21 +297,16 @@ namespace Tsavorite.core
                 "MinPartialAllocSize must fit the main-store RecordDataHeader.ValueLength field used by page-tail fillers");
             // MinPartialAllocSize must hold a chunk header plus a component's int length prefix so the key length prefix is
             // always written whole in the first chunk (it need not be length-aligned like value/input prefixes).
-            Debug.Assert(MinPartialAllocSize >= writer.HeaderSize + sizeof(int),
+            Debug.Assert(MinPartialAllocSize >= sizeof(THeader) + sizeof(int),
                 "MinPartialAllocSize must hold a chunk header plus a component length prefix");
 
             var pageSize = (int)allocator.GetPageSize();
             // Max entry content (chunk header + packed segments), 4-aligned so headerSize + Align(maxContent) <= pageSize.
             var maxContent = (pageSize - headerSize) & ~(sizeof(int) - 1);
-            if (maxContent <= writer.HeaderSize + sizeof(int))
+            if (maxContent <= sizeof(THeader) + sizeof(int))
                 throw new TsavoriteException($"Page size {pageSize} is too small for chunked records");
 
-            return new ChunkWriteState
-            {
-                headerWriter = writer,
-                headerFieldsSize = writer.HeaderSize,
-                maxContent = maxContent,
-            };
+            state.Reset(header, objectIdOffset, maxContent);
         }
 
         /// <summary>Value-only chunk consume (the read side). Not yet implemented; wired up for a future deserialize path.</summary>
@@ -414,7 +486,7 @@ namespace Tsavorite.core
             // Entry content = chunk header + the segment bytes actually written. The scan's Align() absorbs any <4-byte tail gap;
             // the reader bounds its segment scan by this content length.
             var contentLen = state.headerFieldsSize + chunkOffset;
-            state.headerWriter.Write(physicalAddress + headerSize, state.objectId);
+            state.WriteHeader(physicalAddress + headerSize, state.objectId);
             SetHeader(contentLen, physicalAddress);
         }
 

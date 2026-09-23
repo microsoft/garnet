@@ -122,6 +122,12 @@ When `GarnetLog.IsChunkable(key, value, input)` is true (`key.TotalSize + value.
 TsavoriteLog.MinPartialAllocSize`), the operation is written as a **run of chunk entries** by `EnqueueSpanChunked`
 (span key/value) or `EnqueueObjectChunked` (streamed object value).
 
+The write-side objects — the `ChunkWriteState` and, for object values, the `ChunkedObjectSerializer` with its ring buffer
+and stream — are cached per thread and rebound per record, so a chunked write allocates nothing on the steady-state path.
+The ring is a fixed `TsavoriteLog.ChunkedObjectRingBufferSize` (64 KB, deliberately under the large-object-heap threshold)
+rather than being sized from the value: it only bounds how many value bytes are held at once, so a larger value is simply
+drained into more chunk entries.
+
 ### 5.1 Chunk headers
 
 Each chunk entry uses a chunked header: a normal header immediately followed by an `AofChunkHeader`.

@@ -29,11 +29,11 @@ namespace Tsavorite.core.Allocator.ObjectSerialization
     /// <typeparam name="TContext">Caller state threaded through <c>Drain</c> to the consumer (e.g. the write-side chunk state).</typeparam>
     public class ChunkedObjectSerializer<TContext>
     {
-        readonly IObjectSerializer<IHeapObject> serializer;
-        readonly IHeapObject valueObject;
+        IObjectSerializer<IHeapObject> serializer;
+        IHeapObject valueObject;
 
         /// <summary>The consumer that turns drained bytes into chunk records.</summary>
-        protected readonly IChunkedObjectSerializerConsumer consumer;
+        protected IChunkedObjectSerializerConsumer consumer;
 
         /// <summary>Caller state passed through to the consumer on every drain; set for the duration of <see cref="Serialize"/>.</summary>
         protected TContext context;
@@ -49,14 +49,9 @@ namespace Tsavorite.core.Allocator.ObjectSerialization
         /// <summary>True until the first drain of the current serialization; passed to the consumer as <c>isStart</c>. Set by
         /// <see cref="BeginSerialize"/> / <see cref="Serialize"/>.</summary>
         bool firstDrainPending;
-
-        protected ChunkedObjectSerializer(IChunkedObjectSerializerConsumer consumer, IObjectSerializer<IHeapObject> serializer, IHeapObject valueObject, int bufferSize)
-        {
-            this.consumer = consumer;
-            this.serializer = serializer;
-            this.valueObject = valueObject;
-            this.buffer = new byte[bufferSize];
-        }
+        /// <summary>The write-only stream over the ring, created once and reused across serializations (it holds no state of its
+        /// own beyond the owning serializer).</summary>
+        ChunkStreamWriter streamWriter;
 
         /// <summary>
         /// Create a chunk writer for the network (migration / replication) path, which frames raw byte components (record
@@ -65,8 +60,42 @@ namespace Tsavorite.core.Allocator.ObjectSerialization
         /// no fixed value object; <see cref="Serialize"/> is not used on this instance.
         /// </summary>
         public ChunkedObjectSerializer(IChunkedObjectSerializerConsumer consumer, int bufferSize)
-            : this(consumer, serializer: null, valueObject: null, bufferSize)
+            : this(bufferSize)
         {
+            this.consumer = consumer;
+        }
+
+        /// <summary>
+        /// Create a reusable chunk writer whose consumer, object serializer, and value object are bound per write by
+        /// <see cref="SetObjectWriteTarget"/> and released by <see cref="ClearWriteTarget"/>. The ring buffer is allocated once
+        /// here and reused for every write.
+        /// </summary>
+        protected ChunkedObjectSerializer(int bufferSize)
+        {
+            this.buffer = new byte[bufferSize];
+        }
+
+        /// <summary>Bind this (reused) serializer to one streamed write and reset the ring. Paired with
+        /// <see cref="ClearWriteTarget"/>, which drops the references again.</summary>
+        protected void SetObjectWriteTarget(IChunkedObjectSerializerConsumer consumer, IObjectSerializer<IHeapObject> serializer, IHeapObject valueObject)
+        {
+            this.consumer = consumer;
+            this.serializer = serializer;
+            this.valueObject = valueObject;
+
+            // Reset the ring explicitly rather than relying on the previous write's FlushFinal, so a write that failed partway
+            // through cannot leave stale bytes for the next one.
+            head = tail = count = 0;
+        }
+
+        /// <summary>Drop the references taken by <see cref="SetObjectWriteTarget"/> so a cached serializer does not root the
+        /// value object, consumer, or caller context between writes.</summary>
+        protected virtual void ClearWriteTarget()
+        {
+            consumer = null;
+            serializer = null;
+            valueObject = null;
+            context = default;
         }
 
         /// <summary>Set the context for a manual chunked write (see the network-path constructor); follow with
@@ -81,8 +110,9 @@ namespace Tsavorite.core.Allocator.ObjectSerialization
         public void WriteBytes(ReadOnlySpan<byte> bytes) => Write(bytes);
 
         /// <summary>A write-only <see cref="Stream"/> over the chunk ring, e.g. to run an <see cref="IObjectSerializer{T}"/>
-        /// directly into it; bytes written drain to the consumer as the ring fills.</summary>
-        public Stream GetStream() => new ChunkStreamWriter(this);
+        /// directly into it; bytes written drain to the consumer as the ring fills. The same instance is returned on every call
+        /// (it is stateless beyond this serializer), so disposing it is a no-op and it remains usable.</summary>
+        public Stream GetStream() => streamWriter ??= new ChunkStreamWriter(this);
 
         /// <summary>Flush the ring's remaining bytes as the final chunk(s) (<c>isComplete: true</c>), completing a manual write.</summary>
         public void EndSerialize() => FlushFinal();
@@ -96,7 +126,7 @@ namespace Tsavorite.core.Allocator.ObjectSerialization
         {
             this.context = context;
             firstDrainPending = true;
-            using var stream = new ChunkStreamWriter(this);
+            var stream = GetStream();
             serializer.BeginSerialize(stream);
             serializer.Serialize(valueObject);
             serializer.EndSerialize();
@@ -201,6 +231,10 @@ namespace Tsavorite.core.Allocator.ObjectSerialization
             public override int Read(byte[] array, int offset, int length) => throw new NotSupportedException();
             public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
             public override void SetLength(long value) => throw new NotSupportedException();
+
+            // This stream owns no resources and holds no per-serialization state, and the owning serializer reuses one instance
+            // across writes, so disposal is a no-op and the stream stays usable afterwards (callers may wrap it in `using`).
+            protected override void Dispose(bool disposing) { }
         }
     }
 
@@ -224,19 +258,30 @@ namespace Tsavorite.core.Allocator.ObjectSerialization
         /// <remarks>SAFETY: safe as long as we do not exit the scope of any pinned or fixed memory.</remarks>
         TInput input;
 
-        /// <summary>The input's serialized length, captured at construction so it is available independent of <see cref="input"/>.</summary>
-        readonly int inputSerializedLength;
+        /// <summary>Create a reusable serializer; bind each record with <see cref="SetRecord"/> and release it with
+        /// <see cref="Clear"/>.</summary>
+        /// <param name="bufferSize">Size of the circular buffer (the max value bytes held at once), allocated once here.</param>
+        public ChunkedObjectSerializer(int bufferSize)
+            : base(bufferSize)
+        {
+        }
 
-        public ChunkedObjectSerializer(in ConditionallyHoistedKey key, ref TInput input, IChunkedObjectSerializerConsumer consumer, IObjectSerializer<IHeapObject> serializer, IHeapObject valueObject, int bufferSize)
-            : base(consumer, serializer, valueObject, bufferSize)
+        /// <summary>Bind this serializer to one record's key, input, consumer, object serializer, and value object.</summary>
+        public void SetRecord(in ConditionallyHoistedKey key, ref TInput input, IChunkedObjectSerializerConsumer consumer, IObjectSerializer<IHeapObject> serializer, IHeapObject valueObject)
         {
             this.key = key;
             this.input = input;
-            this.inputSerializedLength = input.SerializedLength;
+            SetObjectWriteTarget(consumer, serializer, valueObject);
         }
 
-        /// <summary>The input's serialized length, captured at construction.</summary>
-        public int InputSerializedLength => inputSerializedLength;
+        /// <summary>Release the bound record so a cached serializer does not root the key's hoisted memory, the input's pointers,
+        /// or the value object between writes.</summary>
+        public void Clear()
+        {
+            key = default;
+            input = default;
+            ClearWriteTarget();
+        }
 
         /// <inheritdoc/>
         protected override int Drain(ReadOnlySpan<byte> first, ReadOnlySpan<byte> second, bool isStart, bool isComplete)

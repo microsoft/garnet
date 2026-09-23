@@ -53,11 +53,19 @@ namespace Tsavorite.core
     /// <typeparam name="T"></typeparam>
     public abstract class BinaryObjectSerializer<T> : IObjectSerializer<T>
     {
+        /// <summary>Shared no-BOM UTF8 encoding for the reader/writer; <see cref="Encoding"/> instances are thread-safe, and
+        /// <see cref="BinaryReader"/> / <see cref="BinaryWriter"/> never emit or consume a preamble.</summary>
+        static readonly UTF8Encoding Utf8 = new();
+
         protected BinaryReader reader;
         protected BinaryWriter writer;
 
+        /// <summary>The stream <see cref="writer"/> was created over, so a repeated <see cref="BeginSerialize"/> on the same
+        /// (reused) stream can reuse the writer rather than allocating a new one per serialization.</summary>
+        Stream writerStream;
+
         /// <summary>Begin deserialization</summary>
-        public void BeginDeserialize(Stream stream) => reader = new BinaryReader(stream, new UTF8Encoding(), true);
+        public void BeginDeserialize(Stream stream) => reader = new BinaryReader(stream, Utf8, true);
 
         /// <summary>Deserialize</summary>
         public abstract void Deserialize(out T obj);
@@ -66,12 +74,23 @@ namespace Tsavorite.core
         public void EndDeserialize() => reader.Dispose();
 
         /// <summary>Begin serialize</summary>
-        public void BeginSerialize(Stream stream) => writer = new BinaryWriter(stream, new UTF8Encoding(), true);
+        /// <remarks>The writer is cached and reused while <paramref name="stream"/> is unchanged (the streaming chunk writer
+        /// reuses one stream across records), so a hot serialization path allocates no writer.</remarks>
+        public void BeginSerialize(Stream stream)
+        {
+            if (!ReferenceEquals(writerStream, stream))
+            {
+                writer = new BinaryWriter(stream, Utf8, leaveOpen: true);
+                writerStream = stream;
+            }
+        }
 
         /// <summary>Serialize</summary>
         public abstract void Serialize(T obj);
 
         /// <summary>End serialize</summary>
-        public void EndSerialize() => writer.Dispose();
+        /// <remarks>Flushes rather than disposes: the writer is left open (it never owns the stream) so it can be reused by the
+        /// next <see cref="BeginSerialize"/> on the same stream.</remarks>
+        public void EndSerialize() => writer.Flush();
     }
 }
