@@ -3402,6 +3402,11 @@ namespace Garnet.test
                 var store = server.Provider.StoreWrapper;
                 var vectorManager = store.DefaultDatabase.VectorManager;
 
+                // A context released by a delete or an overwrite is only marked for cleanup on a background
+                // task, so it still reads as live until that task runs. Settle that work before sampling the
+                // slot, otherwise the released context is counted alongside the live one.
+                vectorManager.WaitForQuiescence();
+
                 unsafe
                 {
                     fixed (byte* indexKeyPtr = Encoding.ASCII.GetBytes(indexKey))
@@ -4294,6 +4299,163 @@ namespace Garnet.test
             var res8 = await db.VectorSetGetAttributesJsonAsync(Key, Element0).ConfigureAwait(false);
             ClassicAssert.IsNull(res8);
         }
+
+        /// <summary>
+        /// A Vector Set whose index record was flushed to the main log before the checkpoint was taken must
+        /// survive recovery: the checkpoint snapshot only reports records in its own range, so the index
+        /// record is recovered from the main log without ever being reported, and the recovered context must
+        /// not be mistaken for an abandoned one and swept by the cleanup task.
+        /// </summary>
+        [Test]
+        public async Task RecoverVectorSetFlushedBeforeCheckpointAsync()
+        {
+            // This test drives the log through a real flush, so it needs its own small-page server.
+            server.Dispose(deleteDir: true);
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
+            server = CreateSmallPageGarnetServer(tryRecover: false);
+            server.Start();
+            server.Provider.StoreWrapper.DefaultDatabase.VectorManager.AllocateTestContexts(preAllocatedContexts);
+
+            var vector = Enumerable.Range(0, 8).Select(static x => (byte)x).ToArray();
+            var element = new byte[] { 0, 0, 0, 0 };
+
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))
+            {
+                var db = redis.GetDatabase(0);
+
+                ClassicAssert.IsTrue(db.StringSet("control", "controlvalue"));
+                _ = db.Execute("VADD", ["flushed", "XB8", vector, element, "CAS", "NOQUANT", "EF", "16", "M", "32"]);
+
+                // Fill past the tail page so the product's own page-fill path moves the read-only boundary and
+                // flushes "flushed" to the main log well before the checkpoint below starts.
+                for (var i = 0; i < 4_000; i++)
+                {
+                    ClassicAssert.IsTrue(db.StringSet($"filler:{i}", new string('x', 64)));
+                }
+
+                var log = server.Provider.StoreWrapper.DefaultDatabase.Store.Log;
+                ClassicAssert.Greater(log.FlushedUntilAddress, log.BeginAddress, "the filler writes did not flush any of the log, so this test would not cover the flushed-before-checkpoint case");
+
+                _ = db.Execute("VADD", ["snapshotted", "XB8", vector, element, "CAS", "NOQUANT", "EF", "16", "M", "32"]);
+
+#pragma warning disable CS0618 // ForegroundSave is deprecated in the client, but is what this test needs
+                redis.GetServers()[0].Save(SaveType.ForegroundSave);
+#pragma warning restore CS0618
+                _ = await server.Store.WaitForCommitAsync();
+            }
+
+            server.Dispose(deleteDir: false);
+            server = CreateSmallPageGarnetServer(tryRecover: true);
+            server.Start();
+
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
+            {
+                var db = redis.GetDatabase(0);
+
+                // Plain keys prove recovery itself worked, isolating any Vector Set loss below.
+                ClassicAssert.AreEqual("controlvalue", (string)db.StringGet("control"));
+                ClassicAssert.AreEqual(new string('x', 64), (string)db.StringGet("filler:0"));
+
+                foreach (var key in new[] { "flushed", "snapshotted" })
+                {
+                    var embedding = (string[])db.Execute("VEMB", [key, element]);
+                    ClassicAssert.AreEqual(8, embedding?.Length ?? 0, $"VEMB {key} did not return the recovered embedding");
+                }
+            }
+        }
+
+#if DEBUG
+        /// <summary>
+        /// A ContextMetadata update that lands inside a checkpoint's fuzzy region is copied to the tail, so the
+        /// snapshot holds both the old and the new version of that record. Recovery must take the newest
+        /// version rather than treating the pair as corruption and aborting.
+        /// </summary>
+        [Test]
+        public async Task RecoverContextMetadataUpdatedInsideFuzzyRegionAsync()
+        {
+            TestUtils.IgnoreIfExceptionInjectionDisabled();
+
+            const ExceptionInjectionType MetadataPause = ExceptionInjectionType.VectorSet_Pause_Before_Context_Metadata_Rmw;
+            const ExceptionInjectionType CheckpointPause = ExceptionInjectionType.Checkpoint_Pause_At_Flush_Begin;
+
+            var vector = Enumerable.Range(0, 8).Select(static x => (byte)x).ToArray();
+            var element = new byte[] { 0, 0, 0, 0 };
+
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))
+            {
+                var db = redis.GetDatabase(0);
+
+                // First version of the ContextMetadata record.
+                _ = db.Execute("VADD", ["before", "XB8", vector, element, "CAS", "NOQUANT", "EF", "16", "M", "32"]);
+
+                ExceptionInjectionHelper.EnableException(MetadataPause);
+                try
+                {
+                    // Park a second VADD just before it persists its ContextMetadata update.
+                    var vaddTask = Task.Run(() =>
+                    {
+                        using var vaddRedis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+                        return vaddRedis.GetDatabase(0).Execute("VADD", ["during", "XB8", vector, element, "CAS", "NOQUANT", "EF", "16", "M", "32"]);
+                    });
+                    await ExceptionInjectionHelper.WaitOnClearAsync(MetadataPause).WaitAsync(TimeSpan.FromSeconds(30));
+
+                    // Park a checkpoint at the end of its fuzzy region, before it captures the last address the
+                    // snapshot covers.
+                    ExceptionInjectionHelper.EnableException(CheckpointPause);
+                    try
+                    {
+#pragma warning disable CS0618 // ForegroundSave is deprecated in the client, but is what this test needs
+                        var saveTask = Task.Run(() => redis.GetServers()[0].Save(SaveType.ForegroundSave));
+#pragma warning restore CS0618
+                        await ExceptionInjectionHelper.WaitOnClearAsync(CheckpointPause).WaitAsync(TimeSpan.FromSeconds(30));
+
+                        // Release the metadata update into the new version, forcing it to be copied to the tail
+                        // while the old version stays in the snapshot's range.
+                        ExceptionInjectionHelper.EnableException(MetadataPause);
+                        _ = await vaddTask.WaitAsync(TimeSpan.FromSeconds(30));
+                        ExceptionInjectionHelper.DisableException(MetadataPause);
+
+                        ExceptionInjectionHelper.EnableException(CheckpointPause);
+                        await saveTask.WaitAsync(TimeSpan.FromSeconds(60));
+                    }
+                    finally
+                    {
+                        ExceptionInjectionHelper.DisableException(CheckpointPause);
+                    }
+                }
+                finally
+                {
+                    ExceptionInjectionHelper.DisableException(MetadataPause);
+                }
+
+                _ = await server.Store.WaitForCommitAsync();
+            }
+
+            server.Dispose(deleteDir: false);
+
+            // failOnRecoveryError surfaces a recovery failure that the server would otherwise log and continue
+            // past, leaving a partially recovered store behind.
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableAOF: true, tryRecover: true, aofMemorySize: DefaultAOFMemorySize, enableVectorSetPreview: true, failOnRecoveryError: true);
+            server.Start();
+
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
+            {
+                var db = redis.GetDatabase(0);
+
+                foreach (var key in new[] { "before", "during" })
+                {
+                    var embedding = (string[])db.Execute("VEMB", [key, element]);
+                    ClassicAssert.AreEqual(8, embedding?.Length ?? 0, $"VEMB {key} did not return the recovered embedding");
+                }
+            }
+        }
+#endif
+
+        /// <summary>
+        /// Create a new GarnetServer instance with a small enough log that ordinary writes flush pages.
+        /// </summary>
+        private static GarnetServer CreateSmallPageGarnetServer(bool tryRecover)
+        => TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableAOF: true, tryRecover: tryRecover, aofMemorySize: DefaultAOFMemorySize, enableVectorSetPreview: true, lowMemory: true, memorySize: "64m", pageSize: "16k", failOnRecoveryError: true);
 
         /// <summary>
         /// Create a new GarnetServer instance with common parameters.

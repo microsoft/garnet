@@ -5,7 +5,6 @@ using System;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
-using Garnet.test;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using Tsavorite.core;
@@ -46,6 +45,14 @@ namespace Tsavorite.test.recovery
         }
 
         protected abstract void OperationThread(int thread_id, bool useTimingFuzzing, TsavoriteKV<LongStoreFunctions, LongAllocator> store);
+
+        /// <summary>Stores <paramref name="key"/> into <paramref name="keyArray"/> and returns the array. Locals in an
+        /// async method can be moved by the GC, so a key must be backed by a stable array rather than a pinned local.</summary>
+        private static byte[] SetKey(byte[] keyArray, long key)
+        {
+            new Span<byte>(keyArray).AsRef<long>() = key;
+            return keyArray;
+        }
 
         public async ValueTask DoCheckpointVersionSwitchEquivalenceCheck(CheckpointType checkpointType, long indexSize, bool useTimingFuzzing)
         {
@@ -92,10 +99,11 @@ namespace Tsavorite.test.recovery
                 // Verify the final state of the old store
                 using var s1 = store1.NewSession<TestSpanByteKey, long, long, Empty, SumFunctions>(new SumFunctions(0, false));
                 var bc1 = s1.BasicContext;
+                var keyArray = new byte[sizeof(long)];
                 for (long key = 0; key < numKeys; key++)
                 {
                     long output = default;
-                    var status = bc1.Read(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), ref output);
+                    var status = bc1.Read(TestSpanByteKey.FromArray(SetKey(keyArray, key)), ref output);
                     if (status.IsPending)
                     {
                         var completed = bc1.CompletePendingWithOutputs(out var completedOutputs, true);
@@ -133,7 +141,7 @@ namespace Tsavorite.test.recovery
                 for (long key = 0; key < numKeys; key++)
                 {
                     long output = default;
-                    var status = bc2.Read(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), ref output);
+                    var status = bc2.Read(TestSpanByteKey.FromArray(SetKey(keyArray, key)), ref output);
                     if (status.IsPending)
                     {
                         var completed = bc2.CompletePendingWithOutputs(out var completedOutputs, true);
@@ -202,10 +210,11 @@ namespace Tsavorite.test.recovery
                 // Verify the final state of the store
                 using var s1 = store1.NewSession<TestSpanByteKey, long, long, Empty, SumFunctions>(new SumFunctions(0, false));
                 var bc1 = s1.BasicContext;
+                var keyArray = new byte[sizeof(long)];
                 for (long key = 0; key < numKeys; key++)
                 {
                     long output = default;
-                    var status = bc1.Read(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), ref output);
+                    var status = bc1.Read(TestSpanByteKey.FromArray(SetKey(keyArray, key)), ref output);
                     if (status.IsPending)
                     {
                         var completed = bc1.CompletePendingWithOutputs(out var completedOutputs, true);

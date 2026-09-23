@@ -471,6 +471,100 @@ namespace Garnet.test.cluster
 
             context.ValidateKVCollectionAgainstReplica(ref context.kvPairs, replicaIndex);
         }
+
+        [Test, Order(6), CancelAfter(testTimeout)]
+        public void ClusterReplicaCheckpointRecoveryFailureAbortsSyncTest()
+        {
+            var primaryIndex = 0;
+            var replicaIndex = 1;
+            var nodes_count = 2;
+            context.CreateInstances(nodes_count, disableObjects: false, enableAOF: true, timeout: timeout);
+            context.CreateConnection();
+
+            _ = context.clusterTestUtils.AddDelSlotsRange(primaryIndex, [(0, 16383)], addslot: true, logger: context.logger);
+            context.clusterTestUtils.SetConfigEpoch(primaryIndex, primaryIndex + 1, logger: context.logger);
+            context.clusterTestUtils.SetConfigEpoch(replicaIndex, replicaIndex + 1, logger: context.logger);
+            context.clusterTestUtils.Meet(primaryIndex, replicaIndex, logger: context.logger);
+
+            var keyLength = 32;
+            var kvpairCount = 32;
+            context.kvPairs = [];
+            context.PopulatePrimary(ref context.kvPairs, keyLength, kvpairCount, primaryIndex, null);
+
+            // Take a checkpoint so the replica performs a disk-based full sync and recovers from the shipped token
+            var primaryLastSaveTime = context.clusterTestUtils.LastSave(primaryIndex, logger: context.logger);
+            context.clusterTestUtils.WaitUntilNextSecond(primaryIndex, primaryLastSaveTime);
+            context.clusterTestUtils.Checkpoint(primaryIndex, logger: context.logger);
+            context.clusterTestUtils.WaitCheckpoint(primaryIndex, primaryLastSaveTime, logger: context.logger);
+
+            try
+            {
+                ExceptionInjectionHelper.EnableException(ExceptionInjectionType.Replication_Fail_Replica_Checkpoint_Recovery);
+
+                var respReplicate = context.clusterTestUtils.ClusterReplicate(replicaNodeIndex: replicaIndex, primaryNodeIndex: primaryIndex, failEx: false, logger: context.logger);
+
+                // Recovery failed before applying any of the checkpoint, so the replica holds none of the primary's
+                // data. Reporting success here is what lets a replica advertise the primary's replication offset
+                // over an empty store, so the sync must fail and carry the underlying error.
+                ClassicAssert.AreEqual(0, context.clusterTestUtils.DBSize(replicaIndex, logger: context.logger),
+                    "recovery must have left the replica store empty for this scenario to be under test");
+
+                Assert.That(respReplicate, Does.Contain(nameof(ExceptionInjectionType.Replication_Fail_Replica_Checkpoint_Recovery)),
+                    "a failed replica checkpoint recovery must abort the sync and surface the underlying error");
+            }
+            finally
+            {
+                ExceptionInjectionHelper.DisableException(ExceptionInjectionType.Replication_Fail_Replica_Checkpoint_Recovery);
+            }
+        }
+
+        [Test, Order(6), CancelAfter(testTimeout)]
+        public void ClusterReplicaUnreadableCheckpointAbortsSyncTest()
+        {
+            var primaryIndex = 0;
+            var replicaIndex = 1;
+            var nodes_count = 2;
+
+            // FailOnRecoveryError governs standalone startup, so leave it off: a replica must abort the sync on an
+            // unreadable checkpoint regardless, rather than advertising the primary's offset over incomplete state.
+            context.CreateInstances(nodes_count, disableObjects: false, enableAOF: true, timeout: timeout);
+            context.CreateConnection();
+
+            _ = context.clusterTestUtils.AddDelSlotsRange(primaryIndex, [(0, 16383)], addslot: true, logger: context.logger);
+            context.clusterTestUtils.SetConfigEpoch(primaryIndex, primaryIndex + 1, logger: context.logger);
+            context.clusterTestUtils.SetConfigEpoch(replicaIndex, replicaIndex + 1, logger: context.logger);
+            context.clusterTestUtils.Meet(primaryIndex, replicaIndex, logger: context.logger);
+
+            var keyLength = 32;
+            var kvpairCount = 32;
+            context.kvPairs = [];
+            context.PopulatePrimary(ref context.kvPairs, keyLength, kvpairCount, primaryIndex, null);
+
+            // Take a checkpoint so the replica performs a disk-based full sync and recovers from the shipped token
+            var primaryLastSaveTime = context.clusterTestUtils.LastSave(primaryIndex, logger: context.logger);
+            context.clusterTestUtils.WaitUntilNextSecond(primaryIndex, primaryLastSaveTime);
+            context.clusterTestUtils.Checkpoint(primaryIndex, logger: context.logger);
+            context.clusterTestUtils.WaitCheckpoint(primaryIndex, primaryLastSaveTime, logger: context.logger);
+
+            try
+            {
+                ExceptionInjectionHelper.EnableException(ExceptionInjectionType.Replication_Fail_Replica_Unreadable_Checkpoint);
+
+                var respReplicate = context.clusterTestUtils.ClusterReplicate(replicaNodeIndex: replicaIndex, primaryNodeIndex: primaryIndex, failEx: false, logger: context.logger);
+
+                // A checkpoint whose tokens are all unreadable recovers nothing, so continuing would leave the
+                // replica advertising the primary's replication offset over an empty store.
+                ClassicAssert.AreEqual(0, context.clusterTestUtils.DBSize(replicaIndex, logger: context.logger),
+                    "recovery must have left the replica store empty for this scenario to be under test");
+
+                Assert.That(respReplicate, Does.Contain(nameof(ExceptionInjectionType.Replication_Fail_Replica_Unreadable_Checkpoint)),
+                    "an unreadable replica checkpoint must abort the sync rather than be treated as a fresh start");
+            }
+            finally
+            {
+                ExceptionInjectionHelper.DisableException(ExceptionInjectionType.Replication_Fail_Replica_Unreadable_Checkpoint);
+            }
+        }
 #endif
 
         [Test, Order(10), CancelAfter(60_000)]
@@ -595,6 +689,20 @@ namespace Garnet.test.cluster
             }
         }
 
+        /// <summary>
+        /// Build a single-endpoint configuration matching the servers these tests create.
+        /// </summary>
+        /// <param name="endPoint">Endpoint to connect to.</param>
+        /// <param name="user">ACL user to authenticate as.</param>
+        /// <param name="password">Password for <paramref name="user"/>.</param>
+        static ConfigurationOptions GetNegativeTestConfig(IPEndPoint endPoint, string user, string password)
+            => TestUtils.GetConfig(
+                new EndPointCollection { endPoint },
+                allowAdmin: true,
+                disablePubSub: true,
+                authUsername: user,
+                authPassword: password);
+
         [Test, Order(13)]
         [Category("REPLICATION")]
         public void ClusterReplicateFails()
@@ -616,13 +724,17 @@ namespace Garnet.test.cluster
 
             ClassicAssert.AreNotEqual(primaryEndpoint, replicaEndpoint, "Should have different endpoints for nodes");
 
-            using var primaryConnection = ConnectionMultiplexer.Connect($"{primaryEndpoint.Address}:{primaryEndpoint.Port},user={UserName},password={Password},allowAdmin=true");
+            // Connect through the shared harness configuration rather than a hand-built connection
+            // string: it trims the command map to match the pub/sub-disabled servers created above,
+            // applies the suite's connect retry policy, and enables exception detail and client names
+            // so a connect failure identifies the test and endpoint.
+            using var primaryConnection = ConnectionMultiplexer.Connect(GetNegativeTestConfig(primaryEndpoint, UserName, Password));
             var primaryServer = primaryConnection.GetServer(primaryEndpoint);
 
             ClassicAssert.AreEqual("OK", (string)primaryServer.Execute("CLUSTER", ["ADDSLOTSRANGE", "0", "16383"], flags: CommandFlags.NoRedirect));
             ClassicAssert.AreEqual("OK", (string)primaryServer.Execute("CLUSTER", ["MEET", replicaEndpoint.Address.ToString(), replicaEndpoint.Port.ToString()], flags: CommandFlags.NoRedirect));
 
-            using var replicaConnection = ConnectionMultiplexer.Connect($"{replicaEndpoint.Address}:{replicaEndpoint.Port},user={UserName},password={Password},allowAdmin=true");
+            using var replicaConnection = ConnectionMultiplexer.Connect(GetNegativeTestConfig(replicaEndpoint, UserName, Password));
             var replicaServer = replicaConnection.GetServer(replicaEndpoint);
 
             // Try to replicate from a server that doesn't exist
@@ -839,6 +951,68 @@ namespace Garnet.test.cluster
 
             // Verify data is still accessible from the primary
             context.ValidateKVCollectionAgainstReplica(ref context.kvPairs, primaryIndex);
+        }
+
+        [Test, Order(17), CancelAfter(testTimeout)]
+        [Category("CLUSTER")]
+        public void ClusterGossipSurvivesFailedRound()
+        {
+            const int nodeCount = 3;
+            List<(int, int)>[] ranges = [[(0, 5460)], [(5461, 10921)], [(10922, 16383)]];
+
+            context.CreateInstances(nodeCount, timeout: timeout);
+            context.CreateConnection();
+
+            // Introduce the nodes to each other. This runs on the meet task rather than the main gossip loop,
+            // so it still completes while the loop below is failing.
+            for (var i = 0; i < nodeCount; i++)
+                context.clusterTestUtils.SetConfigEpoch(i, i + 1, logger: context.logger);
+            for (var i = 1; i < nodeCount; i++)
+            {
+                context.clusterTestUtils.Meet(0, i, logger: context.logger);
+                context.clusterTestUtils.WaitUntilNodeIsKnown(0, i, logger: context.logger);
+            }
+            for (var i = 0; i < nodeCount; i++)
+                context.clusterTestUtils.WaitClusterNodesSync(i, nodeCount, context.logger);
+
+            // Fail a round on every node's gossip loop. Nothing restarts that loop, so a round that is allowed
+            // to terminate it leaves the node silent for the rest of the process.
+            ExceptionInjectionHelper.EnableException(ExceptionInjectionType.Cluster_Gossip_Round_Fail);
+            try
+            {
+                // Longer than the gossip interval, so every node has run at least one failing round.
+                Thread.Sleep(TimeSpan.FromSeconds(7));
+            }
+            finally
+            {
+                ExceptionInjectionHelper.DisableException(ExceptionInjectionType.Cluster_Gossip_Round_Fail);
+            }
+
+            // Nothing is failing any more, so the assignment made now has to reach every node.
+            for (var i = 0; i < nodeCount; i++)
+                _ = context.clusterTestUtils.AddDelSlotsRange(i, ranges[i], addslot: true, logger: context.logger);
+
+            var deadline = DateTime.UtcNow.AddSeconds(30);
+            while (true)
+            {
+                var pending = -1;
+                for (var i = 0; i < nodeCount; i++)
+                {
+                    var slots = context.clusterTestUtils.ClusterSlots(i, context.logger);
+                    if (slots == null || slots.Count != nodeCount)
+                    {
+                        pending = i;
+                        break;
+                    }
+                }
+
+                if (pending < 0)
+                    break;
+
+                ClassicAssert.Less(DateTime.UtcNow, deadline,
+                    $"node {pending} never converged after a gossip round failed");
+                Thread.Sleep(100);
+            }
         }
 #endif
     }

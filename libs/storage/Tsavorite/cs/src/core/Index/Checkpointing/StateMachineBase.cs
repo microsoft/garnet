@@ -1,6 +1,8 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
+
 namespace Tsavorite.core
 {
     /// <summary>
@@ -36,6 +38,13 @@ namespace Tsavorite.core
         {
             foreach (var task in tasks)
                 task.GlobalAfterEnteringState(next, stateMachineDriver);
+        }
+
+        /// <inheritdoc />
+        public void OnAbort(StateMachineDriver stateMachineDriver, Exception exception)
+        {
+            foreach (var task in tasks)
+                task.OnAbort(stateMachineDriver, exception);
         }
     }
 }
