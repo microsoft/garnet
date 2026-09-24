@@ -65,12 +65,14 @@ namespace Garnet.cluster
         {
             this.clusterProvider = clusterProvider;
             this.serverOptions = clusterProvider.serverOptions;
-            var clusterFolder = "/cluster";
-            var clusterDataPath = serverOptions.CheckpointDir + clusterFolder;
-            var deviceFactory = serverOptions.GetInitializedDeviceFactory(clusterDataPath);
+            // Compose "cluster" through the file descriptor rather than the base name: the base name is
+            // backend-neutral (a local directory or an Azure "container/prefix" blob path), and each factory
+            // joins descriptor components with its own separator. Embedding it in the base name would put a
+            // backslash into the Azure blob hierarchy on Windows.
+            var deviceFactory = serverOptions.GetInitializedDeviceFactory(serverOptions.CheckpointDir ?? string.Empty);
 
 
-            clusterConfigDevice = deviceFactory.Get(new FileDescriptor(directoryName: "", fileName: "nodes.conf"));
+            clusterConfigDevice = deviceFactory.Get(new FileDescriptor(directoryName: "cluster", fileName: "nodes.conf"));
             pool = new(1, (int)clusterConfigDevice.SectorSize);
 
             var clusterEndpoint = clusterProvider.storeWrapper.GetClusterEndpoint();

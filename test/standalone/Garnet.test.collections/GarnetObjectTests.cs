@@ -296,8 +296,8 @@ namespace Garnet.test
 
         private void CreateStore()
         {
-            logDevice ??= Devices.CreateLogDevice(TestUtils.MethodTestDir + "/hlog.log");
-            objectLogDevice ??= Devices.CreateLogDevice(TestUtils.MethodTestDir + "/hlog.obj.log");
+            logDevice ??= Devices.CreateLogDevice(Path.Combine(TestUtils.MethodTestDir, "hlog.log"));
+            objectLogDevice ??= Devices.CreateLogDevice(Path.Combine(TestUtils.MethodTestDir, "hlog.obj.log"));
 
             var kvSettings = new KVSettings
             {

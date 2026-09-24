@@ -217,11 +217,14 @@ namespace Tsavorite.core
                 elideSourceRecord = stackCtx.recSrc.HasMainLogSrc && CanElide<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, srcLogRecord.Info)
             };
 
-            // We know the existing record cannot be elided; it must point to a valid record; otherwise InternalDelete would have returned NOTFOUND.
+            // If the source record is elidable we will detach it from the tag chain below, after the CAS, by carrying its
+            // PreviousAddress on the new tombstone. CanElide() excludes checkpoint-frozen records.
             if (!TryAllocateRecord(sessionFunctions, ref operationState, ref stackCtx, ref sizeInfo, allocOptions, out var newLogicalAddress, out var newPhysicalAddress, out var status))
                 return status;
 
             var newLogRecord = WriteNewRecordInfo(key, hlogBase, newLogicalAddress, newPhysicalAddress, in sizeInfo, sessionFunctions.Ctx.InNewVersion, previousAddress: stackCtx.recSrc.LatestLogicalAddress);
+            if (allocOptions.elideSourceRecord)
+                newLogRecord.InfoRef.PreviousAddress = srcLogRecord.Info.PreviousAddress;
             newLogRecord.InfoRef.SetTombstone();
             stackCtx.SetNewRecord(newLogicalAddress);
 
@@ -256,10 +259,27 @@ namespace Tsavorite.core
                 sessionFunctions.PostInitialDeleter(ref newLogRecord, ref deleteInfo);
 
                 // Success should always Seal the old record. This may be readcache or readonly, which is OK.
-                if (stackCtx.recSrc.HasMainLogSrc)
+                if (allocOptions.elideSourceRecord)
                 {
-                    // Immediately dispose all resources on the source record before sealing.
+                    // The CAS above replaced the source in the HashBucketEntry with a tombstone that carries the source's
+                    // PreviousAddress, so the source is now detached from the tag chain and can be freelisted.
+                    // Fire the Deleted disposal first so triggers keyed on deletion (e.g. range-index file cleanup and
+                    // Vector Set deletion) still run; that releases and un-accounts the value. The elide/freelist disposal
+                    // below then releases the key, which eviction would otherwise have accounted for.
+                    // CanElide() already excluded checkpoint-frozen records, so no IsFrozen check is needed here.
                     OnDispose(ref srcLogRecord, DisposeReason.Deleted);
+
+                    srcLogRecord.InfoRef.SealAndInvalidate();    // The record was elided, so Invalidate
+
+                    if (stackCtx.recSrc.LogicalAddress >= GetMinRevivifiableAddress())
+                        _ = TryTransferToFreeList<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, stackCtx.recSrc.LogicalAddress, ref srcLogRecord);
+                    else
+                        OnDispose(ref srcLogRecord, DisposeReason.Elided);
+                }
+                else if (stackCtx.recSrc.HasMainLogSrc)
+                {
+                    // Dispose the superseded source record's resources, unless a checkpoint has frozen it.
+                    OnDisposeSupersededSource<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, ref srcLogRecord);
                     srcLogRecord.InfoRef.Seal();    // Not elided so Seal without invalidate
                 }
 

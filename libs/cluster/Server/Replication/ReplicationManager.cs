@@ -150,10 +150,9 @@ namespace Garnet.cluster
             checkpointStore = new CheckpointStore(storeWrapper, clusterProvider, true, logger);
             aofSyncDriverStore = new(clusterProvider, 1, logger);
 
-            var clusterFolder = "/cluster";
-            var clusterDataPath = opts.CheckpointDir + clusterFolder;
-            var deviceFactory = opts.GetInitializedDeviceFactory(clusterDataPath);
-            replicationConfigDevice = deviceFactory.Get(new FileDescriptor(directoryName: "", fileName: "replication.conf"));
+            // Compose "cluster" through the file descriptor rather than the base name; see ClusterManager.
+            var deviceFactory = opts.GetInitializedDeviceFactory(opts.CheckpointDir ?? string.Empty);
+            replicationConfigDevice = deviceFactory.Get(new FileDescriptor(directoryName: "cluster", fileName: "replication.conf"));
             replicationConfigDevicePool = new(1, (int)replicationConfigDevice.SectorSize);
 
             var canRecoverReplicationHistory = replicationConfigDevice.GetFileSize(0) > 0;
@@ -538,6 +537,12 @@ namespace Garnet.cluster
         {
             await storeWrapper.RecoverCheckpointAsync().ConfigureAwait(false);
             await storeWrapper.RecoverAOFAsync().ConfigureAwait(false);
+
+            // A replica is reconciled by a full sync from its primary, so an incomplete local recovery is reported
+            // but must not stop it from starting and connecting.
+            var isReplica = clusterProvider.clusterManager.CurrentConfig.LocalNodeRole == NodeRole.REPLICA;
+            storeWrapper.VerifyRecoveryIsComplete(canBeRepairedBySync: isReplica);
+
             if (clusterProvider.serverOptions.EnableAOF)
             {
                 storeWrapper.DefaultDatabase.VectorManager?.Initialize();

@@ -106,6 +106,27 @@ namespace Tsavorite.core
         internal long GetMinRevivifiableAddress()
             => RevivificationManager.GetMinRevivifiableAddress(hlogBase.GetTailAddress(), hlogBase.ReadOnlyAddress);
 
+        /// <summary>
+        /// Dispose the resources of an in-memory source record that a newly-CAS'd record has just superseded, unless an
+        /// ongoing checkpoint has frozen it.
+        /// </summary>
+        /// <remarks>
+        /// Disposal clears the record's heap fields, which returns the value's <see cref="ObjectIdMap"/> slot to that page's
+        /// free list for reuse by another record. The snapshot flush reads object ids from its page copy but resolves them
+        /// against the live map, so disposing a frozen record lets the flush serialize a freed - or recycled, and therefore
+        /// unrelated - object in its place. A frozen record must keep its value until the checkpoint has captured it; the
+        /// value is then accounted for and released when the page is evicted.
+        /// </remarks>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private void OnDisposeSupersededSource<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions,
+                ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx, ref LogRecord logRecord)
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
+        {
+            if (IsFrozen<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, logRecord.Info))
+                return;
+            OnDispose(ref logRecord, DisposeReason.Deleted);
+        }
+
         [MethodImpl(MethodImplOptions.NoInlining)]
         private (bool elided, bool added) TryElideAndTransferToFreeList<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions,
                 ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx, ref LogRecord logRecord)

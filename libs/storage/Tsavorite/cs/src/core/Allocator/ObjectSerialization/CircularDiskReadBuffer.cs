@@ -268,9 +268,10 @@ namespace Tsavorite.core
                 buffers[ii]?.WaitForReadCompletion();
         }
 
-        /// <summary>Advance the ring's consumption cursor to a record's authoritative object-log start. A partial flush may have
-        /// sector-padded the preceding record range, so this skips that padding (less than one sector) rather than assuming records are
-        /// contiguous. The target may be at the start of the next ring buffer.</summary>
+        /// <summary>Advance the ring's consumption cursor to a record's authoritative object-log start. The stored position may be ahead of
+        /// the cursor: a partial flush sector-pads its last write, and a page whose records were flushed by more than one operation can have
+        /// another flush's object data written between those ranges. The skipped bytes are buffered, because the span being read was computed
+        /// from the record positions themselves, so the target may lie in the current ring buffer or in a later one.</summary>
         /// <param name="recordFilePosition">Object-log position stored in the record being read.</param>
         /// <returns><c>false</c> only when the current ring buffer has no data at entry; otherwise <c>true</c> after attempting to advance.
         /// A subsequent stream read reports exhaustion if the target lay exactly beyond the available buffers.</returns>
@@ -279,8 +280,8 @@ namespace Tsavorite.core
             var buffer = buffers[currentIndex] ?? throw new TsavoriteException(
                 $"Internal error in read buffer sequencing; empty buffer[{currentIndex}] encountered with required endpoint {RequiredEndAddress}");
 
-            // Each partial flush sector-pads its last write. The next stored record position may therefore be ahead of the current
-            // consumption cursor by that padding, but it may never be behind it.
+            // Records are flushed in address order and object-log positions are assigned in flush order, so the next stored record
+            // position is never behind the current consumption cursor.
             if (!buffer.HasData && !buffer.WaitForDataAvailable())
                 return false;
 
@@ -290,16 +291,13 @@ namespace Tsavorite.core
                 Debug.Assert(recordFilePosition.word >= bufferFilePosition.word, $"Record file position ({recordFilePosition}) should be >= ongoing position {bufferFilePosition}");
                 Debug.Assert(recordFilePosition.SegmentId == bufferFilePosition.SegmentId, $"Record file segment ({recordFilePosition.SegmentId}) should == ongoing position {bufferFilePosition.SegmentId}");
                 var increment = recordFilePosition - bufferFilePosition;
-                Debug.Assert(increment < objectLogDevice.SectorSize, $"Increment {increment} must be less than SectorSize ({objectLogDevice.SectorSize})");
 
-                // We might cleanly align to the start of the next buffer, if there was a flush that ended on a buffer boundary.
-                // Otherwise, we should always be within the current buffer. We should only do this "continue" once.
+                // The target is in this buffer, or we consume the remainder of this buffer and re-evaluate against the next one.
                 if (buffer.currentPosition + (int)increment < buffer.endPosition)
                 {
                     buffer.currentPosition += (int)increment;
                     break;
                 }
-                Debug.Assert(buffer.currentPosition + (int)increment == buffer.endPosition, $"Increment {increment} overflows buffer (curPos {buffer.currentPosition}, endPos {buffer.endPosition}) by more than alignment");
                 if (!MoveToNextBuffer(out buffer))
                     break;
             }

@@ -618,8 +618,12 @@ namespace Garnet
             // metadata still describes the downlevel object log that is about to be retired. This also captures any records the
             // append-only-file replay applied on top of the recovered checkpoint. A run that converted nothing takes no checkpoint, so
             // an already-current store is left as it was found.
-            if (wasUpgraded && !storeWrapper.TakeCheckpointAsync(background: false, logger: logger).GetAwaiter().GetResult())
-                throw new GarnetException("Upgrade: could not take the checkpoint that records the up-converted object log");
+            if (wasUpgraded)
+            {
+                var checkpointStatus = storeWrapper.TakeCheckpointAsync(background: false, logger: logger).GetAwaiter().GetResult();
+                if (checkpointStatus != CheckpointStatus.Success)
+                    throw new GarnetException($"Upgrade: could not take the checkpoint that records the up-converted object log ({checkpointStatus})");
+            }
 #pragma warning restore VSTHRD002
 
             // Close the store before renaming, so no device holds either object-log file.
@@ -633,23 +637,35 @@ namespace Garnet
 
         private void InternalDispose()
         {
-            // Phase 1: Stop listening on all servers to free ports immediately.
-            for (var i = 0; i < servers.Length; i++)
-                servers[i]?.Close();
+            // A thread parked in a test injection point holds a pooled network buffer, and the drain below
+            // waits for every such buffer to come back. Suspending covers both waiters already parked and
+            // requests that reach an injection point while this runs, so shutdown cannot be blocked by an
+            // injection point whose owner is already gone. Compiled out in Release.
+            ExceptionInjectionHelper.SuspendParking();
+            try
+            {
+                // Phase 1: Stop listening on all servers to free ports immediately.
+                for (var i = 0; i < servers.Length; i++)
+                    servers[i]?.Close();
 
-            // Phase 2: Drain active handlers and clean up remaining resources.
-            for (var i = 0; i < servers.Length; i++)
-                servers[i]?.Dispose();
+                // Phase 2: Drain active handlers and clean up remaining resources.
+                for (var i = 0; i < servers.Length; i++)
+                    servers[i]?.Dispose();
 
-            // Phase 3: Dispose the provider (storage engine shutdown — may take time).
-            Provider?.Dispose();
+                // Phase 3: Dispose the provider (storage engine shutdown — may take time).
+                Provider?.Dispose();
 
-            subscribeBroker?.Dispose();
-            storeEpoch?.Dispose();
-            pubSubEpoch?.Dispose();
-            opts.AuthSettings?.Dispose();
-            if (disposeLoggerFactory)
-                loggerFactory?.Dispose();
+                subscribeBroker?.Dispose();
+                storeEpoch?.Dispose();
+                pubSubEpoch?.Dispose();
+                opts.AuthSettings?.Dispose();
+                if (disposeLoggerFactory)
+                    loggerFactory?.Dispose();
+            }
+            finally
+            {
+                ExceptionInjectionHelper.ResumeParking();
+            }
         }
 
         private static void DeleteDirectory(string path)

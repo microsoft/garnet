@@ -60,6 +60,17 @@ namespace Tsavorite.core
             if ((minRevivAddress <= stackCtx.hei.Address) && (!options.elideSourceRecord || stackCtx.hei.Address != stackCtx.recSrc.LogicalAddress))
                 minRevivAddress = stackCtx.hei.Address;
 
+            // A (v+1) record must never land below the checkpoint's fuzzy-region start: the snapshot includes every record
+            // below that address regardless of its version bit, so reusing a lower address would leak (v+1) data into the
+            // checkpoint image. This applies to both reuse paths below, including an allocation that was saved before the
+            // version shift and is only now being retried as (v+1).
+            if (sessionFunctions.Ctx.IsInV1)
+            {
+                var fuzzyStartAddress = _hybridLogCheckpoint.info.fuzzyRegionStartAddress;
+                if (fuzzyStartAddress > minRevivAddress)
+                    minRevivAddress = fuzzyStartAddress;
+            }
+
             if (options.recycle && operationState.retryNewLogicalAddress != kInvalidAddress
                     && GetAllocationForRetry(sessionFunctions, ref operationState, minRevivAddress, in sizeInfo, out newLogicalAddress, out newPhysicalAddress))
             {
@@ -68,12 +79,6 @@ namespace Tsavorite.core
             }
             if (RevivificationManager.UseFreeRecordPool)
             {
-                if (sessionFunctions.Ctx.IsInV1)
-                {
-                    var fuzzyStartAddress = _hybridLogCheckpoint.info.fuzzyRegionStartAddress;
-                    if (fuzzyStartAddress > minRevivAddress)
-                        minRevivAddress = fuzzyStartAddress;
-                }
                 if (TryTakeFreeRecord<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, in sizeInfo, minRevivAddress, out newLogicalAddress, out newPhysicalAddress))
                 {
                     new LogRecord(newPhysicalAddress).PrepareForRevivification(ref sizeInfo);

@@ -1499,6 +1499,48 @@ return retArray";
             ClassicAssert.AreEqual("hello lua", success);
         }
 
+        [Test]
+        public void ScriptInputsRejectPrecompiledLuaBytecode()
+        {
+            const string Key = "binary-chunk-key";
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase();
+
+            // Generate valid bytecode matching the server's exact Lua version.
+            ClassicAssert.IsTrue(LuaRunner.TryCompileSource("return redis.call('SET', KEYS[1], 'binary-chunk-executed')"u8, out var compiledScript, out var compileError));
+            ClassicAssert.IsNull(compileError);
+            var binaryChunk = compiledScript.Data.ToArray();
+            ClassicAssert.GreaterOrEqual(binaryChunk.Length, 4);
+            CollectionAssert.AreEqual(new byte[] { 0x1B, (byte)'L', (byte)'u', (byte)'a' }, binaryChunk.AsSpan(0, 4).ToArray());
+
+            // EVAL must not execute arbitrary bytecode supplied as the script body.
+            var exception = ClassicAssert.Throws<RedisServerException>(() => db.Execute("EVAL", [binaryChunk, 1, Key]));
+            StringAssert.Contains("binary chunk", exception.Message);
+            ClassicAssert.IsFalse(db.KeyExists(Key));
+            ClassicAssert.AreNotEqual("binary-chunk-executed", (string)db.StringGet(Key));
+
+            // SCRIPT LOAD must reject the same bytes without adding them to the global cache.
+            var hash = Convert.ToHexString(SHA1.HashData(binaryChunk)).ToLowerInvariant();
+            exception = ClassicAssert.Throws<RedisServerException>(() => db.Execute("SCRIPT", ["LOAD", binaryChunk]));
+            StringAssert.Contains("binary chunk", exception.Message);
+
+            var exists = (RedisResult[])db.Execute("SCRIPT", ["EXISTS", hash]);
+            ClassicAssert.AreEqual(0, (int)exists[0]);
+        }
+
+        [Test]
+        public void EvalUsesFullSourceLength()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase();
+            var source = Encoding.UTF8.GetBytes("return 1\0return 2");
+
+            // Exact-length loading must parse bytes after the NUL instead of truncating the script.
+            var exception = ClassicAssert.Throws<RedisServerException>(() => db.Execute("EVAL", [source, 0]));
+            StringAssert.StartsWith("Compilation error:", exception.Message);
+        }
+
         [TestCase(2)]
         [TestCase(3)]
         public void LuaToResp2Conversions(int redisSetRespVersion)

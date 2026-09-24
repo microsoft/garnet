@@ -248,6 +248,41 @@ For all available command line settings, run `GarnetServer.exe -h` or `GarnetSer
 
 ---
 
+## Recovery failures at startup
+
+When Garnet is started with `--recover`, it restores the store from the most recent readable checkpoint and
+then replays the append-only file (AOF) on top of it. `--fail-on-recovery-error` controls what happens when
+that restore cannot reproduce everything that was durably acknowledged before shutdown.
+
+Startup is refused when **all** of the following hold:
+
+* checkpoint tokens are present in the checkpoint directory, but none of them could be read;
+* the surviving AOF cannot cover the resulting gap, because it is disabled or because it begins past the
+  first valid log address (a completed checkpoint truncates the AOF up to the address that checkpoint covers);
+* `--fail-on-recovery-error` is `true`.
+
+The checkpoint artifacts are left on disk so the failure can be diagnosed, and the reason is logged with the
+number of tokens that were found and rejected.
+
+These cases are **not** treated as recovery failures and continue to start normally:
+
+* a fresh directory, with or without `--aof`;
+* an AOF-only database whose complete log begins at the first valid address;
+* an unreadable checkpoint alongside a complete AOF from the first valid address, because replaying the AOF
+  in full reconstructs the database;
+* an AOF that begins past the first valid address with no checkpoint tokens at all, which is the normal state
+  of a replica that was synchronized without receiving a checkpoint;
+* `--fast-aof-truncate` and AOF null-device configurations, which discard AOF history by design.
+
+With `--fail-on-recovery-error` set to `false` (the default) the server still starts on whatever it managed
+to recover, and the incomplete recovery is logged as an error.
+
+In cluster mode a primary refuses under the same conditions. A replica reports the same error but continues,
+because a full sync from its primary will reconcile it. Cluster startup never purges checkpoint artifacts
+when no valid checkpoint could be selected.
+
+---
+
 ## Upgrading a store written by an earlier release
 
 An on-disk store keeps its object log in the format of the release that wrote it. A newer release can read it,

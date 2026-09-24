@@ -470,9 +470,9 @@ namespace Tsavorite.test
 
         /// <summary>
         /// Filling the log well beyond its mutable window forces page eviction. OnEvict must fire for
-        /// every non-tombstoned, non-invalid record evicted past HeadAddress — including sealed source
-        /// records from immutable-region deletes. Tombstoned records are skipped (heap was decremented
-        /// at the delete site). Invalid/elided records are skipped (already cleaned up).
+        /// every non-tombstoned, non-invalid record evicted past HeadAddress. Tombstoned records are
+        /// skipped (heap was decremented at the delete site). Invalid records are skipped, including the
+        /// source records that an immutable-region delete elided from the tag chain and already cleaned up.
         /// </summary>
         [Test, Category("TsavoriteKV")]
         public void PageEvictionFiresOnEvictForEveryLiveRecord()
@@ -501,18 +501,26 @@ namespace Tsavorite.test
                 "Each Delete should fire OnDispose(Deleted) exactly once");
             var deletedDisposeCountBeforeEvict = tracker.DisposeCount(DisposeReason.Deleted);
 
+            // An immutable-region delete whose source is the only record in its tag chain elides that source:
+            // it is invalidated and either freelisted or disposed, so eviction will never visit it.
+            var elidedSources = tracker.DisposeCount(DisposeReason.Elided) + tracker.DisposeCount(DisposeReason.RevivificationFreeList);
+            ClassicAssert.LessOrEqual(elidedSources, immutableDeletes,
+                "Only immutable-delete source records can be elided");
+
             // Force all records out to disk.
             store.Log.FlushAndEvict(wait: true);
 
             // Precise count:
             //  - (n - deleted) live records: visited by OnEvict.
             //  - mutableDeletes records: tombstoned in-place, skipped by OnEvict.
-            //  - immutableDeletes sealed source records: NOT tombstoned, visited by OnEvict.
+            //  - elidedSources records: invalidated and cleaned up at the delete site, skipped by OnEvict.
+            //  - the remaining immutableDeletes sealed source records: NOT tombstoned, visited by OnEvict.
             //  - immutableDeletes new tombstone records at tail: tombstoned, skipped by OnEvict.
-            // Total = (n - deleted) + immutableDeletes = n - mutableDeletes.
-            ClassicAssert.AreEqual(n - mutableDeletes, tracker.EvictCount(EvictionSource.MainLog),
-                $"OnEvict(MainLog) must fire exactly {n - mutableDeletes} times: " +
-                $"{n - deleted} live + {immutableDeletes} sealed sources, skipping {mutableDeletes} in-place tombstones");
+            var expectedEvictions = (n - deleted) + (immutableDeletes - elidedSources);
+            ClassicAssert.AreEqual(expectedEvictions, tracker.EvictCount(EvictionSource.MainLog),
+                $"OnEvict(MainLog) must fire exactly {expectedEvictions} times: " +
+                $"{n - deleted} live + {immutableDeletes - elidedSources} sealed sources, " +
+                $"skipping {mutableDeletes} in-place tombstones and {elidedSources} elided sources");
             ClassicAssert.AreEqual(0, tracker.EvictCount(EvictionSource.ReadCache),
                 "No read cache is configured, OnEvict(ReadCache) must never fire");
             ClassicAssert.AreEqual(deletedDisposeCountBeforeEvict, tracker.DisposeCount(DisposeReason.Deleted),

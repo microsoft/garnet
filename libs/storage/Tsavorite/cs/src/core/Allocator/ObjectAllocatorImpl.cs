@@ -1475,6 +1475,16 @@ namespace Tsavorite.core
                     var position = new ObjectLogFilePositionInfo(
                         logRecord.GetObjectLogRecordStartPositionAndLengths(out var keyLength, out var valueLength, checkpointVersion),
                         objectLogTail.SegmentSizeBits);
+
+                    // A Valid record can lose its object value before the flush captures it, because a CopyUpdate source clear disposes the
+                    // object without invalidating the record. The flush writes that record's inline image but no object-log bytes, so there is
+                    // nothing to read back; the superseding record later in the log carries the value. Zero component lengths identify that
+                    // record: the position word cannot, because address 0 is the legitimate position of the first record in the address space.
+                    if (keyLength == 0 && valueLength == 0)
+                    {
+                        continue;
+                    }
+
                     if (!startPosition.IsSet)
                         startPosition = position;
                     else if (position - startPosition >= readBuffers.Capacity)
@@ -1511,6 +1521,11 @@ namespace Tsavorite.core
 
                     if (logRecord.DataHeader.RecordHasObjects && logRecord.Info.Valid)
                     {
+                        // Skip the records the flush skipped; see the first pass for why a Valid record can have no object-log bytes.
+                        _ = logRecord.GetObjectLogRecordStartPositionAndLengths(out var skipKeyLength, out var skipValueLength, checkpointVersion);
+                        if (skipKeyLength == 0 && skipValueLength == 0)
+                            continue;
+
                         _ = logReader.ReadRecordObjects(ref logRecord, default(EmptyKey), startPosition.SegmentSizeBits, checkpointVersion);
                         TrackRecoveredObjectRecord(in logRecord);
                     }
