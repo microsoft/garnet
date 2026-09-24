@@ -362,7 +362,7 @@ namespace Garnet.networking
         void Read()
         {
             bool retry = false;
-            while (networkBytesRead > networkReadHead || retry)
+            while (networkBytesRead > networkReadHead || transportBytesRead > 0 || retry)
             {
                 retry = false;
                 var result = sslStream.ReadAsync(new Memory<byte>(transportReceiveBuffer, transportBytesRead, transportReceiveBuffer.Length - transportBytesRead), cancellationTokenSource.Token);
@@ -421,13 +421,9 @@ namespace Garnet.networking
                     DoubleTransportReceiveBuffer();
                     retry = true;
                 }
-                // If more work, passthrough to the general SslReaderAsync, else this task is done.
-                // NOTE: we must propagate the `retry` flag (which signals "the transport buffer was just doubled,
-                // attempt another read into the freshly-enlarged buffer"). If we chained without it, the new
-                // SslReaderLoopAsync would start with retry=false and, when networkBytesRead==networkReadHead,
-                // exit its loop immediately without ever issuing the follow-up read, leaving the half-parsed
-                // payload stuck in the transport buffer until more network bytes happen to arrive.
-                if (networkBytesRead > networkReadHead || retry)
+                // Continue when encrypted or decrypted input remains. SslStream may buffer additional TLS
+                // records after consuming the network buffer, so an incomplete message requires another read.
+                if (networkBytesRead > networkReadHead || transportBytesRead > 0 || retry)
                 {
                     _ = SslReaderLoopAsync(retry, token);
                 }
@@ -453,7 +449,7 @@ namespace Garnet.networking
             try
             {
                 bool retry = initialRetry;
-                while (networkBytesRead > networkReadHead || retry)
+                while (networkBytesRead > networkReadHead || transportBytesRead > 0 || retry)
                 {
                     retry = false;
                     Debug.Assert(readerStatus == TlsReaderStatus.Active);

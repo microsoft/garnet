@@ -109,6 +109,8 @@ namespace Garnet.cluster
                     ClusterPassword = clusterPassword
                 };
             } while (Interlocked.CompareExchange(ref authContainer, newAuthContainer, oldAuthContainer) != oldAuthContainer);
+
+            clusterManager.clusterConnectionStore.CloseAll();
         }
 
         /// <inheritdoc />
