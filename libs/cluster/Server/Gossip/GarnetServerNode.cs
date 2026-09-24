@@ -68,9 +68,16 @@ namespace Garnet.cluster
         public EndPoint EndPoint;
 
         /// <summary>
-        /// Default send page size for GarnetClient
+        /// Default size of each GarnetClient send page. In out-of-line mode, each page stores
+        /// fixed-size payload descriptors rather than payload bytes, so this controls how many
+        /// requests can be queued before page reuse must wait for an earlier flush to complete.
         /// </summary>
-        const int defaultSendPageSize = 1 << 13;
+        const int defaultSendPageSize = 1 << 10;
+
+        /// <summary>
+        /// Default network send buffer size
+        /// </summary>
+        const int defaultNetworkSendBufferSize = 1 << 13;
 
         /// <summary>
         /// Default max outstanding tasks for GarnetClient
@@ -109,7 +116,7 @@ namespace Garnet.cluster
                 EndPoint,
                 tlsOptions,
                 sendPageSize: defaultSendPageSize,
-                bufferSize: defaultSendPageSize,
+                bufferSize: defaultNetworkSendBufferSize,
                 maxOutstandingTasks: defaultMaxOutstandingTask,
                 timeoutMilliseconds: GetClientTimeoutMilliseconds(
                     clusterProvider.storeWrapper.runtimeConfig.GetInt(ServerConfigType.CLUSTER_NODE_TIMEOUT)),

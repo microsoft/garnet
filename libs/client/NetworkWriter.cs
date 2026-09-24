@@ -156,15 +156,13 @@ namespace Garnet.client
             }
 
             var entry = networkPool.Get(allocationSize, PoolEntryBufferType.OutOfLinePayload);
-            if (entry is null)
-                throw new ObjectDisposedException(nameof(NetworkWriter));
+            ObjectDisposedException.ThrowIf(entry is null, this);
             return new(entry, length);
         }
 
         internal void EnqueuePayloadBuffer(long address, Payload payload)
         {
-            if (Volatile.Read(ref disposed))
-                throw new ObjectDisposedException(nameof(NetworkWriter));
+            ObjectDisposedException.ThrowIf(Volatile.Read(ref disposed), this);
 
             if (!outstandingPayloads.TryAdd(address, payload))
                 throw new InvalidOperationException($"An out-of-line payload is already registered at address {address}.");
