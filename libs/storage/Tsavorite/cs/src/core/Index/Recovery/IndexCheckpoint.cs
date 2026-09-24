@@ -163,6 +163,7 @@ namespace Tsavorite.core
                 // past this point were counted into mainIndexCheckpointCallbackCount but never handed to the device.
                 var accountedChunks = 0;
                 var countedChunks = 0;
+                var sentinelPending = false;
                 try
                 {
                     // Split the table into chunks small enough that no single device request exceeds the maximum the
@@ -175,7 +176,13 @@ namespace Tsavorite.core
 
                     uint chunkSize = (uint)(totalSize / numChunks);
                     Debug.Assert(chunkSize <= maxChunkSize, "Index checkpoint chunk exceeds the maximum device request size");
-                    mainIndexCheckpointCallbackCount = countedChunks = numChunks;
+                    // Count an issuance sentinel alongside the chunks, retired in the finally below once issuance has
+                    // ended and the catch has recorded any exception. A device may invoke a completion callback
+                    // synchronously and then throw out of the same submit; without the sentinel that completion can
+                    // drive the count to zero and report the checkpoint successful before the failure is recorded.
+                    mainIndexCheckpointCallbackCount = numChunks + 1;
+                    countedChunks = numChunks;
+                    sentinelPending = true;
 
                     if (throttleCheckpointFlushDelayMs >= 0)
                         throttleIndexCheckpointFlushSemaphore = new SemaphoreSlim(0);
@@ -290,12 +297,18 @@ namespace Tsavorite.core
                     for (var unaccounted = accountedChunks; unaccounted < countedChunks; unaccounted++)
                         RetireMainIndexCheckpointChunk();
 
-                    // Nothing was counted, so no completion will ever run; the task has to be failed here.
-                    if (countedChunks == 0)
+                    // Nothing was counted, so there is no sentinel and no completion will ever run.
+                    if (!sentinelPending)
                         mainIndexCheckpointTcs.TrySetException(ex);
                 }
                 finally
                 {
+                    // Retire the issuance sentinel, now that issuance has ended and the catch above has recorded any
+                    // exception it hit. This is what completes the checkpoint, so it completes with that error rather
+                    // than with a success a synchronous completion reached before the submit threw.
+                    if (sentinelPending)
+                        RetireMainIndexCheckpointChunk();
+
                     // Release the issuance sentinel. Any chunk writes still in flight keep the outstanding-IO count
                     // > 0 until their callbacks fire; the last release frees tables superseded during this flush.
                     EndNativeIndexCheckpointIo();

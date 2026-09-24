@@ -296,7 +296,12 @@ namespace Tsavorite.core
             int recordsCountInLastLevel = localCount & PageSizeMask;
             int numCompleteLevels = localCount >> PageSizeBits;
             int numLevels = numCompleteLevels + (recordsCountInLastLevel > 0 ? 1 : 0);
-            checkpointCallbackCount = numLevels;
+
+            // Count an issuance sentinel alongside the levels, retired in the finally below once issuance has ended
+            // and the catch has recorded any exception. A device may invoke a completion callback synchronously and
+            // then throw out of the same submit; without the sentinel that completion can drive the count to zero and
+            // report the checkpoint successful before the failure is recorded.
+            checkpointCallbackCount = numLevels + 1;
             checkpointError = null;
             checkpointTcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
             uint alignedPageSize = PageSize * (uint)RecordSize;
@@ -305,6 +310,11 @@ namespace Tsavorite.core
             int sectorSize = (int)device.SectorSize;
             numBytesWritten = 0;
             int i = 0;
+
+            // Levels whose retirement is accounted for: the device accepted the write and its completion callback will
+            // retire the level, or the submit failed and the catch retired it in place. Levels past this point were
+            // counted but never handed to the device.
+            var accountedLevels = 0;
             try
             {
                 for (; i < numLevels; i++)
@@ -352,31 +362,43 @@ namespace Tsavorite.core
                             device.WriteAsync((IntPtr)result.mem.aligned_pointer, offset + numBytesWritten, writeSize, AsyncFlushCallback, result);
                         }
                     }
-                    catch
+                    catch (Exception ex)
                     {
                         // A device may invoke the completion callback synchronously and then throw back out of the
                         // submit, so this level may already have been retired and its buffer already released. Claim
                         // exactly once: retiring it twice would complete the checkpoint while earlier writes are still
-                        // reading from the buffers they were given.
+                        // reading from the buffers they were given. Record the error before retiring, so a retirement
+                        // that completes the checkpoint reports the failure.
+                        RecordCheckpointError($"level {i} could not be issued", ex);
                         if (result.TryClaimRetirement())
                         {
                             result.mem?.Dispose();
                             RetireCheckpointLevel();
                         }
+                        accountedLevels++;
                         throw;
                     }
+                    accountedLevels++;
                     numBytesWritten += writeSize;
                 }
             }
             catch (Exception ex)
             {
-                // The levels already issued will still complete, but the ones never issued have no callback to retire
-                // them. Without this the outstanding count never reaches zero and every waiter on the checkpoint task
-                // blocks forever.
+                // The levels already issued will still complete, but the ones counted after the failure have no
+                // callback to retire them. Without this the outstanding count never reaches zero and every waiter on
+                // the checkpoint task blocks forever. Staging a level can throw before its submit is attempted, so
+                // this counts from the levels actually accounted for rather than assuming level i was retired.
                 RecordCheckpointError($"level {i} could not be issued", ex);
-                for (i++; i < numLevels; i++)
+                for (var unaccounted = accountedLevels; unaccounted < numLevels; unaccounted++)
                     RetireCheckpointLevel();
                 throw;
+            }
+            finally
+            {
+                // Retire the issuance sentinel, now that issuance has ended and the catch above has recorded any
+                // exception it hit. This is what completes the checkpoint, so it completes with that error rather
+                // than with a success a synchronous completion reached before the submit threw.
+                RetireCheckpointLevel();
             }
         }
 

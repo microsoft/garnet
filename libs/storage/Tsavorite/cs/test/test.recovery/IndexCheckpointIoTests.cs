@@ -635,6 +635,57 @@ namespace Tsavorite.test.recovery
             ClassicAssert.IsTrue(completion.IsFaulted, "The checkpoint must report the submission failure");
         }
 
+        /// <summary>A device may complete a write inline, reporting success, and then throw out of the same submit. If
+        /// that write is the last one outstanding, its completion drives the retirement count to zero before the
+        /// failure is recorded, and the checkpoint is reported successful even though the write failed - a silent
+        /// durability hole, since recovery would then read a checkpoint that was never fully written.</summary>
+        [Test]
+        [Category("CheckpointRestore")]
+        [Category("Smoke")]
+        public void IndexCheckpointFailsWhenTheFinalChunkCompletesThenThrows()
+        {
+            table = CreatePopulatedTable(Seed, TableSizeInBuckets, NumAdds);
+
+            // The table fits one chunk at the production cap, so the very first write is also the last outstanding one.
+            // Not disposed here: it wraps htDevice, which the fixture teardown owns.
+            var failing = new ThrowOnNthWriteDevice(htDevice) { ThrowWritesAfter = 0, CompleteBeforeThrowing = true };
+
+            table.BeginMainIndexCheckpoint(0, failing, out _);
+
+            var completion = table.GetMainIndexCheckpointTask();
+            ClassicAssert.IsTrue(completion.ContinueWith(_ => { }, TaskScheduler.Default).Wait(TimeSpan.FromSeconds(30)),
+                "The checkpoint task must complete rather than hang");
+            ClassicAssert.IsTrue(completion.IsFaulted, "A checkpoint whose only write failed must not report success");
+        }
+
+        /// <summary>The overflow-bucket checkpoint shares the index checkpoint's retirement pattern, and the fuzzy
+        /// index checkpoint is only complete when both halves are. It must likewise not report success when the last
+        /// level completes inline and then fails its submit.</summary>
+        [Test]
+        [Category("CheckpointRestore")]
+        [Category("Smoke")]
+        public void OverflowBucketCheckpointFailsWhenTheFinalLevelCompletesThenThrows()
+        {
+            var allocator = new MallocFixedPageSize<HashBucket>();
+            _ = allocator.Allocate();
+
+            // Not disposed here: it wraps ofbDevice, which the fixture teardown owns.
+            var failing = new ThrowOnNthWriteDevice(ofbDevice) { ThrowWritesAfter = 0, CompleteBeforeThrowing = true };
+            try
+            {
+                _ = Assert.Throws<IOException>(() => allocator.BeginCheckpoint(failing, 0, out _, useReadCache: false, skipReadCache: null, epoch: null));
+
+                var completion = allocator.IsCheckpointCompletedAsync().AsTask();
+                ClassicAssert.IsTrue(completion.ContinueWith(_ => { }, TaskScheduler.Default).Wait(TimeSpan.FromSeconds(30)),
+                    "The checkpoint task must complete rather than hang");
+                ClassicAssert.IsTrue(completion.IsFaulted, "A checkpoint whose only level failed must not report success");
+            }
+            finally
+            {
+                allocator.Dispose();
+            }
+        }
+
         /// <summary>A 12-byte record: deliberately not a divisor of any sector size, so the checkpoint's sector
         /// rounding leaves padding that is not a whole number of records.</summary>
         [StructLayout(LayoutKind.Sequential, Size = 12)]
