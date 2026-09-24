@@ -116,6 +116,80 @@ own multi-sublog orchestration.
 Garnet AOF records contain Garnet-specific headers and typed inputs, not the
 original RESP command bytes. A stock Redis replica cannot consume this stream.
 
+### Operator-facing Sentinel knobs that stock Redis exposes but Garnet does not
+
+The following options exist in stock Redis 7.4 and are read by stock Sentinel.
+They are **not** wire-protocol compatibility: Sentinel does not fail or fall
+back if they are absent. They are operator-facing levers that change how
+Sentinel selects a failover target or how a replica behaves during outage.
+
+| Option | Redis default | Purpose | Sentinel impact | Garnet status |
+|---|---|---|---|---|
+| `replica-announce-ip` | unset | Replica advertises an IP for `REPLCONF ip-address` when behind NAT. | Lets Sentinel reach replicas that are not at the inbound peer address. | **Shipped in `a01a8c4`.** |
+| `replica-announce-port` | 0 | Replica advertises a different port for `REPLCONF listening-port`. | Lets Sentinel reach a replica that is port-forwarded. | **Shipped in `a01a8c4`.** |
+| `replica-priority` (`slave-priority`) | 100 | Operator-set failover selection priority. | Sentinel promotes the replica with the **lowest** non-zero priority (`sentinel.c:5063` skips `priority == 0`). Used for AZ-aware failover and to exclude replicas (`priority 0`) from promotion. | Not implemented. |
+| `replica-serve-stale-data` | `yes` | Replica serves reads even when the link is down. | Read-replica availability during failover. | Not implemented. |
+| `min-replicas-to-write` | 0 | Primary refuses writes when fewer replicas are connected. | Write safety. | Not implemented. |
+| `min-replicas-max-lag` | 10 | Primary refuses writes when all replicas are laggier than this many seconds. | Write safety. | Not implemented. |
+
+### Replica `INFO replication` shape compared to Dragonfly
+
+Dragonfly (the other well-known Sentinel-compatible server) is the closest
+peer for this surface. Comparing what each server emits on the replica side of
+`INFO replication`:
+
+| Field | Stock Redis 7.4 | Dragonfly (`flags_info_replication_valkey_compatible`) | Garnet (this branch) |
+|---|---|---|---|
+| `role` | `slave` | `slave` (with the flag) | `slave` |
+| `master_host` | yes | yes | yes |
+| `master_port` | yes | yes | yes |
+| `master_link_status` | yes | yes | yes |
+| `master_last_io_seconds_ago` | yes | yes | yes |
+| `master_sync_in_progress` | yes | yes | yes |
+| `master_replid` | yes | yes | **missing** |
+| `slave_repl_offset` | yes | yes | **missing** |
+| `slave_priority` | yes | yes | **missing** (no option to set it) |
+| `slave_read_only` | yes (`1`) | yes (`1`) | **missing** |
+
+Dragonfly's source is clear about how it models these (`server_family.cc:3014-3033`):
+
+- `master_replid` is captured from `+FULLRESYNC <replid> <offset>` and exposed
+  to the replica's own INFO output, not to the primary's `slave<N>` lines.
+- `slave_repl_offset` is the sum of journal-executed LSNs across all flows.
+  For Garnet this would be the AOF address of the most recently applied
+  record, captured from `currentAddress` in
+  `StandaloneReplicaClient.cs:303` and reported to `LocalReplicationState`
+  after each `AofProcessor.ProcessAofRecordInternal` call.
+- `slave_priority` is an `absl::GetFlag` with default `100`. Dragonfly does
+  not change it at runtime; the Redis default (`CONFIG SET slave-priority`) is
+  not implemented either.
+- `slave_read_only` is hard-coded to `1`.
+- `psync_attempts` and `psync_successes` are debug-only counters Dragonfly
+  emits for monitoring; Redis does not emit them.
+
+Dragonfly does **not** implement `+CONTINUE` in the Redis-compatible control
+plane path either. `replica.cc:1378-1381` parses the `+CONTINUE` reply, logs
+`Partial replication not supported yet`, and returns
+`errc::not_supported`. The `replica_partial_sync` flag exists but only
+controls the private Dragonfly-to-Dragonfly DFLY protocol via
+`experimental_cascaded_partial_sync`. This confirms that `+CONTINUE` on the
+Redis-compatible control plane is a genuinely hard problem and not a quick
+port from Dragonfly.
+
+### Operational consequence of the gaps above
+
+- **`replica-priority`**: without it, Sentinel promotes whichever replica has
+  the lowest `PING` latency. In multi-AZ deployments this can pick a cross-AZ
+  replica when the same-AZ replica is available, increasing RTO.
+- **Missing replica INFO fields**: a Redis-compatible client that introspects
+  `INFO replication` against a Garnet replica sees a slightly-incomplete
+  picture. Sentinel itself does not require any of them (it monitors primaries,
+  not replicas, and reads primary-side `slave<N>` lines which Garnet already
+  emits correctly).
+- **`+CONTINUE`**: a replica disconnect longer than the primary's last-changed
+  AOF tail triggers a full resync. Same behavior as stock Redis without
+  `repl-backlog-size`. Acceptable for now.
+
 ## 4. Consistency model
 
 Initial synchronization follows this sequence:
@@ -380,6 +454,9 @@ a7b7e4047 [Cluster] Extract reusable checkpoint file receiver
 7c82564a8 [Resp] Stream standalone checkpoints before AOF catch-up
 05887aea8 [Resp] Batch standalone AOF replication frames
 f2c59fe78 [Resp] Pool standalone replication frame buffers
+d4509a0bd [Docs] Update Sentinel data-plane handoff
+36b2fc824 [Docs] Update stale --sentinel-replication help text and PSYNC docstring
+a01a8c4a1 [Resp] Add replica-announce-ip/port for standalone replication
 ```
 
 ## 10. Recommended future work
@@ -411,6 +488,58 @@ transfer:
 6. Add reconnect tests for retained and truncated ranges.
 
 Reuse `AofRetentionManager`; do not invent an unrelated offset lifetime model.
+
+**Realistic scope warning (Dragonfly comparison):** Dragonfly, which has been
+Sentinel-compatible for years, does not implement `+CONTINUE` on the
+Redis-compatible control plane. Their `replica.cc:1378-1381` explicitly errors
+out with `not_supported` and a `TODO: part sync` comment. Their
+`replica_partial_sync` flag only affects the private Dragonfly-to-Dragonfly
+DFLY protocol. A faithful `+CONTINUE` implementation on Garnet requires:
+
+- `LocalReplicationState` to capture `master_replid` from `+FULLRESYNC`
+  (currently the `<replid>` token is parsed but discarded in
+  `StandaloneReplicaClient.cs:207`).
+- `LocalReplicationState` to track `slave_repl_offset` (the latest replicated
+  AOF address) as records are replayed.
+- `ReplicaRegistry` already updates `ReplicaEntry.AckOffset` from
+  `REPLCONF ACK` (`ReplConfCommands.cs:77`) and `ReplicaRegistry.SetAckOffset`
+  (`ReplicaRegistry.cs:175`), so the per-replica ack tracking is already in
+  place.
+- The `PSYNC` handler to compute whether `(<replid>, <offset>)` is within the
+  retention window via `AofRetentionManager.GetTruncationLimit()`.
+- `ReplicaRegistry` to expose per-replica `ack_offset` so the primary can do
+  the comparison.
+
+This is ~200 LOC of correctness-sensitive code. Plan for off-by-one bugs at
+the retained/truncated boundary and a wire-byte-level test that reproduces
+Redis's response for `+CONTINUE replid offset` vs. `+FULLRESYNC replid
+offset`.
+
+### Then: `replica-priority` (highest-value operator knob)
+
+Add `--replica-priority <int>` (default 100, range 0..INT_MAX) and emit
+`slave_priority:<n>` on the replica-side `INFO replication`. Sentinel reads
+this from each replica's `INFO` and uses the lowest non-zero value to pick
+the failover target. Stock Redis behavior: `priority 0` means "never
+promote." ~50 LOC, mirrors the `--replica-announce-port` plumbing already in
+`a01a8c4`. Useful in multi-AZ deployments to pin failover to the same AZ as
+the primary, and to exclude read-only replicas from promotion.
+
+### Optional: complete replica-side `INFO replication` parity
+
+Add `master_replid`, `slave_repl_offset`, and `slave_read_only` to the
+replica-side INFO output. Pure Redis compatibility, no Sentinel behavior
+change. ~30 LOC. Lower priority than `replica-priority` because no current
+operator dashboard reads them on Garnet replicas.
+
+### Optional: `replica-serve-stale-data` and `min-replicas-*`
+
+`replica-serve-stale-data yes` is a per-replica option; `min-replicas-to-write`
+and `min-replicas-max-lag` are per-primary options. All three are stock
+Redis options; none are read by Sentinel. They matter for read-replica
+deployments and write-safety deployments respectively. ~30-100 LOC each,
+following the established `--replica-announce-*` plumbing pattern. Defer
+unless explicitly requested.
 
 ### Separate performance investigation
 
