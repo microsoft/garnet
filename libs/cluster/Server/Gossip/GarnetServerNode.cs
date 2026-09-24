@@ -16,7 +16,10 @@ namespace Garnet.cluster
     internal sealed class GarnetServerNode
     {
         readonly ClusterProvider clusterProvider;
-        readonly GarnetClient gc;
+        readonly SslClientAuthenticationOptions tlsOptions;
+        readonly LightEpoch epoch;
+        GarnetClient gc;
+        ClusterAuthContainer clientAuth;
         readonly ExponentialBackoff backoff;
         ConfigSerializationBuffer configSerializationBuffer;
         readonly object initializationSync = new();
@@ -48,7 +51,7 @@ namespace Garnet.cluster
         /// <summary>
         /// GarnetClient connection
         /// </summary>
-        public GarnetClient Client => gc;
+        public GarnetClient Client => Volatile.Read(ref gc);
 
         /// <summary>
         /// Whether the client connection has been initialized successfully.
@@ -89,29 +92,35 @@ namespace Garnet.cluster
         public GarnetServerNode(ClusterProvider clusterProvider, EndPoint endpoint, SslClientAuthenticationOptions tlsOptions, LightEpoch epoch, ILogger logger = null)
         {
             this.clusterProvider = clusterProvider;
+            this.tlsOptions = tlsOptions;
+            this.epoch = epoch;
             this.EndPoint = endpoint;
-            this.gc = new GarnetClient(
-                endpoint,
+            this.logger = logger;
+            this.clientAuth = clusterProvider.ClusterAuth;
+            this.gc = CreateGarnetClient(clientAuth);
+            this.backoff = new ExponentialBackoff();
+            this.configSerializationBuffer = new ConfigSerializationBuffer();
+            initialized = false;
+            this.gossipRecv = 0;
+            this.gossipSend = 0;
+            ResetCts();
+        }
+
+        GarnetClient CreateGarnetClient(ClusterAuthContainer auth)
+            => new(
+                EndPoint,
                 tlsOptions,
                 sendPageSize: defaultSendPageSize,
                 bufferSize: defaultSendPageSize,
                 maxOutstandingTasks: defaultMaxOutstandingTask,
                 timeoutMilliseconds: GetClientTimeoutMilliseconds(
                     clusterProvider.storeWrapper.runtimeConfig.GetInt(ServerConfigType.CLUSTER_NODE_TIMEOUT)),
-                authUsername: clusterProvider.clusterManager.clusterProvider.ClusterUsername,
-                authPassword: clusterProvider.clusterManager.clusterProvider.ClusterPassword,
+                authUsername: auth.ClusterUsername,
+                authPassword: auth.ClusterPassword,
                 epoch: epoch,
                 clientName: $"Gossip-{clusterProvider.clusterManager.CurrentConfig.LocalNodeEndpoint}",
                 logger: logger,
                 useOutOfLineExecution: true);
-            this.backoff = new ExponentialBackoff();
-            this.configSerializationBuffer = new ConfigSerializationBuffer();
-            initialized = false;
-            this.logger = logger;
-            this.gossipRecv = 0;
-            this.gossipSend = 0;
-            ResetCts();
-        }
 
         /// <summary>
         /// Attempts to initialize the connection when its reconnect backoff permits.
@@ -130,16 +139,17 @@ namespace Garnet.cluster
                 if (!backoff.CanAttempt())
                     return new(false);
 
-                initializationTask = InitializeCoreAsync();
+                RefreshClientAuthentication();
+                initializationTask = InitializeCoreAsync(gc);
                 return new(initializationTask);
             }
 
-            async Task<bool> InitializeCoreAsync()
+            async Task<bool> InitializeCoreAsync(GarnetClient client)
             {
                 try
                 {
                     cts = CancellationTokenSource.CreateLinkedTokenSource(clusterProvider.clusterManager.ctsGossip.Token, internalCts.Token);
-                    await gc.ReconnectAsync().WaitAsync(clusterProvider.clusterManager.gossipDelay, cts.Token).ConfigureAwait(false);
+                    await client.ReconnectAsync().WaitAsync(clusterProvider.clusterManager.gossipDelay, cts.Token).ConfigureAwait(false);
                     backoff.Reset();
                     initialized = true;
                     return true;
@@ -153,6 +163,19 @@ namespace Garnet.cluster
                         NodeId, EndPoint, retryDelay);
                     return false;
                 }
+            }
+
+            void RefreshClientAuthentication()
+            {
+                var currentAuth = clusterProvider.ClusterAuth;
+                if (ReferenceEquals(currentAuth, clientAuth))
+                    return;
+
+                var oldClient = gc;
+                var newClient = CreateGarnetClient(currentAuth);
+                clientAuth = currentAuth;
+                Volatile.Write(ref gc, newClient);
+                oldClient.Dispose();
             }
         }
 

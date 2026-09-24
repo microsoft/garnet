@@ -34,12 +34,14 @@ namespace Garnet.cluster
         /// <summary>
         /// Get cluster username
         /// </summary>
-        public string ClusterUsername => authContainer.ClusterUsername;
+        public string ClusterUsername => ClusterAuth.ClusterUsername;
 
         /// <summary>
         /// Get cluster password
         /// </summary>
-        public string ClusterPassword => authContainer.ClusterPassword;
+        public string ClusterPassword => ClusterAuth.ClusterPassword;
+
+        internal ClusterAuthContainer ClusterAuth => Volatile.Read(ref authContainer);
 
         /// <summary>
         /// Create new cluster provider
@@ -109,8 +111,6 @@ namespace Garnet.cluster
                     ClusterPassword = clusterPassword
                 };
             } while (Interlocked.CompareExchange(ref authContainer, newAuthContainer, oldAuthContainer) != oldAuthContainer);
-
-            clusterManager.clusterConnectionStore.CloseAll();
         }
 
         /// <inheritdoc />
