@@ -866,6 +866,7 @@ namespace Garnet.test
             int readCachePageCount = 0,
             ILogger logger = null,
             IEnumerable<string> loadModulePaths = null,
+            int? port = null,
             string pubSubPageSize = null,
             bool asyncReplay = false,
             LuaMemoryManagementMode luaMemoryMode = LuaMemoryManagementMode.Native,
@@ -878,6 +879,9 @@ namespace Garnet.test
             int slowLogThreshold = 0,
             TextWriter logTo = null,
             bool enableCluster = false,
+            bool enableStandaloneReplication = false,
+            string replicaAnnounceIp = null,
+            int replicaAnnouncePort = 0,
             int expiredKeyDeletionScanFrequencySecs = -1,
             bool useReviv = false,
             bool useInChainRevivOnly = false,
@@ -940,7 +944,7 @@ namespace Garnet.test
                 EnableStorageTier = logDir != null,
                 LogDir = logDir,
                 CheckpointDir = checkpointDir,
-                EndPoints = endpoints ?? [EndPoint],
+                EndPoints = endpoints ?? (port.HasValue ? [new IPEndPoint(IPAddress.Loopback, port.Value)] : [EndPoint]),
                 DisablePubSub = disablePubSub,
                 Recover = tryRecover,
                 IndexMemorySize = indexSize,
@@ -975,6 +979,9 @@ namespace Garnet.test
                 ThreadPoolMinThreads = threadPoolMinThreads,
                 LoadModuleCS = loadModulePaths,
                 EnableCluster = enableCluster,
+                EnableStandaloneReplication = enableStandaloneReplication,
+                ReplicaAnnounceIp = replicaAnnounceIp,
+                ReplicaAnnouncePort = replicaAnnouncePort,
                 EnableDebugCommand = enableDebugCommand,
                 EnableModuleCommand = enableModuleCommand,
                 EnableReadCache = enableReadCache,
@@ -1991,5 +1998,54 @@ using System.Threading.Tasks;
                 TestContext.Out.WriteLine(failMsg);
             }
         }
+
+    /// <summary>
+    /// Sends a RESP array of bulk strings to <paramref name="port"/> and returns
+    /// the raw reply text. Used by the replication tests because commands like
+    /// PSYNC return payloads that a normal client cannot parse, and the tests need
+    /// to assert on the wire shape directly.
+    /// </summary>
+    public static async Task<string> SendRawAsync(int port, params string[] args)
+    {
+        using var client = new System.Net.Sockets.TcpClient();
+        await client.ConnectAsync(IPAddress.Loopback, port);
+        await using var stream = client.GetStream();
+
+        var sb = new System.Text.StringBuilder();
+        sb.Append('*').Append(args.Length).Append("\r\n");
+        foreach (var a in args)
+            sb.Append('$').Append(System.Text.Encoding.UTF8.GetByteCount(a)).Append("\r\n").Append(a).Append("\r\n");
+
+        await stream.WriteAsync(System.Text.Encoding.ASCII.GetBytes(sb.ToString()));
+        await stream.FlushAsync();
+
+        var buffer = new byte[8192];
+        using var cts = new System.Threading.CancellationTokenSource(2000);
+        try
+        {
+            var n = await stream.ReadAsync(buffer, 0, buffer.Length, cts.Token);
+            return System.Text.Encoding.ASCII.GetString(buffer, 0, n);
+        }
+        catch (OperationCanceledException)
+        {
+            return string.Empty;
+        }
+    }
+
+    /// <summary>
+    /// Extracts the value of <paramref name="key"/> from a multi-line INFO reply.
+    /// Returns null if the key is not present.
+    /// </summary>
+    public static string InfoValue(string info, string key)
+    {
+        if (info == null) return null;
+        foreach (var line in info.Split('\n'))
+        {
+            var trimmed = line.TrimEnd('\r');
+            if (trimmed.StartsWith(key + ":", StringComparison.Ordinal))
+                return trimmed[(key.Length + 1)..];
+        }
+        return null;
+    }
     }
 }

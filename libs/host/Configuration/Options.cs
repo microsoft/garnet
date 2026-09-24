@@ -156,6 +156,18 @@ namespace Garnet
         public bool? EnableCluster { get; set; }
 
         [OptionValidation]
+        [Option("sentinel-replication", Required = false, HelpText = "Enable Garnet-to-Garnet standalone replication under the stock Redis/Valkey Sentinel control plane. Requires AOF on primary and replicas. Streams a real checkpoint + AOF to attached replicas. Partial resync (+CONTINUE on reconnect) is not implemented yet.")]
+        public bool? EnableStandaloneReplication { get; set; }
+
+        [IpAddressValidation(false)]
+        [Option("replica-announce-ip", Required = false, HelpText = "Standalone-replica only: IP address this replica advertises to its primary in REPLCONF ip-address. Use when the replica sits behind NAT or a proxy and Sentinel cannot reach it at the bound address. Mirrors Redis 7.4 replica-announce-ip.")]
+        public string ReplicaAnnounceIp { get; set; }
+
+        [IntRangeValidation(0, 65535)]
+        [Option("replica-announce-port", Required = false, HelpText = "Standalone-replica only: port this replica advertises to its primary in REPLCONF listening-port. 0 (default) sends the bound listening port. Use when the replica is reachable on a port different from the one it is bound to. Mirrors Redis 7.4 replica-announce-port.")]
+        public int ReplicaAnnouncePort { get; set; }
+
+        [OptionValidation]
         [Option("clean-cluster-config", Required = false, HelpText = "Start with clean cluster config.")]
         public bool? CleanClusterConfig { get; set; }
 
@@ -913,6 +925,9 @@ namespace Garnet
                 PubSubPageSize = PubSubPageSize,
                 DisableObjects = DisableObjects.GetValueOrDefault(),
                 EnableCluster = EnableCluster.GetValueOrDefault(),
+                EnableStandaloneReplication = EnableStandaloneReplication.GetValueOrDefault(),
+                ReplicaAnnounceIp = ReplicaAnnounceIp,
+                ReplicaAnnouncePort = ReplicaAnnouncePort,
                 CleanClusterConfig = CleanClusterConfig.GetValueOrDefault(),
                 ParallelMigrateTaskCount = ParallelMigrateTaskCount,
                 FastMigrate = FastMigrate.GetValueOrDefault(),

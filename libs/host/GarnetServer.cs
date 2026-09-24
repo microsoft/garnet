@@ -481,7 +481,12 @@ namespace Garnet
 
             kvSettings.CheckpointManager = opts.EnableCluster ?
                 clusterFactory.CreateCheckpointManager(opts.AofPhysicalSublogCount, opts.DeviceFactoryCreator, defaultNamingScheme, isMainStore: true, logger) :
-                new GarnetCheckpointManager(opts.AofPhysicalSublogCount, opts.DeviceFactoryCreator, defaultNamingScheme, removeOutdated: true);
+                new GarnetCheckpointManager(
+                    opts.AofPhysicalSublogCount,
+                    opts.DeviceFactoryCreator,
+                    defaultNamingScheme,
+                    removeOutdated: true,
+                    enableCheckpointLeases: opts.EnableStandaloneReplication);
 
             // Create cache size tracker before the store. It will be initialized with the store
             // after creation via Initialize() (late-bind to break circular dependency).

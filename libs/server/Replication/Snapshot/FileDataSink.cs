@@ -8,7 +8,7 @@ using Garnet.common;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 
-namespace Garnet.cluster
+namespace Garnet.server
 {
     /// <summary>
     /// Device-backed implementation of <see cref="ISnapshotDataSink"/> that writes checkpoint

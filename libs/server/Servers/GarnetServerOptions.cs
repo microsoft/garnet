@@ -54,6 +54,43 @@ namespace Garnet.server
         public bool EnableCluster = false;
 
         /// <summary>
+        /// When true, this standalone (non-cluster) Garnet node will accept the stock
+        /// Redis Sentinel control-plane commands (REPLCONF, PSYNC) AND will honour a
+        /// standalone <c>REPLICAOF host port</c> / <c>REPLICAOF NO ONE</c> from its
+        /// own clients: as a primary it tracks attached replicas in
+        /// <see cref="ReplicaRegistry"/> and reports them via INFO replication (so
+        /// Sentinel can discover them); as a replica it opens a stock-Redis-style
+        /// outbound replication link (PING / REPLCONF / PSYNC) to the named primary.
+        ///
+        /// <para>When AOF is also enabled, writes made after a replica attaches are
+        /// streamed between Garnet nodes. Initial snapshot and partial resync are not
+        /// implemented. Setting this to <c>true</c>
+        /// without also enabling the AOF is sufficient for Sentinel-driven failover,
+        /// which is the primary use case.</para>
+        /// </summary>
+        public bool EnableStandaloneReplication = false;
+
+        /// <summary>
+        /// Optional IP address this standalone replica advertises to its primary in
+        /// <c>REPLCONF ip-address</c>. When unset, the primary falls back to the
+        /// inbound connection's peer address. Use this when the replica sits behind
+        /// NAT or a proxy and Sentinel cannot reach the replica at its bound address.
+        /// Only meaningful when <see cref="EnableStandaloneReplication"/> is set.
+        /// Mirrors Redis 7.4 <c>replica-announce-ip</c>.
+        /// </summary>
+        public string ReplicaAnnounceIp = null;
+
+        /// <summary>
+        /// Optional port this standalone replica advertises to its primary in
+        /// <c>REPLCONF listening-port</c>. When 0 (default), the bound listening
+        /// port is sent. Use this when the replica is reachable on a port different
+        /// from the one it is bound to (NAT, port forwarding).
+        /// Only meaningful when <see cref="EnableStandaloneReplication"/> is set.
+        /// Mirrors Redis 7.4 <c>replica-announce-port</c>.
+        /// </summary>
+        public int ReplicaAnnouncePort = 0;
+
+        /// <summary>
         /// Start with clean cluster config
         /// </summary>
         public bool CleanClusterConfig = false;

@@ -297,6 +297,14 @@ namespace Garnet.server
             Add("READWRITE", RespCommand.READWRITE);
             Add("REPLICAOF", RespCommand.REPLICAOF);
             Add("SECONDARYOF", RespCommand.SECONDARYOF);
+            // REPLCONF has no subcommand-table entry because the argument set is open-ended
+            // (arbitrary key/value pairs); unknown keys must reply +OK for forward compatibility
+            // with future Redis/Sentinel extensions. The handler lives in ReplConfCommands.cs.
+            Add("REPLCONF", RespCommand.REPLCONF);
+            // PSYNC takes exactly two args (replid, offset). The handler is in
+            // PsyncCommands.cs; we don't use the subcommand-table machinery because
+            // the argument shape is fixed and small.
+            Add("PSYNC", RespCommand.PSYNC);
             Add("SLAVEOF", RespCommand.SECONDARYOF);
 
             // Parent commands with subcommands

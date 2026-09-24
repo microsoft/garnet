@@ -385,6 +385,9 @@ namespace Garnet.server
         {
             logger?.LogDebug("Disposing RespServerSession Id={id}", this.Id);
 
+            standaloneSyncDriver?.Dispose();
+            standaloneSyncDriver = null;
+
             if (recvBufferPtr != null)
             {
                 try { if (recvHandle.IsAllocated) recvHandle.Free(); } catch { }
@@ -406,6 +409,18 @@ namespace Garnet.server
 
             subscribeBroker?.RemoveSubscription(this);
             storeWrapper.itemBroker?.HandleSessionDisposed(this);
+
+            // A replica's replication link is just an ordinary session. When it ends, its
+            // registry entry must be removed, otherwise the node keeps advertising the
+            // replica in INFO replication's connected_slaves/slave<N> forever and an
+            // orchestrator would consider a dead replica a promotion candidate. Keyed by
+            // the same source-port identity the handshake registered under.
+            {
+                var (sourcePort, _) = GetReplicaIdentity();
+                if (sourcePort > 0)
+                    storeWrapper.replicaRegistry.Remove(sourcePort);
+            }
+
             sessionScriptCache?.Dispose();
 
             // Cancel the async processor, if any
@@ -1088,6 +1103,15 @@ namespace Garnet.server
                 RespCommand.COMMAND_GETKEYSANDFLAGS => NetworkCOMMAND_GETKEYSANDFLAGS(),
                 RespCommand.ECHO => NetworkECHO(),
                 RespCommand.HELLO => NetworkHELLO(),
+                // REPLCONF <key> <value> ... is a primary/replica handshake command used
+                // by Sentinel and standard replication. See ReplConfCommands.cs for the
+                // argument-parsing rules and forward-compatibility behaviour.
+                RespCommand.REPLCONF => NetworkREPLCONF(),
+                // PSYNC is the standard Redis primary/replica handshake. Stock Redis
+                // replicas send PSYNC ? -1 to a primary when they first attach; we
+                // accept any PSYNC and reply +FULLRESYNC <replid> 0 + an empty-DB
+                // RDB body. See PsyncCommands.cs for the wire-level details.
+                RespCommand.PSYNC => NetworkPSYNC(),
                 RespCommand.TIME => NetworkTIME(),
                 RespCommand.FLUSHALL => NetworkFLUSHALL(),
                 RespCommand.FLUSHDB => NetworkFLUSHDB(),

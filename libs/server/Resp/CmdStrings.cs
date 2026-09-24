@@ -62,6 +62,28 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> HISTOGRAM => "HISTOGRAM"u8;
         public static ReadOnlySpan<byte> histogram => "histogram"u8;
         public static ReadOnlySpan<byte> REPLICAOF => "REPLICAOF"u8;
+        // REPLCONF subcommand keys. REPLCONF takes arbitrary key/value pairs; these are
+        // the keys we recognise in NetworkREPLCONF. Unknown keys are accepted with +OK
+        // for forward compatibility with future Redis / Sentinel versions.
+        //
+        // NOTE: these MUST be uppercase because they are compared against parseState
+        // arguments (already uppercased by the parser) via EqualsUpperCaseSpanIgnoringCase,
+        // which Debug.Asserts that the constant side is ASCII 'A'-'Z'. Keys containing
+        // non-alphabetic characters (the hyphens in listening-port / ip-address /
+        // rdb-only) additionally require allowNonAlphabeticChars: true at the
+        // call site, mirroring the LIB_NAME / LIB_VER pattern in ClientCommands.cs.
+        //
+        // This set is the option list recognised by REPLCONF in Redis 7.4, confirmed by
+        // probing a live 7.4.11 server. Note that Redis does NOT recognise some options
+        // that look plausible: "no-one-connects", "eof" and "psync2" are all rejected
+        // with -ERR Unrecognized REPLCONF option (eof/psync2 are CAPA *values*, not keys).
+        public static ReadOnlySpan<byte> LISTENING_PORT => "LISTENING-PORT"u8;
+        public static ReadOnlySpan<byte> IP_ADDRESS => "IP-ADDRESS"u8;
+        public static ReadOnlySpan<byte> CAPA => "CAPA"u8;
+        public static ReadOnlySpan<byte> GARNET_SNAPSHOT => "GARNET-SNAPSHOT"u8;
+        public static ReadOnlySpan<byte> RDB_ONLY => "RDB-ONLY"u8;
+        public static ReadOnlySpan<byte> ACK => "ACK"u8;
+        public static ReadOnlySpan<byte> GETACK => "GETACK"u8;
         public static ReadOnlySpan<byte> RICREATE => "RI.CREATE"u8;
         public static ReadOnlySpan<byte> RISET => "RI.SET"u8;
         public static ReadOnlySpan<byte> RIGET => "RI.GET"u8;
@@ -100,6 +122,41 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> count => "count"u8;
         public static ReadOnlySpan<byte> NOVALUES => "NOVALUES"u8;
         public static ReadOnlySpan<byte> TYPE => "TYPE"u8;
+
+        // PSYNC <replid> <offset> reply forms. We always reply +FULLRESYNC in Phase 1;
+        // +CONTINUE (partial resync) is wired in Phase 2 once a replication backlog exists.
+        public static ReadOnlySpan<byte> FULLRESYNC => "FULLRESYNC"u8;
+        public static ReadOnlySpan<byte> CONTINUE => "CONTINUE"u8;
+
+        // Minimal empty-database RDB body (Redis 7.4, RDB v11), 48 bytes body +
+        // 8 bytes CRC64 little-endian = 56 bytes total. Verified via redis-check-rdb.
+        // Layout: REDIS0011 | AUX redis-ver=7.4.11 | AUX redis-bits=64 |
+        // DB0 selector | hash-table-size 0/0 | EOF. The CRC64 is computed at
+        // runtime by NetworkPSYNC via Garnet.common.Crc64.Hash and appended to the
+        // response. Returned as byte[] because LINQ Concat on ReadOnlySpan is
+        // unavailable; the array is built once on first access.
+        public static byte[] EmptyRdbBody
+        {
+            get
+            {
+                if (_emptyRdbBody != null) return _emptyRdbBody;
+                var ms = new System.IO.MemoryStream();
+                ms.Write("REDIS0011"u8);
+                ms.WriteByte(0xfa); ms.WriteByte(0x09);
+                ms.Write("redis-ver"u8);
+                ms.WriteByte(0x06);
+                ms.Write("7.4.11"u8);
+                ms.WriteByte(0xfa); ms.WriteByte(0x0a);
+                ms.Write("redis-bits"u8);
+                ms.WriteByte(0x02); ms.WriteByte((byte)'6'); ms.WriteByte((byte)'4');
+                ms.WriteByte(0xfe); ms.WriteByte(0x00);
+                ms.WriteByte(0xfb); ms.WriteByte(0x00); ms.WriteByte(0x00);
+                ms.WriteByte(0xff);
+                _emptyRdbBody = ms.ToArray();
+                return _emptyRdbBody;
+            }
+        }
+        private static byte[] _emptyRdbBody;
         public static ReadOnlySpan<byte> type => "type"u8;
         public static ReadOnlySpan<byte> REGISTERCS => "REGISTERCS"u8;
         public static ReadOnlySpan<byte> registercs => "registercs"u8;
@@ -451,6 +508,7 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> MAXAGE => "MAXAGE"u8;
         public static ReadOnlySpan<byte> YES => "YES"u8;
         public static ReadOnlySpan<byte> NO => "NO"u8;
+        public static ReadOnlySpan<byte> ONE => "ONE"u8;
 
         // Cluster subcommands which are internal and thus undocumented
         // 

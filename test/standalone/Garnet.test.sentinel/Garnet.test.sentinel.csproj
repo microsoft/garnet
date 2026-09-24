@@ -1,0 +1,73 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <SignAssembly>true</SignAssembly>
+    <AssemblyOriginatorKeyFile>../../../Garnet.snk</AssemblyOriginatorKeyFile>
+    <DelaySign>false</DelaySign>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <NoWarn>1701;1702;1591</NoWarn>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <!--
+    Sentinel / external-redis test gating.
+
+    ENABLE_SENTINEL_TESTS        : always defined inside this project.
+                                    Gives us a single symbol so harness code can be
+                                    written without scattering conditional compile flags.
+
+    ENABLE_SENTINEL_TESTS_FULL   : defined only when the project is built with
+                                      dotnet build -p:EnableSentinelTests=true
+                                    (or via DOTNET_EnableSentinelTests env var).
+                                    All actual spawning of redis-server / redis-sentinel
+                                    processes and the integration tests that drive them
+                                    are gated behind this symbol, so a default build
+                                    produces a test assembly with no externally-spawned
+                                    tests. The runtime env var GARNET_SENTINEL_TESTS=1
+                                    provides a secondary runtime gate at the test level.
+
+    Rationale: this project is allowed to live in the solution at all times and is
+    compiled in CI. The default CI build should not launch external processes.
+  -->
+  <PropertyGroup>
+    <DefineConstants>$(DefineConstants);ENABLE_SENTINEL_TESTS</DefineConstants>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(EnableSentinelTests)'=='true'">
+    <DefineConstants>$(DefineConstants);ENABLE_SENTINEL_TESTS_FULL</DefineConstants>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="..\..\..\libs\host\defaults.conf" Link="defaults.conf" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="CommandLineParser" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="NUnit" />
+    <PackageReference Include="NUnit3TestAdapter">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+    <PackageReference Include="StackExchange.Redis" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\libs\common\Garnet.common.csproj" />
+    <ProjectReference Include="..\..\..\libs\host\Garnet.host.csproj" />
+    <ProjectReference Include="..\..\..\libs\server\Garnet.server.csproj" />
+    <ProjectReference Include="..\..\..\main\GarnetServer\GarnetServer.csproj" />
+    <!--
+      This test project only uses Garnet's public API surface (GarnetServerOptions,
+      Garnet.server.GarnetServer, etc.). No InternalsVisibleTo is needed in any
+      source assembly. Tests connect to spawned Garnet / redis-server subprocesses
+      over RESP, not via in-process internal types.
+    -->
+  </ItemGroup>
+
+  <PropertyGroup>
+    <AspectInjector_Enabled>false</AspectInjector_Enabled>
+  </PropertyGroup>
+
+</Project>

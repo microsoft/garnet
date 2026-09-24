@@ -161,6 +161,106 @@ namespace Garnet.server
         internal readonly CustomCommandManager customCommandManager;
         internal readonly GarnetServerMonitor monitor;
         internal readonly IClusterProvider clusterProvider;
+
+        /// <summary>
+        /// State describing this node's role when running under standalone Sentinel
+        /// control plane (<see cref="GarnetServerOptions.EnableStandaloneReplication"/>).
+        /// <c>null</c> when the feature is disabled, or when this node is in cluster mode.
+        ///
+        /// <para>The state is intentionally tiny: just enough for INFO replication,
+        /// ROLE, and the standalone <c>REPLICAOF</c> command to surface the right
+        /// picture to Sentinel and to clients. It is updated by the
+        /// <c>REPLICAOF host port</c> / <c>REPLICAOF NO ONE</c> command handlers
+        /// on this node.</para>
+        /// </summary>
+        internal readonly LocalReplicationState LocalReplicationState;
+
+        /// <summary>
+        /// Outbound replication client used when this node is a standalone replica under
+        /// the Sentinel control plane. Lazily constructed on first
+        /// <c>REPLICAOF host port</c>; <c>null</c> in cluster mode or when the option
+        /// is disabled.
+        /// </summary>
+        internal StandaloneReplicaClient StandaloneReplicaClient;
+
+        /// <summary>
+        /// Registry of stock RESP replicas attached to this node as primary, used to
+        /// populate the <c>connected_slaves</c> / <c>slave&lt;N&gt;</c> fields of
+        /// <c>INFO replication</c> outside cluster mode. Sentinel discovers a primary's
+        /// replicas exclusively from those fields, so without this registry an
+        /// orchestrator sees zero replicas and can never select one to promote.
+        /// </summary>
+        internal readonly ReplicaRegistry replicaRegistry = new();
+
+        /// <summary>
+        /// Stable replication ID for this node in standalone mode, minted once on first
+        /// use and then held for the lifetime of the process.
+        ///
+        /// <para>Stability matters: Redis reports the same <c>master_replid</c> across
+        /// successive INFO calls, and an orchestrator correlates a primary's identity
+        /// with it. Minting a fresh value per INFO call (as an earlier revision did via
+        /// <c>Generator.DefaultHexId()</c>) makes the node look like a different primary
+        /// every time it is polled.</para>
+        /// </summary>
+        string primaryReplId;
+
+        /// <summary>
+        /// Returns the node's stable replication ID, minting one on first call.
+        /// </summary>
+        public string GetOrCreatePrimaryReplId()
+        {
+            if (!serverOptions.EnableCluster)
+                return runId;
+
+            if (primaryReplId == null)
+            {
+                lock (replicaRegistry)
+                {
+                    // CreateHexId, not DefaultHexId: the latter returns an all-zero
+                    // placeholder. A real primary advertises a random 40-char replication
+                    // ID, and clients/orchestrators may treat an all-zero ID as
+                    // "no replication history" and force a full resync.
+                    primaryReplId ??= Generator.CreateHexId();
+                }
+            }
+
+            return primaryReplId;
+        }
+
+        /// <summary>
+        /// Replication offset reported to clients in standalone mode.
+        ///
+        /// <para>Redis exposes a monotonically increasing byte count here, and clients and
+        /// orchestrators parse it as an integer, so an earlier revision's literal "N/A"
+        /// was a bug. When an append-only file is configured this reports the AOF tail
+        /// offset, which advances as writes are appended.</para>
+        ///
+        /// <para><b>Known limitation:</b> with AOF disabled (the default) there is no
+        /// replication stream to measure, so this reports 0. A real primary reports 0 in
+        /// the same situation (a freshly started primary with no writes), and Redis
+        /// replicas likewise report offset 0 while idle, so the value is not misleading
+        /// — but it does not track writes until a replication stream exists. Phase 2's
+        /// outbound stream will make this a true byte offset.</para>
+        /// </summary>
+        public long PrimaryReplOffset
+        {
+            get
+            {
+                if (appendOnlyFile != null)
+                {
+                    try
+                    {
+                        return appendOnlyFile.Log.TailAddress.AggregateDiff(appendOnlyFile.Log.BeginAddress);
+                    }
+                    catch
+                    {
+                        return 0;
+                    }
+                }
+
+                return 0;
+            }
+        }
         internal readonly SlowLogContainer slowLogContainer;
         internal readonly ILogger sessionLogger;
         internal long safeAofAddress = -1;
@@ -223,6 +323,11 @@ namespace Garnet.server
             this.customCommandManager = customCommandManager;
             this.loggerFactory = loggerFactory;
             this.databaseManager = databaseManager ?? DatabaseManagerFactory.CreateDatabaseManager(serverOptions, createDatabaseDelegate, this);
+            // Standalone replication under Sentinel is opt-in. Even in cluster mode this
+            // is allocated (to a no-op state) so command handlers don't have to null-check
+            // before reading it; the actual role transitions only fire when the option is
+            // enabled AND we are not in cluster mode.
+            this.LocalReplicationState = new LocalReplicationState();
             this.monitor = serverOptions.MetricsSamplingFrequency > 0 || serverOptions.CommandStatsMonitor || serverOptions.LatencyMonitor
                 ? new GarnetServerMonitor(this, serverOptions, servers,
                     loggerFactory?.CreateLogger("GarnetServerMonitor"))
@@ -949,6 +1054,7 @@ namespace Garnet.server
             ctsCommit?.Cancel();
             taskManager.Dispose();
             rangeIndexManager?.Dispose();
+            StandaloneReplicaClient?.Dispose();
             databaseManager.Dispose();
 
             ctsCommit?.Dispose();
