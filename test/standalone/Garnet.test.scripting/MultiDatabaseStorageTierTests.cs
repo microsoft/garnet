@@ -238,7 +238,7 @@ namespace Garnet.test
         /// explicitly rather than surfacing as the same message a fresh start produces.
         /// </summary>
         [Test]
-        public void PreFixCheckpointIsReportedOnRecovery()
+        public void PriorLogLayoutIsReportedOnRecovery()
         {
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, lowMemory: true);
             server.Start();
@@ -257,9 +257,9 @@ namespace Garnet.test
             server.Dispose(false);
             server = null;
 
-            // Reproduce the pre-fix on-disk shape. The checkpoints above were written by this build, so
-            // they carry the current version; roll them back to the downlevel version, or recovery
-            // would classify them as current-layout and take the wrong branch.
+            // Reproduce the on-disk shape that predates individual logs. The checkpoints above were
+            // written by this build, so they carry the current version; roll them back to the downlevel
+            // version, or recovery would classify them as current-layout and take the wrong branch.
             DowngradeCheckpoints(Path.Combine(StoreDir, "checkpoints"));
             DowngradeCheckpoints(Path.Combine(StoreDir, "checkpoints_1"));
 

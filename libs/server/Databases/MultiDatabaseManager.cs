@@ -120,7 +120,7 @@ namespace Garnet.server
                 if (!success)
                     throw new GarnetException($"Failed to retrieve or create database for checkpoint recovery (DB ID = {dbId}).");
 
-                ReportPreFixHybridLogLayout(db, hybridLogSegments, multiDatabaseStore);
+                ReportLogLayoutIsPriorToIndividualHLogs(db, hybridLogSegments, multiDatabaseStore);
 
                 try
                 {
@@ -205,7 +205,7 @@ namespace Garnet.server
         /// <param name="db">Database being recovered</param>
         /// <param name="segments">File names under the store directory, or null if unavailable</param>
         /// <param name="multiDatabaseStore">Whether more than one database is being recovered</param>
-        private void ReportPreFixHybridLogLayout(GarnetDatabase db, HashSet<string> segments, bool multiDatabaseStore)
+        private void ReportLogLayoutIsPriorToIndividualHLogs(GarnetDatabase db, HashSet<string> segments, bool multiDatabaseStore)
         {
             if (segments == null)
                 return;
@@ -216,8 +216,8 @@ namespace Garnet.server
             if (db.StorageSlot == 0)
             {
                 // The default slot keeps the unsuffixed file names, so it always finds its log.
-                // In a pre-fix store holding more than one database that log is the shared one, and
-                // the records in it may belong to any database.
+                // In a store predating individual logs and holding more than one database, that log is
+                // the shared one, and the records in it may belong to any database.
                 if (!perDatabaseLayout && multiDatabaseStore)
                 {
                     Logger?.LogError(
