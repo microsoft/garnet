@@ -21,7 +21,6 @@ namespace Garnet.cluster
         GarnetClient gc;
         ClusterAuthContainer clientAuth;
         readonly ExponentialBackoff backoff;
-        ConfigSerializationBuffer configSerializationBuffer;
         readonly object initializationSync = new();
 
         long gossipSend;
@@ -99,7 +98,6 @@ namespace Garnet.cluster
             this.clientAuth = clusterProvider.ClusterAuth;
             this.gc = CreateGarnetClient(clientAuth);
             this.backoff = new ExponentialBackoff();
-            this.configSerializationBuffer = new ConfigSerializationBuffer();
             initialized = false;
             this.gossipRecv = 0;
             this.gossipSend = 0;
@@ -207,7 +205,6 @@ namespace Garnet.cluster
                 internalCts?.Cancel();
                 internalCts?.Dispose();
                 gc?.Dispose();
-                configSerializationBuffer.Dispose();
             }
             catch { }
         }
@@ -238,9 +235,10 @@ namespace Garnet.cluster
         /// Keep track of updated config per connection. Useful when gossip sampling so as to ensure updates are propagated
         /// </summary>
         /// <returns></returns>
-        ReadOnlyMemory<byte> GetMostRecentConfig()
+        byte[] GetMostRecentConfig()
         {
             var conf = clusterProvider.clusterManager.CurrentConfig;
+            byte[] byteArray;
             if (conf != lastConfig)
             {
                 lastConfig = conf;
@@ -248,11 +246,13 @@ namespace Garnet.cluster
                     // NOTE: We update replication offset for sublog-0 because this info is used in CLUSTER NODES
                     // and we cannot have multiple replication offsets without changing the expected CLUSTER NODES response
                     lastConfig.LazyUpdateLocalReplicationOffset(clusterProvider.replicationManager.GetReplicationOffset(0));
-                lastConfig.Serialize(ref configSerializationBuffer);
-                return configSerializationBuffer.WrittenMemory;
+                byteArray = lastConfig.ToByteArray();
             }
-
-            return ReadOnlyMemory<byte>.Empty;
+            else
+            {
+                byteArray = [];
+            }
+            return byteArray;
         }
 
         /// <summary>
@@ -260,7 +260,7 @@ namespace Garnet.cluster
         /// </summary>
         /// <param name="configByteArray"></param>
         /// <returns></returns>
-        private async Task GossipAsync(ReadOnlyMemory<byte> configByteArray)
+        private async Task GossipAsync(byte[] configByteArray)
         {
             try
             {
@@ -315,8 +315,7 @@ namespace Garnet.cluster
             if (task == null)
             {
                 // Issue first time gossip
-                clusterProvider.clusterManager.CurrentConfig.Serialize(ref configSerializationBuffer);
-                var configArray = configSerializationBuffer.WrittenMemory;
+                var configArray = clusterProvider.clusterManager.CurrentConfig.ToByteArray();
                 gossipTask = GossipAsync(configArray);
                 UpdateGossipSend();
                 clusterProvider.clusterManager.gossipStats.gossip_full_send++;

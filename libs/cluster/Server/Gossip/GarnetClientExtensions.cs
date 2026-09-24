@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 using Garnet.client;
@@ -23,8 +22,8 @@ namespace Garnet.cluster
         /// <param name="data"></param>
         /// <param name="cancellationToken"></param>
         /// <returns></returns>
-        public static Task<MemoryResult<byte>> GossipAsync(this GarnetClient client, ReadOnlyMemory<byte> data, CancellationToken cancellationToken = default)
-            => client.ExecuteForMemoryResultWithCancellationAsync(GarnetClient.CLUSTER, [GOSSIP, MemoryMarshal.AsMemory(data)], cancellationToken);
+        public static Task<MemoryResult<byte>> GossipAsync(this GarnetClient client, Memory<byte> data, CancellationToken cancellationToken = default)
+            => client.ExecuteForMemoryResultWithCancellationAsync(GarnetClient.CLUSTER, [GOSSIP, data], cancellationToken);
 
         /// <summary>
         /// Send config
