@@ -8,6 +8,7 @@ using System.Net;
 using System.Net.Sockets;
 using System.Text;
 using System.Threading.Tasks;
+using Garnet.server;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 
@@ -417,7 +418,7 @@ namespace Garnet.test
         public async Task CheckpointAndCatchupReplicateOnAttach()
         {
             ClassicAssert.AreEqual("+OK\r\n", await TestUtils.SendRawAsync(primaryPort, "SET", "snapshot-key", "snapshot-value"));
-            ClassicAssert.IsTrue(await primary.Provider.StoreWrapper.TakeCheckpointAsync(background: false));
+            ClassicAssert.That(await primary.Provider.StoreWrapper.TakeCheckpointAsync(background: false), Is.EqualTo(CheckpointStatus.Success));
             ClassicAssert.AreEqual("+OK\r\n", await TestUtils.SendRawAsync(primaryPort, "SET", "catchup-key", "catchup-value"));
 
             ClassicAssert.AreEqual(
@@ -442,7 +443,7 @@ namespace Garnet.test
             ClassicAssert.AreEqual("+OK\r\n", await TestUtils.SendRawAsync(primaryPort, "SET", "before-checkpoint", "value-1"));
             await WaitForValueAsync(replicaPort, "before-checkpoint", "value-1", timeoutMs: 5000);
 
-            ClassicAssert.IsTrue(await primary.Provider.StoreWrapper.TakeCheckpointAsync(background: false));
+            ClassicAssert.That(await primary.Provider.StoreWrapper.TakeCheckpointAsync(background: false), Is.EqualTo(CheckpointStatus.Success));
 
             ClassicAssert.AreEqual("+OK\r\n", await TestUtils.SendRawAsync(primaryPort, "SET", "after-checkpoint", "value-2"));
             await WaitForValueAsync(replicaPort, "after-checkpoint", "value-2", timeoutMs: 5000);
@@ -452,7 +453,7 @@ namespace Garnet.test
         public async Task CheckpointLeasePinsFilesUntilReleased()
         {
             ClassicAssert.AreEqual("+OK\r\n", await TestUtils.SendRawAsync(primaryPort, "SET", "checkpoint-key", "value-1"));
-            ClassicAssert.IsTrue(await primary.Provider.StoreWrapper.TakeCheckpointAsync(background: false));
+            ClassicAssert.That(await primary.Provider.StoreWrapper.TakeCheckpointAsync(background: false), Is.EqualTo(CheckpointStatus.Success));
 
             var checkpointStore = primary.Provider.StoreWrapper.DefaultDatabase.StandaloneCheckpointStore;
             ClassicAssert.IsNotNull(checkpointStore);
@@ -460,7 +461,7 @@ namespace Garnet.test
             var leasedLogToken = checkpointLease.Value.storeHlogToken;
 
             ClassicAssert.AreEqual("+OK\r\n", await TestUtils.SendRawAsync(primaryPort, "SET", "checkpoint-key", "value-2"));
-            ClassicAssert.IsTrue(await primary.Provider.StoreWrapper.TakeCheckpointAsync(background: false));
+            ClassicAssert.That(await primary.Provider.StoreWrapper.TakeCheckpointAsync(background: false), Is.EqualTo(CheckpointStatus.Success));
 
             var checkpointManager = primary.Provider.StoreWrapper.StoreCheckpointManager;
             CollectionAssert.Contains(checkpointManager.GetLogCheckpointTokens().ToArray(), leasedLogToken);
@@ -474,7 +475,7 @@ namespace Garnet.test
         {
             ClassicAssert.AreEqual("+OK\r\n", await TestUtils.SendRawAsync(primaryPort, "SET", "recovered-key", "recovered-value"));
             var checkpointHistoryId = primary.Provider.StoreWrapper.RunId;
-            ClassicAssert.IsTrue(await primary.Provider.StoreWrapper.TakeCheckpointAsync(background: false));
+            ClassicAssert.That(await primary.Provider.StoreWrapper.TakeCheckpointAsync(background: false), Is.EqualTo(CheckpointStatus.Success));
 
             primary.Dispose(false);
             primary = TestUtils.CreateGarnetServer(
