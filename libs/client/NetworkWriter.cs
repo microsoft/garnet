@@ -2,11 +2,11 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Buffers;
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Net.Security;
 using System.Net.Sockets;
+using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading;
@@ -19,23 +19,18 @@ namespace Garnet.client
 {
     readonly struct Payload : IDisposable
     {
-        readonly ArrayPool<byte> pool;
+        readonly PoolEntry entry;
 
-        internal byte[] Buffer { get; }
+        internal byte[] Buffer => entry.entry;
         internal int Length { get; }
 
-        internal Payload(ArrayPool<byte> pool, int length)
+        internal Payload(PoolEntry entry, int length)
         {
-            this.pool = pool;
-            this.Buffer = pool.Rent(length);
+            this.entry = entry;
             this.Length = length;
         }
 
-        public void Dispose()
-        {
-            if (Buffer != null)
-                pool.Return(Buffer, clearArray: true);
-        }
+        public void Dispose() => entry?.Dispose();
     }
 
     [StructLayout(LayoutKind.Explicit)]
@@ -46,6 +41,7 @@ namespace Garnet.client
         [FieldOffset(8)]
         public long LastClosedUntilAddress;
     }
+
     unsafe struct Page
     {
         public readonly byte[] value;
@@ -98,7 +94,6 @@ namespace Garnet.client
         readonly LimitedFixedBufferPool networkPool;
         readonly GarnetClientTcpNetworkHandler networkHandler;
         readonly bool useOutOfLineExecution;
-        readonly ArrayPool<byte> outOfLineBufferPool;
         readonly ConcurrentDictionary<long, Payload> outstandingPayloads;
 
         /// <summary>
@@ -119,10 +114,7 @@ namespace Garnet.client
             this.logger = logger;
             this.useOutOfLineExecution = useOutOfLineExecution;
             if (useOutOfLineExecution)
-            {
-                this.outOfLineBufferPool = ArrayPool<byte>.Create();
                 this.outstandingPayloads = new();
-            }
             this.LogPageSizeBits = Utility.NumBitsPreviousPowerOf2(sendPageSize);
             this.WrapDistance = PageWrapDistance << LogPageSizeBits;
 
@@ -152,9 +144,22 @@ namespace Garnet.client
             networkPool?.Dispose();
         }
 
-        // TODO: Expose a reserve-and-commit API so callers can write directly into reusable out-of-line buffers.
         internal Payload RentPayloadBuffer(int length)
-            => new(outOfLineBufferPool, length);
+        {
+            var allocationSize = length;
+            if (length <= networkPool.MaxAllocationSize)
+            {
+                var minimumSize = Math.Max(length, networkPool.MinAllocationSize);
+                var roundedSize = BitOperations.RoundUpToPowerOf2((uint)minimumSize);
+                if (roundedSize <= (uint)networkPool.MaxAllocationSize)
+                    allocationSize = (int)roundedSize;
+            }
+
+            var entry = networkPool.Get(allocationSize, PoolEntryBufferType.OutOfLinePayload);
+            if (entry is null)
+                throw new ObjectDisposedException(nameof(NetworkWriter));
+            return new(entry, length);
+        }
 
         internal void EnqueuePayloadBuffer(long address, Payload payload)
         {

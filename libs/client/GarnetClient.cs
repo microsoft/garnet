@@ -1265,6 +1265,8 @@ namespace Garnet.client
                             token.ThrowIfCancellationRequested();
                             if (!IsConnected)
                             {
+                                payload.Dispose();
+                                payload = default;
                                 Dispose();
                                 ThrowException(disposeException);
                             }
@@ -1293,7 +1295,7 @@ namespace Garnet.client
                             *(long*)networkWriter.GetPhysicalAddress(address) = address;
                         }
 
-                        int shortTaskId = taskId & (maxOutstandingTasks - 1);
+                        var shortTaskId = taskId & (maxOutstandingTasks - 1);
                         var oldTcs = tcsArray[shortTaskId];
                         if (oldTcs.taskType != TaskType.None || !oldTcs.IsNext(taskId))
                         {
@@ -1394,6 +1396,8 @@ namespace Garnet.client
                         token.ThrowIfCancellationRequested();
                         if (!IsConnected)
                         {
+                            payload.Dispose();
+                            payload = default;
                             Dispose();
                             ThrowException(disposeException);
                         }

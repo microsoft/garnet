@@ -40,6 +40,11 @@ namespace Garnet.common
         public int MinAllocationSize => minAllocationSize;
 
         /// <summary>
+        /// Maximum allocation size retained by this pool.
+        /// </summary>
+        public int MaxAllocationSize => maxAllocationSize;
+
+        /// <summary>
         /// Total outstanding allocation references
         /// </summary>
         int totalReferences;

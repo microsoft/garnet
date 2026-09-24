@@ -31,6 +31,9 @@ namespace Garnet.common
 
         /// <summary>Send buffer for async socket operations (GarnetSaeaBuffer).</summary>
         SaeaSendBuffer = 7,
+
+        /// <summary>Out-of-line command payload (NetworkWriter).</summary>
+        OutOfLinePayload = 8,
     }
 
     /// <summary>

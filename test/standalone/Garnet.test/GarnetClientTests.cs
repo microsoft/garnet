@@ -625,6 +625,62 @@ namespace Garnet.test
             await Task.WhenAll(tasks).ConfigureAwait(false);
         }
 
+        [Test]
+        public void ChunkedPayloadBuffersReuseNetworkPool()
+        {
+            const int bufferSize = 256;
+
+            using var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir);
+            server.Start();
+
+            using var db = new GarnetClient(
+                TestUtils.EndPoint,
+                bufferSize: bufferSize,
+                useOutOfLineExecution: true);
+            db.Connect();
+
+            var networkWriter = (NetworkWriter)typeof(GarnetClient)
+                .GetField("networkWriter", BindingFlags.NonPublic | BindingFlags.Instance)
+                .GetValue(db);
+            var networkPool = (LimitedFixedBufferPool)typeof(NetworkWriter)
+                .GetField("networkPool", BindingFlags.NonPublic | BindingFlags.Instance)
+                .GetValue(networkWriter);
+
+            var reusableLength = networkPool.MinAllocationSize + 1;
+            var first = networkWriter.RentPayloadBuffer(reusableLength);
+            var firstBuffer = first.Buffer;
+            Array.Fill(firstBuffer, (byte)0xA5);
+            first.Dispose();
+
+            var second = networkWriter.RentPayloadBuffer(reusableLength);
+            try
+            {
+                ClassicAssert.AreSame(firstBuffer, second.Buffer);
+                ClassicAssert.AreEqual(networkPool.MinAllocationSize * 2, second.Buffer.Length);
+                ClassicAssert.IsTrue(second.Buffer.All(static value => value == 0));
+            }
+            finally
+            {
+                second.Dispose();
+            }
+
+            var oversizedLength = networkPool.MaxAllocationSize + 1;
+            var oversized = networkWriter.RentPayloadBuffer(oversizedLength);
+            var oversizedBuffer = oversized.Buffer;
+            oversized.Dispose();
+
+            var nextOversized = networkWriter.RentPayloadBuffer(oversizedLength);
+            try
+            {
+                ClassicAssert.AreEqual(oversizedLength, nextOversized.Buffer.Length);
+                ClassicAssert.AreNotSame(oversizedBuffer, nextOversized.Buffer);
+            }
+            finally
+            {
+                nextOversized.Dispose();
+            }
+        }
+
         /// <summary>
         /// Regression test for: NetworkWriter.AsyncFlushPages swallows send failures without
         /// releasing the flush-completion event, hanging callers blocked on FlushEvent (e.g.
